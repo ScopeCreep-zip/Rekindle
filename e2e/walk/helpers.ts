@@ -20,10 +20,20 @@ export function sleep(ms: number): Promise<void> {
 export const MOD_KEY = process.platform === "darwin" ? Key.Command : Key.Ctrl;
 export { Key };
 
+/**
+ * The first displayed match of `selector`, once one is. Reads every match,
+ * as `present()` does: webdriverio 10's `$` throws on a second match (walk
+ * 20: `.skin-row` matched every listed skin).
+ */
 export async function shown(b: Browser, selector: string, timeout = WAIT_MS): Promise<El> {
-  const el = await b.$(selector);
-  await el.waitForDisplayed({ timeout, timeoutMsg: `${selector} not displayed after ${timeout} ms` });
-  return el;
+  const deadline = Date.now() + timeout;
+  while (true) {
+    for (const el of await b.$$(selector)) {
+      if (await el.isDisplayed()) return el as unknown as El;
+    }
+    if (Date.now() >= deadline) throw new Error(`${selector} not displayed after ${timeout} ms`);
+    await sleep(100);
+  }
 }
 
 export async function gone(b: Browser, selector: string, timeout = WAIT_MS): Promise<void> {

@@ -58,6 +58,7 @@
     "allow-get-events",
     "allow-get-game-name",
     "allow-get-game-servers",
+    "allow-get-network-status",
     "allow-get-notification-sound",
     "allow-get-older-channel-messages",
     "allow-get-onboarding-config",

@@ -246,7 +246,10 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
     title: "Member menu > Ban (the peer rejoins first)",
     async run({ b, s, shot }) {
       await peerJoins(b, s.passphrase, s.communityName);
-      await contextMenu(b, await peerMember(b), "Ban Member");
+      const member = await peerMember(b).catch(async (e: Error) => {
+        throw new Error(`${e.message} (${await memberProbe(b, s.communityName)})`);
+      });
+      await contextMenu(b, member, "Ban Member");
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
       await waitUntil(async () => !(await memberListed(b)), NET_WAIT_MS, "the banned peer is still listed");
       await shot();

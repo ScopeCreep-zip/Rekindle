@@ -5,12 +5,25 @@
 
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, present, resolveIntent, shown, waitUntil } from "./helpers.ts";
 import { closeSettings, flipPersisted, inBuddy, openSettings, optionBox, pickNextFile, setValue, waitStored } from "./nav.ts";
+import type { Browser } from "webdriverio";
 import type { Row } from "./rows.ts";
 
 /** A 1x1 PNG (the avatar upload's input accepts png/jpeg/gif up to 256 KB). */
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const ONE_SKIN = "one skin listed (Symbiosis: shown and the login skin); a second needs an imported skin package (ST11/ST12)";
+
+/**
+ * The first listed skin that is not the one shown, by its name, and its
+ * radio; null when only one skin is listed.
+ */
+async function otherSkin(b: Browser): Promise<{ name: string; radio: Awaited<ReturnType<Browser["$"]>> } | null> {
+  for (const row of await b.$$(".skin-row:not(.skin-row-shown)")) {
+    const name = (await (await row.$(".skin-name")).getText()).trim();
+    if (name) return { name, radio: await row.$("input[type=radio]") };
+  }
+  return null;
+}
 
 const TABS = ["Profile", "Application", "Appearance", "Notifications", "Audio", "Video", "Privacy", "Devices", "Mobile", "About"];
 
@@ -130,14 +143,14 @@ export const SETTINGS_ROWS: Row[] = [
     async run({ b, s, shot }) {
       await openSettings(b, "Appearance");
       await shown(b, ".skin-row", NET_WAIT_MS);
-      const target = await b.$(".skin-row:not(.skin-row-shown) input[type=radio]");
-      if (!(await target.isExisting())) {
+      const other = await otherSkin(b);
+      if (!other) {
         await shot();
         await closeSettings(b);
         throw new Skip(ONE_SKIN);
       }
-      const name = await (await (await target.parentElement()).$(".skin-name")).getText();
-      await target.click();
+      const { name, radio } = other;
+      await radio.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await shown(b, ".skin-trial", NET_WAIT_MS);
       await shot();
@@ -156,12 +169,13 @@ export const SETTINGS_ROWS: Row[] = [
       await openSettings(b, "Appearance");
       await shown(b, ".skin-row", NET_WAIT_MS);
       const kept = await (await b.$(".skin-row-shown .skin-name")).getText();
-      if (!(await (await b.$(".skin-row:not(.skin-row-shown) input[type=radio]")).isExisting())) {
+      const other = await otherSkin(b);
+      if (!other) {
         await shot();
         await closeSettings(b);
         throw new Skip(ONE_SKIN);
       }
-      await (await b.$(".skin-row:not(.skin-row-shown) input[type=radio]")).click();
+      await other.radio.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await shown(b, ".skin-trial", NET_WAIT_MS);
       await (await b.$(".skin-trial .sec-btn-secondary")).click();

@@ -313,7 +313,8 @@ fn repo_root() -> PathBuf {
     manifest_dir()
         .parent()
         .expect("src-tauri has a parent")
-        .to_path_buf()
+        .canonicalize()
+        .expect("the repo root resolves")
 }
 
 fn frontend_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -349,45 +350,212 @@ fn command_wrappers() -> BTreeMap<String, String> {
     map
 }
 
-/// Every command a window's own code calls is granted to that window. A
-/// call it is not granted fails at runtime with "not allowed by ACL", and
-/// a `.catch` can hide that: the Settings camera list read the denial of
-/// `native_video_capture_available` as "no native capture" (plan C7.28).
+/// Resolve a relative TS import to its file.
+fn resolve_import(from: &Path, spec: &str) -> Option<PathBuf> {
+    let base = from.parent()?.join(spec);
+    ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]
+        .iter()
+        .map(|ext| PathBuf::from(format!("{}{ext}", base.display())))
+        .find(|p| p.is_file())
+        .map(|p| p.canonicalize().expect("an import resolves"))
+}
+
+/// A module's relative value imports: (file, imported names). A default
+/// import is named `default`; `import type` brings no code.
+fn module_imports(file: &Path, src: &str) -> Vec<(PathBuf, Vec<String>)> {
+    let named = regex::Regex::new(
+        r#"(?s)import\s+(type\s+)?(\w+\s*,\s*)?\{([^}]*)\}\s*from\s*"(\.[^"]+)""#,
+    )
+    .expect("regex");
+    let default = regex::Regex::new(r#"import\s+(\w+)\s+from\s*"(\.[^"]+)""#).expect("regex");
+    let mut out = Vec::new();
+    for m in named.captures_iter(src) {
+        if m.get(1).is_some() {
+            continue;
+        }
+        let names = m[3]
+            .split(',')
+            .map(str::trim)
+            .filter(|n| !n.is_empty() && !n.starts_with("type "))
+            .map(|n| n.split_whitespace().next().unwrap_or(n).to_owned())
+            .collect();
+        if let Some(path) = resolve_import(file, &m[4]) {
+            out.push((path, names));
+        }
+    }
+    for m in default.captures_iter(src) {
+        if &m[1] == "type" {
+            continue;
+        }
+        if let Some(path) = resolve_import(file, &m[2]) {
+            out.push((path, vec!["default".to_owned()]));
+        }
+    }
+    out
+}
+
+/// A module's top-level functions: name → source up to the next one.
+fn module_functions(src: &str) -> BTreeMap<String, String> {
+    let start = regex::Regex::new(
+        r"(?m)^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|const\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|\w+\s*=>))",
+    )
+    .expect("regex");
+    let starts: Vec<(usize, String)> = start
+        .captures_iter(src)
+        .map(|m| {
+            let name = m.get(1).or_else(|| m.get(2)).expect("a name");
+            (m.get(0).expect("match").start(), name.as_str().to_owned())
+        })
+        .collect();
+    let mut out = BTreeMap::new();
+    for (i, (at, name)) in starts.iter().enumerate() {
+        let end = starts.get(i + 1).map_or(src.len(), |(next, _)| *next);
+        out.insert(name.clone(), src[*at..end].to_owned());
+    }
+    out
+}
+
+/// What a window's code reaches: the commands its own files call, and the
+/// commands behind every store function its files or the components they
+/// mount (transitively) import, followed through that function's own calls
+/// into other stores and actions. A store hook such as
+/// `trackNetworkStatus()` invokes a command in every window that mounts it,
+/// so the window must be granted it (walk 20 M3: the community window's
+/// Create waited on a status read the ACL refused). A shared component's
+/// own command calls are not counted: they sit behind the props that say
+/// which window's variant it renders (the video panel, the message input).
+struct Reach {
+    commands: BTreeSet<(String, PathBuf)>,
+    files: BTreeSet<PathBuf>,
+    functions: BTreeSet<(PathBuf, String)>,
+    sources: BTreeMap<PathBuf, String>,
+}
+
+fn is_under(path: &Path, dir: &str) -> bool {
+    path.starts_with(repo_root().join(dir))
+}
+
+impl Reach {
+    fn new() -> Self {
+        Self {
+            commands: BTreeSet::new(),
+            files: BTreeSet::new(),
+            functions: BTreeSet::new(),
+            sources: BTreeMap::new(),
+        }
+    }
+
+    fn source(&mut self, path: &Path) -> String {
+        self.sources
+            .entry(path.to_path_buf())
+            .or_insert_with(|| {
+                std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+            })
+            .clone()
+    }
+
+    fn scan_calls(&mut self, at: &Path, src: &str, wrappers: &BTreeMap<String, String>) {
+        let call = regex::Regex::new(r"\bcommands\s*\.\s*(\w+)\s*\(").expect("regex");
+        for m in call.captures_iter(src) {
+            if let Some(cmd) = wrappers.get(&m[1]) {
+                self.commands.insert((cmd.clone(), at.to_path_buf()));
+            }
+        }
+    }
+
+    fn file(&mut self, path: &Path, owned: &dyn Fn(&Path) -> bool, w: &BTreeMap<String, String>) {
+        if !self.files.insert(path.to_path_buf()) {
+            return;
+        }
+        let src = self.source(path);
+        if owned(path) {
+            self.scan_calls(path, &src, w);
+        }
+        for (dep, names) in module_imports(path, &src) {
+            if owned(&dep) || is_under(&dep, "src/components") {
+                self.file(&dep, owned, w);
+            } else if is_under(&dep, "src/stores") {
+                for name in names {
+                    self.function(&dep, &name, w);
+                }
+            }
+        }
+    }
+
+    fn function(&mut self, path: &Path, name: &str, w: &BTreeMap<String, String>) {
+        if !self.functions.insert((path.to_path_buf(), name.to_owned())) {
+            return;
+        }
+        let src = self.source(path);
+        let functions = module_functions(&src);
+        let Some(body) = functions.get(name) else {
+            return;
+        };
+        self.scan_calls(path, body, w);
+        let imports = module_imports(path, &src);
+        let ident = regex::Regex::new(r"\b(\w+)\s*\(").expect("regex");
+        for m in ident.captures_iter(body) {
+            let callee = &m[1];
+            if callee != name && functions.contains_key(callee) {
+                self.function(path, callee, w);
+            } else if let Some((dep, _)) = imports.iter().find(|(dep, names)| {
+                (is_under(dep, "src/stores") || is_under(dep, "src/actions"))
+                    && names.iter().any(|n| n == callee)
+            }) {
+                self.function(&dep.clone(), callee, w);
+            }
+        }
+    }
+}
+
+/// Every command a window's code reaches (`Reach`) is granted to that
+/// window. A call it is not granted fails at runtime with "not allowed by
+/// ACL", and a `.catch` can hide that: the Settings camera list read the
+/// denial of `native_video_capture_available` as "no native capture" (plan
+/// C7.28), and the community window's network store read the denial of
+/// `get_network_status` as "Disconnected" (walk 20 M3).
 #[test]
-fn windows_are_granted_the_commands_their_own_code_calls() {
+fn windows_are_granted_the_commands_their_code_reaches() {
     let wrappers = command_wrappers();
     assert!(
         wrappers.len() > 100,
         "found only {} command wrappers",
         wrappers.len()
     );
-    let call = regex::Regex::new(r"\bcommands\s*\.\s*(\w+)\s*\(").expect("regex");
     let caps = shipped();
+    let mut missing = Vec::new();
     for kind in WindowKind::ALL {
         let (entry, dir) = owned_frontend_code(kind);
-        let mut files = vec![repo_root().join(entry)];
-        if let Some(dir) = dir {
-            frontend_files(&repo_root().join(dir), &mut files);
+        let entry = repo_root().join(entry);
+        let dir = dir.map(|d| repo_root().join(d));
+        let owned = |p: &Path| p == entry || dir.as_ref().is_some_and(|d| p.starts_with(d));
+        let mut reach = Reach::new();
+        reach.file(&entry, &owned, &wrappers);
+        if let Some(dir) = &dir {
+            let mut files = Vec::new();
+            frontend_files(dir, &mut files);
+            for file in files {
+                reach.file(&file, &owned, &wrappers);
+            }
         }
         let granted: BTreeSet<String> = caps
             .iter()
             .filter(|c| c.windows.iter().any(|w| w == kind.pattern()))
             .flat_map(|c| c.permissions.iter().cloned())
             .collect();
-        for file in &files {
-            let src =
-                std::fs::read_to_string(file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
-            for m in call.captures_iter(&src) {
-                let Some(cmd) = wrappers.get(&m[1]) else {
-                    continue;
-                };
-                assert!(
-                    granted.contains(&allow_permission(cmd)),
-                    "{} calls `{cmd}`, which no capability grants to window `{}`",
-                    file.display(),
-                    kind.pattern()
-                );
+        for (cmd, at) in &reach.commands {
+            if !granted.contains(&allow_permission(cmd)) {
+                missing.push(format!(
+                    "`{}` reaches `{cmd}` ({})",
+                    kind.pattern(),
+                    at.display()
+                ));
             }
         }
     }
+    assert!(
+        missing.is_empty(),
+        "commands no capability grants:\n{}",
+        missing.join("\n")
+    );
 }
