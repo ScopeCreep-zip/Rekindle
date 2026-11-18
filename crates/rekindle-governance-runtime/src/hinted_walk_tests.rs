@@ -408,3 +408,28 @@ fn a_resumed_join_whose_inviter_has_no_post_cut_op_cites_the_hint_alone() {
     .expect("the hint covers the inviter's invite");
     assert_eq!(deps, vec![cp.hash()]);
 }
+
+/// Two digests for one cut, each endorsed by a strict majority (the
+/// creator alone at height 1, in two rounds), above the cut of the hint in
+/// use: a checkpoint equivocation, so the joiner uses no hint.
+#[test]
+fn an_equivocated_community_uses_no_hint() {
+    let (mut world, creator, _, cp) = world();
+    let (_, snap) = snapshot_at(&world, &cp_body(&cp).cut);
+    let store = Store::of(&world);
+    let resumed = resume(
+        &world,
+        &store,
+        std::slice::from_ref(&snap),
+        &frontier(&world),
+    )
+    .expect("on top");
+    assert!(!equivocates(&world.cert, None, 1, &resumed.gathered.rest));
+    let mut other = cp_body(&cp).clone();
+    other.round = 1;
+    other.state_root = [9; 32];
+    world.endorse(&creator, other);
+    let store = Store::of(&world);
+    let resumed = resume(&world, &store, &[snap], &frontier(&world)).expect("on top");
+    assert!(equivocates(&world.cert, None, 1, &resumed.gathered.rest));
+}

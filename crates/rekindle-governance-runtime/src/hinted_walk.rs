@@ -38,13 +38,15 @@ use std::future::Future;
 
 use futures::stream::{self, StreamExt, TryStreamExt};
 use rekindle_codec::governance_op::decode_op;
-use rekindle_governance::checkpoint::CutSnapshot;
+use rekindle_governance::checkpoint::{eligible_set, is_strict_majority, tally, CutSnapshot};
 use rekindle_governance::checksum::roster_checksum;
 use rekindle_governance::merge::{merge_from, MergeOutcome};
 use rekindle_governance::op::{op_hash, op_signing_bytes, DepFacts, OpRejection, VerifiedOp};
 use rekindle_governance::state::GovernanceState;
 use rekindle_secrets::sign::verify_signature;
-use rekindle_types::governance::{Frontier, GenesisCert, GovernanceOp, OpHash, OpRef};
+use rekindle_types::governance::{
+    Checkpoint, Frontier, GenesisCert, GovernanceEntry, GovernanceOp, OpHash, OpRef,
+};
 use rekindle_types::id::PseudonymKey;
 
 use crate::error::GovernanceRuntimeError;
@@ -310,6 +312,41 @@ pub fn ring_holds(
     let held: BTreeSet<OpHash> = rest.iter().map(VerifiedOp::hash).collect();
     let equal_heads = (frontier.heads.iter()).all(|h| held.contains(&h.op_hash) || in_cut(snap, h));
     !equal_heads || roster_checksum(state) == frontier.roster_checksum
+}
+
+/// Whether the post-cut ops `rest` hold a checkpoint equivocation at
+/// `height` (the height of the hint resumed from, whose endorsements are
+/// above its cut): two digests or more for one cut and one
+/// `prevCheckpoint`, each carried by a strict majority of the electorate
+/// `below` leaves (the state at the height below's cut; the cert's
+/// creator set at height 1). A reader then uses no hint (plan E3.2 S7c.4).
+#[must_use]
+pub fn equivocates(
+    cert: &GenesisCert,
+    below: Option<&GovernanceState>,
+    height: u64,
+    rest: &[VerifiedOp],
+) -> bool {
+    let electorate = eligible_set(cert, below);
+    let mut groups: BTreeMap<Vec<u8>, Vec<(&PseudonymKey, &Checkpoint)>> = BTreeMap::new();
+    for op in rest {
+        if let GovernanceEntry::Checkpoint(c) = op.body() {
+            if c.height == height {
+                let key: Vec<u8> = (c.cut.iter().map(|r| r.op_hash.0))
+                    .chain(c.prev.iter().map(|r| r.op_hash.0))
+                    .flatten()
+                    .collect();
+                groups.entry(key).or_default().push((op.author(), c));
+            }
+        }
+    }
+    groups.into_values().any(|votes| {
+        let majorities = tally(&electorate, votes)
+            .values()
+            .filter(|endorsers| is_strict_majority(endorsers.len(), electorate.len()))
+            .count();
+        majorities > 1
+    })
 }
 
 /// A merge resumed from a hint.

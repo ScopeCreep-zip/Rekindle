@@ -8,7 +8,8 @@
 //! (`hinted_walk::resume_newest`), moving to an older hint on `NotOnTop`.
 //! It walks in full when the inviter gives no hint (none yet, a checkpoint
 //! equivocation, an old route), no hint is on top, a resumed state misses
-//! the inviter's roster checksum, or the joiner already has an op in the
+//! the inviter's roster checksum, the post-cut ops hold a checkpoint
+//! equivocation at the hint's height, or the joiner already has an op in the
 //! cut (a re-join: its next seq and its removals are in the cut, which it
 //! does not hold).
 
@@ -20,7 +21,7 @@ use rekindle_types::id::PseudonymKey;
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::hint_chain::{verified_hints, Asker};
-use crate::hinted_walk::{gather, resume_newest};
+use crate::hinted_walk::{equivocates, gather, resume_newest};
 use crate::op_log::{self, fetch_held, HeldOp, VerifiedSet, WalkLogCache};
 
 /// What the joiner read and merged.
@@ -103,6 +104,11 @@ pub async fn walk_for_join<D: GovernanceRuntimeDeps>(
         return full_walk(deps, anchor, cert, frontier).await;
     };
     let link = &hints[resumed.index].link;
+    let below = hints.get(resumed.index + 1).map(|h| &h.snapshot.state);
+    if equivocates(cert, below, link.height, &resumed.gathered.rest) {
+        tracing::warn!(community = %anchor, "a checkpoint equivocation: no hint, full walk");
+        return full_walk(deps, anchor, cert, frontier).await;
+    }
     tracing::info!(
         community = %anchor,
         height = link.height,
