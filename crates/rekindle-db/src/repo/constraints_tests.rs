@@ -49,6 +49,8 @@ fn seeded() -> Connection {
         "INSERT INTO governance_checkpoints (owner_key, community_id, height, round, digest, \
          op_hash, dir_size, state) VALUES (?1, 'c', 1, 0, zeroblob(32), zeroblob(32), 0, \
          'usable')",
+        "INSERT INTO governance_partial (owner_key, community_id, height, digest, state_root) \
+         VALUES (?1, 'c', 1, zeroblob(32), zeroblob(32))",
         "INSERT INTO signal_prekeys (owner_key, id, kind, secret, public, created_at, \
          published_subkey) VALUES (?1, 1, 'spk', x'00', x'00', 0, 0)",
         "INSERT INTO prekey_slots_used (owner_key, peer, device_id, opk_id, used_at) \
@@ -112,6 +114,9 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("governance_checkpoints", "digest", "zeroblob(31)"),
     ("governance_checkpoints", "op_hash", "x'00'"),
     ("governance_checkpoints", "dir_size", "-1"),
+    ("governance_partial", "height", "0"),
+    ("governance_partial", "digest", "zeroblob(31)"),
+    ("governance_partial", "state_root", "x'00'"),
     ("signal_prekeys", "kind", "'otpk'"),
     ("signal_prekeys", "id", "0"),
     ("signal_prekeys", "id", "2147483648"),

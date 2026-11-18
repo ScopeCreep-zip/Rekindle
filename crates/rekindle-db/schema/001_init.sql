@@ -908,6 +908,23 @@ CREATE TABLE IF NOT EXISTS governance_checkpoints (
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
+-- A community joined from a checkpoint hint (plan E3.2 S7c.8 (1), Synapse
+-- `is_partial_state_room`): partial until a rebuild holds every op the
+-- hinted walk skipped. While a row exists the community proposes and
+-- endorses no checkpoint, answers no hint, snapshot or bootstrap request
+-- and compares no D15 roster checksum. `height` and `digest` name the
+-- hint's checkpoint, `state_root` the hinted snapshot's digest, compared
+-- with the backfilled state's when the row is cleared.
+CREATE TABLE IF NOT EXISTS governance_partial (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    height INTEGER NOT NULL CHECK(height >= 1),
+    digest BLOB NOT NULL CHECK(length(digest) = 32),
+    state_root BLOB NOT NULL CHECK(length(state_root) = 32),
+    PRIMARY KEY (owner_key, community_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+);
+
 -- The outbox (plan E2.5, D22; `rekindle_outbox`, `rekindle_db::repo::
 -- outbox`): one row per send intent not yet settled. `stream` names an
 -- ordered stream (`<kind>:<scope>`), `stream_seq` the row's place in it;
