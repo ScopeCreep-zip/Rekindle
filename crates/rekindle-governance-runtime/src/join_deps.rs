@@ -63,30 +63,40 @@ fn latest_of<'a>(ops: &'a [VerifiedOp], author: &PseudonymKey) -> Option<&'a Ver
 }
 
 /// The lowest `(lamport, op_hash)` applied `Checkpoint` op in `set`
-/// carrying the digest of `outcome`'s selected hint at its greatest
-/// height; `None` with no usable hint or under a checkpoint equivocation.
-fn hint_base<'a>(set: &'a VerifiedSet, outcome: &MergeOutcome) -> Option<&'a VerifiedOp> {
-    let hint = outcome.hints.latest()?;
+/// carrying `hint`'s digest; `None` with no hint (none usable, or a
+/// checkpoint equivocation).
+fn hint_base<'a>(
+    set: &'a VerifiedSet,
+    outcome: &MergeOutcome,
+    hint: Option<&[u8; 32]>,
+) -> Option<&'a VerifiedOp> {
+    let hint = hint?;
     let applied: BTreeSet<OpHash> = outcome.applied.iter().copied().collect();
     (set.ops.iter())
         .filter(|op| applied.contains(&op.hash()))
         .filter(|op| {
-            matches!(op.body(), GovernanceEntry::Checkpoint(c) if checkpoint_digest(c) == hint.digest)
+            matches!(op.body(), GovernanceEntry::Checkpoint(c) if checkpoint_digest(c) == *hint)
         })
         .min_by_key(|op| (op.lamport(), op.hash()))
 }
 
 /// The deps of `joiner`'s `MemberJoined` on the invite of `inviter`, from
-/// the walked set `set` and its merge `outcome`, in canonical (hash)
-/// order.
+/// the walked set `set`, its merge `outcome` and the digest of the hint
+/// the joiner read it from (`join_walk::WalkedSet::hint`: the hint resumed
+/// from, else the full merge's selected one at the greatest height), in
+/// canonical (hash) order. After a resume `set` holds only the post-cut
+/// ops: an inviter with none has every op, its `InviteCreated` among them,
+/// in the cut, which the hint's `Checkpoint` op has in its causal past, so
+/// the join cites no op of it (plan E3.2 S7c.5).
 ///
 /// # Errors
 /// The walk holds no hint's `Checkpoint` op and no creator op at the last
-/// genesis seq, or no op of the inviter.
+/// genesis seq, or no op of the inviter and no hint's `Checkpoint` op.
 pub fn join_deps(
     cert: &GenesisCert,
     set: &VerifiedSet,
     outcome: &MergeOutcome,
+    hint: Option<&[u8; 32]>,
     joiner: &PseudonymKey,
     inviter: &PseudonymKey,
 ) -> Result<Vec<OpHash>, GovernanceRuntimeError> {
@@ -95,15 +105,23 @@ pub fn join_deps(
             .filter(|op| *op.author() == cert.creator_pseudonym && op.op().seq == GENESIS_LAST_SEQ)
             .min_by_key(|op| op.stamp())
     };
-    let base = hint_base(set, outcome).or_else(genesis).ok_or_else(|| {
+    let hinted = hint_base(set, outcome, hint);
+    let base = hinted.or_else(genesis).ok_or_else(|| {
         GovernanceRuntimeError::Adapter(
             "join: the walk holds no creator op at the last genesis seq".into(),
         )
     })?;
-    let invited = latest_of(&set.ops, inviter).ok_or_else(|| {
-        GovernanceRuntimeError::Adapter("join: the walk holds no op of the inviter".into())
-    })?;
-    let mut cited: Vec<OpHash> = vec![base.hash(), invited.hash()];
+    let invited = match (latest_of(&set.ops, inviter), hinted) {
+        (Some(op), _) => Some(op.hash()),
+        (None, Some(_)) => None,
+        (None, None) => {
+            return Err(GovernanceRuntimeError::Adapter(
+                "join: the walk holds no op of the inviter".into(),
+            ))
+        }
+    };
+    let mut cited: Vec<OpHash> = vec![base.hash()];
+    cited.extend(invited);
     cited.extend(latest_of(&set.ops, joiner).map(VerifiedOp::hash));
     let mut removals: Vec<&VerifiedOp> = set
         .ops

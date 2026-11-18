@@ -37,6 +37,8 @@ pub mod dht_hydration;
 pub mod error;
 pub mod event;
 pub mod genesis;
+pub mod hint_chain;
+pub mod hinted_walk;
 pub mod invite_secrets;
 pub mod invites;
 pub mod join;
@@ -44,6 +46,7 @@ pub mod join_deps;
 pub mod join_flow;
 pub mod join_gate;
 pub mod join_stages;
+pub mod join_walk;
 pub mod member_card;
 pub mod membership_events;
 pub mod moderation;
@@ -63,6 +66,8 @@ pub mod watch_ring;
 
 #[cfg(test)]
 mod test_member;
+#[cfg(test)]
+mod test_world;
 
 pub use apply::{write_checkpoint_queued, write_entry, write_entry_queued, write_invite_created};
 pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};

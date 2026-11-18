@@ -18,25 +18,26 @@
 //! `M`/0, ours on `M`/2 with `M`/3 after it, then the beat `M`/1.
 
 use rekindle_crypto::keypair_text;
-use rekindle_governance::merge;
 use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::port::OpenIntent;
 use rekindle_records::schema;
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_types::dht_layout::member_record;
-use rekindle_types::governance::{GenesisCert, GovernanceEntry, InviteProof, OpRef};
+use rekindle_types::governance::{Frontier, GenesisCert, GovernanceEntry, InviteProof};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::invite::InviteSecrets;
 use zeroize::Zeroizing;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
+use crate::hint_chain::Asker;
 use crate::join::{derive_join_identity, InitialPresence, JoinIdentity};
 use crate::join_deps::join_deps;
 use crate::join_stages::{
     claim_registry_slot, collect_initial_presence_state, ClaimedSlot, SlotClaimCtx,
 };
+use crate::join_walk::{walk_for_join, WalkedSet};
 use crate::op_log::{self, Deps, HeldOp, OpFate};
 
 /// The joiner's own member record, created by the join.
@@ -88,14 +89,15 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid invite secrets: {e}")))
 }
 
-/// A member's `Frontier` (`M`/3), read from the network.
+/// A member's `Frontier` (`M`/3), read from the network: its heads and
+/// roster checksum.
 ///
 /// # Errors
 /// The record is unreadable, holds no frontier, or it does not decode.
 pub async fn read_frontier<D: GovernanceRuntimeDeps>(
     deps: &D,
     record: &str,
-) -> Result<Vec<OpRef>, GovernanceRuntimeError> {
+) -> Result<Frontier, GovernanceRuntimeError> {
     let lease = deps.acquire_record(record, None, OpenIntent::Check).await?;
     let read = deps
         .get_dht_value(lease, member_record::FRONTIER, true)
@@ -105,7 +107,6 @@ pub async fn read_frontier<D: GovernanceRuntimeDeps>(
         GovernanceRuntimeError::Adapter(format!("member record {record} has no frontier"))
     })?;
     rekindle_codec::governance_op::decode_frontier(&bytes)
-        .map(|frontier| frontier.heads)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("frontier of {record}: {e}")))
 }
 
@@ -153,13 +154,14 @@ async fn create_member_record<D: GovernanceRuntimeDeps>(
 /// proof (`K_M` over `MEMBER_RECORD_BINDING ‖ anchor ‖ pseudonym ‖
 /// memberRecord`, ADR 0011 "Binding"). Its deps are shallow (plan E3.2
 /// S7c.0, [`join_deps`](crate::join_deps::join_deps)): a `Checkpoint` op
-/// of `outcome`'s hint (else the creator's last genesis op) and
-/// `inviter`'s latest op, not the whole frontier.
+/// of `walked`'s hint, the one it resumed from or its full merge's
+/// selected one (else the creator's last genesis op), and `inviter`'s
+/// latest op (none after a resume when the inviter has no post-cut op),
+/// not the whole frontier.
 fn joined_op(
     anchor: &str,
     cert: &GenesisCert,
-    outcome: &merge::MergeOutcome,
-    set: &op_log::VerifiedSet,
+    walked: &WalkedSet,
     key: &SigningKey,
     member: (&JoinerRecord, String),
     invite: (String, &PseudonymKey),
@@ -188,7 +190,9 @@ fn joined_op(
         owner_proof: owner_proof.to_vec(),
     };
     let joiner = PseudonymKey(key.verifying_key().to_bytes());
-    let deps = Deps::Join(join_deps(cert, set, outcome, &joiner, inviter)?);
+    let (set, outcome) = (&walked.set, &walked.merged);
+    let hint = walked.hint.as_ref();
+    let deps = Deps::Join(join_deps(cert, set, outcome, hint, &joiner, inviter)?);
     let state = &outcome.state;
     let (op, encoded) = op_log::build_op(anchor, cert, state, set, key, body, deps, now_secs)?;
     Ok(op_log::held(
@@ -226,12 +230,18 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         ));
     }
 
-    // The op set from the inviter's frontier, merged under the pinned cert.
-    let start = read_frontier(deps, &invite.inviter_member_record).await?;
-    let walked = op_log::walk(deps, anchor, &start).await?;
-    let set = op_log::verify_held_with(deps, anchor, &walked);
-    let merged = merge::merge_outcome(&cert, &set.ops);
-    let gov_state = merged.state.clone();
+    // The op set from the inviter's frontier, merged under the pinned cert:
+    // above a hint's cut from its snapshot when the inviter gives one that
+    // verifies (plan E3.2 S7c.5), else in full.
+    let code_hash = rekindle_secrets::invite::hash_invite_code(link.invite_code.as_str());
+    let frontier = read_frontier(deps, &invite.inviter_member_record).await?;
+    let asker = Asker {
+        me: &identity.pseudonym_signing,
+        route: &invite.inviter_route_blob,
+        code_hash: &code_hash,
+    };
+    let walked = walk_for_join(deps, anchor, &cert, &frontier, &asker).await?;
+    let gov_state = walked.merged.state.clone();
 
     if gov_state.bans.contains(&identity.pseudo) {
         return Err(GovernanceRuntimeError::Adapter(
@@ -239,15 +249,13 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         ));
     }
     let now = deps.clock().now_secs();
-    let code_hash = rekindle_secrets::invite::hash_invite_code(link.invite_code.as_str());
     let inviter = check_invite(&gov_state, &code_hash, now)?;
 
     let (member, member_owner) = create_member_record(deps).await?;
     let joined = joined_op(
         anchor,
         &cert,
-        &merged,
-        &set,
+        &walked,
         &identity.pseudonym_signing,
         (&member, member_owner),
         (code_hash, &inviter),
@@ -287,7 +295,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         invite,
         gov_state,
         member,
-        walked,
+        walked: walked.held,
         joined,
         claimed,
         initial_presence,
