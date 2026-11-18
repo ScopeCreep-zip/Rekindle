@@ -19,7 +19,10 @@ export async function handleCreateChannel(
       categoryId,
       parentVoiceChannelId,
     );
-    setCommunityState("communities", communityId, "channels", (chs) => [
+    // The Host merges our ChannelCreated and may publish `channelsChanged`
+    // (the new channel in it) before this call answers (walk 18 (d): the
+    // channel was listed twice); add it only when not yet listed.
+    setCommunityState("communities", communityId, "channels", (chs) => chs.some((ch) => ch.id === channelId) ? chs : [
       ...chs,
       {
         id: channelId,
