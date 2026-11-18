@@ -204,3 +204,14 @@ export function within<T>(work: Promise<T>, ms: number, msg: string): Promise<T>
   });
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
+
+/** The identity bar's name field, focus, label and intent dialog, read in
+ *  the page: B12 names them on a failure (it failed 3 of 7 walks). */
+export function identityBarState(b: Browser): Promise<string> {
+  return b.execute(() => {
+    const f = document.querySelector<HTMLInputElement>(".identity-bar-edit");
+    const label = document.querySelector(".identity-bar-name")?.textContent ?? "none";
+    const focus = document.activeElement?.className || document.activeElement?.tagName || "none";
+    return `field=${f ? JSON.stringify(f.value) : "gone"} focus=${focus} label=${JSON.stringify(label)} dialog=${!!document.querySelector(".intent-dialog")}`;
+  });
+}

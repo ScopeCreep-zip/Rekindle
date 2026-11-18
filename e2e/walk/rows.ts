@@ -16,6 +16,7 @@ import {
   byText,
   doubleClick,
   gone,
+  identityBarState,
   present,
   press,
   resolveIntent,
@@ -159,9 +160,14 @@ const BASE_ROWS: Row[] = [
       await (await shown(b, ".identity-bar-name")).click();
       const edit = await shown(b, ".identity-bar-edit");
       await typeInto(edit, next);
+      const probe = (): Promise<string> => identityBarState(b);
+      const typed = await probe();
       await b.keys(Key.Enter);
-      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await waitUntil(async () => (await (await b.$(".identity-bar-name")).getText()).includes(next), WAIT_MS, "name did not change");
+      const entered = await probe();
+      const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+      await waitUntil(async () => (await (await b.$(".identity-bar-name")).getText()).includes(next), WAIT_MS, "name did not change").catch(async (e: Error) => {
+        throw new Error(`${e.message} (typed: ${typed}; after Enter: ${entered}; intent ${outcome}; now: ${await probe()})`);
+      });
       s.displayName = next;
     },
   },
