@@ -14,10 +14,6 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(pseudonym.as_bytes());
         }
-        MembershipEvent::JoinAccepted { community, .. } => {
-            h.update(b"join_acc|");
-            h.update(community.as_bytes());
-        }
         MembershipEvent::MembersRefreshed { community } => {
             h.update(b"members_refresh|");
             h.update(community.as_bytes());
@@ -48,12 +44,6 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(stage.as_bytes());
             h.update(b"|");
             h.update(status.as_bytes());
-        }
-        MembershipEvent::JoinRejected { community, reason } => {
-            h.update(b"join_rej|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(reason.as_bytes());
         }
         MembershipEvent::Joined {
             community,

@@ -17,8 +17,6 @@ import type { EventInfo, GameServer, Thread } from "../commands/types";
 /** Membership events from the daemon vocabulary. */
 export type MembershipEvent =
   | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
-  | { joinAccepted: { community: string; mekGeneration: number | null; slotIndex: number | null } }
-  | { joinRejected: { community: string; reason: string } }
   | { joinProgress: { community: string; stage: string; status: string } }
   | {
       joined: {
@@ -132,8 +130,6 @@ export type CryptoEvent =
         senderPseudonym: string;
       };
     }
-  | { adminKeypairGranted: { community: string } }
-  | { slotKeypairGranted: { community: string; slotIndex: number; segmentIndex: number } }
   | { prekeyRecordPublished: { head: boolean; slots: number[] } };
 
 // Community member presence is **not** in the union below: it is a

@@ -4,7 +4,7 @@
 //! hand-off the handler's other gossip paths share.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use tracing::{debug, info};
+use tracing::debug;
 
 use super::DaemonHandler;
 
@@ -56,9 +56,8 @@ impl DaemonHandler {
             }
         }
 
-        // The membership control messages (plan E3.1 B2e): a JoinAccepted's
-        // community key, members and slot seed are installed before the
-        // pending join below resumes.
+        // The membership control messages (plan E3.1 B2e): onboarding
+        // answers and a member's own departure.
         if let CommunityEnvelope::Control(ref payload) = envelope {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 crate::host::adapters::governance::HostGovernance::new(ctx)
@@ -174,23 +173,6 @@ impl DaemonHandler {
                 crate::host::adapters::governance::HostGovernance::new(ctx)
                     .on_event_control(community_id, sender_pseudonym, payload)
                     .await;
-            }
-        }
-
-        // Tier 2: If this is a JoinAccepted for a pending join, complete oneshot.
-        // Check BEFORE forwarding to SubscriptionManager (which takes ownership).
-        if let CommunityEnvelope::Control(ControlPayload::JoinAccepted {
-            slot_index: Some(slot),
-            ..
-        }) = &envelope
-        {
-            let mut pending = self.pending_joins.lock();
-            if let Some((tx, _)) = pending.remove(community_id) {
-                let _ = tx.send(*slot);
-                info!(
-                    community = community_id,
-                    slot, "join approved via direct notification (tier 2)"
-                );
             }
         }
 

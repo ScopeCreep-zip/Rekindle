@@ -1,125 +1,9 @@
-//! The membership control messages the Host handles on both hosts (plan
-//! E3.1 B2e), offline: a JoinAccepted and a peer-assisted join.
+//! The membership side of the Host on both hosts, offline: the key
+//! catch-up, the sync loop's community phase and the joiner's key row.
 
-use rekindle_codec::community::envelope::ControlPayload;
-use rekindle_codec::community::types::MemberSummary;
 use rekindle_types::channel_keys::KeyScope;
 
 use super::{create_ann, offline_host, seed_registry_community};
-
-fn member(pseudonym: &str, name: &str, subkey_index: u32) -> MemberSummary {
-    MemberSummary {
-        pseudonym_key: pseudonym.into(),
-        display_name: name.into(),
-        role_ids: vec![0],
-        joined_at: 1,
-        subkey_index,
-        onboarding_complete: false,
-    }
-}
-
-/// A JoinAccepted installs the community key, the MEK generation and the
-/// member registry, and stores and knows the members it lists.
-#[tokio::test]
-async fn a_join_accepted_installs_the_key_registry_and_members() {
-    let dir = tempfile::tempdir().unwrap();
-    let host = offline_host(&dir).await;
-    let owner = create_ann(&host).await.public_key;
-    seed_registry_community(&host, &owner).await;
-
-    let key = rekindle_transport::crypto::mek::Mek::from_bytes([7; 32], 3);
-    let payload = ControlPayload::JoinAccepted {
-        mek_encrypted: key.to_wire_bytes(),
-        mek_generation: 3,
-        members: vec![member("bob", "Bob", 1), member("cat", "Cat", 2)],
-        member_registry_key: Some("registry-2".into()),
-        slot_index: None,
-        wrapped_slot_seed: None,
-    };
-    let handled = host
-        .governance()
-        .on_membership_control("c1", "bob", &payload)
-        .await;
-    assert!(handled);
-
-    {
-        let map = host.ctx.communities.map().read();
-        let c = &map["c1"];
-        assert_eq!(c.mek_generation, 3);
-        assert_eq!(c.member_registry_key.as_deref(), Some("registry-2"));
-        assert!(c.known_members.contains("bob") && c.known_members.contains("cat"));
-    }
-    let cached = host
-        .ctx
-        .mek_cache
-        .read()
-        .current("c1", KeyScope::Community)
-        .map(rekindle_transport::crypto::mek::Mek::generation);
-    assert_eq!(cached, Some(3));
-    let names = host
-        .ctx
-        .db
-        .current()
-        .unwrap()
-        .call(move |conn| {
-            Ok((
-                rekindle_db::repo::members::display_name(conn, &owner, "c1", "bob")?,
-                rekindle_db::repo::members::display_name(conn, &owner, "c1", "cat")?,
-            ))
-        })
-        .await
-        .unwrap();
-    assert_eq!(names, (Some("Bob".into()), Some("Cat".into())));
-    host.shutdown().await.unwrap();
-}
-
-/// A peer-assisted join makes the joiner known and counts a use of our
-/// invite it redeemed.
-#[tokio::test]
-async fn a_peer_join_is_known_and_counts_our_invite() {
-    let dir = tempfile::tempdir().unwrap();
-    let host = offline_host(&dir).await;
-    let owner = create_ann(&host).await.public_key;
-    seed_registry_community(&host, &owner).await;
-    let db = host.ctx.db.current().unwrap();
-    let hash = rekindle_secrets::invite::hash_invite_code("CODE");
-    let (seeded, seeded_hash) = (owner.clone(), hash.clone());
-    db.call(move |conn| {
-        rekindle_db::repo::community_invites::insert(conn, &seeded, "c1", "CODE", &seeded_hash, 1)
-    })
-    .await
-    .unwrap();
-
-    let payload = ControlPayload::MemberJoinRequest {
-        pseudonym_key: "dan".into(),
-        display_name: "Dan".into(),
-        invite_code: Some("CODE".into()),
-        route_blob: None,
-        prekey_bundle: None,
-        claimed_subkey_index: Some(3),
-    };
-    assert!(
-        host.governance()
-            .on_membership_control("c1", "dan", &payload)
-            .await
-    );
-    assert!(host.ctx.communities.known_members("c1").contains("dan"));
-
-    let mut uses = None;
-    for _ in 0..100 {
-        let (o, h) = (owner.clone(), hash.clone());
-        uses = db
-            .call(move |conn| rekindle_db::repo::community_invites::uses(conn, &o, "c1", &h))
-            .await
-            .unwrap();
-        if uses == Some(1) {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    assert_eq!(uses, Some(1));
-    host.shutdown().await.unwrap();
-}
 
 /// The key catch-up (plan E3.1 C2b; register S7l HIGH-1): a community
 /// whose key is held behind governance's generation is asked for; one
@@ -328,5 +212,67 @@ async fn the_joiner_s_key_is_a_committed_row_until_the_joiner_departs() {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     assert_eq!(left, 0, "the joiner's departure discards its row");
+    host.shutdown().await.unwrap();
+}
+
+/// The raid alert (architecture §20.6) rests on merged joins (plan E3.2
+/// S8): with a policy of three joins a minute, the first two members the
+/// merge admits raise nothing and the third raises one `RaidDetected`, on
+/// both modes, with no gossip notice involved.
+#[tokio::test]
+async fn merged_joins_past_the_policy_raise_a_raid_alert() {
+    use rekindle_governance::state::{CommunityPolicyState, GovernanceState, MemberState};
+    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_types::id::PseudonymKey;
+    use rekindle_types::subscription_events::{StreamFrame, SubscriptionEvent, SystemEvent};
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let mut state = GovernanceState {
+        community_policy: Some(CommunityPolicyState {
+            policy_text: None,
+            max_joins_per_interval: 3,
+            join_interval_seconds: 60,
+            stamp: rekindle_governance::fixture::stamp(1),
+        }),
+        ..GovernanceState::default()
+    };
+    let governance = host.governance();
+    // The first projection is the baseline and announces nothing.
+    governance.set_governance_state("c1", state.clone());
+    let mut events = host.ctx.journal.subscribe(None);
+    let mut raids = Vec::new();
+    for m in 1..=3u8 {
+        state.members.insert(
+            PseudonymKey([m; 32]),
+            MemberState {
+                member_record: format!("record-{m}"),
+                member_record_owner: "owner".into(),
+                joined: rekindle_governance::fixture::stamp(u64::from(m) + 1),
+            },
+        );
+        governance.set_governance_state("c1", state.clone());
+        while let Ok(Some(frame)) =
+            tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+        {
+            if let StreamFrame::Event(s) = frame {
+                if let SubscriptionEvent::System(SystemEvent::RaidDetected {
+                    community,
+                    joins_in_window,
+                    ..
+                }) = s.event
+                {
+                    raids.push((m, community, joins_in_window));
+                }
+            }
+        }
+    }
+    assert_eq!(
+        raids,
+        vec![(3, "c1".to_string(), 3)],
+        "the third merged join trips the policy"
+    );
     host.shutdown().await.unwrap();
 }

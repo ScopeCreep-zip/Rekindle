@@ -181,35 +181,14 @@ function applyMembershipRow(m: MembershipEvent): void {
   }
 }
 
-/** Membership events that write no community row: join progress and outcome. */
+/** Membership events that write no community row: join progress. */
 function applyMembershipNotice(m: MembershipEvent): void {
-  if ("joinAccepted" in m) {
-    // Architecture §7.4 — peer accepted our join request and the MEK
-    // has landed. Refresh the community detail so the new generation,
-    // registry slot and governance state propagate into the store.
-    const { community } = m.joinAccepted;
-    addToast("Joined community — encryption keys received", "success");
-    void commands.getCommunityDetails().then((details) => {
-      const detail = details.find((d) => d.id === community);
-      if (detail) {
-        setCommunityState("communities", community, transformCommunityDetail(detail));
-        void handleResolveCommunityImageDataUrls(community);
-      }
-    });
-    return;
-  }
-
   if ("joinProgress" in m) {
     // Pure display: mirror the phase into the join store so the
     // stepper re-renders. No timeout logic — the backend gate owns
     // each phase's budget.
     const { stage, status } = m.joinProgress;
     applyJoinProgress(stage, status as JoinStageStatus);
-    return;
-  }
-
-  if ("joinRejected" in m) {
-    addToast(`Join rejected: ${m.joinRejected.reason}`, "error");
   }
 }
 

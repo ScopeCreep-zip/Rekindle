@@ -14,13 +14,7 @@ pub(crate) async fn handle_relayed_control(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        payload @ ControlPayload::MemberJoinRequest { .. } => {
-            host_membership(state, community_id, sender_pseudonym, &payload).await;
-        }
-        payload @ (ControlPayload::MemberJoined { .. }
-        | ControlPayload::MemberRemoved { .. }
-        | ControlPayload::MemberLeave { .. }
-        | ControlPayload::MemberTimedOut { .. }) => {
+        payload @ (ControlPayload::MemberJoined { .. } | ControlPayload::MemberLeave { .. }) => {
             host_membership(state, community_id, sender_pseudonym, &payload).await;
             super::control_membership::handle_membership_payload(
                 app_handle,
@@ -35,19 +29,9 @@ pub(crate) async fn handle_relayed_control(
         | ControlPayload::ReactionRemoved { .. }) => {
             handle_channel_event_payload(app_handle, state, community_id, payload);
         }
-        payload @ (ControlPayload::MemberRolesChanged { .. }
-        | ControlPayload::JoinAccepted { .. }
-        | ControlPayload::JoinRejected { .. }
-        | ControlPayload::RequestMEK { .. }
+        payload @ (ControlPayload::RequestMEK { .. }
         | ControlPayload::RequestSegmentExpansion { .. }) => {
-            handle_join_and_roles_payload(
-                app_handle,
-                state,
-                community_id,
-                sender_pseudonym,
-                payload,
-            )
-            .await;
+            handle_mek_and_segment_requests(app_handle, state, community_id, payload).await;
         }
         other => {
             handle_control_events_and_threads(
@@ -182,30 +166,15 @@ fn handle_channel_event_payload(
     }
 }
 
-async fn handle_join_and_roles_payload(
+async fn handle_mek_and_segment_requests(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
-    sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        payload @ (ControlPayload::MemberRolesChanged { .. }
-        | ControlPayload::JoinAccepted { .. }) => {
-            host_membership(state, community_id, sender_pseudonym, &payload).await;
-        }
-        ControlPayload::JoinRejected { reason } => {
-            tracing::warn!(community = %community_id, reason = %reason, "join request rejected by peer");
-            crate::event_dispatch::emit_membership(
-                app_handle,
-                rekindle_types::subscription_events::MembershipEvent::JoinRejected {
-                    community: community_id.to_string(),
-                    reason,
-                },
-            );
-        }
         ControlPayload::RequestMEK {
             channel_id,
             needed_generation,
@@ -308,9 +277,9 @@ async fn handle_join_and_roles_payload(
     }
 }
 
-/// A membership control message (a JoinAccepted, a member's roles, a
-/// keypair grant, onboarding answers, a peer-assisted join), handled by the
-/// Host's governance adapter on both hosts (plan E3.1 B2e).
+/// A membership control message (onboarding answers, a member's own join
+/// notice or departure), handled by the Host's governance adapter on both hosts
+/// (plan E3.1 B2e).
 pub(super) async fn host_membership(
     state: &Arc<AppState>,
     community_id: &str,
@@ -324,25 +293,4 @@ pub(super) async fn host_membership(
     host.governance()
         .on_membership_control(community_id, sender_pseudonym, payload)
         .await;
-}
-
-/// [`host_membership`] from a synchronous handler, as a task of the login
-/// scope.
-pub(super) fn spawn_host_membership(
-    state: &Arc<AppState>,
-    community_id: &str,
-    sender_pseudonym: &str,
-    payload: rekindle_codec::community::envelope::ControlPayload,
-) {
-    let (s, c, sender) = (
-        Arc::clone(state),
-        community_id.to_string(),
-        sender_pseudonym.to_string(),
-    );
-    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
-        "membership control",
-        async move {
-            host_membership(&s, &c, &sender, &payload).await;
-        },
-    );
 }

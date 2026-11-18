@@ -47,22 +47,6 @@ pub(super) fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
             h.update(b"|");
             h.update(sender_pseudonym.as_bytes());
         }
-        CryptoEvent::AdminKeypairGranted { community } => {
-            h.update(b"admin_kp|");
-            h.update(community.as_bytes());
-        }
-        CryptoEvent::SlotKeypairGranted {
-            community,
-            slot_index,
-            segment_index,
-        } => {
-            h.update(b"slot_kp|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(&slot_index.to_le_bytes());
-            h.update(b"|");
-            h.update(&segment_index.to_le_bytes());
-        }
         CryptoEvent::PrekeyRecordPublished { head, slots } => {
             h.update(b"prekey_record|");
             h.update(&[u8::from(*head)]);

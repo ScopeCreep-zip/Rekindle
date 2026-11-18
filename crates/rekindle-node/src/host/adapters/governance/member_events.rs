@@ -22,7 +22,7 @@
 
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent, SystemEvent};
 
 use super::HostGovernance;
 
@@ -62,11 +62,54 @@ impl HostGovernance {
     /// event sees it. Without it the row waited for the joiner's gossip
     /// `MemberJoined` or the presence poll, which publish nothing a window
     /// re-reads on, and an open window never listed the joiner (walk B61).
+    ///
+    /// Each `Joined` also counts in the community's raid window
+    /// (architecture §20.6): the merge is where both modes learn of a
+    /// join, so the alert rests on signed, permission-checked joins, not
+    /// on a gossip notice anyone can send.
     pub(super) fn publish_member_transitions(&self, events: Vec<MembershipEvent>) {
         self.store_joined_rows(&events);
+        let alerts = self.observe_raid_joins(&events);
         for event in events {
             self.ctx.publish_event(SubscriptionEvent::Membership(event));
         }
+        for alert in alerts {
+            self.ctx.publish_event(SubscriptionEvent::System(alert));
+        }
+    }
+
+    /// The `RaidDetected` alerts the `Joined`s in `events` raise.
+    fn observe_raid_joins(&self, events: &[MembershipEvent]) -> Vec<SystemEvent> {
+        let now_secs = self.ctx.clock.now_secs();
+        events
+            .iter()
+            .filter_map(|e| match e {
+                MembershipEvent::Joined {
+                    community,
+                    pseudonym,
+                    ..
+                } => {
+                    let alert = self
+                        .ctx
+                        .communities
+                        .observe_raid_join(community, pseudonym, now_secs)?;
+                    tracing::warn!(
+                        community = %community,
+                        joins = alert.joins_in_window,
+                        threshold = alert.max_joins_per_interval,
+                        interval_s = alert.join_interval_seconds,
+                        "raid threshold exceeded — alerting moderators (architecture §20.6)"
+                    );
+                    Some(SystemEvent::RaidDetected {
+                        community: community.clone(),
+                        joins_in_window: alert.joins_in_window,
+                        max_joins_per_interval: alert.max_joins_per_interval,
+                        join_interval_seconds: alert.join_interval_seconds,
+                    })
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     /// Store a roster row for each `Joined` in `events`, named by the

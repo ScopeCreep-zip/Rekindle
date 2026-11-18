@@ -205,7 +205,6 @@ impl Host {
         let registry = Arc::new(tokio::sync::RwLock::new(
             rekindle_ipc::ClearanceRegistry::new(),
         ));
-        let pending_joins = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
         let (mek_rotation_tx, mek_rotation_rx) = crate::daemon::mek_rotation::channel();
         let (gossip_tx, gossip_rx) = crate::daemon::gossip::channel();
         let (presence_start_tx, presence_start_rx) =
@@ -224,7 +223,6 @@ impl Host {
                 Arc::clone(&stores.session),
                 Arc::clone(&signing_key),
                 Arc::clone(&handler_transport),
-                Arc::clone(&pending_joins),
                 mek_rotation_tx.clone(),
                 gossip_tx.clone(),
                 Arc::clone(&clock),
@@ -333,7 +331,6 @@ impl Host {
             idle,
             undo: super::undo::UndoCache::default(),
             event_watch_tx,
-            pending_joins,
             automod_rules: parking_lot::RwLock::default(),
             gossip_tx,
             mek_rotation_tx,

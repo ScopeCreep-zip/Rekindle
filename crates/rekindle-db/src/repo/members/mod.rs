@@ -143,44 +143,6 @@ pub fn insert_bootstrap_if_absent(
     Ok(())
 }
 
-/// A member from a `JoinAccepted` member list.
-#[derive(Debug, Clone, Copy)]
-pub struct AcceptedMember<'a> {
-    pub pseudonym_key: &'a str,
-    pub display_name: &'a str,
-    pub joined_at: i64,
-    pub subkey_index: u32,
-    pub onboarding_complete: bool,
-}
-
-/// Store a `JoinAccepted` member, replacing what was stored.
-///
-/// # Errors
-/// The write failed.
-pub fn replace_accepted(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    member: &AcceptedMember<'_>,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT OR REPLACE INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, joined_at, \
-          subkey_index, onboarding_complete) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            owner_key,
-            community_id,
-            member.pseudonym_key,
-            member.display_name,
-            member.joined_at,
-            member.subkey_index,
-            member.onboarding_complete,
-        ],
-    )?;
-    Ok(())
-}
-
 /// A member found in the registry scan. `rekindle-presence` builds these
 /// from the signed presence rows it reads.
 #[derive(Debug, Clone)]

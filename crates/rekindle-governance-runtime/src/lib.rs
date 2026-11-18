@@ -99,9 +99,7 @@ pub use join_stages::{
     GovernanceSnapshot, SlotClaimCtx,
 };
 pub use membership_events::{
-    process_admin_keypair_grant, process_join_accepted, process_member_roles_changed,
-    process_onboarding_answers, process_peer_assisted_join, process_slot_keypair_grant,
-    JoinAcceptedInput, MemberUpsertRow, MembershipEventDeps, SlotGrantUpdate,
+    process_member_roles_changed, process_onboarding_answers, MembershipEventDeps,
 };
 pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
 pub use origin::create_community;

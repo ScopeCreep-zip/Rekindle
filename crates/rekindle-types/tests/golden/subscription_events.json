@@ -227,13 +227,6 @@
       }
     }
   },
-  "crypto.adminKeypairGranted": {
-    "crypto": {
-      "adminKeypairGranted": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
-      }
-    }
-  },
   "crypto.mekRequested": {
     "crypto": {
       "mekRequested": {
@@ -283,15 +276,6 @@
         "slots": [
           37
         ]
-      }
-    }
-  },
-  "crypto.slotKeypairGranted": {
-    "crypto": {
-      "slotKeypairGranted": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "segmentIndex": 1,
-        "slotIndex": 17
       }
     }
   },
@@ -958,29 +942,12 @@
       }
     }
   },
-  "membership.joinAccepted": {
-    "membership": {
-      "joinAccepted": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "mekGeneration": 5,
-        "slotIndex": 17
-      }
-    }
-  },
   "membership.joinProgress": {
     "membership": {
       "joinProgress": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "stage": "slotClaim",
         "status": "done"
-      }
-    }
-  },
-  "membership.joinRejected": {
-    "membership": {
-      "joinRejected": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "reason": "community is full"
       }
     }
   },

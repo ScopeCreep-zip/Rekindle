@@ -7,7 +7,7 @@ use super::super::navigator::KeyResolution;
 use super::App;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, CryptoEvent, FriendEvent, GovernanceEvent, MembershipEvent, SocialEvent,
+    ChannelMessageEvent, FriendEvent, GovernanceEvent, MembershipEvent, SocialEvent,
     SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
 };
 
@@ -245,16 +245,6 @@ impl App {
             }
 
             // ── Events with toasts (not forwarded to views) ──────────────
-            SubscriptionEvent::Membership(MembershipEvent::JoinAccepted { .. }) => {
-                self.notifications
-                    .push("Join request accepted!".into(), ToastLevel::Success);
-                Some(Action::Render)
-            }
-            SubscriptionEvent::Membership(MembershipEvent::JoinRejected { ref reason, .. }) => {
-                self.notifications
-                    .push(format!("Join rejected: {reason}"), ToastLevel::Warning);
-                Some(Action::Render)
-            }
             SubscriptionEvent::Membership(MembershipEvent::Joined {
                 ref pseudonym,
                 ref display_name,
@@ -309,11 +299,6 @@ impl App {
                 self.reload_friends();
                 self.notifications
                     .push("Friend request rejected".into(), ToastLevel::Warning);
-                Some(Action::Render)
-            }
-            SubscriptionEvent::Crypto(CryptoEvent::AdminKeypairGranted { .. }) => {
-                self.notifications
-                    .push("Admin keypair granted".into(), ToastLevel::Success);
                 Some(Action::Render)
             }
             SubscriptionEvent::Governance(GovernanceEvent::ChannelsChanged { .. }) => {

@@ -4,8 +4,7 @@
 //! system payloads.
 
 use rekindle_types::subscription_events::{
-    CryptoEvent, GovernanceEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent,
-    VoiceScope,
+    GovernanceEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
 };
 
 /// Every voice signal on the gossip mesh is community-scoped — a DM
@@ -203,20 +202,6 @@ pub fn control_into_event_rest(
             scope: scope(c(), channel_id),
             expression_id,
             actor_pseudonym,
-        }),
-
-        // ── Admin delegation ────────────────────────────────
-        ControlPayload::AdminKeypairGrant { .. } => {
-            SubscriptionEvent::Crypto(CryptoEvent::AdminKeypairGranted { community: c() })
-        }
-        ControlPayload::SlotKeypairGrant {
-            slot_index,
-            segment_index,
-            ..
-        } => SubscriptionEvent::Crypto(CryptoEvent::SlotKeypairGranted {
-            community: c(),
-            slot_index,
-            segment_index,
         }),
 
         // ── Bootstrap ───────────────────────────────────────

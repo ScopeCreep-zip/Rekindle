@@ -112,13 +112,6 @@ fn membership(event: &MembershipEvent) -> (&str, String) {
                 if *has_invite { " with an invite" } else { "" }
             ),
         ),
-        MembershipEvent::JoinAccepted { community, .. } => {
-            (community, "your join was accepted".into())
-        }
-        MembershipEvent::JoinRejected { community, reason } => (
-            community,
-            format!("your join was refused: {}", sanitize_for_display(reason)),
-        ),
         MembershipEvent::MembersRefreshed { community } => {
             (community, "member list refreshed".into())
         }

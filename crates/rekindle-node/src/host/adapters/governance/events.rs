@@ -128,15 +128,6 @@ impl HostGovernance {
                     .to_string(),
                 },
             )),
-            // The runtime signals acceptance before the MEK is read or a
-            // slot claimed; the gossip path's event carries both.
-            GovernanceRuntimeEvent::JoinAccepted { community_id } => {
-                membership(MembershipEvent::JoinAccepted {
-                    community: community_id.clone(),
-                    mek_generation: None,
-                    slot_index: None,
-                })
-            }
             GovernanceRuntimeEvent::MemberRolesChanged {
                 community_id,
                 pseudonym_hex,

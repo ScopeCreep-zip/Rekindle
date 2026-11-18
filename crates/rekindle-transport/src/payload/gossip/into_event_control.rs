@@ -48,24 +48,6 @@ pub fn control_into_event(
             display_name,
             has_invite: invite_code.is_some(),
         }),
-        ControlPayload::JoinAccepted {
-            mek_generation,
-            slot_index,
-            ..
-        } => SubscriptionEvent::Membership(MembershipEvent::JoinAccepted {
-            community: c(),
-            // Gossip carries the generation; the desktop's governance
-            // runtime signals acceptance before it has read the MEK.
-            mek_generation: Some(mek_generation),
-            slot_index,
-        }),
-        ControlPayload::JoinRejected { reason } => {
-            SubscriptionEvent::Membership(MembershipEvent::JoinRejected {
-                community: c(),
-                reason,
-            })
-        }
-
         // ── Moderation ──────────────────────────────────────
         ControlPayload::TimeoutMember {
             target_pseudonym,
@@ -246,6 +228,11 @@ pub fn control_into_event(
         | ControlPayload::VoiceMute { .. }
         | ControlPayload::VoiceDeafen { .. }
         | ControlPayload::VoiceRoster { .. }
+        // The legacy join answer and keypair grants: nothing acts on them
+        // since the self-sovereign join (plan E3.2 S8); their arms retire
+        // with the wire.
+        | ControlPayload::JoinAccepted { .. }
+        | ControlPayload::JoinRejected { .. }
         | ControlPayload::AdminKeypairGrant { .. }
         | ControlPayload::SlotKeypairGrant { .. }
         | ControlPayload::BootstrapRequest { .. }

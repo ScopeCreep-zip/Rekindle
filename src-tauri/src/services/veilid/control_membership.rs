@@ -1,8 +1,10 @@
-//! The desktop's half of the four Member* control messages (MemberJoined /
-//! MemberRemoved / MemberLeave / MemberTimedOut): its in-memory community
-//! state, events, raid alert and departure rotations. The roster rows are
-//! the Host's (`host/adapters/governance/membership_roster.rs`, plan E3.1
-//! D1b), which handles each message first.
+//! The desktop's half of a member's own `MemberJoined` and `MemberLeave`
+//! notices: the gossip peer hint a join carries (until E3.4's beat) and
+//! the departure rotations a leave triggers (until E3.5 moves them onto the
+//! merged leave). The roster rows are the Host's
+//! (`host/adapters/governance/membership_roster.rs`, plan E3.1 D1b), which
+//! handles each message first; the raid alert counts merged joins
+//! (`host/adapters/governance/member_events.rs`).
 
 use std::sync::Arc;
 
@@ -61,56 +63,13 @@ pub(super) fn handle_membership_payload(
                 app_handle,
                 rekindle_types::subscription_events::MembershipEvent::Joined {
                     community: community_id.to_string(),
-                    pseudonym: pseudonym_key.clone(),
+                    pseudonym: pseudonym_key,
                     display_name: None,
                     role_ids,
                 },
             );
-
-            // Architecture §20.6 — record the join in the per-community
-            // sliding window; emit a raid alert if the rate trips the
-            // policy threshold.
-            let alert = {
-                let mut communities = state.communities.write();
-                if let Some(cs) = communities.get_mut(community_id) {
-                    let policy = cs
-                        .governance_state
-                        .as_ref()
-                        .and_then(|gs| gs.community_policy.as_ref())
-                        .cloned();
-                    rekindle_governance::raid_detection::observe_join(
-                        &mut cs.recent_member_joins,
-                        rekindle_utils::timestamp_secs(),
-                        &pseudonym_key,
-                        policy.as_ref(),
-                    )
-                } else {
-                    None
-                }
-            };
-            if let Some(alert) = alert {
-                crate::event_dispatch::emit_subscription(
-                    app_handle,
-                    &rekindle_types::subscription_events::SubscriptionEvent::System(
-                        rekindle_types::subscription_events::SystemEvent::RaidDetected {
-                            community: community_id.to_string(),
-                            joins_in_window: alert.joins_in_window,
-                            max_joins_per_interval: alert.max_joins_per_interval,
-                            join_interval_seconds: alert.join_interval_seconds,
-                        },
-                    ),
-                );
-                tracing::warn!(
-                    community = %community_id,
-                    joins = alert.joins_in_window,
-                    threshold = alert.max_joins_per_interval,
-                    interval_s = alert.join_interval_seconds,
-                    "raid threshold exceeded — alerting moderators (architecture §20.6)"
-                );
-            }
         }
-        ControlPayload::MemberRemoved { pseudonym_key }
-        | ControlPayload::MemberLeave { pseudonym_key } => {
+        ControlPayload::MemberLeave { pseudonym_key } => {
             let departed_pseudonym = pseudonym_key.clone();
             {
                 let mut communities = state.communities.write();
@@ -136,19 +95,6 @@ pub(super) fn handle_membership_payload(
                 state,
                 community_id,
                 &departed_pseudonym,
-            );
-        }
-        ControlPayload::MemberTimedOut {
-            pseudonym_key,
-            timeout_until,
-        } => {
-            crate::event_dispatch::emit_membership(
-                app_handle,
-                rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {
-                    community: community_id.to_string(),
-                    pseudonym: pseudonym_key,
-                    timeout_until,
-                },
             );
         }
         _ => {}

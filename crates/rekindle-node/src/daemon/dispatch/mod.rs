@@ -179,18 +179,6 @@ pub struct DaemonContext {
             tokio::sync::broadcast::Sender<rekindle_types::subscription_events::SubscriptionEvent>,
         >,
     >,
-    /// Pending community join completions. Keyed by governance_key.
-    /// Shared between DaemonContext (writer: handle_join registers) and
-    /// DaemonHandler (writer: on_gossip completes on JoinAccepted receipt).
-    /// Tuple: (oneshot sender carrying slot_index, creation instant for cleanup).
-    pub pending_joins: Arc<
-        parking_lot::Mutex<
-            std::collections::HashMap<
-                String,
-                (tokio::sync::oneshot::Sender<u32>, std::time::Instant),
-            >,
-        >,
-    >,
     /// Each community's compiled automod rules, which the channel pipeline
     /// rebuilds when the rules' fingerprint changes (`rekindle_channel::automod`).
     pub automod_rules: parking_lot::RwLock<

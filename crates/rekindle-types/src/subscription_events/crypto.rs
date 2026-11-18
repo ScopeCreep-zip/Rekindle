@@ -34,16 +34,6 @@ pub enum CryptoEvent {
         generation: u64,
         sender_pseudonym: String,
     },
-    /// An admin keypair was granted to us (operator delegation).
-    /// Triggered by: gossip `ControlPayload::AdminKeypairGrant`.
-    AdminKeypairGranted { community: String },
-    /// A slot keypair was granted to us (per-channel write access).
-    /// Triggered by: gossip `ControlPayload::SlotKeypairGrant`.
-    SlotKeypairGranted {
-        community: String,
-        slot_index: u32,
-        segment_index: u32,
-    },
     /// One publish to our prekey record (plan E2.4): the head after an SPK
     /// and PQ-LR rotation, the one-time slots refilled or topped up, or
     /// both. One event per publish call, so a new identity's first set is

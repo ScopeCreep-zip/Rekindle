@@ -18,10 +18,6 @@ pub(crate) fn handle_gossip_control_payloads(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        payload @ (ControlPayload::AdminKeypairGrant { .. }
-        | ControlPayload::SlotKeypairGrant { .. }) => {
-            super::control::spawn_host_membership(state, community_id, sender_pseudonym, payload);
-        }
         ControlPayload::SyncRequest {
             channel_id,
             since_timestamp,
@@ -45,34 +41,6 @@ pub(crate) fn handle_gossip_control_payloads(
                 }
             }
             handle_sync_response(app_handle, state, community_id, &channel_id, &messages);
-        }
-        ControlPayload::GovernanceUpdated {
-            governance_key,
-            subkey_index: _,
-            lamport_ts: _,
-        } => {
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("gossip moderation: no identity database — dropped");
-                return;
-            };
-            let db_pool = pool.clone();
-            let state = Arc::clone(state);
-            crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
-                "community record change",
-                async move {
-                    if let Err(e) =
-                        crate::services::sync_communities::handle_community_record_change(
-                            &state,
-                            &db_pool,
-                            &governance_key,
-                            &[],
-                        )
-                        .await
-                    {
-                        tracing::debug!(error = %e, "governance change while locked — not rebuilt");
-                    }
-                },
-            );
         }
         payload if rekindle_voice::signaling::is_voice_signaling(&payload) => {
             // Voice signaling adapter handles the spawn-and-forget

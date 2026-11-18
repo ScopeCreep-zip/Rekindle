@@ -47,7 +47,7 @@ async fn the_network_stage_runs_in_the_unlock_scope_and_stops_at_lock() {
 }
 
 /// An unlock reloads the stored MEKs into the Host's cache (plan E3.1
-/// C2c): a key a JoinAccepted installed is there again after a relock.
+/// C2c): a key a `MekTransfer` installed is there again after a relock.
 #[tokio::test]
 async fn an_unlock_restores_the_stored_meks() {
     let dir = tempfile::tempdir().unwrap();
@@ -55,19 +55,8 @@ async fn an_unlock_restores_the_stored_meks() {
     let ann = create_ann(&host).await;
     seed_registry_community(&host, &ann.public_key).await;
     let key = rekindle_transport::crypto::mek::Mek::from_bytes([7; 32], 3);
-    let payload = rekindle_codec::community::envelope::ControlPayload::JoinAccepted {
-        mek_encrypted: key.to_wire_bytes(),
-        mek_generation: 3,
-        members: Vec::new(),
-        member_registry_key: Some("registry-2".into()),
-        slot_index: None,
-        wrapped_slot_seed: None,
-    };
-    assert!(
-        host.governance()
-            .on_membership_control("c1", "bob", &payload)
-            .await
-    );
+    host.governance()
+        .install_transferred_mek("c1", KeyScope::Community, &key);
 
     let lock = host.call(Caller::shell(), IpcRequest::Lock).await;
     assert!(matches!(lock, IpcResponse::Ok { .. }), "{lock:?}");

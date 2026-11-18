@@ -9,8 +9,6 @@ pub const NAMES: &[&str] = &[
     "mekRotated",
     "mekRequested",
     "mekTransferred",
-    "adminKeypairGranted",
-    "slotKeypairGranted",
     "prekeyRecordPublished",
 ];
 
@@ -21,8 +19,6 @@ pub fn variant_name(e: &CryptoEvent) -> &'static str {
         CryptoEvent::MekRotated { .. } => "mekRotated",
         CryptoEvent::MekRequested { .. } => "mekRequested",
         CryptoEvent::MekTransferred { .. } => "mekTransferred",
-        CryptoEvent::AdminKeypairGranted { .. } => "adminKeypairGranted",
-        CryptoEvent::SlotKeypairGranted { .. } => "slotKeypairGranted",
         CryptoEvent::PrekeyRecordPublished { .. } => "prekeyRecordPublished",
     }
 }
@@ -32,9 +28,7 @@ pub fn nested_names(e: &CryptoEvent) -> Vec<&'static str> {
         CryptoEvent::PrekeyRecordPublished { .. }
         | CryptoEvent::MekRotated { .. }
         | CryptoEvent::MekRequested { .. }
-        | CryptoEvent::MekTransferred { .. }
-        | CryptoEvent::AdminKeypairGranted { .. }
-        | CryptoEvent::SlotKeypairGranted { .. } => vec![],
+        | CryptoEvent::MekTransferred { .. } => vec![],
     }
 }
 
@@ -69,20 +63,6 @@ pub fn samples() -> Vec<Sample> {
                 channel: Some(channel()),
                 generation: 5,
                 sender_pseudonym: pk('a'),
-            },
-        ),
-        ev(
-            "adminKeypairGranted",
-            CryptoEvent::AdminKeypairGranted {
-                community: community(),
-            },
-        ),
-        ev(
-            "slotKeypairGranted",
-            CryptoEvent::SlotKeypairGranted {
-                community: community(),
-                slot_index: 17,
-                segment_index: 1,
             },
         ),
         ev(

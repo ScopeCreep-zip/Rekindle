@@ -18,22 +18,6 @@ pub enum MembershipEvent {
         display_name: String,
         has_invite: bool,
     },
-    /// Our own join request was accepted (we see this).
-    /// Triggered by: gossip `ControlPayload::JoinAccepted`.
-    JoinAccepted {
-        community: String,
-        /// The MEK generation the joiner starts on.
-        ///
-        /// `Option` because the desktop's governance runtime signals
-        /// acceptance from a path that has not read the MEK yet; the
-        /// gossip path supplies it. `None` means "not yet known", not
-        /// generation zero.
-        mek_generation: Option<u64>,
-        slot_index: Option<u32>,
-    },
-    /// Our own join request was rejected (we see this).
-    /// Triggered by: gossip `ControlPayload::JoinRejected`.
-    JoinRejected { community: String, reason: String },
     /// The full member list was re-read and should be re-rendered.
     ///
     /// Not a membership *change*: a refresh follows a registry scan or

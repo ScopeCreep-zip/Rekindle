@@ -207,8 +207,6 @@ impl SubscriptionEvent {
             },
             Self::Membership(e) => Some(match e {
                 MembershipEvent::JoinRequested { community, .. }
-                | MembershipEvent::JoinAccepted { community, .. }
-                | MembershipEvent::JoinRejected { community, .. }
                 | MembershipEvent::Joined { community, .. }
                 | MembershipEvent::MemberCardChanged { community, .. }
                 | MembershipEvent::Left { community, .. }
@@ -229,9 +227,7 @@ impl SubscriptionEvent {
             Self::Crypto(e) => match e {
                 CryptoEvent::MekRotated { community, .. }
                 | CryptoEvent::MekRequested { community, .. }
-                | CryptoEvent::MekTransferred { community, .. }
-                | CryptoEvent::AdminKeypairGranted { community }
-                | CryptoEvent::SlotKeypairGranted { community, .. } => Some(community),
+                | CryptoEvent::MekTransferred { community, .. } => Some(community),
                 // Our prekey record is the identity's, not a community's.
                 CryptoEvent::PrekeyRecordPublished { .. } => None,
             },

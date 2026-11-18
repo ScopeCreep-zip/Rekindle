@@ -458,57 +458,24 @@ impl CommunityStore {
         self.update(community_id, |c| c.my_subkey_index = Some(slot_index));
     }
 
-    /// The MEK generation and member registry a JoinAccepted carried.
-    pub fn set_mek_generation_and_registry(
+    /// Count a merged join of `pseudonym_hex` at `now_secs` in the
+    /// community's raid window (architecture §20.6), under the merged
+    /// policy's thresholds: the alert when the rate trips them.
+    pub fn observe_raid_join(
         &self,
         community_id: &str,
-        mek_generation: u64,
-        registry_key: Option<&str>,
-    ) {
-        self.update(community_id, |c| {
-            c.mek_generation = mek_generation;
-            if let Some(key) = registry_key {
-                c.member_registry_key = Some(key.to_string());
-            }
-        });
-    }
-
-    /// Our slot index from a member list, when we have none; `true` when
-    /// it was taken.
-    pub fn backfill_my_subkey_index(&self, community_id: &str, subkey_index: u32) -> bool {
+        pseudonym_hex: &str,
+        now_secs: u64,
+    ) -> Option<rekindle_governance::RaidAlert> {
         let mut map = self.map.write();
-        match map.get_mut(community_id) {
-            Some(c) if c.my_subkey_index.is_none() => {
-                c.my_subkey_index = Some(subkey_index);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Install the material a keypair or slot-seed grant unwrapped.
-    pub fn apply_slot_grant(
-        &self,
-        community_id: &str,
-        slot_seed_hex: Option<&str>,
-        slot_keypair: Option<&str>,
-        dht_owner_keypair: Option<&str>,
-        my_subkey_index: Option<u32>,
-    ) {
-        self.update(community_id, |c| {
-            if let Some(seed) = slot_seed_hex {
-                c.slot_seed = Some(seed.to_string());
-            }
-            if let Some(keypair) = slot_keypair {
-                c.slot_keypair = Some(keypair.to_string());
-            }
-            if let Some(keypair) = dht_owner_keypair {
-                c.dht_owner_keypair = Some(keypair.to_string());
-            }
-            if let Some(index) = my_subkey_index {
-                c.my_subkey_index = Some(index);
-            }
-        });
+        let c = map.get_mut(community_id)?;
+        let policy = (c.governance_state.as_ref()).and_then(|gs| gs.community_policy.as_ref());
+        rekindle_governance::observe_join(
+            &mut c.recent_member_joins,
+            now_secs,
+            pseudonym_hex,
+            policy,
+        )
     }
 
     /// A member finished onboarding; ours when `is_self`. Its roles are

@@ -205,8 +205,7 @@ pub fn merge_presence_entry(
     // what made two fresh members invisible to each other at join. The route
     // is a separate reachability fact: only members with a route enter
     // `peers` (the set we actually send bytes to). Mirrors the steady-poll
-    // classifier (`rekindle-presence` scan_row) and the gossip-overlay split
-    // (governance_adapter::membership_events).
+    // classifier (`rekindle-presence` scan_row).
     presence
         .online
         .insert(pseudonym_key.to_string(), member.clone());

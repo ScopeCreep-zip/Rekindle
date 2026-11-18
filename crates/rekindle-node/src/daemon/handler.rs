@@ -36,17 +36,6 @@ pub struct DaemonHandler {
     /// a strong reference here is a cycle that kept the node from being
     /// shut down at exit (A/B R1-16 "outstanding references").
     pub(crate) transport: Arc<RwLock<Option<std::sync::Weak<rekindle_transport::TransportNode>>>>,
-    /// Pending community join completions (shared with DaemonContext).
-    /// On JoinAccepted gossip, the handler completes the oneshot so the
-    /// join handler unblocks immediately.
-    pub(crate) pending_joins: Arc<
-        parking_lot::Mutex<
-            std::collections::HashMap<
-                String,
-                (tokio::sync::oneshot::Sender<u32>, std::time::Instant),
-            >,
-        >,
-    >,
     /// Queues departure-triggered MEK rotations. The leave
     /// notification arrives here, and under v2.0 the only correct
     /// response is to start the deterministic rotation.
@@ -68,14 +57,6 @@ impl DaemonHandler {
         session: Arc<RwLock<Option<Session>>>,
         signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
         transport: Arc<RwLock<Option<std::sync::Weak<rekindle_transport::TransportNode>>>>,
-        pending_joins: Arc<
-            parking_lot::Mutex<
-                std::collections::HashMap<
-                    String,
-                    (tokio::sync::oneshot::Sender<u32>, std::time::Instant),
-                >,
-            >,
-        >,
         mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
         gossip_tx: crate::daemon::gossip::GossipSender,
         clock: Arc<dyn rekindle_utils::Clock>,
@@ -86,7 +67,6 @@ impl DaemonHandler {
             session,
             signing_key,
             transport,
-            pending_joins,
             mek_rotation_tx,
             gossip_tx,
             clock,

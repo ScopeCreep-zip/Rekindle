@@ -116,10 +116,6 @@ pub enum GovernanceRuntimeEvent {
     /// `MembershipEvent::MembersRefreshed` for it.
     GovernanceRebuilt { community_id: String },
 
-    /// A `JoinAccepted` control message has been processed — adapter
-    /// emits `CommunityEvent::JoinAccepted`.
-    JoinAccepted { community_id: String },
-
     /// A member's role set changed — adapter emits
     /// `CommunityEvent::MemberRolesChanged`.
     MemberRolesChanged {

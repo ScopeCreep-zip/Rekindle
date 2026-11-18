@@ -6,8 +6,6 @@ use crate::{community, pk, text, Sample};
 
 pub const NAMES: &[&str] = &[
     "joinRequested",
-    "joinAccepted",
-    "joinRejected",
     "membersRefreshed",
     "memberDiscovered",
     "joinProgress",
@@ -29,8 +27,6 @@ pub const NAMES: &[&str] = &[
 pub fn variant_name(e: &MembershipEvent) -> &'static str {
     match e {
         MembershipEvent::JoinRequested { .. } => "joinRequested",
-        MembershipEvent::JoinAccepted { .. } => "joinAccepted",
-        MembershipEvent::JoinRejected { .. } => "joinRejected",
         MembershipEvent::MembersRefreshed { .. } => "membersRefreshed",
         MembershipEvent::MemberDiscovered { .. } => "memberDiscovered",
         MembershipEvent::JoinProgress { .. } => "joinProgress",
@@ -73,21 +69,6 @@ fn joining() -> Vec<Sample> {
                 pseudonym: pk('e'),
                 display_name: text("Eve"),
                 has_invite: true,
-            },
-        ),
-        ev(
-            "joinAccepted",
-            MembershipEvent::JoinAccepted {
-                community: community(),
-                mek_generation: Some(5),
-                slot_index: Some(17),
-            },
-        ),
-        ev(
-            "joinRejected",
-            MembershipEvent::JoinRejected {
-                community: community(),
-                reason: text("community is full"),
             },
         ),
         ev(
