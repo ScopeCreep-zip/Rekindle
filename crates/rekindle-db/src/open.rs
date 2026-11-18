@@ -234,7 +234,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// id is the anchor `A`'s key (ADR 0011).
 /// 135 (plan E3.2 S9): `community_roles.role_id` is the full 16-byte role
 /// id as 32 hex characters, no longer a truncated integer.
-pub const SCHEMA_VERSION: i64 = 135;
+/// 136 (plan E3.2 S10, D15): no SQL change; a governance op's signature
+/// and hash cover its Cap'n Proto canonical form without `sig`, so ops
+/// stored by older builds no longer verify.
+pub const SCHEMA_VERSION: i64 = 136;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
