@@ -22,6 +22,8 @@ export function refreshCommunityMembers(community: string): void {
     .then((members) => {
       if (communityState.communities[community]) {
         setCommunityState("communities", community, "members", members.map(transformMember));
+        const asked = askedFor.get(community);
+        for (const m of members) asked?.delete(m.pseudonymKey);
       }
     })
     .catch((e) => console.error(`Failed to refresh members for ${community}:`, e))
@@ -29,4 +31,34 @@ export function refreshCommunityMembers(community: string): void {
       inFlight.delete(community);
       if (dirty.delete(community)) refreshCommunityMembers(community);
     });
+}
+
+// Members an event named while the list lacked them, per community: each
+// is re-read for once, until a read lists it (B61: a member's presence or
+// card can arrive before the list holds the member).
+const askedFor = new Map<string, Set<string>>();
+const pending = new Set<string>();
+/** Events for unlisted members within this window share one read. */
+const UNLISTED_DEBOUNCE_MS = 250;
+
+/**
+ * An event named `member` of `community`, which the member list does not
+ * hold: re-read the list once for it, as a `Joined` does, so the member
+ * appears with the Host's status and name instead of never.
+ */
+export function refreshForUnlistedMember(community: string, member: string): void {
+  if (!communityState.communities[community]) return;
+  let asked = askedFor.get(community);
+  if (!asked) {
+    asked = new Set();
+    askedFor.set(community, asked);
+  }
+  if (asked.has(member)) return;
+  asked.add(member);
+  if (pending.has(community)) return;
+  pending.add(community);
+  setTimeout(() => {
+    pending.delete(community);
+    refreshCommunityMembers(community);
+  }, UNLISTED_DEBOUNCE_MS);
 }

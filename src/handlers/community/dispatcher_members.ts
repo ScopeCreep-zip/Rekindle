@@ -12,7 +12,7 @@ import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
 import { transformChannel, transformMember } from "../../utils/transformers";
-import { refreshCommunityMembers } from "./members_refresh";
+import { refreshCommunityMembers, refreshForUnlistedMember } from "./members_refresh";
 import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
 import { handleLoadChannelThreads } from "../../actions/community/events_threads";
 
@@ -58,6 +58,8 @@ export function reduceSubscriptionMembership(
     const idx = (c?.members ?? []).findIndex((x) => x.pseudonymKey === pseudonym);
     if (idx >= 0) {
       setCommunityState("communities", community, "members", idx, "displayName", displayName);
+    } else {
+      refreshForUnlistedMember(community, pseudonym);
     }
     return;
   }

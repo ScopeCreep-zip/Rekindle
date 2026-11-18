@@ -9,7 +9,7 @@ import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
-import { refreshCommunityMembers } from "./community/members_refresh";
+import { refreshCommunityMembers, refreshForUnlistedMember } from "./community/members_refresh";
 import { transformGameInfo } from "../utils/transformers";
 
 /**
@@ -162,7 +162,13 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
       const community = communityState.communities[communityId];
       if (!community) continue;
       const memberIdx = community.members.findIndex((m) => m.pseudonymKey === key);
-      if (memberIdx < 0) continue;
+      if (memberIdx < 0) {
+        // A member the list does not hold yet: the event names its
+        // community, so re-read that list. A friend event names none, and
+        // a friend need not be a member of any community scanned.
+        if ("communityMemberChanged" in event) refreshForUnlistedMember(communityId, key);
+        continue;
+      }
 
       if (snapshot.status !== null) {
         setCommunityState(

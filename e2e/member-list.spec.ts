@@ -1,4 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
 
 // The community member list renders the groups the Host decided
@@ -83,4 +85,72 @@ test("member list renders the Host's groups in the Host's order", async ({ page 
     "AdminOffline",
     "UserOffline",
   ]);
+});
+
+// A member's presence or card can reach the window before its list holds the
+// member (plan E7.13, B61): the window re-reads the list once for that
+// member, as a `Joined` does, instead of dropping the event. The payloads are
+// the golden samples `rekindle-types` serializes from the Rust types.
+const GOLDEN = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL("../crates/rekindle-types/tests/golden/subscription_events.json", import.meta.url),
+    ),
+    "utf8",
+  ),
+) as Record<string, Record<string, Record<string, Record<string, unknown>>>>;
+
+const PEER = "a".repeat(64); // the golden presence sample's pseudonym
+const PEER_ROW = { ...member(9, "Peer", "online", false, ONLINE), pseudonymKey: PEER };
+
+// The Host lists only us until `window.__hostListsPeer` is set; every read
+// is counted in `window.__memberReads`.
+const LATE_HANDLER = HANDLER.replace(
+  `return ${JSON.stringify(MEMBERS)};`,
+  `window.__memberReads = (window.__memberReads ?? 0) + 1;
+      return window.__hostListsPeer
+        ? ${JSON.stringify([MEMBERS[0], PEER_ROW])}
+        : ${JSON.stringify([MEMBERS[0]])};`,
+);
+
+async function openLate(page: Page): Promise<void> {
+  await preloadMocks(page, "community", LATE_HANDLER);
+  await page.goto(`/community?id=${COMMUNITY}`);
+  await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
+  await expect(page.locator(".member-list .member-name")).toHaveText(["AdminOnline"]);
+}
+
+async function send(page: Page, channel: string, payload: unknown): Promise<void> {
+  await page.evaluate(
+    ({ channel, payload }) => {
+      const w = window as any;
+      w.__hostListsPeer = true;
+      w.__TAURI_INTERNALS__.runCallback(w.__eventChannelId, {
+        index: 0,
+        message: { cursor: null, channel, payload },
+      });
+    },
+    { channel, payload },
+  );
+}
+
+const reads = (page: Page) => page.evaluate(() => (window as any).__memberReads as number);
+
+test("presence for a member the list lacks re-reads the list once", async ({ page }) => {
+  await openLate(page);
+  const before = await reads(page);
+  await send(page, "presence-event", GOLDEN["presence.communityMemberChanged"]);
+  await send(page, "presence-event", GOLDEN["presence.communityMemberChanged"]);
+  await expect(page.locator(".member-list .member-name")).toHaveText(["AdminOnline", "Peer"]);
+  expect(await reads(page)).toBe(before + 1);
+});
+
+test("a card for a member the list lacks re-reads the list", async ({ page }) => {
+  await openLate(page);
+  const card = GOLDEN["membership.memberCardChanged"];
+  const payload = {
+    membership: { memberCardChanged: { ...card.membership.memberCardChanged, pseudonym: PEER } },
+  };
+  await send(page, "community-event", payload);
+  await expect(page.locator(".member-list .member-name")).toHaveText(["AdminOnline", "Peer"]);
 });
