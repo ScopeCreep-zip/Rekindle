@@ -106,13 +106,12 @@ async fn community_call(
                     member_joined_op,
                     route: joiner_route,
                 };
-                match crate::services::community::build_bootstrap_response_v2(
+                match crate::services::community::answer_bootstrap_request(
                     app_handle, state, &anchor, &joiner,
                 )
                 .await
                 {
-                    Ok(Some(response)) => response,
-                    Ok(None) => return None,
+                    Ok(response) => response,
                     Err(e) => {
                         tracing::warn!(call_id = %call_id, error = %e, "bootstrap request refused");
                         NAK.to_vec()
