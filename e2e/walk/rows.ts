@@ -346,10 +346,16 @@ const BASE_ROWS: Row[] = [
     title: "Create community",
     async run({ b, s }) {
       await closeModal(b);
-      // A create before the node attaches is refused (409 "cannot perform write
-      // operation in state 'detached'", walk 15); the user waits for the
-      // "Connecting to Veilid network..." banner (BuddyListWindow.tsx:130) to go.
-      await gone(b, ".network-banner", NET_WAIT_MS);
+      // A create before the node is on the network is refused (walk 15: 409
+      // "cannot perform write operation in state 'detached'", then, attached,
+      // "set_dht_value: … not stored (Offline)"); the user waits for the
+      // indicator's "Connected" (NetworkIndicator.tsx:66, public internet
+      // ready and a route).
+      await waitUntil(
+        async () => (await (await b.$(".network-indicator span")).getText()).trim() === "Connected",
+        NET_WAIT_MS,
+        "the network indicator never said Connected",
+      );
       // The Create Community button shows only on the Communities tab
       // (BottomActionBar.tsx:45-46).
       await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
