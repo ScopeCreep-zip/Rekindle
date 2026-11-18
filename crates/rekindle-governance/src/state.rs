@@ -573,3 +573,7 @@ pub struct InviteState {
     /// checkpoint's `stateRoot` commits to it.
     pub uses: u32,
 }
+
+#[cfg(test)]
+#[path = "state_live_invite_tests.rs"]
+mod live_invite_tests;
