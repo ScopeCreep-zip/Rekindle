@@ -9,10 +9,11 @@
 //! app_call reply window, too short for a DHT read): the inviter checks
 //! it against the `OpRef`, verifies it,
 //! stores and merges it, and only a joiner who is then a member of the
-//! merged state is answered, with `bootstrapResponseV2{anchor,
-//! checkpointRef, frontier, directoryPages}`: where the joiner's walk of
-//! the op DAG continues. It ships no keys (D11; the joiner asks for the
-//! community key by `RequestMEK`) and no messages.
+//! merged state is answered, with `bootstrapResponseV2{anchor, frontier}`:
+//! where the joiner's walk of the op DAG continues. It ships no keys (D11;
+//! the joiner asks for the community key by `RequestMEK`), no messages and
+//! no checkpoint hint (the joiner asks for that before its walk, by
+//! `checkpointHintRequest`).
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_types::governance::OpRef;
@@ -86,9 +87,7 @@ pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     let set = op_log::verify_held_with(deps, anchor, &deps.governance_ops(anchor).await?);
     let payload = ControlPayload::BootstrapResponseV2 {
         anchor: anchor.to_owned(),
-        checkpoint_ref: None,
         frontier: op_log::frontier_refs(&cert, &state, &set),
-        directory_pages: Vec::new(),
     };
     let bytes = encode_response(payload)?;
     deps.emit_event(GovernanceRuntimeEvent::BootstrapResponseBuilt {
@@ -204,12 +203,9 @@ mod tests {
     #[test]
     fn the_largest_response_fits_the_app_call_cap() {
         let max_frontier = u8::try_from(MAX_FRONTIER_REFS).unwrap();
-        let max_pages = u8::try_from(rekindle_codec::capnp_envelope::MAX_DIRECTORY_PAGES).unwrap();
         let payload = ControlPayload::BootstrapResponseV2 {
             anchor: record_key(200),
-            checkpoint_ref: Some(op_ref(255)),
             frontier: (0..max_frontier).map(op_ref).collect(),
-            directory_pages: (0..max_pages).map(record_key).collect(),
         };
         let bytes = encode_response(payload.clone()).expect("fits");
         assert!(
@@ -232,9 +228,7 @@ mod tests {
         let over = u8::try_from(MAX_FRONTIER_REFS + 1).unwrap();
         let payload = ControlPayload::BootstrapResponseV2 {
             anchor: record_key(0),
-            checkpoint_ref: None,
             frontier: (0..over).map(op_ref).collect(),
-            directory_pages: Vec::new(),
         };
         assert!(encode_response(payload).is_err());
     }

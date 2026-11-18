@@ -444,13 +444,12 @@ struct BootstrapRequestPayload @0xea002a000000a000 {
 }
 
 # The inviter's answer (plan E3.2): where the joiner's walk of the op DAG
-# continues. Constant in N: at most 64 frontier heads and 16 directory
-# pages, under the 32,768 B app_call cap. No keys, no messages (D11).
+# continues. Constant in N: at most 64 frontier heads, under the 32,768 B
+# app_call cap. No keys, no messages (D11). The checkpoint hint comes
+# before the walk by `checkpointHintRequest`, not here.
 struct BootstrapResponseV2Payload @0xea0047000000a000 {
     anchor               @0 :Text;
-    checkpointRef        @1 :OpRef;   # unset: no checkpoint yet
-    frontier             @2 :List(OpRef);
-    directoryPages       @3 :List(Text);
+    frontier             @1 :List(OpRef);
 }
 
 struct SyncRequestPayload @0xea002c000000a000 {

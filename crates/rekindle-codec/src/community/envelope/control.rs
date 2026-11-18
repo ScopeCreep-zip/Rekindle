@@ -318,13 +318,8 @@ pub enum ControlPayload {
     /// and no messages.
     BootstrapResponseV2 {
         anchor: String,
-        /// The latest checkpoint op; `None` until a checkpoint exists.
-        checkpoint_ref: Option<rekindle_types::governance::OpRef>,
         /// The inviter's frontier, at most `MAX_FRONTIER_REFS` heads.
         frontier: Vec<rekindle_types::governance::OpRef>,
-        /// The checkpoint's directory page record keys, at most
-        /// `MAX_DIRECTORY_PAGES`.
-        directory_pages: Vec<String>,
     },
 
     // ── Sync protocol ──

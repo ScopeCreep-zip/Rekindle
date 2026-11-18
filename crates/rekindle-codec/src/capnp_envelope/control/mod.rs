@@ -15,7 +15,6 @@ use crate::community_envelope_capnp::control_payload as schema;
 use crate::error::CodecError;
 
 mod bootstrap_sync;
-pub use bootstrap_sync::MAX_DIRECTORY_PAGES;
 mod events;
 mod keys;
 mod media;
