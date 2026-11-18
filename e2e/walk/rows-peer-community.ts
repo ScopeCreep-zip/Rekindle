@@ -2,11 +2,12 @@
 // .claude/plans/standards-remediation/evidence/app-journeys-2026-11-17.md.
 // The peer (rows-peer.ts PEER0) joins the walk's community by invite; the
 // walk's identity, its owner, moderates it from the member menu
-// (MemberList.tsx:165-300); then the walk joins a community the peer creates,
+// (MemberList.tsx:165-300; M84 and M85 need the peer in a voice channel, so
+// they live in rows-voice.ts, spliced in before M88 by rows.ts); then the walk joins a community the peer creates,
 // from the community window's sidebar (CommunitySidebar.tsx:37).
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, Skip, byText, present, press, resolveIntent, shown, typeInto, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, byText, present, press, resolveIntent, shown, typeInto, waitUntil } from "./helpers.ts";
 import { inBuddy } from "./nav.ts";
 import { closeCommunityModal, contextMenu, inCommunity, openCommunitySettings } from "./rows-community.ts";
 import { needPeer } from "./rows-peer.ts";
@@ -65,7 +66,7 @@ async function peerJoins(b: Browser, walkPass: string, community: string): Promi
   await byText(p.b, ".community-item", community, NET_WAIT_MS);
 }
 
-async function peerMember(b: Browser): Promise<El> {
+export async function peerMember(b: Browser): Promise<El> {
   if (!(await present(b, ".member-item"))) await (await shown(b, '[aria-label="Show members panel"]')).click();
   return byText(b, ".member-item", needPeer().s.displayName, NET_WAIT_MS);
 }
@@ -204,20 +205,6 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
       const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
       await shot();
       if (outcome !== "committed") throw new Error(`timeout intent ${outcome}`);
-    },
-  },
-  {
-    id: "M84",
-    title: "Member menu > Server mute",
-    async run() {
-      throw new Skip("Server Mute shows only for a member in a voice channel (MemberList.tsx:236); the peer joins none");
-    },
-  },
-  {
-    id: "M85",
-    title: "Member menu > Server deafen",
-    async run() {
-      throw new Skip("Server Deafen shows only for a member in a voice channel (MemberList.tsx:252); the peer joins none");
     },
   },
   {

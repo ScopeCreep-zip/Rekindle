@@ -600,6 +600,11 @@ export async function allRows(): Promise<Row[]> {
   const { COMMUNITY_ROWS } = await import("./rows-community.ts");
   const { PEER_ROWS } = await import("./rows-peer.ts");
   const { PEER_COMMUNITY_ROWS } = await import("./rows-peer-community.ts");
+  const { VOICE_ROWS } = await import("./rows-voice.ts");
   const at = BASE_ROWS.findIndex((r) => r.id === SPLICE_AFTER) + 1;
-  return [...BASE_ROWS.slice(0, at), ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...PEER_COMMUNITY_ROWS, ...BASE_ROWS.slice(at)];
+  // The voice rows need the peer in the walk's community (B61) and end
+  // before the member-menu rows that kick it (M88 → M86).
+  const voiceAt = PEER_COMMUNITY_ROWS.findIndex((r) => r.id === "M88");
+  const peerCommunity = [...PEER_COMMUNITY_ROWS.slice(0, voiceAt), ...VOICE_ROWS, ...PEER_COMMUNITY_ROWS.slice(voiceAt)];
+  return [...BASE_ROWS.slice(0, at), ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...peerCommunity, ...BASE_ROWS.slice(at)];
 }
