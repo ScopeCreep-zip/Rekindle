@@ -63,8 +63,10 @@ async fn a_revoke_names_a_live_invite() {
     host.shutdown().await.unwrap();
 }
 
-/// The list is merged governance in invite-id order, with our use count
-/// on the invite we minted and none on another member's.
+/// The list is merged governance in invite-id order, each invite with the
+/// use count the merge gates (`InviteState.uses`, plan E3.2 S8: the invite
+/// gate counts the joins that redeemed it), and our link and mint time on
+/// the invite we minted.
 #[tokio::test]
 async fn the_invite_list_is_in_id_order_with_our_counts() {
     let dir = tempfile::tempdir().unwrap();
@@ -72,8 +74,12 @@ async fn the_invite_list_is_in_id_order_with_our_counts() {
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
     let mut gov = GovernanceState::default();
-    gov.invites.insert([2; 16], invite("theirs", 2));
-    gov.invites.insert([1; 16], invite("ours", 1));
+    let mut theirs = invite("theirs", 2);
+    theirs.uses = 2;
+    let mut ours = invite("ours", 1);
+    ours.uses = 3;
+    gov.invites.insert([2; 16], theirs);
+    gov.invites.insert([1; 16], ours);
     host.ctx
         .communities
         .map()
@@ -87,16 +93,15 @@ async fn the_invite_list_is_in_id_order_with_our_counts() {
         .current()
         .unwrap()
         .call(move |conn| {
-            rekindle_db::repo::community_invites::insert(conn, &o, "c1", "CODE", "ours", 7)?;
-            rekindle_db::repo::community_invites::bump_uses(conn, &o, "c1", "ours").map(drop)
+            rekindle_db::repo::community_invites::insert(conn, &o, "c1", "CODE", "ours", 7)
         })
         .await
         .unwrap();
     let list = host.governance().list_invites("c1").await.unwrap();
     let ids: Vec<_> = list.iter().map(|i| i.invite_id.clone()).collect();
     assert_eq!(ids, vec!["01".repeat(16), "02".repeat(16)]);
-    assert_eq!((list[0].uses, list[0].created_at), (1, Some(7)));
-    assert_eq!((list[1].uses, list[1].created_at), (0, None));
+    assert_eq!((list[0].uses, list[0].created_at), (3, Some(7)));
+    assert_eq!((list[1].uses, list[1].created_at), (2, None));
     assert_eq!(list[1].created_by, "02".repeat(32));
     host.shutdown().await.unwrap();
 }

@@ -1,7 +1,7 @@
 //! A community's invites on the Host (plan E3.1 D1), both modes: mint one
 //! (`rekindle_governance_runtime::invites::create_invite`) and keep its code
-//! so its redemptions are counted and its link can be shown again, list the
-//! live ones from merged governance, and revoke one by its invite id.
+//! so its link can be shown again, list the live ones from merged
+//! governance with the uses the merge counts, and revoke one by its id.
 
 use rekindle_types::dto::community::{CommunityInviteCreated, CommunityInviteView};
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
@@ -91,8 +91,8 @@ impl HostGovernance {
     }
 
     /// The live invites of `community`, by invite id: merged governance
-    /// with no revocation and not expired, ours with their use count and
-    /// link.
+    /// with no revocation and not expired, each with the use count the
+    /// merge gates (the joins that redeemed it), ours with their link.
     ///
     /// # Errors
     /// Our stored invites could not be read.
@@ -129,7 +129,7 @@ impl HostGovernance {
                     code_hash: inv.code_hash.clone(),
                     created_by: hex::encode(inv.creator_pseudonym.0),
                     max_uses: inv.max_uses,
-                    uses: own.map_or(0, |o| o.uses),
+                    uses: inv.uses,
                     expires_at: inv.expires_at,
                     created_at: own.map(|o| o.created_at),
                     url: own

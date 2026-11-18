@@ -695,14 +695,6 @@ CREATE TABLE IF NOT EXISTS community_invites (
     max_uses INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
-    -- Architecture §16 — local uses counter incremented every time a
-    -- `MemberJoinRequest` with this code_hash validates against a
-    -- governance entry we hold. Non-authoritative: each peer counts
-    -- only the requests they personally observed via gossip; the
-    -- displayed value is a best-effort UX hint, not an enforcement
-    -- threshold (the `max_uses` policy is enforced by the inviter at
-    -- write time, not by reader consensus).
-    uses INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, code_hash),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
