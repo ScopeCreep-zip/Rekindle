@@ -71,7 +71,12 @@ export async function flipPersisted(b: Browser, tab: string, text: string, passp
     await waitUntil(async () => (await (await optionBox(b, text)).isSelected()) !== before, WAIT_MS, `"${text}" did not flip`);
     await closeSettings(b);
     await openSettings(b, tab);
-    const stored = await (await optionBox(b, text)).isSelected();
+    // Read the stored value, not the box's initial one: it is disabled until
+    // the value loads, and "Generate previews" starts ticked
+    // (NotificationsTab.tsx), which ST21 read back in walk 11.
+    const reopened = await optionBox(b, text);
+    await reopened.waitForEnabled({ timeout: WAIT_MS, timeoutMsg: `"${text}" stayed disabled after reopening` });
+    const stored = await reopened.isSelected();
     if (stored === before) throw new Error(`"${text}" read back ${stored} after reopening Settings`);
     return stored;
   };

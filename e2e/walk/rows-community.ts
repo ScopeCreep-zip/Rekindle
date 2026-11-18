@@ -8,6 +8,7 @@
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, typeAndSend, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
 import { inBuddy, setValue } from "./nav.ts";
+import { pageLog, recordPage } from "./probe.ts";
 import type { Row } from "./rows.ts";
 
 const TEXT_CH = "walk-text";
@@ -66,54 +67,18 @@ async function msgAction(b: Browser, text: string, label: string): Promise<void>
 }
 
 /**
- * Records `edit_channel_message`'s IPC requests and answers in the page: M45
- * names them when the edit never shows, to tell a save that was never sent
- * or was refused from an event never applied. Tauri defines
- * `__TAURI_INTERNALS__.invoke` and `.ipc` read-only (tauri 2.12.1
- * scripts/core.js:81, ipc.js:142), so the hook is the `fetch` its IPC
- * protocol posts each call with (scripts/ipc-protocol.js:37).
+ * What M45 names when the edit never shows: whether edit mode closed, and
+ * each message's text without its header and action buttons.
  */
-async function recordEditCalls(b: Browser): Promise<void> {
-  await b.execute(() => {
-    type W = { __walkEdits?: string[]; __walkFetch?: typeof fetch };
-    const w = window as unknown as W;
-    w.__walkEdits = [];
-    if (w.__walkFetch) return;
-    // Each Enter: where it landed and with what value, and whether a handler
-    // took it (MessageInput's onKeyDown prevents both a save and a cancel).
-    document.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      const t = e.target as HTMLTextAreaElement;
-      w.__walkEdits!.push(`Enter on ${t.className || t.tagName} value=${JSON.stringify(t.value ?? null)}`);
-    }, true);
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") w.__walkEdits!.push(`Enter prevented=${e.defaultPrevented}`);
-    });
-    const real = window.fetch.bind(window);
-    w.__walkFetch = real;
-    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      const p = real(input, init);
-      if (url.includes("edit_channel_message")) {
-        const log = w.__walkEdits!;
-        const at = log.push(`sent ${String(init?.body).slice(0, 300)}`) - 1;
-        p.then(
-          (r) => r.clone().text().then((t) => { log[at] += ` -> ${r.status} ${r.headers.get("Tauri-Response") ?? "?"} ${t.slice(0, 300)}`; }),
-          (e: unknown) => { log[at] += ` -> fetch error ${String(e)}`; },
-        );
-      }
-      return p;
-    };
-  });
-}
-
-async function editCalls(b: Browser): Promise<string> {
+async function editView(b: Browser): Promise<string> {
   return b.execute(() => {
-    const w = window as unknown as { __walkEdits?: string[] };
-    const ids = Array.from(document.querySelectorAll(".community-main .chat-message")).map((m) => m.textContent?.trim().slice(0, 40));
-    const dialog = !!document.querySelector(".intent-dialog");
+    const bodies = Array.from(document.querySelectorAll(".community-main .chat-message")).map((m) => {
+      const c = m.cloneNode(true) as HTMLElement;
+      c.querySelectorAll(".chat-message-header, button").forEach((x) => x.remove());
+      return c.textContent?.trim().slice(0, 60);
+    });
     const editing = !!document.querySelector(".community-main .message-input-editing");
-    return `edit calls: ${(w.__walkEdits ?? []).join(" ; ") || "none"}; dialog open=${dialog}; editing=${editing}; messages: ${ids.join(" | ")}`;
+    return `editing=${editing}; messages: ${bodies.join(" | ")}`;
   });
 }
 
@@ -218,12 +183,12 @@ export const COMMUNITY_ROWS: Row[] = [
       const input = await shown(b, ".community-main .message-input-editing");
       await input.clearValue();
       await input.addValue(EDITED);
-      await recordEditCalls(b);
+      await recordPage(b, ["edit_channel_message", "get_channel_messages"], ['"edited"', "syncReceived", "channelMessage"]);
       const typed = await input.getValue();
       await b.keys("Enter");
       const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await lastMessage(b, EDITED).catch(async (e: Error) => {
-        throw new Error(`${e.message} (field before Enter: ${JSON.stringify(typed)}; intent ${outcome}; ${await editCalls(b)})`);
+        throw new Error(`${e.message} (field before Enter: ${JSON.stringify(typed)}; intent ${outcome}; ${await editView(b)}; ${await pageLog(b)})`);
       });
       await shot();
     },

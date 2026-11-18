@@ -8,27 +8,11 @@
 import type { Browser } from "webdriverio";
 import type { App } from "./launch.ts";
 import {
-  Key,
-  MOD_KEY,
-  NET_WAIT_MS,
-  Skip,
-  WAIT_MS,
-  byText,
-  doubleClick,
-  gone,
-  identityBarState,
-  present,
-  press,
-  resolveIntent,
-  shown,
-  sleep,
-  switchTo,
-  typeInto,
-  waitForHandle,
-  waitUntil,
-  within,
+  Key, MOD_KEY, NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, identityBarState,
+  present, press, resolveIntent, shown, sleep, switchTo, typeInto, waitForHandle, waitUntil, within,
 } from "./helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu, openAddFriend } from "./nav.ts";
+import { pageLog, recordPage } from "./probe.ts";
 
 export interface WalkState {
   displayName: string;
@@ -160,7 +144,8 @@ const BASE_ROWS: Row[] = [
       await (await shown(b, ".identity-bar-name")).click();
       const edit = await shown(b, ".identity-bar-edit");
       await typeInto(edit, next);
-      const probe = (): Promise<string> => identityBarState(b);
+      const probe = async (): Promise<string> => `${await identityBarState(b)}; ${await pageLog(b)}`;
+      await recordPage(b, ["set_nickname", "get_identity"], ["selfProfileChanged", "intentPending", "selfChanged"]);
       const typed = await probe();
       await b.keys(Key.Enter);
       const entered = await probe();
