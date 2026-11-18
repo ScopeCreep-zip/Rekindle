@@ -126,6 +126,7 @@ async fn import(ctx: &DaemonContext, bytes: Vec<u8>) -> Answer<SkinEntry> {
         id: format!("{PKG}{hash}"),
         name: m.name,
         imported_at: Some(imported_at),
+        credits: m.credits,
     })
 }
 
@@ -241,10 +242,12 @@ async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
     let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
     let mut skins_out = Vec::new();
     for pack in &builtin::PACKS {
+        let m = manifest_of(pack.bytes)?;
         skins_out.push(SkinEntry {
             id: format!("{}{}", builtin::PREFIX, pack.id),
-            name: manifest_of(pack.bytes)?.name,
+            name: m.name,
             imported_at: None,
+            credits: m.credits,
         });
     }
     let trial = ctx.skin_trial.current(&owner);
@@ -264,6 +267,7 @@ async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
             id: format!("{PKG}{}", row.hash),
             name: m.name,
             imported_at: Some(row.imported_at),
+            credits: m.credits,
         });
     }
     let login = login::read(&ctx.root).map_err(|e| failed("login skin", e))?;

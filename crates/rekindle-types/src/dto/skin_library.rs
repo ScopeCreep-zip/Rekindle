@@ -13,6 +13,9 @@ pub struct SkinEntry {
     pub name: String,
     /// When it entered the library (ms); `None` for a built-in.
     pub imported_at: Option<i64>,
+    /// The manifest's credits; a library skin's are as the skin states
+    /// them (self-claimed, not verified).
+    pub credits: Option<crate::dto::skin::SkinCredits>,
 }
 
 /// Every skin, the identity's choice and the device login skin.

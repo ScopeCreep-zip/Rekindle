@@ -427,6 +427,20 @@ export interface SkinEntry {
   name: string;
   /// When it entered the library (ms); `null` for a built-in.
   importedAt: number | null;
+  /// Who made it, as the skin states it; a library skin's are self-claimed.
+  credits: SkinCredits | null;
+}
+
+/// A skin's human credits (`rekindle_types::dto::skin::SkinCredits`).
+export interface SkinCredits {
+  /// The original authors.
+  authors: string[];
+  contributors: string[];
+  /// Where the skin was published: shown as text, opened only through
+  /// `open_external_url`.
+  url: string | null;
+  /// The licence as the skin states it, or `"noneStated"`.
+  licence: { text: string } | "noneStated";
 }
 
 /// A library skin on trial ("Keep this skin?", `SkinTrial`): the Host

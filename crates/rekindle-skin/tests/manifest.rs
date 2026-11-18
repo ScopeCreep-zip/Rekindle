@@ -232,6 +232,91 @@ fn a_bad_source_is_refused() {
     bad_value(&e, "source.format");
 }
 
+fn credits(authors: Value, url: Value, licence: Value) -> Value {
+    let mut c = serde_json::Map::new();
+    c.insert("authors".into(), authors);
+    c.insert("contributors".into(), json!([]));
+    c.insert("url".into(), url);
+    c.insert("licence".into(), licence);
+    Value::Object(c)
+}
+
+#[test]
+fn credits_parse_and_round_trip() {
+    use rekindle_types::dto::skin::{OriginalLicence, SkinCredits};
+    let mut m = common::manifest();
+    m["credits"] = json!({
+        "authors": ["Xfire, Inc."],
+        "contributors": ["Tim Brengle"],
+        "url": "http://www.xfire.com/",
+        "licence": "noneStated",
+    });
+    let parsed = parse_with(&m, &[]).unwrap();
+    let want = SkinCredits {
+        authors: vec!["Xfire, Inc.".into()],
+        contributors: vec!["Tim Brengle".into()],
+        url: Some("http://www.xfire.com/".into()),
+        licence: OriginalLicence::NoneStated,
+    };
+    assert_eq!(parsed.credits.as_ref(), Some(&want));
+    m["credits"] = credits(
+        json!([]),
+        Value::Null,
+        json!({ "text": "Free.\nShare it." }),
+    );
+    assert!(parse_with(&m, &[]).is_ok());
+}
+
+#[test]
+fn bad_credits_are_refused() {
+    let names = |n: usize| json!(vec!["A"; n]);
+    let none = json!("noneStated");
+    let e = refused_with("credits", credits(names(17), Value::Null, none.clone()));
+    bad_value(&e, "credits.authors");
+    let e = refused_with(
+        "credits",
+        credits(json!(["Al\u{202E}ice"]), Value::Null, none.clone()),
+    );
+    assert_rule(
+        &e,
+        &SkinRule::ForbiddenCharacter {
+            field: field("credits.authors[0]"),
+            codepoint: 0x202E,
+        },
+    );
+    let e = refused_with(
+        "credits",
+        credits(json!(["A\nB"]), Value::Null, none.clone()),
+    );
+    assert!(matches!(e.rule, SkinRule::ForbiddenCharacter { .. }), "{e}");
+    let e = refused_with("credits", credits(json!([" "]), Value::Null, none.clone()));
+    assert!(matches!(e.rule, SkinRule::EmptyText { .. }), "{e}");
+    let e = refused_with(
+        "credits",
+        credits(json!(["a".repeat(65)]), Value::Null, none.clone()),
+    );
+    assert!(matches!(e.rule, SkinRule::TextTooLong { .. }), "{e}");
+    for url in [
+        "javascript:alert(1)".to_owned(),
+        "https://a b".to_owned(),
+        "https://\u{0430}.example".to_owned(),
+        format!("https://{}", "a".repeat(512)),
+    ] {
+        let e = refused_with("credits", credits(json!([]), json!(url), none.clone()));
+        bad_value(&e, "credits.url");
+    }
+    let e = refused_with(
+        "credits",
+        credits(json!([]), Value::Null, json!({ "text": "x\u{2066}" })),
+    );
+    assert!(matches!(e.rule, SkinRule::ForbiddenCharacter { .. }), "{e}");
+    let e = refused_with(
+        "credits",
+        json!({ "authors": [], "contributors": [], "url": null, "licence": "noneStated", "x": 1 }),
+    );
+    syntax(&e);
+}
+
 #[test]
 fn a_bad_author_key_is_refused() {
     bad_value(&refused_with("author", json!("cd".repeat(31))), "author");

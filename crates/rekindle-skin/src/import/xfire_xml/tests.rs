@@ -366,3 +366,30 @@ fn a_credit_names_xfire_when_info_does_not() {
     );
     assert!(a.notice.contains("archive.org/details/XFireSkins"));
 }
+
+/// Plan E7.7.3d: `Info.xml`'s authors by type, its `Website` and a root
+/// README reach the manifest's credits, as the skin states them.
+#[test]
+fn info_xml_credits_reach_the_manifest() {
+    use rekindle_types::dto::skin::OriginalLicence;
+    let mut t = tree(PASSING);
+    t.insert(
+        "Info.xml".into(),
+        br#"<SkinDescription><Author Type="original">Ann</Author><Author Type="contributor">Bo</Author><Author Type="Contributor">Ann</Author><Website>http://skins.example/</Website><Name>Fixture</Name></SkinDescription>"#.to_vec(),
+    );
+    t.insert("ReadMe.txt".into(), b"Share freely.\r\n".to_vec());
+    let i = import(&t, "fixture", None).unwrap();
+    let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
+    let c = m.credits.expect("credits");
+    assert_eq!(
+        (c.authors, c.contributors),
+        (vec!["Ann".to_owned()], vec!["Bo".to_owned()])
+    );
+    assert_eq!(c.url.as_deref(), Some("http://skins.example/"));
+    assert_eq!(c.licence, OriginalLicence::Text("Share freely.".into()));
+    let bare = import(&tree(PASSING), "fixture", None).unwrap();
+    let m = crate::manifest::parse(&crate::package::read(&bare.canonical.bytes).unwrap()).unwrap();
+    let c = m.credits.expect("credits");
+    assert!(c.authors.is_empty() && c.url.is_none());
+    assert_eq!(c.licence, OriginalLicence::NoneStated);
+}

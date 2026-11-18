@@ -101,4 +101,17 @@ mod tests {
         assert!(find("symbiosis").is_none());
         assert!(find("pkg:symbiosis").is_none());
     }
+
+    /// Plan E7.7.3d: every built-in credits Xfire, Inc. and links its source.
+    #[test]
+    fn every_pack_credits_its_authors() {
+        for pack in &PACKS {
+            let m = crate::manifest::parse(&crate::package::read(pack.bytes).unwrap()).unwrap();
+            let c = m
+                .credits
+                .unwrap_or_else(|| panic!("builtin:{} has no credits", pack.id));
+            assert_eq!(c.authors, ["Xfire, Inc."], "builtin:{}", pack.id);
+            assert!(c.url.is_some(), "builtin:{}", pack.id);
+        }
+    }
 }

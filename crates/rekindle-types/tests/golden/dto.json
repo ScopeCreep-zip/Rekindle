@@ -413,5 +413,39 @@
     "idle": "active",
     "status": "busy",
     "statusMessage": "fragging"
+  },
+  "skin.entry.builtin": {
+    "credits": {
+      "authors": [
+        "Xfire, Inc."
+      ],
+      "contributors": [
+        "Tim Brengle"
+      ],
+      "licence": "noneStated",
+      "url": "http://www.xfire.com/"
+    },
+    "id": "builtin:xfire-classic",
+    "importedAt": null,
+    "name": "Xfire"
+  },
+  "skin.entry.library": {
+    "credits": {
+      "authors": [],
+      "contributors": [],
+      "licence": {
+        "text": "Free to share."
+      },
+      "url": null
+    },
+    "id": "pkg:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "importedAt": 1760000000000,
+    "name": "Night"
+  },
+  "skin.entry.uncredited": {
+    "credits": null,
+    "id": "pkg:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "importedAt": 1760000000001,
+    "name": "Plain"
   }
 }

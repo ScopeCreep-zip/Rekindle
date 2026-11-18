@@ -21,18 +21,18 @@ Colour groups (15 defined)
   MenuTextCG RGBA(255,255,255,0) -> not mapped: no registry role menubar.text yet
   UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
   HeaderColor RGBA(0,0,0,0) -> image shift (baked)
-  ChatBGCG RGBA(255,255,255,0) -> dropped: not an Xfire colour name
-  InGameChatTextColor RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  ChatBGCG RGBA(255,255,255,0) -> token bg.panel
+  InGameChatTextColor RGBA(255,255,255,0) -> dropped: in-game overlay (E7.5 research)
   FriendsFavoritesText RGBA(0,0,255,0) -> dropped: server browser
   AllServersText RGBA(255,255,0,0) -> dropped: server browser
-  DownloadText RGBA(0,255,0,0) -> dropped: not an Xfire colour name
-  Friend RGBA(0,84,12,0) -> dropped: not an Xfire colour name
-  FriendofFriend RGBA(84,65,0,0) -> dropped: not an Xfire colour name
-  AllServers RGBA(169,108,30,0) -> dropped: not an Xfire colour name
-  Select RGBA(0,0,0,0) -> dropped: not an Xfire colour name
-  Label RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  DownloadText RGBA(0,255,0,0) -> dropped: the download manager's tab label
+  Friend RGBA(0,84,12,0) -> token text.base
+  FriendofFriend RGBA(84,65,0,0) -> dropped: friends of friends (E7.8 research)
+  AllServers RGBA(169,108,30,0) -> not mapped: no registry role chat.peer.text yet
+  Select RGBA(0,0,0,0) -> token accent.fill
+  Label RGBA(255,255,255,0) -> registry-fixed accent.fg (a skin cannot set it)
   InfoViewHyperlink RGBA(0,84,12,0) -> not mapped: no registry role profile.link yet
-  ProgressFill RGBA(128,128,128,0) -> dropped: not an Xfire colour name
+  ProgressFill RGBA(128,128,128,0) -> not mapped: no registry role progress.fill yet
 
 Regions
   window.frame: [OuterFrame], nine-slice 214/78/113/79, transparent middle
@@ -260,4 +260,9 @@ Dropped
     scrollbar/c_scroll_corner.gif
     strings.ini
 
-Contrast changes (minimal Oklab-lightness walk) (0 made)
+Contrast changes (minimal Oklab-lightness walk) (5 made)
+  status.online: #00872c -> #007011 (S3 status.online on accent.fill 30.0% over bg.dark: 2.22:1 -> passes, required 3.00:1)
+  status.away: #8f7000 -> #7a5b00 (S3 status.away on accent.fill 30.0% over bg.dark: 2.23:1 -> passes, required 3.00:1)
+  status.busy: #da3034 -> #c1081e (S3 status.busy on accent.fill 30.0% over bg.dark: 2.24:1 -> passes, required 3.00:1)
+  status.ingame: #0078b4 -> #00649f (S3 status.ingame on accent.fill 30.0% over bg.dark: 2.30:1 -> passes, required 3.00:1)
+  status.offline: #737373 -> #5f5f5f (S3 status.offline on accent.fill 30.0% over bg.dark: 2.26:1 -> passes, required 3.00:1)

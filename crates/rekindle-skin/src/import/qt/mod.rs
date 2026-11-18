@@ -212,6 +212,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
             format: read.front.format().to_owned(),
             hash: source.to_owned(),
         }),
+        credits: None,
         author: None,
         signature: None,
         variants: vec![SkinVariant {

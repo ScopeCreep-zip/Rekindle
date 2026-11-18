@@ -37,6 +37,7 @@ use rekindle_types::dto::skin::{
 };
 
 use super::credit::{Authorship, XfireCredit};
+use super::credits;
 use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
 use super::xfire_xml::{bitmap, ColourRow};
 use super::{base_of, conclude, tree_hash, walk, ImportError, Outcome, Tree};
@@ -428,10 +429,11 @@ fn frame_image(state: RegionState) -> String {
 fn manifest(
     id: &str,
     read: &Read,
-    source: &str,
+    (source, tree): (&str, &Tree),
     base: SkinBase,
-    authorship: Authorship<'_>,
+    credit: Option<&XfireCredit>,
 ) -> SkinManifest {
+    let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
     let mut regions = BTreeMap::new();
     if let Some(f) = &read.frame {
         let states = f
@@ -466,6 +468,9 @@ fn manifest(
             format: XFIRE_INI_FORMAT.to_owned(),
             hash: source.to_owned(),
         }),
+        // An INI skin names no author or site in its files; an outside
+        // credit names Xfire and its page.
+        credits: Some(credits::build(tree, &[], &[], None, credit)),
         author: None,
         signature: None,
         variants: vec![SkinVariant {
@@ -491,11 +496,13 @@ pub fn import(tree: &Tree, id: &str, credit: Option<&XfireCredit>) -> Result<Out
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
-    let manifest_json = serde_json::to_vec(&manifest(id, &read, &source, skin_base, authorship))
-        .map_err(|e| ImportError::Format {
-            file: MANIFEST.to_owned(),
-            detail: e.to_string(),
-        })?;
+    let manifest_json =
+        serde_json::to_vec(&manifest(id, &read, (&source, tree), skin_base, credit)).map_err(
+            |e| ImportError::Format {
+                file: MANIFEST.to_owned(),
+                detail: e.to_string(),
+            },
+        )?;
     let mut files = BTreeMap::from([(MANIFEST.to_owned(), manifest_json)]);
     for (state, img) in read.frame.iter().flat_map(|f| &f.images) {
         let path = frame_image(*state);

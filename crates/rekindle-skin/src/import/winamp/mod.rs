@@ -292,6 +292,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
             format: WINAMP_WSZ_FORMAT.to_owned(),
             hash: source.to_owned(),
         }),
+        credits: None,
         author: None,
         signature: None,
         variants: vec![SkinVariant {

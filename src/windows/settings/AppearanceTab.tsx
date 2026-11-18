@@ -4,6 +4,7 @@ import { subscribeSkinEvents, subscribeSkinTrial } from "../../ipc/channels";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
 import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
+import SkinCredits from "../../components/settings/SkinCredits";
 
 /** A Host refusal as the line the tab shows. */
 function refusal(e: unknown): string | null {
@@ -28,6 +29,8 @@ const AppearanceTab: Component = () => {
   const [trial, setTrial] = createSignal<SkinTrial | null>(null);
   const [now, setNow] = createSignal(Date.now());
   const [error, setError] = createSignal<string | null>(null);
+  /** The skin whose credits are open, if any. */
+  const [creditsOf, setCreditsOf] = createSignal<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
 
   const apply = (lib: SkinLibrary): void => {
@@ -76,7 +79,7 @@ const AppearanceTab: Component = () => {
     await run(() => commands.importSkin(bytes));
   }
 
-  const row = (skin: SkinEntry) => (
+  const row = (skin: SkinEntry, index: () => number) => (
     <div class="skin-row" classList={{ "skin-row-shown": shown() === skin.id }}>
       <label class="settings-option skin-choice">
         <input
@@ -91,6 +94,15 @@ const AppearanceTab: Component = () => {
         <span class="skin-badge">Login skin</span>
       </Show>
       <div class="skin-actions">
+        <button
+          class="form-btn-secondary skin-info"
+          aria-label={`Credits for ${skin.name}`}
+          aria-expanded={creditsOf() === skin.id}
+          aria-controls={`skin-credits-${index()}`}
+          onClick={() => setCreditsOf(creditsOf() === skin.id ? null : skin.id)}
+        >
+          i
+        </button>
         <Show when={library()?.login !== skin.id}>
           <button
             class="form-btn-secondary skin-action"
@@ -109,6 +121,9 @@ const AppearanceTab: Component = () => {
           </button>
         </Show>
       </div>
+      <Show when={creditsOf() === skin.id}>
+        <SkinCredits skin={skin} id={`skin-credits-${index()}`} />
+      </Show>
     </div>
   );
 

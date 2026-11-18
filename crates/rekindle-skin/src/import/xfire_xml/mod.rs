@@ -42,6 +42,7 @@ use rekindle_types::dto::skin::{
 };
 
 use super::credit::{Authorship, XfireCredit};
+use super::credits;
 use super::tree::{self, Node};
 use super::walk::{self, settle};
 use super::xfire_ini::lookup;
@@ -59,7 +60,7 @@ pub const FRAME_SOURCE: &str = "Components/ChatWindow.xml";
 const FRAME_IMAGE: &str = "assets/window-frame.png";
 const TOKENS: &str = "tokens.json";
 /// The original author `Info.xml` names on Xfire's own skins (Symbiosis).
-pub const XFIRE_AUTHOR: &str = "Xfire, Inc.";
+pub use super::credits::XFIRE_AUTHOR;
 
 /// One colour of the theme and what it became.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,8 +74,12 @@ pub struct ColourRow {
 #[derive(Debug)]
 pub struct Read {
     pub info: BTreeMap<String, String>,
-    /// `Info.xml`'s `<Author Type="Original">`.
+    /// `Info.xml`'s first `<Author Type="Original">`.
     pub original_author: Option<String>,
+    /// Every `<Author Type="Original">`, then every `Type="Contributor"`,
+    /// in file order (plan E7.7.3d).
+    pub authors: Vec<String>,
+    pub contributors: Vec<String>,
     pub colours: Vec<ColourRow>,
     pub tokens: BTreeMap<String, TokenValue>,
     pub frame: Option<(RgbaImage, rekindle_types::dto::skin::Insets)>,
@@ -302,14 +307,19 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         Ok((key, bytes)) => Some(tree::parse(key, bytes)?),
         Err(_) => None,
     };
-    let original_author = info_xml.as_ref().and_then(|n| {
-        n.children_named("Author")
-            .find(|a| {
-                a.attr_ci("Type")
-                    .is_some_and(|t| t.eq_ignore_ascii_case("Original"))
-            })
-            .map(|a| a.text.clone())
-    });
+    let authors_of = |kind: &str| -> Vec<String> {
+        info_xml.as_ref().map_or_else(Vec::new, |n| {
+            n.children_named("Author")
+                .filter(|a| {
+                    a.attr_ci("Type")
+                        .is_some_and(|t| t.eq_ignore_ascii_case(kind))
+                })
+                .map(|a| a.text.clone())
+                .collect()
+        })
+    };
+    let (authors, contributors) = (authors_of("Original"), authors_of("Contributor"));
+    let original_author = authors.first().cloned();
     let info = info_xml.map_or_else(BTreeMap::new, |n| {
         n.children
             .into_iter()
@@ -322,6 +332,8 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     Ok(Read {
         info,
         original_author,
+        authors,
+        contributors,
         colours,
         tokens,
         frame,
@@ -368,9 +380,9 @@ impl Read {
 fn manifest(
     id: &str,
     read: &Read,
-    source: &str,
+    (source, tree): (&str, &Tree),
     base: SkinBase,
-    authorship: Authorship<'_>,
+    (authorship, credit): (Authorship<'_>, Option<&XfireCredit>),
 ) -> SkinManifest {
     let name: String = read
         .info
@@ -404,6 +416,13 @@ fn manifest(
             format: XFIRE_XML_FORMAT.to_owned(),
             hash: source.to_owned(),
         }),
+        credits: Some(credits::build(
+            tree,
+            &read.authors,
+            &read.contributors,
+            read.info.get("Website").map(String::as_str),
+            credit,
+        )),
         author: None,
         signature: None,
         variants: vec![SkinVariant {
@@ -432,7 +451,7 @@ pub fn import(
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
     let authorship = read.authorship(credit);
-    let manifest = manifest(id, &read, &source, skin_base, authorship);
+    let manifest = manifest(id, &read, (&source, tree), skin_base, (authorship, credit));
     let manifest_json = serde_json::to_vec(&manifest).map_err(|e| ImportError::Xml {
         file: MANIFEST.to_owned(),
         detail: e.to_string(),

@@ -299,3 +299,33 @@ fn an_outer_frame_section_is_the_window_frame() {
         i.notice
     );
 }
+
+/// Plan E7.7.3d: an INI skin names no one in its files; an outside credit
+/// names Xfire, Inc. and its page, and a root licence file is its licence.
+#[test]
+fn an_ini_skins_credits_come_from_the_credit_and_its_licence_file() {
+    use rekindle_types::dto::skin::OriginalLicence;
+    let credits = |t: &Tree, credit| {
+        let i = passed(import(t, "fixture", credit).unwrap());
+        crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap())
+            .unwrap()
+            .credits
+            .expect("credits")
+    };
+    let page = "https://archive.org/details/XFireSkins";
+    let credit = crate::import::XfireCredit::new(page, "Made by Xfire.").unwrap();
+    let c = credits(&tree(), Some(&credit));
+    assert_eq!(c.authors, vec!["Xfire, Inc.".to_owned()]);
+    assert_eq!(
+        (c.url.as_deref(), &c.licence),
+        (Some(page), &OriginalLicence::NoneStated)
+    );
+    let mut t = tree();
+    t.insert("License.txt".into(), b"(c) Ann. Do not sell.".to_vec());
+    let c = credits(&t, None);
+    assert!(c.authors.is_empty() && c.url.is_none());
+    assert_eq!(
+        c.licence,
+        OriginalLicence::Text("(c) Ann. Do not sell.".into())
+    );
+}

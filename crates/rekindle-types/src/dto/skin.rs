@@ -33,6 +33,10 @@ pub struct SkinManifest {
     /// The original format and its hash, for imported skins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SkinSource>,
+    /// Who made the skin, as the skin states it (plan E7.7.3d): shown
+    /// beside it, never verified. `author` below is a signer, not a credit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credits: Option<SkinCredits>,
     /// The author's Ed25519 public key, hex (checked in E7.7.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
@@ -109,6 +113,28 @@ impl SoundCue {
 pub enum SkinLicense {
     Spdx(String),
     Text(String),
+}
+
+/// A skin's human credits (plan E7.7.3d), each name ≤ 64 scalars and each
+/// list ≤ 16 names, checked like `name`; `url` an `http(s)` URL ≤ 512.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkinCredits {
+    /// The original authors.
+    pub authors: Vec<String>,
+    pub contributors: Vec<String>,
+    /// Where the skin was published.
+    pub url: Option<String>,
+    pub licence: OriginalLicence,
+}
+
+/// The licence the skin's own files state, or that they state none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OriginalLicence {
+    /// The text as stated (≤ 64 KiB scalars, line feeds allowed).
+    Text(String),
+    NoneStated,
 }
 
 /// Where an imported skin came from.

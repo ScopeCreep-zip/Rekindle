@@ -120,6 +120,7 @@ fn manifest(id: &str, name: &str, hash: String, cues: &[(SoundCue, String)]) -> 
             format: SOURCE_FORMAT.to_owned(),
             hash,
         }),
+        credits: None,
         author: None,
         signature: None,
         variants: vec![SkinVariant {

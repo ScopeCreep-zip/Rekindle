@@ -140,6 +140,24 @@ export const WINDOWS: WindowCase[] = [
     spacing: [".xfire-titlebar", ".form-tabs"],
     spacingWithData: [".skin-list"],
   },
+  {
+    // Plan E7.7.3d: a built-in's credits panel open, its names, URL and
+    // licence at their bounds.
+    name: "settings-appearance-credits",
+    label: "settings",
+    path: "/settings?tab=appearance",
+    def: { width: 500, height: 550 },
+    min: { width: 420, height: 450 },
+    ready: async (page) => {
+      await frame(page);
+      // By keyboard, so focus indicators stay keyboard-modality afterwards.
+      await page.getByRole("button", { name: "Credits for Symbiosis" }).focus();
+      await page.keyboard.press("Enter");
+      await page.locator(".skin-credits").waitFor();
+    },
+    spacing: [".xfire-titlebar", ".form-tabs"],
+    spacingWithData: [".skin-list"],
+  },
 ];
 
 /** The content panes `w` renders with or without data. */

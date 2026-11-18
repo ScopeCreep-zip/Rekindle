@@ -22,6 +22,15 @@ const GOLDEN = JSON.parse(
     "utf8",
   ),
 ) as Record<string, TrialPayload>;
+// The credits are the golden `SkinEntry` samples (plan E7.7.3d).
+const DTO = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../crates/rekindle-types/tests/golden/dto.json", import.meta.url)),
+    "utf8",
+  ),
+) as Record<string, { credits: unknown }>;
+const BUILTIN_CREDITS = DTO["skin.entry.builtin"].credits;
+const LIBRARY_CREDITS = DTO["skin.entry.library"].credits;
 const TRIAL_EVENT = GOLDEN["system.skinTrialChanged"];
 const TRIAL = TRIAL_EVENT.system.skinTrialChanged.trial!;
 const STARTED = TRIAL.revertsAtMs - 15_000;
@@ -33,9 +42,11 @@ const HANDLER = `
   w.__evIndex = w.__evIndex ?? 0;
   const library = () => ({
     skins: [
-      { id: "builtin:symbiosis", name: "Symbiosis", importedAt: null },
-      { id: "builtin:default", name: "Default", importedAt: null },
-      { id: trial.id, name: trial.name, importedAt: 1000 },
+      { id: "builtin:symbiosis", name: "Symbiosis", importedAt: null,
+        credits: ${JSON.stringify(BUILTIN_CREDITS)} },
+      { id: "builtin:default", name: "Default", importedAt: null, credits: null },
+      { id: trial.id, name: trial.name, importedAt: 1000,
+        credits: ${JSON.stringify(LIBRARY_CREDITS)} },
     ],
     active: w.__skin.active,
     login: "builtin:symbiosis",
@@ -108,6 +119,39 @@ test.describe("Settings → Appearance", () => {
     await expect(page.getByRole("radio", { name: "Symbiosis" })).toBeChecked();
     await expect(page.locator(".skin-badge")).toHaveText("Login skin");
     await expect(page.getByRole("button", { name: "Remove" })).toHaveCount(1);
+  });
+
+  test("each skin's info button opens its credits", async ({ page }) => {
+    await openAppearance(page);
+    const info = page.getByRole("button", { name: "Credits for Symbiosis" });
+    await expect(info).toHaveAttribute("aria-expanded", "false");
+    await info.focus();
+    await page.keyboard.press("Enter");
+    await expect(info).toHaveAttribute("aria-expanded", "true");
+    const panel = page.getByRole("region", { name: "Credits for Symbiosis" });
+    await expect(panel).toContainText("Original authors");
+    await expect(panel).toContainText("Xfire, Inc.");
+    await expect(panel).toContainText("Tim Brengle");
+    await expect(panel).toContainText("http://www.xfire.com/");
+    await expect(panel).toContainText("No licence stated");
+    await expect(panel).not.toContainText("As stated by the skin");
+    await panel.getByRole("button", { name: "Open the source of Symbiosis" }).click();
+    const open = await page.evaluate(() =>
+      (window as any).__ipcCalls.find((c: { cmd: string }) => c.cmd === "open_external_url"),
+    );
+    expect(open.args).toEqual({ url: "http://www.xfire.com/" });
+
+    await page.getByRole("button", { name: `Credits for ${TRIAL.name}` }).click();
+    await expect(panel).toHaveCount(0);
+    const library = page.getByRole("region", { name: `Credits for ${TRIAL.name}` });
+    await expect(library).toContainText("As stated by the skin (not verified)");
+    await expect(library).toContainText("Free to share.");
+    await expect(library.getByRole("button", { name: /Open the source/ })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Credits for Default" }).click();
+    await expect(page.getByRole("region", { name: "Credits for Default" })).toContainText(
+      "None stated",
+    );
   });
 
   test("a library skin asks to be kept and goes back after 15 s", async ({ page }) => {

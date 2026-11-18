@@ -14,6 +14,7 @@
 //! * [`miranda`]: Miranda NG TabSRMM `.tsk` and Clist_modern `.msf` skins
 //!   (colours and 9-slice images).
 //! * [`credit`]: whose art an Xfire skin is, and the licence text it gets.
+//! * [`credits`]: the human credits an Xfire skin states (plan E7.7.3d).
 //! * [`walk`]: the minimal Oklab-lightness walk a built-in that fails the
 //!   validator is adjusted by, every change recorded.
 //!
@@ -21,6 +22,7 @@
 //! helper) hands the tree over as a map of relative paths to bytes.
 
 pub mod credit;
+pub mod credits;
 pub mod miranda;
 mod notice;
 pub mod pidgin;

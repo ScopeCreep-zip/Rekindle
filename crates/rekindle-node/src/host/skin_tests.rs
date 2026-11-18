@@ -137,6 +137,9 @@ async fn import_select_set_login_and_remove_round_trip() {
     .await;
     let entry: SkinEntry = data(answer);
     assert_eq!(entry.id, format!("pkg:{}", canonical.address()));
+    // Plan E7.7.3d: the import answers the manifest's credits.
+    let credited = entry.credits.clone().expect("Symbiosis states its credits");
+    assert_eq!(credited.authors, ["Xfire, Inc."]);
 
     let (answer, _) = run(
         &host,
@@ -148,6 +151,12 @@ async fn import_select_set_login_and_remove_round_trip() {
     let library: SkinLibrary = data(answer);
     assert_eq!(library.trial.map(|t| t.id), Some(entry.id.clone()));
     assert!(library.skins.iter().any(|s| s.id == entry.id));
+    // `SkinList` carries the credits of the built-ins and the library.
+    for s in &library.skins {
+        assert!(s.credits.is_some(), "{} lacks its credits", s.id);
+    }
+    let library_row = library.skins.iter().find(|s| s.id == entry.id).unwrap();
+    assert_eq!(library_row.credits.as_ref(), Some(&credited));
     let (answer, review) = run(
         &host,
         IpcRequest::SkinKeep {

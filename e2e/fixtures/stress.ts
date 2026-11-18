@@ -217,6 +217,19 @@ export interface Stress {
 
 /** Settings → Appearance's library: the built-ins, then (with data) a
  *  dozen long-named library skins, one of them on trial. */
+/** Credits at their bounds (plan E7.7.3d): long names, a long unbroken
+ *  URL and a multi-line licence. */
+function skinCredits(i: number) {
+  return {
+    authors: [longName(`Author_${i}_`), "Xfire, Inc."],
+    contributors: Array.from({ length: 4 }, (_, n) => longName(`Contributor_${n}_`)),
+    url: `https://example.org/${"skins/".repeat(60)}${i}`,
+    licence: {
+      text: Array.from({ length: 12 }, (_, n) => `Clause ${n}: ${longName("Terms_")}`).join("\n"),
+    },
+  };
+}
+
 function skinLibrary(s: Stress) {
   const pkg = (i: number) => `pkg:${i.toString(16).padStart(64, "0")}`;
   const library = s.communities
@@ -224,12 +237,13 @@ function skinLibrary(s: Stress) {
         id: pkg(i + 1),
         name: longName(`Skin_${i}_`),
         importedAt: 1000 + i,
+        credits: i % 2 ? null : skinCredits(i),
       }))
     : [];
   return {
     skins: [
-      { id: "builtin:symbiosis", name: "Symbiosis", importedAt: null },
-      { id: "builtin:default", name: "Default", importedAt: null },
+      { id: "builtin:symbiosis", name: "Symbiosis", importedAt: null, credits: skinCredits(99) },
+      { id: "builtin:default", name: "Default", importedAt: null, credits: null },
       ...library,
     ],
     active: "builtin:symbiosis",

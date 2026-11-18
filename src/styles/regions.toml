@@ -131,6 +131,9 @@
 '.settings-hint' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary"] }
 # The Settings window's `.app-frame` (bg-dark); `.skin-row-shown` tints it.
 '.skin-badge' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
+'.skin-credits' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
+'.skin-credits-stated' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
+'.skin-credits-term' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
 '.settings-category-label' = { on = ["--color-xfire-bg-panel"] }
 '.settings-about-text' = { on = ["--color-xfire-bg-dark"] }
 '.settings-about-value' = { on = ["--color-xfire-bg-dark"] }

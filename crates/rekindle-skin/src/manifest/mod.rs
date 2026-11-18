@@ -5,7 +5,9 @@
 //! The manifest is then parsed with `deny_unknown_fields`, and each field
 //! checked: `id`, `name` (≤ 64 scalars, NFC, no control or bidi
 //! characters), `description` (≤ 280), `license` (an SPDX expression or the
-//! full text), `source`, `author` with `signature`, and the variants (one or
+//! full text), `source`, the human `credits` (plan E7.7.3d: each name as
+//! `name`, ≤ 16 per list, an `http(s)` URL ≤ 512, the original licence text
+//! as `license`'s), `author` with `signature`, and the variants (one or
 //! more, one per base and contrast, each naming a root token file the
 //! package holds). The icons and sounds keys are checked here against the
 //! registry's icon slots and sound cues; the regions map against the
@@ -16,8 +18,8 @@ pub(crate) mod text;
 use std::collections::HashSet;
 
 use rekindle_types::dto::skin::{
-    SkinBase, SkinContrast, SkinError, SkinLicense, SkinManifest, SkinRule, SKIN_FORMAT_MAJOR,
-    SKIN_FORMAT_PREFIX,
+    OriginalLicence, SkinBase, SkinContrast, SkinCredits, SkinError, SkinLicense, SkinManifest,
+    SkinRule, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
 };
 use serde::Deserialize;
 
@@ -42,6 +44,10 @@ const LICENSE_TEXT: TextRule = TextRule {
     may_be_empty: false,
     line_feeds: true,
 };
+/// The most names in `credits.authors` or `credits.contributors`.
+pub const MAX_CREDIT_NAMES: usize = 16;
+/// The longest `credits.url`, in bytes (ASCII only).
+pub const MAX_CREDIT_URL: usize = 512;
 const ID_MAX: usize = 64;
 const ED25519_KEY_HEX: usize = 64;
 const ED25519_SIGNATURE_HEX: usize = 128;
@@ -166,6 +172,9 @@ fn check_fields(m: &SkinManifest) -> Result<(), SkinError> {
             ));
         }
     }
+    if let Some(credits) = &m.credits {
+        check_credits(credits)?;
+    }
     if let Some(author) = &m.author {
         if !is_lower_hex(author, ED25519_KEY_HEX) {
             return Err(bad_value(
@@ -184,6 +193,36 @@ fn check_fields(m: &SkinManifest) -> Result<(), SkinError> {
                 "an Ed25519 signature, 128 lowercase hex digits",
             ));
         }
+    }
+    Ok(())
+}
+
+/// Each credited name as `name`, a bounded list, a printable-ASCII
+/// `http(s)` URL (no space), the licence text as `license`'s.
+fn check_credits(c: &SkinCredits) -> Result<(), SkinError> {
+    for (field, names) in [
+        ("credits.authors", &c.authors),
+        ("credits.contributors", &c.contributors),
+    ] {
+        if names.len() > MAX_CREDIT_NAMES {
+            return Err(bad_value(field, "at most 16 names"));
+        }
+        for (i, n) in names.iter().enumerate() {
+            text::check(&format!("{field}[{i}]"), n, NAME).map_err(refuse)?;
+        }
+    }
+    if let Some(url) = &c.url {
+        let printable = url.bytes().all(|b| b.is_ascii_graphic());
+        let scheme = url.starts_with("https://") || url.starts_with("http://");
+        if !(printable && scheme && url.len() <= MAX_CREDIT_URL) {
+            return Err(bad_value(
+                "credits.url",
+                "an http(s) URL of at most 512 printable ASCII characters",
+            ));
+        }
+    }
+    if let OriginalLicence::Text(full) = &c.licence {
+        text::check("credits.licence", full, LICENSE_TEXT).map_err(refuse)?;
     }
     Ok(())
 }
