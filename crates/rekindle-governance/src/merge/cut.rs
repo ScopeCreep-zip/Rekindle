@@ -19,11 +19,13 @@ pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState
     let set = resolve::prepare(cut_ops);
     let (round, _) = resolve_stable(cert, &set);
     let mut authors: BTreeMap<[u8; 32], (u64, OpHash)> = BTreeMap::new();
+    let mut lamports: BTreeMap<[u8; 32], u64> = BTreeMap::new();
     for op in &set.ops {
         let entry = (op.op().seq, op.hash());
-        (authors.entry(op.author().0))
-            .and_modify(|held| *held = (*held).max(entry))
-            .or_insert(entry);
+        if authors.get(&op.author().0).is_none_or(|held| *held < entry) {
+            authors.insert(op.author().0, entry);
+            lamports.insert(op.author().0, op.lamport());
+        }
     }
     let n = set.ops.len();
     let is_power = |i: usize| class_of(set.ops[i].body()) == OpClass::Power;
@@ -53,6 +55,8 @@ pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState
         invite_codes: invite_codes(&set, &round),
         forks: forks(cut_ops),
         unmerged: unmerged(cut_ops, &authors_live),
+        lamports,
+        checkpoints: checkpoints(&set, &round),
     };
     (round.state, cut)
 }
@@ -137,6 +141,22 @@ fn invite_codes(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<String, ([u
         }
     }
     out
+}
+
+/// The applied `Checkpoint` ops at the cut's two greatest applied heights,
+/// with their heights.
+fn checkpoints(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<OpHash, u64> {
+    let applied: Vec<(OpHash, u64)> = (set.ops.iter().enumerate())
+        .filter(|&(o, _)| round.applied[o])
+        .filter_map(|(_, op)| match op.body() {
+            GovernanceEntry::Checkpoint(c) => Some((op.hash(), c.height)),
+            _ => None,
+        })
+        .collect();
+    let top = applied.iter().map(|(_, h)| *h).max().unwrap_or(0);
+    (applied.into_iter())
+        .filter(|(_, h)| h.saturating_add(1) >= top)
+        .collect()
 }
 
 /// Each author that signed two ops at one seq, with the lowest such seq

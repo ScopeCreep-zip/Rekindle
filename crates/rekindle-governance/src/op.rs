@@ -88,6 +88,14 @@ pub fn invite_proof_bytes(anchor: &str, code_hash: &str, member_record: &str) ->
     out
 }
 
+/// What verifying an op reads of one of its deps (plan E3.2 S7c.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepFacts<'a> {
+    pub author: &'a PseudonymKey,
+    pub seq: u64,
+    pub lamport: u64,
+}
+
 impl VerifiedOp {
     /// Verify `op` of community `anchor`. `unsigned` is the canonical
     /// unsigned encoding the op was decoded from (the codec produces both
@@ -98,6 +106,18 @@ impl VerifiedOp {
         unsigned: &[u8],
         known: impl Fn(&OpHash) -> Option<&'a Self>,
     ) -> Result<Self, OpRejection> {
+        Self::verify_with(anchor, op, unsigned, |h| known(h).map(Self::facts))
+    }
+
+    /// [`verify`](Self::verify) reading only what it needs of each dep, its
+    /// [`DepFacts`]: a post-cut op is verified against the cut index's
+    /// facts for the cut ops it cites, without those ops (plan E3.2 S7c.5).
+    pub fn verify_with<'a>(
+        anchor: &str,
+        op: GovernanceOp,
+        unsigned: &[u8],
+        known: impl Fn(&OpHash) -> Option<DepFacts<'a>>,
+    ) -> Result<Self, OpRejection> {
         verify_signature(&op.author.0, &op_signing_bytes(anchor, unsigned), &op.sig)
             .map_err(|_| OpRejection::BadSignature)?;
         check_invite_proof(anchor, &op)?;
@@ -106,7 +126,7 @@ impl VerifiedOp {
         let mut lamport = 0;
         for dep in &op.deps {
             let found = known(&dep.op_hash).ok_or(OpRejection::MissingDep(dep.op_hash))?;
-            if found.op.author != dep.author || found.op.seq != dep.author_seq {
+            if *found.author != dep.author || found.seq != dep.author_seq {
                 return Err(OpRejection::DepMismatch(dep.op_hash));
             }
             lamport = lamport.max(found.lamport);
@@ -118,6 +138,16 @@ impl VerifiedOp {
             hash,
             lamport: lamport + 1,
         })
+    }
+
+    /// What a dependant's verification reads of this op.
+    #[must_use]
+    pub fn facts(&self) -> DepFacts<'_> {
+        DepFacts {
+            author: &self.op.author,
+            seq: self.op.seq,
+            lamport: self.lamport,
+        }
     }
 
     #[must_use]
@@ -177,13 +207,13 @@ impl VerifiedOp {
 /// seq n - 1 as `prev`, and that op is among the deps.
 fn check_chain<'a>(
     op: &GovernanceOp,
-    known: &impl Fn(&OpHash) -> Option<&'a VerifiedOp>,
+    known: &impl Fn(&OpHash) -> Option<DepFacts<'a>>,
 ) -> Result<(), OpRejection> {
     match (op.seq, op.prev) {
         (0, None) => Ok(()),
         (seq, Some(prev)) if seq > 0 => {
             let found = known(&prev).ok_or(OpRejection::MissingDep(prev))?;
-            let chained = found.op.author == op.author && found.op.seq + 1 == seq;
+            let chained = *found.author == op.author && found.seq + 1 == seq;
             let cited = op.deps.iter().any(|d| d.op_hash == prev);
             if chained && cited {
                 Ok(())

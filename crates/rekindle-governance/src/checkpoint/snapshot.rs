@@ -39,6 +39,8 @@ impl CutSnapshot {
             invite_codes: Decanon::take(&mut r)?,
             forks: Decanon::take(&mut r)?,
             unmerged: Decanon::take(&mut r)?,
+            lamports: Decanon::take(&mut r)?,
+            checkpoints: Decanon::take(&mut r)?,
         };
         if !r.is_done() || state_preimage(&state, &cut) != bytes {
             return None;

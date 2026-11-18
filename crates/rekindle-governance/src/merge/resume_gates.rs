@@ -196,11 +196,11 @@ fn record_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &mu
     }
 }
 
-/// `gates::checkpoint_gate` for a `rest` `Checkpoint` whose previous
-/// checkpoint is in `rest` (or that has none). A cut head is in the past
-/// of every `rest` head; whether one cut op is in another's past, and
-/// whether a previous checkpoint in the cut applied, the snapshot does not
-/// say, so those are undecidable.
+/// `gates::checkpoint_gate` for a `rest` `Checkpoint`. A cut head is in
+/// the past of every `rest` head; a previous checkpoint in the cut is
+/// judged from the cut index's applied checkpoints (plan E3.2 S7c.5);
+/// whether one cut op is in another's past the snapshot does not say, so
+/// that, and a previous checkpoint the index does not list, is undecidable.
 fn checkpoint_gate(
     ctx: &Ctx<'_>,
     set: &RestSet<'_>,
@@ -224,7 +224,22 @@ fn checkpoint_gate(
             continue;
         };
         let holds = match at(prev) {
-            Some(Dep::Cut) => return Err(NotOnTop::Undecidable(op.hash())),
+            Some(Dep::Cut) => {
+                // An applied previous checkpoint in the cut is in the cut
+                // index with its height (else undecidable). Its cut heads
+                // are its deps, so cut ops: `c` covers them when one of its
+                // heads is in `rest` (the whole cut in its past, (a′)) or
+                // its heads include every head of the snapshot's cut.
+                let Some(&height) = ctx.snap.cut.checkpoints.get(&prev.op_hash) else {
+                    return Err(NotOnTop::Undecidable(op.hash()));
+                };
+                let covered = c.cut.iter().any(|k| matches!(at(k), Some(Dep::Rest(_))))
+                    || (ctx.snap.heads.iter()).all(|h| c.cut.iter().any(|k| k.op_hash == *h));
+                if !covered {
+                    return Err(NotOnTop::Undecidable(op.hash()));
+                }
+                height.checked_add(1) == Some(c.height)
+            }
             None => false,
             Some(Dep::Rest(p)) => {
                 let GovernanceEntry::Checkpoint(pc) = set.ops[p].body() else {

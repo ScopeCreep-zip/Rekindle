@@ -52,6 +52,33 @@ pub struct CutIndex {
     /// an op at a seq above its author's `authors` entry and at or below
     /// this one is in the cut but never merged (plan E3.2 S7c.4a).
     pub unmerged: BTreeMap<[u8; 32], u64>,
+    /// The lamport of each author's op in `authors` (plan E3.2 S7c.5): a
+    /// post-cut op's lamport is one above its deps', so a reader that
+    /// skipped the cut verifies an op citing an author's top cut op from
+    /// this (`VerifiedOp::verify_with`). Every cut head is such an op.
+    pub lamports: BTreeMap<[u8; 32], u64>,
+    /// The cut's applied `Checkpoint` ops at its two greatest heights, by
+    /// hash, with their heights (plan E3.2 S7c.5): a post-cut `Checkpoint`
+    /// naming one as `prevCheckpoint` (the endorsements of the hint whose
+    /// cut this is name one at the height below) is judged from it.
+    pub checkpoints: BTreeMap<OpHash, u64>,
+}
+
+impl CutIndex {
+    /// What verifying a post-cut op reads of its dep `r` when `r` is its
+    /// author's top op in the cut (`authors`); `None` for any other op.
+    #[must_use]
+    pub fn top_facts<'a>(&self, r: &'a OpRef) -> Option<crate::op::DepFacts<'a>> {
+        let (seq, hash) = self.authors.get(&r.author.0)?;
+        if *seq != r.author_seq || *hash != r.op_hash {
+            return None;
+        }
+        Some(crate::op::DepFacts {
+            author: &r.author,
+            seq: *seq,
+            lamport: *self.lamports.get(&r.author.0)?,
+        })
+    }
 }
 
 /// The canonical encoding of `cut`, under `canonical_state`'s rules.
@@ -67,6 +94,8 @@ pub fn canonical_cut(cut: &CutIndex) -> Vec<u8> {
         invite_codes,
         forks,
         unmerged,
+        lamports,
+        checkpoints,
     } = cut;
     let mut out = Vec::new();
     put_map(&mut out, authors);
@@ -78,6 +107,8 @@ pub fn canonical_cut(cut: &CutIndex) -> Vec<u8> {
     put_map(&mut out, invite_codes);
     put_map(&mut out, forks);
     put_map(&mut out, unmerged);
+    put_map(&mut out, lamports);
+    put_map(&mut out, checkpoints);
     out
 }
 

@@ -44,7 +44,8 @@ pub enum NotOnTop {
     BelowTheCut(OpHash),
     /// A gate needs a fact about this op's cut deps that the snapshot does
     /// not carry (the `issued_at` of a non-power cut dep below the cut's
-    /// greatest, a previous checkpoint in the cut).
+    /// greatest, a previous checkpoint in the cut that the cut index does
+    /// not list among its applied checkpoints).
     Undecidable(OpHash),
 }
 
