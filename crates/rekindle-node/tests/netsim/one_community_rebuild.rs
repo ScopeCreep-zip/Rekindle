@@ -39,8 +39,14 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
     community.governance_key.clone_from(&second);
     community.join(1).await;
     community.governance_key.clone_from(&first);
-    // Every join-time write settles before we watch.
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    // Every join-time write settles before we watch, and so does each
+    // community's height-1 checkpoint proposal: genesis holds power ops, so
+    // the creator proposes one `SWEEP_PERIOD` after the last op, on the next
+    // sweep tick (plan E3.2 S7c.4 "Proposal"). That proposal is a governance
+    // change of its own community, so the idle state this test watches from
+    // is the one after it (traced 2026-11-17: before, node 0's height-1
+    // proposal in the second community landed inside the watch window).
+    tokio::time::sleep(rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD * 3).await;
 
     let events = community.nodes[1].events().await;
     community.nodes[0]
