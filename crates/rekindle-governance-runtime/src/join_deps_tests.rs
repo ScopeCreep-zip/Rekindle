@@ -10,6 +10,7 @@ use crate::op_log::{
 use crate::origin::genesis_entries;
 use crate::test_member::Member;
 use rekindle_codec::governance_op::{decode_op, encode_op};
+use rekindle_governance::checkpoint::Replay;
 use rekindle_governance::merge;
 use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance::state::GovernanceState;
@@ -129,8 +130,46 @@ impl World {
 
     /// `member`'s join on `inviter`'s invite `code`, with shallow deps.
     fn join(&mut self, member: &Member, inviter: &Member, code: &str) -> VerifiedOp {
-        let deps = join_deps(&self.cert, &self.set, &member.author(), &inviter.author()).unwrap();
+        let deps = self.deps_of(member, inviter);
         self.author(member, member.joined(code), Deps::Join(deps))
+    }
+
+    /// `member`'s join deps on `inviter`'s invite, from the held set.
+    fn deps_of(&self, member: &Member, inviter: &Member) -> Vec<OpHash> {
+        let outcome = merge::merge_outcome(&self.cert, &self.set.ops);
+        join_deps(
+            &self.cert,
+            &self.set,
+            &outcome,
+            &member.author(),
+            &inviter.author(),
+        )
+        .unwrap()
+    }
+
+    /// The height-1 checkpoint body over the current frontier.
+    fn checkpoint_body(&self) -> rekindle_types::governance::Checkpoint {
+        let heads = frontier_refs(&self.cert, &self.state, &self.set);
+        let replay = Replay {
+            cert: &self.cert,
+            ops: &self.set.ops,
+            community_id: [7; 32],
+        };
+        replay.body(None, &heads).expect("a checkpoint body")
+    }
+
+    /// `member`'s `Checkpoint` op carrying `body`, citing its cut's heads.
+    fn endorse(
+        &mut self,
+        member: &Member,
+        body: rekindle_types::governance::Checkpoint,
+    ) -> VerifiedOp {
+        let cited = body.cut.iter().map(|r| r.op_hash).collect();
+        self.author(
+            member,
+            GovernanceEntry::Checkpoint(body),
+            Deps::Cited(cited),
+        )
     }
 
     /// The hashes of `author`'s op at `seq`.
@@ -207,7 +246,7 @@ fn a_fold_join_cites_at_most_sixty_four_deps() {
     let mut concurrent = Vec::new();
     for seed in 10..80 {
         let member = Member::new(seed);
-        let deps = join_deps(&world.cert, &world.set, &member.author(), &creator.author()).unwrap();
+        let deps = world.deps_of(&member, &creator);
         concurrent.push(world.build(&member, member.joined("code"), Deps::Join(deps)));
     }
     assert_eq!(world.held, before);
@@ -291,7 +330,7 @@ fn a_join_concurrent_with_the_inviters_removal_is_still_filtered() {
     world.author(&inviter, invite(2, "code2"), Deps::Frontier);
     // The joiner signs before it sees the removal.
     let joiner = Member::new(20);
-    let deps = join_deps(&world.cert, &world.set, &joiner.author(), &inviter.author()).unwrap();
+    let deps = world.deps_of(&joiner, &inviter);
     let (joined, encoded) = world.build(&joiner, joiner.joined("code2"), Deps::Join(deps));
     // The removal follows the inviter's join, not its invite.
     let removal = GovernanceEntry::MemberRemoved {
@@ -305,4 +344,59 @@ fn a_join_concurrent_with_the_inviters_removal_is_still_filtered() {
     world.hold(&joined, encoded);
     assert!(!world.state.members.contains_key(&inviter.author()));
     assert!(!world.state.members.contains_key(&joiner.author()));
+}
+
+/// A community whose member 10 created invite `code2`: the creator, its
+/// invite, member 10's join and its invite op.
+fn with_member_inviter(creator: &Member) -> (World, Member, VerifiedOp) {
+    let mut world = World::new(creator);
+    let inviter = Member::new(10);
+    world.join(&inviter, creator, "code");
+    let own_invite = world.author(&inviter, invite(2, "code2"), Deps::Frontier);
+    (world, inviter, own_invite)
+}
+
+/// IC3: with a usable hint, a join cites a `Checkpoint` op carrying its
+/// digest (the lowest by `(lamport, op_hash)`) in place of the creator's
+/// seq-4 op, so the whole cut is in its causal past.
+#[test]
+fn a_join_cites_a_checkpoint_op_of_its_hint() {
+    let creator = Member::new(1);
+    let (mut world, inviter, own_invite) = with_member_inviter(&creator);
+    let body = world.checkpoint_body();
+    let checkpoint = world.endorse(&creator, body);
+    let outcome = merge::merge_outcome(&world.cert, &world.set.ops);
+    assert_eq!(
+        outcome.hints.latest().map(|h| h.op),
+        Some(checkpoint.hash())
+    );
+    let joined = world.join(&Member::new(20), &inviter, "code2");
+    assert_eq!(
+        dep_hashes(&joined),
+        BTreeSet::from([checkpoint.hash(), own_invite.hash()])
+    );
+    assert!(world.state.members.contains_key(&Member::new(20).author()));
+}
+
+/// Under a checkpoint equivocation (two digests, each with a strict
+/// majority, for one cut and one `prevCheckpoint`) no hint is selected,
+/// so a join cites the creator's seq-4 op, never a `Checkpoint` op.
+#[test]
+fn an_equivocated_community_uses_no_hint() {
+    let creator = Member::new(1);
+    let (mut world, inviter, own_invite) = with_member_inviter(&creator);
+    let base = world.op_at(&creator, GENESIS_LAST_SEQ);
+    let body = world.checkpoint_body();
+    world.endorse(&creator, body.clone());
+    let mut other = body;
+    other.round = 1;
+    other.state_root = [9; 32];
+    world.endorse(&creator, other);
+    let outcome = merge::merge_outcome(&world.cert, &world.set.ops);
+    assert_eq!(outcome.hints.equivocations.len(), 1, "{:?}", outcome.hints);
+    let joined = world.join(&Member::new(20), &inviter, "code2");
+    assert_eq!(
+        dep_hashes(&joined),
+        BTreeSet::from([base, own_invite.hash()])
+    );
 }

@@ -156,12 +156,13 @@ async fn create_member_record<D: GovernanceRuntimeDeps>(
 /// over `INVITE_PROOF ‖ anchor ‖ code hash ‖ memberRecord`) and the owner
 /// proof (`K_M` over `MEMBER_RECORD_BINDING ‖ anchor ‖ pseudonym ‖
 /// memberRecord`, ADR 0011 "Binding"). Its deps are shallow (plan E3.2
-/// S7c.0, [`join_deps`](crate::join_deps::join_deps)): the creator's last
-/// genesis op and `inviter`'s latest op, not the whole frontier.
+/// S7c.0, [`join_deps`](crate::join_deps::join_deps)): a `Checkpoint` op
+/// of `outcome`'s hint (else the creator's last genesis op) and
+/// `inviter`'s latest op, not the whole frontier.
 fn joined_op(
     anchor: &str,
     cert: &GenesisCert,
-    state: &GovernanceState,
+    outcome: &merge::MergeOutcome,
     set: &op_log::VerifiedSet,
     key: &SigningKey,
     member: (&JoinerRecord, String),
@@ -191,7 +192,8 @@ fn joined_op(
         owner_proof: owner_proof.to_vec(),
     };
     let joiner = PseudonymKey(key.verifying_key().to_bytes());
-    let deps = Deps::Join(join_deps(cert, set, &joiner, inviter)?);
+    let deps = Deps::Join(join_deps(cert, set, outcome, &joiner, inviter)?);
+    let state = &outcome.state;
     let (op, encoded) = op_log::build_op(anchor, cert, state, set, key, body, deps, now_secs)?;
     Ok(op_log::held(
         &op,
@@ -232,7 +234,8 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     let start = read_frontier(deps, &invite.inviter_member_record).await?;
     let walked = op_log::walk(deps, anchor, &start).await?;
     let set = op_log::verify_held_with(deps, anchor, &walked);
-    let gov_state = merge::merge(&cert, &set.ops);
+    let merged = merge::merge_outcome(&cert, &set.ops);
+    let gov_state = merged.state.clone();
 
     if gov_state.bans.contains(&identity.pseudo) {
         return Err(GovernanceRuntimeError::Adapter(
@@ -247,7 +250,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     let joined = joined_op(
         anchor,
         &cert,
-        &gov_state,
+        &merged,
         &set,
         &identity.pseudonym_signing,
         (&member, member_owner),

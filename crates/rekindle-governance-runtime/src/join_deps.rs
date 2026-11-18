@@ -5,11 +5,17 @@
 //! `MemberJoined` after a quiescent join, so the DAG's depth grows by one
 //! per join. A join instead cites:
 //!
-//! - **the base**: the creator's last genesis op (seq
-//!   [`GENESIS_LAST_SEQ`](crate::origin::GENESIS_LAST_SEQ), `ChannelCreated`;
-//!   the `GenesisCert` is pinned outside the DAG, so no op stands for it).
-//!   S7c.3/S7c.5 put a `Checkpoint` op of the joiner's hint here once
-//!   checkpoint ops exist; none exist before them;
+//! - **the base**: a `Checkpoint` op of the joiner's hint, the selected
+//!   hint at the greatest height of its merge of the walked set
+//!   (`Hints::latest`), the lowest `(lamport, op_hash)` applied op carrying
+//!   its digest (plan E3.2 S7c.0/S7c.5, IC3). Every `Checkpoint` op's deps
+//!   hold its cut's heads (S7c.3), so the join has the whole cut in its
+//!   causal past and lands on top of it for a reader resuming from that
+//!   hint's snapshot. With no hint (none yet, or a checkpoint
+//!   equivocation, which disables every hint), the creator's last genesis
+//!   op (seq [`GENESIS_LAST_SEQ`](crate::origin::GENESIS_LAST_SEQ),
+//!   `ChannelCreated`; the `GenesisCert` is pinned outside the DAG, so no
+//!   op stands for it);
 //! - **the inviter's latest op**, whose `prev` chain reaches the
 //!   `InviteCreated` the invite gate needs (`gates::invite_gate`);
 //! - on a re-join, **our previous op** (the chain rule: `prev` is among the
@@ -34,10 +40,12 @@
 use std::collections::BTreeSet;
 
 use rekindle_codec::governance_op::GOVERNANCE_OP_MAX_DEPS;
+use rekindle_governance::checkpoint::checkpoint_digest;
+use rekindle_governance::merge::MergeOutcome;
 use rekindle_governance::op::VerifiedOp;
 use rekindle_governance::power::removal_target;
 use rekindle_types::dht_layout::member_record::MAX_FRONTIER_REFS;
-use rekindle_types::governance::{GenesisCert, OpHash};
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use crate::error::GovernanceRuntimeError;
@@ -54,28 +62,44 @@ fn latest_of<'a>(ops: &'a [VerifiedOp], author: &PseudonymKey) -> Option<&'a Ver
         .max_by_key(|op| (op.op().seq, op.stamp()))
 }
 
+/// The lowest `(lamport, op_hash)` applied `Checkpoint` op in `set`
+/// carrying the digest of `outcome`'s selected hint at its greatest
+/// height; `None` with no usable hint or under a checkpoint equivocation.
+fn hint_base<'a>(set: &'a VerifiedSet, outcome: &MergeOutcome) -> Option<&'a VerifiedOp> {
+    let hint = outcome.hints.latest()?;
+    let applied: BTreeSet<OpHash> = outcome.applied.iter().copied().collect();
+    (set.ops.iter())
+        .filter(|op| applied.contains(&op.hash()))
+        .filter(|op| {
+            matches!(op.body(), GovernanceEntry::Checkpoint(c) if checkpoint_digest(c) == hint.digest)
+        })
+        .min_by_key(|op| (op.lamport(), op.hash()))
+}
+
 /// The deps of `joiner`'s `MemberJoined` on the invite of `inviter`, from
-/// the walked set `set`, in canonical (hash) order.
+/// the walked set `set` and its merge `outcome`, in canonical (hash)
+/// order.
 ///
 /// # Errors
-/// The walk holds no creator op at the last genesis seq, or no op of the
-/// inviter.
+/// The walk holds no hint's `Checkpoint` op and no creator op at the last
+/// genesis seq, or no op of the inviter.
 pub fn join_deps(
     cert: &GenesisCert,
     set: &VerifiedSet,
+    outcome: &MergeOutcome,
     joiner: &PseudonymKey,
     inviter: &PseudonymKey,
 ) -> Result<Vec<OpHash>, GovernanceRuntimeError> {
-    let base = set
-        .ops
-        .iter()
-        .filter(|op| *op.author() == cert.creator_pseudonym && op.op().seq == GENESIS_LAST_SEQ)
-        .min_by_key(|op| op.stamp())
-        .ok_or_else(|| {
-            GovernanceRuntimeError::Adapter(
-                "join: the walk holds no creator op at the last genesis seq".into(),
-            )
-        })?;
+    let genesis = || {
+        (set.ops.iter())
+            .filter(|op| *op.author() == cert.creator_pseudonym && op.op().seq == GENESIS_LAST_SEQ)
+            .min_by_key(|op| op.stamp())
+    };
+    let base = hint_base(set, outcome).or_else(genesis).ok_or_else(|| {
+        GovernanceRuntimeError::Adapter(
+            "join: the walk holds no creator op at the last genesis seq".into(),
+        )
+    })?;
     let invited = latest_of(&set.ops, inviter).ok_or_else(|| {
         GovernanceRuntimeError::Adapter("join: the walk holds no op of the inviter".into())
     })?;
