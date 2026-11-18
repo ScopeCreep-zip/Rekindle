@@ -52,22 +52,20 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityJoin { invite } => {
             community::handle_join(ctx, state, &invite).await
         }
-        LifecycleRequest::CommunityLeave { governance_key } => {
-            community::handle_leave(ctx, state, &governance_key).await
+        LifecycleRequest::CommunityLeave { anchor } => {
+            community::handle_leave(ctx, state, &anchor).await
         }
-        LifecycleRequest::CommunityForget { governance_key } => {
-            community::handle_forget(ctx, state, &governance_key).await
+        LifecycleRequest::CommunityForget { anchor } => {
+            community::handle_forget(ctx, state, &anchor).await
         }
         LifecycleRequest::CommunityList => community::handle_list(ctx, state),
         LifecycleRequest::CommunityViews => community::handle_views(ctx, state),
-        LifecycleRequest::CommunityMembers { governance_key } => {
-            community::handle_members(ctx, state, &governance_key).await
+        LifecycleRequest::CommunityMembers { anchor } => {
+            community::handle_members(ctx, state, &anchor).await
         }
-        LifecycleRequest::CommunityInfo { governance_key } => {
-            community::handle_info(ctx, state, &governance_key)
-        }
+        LifecycleRequest::CommunityInfo { anchor } => community::handle_info(ctx, state, &anchor),
         LifecycleRequest::CommunityUpdateInfo {
-            governance_key,
+            anchor,
             name,
             description,
             icon_hash,
@@ -76,7 +74,7 @@ pub(super) async fn route_lifecycle(
             community::handle_update_info(
                 ctx,
                 state,
-                &governance_key,
+                &anchor,
                 crate::host::adapters::governance::InfoEdit {
                     name,
                     description,
@@ -87,26 +85,21 @@ pub(super) async fn route_lifecycle(
             .await
         }
         LifecycleRequest::CommunityApprove {
-            governance_key,
+            anchor,
             member_pseudonym,
-        } => community::handle_approve(ctx, state, &governance_key, &member_pseudonym).await,
+        } => community::handle_approve(ctx, state, &anchor, &member_pseudonym).await,
         LifecycleRequest::CommunityReject {
-            governance_key,
+            anchor,
             member_pseudonym,
             reason,
-        } => {
-            community::handle_reject(ctx, state, &governance_key, &member_pseudonym, &reason).await
-        }
-        LifecycleRequest::CommunityPendingMembers { governance_key } => {
-            community::handle_pending_members(ctx, state, &governance_key)
+        } => community::handle_reject(ctx, state, &anchor, &member_pseudonym, &reason).await,
+        LifecycleRequest::CommunityPendingMembers { anchor } => {
+            community::handle_pending_members(ctx, state, &anchor)
         }
         LifecycleRequest::CommunityTransferOwnership {
-            governance_key,
+            anchor,
             new_owner_pseudonym,
-        } => {
-            community::handle_transfer_ownership(ctx, state, &governance_key, &new_owner_pseudonym)
-                .await
-        }
+        } => community::handle_transfer_ownership(ctx, state, &anchor, &new_owner_pseudonym).await,
         LifecycleRequest::InviteCreate {
             community,
             max_uses,

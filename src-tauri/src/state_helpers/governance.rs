@@ -20,12 +20,12 @@ pub fn governance_state(
 }
 
 /// Get the governance record DHT key for a community.
-pub fn governance_key(state: &Arc<AppState>, community_id: &str) -> Option<String> {
+pub fn anchor(state: &Arc<AppState>, community_id: &str) -> Option<String> {
     state
         .communities
         .read()
         .get(community_id)
-        .and_then(|cs| cs.governance_key.clone())
+        .and_then(|cs| cs.anchor.clone())
 }
 
 /// Tick the community's message clock and return the new value.

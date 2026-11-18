@@ -22,7 +22,7 @@ fn rebuilt(event: &SubscriptionEvent, community: &str) -> bool {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
     let mut community = Community::of(2, 137).await;
-    let first = community.governance_key.clone();
+    let first = community.anchor.clone();
     let created = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityCreate {
@@ -32,13 +32,13 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
             },
         )))
         .await;
-    let second = created["governanceKey"]
+    let second = created["anchor"]
         .as_str()
-        .expect("a governance key")
+        .expect("an anchor key")
         .to_string();
-    community.governance_key.clone_from(&second);
+    community.anchor.clone_from(&second);
     community.join(1).await;
-    community.governance_key.clone_from(&first);
+    community.anchor.clone_from(&first);
     // Every join-time write settles before we watch, and so does each
     // community's height-1 checkpoint proposal: genesis holds power ops, so
     // the creator proposes one `SWEEP_PERIOD` after the last op, on the next

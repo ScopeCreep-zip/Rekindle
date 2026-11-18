@@ -35,7 +35,7 @@ async fn attachment_round_trip() {
     let channel = community.general_id(0).await;
     let uploaded = community.nodes[0]
         .call(pins(PinRequest::AttachmentUpload {
-            community: community.governance_key.clone(),
+            community: community.anchor.clone(),
             channel_id: channel.clone(),
             path: source.display().to_string(),
         }))
@@ -50,7 +50,7 @@ async fn attachment_round_trip() {
     let saved = eventually(&community.sim, LIMIT, || async {
         let answer = reader
             .call(pins(PinRequest::AttachmentDownload {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 channel_id: channel.clone(),
                 attachment_id: attachment_id.clone(),
                 path: target.display().to_string(),

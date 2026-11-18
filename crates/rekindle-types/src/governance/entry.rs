@@ -460,7 +460,7 @@ pub enum GovernanceEntry {
     SegmentAdded {
         segment_index: u32,
         registry_key: String,
-        governance_key: String,
+        anchor: String,
         slot_range_start: u32,
         slot_range_end: u32,
     },

@@ -121,15 +121,15 @@ impl DaemonPresenceAdapter {
             .read()
             .as_ref()
             .and_then(|s| s.community(community_id))
-            .map(|m| (m.registry_key.clone(), m.governance_key.clone()));
+            .map(|m| (m.registry_key.clone(), m.anchor.clone()));
 
         let mut out = Vec::new();
-        if let Some((registry_key, governance_key)) = primary {
+        if let Some((registry_key, anchor)) = primary {
             out.push(SegmentDescriptor {
                 segment_index: 0,
                 registry_key,
                 // Segment 0's governance record is the community's own.
-                governance_key,
+                anchor,
                 slot_range_start: 0,
                 slot_range_end: rekindle_types::dht_layout::SLOTS_PER_SEGMENT,
             });
@@ -144,7 +144,7 @@ impl DaemonPresenceAdapter {
                     registry_key: seg.registry_key.clone(),
                     // Carried rather than dropped: the merged segment
                     // entry has it, and the type can now hold it.
-                    governance_key: seg.governance_key.clone(),
+                    anchor: seg.anchor.clone(),
                     slot_range_start: seg.slot_range_start,
                     slot_range_end: seg.slot_range_end,
                 });

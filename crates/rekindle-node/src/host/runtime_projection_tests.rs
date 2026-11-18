@@ -29,7 +29,7 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
                 mek_generation: 0,
                 member_registry_key: None,
                 my_subkey_index: None,
-                governance_key: None,
+                anchor: None,
             },
         )
     })

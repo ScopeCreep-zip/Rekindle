@@ -57,7 +57,7 @@ fn prompt(role_id: u32) -> OnboardingConfigDto {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn onboarding_answers_never_wait_on_the_network() {
     let community = Community::of(2, 231).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
@@ -132,7 +132,7 @@ async fn generations(community: &Community) -> Vec<u64> {
                 .and_then(|views| {
                     views
                         .iter()
-                        .find(|v| v["id"].as_str() == Some(community.governance_key.as_str()))
+                        .find(|v| v["id"].as_str() == Some(community.anchor.as_str()))
                 })
                 .and_then(|v| v["mekGeneration"].as_u64())
                 .unwrap_or_default(),
@@ -159,7 +159,7 @@ async fn a_manual_rotation_never_waits_and_every_reader_accepts_its_bump() {
         community.nodes[0]
             .ok(IpcRequest::Community(CommunityRequest::Messages(
                 ChannelMessageRequest::MekRotate {
-                    community: community.governance_key.clone(),
+                    community: community.anchor.clone(),
                     channel: String::new(),
                 },
             )))

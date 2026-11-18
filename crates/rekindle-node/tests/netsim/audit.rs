@@ -12,7 +12,7 @@ use crate::harness::{eventually, Community};
 
 fn audit_log(community: &Community) -> IpcRequest {
     IpcRequest::Community(CommunityRequest::Audit(AuditRequest::AuditLog {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
         before_timestamp: None,
         limit: 50,
     }))
@@ -37,7 +37,7 @@ async fn audit_log_records_moderation_and_roles() {
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 name: "raiders".into(),
                 permissions: 0,
                 color: 0,
@@ -52,7 +52,7 @@ async fn audit_log_records_moderation_and_roles() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 member_pseudonym: bea.clone(),
                 role_id,
             },
@@ -61,7 +61,7 @@ async fn audit_log_records_moderation_and_roles() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Ban {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: cat.clone(),
                 reason: Some("spam".into()),
             },
@@ -100,7 +100,7 @@ async fn notification_default_reaches_members() {
     let get = |i: usize| {
         community.nodes[i].ok(IpcRequest::Community(CommunityRequest::Audit(
             AuditRequest::NotificationDefaultGet {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
     };
@@ -108,7 +108,7 @@ async fn notification_default_reaches_members() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Audit(
             AuditRequest::NotificationDefaultSet {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 level: "mentions".into(),
             },
         )))
@@ -123,7 +123,7 @@ async fn notification_default_reaches_members() {
     let refused = community.nodes[1]
         .call(IpcRequest::Community(CommunityRequest::Audit(
             AuditRequest::NotificationDefaultSet {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 level: "nothing".into(),
             },
         )))

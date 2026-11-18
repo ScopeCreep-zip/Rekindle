@@ -21,7 +21,7 @@ pub enum EventScope {
     /// This device and identity as a whole: own presence, network state,
     /// device-level notifications, invites into new conversations.
     Device,
-    /// One community, by governance key.
+    /// One community, by anchor key.
     Community(String),
     /// A community being joined. No view of it exists yet, so it belongs
     /// to wherever the join was started.

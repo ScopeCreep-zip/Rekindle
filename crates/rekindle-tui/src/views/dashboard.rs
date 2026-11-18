@@ -445,7 +445,7 @@ impl View for DashboardView {
                     FocusId::DoctorList => Some(Action::ShowDoctor),
                     FocusId::ChannelTree => {
                         self.communities.first().map(|c| Action::ShowCommunityInfo {
-                            community: c.governance_key.clone(),
+                            community: c.anchor.clone(),
                         })
                     }
                     FocusId::FriendList => Some(Action::ShowFriendList),
@@ -492,7 +492,7 @@ impl View for DashboardView {
             KeyCode::Char('d') => Some(Action::ShowDmInbox),
             KeyCode::Char('f') => Some(Action::ShowFriendList),
             KeyCode::Char('c') => self.communities.first().map(|c| Action::ShowCommunityInfo {
-                community: c.governance_key.clone(),
+                community: c.anchor.clone(),
             }),
             // h/l for horizontal grid navigation — intercepted here as raw keys
             // because the global keymap maps h→Back and l→Select which get
@@ -521,7 +521,7 @@ impl View for DashboardView {
                     FocusId::ChannelTree => {
                         if let Some(c) = self.communities.first() {
                             Some(Action::ShowCommunityInfo {
-                                community: c.governance_key.clone(),
+                                community: c.anchor.clone(),
                             })
                         } else {
                             // No communities yet — still navigate to show the empty state
@@ -558,7 +558,7 @@ impl View for DashboardView {
                     FocusId::DoctorList => Some(Action::ShowDoctor),
                     FocusId::ChannelTree => {
                         self.communities.first().map(|c| Action::ShowCommunityInfo {
-                            community: c.governance_key.clone(),
+                            community: c.anchor.clone(),
                         })
                     }
                     FocusId::FriendList => Some(Action::ShowFriendList),

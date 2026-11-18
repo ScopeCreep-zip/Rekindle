@@ -1,7 +1,7 @@
 //! The Host's one community store (plan E3.1 A1).
 //!
 //! [`CommunityMap`] is the one map of joined communities, keyed by
-//! governance key: `HostStores::communities`, which the GUI's
+//! anchor key: `HostStores::communities`, which the GUI's
 //! `AppState.communities` is in Shell mode, so what either side writes the
 //! other reads. [`CommunityStore`] is the daemon's typed view of it
 //! (`DaemonContext::communities`): the governance cache, the leases, the
@@ -25,7 +25,7 @@ use rekindle_db::repo::communities::snapshot::StoredGovernance;
 use super::state::{CommunityState, MemberRecord};
 use crate::host::adapters::governance::projection::{self, GovernanceProjected};
 
-/// Every joined community, keyed by governance key.
+/// Every joined community, keyed by anchor key.
 pub type CommunityMap = Arc<RwLock<HashMap<String, CommunityState>>>;
 
 /// A new, empty [`CommunityMap`].
@@ -413,7 +413,7 @@ impl CommunityStore {
         dht_owner_keypair: Option<&str>,
         registry_owner_keypair: Option<&str>,
     ) {
-        self.write(&membership.governance_key, |c| {
+        self.write(&membership.anchor, |c| {
             c.name.clone_from(&membership.community_name);
             c.my_pseudonym_key = Some(membership.pseudonym_key.clone());
             c.member_registry_key =

@@ -138,7 +138,7 @@ pub(crate) async fn load(
 /// the Host store is authoritative).
 pub(crate) fn membership(state: &CommunityState) -> CommunityMembership {
     CommunityMembership {
-        governance_key: state.id.clone(),
+        anchor: state.id.clone(),
         pseudonym_key: state.my_pseudonym_key.clone().unwrap_or_default(),
         registry_key: state.member_registry_key.clone().unwrap_or_default(),
         slot_index: state.my_subkey_index.unwrap_or(0),

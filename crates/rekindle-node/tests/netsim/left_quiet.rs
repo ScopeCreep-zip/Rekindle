@@ -13,7 +13,7 @@ use crate::harness::Community;
 
 /// The leaver's gossip sends for the community so far.
 fn sends(community: &Community) -> Vec<String> {
-    crate::logs::logged(1, &["send_to_mesh", community.governance_key.as_str()])
+    crate::logs::logged(1, &["send_to_mesh", community.anchor.as_str()])
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -32,7 +32,7 @@ async fn a_member_that_left_sends_nothing_for_the_community() {
     community.nodes[1]
         .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await

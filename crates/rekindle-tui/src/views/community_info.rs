@@ -33,7 +33,7 @@ use crate::theme::ThemeManager;
 /// Community info view state.
 pub struct CommunityInfoView {
     focus: FocusRing,
-    /// Community governance key.
+    /// Community anchor key.
     community: String,
     /// Loaded community detail (None until CommandResult arrives).
     detail: Option<CommunityDetail>,
@@ -55,14 +55,14 @@ impl CommunityInfoView {
         }
     }
 
-    /// The community governance key.
+    /// The community anchor key.
     pub fn community(&self) -> &str {
         &self.community
     }
 
     /// Render the metadata section.
     fn render_metadata(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
-        let gov_short = helpers::abbreviate_key(&detail.governance_key);
+        let gov_short = helpers::abbreviate_key(&detail.anchor);
         let owner_short = helpers::abbreviate_key(&detail.owner_pseudonym);
         let created = helpers::format_timestamp(detail.created_at);
         let our_key = helpers::abbreviate_key(&detail.our_pseudonym);
@@ -315,7 +315,7 @@ impl View for CommunityInfoView {
 
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
         if let CommandResult::CommunityInfoLoaded { detail } = result {
-            if detail.governance_key == self.community {
+            if detail.anchor == self.community {
                 self.detail = Some(detail);
                 self.loading = false;
             }

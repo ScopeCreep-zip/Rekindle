@@ -7,7 +7,7 @@ use crate::host::identity;
 
 fn membership() -> CommunityMembership {
     CommunityMembership {
-        governance_key: "gov-key".into(),
+        anchor: "gov-key".into(),
         pseudonym_key: "cd".repeat(32),
         registry_key: "reg-key".into(),
         slot_index: 3,

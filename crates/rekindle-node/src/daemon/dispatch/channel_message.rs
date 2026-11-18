@@ -25,10 +25,10 @@ pub(crate) async fn handle_send(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let Some((_, channel_id)) = resolve_channel(ctx, &membership.governance_key, channel) else {
+    let Some((_, channel_id)) = resolve_channel(ctx, &membership.anchor, channel) else {
         return IpcResponse::error(404, format!("channel '{channel}' not found"));
     };
-    post(ctx, &membership.governance_key, &channel_id, body, reply_to).await
+    post(ctx, &membership.anchor, &channel_id, body, reply_to).await
 }
 
 /// Post `body` to `channel` (a channel id; plan E3.1 E2b).
@@ -155,12 +155,7 @@ pub(crate) async fn handle_read(
             before_timestamp,
             limit,
         } => match ctx.resolve_community(&community) {
-            Ok(membership) => (
-                membership.governance_key,
-                channel,
-                Some(before_timestamp),
-                limit,
-            ),
+            Ok(membership) => (membership.anchor, channel, Some(before_timestamp), limit),
             Err(e) => return e,
         },
         _ => return IpcResponse::error(400, "not a channel history request"),

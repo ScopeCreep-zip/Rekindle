@@ -75,7 +75,7 @@ async fn kick_and_rejoin(community: &mut Community) -> String {
     // That op log, only, stays refusing: the re-join's fresh member record
     // takes its writes.
     let first_record = (community.nodes[0].host.governance())
-        .governance_state(&community.governance_key)
+        .governance_state(&community.anchor)
         .and_then(|state| {
             (state.members.get(&PseudonymKey::from_hex_lossy(&bea)))
                 .map(|m| m.member_record.clone())
@@ -90,7 +90,7 @@ async fn kick_and_rejoin(community: &mut Community) -> String {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },
@@ -142,7 +142,7 @@ async fn a_kicked_member_rejoins_and_posts() {
 /// Node `i`'s merged members and removals, by pseudonym.
 fn roster(community: &Community, i: usize) -> (Vec<PseudonymKey>, Vec<PseudonymKey>) {
     let state = (community.nodes[i].host.governance())
-        .governance_state(&community.governance_key)
+        .governance_state(&community.anchor)
         .expect("a merged governance state");
     let mut members: Vec<PseudonymKey> = state.members.keys().cloned().collect();
     let mut removed: Vec<PseudonymKey> = state.removed.keys().cloned().collect();
@@ -190,7 +190,7 @@ async fn a_member_joining_after_a_kick_and_rejoin_sees_the_rejoiner() {
     // (`GovernanceState::removed`); a re-joined member is not departed.
     assert!(removed.contains(&bea_key), "the kick stays recorded");
     let departed = (community.nodes[2].host.governance())
-        .governance_state(&community.governance_key)
+        .governance_state(&community.anchor)
         .is_some_and(|state| state.is_departed(&bea_key));
     assert!(!departed, "bea is not departed for the third member");
 
@@ -229,7 +229,7 @@ async fn restart(community: &Community, nodes: &[usize]) {
                 matches!(
                     e,
                     SubscriptionEvent::Governance(GovernanceEvent::GovernanceRebuilt { community: c })
-                        if *c == community.governance_key
+                        if *c == community.anchor
                 )
             })
         })
@@ -264,7 +264,7 @@ async fn a_restart_after_a_kick_and_rejoin_keeps_the_rejoiner() {
             "node {i} lists bea after its restart"
         );
         let state = (community.nodes[i].host.governance())
-            .governance_state(&community.governance_key)
+            .governance_state(&community.anchor)
             .expect("a rebuilt governance state");
         assert!(
             state.members.contains_key(&bea_key) && !state.is_departed(&bea_key),

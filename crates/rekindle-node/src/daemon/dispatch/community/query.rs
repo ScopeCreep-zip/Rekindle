@@ -39,8 +39,8 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         .iter()
         .map(|m| {
             (
-                m.governance_key.clone(),
-                u32::try_from(ctx.communities.member_count(&m.governance_key)).unwrap_or(u32::MAX),
+                m.anchor.clone(),
+                u32::try_from(ctx.communities.member_count(&m.anchor)).unwrap_or(u32::MAX),
             )
         })
         .collect();
@@ -53,21 +53,21 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         .map(|m| {
             let n = ctx
                 .communities
-                .governance_state(&m.governance_key)
+                .governance_state(&m.anchor)
                 .map_or(0, |gov| {
                     u32::try_from(gov.channels.len()).unwrap_or(u32::MAX)
                 });
-            (m.governance_key.clone(), n)
+            (m.anchor.clone(), n)
         })
         .collect();
 
     let metadata: HashMap<String, rekindle_transport::CommunityMetaSummary> = memberships
         .iter()
         .filter_map(|m| {
-            let gov = ctx.communities.governance_state(&m.governance_key)?;
+            let gov = ctx.communities.governance_state(&m.anchor)?;
             let meta = gov.metadata.as_ref()?;
             Some((
-                m.governance_key.clone(),
+                m.anchor.clone(),
                 rekindle_transport::CommunityMetaSummary {
                     name: meta.name.clone(),
                     description: meta.description.clone().unwrap_or_default(),
@@ -89,31 +89,25 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         &metadata,
     );
     for overview in &mut overviews {
-        overview.removed = crate::host::adapters::governance::removal_display(
-            &ctx.communities,
-            &overview.governance_key,
-        );
+        overview.removed =
+            crate::host::adapters::governance::removal_display(&ctx.communities, &overview.anchor);
     }
     IpcResponse::ok(&overviews)
 }
 
-pub(crate) fn handle_info(
-    ctx: &DaemonContext,
-    state: DaemonState,
-    governance_key: &str,
-) -> IpcResponse {
+pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let membership = match ctx.resolve_community(governance_key) {
+    let membership = match ctx.resolve_community(anchor) {
         Ok(m) => m,
         Err(e) => return e,
     };
     let member_count =
-        u32::try_from(ctx.communities.member_count(&membership.governance_key)).unwrap_or(u32::MAX);
-    let channels = super::super::channel::channel_overviews(ctx, &membership.governance_key);
-    let roles = super::super::governance::role_displays(ctx, &membership.governance_key);
-    let gov = ctx.communities.governance_state(&membership.governance_key);
+        u32::try_from(ctx.communities.member_count(&membership.anchor)).unwrap_or(u32::MAX);
+    let channels = super::super::channel::channel_overviews(ctx, &membership.anchor);
+    let roles = super::super::governance::role_displays(ctx, &membership.anchor);
+    let gov = ctx.communities.governance_state(&membership.anchor);
     let meta = gov
         .as_ref()
         .map(|gov| rekindle_transport::CommunityMetaSummary {
@@ -140,13 +134,11 @@ pub(crate) fn handle_info(
         member_count,
         channels,
         roles,
-        ctx.communities.my_role_ids(&membership.governance_key),
+        ctx.communities.my_role_ids(&membership.anchor),
         meta,
     );
-    detail.removed = crate::host::adapters::governance::removal_display(
-        &ctx.communities,
-        &membership.governance_key,
-    );
+    detail.removed =
+        crate::host::adapters::governance::removal_display(&ctx.communities, &membership.anchor);
     IpcResponse::ok(&detail)
 }
 
@@ -162,17 +154,17 @@ pub(crate) fn handle_views(ctx: &DaemonContext, state: DaemonState) -> IpcRespon
 pub(crate) async fn handle_members(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
 ) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let membership = match ctx.resolve_community(governance_key) {
+    let membership = match ctx.resolve_community(anchor) {
         Ok(m) => m,
         Err(e) => return e,
     };
     match crate::daemon::dispatch::adapter(ctx)
-        .community_members(&membership.governance_key)
+        .community_members(&membership.anchor)
         .await
     {
         Ok(members) => IpcResponse::ok(&members),

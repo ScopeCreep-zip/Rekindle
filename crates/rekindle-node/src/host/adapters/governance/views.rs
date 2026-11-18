@@ -68,7 +68,7 @@ fn community_view(c: &CommunityState) -> CommunityView {
         my_pseudonym_key: c.my_pseudonym_key.clone(),
         mek_generation: c.mek_generation,
         member_registry_key: c.member_registry_key.clone(),
-        governance_key: c.governance_key.clone(),
+        anchor: c.anchor.clone(),
         onboarding_complete: c.onboarding_complete,
         my_bio: c.my_bio.clone(),
         my_pronouns: c.my_pronouns.clone(),

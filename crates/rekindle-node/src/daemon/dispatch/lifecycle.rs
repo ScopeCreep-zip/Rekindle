@@ -105,7 +105,7 @@ pub(crate) async fn daemon_overlays(
         meshes,
     );
     for membership in session.communities.values() {
-        bcast_mgr.register_mesh(&membership.governance_key);
+        bcast_mgr.register_mesh(&membership.anchor);
     }
     *ctx.broadcast_mgr.write() = Some(bcast_mgr);
     Ok(())

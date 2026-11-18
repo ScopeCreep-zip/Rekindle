@@ -25,7 +25,7 @@ pub(crate) fn handle_update_profile(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).update_profile(&membership.governance_key, edit) {
+    match adapter(ctx).update_profile(&membership.anchor, edit) {
         Ok(()) => IpcResponse::ok(&()),
         Err(e) => IpcResponse::error(404, format!("community profile: {e}")),
     }
@@ -48,7 +48,7 @@ pub(crate) async fn handle_set_picture(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .set_community_picture(&membership.governance_key, image, kind, slot)
+        .set_community_picture(&membership.anchor, image, kind, slot)
         .await
     {
         Ok(hash) => IpcResponse::ok(&hash),
@@ -71,7 +71,7 @@ pub(crate) async fn handle_picture(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .community_picture_data_url(&membership.governance_key, hash)
+        .community_picture_data_url(&membership.anchor, hash)
         .await
     {
         Ok(url) => IpcResponse::ok(&url),
@@ -92,7 +92,7 @@ pub(crate) fn handle_policy(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).community_policy(&membership.governance_key) {
+    match adapter(ctx).community_policy(&membership.anchor) {
         Ok(policy) => IpcResponse::ok(&policy),
         Err(e) => runtime_refused(&e, "community policy"),
     }
@@ -113,7 +113,7 @@ pub(crate) async fn handle_set_policy(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .set_community_policy(&membership.governance_key, edit)
+        .set_community_policy(&membership.anchor, edit)
         .await
     {
         Ok(()) => IpcResponse::ok(&()),

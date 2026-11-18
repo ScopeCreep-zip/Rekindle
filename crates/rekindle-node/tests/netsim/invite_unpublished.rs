@@ -28,7 +28,7 @@ use crate::harness::{eventually, Community};
 pub(crate) fn creator_record(community: &Community) -> String {
     let cert = community
         .sim
-        .network_get(&community.governance_key, community_anchor::GENESIS_CERT)
+        .network_get(&community.anchor, community_anchor::GENESIS_CERT)
         .expect("the anchor's GenesisCert");
     rekindle_codec::governance_op::genesis::decode_genesis(&cert.data)
         .expect("a GenesisCert")
@@ -39,7 +39,7 @@ pub(crate) fn creator_record(community: &Community) -> String {
 
 fn invite_list(community: &Community) -> IpcRequest {
     IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::InviteList {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
     }))
 }
 
@@ -54,7 +54,7 @@ async fn no_invite_link_until_its_op_is_on_the_dht() {
     let refused = community.nodes[0]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::InviteCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 max_uses: 1,
                 expires_seconds: None,
             },
@@ -104,7 +104,7 @@ async fn a_governance_command_answers_pending_within_the_bound() {
         of: Writes::Record(record),
     });
     let create = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
         name: "queued".into(),
         kind: "text".into(),
         category: None,
@@ -125,7 +125,7 @@ async fn a_governance_command_answers_pending_within_the_bound() {
 
     community.sim.fault(Fault::Heal);
     let list = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelList {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
     }));
     let landed = eventually(&community.sim, Duration::from_secs(900), || async {
         community.nodes[1]
@@ -206,7 +206,7 @@ async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
         )))
         .await;
     assert!(
-        listed.to_string().contains(&community.governance_key),
+        listed.to_string().contains(&community.anchor),
         "the join's local side is done: {listed}"
     );
 
@@ -214,7 +214,7 @@ async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
     let leave = community.nodes[1]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await;

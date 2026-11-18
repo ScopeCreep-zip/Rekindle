@@ -17,7 +17,7 @@ pub enum KeyCmd {
 
     /// Show crypto state for a community (MEK cache, session count).
     Inspect {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
@@ -28,14 +28,14 @@ pub enum KeyCmd {
 pub enum MekCmd {
     /// List cached MEKs per channel with generation.
     List {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
 
     /// Force MEK rotation (requires MANAGE_CHANNELS).
     Rotate {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -45,7 +45,7 @@ pub enum MekCmd {
 
     /// Request current MEK from peers.
     Request {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.

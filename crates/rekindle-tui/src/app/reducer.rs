@@ -287,7 +287,7 @@ impl App {
                 self.cached_communities = communities
                     .iter()
                     .map(|c| super::CachedCommunity {
-                        governance_key: c.governance_key.clone(),
+                        anchor: c.anchor.clone(),
                         name: c.name.clone(),
                         our_pseudonym: c.our_pseudonym.clone(),
                     })

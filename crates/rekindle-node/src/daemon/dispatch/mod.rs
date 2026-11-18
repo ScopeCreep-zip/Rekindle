@@ -216,7 +216,7 @@ pub struct DaemonContext {
     /// daemon (`ExitReason::HandlerPanic`) and ends the GUI's session.
     pub unlock_scope: RwLock<Option<Arc<rekindle_lifecycle::SessionScope>>>,
     /// Per-community children of the unlock scope (the presence poll),
-    /// keyed by governance key. The polls hold an `Arc<DaemonContext>` and
+    /// keyed by anchor key. The polls hold an `Arc<DaemonContext>` and
     /// write presence rows, so leaving a community shuts its scope down
     /// and locking shuts them all down with the unlock scope.
     pub community_scopes: parking_lot::Mutex<

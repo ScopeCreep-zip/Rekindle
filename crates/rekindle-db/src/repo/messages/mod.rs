@@ -350,7 +350,7 @@ mod tests {
                 mek_generation: 1,
                 member_registry_key: None,
                 my_subkey_index: None,
-                governance_key: Some("c1"),
+                anchor: Some("c1"),
             },
         )
         .unwrap();

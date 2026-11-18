@@ -14,7 +14,7 @@ async fn members(community: &Community, i: usize) -> Vec<String> {
     community.nodes[i]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityMembers {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await
@@ -46,7 +46,7 @@ async fn invite_join_leave() {
     community.nodes[1]
         .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await
@@ -65,7 +65,7 @@ async fn invite_join_leave() {
         )))
         .await;
     assert!(
-        !listed.to_string().contains(&community.governance_key),
+        !listed.to_string().contains(&community.anchor),
         "the leaver no longer lists the community: {listed}"
     );
     let views = community.nodes[1]
@@ -77,7 +77,7 @@ async fn invite_join_leave() {
     let refused = community.nodes[1]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityMembers {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await

@@ -47,7 +47,7 @@ pub(crate) async fn handle(
         | PinRequest::VoiceMessageAudio { community, .. } => community.clone(),
     };
     let key = match ctx.resolve_community(&community) {
-        Ok(m) => m.governance_key,
+        Ok(m) => m.anchor,
         Err(e) => return e,
     };
     match request {

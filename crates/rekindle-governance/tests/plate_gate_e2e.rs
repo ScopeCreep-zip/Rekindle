@@ -9,7 +9,7 @@
 //!      (architecture §15.4 lazy channel record).
 //!   4. Both members' entries are merged in arbitrary order; the
 //!      resulting `GovernanceState` exposes:
-//!        - the segment-1 registry+governance keys in `segments`
+//!        - the segment-1 registry+anchor keys in `segments`
 //!        - the segment-1 channel SMPL key in `channel_segment_records`
 //!        - both members are valid writers (validate_write passes)
 //!
@@ -115,7 +115,7 @@ fn admin_entries() -> Vec<Stamped> {
             GovernanceEntry::SegmentAdded {
                 segment_index: 1,
                 registry_key: "VLD0:REG-1".into(),
-                governance_key: "VLD0:GOV-1".into(),
+                anchor: "VLD0:GOV-1".into(),
                 slot_range_start: 255,
                 slot_range_end: 510,
             },
@@ -153,7 +153,7 @@ fn segment1_record_appears_in_state_and_validates() {
     assert_eq!(state.segments.len(), 1);
     assert_eq!(state.segments[0].segment_index, 1);
     assert_eq!(state.segments[0].registry_key, "VLD0:REG-1");
-    assert_eq!(state.segments[0].governance_key, "VLD0:GOV-1");
+    assert_eq!(state.segments[0].anchor, "VLD0:GOV-1");
 
     // Segment-1's lazy channel record landed under the right key.
     let record = state

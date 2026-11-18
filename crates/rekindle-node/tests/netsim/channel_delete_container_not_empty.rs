@@ -23,7 +23,7 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
     let created = creator
         .ok(IpcRequest::Community(CommunityRequest::Channels(
             ChannelRequest::ChannelCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 name: "doomed".into(),
                 kind: "text".into(),
                 category: None,
@@ -54,7 +54,7 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
 
     let delete = || {
         IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelDelete {
-            community: community.governance_key.clone(),
+            community: community.anchor.clone(),
             channel_id: channel.clone(),
         }))
     };

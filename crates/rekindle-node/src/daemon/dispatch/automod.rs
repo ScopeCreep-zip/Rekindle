@@ -31,7 +31,7 @@ pub(crate) async fn handle(
         }
     };
     let key = match ctx.resolve_community(&community) {
-        Ok(m) => m.governance_key,
+        Ok(m) => m.anchor,
         Err(e) => return e,
     };
     let host = adapter(ctx);

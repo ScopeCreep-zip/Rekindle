@@ -37,7 +37,7 @@ pub(super) fn writable(
         return Err(state_error(state, "write"));
     }
     ctx.require_transport()?;
-    Ok(ctx.resolve_community(community)?.governance_key)
+    Ok(ctx.resolve_community(community)?.anchor)
 }
 
 pub(crate) fn handle_role_list(
@@ -49,7 +49,7 @@ pub(crate) fn handle_role_list(
         return state_error(state, "query");
     }
     match ctx.resolve_community(community) {
-        Ok(m) => IpcResponse::ok(&adapter(ctx).role_list(&m.governance_key)),
+        Ok(m) => IpcResponse::ok(&adapter(ctx).role_list(&m.anchor)),
         Err(e) => e,
     }
 }
@@ -260,7 +260,7 @@ pub(crate) async fn handle_ban_list(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).ban_list(&membership.governance_key).await {
+    match adapter(ctx).ban_list(&membership.anchor).await {
         Ok(bans) => IpcResponse::ok(&bans),
         Err(e) => IpcResponse::error(500, e),
     }
@@ -279,7 +279,7 @@ pub(crate) fn handle_mod_report_list(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).mod_reports(&membership.governance_key) {
+    match adapter(ctx).mod_reports(&membership.anchor) {
         Ok(reports) => IpcResponse::ok(&reports),
         Err(e) => IpcResponse::error(403, e.to_string()),
     }
@@ -305,7 +305,7 @@ pub(crate) async fn handle_invite_create(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .create_invite(&membership.governance_key, max_uses, expires_seconds)
+        .create_invite(&membership.anchor, max_uses, expires_seconds)
         .await
     {
         Ok(created) => IpcResponse::ok(&created),
@@ -325,7 +325,7 @@ pub(crate) async fn handle_invite_list(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).list_invites(&membership.governance_key).await {
+    match adapter(ctx).list_invites(&membership.anchor).await {
         Ok(invites) => IpcResponse::ok(&invites),
         Err(e) => IpcResponse::error(500, e),
     }
@@ -356,10 +356,7 @@ pub(crate) async fn handle_invite_revoke(
     else {
         return IpcResponse::error(400, "revoke takes the 16-byte invite id from `invite list`");
     };
-    match adapter(ctx)
-        .revoke_invite(&membership.governance_key, id)
-        .await
-    {
+    match adapter(ctx).revoke_invite(&membership.anchor, id).await {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "revoked": invite_id })),
         Err(e) => IpcResponse::error(500, e),
     }

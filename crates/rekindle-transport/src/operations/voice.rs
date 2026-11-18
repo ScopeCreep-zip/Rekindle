@@ -50,7 +50,7 @@ pub fn join_voice(
     info!(channel = channel_id, community = %membership.community_name, "voice session established");
 
     Ok(VoiceSession {
-        community_id: membership.governance_key.clone(),
+        community_id: membership.anchor.clone(),
         channel_id: channel_id.to_string(),
         our_route_blob: route_blob,
         muted,

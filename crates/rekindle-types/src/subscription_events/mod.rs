@@ -171,7 +171,7 @@ impl SubscriptionEvent {
         }
     }
 
-    /// Extract the community governance key from this event, if it has one.
+    /// Extract the community anchor key from this event, if it has one.
     /// Returns None for global events (friend, network, unread).
     pub fn community(&self) -> Option<&str> {
         match self {
@@ -294,7 +294,7 @@ impl SubscriptionEvent {
 pub struct SubscriptionFilter {
     /// Event categories to match. None = all categories.
     pub categories: Option<Vec<EventCategory>>,
-    /// Community scope (governance key). None = all communities + global events.
+    /// Community scope (anchor key). None = all communities + global events.
     /// Some(key) = only events for that community + global events.
     pub community_scope: Option<String>,
 }

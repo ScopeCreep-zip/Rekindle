@@ -141,8 +141,8 @@ impl HostGovernance {
                     rekindle_crypto::keypair_text::slot_keypair_text(seed, m.slot_index).ok()
                 });
                 CommunityDhtOpenSetup {
-                    id: m.governance_key.clone(),
-                    governance_key: m.governance_key.clone(),
+                    id: m.anchor.clone(),
+                    anchor: m.anchor.clone(),
                     registry_key: (!m.registry_key.is_empty()).then(|| m.registry_key.clone()),
                     registry_writer: slot_writer.clone(),
                     slot_writer,

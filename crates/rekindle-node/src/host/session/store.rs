@@ -268,7 +268,7 @@ pub fn record_membership(
         genesis_cert,
         joined_at,
     } = new;
-    let community = membership.governance_key.clone();
+    let community = membership.anchor.clone();
     // Decoded before anything is stored: a cert that does not decode
     // records nothing.
     let cert = genesis_cert
@@ -331,7 +331,7 @@ pub fn record_membership(
             conn,
             &owner,
             &repo::communities::NewCommunity {
-                id: &row.governance_key,
+                id: &row.anchor,
                 name: &row.community_name,
                 joined_at,
                 dht_owner_keypair: dht_owner_keypair.as_deref(),
@@ -339,13 +339,13 @@ pub fn record_membership(
                 mek_generation: i64::try_from(row.mek_generation).unwrap_or(i64::MAX),
                 member_registry_key: Some(&row.registry_key),
                 my_subkey_index: Some(row.slot_index),
-                governance_key: Some(&row.governance_key),
+                anchor: Some(&row.anchor),
             },
         )?;
         repo::communities::set(
             conn,
             &owner,
-            &row.governance_key,
+            &row.anchor,
             repo::communities::Column::MySegmentIndex,
             row.segment_index.unwrap_or(0),
         )?;
@@ -353,7 +353,7 @@ pub fn record_membership(
             repo::communities::set(
                 conn,
                 &owner,
-                &row.governance_key,
+                &row.anchor,
                 repo::communities::Column::GenesisCert,
                 cert,
             )?;
@@ -361,7 +361,7 @@ pub fn record_membership(
         repo::communities::raise_clock(
             conn,
             &owner,
-            &row.governance_key,
+            &row.anchor,
             i64::try_from(row.lamport_counter).unwrap_or(i64::MAX),
         )
     });

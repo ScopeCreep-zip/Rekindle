@@ -19,7 +19,7 @@ pub(super) async fn selection(
 ) -> Result<(), IpcResponse> {
     let (community, event_id) = match request {
         ActivityRequest::EventCreate { community, event } => {
-            let id = ctx.resolve_community(community)?.governance_key;
+            let id = ctx.resolve_community(community)?.anchor;
             s.subject = Subject::Named {
                 name: event.title.clone(),
             };
@@ -47,7 +47,7 @@ pub(super) async fn selection(
         } => (community, event_id),
         _ => return Ok(()),
     };
-    let id = ctx.resolve_community(community)?.governance_key;
+    let id = ctx.resolve_community(community)?.anchor;
     let title = crate::daemon::dispatch::adapter(ctx)
         .events(&id)
         .await

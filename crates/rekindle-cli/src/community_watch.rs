@@ -25,9 +25,9 @@ pub async fn watch(
     community: Option<&str>,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
-    // Events name a community by governance key; the user may give a name.
+    // Events name a community by anchor key; the user may give a name.
     let community_scope = match community {
-        Some(community) => Some(governance_key(client, community).await?),
+        Some(community) => Some(anchor(client, community).await?),
         None => None,
     };
     let filter = SubscriptionFilter {
@@ -37,19 +37,19 @@ pub async fn watch(
     crate::watch::stream(client, vec![filter], mode, render).await
 }
 
-async fn governance_key(client: &DaemonClient, community: &str) -> anyhow::Result<String> {
+async fn anchor(client: &DaemonClient, community: &str) -> anyhow::Result<String> {
     let detail: rekindle_types::display::CommunityDetail = serde_json::from_value(
         helpers::send(
             client,
             IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityInfo {
-                    governance_key: community.to_owned(),
+                    anchor: community.to_owned(),
                 },
             )),
         )
         .await?,
     )?;
-    Ok(detail.governance_key)
+    Ok(detail.anchor)
 }
 
 /// The text line for a community event; `None` for any other event.

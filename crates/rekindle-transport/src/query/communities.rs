@@ -56,7 +56,7 @@ pub struct CommunityMetaSummary {
 ///
 /// Reads each community's governance metadata subkey for
 /// name/description. `member_counts` and `channel_counts` are keyed
-/// by governance key; a community missing from either reports zero.
+/// by anchor key; a community missing from either reports zero.
 ///
 /// Both come from the caller for the same reason: they are answers
 /// the merged CRDT holds, and this layer has no access to it. The
@@ -73,7 +73,7 @@ pub fn list_communities<S: std::hash::BuildHasher>(
     let mut result = Vec::with_capacity(memberships.len());
 
     for m in memberships {
-        let (name, description) = match metadata.get(&m.governance_key) {
+        let (name, description) = match metadata.get(&m.anchor) {
             Some(meta) => (meta.name.clone(), meta.description.clone()),
             // The persisted membership name is the fallback for a
             // community whose `CommunityMeta` has not merged yet.
@@ -81,17 +81,11 @@ pub fn list_communities<S: std::hash::BuildHasher>(
         };
 
         result.push(CommunityOverview {
-            governance_key: m.governance_key.clone(),
+            anchor: m.anchor.clone(),
             name,
             description,
-            member_count: member_counts
-                .get(&m.governance_key)
-                .copied()
-                .unwrap_or_default(),
-            channel_count: channel_counts
-                .get(&m.governance_key)
-                .copied()
-                .unwrap_or_default(),
+            member_count: member_counts.get(&m.anchor).copied().unwrap_or_default(),
+            channel_count: channel_counts.get(&m.anchor).copied().unwrap_or_default(),
             our_pseudonym: m.pseudonym_key.clone(),
             removed: None,
         });
@@ -111,7 +105,7 @@ pub fn community_detail(
     meta: CommunityMetaSummary,
 ) -> CommunityDetail {
     CommunityDetail {
-        governance_key: membership.governance_key.clone(),
+        anchor: membership.anchor.clone(),
         name: meta.name,
         description: meta.description,
         owner_pseudonym: meta.creator_pseudonym,

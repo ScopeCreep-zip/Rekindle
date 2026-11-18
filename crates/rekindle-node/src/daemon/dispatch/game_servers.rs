@@ -50,7 +50,7 @@ async fn handle_list(ctx: &DaemonContext, state: DaemonState, community: &str) -
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).game_servers(&membership.governance_key).await {
+    match adapter(ctx).game_servers(&membership.anchor).await {
         Ok(servers) => IpcResponse::ok(&servers),
         Err(e) => runtime_refused(&e, "game servers"),
     }
@@ -71,7 +71,7 @@ async fn handle_add(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .add_game_server(&membership.governance_key, server)
+        .add_game_server(&membership.anchor, server)
         .await
     {
         Ok(id) => IpcResponse::ok(&id),
@@ -94,7 +94,7 @@ async fn handle_remove(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .remove_game_server(&membership.governance_key, server_id)
+        .remove_game_server(&membership.anchor, server_id)
         .await
     {
         Ok(()) => IpcResponse::ok(&()),

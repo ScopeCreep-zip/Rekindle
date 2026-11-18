@@ -253,7 +253,7 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
         E::SegmentAdded {
             segment_index: 1,
             registry_key: s("VLD0:r"),
-            governance_key: s("VLD0:g"),
+            anchor: s("VLD0:g"),
             slot_range_start: 0,
             slot_range_end: 255,
         },

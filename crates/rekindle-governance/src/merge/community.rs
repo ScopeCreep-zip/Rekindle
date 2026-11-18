@@ -57,7 +57,7 @@ pub(super) fn apply_community(
         GovernanceEntry::SegmentAdded {
             segment_index,
             registry_key,
-            governance_key,
+            anchor,
             slot_range_start,
             slot_range_end,
             ..
@@ -71,7 +71,7 @@ pub(super) fn apply_community(
                 state.segments.push(SegmentState {
                     segment_index: *segment_index,
                     registry_key: registry_key.clone(),
-                    governance_key: governance_key.clone(),
+                    anchor: anchor.clone(),
                     slot_range_start: *slot_range_start,
                     slot_range_end: *slot_range_end,
                 });

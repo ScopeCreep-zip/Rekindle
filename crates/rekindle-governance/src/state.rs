@@ -537,7 +537,7 @@ pub struct WelcomeScreenState {
 pub struct SegmentState {
     pub segment_index: u32,
     pub registry_key: String,
-    pub governance_key: String,
+    pub anchor: String,
     pub slot_range_start: u32,
     pub slot_range_end: u32,
 }

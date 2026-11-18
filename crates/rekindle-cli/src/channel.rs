@@ -160,7 +160,7 @@ pub async fn dispatch(
     }
 }
 
-/// The governance key of `community` and the id of its channel `channel`;
+/// The anchor key of `community` and the id of its channel `channel`;
 /// the user may have given either names or keys.
 async fn resolve_channel(
     client: &DaemonClient,
@@ -172,7 +172,7 @@ async fn resolve_channel(
             client,
             IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityInfo {
-                    governance_key: community.to_owned(),
+                    anchor: community.to_owned(),
                 },
             )),
         )
@@ -184,7 +184,7 @@ async fn resolve_channel(
         .find(|c| c.id == channel || c.name == channel)
         .map(|c| c.id.clone())
         .ok_or_else(|| anyhow::anyhow!("no channel '{channel}' in '{community}'"))?;
-    Ok((detail.governance_key, channel_id))
+    Ok((detail.anchor, channel_id))
 }
 
 /// `channel watch`: stream one channel's messages until Ctrl-C.
@@ -197,11 +197,11 @@ async fn watch_channel(
     use rekindle_types::subscription_events::{
         ChannelMessageEvent, EventCategory, SubscriptionEvent, SubscriptionFilter,
     };
-    // Events name the community by governance key and the channel by id.
-    let (governance_key, channel_id) = resolve_channel(client, community, channel).await?;
+    // Events name the community by anchor key and the channel by id.
+    let (anchor, channel_id) = resolve_channel(client, community, channel).await?;
     let filter = SubscriptionFilter {
         categories: Some(vec![EventCategory::ChannelMessage]),
-        community_scope: Some(governance_key),
+        community_scope: Some(anchor),
     };
     let body = |text: &Option<String>| {
         text.as_deref().map_or_else(

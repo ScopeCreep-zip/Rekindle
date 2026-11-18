@@ -57,7 +57,7 @@ pub fn id(prefix: &str, digit: char) -> String {
     format!("{prefix}{}", digit.to_string().repeat(32))
 }
 
-/// The community governance key used by every community-scoped sample.
+/// The community anchor key used by every community-scoped sample.
 pub fn community() -> String {
     rk('g')
 }

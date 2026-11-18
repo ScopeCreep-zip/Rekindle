@@ -66,7 +66,7 @@ async fn attendees(node: &SimNode, community: &str, event_id: &str) -> Vec<Event
 async fn event_rsvp_converges() {
     let community = Community::of(2, 173).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
 
     let id = create(
         &community.nodes[0],
@@ -117,7 +117,7 @@ async fn event_rsvp_converges() {
 async fn an_event_reminder_fires_ten_minutes_before_its_start() {
     let community = Community::create(1, 181).await;
     let node = &community.nodes[0];
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let stream = node.events().await;
 
     // The Host clock's now, as the first event's creation time.

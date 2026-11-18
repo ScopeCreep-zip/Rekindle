@@ -46,7 +46,7 @@ pub(crate) async fn handle_create(
             .session
             .read()
             .as_ref()
-            .and_then(|s| s.community(&created.governance_key).cloned());
+            .and_then(|s| s.community(&created.anchor).cloned());
         if let Some(membership) = membership {
             activate_community(ctx, &membership).await;
         }
@@ -62,7 +62,7 @@ pub(crate) async fn activate_community(
     ctx: &DaemonContext,
     membership: &rekindle_transport::session::CommunityMembership,
 ) {
-    let community_id = membership.governance_key.clone();
+    let community_id = membership.anchor.clone();
     crate::daemon::keepalive::start(ctx, &community_id);
     let subscriptions = ctx.subscriptions.read().clone();
     if let Some(subscriptions) = subscriptions {
@@ -111,7 +111,7 @@ pub(crate) async fn handle_join(
             .session
             .read()
             .as_ref()
-            .and_then(|s| s.community(&joined.governance_key).cloned());
+            .and_then(|s| s.community(&joined.anchor).cloned());
         if let Some(membership) = membership {
             activate_community(ctx, &membership).await;
         }
@@ -122,17 +122,17 @@ pub(crate) async fn handle_join(
 pub(crate) async fn handle_leave(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let membership = match ctx.resolve_community(governance_key) {
+    let membership = match ctx.resolve_community(anchor) {
         Ok(m) => m,
         Err(e) => return e,
     };
     match adapter(ctx).leave(&membership).await {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "left": membership.governance_key })),
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "left": membership.anchor })),
         Err(e) => IpcResponse::error(500, e),
     }
 }
@@ -142,18 +142,18 @@ pub(crate) async fn handle_leave(
 pub(crate) async fn handle_forget(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
 ) -> IpcResponse {
     use crate::host::adapters::governance::ForgetError;
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let membership = match ctx.resolve_community(governance_key) {
+    let membership = match ctx.resolve_community(anchor) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).forget(&membership.governance_key).await {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "forgotten": membership.governance_key })),
+    match adapter(ctx).forget(&membership.anchor).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "forgotten": membership.anchor })),
         Err(ForgetError::NotRemoved) => IpcResponse::error_with_remediation(
             409,
             "only a community you were removed from can be forgotten",
@@ -166,7 +166,7 @@ pub(crate) async fn handle_forget(
 pub(crate) async fn handle_update_info(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
     edit: crate::host::adapters::governance::InfoEdit,
 ) -> IpcResponse {
     if !state.can_write() {
@@ -175,15 +175,12 @@ pub(crate) async fn handle_update_info(
     if let Err(e) = ctx.require_transport() {
         return e;
     }
-    let membership = match ctx.resolve_community(governance_key) {
+    let membership = match ctx.resolve_community(anchor) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx)
-        .update_info(&membership.governance_key, edit)
-        .await
-    {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "updated": membership.governance_key })),
+    match adapter(ctx).update_info(&membership.anchor, edit).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "updated": membership.anchor })),
         Err(e) => IpcResponse::error(500, e),
     }
 }

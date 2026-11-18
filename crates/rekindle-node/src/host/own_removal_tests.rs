@@ -174,7 +174,7 @@ async fn forget_is_held_by_the_destructive_gate() {
     };
     let forget = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::CommunityForget {
-            governance_key: "c1".into(),
+            anchor: "c1".into(),
         },
     ));
     match host.call(caller, forget).await {

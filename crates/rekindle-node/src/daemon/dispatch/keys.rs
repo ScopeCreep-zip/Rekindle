@@ -23,14 +23,14 @@ pub(crate) fn handle_mek_list(
     if !state.can_query() {
         return state_error(state, "query");
     }
-    // `community` is what the user typed, a name or a governance key; the
-    // cache is keyed by the governance key, so a name matched nothing
+    // `community` is what the user typed, a name or an anchor key; the
+    // cache is keyed by the anchor key, so a name matched nothing
     // (live A/B finding 10).
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    let snapshot = ctx.mek_cache.read().snapshot(&membership.governance_key);
+    let snapshot = ctx.mek_cache.read().snapshot(&membership.anchor);
     IpcResponse::ok(&snapshot)
 }
 
@@ -113,7 +113,7 @@ pub(crate) fn handle_mek_request(
             cascade_index: 0,
         },
     );
-    crate::daemon::gossip::send(&ctx.gossip_tx, &membership.governance_key, &request);
+    crate::daemon::gossip::send(&ctx.gossip_tx, &membership.anchor, &request);
 
     IpcResponse::ok(&serde_json::json!({
         "requested": true,

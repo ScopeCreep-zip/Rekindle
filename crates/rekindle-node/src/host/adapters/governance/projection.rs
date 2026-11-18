@@ -36,7 +36,7 @@ fn watch_targets(cs: &CommunityState) -> HashSet<String> {
         .chain(cs.governance_state.iter().flat_map(|g| {
             g.segments
                 .iter()
-                .flat_map(|s| [s.governance_key.clone(), s.registry_key.clone()])
+                .flat_map(|s| [s.anchor.clone(), s.registry_key.clone()])
                 .chain(
                     g.channel_segment_records
                         .values()
@@ -219,7 +219,7 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
         .map(|s| rekindle_types::presence::SegmentDescriptor {
             segment_index: s.segment_index,
             registry_key: s.registry_key.clone(),
-            governance_key: s.governance_key.clone(),
+            anchor: s.anchor.clone(),
             slot_range_start: s.slot_range_start,
             slot_range_end: s.slot_range_end,
         })

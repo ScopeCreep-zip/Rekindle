@@ -29,7 +29,7 @@ async fn an_uncompilable_automod_rule_is_refused_with_400_and_not_written() {
         let mut communities = host.ctx.communities.map().write();
         let c1 = communities.get_mut("c1").expect("c1 is loaded");
         c1.my_pseudonym_key = Some("cd".repeat(32));
-        c1.governance_key = Some("c1".into());
+        c1.anchor = Some("c1".into());
         c1.governance_state = Some(creator.clone());
     }
 

@@ -56,13 +56,13 @@ pub fn segment_descriptors<D: GovernanceRuntimeDeps>(
 
     let mut out: Vec<SegmentDescriptor> = Vec::new();
     if let (Some(gov_key), Some(reg_key)) = (
-        membership.governance_key.clone(),
+        membership.anchor.clone(),
         membership.member_registry_key.clone(),
     ) {
         out.push(SegmentDescriptor {
             segment_index: 0,
             registry_key: reg_key,
-            governance_key: gov_key,
+            anchor: gov_key,
             slot_range_start: 0,
             slot_range_end: SLOTS_PER_SEGMENT,
         });
@@ -75,7 +75,7 @@ pub fn segment_descriptors<D: GovernanceRuntimeDeps>(
             out.push(SegmentDescriptor {
                 segment_index: seg.segment_index,
                 registry_key: seg.registry_key.clone(),
-                governance_key: seg.governance_key.clone(),
+                anchor: seg.anchor.clone(),
                 slot_range_start: seg.slot_range_start,
                 slot_range_end: seg.slot_range_end,
             });
@@ -178,7 +178,7 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
         GovernanceEntry::SegmentAdded {
             segment_index: next_segment_index,
             registry_key: new_reg_record.record_key,
-            governance_key: new_gov_record.record_key,
+            anchor: new_gov_record.record_key,
             slot_range_start,
             slot_range_end,
         },
@@ -211,7 +211,7 @@ pub async fn open_new_segments<D: GovernanceRuntimeDeps>(deps: &D, community_id:
     for descriptor in segment_descriptors(deps, community_id) {
         if descriptor.segment_index != 0 {
             keys.push(descriptor.registry_key);
-            keys.push(descriptor.governance_key);
+            keys.push(descriptor.anchor);
         }
     }
     // Plate Gate (architecture §15.4): channel-segment records announced
@@ -448,7 +448,7 @@ mod tests {
     #[test]
     fn slot_seed_from_membership_decodes_hex() {
         let membership = CommunityMembership {
-            governance_key: None,
+            anchor: None,
             member_registry_key: None,
             my_pseudonym_hex: None,
             my_subkey_index: None,
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn slot_seed_from_membership_missing_errors() {
         let membership = CommunityMembership {
-            governance_key: None,
+            anchor: None,
             member_registry_key: None,
             my_pseudonym_hex: None,
             my_subkey_index: None,

@@ -542,7 +542,7 @@ struct ChannelSegmentLinkedEntry @0xd0d4eb16e9bf1c2e {
 struct SegmentAddedEntry @0xd1d4eb16e9bf1c2e {
     segmentIndex         @0 :UInt32;
     registryKey          @1 :Text;
-    governanceKey        @2 :Text;
+    anchor        @2 :Text;
     slotRangeStart       @3 :UInt32;
     slotRangeEnd         @4 :UInt32;
     obsoleteLamport              @5 :UInt64;

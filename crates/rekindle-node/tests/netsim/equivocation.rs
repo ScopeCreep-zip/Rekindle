@@ -24,7 +24,7 @@ async fn create_role(community: &Community, i: usize, name: &str) {
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 name: name.into(),
                 permissions: 0,
                 color: 0,
@@ -41,7 +41,7 @@ async fn shows(community: &Community, i: usize, name: &str) -> bool {
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await

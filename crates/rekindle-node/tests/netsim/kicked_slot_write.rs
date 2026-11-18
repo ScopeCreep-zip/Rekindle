@@ -27,7 +27,7 @@ async fn a_kicked_members_slot_write_is_stored_by_no_member() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },
@@ -107,7 +107,7 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },
@@ -201,7 +201,7 @@ async fn a_post_racing_the_kick_reads_not_delivered_on_the_senders_client() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },

@@ -25,7 +25,7 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
     let invite = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::InviteCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 max_uses: 1,
                 expires_seconds: Some(TTL),
             },
@@ -34,7 +34,7 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
     let link = invite["url"].as_str().expect("an invite link").to_string();
     let listed = |v: &serde_json::Value| v.as_array().is_some_and(|a| !a.is_empty());
     let list = IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::InviteList {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
     }));
     assert!(
         listed(&community.nodes[0].ok(list.clone()).await),
@@ -46,7 +46,7 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
             matches!(
                 e,
                 SubscriptionEvent::Governance(GovernanceEvent::InviteExpired { community: c, .. })
-                    if *c == community.governance_key
+                    if *c == community.anchor
             )
         })
     })

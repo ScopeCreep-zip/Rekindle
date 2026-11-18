@@ -9,16 +9,16 @@ use super::channel::resolve_channel;
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
 
-/// The community's governance key and the channel's hex id.
+/// The community's anchor key and the channel's hex id.
 fn target(
     ctx: &DaemonContext,
     community: &str,
     channel: &str,
 ) -> Result<(String, String), IpcResponse> {
     let membership = ctx.resolve_community(community)?;
-    let (_, channel_id) = resolve_channel(ctx, &membership.governance_key, channel)
+    let (_, channel_id) = resolve_channel(ctx, &membership.anchor, channel)
         .ok_or_else(|| IpcResponse::error(404, format!("channel '{channel}' not found")))?;
-    Ok((membership.governance_key, channel_id))
+    Ok((membership.anchor, channel_id))
 }
 
 /// Route a forward, delete, typing or active-channel request.
@@ -112,7 +112,7 @@ async fn run(
                     let (community, channel) = target(ctx, &community, &channel)?;
                     (community, Some(channel))
                 }
-                None => (ctx.resolve_community(&community)?.governance_key, None),
+                None => (ctx.resolve_community(&community)?.anchor, None),
             };
             governance()
                 .set_active_channel(&community, channel, kind == "voice")

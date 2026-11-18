@@ -33,7 +33,7 @@
 #[derive(Debug, Clone, Default)]
 pub struct CommunityRecords {
     /// Governance SMPL record (`o_cnt:0`) — community state.
-    pub governance_key: Option<String>,
+    pub anchor: Option<String>,
 
     /// Member registry SMPL record (`o_cnt:0`) — presence + route blobs.
     pub registry_key: Option<String>,
@@ -53,9 +53,9 @@ pub struct CommunityRecords {
 impl CommunityRecords {
     /// Create a new tracker for a community.
     #[must_use]
-    pub fn new(governance_key: String, registry_key: String) -> Self {
+    pub fn new(anchor: String, registry_key: String) -> Self {
         Self {
-            governance_key: Some(governance_key),
+            anchor: Some(anchor),
             registry_key: Some(registry_key),
             ..Self::default()
         }
@@ -79,7 +79,7 @@ impl CommunityRecords {
     #[must_use]
     pub fn all_keys(&self) -> Vec<String> {
         let mut keys = Vec::new();
-        if let Some(ref k) = self.governance_key {
+        if let Some(ref k) = self.anchor {
             keys.push(k.clone());
         }
         if let Some(ref k) = self.registry_key {

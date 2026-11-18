@@ -330,7 +330,7 @@ decanon_struct!(WelcomeScreenState {
 decanon_struct!(SegmentState {
     segment_index,
     registry_key,
-    governance_key,
+    anchor,
     slot_range_start,
     slot_range_end
 });

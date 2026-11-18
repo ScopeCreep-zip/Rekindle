@@ -37,7 +37,7 @@ async fn a_join_beside_the_cut_keeps_the_hint_for_later_joiners() {
     let beside_link = community.nodes[1]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::InviteCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 max_uses: 1,
                 expires_seconds: None,
             },

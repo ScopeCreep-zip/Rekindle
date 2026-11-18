@@ -25,7 +25,7 @@ pub fn warmable_record_keys(cs: &CommunityState) -> Vec<String> {
     let mut keys = Vec::new();
 
     // Governance + member registry (top-level SMPL records).
-    keys.push(cs.governance_key.clone().unwrap_or_else(|| cs.id.clone()));
+    keys.push(cs.anchor.clone().unwrap_or_else(|| cs.id.clone()));
     if let Some(key) = cs.member_registry_key.clone() {
         keys.push(key);
     }
@@ -37,7 +37,7 @@ pub fn warmable_record_keys(cs: &CommunityState) -> Vec<String> {
         // Plate Gate (§15.4) expansion segments — segment-N governance +
         // registry, and channel-segment records.
         for seg in &gov.segments {
-            keys.push(seg.governance_key.clone());
+            keys.push(seg.anchor.clone());
             keys.push(seg.registry_key.clone());
         }
         for csr in gov.channel_segment_records.values() {
@@ -136,7 +136,7 @@ mod tests {
             ring_beat_status: std::collections::BTreeMap::new(),
             head_hints: rekindle_node::host::community::state::HeadHints::default(),
             snapshot_requests: rekindle_transport::gossip::RateLimiter::default(),
-            governance_key: Some("gov-key".to_string()),
+            anchor: Some("gov-key".to_string()),
             governance_state: gov,
             own_removal: None,
             removal_gate: std::sync::Arc::default(),
@@ -198,7 +198,7 @@ mod tests {
         let cs = community(&me, Some(gov), vec!["ovl-key".to_string()]);
         let keys = warmable_record_keys(&cs);
 
-        assert!(keys.contains(&"gov-key".to_string()), "governance key");
+        assert!(keys.contains(&"gov-key".to_string()), "anchor key");
         assert!(keys.contains(&"reg-key".to_string()), "registry key");
         assert!(keys.contains(&"chan-key-1".to_string()), "channel key");
         assert!(keys.contains(&"ovl-key".to_string()), "overflow key");
@@ -214,10 +214,10 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_community_id_when_no_governance_key() {
+    fn falls_back_to_community_id_when_no_anchor() {
         let me = PseudonymKey([7u8; 32]);
         let mut cs = community(&me, None, Vec::new());
-        cs.governance_key = None;
+        cs.anchor = None;
         let keys = warmable_record_keys(&cs);
         assert!(
             keys.contains(&"gov-id".to_string()),

@@ -39,7 +39,7 @@ fn governance_state_round_trips_and_is_absent_until_set() {
     let map = store.map().read();
     let entry = map.get("c1").expect("the first merge makes the entry");
     assert_eq!(entry.id, "c1");
-    assert_eq!(entry.governance_key.as_deref(), Some("c1"));
+    assert_eq!(entry.anchor.as_deref(), Some("c1"));
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn set_members_replaces_the_roster_and_the_known_members() {
 
 fn membership(me: &PseudonymKey) -> CommunityMembership {
     CommunityMembership {
-        governance_key: "gov-key".into(),
+        anchor: "gov-key".into(),
         pseudonym_key: hex::encode(me.0),
         registry_key: "reg-key".into(),
         slot_index: 0,

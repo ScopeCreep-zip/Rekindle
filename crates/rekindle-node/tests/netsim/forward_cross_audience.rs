@@ -25,9 +25,9 @@ async fn a_forward_to_another_membership_is_held_with_both_counts() {
                 approval_required: false,
             },
         )))
-        .await["governanceKey"]
+        .await["anchor"]
         .as_str()
-        .expect("a governance key")
+        .expect("an anchor key")
         .to_owned();
     let posted = community
         .post(0, "worth sharing")
@@ -41,7 +41,7 @@ async fn a_forward_to_another_membership_is_held_with_both_counts() {
     let forward = || {
         IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::ChannelMessageForward {
-                source_community: community.governance_key.clone(),
+                source_community: community.anchor.clone(),
                 source_channel: "general".into(),
                 source_message: source_message.clone(),
                 dest_community: elsewhere.clone(),

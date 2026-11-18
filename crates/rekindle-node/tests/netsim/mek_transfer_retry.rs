@@ -32,7 +32,7 @@ async fn a_lost_key_push_to_a_joiner_is_retried_until_it_lands() {
             LifecycleRequest::CommunityJoin { invite: link },
         )))
         .await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
             community.nodes[1]

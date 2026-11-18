@@ -50,7 +50,7 @@ async fn slowmode_refused() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Channels(
             ChannelRequest::ChannelSetSlowmode {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 channel_id: general,
                 seconds: 60,
             },
@@ -73,7 +73,7 @@ async fn banned_post_dropped() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Ban {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea,
                 reason: None,
             },
@@ -97,7 +97,7 @@ async fn timeout_expires_on_post() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Timeout {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea,
                 duration_seconds: 240,
                 reason: None,
@@ -130,7 +130,7 @@ async fn automod_uncompilable_rule_refused() {
     let refused = community.nodes[0]
         .call(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::AutomodRuleSet {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 rule_id: None,
                 name: "broken".into(),
                 enabled: true,

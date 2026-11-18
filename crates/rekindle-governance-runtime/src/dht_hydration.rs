@@ -102,7 +102,7 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
     }
     let mut leases = CommunityLeases::default();
     match deps
-        .acquire_record(&rec.governance_key, None, OpenIntent::Hold)
+        .acquire_record(&rec.anchor, None, OpenIntent::Hold)
         .await
     {
         Ok(lease) => leases.governance = Some(lease),

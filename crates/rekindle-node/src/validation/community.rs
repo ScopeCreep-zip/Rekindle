@@ -1,4 +1,4 @@
-//! A community's requests (plan E3.1): its governance key, names, member
+//! A community's requests (plan E3.1): its anchor key, names, member
 //! pseudonyms, roles, moderation, invites and channel keys; channels are
 //! `channels`'.
 
@@ -103,19 +103,19 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 400,
                 format!(
                     "join requires a full invite link \
-                     (rekindle://invite/{{governance_key}}/{{secrets_record_key}}/{{invite_code}}): {e}"
+                     (rekindle://invite/{{anchor}}/{{secrets_record_key}}/{{invite_code}}): {e}"
                 ),
             )
         }),
-LifecycleRequest::CommunityLeave { governance_key } | LifecycleRequest::CommunityForget { governance_key } | LifecycleRequest::CommunityInfo { governance_key } | LifecycleRequest::CommunityMembers { governance_key } | LifecycleRequest::CommunityPendingMembers { governance_key } => community(governance_key),
+LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } => community(anchor),
 LifecycleRequest::CommunityUpdateInfo {
-            governance_key,
+            anchor,
             name: community_name,
             description,
             icon_hash,
             banner_hash,
         } => {
-            community(governance_key)?;
+            community(anchor)?;
             opt(community_name.as_deref(), |n| name(n, "community"))?;
             opt(description.as_deref(), |d| {
                 bounds::description(d)
@@ -126,26 +126,26 @@ LifecycleRequest::CommunityUpdateInfo {
             opt(banner_hash.as_deref(), |h| blob_hash(h, "banner hash"))
         }
 LifecycleRequest::CommunityApprove {
-            governance_key,
+            anchor,
             member_pseudonym,
         } => {
-            community(governance_key)?;
+            community(anchor)?;
             pseudonym(member_pseudonym, "member pseudonym")
         }
 LifecycleRequest::CommunityReject {
-            governance_key,
+            anchor,
             member_pseudonym,
             reason,
         } => {
-            community(governance_key)?;
+            community(anchor)?;
             pseudonym(member_pseudonym, "member pseudonym")?;
             text(reason, MAX_NOTE_LEN, "reason")
         }
 LifecycleRequest::CommunityTransferOwnership {
-            governance_key,
+            anchor,
             new_owner_pseudonym,
         } => {
-            community(governance_key)?;
+            community(anchor)?;
             pseudonym(new_owner_pseudonym, "new owner pseudonym")
         }
 LifecycleRequest::InviteList { community: c }

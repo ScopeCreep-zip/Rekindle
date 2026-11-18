@@ -16,7 +16,7 @@ pub(crate) async fn listed(community: &Community, i: usize, pseudonym: &str) -> 
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityMembers {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await
@@ -60,7 +60,7 @@ async fn ban_removes_member() {
     let refused = community.nodes[2]
         .call(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Ban {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },
@@ -72,7 +72,7 @@ async fn ban_removes_member() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Ban {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: Some("spam".into()),
             },
@@ -88,7 +88,7 @@ async fn ban_removes_member() {
     let bans = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::BanList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await;
@@ -115,7 +115,7 @@ async fn timeout_expires() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Timeout {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 duration_seconds: 120,
                 reason: None,
@@ -153,7 +153,7 @@ async fn kick_removes_member_and_refuses_its_key_request() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },
@@ -177,7 +177,7 @@ async fn kick_removes_member_and_refuses_its_key_request() {
     let _ = community.nodes[1]
         .call(IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::MekRequest {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 channel: general,
                 generation: 0,
             },

@@ -24,7 +24,7 @@ pub struct GossipDiagnostics {
     pub has_slot_keypair: bool,
     pub has_slot_seed: bool,
     pub has_mek: bool,
-    pub governance_key: Option<String>,
+    pub anchor: Option<String>,
     pub gossip_peer_keys: Vec<String>,
     pub online_member_keys: Vec<String>,
 }
@@ -75,7 +75,7 @@ pub fn debug_gossip_state_inner(
         has_slot_keypair: cs.slot_keypair.is_some(),
         has_slot_seed: cs.slot_seed.is_some(),
         has_mek,
-        governance_key: cs.governance_key.clone(),
+        anchor: cs.anchor.clone(),
         gossip_peer_keys: peer_keys,
         online_member_keys: online_keys,
     })

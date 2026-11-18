@@ -91,7 +91,7 @@ pub struct NewCommunity<'a> {
     pub mek_generation: i64,
     pub member_registry_key: Option<&'a str>,
     pub my_subkey_index: Option<u32>,
-    pub governance_key: Option<&'a str>,
+    pub anchor: Option<&'a str>,
 }
 
 fn insert_with(
@@ -118,7 +118,7 @@ fn insert_with(
             c.mek_generation,
             c.member_registry_key,
             c.my_subkey_index,
-            c.governance_key,
+            c.anchor,
         ],
     )?;
     Ok(())
@@ -343,7 +343,7 @@ mod tests {
             mek_generation: 3,
             member_registry_key: Some("registry"),
             my_subkey_index: Some(4),
-            governance_key: None,
+            anchor: None,
         }
     }
 

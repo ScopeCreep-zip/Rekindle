@@ -33,14 +33,14 @@ pub enum CommunityCmd {
         approval_required: bool,
     },
 
-    /// Join via invite code or governance key.
+    /// Join via invite code or anchor key.
     ///
     /// `--confirm` takes the invite's fingerprint: the 64 hex digits the
     /// review prints (the spaces between groups may be kept), not the
     /// community name, which the joiner does not know yet.
     #[command(after_help = "--confirm SUBJECT: the invite's 64-hex fingerprint from the review.")]
     Join {
-        /// Invite code or governance key.
+        /// Invite code or anchor key.
         #[arg(long, short = 'i')]
         invite: String,
         /// Override display name for this community.
@@ -50,14 +50,14 @@ pub enum CommunityCmd {
 
     /// Leave a community.
     Leave {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
 
     /// Forget a community you were removed from: its kept history and keys.
     Forget {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
@@ -67,7 +67,7 @@ pub enum CommunityCmd {
 
     /// Show community details (metadata, channels, roles, members).
     Info {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Include full channel list and role permissions.
@@ -77,7 +77,7 @@ pub enum CommunityCmd {
 
     /// Approve a pending member from the waiting room.
     Approve {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym to approve.
@@ -87,7 +87,7 @@ pub enum CommunityCmd {
 
     /// Reject a pending member from the waiting room.
     Reject {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym to reject.
@@ -100,14 +100,14 @@ pub enum CommunityCmd {
 
     /// List pending join requests.
     Pending {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
 
     /// Transfer community ownership to another member.
     Transfer {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// New owner's pseudonym key.
@@ -122,7 +122,7 @@ pub enum CommunityCmd {
     /// Live-stream membership and governance events (joins, leaves,
     /// kicks and bans with their reason, roles, channels) until Ctrl-C.
     Watch {
-        /// Community name or governance key; every community when omitted.
+        /// Community name or anchor key; every community when omitted.
         #[arg(long, short = 'c')]
         community: Option<String>,
     },
@@ -133,7 +133,7 @@ pub enum CommunityCmd {
 pub enum InviteCmd {
     /// Generate invite code/link.
     Create {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Maximum number of uses, 1 (the default) to 100 (there is no
@@ -148,7 +148,7 @@ pub enum InviteCmd {
 
     /// List active invites.
     List {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
@@ -166,14 +166,14 @@ pub enum InviteCmd {
 pub enum RoleCmd {
     /// List roles with permissions.
     List {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
 
     /// Create a role.
     Create {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Role name.
@@ -189,7 +189,7 @@ pub enum RoleCmd {
 
     /// Update a role.
     Update {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Role ID.
@@ -208,7 +208,7 @@ pub enum RoleCmd {
 
     /// Delete a role.
     Delete {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Role ID.
@@ -218,7 +218,7 @@ pub enum RoleCmd {
 
     /// Assign a role to a member.
     Assign {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym or display name.
@@ -231,7 +231,7 @@ pub enum RoleCmd {
 
     /// Remove a role from a member.
     Unassign {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym or display name.
@@ -248,7 +248,7 @@ pub enum RoleCmd {
 pub enum ModerateCmd {
     /// Kick a member from the community.
     Kick {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym or display name.
@@ -261,7 +261,7 @@ pub enum ModerateCmd {
 
     /// Ban a member from the community.
     Ban {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym or display name.
@@ -274,7 +274,7 @@ pub enum ModerateCmd {
 
     /// Unban a member.
     Unban {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym or display name.
@@ -284,7 +284,7 @@ pub enum ModerateCmd {
 
     /// Timeout a member.
     Timeout {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Member pseudonym or display name.
@@ -300,7 +300,7 @@ pub enum ModerateCmd {
 
     /// List active bans.
     Bans {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },

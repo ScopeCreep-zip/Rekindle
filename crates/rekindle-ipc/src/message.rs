@@ -115,7 +115,7 @@ pub struct Message<T> {
     pub verified_sender_conn: Option<u64>,
     /// Agent type classification.
     pub agent_type: Option<AgentType>,
-    /// Community scope for event routing (governance key, or None for global).
+    /// Community scope for event routing (anchor key, or None for global).
     pub community_scope: Option<String>,
 }
 

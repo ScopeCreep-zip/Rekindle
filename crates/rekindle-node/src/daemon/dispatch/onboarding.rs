@@ -27,7 +27,7 @@ fn readable(
     if !state.can_query() {
         return Err(state_error(state, "query"));
     }
-    Ok(ctx.resolve_community(community)?.governance_key)
+    Ok(ctx.resolve_community(community)?.anchor)
 }
 
 /// The merged onboarding flow.
@@ -108,11 +108,7 @@ pub(crate) async fn handle_complete(
         return state_error(state, "write");
     }
     match ctx.resolve_community(community) {
-        Ok(m) => answered(
-            adapter(ctx)
-                .mark_onboarding_complete(&m.governance_key)
-                .await,
-        ),
+        Ok(m) => answered(adapter(ctx).mark_onboarding_complete(&m.anchor).await),
         Err(e) => e,
     }
 }

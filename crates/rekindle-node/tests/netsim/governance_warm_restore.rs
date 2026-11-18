@@ -20,7 +20,7 @@ async fn an_unlock_with_the_network_cut_answers_from_the_cache() {
     tokio::time::sleep(Duration::from_secs(60)).await;
     for i in [1, 0] {
         relock_offline(&community, i).await;
-        reviewed_from_cache(&community.nodes[i], &community.governance_key).await;
+        reviewed_from_cache(&community.nodes[i], &community.anchor).await;
     }
 }
 
@@ -41,12 +41,12 @@ async fn relock_offline(community: &Community, i: usize) {
 }
 
 /// `CommunityLeave` is held for review; `RoleUpdate` is not refused 503.
-async fn reviewed_from_cache(node: &crate::harness::SimNode, governance_key: &str) {
-    let governance_key = governance_key.to_string();
+async fn reviewed_from_cache(node: &crate::harness::SimNode, anchor: &str) {
+    let anchor = anchor.to_string();
     let leave = node
         .answer(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {
-                governance_key: governance_key.clone(),
+                anchor: anchor.clone(),
             },
         )))
         .await;
@@ -57,7 +57,7 @@ async fn reviewed_from_cache(node: &crate::harness::SimNode, governance_key: &st
     let update = node
         .answer(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleUpdate {
-                community: governance_key,
+                community: anchor,
                 role_id: 0,
                 name: Some("Everyone".into()),
                 permissions: None,

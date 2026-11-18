@@ -52,7 +52,7 @@ pub async fn dispatch(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityLeave {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                     },
                 )),
             )
@@ -64,7 +64,7 @@ pub async fn dispatch(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityForget {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                     },
                 )),
             )
@@ -97,9 +97,7 @@ pub async fn dispatch(
                                     .and_then(serde_json::Value::as_u64)
                                     .map_or("?".into(), |n| n.to_string()),
                                 rekindle_client::fmt::abbreviate_key(
-                                    c.get("governanceKey")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("?"),
+                                    c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
                                 ),
                                 removal_text(c.get("removed")),
                             ]
@@ -118,7 +116,7 @@ pub async fn dispatch(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityInfo {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                     },
                 )),
             )
@@ -166,9 +164,9 @@ pub async fn dispatch(
                         .to_string(),
                 ),
                 (
-                    "Governance Key",
+                    "Anchor Key",
                     value
-                        .get("governance_key")
+                        .get("anchor")
                         .and_then(|v| v.as_str())
                         .unwrap_or("?")
                         .to_string(),
@@ -187,7 +185,7 @@ pub async fn dispatch(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityApprove {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                         member_pseudonym: member.clone(),
                     },
                 )),
@@ -211,7 +209,7 @@ pub async fn dispatch(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityReject {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                         member_pseudonym: member.clone(),
                         reason: reason.clone().unwrap_or_default(),
                     },
@@ -228,7 +226,7 @@ pub async fn dispatch(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityPendingMembers {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                     },
                 )),
             )
@@ -270,7 +268,7 @@ pub async fn dispatch(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityTransferOwnership {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                         new_owner_pseudonym: new_owner.clone(),
                     },
                 )),

@@ -70,7 +70,7 @@ impl HostGovernance {
         });
 
         Some(CommunityMembership {
-            governance_key: Some(membership.governance_key.clone()),
+            anchor: Some(membership.anchor.clone()),
             member_registry_key: Some(membership.registry_key.clone()),
             my_pseudonym_hex: Some(membership.pseudonym_key.clone()),
             my_subkey_index: Some(membership.slot_index),
@@ -151,15 +151,15 @@ impl HostGovernance {
             .collect()
     }
 
-    /// Every joined community's `(id, governance_key)`.
+    /// Every joined community's `(id, anchor)`.
     ///
-    /// On this track `governance_key` is non-optional in the persisted
+    /// On this track `anchor` is non-optional in the persisted
     /// record and doubles as the map key, so unlike the desktop adapter
     /// there is no v1.0-legacy row to skip.
     pub(super) fn list_community_governance_targets_impl(&self) -> Vec<(String, String)> {
         self.store_memberships()
             .into_iter()
-            .map(|m| (m.governance_key.clone(), m.governance_key))
+            .map(|m| (m.anchor.clone(), m.anchor))
             .collect()
     }
 
@@ -201,7 +201,7 @@ impl HostGovernance {
             .filter(|m| !m.registry_key.is_empty())
             .map(|m| {
                 (
-                    m.governance_key.clone(),
+                    m.anchor.clone(),
                     m.registry_key.clone(),
                     Some(m.pseudonym_key.clone()),
                 )

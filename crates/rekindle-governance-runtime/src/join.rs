@@ -61,8 +61,8 @@ pub struct InitialPresence {
 /// Derive the joiner's pseudonym + signing key for a specific community.
 /// Pure — takes the master `identity_secret` + the governance record key
 /// and produces the community-scoped pseudonym via `derive_community_pseudonym`.
-pub fn derive_join_identity(identity_secret: &[u8; 32], governance_key_str: &str) -> JoinIdentity {
-    let pseudonym_signing = derive::derive_community_pseudonym(identity_secret, governance_key_str);
+pub fn derive_join_identity(identity_secret: &[u8; 32], anchor_str: &str) -> JoinIdentity {
+    let pseudonym_signing = derive::derive_community_pseudonym(identity_secret, anchor_str);
     let pseudo_bytes = pseudonym_signing.verifying_key().to_bytes();
     JoinIdentity {
         pseudo_hex: hex::encode(pseudo_bytes),
@@ -73,13 +73,10 @@ pub fn derive_join_identity(identity_secret: &[u8; 32], governance_key_str: &str
 
 /// Fallback community name when no `CommunityMeta` entry is present in
 /// the merged governance state (shows "Community " + first 8 hex chars
-/// of the governance key).
+/// of the anchor key).
 #[must_use]
-pub fn default_community_name(governance_key: &str) -> String {
-    format!(
-        "Community {}",
-        &governance_key[..8.min(governance_key.len())]
-    )
+pub fn default_community_name(anchor: &str) -> String {
+    format!("Community {}", &anchor[..8.min(anchor.len())])
 }
 
 /// M10.3 — look up an invite by `code_hash` in the raw governance subkey
@@ -219,7 +216,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_community_name_short_governance_key() {
+    fn default_community_name_short_anchor() {
         assert_eq!(default_community_name("abc"), "Community abc");
     }
 

@@ -110,7 +110,7 @@ pub struct CommunityState {
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub governance_key: Option<String>,
+    pub anchor: Option<String>,
 
     /// Cached CRDT-merged governance state.
     /// Computed by `rekindle_governance::merge::merge()`.
@@ -347,13 +347,13 @@ pub struct CommunityState {
 }
 
 impl CommunityState {
-    /// An empty community keyed by its governance key, for a store entry
+    /// An empty community keyed by its anchor key, for a store entry
     /// made before its first merge.
     #[must_use]
-    pub fn new(governance_key: &str) -> Self {
+    pub fn new(anchor: &str) -> Self {
         Self {
-            id: governance_key.to_string(),
-            governance_key: Some(governance_key.to_string()),
+            id: anchor.to_string(),
+            anchor: Some(anchor.to_string()),
             ..Self::default()
         }
     }

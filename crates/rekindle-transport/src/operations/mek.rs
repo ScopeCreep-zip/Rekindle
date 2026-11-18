@@ -31,11 +31,11 @@ fn parse_pseudonym_pub(hex_str: &str) -> Result<[u8; 32]> {
 pub fn unwrap_mek_transfer_payload(
     transfer: &crate::payload::rpc::MekTransferPayload,
     signing_key_bytes: &[u8; 32],
-    governance_key: &str,
+    anchor: &str,
 ) -> Result<Mek> {
     let rotator_pub = parse_pseudonym_pub(&transfer.rotator_pseudonym_hex)?;
     let our_pseudonym =
-        crate::crypto::pseudonym::derive_community_pseudonym(signing_key_bytes, governance_key);
+        crate::crypto::pseudonym::derive_community_pseudonym(signing_key_bytes, anchor);
     let mek_wire =
         crate::crypto::mek::unwrap_mek(&our_pseudonym, &rotator_pub, &transfer.wrapped_mek)?;
     let mek = Mek::from_wire_bytes(&mek_wire).ok_or_else(|| TransportError::MekUnwrapFailed {
@@ -50,7 +50,7 @@ pub fn unwrap_mek_transfer_payload(
             ),
         });
     }
-    info!(governance_key, scope = %transfer.scope, generation = mek.generation(), "MEK unwrapped");
+    info!(anchor, scope = %transfer.scope, generation = mek.generation(), "MEK unwrapped");
     Ok(mek)
 }
 

@@ -39,7 +39,7 @@ async fn community_block_drops() {
     community.nodes[1]
         .ok(block(CommunityRequest::Members(
             MemberRequest::MemberBlock {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: ann.clone(),
             },
         )))
@@ -47,7 +47,7 @@ async fn community_block_drops() {
     let listed = community.nodes[1]
         .ok(block(CommunityRequest::Members(
             MemberRequest::MemberBlockList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await;
@@ -55,7 +55,7 @@ async fn community_block_drops() {
     let refused = community.nodes[1]
         .call(block(CommunityRequest::Members(
             MemberRequest::MemberBlock {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: community.pseudonym(1).await,
             },
         )))
@@ -83,7 +83,7 @@ async fn community_block_drops() {
     community.nodes[1]
         .ok(block(CommunityRequest::Members(
             MemberRequest::MemberUnblock {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: ann.clone(),
             },
         )))

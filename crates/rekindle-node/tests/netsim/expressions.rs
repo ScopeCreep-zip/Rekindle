@@ -38,7 +38,7 @@ async fn expression_upload_seen() {
     let community = Community::of(2, 165).await;
     // Every join-time write settles.
     tokio::time::sleep(Duration::from_secs(60)).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
 
     let id = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Expressions(

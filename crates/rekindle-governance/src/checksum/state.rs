@@ -307,11 +307,11 @@ impl Canon for SegmentState {
         let Self {
             segment_index,
             registry_key,
-            governance_key,
+            anchor,
             slot_range_start,
             slot_range_end,
         } = self;
-        put!(out; segment_index, registry_key, governance_key, slot_range_start, slot_range_end);
+        put!(out; segment_index, registry_key, anchor, slot_range_start, slot_range_end);
     }
 }
 

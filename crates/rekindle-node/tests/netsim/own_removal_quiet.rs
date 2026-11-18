@@ -16,7 +16,7 @@ use crate::harness::{eventually, Community, PASSPHRASE};
 /// the gossip worker's backstop refused for it (a sender that did not
 /// check the removal itself).
 fn sends(community: &Community) -> Vec<String> {
-    let key = community.governance_key.as_str();
+    let key = community.anchor.as_str();
     let mut sends = crate::logs::logged(1, &["send_to_mesh", key]);
     sends.extend(crate::logs::logged(1, &["nothing sent for a removed", key]));
     sends
@@ -58,7 +58,7 @@ async fn a_kicked_member_sends_nothing_for_the_community() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea,
                 reason: None,
             },

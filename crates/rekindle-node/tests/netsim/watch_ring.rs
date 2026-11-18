@@ -33,7 +33,7 @@ async fn member_sets(
         let roster = community.nodes[i]
             .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityMembers {
-                    governance_key: community.governance_key.clone(),
+                    anchor: community.anchor.clone(),
                 },
             )))
             .await;
@@ -128,7 +128,7 @@ pub async fn ring_converges(members: usize, seed: u64) {
 pub fn creator_record(community: &Community) -> String {
     let cert = community
         .sim
-        .network_get(&community.governance_key, community_anchor::GENESIS_CERT)
+        .network_get(&community.anchor, community_anchor::GENESIS_CERT)
         .expect("the anchor's GenesisCert");
     rekindle_codec::governance_op::genesis::decode_genesis(&cert.data)
         .expect("a GenesisCert")

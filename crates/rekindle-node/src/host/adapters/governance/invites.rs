@@ -9,15 +9,10 @@ use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 use super::HostGovernance;
 
 /// The canonical link for an invite: all three parts the joiner needs.
-fn invite_url(
-    governance_key: &str,
-    secrets_record_key: &str,
-    code: &str,
-) -> Result<String, String> {
+fn invite_url(anchor: &str, secrets_record_key: &str, code: &str) -> Result<String, String> {
     use rekindle_types::key_format;
     let link = rekindle_types::invite::InviteLink {
-        anchor: key_format::record_key(governance_key)
-            .map_err(|e| format!("invite anchor: {e}"))?,
+        anchor: key_format::record_key(anchor).map_err(|e| format!("invite anchor: {e}"))?,
         secrets_record_key: key_format::record_key(secrets_record_key)
             .map_err(|e| format!("invite secrets key: {e}"))?,
         invite_code: key_format::hex16_id(code).map_err(|e| format!("invite code: {e}"))?,

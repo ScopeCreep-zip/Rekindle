@@ -159,11 +159,11 @@ impl DaemonHandler {
         let guard = self.session.read();
         let session = guard.as_ref()?;
         session.communities.values().find_map(|m| {
-            let ours = m.governance_key == record_key
+            let ours = m.anchor == record_key
                 || m.registry_key == record_key
                 || m.channel_record_keys.values().any(|k| k == record_key);
             (ours && !m.pseudonym_key.is_empty())
-                .then(|| (m.governance_key.clone(), m.pseudonym_key.clone()))
+                .then(|| (m.anchor.clone(), m.pseudonym_key.clone()))
         })
     }
 }

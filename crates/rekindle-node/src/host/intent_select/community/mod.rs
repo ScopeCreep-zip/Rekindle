@@ -168,13 +168,13 @@ fn member_person(
     })
 }
 
-/// A community by governance key or name: `(id, name)`.
+/// A community by anchor key or name: `(id, name)`.
 pub(super) fn community(
     ctx: &DaemonContext,
     target: &str,
 ) -> Result<(String, String), IpcResponse> {
     ctx.resolve_community(target)
-        .map(|m| (m.governance_key, m.community_name))
+        .map(|m| (m.anchor, m.community_name))
 }
 
 /// The members a community action reaches (its known members, the

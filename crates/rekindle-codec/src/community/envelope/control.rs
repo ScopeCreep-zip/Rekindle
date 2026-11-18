@@ -292,7 +292,7 @@ pub enum ControlPayload {
     // ── Bootstrap protocol ──
     /// Gossip notification that a governance SMPL subkey changed.
     GovernanceUpdated {
-        governance_key: String,
+        anchor: String,
         subkey_index: u32,
         lamport_ts: u64,
     },

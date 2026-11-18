@@ -57,7 +57,7 @@ pub struct MessageList {
     list_state: ListState,
     /// Whether new messages should auto-scroll to bottom.
     auto_scroll: bool,
-    /// Community governance key (for context display).
+    /// Community anchor key (for context display).
     community: String,
     /// Channel name or ID.
     channel: String,

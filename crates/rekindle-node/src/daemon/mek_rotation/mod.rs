@@ -71,7 +71,7 @@ pub enum MekRotationKind {
 /// A reason to replace a community's MEK, queued for the worker.
 #[derive(Debug, Clone)]
 pub struct MekRotationRequest {
-    /// Governance key of the affected community.
+    /// Anchor key of the affected community.
     pub community_id: String,
     pub kind: MekRotationKind,
 }

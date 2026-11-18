@@ -420,7 +420,7 @@ struct SlotKeypairGrantPayload @0xea0028000000a000 {
 }
 
 struct GovernanceUpdatedPayload @0xea0029000000a000 {
-    governanceKey        @0 :Text;
+    anchor        @0 :Text;
     subkeyIndex          @1 :UInt32;
     lamportTs            @2 :UInt64;
 }

@@ -92,7 +92,7 @@ pub async fn get_community_members(
 ) -> Result<Done<Vec<CommunityMemberView>>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::CommunityMembers {
-            governance_key: community_id,
+            anchor: community_id,
         },
     ));
     crate::host_call::call(&state, request).await

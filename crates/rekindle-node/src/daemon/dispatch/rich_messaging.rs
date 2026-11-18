@@ -71,7 +71,7 @@ pub(crate) async fn handle(
         return state_error(state, "write");
     }
     let key = match ctx.resolve_community(community_of(&request)) {
-        Ok(m) => m.governance_key,
+        Ok(m) => m.anchor,
         Err(e) => return e,
     };
     let host = HostChannel::new(ctx);

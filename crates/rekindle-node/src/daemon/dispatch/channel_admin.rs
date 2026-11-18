@@ -163,12 +163,12 @@ pub(super) async fn route(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let op = match op(ctx, &membership.governance_key, request) {
+    let op = match op(ctx, &membership.anchor, request) {
         Ok(op) => op,
         Err(e) => return e,
     };
     match super::adapter(ctx)
-        .channel_admin(&membership.governance_key, op)
+        .channel_admin(&membership.anchor, op)
         .await
     {
         Ok(answer) => IpcResponse::ok(&answer),

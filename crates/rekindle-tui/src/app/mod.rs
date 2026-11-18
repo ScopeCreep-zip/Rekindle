@@ -85,7 +85,7 @@ pub struct App {
 /// Minimal community cache for UI labels and navigation.
 #[derive(Clone)]
 pub(crate) struct CachedCommunity {
-    pub governance_key: String,
+    pub anchor: String,
     pub name: String,
     /// Our pseudonym there, to tell our own removal from another's.
     pub our_pseudonym: String,
@@ -230,19 +230,19 @@ impl App {
         Ok(())
     }
 
-    /// Look up a cached community name by governance key.
-    pub(crate) fn community_name<'a>(&'a self, governance_key: &'a str) -> &'a str {
+    /// Look up a cached community name by anchor key.
+    pub(crate) fn community_name<'a>(&'a self, anchor: &'a str) -> &'a str {
         self.cached_communities
             .iter()
-            .find(|c| c.governance_key == governance_key)
-            .map_or(governance_key, |c| c.name.as_str())
+            .find(|c| c.anchor == anchor)
+            .map_or(anchor, |c| c.name.as_str())
     }
 
-    /// Whether `pseudonym` is ours in `governance_key`.
-    pub(crate) fn is_own_pseudonym(&self, governance_key: &str, pseudonym: &str) -> bool {
+    /// Whether `pseudonym` is ours in `anchor`.
+    pub(crate) fn is_own_pseudonym(&self, anchor: &str, pseudonym: &str) -> bool {
         self.cached_communities
             .iter()
-            .any(|c| c.governance_key == governance_key && c.our_pseudonym == pseudonym)
+            .any(|c| c.anchor == anchor && c.our_pseudonym == pseudonym)
     }
 
     /// The toast for a kick or ban: ours names the community and the

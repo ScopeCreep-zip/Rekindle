@@ -43,7 +43,7 @@ async fn a_partially_written_op_is_readable_while_pending_and_lands_once() {
         accepting: 2,
     });
     let create = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
         name: "partial".into(),
         kind: "text".into(),
         category: None,
@@ -86,7 +86,7 @@ async fn a_partially_written_op_is_readable_while_pending_and_lands_once() {
 
     community.sim.fault(Fault::Heal);
     let list = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelList {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
     }));
     let converged = eventually(&community.sim, Duration::from_secs(900), || async {
         listed(&community, &list, "partial").await == vec![1, 1, 1]

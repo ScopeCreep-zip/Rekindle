@@ -16,7 +16,7 @@ pub(crate) fn tracked_record_keys(
     let records = &communities.get(community_id)?.open_community_records;
     Some(
         records
-            .governance_key
+            .anchor
             .iter()
             .chain(records.registry_key.iter())
             .chain(records.channel_keys.iter())

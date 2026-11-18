@@ -52,7 +52,7 @@ async fn a_kick_is_one_kicked_with_its_reason_on_every_member() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: Some(REASON.into()),
             },
@@ -87,7 +87,7 @@ async fn a_leave_is_one_left_on_the_leaver_and_every_member() {
     community.nodes[1]
         .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await

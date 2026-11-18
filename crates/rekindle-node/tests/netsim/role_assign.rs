@@ -13,7 +13,7 @@ async fn listed_roles(community: &Community, i: usize) -> Vec<u64> {
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await
@@ -34,7 +34,7 @@ async fn role_assign_converges() {
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 name: "raiders".into(),
                 permissions: 0,
                 color: 0x00ff_8800,
@@ -49,7 +49,7 @@ async fn role_assign_converges() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 member_pseudonym: bea,
                 role_id,
             },
@@ -73,7 +73,7 @@ async fn role_assign_converges() {
     let refused = community.nodes[2]
         .call(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 member_pseudonym: cat,
                 role_id,
             },

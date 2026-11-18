@@ -21,7 +21,7 @@ async fn mod_report_reaches_moderators() {
     owner
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::AutomodRuleSet {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 rule_id: None,
                 name: "asks for help".into(),
                 enabled: true,
@@ -57,7 +57,7 @@ async fn mod_report_reaches_moderators() {
     let queue = owner
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::ModReportList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await;

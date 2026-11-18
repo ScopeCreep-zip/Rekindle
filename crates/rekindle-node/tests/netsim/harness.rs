@@ -338,7 +338,7 @@ pub const COMMUNITY_NAME: &str = "Netsim";
 pub struct Community {
     pub sim: Netsim,
     pub nodes: Vec<SimNode>,
-    pub governance_key: String,
+    pub anchor: String,
     /// The last invite link (its secrets carry the slot seed).
     pub link: String,
 }
@@ -369,14 +369,14 @@ impl Community {
                 },
             )))
             .await;
-        let governance_key = created["governanceKey"]
+        let anchor = created["anchor"]
             .as_str()
-            .expect("a governance key")
+            .expect("an anchor key")
             .to_string();
         Self {
             sim,
             nodes,
-            governance_key,
+            anchor,
             link: String::new(),
         }
     }
@@ -397,7 +397,7 @@ impl Community {
         let invite = self.nodes[0]
             .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::InviteCreate {
-                    community: self.governance_key.clone(),
+                    community: self.anchor.clone(),
                     max_uses: uses,
                     expires_seconds: None,
                 },
@@ -421,7 +421,7 @@ impl Community {
                     LifecycleRequest::CommunityList,
                 )))
                 .await
-                .is_ok_and(|v| v.to_string().contains(&self.governance_key))
+                .is_ok_and(|v| v.to_string().contains(&self.anchor))
         })
         .await;
         assert!(listed, "node {i} lists the community");
@@ -448,10 +448,10 @@ impl Community {
                 .filter(|c| {
                     c.get("name").and_then(serde_json::Value::as_str) == Some(COMMUNITY_NAME)
                 })
-                .filter_map(|c| c.get("governanceKey").and_then(serde_json::Value::as_str))
+                .filter_map(|c| c.get("anchor").and_then(serde_json::Value::as_str))
                 .collect()
         });
-        if named != [self.governance_key.as_str()] {
+        if named != [self.anchor.as_str()] {
             return;
         }
         let by_name = self.nodes[i]
@@ -473,7 +473,7 @@ impl Community {
         self.nodes[i]
             .ok(IpcRequest::Community(CommunityRequest::Messages(
                 ChannelMessageRequest::MekList {
-                    community: self.governance_key.clone(),
+                    community: self.anchor.clone(),
                 },
             )))
             .await
@@ -484,7 +484,7 @@ impl Community {
         self.nodes[i]
             .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityInfo {
-                    governance_key: self.governance_key.clone(),
+                    anchor: self.anchor.clone(),
                 },
             )))
             .await
@@ -513,7 +513,7 @@ impl Community {
         self.nodes[i]
             .call(IpcRequest::Community(CommunityRequest::Messages(
                 ChannelMessageRequest::ChannelSend {
-                    community: self.governance_key.clone(),
+                    community: self.anchor.clone(),
                     channel: "general".into(),
                     body: body.into(),
                     reply_to: None,
@@ -527,7 +527,7 @@ impl Community {
         let channels = self.nodes[i]
             .call(IpcRequest::Community(CommunityRequest::Channels(
                 ChannelRequest::ChannelList {
-                    community: self.governance_key.clone(),
+                    community: self.anchor.clone(),
                 },
             )))
             .await
@@ -554,7 +554,7 @@ impl Community {
             }),
             Some(before_timestamp) => {
                 CommunityRequest::Messages(ChannelMessageRequest::ChannelMessagesBefore {
-                    community: self.governance_key.clone(),
+                    community: self.anchor.clone(),
                     channel,
                     before_timestamp,
                     limit,

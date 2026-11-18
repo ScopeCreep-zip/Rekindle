@@ -27,8 +27,8 @@ pub enum GovernanceRuntimeError {
     #[error("invalid pseudonym hex: {0}")]
     InvalidPseudonymHex(String),
 
-    #[error("no governance key for community {0}")]
-    GovernanceKeyMissing(String),
+    #[error("no anchor key for community {0}")]
+    AnchorMissing(String),
 
     #[error("no slot index for community {0}")]
     SlotIndexMissing(String),

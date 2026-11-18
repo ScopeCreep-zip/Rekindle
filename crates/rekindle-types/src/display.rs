@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityOverview {
-    pub governance_key: String,
+    pub anchor: String,
     pub name: String,
     pub description: String,
     pub member_count: u32,
@@ -46,7 +46,7 @@ pub struct CommunityRemovalDisplay {
 /// Detailed community info for the info command and TUI view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommunityDetail {
-    pub governance_key: String,
+    pub anchor: String,
     pub name: String,
     pub description: String,
     pub owner_pseudonym: String,

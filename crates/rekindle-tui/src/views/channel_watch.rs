@@ -51,7 +51,7 @@ const PEER_LIST_WIDTH: u16 = 18;
 
 /// Channel watch view state.
 pub struct ChannelWatchView {
-    /// The community governance key this view is watching.
+    /// The community anchor key this view is watching.
     community: String,
     /// The channel ID this view is watching.
     channel: String,
@@ -107,7 +107,7 @@ impl ChannelWatchView {
         }
     }
 
-    /// Community governance key.
+    /// Community anchor key.
     pub fn community(&self) -> &str {
         &self.community
     }
@@ -378,7 +378,7 @@ impl View for ChannelWatchView {
                 tracing::debug!(msg = message_id, "message sent confirmation");
             }
             CommandResult::CommunityInfoLoaded { detail } => {
-                if detail.governance_key == self.community {
+                if detail.anchor == self.community {
                     use crate::components::channel_tree::ChannelEntry;
                     let channels: Vec<ChannelEntry> = detail
                         .channels
@@ -393,7 +393,7 @@ impl View for ChannelWatchView {
                         })
                         .collect();
                     self.channel_tree.set_communities(
-                        &[(detail.governance_key.clone(), detail.name.clone(), channels)],
+                        &[(detail.anchor.clone(), detail.name.clone(), channels)],
                         &[],
                     );
                 }

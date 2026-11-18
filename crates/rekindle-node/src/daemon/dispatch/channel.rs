@@ -128,7 +128,7 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState, community: &s
         Ok(m) => m,
         Err(e) => return e,
     };
-    IpcResponse::ok(&channel_overviews(ctx, &membership.governance_key))
+    IpcResponse::ok(&channel_overviews(ctx, &membership.anchor))
 }
 
 /// Every live channel, sorted by position then name so two peers list
@@ -206,7 +206,7 @@ pub(crate) async fn handle_create(
 
     channel.position = ctx
         .communities
-        .governance_state(&membership.governance_key)
+        .governance_state(&membership.anchor)
         .map_or(0, |gov| {
             gov.channels
                 .values()
@@ -218,7 +218,7 @@ pub(crate) async fn handle_create(
     let adapter = super::adapter(ctx);
     let created = match rekindle_governance_runtime::channels::create_channel(
         &adapter,
-        &membership.governance_key,
+        &membership.anchor,
         channel,
     )
     .await
@@ -241,7 +241,7 @@ pub(crate) async fn handle_create(
         {
             if let Err(e) = rekindle_governance_runtime::apply::write_entry(
                 &adapter,
-                &membership.governance_key,
+                &membership.anchor,
                 rekindle_types::governance::GovernanceEntry::ChannelUpdated {
                     channel_id,
                     name: None,
@@ -265,7 +265,7 @@ pub(crate) async fn handle_create(
     }
 
     adapter
-        .persist_governance_snapshot(&membership.governance_key)
+        .persist_governance_snapshot(&membership.anchor)
         .await;
     IpcResponse::ok(&serde_json::json!({
         "id": created.channel_id_hex,
@@ -288,7 +288,7 @@ pub(crate) async fn handle_delete(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let Some((id, hex_id)) = resolve_channel(ctx, &membership.governance_key, channel_id) else {
+    let Some((id, hex_id)) = resolve_channel(ctx, &membership.anchor, channel_id) else {
         return IpcResponse::error(404, format!("channel '{channel_id}' not found"));
     };
 
@@ -299,14 +299,14 @@ pub(crate) async fn handle_delete(
     let adapter = super::adapter(ctx);
     match rekindle_governance_runtime::apply::write_entry(
         &adapter,
-        &membership.governance_key,
+        &membership.anchor,
         rekindle_types::governance::GovernanceEntry::ChannelArchived { channel_id: id },
     )
     .await
     {
         Ok(outcome) => {
             adapter
-                .persist_governance_snapshot(&membership.governance_key)
+                .persist_governance_snapshot(&membership.anchor)
                 .await;
             IpcResponse::ok(&serde_json::json!({
                 "deleted": hex_id,
@@ -341,14 +341,14 @@ pub(crate) async fn handle_update(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let Some((id, hex_id)) = resolve_channel(ctx, &membership.governance_key, channel_id) else {
+    let Some((id, hex_id)) = resolve_channel(ctx, &membership.anchor, channel_id) else {
         return IpcResponse::error(404, format!("channel '{channel_id}' not found"));
     };
 
     let adapter = super::adapter(ctx);
     match rekindle_governance_runtime::apply::write_entry(
         &adapter,
-        &membership.governance_key,
+        &membership.anchor,
         rekindle_types::governance::GovernanceEntry::ChannelUpdated {
             channel_id: id,
             name: update.name.map(ToOwned::to_owned),

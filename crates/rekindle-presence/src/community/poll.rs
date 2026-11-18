@@ -395,7 +395,7 @@ mod tests {
         state.presence_credentials = Some(creds_with(7, 0));
         state.segments = vec![SegmentDescriptor {
             // Scan-only fixture: presence never merges governance.
-            governance_key: String::new(),
+            anchor: String::new(),
             segment_index: 0,
             registry_key: "reg0".to_string(),
             slot_range_start: 0,

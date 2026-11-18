@@ -82,7 +82,7 @@ impl DaemonContext {
         }
     }
 
-    /// Resolve a community by governance key or name from session.
+    /// Resolve a community by anchor key or name from session.
     pub(crate) fn resolve_community(
         &self,
         target: &str,
@@ -91,7 +91,7 @@ impl DaemonContext {
         let session = guard
             .as_ref()
             .ok_or_else(|| IpcResponse::error(423, "no identity is unlocked"))?;
-        // Exact governance key match
+        // Exact anchor key match
         if let Some(m) = session.community(target) {
             return Ok(m.clone());
         }

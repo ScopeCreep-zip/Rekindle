@@ -42,7 +42,7 @@ pub(crate) fn handle_leave(
     session: &RwLock<Option<rekindle_transport::Session>>,
     mek_rotation_tx: &MekRotationSender,
 ) -> CallResponse {
-    let community = &notif.governance_key;
+    let community = &notif.anchor;
     let member = &notif.leaving_pseudonym_hex;
 
     // Only act for communities we are actually in. Without this an
@@ -52,7 +52,7 @@ pub(crate) fn handle_leave(
     let is_member = session
         .read()
         .as_ref()
-        .is_some_and(|s| s.community(&notif.governance_key).is_some());
+        .is_some_and(|s| s.community(&notif.anchor).is_some());
     if !is_member {
         tracing::debug!(
             community = %community,
@@ -67,10 +67,8 @@ pub(crate) fn handle_leave(
         "member departed — queueing MEK rotation"
     );
 
-    let request = MekRotationRequest::departure(
-        notif.governance_key.clone(),
-        notif.leaving_pseudonym_hex.clone(),
-    );
+    let request =
+        MekRotationRequest::departure(notif.anchor.clone(), notif.leaving_pseudonym_hex.clone());
     if mek_rotation_tx.send(request).is_err() {
         tracing::warn!(
             community = %community,
@@ -108,7 +106,7 @@ mod tests {
     /// v1.0 handler gated on.
     fn membership() -> CommunityMembership {
         CommunityMembership {
-            governance_key: GOV.into(),
+            anchor: GOV.into(),
             pseudonym_key: "cd".repeat(32),
             registry_key: "VLD0:reg:key".into(),
             slot_index: 3,
@@ -129,7 +127,7 @@ mod tests {
 
     fn notification() -> CommunityLeaveNotification {
         CommunityLeaveNotification {
-            governance_key: GOV.into(),
+            anchor: GOV.into(),
             leaving_pseudonym_hex: DEPARTED.into(),
         }
     }
@@ -159,7 +157,7 @@ mod tests {
     fn departure_for_an_unknown_community_is_ignored() {
         let (tx, mut rx) = crate::daemon::mek_rotation::channel();
         let mut notif = notification();
-        notif.governance_key = "VLD0:some:other".into();
+        notif.anchor = "VLD0:some:other".into();
 
         handle_leave(&notif, &session_with_community(), &tx);
         assert!(rx.try_recv().is_err(), "must not queue for a stranger");

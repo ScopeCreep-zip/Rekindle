@@ -42,7 +42,7 @@ async fn a_member_away_at_rotation_asks_for_the_key_it_missed() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea,
                 reason: None,
             },

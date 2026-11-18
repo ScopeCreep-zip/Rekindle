@@ -35,16 +35,16 @@ pub struct GovernanceSnapshot {
 /// to find announced segments, fetch + verify each segment, re-merge.
 pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
     deps: &D,
-    governance_key_str: &str,
+    anchor_str: &str,
 ) -> Result<GovernanceSnapshot, GovernanceRuntimeError> {
-    let primary = fetch_governance_record_entries(deps, governance_key_str).await?;
+    let primary = fetch_governance_record_entries(deps, anchor_str).await?;
     let mut all_entries = primary.authored;
     let mut overflow_keys = primary.overflow_keys;
     // Merge under the anchor's pinned cert: the ops we hold (S6's
     // bootstrapResponseV2 delivers the rest).
-    let (cert, _) = crate::genesis::read_pinned(deps, governance_key_str).await?;
-    let held = deps.governance_ops(governance_key_str).await?;
-    let ops = crate::op_log::verify_held_with(deps, governance_key_str, &held).ops;
+    let (cert, _) = crate::genesis::read_pinned(deps, anchor_str).await?;
+    let held = deps.governance_ops(anchor_str).await?;
+    let ops = crate::op_log::verify_held_with(deps, anchor_str, &held).ops;
     let gov_state_v1 = merge::merge(&cert, &ops);
 
     // Pass 2: fetch every segment's governance record. CRDT idempotence +
@@ -54,14 +54,14 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
         if segment.segment_index == 0 {
             continue;
         }
-        match fetch_governance_record_entries(deps, &segment.governance_key).await {
+        match fetch_governance_record_entries(deps, &segment.anchor).await {
             Ok(mut extra) => {
                 all_entries.append(&mut extra.authored);
                 overflow_keys.append(&mut extra.overflow_keys);
             }
             Err(e) => tracing::warn!(
                 segment = segment.segment_index,
-                governance_key = %segment.governance_key,
+                anchor = %segment.anchor,
                 error = %e,
                 "load_governance_snapshot: skipping unreachable segment governance record"
             ),
@@ -74,7 +74,7 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
     };
 
     let name = gov_state.metadata.as_ref().map_or_else(
-        || default_community_name(governance_key_str),
+        || default_community_name(anchor_str),
         |metadata| metadata.name.clone(),
     );
     let description = gov_state
@@ -127,8 +127,8 @@ async fn populated_subkeys_or_full_scan<D: GovernanceRuntimeDeps>(
 /// before merge (architecture §"Follow GovernanceOverflow pointers", line 1609).
 async fn fetch_governance_record_entries<D: GovernanceRuntimeDeps>(
     deps: &D,
-    governance_key_str: &str,
+    anchor_str: &str,
 ) -> Result<crate::overflow::GovernanceReadout, GovernanceRuntimeError> {
-    let occupied = populated_subkeys_or_full_scan(deps, governance_key_str).await;
-    Ok(crate::overflow::read_governance_with_overflow(deps, governance_key_str, &occupied).await)
+    let occupied = populated_subkeys_or_full_scan(deps, anchor_str).await;
+    Ok(crate::overflow::read_governance_with_overflow(deps, anchor_str, &occupied).await)
 }

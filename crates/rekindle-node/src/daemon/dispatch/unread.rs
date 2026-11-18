@@ -27,7 +27,7 @@ pub(crate) async fn handle(
                 Err(e) => return e,
             };
             match adapter(ctx)
-                .mark_channel_read(&membership.governance_key, &channel, &up_to)
+                .mark_channel_read(&membership.anchor, &channel, &up_to)
                 .await
             {
                 Ok(()) => IpcResponse::ok(&()),
@@ -39,7 +39,7 @@ pub(crate) async fn handle(
                 Ok(m) => m,
                 Err(e) => return e,
             };
-            match adapter(ctx).unread_counts(&membership.governance_key).await {
+            match adapter(ctx).unread_counts(&membership.anchor).await {
                 Ok(counts) => IpcResponse::ok(&counts),
                 Err(e) => runtime_refused(&e, "unread counts"),
             }

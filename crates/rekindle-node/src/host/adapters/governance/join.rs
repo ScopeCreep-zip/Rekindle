@@ -48,7 +48,7 @@ impl HostGovernance {
             .and_then(|b| <[u8; 32]>::try_from(b).ok());
         let pseudonym = outcome.identity.pseudo_hex.clone();
         let membership = rekindle_transport::session::CommunityMembership {
-            governance_key: id.clone(),
+            anchor: id.clone(),
             pseudonym_key: pseudonym.clone(),
             slot_index: outcome.claimed.local_subkey,
             registry_key: outcome.claimed.registry_key.clone(),
@@ -127,7 +127,7 @@ impl HostGovernance {
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
         // gossiped and queued, and the outbox lands it (S6b).
         Ok(CommunityJoined {
-            governance_key: id,
+            anchor: id,
             name: outcome.invite.community_name.clone(),
             segment: outcome.claimed.segment_index,
             slot: outcome.claimed.local_subkey,
@@ -157,7 +157,7 @@ impl HostGovernance {
                 return None;
             }
             let joined = CommunityJoined {
-                governance_key: id.to_owned(),
+                anchor: id.to_owned(),
                 name: community.name.clone(),
                 segment: community.my_segment_index.unwrap_or_default(),
                 slot: community.my_subkey_index.unwrap_or_default(),

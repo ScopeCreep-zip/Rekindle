@@ -327,7 +327,7 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                 g.segments.push(SegmentState {
                     segment_index: 1,
                     registry_key: "r".into(),
-                    governance_key: "g".into(),
+                    anchor: "g".into(),
                     slot_range_start: 0,
                     slot_range_end: 1,
                 });

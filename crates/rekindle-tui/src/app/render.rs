@@ -144,7 +144,7 @@ impl App {
             }
             "communities" => {
                 if let Some(first) = self.cached_communities.first() {
-                    let gov = first.governance_key.clone();
+                    let gov = first.anchor.clone();
                     self.nav.navigate(
                         ViewKind::CommunityInfo {
                             community: gov.clone(),
@@ -210,7 +210,7 @@ impl App {
                         label: c.name.clone(),
                         detail: "community".into(),
                         action: Action::ShowCommunityInfo {
-                            community: c.governance_key.clone(),
+                            community: c.anchor.clone(),
                         },
                     })
                     .collect();

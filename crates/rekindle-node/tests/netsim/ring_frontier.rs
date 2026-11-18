@@ -37,7 +37,7 @@ async fn lists_channel(community: &Community, i: usize, name: &str) -> bool {
     community.nodes[i]
         .call(IpcRequest::Community(CommunityRequest::Channels(
             ChannelRequest::ChannelList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await
@@ -53,7 +53,7 @@ async fn lists_channel(community: &Community, i: usize, name: &str) -> bool {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_lost_op_gossip_reaches_the_ring_watcher_through_the_frontier() {
     let community = Community::of(2, 4107).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let creator = creator_record(&community);
     // Node 1 is the one ring watcher of the creator's `M`, and every
     // join-time write has settled.
@@ -164,7 +164,7 @@ async fn a_lost_op_gossip_reaches_the_ring_watcher_through_the_frontier() {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_moved_frontier_naming_only_held_heads_rebuilds_nothing() {
     let community = Community::of(2, 4108).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let creator = creator_record(&community);
     assert!(
         eventually(&community.sim, Duration::from_secs(300), || async {

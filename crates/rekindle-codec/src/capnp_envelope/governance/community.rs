@@ -75,7 +75,7 @@ pub(super) fn write_segment_added(
     let GovernanceEntry::SegmentAdded {
         segment_index,
         registry_key,
-        governance_key,
+        anchor,
         slot_range_start,
         slot_range_end,
     } = e
@@ -84,7 +84,7 @@ pub(super) fn write_segment_added(
     };
     p.set_segment_index(*segment_index);
     p.set_registry_key(registry_key);
-    p.set_governance_key(governance_key);
+    p.set_anchor(anchor);
     p.set_slot_range_start(*slot_range_start);
     p.set_slot_range_end(*slot_range_end);
 }
@@ -199,7 +199,7 @@ pub(super) fn read_segment_added(
     Ok(GovernanceEntry::SegmentAdded {
         segment_index: p.get_segment_index(),
         registry_key: text_to_string(p.get_registry_key().map_err(|e| capnp_err(&e))?)?,
-        governance_key: text_to_string(p.get_governance_key().map_err(|e| capnp_err(&e))?)?,
+        anchor: text_to_string(p.get_anchor().map_err(|e| capnp_err(&e))?)?,
         slot_range_start: p.get_slot_range_start(),
         slot_range_end: p.get_slot_range_end(),
     })

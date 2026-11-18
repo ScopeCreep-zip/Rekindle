@@ -56,7 +56,7 @@ pub struct ChannelEntrySummary {
 /// departed member's presence to go stale.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommunityLeaveNotification {
-    pub governance_key: String,
+    pub anchor: String,
     pub leaving_pseudonym_hex: String,
 }
 

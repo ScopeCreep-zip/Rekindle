@@ -147,7 +147,7 @@ fn structure() -> Vec<Sample> {
                 segments: vec![SegmentDescriptor {
                     segment_index: 1,
                     registry_key: rk('r'),
-                    governance_key: rk('s'),
+                    anchor: rk('s'),
                     slot_range_start: 255,
                     slot_range_end: 510,
                 }],

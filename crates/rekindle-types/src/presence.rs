@@ -227,9 +227,9 @@ pub struct GameInfo {
 /// Tier 1 because both `rekindle-presence` (Tier 5, scanning member
 /// rows) and `rekindle-governance-runtime` (Tier 6, expanding segments)
 /// need it, and Tier 5 cannot depend on Tier 6. They had a copy each,
-/// differing only in `governance_key` — which meant the desktop's
+/// differing only in `anchor` — which meant the desktop's
 /// presence adapter mapped the Tier-6 descriptor into the Tier-5 one
-/// field by field and *dropped* the governance key on the way.
+/// field by field and *dropped* the anchor key on the way.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SegmentDescriptor {
@@ -239,7 +239,7 @@ pub struct SegmentDescriptor {
     pub registry_key: String,
     /// SMPL governance record for this segment. Empty for readers that
     /// only scan presence rows and never merge governance.
-    pub governance_key: String,
+    pub anchor: String,
     /// Inclusive-exclusive global slot range this segment covers
     /// (`segment_index * SLOTS_PER_SEGMENT` .. `+ SLOTS_PER_SEGMENT`).
     /// 0 for readers that only scan presence rows and never merge

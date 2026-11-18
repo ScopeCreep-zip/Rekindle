@@ -136,14 +136,14 @@ pub(super) fn write_governance_updated(
     payload: &ControlPayload,
 ) {
     let ControlPayload::GovernanceUpdated {
-        governance_key,
+        anchor,
         subkey_index,
         lamport_ts,
     } = payload
     else {
         unreachable!("write_governance_updated: variant mismatch")
     };
-    p.set_governance_key(governance_key);
+    p.set_anchor(anchor);
     p.set_subkey_index(*subkey_index);
     p.set_lamport_ts(*lamport_ts);
 }
@@ -258,7 +258,7 @@ pub(super) fn read_governance_updated(
     p: cap::governance_updated_payload::Reader<'_>,
 ) -> Result<ControlPayload, CodecError> {
     Ok(ControlPayload::GovernanceUpdated {
-        governance_key: text_to_string(p.get_governance_key().map_err(|e| capnp_err(&e))?)?,
+        anchor: text_to_string(p.get_anchor().map_err(|e| capnp_err(&e))?)?,
         subkey_index: p.get_subkey_index(),
         lamport_ts: p.get_lamport_ts(),
     })

@@ -47,7 +47,7 @@ async fn mark_read(community: &Community, channel: &str, up_to: &str) {
     community.nodes[BEA]
         .ok(IpcRequest::Community(CommunityRequest::Unread(
             UnreadRequest::ChannelMarkRead {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 channel: channel.to_owned(),
                 up_to: up_to.to_owned(),
             },
@@ -60,7 +60,7 @@ async fn unread(community: &Community, channel: &str) -> u64 {
     let counts = community.nodes[BEA]
         .ok(IpcRequest::Community(CommunityRequest::Unread(
             UnreadRequest::UnreadCounts {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await;

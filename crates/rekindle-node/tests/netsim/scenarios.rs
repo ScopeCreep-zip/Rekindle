@@ -54,10 +54,8 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
     let seed = slot_seed_from_invite(&community);
     let free_slot = 254;
     let writer = rekindle_crypto::keypair_text::slot_keypair_text(&seed, free_slot).unwrap();
-    let forger = rekindle_secrets::derive::derive_community_pseudonym(
-        &[0xAB; 32],
-        &community.governance_key,
-    );
+    let forger =
+        rekindle_secrets::derive::derive_community_pseudonym(&[0xAB; 32], &community.anchor);
     let author = PseudonymKey(forger.verifying_key().to_bytes());
     let (_, page) = rekindle_governance_runtime::overflow::build_signed_payload(
         &[GovernanceEntry::CommunityMeta {
@@ -73,7 +71,7 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
     .unwrap();
     community
         .sim
-        .forge_write(&community.governance_key, free_slot, page, &writer)
+        .forge_write(&community.anchor, free_slot, page, &writer)
         .unwrap();
 
     // A joiner merges the governance record from the DHT, forged page included.
@@ -101,7 +99,7 @@ async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 name: "mod".into(),
                 permissions: KICK_MEMBERS,
                 color: 0,
@@ -116,7 +114,7 @@ async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 member_pseudonym: bea.clone(),
                 role_id,
             },
@@ -138,7 +136,7 @@ async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
     let kick = |by: usize, target: &str| {
         community.nodes[by].call(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: target.to_string(),
                 reason: None,
             },
@@ -179,7 +177,7 @@ async fn concurrent_rotations_converge_on_one_generation() {
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 name: "admin".into(),
                 permissions: ADMINISTRATOR,
                 color: 0,
@@ -194,7 +192,7 @@ async fn concurrent_rotations_converge_on_one_generation() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 member_pseudonym: bea,
                 role_id,
             },
@@ -212,7 +210,7 @@ async fn concurrent_rotations_converge_on_one_generation() {
     let rotate = |by: usize| {
         community.nodes[by].call(IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::MekRotate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 channel: general.clone(),
             },
         )))
@@ -227,7 +225,7 @@ async fn concurrent_rotations_converge_on_one_generation() {
             out.push(
                 node.ok(IpcRequest::Community(CommunityRequest::Messages(
                     ChannelMessageRequest::MekList {
-                        community: community.governance_key.clone(),
+                        community: community.anchor.clone(),
                     },
                 )))
                 .await
@@ -265,7 +263,7 @@ async fn an_outsider_cannot_inject_a_community_key() {
     let before = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::MekList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await;
@@ -290,7 +288,7 @@ async fn an_outsider_cannot_inject_a_community_key() {
     .unwrap();
     let transfer = encode_community_envelope(&CommunityEnvelope::Control(
         ControlPayload::MekTransfer(MekTransferPayload {
-            community_id: community.governance_key.clone(),
+            community_id: community.anchor.clone(),
             channel_id: None,
             generation: 99,
             sender_pseudonym: hex::encode(forger.verifying_key().to_bytes()),
@@ -309,7 +307,7 @@ async fn an_outsider_cannot_inject_a_community_key() {
     let after = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::MekList {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
             },
         )))
         .await;

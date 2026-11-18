@@ -33,7 +33,7 @@ async fn banned_post_not_backfilled() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Ban {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },
@@ -77,7 +77,7 @@ async fn automod_blur_carried_on_event() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::AutomodRuleSet {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 rule_id: None,
                 name: "spoilers".into(),
                 enabled: true,

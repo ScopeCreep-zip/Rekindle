@@ -30,7 +30,7 @@ async fn a_member_resumes_its_community_after_a_restart() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Channels(
             ChannelRequest::ChannelCreate {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 name: "news".into(),
                 kind: "text".into(),
                 category: None,
@@ -52,13 +52,13 @@ async fn a_member_resumes_its_community_after_a_restart() {
         })
         .await;
     let events = member.events().await;
-    let governance_key = community.governance_key.clone();
+    let anchor = community.anchor.clone();
     let rebuilt = eventually(&community.sim, LIMIT, || async {
         events.any(|e| {
             matches!(
                 e,
                 SubscriptionEvent::Governance(GovernanceEvent::GovernanceRebuilt { community: c })
-                    if *c == governance_key
+                    if *c == anchor
             )
         }) && community.info(1).await.to_string().contains("news")
     })

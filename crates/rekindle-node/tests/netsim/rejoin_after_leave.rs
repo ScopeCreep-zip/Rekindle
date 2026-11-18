@@ -21,7 +21,7 @@ async fn members(community: &Community, i: usize) -> Vec<String> {
     community.nodes[i]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityMembers {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await
@@ -104,7 +104,7 @@ async fn leave(community: &Community, i: usize, who: &str) {
     community.nodes[i]
         .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await
@@ -120,12 +120,12 @@ async fn leave(community: &Community, i: usize, who: &str) {
 async fn general_heads(community: &Community, reader: usize, departed: &str) -> usize {
     let governance = community.nodes[reader].host.governance();
     let general = community.general_id(0).await;
-    let Some(record_key) = (governance.community_membership(&community.governance_key))
+    let Some(record_key) = (governance.community_membership(&community.anchor))
         .and_then(|m| m.channel_log_keys.get(&general).cloned())
     else {
         return 0;
     };
-    (governance.governance_state(&community.governance_key))
+    (governance.governance_state(&community.anchor))
         .and_then(|state| {
             (state
                 .departed_heads
@@ -169,7 +169,7 @@ async fn a_kick_right_after_a_rejoin_heads_the_current_slot_and_keeps_the_old() 
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: None,
             },

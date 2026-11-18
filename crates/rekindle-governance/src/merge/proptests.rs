@@ -398,7 +398,7 @@ proptest! {
             .map(|idx| at(base_lamport.saturating_add(u64::from(idx)), GovernanceEntry::SegmentAdded {
                 segment_index: idx,
                 registry_key: format!("REG{idx}"),
-                governance_key: format!("GOV{idx}"),
+                anchor: format!("GOV{idx}"),
                 slot_range_start: idx * 255,
                 slot_range_end: idx * 255 + 255,
             }))

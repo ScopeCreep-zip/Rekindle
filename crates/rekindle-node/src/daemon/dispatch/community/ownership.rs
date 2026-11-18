@@ -20,13 +20,13 @@ use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 pub(crate) async fn handle_transfer_ownership(
     ctx: &DaemonContext,
     state: DaemonState,
-    governance_key: &str,
+    anchor: &str,
     new_owner_pseudonym: &str,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Err(e) = ctx.resolve_community(governance_key) {
+    if let Err(e) = ctx.resolve_community(anchor) {
         return e;
     }
 
@@ -34,7 +34,7 @@ pub(crate) async fn handle_transfer_ownership(
     // flag is v1.0 residue and under `o_cnt: 0` grants nothing.
     match rekindle_governance_runtime::ownership::grant_administration(
         &adapter(ctx),
-        governance_key,
+        anchor,
         new_owner_pseudonym,
     )
     .await

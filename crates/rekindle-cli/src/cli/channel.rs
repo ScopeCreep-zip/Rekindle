@@ -11,14 +11,14 @@ use clap::Subcommand;
 pub enum ChannelCmd {
     /// List channels in a community (grouped by category).
     List {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
     },
 
     /// Create a channel.
     Create {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name.
@@ -40,7 +40,7 @@ pub enum ChannelCmd {
 
     /// Delete a channel.
     Delete {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -50,7 +50,7 @@ pub enum ChannelCmd {
 
     /// Update a channel's properties.
     Update {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -71,7 +71,7 @@ pub enum ChannelCmd {
     ///
     /// Example: rekindle channel send -c "my community" -C "general" -m "hello world"
     Send {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -87,7 +87,7 @@ pub enum ChannelCmd {
 
     /// Read channel message history.
     History {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -106,7 +106,7 @@ pub enum ChannelCmd {
 
     /// Live-stream channel messages (gossip + DHT watch).
     Watch {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -116,7 +116,7 @@ pub enum ChannelCmd {
 
     /// Pin a message.
     Pin {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -129,7 +129,7 @@ pub enum ChannelCmd {
 
     /// Unpin a message.
     Unpin {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Channel name or ID.
@@ -146,7 +146,7 @@ pub enum ChannelCmd {
 pub enum VoiceCmd {
     /// Join a voice channel (MEK derive, session establish).
     Join {
-        /// Community name or governance key.
+        /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
         /// Voice channel name or ID.

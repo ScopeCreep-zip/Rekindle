@@ -34,41 +34,41 @@ pub(super) fn selection(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
             s.notifies = Notifies::Subject;
         }
-        LifecycleRequest::CommunityLeave { governance_key } => {
-            let (id, name) = community(ctx, governance_key)?;
+        LifecycleRequest::CommunityLeave { anchor } => {
+            let (id, name) = community(ctx, anchor)?;
             s.escalations = leave_escalations(ctx, &id)?;
             s.facts.push(Fact::RejoinNeedsInvite);
             s.reversibility = Reversibility::NeedsOthers;
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        LifecycleRequest::CommunityForget { governance_key } => {
+        LifecycleRequest::CommunityForget { anchor } => {
             // Only our own copy goes: no one is told (plan E3.2 S9 R3-5).
-            let (id, name) = community(ctx, governance_key)?;
+            let (id, name) = community(ctx, anchor)?;
             s.facts.push(Fact::RejoinNeedsInvite);
             s.reversibility = Reversibility::Never;
             s.subject = Subject::Community { id, name };
         }
-        LifecycleRequest::CommunityUpdateInfo { governance_key, .. } => {
-            let (id, name) = community(ctx, governance_key)?;
+        LifecycleRequest::CommunityUpdateInfo { anchor, .. } => {
+            let (id, name) = community(ctx, anchor)?;
             s.reversibility = Reversibility::Undoable;
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
         LifecycleRequest::CommunityApprove {
-            governance_key,
+            anchor,
             member_pseudonym,
         }
         | LifecycleRequest::CommunityReject {
-            governance_key,
+            anchor,
             member_pseudonym,
             ..
         }
         | LifecycleRequest::CommunityTransferOwnership {
-            governance_key,
+            anchor,
             new_owner_pseudonym: member_pseudonym,
         } => {
-            let (id, _) = community(ctx, governance_key)?;
+            let (id, _) = community(ctx, anchor)?;
             s.subject = Subject::Named {
                 name: member_pseudonym.clone(),
             };

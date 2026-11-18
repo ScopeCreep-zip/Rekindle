@@ -205,7 +205,7 @@ pub async fn setup_community_watches(
     registry: &RwLock<WatchRegistry>,
     membership: &CommunityMembership,
 ) {
-    let community = &membership.governance_key;
+    let community = &membership.anchor;
 
     // No governance-record watch (plan E3.2 S7): the anchor is immutable,
     // and a governance change arrives through the Host's watch ring.
@@ -254,7 +254,7 @@ pub async fn setup_community_watches(
 
     info!(
         community = membership.community_name.as_str(),
-        governance = %membership.governance_key,
+        governance = %membership.anchor,
         registry = %membership.registry_key,
         "community watches established"
     );

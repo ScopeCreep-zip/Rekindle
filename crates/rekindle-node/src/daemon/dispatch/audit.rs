@@ -44,7 +44,7 @@ async fn handle_audit_log(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .audit_log(&membership.governance_key, before_timestamp, limit)
+        .audit_log(&membership.anchor, before_timestamp, limit)
         .await
     {
         Ok(rows) => IpcResponse::ok(&rows),
@@ -65,7 +65,7 @@ fn handle_notification_default_get(
         Ok(m) => m,
         Err(e) => return e,
     };
-    IpcResponse::ok(&adapter(ctx).notification_default(&membership.governance_key))
+    IpcResponse::ok(&adapter(ctx).notification_default(&membership.anchor))
 }
 
 /// Set the default notification level.
@@ -83,7 +83,7 @@ async fn handle_notification_default_set(
         Err(e) => return e,
     };
     match adapter(ctx)
-        .set_notification_default(&membership.governance_key, level)
+        .set_notification_default(&membership.anchor, level)
         .await
     {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "level": level })),

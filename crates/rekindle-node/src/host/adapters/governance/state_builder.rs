@@ -13,7 +13,7 @@ use crate::host::community::GossipOverlay;
 /// The parts of a `CommunityInsert` the store keeps at creation.
 pub(super) struct CreatedCommunity<'a> {
     pub id: &'a str,
-    pub governance_key: &'a str,
+    pub anchor: &'a str,
     pub registry_key: &'a str,
     pub channel_id_hex: &'a str,
     pub channel_record_key: &'a str,
@@ -35,7 +35,7 @@ impl HostGovernance {
                 created.channel_id_hex.to_string(),
                 created.channel_record_key.to_string(),
             );
-            c.open_community_records.governance_key = Some(created.governance_key.to_string());
+            c.open_community_records.anchor = Some(created.anchor.to_string());
             c.open_community_records.registry_key = Some(created.registry_key.to_string());
             c.open_community_records
                 .channel_keys

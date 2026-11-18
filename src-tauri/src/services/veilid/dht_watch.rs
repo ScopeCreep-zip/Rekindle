@@ -137,13 +137,13 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
     let community_id_and_pseudonym = {
         let communities = state.communities.read();
         communities.values().find_map(|cs| {
-            let matched = cs.governance_key.as_deref() == Some(record_key)
+            let matched = cs.anchor.as_deref() == Some(record_key)
                 || cs.member_registry_key.as_deref() == Some(record_key)
                 || cs.channel_log_keys.values().any(|k| k == record_key)
                 || cs.governance_state.as_ref().is_some_and(|gov| {
                     gov.segments
                         .iter()
-                        .any(|s| s.governance_key == record_key || s.registry_key == record_key)
+                        .any(|s| s.anchor == record_key || s.registry_key == record_key)
                         || gov
                             .channel_segment_records
                             .values()

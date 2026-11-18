@@ -18,7 +18,7 @@ async fn member_roles(community: &Community, i: usize, pseudonym: &str) -> Vec<u
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityMembers {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await
@@ -69,7 +69,7 @@ fn prompt(role_id: u32) -> OnboardingConfigDto {
 async fn onboarding_role_assignment() {
     let community = Community::of(2, 83).await;
     let bea = community.pseudonym(1).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {

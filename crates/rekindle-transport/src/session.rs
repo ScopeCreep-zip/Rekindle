@@ -48,26 +48,26 @@ impl Session {
         }
     }
 
-    /// Add a community membership. Overwrites if the governance key already exists.
+    /// Add a community membership. Overwrites if the anchor key already exists.
     pub fn join_community(&mut self, membership: CommunityMembership) {
         self.communities
-            .insert(membership.governance_key.clone(), membership);
+            .insert(membership.anchor.clone(), membership);
     }
 
-    /// Remove a community membership by governance key.
-    pub fn leave_community(&mut self, governance_key: &str) {
-        self.communities.remove(governance_key);
+    /// Remove a community membership by anchor key.
+    pub fn leave_community(&mut self, anchor: &str) {
+        self.communities.remove(anchor);
     }
 
-    /// Look up a community membership by governance key.
-    pub fn community(&self, governance_key: &str) -> Option<&CommunityMembership> {
-        self.communities.get(governance_key)
+    /// Look up a community membership by anchor key.
+    pub fn community(&self, anchor: &str) -> Option<&CommunityMembership> {
+        self.communities.get(anchor)
     }
 
     /// Look up a community membership by community name (case-insensitive).
     ///
     /// Returns `None` if zero or more than one community matches. The CLI
-    /// should use governance key for unambiguous lookups; this is a
+    /// should use anchor key for unambiguous lookups; this is a
     /// convenience for user-facing name resolution.
     pub fn community_by_name(&self, name: &str) -> Option<&CommunityMembership> {
         let lower = name.to_lowercase();
@@ -118,7 +118,7 @@ pub struct SessionIdentity {
 #[derive(Debug, Clone)]
 pub struct CommunityMembership {
     /// Community governance DHT key.
-    pub governance_key: String,
+    pub anchor: String,
 
     /// Our pseudonym public key for this community (hex).
     pub pseudonym_key: String,
@@ -180,7 +180,7 @@ mod tests {
 
     fn test_membership() -> CommunityMembership {
         CommunityMembership {
-            governance_key: "VLD0:gov:key".into(),
+            anchor: "VLD0:gov:key".into(),
             pseudonym_key: "pseudonym_hex".into(),
             registry_key: "VLD0:reg:key".into(),
             slot_index: 3,
@@ -209,12 +209,12 @@ mod tests {
         let mut session = Session::new(test_identity());
 
         let mut m1 = test_membership();
-        m1.governance_key = "gov1".into();
+        m1.anchor = "gov1".into();
         m1.community_name = "shared-name".into();
         session.join_community(m1);
 
         let mut m2 = test_membership();
-        m2.governance_key = "gov2".into();
+        m2.anchor = "gov2".into();
         m2.community_name = "shared-name".into();
         session.join_community(m2);
 

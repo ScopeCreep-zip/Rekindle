@@ -156,7 +156,7 @@ impl HostGovernance {
             .ok()
             .and_then(|b| <[u8; 32]>::try_from(b).ok());
         let membership = SessionMembership {
-            governance_key: community.id.clone(),
+            anchor: community.id.clone(),
             pseudonym_key: community.my_pseudonym_hex.clone(),
             registry_key: community.registry_key.clone(),
             // Origin always takes slot 0 of the genesis segment.
@@ -194,7 +194,7 @@ impl HostGovernance {
         self.open_gossip_mesh(&community.id);
         self.install_created(&super::state_builder::CreatedCommunity {
             id: &community.id,
-            governance_key: &community.id,
+            anchor: &community.id,
             registry_key: &community.registry_key,
             channel_id_hex: &community.channel_id_hex,
             channel_record_key: &community.channel_record_key,

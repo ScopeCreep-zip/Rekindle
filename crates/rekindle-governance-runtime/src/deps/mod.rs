@@ -304,8 +304,8 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     // ---------- DHT-hydration deps (Phase 23.C chiral split) ----------
 
-    /// Snapshot every joined community's `(community_id, governance_key)`.
-    /// Communities without a `governance_key` (v1.0 legacy) are skipped.
+    /// Snapshot every joined community's `(community_id, anchor)`.
+    /// Communities without a `anchor` (v1.0 legacy) are skipped.
     /// Used by `dht_hydration::rebuild_governance` to enumerate
     /// records to merge.
     fn list_community_governance_targets(&self) -> Vec<(String, String)>;

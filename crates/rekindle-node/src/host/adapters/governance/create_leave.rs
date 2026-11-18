@@ -85,7 +85,7 @@ impl HostGovernance {
             .map(|m| m.registry_key.clone())
             .unwrap_or_default();
         Ok(CommunityCreated {
-            governance_key: id,
+            anchor: id,
             registry_key,
             name: name.to_owned(),
         })
@@ -100,7 +100,7 @@ impl HostGovernance {
         &self,
         membership: &rekindle_transport::CommunityMembership,
     ) -> Result<(), String> {
-        let id = membership.governance_key.clone();
+        let id = membership.anchor.clone();
         let transport = self.transport().map_err(|e| e.to_string())?;
         // The `MemberLeft` op goes on our member record first, while the
         // community's state and our pseudonym are still here (plan E3.2).

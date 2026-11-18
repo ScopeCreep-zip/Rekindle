@@ -28,7 +28,7 @@ pub use rekindle_types::presence::SessionStatus as UserStatusKind;
 /// DTO so the lock is dropped before any `.await`.
 #[derive(Debug, Clone)]
 pub struct CommunityMembership {
-    pub governance_key: Option<String>,
+    pub anchor: Option<String>,
     pub member_registry_key: Option<String>,
     pub my_pseudonym_hex: Option<String>,
     pub my_subkey_index: Option<u32>,
@@ -85,7 +85,7 @@ pub struct DhtRecordInfo {
 #[derive(Debug, Clone)]
 pub struct CommunityDhtOpenSetup {
     pub id: String,
-    pub governance_key: String,
+    pub anchor: String,
     pub registry_key: Option<String>,
     /// Preferred registry writer keypair string (registry_owner if
     /// present, falling back to the slot keypair). `None` opens the

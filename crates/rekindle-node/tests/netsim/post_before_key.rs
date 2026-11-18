@@ -32,7 +32,7 @@ async fn a_post_before_the_key_waits_and_is_written_when_the_key_lands() {
             LifecycleRequest::CommunityJoin { invite: link },
         )))
         .await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
             community.nodes[1]

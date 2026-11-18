@@ -39,17 +39,17 @@ pub(crate) fn handle_mek_transfer(
     signing_key: &RwLock<Option<crate::state::signing_key::SigningKeyHandle>>,
     governance: Option<&crate::host::adapters::governance::HostGovernance>,
 ) -> CallResponse {
-    let governance_key = &transfer.community_id;
+    let anchor = &transfer.community_id;
 
     // Membership is checked first so an unsolicited transfer for a
     // community we are not in is refused before any crypto runs.
     let is_member = session
         .read()
         .as_ref()
-        .is_some_and(|s| s.community(governance_key).is_some());
+        .is_some_and(|s| s.community(anchor).is_some());
     if !is_member {
         tracing::debug!(
-            community = %governance_key,
+            community = %anchor,
             "MEK transfer for a community we are not in — refusing"
         );
         return CallResponse::Rejected {
@@ -60,8 +60,8 @@ pub(crate) fn handle_mek_transfer(
     // Nothing is opened or stored for a community we were removed from,
     // nor from a departed rotator (plan E3.2 S9, R3-1/R3-3).
     let rotator = rekindle_types::id::PseudonymKey::from_hex_lossy(&transfer.sender_pseudonym);
-    if governance.is_some_and(|g| !g.takes_traffic_from(governance_key, &rotator)) {
-        tracing::debug!(community = %governance_key, "MEK transfer refused: removed or departed");
+    if governance.is_some_and(|g| !g.takes_traffic_from(anchor, &rotator)) {
+        tracing::debug!(community = %anchor, "MEK transfer refused: removed or departed");
         return CallResponse::Rejected {
             reason: "removed".into(),
         };
@@ -92,7 +92,7 @@ pub(crate) fn handle_mek_transfer(
     match rekindle_transport::operations::mek::unwrap_mek_transfer_payload(
         &projected,
         &signing_key_bytes,
-        governance_key,
+        anchor,
     ) {
         Ok(mek) => {
             let generation = mek.generation();
@@ -104,14 +104,14 @@ pub(crate) fn handle_mek_transfer(
                     reason: "locked".into(),
                 };
             };
-            governance.install_transferred_mek(governance_key, scope, &mek);
+            governance.install_transferred_mek(anchor, scope, &mek);
             let our_pseudonym = rekindle_transport::crypto::pseudonym::derive_community_pseudonym(
                 &signing_key_bytes,
-                governance_key,
+                anchor,
             );
             let our_pseudonym_hex = hex::encode(our_pseudonym.verifying_key().to_bytes());
             tracing::info!(
-                community = %governance_key,
+                community = %anchor,
                 %scope,
                 generation,
                 "MEK accepted from rotator"
@@ -120,7 +120,7 @@ pub(crate) fn handle_mek_transfer(
             {
                 Ok(ack) => CallResponse::Ok(ack),
                 Err(e) => {
-                    tracing::warn!(community = %governance_key, error = %e, "MekTransferAck not encoded");
+                    tracing::warn!(community = %anchor, error = %e, "MekTransferAck not encoded");
                     CallResponse::Rejected {
                         reason: "ack not encoded".into(),
                     }
@@ -133,7 +133,7 @@ pub(crate) fn handle_mek_transfer(
             // at warn because a *legitimate* rotator hitting this means
             // a real key-distribution failure.
             tracing::warn!(
-                community = %governance_key,
+                community = %anchor,
                 error = %e,
                 "MEK transfer unwrap failed"
             );

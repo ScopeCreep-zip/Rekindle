@@ -27,19 +27,19 @@ pub async fn community_leave(
     node: &TransportNode,
     target: &PeerTarget,
     recipient: &[u8; 32],
-    governance_key: &str,
+    anchor: &str,
     leaving_pseudonym: &str,
     signing_key: &[u8; 32],
     sender_public_hex: &str,
     now_ms: u64,
 ) -> Result<CallResponse> {
     debug!(
-        governance = governance_key,
+        governance = anchor,
         pseudonym = leaving_pseudonym,
         "rpc: community_leave"
     );
     let notification = CommunityLeaveNotification {
-        governance_key: governance_key.into(),
+        anchor: anchor.into(),
         leaving_pseudonym_hex: leaving_pseudonym.into(),
     };
     let payload =
@@ -68,7 +68,7 @@ pub async fn community_leave(
         }
     })?;
 
-    info!(governance = governance_key, "community leave RPC complete");
+    info!(governance = anchor, "community leave RPC complete");
     Ok(response)
 }
 

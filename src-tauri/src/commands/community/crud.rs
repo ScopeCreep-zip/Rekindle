@@ -79,7 +79,7 @@ pub async fn leave_community(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::CommunityLeave {
-            governance_key: community_id,
+            anchor: community_id,
         },
     ));
     host_call::call(&state, request).await
@@ -98,7 +98,7 @@ pub async fn update_community_info(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::CommunityUpdateInfo {
-            governance_key: community_id,
+            anchor: community_id,
             name,
             description,
             icon_hash,

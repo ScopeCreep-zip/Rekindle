@@ -58,9 +58,7 @@ pub async fn leave_community(
         );
     }
 
-    mek_cache
-        .write()
-        .remove_community(&membership.governance_key);
+    mek_cache.write().remove_community(&membership.anchor);
     info!(community = %membership.community_name, "community left");
     Ok(LeaveResult {
         departure_notice: rekindle_codec::community::envelope::CommunityEnvelope::Control(
@@ -147,10 +145,8 @@ async fn release_registry_slot(
                 TransportError::Internal(format!("slot keypair derivation failed: {e}"))
             })?;
 
-    let pseudonym = crate::crypto::pseudonym::derive_community_pseudonym(
-        signing_key_bytes,
-        &membership.governance_key,
-    );
+    let pseudonym =
+        crate::crypto::pseudonym::derive_community_pseudonym(signing_key_bytes, &membership.anchor);
     let bytes = rekindle_codec::presence_row::departure_row(&pseudonym, now_secs);
     let my_pseudonym_hex = hex::encode(pseudonym.verifying_key().to_bytes());
 

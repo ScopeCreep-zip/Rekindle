@@ -33,7 +33,7 @@ async fn line(community: &Community, at: Duration) -> String {
             Duration::from_secs(5),
             node.call(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityInfo {
-                    governance_key: community.governance_key.clone(),
+                    anchor: community.anchor.clone(),
                 },
             ))),
         )

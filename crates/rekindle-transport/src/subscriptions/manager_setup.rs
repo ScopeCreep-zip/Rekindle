@@ -12,13 +12,13 @@ impl SubscriptionManager {
     ///
     /// Called for each community during resume and on community join.
     pub async fn setup_community(&self, membership: &CommunityMembership) {
-        info!(community = %membership.community_name, governance = %membership.governance_key, "sub: setup_community");
+        info!(community = %membership.community_name, governance = %membership.anchor, "sub: setup_community");
         // The mesh first: it holds the community's message Lamport clock, so
         // a send works while the watches' DHT opens are still in flight.
         self.meshes
             .write()
-            .entry(membership.governance_key.clone())
-            .or_insert_with(|| GossipMesh::new(membership.governance_key.clone()));
+            .entry(membership.anchor.clone())
+            .or_insert_with(|| GossipMesh::new(membership.anchor.clone()));
         watches::setup_community_watches(&self.node, &self.watches, membership).await;
     }
 
@@ -35,13 +35,13 @@ impl SubscriptionManager {
     /// Remove all watches and state for a community. Returns the watches'
     /// pool leases, for the caller to release.
     #[must_use]
-    pub fn teardown_community(&self, governance_key: &str) -> Vec<LeaseId> {
-        let leases = self.watches.write().remove_community(governance_key);
-        self.meshes.write().remove(governance_key);
-        self.state.write().typing.remove_community(governance_key);
-        self.state.write().presence.remove_community(governance_key);
-        self.state.write().voice.remove_community(governance_key);
-        debug!(governance_key, "community subscriptions torn down");
+    pub fn teardown_community(&self, anchor: &str) -> Vec<LeaseId> {
+        let leases = self.watches.write().remove_community(anchor);
+        self.meshes.write().remove(anchor);
+        self.state.write().typing.remove_community(anchor);
+        self.state.write().presence.remove_community(anchor);
+        self.state.write().voice.remove_community(anchor);
+        debug!(anchor, "community subscriptions torn down");
         leases
     }
 }

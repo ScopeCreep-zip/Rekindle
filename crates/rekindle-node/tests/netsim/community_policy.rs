@@ -39,7 +39,7 @@ fn set_policy(community: &str, text: &str, joins: u32) -> IpcRequest {
 async fn a_policy_one_member_sets_is_seen_by_another() {
     let community = Community::of(2, 211).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let before = policy(&community.nodes[1], &key).await;
     assert_eq!(before.policy_text, None, "the defaults before any policy");
 
@@ -66,7 +66,7 @@ async fn a_policy_one_member_sets_is_seen_by_another() {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_community_picture_is_cached_and_a_webp_is_refused() {
     let community = Community::of(1, 212).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let pixels = vec![200u8; 64 * 64 * 4];
     let picture = rekindle_image::RgbaImage::from_raw(64, 64, pixels).expect("pixels");
     let png = rekindle_image::encode_png(&rekindle_image::DynamicImage::ImageRgba8(picture))

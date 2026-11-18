@@ -23,15 +23,15 @@ pub enum LifecycleRequest {
         approval_required: bool,
     },
 
-    /// Join a community via governance key or invite code.
+    /// Join a community via anchor key or invite code.
     CommunityJoin { invite: String },
 
     /// Leave a community.
-    CommunityLeave { governance_key: String },
+    CommunityLeave { anchor: String },
 
     /// Delete a community we were removed from: its kept history, keys
     /// and every local row (plan E3.2 S9 R3-5).
-    CommunityForget { governance_key: String },
+    CommunityForget { anchor: String },
 
     /// List all joined communities.
     CommunityList,
@@ -41,15 +41,15 @@ pub enum LifecycleRequest {
     CommunityViews,
 
     /// A community's member list.
-    CommunityMembers { governance_key: String },
+    CommunityMembers { anchor: String },
 
     /// Get detailed community info (channels, roles, members).
-    CommunityInfo { governance_key: String },
+    CommunityInfo { anchor: String },
 
     /// Edit a community's name, description, icon or banner; `None` keeps
     /// the merged value.
     CommunityUpdateInfo {
-        governance_key: String,
+        anchor: String,
         name: Option<String>,
         description: Option<String>,
         icon_hash: Option<String>,
@@ -58,23 +58,23 @@ pub enum LifecycleRequest {
 
     /// Approve a pending member from the waiting room.
     CommunityApprove {
-        governance_key: String,
+        anchor: String,
         member_pseudonym: String,
     },
 
     /// Reject a pending member from the waiting room.
     CommunityReject {
-        governance_key: String,
+        anchor: String,
         member_pseudonym: String,
         reason: String,
     },
 
     /// List pending join requests for a community.
-    CommunityPendingMembers { governance_key: String },
+    CommunityPendingMembers { anchor: String },
 
     /// Transfer community ownership to a new owner.
     CommunityTransferOwnership {
-        governance_key: String,
+        anchor: String,
         new_owner_pseudonym: String,
     },
 

@@ -45,7 +45,7 @@ pub struct CommunityInviteView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityCreated {
-    pub governance_key: String,
+    pub anchor: String,
     pub registry_key: String,
     pub name: String,
 }
@@ -54,7 +54,7 @@ pub struct CommunityCreated {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityJoined {
-    pub governance_key: String,
+    pub anchor: String,
     pub name: String,
     /// The registry segment our claimed slot is in.
     pub segment: u32,
@@ -90,7 +90,7 @@ pub struct CommunityView {
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,
     pub member_registry_key: Option<String>,
-    pub governance_key: Option<String>,
+    pub anchor: Option<String>,
     pub onboarding_complete: bool,
     /// Our per-community profile, for prefilling the edit form.
     #[serde(default, skip_serializing_if = "Option::is_none")]

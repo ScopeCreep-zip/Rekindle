@@ -27,7 +27,7 @@ async fn ask(community: &Community, i: usize, request: CommunityRequest) -> serd
 async fn thread_reply_both_ways() {
     let community = Community::of(2, 231).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let channel = community.general_id(0).await;
     let starter = community
         .post(0, "start a thread")
@@ -189,7 +189,7 @@ fn saw_own_reply(events: &Events, thread: &str, text: &str) -> bool {
 async fn reaction_converges() {
     let community = Community::of(2, 232).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let posted = community.post(0, "react to me").await.expect("ann posts");
     assert!(
         community.history_holds(1, "react to me", LIMIT).await,
@@ -220,7 +220,7 @@ async fn reaction_converges() {
 async fn poll_vote_converges() {
     let community = Community::of(2, 233).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
-    let key = community.governance_key.clone();
+    let key = community.anchor.clone();
     let channel = community.general_id(0).await;
     let posted = community.post(0, "lunch?").await.expect("ann posts");
     let poll = ask(

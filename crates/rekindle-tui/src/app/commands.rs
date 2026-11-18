@@ -161,7 +161,7 @@ impl App {
             match client
                 .request_ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityMembers {
-                        governance_key: community.clone(),
+                        anchor: community.clone(),
                     },
                 )))
                 .await
@@ -191,9 +191,7 @@ impl App {
         tokio::spawn(async move {
             match client
                 .request_ok(IpcRequest::Community(CommunityRequest::Lifecycle(
-                    LifecycleRequest::CommunityInfo {
-                        governance_key: community,
-                    },
+                    LifecycleRequest::CommunityInfo { anchor: community },
                 )))
                 .await
             {
@@ -288,14 +286,14 @@ impl App {
         });
     }
 
-    pub(crate) fn spawn_leave_community(&self, governance_key: String, name: String) {
+    pub(crate) fn spawn_leave_community(&self, anchor: String, name: String) {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
             match client
                 .request_ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityLeave {
-                        governance_key: governance_key.clone(),
+                        anchor: anchor.clone(),
                     },
                 )))
                 .await

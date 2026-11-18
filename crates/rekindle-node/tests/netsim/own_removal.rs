@@ -80,7 +80,7 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea.clone(),
                 reason: Some(REASON.into()),
             },

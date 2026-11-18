@@ -21,7 +21,7 @@ pub(super) async fn selection(
         ActivityRequest::GameServerAdd {
             community, label, ..
         } => {
-            let id = ctx.resolve_community(community)?.governance_key;
+            let id = ctx.resolve_community(community)?.anchor;
             s.subject = Subject::Named {
                 name: label.clone(),
             };
@@ -32,7 +32,7 @@ pub(super) async fn selection(
             community,
             server_id,
         } => {
-            let id = ctx.resolve_community(community)?.governance_key;
+            let id = ctx.resolve_community(community)?.anchor;
             let governance = crate::daemon::dispatch::adapter(ctx);
             let label = governance
                 .game_server_label(&id, server_id)

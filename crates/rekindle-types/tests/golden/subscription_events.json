@@ -596,7 +596,7 @@
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "segments": [
           {
-            "governanceKey": "VLD0:sssssssssssssssssssssssssssssssssssssssssss",
+            "anchor": "VLD0:sssssssssssssssssssssssssssssssssssssssssss",
             "registryKey": "VLD0:rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
             "segmentIndex": 1,
             "slotRangeEnd": 510,

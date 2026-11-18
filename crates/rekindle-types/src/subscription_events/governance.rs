@@ -310,7 +310,7 @@ mod tests {
                 segments: vec![crate::presence::SegmentDescriptor {
                     segment_index: 1,
                     registry_key: "reg1".into(),
-                    governance_key: "gov1".into(),
+                    anchor: "gov1".into(),
                     slot_range_start: 255,
                     slot_range_end: 510,
                 }],

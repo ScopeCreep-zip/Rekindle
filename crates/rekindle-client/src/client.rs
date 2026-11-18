@@ -316,9 +316,7 @@ mod timeout_tests {
             reason: None,
         }));
         let leave = IpcRequest::Community(CommunityRequest::Lifecycle(
-            LifecycleRequest::CommunityLeave {
-                governance_key: "c".into(),
-            },
+            LifecycleRequest::CommunityLeave { anchor: "c".into() },
         ));
         let list = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelList {
             community: "c".into(),

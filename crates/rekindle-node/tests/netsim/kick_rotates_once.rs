@@ -39,7 +39,7 @@ async fn one_kick_rotates_the_key_once() {
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
-                community: community.governance_key.clone(),
+                community: community.anchor.clone(),
                 target_pseudonym: bea,
                 reason: None,
             },

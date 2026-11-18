@@ -51,10 +51,10 @@ async fn unlock(community: &Community, i: usize) {
 pub(crate) async fn assert_departure_heads(community: &Community, reader: usize, departed: &str) {
     let governance = community.nodes[reader].host.governance();
     let general = community.general_id(0).await;
-    let record_key = (governance.community_membership(&community.governance_key))
+    let record_key = (governance.community_membership(&community.anchor))
         .and_then(|m| m.channel_log_keys.get(&general).cloned())
         .expect("the general channel's record");
-    let heads = (governance.governance_state(&community.governance_key))
+    let heads = (governance.governance_state(&community.anchor))
         .and_then(|state| {
             (state.departed_heads)
                 .get(&PseudonymKey::from_hex_lossy(departed))
@@ -86,7 +86,7 @@ async fn a_leavers_back_dated_slot_write_is_kept_by_no_member() {
     community.nodes[1]
         .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {
-                governance_key: community.governance_key.clone(),
+                anchor: community.anchor.clone(),
             },
         )))
         .await
@@ -148,7 +148,7 @@ async fn a_leavers_back_dated_slot_write_is_kept_by_no_member() {
 /// The heads node `i` would sign for `departed` now (its local copy).
 async fn heads_of(community: &Community, i: usize, departed: &str) -> Vec<SlotHead> {
     (community.nodes[i].host.governance())
-        .departed_slot_heads(&community.governance_key, departed)
+        .departed_slot_heads(&community.anchor, departed)
         .await
         .expect("the slot heads")
 }
@@ -161,7 +161,7 @@ fn merged_head(
     record_key: &str,
 ) -> Option<std::collections::BTreeSet<(u32, [u8; 32])>> {
     (community.nodes[reader].host.governance())
-        .governance_state(&community.governance_key)
+        .governance_state(&community.anchor)
         .and_then(|state| {
             (state
                 .departed_heads
@@ -221,7 +221,7 @@ async fn a_leavers_reserved_seq_gap_is_kept_by_no_member() {
     };
     rekindle_governance_runtime::apply::write_entry(
         &community.nodes[1].host.governance(),
-        &community.governance_key,
+        &community.anchor,
         forged,
     )
     .await
@@ -307,7 +307,7 @@ async fn a_leavers_withheld_last_write_is_kept_by_every_member() {
     );
     rekindle_governance_runtime::moderation::leave(
         &community.nodes[1].host.governance(),
-        &community.governance_key,
+        &community.anchor,
     )
     .await
     .expect("the leave op commits");

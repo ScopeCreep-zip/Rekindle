@@ -47,7 +47,7 @@ fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static
                 out.push((label, key));
             }
         };
-    if let Some(ref gov_key) = community.open_community_records.governance_key {
+    if let Some(ref gov_key) = community.open_community_records.anchor {
         push("governance", gov_key.clone(), &mut seen);
     }
     if let Some(ref reg_key) = community.open_community_records.registry_key {
@@ -69,7 +69,7 @@ fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static
     }
     if let Some(gov) = community.governance_state.as_ref() {
         for seg in &gov.segments {
-            push("segment-governance", seg.governance_key.clone(), &mut seen);
+            push("segment-governance", seg.anchor.clone(), &mut seen);
             push("segment-registry", seg.registry_key.clone(), &mut seen);
         }
         for csr in gov.channel_segment_records.values() {
@@ -119,13 +119,13 @@ pub async fn hold_unheld_records(
     let Ok(pool) = state_helpers::record_pool(state) else {
         return;
     };
-    let (governance_key, registry_key, registry_writer) = {
+    let (anchor, registry_key, registry_writer) = {
         let communities = state.communities.read();
         let Some(cs) = communities.get(community_id) else {
             return;
         };
         (
-            cs.governance_key.clone(),
+            cs.anchor.clone(),
             cs.member_registry_key.clone(),
             cs.registry_owner_keypair
                 .clone()
@@ -145,7 +145,7 @@ pub async fn hold_unheld_records(
             break;
         };
         match acquired {
-            Ok(lease) if governance_key.as_deref() == Some(record_key.as_str()) => {
+            Ok(lease) if anchor.as_deref() == Some(record_key.as_str()) => {
                 leases.governance = Some(lease);
             }
             Ok(lease) if is_registry => leases.registry = Some(lease),

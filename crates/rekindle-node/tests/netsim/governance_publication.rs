@@ -41,7 +41,7 @@ async fn settle() {
 
 fn channel_create(community: &Community) -> IpcRequest {
     IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
-        community: community.governance_key.clone(),
+        community: community.anchor.clone(),
         name: "pending".into(),
         kind: "text".into(),
         category: None,
@@ -111,7 +111,7 @@ async fn an_invite_whose_command_died_mid_wait_is_revoked_once_it_lands() {
     let events = creator.events().await;
     let create = creator.call(IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::InviteCreate {
-            community: community.governance_key.clone(),
+            community: community.anchor.clone(),
             max_uses: 1,
             expires_seconds: None,
         },
@@ -122,7 +122,7 @@ async fn an_invite_whose_command_died_mid_wait_is_revoked_once_it_lands() {
     community.sim.fault(Fault::Heal);
     let list = || {
         IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::InviteList {
-            community: community.governance_key.clone(),
+            community: community.anchor.clone(),
         }))
     };
     // The `InviteCreated` lands, then the revoke written behind it.

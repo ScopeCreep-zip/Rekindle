@@ -78,7 +78,7 @@ fn merge(
     let inventory = &mut cs.open_community_records;
     for (kind, key) in merged.added {
         match kind {
-            HeldKind::Governance => inventory.governance_key = Some(key),
+            HeldKind::Governance => inventory.anchor = Some(key),
             HeldKind::Registry => inventory.registry_key = Some(key),
             HeldKind::Channel | HeldKind::Segment => inventory.add_channel(key),
             HeldKind::Overflow => inventory.add_overflow(key),

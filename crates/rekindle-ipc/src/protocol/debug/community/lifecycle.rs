@@ -20,66 +20,66 @@ impl std::fmt::Debug for LifecycleRequest {
                 .debug_struct("CommunityJoin")
                 .field("invite", invite)
                 .finish(),
-            Self::CommunityLeave { governance_key } => f
+            Self::CommunityLeave { anchor } => f
                 .debug_struct("CommunityLeave")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .finish(),
-            Self::CommunityForget { governance_key } => f
+            Self::CommunityForget { anchor } => f
                 .debug_struct("CommunityForget")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .finish(),
             Self::CommunityList => write!(f, "CommunityList"),
             Self::CommunityViews => write!(f, "CommunityViews"),
-            Self::CommunityMembers { governance_key } => f
+            Self::CommunityMembers { anchor } => f
                 .debug_struct("CommunityMembers")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .finish(),
             Self::CommunityUpdateInfo {
-                governance_key,
+                anchor,
                 name,
                 description,
                 icon_hash,
                 banner_hash,
             } => f
                 .debug_struct("CommunityUpdateInfo")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .field("name", &name.as_ref().map(String::len))
                 .field("description", &description.as_ref().map(String::len))
                 .field("icon_hash", icon_hash)
                 .field("banner_hash", banner_hash)
                 .finish(),
-            Self::CommunityInfo { governance_key } => f
+            Self::CommunityInfo { anchor } => f
                 .debug_struct("CommunityInfo")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .finish(),
             Self::CommunityApprove {
-                governance_key,
+                anchor,
                 member_pseudonym,
             } => f
                 .debug_struct("CommunityApprove")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .field("member_pseudonym", member_pseudonym)
                 .finish(),
             Self::CommunityReject {
-                governance_key,
+                anchor,
                 member_pseudonym,
                 reason,
             } => f
                 .debug_struct("CommunityReject")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .field("member_pseudonym", member_pseudonym)
                 .field("reason", reason)
                 .finish(),
-            Self::CommunityPendingMembers { governance_key } => f
+            Self::CommunityPendingMembers { anchor } => f
                 .debug_struct("CommunityPendingMembers")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .finish(),
             Self::CommunityTransferOwnership {
-                governance_key,
+                anchor,
                 new_owner_pseudonym,
             } => f
                 .debug_struct("CommunityTransferOwnership")
-                .field("governance_key", governance_key)
+                .field("anchor", anchor)
                 .field("new_owner_pseudonym", new_owner_pseudonym)
                 .finish(),
             Self::InviteCreate {
