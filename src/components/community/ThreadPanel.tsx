@@ -12,6 +12,7 @@ interface ThreadPanelProps {
   onClose: () => void;
   onSend: (communityId: string, threadId: string, body: string) => void;
   onArchive: (communityId: string, threadId: string) => void;
+  onUnarchive: (communityId: string, threadId: string) => void;
   onReply?: (message: Message) => void;
   onReaction?: (messageId: string, emoji: string) => void;
   onRemoveReaction?: (messageId: string, emoji: string) => void;
@@ -88,6 +89,17 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
               <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
             </button>
           </div>
+          <Show when={thread().archived}>
+            <div class="thread-panel-archived" role="status">
+              <span>This thread is archived. A reply reopens it.</span>
+              <button
+                class="thread-panel-archive-btn"
+                onClick={() => props.onUnarchive(props.communityId, thread().id)}
+              >
+                Unarchive
+              </button>
+            </div>
+          </Show>
           <LiveRegion
             class="thread-panel-messages"
             ref={(el) => (containerRef = el)}

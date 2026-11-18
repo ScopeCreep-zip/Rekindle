@@ -98,6 +98,11 @@ export function createCommunityWindowState() {
     return communityState.channelMessages[channelId] ?? [];
   });
 
+  /** The selected channel's threads not archived (the header badge). */
+  const activeThreadCount = createMemo(
+    () => (communityState.channelThreads[selectedChannelId()] ?? []).filter((t) => !t.archived).length,
+  );
+
   const threadMessages = createMemo((): Message[] => {
     const thread = activeThread();
     if (!thread) return [];
@@ -221,7 +226,7 @@ export function createCommunityWindowState() {
     renameTarget, setRenameTarget, renameCategoryTarget, setRenameCategoryTarget,
     showSearch, setShowSearch,
     searchInitialChannel, setSearchInitialChannel, replyTo, setReplyTo,
-    pins, setPins, activeThread, setActiveThread, editingTopic, setEditingTopic,
+    pins, setPins, activeThread, setActiveThread, activeThreadCount, editingTopic, setEditingTopic,
     topicDraft, setTopicDraft, editState, setEditState, 
     isLoadingOlder, setIsLoadingOlder, hasMoreOlder, setHasMoreOlder,
     editingEvent, setEditingEvent, createPollTarget, setCreatePollTarget,

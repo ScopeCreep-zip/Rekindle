@@ -118,7 +118,9 @@ export async function handleLoadChannelThreads(
     channelId: string,
 ): Promise<void> {
   try {
-    const threads = await commands.getActiveThreads(communityId, channelId);
+    // Every thread, archived ones flagged: the list shows them apart and
+    // an archived one can be opened and reopened (walk 18 (b)).
+    const threads = await commands.getChannelThreads(communityId, channelId);
     setCommunityState("channelThreads", channelId, threads);
   } catch (e) {
     console.error("Failed to load channel threads:", e);
@@ -168,11 +170,17 @@ export async function handleSendThreadMessage(
   };
   setCommunityState("threadMessages", threadId, (prev) => [...(prev ?? []), message]);
 
+  const archivedIn = Object.values(communityState.channelThreads)
+    .flat()
+    .find((t) => t.id === threadId && t.archived)?.channelId;
   try {
     await commands.sendThreadMessage(communityId, threadId, trimmed);
     setCommunityState("threadMessages", threadId, (msgs) =>
       msgs.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m)),
     );
+    // A reply after the archive revives the thread (the Host's listing,
+    // `is_thread_archived`): re-read it rather than decide it here.
+    if (archivedIn) await handleLoadChannelThreads(communityId, archivedIn);
   } catch (e) {
     console.error("Failed to send thread message:", e);
     addToast("Failed to send thread message", "error");

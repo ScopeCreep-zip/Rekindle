@@ -96,6 +96,14 @@
     opacity: 0.7;
   }
 
+  .thread-list-section {
+    padding: 8px 8px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--color-xfire-text-dim);
+  }
+
   /* ─── Thread starter badge ─── */
   .thread-starter-badge {
     display: inline-flex;

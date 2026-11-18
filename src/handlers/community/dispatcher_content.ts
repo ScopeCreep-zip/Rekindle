@@ -135,13 +135,10 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
       if (!threads) continue;
       const idx = threads.findIndex((t) => t.id === threadId);
       if (idx < 0) continue;
-      if (archived) {
-        setCommunityState("channelThreads", channelId, (prev) =>
-          (prev ?? []).filter((thread) => thread.id !== threadId),
-        );
-      } else {
-        setCommunityState("channelThreads", channelId, idx, "archived", false);
-      }
+      // An archived thread stays listed, as archived (plan E7.13 walk
+      // 18 (b)): it can be read and reopened, as Discord's archived
+      // threads can.
+      setCommunityState("channelThreads", channelId, idx, "archived", archived);
       break;
     }
     return;

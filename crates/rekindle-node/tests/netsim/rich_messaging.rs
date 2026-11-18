@@ -86,6 +86,8 @@ async fn thread_reply_both_ways() {
             .await
             .is_ok_and(|v| v.to_string().contains(&thread))
     };
+    let ann_events = community.nodes[0].events().await;
+    let bea_archive_events = community.nodes[1].events().await;
     ask(
         &community,
         0,
@@ -97,6 +99,16 @@ async fn thread_reply_both_ways() {
     .await;
     let archived = eventually(&community.sim, LIMIT, || async { !active_for_bea().await }).await;
     assert!(archived, "bea sees ann's archive");
+    // An archive is a governance entry: ann's own frontends learn of it
+    // from her own merge (the mesh never echoes her frame), bea's from
+    // hers (plan E7.13 walk 18 (a)).
+    for (events, who) in [(&ann_events, "ann"), (&bea_archive_events, "bea")] {
+        let seen = eventually(&community.sim, LIMIT, || async {
+            saw_archive(events, &thread, true)
+        })
+        .await;
+        assert!(seen, "{who}'s frontends get the archive");
+    }
     ask(
         &community,
         0,
@@ -111,6 +123,13 @@ async fn thread_reply_both_ways() {
         reopened,
         "bea sees the thread open again after ann's unarchive"
     );
+    for (events, who) in [(&ann_events, "ann"), (&bea_archive_events, "bea")] {
+        let seen = eventually(&community.sim, LIMIT, || async {
+            saw_archive(events, &thread, false)
+        })
+        .await;
+        assert!(seen, "{who}'s frontends get the reopening");
+    }
 
     let bea_events = community.nodes[1].events().await;
     ask(
@@ -144,6 +163,16 @@ async fn thread_reply_both_ways() {
         saw_own_reply(&bea_events, &thread, "count me in"),
         "bea's Host publishes her own reply to her frontends"
     );
+}
+
+fn saw_archive(events: &Events, thread: &str, to: bool) -> bool {
+    SimNode::saw(events, |event| {
+        matches!(
+            event,
+            SubscriptionEvent::Social(SocialEvent::ThreadArchiveChanged { thread_id, archived, .. })
+                if thread_id == thread && *archived == to
+        )
+    })
 }
 
 fn saw_own_reply(events: &Events, thread: &str, text: &str) -> bool {

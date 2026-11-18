@@ -44,7 +44,7 @@ const HANDLER = `
       }];
     case "get_community_members":
       return ${JSON.stringify([member(ME, "Bea"), member(PEER, "Cid")])};
-    case "get_active_threads":
+    case "get_channel_threads":
       return [${JSON.stringify(THREAD)}];
     case "get_welcome_screen":
       return { description: "", channels: [] };
@@ -127,4 +127,49 @@ test("a posted reply counts in the thread header", async ({ page }) => {
   await sendEvent(page, 0, posted("tm_2", PEER, "count me in"));
   await expect(page.locator(".thread-panel-messages")).toContainText("count me in");
   await expect(page.locator(".thread-panel-meta")).toContainText("1 messages");
+});
+
+const archiveChanged = (archived: boolean) => ({
+  social: { threadArchiveChanged: { community: COMMUNITY, threadId: THREAD_ID, archived } },
+});
+
+// Walk 18 (a)/(b): an archived thread stays reachable. The Host publishes
+// the archive to every window; the open thread shows it archived with an
+// Unarchive action, the list shows it apart, and the badge counts only
+// active threads.
+test("an archived thread shows archived and offers Unarchive", async ({ page }) => {
+  await openThread(page, HANDLER.replace(
+    'case "get_welcome_screen":',
+    `case "unarchive_thread":
+      window.__unarchived = args.threadId === "${THREAD_ID}";
+      return null;
+    case "get_welcome_screen":`,
+  ));
+  await expect(page.locator(".thread-panel-archived")).toHaveCount(0);
+  await sendEvent(page, 0, archiveChanged(true));
+  const banner = page.locator(".thread-panel-archived");
+  await expect(banner).toContainText("This thread is archived");
+  await banner.getByRole("button", { name: "Unarchive" }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__unarchived)).toBe(true);
+  await sendEvent(page, 1, archiveChanged(false));
+  await expect(page.locator(".thread-panel-archived")).toHaveCount(0);
+});
+
+test("the thread list shows an archived thread apart and the badge leaves", async ({ page }) => {
+  // The Host stores the archive before it publishes it, so a re-read
+  // after the event lists the thread archived.
+  await openThread(page, HANDLER.replace(
+    'case "get_channel_threads":',
+    `case "get_channel_threads":
+      if (window.__archived) return [{ ...${JSON.stringify(THREAD)}, archived: true }];`,
+  ));
+  const badge = page.locator('button[title="Threads"] .channel-header-badge');
+  await expect(badge).toHaveText("1");
+  await page.evaluate(() => { (window as any).__archived = true; });
+  await sendEvent(page, 0, archiveChanged(true));
+  await expect(badge).toHaveCount(0);
+  await page.locator(".thread-panel .modal-close-btn").click();
+  await page.locator('button[title="Threads"]').click();
+  await expect(page.locator(".thread-list-section")).toHaveText("Archived threads");
+  await expect(page.locator(".thread-list-item.thread-archived")).toContainText("walk thread");
 });

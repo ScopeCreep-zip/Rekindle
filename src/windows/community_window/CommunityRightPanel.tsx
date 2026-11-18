@@ -8,6 +8,7 @@ import {
   handlePinMessage,
   handleUnpinMessage,
   handleSendThreadMessage,
+  handleUnarchiveThread,
   handleAddReaction,
   handleRemoveReaction,
   handleVotePoll,
@@ -64,6 +65,7 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               onClose={vm.handleCloseThread}
               onSend={handleSendThreadMessage}
               onArchive={vm.handleArchiveActiveThread}
+              onUnarchive={handleUnarchiveThread}
               onReply={vm.handleReply}
               onReaction={(messageId, emoji) => handleAddReaction(vm.selectedCommunityId(), vm.selectedChannelId(), messageId, emoji)}
               onRemoveReaction={(messageId, emoji) => handleRemoveReaction(vm.selectedCommunityId(), vm.selectedChannelId(), messageId, emoji)}

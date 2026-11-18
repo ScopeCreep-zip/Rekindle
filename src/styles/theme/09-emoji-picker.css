@@ -148,6 +148,16 @@
     background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
+  .thread-panel-archived {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
   .thread-panel-messages {
     flex: 1;
     overflow-y: auto;

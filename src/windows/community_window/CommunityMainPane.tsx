@@ -110,8 +110,8 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                   title="Threads"
                 >
                   <span class="nf-icon">{ICON_THREAD}</span>
-                  <Show when={(communityState.channelThreads[vm.selectedChannelId()] ?? []).length > 0}>
-                    <span class="channel-header-badge">{(communityState.channelThreads[vm.selectedChannelId()] ?? []).length}</span>
+                  <Show when={vm.activeThreadCount() > 0}>
+                    <span class="channel-header-badge">{vm.activeThreadCount()}</span>
                   </Show>
                 </button>
                 <button

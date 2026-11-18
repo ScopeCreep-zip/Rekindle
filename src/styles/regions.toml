@@ -366,6 +366,8 @@
 '.stage-panel-empty' = { on = ["--color-xfire-bg-secondary"] }
 '.thread-list-item-name' = { on = ["--color-xfire-bg-dark"] }
 '.thread-list-item-meta' = { on = ["--color-xfire-bg-dark"] }
+'.thread-list-section' = { on = ["--color-xfire-bg-dark"] }
+'.thread-panel-archived' = { on = ["--color-xfire-bg-dark"] }
 '.thread-starter-badge' = { on = ["--color-xfire-accent 6% over --color-xfire-bg-dark", "--color-xfire-accent 6% over --color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 9% over --color-xfire-bg-dark", "--color-xfire-accent 9% over --color-xfire-bg-panel"] }
 '.message-action-btn' = { on = ["--color-xfire-bg-panel"] }
 '.message-action-btn:hover' = { on = ["--color-xfire-overlay 10% over --color-xfire-bg-panel"] }

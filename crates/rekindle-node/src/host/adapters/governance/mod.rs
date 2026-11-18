@@ -76,6 +76,7 @@ mod publication;
 mod registry;
 mod removal_posts;
 pub(crate) mod search;
+mod thread_events;
 
 mod checkpoint_rows;
 mod checkpoint_state;

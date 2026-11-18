@@ -59,6 +59,9 @@ impl HostGovernance {
         let prev = self.ctx.communities.governance_state(community_id);
         let transitions =
             self.member_transitions_of(community_id, prev.as_ref(), &state, me.as_ref());
+        let archives = prev.as_ref().map_or_else(Vec::new, |prev| {
+            super::thread_events::thread_archive_transitions(prev, &state)
+        });
         let raised = raises_key_generation(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
         let (projected, held) =
@@ -71,6 +74,7 @@ impl HostGovernance {
             shell.on_governance_projected(community_id, &projected);
         }
         self.publish_member_transitions(transitions);
+        self.publish_thread_archive_changes(community_id, archives);
         match removal {
             Some(removal) => self.on_own_removal(community_id, &removal),
             None => self.on_not_removed(community_id),

@@ -15,7 +15,7 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
   const [sortMode, setSortMode] = createSignal<SortMode>("activity");
   const [searchQuery, setSearchQuery] = createSignal("");
 
-  const filteredThreads = createMemo(() => {
+  const sortedThreads = createMemo(() => {
     const q = searchQuery().toLowerCase();
     let threads = props.threads;
     if (q) threads = threads.filter((t) => t.name.toLowerCase().includes(q));
@@ -25,6 +25,19 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
     }
     return [...threads].sort((a, b) => b.createdAt - a.createdAt);
   });
+
+  // Archived threads stay reachable, listed apart (Discord's "Archived
+  // threads"; plan E7.13 walk 18 (b)).
+  const active = createMemo(() => sortedThreads().filter((t) => !t.archived));
+  const archived = createMemo(() => sortedThreads().filter((t) => t.archived));
+  const item = (thread: Thread) => (
+    <div class={`thread-list-item${thread.archived ? " thread-archived" : ""}`} onClick={() => props.onSelectThread(thread.id)}>
+      <div class="thread-list-item-name">{thread.name}</div>
+      <div class="thread-list-item-meta">
+        {thread.messageCount} messages - {formatRelativeTime(thread.lastMessageAt * 1000)}
+      </div>
+    </div>
+  );
 
   return (
     <div class="thread-list-panel">
@@ -59,19 +72,14 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
         </div>
       </div>
       <div class="thread-list-content">
-        <Show when={filteredThreads().length === 0}>
+        <Show when={sortedThreads().length === 0}>
           <div class="pin-panel-empty">No threads yet</div>
         </Show>
-        <For each={filteredThreads()}>
-          {(thread) => (
-            <div class="thread-list-item" onClick={() => props.onSelectThread(thread.id)}>
-              <div class="thread-list-item-name">{thread.name}</div>
-              <div class="thread-list-item-meta">
-                {thread.messageCount} messages - {formatRelativeTime(thread.lastMessageAt * 1000)}
-              </div>
-            </div>
-          )}
-        </For>
+        <For each={active()}>{item}</For>
+        <Show when={archived().length > 0}>
+          <div class="thread-list-section">Archived threads</div>
+          <For each={archived()}>{item}</For>
+        </Show>
       </div>
     </div>
   );
