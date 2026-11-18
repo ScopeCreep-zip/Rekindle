@@ -246,8 +246,11 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
     title: "Member menu > Ban (the peer rejoins first)",
     async run({ b, s, shot }) {
       await peerJoins(b, s.passphrase, s.communityName);
+      // Walk 21: the peer's Host logged no join stage for this rejoin; the
+      // peer's own Host view says whether it holds the community again.
       const member = await peerMember(b).catch(async (e: Error) => {
-        throw new Error(`${e.message} (${await memberProbe(b, s.communityName)})`);
+        const peerView = await memberProbe(needPeer().b, s.communityName);
+        throw new Error(`${e.message} (${await memberProbe(b, s.communityName)}; peer: ${peerView})`);
       });
       await contextMenu(b, member, "Ban Member");
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });

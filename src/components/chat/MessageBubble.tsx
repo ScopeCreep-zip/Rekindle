@@ -21,7 +21,7 @@ interface MessageBubbleProps {
   senderName: string;
   myPseudonymKey?: string | null;
   replyToMessage?: Message | null;
-  threadInfo?: { name: string; messageCount: number; threadId: string };
+  threadInfo?: { name: string; messageCount: number; threadId: string; archived: boolean };
   onRetry?: (messageId: number) => void;
   onDiscard?: (messageId: number) => void;
   onReply?: (message: Message) => void;
@@ -362,6 +362,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           <ThreadStarter
             threadName={info().name}
             messageCount={info().messageCount}
+            archived={info().archived}
             onClick={() => props.onOpenThread?.()}
           />
         )}

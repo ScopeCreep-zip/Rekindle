@@ -173,3 +173,30 @@ test("the thread list shows an archived thread apart and the badge leaves", asyn
   await expect(page.locator(".thread-list-section")).toHaveText("Archived threads");
   await expect(page.locator(".thread-list-item.thread-archived")).toContainText("walk thread");
 });
+
+// Walk 22 (M78): the starter message keeps its thread badge once the thread
+// is archived, as Discord's starter keeps its thread (it still opens the
+// thread, which offers Unarchive), and the badge says it is archived.
+test("an archived thread's starter badge says archived", async ({ page }) => {
+  await preloadMocks(page, "community", HANDLER.replace(
+    'case "get_welcome_screen":',
+    `case "get_channel_messages":
+      return [{ id: 1, senderId: "${PEER}", body: "start here", timestamp: 1760000000000,
+                isOwn: false, serverMessageId: "msg_1", sendState: "sent" }];
+    case "get_welcome_screen":`,
+  ));
+  await page.goto(`/community?id=${COMMUNITY}`);
+  await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
+  await page.getByText("general", { exact: true }).first().click();
+  // The channel's threads load with its Threads list (as M51 created it).
+  await page.locator('button[title="Threads"]').click();
+  await expect(page.locator(".thread-list-item", { hasText: "walk thread" })).toBeVisible();
+  const starter = page.locator(".chat-message", { hasText: "start here" }).locator(".thread-starter-badge");
+  await expect(starter).toHaveText(/walk thread \(0\)$/);
+  await expect(starter).not.toHaveClass(/thread-starter-archived/);
+  await sendEvent(page, 0, archiveChanged(true));
+  await expect(starter).toHaveClass(/thread-starter-archived/);
+  await expect(starter).toContainText("archived");
+  await sendEvent(page, 1, archiveChanged(false));
+  await expect(starter).not.toHaveClass(/thread-starter-archived/);
+});

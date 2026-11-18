@@ -286,16 +286,20 @@ export const COMMUNITY_ROWS: Row[] = [
       await press(b, await (await lastMessage(b, EDITED)).$(".thread-starter-badge"));
       await byText(b, ".thread-panel-title", THREAD, NET_WAIT_MS);
       // Archiving from the panel closes it (useCommunityWindow.ts
-      // handleArchiveActiveThread); the archived thread leaves the channel's
-      // threads (dispatcher_content.ts threadArchiveChanged), so its starter
-      // badge goes too.
+      // handleArchiveActiveThread). The archived thread stays listed, as
+      // archived (walk 19 (b), Discord), so its starter keeps the badge and
+      // the badge says archived once `threadArchiveChanged` arrives
+      // (ThreadStarter.tsx, walk 22).
       await (await shown(b, '[aria-label="Archive thread"]')).click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await gone(b, ".thread-panel");
       await waitUntil(
-        async () => !(await (await lastMessage(b, EDITED)).$(".thread-starter-badge").isExisting()),
+        async () => {
+          const badge = await (await lastMessage(b, EDITED)).$(".thread-starter-badge");
+          return (await badge.isExisting()) && /\bthread-starter-archived\b/.test((await badge.getAttribute("class")) ?? "");
+        },
         NET_WAIT_MS,
-        "the archived thread's badge stayed on its starter message",
+        "the starter's badge never showed the thread archived",
       );
       await shot();
     },
