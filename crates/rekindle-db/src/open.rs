@@ -232,7 +232,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 133 (plan E3.2 S8): `community_invites.uses` dropped.
 /// 134 (plan E3.2 S8): `communities.governance_key` dropped; the community
 /// id is the anchor `A`'s key (ADR 0011).
-pub const SCHEMA_VERSION: i64 = 134;
+/// 135 (plan E3.2 S9): `community_roles.role_id` is the full 16-byte role
+/// id as 32 hex characters, no longer a truncated integer.
+pub const SCHEMA_VERSION: i64 = 135;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
