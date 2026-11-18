@@ -9,7 +9,10 @@ import { handleUnblockUser } from "../../actions/buddy.actions";
 const PrivacyTab: Component = () => {
   const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
   const [error, setError] = createSignal<string | null>(null);
-  const [readReceipts, setReadReceipts] = createSignal(false);
+  // `null` until the stored value loads: the box is unticked and disabled,
+  // never showing a value it has not read (walk row ST28 read the initial
+  // `false` back after reopening Settings, before the load answered).
+  const [readReceipts, setReadReceipts] = createSignal<boolean | null>(null);
 
   onMount(() => {
     commands.getPreferences().then((p) => setReadReceipts(p.readReceiptsEnabled)).catch((e) => {
@@ -20,9 +23,11 @@ const PrivacyTab: Component = () => {
   // The Host reviews the change (a trust-changing intent); the switch shows
   // what it stored, or stays as it was when the change is refused.
   async function handleToggleReadReceipts(): Promise<void> {
+    const current = readReceipts();
+    if (current === null) return;
     setError(null);
     try {
-      const prefs = await commands.setReadReceiptsEnabled(!readReceipts());
+      const prefs = await commands.setReadReceiptsEnabled(!current);
       setReadReceipts(prefs.readReceiptsEnabled);
     } catch (e) {
       setError(`Read receipts not changed: ${String(e)}`);
@@ -64,7 +69,8 @@ const PrivacyTab: Component = () => {
       <label class="settings-option">
         <input
           type="checkbox"
-          checked={readReceipts()}
+          checked={readReceipts() === true}
+          disabled={readReceipts() === null}
           onChange={() => void handleToggleReadReceipts()}
         />
         <span class="buddy-name">Read receipts</span>

@@ -18,18 +18,18 @@ const NotificationsTab: Component = () => {
   const [qhTimezone, setQhTimezone] = createSignal<string>(
     Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
-  // Architecture §28.8 line 3220 — IP-privacy toggle for outgoing link previews.
-  const [linkPreviewsEnabled, setLinkPreviewsEnabled] = createSignal<boolean>(true);
+  // Architecture §28.8 line 3220 — IP-privacy toggle for outgoing link
+  // previews. `null` until the stored value loads: the box shows unticked and
+  // disabled, never a value it has not read (it used to start ticked).
+  const [linkPreviewsEnabled, setLinkPreviewsEnabled] = createSignal<boolean | null>(null);
   // Each group stays disabled until its stored value has loaded: an edit
   // made before the answer arrived was overwritten by it (walk row ST22).
   const [dndLoaded, setDndLoaded] = createSignal(false);
   const [qhLoaded, setQhLoaded] = createSignal(false);
-  const [linkPreviewsLoaded, setLinkPreviewsLoaded] = createSignal(false);
 
   onMount(() => {
     commands.getLinkPreviewsEnabled().then((on) => {
       setLinkPreviewsEnabled(on);
-      setLinkPreviewsLoaded(true);
     }).catch((e) => {
       console.error("Failed to load link-previews setting:", e);
     });
@@ -74,7 +74,9 @@ const NotificationsTab: Component = () => {
   }
 
   async function handleToggleLinkPreviews(): Promise<void> {
-    const next = !linkPreviewsEnabled();
+    const current = linkPreviewsEnabled();
+    if (current === null) return;
+    const next = !current;
     setLinkPreviewsEnabled(next);
     try {
       await commands.setLinkPreviewsEnabled(next);
@@ -200,8 +202,8 @@ const NotificationsTab: Component = () => {
       <label class="settings-option">
         <input
           type="checkbox"
-          checked={linkPreviewsEnabled()}
-          disabled={!linkPreviewsLoaded()}
+          checked={linkPreviewsEnabled() === true}
+          disabled={linkPreviewsEnabled() === null}
           onChange={() => void handleToggleLinkPreviews()}
         />
         <span class="buddy-name">

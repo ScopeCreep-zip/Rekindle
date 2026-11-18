@@ -71,9 +71,9 @@ export async function flipPersisted(b: Browser, tab: string, text: string, passp
     await waitUntil(async () => (await (await optionBox(b, text)).isSelected()) !== before, WAIT_MS, `"${text}" did not flip`);
     await closeSettings(b);
     await openSettings(b, tab);
-    // Read the stored value, not the box's initial one: it is disabled until
-    // the value loads, and "Generate previews" starts ticked
-    // (NotificationsTab.tsx), which ST21 read back in walk 11.
+    // Read the stored value, not the box's initial one: every box is
+    // disabled and unticked until its value loads (NotificationsTab.tsx,
+    // PrivacyTab.tsx); ST21 and ST28 read an initial value back in walks 11-12.
     const reopened = await optionBox(b, text);
     await reopened.waitForEnabled({ timeout: WAIT_MS, timeoutMsg: `"${text}" stayed disabled after reopening` });
     const stored = await reopened.isSelected();
