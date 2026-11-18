@@ -205,3 +205,12 @@ print-stderr = "warn"               # prefer tracing over eprintln!
 # resets all three stores together on the bump).
 [patch.crates-io]
 veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "91453e97e8ef467aa7c7c3b5e871a7ed5738f941" }
+# libdbus-sys 0.2.7's vendored build (Linux; vendored is forced by
+# keyring-manager, a veilid-core dependency) omits HAVE_POLL, so libdbus
+# emulates poll() with select() and FD_SET of a descriptor >= 1024 writes
+# past the stack fd_set: the app aborted on Linux ("stack smashing
+# detected", plan E7.13 W7). dbus-rs issue #522, fixed upstream by PR #523,
+# commit dd78d826 (one line: `config.enable("HAVE_POLL")`), unreleased as of
+# 2026-11-17 (crates.io latest 0.2.7). Drop this once a release carries it.
+# Keep deny.toml's allow-git in sync.
+libdbus-sys = { git = "https://github.com/diwic/dbus-rs", rev = "dd78d8267498300d981df2859f027ddfedd74b0a" }
