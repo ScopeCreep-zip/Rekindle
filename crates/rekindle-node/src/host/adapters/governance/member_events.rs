@@ -52,10 +52,58 @@ impl HostGovernance {
     }
 
     /// Publish `events` (from [`Self::member_transitions_of`]).
+    ///
+    /// A `Joined` member goes on the stored roster first: a frontend
+    /// re-reads the member list on `Joined` (`get_community_members` reads
+    /// `community_members`), and the merge is the authority on membership
+    /// (Matrix's `m.room.member` state event), so the list it reads must
+    /// already hold the member. The write is queued on the database's one
+    /// connection before the event leaves, so every read that follows the
+    /// event sees it. Without it the row waited for the joiner's gossip
+    /// `MemberJoined` or the presence poll, which publish nothing a window
+    /// re-reads on, and an open window never listed the joiner (walk B61).
     pub(super) fn publish_member_transitions(&self, events: Vec<MembershipEvent>) {
+        self.store_joined_rows(&events);
         for event in events {
             self.ctx.publish_event(SubscriptionEvent::Membership(event));
         }
+    }
+
+    /// Store a roster row for each `Joined` in `events`, named by the
+    /// joiner's verified card when read (plan E3.2 F9-2), else unnamed
+    /// until its `MemberCardChanged`.
+    fn store_joined_rows(&self, events: &[MembershipEvent]) {
+        let joined: Vec<(String, String, String)> = events
+            .iter()
+            .filter_map(|e| match e {
+                MembershipEvent::Joined {
+                    community,
+                    pseudonym,
+                    display_name,
+                    ..
+                } => Some((
+                    community.clone(),
+                    pseudonym.clone(),
+                    display_name.clone().unwrap_or_default(),
+                )),
+                _ => None,
+            })
+            .collect();
+        if joined.is_empty() {
+            return;
+        }
+        let Some((owner, db)) = self.owner_and_db() else {
+            return;
+        };
+        let joined_at = self.ctx.clock.now_secs().cast_signed();
+        db.fire("joined members", move |conn| {
+            for (community, pseudonym, name) in &joined {
+                rekindle_db::repo::members::insert_if_absent(
+                    conn, &owner, community, pseudonym, name, joined_at,
+                )?;
+            }
+            Ok(())
+        });
     }
 }
 

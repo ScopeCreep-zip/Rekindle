@@ -103,3 +103,60 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
     assert_eq!(roles, [(RoleId::to_legacy_u32(admin), "Admin".to_string())]);
     host.shutdown().await.unwrap();
 }
+
+/// A member the merge adds is on the member list by the time its `Joined`
+/// is published (walk B61): a window re-reads the list on `Joined`, and the
+/// joiner's gossip and the presence poll that also store its row publish
+/// nothing a window re-reads on, so an open window never listed it.
+#[tokio::test]
+async fn a_merged_join_is_on_the_member_list_its_joined_announces() {
+    use rekindle_governance::state::{GovernanceState, MemberState};
+    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_types::id::PseudonymKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let governance = host.governance();
+    // The first projection is the baseline; the second adds Bea.
+    governance
+        .apply_governance_rebuild_result("c1", GovernanceState::default())
+        .await;
+    let bea = PseudonymKey([7; 32]);
+    let mut joined = GovernanceState::default();
+    joined.members.insert(
+        bea.clone(),
+        MemberState {
+            member_record: "record".into(),
+            member_record_owner: "owner".into(),
+            joined: rekindle_governance::op::OpStamp::MIN,
+        },
+    );
+    joined.op_log_records.insert(bea.clone(), "log".into());
+    let mut events = host.ctx.journal.subscribe(None);
+    governance
+        .apply_governance_rebuild_result("c1", joined)
+        .await;
+
+    let mut announced = false;
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        if let rekindle_types::subscription_events::StreamFrame::Event(s) = frame {
+            announced |= matches!(
+                s.event,
+                rekindle_types::subscription_events::SubscriptionEvent::Membership(
+                    rekindle_types::subscription_events::MembershipEvent::Joined { ref pseudonym, .. }
+                ) if *pseudonym == bea.to_hex()
+            );
+        }
+    }
+    assert!(announced, "the join is published");
+    let listed = governance.community_members("c1").await.unwrap();
+    assert!(
+        listed.iter().any(|m| m.pseudonym_key == bea.to_hex()),
+        "the member list holds the joiner"
+    );
+    host.shutdown().await.unwrap();
+}
