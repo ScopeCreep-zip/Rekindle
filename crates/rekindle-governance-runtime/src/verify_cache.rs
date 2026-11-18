@@ -76,15 +76,15 @@ impl OpVerifyCache {
     }
 }
 
-/// Whether every op `op` names by hash is verified in `known`: its deps,
-/// and its `prev` at seq > 0 (the ones `verify` looks up).
-fn ready(op: &GovernanceOp, known: &HashMap<OpHash, VerifiedOp>) -> bool {
-    let deps = op.deps.iter().all(|d| known.contains_key(&d.op_hash));
+/// The ops `op` names by hash and `verify` looks up, distinct: its deps,
+/// and its `prev` at seq > 0. It is ready once every one is verified in
+/// the read.
+fn waits_on(op: &GovernanceOp) -> HashSet<OpHash> {
     let prev = match (op.seq, op.prev) {
-        (seq, Some(prev)) if seq > 0 => known.contains_key(&prev),
-        _ => true,
+        (seq, Some(prev)) if seq > 0 => Some(prev),
+        _ => None,
     };
-    deps && prev
+    op.deps.iter().map(|d| d.op_hash).chain(prev).collect()
 }
 
 /// What one pass decides for a waiting op.
@@ -94,98 +94,165 @@ enum Step {
     Refused,
 }
 
+/// One read's walk state: the decoded ops in held order, the verified ones
+/// by hash, and for each op how many of the hashes it waits on are not yet
+/// verified.
+struct Walk<'a> {
+    anchor: &'a str,
+    entries: Vec<(OpHash, GovernanceOp, Vec<u8>)>,
+    kept: HashMap<OpHash, Verdict>,
+    fresh: HashMap<OpHash, Verdict>,
+    verifications: u64,
+    known: HashMap<OpHash, VerifiedOp>,
+    /// This read's ops whose signature and proofs passed and which wait on
+    /// a dep (`verify` checks those first): not a verdict, never kept.
+    authentic: HashSet<OpHash>,
+    unmet: Vec<usize>,
+}
+
+impl Walk<'_> {
+    /// The step for entry `i` in this pass; `ready` exactly when every hash
+    /// it waits on was verified in an earlier pass.
+    fn step(&mut self, i: usize) -> Step {
+        let ready = self.unmet[i] == 0;
+        let (hash, op, unsigned) = &self.entries[i];
+        match self.kept.get(hash) {
+            Some(Verdict::Refused(
+                OpRejection::BadSignature
+                | OpRejection::BadInviteProof
+                | OpRejection::BadOwnerProof,
+            )) => Step::Refused,
+            Some(Verdict::Refused(_)) if ready => Step::Refused,
+            Some(Verdict::Verified(v)) if ready => Step::Verified(Box::new(VerifiedOp::clone(v))),
+            Some(_) => Step::Waiting,
+            // Authentic and still short of a dep: `verify` would say
+            // `MissingDep` again after one more signature check.
+            None if self.authentic.contains(hash) && !ready => Step::Waiting,
+            None => {
+                self.verifications += 1;
+                let known = &self.known;
+                match VerifiedOp::verify(self.anchor, op.clone(), unsigned, |h| known.get(h)) {
+                    Ok(verified) => {
+                        let kept = Verdict::Verified(Arc::new(verified.clone()));
+                        self.fresh.insert(*hash, kept);
+                        Step::Verified(Box::new(verified))
+                    }
+                    Err(OpRejection::MissingDep(_)) => {
+                        self.authentic.insert(*hash);
+                        Step::Waiting
+                    }
+                    Err(rejection) => {
+                        self.fresh.insert(*hash, Verdict::Refused(rejection));
+                        Step::Refused
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Decode and verify `held` for community `anchor` in dependency order,
 /// reusing `cache`'s verdicts and keeping the new ones; the cache then holds
 /// the verdicts of `held`'s ops only.
+///
+/// The walk runs in passes: an op is decided in the first pass after every
+/// op it waits on was verified (all ops in the first), so the verified ops
+/// come out level by level, in held order within a level. Each pass visits
+/// only the ops the previous one made ready (a ready queue, Kahn's
+/// algorithm): linear in the ops and their deps.
 #[must_use]
 pub fn verify_held_cached(anchor: &str, held: &[HeldOp], cache: &OpVerifyCache) -> VerifiedSet {
     let mut set = VerifiedSet::default();
-    let mut waiting: Vec<(OpHash, GovernanceOp, Vec<u8>)> = Vec::new();
+    let mut entries: Vec<(OpHash, GovernanceOp, Vec<u8>)> = Vec::new();
     for op in held {
         match decode_op(&op.encoded) {
             Ok(decoded) if op_hash(&decoded.unsigned, &decoded.op.sig) == op.hash => {
-                waiting.push((op.hash, decoded.op, decoded.unsigned));
+                entries.push((op.hash, decoded.op, decoded.unsigned));
             }
             _ => set.quarantined.push(op.hash),
         }
     }
     let kept: HashMap<OpHash, Verdict> = {
         let inner = cache.inner.lock();
-        waiting
+        entries
             .iter()
             .filter_map(|(h, _, _)| inner.verdicts.get(h).map(|v| (*h, v.clone())))
             .collect()
     };
-    let mut fresh: HashMap<OpHash, Verdict> = HashMap::new();
-    let mut verifications = 0u64;
-    let mut known: HashMap<OpHash, VerifiedOp> = HashMap::new();
-    // This read's ops whose signature and proofs passed and which wait on a
-    // dep (`verify` checks those first): not a verdict, never kept.
-    let mut authentic: HashSet<OpHash> = HashSet::new();
+    // Who waits on each hash, by entry index.
+    let mut dependents: HashMap<OpHash, Vec<usize>> = HashMap::new();
+    let mut unmet = Vec::with_capacity(entries.len());
+    for (i, (_, op, _)) in entries.iter().enumerate() {
+        let names = waits_on(op);
+        unmet.push(names.len());
+        for name in names {
+            dependents.entry(name).or_default().push(i);
+        }
+    }
+    let mut walk = Walk {
+        anchor,
+        entries,
+        kept,
+        fresh: HashMap::new(),
+        verifications: 0,
+        known: HashMap::new(),
+        authentic: HashSet::new(),
+        unmet,
+    };
+    let mut decided = vec![false; walk.entries.len()];
+    let mut pass: Vec<usize> = (0..walk.entries.len()).collect();
     loop {
         let mut progressed = Vec::new();
-        let mut still = Vec::new();
-        for (hash, op, unsigned) in waiting {
-            let step = match kept.get(&hash) {
-                Some(Verdict::Refused(
-                    OpRejection::BadSignature
-                    | OpRejection::BadInviteProof
-                    | OpRejection::BadOwnerProof,
-                )) => Step::Refused,
-                Some(Verdict::Refused(_)) if ready(&op, &known) => Step::Refused,
-                Some(Verdict::Verified(v)) if ready(&op, &known) => {
-                    Step::Verified(Box::new(VerifiedOp::clone(v)))
+        for &i in &pass {
+            match walk.step(i) {
+                Step::Verified(verified) => {
+                    decided[i] = true;
+                    progressed.push(*verified);
                 }
-                Some(_) => Step::Waiting,
-                // Authentic and still short of a dep: `verify` would say
-                // `MissingDep` again after one more signature check.
-                None if authentic.contains(&hash) && !ready(&op, &known) => Step::Waiting,
-                None => {
-                    verifications += 1;
-                    match VerifiedOp::verify(anchor, op.clone(), &unsigned, |h| known.get(h)) {
-                        Ok(verified) => {
-                            fresh.insert(hash, Verdict::Verified(Arc::new(verified.clone())));
-                            Step::Verified(Box::new(verified))
-                        }
-                        Err(OpRejection::MissingDep(_)) => {
-                            authentic.insert(hash);
-                            Step::Waiting
-                        }
-                        Err(rejection) => {
-                            fresh.insert(hash, Verdict::Refused(rejection));
-                            Step::Refused
-                        }
-                    }
+                Step::Waiting => {}
+                Step::Refused => {
+                    decided[i] = true;
+                    set.quarantined.push(walk.entries[i].0);
                 }
-            };
-            match step {
-                Step::Verified(verified) => progressed.push(*verified),
-                Step::Waiting => still.push((hash, op, unsigned)),
-                Step::Refused => set.quarantined.push(hash),
             }
         }
-        waiting = still;
         if progressed.is_empty() {
             break;
         }
+        let mut next = Vec::new();
         for verified in progressed {
             set.ops.push(verified.clone());
-            known.insert(verified.hash(), verified);
+            let hash = verified.hash();
+            if walk.known.insert(hash, verified).is_none() {
+                for &d in dependents.get(&hash).into_iter().flatten() {
+                    walk.unmet[d] -= 1;
+                    if walk.unmet[d] == 0 && !decided[d] {
+                        next.push(d);
+                    }
+                }
+            }
         }
+        next.sort_unstable();
+        next.dedup();
+        pass = next;
     }
     {
         let held_hashes: HashSet<OpHash> = held.iter().map(|op| op.hash).collect();
         let mut inner = cache.inner.lock();
-        inner.verdicts.extend(fresh);
+        inner.verdicts.extend(walk.fresh);
         inner.verdicts.retain(|h, _| held_hashes.contains(h));
-        inner.verifications += verifications;
+        inner.verifications += walk.verifications;
     }
+    let waiting: Vec<&(OpHash, GovernanceOp, Vec<u8>)> = (walk.entries.iter())
+        .zip(&decided)
+        .filter_map(|(entry, decided)| (!decided).then_some(entry))
+        .collect();
     let waiting_hashes: BTreeSet<OpHash> = waiting.iter().map(|(h, _, _)| *h).collect();
     let mut missing: BTreeMap<OpHash, OpRef> = BTreeMap::new();
-    for (hash, op, _) in &waiting {
+    for (hash, op, _) in waiting {
         set.pending.push(*hash);
         for dep in &op.deps {
-            if !known.contains_key(&dep.op_hash) && !waiting_hashes.contains(&dep.op_hash) {
+            if !walk.known.contains_key(&dep.op_hash) && !waiting_hashes.contains(&dep.op_hash) {
                 missing.entry(dep.op_hash).or_insert_with(|| dep.clone());
             }
         }
