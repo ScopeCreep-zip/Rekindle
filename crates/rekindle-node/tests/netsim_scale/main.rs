@@ -105,6 +105,7 @@ mod invite_expiry;
 mod invite_join_leave;
 #[path = "../netsim/invite_unpublished.rs"]
 mod invite_unpublished;
+mod join_cost;
 #[path = "../netsim/join_from_hint.rs"]
 mod join_from_hint;
 #[path = "../netsim/kick_rotates_once.rs"]
