@@ -109,24 +109,20 @@ pub async fn read_frontier<D: GovernanceRuntimeDeps>(
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("frontier of {record}: {e}")))
 }
 
-/// Refuse an invite the merged state does not hold as live: unknown or
-/// revoked (a revoked invite leaves `invites`), or expired.
+/// Refuse an invite the merged state does not hold as live
+/// (`GovernanceState::live_invite`): unknown or revoked, expired, or used
+/// up (a join on it would be refused by every reader's `invite_gate`).
 fn check_invite(
     state: &GovernanceState,
     code_hash: &str,
     now_secs: u64,
 ) -> Result<PseudonymKey, GovernanceRuntimeError> {
-    let mut invites: Vec<_> = state.invites.iter().collect();
-    invites.sort_by_key(|(id, _)| **id);
-    let invite = invites
-        .into_iter()
-        .map(|(_, invite)| invite)
-        .find(|invite| invite.code_hash == code_hash)
-        .ok_or_else(|| GovernanceRuntimeError::Adapter("invite is revoked or unknown".into()))?;
-    if invite.expires_at.is_some_and(|at| at <= now_secs) {
-        return Err(GovernanceRuntimeError::Adapter("invite has expired".into()));
-    }
-    Ok(invite.creator_pseudonym.clone())
+    state
+        .live_invite(code_hash, now_secs)
+        .map(|invite| invite.creator_pseudonym.clone())
+        .ok_or_else(|| {
+            GovernanceRuntimeError::Adapter("invite is revoked, unknown, expired or used up".into())
+        })
 }
 
 /// Create our member record `M(p)`; its lease is released (the op-log

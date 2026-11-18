@@ -21,12 +21,17 @@ use super::{
 };
 
 fn ask(key: &SigningKey, digest: [u8; 32]) -> Vec<u8> {
+    ask_with(key, digest, None)
+}
+
+fn ask_with(key: &SigningKey, digest: [u8; 32], invite: Option<&str>) -> Vec<u8> {
     CheckpointStateRequest {
         community: "c1".into(),
         height: 1,
         digest,
         offset: 0,
         requester: key.verifying_key().to_bytes(),
+        invite_code_hash: invite.map(str::to_owned),
     }
     .encode(key)
     .unwrap()
@@ -37,7 +42,7 @@ fn ask(key: &SigningKey, digest: [u8; 32]) -> Vec<u8> {
 /// first checkpoint's cut; a key that is no member is refused, though the
 /// request is well signed and names the same checkpoint.
 #[tokio::test]
-async fn a_state_snapshot_request_from_a_non_member_is_refused() {
+async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     let ann = create_ann(&host).await;
@@ -115,5 +120,56 @@ async fn a_state_snapshot_request_from_a_non_member_is_refused() {
             .is_none(),
         "a non-member is refused"
     );
+
+    // Plan E3.2 S7c.5: a joiner holding a live invite is served before it
+    // joins; a used-up, expired or revoked invite, or a banned joiner, is
+    // refused.
+    let code = "c0de".repeat(16);
+    let joiner = |invite: Option<rekindle_governance::state::InviteState>, banned: bool| {
+        let mut state = merge(&cert, &verify_held("c1", &ops).ops);
+        state.invites.extend(invite.map(|i| ([9; 16], i)));
+        if banned {
+            state
+                .bans
+                .insert(PseudonymKey(stranger.verifying_key().to_bytes()));
+        }
+        host.governance().set_governance_state("c1", state);
+    };
+    let live = rekindle_governance::state::InviteState {
+        code_hash: code.clone(),
+        max_uses: 1,
+        expires_at: None,
+        secrets_record_key: String::new(),
+        created: rekindle_governance::op::OpStamp::MIN,
+        creator_pseudonym: creator.clone(),
+        uses: 0,
+    };
+    let request = ask_with(&stranger, digest, Some(&code));
+    let served = || async { host.governance().answer_checkpoint_state(&request).await };
+    joiner(Some(live.clone()), false);
+    assert!(
+        served().await.is_some(),
+        "a joiner with a live invite is served"
+    );
+    joiner(Some(live.clone()), true);
+    assert!(served().await.is_none(), "a banned joiner is refused");
+    joiner(
+        Some(rekindle_governance::state::InviteState {
+            uses: 1,
+            ..live.clone()
+        }),
+        false,
+    );
+    assert!(served().await.is_none(), "a used-up invite is refused");
+    joiner(
+        Some(rekindle_governance::state::InviteState {
+            expires_at: Some(1),
+            ..live
+        }),
+        false,
+    );
+    assert!(served().await.is_none(), "an expired invite is refused");
+    joiner(None, false);
+    assert!(served().await.is_none(), "a revoked invite is refused");
     host.shutdown().await.unwrap();
 }

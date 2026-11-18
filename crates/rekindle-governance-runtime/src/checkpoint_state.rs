@@ -164,8 +164,10 @@ where
 
 /// Fetch the snapshot of `checkpoint` from the ring peers at
 /// `peer_routes`, nearest first, asking as `me` (our pseudonym in
-/// `community_id`): its `stateSize` bytes that hash to its `stateRoot`, or
-/// `None` when no peer matches.
+/// `community_id`), a member, or, before the join, a joiner holding the
+/// invite whose code hash is `invite_code_hash` (plan E3.2 S7c.5): its
+/// `stateSize` bytes that hash to its `stateRoot`, or `None` when no peer
+/// matches.
 ///
 /// # Errors
 /// Our request could not be encoded.
@@ -175,6 +177,7 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
     me: &SigningKey,
     checkpoint: &Checkpoint,
     peer_routes: &[Vec<u8>],
+    invite_code_hash: Option<&str>,
 ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
     let (height, digest) = (checkpoint.height, checkpoint_digest(checkpoint));
     let request = |offset| {
@@ -184,6 +187,7 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
             digest,
             offset,
             requester: me.verifying_key().to_bytes(),
+            invite_code_hash: invite_code_hash.map(str::to_owned),
         };
         let encoded = request.encode(me).map_err(|e| {
             GovernanceRuntimeError::Encoding(format!("checkpoint state request: {e}"))

@@ -12,6 +12,7 @@ fn request(key: &SigningKey) -> CheckpointStateRequest {
         digest: [7; 32],
         offset: u32::MAX,
         requester: key.verifying_key().to_bytes(),
+        invite_code_hash: None,
     }
 }
 
@@ -90,6 +91,34 @@ fn a_full_chunk_fits_the_app_call_cap() {
         panic!("not a checkpoint state response");
     };
     assert_eq!(decode_checkpoint_state_response(&got).unwrap(), response);
+}
+
+/// A joiner's request carries the code hash of the invite it holds (plan
+/// E3.2 S7c.5): it round-trips, and the signature binds it, so a member's
+/// request cannot be re-pointed at an invite nor a joiner's at another.
+#[test]
+fn a_joiners_invite_code_hash_round_trips_and_is_signed() {
+    let key = SigningKey::from_bytes(&[3; 32]);
+    let joiner = CheckpointStateRequest {
+        invite_code_hash: Some("ab".repeat(32)),
+        ..request(&key)
+    };
+    let encoded = joiner.encode(&key).unwrap();
+    assert!(encoded.len() <= CHECKPOINT_STATE_REQUEST_MAX_BYTES);
+    assert_eq!(decode_checkpoint_state_request(&encoded).unwrap(), joiner);
+    let sig = sign(&key, &request(&key).signing_bytes());
+    let mut builder = capnp::message::Builder::new_default();
+    {
+        let mut b = builder.init_root::<checkpoint_state_request::Builder<'_>>();
+        b.set_community(&joiner.community);
+        b.set_height(joiner.height);
+        b.set_digest(&joiner.digest);
+        b.set_offset(joiner.offset);
+        b.set_requester(&joiner.requester);
+        b.set_sig(&sig);
+        b.set_invite_code_hash(joiner.invite_code_hash.as_deref().unwrap());
+    }
+    assert!(decode_checkpoint_state_request(&pack(&builder)).is_err());
 }
 
 #[test]

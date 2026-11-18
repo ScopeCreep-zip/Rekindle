@@ -1,5 +1,6 @@
 //! The checkpoint state snapshot a member serves (plan E3.2 S7c.3, "State
-//! snapshot"), on both modes: answered only to an admitted member and
+//! snapshot"), on both modes: answered only to an admitted member, or to a
+//! joiner holding a live invite (plan E3.2 S7c.5, the pre-join hint), and
 //! rate-limited per requester like the `headAdvanced` handler, in chunks of
 //! at most 30,000 B (`rekindle_governance_runtime::checkpoint_state`).
 
@@ -11,8 +12,9 @@ use super::HostGovernance;
 impl HostGovernance {
     /// Answer a `CheckpointStateRequest` (the encoded request its signer's
     /// pseudonym signs): the encoded `checkpointStateResponse` envelope, or
-    /// `None` (a NAK) when it does not verify, its signer is not a member,
-    /// the signer is over its rate, or we hold no such snapshot.
+    /// `None` (a NAK) when it does not verify, its signer is not a member
+    /// (a member's request) or holds no live invite (a joiner's), the
+    /// signer is over its rate, or we hold no such snapshot.
     pub async fn answer_checkpoint_state(&self, request: &[u8]) -> Option<Vec<u8>> {
         let request = match decode_checkpoint_state_request(request) {
             Ok(request) => request,
@@ -23,10 +25,14 @@ impl HostGovernance {
         };
         let community = request.community.as_str();
         let requester = PseudonymKey(request.requester);
-        if !self.is_key_reader(community, &requester) {
+        let admitted = match request.invite_code_hash.as_deref() {
+            None => self.is_key_reader(community, &requester),
+            Some(code_hash) => self.holds_live_invite(community, &requester, code_hash),
+        };
+        if !admitted {
             tracing::debug!(
                 community,
-                "checkpoint state request from a non-member refused"
+                "checkpoint state request from a non-member without a live invite refused"
             );
             return None;
         }
@@ -46,6 +52,23 @@ impl HostGovernance {
                 None
             }
         }
+    }
+
+    /// Whether `requester`, not banned, names a live invite of `community`
+    /// (`GovernanceState::live_invite`, the check the join itself passes):
+    /// anyone holding the invite may join and then read the same state, so
+    /// serving it before the join exposes nothing new (plan E3.2 S7c.5). A
+    /// revoked, expired or used-up invite is refused.
+    fn holds_live_invite(
+        &self,
+        community: &str,
+        requester: &PseudonymKey,
+        code_hash: &str,
+    ) -> bool {
+        let now = self.ctx.clock.now_secs();
+        (self.ctx.communities.governance_state(community)).is_some_and(|state| {
+            !state.bans.contains(requester) && state.live_invite(code_hash, now).is_some()
+        })
     }
 
     /// One token of `requester`'s bucket in `community`, at the 10 per

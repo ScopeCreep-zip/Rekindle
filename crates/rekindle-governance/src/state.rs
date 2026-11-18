@@ -461,6 +461,23 @@ impl TimeoutState {
 }
 
 impl GovernanceState {
+    /// The live invite carrying `code_hash` at `now_secs`: created, not
+    /// revoked (a revoked invite leaves `invites`), not expired, and with
+    /// a use left (`uses`, the count `invite_gate` reached, below
+    /// `max_uses`). The lowest invite id wins a shared hash. What a join
+    /// and a joiner's pre-join snapshot request are checked against (plan
+    /// E3.2 S7c.5).
+    #[must_use]
+    pub fn live_invite(&self, code_hash: &str, now_secs: u64) -> Option<&InviteState> {
+        let mut invites: Vec<_> = self.invites.iter().collect();
+        invites.sort_by_key(|(id, _)| **id);
+        let (_, invite) = invites
+            .into_iter()
+            .find(|(_, invite)| invite.code_hash == code_hash)?;
+        let expired = invite.expires_at.is_some_and(|at| at <= now_secs);
+        (!expired && invite.uses < invite.max_uses).then_some(invite)
+    }
+
     /// The admission mode in force. `Open` when the community never set
     /// one — which is every community created before this existed, so
     /// the default preserves current behaviour.

@@ -27,6 +27,9 @@ pub const CHECKPOINT_STATE_RESPONSE_MAX_BYTES: usize = SNAPSHOT_CHUNK_MAX + 512;
 /// A community id (an anchor record key) at its longest text form, with room.
 const MAX_COMMUNITY: usize = 160;
 
+/// An invite code hash (64 hex characters), with room.
+const MAX_CODE_HASH: usize = 128;
+
 /// `requester` asks for the snapshot bytes at `offset` of the checkpoint
 /// with this `height` and `digest` in `community`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +39,10 @@ pub struct CheckpointStateRequest {
     pub digest: [u8; 32],
     pub offset: u32,
     pub requester: [u8; 32],
+    /// `None`: a member asks. `Some`: the code hash of the live invite a
+    /// joiner holds, its authority before it is a member (plan E3.2
+    /// S7c.5); signed with the rest.
+    pub invite_code_hash: Option<String>,
 }
 
 impl CheckpointStateRequest {
@@ -46,6 +53,13 @@ impl CheckpointStateRequest {
         out.extend_from_slice(&self.digest);
         out.extend_from_slice(&self.offset.to_be_bytes());
         out.extend_from_slice(&self.requester);
+        match &self.invite_code_hash {
+            None => out.push(0),
+            Some(hash) => {
+                out.push(1);
+                put_lp(&mut out, hash.as_bytes());
+            }
+        }
         out
     }
 
@@ -61,6 +75,13 @@ impl CheckpointStateRequest {
             ));
         }
         check_len("community id", self.community.len(), MAX_COMMUNITY)?;
+        let code_hash = self.invite_code_hash.as_deref().unwrap_or_default();
+        check_len("invite code hash", code_hash.len(), MAX_CODE_HASH)?;
+        if self.invite_code_hash.as_deref() == Some("") {
+            return Err(CodecError::Serialization(
+                "checkpoint state request: an empty invite code hash".into(),
+            ));
+        }
         let sig = sign(key, &self.signing_bytes());
         let mut builder = capnp::message::Builder::new_default();
         {
@@ -71,6 +92,7 @@ impl CheckpointStateRequest {
             b.set_offset(self.offset);
             b.set_requester(&self.requester);
             b.set_sig(&sig);
+            b.set_invite_code_hash(code_hash);
         }
         let out = pack(&builder);
         check_size(
@@ -108,7 +130,16 @@ pub fn decode_checkpoint_state_request(data: &[u8]) -> Result<CheckpointStateReq
         digest: bytes32(b.get_digest(), "checkpoint state request: digest")?,
         offset: b.get_offset(),
         requester: bytes32(b.get_requester(), "checkpoint state request: requester")?,
+        invite_code_hash: Some(text_to_string(
+            b.get_invite_code_hash().map_err(|e| capnp_err(&e))?,
+        )?)
+        .filter(|hash| !hash.is_empty()),
     };
+    check_len(
+        "invite code hash",
+        request.invite_code_hash.as_deref().map_or(0, str::len),
+        MAX_CODE_HASH,
+    )?;
     verify(
         &request.requester,
         &request.signing_bytes(),

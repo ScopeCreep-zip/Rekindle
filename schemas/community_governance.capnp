@@ -257,8 +257,9 @@ struct CheckpointEntry {
 # `offset` of `canonical_state ‖ canonical_cut` at the cut of the checkpoint
 # with this `height` and `digest`. Signed by `requester`, the asking
 # member's pseudonym, over `rekindle-checkpoint-state-request-v1 ‖
-# community ‖ height ‖ digest ‖ offset ‖ requester`, so the answering member
-# serves admitted members only.
+# community ‖ height ‖ digest ‖ offset ‖ requester ‖ invite`, so the
+# answering member serves admitted members, and joiners holding a live
+# invite, only.
 struct CheckpointStateRequest {
     community            @0 :Text;
     height               @1 :UInt64;
@@ -266,6 +267,11 @@ struct CheckpointStateRequest {
     offset               @3 :UInt32;
     requester            @4 :Data;          # 32 bytes
     sig                  @5 :Data;          # 64 bytes
+    # Empty: a member asks. Else the code hash of the live invite a joiner
+    # holds (plan E3.2 S7c.5, the pre-join hint): the authority that lets it
+    # join, under `sig` (the signed bytes add `0x01 ‖ len ‖ hash`, `0x00`
+    # when empty).
+    inviteCodeHash       @6 :Text;
 }
 
 # The answer, in `checkpointStateResponse @78`: at most 30,000 of the
