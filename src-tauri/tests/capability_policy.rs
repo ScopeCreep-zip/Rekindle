@@ -421,9 +421,11 @@ fn module_functions(src: &str) -> BTreeMap<String, String> {
 /// into other stores and actions. A store hook such as
 /// `trackNetworkStatus()` invokes a command in every window that mounts it,
 /// so the window must be granted it (walk 20 M3: the community window's
-/// Create waited on a status read the ACL refused). A shared component's
-/// own command calls are not counted: they sit behind the props that say
-/// which window's variant it renders (the video panel, the message input).
+/// Create waited on a status read the ACL refused). A mounted component's
+/// own command calls count too (walk 21: the chat window's link preview and
+/// Settings' skin credits called `open_external_url` ungranted), except in
+/// [`PROP_VARIANTS`], whose calls sit behind the props that say which
+/// window's variant it renders.
 struct Reach {
     commands: BTreeSet<(String, PathBuf)>,
     files: BTreeSet<PathBuf>,
@@ -433,6 +435,17 @@ struct Reach {
 
 fn is_under(path: &Path, dir: &str) -> bool {
     path.starts_with(repo_root().join(dir))
+}
+
+/// Shared components that render one variant per window from their props:
+/// the video panel's DM, community and native-preview paths
+/// (`useVideoCallPanel.ts`, `panel_capture.ts`) each call only their own
+/// variant's commands, so a window is granted its variant's, not every
+/// branch's. `prop_variants_still_call_commands` keeps each entry live.
+const PROP_VARIANTS: [&str; 1] = ["src/components/voice/video_call"];
+
+fn is_prop_variant(path: &Path) -> bool {
+    PROP_VARIANTS.iter().any(|dir| is_under(path, dir))
 }
 
 impl Reach {
@@ -468,7 +481,7 @@ impl Reach {
             return;
         }
         let src = self.source(path);
-        if owned(path) {
+        if owned(path) || (is_under(path, "src/components") && !is_prop_variant(path)) {
             self.scan_calls(path, &src, w);
         }
         for (dep, names) in module_imports(path, &src) {
@@ -558,4 +571,21 @@ fn windows_are_granted_the_commands_their_code_reaches() {
         "commands no capability grants:\n{}",
         missing.join("\n")
     );
+}
+
+/// Each [`PROP_VARIANTS`] entry still calls commands of its own: an entry
+/// that calls none exempts nothing and is removed.
+#[test]
+fn prop_variants_still_call_commands() {
+    let wrappers = command_wrappers();
+    for dir in PROP_VARIANTS {
+        let mut files = Vec::new();
+        frontend_files(&repo_root().join(dir), &mut files);
+        let mut reach = Reach::new();
+        for file in &files {
+            let src = reach.source(file);
+            reach.scan_calls(file, &src, &wrappers);
+        }
+        assert!(!reach.commands.is_empty(), "{dir} calls no command");
+    }
 }

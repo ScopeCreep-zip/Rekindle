@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-chat",
-  "description": "App-command grants for `chat-*` windows: 1:1 friend chat, with start and hang-up of a call to this peer and the peer's safety number with its mark-verified flow (the header's badge), and the group mode (plan E2.6): the group list, a group's stored messages, its send and typing, and Leave. No plugin grants.",
+  "description": "App-command grants for `chat-*` windows: 1:1 friend chat, with start and hang-up of a call to this peer and the peer's safety number with its mark-verified flow (the header's badge), and the group mode (plan E2.6): the group list, a group's stored messages, its send and typing, and Leave, and opening a link preview's page (`open_external_url`, which asks in Rust before it opens). No plugin grants.",
   "windows": [
     "chat-*"
   ],
   "permissions": [
     "allow-get-message-history",
     "allow-mark-read",
+    "allow-open-external-url",
     "allow-send-message",
     "allow-outbox-retry",
     "allow-outbox-discard",
