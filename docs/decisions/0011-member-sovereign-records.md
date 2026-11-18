@@ -1,6 +1,11 @@
 # 0011 — Member-sovereign records replace the shared-`slot_seed` write model
 
-- **Status:** Accepted
+- **Status:** Accepted; **implemented** for governance (plan E3.2, 2026-11-18): the anchor and
+  `GenesisCert`, DFLT(8) member records, the signed op DAG and its merge, checkpoints with the
+  pre-join hint and partial state, the k = 4 watch ring and anti-entropy sweep, and the
+  self-sovereign join and re-join (`crates/rekindle-governance/`, `crates/rekindle-governance-runtime/`,
+  `docs/architecture/communities-governance.md`). Channel records and the registry slot claim keep
+  the `slot_seed` model until plan E3.4.
 - **Date:** 2026-10-04
 - **Supersedes:** the write model of [0003](0003-flat-smpl-governance.md), i.e. universal SMPL
   `o_cnt: 0` records whose slot keypairs every member derives from a community-shared `slot_seed`

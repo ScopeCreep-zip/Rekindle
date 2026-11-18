@@ -91,6 +91,7 @@ mod rich_messaging;
 mod ring_census;
 mod ring_frontier;
 mod role_assign;
+mod roster_convergence;
 mod rotation;
 mod route_link_failure;
 mod route_liveness;

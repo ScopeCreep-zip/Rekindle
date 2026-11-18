@@ -1,269 +1,219 @@
 # Communities — Governance, Join, Scaling
 
-This document covers the governance internals of Communities:
-CRDT merge rules, the pure / async split between
-`rekindle-governance` and `rekindle-governance-runtime`,
-self-sovereign join, and Plate Gate scaling beyond 255 members.
+This document covers the governance internals of Communities as built
+(plan E3.2, ADR 0011): member-sovereign records, the signed governance
+op DAG and its merge, checkpoints and the pre-join hint, the
+self-sovereign join, the watch ring, and the segment and slot-claim
+mechanisms that remain until E3.4.
 
 The companion docs are
 [`communities-overview.md`](communities-overview.md) (model,
-three-path delivery, SMPL schema, permissions, design principles)
+delivery paths, records, permissions, design principles)
 and [`communities-channels.md`](communities-channels.md) (MEK,
 channel messaging, voice, DMs).
 
-## 1. CRDT Governance
+## 1. Records
 
-The merge engine lives in `crates/rekindle-governance/` (Tier 6).
-It is **pure logic** — no I/O, no async, no side effects — so it
-is deterministically testable and the same merge function runs
-identically on every peer.
+| Record | Kind | Owner | Contents |
+|---|---|---|---|
+| Anchor `A` | DFLT(1) | none: the creation key is discarded after one write | subkey 0 `GenesisCert` (`dht_layout::community_anchor::GENESIS_CERT`) |
+| Member record `M` | DFLT(8) | `K_M(p)`, a key only that member holds (`VaultKey::MemberRecordOwner`) | 0 card, 1 presence beat, 2 op-log head, 3 frontier, 4 outbox, 5 history ad, 6 routes (`dht_layout::member_record`) |
+| Sealed page | DFLT(1) | discarded after one write | an op-log page (`dht_layout::sealed_page`) |
 
-The async lifecycle on top of it — origin (community creation),
-bootstrap (fetch origin + governance + members on join), join,
-segments (Plate Gate expansion), apply (writes that flow through
-`rekindle_governance::merge::apply`) — lives in
-`crates/rekindle-governance-runtime/`. The split exists because
-the merge engine must stay free of `tokio` so property tests can
-run synchronously over millions of generated inputs without
-spawning a runtime per case. See
+The community id is the anchor's record key. The `GenesisCert`
+(`rekindle-codec/src/governance_op/genesis.rs`) names the creator's
+pseudonym, the creator's `M` and its owner, and the admission policy;
+admission is genesis-only, so no op changes it. Nobody can write `A`
+again, and nobody but `p` can write `p`'s `M`: Veilid refuses a write
+signed by any other key (`rekindle-netsim/src/member_record_tests.rs`
+proves it for both records over the production pool).
+
+## 2. The governance op DAG
+
+The merge engine lives in `crates/rekindle-governance/` (Tier 6). It is
+pure logic (no I/O, no async), so the same merge runs on every peer and
+is property-tested. The async lifecycle on top of it lives in
+`crates/rekindle-governance-runtime/`; the Host's adapter is
+`crates/rekindle-node/src/host/adapters/governance/` on both the daemon
+and the desktop (ADR 0010). See
 [`decisions/0009-crate-harvest-tiers.md`](../decisions/0009-crate-harvest-tiers.md)
-for the tier-bump argument.
+for the tier split.
 
-### Merge rules by entry type
+### Ops
 
-Every governance entry includes a `lamport: u64` clock. The merge
-sorts all entries from all subkeys by
-`(lamport, author_pseudonym)` for deterministic total order, then
-applies type-specific rules:
+Every governance change is a `GovernanceOp`
+(`rekindle-types/src/governance/op.rs`, wire schema
+`schemas/governance_op.capnp`): author, `seq` in the author's own chain,
+`prev`, causal `deps` (`OpRef`s naming the op hash, author, seq and the
+author's record), `issued_at` (a tie-break only), the body (a
+`GovernanceEntry`) and an Ed25519 signature over
+`GOV_OP ‖ anchor ‖ canonical unsigned bytes`. Ops are appended to the
+author's own op log (`M`/2 head, sealed pages behind it) and the
+author's frontier (`M`/3: heads plus the roster checksum) is written
+after the head. A reader verifies each op
+(`rekindle-governance/src/op.rs` `VerifiedOp::verify_with`): signature,
+invite and owner proofs, chain, and deps; the op's lamport is derived,
+`1 + max(deps)`, never carried. Ops are stored in `governance_ops` and
+`governance_heads` (see [`data-layer.md`](data-layer.md)) with a fate
+(applied, pending deps, quarantined).
 
-**Clocks.** Each community keeps two Lamport clocks (plan step B4):
-the *governance clock* stamps the `GovernanceEntry`s we write, and the
-*message clock* stamps channel and control messages (text, polls,
-stage, files, video topology). Both use `rekindle_types::lamport::LamportClock`:
-a local tick fails at the `u64` ceiling instead of wrapping, and a
-received timestamp advances the clock by at most `MAX_LAMPORT_DRIFT + 1`
-(the message is kept; it orders by its own timestamp). A governance
-rebuild raises the governance clock to what
-`merge_with_accepted` returns — the accepted entries' timestamps
-folded through that clamped rule, so rejected or forged-far-future
-entries cannot pin it. On desktop the governance clock is persisted
-(`communities.lamport_clock`) on every tick and both clocks reload at
-login (the message clock from the community's highest stored message
-`lamport_ts`). The daemon stamps channel messages from its gossip mesh
-clock, never the wall clock.
+### The merge
 
-| Entry type | Strategy | Notes |
-|------------|----------|-------|
-| `ChannelCreated` / `ChannelArchived` | OR-Set | Active = created MINUS archived (matched by `channel_id`). |
-| `RoleDefinition` | LWW-Register | Highest `lamport` wins per `role_id`. Ties: lexicographic pseudonym. |
-| `RoleAssignment` / `RoleUnassignment` | LWW-Flag | Per `(target_pseudonym, role_id)`. |
-| `BanEntry` / `UnbanEntry` | LWW-Flag | Per `target_pseudonym`. Unban requires higher `lamport` than the ban. |
-| `MEKGenerationBump` | Max-Register | Highest `generation` is current MEK gen. Reader-validates rotator authority. |
-| `CommunityMeta` | LWW-Register | Single logical object — latest write replaces all fields. |
-| `ThreadCreated` / `ThreadArchived` | OR-Set | `ThreadArchived` requires `MANAGE_THREADS`. |
-| `EventCreated` / `EventArchived` | OR-Set | LWW within active set for metadata. |
-| `ExpressionAdded` | OR-Set + tombstone | Removal via `AdminDelete` targeting the entry. |
-| `CategoryCreated` / `CategoryArchived` | OR-Set | Same as channels. |
-| `PermissionOverwrite` | LWW-Register | Per `(channel_id, target_id)`. |
-| `AutoModRule` | LWW-Register | Per `rule_id`. |
-| `SegmentAdded` | Grow-Only Set | Plate-Gate segments accumulate. |
+`rekindle_governance::merge` folds a verified op set into
+`GovernanceState`:
 
-For channel records:
+- **The creator** is the `GenesisCert`'s (MSC4289's immutable creator):
+  no op at any lamport becomes the creator
+  (`merge/op_proptests.rs` `no_op_at_any_lamport_becomes_the_creator`;
+  netsim `scenarios.rs` `a_lamport_zero_entry_never_becomes_the_creator`).
+- **Power first.** Each op is judged against the power state in its own
+  causal past, never the final one; power ops are resolved on a
+  mainline first (`merge/resolve.rs`, `power.rs`), with a Discord-style
+  hierarchy (a target must rank below the writer).
+- **Strong removal.** A kick or ban carries `targetSeqFrontier`, its
+  target's highest seq in its causal past, and masks only the target's
+  ops above it; a removed manager's concurrent actions are void, and
+  the invalidation chains (`op_proptests.rs`
+  `removal_invalidates_the_removed_managers_concurrent_actions`,
+  `strong_removal_chains_transitively`).
+- **Quarantine.** An op the merge refuses after its author's removal, a
+  checkpoint equivocation, or fork evidence is quarantined, never
+  applied in part, and announced once as `GovernanceOpQuarantined`
+  (`rekindle-governance-runtime/src/quarantine.rs`). An op whose kind the
+  codec does not know fails to decode
+  (`CodecError::UnknownGovernanceArm`) and is not stored.
+- **Equivocation.** Ops are signed by per-community device keys the
+  pseudonym endorses (ADR 0022). Two ops at one `(device key, seq)` are
+  fork evidence: that key is retired, ops below the fork stay valid, the
+  conflicting ops and its later ops are quarantined. The anti-entropy
+  sweep compares frontiers and finds it (netsim `equivocation.rs`).
+- **Convergence check.** `rekindle_governance::checksum::roster_checksum`
+  hashes one canonical encoding of every state field; the frontier
+  publishes it, and a reader at equal heads compares it
+  (`hinted_walk.rs` `ring_holds`). Members holding one op set compute
+  equal checksums and tables (netsim `roster_convergence.rs`).
 
-| Entry | Strategy | Notes |
-|-------|----------|-------|
-| `Message` | Grow-Only Set | All messages from all subkeys included; ordered by `(lamport, pseudonym)`. |
-| `Edit` | Author-LWW | Edits applied only if the edit's author matches the original message author. |
-| `Delete` | Tombstone | Permanent. Removes message from materialised view. |
-| `Reaction` | PN-Counter | Distinct pseudonyms with `added: true` at their latest `lamport`. |
-| `PollVote` | LWW-Flag | Per `(poll_id, pseudonym)`. |
+There is no governance clock and no per-entry lamport: the old
+`(lamport, author)` sort over SMPL subkeys, "genesis at sequence 1", the
+`governance_entries_cache` table and subkey compaction are gone.
 
-### The reader-validates principle
+### Roles
 
-```
-Writer writes GovernanceEntry::ChannelCreated to their subkey
-  ↓
-Reader reads all subkeys
-  ↓
-Reader merges CRDT state to determine current roles
-  ↓
-Reader checks: does writer's pseudonym hold a role with MANAGE_CHANNELS?
-  ↓
-  YES → entry included in materialized view
-  NO  → entry silently ignored
-```
+A role is named by a 16-byte `RoleId` (`rekindle-types/src/id.rs`),
+written as 32 lowercase hex characters on IPC, in events and in
+`community_roles.role_id`. The Host emits `RolesChanged` and
+`EffectivePermissionsChanged` from the merge's state diff, and the
+frontend reads the Host's permission flags rather than recomputing them
+(netsim `governance_diff_events.rs`).
 
-Consequences:
+### Checkpoints and the pre-join hint
 
-- A member without `MANAGE_CHANNELS` *can* write `ChannelCreated`.
-  Honest clients ignore it.
-- A banned member can keep writing to their subkey forever.
-  Honest clients drop everything they wrote after the ban entry's
-  `lamport`.
-- Security comes from *every reader independently validating*, not
-  from preventing writes. The SMPL schema gives every member
-  irrevocable write access to their own subkey by construction.
+A checkpoint (`rekindle-governance/src/checkpoint/`) is an acceleration
+hint, never authoritative: a power holder proposes a cut once
+`PROPOSAL_OPS` (128) ops lie above the last one
+(`checkpoint/endorse.rs`), it commits to the frontier, a state root
+(the canonical state followed by the cut index) and the member
+directory pages, and a strict majority of the electorate endorses it.
+Before its walk a joiner asks its inviter for the usable hint at the
+greatest height and the chain behind it
+(`rekindle-governance-runtime/src/checkpoint_hint.rs`), resumes from the
+hinted snapshot and fetches only the ops above the cut
+(`hinted_walk.rs`, `join_walk.rs`), so a join's cost is bounded by the
+ops since the latest checkpoint, not by the community's age
+(netsim `join_from_hint.rs`, `racing_join.rs`).
 
-### Genesis validation
+### Partial state
 
-Entries at Veilid sequence 1 (the first write to a subkey) are
-**always accepted** regardless of permissions. This bootstraps
-the community: the creator writes initial roles, channels, and
-metadata in their genesis entries before any permission structure
-exists.
+A community joined from a hint is **partial** until its backfill ends
+(`rekindle-governance-runtime/src/partial.rs`; Synapse's partial-state
+rooms): it proposes and endorses no checkpoint, answers no hint,
+snapshot or bootstrap request, and compares no roster checksum. The
+flag is durable (`governance_partial`). When the backfill ends the full
+state at the cut is compared with the hint's digest; a mismatch is a
+false snapshot, published as a typed event, and the community stays on
+the backfilled state.
 
-### Circular dependency resolution
+### Watching: the ring and the sweep
 
-Role assignments determine who can make governance changes, but
-role assignments are themselves governance changes. Resolution is
-by Lamport order: the merge processes entries in chronological
-order, and at each entry the *currently accumulated* permission
-state determines validity. Genesis entries bypass this check.
+Members are ordered by `blake3("rekindle-watch-ring-v1" ‖ communityId ‖ p)`
+and each watches the `M` of its `RING_K` = 4 ring successors
+(`rekindle-governance-runtime/src/watch_ring.rs`), so every `M` has
+`min(4, N − 1)` watchers, under Veilid's per-record watcher limit (netsim
+`watch_ring_budget.rs`, 40 members). A watched frontier change (`M`/3)
+triggers a rebuild (`ring_frontier.rs`); ring members keep each other's
+records warm. The anti-entropy sweep (`anti_entropy.rs`) inspects
+`SWEEP_SAMPLE` = 16 random members' records every `SWEEP_PERIOD` = 60 s,
+and every record on login or reconnect, and fetches any op it lacks.
+`governanceOp @74` gossip and `headAdvanced @76` hints are the fast path;
+the ring and the sweep are the durable one. There are no governance
+record watches and no polling of governance.
 
-```rust
-fn merge_governance(subkeys: &[SubkeyPayload]) -> GovernanceState {
-    let mut state = GovernanceState::default();
-    let mut all_entries: Vec<(PublicKey, &GovernanceEntry)> = Vec::new();
+## 3. Self-Sovereign Join
 
-    for payload in subkeys {
-        for entry in &payload.entries {
-            all_entries.push((payload.pseudonym, entry));
-        }
-    }
-    all_entries.sort_by_key(|(pk, e)| (e.lamport(), *pk));
+The join needs no coordinator and no member online
+(a netsim scenario for it is open, see the plan). The joiner holds an invite link whose code
+opens the `InviteSecrets` (`rekindle-governance-runtime/src/invite_secrets.rs`):
+the anchor, the inviter's pseudonym and member record, the segment
+registry and slot seed (until E3.4), and no community key (D11). An
+invite exists as an `InviteCreated` op (`max_uses` in
+`1..=MAX_USES_PER_INVITE`), and its link is handed out only after that
+op and the frontier are durable on the inviter's `M`.
 
-    for (idx, (author, entry)) in all_entries.iter().enumerate() {
-        let is_genesis = idx == 0;
-        if is_genesis || state.has_permission(author, entry.required_permission()) {
-            state.apply(author, entry);
-        }
-        // else: silently ignored
-    }
-    state
-}
-```
+1. Read `A` and verify the `GenesisCert`; read the inviter's `M`.
+2. Ask the inviter for a checkpoint hint and walk the ops above the cut
+   (partial until backfilled); with no answer, walk from genesis.
+3. Derive the pseudonym, HKDF(`master_secret`, `community_id`), and
+   create the joiner's own `M` with a fresh owner key.
+4. Build `MemberJoined` (`join_flow.rs`): the record and its owner, an
+   owner proof (only `K_M` can bind the record), an invite proof (the
+   pseudonym's signature over the invite code's commitment), and shallow
+   deps (`join_deps.rs`: the creator's last genesis op, the inviter's
+   latest op, and on a re-join the member's own previous op and every op
+   removing it). Publish `M`/0 card, `M`/2, `M`/3, then `M`/1 beat.
+5. `BootstrapRequest @42` app_calls the inviter's route (from its `M`/6)
+   carrying the encoded `MemberJoined`; the inviter verifies, stores and
+   merges it and answers `bootstrapResponseV2 @75`
+   (`rekindle-governance-runtime/src/bootstrap.rs`, sized to the app_call
+   cap), or a NAK. The answer is convenience: the DHT is authoritative.
+6. The community key arrives from a member (`RequestMEK`, answered by the
+   Host's `mek_request.rs` for members of the merged state); a post made
+   before it returns `MekMissing`.
 
-The merge function is property-tested in
-`rekindle-governance/proptest-regressions/` for convergence (same
-entries in any order → same state), idempotence (applying same
-entry twice → same state), and commutativity.
-
-### The runtime layer
-
-`rekindle-governance-runtime` wraps the pure merge with the
-asynchronous lifecycle: opening DHT records, fetching segment
-authors, applying entries to the in-memory snapshot, emitting UI
-events. Its modules:
-
-| Module | Role |
-|---|---|
-| `apply` | The write pipeline: stage entry → merge → persist → emit |
-| `origin` | Community creation (genesis entries + first MEK + initial roles / channels) |
-| `bootstrap` | Build the BootstrapBundle response for incoming joiners |
-| `join` + `join_stages` + `join_gate` | Joiner flow (decrypt invite, scan registry, claim slot, fetch MEK) |
-| `dht_hydration` | Rehydrate registry slots from the network |
-| `segments` | Plate Gate segmentation (Section 3 below) |
-| `roles`, `membership_events`, `overflow`, `invite_secrets`, `event`, `error` | Supporting concerns |
-| `deps` | The `Deps` trait surface implemented by `src-tauri/src/services/governance_adapter/` |
-
-The crate itself never imports `veilid-core`, `tauri`, `rusqlite`,
-or `iota_stronghold`. The adapter at
-`src-tauri/src/services/governance_adapter/` is the
-**Schwarzschild boundary** between the runtime crate and the
-Tauri-side AppState — see [`services-pattern.md`](services-pattern.md)
-for the standard runtime / adapter / pure-logic split.
-
-## 2. Self-Sovereign Join
-
-Joining requires no coordinator approval, no online ceremony
-beyond DHT reads and a single slot claim. The joiner has all
-cryptographic material in the invite and performs all operations
-independently.
-
-### Invite structure
-
-An invite is an encrypted blob distributed out-of-band (deep link,
-QR code, peer share). The decryption key is encoded in the deep
-link URL fragment (never sent to any server):
-
-```
-rekindle://invite/{base64url(encrypted_blob)}#{base64url(decryption_key)}
-```
-
-The decrypted `InviteSecrets`:
-
-```rust
-struct InviteSecrets {
-    anchor: TypedKey,
-    registry_key: TypedKey,
-    slot_seed: [u8; 32],                         // For deriving slot keypairs
-    channel_keys: Vec<ChannelKeyInfo>,
-    current_mek: HashMap<TypedKey, MekInfo>,     // (channel, mek, generation)
-    community_name: String,
-    inviter_pseudonym: [u8; 32],
-    // No route blob: the joiner reads the inviter's current route from
-    // its member record's M/6 (MemberRoutes, plan E3.2 S7c.8).
-}
-```
-
-### Join sequence
-
-| Step | Action | Notes |
-|------|--------|-------|
-| 1 | Decrypt invite | XChaCha20-Poly1305 keyed by URL fragment. |
-| 2 | Parse `InviteSecrets` | Cap'n Proto. |
-| 3 | Request `BootstrapBundle` | `app_call` to inviter. **Convenience, not trust.** |
-| 4 | Open governance record, build state | CRDT merge of all subkeys. Verifies the bundle. |
-| 5 | Derive pseudonym | HKDF(`master_secret`, `community_id`) → Ed25519 keypair. Unlinkable across communities. |
-| 6 | Check ban list | Banned pseudonyms abort the join client-side. |
-| 7 | Scan registry for empty slot | `inspect_dht_record` returns subkey seqs; lowest-indexed seq=0 is empty. |
-| 8 | Derive slot keypair, write `MemberPresence` | HKDF(`slot_seed`, `subkey_index`) → Veilid keypair. |
-| 9 | Verify claim (compare-and-swap) | Re-read with `force_refresh=true`. On conflict, retry next slot (max 5). |
-| 10 | Request current MEK if invite is stale | `RequestMEK` gossip; deterministic responder replies. |
-| 11 | Open all channel records | `open_dht_record` + `watch_dht_values`. |
-| 12 | Bootstrap gossip peers | Read every occupied registry slot; pick D online peers as initial neighbours. |
-| 13 | Watch all records | Governance, registry, every channel. |
-| 14 | Start presence heartbeat | 15 s interval, refreshes route blob. |
-| 15 | SMPL catchup | Read all subkeys of all channel records, merge-sort, decrypt, store in SQLite. Background. |
-
-### BootstrapBundle — porter delivery
-
-The bundle is a single `app_call` to the inviter that returns
-pre-merged governance entries, online member list with route
-blobs, channel MEKs wrapped per-channel via X25519 ECDH, the last
-50 messages per channel (MEK-encrypted ciphertext), and the owner
-keypair wrapped for the joiner.
-
-Saves ~30 independent DHT reads, reducing join time from
-~10–30 s to ~1–2 s. The joiner verifies the bundle against DHT
-reads — if anything mismatches, the DHT is authoritative. The
-bundle is cargo delivered by a porter; the recipient verifies the
-seal. If the inviter is offline, the joiner falls through to
-direct DHT reads. The join is self-sovereign regardless of
-inviter availability.
+Readers admit the joiner by merging its `MemberJoined`; the receive
+bound (`op_log.rs` `receive_bounded`) stores a `MemberJoined` from an
+unknown author only with an invite proof naming a live invite.
 
 ### Leave and rejoin
 
-Leaving is unilateral: stop heartbeat, zero own registry slot,
-close records, optionally delete local SQLite data. No
-coordinator approval. The slot becomes available for reuse.
+Leaving writes a `MemberLeft` op; a kick or ban is a removal op by a
+member who outranks the target. A member who rejoins derives the same
+pseudonym, binds a fresh `M` (owner-proved), and its `MemberJoined`
+depends on its own previous op and every op that removed it, so the
+merge sees the removal in the re-join's past (`merge/gates.rs`;
+netsim `rejoin_after_kick.rs`, `rejoin_after_leave.rs`). A kicked
+member's earlier posts stay readable through the remover's recorded
+slot heads (`departed_heads`).
 
-A leaver who rejoins via a new invite derives the *same*
-pseudonym (deterministic from `master_secret` + `community_id`)
-but claims a new slot — their previous messages remain attributed
-to the same identity.
+## 4. Segments and the slot claim (until E3.4)
 
-## 3. Plate-Gate Scaling (Past 255 Members)
+Governance no longer lives in SMPL records. Channel records and the
+member registry still do, and the registry slot claim still runs: a
+joiner claims a slot in a segment registry for its channel writes and
+presence (`rekindle-governance-runtime/src/join_stages/`), and the
+segment descriptors come from merged `SegmentAdded` ops. E3.4 replaces
+the slot claim and the presence poll with `M`/1 beats; the text below
+describes these remaining mechanisms.
+
+### Plate-Gate scaling (past 255 members)
 
 A single SMPL DHT record holds 255 member subkeys. Communities
 larger than that are split into **fractal segments** — additional
-registry + governance records announced via
-`GovernanceEntry::SegmentAdded`.
+registry and channel records announced via a `SegmentAdded` op.
 
 ```rust
 GovernanceEntry::SegmentAdded {
     segment_index: u16,
-    anchor: TypedKey,
+    governance_key: TypedKey,
     registry_key: TypedKey,
     slot_range: (u16, u16),  // member slot range this segment covers
     lamport: u64,
@@ -329,11 +279,10 @@ sharding.
 
 | Concern | Location |
 |---|---|
-| Pure CRDT merge | `crates/rekindle-governance/` |
-| Async lifecycle (origin, bootstrap, join, segments, apply) | `crates/rekindle-governance-runtime/` |
-| Governance adapter (Tauri) | `src-tauri/src/services/governance_adapter/` |
-| State helpers for governance | `src-tauri/src/state_helpers/{governance, governance_persist}.rs` |
-| Governance persistence cache | `governance_entries_cache` SQLite table — see [`data-layer.md`](data-layer.md) |
-| Join services | `src-tauri/src/services/community/join/{flow,bootstrap,helpers,history,rejoin,state}.rs` |
-| Segment admin command | `src-tauri/src/commands/community/segments.rs` |
-| Plate Gate descriptors | `src-tauri/src/services/community/segments.rs` |
+| Op types, `GenesisCert`, `Frontier` | `crates/rekindle-types/src/governance/op.rs` |
+| Op and member-record codecs | `crates/rekindle-codec/src/governance_op/`, `crates/rekindle-codec/src/member_record/` |
+| Pure merge, power, checkpoints, checksum | `crates/rekindle-governance/src/{merge,power.rs,checkpoint,checksum}` |
+| Op log, origin, join, hint, walk, ring, sweep, partial | `crates/rekindle-governance-runtime/src/` |
+| Host adapter (daemon and desktop) | `crates/rekindle-node/src/host/adapters/governance/` |
+| Op store | `governance_ops`, `governance_heads`, `governance_partial` — see [`data-layer.md`](data-layer.md) |
+| Record layouts | `crates/rekindle-types/src/dht_layout.rs` |

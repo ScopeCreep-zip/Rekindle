@@ -168,9 +168,14 @@ groups them by concern.
 
 ### Governance and Audit
 
-- **`governance_entries_cache`** — hydrated cache of merged
-  `GovernanceEntry` rows so the CRDT merge does not need to re-fetch
-  from the DHT on every command.
+- **`governance_ops`** — every governance op held, verified or not:
+  its hash, author, author record, seq, lamport, encoded bytes and fate
+  (applied, pending deps, quarantined); the merge reads the verified
+  set (`rekindle_db::repo`, `rekindle-governance-runtime/src/op_log.rs`).
+  **`governance_heads`** keeps our own op-log head and frontier;
+  **`governance_partial`** marks a community joined from a checkpoint
+  hint until its backfill ends; `governance_checkpoints` holds adopted cuts and
+  their snapshots (`checkpoint_rows.rs`).
 - **`audit_entries`** — tamper-evident audit log. Each row carries
   `prev_mac` + `mac` per [`audit-chain.md`](audit-chain.md). The MAC
   key lives in the vault; loss of the vault loses the chain.
@@ -320,7 +325,9 @@ uses. Each function takes `&rusqlite::Connection` and runs inside a
 | `pending_requests` | `pending_friend_requests` |
 | `communities` | `communities` |
 | `members` | `community_members` (owner-scoped; `members::roles` for role sets) |
-| `governance_cache` | `governance_entries_cache` |
+| `governance_ops` | `governance_ops`, `governance_heads` |
+| `governance_checkpoints` | `governance_checkpoints` |
+| `governance_partial` | `governance_partial` |
 | `audit` | `audit_entries` |
 
 Repository tests run against the real schema. `cargo xtask check-sqlite`
@@ -459,15 +466,22 @@ Lazy-created on first opt-in to multi-device. Subkeys hold the device
 list, read state per channel, sync preferences, paired device public
 keys, and sync manifest. Reconciled by the cross-device sync service.
 
-### Community Records (SMPL `o_cnt:0`, 255 subkeys — universal v2.0 schema)
+### Community Records
 
-All community records share the universal SMPL schema. The
-`o_cnt: 0` property means the creation keypair is discarded after
-genesis — the record has no privileged owner.
+Governance is member-sovereign (ADR 0011, `dht_layout.rs`):
 
-- **Governance record** — every member writes their
-  `GovernanceEntry` history to their assigned subkey. Reader merges
-  all subkeys via `rekindle-governance::merge::merge()`.
+- **Anchor `A`** — DFLT(1), subkey 0 the `GenesisCert`; the creation
+  key is discarded after that one write. Its key is the community id.
+- **Member record `M`** — DFLT(8), one per member, owned by
+  `K_M(p)` (`VaultKey::MemberRecordOwner`): 0 card, 1 presence beat,
+  2 op-log head, 3 frontier (heads + roster checksum), 4 outbox,
+  5 history ad, 6 routes. Op-log pages are sealed DFLT(1) records
+  whose owner is discarded. Readers merge every member's ops via
+  `rekindle_governance::merge`.
+
+The member registry and channel records below are still SMPL
+`o_cnt: 0` (255 subkeys), written through a slot claimed with keys
+derived from the invite's `slot_seed`, until plan E3.4:
 - **Member registry record** — a presence directory, not a ledger.
   Members claim a free subkey on join and overwrite it each
   heartbeat; it never grows. Membership is a predicate over these
