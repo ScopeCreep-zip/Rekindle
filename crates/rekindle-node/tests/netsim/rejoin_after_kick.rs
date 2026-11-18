@@ -21,8 +21,9 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest, Mem
 use rekindle_netsim::{Fault, Records, Writes};
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
-use crate::harness::{eventually, Community};
+use crate::harness::{eventually, Community, PASSPHRASE};
 use crate::moderation::listed;
 
 const LIMIT: Duration = Duration::from_secs(180);
@@ -205,4 +206,80 @@ async fn a_member_joining_after_a_kick_and_rejoin_sees_the_rejoiner() {
         community.reads(0, "seen by the third member", LIMIT).await,
         "the owner reads the re-joiner's post"
     );
+}
+
+/// Nodes `nodes` lock, then unlock with the network up; each one's login
+/// network stage rebuilds the community from its stored ops
+/// (`rebuild_ops`, `GovernanceRebuilt`), fetching only the deps it lacks.
+async fn restart(community: &Community, nodes: &[usize]) {
+    for &i in nodes {
+        community.nodes[i].ok(IpcRequest::Lock).await;
+    }
+    for &i in nodes {
+        let node = &community.nodes[i];
+        let identity = node.public_key.clone().expect("an identity");
+        node.ok(IpcRequest::Unlock {
+            identity,
+            passphrase: PASSPHRASE.into(),
+        })
+        .await;
+        let events = node.events().await;
+        let rebuilt = eventually(&community.sim, LIMIT, || async {
+            events.any(|e| {
+                matches!(
+                    e,
+                    SubscriptionEvent::Governance(GovernanceEvent::GovernanceRebuilt { community: c })
+                        if *c == community.governance_key
+                )
+            })
+        })
+        .await;
+        assert!(rebuilt, "node {i} rebuilds the community after its restart");
+    }
+}
+
+/// After a kick-and-rejoin, the owner and a third member (each holding
+/// bea's re-join op, the third from its join walk) restart: the rebuild
+/// re-verifies their stored ops, where bea's seq 0 is cited at her first
+/// member record, which never held it (`op_walk::locators` on the join
+/// walk). Each still lists bea, not departed, and reads her next post,
+/// as a Matrix server restarting replays its stored room state, the leave
+/// and the re-join in order.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_restart_after_a_kick_and_rejoin_keeps_the_rejoiner() {
+    let mut community = Community::create(3, 347).await;
+    let bea = kick_and_rejoin(&mut community).await;
+    community.join(2).await;
+    assert!(
+        all_list(&community, &bea, &[0, 1, 2]).await,
+        "every member lists bea before the restart"
+    );
+    community.sim.quiesce().await;
+
+    restart(&community, &[0, 2]).await;
+    let bea_key = PseudonymKey::from_hex_lossy(&bea);
+    for i in [0, 2] {
+        assert!(
+            listed(&community, i, &bea).await.is_some(),
+            "node {i} lists bea after its restart"
+        );
+        let state = (community.nodes[i].host.governance())
+            .governance_state(&community.governance_key)
+            .expect("a rebuilt governance state");
+        assert!(
+            state.members.contains_key(&bea_key) && !state.is_departed(&bea_key),
+            "node {i}: bea is a member, not departed, after its restart"
+        );
+    }
+
+    community
+        .post(1, "after their restart")
+        .await
+        .expect("the re-joiner posts");
+    for i in [0, 2] {
+        assert!(
+            community.reads(i, "after their restart", LIMIT).await,
+            "node {i} reads the re-joiner's post after its restart"
+        );
+    }
 }
