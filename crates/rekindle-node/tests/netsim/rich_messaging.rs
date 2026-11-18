@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use rekindle_ipc::protocol::RichRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
-use crate::harness::{eventually, Community};
+use crate::harness::{eventually, Community, Events, SimNode};
 
 const LIMIT: Duration = Duration::from_secs(180);
 
@@ -111,6 +112,7 @@ async fn thread_reply_both_ways() {
         "bea sees the thread open again after ann's unarchive"
     );
 
+    let bea_events = community.nodes[1].events().await;
     ask(
         &community,
         1,
@@ -136,6 +138,22 @@ async fn thread_reply_both_ways() {
     })
     .await;
     assert!(replied, "ann reads bea's reply in the thread");
+    // The mesh never echoes a frame to its sender (plan E7.13 M76): bea's
+    // own frontends get her reply from her Host, body and all.
+    assert!(
+        saw_own_reply(&bea_events, &thread, "count me in"),
+        "bea's Host publishes her own reply to her frontends"
+    );
+}
+
+fn saw_own_reply(events: &Events, thread: &str, text: &str) -> bool {
+    SimNode::saw(events, |event| {
+        matches!(
+            event,
+            SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted { thread_id, body: Some(body), .. })
+                if thread_id == thread && body == text
+        )
+    })
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

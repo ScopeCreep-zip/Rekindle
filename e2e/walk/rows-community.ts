@@ -46,7 +46,17 @@ export async function contextMenu(b: Browser, el: Awaited<ReturnType<Browser["$"
 
 async function modalSubmit(b: Browser, input: string, value: string, passphrase: string): Promise<void> {
   await typeInto(await shown(b, input), value);
-  await (await b.$('.modal-container button[type="submit"]')).click();
+  // Create Community is disabled until the window's network store says
+  // "Connected" (CreateCommunityModal.tsx, ee301271); each window's store
+  // starts detached until its first status read, and a click on the
+  // disabled button is lost (walk 17 M3: the form stayed open). The user
+  // waits for it to enable; so does the row.
+  const submit = await b.$('.modal-container button[type="submit"]');
+  await submit.waitForEnabled({
+    timeout: NET_WAIT_MS,
+    timeoutMsg: `submit stayed disabled: ${await (await b.$(".modal-container .form-hint")).getText().catch(() => "no hint")}`,
+  });
+  await submit.click();
   await resolveIntent(b, { passphrase, appearMs: 3000 });
   await gone(b, input, NET_WAIT_MS);
 }

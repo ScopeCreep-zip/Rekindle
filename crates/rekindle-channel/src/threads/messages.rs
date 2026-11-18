@@ -8,15 +8,25 @@ use super::support::{decrypt_thread_body, ensure_thread_record_and_message, thre
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
 
+/// A thread reply we sent: what a receiver's `ThreadMessagePosted`
+/// carries besides the body, so our own frontends get the same event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadReplySent {
+    pub message_id: String,
+    pub sender_pseudonym: String,
+    /// Seconds, as the `ThreadMessageReceived` envelope carries it.
+    pub timestamp: u64,
+}
+
 /// Phase 19.e — send a thread reply. Encrypts under the community MEK
 /// with thread-specific AAD, writes to SMPL, and fan-outs the
-/// `ThreadMessageReceived` envelope to the mesh.
+/// `ThreadMessageReceived` envelope to the mesh; the reply sent.
 pub async fn send_thread_message<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     thread_id: &str,
     body: &str,
-) -> Result<(), ChannelError> {
+) -> Result<ThreadReplySent, ChannelError> {
     let (record_key, channel_message) =
         ensure_thread_record_and_message(deps, community_id, thread_id, body).await?;
 
@@ -29,17 +39,22 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
     deps.write_channel_message_smpl(&parent_context, &channel_message)
         .await?;
 
-    let envelope = CommunityEnvelope::Control(ControlPayload::ThreadMessageReceived {
-        thread_id: thread_id.to_string(),
+    let sent = ThreadReplySent {
         message_id: channel_message.message_id.clone().unwrap_or_default(),
         sender_pseudonym: channel_message.sender_pseudonym.clone(),
+        timestamp: channel_message.timestamp / 1000,
+    };
+    let envelope = CommunityEnvelope::Control(ControlPayload::ThreadMessageReceived {
+        thread_id: thread_id.to_string(),
+        message_id: sent.message_id.clone(),
+        sender_pseudonym: sent.sender_pseudonym.clone(),
         ciphertext: channel_message.ciphertext.clone(),
         mek_generation: channel_message.mek_generation,
-        timestamp: channel_message.timestamp / 1000,
+        timestamp: sent.timestamp,
         reply_to_id: None,
     });
     deps.send_to_mesh(community_id, &envelope)?;
-    Ok(())
+    Ok(sent)
 }
 
 /// Phase 19.e — load thread messages from the thread's SMPL record,

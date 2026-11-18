@@ -220,7 +220,8 @@ impl HostChannel {
         Ok(views.into_iter().map(message_view).collect())
     }
 
-    /// Post `body` to `thread_id`.
+    /// Post `body` to `thread_id`; our own frontends get the reply as a
+    /// receiver does (plan E7.13 M76), since the mesh never echoes it.
     ///
     /// # Errors
     /// We may not send in the parent channel, or the write failed.
@@ -232,7 +233,11 @@ impl HostChannel {
     ) -> Result<(), ChannelError> {
         let channel = self.thread_parent(community_id, thread_id)?;
         self.require(community_id, &channel, permissions::SEND_MESSAGES)?;
-        rekindle_channel::send_thread_message(self, community_id, thread_id, body).await
+        let sent =
+            rekindle_channel::send_thread_message(self, community_id, thread_id, body).await?;
+        self.publish_own_reply(community_id, thread_id, body, sent)
+            .await;
+        Ok(())
     }
 
     /// Attach a poll to our message; the poll's id.
