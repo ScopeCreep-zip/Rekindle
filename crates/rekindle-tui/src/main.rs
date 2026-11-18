@@ -9,6 +9,7 @@
 
 mod action;
 mod app;
+mod colour_depth;
 mod components;
 mod event;
 mod focus;

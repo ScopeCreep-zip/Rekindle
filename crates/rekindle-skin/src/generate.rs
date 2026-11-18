@@ -9,6 +9,8 @@ use std::fmt::Write as _;
 
 use serde_json::{json, Map, Value};
 
+use rekindle_types::dto::skin_library::SkinPaletteColour;
+
 use crate::registry::{resolve, Base, Class, TokenEntry, TokenType, ENTRIES, FONTS};
 use crate::tokens::emit::{css_value, declarations};
 use crate::tokens::EXTENSIONS_NAMESPACE;
@@ -131,6 +133,52 @@ error_style = { fg = \"error\" }\n\
 warning_style = { fg = \"warning\" }\n\
 info_style = { fg = \"info\" }\n";
 
+/// The registry id the TUI's translucent colours are composited over: the
+/// window background (`bg.base`'s source).
+const TUI_BACKDROP: &str = "bg.dark";
+
+/// `top` over the opaque `under` (source-over, rounded to the nearest).
+fn over(top: (u8, u8, u8, u8), under: [u8; 3]) -> [u8; 3] {
+    let (red, green, blue, alpha) = top;
+    let mix = |channel: u8, below: u8| {
+        let sum =
+            u32::from(channel) * u32::from(alpha) + u32::from(below) * (255 - u32::from(alpha));
+        u8::try_from((sum + 127) / 255).unwrap_or(u8::MAX)
+    };
+    [
+        mix(red, under[0]),
+        mix(green, under[1]),
+        mix(blue, under[2]),
+    ]
+}
+
+/// The TUI's roles in `resolved` (one skin variant's resolution, in
+/// [`TUI_TOKENS`] order) as opaque sRGB: a translucent token is composited
+/// over the window background, which is itself composited over black (a
+/// terminal has no alpha). What `SkinApplied.palette` carries.
+#[must_use]
+pub fn tui_colours(
+    resolved: &[(&TokenEntry, rekindle_types::dto::skin::TokenValue)],
+) -> Vec<SkinPaletteColour> {
+    use rekindle_types::dto::skin::TokenValue;
+    let rgba = |id: &str| {
+        resolved.iter().find_map(|(e, v)| match v {
+            TokenValue::Color { r, g, b, a } if e.id == id => Some((*r, *g, *b, *a)),
+            _ => None,
+        })
+    };
+    let backdrop = rgba(TUI_BACKDROP).map_or([0, 0, 0], |c| over(c, [0, 0, 0]));
+    TUI_TOKENS
+        .iter()
+        .filter_map(|(role, id)| {
+            rgba(id).map(|c| SkinPaletteColour {
+                role: (*role).to_owned(),
+                rgb: over(c, backdrop),
+            })
+        })
+        .collect()
+}
+
 /// An opaline theme (`load_from_str`) of the registry's colours on `base`
 /// (`Dark` or `Light`), for the TUI.
 #[must_use]
@@ -139,17 +187,12 @@ pub fn tui_palette(base: Base) -> String {
         Base::Light | Base::HcLight => ("Rekindle Light", "light"),
         Base::Dark | Base::HcDark => ("Rekindle Dark", "dark"),
     };
-    let values: BTreeMap<&str, String> = defaults(base)
-        .iter()
-        .filter_map(|(e, v)| css_value(e, v).map(|c| (e.id, c)))
-        .collect();
     let mut out = format!(
         "# {HEADER}\n\n[meta]\nname = \"{name}\"\nauthor = \"Rekindle\"\nvariant = \"{variant}\"\nversion = \"1\"\ndescription = \"The skin registry's {variant} defaults\"\n\n[tokens]\n"
     );
-    for (role, id) in TUI_TOKENS {
-        if let Some(hex) = values.get(id) {
-            let _ = writeln!(out, "\"{role}\" = \"{hex}\"");
-        }
+    for c in tui_colours(&defaults(base)) {
+        let [r, g, b] = c.rgb;
+        let _ = writeln!(out, "\"{}\" = \"#{r:02x}{g:02x}{b:02x}\"", c.role);
     }
     out.push('\n');
     out.push_str(TUI_STYLES);
@@ -251,4 +294,40 @@ pub fn json_schema() -> String {
     let mut s = serde_json::to_string_pretty(&root).expect("a JSON value serialises");
     s.push('\n');
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rekindle_types::dto::skin::TokenValue;
+
+    fn colour(r: u8, g: u8, b: u8, a: u8) -> TokenValue {
+        TokenValue::Color { r, g, b, a }
+    }
+
+    fn role(colours: &[SkinPaletteColour], role: &str) -> [u8; 3] {
+        colours
+            .iter()
+            .find(|c| c.role == role)
+            .map_or_else(|| panic!("no {role}"), |c| c.rgb)
+    }
+
+    #[test]
+    fn a_skins_colours_map_to_the_tui_roles() {
+        let skin = BTreeMap::from([
+            ("accent.text".to_owned(), colour(0x11, 0x22, 0x33, 255)),
+            ("bg.dark".to_owned(), colour(0x20, 0x40, 0x60, 255)),
+            ("bg.tertiary".to_owned(), colour(255, 255, 255, 128)),
+        ]);
+        let colours = tui_colours(&resolve(ENTRIES, Base::Dark, &skin));
+        assert_eq!(colours.len(), TUI_TOKENS.len());
+        assert_eq!(role(&colours, "accent.primary"), [0x11, 0x22, 0x33]);
+        assert_eq!(role(&colours, "mode.active"), [0x11, 0x22, 0x33]);
+        assert_eq!(role(&colours, "bg.base"), [0x20, 0x40, 0x60]);
+        // White at 128/255 over the window background.
+        assert_eq!(role(&colours, "bg.highlight"), [0x90, 0xa0, 0xb0]);
+        let defaults = tui_colours(&defaults(Base::Dark));
+        assert_eq!(role(&defaults, "text.primary"), [0xe7, 0xe7, 0xe7]);
+        assert_eq!(role(&colours, "text.primary"), [0xe7, 0xe7, 0xe7]);
+    }
 }

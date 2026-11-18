@@ -58,6 +58,7 @@ impl App {
             StreamFrame::InvalidSession => {
                 self.cursor = None;
                 self.load_dashboard_data();
+                self.load_skin();
                 if let Err(e) = self.client.subscribe_all(None).await {
                     let _ = self.action_tx.send(Action::ShowToast {
                         message: format!("event stream lost: {e}"),

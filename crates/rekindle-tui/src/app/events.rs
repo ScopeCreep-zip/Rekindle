@@ -346,6 +346,7 @@ impl App {
                     .push(format!("Game server added: {}", server.label), ToastLevel::Info);
                 Some(Action::Render)
             }
+            SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => Some(self.reskin(&event)),
             SubscriptionEvent::System(SystemEvent::Announcement { ref body, .. }) => {
                 let preview = rekindle_utils::text::prefix(body, 80);
                 self.notifications
@@ -367,18 +368,7 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::System(SystemEvent::ChannelLockdown { locked, .. }) => {
-                let msg = if locked {
-                    "Channel locked down"
-                } else {
-                    "Channel lockdown lifted"
-                };
-                let level = if locked {
-                    ToastLevel::Warning
-                } else {
-                    ToastLevel::Success
-                };
-                self.notifications.push(msg.into(), level);
-                Some(Action::Render)
+                Some(self.lockdown_toast(locked))
             }
 
             // ── Silent events (no UI impact) ─────────────────────────────
@@ -446,6 +436,17 @@ impl App {
             | SubscriptionEvent::Network(_)
             | SubscriptionEvent::System(_) => Some(Action::Render),
         }
+    }
+
+    /// A channel's lockdown began or ended.
+    fn lockdown_toast(&mut self, locked: bool) -> Action {
+        let (msg, level) = if locked {
+            ("Channel locked down", ToastLevel::Warning)
+        } else {
+            ("Channel lockdown lifted", ToastLevel::Success)
+        };
+        self.notifications.push(msg.into(), level);
+        Action::Render
     }
 
     /// Re-read the friend list when it is on screen: its rows (pin alert,

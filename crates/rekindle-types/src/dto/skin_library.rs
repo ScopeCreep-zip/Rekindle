@@ -57,7 +57,7 @@ pub struct SkinTrial {
 /// What a window applies (`SkinGet`'s answer and `SkinChanged`'s payload):
 /// the skin, its active variant's base for `:root[data-skin-base]`, the
 /// `skin://` href of its `@layer skin` stylesheet and the region slots it
-/// paints.
+/// paints, and the palette subset a terminal frontend applies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkinApplied {
@@ -66,6 +66,20 @@ pub struct SkinApplied {
     pub base: crate::dto::skin::SkinBase,
     pub tokens_href: String,
     pub regions: Vec<String>,
+    /// The skin's resolved colours for the TUI's roles (plan E7.7.2 "the
+    /// TUI applies the palette subset from the same DTO"), mapped by the
+    /// generator's TUI table, so a terminal never parses CSS.
+    pub palette: Vec<SkinPaletteColour>,
+}
+
+/// One TUI colour role and its opaque sRGB value (a translucent token is
+/// composited over the skin's window background by the Host).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinPaletteColour {
+    /// The TUI theme's token, e.g. `accent.primary`.
+    pub role: String,
+    pub rgb: [u8; 3],
 }
 
 /// One file the `skin://` scheme serves (`SkinFile`'s answer): the shell

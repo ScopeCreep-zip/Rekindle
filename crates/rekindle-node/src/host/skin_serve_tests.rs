@@ -39,6 +39,10 @@ async fn the_login_skin_applies_before_unlock_and_is_served_immutable() {
     assert_eq!(applied.id, builtin::DEFAULT);
     assert_eq!(applied.tokens_href, serve::tokens_href(&a));
     assert_eq!(applied.base, SkinBase::Dark);
+    // The TUI's palette subset rides the same answer (plan E7.7.2).
+    let resolved = serve::stylesheet(&canonical.bytes, &a).unwrap();
+    assert_eq!(applied.palette, resolved.palette);
+    assert!(applied.palette.iter().any(|c| c.role == "accent.primary"));
     let css: SkinServed = data(
         host.call(Caller::shell(), file(format!("/{a}/tokens.css")))
             .await,

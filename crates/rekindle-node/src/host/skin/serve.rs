@@ -126,6 +126,7 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
         base: applied.base,
         tokens_href: serve::tokens_href(&held.address),
         regions: applied.regions,
+        palette: applied.palette,
     })
 }
 

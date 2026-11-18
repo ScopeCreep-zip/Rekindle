@@ -151,6 +151,9 @@ pub enum Action {
     // ─── Intent reviews (plan D3.4) ─────────────────────────────
     /// The host holds an action for review: show it.
     ShowIntent(Box<rekindle_types::intent::IntentReview>),
+    /// The skin this device shows (`SkinGet`'s answer or the host's
+    /// `SkinChanged`): the theme takes its palette (plan E7.7.2).
+    ApplySkin(Box<rekindle_types::dto::skin_library::SkinApplied>),
     /// Our own presence changed (the host's `SelfChanged`).
     OwnPresence(Box<rekindle_types::subscription_events::PresenceSnapshot>),
     /// Commit the reviewed action with this proof.

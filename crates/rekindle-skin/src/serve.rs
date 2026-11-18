@@ -17,7 +17,9 @@
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{SkinBase, SkinContrast, SkinError, SkinRule, SkinVariant};
+use rekindle_types::dto::skin_library::SkinPaletteColour;
 
+use crate::generate::tui_colours;
 use crate::output::tokens_css;
 use crate::package::{self, Package};
 use crate::regions::css::skin_css;
@@ -126,12 +128,14 @@ fn unreadable(detail: &str) -> SkinError {
 }
 
 /// What a window applies: the active variant's base, the stylesheet and
-/// the region slots the skin paints.
+/// the region slots the skin paints, and the TUI's palette subset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stylesheet {
     pub base: SkinBase,
     pub css: String,
     pub regions: Vec<String>,
+    /// [`crate::generate::tui_colours`] of the active variant.
+    pub palette: Vec<SkinPaletteColour>,
 }
 
 fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
@@ -161,6 +165,7 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
         base: v.base,
         css,
         regions: m.regions.keys().cloned().collect(),
+        palette: tui_colours(&resolved),
     })
 }
 

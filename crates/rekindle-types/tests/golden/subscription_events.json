@@ -1740,6 +1740,16 @@
         "skin": {
           "base": "dark",
           "id": "builtin:symbiosis",
+          "palette": [
+            {
+              "rgb": [
+                52,
+                145,
+                216
+              ],
+              "role": "accent.primary"
+            }
+          ],
           "regions": [
             "frame"
           ],

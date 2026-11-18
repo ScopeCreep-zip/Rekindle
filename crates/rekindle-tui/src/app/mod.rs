@@ -18,6 +18,7 @@ mod friend_commands;
 mod group_dm_commands;
 mod reducer;
 mod render;
+mod skin;
 mod stream;
 
 pub(crate) use stream::load_cursor;
@@ -180,6 +181,7 @@ impl App {
         self.loading_spinner.set_label("Loading dashboard...");
         self.loading_spinner.start();
         self.load_dashboard_data();
+        self.load_skin();
 
         loop {
             // Biased, terminal first: a busy host stream cannot hold off a

@@ -462,6 +462,13 @@ export interface SkinLibrary {
   trial: SkinTrial | null;
 }
 
+/// One TUI colour role and its opaque sRGB value
+/// (`rekindle_types::dto::skin_library::SkinPaletteColour`).
+export interface SkinPaletteColour {
+  role: string;
+  rgb: [number, number, number];
+}
+
 /// What a window applies (`rekindle_types::dto::skin_library::SkinApplied`,
 /// plan E7.7.2): `get_skin`'s answer and `SkinChanged`'s payload.
 export interface SkinApplied {
@@ -473,6 +480,8 @@ export interface SkinApplied {
   tokensHref: string;
   /// The region slots the skin paints.
   regions: string[];
+  /// The TUI's palette subset (the webview reads the stylesheet instead).
+  palette: SkinPaletteColour[];
 }
 
 /** The member-list group the Host put a member in (Tier 1 `MemberGroup`):

@@ -134,6 +134,10 @@ fn sync() -> Vec<Sample> {
                     base: rekindle_types::dto::skin::SkinBase::Dark,
                     tokens_href: "skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/tokens.css".into(),
                     regions: vec!["frame".into()],
+                    palette: vec![rekindle_types::dto::skin_library::SkinPaletteColour {
+                        role: "accent.primary".into(),
+                        rgb: [0x34, 0x91, 0xd8],
+                    }],
                 },
             },
         ),
