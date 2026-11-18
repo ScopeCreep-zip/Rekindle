@@ -304,6 +304,15 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
     return;
   }
 
+  if ("governanceOpQuarantined" in g) {
+    const { community, op, author, reason, cause } = g.governanceOpQuarantined;
+    setCommunityState("quarantinedOps", community, (prev) => ({
+      ...(prev ?? {}),
+      [op]: { author, reason, cause },
+    }));
+    return;
+  }
+
   if ("opPublication" in g) {
     const { community, op, state } = g.opPublication;
     // A landed op leaves the map; pending and failed ones stay shown.

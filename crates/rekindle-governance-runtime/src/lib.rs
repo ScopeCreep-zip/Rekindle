@@ -51,6 +51,7 @@ pub mod op_walk;
 pub mod origin;
 pub mod overflow;
 pub mod ownership;
+pub mod quarantine;
 pub mod rebuild_flight;
 pub(crate) mod records;
 pub mod roles;

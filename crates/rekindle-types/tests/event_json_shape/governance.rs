@@ -2,7 +2,9 @@
 
 use rekindle_types::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDisplay};
 use rekindle_types::presence::SegmentDescriptor;
-use rekindle_types::subscription_events::{GovernanceEvent, OpPublicationState, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    GovernanceEvent, OpPublicationState, OpQuarantineReason, SubscriptionEvent,
+};
 
 use crate::{channel, community, id, pk, rk, text, Sample};
 
@@ -20,6 +22,7 @@ pub const NAMES: &[&str] = &[
     "governanceSubkeyUpdated",
     "governanceRebuilt",
     "opPublication",
+    "governanceOpQuarantined",
 ];
 
 pub fn variant_name(e: &GovernanceEvent) -> &'static str {
@@ -37,6 +40,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::GovernanceSubkeyUpdated { .. } => "governanceSubkeyUpdated",
         GovernanceEvent::GovernanceRebuilt { .. } => "governanceRebuilt",
         GovernanceEvent::OpPublication { .. } => "opPublication",
+        GovernanceEvent::GovernanceOpQuarantined { .. } => "governanceOpQuarantined",
     }
 }
 
@@ -59,6 +63,16 @@ pub fn samples() -> Vec<Sample> {
 
 fn structure() -> Vec<Sample> {
     vec![
+        ev(
+            "governanceOpQuarantined",
+            GovernanceEvent::GovernanceOpQuarantined {
+                community: community(),
+                op: "8".repeat(64),
+                author: "a".repeat(64),
+                reason: OpQuarantineReason::AfterAuthorRemoval,
+                cause: Some("9".repeat(64)),
+            },
+        ),
         ev(
             "opPublication",
             GovernanceEvent::OpPublication {

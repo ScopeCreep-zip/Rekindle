@@ -135,6 +135,34 @@ pub enum GovernanceEvent {
     /// and permissions together, so re-reading is the correct response
     /// rather than shipping four lists.
     GovernanceRebuilt { community: String },
+
+    /// A governance op's fate moved to quarantined (plan E3.2 S7c.5): it is
+    /// held and shown, never applied. Published once per op, when the
+    /// merge first sets it aside.
+    GovernanceOpQuarantined {
+        community: String,
+        /// The op's hash, hex.
+        op: String,
+        /// Its author's community pseudonym, hex.
+        author: String,
+        reason: OpQuarantineReason,
+        /// The hash (hex) of the op that caused it: the removal, or the
+        /// other `Checkpoint` op.
+        cause: Option<String>,
+    },
+}
+
+/// Why a governance op is quarantined
+/// ([`GovernanceEvent::GovernanceOpQuarantined`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OpQuarantineReason {
+    /// "after its author's removal".
+    AfterAuthorRemoval,
+    /// "two checkpoint endorsements in one round".
+    TwoCheckpointEndorsementsInOneRound,
+    /// "checkpoint equivocation".
+    CheckpointEquivocation,
 }
 
 /// An own governance op's publication state ([`GovernanceEvent::OpPublication`]).
@@ -166,7 +194,8 @@ impl GovernanceEvent {
             | Self::InviteExpired { community, .. }
             | Self::ChannelPermissionsChanged { community, .. }
             | Self::GovernanceSubkeyUpdated { community, .. }
-            | Self::GovernanceRebuilt { community } => community,
+            | Self::GovernanceRebuilt { community }
+            | Self::GovernanceOpQuarantined { community, .. } => community,
         }
     }
 }

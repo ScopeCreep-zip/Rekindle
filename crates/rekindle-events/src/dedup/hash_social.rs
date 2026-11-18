@@ -113,6 +113,11 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         GovernanceEvent::GovernanceRebuilt { .. } => {
             h.update(b"rebuilt");
         }
+        // One per op: the op names it, the reason and cause fixed with it.
+        GovernanceEvent::GovernanceOpQuarantined { op, .. } => {
+            h.update(b"quarantined|");
+            h.update(op.as_bytes());
+        }
         GovernanceEvent::ChannelPermissionsChanged { community, channel } => {
             h.update(b"perms|");
             h.update(community.as_bytes());

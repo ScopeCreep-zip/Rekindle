@@ -239,7 +239,23 @@ export type GovernanceEvent =
         lamportTs: number;
       };
     }
-  | { governanceRebuilt: { community: string } };
+  | { governanceRebuilt: { community: string } }
+  | {
+      governanceOpQuarantined: {
+        community: string;
+        op: string;
+        author: string;
+        reason: OpQuarantineReason;
+        cause: string | null;
+      };
+    };
+
+/** Why the backend set a governance op aside, never applied
+ *  (`GovernanceEvent::GovernanceOpQuarantined`, plan E3.2 S7c.5). */
+export type OpQuarantineReason =
+  | "afterAuthorRemoval"
+  | "twoCheckpointEndorsementsInOneRound"
+  | "checkpointEquivocation";
 
 /** Where one of our governance ops stands, decided by the backend
  *  (`GovernanceEvent::OpPublication`): pending while queued, landed once on

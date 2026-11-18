@@ -284,3 +284,53 @@ fn a_masked_op_is_held_quarantined() {
     assert_eq!(verdicts.len(), 1);
     assert_eq!(verdicts[0].fate, OpFate::Quarantined);
 }
+
+/// Plan E3.2 S7c.5: an op whose fate moves to quarantined raises one
+/// `GovernanceOpQuarantined`, with its reason; once held quarantined it
+/// raises none on the next merge.
+#[test]
+fn a_quarantined_op_raises_one_governance_op_quarantined_event() {
+    let key = SigningKey::from_bytes(&[7; 32]);
+    let cert = cert(&key);
+    let state = GovernanceState::default();
+    let empty = VerifiedSet::default();
+    let (ours, bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &empty,
+        &key,
+        meta("a"),
+        Deps::Frontier,
+        5,
+    )
+    .unwrap();
+    let applied = held(&ours, "m".into(), bytes.clone(), OpFate::Applied);
+    let set = verify_held("A", std::slice::from_ref(&applied));
+    let mut outcome = merge::merge_outcome(&cert, &set.ops);
+    outcome.applied.clear();
+    let reason = merge::QuarantineReason::AfterAuthorRemoval { cause: ours.hash() };
+    outcome.quarantined.push((ours.hash(), reason));
+
+    let events = crate::quarantine::newly_quarantined("A", &[applied], &outcome);
+    assert_eq!(events.len(), 1, "one event for the move");
+    let crate::event::GovernanceRuntimeEvent::GovernanceOpQuarantined {
+        community_id,
+        op,
+        author,
+        reason: got,
+    } = &events[0]
+    else {
+        panic!("not GovernanceOpQuarantined");
+    };
+    assert_eq!(
+        (community_id.as_str(), *op, author, *got),
+        ("A", ours.hash(), ours.author(), reason)
+    );
+
+    let kept = held(&ours, "m".into(), bytes, OpFate::Quarantined);
+    assert!(
+        crate::quarantine::newly_quarantined("A", &[kept], &outcome).is_empty(),
+        "already held quarantined: shown once"
+    );
+}

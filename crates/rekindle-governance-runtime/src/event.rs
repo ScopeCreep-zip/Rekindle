@@ -6,7 +6,9 @@
 //! crate free of the Tauri channel types while preserving the existing
 //! UI contract.
 
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_governance::merge::QuarantineReason;
+use rekindle_types::governance::{GovernanceEntry, OpHash};
+use rekindle_types::id::PseudonymKey;
 
 /// Lifecycle status of a single join phase ("dial-in" gate). Carried by
 /// [`GovernanceRuntimeEvent::JoinProgress`] so the UI can render each
@@ -44,6 +46,16 @@ pub enum GovernanceRuntimeEvent {
     /// A community has been created locally (origin flow). Adapter emits
     /// `CommunityEvent::CommunityCreated` and starts background services.
     CommunityCreated { community_id: String, name: String },
+
+    /// A held op's fate moved to quarantined in a merge (plan E3.2 S7c.5):
+    /// the Host publishes `GovernanceEvent::GovernanceOpQuarantined`, once
+    /// per op ([`crate::op_log::newly_quarantined`]).
+    GovernanceOpQuarantined {
+        community_id: String,
+        op: OpHash,
+        author: PseudonymKey,
+        reason: QuarantineReason,
+    },
 
     /// A bootstrap response has been built for a joiner. Adapter logs
     /// this for telemetry (no user-visible event today).

@@ -184,10 +184,21 @@ fn two_digests_for_one_cut_fall_back_to_full_replay_and_are_shown() {
     assert!(outcome.hints.selected(2).is_none() && outcome.hints.selected(1).is_none());
     let equivocation = &outcome.hints.equivocations[0];
     assert_eq!(equivocation.flagged, vec![pk(2), pk(3)]);
+    let digest = |o: &VerifiedOp| match o.body() {
+        GovernanceEntry::Checkpoint(c) => checkpoint_digest(c),
+        _ => unreachable!("a vote"),
+    };
     for v in &votes {
-        assert!(outcome
-            .quarantined
-            .contains(&(v.hash(), QuarantineReason::CheckpointEquivocation)));
+        let cause = outcome.quarantined.iter().find_map(|(h, r)| match r {
+            QuarantineReason::CheckpointEquivocation { cause } if *h == v.hash() => Some(*cause),
+            _ => None,
+        });
+        let cause = votes
+            .iter()
+            .filter(|o| digest(o) != digest(v))
+            .min_by_key(|o| (o.lamport(), o.hash()))
+            .filter(|o| Some(o.hash()) == cause);
+        assert!(cause.is_some(), "the lowest op of the other digest");
         assert!(!outcome.applied.contains(&v.hash()));
     }
 }
@@ -254,10 +265,12 @@ fn a_second_endorsement_in_one_round_counts_for_neither_and_is_quarantined() {
         outcome.hints.selected(2).is_none(),
         "3's vote counts for neither"
     );
-    for v in [&first, &second] {
+    for (v, other) in [(&first, &second), (&second, &first)] {
         assert!(outcome.quarantined.contains(&(
             v.hash(),
-            QuarantineReason::TwoCheckpointEndorsementsInOneRound
+            QuarantineReason::TwoCheckpointEndorsementsInOneRound {
+                cause: other.hash()
+            }
         )));
     }
 }

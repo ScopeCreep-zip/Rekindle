@@ -22,11 +22,14 @@ use crate::op::VerifiedOp;
 pub enum EndorsementFault {
     /// "two checkpoint endorsements in one round": its author signed
     /// another `Checkpoint` op at the same (height, round). Both count for
-    /// neither digest (ADR 0018's write-once vote).
-    TwoInOneRound,
+    /// neither digest (ADR 0018's write-once vote). `cause`: the lowest
+    /// `(lamport, op_hash)` other one (plan E3.2 S7c.5).
+    TwoInOneRound { cause: OpHash },
     /// "checkpoint equivocation": it carries one of two digests that each
     /// have a strict majority for one cut and one `prevCheckpoint`.
-    Equivocation,
+    /// `cause`: the lowest `(lamport, op_hash)` `Checkpoint` op of the other
+    /// digest (plan E3.2 S7c.5).
+    Equivocation { cause: OpHash },
 }
 
 /// A (height, round, digest) that a strict majority of the eligible
@@ -121,23 +124,36 @@ pub fn hints(cert: &GenesisCert, ops: &[VerifiedOp], counted: impl Fn(&OpHash) -
         })
         .collect();
     let mut faults: BTreeMap<OpHash, EndorsementFault> = BTreeMap::new();
-    let mut per_round: BTreeMap<([u8; 32], u64, u32), Vec<OpHash>> = BTreeMap::new();
+    let mut per_round: BTreeMap<([u8; 32], u64, u32), Vec<&Endorsement<'_>>> = BTreeMap::new();
     for e in &all {
         let key = (e.op.author().0, e.body.height, e.body.round);
-        per_round.entry(key).or_default().push(e.op.hash());
+        per_round.entry(key).or_default().push(e);
     }
-    for hashes in per_round.values().filter(|h| h.len() > 1) {
-        for hash in hashes {
-            faults.insert(*hash, EndorsementFault::TwoInOneRound);
+    let lowest = |of: &mut dyn Iterator<Item = &Endorsement<'_>>| {
+        of.min_by_key(|e| (e.op.lamport(), e.op.hash()))
+            .map(|e| e.op.hash())
+    };
+    for group in per_round.values().filter(|g| g.len() > 1) {
+        for e in group {
+            let others = &mut group.iter().copied().filter(|o| o.op.hash() != e.op.hash());
+            if let Some(cause) = lowest(others) {
+                faults.insert(e.op.hash(), EndorsementFault::TwoInOneRound { cause });
+            }
         }
     }
     let usable = count(cert, ops, &all, &faults);
     let equivocations = equivocations(&all, &usable);
     for e in &all {
-        if equivocations.iter().any(|q| q.digests.contains(&e.digest)) {
+        let Some(q) = equivocations.iter().find(|q| q.digests.contains(&e.digest)) else {
+            continue;
+        };
+        let others = &mut all
+            .iter()
+            .filter(|o| o.digest != e.digest && q.digests.contains(&o.digest));
+        if let Some(cause) = lowest(others) {
             faults
                 .entry(e.op.hash())
-                .or_insert(EndorsementFault::Equivocation);
+                .or_insert(EndorsementFault::Equivocation { cause });
         }
     }
     Hints {

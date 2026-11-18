@@ -488,6 +488,17 @@
       }
     }
   },
+  "governance.governanceOpQuarantined": {
+    "governance": {
+      "governanceOpQuarantined": {
+        "author": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cause": "9999999999999999999999999999999999999999999999999999999999999999",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "op": "8888888888888888888888888888888888888888888888888888888888888888",
+        "reason": "afterAuthorRemoval"
+      }
+    }
+  },
   "governance.governanceRebuilt": {
     "governance": {
       "governanceRebuilt": {

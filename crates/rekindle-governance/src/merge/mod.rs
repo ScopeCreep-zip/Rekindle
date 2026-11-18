@@ -78,12 +78,26 @@ pub enum QuarantineReason {
     /// frontier of `cause`, a `MemberRemoved` or `BanEntry` of its author.
     AfterAuthorRemoval { cause: OpHash },
     /// "two checkpoint endorsements in one round": a `Checkpoint` op whose
-    /// author signed another at the same (height, round) (plan E3.2 S7c.4).
-    TwoCheckpointEndorsementsInOneRound,
+    /// author signed another at the same (height, round) (plan E3.2 S7c.4);
+    /// `cause`: the lowest `(lamport, op_hash)` other one.
+    TwoCheckpointEndorsementsInOneRound { cause: OpHash },
     /// "checkpoint equivocation": a `Checkpoint` op carrying one of two
     /// digests that each have a strict majority for one cut and one
-    /// `prevCheckpoint` (plan E3.2 S7c.4).
-    CheckpointEquivocation,
+    /// `prevCheckpoint` (plan E3.2 S7c.4); `cause`: the lowest
+    /// `(lamport, op_hash)` `Checkpoint` op of the other digest.
+    CheckpointEquivocation { cause: OpHash },
+}
+
+impl QuarantineReason {
+    /// The op that caused the quarantine.
+    #[must_use]
+    pub fn cause(&self) -> OpHash {
+        match self {
+            Self::AfterAuthorRemoval { cause }
+            | Self::TwoCheckpointEndorsementsInOneRound { cause }
+            | Self::CheckpointEquivocation { cause } => *cause,
+        }
+    }
 }
 
 /// Merge `ops` under the pinned `cert` into a canonical state.
@@ -118,10 +132,12 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     applied.retain(|h| !faulted.contains(h));
     quarantined.extend(hints.faults.iter().map(|&(hash, fault)| {
         let reason = match fault {
-            EndorsementFault::TwoInOneRound => {
-                QuarantineReason::TwoCheckpointEndorsementsInOneRound
+            EndorsementFault::TwoInOneRound { cause } => {
+                QuarantineReason::TwoCheckpointEndorsementsInOneRound { cause }
             }
-            EndorsementFault::Equivocation => QuarantineReason::CheckpointEquivocation,
+            EndorsementFault::Equivocation { cause } => {
+                QuarantineReason::CheckpointEquivocation { cause }
+            }
         };
         (hash, reason)
     }));

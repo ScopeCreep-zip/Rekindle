@@ -86,6 +86,38 @@ fn joins_reach_every_community_window() {
     assert!(!a.includes("settings"));
 }
 
+/// Plan E3.2 S7c.5: a quarantined governance op is a community event, so
+/// it reaches every community window and the buddy list's community list,
+/// in the golden sample's shape (`crates/rekindle-types/tests/golden`).
+#[test]
+fn governance_op_quarantined_audience_golden() {
+    let event = WebviewEvent::Subscription(SubscriptionEvent::Governance(
+        rekindle_types::subscription_events::GovernanceEvent::GovernanceOpQuarantined {
+            community: REC.into(),
+            op: "8".repeat(64),
+            author: PK.into(),
+            reason: rekindle_types::subscription_events::OpQuarantineReason::CheckpointEquivocation,
+            cause: Some("9".repeat(64)),
+        },
+    ));
+    let a = event.audience();
+    assert!(a.includes("community-browser"));
+    assert!(a.includes("buddy-list"));
+    assert!(!a.includes("settings"));
+    assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
+    let envelope = event.envelope(None).expect("serializes");
+    assert_eq!(
+        envelope.payload,
+        serde_json::json!({ "governance": { "governanceOpQuarantined": {
+            "community": REC,
+            "op": "8".repeat(64),
+            "author": PK,
+            "reason": "checkpointEquivocation",
+            "cause": "9".repeat(64),
+        }}})
+    );
+}
+
 #[test]
 fn calls_reach_their_window_and_conversation_windows() {
     let a = sub(SubscriptionEvent::Call(CallEvent::Ringing {

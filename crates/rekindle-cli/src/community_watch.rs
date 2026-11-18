@@ -11,8 +11,8 @@ use rekindle_client::fmt::abbreviate_key;
 use rekindle_client::DaemonClient;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
 use rekindle_types::subscription_events::{
-    EventCategory, GovernanceEvent, MembershipEvent, OpPublicationState, SubscriptionEvent,
-    SubscriptionFilter,
+    EventCategory, GovernanceEvent, MembershipEvent, OpPublicationState, OpQuarantineReason,
+    SubscriptionEvent, SubscriptionFilter,
 };
 use rekindle_utils::text::sanitize_for_display;
 
@@ -344,6 +344,18 @@ fn governance(event: &GovernanceEvent) -> String {
             ..
         } => format!("governance subkey {subkey_index} written (lamport {lamport_ts})"),
         GovernanceEvent::GovernanceRebuilt { .. } => "governance rebuilt".into(),
+        GovernanceEvent::GovernanceOpQuarantined {
+            op, author, reason, ..
+        } => {
+            let why = match reason {
+                OpQuarantineReason::AfterAuthorRemoval => "after its author's removal",
+                OpQuarantineReason::TwoCheckpointEndorsementsInOneRound => {
+                    "two checkpoint endorsements in one round"
+                }
+                OpQuarantineReason::CheckpointEquivocation => "checkpoint equivocation",
+            };
+            format!("op {op} by {author} quarantined: {why}")
+        }
     }
 }
 

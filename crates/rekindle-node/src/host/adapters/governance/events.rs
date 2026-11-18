@@ -6,14 +6,40 @@
 //! Role and channel tables come from the merged CRDT (the same builders
 //! `role list` and `channel list` use), segments from the community store.
 
+use rekindle_governance::merge::QuarantineReason;
 use rekindle_governance_runtime::event::{GovernanceRuntimeEvent, JoinStageStatus};
 use rekindle_types::subscription_events::{
-    GovernanceEvent, MembershipEvent, NotificationEvent, SubscriptionEvent,
+    GovernanceEvent, MembershipEvent, NotificationEvent, OpQuarantineReason, SubscriptionEvent,
 };
 
 use rekindle_types::display::CategoryDisplay;
 
 use super::HostGovernance;
+
+/// `GovernanceEvent::GovernanceOpQuarantined` for one op the merge set
+/// aside (plan E3.2 S7c.5): hashes and the author as hex, the cause too.
+fn op_quarantined(
+    community_id: &str,
+    op: &rekindle_types::governance::OpHash,
+    author: &rekindle_types::id::PseudonymKey,
+    reason: &QuarantineReason,
+) -> GovernanceEvent {
+    GovernanceEvent::GovernanceOpQuarantined {
+        community: community_id.to_owned(),
+        op: hex::encode(op.0),
+        author: hex::encode(author.0),
+        reason: match reason {
+            QuarantineReason::AfterAuthorRemoval { .. } => OpQuarantineReason::AfterAuthorRemoval,
+            QuarantineReason::TwoCheckpointEndorsementsInOneRound { .. } => {
+                OpQuarantineReason::TwoCheckpointEndorsementsInOneRound
+            }
+            QuarantineReason::CheckpointEquivocation { .. } => {
+                OpQuarantineReason::CheckpointEquivocation
+            }
+        },
+        cause: Some(hex::encode(reason.cause().0)),
+    }
+}
 
 impl HostGovernance {
     /// Translate and publish one runtime event; the progress and telemetry
@@ -129,6 +155,12 @@ impl HostGovernance {
                 pseudonym: pseudonym_hex.clone(),
                 role_ids: role_ids.clone(),
             }),
+            GovernanceRuntimeEvent::GovernanceOpQuarantined {
+                community_id,
+                op,
+                author,
+                reason,
+            } => governance(op_quarantined(community_id, op, author, reason)),
             GovernanceRuntimeEvent::GovernanceRebuilt { .. }
             | GovernanceRuntimeEvent::BootstrapResponseBuilt { .. }
             | GovernanceRuntimeEvent::GovernanceEntryApplied { .. } => None,

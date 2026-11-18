@@ -1,4 +1,7 @@
-import type { OpPublicationState } from "../ipc/channels/community_subscription_events";
+import type {
+  OpPublicationState,
+  OpQuarantineReason,
+} from "../ipc/channels/community_subscription_events";
 import { createStore } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
@@ -277,6 +280,16 @@ export interface CommunityState {
   /** Our governance ops not yet landed, per community then op hash, as the
    *  backend announces them (pending, or failed with its reason). */
   opPublications: Record<string, Record<string, OpPublicationState>>;
+  /** Governance ops the backend set aside, per community then op hash
+   *  (`governanceOpQuarantined` events): shown, never applied. */
+  quarantinedOps: Record<string, Record<string, QuarantinedOp>>;
+}
+
+/** One quarantined governance op, as the backend announced it. */
+export interface QuarantinedOp {
+  author: string;
+  reason: OpQuarantineReason;
+  cause: string | null;
 }
 
 const [communityState, setCommunityState] = createStore<CommunityState>({
@@ -291,6 +304,7 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
   communityInvites: {},
   voiceChannels: {},
   opPublications: {},
+  quarantinedOps: {},
 });
 
 export { communityState, setCommunityState };
