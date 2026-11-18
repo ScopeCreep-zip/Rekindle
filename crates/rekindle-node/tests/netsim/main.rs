@@ -83,6 +83,7 @@ mod refriend_after_removal;
 mod refused_request;
 mod rejoin_after_kick;
 mod rejoin_after_leave;
+mod rejoin_by_gossip;
 mod removal_ack;
 mod resume_after_restart;
 mod rich_messaging;
