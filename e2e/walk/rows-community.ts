@@ -238,10 +238,22 @@ export const COMMUNITY_ROWS: Row[] = [
     async run({ b, s, shot }) {
       await (await byText(b, ".thread-list-item", THREAD)).click();
       await byText(b, ".thread-panel-title", THREAD, NET_WAIT_MS);
+      // Walk 14: the reply never showed; record the send and the thread events.
+      await recordPage(b, ["send_thread_message", "get_thread_messages"], ["thread", "intentPending"]);
       await typeInto(await shown(b, ".thread-panel .message-input-field"), "thread reply");
       await b.keys("Enter");
-      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await byText(b, ".thread-panel-messages", "thread reply", NET_WAIT_MS);
+      const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+      await byText(b, ".thread-panel-messages", "thread reply", NET_WAIT_MS).catch(async (e: Error) => {
+        const panel = (await (await b.$(".thread-panel")).getText().catch(() => "no panel")).replace(/\s+/g, " ").slice(0, 300);
+        const list = await b.execute(() => {
+          const el = document.querySelector(".thread-panel-messages");
+          if (!el) return "no list";
+          const r = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
+          return `list ${Math.round(r.width)}x${Math.round(r.height)} display=${style.display} opacity=${style.opacity} children=${el.children.length} text="${(el.textContent ?? "").replace(/\s+/g, " ").slice(0, 200)}"`;
+        });
+        throw new Error(`${e.message} (intent ${outcome}; panel: ${panel}; ${list}; ${await pageLog(b)})`);
+      });
       await shot();
     },
   },
