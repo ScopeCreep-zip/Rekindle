@@ -7,13 +7,17 @@ use super::*;
 use crate::capnp_envelope::{encode_community_envelope, try_decode_community_envelope};
 use crate::community::envelope::{CommunityEnvelope, ControlPayload};
 
-fn request(key: &SigningKey, invite: Option<&str>) -> CheckpointHintRequest {
-    CheckpointHintRequest {
+fn request(key: &SigningKey, invite_code: Option<&str>) -> CheckpointHintRequest {
+    let request = CheckpointHintRequest {
         community: format!("VLD0:{}", "A".repeat(150)),
         height: u64::MAX,
         digest: [7; 32],
         requester: key.verifying_key().to_bytes(),
-        invite_code_hash: invite.map(str::to_owned),
+        invite: None,
+    };
+    match invite_code {
+        Some(code) => request.with_invite_code(code),
+        None => request,
     }
 }
 
@@ -58,7 +62,9 @@ fn a_hint_request_round_trips_and_its_signature_binds_it() {
         b.set_height(joiner.height);
         b.set_digest(&joiner.digest);
         b.set_requester(&joiner.requester);
-        b.set_invite_code_hash("cd");
+        let invite = joiner.invite.as_ref().unwrap();
+        b.set_invite_code_hash(&invite.code_hash);
+        b.set_invite_tag(&invite.tag);
         b.set_sig(&sig);
     }
     assert!(decode_checkpoint_hint_request(&pack(&builder)).is_err());

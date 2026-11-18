@@ -272,6 +272,11 @@ struct CheckpointStateRequest {
     # join, under `sig` (the signed bytes add `0x01 ‖ len ‖ hash`, `0x00`
     # when empty).
     inviteCodeHash       @6 :Text;
+    # With `inviteCodeHash`: `rekindle_secrets::invite::pre_join_read_tag`
+    # under the invite code over the signed bytes (plan E3.2 S7c.8 (2)), so
+    # only a holder of the code, never in the op log, is served. Empty for
+    # a member.
+    inviteTag            @7 :Data;
 }
 
 # A request for a usable checkpoint hint (plan E3.2 S7c.5), in ControlPayload
@@ -288,6 +293,8 @@ struct CheckpointHintRequest {
     requester            @3 :Data;          # 32 bytes
     inviteCodeHash       @4 :Text;
     sig                  @5 :Data;          # 64 bytes
+    # As `CheckpointStateRequest.inviteTag` (plan E3.2 S7c.8 (2)).
+    inviteTag            @6 :Data;
 }
 
 # The answer, in `checkpointHintResponse @80`: the hint's lowest

@@ -102,12 +102,10 @@ pub struct CommunityState {
     /// subkey).
     #[serde(skip)]
     pub head_hints: HeadHints,
-    /// Each member's checkpoint state requests, at the gossip floor (S7c.3).
+    /// Checkpoint hint and state requests at the gossip floor (S7c.3): a
+    /// member's per pseudonym, a joiner's per invite (S7c.8 (2)).
     #[serde(skip)]
     pub snapshot_requests: rekindle_transport::gossip::RateLimiter,
-    /// Joiners admitted to a pre-join read, per invite code hash (≤ `max_uses`, S7c.8).
-    #[serde(skip)]
-    pub pre_join_readers: std::collections::BTreeMap<String, std::collections::BTreeSet<[u8; 32]>>,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.

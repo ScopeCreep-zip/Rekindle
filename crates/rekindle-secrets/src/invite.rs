@@ -37,6 +37,27 @@ pub fn hash_invite_code(invite_code: &str) -> String {
     ))
 }
 
+/// The tag a joiner puts on a pre-join checkpoint hint or snapshot request
+/// (plan E3.2 S7c.8 (2)): BLAKE3 keyed under `derive_key` of
+/// [`domains::INVITE_READ_TAG`] over the invite code, over `signed` (the
+/// request's signed bytes, which name the community, what is asked and the
+/// code's lookup id). The op log carries only that lookup id, so a party
+/// that saw the `InviteCreated` but never the code cannot tag a request;
+/// the responding inviter checks the tag under its own copy of the code
+/// ([`pre_join_read_tag_verifies`]).
+#[must_use]
+pub fn pre_join_read_tag(invite_code: &str, signed: &[u8]) -> [u8; 32] {
+    let key = blake3::derive_key(domains::INVITE_READ_TAG, invite_code.as_bytes());
+    *blake3::keyed_hash(&key, signed).as_bytes()
+}
+
+/// Whether `tag` is [`pre_join_read_tag`] of `signed` under `invite_code`,
+/// compared in constant time (`blake3::Hash`'s equality).
+#[must_use]
+pub fn pre_join_read_tag_verifies(invite_code: &str, signed: &[u8], tag: &[u8; 32]) -> bool {
+    blake3::Hash::from(pre_join_read_tag(invite_code, signed)) == blake3::Hash::from(*tag)
+}
+
 /// Encrypt invite secrets with HKDF(invite_code) → AES-256-GCM.
 ///
 /// Output: `[12-byte nonce || ciphertext + 16-byte tag]`.
@@ -125,6 +146,23 @@ mod tests {
         assert_eq!(id.len(), 64);
         assert_ne!(id, blake3::hash(code.as_bytes()).to_hex().to_string());
         assert_ne!(id, hex::encode(Sha256::digest(code.as_bytes())));
+    }
+
+    /// The tag is keyed by the code, not its public lookup id: the id
+    /// cannot produce it, and it binds the bytes it covers.
+    #[test]
+    fn a_pre_join_read_tag_needs_the_code() {
+        let code = "a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8";
+        let tag = pre_join_read_tag(code, b"request");
+        assert!(pre_join_read_tag_verifies(code, b"request", &tag));
+        assert!(!pre_join_read_tag_verifies(code, b"other", &tag));
+        assert!(!pre_join_read_tag_verifies(
+            &hash_invite_code(code),
+            b"request",
+            &tag
+        ));
+        let id_tag = pre_join_read_tag(&hash_invite_code(code), b"request");
+        assert!(!pre_join_read_tag_verifies(code, b"request", &id_tag));
     }
 
     #[test]

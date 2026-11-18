@@ -282,7 +282,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     let asker = Asker {
         me: &identity.pseudonym_signing,
         route: &inviter_route,
-        code_hash: &code_hash,
+        code: link.invite_code.as_str(),
     };
     let walked = walk_for_join(deps, anchor, &cert, &frontier, &asker).await?;
     let gov_state = walked.merged.state.clone();

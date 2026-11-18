@@ -39,11 +39,12 @@ pub struct VerifiedHint {
 }
 
 /// Who asks, and through whom: the joiner's pseudonym in the community,
-/// the inviter's route and the invite's code hash.
+/// the inviter's route and the invite code, which tags each request (plan
+/// E3.2 S7c.8 (2)).
 pub struct Asker<'a> {
     pub me: &'a SigningKey,
     pub route: &'a [u8],
-    pub code_hash: &'a str,
+    pub code: &'a str,
 }
 
 /// The endorsements `refs` name, fetched and checked by signature.
@@ -80,22 +81,14 @@ async fn levels<D: GovernanceRuntimeDeps>(
     let mut ask = (0u64, [0u8; 32]);
     let mut named: Vec<SignedEndorsement> = Vec::new();
     loop {
-        let response = match request_hint(
-            deps,
-            asker.route,
-            anchor,
-            asker.me,
-            ask,
-            Some(asker.code_hash),
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                tracing::debug!(error = %e, "no checkpoint hint from the inviter");
-                break;
-            }
-        };
+        let response =
+            match request_hint(deps, asker.route, anchor, asker.me, ask, Some(asker.code)).await {
+                Ok(response) => response,
+                Err(e) => {
+                    tracing::debug!(error = %e, "no checkpoint hint from the inviter");
+                    break;
+                }
+            };
         let Some(mut level) = endorsements(deps, anchor, &response.endorsements, &logs).await
         else {
             break;
@@ -178,15 +171,9 @@ pub async fn verified_hints<D: GovernanceRuntimeDeps>(
             break;
         }
         let route = [asker.route.to_vec()];
-        let fetched = fetch_state_snapshot(
-            deps,
-            anchor,
-            asker.me,
-            &link.body,
-            &route,
-            Some(asker.code_hash),
-        )
-        .await;
+        let fetched =
+            fetch_state_snapshot(deps, anchor, asker.me, &link.body, &route, Some(asker.code))
+                .await;
         let Some(snapshot) = fetched
             .ok()
             .flatten()

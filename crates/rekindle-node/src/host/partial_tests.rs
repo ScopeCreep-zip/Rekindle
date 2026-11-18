@@ -68,14 +68,14 @@ async fn a_partial_community_answers_no_hint_or_snapshot_request() {
         digest,
         offset: 0,
         requester: [3; 32],
-        invite_code_hash: None,
+        invite: None,
     };
     let hint = CheckpointHintRequest {
         community: "c1".into(),
         height: 1,
         digest,
         requester: [3; 32],
-        invite_code_hash: None,
+        invite: None,
     };
     assert!(
         answer_state_request(&gov, &state).await.is_ok(),
@@ -319,10 +319,10 @@ async fn a_set_holding_the_checkpoint_but_missing_an_op_stays_partial() {
 }
 
 /// Plan E3.2 S7c.8 (2): pre-join reads are served for a live invite only,
-/// to at most `max_uses` distinct requesters, a requester admitted once
-/// keeping its place; a revoked or expired invite admits nobody.
+/// to any number of askers (each proved the code, `admit_reader`); a
+/// revoked, expired or used-up invite admits nobody.
 #[tokio::test]
-async fn pre_join_reads_are_budgeted_per_invite() {
+async fn pre_join_reads_need_a_live_invite() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     let ann = create_ann(&host).await;
@@ -346,16 +346,9 @@ async fn pre_join_reads_are_budgeted_per_invite() {
     set_invite(Some(invite.clone()));
     let gov = host.governance();
     let reader = |n: u8| PseudonymKey([n; 32]);
-    assert!(gov.holds_live_invite("c1", &reader(10), "code"));
-    assert!(gov.holds_live_invite("c1", &reader(11), "code"));
-    assert!(
-        !gov.holds_live_invite("c1", &reader(12), "code"),
-        "budget spent"
-    );
-    assert!(
-        gov.holds_live_invite("c1", &reader(10), "code"),
-        "keeps its place"
-    );
+    for n in 10..14 {
+        assert!(gov.holds_live_invite("c1", &reader(n), "code"), "{n}");
+    }
     assert!(
         !gov.holds_live_invite("c1", &reader(10), "other"),
         "unknown"

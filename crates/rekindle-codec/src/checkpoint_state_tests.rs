@@ -12,7 +12,7 @@ fn request(key: &SigningKey) -> CheckpointStateRequest {
         digest: [7; 32],
         offset: u32::MAX,
         requester: key.verifying_key().to_bytes(),
-        invite_code_hash: None,
+        invite: None,
     }
 }
 
@@ -93,20 +93,18 @@ fn a_full_chunk_fits_the_app_call_cap() {
     assert_eq!(decode_checkpoint_state_response(&got).unwrap(), response);
 }
 
-/// A joiner's request carries the code hash of the invite it holds (plan
-/// E3.2 S7c.5): it round-trips, and the signature binds it, so a member's
-/// request cannot be re-pointed at an invite nor a joiner's at another.
+/// A joiner's request carries the invite it holds (plan E3.2 S7c.5): it
+/// round-trips, and the signature binds its code hash, so a member's request
+/// cannot be re-pointed at an invite nor a joiner's at another.
 #[test]
 fn a_joiners_invite_code_hash_round_trips_and_is_signed() {
     let key = SigningKey::from_bytes(&[3; 32]);
-    let joiner = CheckpointStateRequest {
-        invite_code_hash: Some("ab".repeat(32)),
-        ..request(&key)
-    };
+    let joiner = request(&key).with_invite_code(&"ab".repeat(16));
     let encoded = joiner.encode(&key).unwrap();
     assert!(encoded.len() <= CHECKPOINT_STATE_REQUEST_MAX_BYTES);
     assert_eq!(decode_checkpoint_state_request(&encoded).unwrap(), joiner);
     let sig = sign(&key, &request(&key).signing_bytes());
+    let invite = joiner.invite.as_ref().unwrap();
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut b = builder.init_root::<checkpoint_state_request::Builder<'_>>();
@@ -116,9 +114,42 @@ fn a_joiners_invite_code_hash_round_trips_and_is_signed() {
         b.set_offset(joiner.offset);
         b.set_requester(&joiner.requester);
         b.set_sig(&sig);
-        b.set_invite_code_hash(joiner.invite_code_hash.as_deref().unwrap());
+        b.set_invite_code_hash(&invite.code_hash);
+        b.set_invite_tag(&invite.tag);
     }
     assert!(decode_checkpoint_state_request(&pack(&builder)).is_err());
+}
+
+/// Plan E3.2 S7c.8 (2): the public code hash alone proves nothing. A
+/// request tagged under the invite code is proven by that code after its
+/// round trip; one naming the same code hash with a tag not made from the
+/// code, or under another code, is not, and a tag binds the bytes asked.
+#[test]
+fn only_the_invite_code_proves_a_joiners_request() {
+    let key = SigningKey::from_bytes(&[3; 32]);
+    let code = "ab".repeat(16);
+    let joiner = request(&key).with_invite_code(&code);
+    let decoded = decode_checkpoint_state_request(&joiner.encode(&key).unwrap()).unwrap();
+    assert!(decoded.invite_proven_by(&code));
+    assert!(!decoded.invite_proven_by(&"cd".repeat(16)));
+    let hash_only = CheckpointStateRequest {
+        invite: Some(PreJoinInvite {
+            code_hash: rekindle_secrets::invite::hash_invite_code(&code),
+            tag: [0; 32],
+        }),
+        ..request(&key)
+    };
+    let decoded = decode_checkpoint_state_request(&hash_only.encode(&key).unwrap()).unwrap();
+    assert!(
+        !decoded.invite_proven_by(&code),
+        "the hash without the code"
+    );
+    let moved = CheckpointStateRequest {
+        offset: 0,
+        ..joiner.clone()
+    };
+    assert!(!moved.invite_proven_by(&code), "the tag binds the offset");
+    assert!(!request(&key).invite_proven_by(&code), "a member's request");
 }
 
 #[test]

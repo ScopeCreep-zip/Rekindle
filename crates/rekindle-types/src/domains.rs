@@ -133,6 +133,12 @@ labels! {
     /// `code_hash` invite entries are stored under
     /// (`rekindle_secrets::invite::hash_invite_code`).
     INVITE_CODE_ID = "rekindle-invite-code-id-v1";
+    /// BLAKE3 derive-key context: the key a joiner's pre-join checkpoint
+    /// hint and snapshot requests are tagged under, from the invite code
+    /// (plan E3.2 S7c.8 (2); `rekindle_secrets::invite::pre_join_read_tag`).
+    /// The op log holds only the code's lookup id, so only a holder of the
+    /// code can tag a request.
+    INVITE_READ_TAG = "rekindle-invite-read-tag-v1";
     /// Ed25519 context: a governance op, signed by its author pseudonym over
     /// this label ‖ community anchor ‖ the canonical unsigned op bytes (plan E3.2).
     GOV_OP = "rekindle-gov-op-v1";

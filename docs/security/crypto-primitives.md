@@ -327,6 +327,12 @@ SHA256(concatenated)` will move to a true binary Merkle tree
 - **Invite-code lookup id** (the `code_hash` an invite entry is stored
   under): `derive_key` under `rekindle-invite-code-id-v1` over the code
   (`rekindle_secrets::invite::hash_invite_code`).
+- **Pre-join read tag** (plan E3.2 S7c.8 (2)): a joiner's checkpoint hint
+  and snapshot requests carry BLAKE3-keyed under `derive_key(
+  "rekindle-invite-read-tag-v1", code)` over the request's signed bytes
+  (`rekindle_secrets::invite::pre_join_read_tag`); the inviter compares it
+  in constant time under its own copy of the code, since the op log holds
+  only the code's lookup id.
 - **Departure slot heads** (plan E3.2 S9): a `MemberLeft` or `MemberRemoved`
   commits to the exact value of the departed member's channel slot with
   `derive_key("rekindle-departed-slot-head-v1", record key ‖ subkey ‖ seq ‖

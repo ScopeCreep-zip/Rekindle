@@ -18,6 +18,31 @@ use serde::{Deserialize, Serialize};
 /// a Safe route with `hop_count == 0`, so the floor is always a valid route.
 pub const ANONYMITY_HOP_FLOOR: u8 = 3;
 
+/// Percent of `rpc.timeout_ms` Veilid allows per route hop past those the
+/// base timeout covers (`ROUTE_HOP_ALLOWANCE_PERCENT`, veilid-core 0.5.8
+/// `rpc_processor/mod.rs:102`).
+const ROUTE_HOP_ALLOWANCE_PERCENT: u64 = 10;
+
+/// Route hops the base RPC timeout already covers
+/// (`ROUTE_HOPS_IN_BASE_TIMEOUT`, `rpc_processor/mod.rs:104`).
+const ROUTE_HOPS_IN_BASE_TIMEOUT: u64 = 4;
+
+/// Veilid's wait for one answer at `profile`'s hop count, floor-clamped as
+/// the port clamps it: `routed_timeout(timeout, 2 * hops)`
+/// (`get_safety_selection_timeout`, veilid-core 0.5.8
+/// `rpc_processor/mod.rs:1985-1994`), which is `rpc.timeout_ms`
+/// (`crate::message::CALL_TIMEOUT_MS`) plus 10% of it for each effective hop (twice the
+/// safety route's) above four (`routed_timeout`, `:109-117`). At our 5 s
+/// timeout that is 500 ms a hop: 6 s at our 3-hop floor, 7 s at Veilid's
+/// 4-hop maximum (`max_route_hop_count`, `veilid_config.rs:945`).
+#[must_use]
+pub fn answer_wait(profile: &SafetyProfile) -> std::time::Duration {
+    let hops = u64::from(profile.hop_count.max(ANONYMITY_HOP_FLOOR));
+    let excess = (2 * hops).saturating_sub(ROUTE_HOPS_IN_BASE_TIMEOUT);
+    let allowance = crate::message::CALL_TIMEOUT_MS * ROUTE_HOP_ALLOWANCE_PERCENT / 100;
+    std::time::Duration::from_millis(crate::message::CALL_TIMEOUT_MS + allowance * excess)
+}
+
 /// How long a session's scope gets to stop at logout, lock or exit before
 /// its stragglers are aborted (`evidence/c4-live-findings.md` L1). Only
 /// tasks that make no Veilid call directly may be aborted: the DHT work of

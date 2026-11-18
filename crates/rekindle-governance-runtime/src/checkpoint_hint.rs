@@ -12,6 +12,7 @@ use rekindle_codec::checkpoint_hint::{
     decode_checkpoint_hint_response, CheckpointHintRequest, CheckpointHintResponse,
     MAX_HINT_ENDORSEMENTS,
 };
+use rekindle_codec::checkpoint_state::PreJoinRequest;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::checkpoint::{checkpoint_digest, is_strict_majority, Hints, UsableHint};
 use rekindle_governance::merge::merge_outcome;
@@ -133,7 +134,8 @@ pub async fn answer_hint_request<D: GovernanceRuntimeDeps>(
 
 /// Ask the peer at `route` for the hint `height` (0: the selected one at
 /// the greatest height) and `digest` name, as `me` (our pseudonym in
-/// `community`), a member or, with `invite_code_hash`, a joiner.
+/// `community`), a member or, with `invite_code`, a joiner holding that
+/// invite (its request tagged under the code, plan E3.2 S7c.8 (2)).
 ///
 /// # Errors
 /// Encoding failed, the call failed, or the reply is not a hint response.
@@ -143,14 +145,18 @@ pub async fn request_hint<D: GovernanceRuntimeDeps>(
     community: &str,
     me: &SigningKey,
     (height, digest): (u64, [u8; 32]),
-    invite_code_hash: Option<&str>,
+    invite_code: Option<&str>,
 ) -> Result<CheckpointHintResponse, GovernanceRuntimeError> {
     let request = CheckpointHintRequest {
         community: community.to_owned(),
         height,
         digest,
         requester: me.verifying_key().to_bytes(),
-        invite_code_hash: invite_code_hash.map(str::to_owned),
+        invite: None,
+    };
+    let request = match invite_code {
+        Some(code) => request.with_invite_code(code),
+        None => request,
     }
     .encode(me)
     .map_err(|e| encoding("checkpoint hint request", e))?;

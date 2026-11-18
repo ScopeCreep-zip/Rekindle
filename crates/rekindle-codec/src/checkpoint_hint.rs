@@ -4,8 +4,9 @@
 //! then, height by height, the hint each `prevCheckpoint` names, so it
 //! checks the endorsement chain down to the `GenesisCert`. The request is
 //! signed by the asker's pseudonym under `domains::CHECKPOINT_HINT_REQUEST`
-//! and carries the code hash of the invite a joiner holds, as the snapshot
-//! request does; the answer is unsigned, since the reader verifies every op
+//! and carries the invite a joiner holds with its tag
+//! ([`crate::checkpoint_state::PreJoinInvite`]), as the snapshot request
+//! does; the answer is unsigned, since the reader verifies every op
 //! it fetches by the refs.
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -13,7 +14,7 @@ use rekindle_types::domains;
 use rekindle_types::governance::OpRef;
 
 use crate::capnp_codec::{bounds, capnp_err, pack, text_to_string, unpack_bounded};
-use crate::checkpoint_state::bytes32;
+use crate::checkpoint_state::{bytes32, PreJoinInvite, PreJoinRequest};
 use crate::community_governance_capnp::{checkpoint_hint_request, checkpoint_hint_response};
 use crate::governance_op::{read_op_ref, write_op_ref};
 use crate::member_record::{check_len, check_size, put_lp, sign, verify};
@@ -34,9 +35,6 @@ pub const CHECKPOINT_HINT_RESPONSE_MAX_BYTES: usize = 30_000;
 /// A community id (an anchor record key) at its longest text form, with room.
 const MAX_COMMUNITY: usize = 160;
 
-/// An invite code hash (64 hex characters), with room.
-const MAX_CODE_HASH: usize = 128;
-
 /// `requester` asks for the hint selected at the greatest height
 /// (`height` 0), or the usable hint at `height` carrying `digest`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,9 +43,9 @@ pub struct CheckpointHintRequest {
     pub height: u64,
     pub digest: [u8; 32],
     pub requester: [u8; 32],
-    /// `None`: a member asks. `Some`: the code hash of the live invite a
-    /// joiner holds; signed with the rest.
-    pub invite_code_hash: Option<String>,
+    /// `None`: a member asks. `Some`: the live invite a joiner holds, set
+    /// by [`Self::with_invite_code`].
+    pub invite: Option<PreJoinInvite>,
 }
 
 impl CheckpointHintRequest {
@@ -57,13 +55,7 @@ impl CheckpointHintRequest {
         out.extend_from_slice(&self.height.to_be_bytes());
         out.extend_from_slice(&self.digest);
         out.extend_from_slice(&self.requester);
-        match &self.invite_code_hash {
-            None => out.push(0),
-            Some(hash) => {
-                out.push(1);
-                put_lp(&mut out, hash.as_bytes());
-            }
-        }
+        PreJoinInvite::put(self.invite.as_ref(), &mut out);
         out
     }
 
@@ -79,13 +71,7 @@ impl CheckpointHintRequest {
             ));
         }
         check_len("community id", self.community.len(), MAX_COMMUNITY)?;
-        let code_hash = self.invite_code_hash.as_deref().unwrap_or_default();
-        check_len("invite code hash", code_hash.len(), MAX_CODE_HASH)?;
-        if self.invite_code_hash.as_deref() == Some("") {
-            return Err(CodecError::Serialization(
-                "checkpoint hint request: an empty invite code hash".into(),
-            ));
-        }
+        let (code_hash, tag) = PreJoinInvite::wire(self.invite.as_ref())?;
         let sig = sign(key, &self.signing_bytes());
         let mut builder = capnp::message::Builder::new_default();
         {
@@ -95,6 +81,7 @@ impl CheckpointHintRequest {
             b.set_digest(&self.digest);
             b.set_requester(&self.requester);
             b.set_invite_code_hash(code_hash);
+            b.set_invite_tag(tag);
             b.set_sig(&sig);
         }
         let out = pack(&builder);
@@ -104,6 +91,18 @@ impl CheckpointHintRequest {
             CHECKPOINT_HINT_REQUEST_MAX_BYTES,
         )?;
         Ok(out)
+    }
+}
+
+impl PreJoinRequest for CheckpointHintRequest {
+    fn signed_bytes(&self) -> Vec<u8> {
+        self.signing_bytes()
+    }
+    fn invite_slot(&mut self) -> &mut Option<PreJoinInvite> {
+        &mut self.invite
+    }
+    fn invite_ref(&self) -> Option<&PreJoinInvite> {
+        self.invite.as_ref()
     }
 }
 
@@ -126,10 +125,7 @@ pub fn decode_checkpoint_hint_request(data: &[u8]) -> Result<CheckpointHintReque
         height: b.get_height(),
         digest: bytes32(b.get_digest(), "checkpoint hint request: digest")?,
         requester: bytes32(b.get_requester(), "checkpoint hint request: requester")?,
-        invite_code_hash: Some(text_to_string(
-            b.get_invite_code_hash().map_err(|e| capnp_err(&e))?,
-        )?)
-        .filter(|hash| !hash.is_empty()),
+        invite: PreJoinInvite::read(b.get_invite_code_hash(), b.get_invite_tag())?,
     };
     verify(
         &request.requester,

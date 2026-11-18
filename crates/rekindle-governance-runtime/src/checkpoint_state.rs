@@ -15,7 +15,7 @@ use std::future::Future;
 use rekindle_codec::capnp_envelope::{encode_community_envelope, try_decode_community_envelope};
 use rekindle_codec::checkpoint_state::{
     decode_checkpoint_state_response, CheckpointStateRequest, CheckpointStateResponse,
-    SNAPSHOT_CHUNK_MAX,
+    PreJoinRequest, SNAPSHOT_CHUNK_MAX,
 };
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::checkpoint::{checkpoint_digest, state_preimage, state_root_of};
@@ -187,7 +187,8 @@ where
 /// Fetch the snapshot of `checkpoint` from the ring peers at
 /// `peer_routes`, nearest first, asking as `me` (our pseudonym in
 /// `community_id`), a member, or, before the join, a joiner holding the
-/// invite whose code hash is `invite_code_hash` (plan E3.2 S7c.5): its
+/// invite `invite_code` (plan E3.2 S7c.5; each request tagged under the
+/// code, S7c.8 (2)): its
 /// `stateSize` bytes that hash to its `stateRoot`, or `None` when no peer
 /// matches.
 ///
@@ -199,7 +200,7 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
     me: &SigningKey,
     checkpoint: &Checkpoint,
     peer_routes: &[Vec<u8>],
-    invite_code_hash: Option<&str>,
+    invite_code: Option<&str>,
 ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
     let (height, digest) = (checkpoint.height, checkpoint_digest(checkpoint));
     let request = |offset| {
@@ -209,7 +210,11 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
             digest,
             offset,
             requester: me.verifying_key().to_bytes(),
-            invite_code_hash: invite_code_hash.map(str::to_owned),
+            invite: None,
+        };
+        let request = match invite_code {
+            Some(code) => request.with_invite_code(code),
+            None => request,
         };
         let encoded = request.encode(me).map_err(|e| {
             GovernanceRuntimeError::Encoding(format!("checkpoint state request: {e}"))

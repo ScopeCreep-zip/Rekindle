@@ -22,6 +22,26 @@ pub fn insert(
     Ok(())
 }
 
+/// The code of our invite whose code hashes to `code_hash`: the key a
+/// joiner's pre-join request is tagged under (plan E3.2 S7c.8 (2)).
+///
+/// # Errors
+/// The read failed.
+pub fn code(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    code_hash: &str,
+) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT code FROM community_invites \
+         WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3",
+        params![owner_key, community_id, code_hash],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
 /// Delete our invite whose code hashes to `code_hash` (it expired).
 ///
 /// # Errors

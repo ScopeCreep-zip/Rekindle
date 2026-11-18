@@ -136,7 +136,6 @@ mod tests {
             ring_beat_status: std::collections::BTreeMap::new(),
             head_hints: rekindle_node::host::community::state::HeadHints::default(),
             snapshot_requests: rekindle_transport::gossip::RateLimiter::default(),
-            pre_join_readers: std::collections::BTreeMap::new(),
             governance_key: Some("gov-key".to_string()),
             governance_state: gov,
             own_removal: None,

@@ -45,34 +45,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortError, RouteClass};
-use rekindle_types::config::{SafetyProfile, ANONYMITY_HOP_FLOOR};
+use rekindle_types::config::SafetyProfile;
 use rekindle_types::message::CALL_TIMEOUT_MS;
 use tracing::{debug, warn};
 
-/// Percent of `rpc.timeout_ms` Veilid allows per route hop past those the
-/// base timeout covers (`ROUTE_HOP_ALLOWANCE_PERCENT`, veilid-core 0.5.8
-/// `rpc_processor/mod.rs:102`).
-const ROUTE_HOP_ALLOWANCE_PERCENT: u64 = 10;
-
-/// Route hops the base RPC timeout already covers
-/// (`ROUTE_HOPS_IN_BASE_TIMEOUT`, `rpc_processor/mod.rs:104`).
-const ROUTE_HOPS_IN_BASE_TIMEOUT: u64 = 4;
-
-/// Veilid's wait for one answer at `profile`'s hop count, floor-clamped as
-/// the port clamps it: `routed_timeout(timeout, 2 * hops)`
-/// (`get_safety_selection_timeout`, veilid-core 0.5.8
-/// `rpc_processor/mod.rs:1985-1994`), which is `rpc.timeout_ms`
-/// (`CALL_TIMEOUT_MS`) plus 10% of it for each effective hop (twice the
-/// safety route's) above four (`routed_timeout`, `:109-117`). At our 5 s
-/// timeout that is 500 ms a hop: 6 s at our 3-hop floor, 7 s at Veilid's
-/// 4-hop maximum (`max_route_hop_count`, `veilid_config.rs:945`).
-#[must_use]
-pub fn answer_wait(profile: &SafetyProfile) -> Duration {
-    let hops = u64::from(profile.hop_count.max(ANONYMITY_HOP_FLOOR));
-    let excess = (2 * hops).saturating_sub(ROUTE_HOPS_IN_BASE_TIMEOUT);
-    let allowance = CALL_TIMEOUT_MS * ROUTE_HOP_ALLOWANCE_PERCENT / 100;
-    Duration::from_millis(CALL_TIMEOUT_MS + allowance * excess)
-}
+/// Veilid's wait for one answer at a profile's hop count (lives in
+/// `rekindle-types` so the governance runtime sizes its bootstrap cap from
+/// the same rule, plan E3.2 S7c.8 (i)).
+pub use rekindle_types::config::answer_wait;
 
 /// Our bound on one outbound `app_call` at `profile`: Veilid's answer wait
 /// ([`answer_wait`]) plus one more `CALL_TIMEOUT_MS` for the stages before
@@ -233,6 +213,7 @@ impl AppMessagePort for Bounded {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rekindle_types::config::ANONYMITY_HOP_FLOOR;
 
     fn at(hop_count: u8) -> SafetyProfile {
         SafetyProfile {

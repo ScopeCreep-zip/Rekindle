@@ -3,7 +3,9 @@
 //! hash to the checkpoint's `stateRoot`, refused to anyone else.
 
 use rekindle_codec::capnp_envelope::try_decode_community_envelope;
-use rekindle_codec::checkpoint_state::{decode_checkpoint_state_response, CheckpointStateRequest};
+use rekindle_codec::checkpoint_state::{
+    decode_checkpoint_state_response, CheckpointStateRequest, PreJoinRequest,
+};
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::checkpoint::{
     checkpoint_digest, frontier_hash, state_preimage, state_root, state_root_of,
@@ -24,14 +26,22 @@ fn ask(key: &SigningKey, digest: [u8; 32]) -> Vec<u8> {
     ask_with(key, digest, None)
 }
 
-fn ask_with(key: &SigningKey, digest: [u8; 32], invite: Option<&str>) -> Vec<u8> {
+fn state_request(key: &SigningKey, digest: [u8; 32]) -> CheckpointStateRequest {
     CheckpointStateRequest {
         community: "c1".into(),
         height: 1,
         digest,
         offset: 0,
         requester: key.verifying_key().to_bytes(),
-        invite_code_hash: invite.map(str::to_owned),
+        invite: None,
+    }
+}
+
+fn ask_with(key: &SigningKey, digest: [u8; 32], invite_code: Option<&str>) -> Vec<u8> {
+    let request = state_request(key, digest);
+    match invite_code {
+        Some(code) => request.with_invite_code(code),
+        None => request,
     }
     .encode(key)
     .unwrap()
@@ -123,8 +133,27 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
 
     // Plan E3.2 S7c.5: a joiner holding a live invite is served before it
     // joins; a used-up, expired or revoked invite, or a banned joiner, is
-    // refused.
-    let code = "c0de".repeat(16);
+    // refused. The invite is one we minted, so we hold its code.
+    let code = "c0de".repeat(8);
+    let code_hash = rekindle_secrets::invite::hash_invite_code(&code);
+    let owner = host.ctx.require_owner().unwrap();
+    let (stored_code, stored_hash) = (code.clone(), code_hash.clone());
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |c| {
+            rekindle_db::repo::community_invites::insert(
+                c,
+                &owner,
+                "c1",
+                &stored_code,
+                &stored_hash,
+                1,
+            )
+        })
+        .await
+        .unwrap();
     let joiner = |invite: Option<rekindle_governance::state::InviteState>, banned: bool| {
         let mut state = merge(&cert, &verify_held("c1", &ops).ops);
         state.invites.extend(invite.map(|i| ([9; 16], i)));
@@ -136,7 +165,7 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
         host.governance().set_governance_state("c1", state);
     };
     let live = rekindle_governance::state::InviteState {
-        code_hash: code.clone(),
+        code_hash: code_hash.clone(),
         max_uses: 1,
         expires_at: None,
         secrets_record_key: String::new(),
@@ -150,6 +179,36 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
     assert!(
         served().await.is_some(),
         "a joiner with a live invite is served"
+    );
+    // Plan E3.2 S7c.8 (2): the code hash is public (any reader of the op
+    // log has it), so naming it without a tag made from the code is
+    // refused, as is a tag under another code.
+    let hash_only = CheckpointStateRequest {
+        invite: Some(rekindle_codec::checkpoint_state::PreJoinInvite {
+            code_hash: code_hash.clone(),
+            tag: [0; 32],
+        }),
+        ..state_request(&stranger, digest)
+    }
+    .encode(&stranger)
+    .unwrap();
+    assert!(
+        host.governance()
+            .answer_checkpoint_state(&hash_only)
+            .await
+            .is_none(),
+        "the public code hash without the code is refused"
+    );
+    let mut wrong = state_request(&stranger, digest).with_invite_code(&"0bad".repeat(8));
+    if let Some(invite) = wrong.invite.as_mut() {
+        invite.code_hash.clone_from(&code_hash);
+    }
+    assert!(
+        host.governance()
+            .answer_checkpoint_state(&wrong.encode(&stranger).unwrap())
+            .await
+            .is_none(),
+        "a tag under another code is refused"
     );
     joiner(Some(live.clone()), true);
     assert!(served().await.is_none(), "a banned joiner is refused");
@@ -178,8 +237,9 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
         height: 0,
         digest: [0; 32],
         requester: stranger.verifying_key().to_bytes(),
-        invite_code_hash: Some(code.clone()),
+        invite: None,
     }
+    .with_invite_code(&code)
     .encode(&stranger)
     .unwrap();
     let hinted = || async { host.governance().answer_checkpoint_hint(&hint).await };

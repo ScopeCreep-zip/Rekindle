@@ -36,6 +36,15 @@ use zeroize::Zeroizing;
 /// `expiresAt = now + 150 s` (the 2.5x rule the friend TTL uses).
 pub const BEAT_LIFETIME_MS: u64 = 150_000;
 
+/// The card reads a refresh keeps in flight: half of Veilid's
+/// `max_concurrent_operations` (16, veilid-core 0.5.8
+/// `veilid_config.rs:329-336`), which gates every outbound get of the node
+/// (`storage_manager/gated_operation.rs:404`). The refresh runs during a
+/// join, beside the beat and `M`/6 reads of its bootstrap, presence and the
+/// outbox streams; at 16, its card reads alone would take every slot and
+/// those reads would queue behind them (plan E3.2 S7c.8 audit (8)).
+pub const CARD_READS_IN_FLIGHT: usize = 8;
+
 /// A fresh X25519 secret for our card's `hpkeKey` in one community.
 #[must_use]
 pub fn new_hpke_secret(rng: &dyn RandomSource) -> Zeroizing<[u8; 32]> {
@@ -257,11 +266,11 @@ pub async fn read_beat(
 /// members first, oldest first, then members by join stamp. A card that
 /// does not verify is not remembered.
 ///
-/// The reads run [`read_each`]'s way, sixteen in flight (plan E3.2
-/// S7c.9): a joiner holds no card name yet, so its first rebuild reads a
-/// card per member, and one at a time that cost a forced read per member
-/// on every join (≈ 0.5 s of simulated time each, the join-cost run's
-/// growth per post-cut op).
+/// The reads run [`read_each`]'s way, [`CARD_READS_IN_FLIGHT`] in flight
+/// (plan E3.2 S7c.9): a joiner holds no card name yet, so its first
+/// rebuild reads a card per member, and one at a time that cost a forced
+/// read per member on every join (≈ 0.5 s of simulated time each, the
+/// join-cost run's growth per post-cut op).
 pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -335,8 +344,7 @@ fn cards_to_read<'a>(
 }
 
 /// Each of `reads` (a member's pseudonym and its card read), at most
-/// [`crate::op_walk::WALK_FETCHES_IN_FLIGHT`] in flight (the walk's
-/// fan-out cap), answered in `reads`' order. The futures are built by the
+/// [`CARD_READS_IN_FLIGHT`] in flight, answered in `reads`' order. The futures are built by the
 /// caller (no closure in the returned future's type, which the Host's
 /// `Send` bound cannot see through for every lifetime).
 async fn read_each<T, Fut>(reads: Vec<(&PseudonymKey, Fut)>) -> Vec<(&PseudonymKey, T)>
@@ -349,7 +357,7 @@ where
         tagged.push(async move { (pseudonym, read.await) });
     }
     stream::iter(tagged)
-        .buffered(crate::op_walk::WALK_FETCHES_IN_FLIGHT)
+        .buffered(CARD_READS_IN_FLIGHT)
         .collect()
         .await
 }

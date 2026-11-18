@@ -53,16 +53,16 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
 const RTT: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Plan E3.2 S7c.9: a joiner's first rebuild reads every member's card;
-/// the reads run sixteen at a time, in the members' order, so 40 cards
-/// cost three round trips, where one read at a time cost forty.
+/// the reads run eight at a time (half of Veilid's gets, S7c.8 audit (8)),
+/// in the members' order, so 40 cards cost five round trips, where one
+/// read at a time cost forty.
 #[tokio::test(start_paused = true)]
-async fn card_reads_run_sixteen_in_flight_in_member_order() {
+async fn card_reads_run_eight_in_flight_in_member_order() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use rekindle_types::id::PseudonymKey;
 
-    use super::read_each;
-    use crate::op_walk::WALK_FETCHES_IN_FLIGHT;
+    use super::{read_each, CARD_READS_IN_FLIGHT};
 
     const MEMBERS: u8 = 40;
     let pseudonyms: Vec<PseudonymKey> = (0..MEMBERS).map(|i| PseudonymKey([i; 32])).collect();
@@ -81,7 +81,7 @@ async fn card_reads_run_sixteen_in_flight_in_member_order() {
     let started = tokio::time::Instant::now();
     let read = read_each(reads).await;
     let elapsed = started.elapsed();
-    assert_eq!(most.load(Ordering::SeqCst), WALK_FETCHES_IN_FLIGHT);
+    assert_eq!(most.load(Ordering::SeqCst), CARD_READS_IN_FLIGHT);
     let order: Vec<u8> = read
         .iter()
         .map(|(p, seen)| {
@@ -90,7 +90,7 @@ async fn card_reads_run_sixteen_in_flight_in_member_order() {
         })
         .collect();
     assert_eq!(order, (0..MEMBERS).collect::<Vec<_>>());
-    let rounds = usize::from(MEMBERS).div_ceil(WALK_FETCHES_IN_FLIGHT);
+    let rounds = usize::from(MEMBERS).div_ceil(CARD_READS_IN_FLIGHT);
     assert_eq!(elapsed, RTT * u32::try_from(rounds).unwrap());
 }
 

@@ -206,7 +206,7 @@ pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
     let frontier = crate::bootstrap_peers::find_frontier(
         call,
         &*port,
-        anchor,
+        (anchor, deps.clock().now_ms()),
         inviter_route,
         &candidates,
         &bytes,
