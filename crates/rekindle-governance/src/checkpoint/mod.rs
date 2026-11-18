@@ -11,7 +11,9 @@ mod shape;
 mod snapshot;
 
 pub use body::Replay;
-pub use cut::{canonical_cut, causal_past, state_preimage, state_root, state_root_of, CutIndex};
+pub use cut::{
+    canonical_cut, causal_past, state_preimage, state_root, state_root_of, CutIndex, CutOp,
+};
 pub use electorate::{eligible_set, eligible_set_hash, is_strict_majority, tally};
 pub use endorse::{beyond, endorsement, proposal_due, proposals, Beyond, PROPOSAL_OPS};
 pub use hints::{hints, EndorsementFault, Equivocation, Hints, UsableHint};

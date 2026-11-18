@@ -230,7 +230,7 @@ fn checkpoint_gate(
                 // are its deps, so cut ops: `c` covers them when one of its
                 // heads is in `rest` (the whole cut in its past, (a′)) or
                 // its heads include every head of the snapshot's cut.
-                let Some(&height) = ctx.snap.cut.checkpoints.get(&prev.op_hash) else {
+                let Some(height) = ctx.snap.cut.checkpoint_height(&prev.op_hash) else {
                     return Err(NotOnTop::Undecidable(op.hash()));
                 };
                 let covered = c.cut.iter().any(|k| matches!(at(k), Some(Dep::Rest(_))))

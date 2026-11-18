@@ -2,9 +2,10 @@
 //! at a checkpoint's cut, which `merge::merge_from` resumes from, with the
 //! cut's heads from the checkpoint body.
 
-use rekindle_types::governance::{Checkpoint, OpHash};
+use rekindle_types::governance::{Checkpoint, GenesisCert, OpHash, OpRef};
+use rekindle_types::id::PseudonymKey;
 
-use super::cut::{state_preimage, state_root_of, CutIndex};
+use super::cut::{state_preimage, state_root_of, CutIndex, CutOp};
 use crate::checksum::decode::{CanonReader, Decanon};
 use crate::state::GovernanceState;
 
@@ -50,5 +51,36 @@ impl CutSnapshot {
             cut,
             heads: checkpoint.cut.iter().map(|r| r.op_hash).collect(),
         })
+    }
+}
+
+impl CutSnapshot {
+    /// Where the cut op `op` lives: its author's member record in the
+    /// snapshot's state (the directory at the cut, member → record; the
+    /// cert's for the creator) at its seq, the locator a reader fetches it
+    /// by (plan E3.2 S7c.5, P3). `None` when the state names no record for
+    /// its author.
+    #[must_use]
+    pub fn locate(&self, cert: &GenesisCert, op: &CutOp) -> Option<OpRef> {
+        let author = PseudonymKey(op.author);
+        Some(OpRef {
+            op_hash: op.hash,
+            author_record: self.state.author_record(cert, &author)?,
+            author,
+            author_seq: op.seq,
+        })
+    }
+
+    /// The locators of the cut's applied power ops, in the power phase's
+    /// order: what a reader holding only the snapshot fetches for
+    /// `merge_from` (a refused one is never folded, and its author, a
+    /// non-member, may have no record at the cut). `None` when one cannot
+    /// be located.
+    #[must_use]
+    pub fn power_refs(&self, cert: &GenesisCert) -> Option<Vec<OpRef>> {
+        (self.cut.power.iter())
+            .filter(|(_, applied)| *applied)
+            .map(|(op, _)| self.locate(cert, op))
+            .collect()
     }
 }

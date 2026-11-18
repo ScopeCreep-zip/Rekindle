@@ -34,7 +34,7 @@ use crate::state::GovernanceState;
 /// the next older usable hint, then the full merge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotOnTop {
-    /// A cut power op the snapshot lists was not supplied.
+    /// A cut power op the snapshot lists as applied was not supplied.
     MissingCutPowerOp(OpHash),
     /// (a′): this op lacks a cut head in its causal past.
     BesideTheCut(OpHash),
@@ -95,8 +95,10 @@ pub(super) struct RestRound {
 }
 
 /// The merge of the full op set, from `snapshot` (the state and cut index
-/// at a checkpoint's cut), `cut_power` (the cut's power ops, fetched by
-/// hash) and `rest` (every op held outside the cut): the cut's power
+/// at a checkpoint's cut), `cut_power` (the cut's applied power ops,
+/// fetched by their locators, `CutSnapshot::power_refs`; a refused one
+/// is never folded, so only its fate, which the snapshot carries, is read)
+/// and `rest` (every op held outside the cut): the cut's power
 /// fates followed by `rest`'s. Its `hints` are empty: the hint layer is a
 /// function of every `Checkpoint` op held (`checkpoint::hints`).
 ///
@@ -131,7 +133,7 @@ pub fn merge_from(
     applied.extend(round.order.iter().map(|&i| set.ops[i].hash()));
     let mut refused: Vec<OpHash> = (snapshot.cut.power.iter())
         .filter(|(_, fate)| !fate)
-        .map(|(h, _)| *h)
+        .map(|(c, _)| c.hash)
         .collect();
     refused.extend(
         (0..n)
@@ -166,14 +168,12 @@ fn context<'a>(
     let by_hash: HashMap<OpHash, &VerifiedOp> = cut_power.iter().map(|o| (o.hash(), o)).collect();
     let mut cut_applied = Vec::new();
     let mut power_state = genesis_state(cert);
-    for (hash, fate) in &snap.cut.power {
+    for (at, _) in snap.cut.power.iter().filter(|(_, applied)| *applied) {
         let op = *by_hash
-            .get(hash)
-            .ok_or(NotOnTop::MissingCutPowerOp(*hash))?;
-        if *fate {
-            fold(op, &mut power_state);
-            cut_applied.push(op);
-        }
+            .get(&at.hash)
+            .ok_or(NotOnTop::MissingCutPowerOp(at.hash))?;
+        fold(op, &mut power_state);
+        cut_applied.push(op);
     }
     Ok(Ctx {
         cert,

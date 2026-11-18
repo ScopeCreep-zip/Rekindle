@@ -9,8 +9,50 @@ use rekindle_types::governance::{OpHash, OpRef};
 
 use crate::checksum::canon::{put_map, put_set, Canon};
 use crate::checksum::canonical_state;
+use crate::checksum::decode::{CanonReader, Decanon};
 use crate::op::VerifiedOp;
 use crate::state::GovernanceState;
+
+/// A cut op as the cut index names it: its hash, author (pseudonym key
+/// bytes) and seq, so a reader holding only the snapshot locates it in
+/// its author's op log through the directory at the cut (member →
+/// record, `CutSnapshot::locate`) plus its seq (plan E3.2 S7c.5, P3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CutOp {
+    pub hash: OpHash,
+    pub author: [u8; 32],
+    pub seq: u64,
+}
+
+impl CutOp {
+    /// `op`'s entry.
+    #[must_use]
+    pub fn of(op: &VerifiedOp) -> Self {
+        Self {
+            hash: op.hash(),
+            author: op.author().0,
+            seq: op.op().seq,
+        }
+    }
+}
+
+impl Canon for CutOp {
+    fn put(&self, out: &mut Vec<u8>) {
+        self.hash.put(out);
+        self.author.put(out);
+        self.seq.put(out);
+    }
+}
+
+impl Decanon for CutOp {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
+        Some(Self {
+            hash: Decanon::take(r)?,
+            author: Decanon::take(r)?,
+            seq: Decanon::take(r)?,
+        })
+    }
+}
 
 /// The cut index of one cut.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -20,8 +62,9 @@ pub struct CutIndex {
     /// author's entry.
     pub authors: BTreeMap<[u8; 32], (u64, OpHash)>,
     /// The cut's power ops in the order the power phase visits them, each
-    /// with its fate (`true`: applied, `false`: refused).
-    pub power: Vec<(OpHash, bool)>,
+    /// with its fate (`true`: applied, `false`: refused), located by author
+    /// and seq (S7c.5, P3): `merge_from` needs every one of them.
+    pub power: Vec<(CutOp, bool)>,
     /// The cut's power ops no other cut power op has in its causal past.
     pub power_heads: Vec<OpHash>,
     /// The greatest mainline key `(issued_at, op_hash)` among the cut's
@@ -57,14 +100,24 @@ pub struct CutIndex {
     /// skipped the cut verifies an op citing an author's top cut op from
     /// this (`VerifiedOp::verify_with`). Every cut head is such an op.
     pub lamports: BTreeMap<[u8; 32], u64>,
-    /// The cut's applied `Checkpoint` ops at its two greatest heights, by
-    /// hash, with their heights (plan E3.2 S7c.5): a post-cut `Checkpoint`
-    /// naming one as `prevCheckpoint` (the endorsements of the hint whose
-    /// cut this is name one at the height below) is judged from it.
-    pub checkpoints: BTreeMap<OpHash, u64>,
+    /// The cut's applied `Checkpoint` ops at its two greatest heights,
+    /// located by author and seq, with their heights (plan E3.2 S7c.5): a
+    /// post-cut `Checkpoint` naming one as `prevCheckpoint` (the
+    /// endorsements of the hint whose cut this is name one at the height
+    /// below) is judged from it, and the hint chain check fetches them.
+    pub checkpoints: BTreeMap<CutOp, u64>,
 }
 
 impl CutIndex {
+    /// The height of the cut's applied `Checkpoint` op `hash`, when
+    /// `checkpoints` lists it.
+    #[must_use]
+    pub fn checkpoint_height(&self, hash: &OpHash) -> Option<u64> {
+        (self.checkpoints.iter())
+            .find(|(c, _)| c.hash == *hash)
+            .map(|(_, h)| *h)
+    }
+
     /// What verifying a post-cut op reads of its dep `r` when `r` is its
     /// author's top op in the cut (`authors`); `None` for any other op.
     #[must_use]

@@ -103,20 +103,7 @@ pub fn author_record(
     state: &GovernanceState,
     author: &PseudonymKey,
 ) -> Option<String> {
-    if *author == cert.creator_pseudonym {
-        return Some(cert.creator_member_record.clone());
-    }
-    state
-        .members
-        .get(author)
-        .map(|m| m.member_record.clone())
-        .or_else(|| {
-            state
-                .pending_members
-                .get(author)
-                .map(|m| m.member_record.clone())
-        })
-        .or_else(|| state.op_log_records.get(author).cloned())
+    state.author_record(cert, author)
 }
 
 /// The frontier: the verified ops no other verified op cites, newest

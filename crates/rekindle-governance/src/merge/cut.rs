@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 
 use super::{resolve, resolve_stable, Round};
-use crate::checkpoint::CutIndex;
+use crate::checkpoint::{CutIndex, CutOp};
 use crate::op::VerifiedOp;
 use crate::power::{class_of, removal_target, target_seq_frontier, OpClass};
 use crate::state::GovernanceState;
@@ -32,7 +32,7 @@ pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState
     let power_idx: Vec<usize> = (0..n).filter(|&i| is_power(i)).collect();
     let power = power_idx
         .iter()
-        .map(|&i| (set.ops[i].hash(), round.applied[i]))
+        .map(|&i| (CutOp::of(set.ops[i]), round.applied[i]))
         .collect();
     let mut power_heads: Vec<OpHash> = power_idx
         .iter()
@@ -145,11 +145,11 @@ fn invite_codes(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<String, ([u
 
 /// The applied `Checkpoint` ops at the cut's two greatest applied heights,
 /// with their heights.
-fn checkpoints(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<OpHash, u64> {
-    let applied: Vec<(OpHash, u64)> = (set.ops.iter().enumerate())
+fn checkpoints(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<CutOp, u64> {
+    let applied: Vec<(CutOp, u64)> = (set.ops.iter().enumerate())
         .filter(|&(o, _)| round.applied[o])
         .filter_map(|(_, op)| match op.body() {
-            GovernanceEntry::Checkpoint(c) => Some((op.hash(), c.height)),
+            GovernanceEntry::Checkpoint(c) => Some((CutOp::of(op), c.height)),
             _ => None,
         })
         .collect();

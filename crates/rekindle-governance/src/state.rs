@@ -341,6 +341,23 @@ pub struct RsvpState {
 }
 
 impl GovernanceState {
+    /// The member record `author`'s ops live in: the cert's for the
+    /// creator, else its `MemberJoined`'s (admitted or pending), kept after
+    /// it leaves or is removed (`op_log_records`).
+    #[must_use]
+    pub fn author_record(
+        &self,
+        cert: &rekindle_types::governance::GenesisCert,
+        author: &PseudonymKey,
+    ) -> Option<String> {
+        if *author == cert.creator_pseudonym {
+            return Some(cert.creator_member_record.clone());
+        }
+        (self.members.get(author).map(|m| m.member_record.clone()))
+            .or_else(|| (self.pending_members.get(author)).map(|m| m.member_record.clone()))
+            .or_else(|| self.op_log_records.get(author).cloned())
+    }
+
     /// How many members the merge counts: every admitted `MemberJoined`
     /// author, and the cert's creator (MSC4289: no op makes it one) unless
     /// it departed.
