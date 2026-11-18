@@ -5,6 +5,7 @@
 
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, present, resolveIntent, shown, waitUntil } from "./helpers.ts";
 import { closeSettings, flipPersisted, inBuddy, openSettings, optionBox, pickNextFile, setValue, waitStored } from "./nav.ts";
+import { readFileSync } from "node:fs";
 import type { Browser } from "webdriverio";
 import type { Row } from "./rows.ts";
 
@@ -39,6 +40,47 @@ async function skinProbe(b: Browser): Promise<string> {
     const review = !!document.querySelector(".intent-dialog-actions");
     return `shown=${shownName}; checked=${checked}; refusal=${refusal ?? "none"}; review open=${review}`;
   });
+}
+
+const ONYX = new URL("../../crates/rekindle-skin/builtin/onyx.rkskin", import.meta.url);
+
+type Radio = Awaited<ReturnType<Browser["$"]>>;
+
+/** The name of the skin every window shows now. */
+async function shownSkin(b: Browser): Promise<string> {
+  return (await (await b.$(".skin-row-shown .skin-name")).getText()).trim();
+}
+
+/** Whether a row offers Remove, i.e. holds an imported (library) skin. */
+async function offersRemove(row: Radio): Promise<boolean> {
+  for (const action of await row.$$(".skin-action")) {
+    if ((await action.getText()).trim() === "Remove") return true;
+  }
+  return false;
+}
+
+/** The radio of the built-in skin named `name`. */
+async function rowRadio(b: Browser, name: string): Promise<Radio> {
+  for (const row of await b.$$(".skin-row")) {
+    if ((await (await row.$(".skin-name")).getText()).trim() === name && !(await offersRemove(row))) {
+      return row.$("input[type=radio]");
+    }
+  }
+  throw new Error(`no built-in skin named ${name}`);
+}
+
+/** The radio of the imported skin, or null when none is listed. */
+async function importedRadio(b: Browser): Promise<Radio | null> {
+  for (const row of await b.$$(".skin-row")) {
+    if (await offersRemove(row)) return row.$("input[type=radio]");
+  }
+  return null;
+}
+
+/** Whether the shown skin is the imported one. */
+async function importedShown(b: Browser): Promise<boolean> {
+  const row = await b.$(".skin-row-shown");
+  return (await row.isExisting()) && (await offersRemove(row));
 }
 
 const TABS = ["Profile", "Application", "Appearance", "Notifications", "Audio", "Video", "Privacy", "Devices", "Mobile", "About"];
@@ -155,38 +197,14 @@ export const SETTINGS_ROWS: Row[] = [
   },
   {
     id: "ST9",
-    title: "Appearance: select skin, then ST13 keep",
+    title: "Appearance: a built-in skin is chosen at once",
     async run({ b, s, shot }) {
+      // Only a non-built-in skin goes on trial (plan E7.7.2 "Apply";
+      // host/skin/mod.rs select); walk 22's probe after choosing the
+      // built-in Xfire read "shown=Xfire; checked=Xfire; refusal=none".
       await openSettings(b, "Appearance");
       await shown(b, ".skin-row", NET_WAIT_MS);
-      const other = await otherSkin(b);
-      if (!other) {
-        await shot();
-        await closeSettings(b);
-        throw new Skip(ONE_SKIN);
-      }
-      const { name, radio } = other;
-      await radio.click();
-      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await shown(b, ".skin-trial", NET_WAIT_MS).catch(async (e: Error) => {
-        throw new Error(`${e.message} after choosing ${name} (${await skinProbe(b)})`);
-      });
-      await shot();
-      await (await b.$(".skin-trial .sec-btn-commit")).click();
-      await waitUntil(async () => !(await present(b, ".skin-trial")), NET_WAIT_MS, "trial prompt stayed after Keep");
-      const shownName = await (await b.$(".skin-row-shown .skin-name")).getText();
-      if (shownName !== name) throw new Error(`kept ${name} but ${shownName} is shown`);
-      await closeSettings(b);
-      return `chose ${name}; the trial prompt showed; Keep kept it`;
-    },
-  },
-  {
-    id: "ST13",
-    title: "Appearance: skin trial revert",
-    async run({ b, s, shot }) {
-      await openSettings(b, "Appearance");
-      await shown(b, ".skin-row", NET_WAIT_MS);
-      const kept = await (await b.$(".skin-row-shown .skin-name")).getText();
+      const first = await (await b.$(".skin-row-shown .skin-name")).getText();
       const other = await otherSkin(b);
       if (!other) {
         await shot();
@@ -195,15 +213,53 @@ export const SETTINGS_ROWS: Row[] = [
       }
       await other.radio.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await shown(b, ".skin-trial", NET_WAIT_MS).catch(async (e: Error) => {
-        throw new Error(`${e.message} after choosing ${other.name} (${await skinProbe(b)})`);
-      });
-      await (await b.$(".skin-trial .sec-btn-secondary")).click();
-      await waitUntil(async () => !(await present(b, ".skin-trial")), NET_WAIT_MS, "trial prompt stayed after Revert");
-      await waitUntil(async () => (await (await b.$(".skin-row-shown .skin-name")).getText()) === kept, WAIT_MS, "skin did not revert");
-      await shot();
+      await waitUntil(async () => (await shownSkin(b)) === other.name, WAIT_MS, `${other.name} not shown`);
+      if (await present(b, ".skin-trial")) throw new Error(`a built-in went on trial (${await skinProbe(b)})`);
       await closeSettings(b);
-      return `reverted to ${kept}`;
+      await openSettings(b, "Appearance");
+      await waitUntil(async () => (await shownSkin(b)) === other.name, WAIT_MS, `${other.name} not kept after reopen`);
+      await shot();
+      await (await rowRadio(b, first)).click();
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+      await waitUntil(async () => (await shownSkin(b)) === first, WAIT_MS, `${first} not shown again`);
+      await closeSettings(b);
+      return `${other.name} stored at once with no trial, kept after reopen; set back to ${first}`;
+    },
+  },
+  {
+    id: "ST13",
+    title: "Appearance: an imported skin's trial (Revert, then Keep)",
+    async run({ b, s, shot }) {
+      await openSettings(b, "Appearance");
+      await shown(b, ".skin-row", NET_WAIT_MS);
+      const kept = await shownSkin(b);
+      // A real package: the Onyx built-in's bytes, imported as a library
+      // skin (pkg:<hash>), whose row offers Remove (AppearanceTab.tsx).
+      await pickNextFile(b, "walk-onyx.rkskin", "application/zip", readFileSync(ONYX).toString("base64"));
+      await (await byText(b, ".skin-import button", "Import skin")).click();
+      if ((await resolveIntent(b, { passphrase: s.passphrase })) !== "committed") throw new Error("import showed no review");
+      const trialOf = async (answer: string): Promise<void> => {
+        await waitUntil(async () => (await importedRadio(b)) !== null, NET_WAIT_MS, "no imported skin listed");
+        const radio = await importedRadio(b);
+        if (!radio) throw new Error("the imported skin left the list");
+        await radio.click();
+        await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+        await shown(b, ".skin-trial", NET_WAIT_MS).catch(async (e: Error) => {
+          throw new Error(`${e.message} after choosing the imported skin (${await skinProbe(b)})`);
+        });
+        await (await b.$(`.skin-trial ${answer}`)).click();
+        await waitUntil(async () => !(await present(b, ".skin-trial")), NET_WAIT_MS, "trial prompt stayed after the answer");
+      };
+      await trialOf(".sec-btn-secondary");
+      await waitUntil(async () => (await shownSkin(b)) === kept, WAIT_MS, "Revert did not restore the skin");
+      await trialOf(".sec-btn-commit");
+      await waitUntil(async () => (await importedShown(b)), WAIT_MS, "Keep did not keep the imported skin");
+      await shot();
+      await (await rowRadio(b, kept)).click();
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+      await waitUntil(async () => (await shownSkin(b)) === kept, WAIT_MS, `${kept} not shown again`);
+      await closeSettings(b);
+      return `Revert restored ${kept}; Keep kept the imported skin; set back to ${kept}`;
     },
   },
   {
