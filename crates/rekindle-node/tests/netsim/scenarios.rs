@@ -7,81 +7,147 @@ use std::time::Duration;
 use base64::Engine as _;
 use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
+use rekindle_codec::governance_op::{encode_op, op_unsigned_bytes};
+use rekindle_governance::op::{invite_proof_bytes, op_hash, op_signing_bytes};
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_ipc::protocol::{ChannelMessageRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+use rekindle_secrets::member_record::{dflt_opaque_record_key, sign_member_record_binding};
 use rekindle_types::config::SafetyProfile;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::dht_layout::member_record;
+use rekindle_types::governance::{GovernanceEntry, GovernanceOp, InviteProof, OpHash};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::{ADMINISTRATOR, KICK_MEMBERS};
 
 use crate::harness::{eventually, Community};
 use crate::moderation::listed;
 
-/// A member's slot seed, as anyone holding an invite reads it: the link's
-/// code decrypts the secrets record.
-fn slot_seed_from_invite(community: &Community) -> [u8; 32] {
-    let link = rekindle_types::invite::InviteLink::parse(&community.link).expect("an invite link");
-    let stored = community
-        .sim
-        .network_get(link.secrets_record_key.as_str(), 0)
-        .expect("the invite secrets are published");
-    let encrypted = base64::engine::general_purpose::STANDARD
-        .decode(String::from_utf8(stored.data).expect("base64 text"))
-        .expect("base64");
-    let secrets: rekindle_types::invite::InviteSecrets = serde_json::from_slice(
-        &rekindle_secrets::invite::decrypt_invite_secrets(link.invite_code.as_str(), &encrypted)
-            .expect("the code opens the secrets"),
+/// `bytes` as a `VLD0:` key text, as Veilid prints a public or opaque key.
+fn vld0(bytes: &[u8; 32]) -> String {
+    format!(
+        "VLD0:{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
     )
-    .expect("invite secrets");
-    hex::decode(secrets.slot_seed)
-        .expect("hex")
-        .try_into()
-        .expect("32 bytes")
 }
 
-/// S4 (fixed in E3.2): a member holding the slot seed writes, into a free
-/// slot of the governance record, a validly signed entry at lamport 0.
-/// Genesis entries start at lamport 1, so the merge's lowest-lamport
-/// genesis branch (`rekindle-governance/src/merge/mod.rs:85-90`) makes the
-/// forger the creator. E3.2 pins the creator by the `GenesisCert`.
+/// `op` signed by `key` over the anchor-bound signing bytes, encoded as the
+/// op log and `governanceOp @74` carry it, with its hash.
+fn signed(anchor: &str, key: &SigningKey, mut op: GovernanceOp) -> (Vec<u8>, OpHash) {
+    let unsigned = op_unsigned_bytes(&op);
+    op.sig = key.sign(&op_signing_bytes(anchor, &unsigned)).to_bytes();
+    (
+        encode_op(&op).expect("encodes"),
+        op_hash(&unsigned, &op.sig),
+    )
+}
+
+/// S4 (fixed in E3.2): an op at the lowest lamport never becomes the
+/// creator. Before E3.2 a member holding the slot seed wrote a lamport-0
+/// entry into a free governance slot and the merge's lowest-lamport genesis
+/// branch made the forger the creator. Now the creator is the `GenesisCert`'s
+/// (`rekindle-governance/src/merge`), and an op's lamport is derived,
+/// `1 + max(deps)` (`rekindle-governance/src/op.rs` `verify_with`), so the
+/// lowest an op can reach is a dep-less one: lamport 1, the creator's own
+/// op #0's. Anyone holding an invite builds such an op, a `MemberJoined`
+/// with a valid invite proof and owner proof (so it passes the receive
+/// bound and lands in the op store), issued at time 0, and a dep-less
+/// `CommunityMeta` renaming the community; both reach the members on the
+/// `governanceOp @74` ingest (`daemon/handler/gossip_ingest.rs`). Every
+/// member keeps the genesis author as creator and the name.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E3.2"]
 async fn a_lamport_zero_entry_never_becomes_the_creator() {
     let mut community = Community::create(2, 41).await;
     let creator = community.info(0).await["owner_pseudonym"].clone();
+    let name = community.info(0).await["name"].clone();
+    community.join(1).await;
     community.invite().await;
+    let link = rekindle_types::invite::InviteLink::parse(&community.link).expect("an invite link");
+    let code_hash = rekindle_secrets::invite::hash_invite_code(link.invite_code.as_str());
+    // Every member holds the invite, so the forgery passes the receive bound.
+    assert!(
+        eventually(&community.sim, Duration::from_secs(120), || async {
+            community.nodes.iter().all(|node| {
+                (node.host.governance().governance_state(&community.anchor))
+                    .is_some_and(|state| state.invites.values().any(|i| i.code_hash == code_hash))
+            })
+        })
+        .await,
+        "every member merged the invite"
+    );
 
-    let seed = slot_seed_from_invite(&community);
-    let free_slot = 254;
-    let writer = rekindle_crypto::keypair_text::slot_keypair_text(&seed, free_slot).unwrap();
+    let anchor = community.anchor.clone();
     let forger =
         rekindle_secrets::derive::derive_community_pseudonym(&[0xAB; 32], &community.anchor);
     let author = PseudonymKey(forger.verifying_key().to_bytes());
-    let (_, page) = rekindle_governance_runtime::overflow::build_signed_payload(
-        &[GovernanceEntry::CommunityMeta {
+    let owner = SigningKey::from_bytes(&[0xEF; 32]);
+    let owner_public = owner.verifying_key().to_bytes();
+    let record = vld0(&dflt_opaque_record_key(
+        &owner_public,
+        member_record::SUBKEY_COUNT,
+    ));
+    let joined = GovernanceOp {
+        author: author.clone(),
+        seq: 0,
+        prev: None,
+        deps: Vec::new(),
+        issued_at: 0,
+        body: GovernanceEntry::MemberJoined {
+            member_record: record.clone(),
+            member_record_owner: vld0(&owner_public),
+            invite_proof: Some(InviteProof {
+                code_hash: code_hash.clone(),
+                sig: forger
+                    .sign(&invite_proof_bytes(&anchor, &code_hash, &record))
+                    .to_bytes()
+                    .to_vec(),
+            }),
+            owner_proof: sign_member_record_binding(&[0xEF; 32], &anchor, &author.0, &record)
+                .to_vec(),
+        },
+        sig: [0; 64],
+    };
+    let (joined, joined_hash) = signed(&anchor, &forger, joined);
+    let renamed = GovernanceOp {
+        author: author.clone(),
+        seq: 1,
+        prev: Some(joined_hash),
+        deps: Vec::new(),
+        issued_at: 0,
+        body: GovernanceEntry::CommunityMeta {
             name: Some("Taken".into()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-        }],
-        None,
-        &forger,
-        &author,
-    )
-    .unwrap();
-    community
-        .sim
-        .forge_write(&community.anchor, free_slot, page, &writer)
-        .unwrap();
+        },
+        sig: [0; 64],
+    };
+    let (renamed, _) = signed(&anchor, &forger, renamed);
+    for node in &community.nodes {
+        let governance = node.host.governance();
+        governance.on_governance_op(&anchor, joined.clone()).await;
+        governance.on_governance_op(&anchor, renamed.clone()).await;
+    }
+    community.sim.quiesce().await;
 
-    // A joiner merges the governance record from the DHT, forged page included.
-    community.join(1).await;
-    let joined_view = community.info(1).await;
-    assert_eq!(
-        joined_view["owner_pseudonym"], creator,
-        "the creator stays the genesis author"
-    );
-    assert_ne!(joined_view["name"], "Taken");
+    for (i, node) in community.nodes.iter().enumerate() {
+        let held = node
+            .host
+            .governance()
+            .governance_ops(&anchor)
+            .await
+            .unwrap();
+        assert!(
+            held.iter().any(|op| op.hash == joined_hash),
+            "node {i}'s op store holds the forged op, so the merge reads it"
+        );
+        let view = community.info(i).await;
+        assert_eq!(
+            view["owner_pseudonym"], creator,
+            "node {i}: the creator stays the genesis author"
+        );
+        assert_eq!(view["name"], name, "node {i}: the name is unchanged");
+    }
 }
 
 /// The strong-removal chain (fixed in E3.2; plan E3.2 S3 decision (a)).
