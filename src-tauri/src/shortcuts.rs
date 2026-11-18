@@ -4,47 +4,83 @@ use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
 use std::sync::Arc;
 
 use tauri::Manager;
-use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
+use tauri_plugin_global_shortcut::{
+    Code, Error as ShortcutError, GlobalShortcutExt, Modifiers, ShortcutState,
+};
 
 use crate::state::SharedState;
 
+/// The fixed chords: toggle the buddy list, toggle voice mute. macOS uses
+/// Cmd (Super); Windows/Linux use Ctrl.
+#[cfg(target_os = "macos")]
+const CHORDS: [&str; 2] = ["super+shift+x", "super+shift+m"];
+#[cfg(not(target_os = "macos"))]
+const CHORDS: [&str; 2] = ["ctrl+shift+x", "ctrl+shift+m"];
+
 /// Register the global keyboard shortcuts plugin with state-aware handlers.
 ///
-/// macOS uses Cmd (Super); Windows/Linux use Ctrl. The plugin is registered
-/// here (rather than in the builder chain) so the handler can capture
-/// [`SharedState`].
+/// The plugin is built with the handler only and each chord is registered
+/// afterwards on its own, so a chord the OS refuses (another program, or a
+/// second Rekindle instance, already holds it) leaves the app running
+/// without that chord instead of failing plugin setup. The plugin is
+/// registered here (rather than in the builder chain) so the handler can
+/// capture [`SharedState`].
 pub fn register(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::error::Error>> {
     let shortcut_state = Arc::clone(state);
-    #[cfg(target_os = "macos")]
-    let builder = tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts(["super+shift+x", "super+shift+m"])?;
-    #[cfg(not(target_os = "macos"))]
-    let builder = tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts(["ctrl+shift+x", "ctrl+shift+m"])?;
-    app.handle().plugin(
-        builder
-            .with_handler(move |app_handle, shortcut, event| {
-                if event.state != ShortcutState::Pressed {
-                    return;
-                }
+    let plugin = tauri_plugin_global_shortcut::Builder::new()
+        .with_handler(move |app_handle, shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
 
-                // Ctrl+Shift+X / Cmd+Shift+X — toggle buddy list visibility
-                if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyX)
-                    || shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyX)
-                {
-                    toggle_buddy_list(app_handle);
-                }
+            // Ctrl+Shift+X / Cmd+Shift+X — toggle buddy list visibility
+            if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyX)
+                || shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyX)
+            {
+                toggle_buddy_list(app_handle);
+            }
 
-                // Ctrl+Shift+M / Cmd+Shift+M — toggle voice mute
-                if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyM)
-                    || shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyM)
-                {
-                    toggle_mute(app_handle, &shortcut_state);
-                }
-            })
-            .build(),
-    )?;
+            // Ctrl+Shift+M / Cmd+Shift+M — toggle voice mute
+            if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyM)
+                || shortcut.matches(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyM)
+            {
+                toggle_mute(app_handle, &shortcut_state);
+            }
+        })
+        .build();
+    match app.handle().plugin(plugin) {
+        Ok(()) => {}
+        // The OS hot-key manager could not start (`GlobalHotKeyManager::new`
+        // in the plugin's setup): the app runs with no global shortcuts.
+        Err(tauri::Error::PluginInitialization(_, reason)) => {
+            tracing::warn!(%reason, "global shortcuts unavailable");
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    }
+    let shortcuts = app.global_shortcut();
+    for chord in CHORDS {
+        settle_registration(chord, shortcuts.register(chord))?;
+    }
     Ok(())
+}
+
+/// Settle one chord's registration result. The OS refusing the chord
+/// (`Error::GlobalHotkey`: already registered by another program or another
+/// instance, or rejected) is logged and the app continues without it; a
+/// runtime failure dispatching to the main thread stays an error.
+fn settle_registration(
+    chord: &str,
+    result: Result<(), ShortcutError>,
+) -> Result<(), ShortcutError> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(ShortcutError::GlobalHotkey(reason)) => {
+            tracing::warn!(chord, %reason, "global shortcut unavailable");
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Toggle the buddy list window visibility (Ctrl+Shift+X / Cmd+Shift+X).
@@ -85,5 +121,27 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
         }
 
         tracing::debug!(muted = new_muted, "voice mute toggled via global shortcut");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A chord another program or a second instance holds leaves the app
+    /// running (Linux finding: `HotKey already registered` panicked setup).
+    #[test]
+    fn already_registered_chord_is_not_fatal() {
+        let refused = Err(ShortcutError::GlobalHotkey(
+            "HotKey already registered: HotKey { mods: CONTROL | SHIFT, key: KeyX }".into(),
+        ));
+        assert!(settle_registration("ctrl+shift+x", refused).is_ok());
+        assert!(settle_registration("ctrl+shift+x", Ok(())).is_ok());
+    }
+
+    #[test]
+    fn main_thread_dispatch_failure_stays_an_error() {
+        let failed = Err(ShortcutError::RecvError(std::sync::mpsc::RecvError));
+        assert!(settle_registration("ctrl+shift+m", failed).is_err());
     }
 }
