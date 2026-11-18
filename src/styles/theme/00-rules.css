@@ -191,13 +191,6 @@
     text-align: center;
   }
 
-  /* Why a form's submit is unavailable for now (e.g. waiting for the network). */
-  .form-hint {
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-    text-align: center;
-  }
-
 
   .form-label {
     font-size: 11px;
