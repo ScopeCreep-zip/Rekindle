@@ -12,9 +12,12 @@ import {
 import { handleLoadUnreadCounts } from "./channels";
 import { handleUpdateCommunityPresence } from "./profile";
 
+/// Create a community. A refused create (a cancelled review, a node not
+/// yet attached) rejects with the Host's error, so the form that asked
+/// stays open and shows why (walk row B60).
 export async function handleCreateCommunity(name: string): Promise<void> {
+  const id = await commands.createCommunity(name);
   try {
-    const id = await commands.createCommunity(name);
     // Fetch full community details from backend (includes pseudonym, MEK gen, channels, roles)
     const details = await commands.getCommunityDetails();
     const created = details.find((c) => c.id === id);
@@ -45,9 +48,8 @@ export async function handleCreateCommunity(name: string): Promise<void> {
       console.error("Failed to load community members after creation:", e);
     }
   } catch (e) {
-    console.error("Failed to create community:", e);
-    const msg = typeof e === "string" ? e : "Failed to create community";
-    addToast(msg, "error");
+    console.error("Failed to load the created community:", e);
+    addToast(`Created, but failed to load it: ${errorMessage(e)}`, "error");
   }
 }
 

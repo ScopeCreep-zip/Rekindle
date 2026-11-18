@@ -1,6 +1,7 @@
 import { createSignal, createMemo } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
+import { authState } from "../../stores/auth.store";
 import { typingUsers } from "../../actions/community.actions";
 import {
   calculateBasePermissions,
@@ -113,6 +114,14 @@ export function createCommunityWindowState() {
     return map;
   });
 
+  /// A pseudonym's display name, as the channel message list shows it:
+  /// our own key is our name, a listed member's is the card's, and an
+  /// unlisted key is "Member" (never the raw 64-hex key).
+  function memberName(pseudonymKey: string): string {
+    if (pseudonymKey === activeCommunity()?.myPseudonymKey) return authState.displayName ?? "You";
+    return memberNames()[pseudonymKey] ?? "Member";
+  }
+
   const myRoleIds = createMemo((): number[] => {
     const community = activeCommunity();
     return community?.myRoleIds ?? [];
@@ -221,7 +230,7 @@ export function createCommunityWindowState() {
     rightPanel, setRightPanel,
     sidebarServersExpanded, setSidebarServersExpanded,
     sidebarEventsExpanded, setSidebarEventsExpanded, gameNameCache, setGameNameCache,
-    activeCommunity, activeChannel, channelMessages, threadMessages, memberNames,
+    activeCommunity, activeChannel, channelMessages, threadMessages, memberNames, memberName,
     myRoleIds, myPerms, canManageChannels, canManageMessages, canRequestToSpeak,
     canManageCommunity, canSendMessages, canBypassSlowmode, gameServers,
     isAnnouncementChannel, isForumChannel, isStageChannel, isVoiceChannel,

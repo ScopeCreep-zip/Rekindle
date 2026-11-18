@@ -22,6 +22,8 @@ interface ThreadPanelProps {
   onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
   onClosePoll?: (pollId: string) => void;
   myPseudonymKey?: string | null;
+  /** A pseudonym's display name (the window's member resolver). */
+  nameOf: (pseudonymKey: string) => string;
 }
 
 const ThreadPanel: Component<ThreadPanelProps> = (props) => {
@@ -50,7 +52,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
   }
 
   function senderName(msg: Message): string {
-    return msg.isOwn ? "You" : msg.senderId;
+    return msg.isOwn ? "You" : props.nameOf(msg.senderId);
   }
 
   return (
@@ -62,7 +64,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <div class="thread-panel-title-group">
               <span class="thread-panel-title">{thread().name}</span>
               <div class="thread-panel-meta">
-                Started by {thread().creatorPseudonym} · {thread().messageCount} messages
+                Started by {props.nameOf(thread().creatorPseudonym)} · {thread().messageCount} messages
                 <Show when={thread().lastMessageAt > 0}>
                   {` · last active ${new Date(thread().lastMessageAt * 1000).toLocaleString()}`}
                 </Show>

@@ -7,6 +7,8 @@ interface ForumChannelViewProps {
   channel: Channel;
   threads: Thread[];
   onOpenThread: (thread: Thread) => void;
+  /** A pseudonym's display name (the window's member resolver). */
+  nameOf: (pseudonymKey: string) => string;
   onCreatePost: (name: string, body: string, forumTag?: string | null) => Promise<void> | void;
 }
 
@@ -147,7 +149,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
                   </Show>
                 </div>
                 <div class="forum-channel-thread-meta">
-                  Started by {thread.creatorPseudonym} · {thread.messageCount} messages · {formatRelativeTime(thread.lastMessageAt * 1000)}
+                  Started by {props.nameOf(thread.creatorPseudonym)} · {thread.messageCount} messages · {formatRelativeTime(thread.lastMessageAt * 1000)}
                 </div>
               </button>
             )}

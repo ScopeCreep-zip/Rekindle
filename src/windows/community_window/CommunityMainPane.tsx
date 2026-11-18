@@ -163,6 +163,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                 channel={vm.activeChannel()!}
                 threads={communityState.channelThreads[vm.selectedChannelId()] ?? []}
                 onOpenThread={vm.handleOpenThread}
+                nameOf={vm.memberName}
                 onCreatePost={async (name, body, forumTag) => {
                   const threadId = await handleCreateForumPost(
                     vm.selectedCommunityId(),

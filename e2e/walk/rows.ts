@@ -346,12 +346,17 @@ const BASE_ROWS: Row[] = [
     title: "Create community",
     async run({ b, s }) {
       await closeModal(b);
+      // A create before the node attaches is refused (409 "cannot perform write
+      // operation in state 'detached'", walk 15); the user waits for the
+      // "Connecting to Veilid network..." banner (BuddyListWindow.tsx:130) to go.
+      await gone(b, ".network-banner", NET_WAIT_MS);
       // The Create Community button shows only on the Communities tab
       // (BottomActionBar.tsx:45-46).
       await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
       await (await shown(b, '[aria-label="Create Community"]')).click();
       await typeInto(await shown(b, 'input[placeholder="Community name..."]'), s.communityName);
-      await recordPage(b, ["create_community"], ["community"]);
+      // B60 failed twice with the create rejected 139 ms after its review (walk 14, 15): record who settled it.
+      await recordPage(b, ["create_community", "intent_commit", "intent_cancel"], ["community", "intentPending"]);
       await (await b.$('.modal-container button[type="submit"]')).click();
       await resolveIntent(b, { passphrase: s.passphrase });
       await gone(b, 'input[placeholder="Community name..."]', NET_WAIT_MS);

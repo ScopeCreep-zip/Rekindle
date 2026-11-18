@@ -85,6 +85,7 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
                 handleClosePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId)
               }
               myPseudonymKey={vm.activeCommunity()?.myPseudonymKey}
+              nameOf={vm.memberName}
             />
           </Match>
         </Switch>
