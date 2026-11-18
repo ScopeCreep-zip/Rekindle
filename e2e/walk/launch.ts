@@ -65,6 +65,16 @@ export function build(): void {
     stdio: "inherit",
   });
   if (result.status !== 0) throw new Error(`build failed (exit ${result.status ?? result.signal})`);
+  // The Host runs every skin package through rekindle-skin-helper beside its
+  // own executable (rekindle-skin helper/mod.rs:98 beside_current_exe);
+  // without it ST12's import was refused as "helper not found", not by the
+  // helper's check of the package.
+  console.log("[walk] building: cargo build -p rekindle-skin --bin rekindle-skin-helper");
+  const helper = spawnSync("cargo", ["build", "-p", "rekindle-skin", "--bin", "rekindle-skin-helper"], {
+    cwd: REPO_ROOT,
+    stdio: "inherit",
+  });
+  if (helper.status !== 0) throw new Error(`helper build failed (exit ${helper.status ?? helper.signal})`);
 }
 
 async function waitForStatus(app: App, logName: string): Promise<void> {

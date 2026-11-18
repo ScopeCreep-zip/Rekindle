@@ -217,6 +217,9 @@ export const SETTINGS_ROWS: Row[] = [
       const text = await err.getText();
       await shot();
       await closeSettings(b);
+      // The helper's check must be what refused it (walk 6 read "helper
+      // could not start" here before the walk built the helper).
+      if (text.includes("could not start")) throw new Error(`the helper did not run: ${text.slice(0, 160)}`);
       return `refused: ${text.slice(0, 120)}`;
     },
   },
