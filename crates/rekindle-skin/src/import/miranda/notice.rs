@@ -60,7 +60,7 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
     }
     let _ = writeln!(
         s,
-        "  repeated keys, the first occurrence read as on Windows ({}):",
+        "  lines Windows reads no value from ({}):",
         read.repeated.len()
     );
     for r in &read.repeated {

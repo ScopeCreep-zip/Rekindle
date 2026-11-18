@@ -4,10 +4,19 @@
 //!
 //! * Three files are read, each by the bounded [`ini`] reader and nothing
 //!   else: `version.ini` (`[Version] Version=1`, `LongName`), the skin
-//!   file `<LongName>.ini` (`[MainWindow]`), and the theme its
+//!   file `<folder>.ini` (`[MainWindow]`), and the theme its
 //!   `ColorGroupTheme=` names (`<name>.ini`, section `[default]`). Every
 //!   other file (chat, info, in-game skins, `strings.ini`, `Thumbs.db`,
 //!   `.psd`) is named in the `NOTICE` and never decoded.
+//! * The skin file is named by the skin's folder, never by `LongName`,
+//!   which is only the name shown: in all 45 INI archives of the research
+//!   item (`.claude/plans/skins/raw/xfire-online/ia_XFireSkins/`) the
+//!   folder holding `version.ini` holds `<folder>.ini` (case aside:
+//!   `Xfireaqua/Xfireaqua.ini`), while `<LongName>.ini` is absent in 13,
+//!   Xfire's own partner skin among them (`Charger/Charger.ini`,
+//!   `LongName=Dodge Charger`; `Xbox360/Xbox360.ini`, `LongName=Xbox 360`);
+//!   the XML era's `Info.xml` likewise carries `Name` and `LongName` apart
+//!   (Carbon Fiber's `LongName` is `James Fiber`).
 //! * Colours: `ColorGroup.<Name>=RGBA(…)` by [`colours::NAMES`], parsed and
 //!   targeted as in item 1 (a non-zero alpha refuses; absolute on a token,
 //!   a signed shift on images, otherwise recorded).
@@ -120,6 +129,31 @@ pub struct Read {
     pub unread: Vec<String>,
     /// Repeated keys not read (the first occurrence wins), per file.
     pub repeated: Vec<String>,
+    /// The authors `version.ini`'s comments name ([`stated_authors`]).
+    pub authors: Vec<String>,
+}
+
+/// The names `comments` credit: the text after the last ` by ` of each
+/// comment that has one (`; Alloy Xfire Skin by Gunowar`, Xglow's
+/// `;Designed by [S.C.o.D]GrAsMaN` and `;Coded by Avicus|PSK`), in order,
+/// each once. The manifest bounds and checks them like `name`.
+#[must_use]
+pub fn stated_authors(comments: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for c in comments {
+        let lower = c.to_ascii_lowercase();
+        // ASCII lowering keeps every byte offset.
+        let start = match lower.rfind(" by ") {
+            Some(at) => at + 4,
+            None if lower.starts_with("by ") => 3,
+            None => continue,
+        };
+        let name = c[start..].trim();
+        if !name.is_empty() && !out.iter().any(|n| n == name) {
+            out.push(name.to_owned());
+        }
+    }
+    out
 }
 
 /// `raw` (a Windows path) as a tree key: `\` → `/`, relative, no `.`/`..`
@@ -354,11 +388,12 @@ fn count_dropped(skin: &Ini, frame: Option<&Frame>, dropped: &mut BTreeMap<&'sta
     }
 }
 
-/// Reads `tree` (an unpacked Xfire INI-era skin).
+/// Reads `tree` (an unpacked Xfire INI-era skin) from its folder `folder`
+/// (the directory holding `version.ini`, whose name names the skin file).
 ///
 /// # Errors
 /// A missing or malformed file, a non-zero alpha, a bad colour or image.
-pub fn read(tree: &Tree) -> Result<Read, ImportError> {
+pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let (version_key, version) = parse_file(tree, VERSION_FILE)?;
     let v = section(&version, version_key, "Version")?;
     // `Version` is the skin's own revision, never a format selector: across
@@ -372,7 +407,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         .take(MAX_REVISION)
         .collect();
     let long = v.get("LongName").unwrap_or_default().to_owned();
-    let (skin_key, skin) = parse_file(tree, &file_name(version_key, "LongName", &long)?)?;
+    let (skin_key, skin) = parse_file(tree, &file_name(version_key, "the skin folder", folder)?)?;
     let main = section(&skin, skin_key, "MainWindow")?;
     let theme_name = main.get("ColorGroupTheme").unwrap_or_default();
     let (theme_key, theme) =
@@ -411,6 +446,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         dropped,
         unread,
         repeated,
+        authors: stated_authors(&version.comments),
     })
 }
 
@@ -468,9 +504,9 @@ fn manifest(
             format: XFIRE_INI_FORMAT.to_owned(),
             hash: source.to_owned(),
         }),
-        // An INI skin names no author or site in its files; an outside
-        // credit names Xfire and its page.
-        credits: Some(credits::build(tree, &[], &[], None, credit)),
+        // An INI skin names its authors only in `version.ini` comments, and
+        // no site; an outside credit names Xfire and its page.
+        credits: Some(credits::build(tree, &read.authors, &[], None, credit)),
         author: None,
         signature: None,
         variants: vec![SkinVariant {
@@ -484,15 +520,21 @@ fn manifest(
     }
 }
 
-/// Imports `tree` as the package `id`: a passing package, or a draft
+/// Imports `tree`, the skin folder `folder`, as the package `id`: a
+/// passing package, or a draft
 /// naming every failing pair. `credit` is Xfire's authorship stated outside
 /// the files (an INI skin carries no author); without it the pack is
 /// third-party work.
 ///
 /// # Errors
 /// What [`read`] refuses, an image that does not encode.
-pub fn import(tree: &Tree, id: &str, credit: Option<&XfireCredit>) -> Result<Outcome, ImportError> {
-    let read = read(tree)?;
+pub fn import(
+    tree: &Tree,
+    folder: &str,
+    id: &str,
+    credit: Option<&XfireCredit>,
+) -> Result<Outcome, ImportError> {
+    let read = read(tree, folder)?;
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);

@@ -6,11 +6,32 @@
 //! value; the importer decides which files it reads) and no escapes: a
 //! backslash is accepted only as a Windows path separator between two path
 //! characters, anything else is an unknown escape and refuses the file.
-//! A key outside a section, a duplicate section, a control byte, a line or
-//! file past the limits refuse it too. A key repeated in one section is
-//! read as Windows reads it, the first occurrence wins (DoiDD repeats ten,
-//! `DoiDD Skin.ini:80-81` `Window8.Y`); the later ones are kept out of
-//! [`Section::entries`] and listed in [`Ini::repeated`] for the `NOTICE`.
+//! A key outside a section, a malformed header, a control byte, a line or
+//! file past the limits refuse it too.
+//!
+//! Three things are read as Windows reads them (Wine's
+//! `dlls/kernel32/profile.c`, the reference reimplementation, read
+//! 2026-11-18; Microsoft Learn `GetPrivateProfileString`: "not
+//! case-sensitive", `lpDefault` when "the key does not exist"), each line
+//! not read listed in [`Ini::repeated`] for the `NOTICE`:
+//!
+//! * a key repeated in one section: the first occurrence wins (DoiDD
+//!   repeats ten, `DoiDD Skin.ini:80-81` `Window8.Y`); `PROFILE_Find`
+//!   returns the first matching key;
+//! * a repeated section: the first wins and the later one's keys are never
+//!   seen. `PROFILE_Load` appends every header as its own section, no
+//!   merge, and `PROFILE_Find` "stops at the first matching section name"
+//!   (`HL2.ini:478,614` `[ResizeRight]`, `Battlefield2.ini:343,377,408`
+//!   `[BvBk]`);
+//! * a line that is not a header or comment and has no `=`: `PROFILE_Load`
+//!   stores it as a key with a `NULL` value (`else key->value = NULL;`), and
+//!   `GetPrivateProfileStringW` returns the default for it
+//!   (`(key && key->value) ? key->value : def_val`), so it gives no value:
+//!   skipped (`FluidX.ini:337` `Window1.ResizeY.0`, Xglow's
+//!   `version.ini:2` `Version 1.0`, Dystopia's credit line).
+//!
+//! A key may hold inner spaces, as on Windows, where the key is the text
+//! before the first `=`, trimmed (GunZ's `Design by -=X-Redeem-DC=-`).
 
 use super::super::ImportError;
 
@@ -52,8 +73,13 @@ impl Section {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ini {
     pub sections: Vec<Section>,
-    /// `[section] key (line n)` of every repeated key not read.
+    /// Every line Windows reads no value from: `[section] key (line n)` of
+    /// a repeated key, `[section] (line n): a repeated section, its keys
+    /// not read`, `[section] (line n): no '=', no value`.
     pub repeated: Vec<String>,
+    /// The text of every `;` comment line, after the `;`, trimmed, in file
+    /// order (a skin's `version.ini` names its authors in them).
+    pub comments: Vec<String>,
 }
 
 impl Ini {
@@ -91,6 +117,16 @@ fn section_name(c: char) -> bool {
     key_char(c) || c == ' '
 }
 
+/// Where the keys of the current line go.
+enum Dest {
+    /// Before the first header.
+    Nowhere,
+    /// The last section read.
+    Last,
+    /// A repeated section's: validated, never read.
+    Repeated(String),
+}
+
 /// Parses `bytes` as the INI file `file`.
 ///
 /// # Errors
@@ -111,6 +147,8 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
     let text = std::str::from_utf8(bytes).map_err(|_| err(0, "not UTF-8"))?;
     let mut sections: Vec<Section> = Vec::new();
     let mut repeated = Vec::new();
+    let mut comments = Vec::new();
+    let mut dest = Dest::Nowhere;
     for (i, raw) in text.split('\n').enumerate() {
         let n = i + 1;
         if n > MAX_LINES {
@@ -124,7 +162,11 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
             return Err(err(n, "a control character"));
         }
         let line = line.trim();
-        if line.is_empty() || line.starts_with(';') {
+        if let Some(comment) = line.strip_prefix(';') {
+            comments.push(comment.trim().to_owned());
+            continue;
+        }
+        if line.is_empty() {
             continue;
         }
         if let Some(rest) = line.strip_prefix('[') {
@@ -133,23 +175,39 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
                 .filter(|s| !s.trim().is_empty() && s.chars().all(section_name))
                 .ok_or_else(|| err(n, "a malformed section header"))?;
             if sections.iter().any(|s| s.name.eq_ignore_ascii_case(name)) {
-                return Err(err(n, &format!("section [{name}] repeated")));
+                repeated.push(format!(
+                    "[{name}] (line {n}): a repeated section, its keys not read"
+                ));
+                dest = Dest::Repeated(name.to_owned());
+                continue;
             }
             sections.push(Section {
                 name: name.to_owned(),
                 entries: Vec::new(),
             });
+            dest = Dest::Last;
             continue;
         }
-        let (key, value) = line
-            .split_once('=')
-            .map(|(k, v)| (k.trim(), v.trim()))
-            .filter(|(k, _)| !k.is_empty() && k.chars().all(key_char))
-            .ok_or_else(|| err(n, "neither a section, a comment nor key=value"))?;
+        let pair = line.split_once('=').map(|(k, v)| (k.trim(), v.trim()));
+        let in_section = match &dest {
+            Dest::Nowhere => return Err(err(n, "a key outside any section")),
+            Dest::Last => sections.last().map(|s| s.name.clone()),
+            Dest::Repeated(name) => Some(name.clone()),
+        };
+        let Some((key, value)) = pair else {
+            repeated.push(format!(
+                "[{}] (line {n}): no '=', no value",
+                in_section.unwrap_or_default()
+            ));
+            continue;
+        };
+        if key.is_empty() || !key.chars().all(|c| key_char(c) || c == ' ') {
+            return Err(err(n, "neither a section, a comment nor key=value"));
+        }
         check_escapes(value).map_err(|d| err(n, &d))?;
-        let section = sections
-            .last_mut()
-            .ok_or_else(|| err(n, "a key outside any section"))?;
+        let (Dest::Last, Some(section)) = (&dest, sections.last_mut()) else {
+            continue;
+        };
         if section.get(key).is_some() {
             repeated.push(format!("[{}] {key} (line {n})", section.name));
             continue;
@@ -160,7 +218,11 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
             line: n,
         });
     }
-    Ok(Ini { sections, repeated })
+    Ok(Ini {
+        sections,
+        repeated,
+        comments,
+    })
 }
 
 #[cfg(test)]
@@ -183,13 +245,49 @@ mod tests {
         assert_eq!(ini.repeated, ["[A] K (line 3)"]);
     }
 
+    /// Wine `PROFILE_Find`: the first section of a name is the one read.
+    #[test]
+    fn a_repeated_section_reads_the_first() {
+        let ini = parse("a.ini", b"[R]\nMinWidth=10\n[x]\n[r]\nMinWidth=60\nNew=1\n").unwrap();
+        assert_eq!(ini.sections.len(), 2);
+        let r = ini.section("R").unwrap();
+        assert_eq!(r.get("MinWidth"), Some("10"));
+        assert_eq!(r.get("New"), None);
+        assert_eq!(
+            ini.repeated,
+            ["[r] (line 4): a repeated section, its keys not read"]
+        );
+    }
+
+    /// Wine `PROFILE_Load` stores a line without `=` with a `NULL` value,
+    /// and `GetPrivateProfileStringW` returns the default for it.
+    #[test]
+    fn a_line_without_equals_gives_no_value() {
+        let ini = parse("v.ini", b"[Version]\r\nVersion 1.0\r\nLongName=XGlow\r\n").unwrap();
+        let v = ini.section("Version").unwrap();
+        assert_eq!(v.get("Version"), None);
+        assert_eq!(v.get("Version 1.0"), None);
+        assert_eq!(v.get("LongName"), Some("XGlow"));
+        assert_eq!(ini.repeated, ["[Version] (line 2): no '=', no value"]);
+    }
+
+    /// The key is the text before the first `=`, trimmed, inner spaces kept.
+    #[test]
+    fn a_key_may_hold_spaces() {
+        let ini = parse("v.ini", b"[Version]\nDesign by -=X-Redeem-DC=-\n").unwrap();
+        let v = ini.section("Version").unwrap();
+        assert_eq!(v.get("design by -"), Some("X-Redeem-DC=-"));
+    }
+
     #[test]
     fn malformed_and_oversize_are_refused() {
         for bad in [
             &b"k=v\n"[..],
-            b"[A]\nnot a pair\n",
+            b"[A]\n=v\n",
+            b"[A]\nk]=v\n",
+            b"not a pair\n",
             b"[A\n",
-            b"[A]\n[a]\n",
+            b"[A]\n[a]\nk=\\\n",
             b"[A]\nk=a\\\n",
             b"[A]\nk=\\\"x\n",
             b"[A]\nk=a\\\\b\n",

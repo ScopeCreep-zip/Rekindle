@@ -9,6 +9,8 @@ use super::*;
 use crate::import::Imported;
 use crate::validate;
 
+/// The skin's folder: it names `Fixture.ini`; `LongName` differs.
+const FOLDER: &str = "Fixture";
 const MAGENTA: Rgba<u8> = Rgba([0xff, 0, 0xff, 0xff]);
 const PIXEL: Rgba<u8> = Rgba([40, 100, 160, 255]);
 
@@ -69,7 +71,7 @@ fn tree() -> Tree {
     let mut t = Tree::new();
     t.insert(
         "version.ini".into(),
-        b"[Version]\r\nVersion=1\r\nLongName=Fixture\r\n".to_vec(),
+        b"[Version]\r\nVersion=1\r\nLongName=The Fixture\r\n".to_vec(),
     );
     t.insert("Fixture.ini".into(), skin_ini().into_bytes());
     t.insert("FixThemes.ini".into(), THEME.as_bytes().to_vec());
@@ -100,8 +102,8 @@ fn passed(o: Outcome) -> Imported {
 #[test]
 fn imports_validates_and_is_byte_identical() {
     let t = tree();
-    let a = passed(import(&t, "fixture", None).unwrap());
-    let b = passed(import(&t, "fixture", None).unwrap());
+    let a = passed(import(&t, FOLDER, "fixture", None).unwrap());
+    let b = passed(import(&t, FOLDER, "fixture", None).unwrap());
     assert_eq!(a, b);
     let again = validate::run(&a.canonical.bytes).unwrap();
     assert_eq!(again.bytes, a.canonical.bytes);
@@ -126,7 +128,7 @@ fn a_failing_pair_is_a_draft_naming_it() {
     let mut t = tree();
     let theme = format!("{THEME}ColorGroup.BuddyViewOfflineText=RGBA(12,51,87,0)\r\n");
     t.insert("FixThemes.ini".into(), theme.into_bytes());
-    let Outcome::Draft(d) = import(&t, "fixture", None).unwrap() else {
+    let Outcome::Draft(d) = import(&t, FOLDER, "fixture", None).unwrap() else {
         panic!("expected a draft");
     };
     let c = d.failures.first().unwrap();
@@ -148,14 +150,14 @@ fn non_zero_alpha_is_refused() {
             .into_bytes(),
     );
     assert!(matches!(
-        import(&t, "fixture", None),
+        import(&t, FOLDER, "fixture", None),
         Err(ImportError::NonZeroAlpha { alpha: 9, .. })
     ));
 }
 
 #[test]
 fn hover_and_pressed_shifts_and_colour_key_are_baked() {
-    let f = read(&tree()).unwrap().frame.unwrap();
+    let f = read(&tree(), FOLDER).unwrap().frame.unwrap();
     assert_eq!((f.insets.top, f.insets.left), (3, 3));
     let at = |s: RegionState, x, y| f.images[&s].get_pixel(x, y).0;
     // The top middle piece (the alias) at its (1, 1).
@@ -176,29 +178,28 @@ fn oversize_malformed_and_escaping_inis_are_refused() {
     let refused = |name: &str, bytes: Vec<u8>| {
         let mut t = tree();
         t.insert(name.into(), bytes);
-        import(&t, "fixture", None).is_err()
+        import(&t, FOLDER, "fixture", None).is_err()
     };
     let mut big = skin_ini();
     big.push_str(&";\r\n".repeat(ini::MAX_INI_BYTES / 3));
     assert!(refused("Fixture.ini", big.into_bytes()));
     assert!(refused(
         "Fixture.ini",
-        format!("{}garbage line\r\n", skin_ini()).into_bytes()
+        format!("{}garbage]=line\r\n", skin_ini()).into_bytes()
     ));
     assert!(refused(
         "FixThemes.ini",
         format!("{THEME}Graphics.X=a\\\r\n").into_bytes()
     ));
-    assert!(refused(
-        "version.ini",
-        b"[Version]\r\nVersion=1\r\nLongName=..\r\n".to_vec()
-    ));
+    for folder in ["..", "a/b", "a\\b", ""] {
+        assert!(import(&tree(), folder, "x", None).is_err(), "{folder}");
+    }
     let escape = skin_ini().replace("main\\topleft.png", "main\\..\\topleft.png");
     assert!(matches!(
         {
             let mut t = tree();
             t.insert("Fixture.ini".into(), escape.into_bytes());
-            import(&t, "x", None)
+            import(&t, FOLDER, "x", None)
         },
         Err(ImportError::Format { .. })
     ));
@@ -215,9 +216,9 @@ fn a_skin_revision_imports_and_is_recorded() {
             "version.ini".into(),
             format!("[Version]\r\nVersion={revision}\r\nLongName=Fixture\r\n").into_bytes(),
         );
-        let r = read(&t).unwrap();
+        let r = read(&t, FOLDER).unwrap();
         assert_eq!(r.info["Version (the skin's own revision)"], revision);
-        let i = passed(import(&t, "fixture", None).unwrap());
+        let i = passed(import(&t, FOLDER, "fixture", None).unwrap());
         assert!(
             i.notice
                 .contains(&format!("Version (the skin's own revision): {revision}")),
@@ -232,7 +233,7 @@ fn a_skin_revision_imports_and_is_recorded() {
         format!("[Version]\r\nVersion={long}\r\nLongName=Fixture\r\n").into_bytes(),
     );
     assert_eq!(
-        read(&t).unwrap().info["Version (the skin's own revision)"].len(),
+        read(&t, FOLDER).unwrap().info["Version (the skin's own revision)"].len(),
         MAX_REVISION
     );
 }
@@ -244,7 +245,7 @@ fn a_credit_reaches_the_manifest_and_the_notice() {
     let page = "https://archive.org/details/XFireSkins";
     let quote = "The Combat skin is an official skin created by Xfire.";
     let credit = crate::import::XfireCredit::new(page, quote).unwrap();
-    let i = passed(import(&tree(), "fixture", Some(&credit)).unwrap());
+    let i = passed(import(&tree(), FOLDER, "fixture", Some(&credit)).unwrap());
     let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
     let rekindle_types::dto::skin::SkinLicense::Text(licence) = m.license else {
         panic!("not a licence text");
@@ -256,7 +257,7 @@ fn a_credit_reaches_the_manifest_and_the_notice() {
             "{text}"
         );
     }
-    let third = passed(import(&tree(), "fixture", None).unwrap());
+    let third = passed(import(&tree(), FOLDER, "fixture", None).unwrap());
     assert!(third.notice.contains("third-party work"));
 }
 
@@ -286,12 +287,12 @@ fn an_outer_frame_section_is_the_window_frame() {
     }
     let mut t = tree();
     t.insert("Fixture.ini".into(), s.into_bytes());
-    let f = read(&t).unwrap().frame.unwrap();
+    let f = read(&t, FOLDER).unwrap().frame.unwrap();
     assert_eq!(*f.shape, OUTER_FRAME);
     assert_eq!((f.insets.top, f.insets.left), (3, 3));
     assert_eq!(f.images[&RegionState::Normal].get_pixel(4, 1).0, PIXEL.0);
     assert_eq!(f.images.len(), 1);
-    let i = passed(import(&t, "fixture", None).unwrap());
+    let i = passed(import(&t, FOLDER, "fixture", None).unwrap());
     assert!(
         i.notice
             .contains("window.frame: [OuterFrame], nine-slice 3/3/3/3"),
@@ -306,7 +307,7 @@ fn an_outer_frame_section_is_the_window_frame() {
 fn an_ini_skins_credits_come_from_the_credit_and_its_licence_file() {
     use rekindle_types::dto::skin::OriginalLicence;
     let credits = |t: &Tree, credit| {
-        let i = passed(import(t, "fixture", credit).unwrap());
+        let i = passed(import(t, FOLDER, "fixture", credit).unwrap());
         crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap())
             .unwrap()
             .credits
@@ -328,4 +329,56 @@ fn an_ini_skins_credits_come_from_the_credit_and_its_licence_file() {
         c.licence,
         OriginalLicence::Text("(c) Ann. Do not sell.".into())
     );
+}
+
+/// The skin file is `<folder>.ini`, `LongName` only the name shown (all 45
+/// INI archives hold `<folder>.ini`; 13 lack `<LongName>.ini`, Xfire's
+/// `Charger/Charger.ini` with `LongName=Dodge Charger` among them).
+#[test]
+fn the_folder_names_the_skin_file_and_long_name_is_shown() {
+    let i = passed(import(&tree(), FOLDER, "fixture", None).unwrap());
+    let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
+    assert_eq!(m.name, "The Fixture");
+    assert!(
+        i.notice.contains("  skin file: Fixture.ini\n"),
+        "{}",
+        i.notice
+    );
+    // Case aside, as on Windows (`Xfireaqua/Xfireaqua.ini`).
+    passed(import(&tree(), "FIXTURE", "fixture", None).unwrap());
+    // A file named by `LongName` is not read in the folder's place.
+    let mut t = tree();
+    let skin = t.remove("Fixture.ini").unwrap();
+    t.insert("The Fixture.ini".into(), skin);
+    assert!(matches!(
+        import(&t, FOLDER, "fixture", None),
+        Err(ImportError::MissingFile { .. })
+    ));
+}
+
+/// `version.ini`'s comments name the authors (Alloy, Simple X, Xglow).
+#[test]
+fn version_ini_comments_credit_the_authors() {
+    let comments: Vec<String> = [
+        "Compatible up to Xfire Version 1.55",
+        "Alloy Xfire Skin by Gunowar",
+        "Designed by [S.C.o.D]GrAsMaN",
+        "Coded By Avicus|PSK",
+        "by Gunowar",
+        "www.gunsammocrate.com",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    assert_eq!(
+        stated_authors(&comments),
+        ["Gunowar", "[S.C.o.D]GrAsMaN", "Avicus|PSK"]
+    );
+    let mut t = tree();
+    t.insert(
+        "version.ini".into(),
+        b"[Version]\r\nVersion=1\r\nLongName=The Fixture\r\n;Designed by Ann\r\n".to_vec(),
+    );
+    let i = passed(import(&t, FOLDER, "fixture", None).unwrap());
+    let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
+    assert_eq!(m.credits.unwrap().authors, ["Ann"]);
 }

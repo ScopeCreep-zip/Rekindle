@@ -5,7 +5,8 @@
 //! or copied):
 //!
 //! * both are INI files, read by the one bounded [`ini`] reader (a repeated
-//!   key is read as Windows reads it, the first wins, and is named);
+//!   key or section is read as Windows reads it, the first wins, and a line
+//!   without `=` gives no value; each is named);
 //! * TabSRMM ([`tabsrmm`]): `[%Item]` records give `COLOR1`, `COLOR2` and
 //!   `TEXTCOLOR` (`tabsrmm.tsk:42-64`); `[$Name]` image items give a 32-bit
 //!   PNG, four sizing margins that "divide the image into 9 parts" and are

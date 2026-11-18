@@ -120,6 +120,17 @@ fn read_tree(dir: &Path) -> Result<Tree> {
     Ok(tree)
 }
 
+/// The name of the skin folder `dir` (an INI-era skin's file is named by
+/// it, `rekindle_skin::import::xfire_ini`), resolved so `.` names it too.
+fn folder_name(dir: &Path) -> Result<String> {
+    let full =
+        std::fs::canonicalize(dir).with_context(|| format!("resolving {}", dir.display()))?;
+    full.file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("{}: no UTF-8 folder name", dir.display()))
+}
+
 fn is_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
@@ -163,7 +174,7 @@ pub fn import_skin(root: &Path, req: &Request<'_>) -> Result<()> {
             xfire_xml::import(&read_tree(from)?, id, credit.as_ref()).map_err(|e| anyhow!("{e}"))?
         }
         Format::XfireIni => accept(
-            xfire_ini::import(&read_tree(from)?, id, credit.as_ref())
+            xfire_ini::import(&read_tree(from)?, &folder_name(from)?, id, credit.as_ref())
                 .map_err(|e| anyhow!("{e}"))?,
         )?,
         Format::WinampWsz => winamp_pack(from, id)?,

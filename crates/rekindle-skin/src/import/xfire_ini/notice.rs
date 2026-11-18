@@ -69,7 +69,7 @@ pub fn render(
     }
     let _ = writeln!(
         s,
-        "  repeated keys, the first occurrence read as on Windows ({}):",
+        "  lines Windows reads no value from ({}):",
         read.repeated.len()
     );
     for r in &read.repeated {
