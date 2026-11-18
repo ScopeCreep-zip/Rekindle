@@ -297,7 +297,8 @@ CREATE TABLE IF NOT EXISTS community_members (
 CREATE TABLE IF NOT EXISTS community_roles (
     owner_key TEXT NOT NULL,
     community_id TEXT NOT NULL,
-    role_id INTEGER NOT NULL,
+    -- The full 16-byte role id as 32 hex characters (plan E3.2 S9).
+    role_id TEXT NOT NULL,
     name TEXT NOT NULL,
     color INTEGER NOT NULL DEFAULT 0,
     permissions INTEGER NOT NULL DEFAULT 0,

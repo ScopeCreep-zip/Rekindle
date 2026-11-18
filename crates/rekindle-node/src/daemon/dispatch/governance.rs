@@ -22,6 +22,12 @@ pub(crate) fn role_displays(
         .unwrap_or_default()
 }
 
+/// A role id from a request: the full 16 bytes as hex (plan E3.2 S9).
+fn role(role_id: &str) -> Result<rekindle_types::id::RoleId, IpcResponse> {
+    rekindle_types::id::RoleId::from_hex(role_id)
+        .ok_or_else(|| IpcResponse::error(400, "invalid role id: must be 32 hex characters"))
+}
+
 fn refused(refusal: &RoleRefusal) -> IpcResponse {
     IpcResponse::error(u32::from(refusal.code()), refusal.to_string())
 }
@@ -66,7 +72,7 @@ pub(crate) async fn handle_role_create(
         Err(e) => return e,
     };
     match adapter(ctx).role_create(&key, role).await {
-        Ok(role_id) => IpcResponse::ok(&role_id),
+        Ok(role_id) => IpcResponse::ok(&role_id.to_hex()),
         Err(r) => refused(&r),
     }
 }
@@ -75,14 +81,18 @@ pub(crate) async fn handle_role_update(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    role_id: u32,
+    role_id: &str,
     patch: RoleSnapshotPatch,
 ) -> IpcResponse {
     let key = match writable(ctx, state, community) {
         Ok(k) => k,
         Err(e) => return e,
     };
-    match adapter(ctx).role_edit(&key, role_id, patch).await {
+    let id = match role(role_id) {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+    match adapter(ctx).role_edit(&key, id, patch).await {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "id": role_id })),
         Err(r) => refused(&r),
     }
@@ -93,13 +103,17 @@ pub(crate) async fn handle_role_delete(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    role_id: u32,
+    role_id: &str,
 ) -> IpcResponse {
     let key = match writable(ctx, state, community) {
         Ok(k) => k,
         Err(e) => return e,
     };
-    match adapter(ctx).role_delete(&key, role_id).await {
+    let id = match role(role_id) {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+    match adapter(ctx).role_delete(&key, id).await {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "deleted": role_id })),
         Err(r) => refused(&r),
     }
@@ -112,18 +126,22 @@ pub(crate) async fn handle_role_grant(
     state: DaemonState,
     community: &str,
     member_pseudonym: &str,
-    role_id: u32,
+    role_id: &str,
     grant: bool,
 ) -> IpcResponse {
     let key = match writable(ctx, state, community) {
         Ok(k) => k,
         Err(e) => return e,
     };
+    let id = match role(role_id) {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
     let host = adapter(ctx);
     let done = if grant {
-        host.role_assign(&key, member_pseudonym, role_id).await
+        host.role_assign(&key, member_pseudonym, id).await
     } else {
-        host.role_unassign(&key, member_pseudonym, role_id).await
+        host.role_unassign(&key, member_pseudonym, id).await
     };
     match done {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "assigned": grant, "role_id": role_id })),
@@ -136,14 +154,18 @@ pub(crate) async fn handle_role_self(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    role_id: u32,
+    role_id: &str,
     take: bool,
 ) -> IpcResponse {
     let key = match writable(ctx, state, community) {
         Ok(k) => k,
         Err(e) => return e,
     };
-    match adapter(ctx).role_self(&key, role_id, take).await {
+    let id = match role(role_id) {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+    match adapter(ctx).role_self(&key, id, take).await {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "assigned": take, "role_id": role_id })),
         Err(r) => refused(&r),
     }

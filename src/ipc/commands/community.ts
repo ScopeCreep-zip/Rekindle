@@ -27,10 +27,10 @@ export const communityCommands = {
       channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
-      myRoleIds: number[];
+      myRoleIds: string[];
       myPermissions: string;
       myChannelPermissions: Record<string, string>;
-      roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean; exclusionGroup?: string }[];
+      roles: { id: string; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean; exclusionGroup?: string }[];
       myPseudonymKey: string | null;
       mekGeneration: number;
       onboardingComplete: boolean;
@@ -49,7 +49,7 @@ export const communityCommands = {
     hostInvoke<{
       pseudonymKey: string;
       displayName: string;
-      roleIds: number[];
+      roleIds: string[];
       displayRole: string;
       status: string;
       timeoutUntil: number | null;

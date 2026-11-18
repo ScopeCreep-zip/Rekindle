@@ -27,7 +27,7 @@ fn creator_cannot_land(community: &Community) {
     });
 }
 
-fn prompt(role_id: u32) -> OnboardingConfigDto {
+fn prompt(role_id: &str) -> OnboardingConfigDto {
     OnboardingConfigDto {
         enabled: true,
         mode: OnboardingModeDto::Guided,
@@ -42,7 +42,7 @@ fn prompt(role_id: u32) -> OnboardingConfigDto {
                 option_id: "raid".into(),
                 title: "Raiding".into(),
                 description: None,
-                roles_to_assign: vec![role_id],
+                roles_to_assign: vec![role_id.to_owned()],
                 channels_to_show: Vec::new(),
             }],
         }],
@@ -72,12 +72,12 @@ async fn onboarding_answers_never_wait_on_the_network() {
             },
         )))
         .await;
-    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
+    let role_id = role.as_str().expect("a role id").to_owned();
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Settings(
             SettingsRequest::OnboardingConfigSet {
                 community: key.clone(),
-                config: prompt(role_id),
+                config: prompt(&role_id),
             },
         )))
         .await;
@@ -111,7 +111,7 @@ async fn onboarding_answers_never_wait_on_the_network() {
         )))
         .await;
     let granted = eventually(&community.sim, Duration::from_secs(60), || async {
-        community.holds_role(1, role_id).await
+        community.holds_role(1, &role_id).await
     })
     .await;
     assert!(granted, "the role assignment did not wait on the network");

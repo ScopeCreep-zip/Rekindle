@@ -25,9 +25,9 @@ function detail(id: string, name: string): string {
   return `{
     id: "${id}", name: "${name}", description: null,
     channels: [{ id: "${CHANNEL}", name: "general", channelType: "text" }],
-    roles: [{ id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0,
+    roles: [{ id: "00000000000000000000000000000000", name: "@everyone", color: 0, permissions: "65536", position: 0,
               hoist: false, mentionable: false }],
-    myPseudonymKey: "${ME}", myRoleIds: [0], myPermissions: "65536", myChannelPermissions: {}, removed: null,
+    myPseudonymKey: "${ME}", myRoleIds: ["00000000000000000000000000000000"], myPermissions: "65536", myChannelPermissions: {}, removed: null,
   }`;
 }
 

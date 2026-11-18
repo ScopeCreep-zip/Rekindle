@@ -62,6 +62,16 @@ pub fn get_json_opt<T: serde::de::DeserializeOwned>(
         .transpose()
 }
 
+/// A text column holding a 16-byte role id as 32 hex characters.
+///
+/// # Errors
+/// The column is missing, not text, or not a 16-byte hex id.
+pub fn get_role_id(row: &Row<'_>, column: &str) -> rusqlite::Result<rekindle_types::id::RoleId> {
+    let text: String = row.get(column)?;
+    rekindle_types::id::RoleId::from_hex(&text)
+        .ok_or_else(|| invalid(row, column, "not a 16-byte hex role id"))
+}
+
 fn invalid(row: &Row<'_>, column: &str, detail: &str) -> rusqlite::Error {
     let index = row.as_ref().column_index(column).unwrap_or(0);
     rusqlite::Error::FromSqlConversionFailure(

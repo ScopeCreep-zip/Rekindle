@@ -30,7 +30,7 @@ pub enum MemberRequest {
     /// Update a role's properties.
     RoleUpdate {
         community: String,
-        role_id: u32,
+        role_id: String,
         name: Option<String>,
         permissions: Option<u64>,
         color: Option<u32>,
@@ -42,27 +42,27 @@ pub enum MemberRequest {
     },
 
     /// Delete a role.
-    RoleDelete { community: String, role_id: u32 },
+    RoleDelete { community: String, role_id: String },
 
     /// Assign a role to a member.
     RoleAssign {
         community: String,
         member_pseudonym: String,
-        role_id: u32,
+        role_id: String,
     },
 
     /// Remove a role from a member.
     RoleUnassign {
         community: String,
         member_pseudonym: String,
-        role_id: u32,
+        role_id: String,
     },
 
     /// Take a self-assignable role ourselves.
-    RoleSelfAssign { community: String, role_id: u32 },
+    RoleSelfAssign { community: String, role_id: String },
 
     /// Drop a self-assignable role we hold.
-    RoleSelfUnassign { community: String, role_id: u32 },
+    RoleSelfUnassign { community: String, role_id: String },
 
     /// Kick a member (sync gossip broadcast).
     Kick {

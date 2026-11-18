@@ -43,7 +43,7 @@ use crate::roles;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrantOutcome {
     /// The role the target now holds.
-    pub role_id: u32,
+    pub role_id: RoleId,
     /// Whether we also gave up our own copy of that role.
     pub relinquished: bool,
     /// Set when we are the community's creator.
@@ -56,7 +56,7 @@ pub struct GrantOutcome {
     pub still_creator: bool,
 }
 
-/// The lowest-numbered role carrying `ADMINISTRATOR`.
+/// The role carrying `ADMINISTRATOR` whose id bytes sort lowest.
 ///
 /// Deterministic by role id so two admins granting concurrently pick
 /// the same role and the assignments merge rather than diverge.
@@ -66,7 +66,7 @@ fn administrator_role(state: &GovernanceState) -> Option<RoleId> {
         .iter()
         .filter(|(_, role)| role.permissions & ADMINISTRATOR != 0)
         .map(|(id, _)| *id)
-        .min_by_key(|id| id.to_legacy_u32())
+        .min_by_key(|id| id.0)
 }
 
 /// Grant administrative control to `target`, and step down if we can.
@@ -90,9 +90,7 @@ pub async fn grant_administration<D: GovernanceRuntimeDeps>(
             "no role in this community carries ADMINISTRATOR — create one first".to_string(),
         )
     })?;
-    let role_legacy = role_id.to_legacy_u32();
-
-    roles::assign_role(deps, community_id, target_pseudonym_hex, role_legacy).await?;
+    roles::assign_role(deps, community_id, target_pseudonym_hex, role_id).await?;
 
     // Step down only if we hold the role by assignment. A creator's
     // power is not held that way and cannot be dropped.
@@ -113,14 +111,14 @@ pub async fn grant_administration<D: GovernanceRuntimeDeps>(
             .community_membership(community_id)
             .and_then(|m| m.my_pseudonym_hex)
             .unwrap_or_default();
-        roles::unassign_role(deps, community_id, &my_hex, role_legacy).await?;
+        roles::unassign_role(deps, community_id, &my_hex, role_id).await?;
         true
     } else {
         false
     };
 
     Ok(GrantOutcome {
-        role_id: role_legacy,
+        role_id,
         relinquished,
         still_creator,
     })
@@ -133,9 +131,9 @@ mod tests {
     use rekindle_types::id::RoleId;
     use rekindle_types::permissions::{ADMINISTRATOR, KICK_MEMBERS, SEND_MESSAGES};
 
-    fn role(id: u32, permissions: u64) -> (RoleId, RoleState) {
+    fn role(id: u8, permissions: u64) -> (RoleId, RoleState) {
         (
-            RoleId::from_legacy_u32(id),
+            RoleId([id; 16]),
             RoleState {
                 name: format!("role-{id}"),
                 permissions,
@@ -157,7 +155,7 @@ mod tests {
         state.roles.insert(id, r);
         let (id2, r2) = role(3, SEND_MESSAGES);
         state.roles.insert(id2, r2);
-        assert_eq!(administrator_role(&state), Some(RoleId::from_legacy_u32(7)));
+        assert_eq!(administrator_role(&state), Some(RoleId([7; 16])));
     }
 
     /// Deterministic across peers: two admins granting concurrently must
@@ -166,11 +164,11 @@ mod tests {
     #[test]
     fn picks_the_lowest_id_when_several_qualify() {
         let mut state = GovernanceState::default();
-        for id in [9u32, 2, 5] {
+        for id in [9u8, 2, 5] {
             let (rid, r) = role(id, ADMINISTRATOR);
             state.roles.insert(rid, r);
         }
-        assert_eq!(administrator_role(&state), Some(RoleId::from_legacy_u32(2)));
+        assert_eq!(administrator_role(&state), Some(RoleId([2; 16])));
     }
 
     /// Refused rather than invented. Creating an admin role silently

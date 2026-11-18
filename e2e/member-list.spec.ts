@@ -12,15 +12,15 @@ import { preloadMocks } from "./fixtures/mocks";
 const COMMUNITY = `VLD0:${"g".repeat(43)}`;
 const ME = "e".repeat(64);
 
-type Group = { kind: "role"; id: number; name: string } | { kind: "online" } | { kind: "offline" };
-const ADMINS: Group = { kind: "role", id: 1, name: "Admins" };
+type Group = { kind: "role"; id: string; name: string } | { kind: "online" } | { kind: "offline" };
+const ADMINS: Group = { kind: "role", id: "01010101010101010101010101010101", name: "Admins" };
 const ONLINE: Group = { kind: "online" };
 const OFFLINE: Group = { kind: "offline" };
 
 const member = (n: number, name: string, status: string, admin: boolean, group: Group) => ({
   pseudonymKey: n === 0 ? ME : n.toString(16).padStart(64, "d"),
   displayName: name,
-  roleIds: admin ? [0, 1] : [0],
+  roleIds: admin ? ["00000000000000000000000000000000", "01010101010101010101010101010101"] : ["00000000000000000000000000000000"],
   displayRole: admin ? "Admins" : "@everyone",
   status,
   timeoutUntil: null,
@@ -52,12 +52,12 @@ const HANDLER = `
         id: "${COMMUNITY}", name: "Lan Party", description: null,
         channels: [{ id: "ch1", name: "general", channelType: "text" }],
         roles: [
-          { id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0,
+          { id: "00000000000000000000000000000000", name: "@everyone", color: 0, permissions: "65536", position: 0,
             hoist: false, mentionable: false },
-          { id: 1, name: "Admins", color: 0, permissions: "65536", position: 1,
+          { id: "01010101010101010101010101010101", name: "Admins", color: 0, permissions: "65536", position: 1,
             hoist: true, mentionable: false },
         ],
-        myPseudonymKey: "${ME}", myRoleIds: [0, 1], myPermissions: "65536", myChannelPermissions: {}, removed: null,
+        myPseudonymKey: "${ME}", myRoleIds: ["00000000000000000000000000000000", "01010101010101010101010101010101"], myPermissions: "65536", myChannelPermissions: {}, removed: null,
       }];
     case "get_community_members":
       return ${JSON.stringify(MEMBERS)};
@@ -166,8 +166,8 @@ const OWNER_HANDLER = HANDLER.replace(
   'myPermissions: "65536"',
   'myPermissions: "1125899906842624"',
 ).replace(
-  '"displayName":"AdminBusy","roleIds":[0,1],"displayRole":"Admins","status":"busy","timeoutUntil":null,"lastActive":0,"group":{"kind":"role","id":1,"name":"Admins"}',
-  '"displayName":"AdminBusy","roleIds":[0,1],"displayRole":"Admins","status":"busy","timeoutUntil":null,"lastActive":0,"group":{"kind":"role","id":1,"name":"Admins"},"canModerateTarget":{"kick":true,"ban":true,"timeout":true},"outranks":true',
+  '"displayName":"AdminBusy","roleIds":["00000000000000000000000000000000","01010101010101010101010101010101"],"displayRole":"Admins","status":"busy","timeoutUntil":null,"lastActive":0,"group":{"kind":"role","id":"01010101010101010101010101010101","name":"Admins"}',
+  '"displayName":"AdminBusy","roleIds":["00000000000000000000000000000000","01010101010101010101010101010101"],"displayRole":"Admins","status":"busy","timeoutUntil":null,"lastActive":0,"group":{"kind":"role","id":"01010101010101010101010101010101","name":"Admins"},"canModerateTarget":{"kick":true,"ban":true,"timeout":true},"outranks":true',
 );
 
 test("the owner's menu on a member with a role offers every moderation item", async ({ page }) => {

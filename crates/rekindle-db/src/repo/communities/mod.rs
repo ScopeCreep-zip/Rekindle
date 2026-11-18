@@ -426,7 +426,7 @@ mod tests {
         fixture::community(&conn, "c1");
         fixture::community(&conn, "c2");
         let per_community = [
-            "INSERT INTO community_roles (owner_key, community_id, role_id, name) VALUES (?1, ?2, 1, 'r')",
+            "INSERT INTO community_roles (owner_key, community_id, role_id, name) VALUES (?1, ?2, '01010101010101010101010101010101', 'r')",
             "INSERT INTO community_members (owner_key, community_id, pseudonym_key, joined_at) VALUES (?1, ?2, 'p', 0)",
             "INSERT INTO event_rsvps (owner_key, community_id, event_id, pseudonym_key, status) VALUES (?1, ?2, 'e', 'p', 'going')",
             "INSERT INTO read_markers (owner_key, scope_kind, community_id, channel_id, last_read_seq, updated_at) VALUES (?1, 'channel', ?2, 'ch', 0, 0)",
@@ -468,7 +468,7 @@ mod tests {
     fn a_row_for_a_community_we_do_not_hold_is_refused() {
         let conn = fixture::conn();
         let err = conn.execute(
-            "INSERT INTO community_roles (owner_key, community_id, role_id, name) VALUES (?1, 'gone', 1, 'r')",
+            "INSERT INTO community_roles (owner_key, community_id, role_id, name) VALUES (?1, 'gone', '01010101010101010101010101010101', 'r')",
             params![OWNER],
         );
         assert!(err.is_err());

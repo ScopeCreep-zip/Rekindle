@@ -10,30 +10,6 @@ use serde::{Deserialize, Serialize};
 // have been removed. All community protocol now goes through the v2
 // coordinator/ControlPayload model (see dht::community::envelope).
 
-/// A role definition as returned by the server over RPC.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RoleDto {
-    pub id: u32,
-    pub name: String,
-    pub color: u32,
-    pub permissions: u64,
-    pub position: u32,
-    pub hoist: bool,
-    pub mentionable: bool,
-    #[serde(default)]
-    pub self_assignable: bool,
-}
-
-/// A community member as returned by the server in the join/rejoin response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemberInfoDto {
-    pub pseudonym_key: String,
-    pub display_name: String,
-    pub role_ids: Vec<u32>,
-}
-
 /// A banned member as returned by the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

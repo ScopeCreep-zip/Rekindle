@@ -17,7 +17,7 @@ use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
 
 fn role_view(role: &RoleDefinition) -> CommunityRoleView {
     CommunityRoleView {
-        id: role.id,
+        id: role.id.to_hex(),
         name: role.name.clone(),
         color: role.color,
         permissions: role.permissions.to_string(),
@@ -93,7 +93,7 @@ fn community_view(c: &CommunityState, now_secs: u64) -> CommunityView {
             })
             .collect(),
         my_role: Some(display_role_name(&c.my_role_ids, &c.roles)),
-        my_role_ids: c.my_role_ids.clone(),
+        my_role_ids: c.my_role_ids.iter().map(|id| id.to_hex()).collect(),
         my_permissions,
         my_channel_permissions,
         roles: c.roles.iter().map(role_view).collect(),
@@ -351,7 +351,7 @@ impl HostGovernance {
                 CommunityMemberView {
                     display_role: display_role_name(&role_ids, &overlay.roles),
                     display_name: card.or(row.display_name).unwrap_or_default(),
-                    role_ids,
+                    role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
                     status,
                     timeout_until: timeout_until(&row.pseudonym_key),
                     location,

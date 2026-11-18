@@ -500,12 +500,12 @@ impl GovernanceRuntimeDeps for HostGovernance {
     fn role_current_definition(
         &self,
         community_id: &str,
-        role_id: u32,
+        role_id: rekindle_types::id::RoleId,
     ) -> Option<RoleSnapshotInsert> {
         self.role_current_definition_impl(community_id, role_id)
     }
 
-    fn role_table_summary(&self, community_id: &str) -> (Vec<u32>, u32) {
+    fn role_table_summary(&self, community_id: &str) -> (Vec<rekindle_types::id::RoleId>, u32) {
         self.role_table_summary_impl(community_id)
     }
 
@@ -526,7 +526,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
     async fn apply_role_edit(
         &self,
         _community_id: &str,
-        _role_id: u32,
+        _role_id: rekindle_types::id::RoleId,
         _patch: RoleSnapshotPatch,
     ) -> Result<(), GovernanceRuntimeError> {
         Ok(())

@@ -201,17 +201,18 @@ pub(super) fn channel_name(ctx: &DaemonContext, community_id: &str, channel_id: 
 fn role(
     ctx: &DaemonContext,
     community_id: &str,
-    role_id: u32,
+    role_id: &str,
 ) -> Result<(String, u32), IpcResponse> {
     let state = ctx
         .communities
         .governance_state(community_id)
         .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
-    let id = rekindle_types::id::RoleId::from_legacy_u32(role_id);
+    let id = rekindle_types::id::RoleId::from_hex(role_id)
+        .ok_or_else(|| IpcResponse::error(400, "invalid role id: must be 32 hex characters"))?;
     let name = state
         .roles
         .get(&id)
-        .map_or_else(|| role_id.to_string(), |r| r.name.clone());
+        .map_or_else(|| role_id.to_owned(), |r| r.name.clone());
     Ok((
         name,
         rekindle_governance::intent_facts::role_holders(&state, &id),

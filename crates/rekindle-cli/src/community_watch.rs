@@ -91,9 +91,8 @@ fn member(pseudonym: &str, name: Option<&str>) -> String {
     }
 }
 
-fn roles(role_ids: &[u32]) -> String {
-    let ids: Vec<String> = role_ids.iter().map(u32::to_string).collect();
-    format!("[{}]", ids.join(", "))
+fn roles(role_ids: &[String]) -> String {
+    format!("[{}]", role_ids.join(", "))
 }
 
 fn membership(event: &MembershipEvent) -> (&str, String) {

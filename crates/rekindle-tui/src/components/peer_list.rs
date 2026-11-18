@@ -208,7 +208,7 @@ mod tests {
     /// him there: it renders the Host's groups, it does not regroup.
     fn test_members() -> Vec<PeerEntry> {
         let admins = MemberGroup::Role {
-            id: 2,
+            id: "02".repeat(16),
             name: "Admins".into(),
         };
         vec![

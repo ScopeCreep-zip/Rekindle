@@ -55,7 +55,7 @@ pub struct CommunityDetail {
     pub channels: Vec<ChannelOverviewDisplay>,
     pub roles: Vec<RoleDisplay>,
     pub our_pseudonym: String,
-    pub our_roles: Vec<u32>,
+    pub our_roles: Vec<String>,
     /// Set when we were removed: the community is read-only history.
     #[serde(default)]
     pub removed: Option<CommunityRemovalDisplay>,
@@ -152,7 +152,8 @@ pub struct DmMessageDisplay {
 // camelCase keys (plan C7.26).
 #[serde(rename_all = "camelCase")]
 pub struct RoleDisplay {
-    pub id: u32,
+    /// The full 16-byte role id, 32 hex characters.
+    pub id: String,
     pub name: String,
     pub color: u32,
     pub permissions: u64,

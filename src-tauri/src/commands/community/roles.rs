@@ -64,7 +64,7 @@ pub async fn create_role(
 #[tauri::command]
 pub async fn edit_role(
     community_id: String,
-    role_id: u32,
+    role_id: String,
     name: Option<String>,
     color: Option<u32>,
     permissions: Option<u64>,
@@ -97,7 +97,7 @@ pub async fn edit_role(
 #[tauri::command]
 pub async fn delete_role(
     community_id: String,
-    role_id: u32,
+    role_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
     host_call::call(
@@ -115,7 +115,7 @@ pub async fn delete_role(
 pub async fn assign_role(
     community_id: String,
     pseudonym_key: String,
-    role_id: u32,
+    role_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
     host_call::call(
@@ -134,7 +134,7 @@ pub async fn assign_role(
 pub async fn unassign_role(
     community_id: String,
     pseudonym_key: String,
-    role_id: u32,
+    role_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
     host_call::call(
@@ -152,7 +152,7 @@ pub async fn unassign_role(
 #[tauri::command]
 pub async fn self_assign_role(
     community_id: String,
-    role_id: u32,
+    role_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
     host_call::call(
@@ -169,7 +169,7 @@ pub async fn self_assign_role(
 #[tauri::command]
 pub async fn self_unassign_role(
     community_id: String,
-    role_id: u32,
+    role_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
     host_call::call(

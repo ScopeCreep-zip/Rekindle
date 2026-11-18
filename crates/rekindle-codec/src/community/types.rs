@@ -89,27 +89,6 @@ pub struct CategoryEntry {
     pub sort_order: i32,
 }
 
-/// A role entry in the manifest role list (subkey 3).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RoleEntryV2 {
-    pub id: u32,
-    pub name: String,
-    pub color: u32,
-    pub permissions: u64,
-    /// Role hierarchy position. Higher = more authority.
-    pub position: u32,
-    /// Whether to display this role separately in the member list.
-    #[serde(default)]
-    pub hoist: bool,
-    /// Whether this role can be @mentioned by anyone.
-    #[serde(default)]
-    pub mentionable: bool,
-    /// Whether members can assign this role to themselves.
-    #[serde(default)]
-    pub self_assignable: bool,
-}
-
 /// A ban entry in the manifest ban list (subkey 4).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,7 +111,7 @@ pub struct CommunityPolicy {
     pub max_members: u32,
     /// Default role IDs assigned to new members.
     #[serde(default)]
-    pub default_role_ids: Vec<u32>,
+    pub default_role_ids: Vec<rekindle_types::id::RoleId>,
     /// Content moderation level.
     #[serde(default)]
     pub moderation_level: ModerationLevel,

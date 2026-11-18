@@ -368,15 +368,18 @@ impl CommunityStore {
     /// Our role ids: the merged role assignments as the projection laid
     /// them down (`projection::project_my_roles`).
     #[must_use]
-    pub fn my_role_ids(&self, community_id: &str) -> Vec<u32> {
+    pub fn my_role_ids(&self, community_id: &str) -> Vec<rekindle_types::id::RoleId> {
         self.read(community_id, |c| c.my_role_ids.clone())
             .unwrap_or_default()
     }
 
-    /// Every member's role ids (pseudonym hex → sorted legacy ids), from
+    /// Every member's role ids (pseudonym hex → ids sorted by their bytes), from
     /// the merged role assignments (plan E3.2, D15); never a cache.
     #[must_use]
-    pub fn member_role_ids(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
+    pub fn member_role_ids(
+        &self,
+        community_id: &str,
+    ) -> HashMap<String, Vec<rekindle_types::id::RoleId>> {
         self.read(community_id, |c| {
             c.governance_state
                 .as_ref()

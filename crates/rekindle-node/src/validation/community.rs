@@ -29,7 +29,7 @@ use crate::host::adapters::governance::community_pictures::{
     is_picture_hash, MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
 };
 
-use super::community_fields::{audit_fields, automod_fields, game_server_fields};
+use super::community_fields::{audit_fields, automod_fields, game_server_fields, role_id_field};
 use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 
 /// A community request's fields.
@@ -363,19 +363,22 @@ pub(super) fn check_members(request: &MemberRequest) -> Checked {
         | MemberRequest::AutomodRuleDelete { .. }) => automod_fields(request),
         MemberRequest::RoleList { community: c }
         | MemberRequest::BanList { community: c }
-        | MemberRequest::ModReportList { community: c }
-        | MemberRequest::RoleDelete {
+        | MemberRequest::ModReportList { community: c } => community(c),
+        MemberRequest::RoleDelete {
             community: c,
-            role_id: _,
+            role_id,
         }
         | MemberRequest::RoleSelfAssign {
             community: c,
-            role_id: _,
+            role_id,
         }
         | MemberRequest::RoleSelfUnassign {
             community: c,
-            role_id: _,
-        } => community(c),
+            role_id,
+        } => {
+            community(c)?;
+            role_id_field(role_id)
+        }
         MemberRequest::RoleCreate {
             community: c,
             name: role_name,
@@ -390,12 +393,13 @@ pub(super) fn check_members(request: &MemberRequest) -> Checked {
         }
         MemberRequest::RoleUpdate {
             community: c,
-            role_id: _,
+            role_id,
             name: new_name,
             exclusion_group,
             ..
         } => {
             community(c)?;
+            role_id_field(role_id)?;
             opt(new_name.as_deref(), |n| name(n, "role"))?;
             match exclusion_group {
                 ExclusionGroupEdit::Set(g) => text(g, MAX_EXCLUSION_GROUP_LEN, "exclusion group"),
@@ -405,14 +409,15 @@ pub(super) fn check_members(request: &MemberRequest) -> Checked {
         MemberRequest::RoleAssign {
             community: c,
             member_pseudonym,
-            role_id: _,
+            role_id,
         }
         | MemberRequest::RoleUnassign {
             community: c,
             member_pseudonym,
-            role_id: _,
+            role_id,
         } => {
             community(c)?;
+            role_id_field(role_id)?;
             pseudonym(member_pseudonym, "member pseudonym")
         }
         MemberRequest::Unban {

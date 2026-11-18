@@ -135,7 +135,7 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
     *gui.session.write() = Some(session);
 
     // What the GUI's governance rebuild writes.
-    let role = RoleId::from_legacy_u32(5);
+    let role = RoleId([5; 16]);
     let mut governance = GovernanceState::default();
     governance.roles.insert(
         role,
@@ -175,7 +175,7 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
 
     let request = IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleDelete {
         community: "gov-key".into(),
-        role_id: 5,
+        role_id: "05".repeat(16),
     }));
     let selection = crate::host::intent_select::select(&host.ctx, &request, IntentKind::DeleteRole)
         .await
@@ -183,7 +183,7 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
     assert_eq!(
         selection.subject,
         Subject::Role {
-            id: "5".into(),
+            id: "05".repeat(16),
             name: "mods".into()
         }
     );
@@ -276,7 +276,7 @@ fn member_and_own_roles_follow_a_later_role_unassignment() {
     let store = CommunityStore::new(new_map());
     let (me, bob) = (PseudonymKey([1; 32]), PseudonymKey([2; 32]));
     store.install_membership(&membership(&me), None, None);
-    let (everyone, moderator) = (RoleId::from_legacy_u32(0), RoleId::from_legacy_u32(5));
+    let (everyone, moderator) = (RoleId::EVERYONE, RoleId([5; 16]));
     let assigned = |held: &[RoleId]| {
         let mut gov = GovernanceState::default();
         for member in [&me, &bob] {
@@ -289,22 +289,22 @@ fn member_and_own_roles_follow_a_later_role_unassignment() {
     // Onboarding completes while the role is held: the old cache writers.
     store.note_onboarding_completion("gov-key", false);
     store.note_onboarding_completion("gov-key", true);
-    assert_eq!(store.my_role_ids("gov-key"), vec![0, 5]);
+    assert_eq!(store.my_role_ids("gov-key"), vec![everyone, moderator]);
     assert_eq!(
         store.member_role_ids("gov-key")[&hex::encode(bob.0)],
-        vec![0, 5]
+        vec![everyone, moderator]
     );
 
     // The creator's later RoleUnassignment, merged.
     store.project_governance("gov-key", assigned(&[everyone]), 0);
-    assert_eq!(store.my_role_ids("gov-key"), vec![0]);
+    assert_eq!(store.my_role_ids("gov-key"), vec![everyone]);
     assert_eq!(
         store.member_role_ids("gov-key")[&hex::encode(bob.0)],
-        vec![0]
+        vec![everyone]
     );
     assert_eq!(
         store.member_role_ids("gov-key")[&hex::encode(me.0)],
-        vec![0]
+        vec![everyone]
     );
 }
 

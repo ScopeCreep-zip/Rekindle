@@ -537,13 +537,13 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     fn role_current_definition(
         &self,
         community_id: &str,
-        role_id: u32,
+        role_id: rekindle_types::id::RoleId,
     ) -> Option<crate::roles::RoleSnapshotInsert>;
 
     /// Return `(existing_ids, next_position)` for `create_role` —
     /// used to allocate a unique random role id and assign the next
     /// position slot.
-    fn role_table_summary(&self, community_id: &str) -> (Vec<u32>, u32);
+    fn role_table_summary(&self, community_id: &str) -> (Vec<rekindle_types::id::RoleId>, u32);
 
     /// Insert a new role into AppState + DB. The `RoleSnapshotInsert`
     /// is fully populated; adapter mirrors into `community.roles` (sort
@@ -560,7 +560,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     async fn apply_role_edit(
         &self,
         community_id: &str,
-        role_id: u32,
+        role_id: rekindle_types::id::RoleId,
         patch: crate::roles::RoleSnapshotPatch,
     ) -> Result<(), GovernanceRuntimeError>;
 }

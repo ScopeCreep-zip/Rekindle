@@ -441,7 +441,7 @@ function applyGovernance(g: GovernanceEvent): void {
             detail.channels.map(transformChannel),
           );
           setCommunityState("communities", community, "categories", detail.categories ?? []);
-          setCommunityState("communities", community, "myRoleIds", detail.myRoleIds ?? [0]);
+          setCommunityState("communities", community, "myRoleIds", detail.myRoleIds);
           setCommunityState("communities", community, "myPermissions", detail.myPermissions);
           setCommunityState(
             "communities",

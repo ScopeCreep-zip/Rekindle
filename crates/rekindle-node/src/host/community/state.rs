@@ -58,7 +58,7 @@ pub struct CommunityState {
     pub categories: Vec<CategoryInfo>,
     /// Our role IDs in this community: the merged role assignments, which
     /// only the projection (`projection::project_my_roles`) writes.
-    pub my_role_ids: Vec<u32>,
+    pub my_role_ids: Vec<rekindle_types::id::RoleId>,
     /// Cached role definitions from merged governance state.
     pub roles: Vec<RoleDefinition>,
     /// Owner keypair for the community DHT record (Veilid `KeyPair::to_string()` format).
@@ -400,7 +400,7 @@ pub use rekindle_presence::MemberProfileSnapshot;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleDefinition {
-    pub id: u32,
+    pub id: rekindle_types::id::RoleId,
     pub name: String,
     pub color: u32,
     pub permissions: u64,
@@ -415,25 +415,11 @@ pub struct RoleDefinition {
     pub exclusion_group: Option<String>,
 }
 
-impl RoleDefinition {
-    /// Convert from the protocol's `RoleDto`.
-    pub fn from_dto(dto: &rekindle_codec::message::RoleDto) -> Self {
-        Self {
-            id: dto.id,
-            name: dto.name.clone(),
-            color: dto.color,
-            permissions: dto.permissions,
-            position: dto.position,
-            hoist: dto.hoist,
-            mentionable: dto.mentionable,
-            self_assignable: dto.self_assignable,
-            exclusion_group: None,
-        }
-    }
-}
-
 /// Compute the display name for the highest-positioned role from a set of role IDs.
-pub fn display_role_name(role_ids: &[u32], roles: &[RoleDefinition]) -> String {
+pub fn display_role_name(
+    role_ids: &[rekindle_types::id::RoleId],
+    roles: &[RoleDefinition],
+) -> String {
     match role_ids
         .iter()
         .filter_map(|id| roles.iter().find(|r| r.id == *id))

@@ -168,12 +168,11 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
         }
     }
 
-    let final_role_ids: Vec<u32> = deps
+    let mut final_role_ids: Vec<RoleId> = deps
         .governance_state(community_id)
         .and_then(|state| state.role_assignments.get(&sender_key).cloned())
-        .map_or_else(Vec::new, |roles| {
-            roles.iter().copied().map(RoleId::to_legacy_u32).collect()
-        });
+        .map_or_else(Vec::new, |roles| roles.into_iter().collect());
+    final_role_ids.sort_unstable_by_key(|id| id.0);
 
     let is_self = deps
         .community_membership(community_id)

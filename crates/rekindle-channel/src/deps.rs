@@ -142,14 +142,14 @@ pub struct ThreadInfoSnapshot {
 #[derive(Debug, Clone, Default)]
 pub struct MemberMentionView {
     pub display_name: Option<String>,
-    pub role_ids: Vec<u32>,
+    pub role_ids: Vec<rekindle_types::id::RoleId>,
 }
 
 /// Role definition view used by mention validation — roles list +
 /// mentionable flag per role.
 #[derive(Debug, Clone)]
 pub struct RoleSnapshot {
-    pub id: u32,
+    pub id: rekindle_types::id::RoleId,
     pub name: String,
     pub mentionable: bool,
 }
@@ -217,7 +217,7 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn identity_secret(&self) -> Option<[u8; 32]>;
     fn owner_key(&self) -> Option<String>;
     fn my_pseudonym_hex(&self, community_id: &str) -> Option<String>;
-    fn my_role_ids(&self, community_id: &str) -> Vec<u32>;
+    fn my_role_ids(&self, community_id: &str) -> Vec<rekindle_types::id::RoleId>;
     fn pseudonym_credentials(
         &self,
         community_id: &str,

@@ -49,7 +49,7 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         GovernanceEvent::RolesChanged { roles, .. } => {
             h.update(b"roles|");
             for r in roles {
-                h.update(&r.id.to_le_bytes());
+                h.update(r.id.as_bytes());
                 h.update(r.name.as_bytes());
                 h.update(&r.permissions.to_le_bytes());
                 h.update(&r.position.to_le_bytes());

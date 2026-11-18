@@ -1,7 +1,7 @@
 import { Component, For, Show, createEffect, createSignal, createMemo, JSX } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
-import { Member, Role, communityState } from "../../stores/community.store";
+import { EVERYONE_ROLE_ID, Member, Role, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
@@ -110,7 +110,7 @@ const MemberList: Component<MemberListProps> = (props) => {
         : [];
   }
 
-  function toggleRole(pseudonymKey: string, roleId: number, hasRole: boolean): void {
+  function toggleRole(pseudonymKey: string, roleId: string, hasRole: boolean): void {
     if (hasRole) {
       handleUnassignRole(props.communityId, pseudonymKey, roleId);
     } else {
@@ -157,7 +157,7 @@ const MemberList: Component<MemberListProps> = (props) => {
     const may = member.canModerateTarget;
     const voiceChannelId = memberVoiceChannelId(member);
     const assignableRoles = props.roles
-      .filter((r) => r.id !== 0)
+      .filter((r) => r.id !== EVERYONE_ROLE_ID)
       .sort((a, b) => b.position - a.position);
 
     return (

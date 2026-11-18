@@ -2,7 +2,7 @@ use serde::Serialize;
 
 mod dto;
 pub use dto::{
-    NativeVideoErrorEvent, RoleDto, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
+    NativeVideoErrorEvent, VideoBitrateTargetEvent, VideoCodecIncompatibleEvent,
     VideoEnvelopeRejectedEvent, VideoKeyframeRequestEvent, VideoSessionConfigEvent,
     VideoTopologyChangeEvent,
 };

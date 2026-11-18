@@ -41,9 +41,9 @@ pub enum RoleRefusal {
     /// Our merged permissions lack `MANAGE_ROLES`, or the role ranks too high.
     NotPermitted,
     /// The role is not one members may take or drop themselves.
-    NotSelfAssignable(u32),
+    NotSelfAssignable(RoleId),
     /// No live role has this id.
-    UnknownRole(u32),
+    UnknownRole(RoleId),
     /// We hold no pseudonym in this community.
     NotAMember,
     /// The exclusion-group slug is malformed.
@@ -69,8 +69,8 @@ impl fmt::Display for RoleRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotPermitted => f.write_str("missing permission: manage roles"),
-            Self::NotSelfAssignable(id) => write!(f, "role {id} is not self-assignable"),
-            Self::UnknownRole(id) => write!(f, "role not found: {id}"),
+            Self::NotSelfAssignable(id) => write!(f, "role {} is not self-assignable", id.to_hex()),
+            Self::UnknownRole(id) => write!(f, "role not found: {}", id.to_hex()),
             Self::NotAMember => f.write_str("no pseudonym for this community"),
             Self::BadExclusionGroup(why) => write!(f, "exclusion_group {why}"),
             Self::Failed(e) => write!(f, "role write: {e}"),
@@ -94,7 +94,7 @@ pub fn role_displays(governance: &GovernanceState) -> Vec<RoleDisplay> {
         .roles
         .iter()
         .map(|(id, role)| RoleDisplay {
-            id: id.to_legacy_u32(),
+            id: id.to_hex(),
             name: role.name.clone(),
             color: role.color,
             permissions: role.permissions,
@@ -105,7 +105,7 @@ pub fn role_displays(governance: &GovernanceState) -> Vec<RoleDisplay> {
             exclusion_group: role.exclusion_group.clone(),
         })
         .collect();
-    out.sort_by_key(|r| r.id);
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     out
 }
 
@@ -150,8 +150,8 @@ fn normalize_edit(edit: ExclusionGroupEdit) -> Result<ExclusionGroupEdit, RoleRe
 ///
 /// # Errors
 /// The role is unknown or not self-assignable.
-pub fn self_assignable(governance: &GovernanceState, role_id: u32) -> Result<(), RoleRefusal> {
-    match governance.roles.get(&RoleId::from_legacy_u32(role_id)) {
+pub fn self_assignable(governance: &GovernanceState, role_id: RoleId) -> Result<(), RoleRefusal> {
+    match governance.roles.get(&role_id) {
         None => Err(RoleRefusal::UnknownRole(role_id)),
         Some(role) if !role.self_assignable => Err(RoleRefusal::NotSelfAssignable(role_id)),
         Some(_) => Ok(()),
@@ -171,7 +171,11 @@ impl HostGovernance {
     ///
     /// # Errors
     /// Not permitted, a bad slug, or the write failed.
-    pub async fn role_create(&self, community_id: &str, role: NewRole) -> Result<u32, RoleRefusal> {
+    pub async fn role_create(
+        &self,
+        community_id: &str,
+        role: NewRole,
+    ) -> Result<RoleId, RoleRefusal> {
         self.require_permission_impl(community_id, MANAGE_ROLES)?;
         let exclusion_group = normalize_exclusion_group(role.exclusion_group.as_deref())?;
         Ok(roles::create_role(
@@ -195,7 +199,7 @@ impl HostGovernance {
     pub async fn role_edit(
         &self,
         community_id: &str,
-        role_id: u32,
+        role_id: RoleId,
         mut patch: RoleSnapshotPatch,
     ) -> Result<(), RoleRefusal> {
         self.require_permission_impl(community_id, MANAGE_ROLES)?;
@@ -208,7 +212,11 @@ impl HostGovernance {
     ///
     /// # Errors
     /// Not permitted, or the write failed.
-    pub async fn role_delete(&self, community_id: &str, role_id: u32) -> Result<(), RoleRefusal> {
+    pub async fn role_delete(
+        &self,
+        community_id: &str,
+        role_id: RoleId,
+    ) -> Result<(), RoleRefusal> {
         self.require_permission_impl(community_id, MANAGE_ROLES)?;
         Ok(roles::delete_role(self, community_id, role_id).await?)
     }
@@ -221,7 +229,7 @@ impl HostGovernance {
         &self,
         community_id: &str,
         member: &str,
-        role_id: u32,
+        role_id: RoleId,
     ) -> Result<(), RoleRefusal> {
         self.require_permission_impl(community_id, MANAGE_ROLES)?;
         Ok(roles::assign_role(self, community_id, member, role_id).await?)
@@ -235,7 +243,7 @@ impl HostGovernance {
         &self,
         community_id: &str,
         member: &str,
-        role_id: u32,
+        role_id: RoleId,
     ) -> Result<(), RoleRefusal> {
         self.require_permission_impl(community_id, MANAGE_ROLES)?;
         Ok(roles::unassign_role(self, community_id, member, role_id).await?)
@@ -249,7 +257,7 @@ impl HostGovernance {
     pub async fn role_self(
         &self,
         community_id: &str,
-        role_id: u32,
+        role_id: RoleId,
         take: bool,
     ) -> Result<(), RoleRefusal> {
         let governance = self

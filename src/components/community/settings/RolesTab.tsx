@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import type { Community } from "../../../stores/community.store";
+import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
 import RoleTag from "../RoleTag";
 import PermissionCheckboxList from "./PermissionCheckboxList";
 import FormField from "../../common/FormField";
@@ -32,7 +33,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [newRoleHoist, setNewRoleHoist] = createSignal(false);
   const [newRoleMentionable, setNewRoleMentionable] = createSignal(false);
   const [newRoleSelfAssignable, setNewRoleSelfAssignable] = createSignal(false);
-  const [editingRoleId, setEditingRoleId] = createSignal<number | null>(null);
+  const [editingRoleId, setEditingRoleId] = createSignal<string | null>(null);
   const [editRoleName, setEditRoleName] = createSignal("");
   const [editRoleColor, setEditRoleColor] = createSignal("#000000");
   const [editRolePerms, setEditRolePerms] = createSignal(0n);
@@ -41,7 +42,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [editRoleSelfAssignable, setEditRoleSelfAssignable] = createSignal(false);
   const [savingRole, setSavingRole] = createSignal(false);
 
-  function startEditRole(role: { id: number; name: string; color: number; permissions: string; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }): void {
+  function startEditRole(role: { id: string; name: string; color: number; permissions: string; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }): void {
     setEditingRoleId(role.id);
     setEditRoleName(role.name);
     setEditRoleColor(colorIntToHex(role.color));
@@ -103,7 +104,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
     }
   }
 
-  function deleteRole(roleId: number): void {
+  function deleteRole(roleId: string): void {
     void handleDeleteRole(props.community.id, roleId);
     if (editingRoleId() === roleId) setEditingRoleId(null);
   }
@@ -118,7 +119,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           <Show when={editingRoleId() === role.id} fallback={
             <div
               class="settings-role-row"
-              onClick={() => role.id > 0 && startEditRole(role)}
+              onClick={() => role.id !== EVERYONE_ROLE_ID && startEditRole(role)}
             >
               <span
                 class="settings-role-color"
@@ -130,7 +131,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 <span class="settings-role-position">hoisted</span>
               </Show>
               <div class="settings-role-actions">
-                <Show when={role.id > 1}>
+                <Show when={role.id !== EVERYONE_ROLE_ID}>
                   <button
                     class="form-btn-danger"
                     onClick={(e) => { e.stopPropagation(); deleteRole(role.id); }}

@@ -29,9 +29,9 @@ const handler = (welcome: string): string => `
       return [{
         id: "${COMMUNITY}", name: "Lan Party", description: null,
         channels: [{ id: "ch1", name: "general", channelType: "text" }],
-        roles: [{ id: 0, name: "@everyone", color: 0, permissions: "${PERMS}", position: 0,
+        roles: [{ id: "00000000000000000000000000000000", name: "@everyone", color: 0, permissions: "${PERMS}", position: 0,
           hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0], myPermissions: "${PERMS}", myChannelPermissions: {}, removed: null,
+        myPseudonymKey: "${ME}", myRoleIds: ["00000000000000000000000000000000"], myPermissions: "${PERMS}", myChannelPermissions: {}, removed: null,
       }];
     default:
       return cmd.startsWith("get_") || cmd.startsWith("list_") ? [] : null;

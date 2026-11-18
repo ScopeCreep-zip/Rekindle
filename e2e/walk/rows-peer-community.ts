@@ -109,12 +109,12 @@ async function rolesProbe(b: Browser, community: string): Promise<string> {
     w.__walkRoles = "pending";
     void w.__TAURI_INTERNALS__.invoke("get_community_details")
       .then(async (d) => {
-        const list = unwrap(d) as { id: string; name: string; myRoleIds: number[]; roles: { id: number; name: string; position: number; permissions: string }[] }[];
+        const list = unwrap(d) as { id: string; name: string; myRoleIds: string[]; roles: { id: string; name: string; position: number; permissions: string }[] }[];
         const c = list.find((x) => x.name === name);
         if (!c) return `no community named ${name}`;
         const m = unwrap(await w.__TAURI_INTERNALS__.invoke("get_community_members", { communityId: c.id })) as {
           displayName: string;
-          roleIds: number[];
+          roleIds: string[];
         }[];
         const roles = c.roles.map((r) => `${r.id}:${r.name}@${r.position}/${r.permissions}`).join(", ");
         const members = m.map((x) => `${x.displayName}=[${x.roleIds.join(",")}]`).join(", ");

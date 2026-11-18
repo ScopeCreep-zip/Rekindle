@@ -24,7 +24,8 @@ pub struct SnapshotChannel {
 /// A role definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotRole {
-    pub role_id: u32,
+    /// The full 16-byte id, stored as 32 hex characters.
+    pub role_id: rekindle_types::id::RoleId,
     pub name: String,
     pub color: u32,
     pub permissions: u64,
@@ -153,7 +154,7 @@ fn replace_roles(
             params![
                 owner_key,
                 community_id,
-                i64::from(r.role_id),
+                r.role_id.to_hex(),
                 r.name,
                 i64::from(r.color),
                 r.permissions.cast_signed(),

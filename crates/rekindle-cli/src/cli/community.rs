@@ -192,7 +192,7 @@ pub enum RoleCmd {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
-        /// Role ID.
+        /// Role ID (32 hex characters).
         #[arg(long, short = 'r')]
         role_id: String,
         /// New name.
@@ -211,7 +211,7 @@ pub enum RoleCmd {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
-        /// Role ID.
+        /// Role ID (32 hex characters).
         #[arg(long, short = 'r')]
         role_id: String,
     },
@@ -224,7 +224,7 @@ pub enum RoleCmd {
         /// Member pseudonym or display name.
         #[arg(long, short = 'M')]
         member: String,
-        /// Role ID.
+        /// Role ID (32 hex characters).
         #[arg(long, short = 'r')]
         role_id: String,
     },
@@ -237,7 +237,7 @@ pub enum RoleCmd {
         /// Member pseudonym or display name.
         #[arg(long, short = 'M')]
         member: String,
-        /// Role ID.
+        /// Role ID (32 hex characters).
         #[arg(long, short = 'r')]
         role_id: String,
     },

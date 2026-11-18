@@ -5,7 +5,7 @@ use crate::host::community::{CommunityState, RoleDefinition};
 
 fn owner_role() -> RoleDefinition {
     RoleDefinition {
-        id: 0,
+        id: rekindle_types::id::RoleId::EVERYONE,
         name: "Owner".into(),
         color: 0x00ff_aa00,
         permissions: u64::MAX >> 1,
@@ -36,14 +36,14 @@ fn the_view_names_our_role_and_carries_our_standing() {
     let mut gov = rekindle_governance::state::GovernanceState::default();
     gov.role_assignments.insert(
         rekindle_types::id::PseudonymKey([0xab; 32]),
-        std::collections::HashSet::from([rekindle_types::id::RoleId::from_legacy_u32(0)]),
+        std::collections::HashSet::from([rekindle_types::id::RoleId::EVERYONE]),
     );
     crate::host::adapters::governance::projection::project_my_roles(&mut state, &gov);
     state.mek_generation = 3;
     let view = community_view(&state, 0);
     assert_eq!(view.name, "Raiders");
     assert_eq!(view.my_role.as_deref(), Some("Owner"));
-    assert_eq!(view.my_role_ids, vec![0]);
+    assert_eq!(view.my_role_ids, vec!["00".repeat(16)]);
     assert_eq!(view.mek_generation, 3);
     assert_eq!(view.roles.len(), 1);
     let json = serde_json::to_value(&view).unwrap();
@@ -141,4 +141,54 @@ fn each_member_rows_flags_are_the_validators_verdicts() {
     let (flags, outranks) = moderation_of(&gov, Some(&pk(6)), &pk(5));
     assert!(!flags.ban && !outranks);
     assert_eq!(moderation_of(&gov, None, &pk(6)), Default::default());
+}
+
+/// Two roles whose first four bytes match (what a `u32` id kept) stay two
+/// roles at every surface: a member holding one is never shown holding
+/// the other (plan E3.2 S9, the 16-byte `RoleId` item).
+#[test]
+fn roles_sharing_their_low_four_bytes_never_collide_in_the_view() {
+    use rekindle_governance::state::RoleState;
+    use rekindle_types::id::{PseudonymKey, RoleId};
+    let role = |name: &str, position| RoleState {
+        name: name.into(),
+        permissions: 0,
+        position,
+        color: 0,
+        hoist: true,
+        mentionable: false,
+        self_assignable: false,
+        exclusion_group: None,
+        stamp: rekindle_governance::fixture::stamp(1),
+    };
+    let alpha = RoleId([1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let beta = RoleId([1, 2, 3, 4, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]);
+    let mut gov = rekindle_governance::state::GovernanceState::default();
+    gov.roles.insert(alpha, role("Alpha", 1));
+    gov.roles.insert(beta, role("Beta", 2));
+    gov.role_assignments.insert(
+        PseudonymKey([0xab; 32]),
+        std::collections::HashSet::from([beta]),
+    );
+    let mut state = CommunityState::new("gk");
+    state.my_pseudonym_key = Some("ab".repeat(32));
+    crate::host::adapters::governance::projection::project(&mut state, gov.clone());
+    let json = serde_json::to_value(community_view(&state, 0)).unwrap();
+    let id_of = |name: &str| {
+        json["roles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["name"] == name)
+            .map(|r| r["id"].clone())
+            .unwrap()
+    };
+    let (alpha_id, beta_id) = (id_of("Alpha"), id_of("Beta"));
+    assert_ne!(alpha_id, beta_id, "two roles, two ids: {json}");
+    assert_eq!(json["myRoleIds"], serde_json::json!([beta_id]), "{json}");
+    let members = crate::host::adapters::governance::projection::member_role_ids(&gov);
+    assert_eq!(members[&"ab".repeat(32)], vec![beta]);
+    assert_eq!(beta_id, serde_json::json!(beta.to_hex()));
+    assert_eq!(alpha_id, serde_json::json!(alpha.to_hex()));
+    assert_eq!(json["myRole"], "Beta", "{json}");
 }

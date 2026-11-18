@@ -9,7 +9,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use crate::harness::{eventually, Community};
 
 /// The role ids node `i` lists for the community.
-async fn listed_roles(community: &Community, i: usize) -> Vec<u64> {
+async fn listed_roles(community: &Community, i: usize) -> Vec<String> {
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleList {
@@ -18,7 +18,12 @@ async fn listed_roles(community: &Community, i: usize) -> Vec<u64> {
         )))
         .await
         .as_array()
-        .map(|roles| roles.iter().filter_map(|r| r["id"].as_u64()).collect())
+        .map(|roles| {
+            roles
+                .iter()
+                .filter_map(|r| r["id"].as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -45,26 +50,24 @@ async fn role_assign_converges() {
             },
         )))
         .await;
-    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
+    let role_id = role.as_str().expect("a role id").to_owned();
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
                 community: community.anchor.clone(),
                 member_pseudonym: bea,
-                role_id,
+                role_id: role_id.clone(),
             },
         )))
         .await;
 
     assert!(
-        community.holds_role(1, role_id).await,
+        community.holds_role(1, &role_id).await,
         "the member's store learns its role"
     );
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
-            listed_roles(&community, 1)
-                .await
-                .contains(&u64::from(role_id))
+            listed_roles(&community, 1).await.contains(&role_id)
         })
         .await,
         "the member's role list converges"
@@ -75,7 +78,7 @@ async fn role_assign_converges() {
             MemberRequest::RoleAssign {
                 community: community.anchor.clone(),
                 member_pseudonym: cat,
-                role_id,
+                role_id: role_id.clone(),
             },
         )))
         .await
@@ -83,7 +86,7 @@ async fn role_assign_converges() {
     assert_eq!(refused.code, 403, "{}", refused.message);
     community.sim.quiesce().await;
     assert!(
-        !community.holds_role(2, role_id).await,
+        !community.holds_role(2, &role_id).await,
         "the refused grant confers nothing"
     );
 }

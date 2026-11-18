@@ -155,7 +155,7 @@
     "displayName": "Bea",
     "displayRole": "Shooters",
     "group": {
-      "id": 5,
+      "id": "05050505050505050505050505050505",
       "kind": "role",
       "name": "Shooters"
     },
@@ -163,8 +163,8 @@
     "outranks": true,
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "roleIds": [
-      0,
-      5
+      "00000000000000000000000000000000",
+      "05050505050505050505050505050505"
     ],
     "status": "online",
     "timeoutUntil": null
@@ -352,7 +352,7 @@
             ],
             "optionId": "opt_fps",
             "rolesToAssign": [
-              5
+              "05050505050505050505050505050505"
             ],
             "title": "Shooters"
           }

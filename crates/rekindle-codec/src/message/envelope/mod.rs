@@ -5,8 +5,7 @@ mod invite;
 
 pub use dto::{
     AuditLogEntryDto, BannedMemberDto, CategoryDto, ChannelMessageDto, EventDto, EventRsvpDto,
-    GameServerDto, InviteDto, MemberInfoDto, PinnedMessageDto, ReactionGroupDto, RoleDto,
-    UnreadCountDto,
+    GameServerDto, InviteDto, PinnedMessageDto, ReactionGroupDto, UnreadCountDto,
 };
 pub use invite::{
     check_invite_recency, create_invite_blob, decode_invite_url, encode_invite_url,

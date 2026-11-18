@@ -48,13 +48,13 @@ async fn audit_log_records_moderation_and_roles() {
             },
         )))
         .await;
-    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
+    let role_id = role.as_str().expect("a role id").to_owned();
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
                 community: community.anchor.clone(),
                 member_pseudonym: bea.clone(),
-                role_id,
+                role_id: role_id.clone(),
             },
         )))
         .await;

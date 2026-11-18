@@ -21,7 +21,7 @@ pub struct MemberInfo {
     /// Hex-encoded community pseudonym Ed25519 public key.
     pub pseudonym_key: String,
     pub display_name: String,
-    pub role_ids: Vec<u32>,
+    pub role_ids: Vec<String>,
     /// `online` / `away` / `busy` / `offline`.
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -48,7 +48,7 @@ mod tests {
         let m = MemberInfo {
             pseudonym_key: "abcd".into(),
             display_name: "Alice".into(),
-            role_ids: vec![0, 1],
+            role_ids: vec!["00".repeat(16), "01".repeat(16)],
             status: "online".into(),
             route_blob: Some(vec![1, 2, 3]),
             bio: Some("hi".into()),

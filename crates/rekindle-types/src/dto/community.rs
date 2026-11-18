@@ -85,7 +85,7 @@ pub struct CommunityView {
     pub channels: Vec<CommunityChannelView>,
     pub categories: Vec<CommunityCategoryView>,
     pub my_role: Option<String>,
-    pub my_role_ids: Vec<u32>,
+    pub my_role_ids: Vec<String>,
     /// What we may do, from the merged governance (plan E3.2 S9,
     /// architecture §9.2 `compute_permissions`): the base permission bits
     /// as a decimal `u64` string (the webview parses it with `BigInt`, exact
@@ -163,7 +163,8 @@ pub struct CommunityCategoryView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityRoleView {
-    pub id: u32,
+    /// The full 16-byte role id, 32 hex characters.
+    pub id: String,
     pub name: String,
     pub color: u32,
     /// The permission bits in decimal: a JSON number loses the bits above
@@ -183,7 +184,7 @@ pub struct CommunityRoleView {
 pub struct CommunityMemberView {
     pub pseudonym_key: String,
     pub display_name: String,
-    pub role_ids: Vec<u32>,
+    pub role_ids: Vec<String>,
     pub display_role: String,
     /// `online`, `away`, `busy` or `offline`.
     pub status: String,
@@ -242,7 +243,7 @@ pub struct TargetModeration {
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum MemberGroup {
     /// The member's highest hoisted role.
-    Role { id: u32, name: String },
+    Role { id: String, name: String },
     /// Present (online, away or busy) with no hoisted role.
     Online,
     /// Offline, whatever their roles.

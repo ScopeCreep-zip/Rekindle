@@ -325,17 +325,17 @@ pub(super) async fn route_members(
                 self_assignable,
                 exclusion_group,
             };
-            governance::handle_role_update(ctx, state, &community, role_id, patch).await
+            governance::handle_role_update(ctx, state, &community, &role_id, patch).await
         }
         MemberRequest::RoleDelete { community, role_id } => {
-            governance::handle_role_delete(ctx, state, &community, role_id).await
+            governance::handle_role_delete(ctx, state, &community, &role_id).await
         }
         MemberRequest::RoleAssign {
             community,
             member_pseudonym,
             role_id,
         } => {
-            governance::handle_role_grant(ctx, state, &community, &member_pseudonym, role_id, true)
+            governance::handle_role_grant(ctx, state, &community, &member_pseudonym, &role_id, true)
                 .await
         }
         MemberRequest::RoleUnassign {
@@ -343,14 +343,21 @@ pub(super) async fn route_members(
             member_pseudonym,
             role_id,
         } => {
-            governance::handle_role_grant(ctx, state, &community, &member_pseudonym, role_id, false)
-                .await
+            governance::handle_role_grant(
+                ctx,
+                state,
+                &community,
+                &member_pseudonym,
+                &role_id,
+                false,
+            )
+            .await
         }
         MemberRequest::RoleSelfAssign { community, role_id } => {
-            governance::handle_role_self(ctx, state, &community, role_id, true).await
+            governance::handle_role_self(ctx, state, &community, &role_id, true).await
         }
         MemberRequest::RoleSelfUnassign { community, role_id } => {
-            governance::handle_role_self(ctx, state, &community, role_id, false).await
+            governance::handle_role_self(ctx, state, &community, &role_id, false).await
         }
         MemberRequest::Kick {
             community,

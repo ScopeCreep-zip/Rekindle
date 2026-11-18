@@ -499,11 +499,11 @@ impl Community {
     }
 
     /// Whether node `i` sees itself holding `role_id` within a minute.
-    pub async fn holds_role(&self, i: usize, role_id: u32) -> bool {
+    pub async fn holds_role(&self, i: usize, role_id: &str) -> bool {
         eventually(&self.sim, Duration::from_secs(60), || async {
             self.info(i).await["our_roles"]
                 .as_array()
-                .is_some_and(|roles| roles.iter().any(|r| r.as_u64() == Some(u64::from(role_id))))
+                .is_some_and(|roles| roles.iter().any(|r| r.as_str() == Some(role_id)))
         })
         .await
     }

@@ -4,6 +4,7 @@
 //! the former inline struct-variant form (proven by `wire_tests.rs`,
 //! whose literals were captured against the pre-conversion enum).
 
+use rekindle_types::id::RoleId;
 use rekindle_types::video::{Codec, ScalabilityMode};
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +25,7 @@ pub enum ControlPayload {
     MemberJoined {
         pseudonym_key: String,
         display_name: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<RoleId>,
         status: String,
         /// Route blob so receivers can immediately add the joiner to their gossip overlay.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,7 +108,7 @@ pub enum ControlPayload {
     /// Broadcast: member completed onboarding.
     OnboardingComplete {
         pseudonym_key: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<RoleId>,
     },
 
     // ── Channel permission overwrites ──

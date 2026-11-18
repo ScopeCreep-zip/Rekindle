@@ -85,12 +85,12 @@ export function members(n: number) {
     const group = !present
       ? { kind: "offline" as const }
       : hoisted
-        ? { kind: "role" as const, id: 1, name: HOISTED_ROLE }
+        ? { kind: "role" as const, id: "01010101010101010101010101010101", name: HOISTED_ROLE }
         : { kind: "online" as const };
     return {
       pseudonymKey: i === 0 ? ME : key("d", i),
       displayName: longName(`Member${i}_`),
-      roleIds: hoisted ? [0, 1] : [0],
+      roleIds: hoisted ? ["00000000000000000000000000000000", "01010101010101010101010101010101"] : ["00000000000000000000000000000000"],
       displayRole: hoisted ? HOISTED_ROLE : "@everyone",
       status,
       timeoutUntil: null,
@@ -114,11 +114,11 @@ export function communityDetails(channelCount = 30) {
         topic: longName("Topic_", 120),
       })),
       roles: [
-        { id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0, hoist: false, mentionable: false },
-        { id: 1, name: HOISTED_ROLE, color: 0x3498db, permissions: "65536", position: 1, hoist: true, mentionable: false },
+        { id: "00000000000000000000000000000000", name: "@everyone", color: 0, permissions: "65536", position: 0, hoist: false, mentionable: false },
+        { id: "01010101010101010101010101010101", name: HOISTED_ROLE, color: 0x3498db, permissions: "65536", position: 1, hoist: true, mentionable: false },
       ],
       myRole: null,
-      myRoleIds: [0], myPermissions: "65536", myChannelPermissions: {},
+      myRoleIds: ["00000000000000000000000000000000"], myPermissions: "65536", myChannelPermissions: {},
       myPseudonymKey: ME,
       mekGeneration: 1,
       onboardingComplete: true,

@@ -339,7 +339,7 @@ fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>>
                 r.name.clone(),
                 r.position.to_string(),
                 format!("{:#x}", r.permissions),
-                r.id.to_string(),
+                r.id.clone(),
             ]
         })
         .collect()

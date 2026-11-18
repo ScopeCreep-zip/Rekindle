@@ -98,7 +98,7 @@ pub fn control_into_event(
         } => SubscriptionEvent::Membership(MembershipEvent::OnboardingCompleted {
             community: c(),
             pseudonym: pseudonym_key,
-            role_ids,
+            role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
         }),
         ControlPayload::SubmitOnboardingAnswers { answers } => {
             SubscriptionEvent::Membership(MembershipEvent::OnboardingAnswersSubmitted {

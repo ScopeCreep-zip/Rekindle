@@ -35,9 +35,9 @@ function handler(removed: string): string {
         channels: [{ id: "ch1", name: "general", channelType: "text" }],
         // @everyone may post (SEND_MESSAGES = 1 << 16), so only the removal
         // disables the composer.
-        roles: [{ id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0,
+        roles: [{ id: "00000000000000000000000000000000", name: "@everyone", color: 0, permissions: "65536", position: 0,
                   hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0], myPermissions: "65536", myChannelPermissions: {}, removed: ${removed},
+        myPseudonymKey: "${ME}", myRoleIds: ["00000000000000000000000000000000"], myPermissions: "65536", myChannelPermissions: {}, removed: ${removed},
       }];
     case "get_welcome_screen":
       return { description: "", channels: [] };

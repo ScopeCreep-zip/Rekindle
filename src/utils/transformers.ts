@@ -162,8 +162,8 @@ export function transformCommunityDetail(c: {
   bannerHash?: string | null;
   channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
   categories?: { id: string; name: string; sortOrder: number }[];
-  roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
-  myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;
+  roles?: { id: string; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
+  myRoleIds?: string[]; myPseudonymKey?: string | null; mekGeneration?: number;
   myPermissions: string; myChannelPermissions: Record<string, string>;
   memberRegistryKey?: string; anchor?: string | null;
   onboardingComplete?: boolean;
@@ -185,7 +185,7 @@ export function transformCommunityDetail(c: {
     channels: c.channels.map(transformChannel),
     categories: c.categories ?? [],
     members: [], roles: c.roles ?? [],
-    myRoleIds: c.myRoleIds ?? [0, 1], myPseudonymKey: c.myPseudonymKey ?? null,
+    myRoleIds: c.myRoleIds ?? [], myPseudonymKey: c.myPseudonymKey ?? null,
     myPermissions: c.myPermissions, myChannelPermissions: c.myChannelPermissions,
     mekGeneration: c.mekGeneration ?? 0,
     events: [],
@@ -212,7 +212,7 @@ export function transformCommunityMap(
 
 /** Backend member DTO → store Member. */
 export function transformMember(m: {
-  pseudonymKey: string; displayName: string; roleIds: number[];
+  pseudonymKey: string; displayName: string; roleIds: string[];
   displayRole: string; status: string; timeoutUntil: number | null;
   gameInfo?: GameInfo | null;
   bio?: string | null; pronouns?: string | null;

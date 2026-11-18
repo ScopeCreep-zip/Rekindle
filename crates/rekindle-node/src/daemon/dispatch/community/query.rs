@@ -134,7 +134,7 @@ pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str)
         member_count,
         channels,
         roles,
-        ctx.communities.my_role_ids(&membership.anchor),
+        &ctx.communities.my_role_ids(&membership.anchor),
         meta,
     );
     detail.removed =

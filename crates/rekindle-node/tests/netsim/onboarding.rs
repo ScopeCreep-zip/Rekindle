@@ -14,7 +14,7 @@ use rekindle_types::presence::OnboardingAnswer;
 use crate::harness::{eventually, Community};
 
 /// The role ids node `i` lists for member `pseudonym`.
-async fn member_roles(community: &Community, i: usize, pseudonym: &str) -> Vec<u64> {
+async fn member_roles(community: &Community, i: usize, pseudonym: &str) -> Vec<String> {
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityMembers {
@@ -28,12 +28,16 @@ async fn member_roles(community: &Community, i: usize, pseudonym: &str) -> Vec<u
                 .iter()
                 .find(|m| m["pseudonymKey"].as_str() == Some(pseudonym))
                 .and_then(|m| m["roleIds"].as_array())
-                .map(|ids| ids.iter().filter_map(serde_json::Value::as_u64).collect())
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(|id| id.as_str().map(str::to_owned))
+                        .collect()
+                })
         })
         .unwrap_or_default()
 }
 
-fn prompt(role_id: u32) -> OnboardingConfigDto {
+fn prompt(role_id: &str) -> OnboardingConfigDto {
     OnboardingConfigDto {
         enabled: true,
         mode: OnboardingModeDto::Guided,
@@ -48,7 +52,7 @@ fn prompt(role_id: u32) -> OnboardingConfigDto {
                 option_id: "raid".into(),
                 title: "Raiding".into(),
                 description: None,
-                roles_to_assign: vec![role_id],
+                roles_to_assign: vec![role_id.to_owned()],
                 channels_to_show: Vec::new(),
             }],
         }],
@@ -84,12 +88,12 @@ async fn onboarding_role_assignment() {
             },
         )))
         .await;
-    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
+    let role_id = role.as_str().expect("a role id").to_owned();
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Settings(
             SettingsRequest::OnboardingConfigSet {
                 community: key.clone(),
-                config: prompt(role_id),
+                config: prompt(&role_id),
             },
         )))
         .await;
@@ -97,7 +101,7 @@ async fn onboarding_role_assignment() {
         .call(IpcRequest::Community(CommunityRequest::Settings(
             SettingsRequest::OnboardingConfigSet {
                 community: key.clone(),
-                config: prompt(role_id),
+                config: prompt(&role_id),
             },
         )))
         .await
@@ -140,10 +144,10 @@ async fn onboarding_role_assignment() {
         .await;
 
     assert!(
-        community.holds_role(1, role_id).await,
+        community.holds_role(1, &role_id).await,
         "the member holds the role it answered for"
     );
-    let granted = u64::from(role_id);
+    let granted = role_id.clone();
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
             member_roles(&community, 0, &bea).await.contains(&granted)
@@ -157,7 +161,7 @@ async fn onboarding_role_assignment() {
             MemberRequest::RoleUnassign {
                 community: key.clone(),
                 member_pseudonym: bea.clone(),
-                role_id,
+                role_id: role_id.clone(),
             },
         )))
         .await;

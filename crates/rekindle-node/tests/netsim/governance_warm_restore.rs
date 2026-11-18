@@ -58,7 +58,7 @@ async fn reviewed_from_cache(node: &crate::harness::SimNode, anchor: &str) {
         .answer(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleUpdate {
                 community: anchor,
-                role_id: 0,
+                role_id: "00".repeat(16),
                 name: Some("Everyone".into()),
                 permissions: None,
                 color: None,

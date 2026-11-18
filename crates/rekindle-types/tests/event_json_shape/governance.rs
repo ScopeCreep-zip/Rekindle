@@ -128,7 +128,7 @@ fn structure() -> Vec<Sample> {
             GovernanceEvent::RolesChanged {
                 community: community(),
                 roles: vec![RoleDisplay {
-                    id: 3,
+                    id: "03".repeat(16),
                     name: text("Moderator"),
                     color: 0x00_FF_00,
                     permissions: rekindle_types::permissions::ALL,

@@ -6,10 +6,10 @@ use rekindle_types::id::RoleId;
 
 use super::{normalize_edit, normalize_exclusion_group, self_assignable, RoleRefusal};
 
-fn governance_with(role_id: u32, self_assignable: bool) -> GovernanceState {
+fn governance_with(role_id: u8, self_assignable: bool) -> GovernanceState {
     let mut governance = GovernanceState::default();
     governance.roles.insert(
-        RoleId::from_legacy_u32(role_id),
+        RoleId([role_id; 16]),
         RoleState {
             name: "gamers".into(),
             permissions: 0,
@@ -27,20 +27,20 @@ fn governance_with(role_id: u32, self_assignable: bool) -> GovernanceState {
 
 #[test]
 fn a_self_assignable_role_may_be_taken() {
-    assert!(self_assignable(&governance_with(7, true), 7).is_ok());
+    assert!(self_assignable(&governance_with(7, true), RoleId([7; 16])).is_ok());
 }
 
 #[test]
 fn a_role_not_marked_self_assignable_is_refused() {
-    let refused = self_assignable(&governance_with(7, false), 7).unwrap_err();
-    assert!(matches!(refused, RoleRefusal::NotSelfAssignable(7)));
+    let refused = self_assignable(&governance_with(7, false), RoleId([7; 16])).unwrap_err();
+    assert!(matches!(refused, RoleRefusal::NotSelfAssignable(id) if id == RoleId([7; 16])));
     assert_eq!(refused.code(), 403);
 }
 
 #[test]
 fn an_unknown_role_is_refused() {
-    let refused = self_assignable(&governance_with(7, true), 8).unwrap_err();
-    assert!(matches!(refused, RoleRefusal::UnknownRole(8)));
+    let refused = self_assignable(&governance_with(7, true), RoleId([8; 16])).unwrap_err();
+    assert!(matches!(refused, RoleRefusal::UnknownRole(id) if id == RoleId([8; 16])));
 }
 
 #[test]

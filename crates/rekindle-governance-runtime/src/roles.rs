@@ -21,7 +21,7 @@ use crate::error::GovernanceRuntimeError;
 /// `deps.apply_role_create`.
 #[derive(Debug, Clone)]
 pub struct RoleSnapshotInsert {
-    pub role_id: u32,
+    pub role_id: RoleId,
     pub name: String,
     pub color: u32,
     pub permissions: u64,
@@ -56,14 +56,14 @@ pub async fn assign_role<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     pseudonym_key: &str,
-    role_id: u32,
+    role_id: RoleId,
 ) -> Result<(), GovernanceRuntimeError> {
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::RoleAssignment {
             target: PseudonymKey::from_hex_lossy(pseudonym_key),
-            role_id: RoleId::from_legacy_u32(role_id),
+            role_id,
         },
     )
     .await?;
@@ -76,14 +76,14 @@ pub async fn unassign_role<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     pseudonym_key: &str,
-    role_id: u32,
+    role_id: RoleId,
 ) -> Result<(), GovernanceRuntimeError> {
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::RoleUnassignment {
             target: PseudonymKey::from_hex_lossy(pseudonym_key),
-            role_id: RoleId::from_legacy_u32(role_id),
+            role_id,
         },
     )
     .await?;
@@ -92,16 +92,16 @@ pub async fn unassign_role<D: GovernanceRuntimeDeps>(
     Ok(())
 }
 
-/// Allocate a fresh u32 role id that's not already in use. Caller
-/// passes the existing id set (read from governance state); we try up
-/// to 64 random ids before giving up.
+/// Allocate a fresh 16-byte role id that's not already in use and is
+/// not `@everyone`. Caller passes the existing id set (read from
+/// governance state); we try up to 64 random ids before giving up.
 fn allocate_unique_role_id(
-    existing_ids: &[u32],
+    existing_ids: &[RoleId],
     rng: &dyn rekindle_utils::RandomSource,
-) -> Option<u32> {
+) -> Option<RoleId> {
     for _ in 0..64 {
-        let candidate = rng.next_u32().saturating_add(100);
-        if !existing_ids.contains(&candidate) {
+        let candidate = RoleId(rekindle_utils::random::id_bytes_16_from(rng));
+        if candidate != RoleId::EVERYONE && !existing_ids.contains(&candidate) {
             return Some(candidate);
         }
     }
@@ -118,7 +118,7 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
     mentionable: bool,
     self_assignable: bool,
     exclusion_group: Option<String>,
-) -> Result<u32, GovernanceRuntimeError> {
+) -> Result<RoleId, GovernanceRuntimeError> {
     let (existing_ids, next_position) = deps.role_table_summary(community_id);
     let role_id = allocate_unique_role_id(&existing_ids, deps.rng().as_ref()).ok_or_else(|| {
         GovernanceRuntimeError::Adapter("failed to allocate unique role id".into())
@@ -128,7 +128,7 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         GovernanceEntry::RoleDefinition {
-            role_id: RoleId::from_legacy_u32(role_id),
+            role_id,
             name: name.clone(),
             permissions,
             position: next_position,
@@ -159,12 +159,14 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
 pub async fn edit_role<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    role_id: u32,
+    role_id: RoleId,
     patch: RoleSnapshotPatch,
 ) -> Result<(), GovernanceRuntimeError> {
     let current = deps
         .role_current_definition(community_id, role_id)
-        .ok_or_else(|| GovernanceRuntimeError::Adapter(format!("role not found: {role_id}")))?;
+        .ok_or_else(|| {
+            GovernanceRuntimeError::Adapter(format!("role not found: {}", role_id.to_hex()))
+        })?;
 
     let next_exclusion = match &patch.exclusion_group {
         ExclusionGroupEdit::Unchanged => current.exclusion_group,
@@ -176,7 +178,7 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         GovernanceEntry::RoleDefinition {
-            role_id: RoleId::from_legacy_u32(role_id),
+            role_id,
             name: patch.name.clone().unwrap_or(current.name),
             permissions: patch.permissions.unwrap_or(current.permissions),
             position: patch.position.unwrap_or(current.position),
@@ -195,14 +197,12 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
 pub async fn delete_role<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    role_id: u32,
+    role_id: RoleId,
 ) -> Result<(), GovernanceRuntimeError> {
     apply::write_entry(
         deps,
         community_id,
-        GovernanceEntry::RoleArchived {
-            role_id: RoleId::from_legacy_u32(role_id),
-        },
+        GovernanceEntry::RoleArchived { role_id },
     )
     .await?;
     // The merge drops the deleted role from every assignment.
@@ -215,25 +215,22 @@ mod tests {
 
     #[test]
     fn allocate_unique_role_id_returns_unused() {
-        let existing = vec![100, 200, 300];
+        let existing = vec![RoleId([1; 16]), RoleId([2; 16]), RoleId([3; 16])];
         let id = allocate_unique_role_id(&existing, &rekindle_utils::OsRandom).expect("found");
         assert!(!existing.contains(&id));
     }
 
+    /// A new role is never `@everyone`, whatever the source draws.
     #[test]
-    fn allocate_unique_role_id_minimum_threshold() {
-        let id = allocate_unique_role_id(&[], &rekindle_utils::OsRandom).expect("found");
-        assert!(
-            id >= 100,
-            "id should be >= 100 to avoid built-in reserved range"
-        );
-    }
-
-    #[test]
-    fn u32_to_role_id_round_trips_low_bytes() {
-        let r = RoleId::from_legacy_u32(0x0102_0304);
-        assert_eq!(r.0[0..4], [0x04, 0x03, 0x02, 0x01]);
-        assert_eq!(r.0[4..], [0u8; 12]);
+    fn allocate_unique_role_id_never_hands_out_everyone() {
+        struct Zeros;
+        impl rand::CryptoRng for Zeros {}
+        impl rekindle_utils::RandomSource for Zeros {
+            fn fill(&self, dest: &mut [u8]) {
+                dest.fill(0);
+            }
+        }
+        assert_eq!(allocate_unique_role_id(&[], &Zeros), None);
     }
 
     #[test]

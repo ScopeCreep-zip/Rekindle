@@ -137,7 +137,7 @@ struct MemberLeavePayload @0xea0002000000a000 {
 struct MemberJoinedPayload @0xea0005000000a000 {
     pseudonymKey         @0 :Text;
     displayName          @1 :Text;
-    roleIds              @2 :List(UInt32);
+    roleIds              @2 :List(Data);    # 16-byte role ids
     status               @3 :Text;
     hasRouteBlob         @4 :Bool;
     routeBlob            @5 :Data;
@@ -231,7 +231,7 @@ struct RequestSegmentExpansionPayload @0xea0044000000a000 {
 
 struct OnboardingCompletePayload @0xea0012000000a000 {
     pseudonymKey         @0 :Text;
-    roleIds              @1 :List(UInt32);
+    roleIds              @1 :List(Data);    # 16-byte role ids
 }
 
 struct ChannelOverwriteChangedPayload @0xea0014000000a000 {

@@ -135,7 +135,7 @@ impl HostGovernance {
             } => membership(MembershipEvent::RolesChanged {
                 community: community_id.clone(),
                 pseudonym: pseudonym_hex.clone(),
-                role_ids: role_ids.clone(),
+                role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
             }),
             GovernanceRuntimeEvent::OnboardingComplete {
                 community_id,
@@ -144,7 +144,7 @@ impl HostGovernance {
             } => membership(MembershipEvent::OnboardingCompleted {
                 community: community_id.clone(),
                 pseudonym: pseudonym_hex.clone(),
-                role_ids: role_ids.clone(),
+                role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
             }),
             GovernanceRuntimeEvent::GovernanceOpQuarantined {
                 community_id,

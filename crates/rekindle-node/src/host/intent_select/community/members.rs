@@ -35,14 +35,14 @@ pub(super) fn selection(
             role_id,
         } => {
             let (id, _) = community(ctx, target)?;
-            let (name, holders) = role(ctx, &id, *role_id)?;
+            let (name, holders) = role(ctx, &id, role_id)?;
             if matches!(request, MemberRequest::RoleDelete { .. }) {
                 s.facts.push(Fact::MembersAffected { count: holders });
             } else {
                 s.reversibility = Reversibility::Undoable;
             }
             s.subject = Subject::Role {
-                id: role_id.to_string(),
+                id: role_id.clone(),
                 name,
             };
             s.notifies = members(ctx, &id);
@@ -56,9 +56,9 @@ pub(super) fn selection(
             role_id,
         } => {
             let (id, _) = community(ctx, target)?;
-            let (name, _) = role(ctx, &id, *role_id)?;
+            let (name, _) = role(ctx, &id, role_id)?;
             s.subject = Subject::Role {
-                id: role_id.to_string(),
+                id: role_id.clone(),
                 name,
             };
             s.reversibility = if matches!(request, MemberRequest::RoleSelfAssign { .. }) {

@@ -121,7 +121,7 @@ pub enum GovernanceRuntimeEvent {
     MemberRolesChanged {
         community_id: String,
         pseudonym_hex: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<rekindle_types::id::RoleId>,
     },
 
     /// A member completed onboarding — adapter emits
@@ -129,6 +129,6 @@ pub enum GovernanceRuntimeEvent {
     OnboardingComplete {
         community_id: String,
         pseudonym_hex: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<rekindle_types::id::RoleId>,
     },
 }

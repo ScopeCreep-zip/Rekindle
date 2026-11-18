@@ -17,7 +17,7 @@ use super::HostChannel;
 use crate::host::community::state::ChannelType;
 
 impl HostChannel {
-    pub(super) fn my_role_ids_impl(&self, community_id: &str) -> Vec<u32> {
+    pub(super) fn my_role_ids_impl(&self, community_id: &str) -> Vec<rekindle_types::id::RoleId> {
         let map = self.ctx().communities.map().read();
         map.get(community_id)
             .map(|c| c.my_role_ids.clone())

@@ -222,7 +222,7 @@ mod tests {
 
     fn role() -> RoleDisplay {
         RoleDisplay {
-            id: 3,
+            id: "03".repeat(16),
             name: "Mod".into(),
             color: 0x00_FF_00,
             permissions: crate::permissions::ALL,

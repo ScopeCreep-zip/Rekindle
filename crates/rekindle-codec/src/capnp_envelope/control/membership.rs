@@ -6,6 +6,19 @@ use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community::envelope::ControlPayload;
 use crate::community_envelope_capnp as cap;
 use crate::error::CodecError;
+use rekindle_types::id::RoleId;
+
+/// Every 16-byte role id of a list; a malformed entry fails the payload.
+fn read_role_ids(list: capnp::data_list::Reader<'_>) -> Result<Vec<RoleId>, CodecError> {
+    list.iter()
+        .map(|id| {
+            let bytes = id.map_err(|e| capnp_err(&e))?;
+            <[u8; 16]>::try_from(bytes).map(RoleId).map_err(|_| {
+                CodecError::Deserialization(format!("role id of {} bytes", bytes.len()))
+            })
+        })
+        .collect()
+}
 
 pub(super) fn write_member_leave(
     mut p: cap::member_leave_payload::Builder<'_>,
@@ -35,7 +48,7 @@ pub(super) fn write_member_joined(
     p.set_display_name(display_name);
     let mut list = p.reborrow().init_role_ids(len_u32(role_ids.len()));
     for (i, id) in role_ids.iter().enumerate() {
-        list.set(len_u32(i), *id);
+        list.set(len_u32(i), &id.0);
     }
     p.set_status(status);
     p.set_has_route_blob(route_blob.is_some());
@@ -75,7 +88,7 @@ pub(super) fn write_onboarding_complete(
     p.set_pseudonym_key(pseudonym_key);
     let mut list = p.reborrow().init_role_ids(len_u32(role_ids.len()));
     for (i, id) in role_ids.iter().enumerate() {
-        list.set(len_u32(i), *id);
+        list.set(len_u32(i), &id.0);
     }
 }
 
@@ -113,11 +126,7 @@ pub(super) fn read_member_leave(
 pub(super) fn read_member_joined(
     p: cap::member_joined_payload::Reader<'_>,
 ) -> Result<ControlPayload, CodecError> {
-    let role_ids: Vec<u32> = p
-        .get_role_ids()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .collect();
+    let role_ids = read_role_ids(p.get_role_ids().map_err(|e| capnp_err(&e))?)?;
     Ok(ControlPayload::MemberJoined {
         pseudonym_key: text_to_string(p.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
         display_name: text_to_string(p.get_display_name().map_err(|e| capnp_err(&e))?)?,
@@ -146,11 +155,7 @@ pub(super) fn read_request_segment_expansion(
 pub(super) fn read_onboarding_complete(
     p: cap::onboarding_complete_payload::Reader<'_>,
 ) -> Result<ControlPayload, CodecError> {
-    let role_ids: Vec<u32> = p
-        .get_role_ids()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .collect();
+    let role_ids = read_role_ids(p.get_role_ids().map_err(|e| capnp_err(&e))?)?;
     Ok(ControlPayload::OnboardingComplete {
         pseudonym_key: text_to_string(p.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
         role_ids,

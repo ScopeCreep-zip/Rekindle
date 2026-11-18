@@ -110,18 +110,18 @@ async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
             },
         )))
         .await;
-    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
+    let role_id = role.as_str().expect("a role id").to_owned();
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
                 community: community.anchor.clone(),
                 member_pseudonym: bea.clone(),
-                role_id,
+                role_id: role_id.clone(),
             },
         )))
         .await;
     assert!(
-        community.holds_role(1, role_id).await,
+        community.holds_role(1, &role_id).await,
         "the moderator learns its role"
     );
     let limit = Duration::from_secs(120);
@@ -188,18 +188,18 @@ async fn concurrent_rotations_converge_on_one_generation() {
             },
         )))
         .await;
-    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
+    let role_id = role.as_str().expect("a role id").to_owned();
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
                 community: community.anchor.clone(),
                 member_pseudonym: bea,
-                role_id,
+                role_id: role_id.clone(),
             },
         )))
         .await;
     assert!(
-        community.holds_role(1, role_id).await,
+        community.holds_role(1, &role_id).await,
         "the administrator learns its role"
     );
     let general = community.info(0).await["channels"][0]["id"]

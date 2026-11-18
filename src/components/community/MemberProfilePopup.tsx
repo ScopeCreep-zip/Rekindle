@@ -4,7 +4,7 @@ import { colorIntToHex, parseColorHex } from "../../utils/color";
 import { Popover } from "@kobalte/core/popover";
 import LoadingButton from "../common/LoadingButton";
 import type { Member, Role } from "../../stores/community.store";
-import { communityState } from "../../stores/community.store";
+import { EVERYONE_ROLE_ID, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import { truncateKey } from "../../utils/formatting";
@@ -60,7 +60,7 @@ function formatLastSeen(secs: number): string {
  * Esc + click-outside dismissal are built in.
  */
 const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
-  const [updatingRoleId, setUpdatingRoleId] = createSignal<number | null>(null);
+  const [updatingRoleId, setUpdatingRoleId] = createSignal<string | null>(null);
   const [editing, setEditing] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
 
@@ -149,7 +149,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
 
   const memberRoles = () =>
     props.roles
-      .filter((r) => props.member.roleIds.includes(r.id) && r.id !== 0 && r.name !== "@everyone")
+      .filter((r) => props.member.roleIds.includes(r.id) && r.id !== EVERYONE_ROLE_ID && r.name !== "@everyone")
       .sort((a, b) => b.position - a.position);
 
   function formatTimeout(timestamp: number | null): string | null {
@@ -162,7 +162,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const isSelf = () => props.myPseudonymKey === props.member.pseudonymKey;
   const selfAssignableRoles = () =>
     props.roles
-      .filter((role) => role.selfAssignable && role.id !== 0 && role.name !== "@everyone")
+      .filter((role) => role.selfAssignable && role.id !== EVERYONE_ROLE_ID && role.name !== "@everyone")
       .sort((a, b) => b.position - a.position);
 
   function handleCopyKey(): void {

@@ -167,7 +167,7 @@ export interface OnboardingOption {
   optionId: string;
   title: string;
   description: string | null;
-  rolesToAssign: number[];
+  rolesToAssign: string[];
   channelsToShow: string[];
 }
 
@@ -487,7 +487,7 @@ export interface SkinApplied {
 /** The member-list group the Host put a member in (Tier 1 `MemberGroup`):
  *  every frontend renders it as given. */
 export type MemberGroup =
-  | { kind: "role"; id: number; name: string }
+  | { kind: "role"; id: string; name: string }
   | { kind: "online" }
   | { kind: "offline" };
 

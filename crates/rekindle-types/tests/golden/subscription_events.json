@@ -578,7 +578,7 @@
             "color": 65280,
             "exclusionGroup": "rank",
             "hoist": true,
-            "id": 3,
+            "id": "03030303030303030303030303030303",
             "mentionable": true,
             "name": "Moderator",
             "permissions": 2251799813685247,
@@ -967,8 +967,8 @@
         "displayName": "Eve",
         "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "roleIds": [
-          0,
-          3
+          "00000000000000000000000000000000",
+          "03030303030303030303030303030303"
         ]
       }
     }
@@ -1033,8 +1033,8 @@
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "roleIds": [
-          0,
-          5
+          "00000000000000000000000000000000",
+          "05050505050505050505050505050505"
         ]
       }
     }
@@ -1053,9 +1053,9 @@
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "roleIds": [
-          0,
-          3,
-          7
+          "00000000000000000000000000000000",
+          "03030303030303030303030303030303",
+          "07070707070707070707070707070707"
         ]
       }
     }

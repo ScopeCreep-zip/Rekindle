@@ -7,12 +7,13 @@
 //! `Offline`. Within a group the input order is kept.
 
 use super::community::{CommunityMemberView, MemberGroup};
+use crate::id::RoleId;
 use crate::presence::SessionStatus;
 
 /// A community role as the grouping needs it.
 #[derive(Debug, Clone, Copy)]
 pub struct GroupRole<'a> {
-    pub id: u32,
+    pub id: RoleId,
     pub name: &'a str,
     pub position: u32,
     pub hoist: bool,
@@ -30,25 +31,28 @@ pub fn group_members<'a>(
     mut members: Vec<CommunityMemberView>,
     roles: impl IntoIterator<Item = GroupRole<'a>>,
 ) -> Vec<CommunityMemberView> {
-    // `@everyone` (id 0) is never a group.
-    let mut hoisted: Vec<GroupRole<'a>> =
-        roles.into_iter().filter(|r| r.hoist && r.id != 0).collect();
-    hoisted.sort_by(|a, b| b.position.cmp(&a.position).then(a.id.cmp(&b.id)));
+    // `@everyone` is never a group.
+    let mut hoisted: Vec<(GroupRole<'a>, String)> = roles
+        .into_iter()
+        .filter(|r| r.hoist && r.id != RoleId::EVERYONE)
+        .map(|r| (r, r.id.to_hex()))
+        .collect();
+    hoisted.sort_by(|(a, _), (b, _)| b.position.cmp(&a.position).then(a.id.0.cmp(&b.id.0)));
     let online_rank = hoisted.len();
     let mut ranked: Vec<(usize, CommunityMemberView)> = members
         .drain(..)
         .map(|mut m| {
             let (rank, group) = if !is_present(&m.status) {
                 (online_rank + 1, MemberGroup::Offline)
-            } else if let Some((i, role)) = hoisted
+            } else if let Some((i, (role, hex))) = hoisted
                 .iter()
                 .enumerate()
-                .find(|(_, r)| m.role_ids.contains(&r.id))
+                .find(|(_, (_, hex))| m.role_ids.contains(hex))
             {
                 (
                     i,
                     MemberGroup::Role {
-                        id: role.id,
+                        id: hex.clone(),
                         name: role.name.to_owned(),
                     },
                 )
@@ -68,11 +72,11 @@ mod tests {
     use super::*;
     use crate::dto::community::TargetModeration;
 
-    fn member(name: &str, status: &str, role_ids: &[u32]) -> CommunityMemberView {
+    fn member(name: &str, status: &str, role_ids: &[u8]) -> CommunityMemberView {
         CommunityMemberView {
             pseudonym_key: name.to_owned(),
             display_name: name.to_owned(),
-            role_ids: role_ids.to_vec(),
+            role_ids: role_ids.iter().map(|&b| RoleId([b; 16]).to_hex()).collect(),
             display_role: String::new(),
             status: status.to_owned(),
             timeout_until: None,
@@ -90,9 +94,9 @@ mod tests {
         }
     }
 
-    fn role(id: u32, name: &'static str, position: u32, hoist: bool) -> GroupRole<'static> {
+    fn role(id: u8, name: &'static str, position: u32, hoist: bool) -> GroupRole<'static> {
         GroupRole {
-            id,
+            id: RoleId([id; 16]),
             name,
             position,
             hoist,
@@ -115,9 +119,9 @@ mod tests {
             .collect()
     }
 
-    fn role_group(id: u32, name: &str) -> MemberGroup {
+    fn role_group(id: u8, name: &str) -> MemberGroup {
         MemberGroup::Role {
-            id,
+            id: RoleId([id; 16]).to_hex(),
             name: name.to_owned(),
         }
     }
@@ -171,7 +175,7 @@ mod tests {
         let json = |g: &MemberGroup| serde_json::to_value(g).unwrap();
         assert_eq!(
             json(&role_group(2, "Admins")),
-            serde_json::json!({"kind": "role", "id": 2, "name": "Admins"})
+            serde_json::json!({"kind": "role", "id": "02".repeat(16), "name": "Admins"})
         );
         assert_eq!(
             json(&MemberGroup::Online),

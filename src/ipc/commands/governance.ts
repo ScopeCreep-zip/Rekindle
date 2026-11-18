@@ -78,7 +78,7 @@ export const governanceCommands = {
 
   // Roles
   getRoles: (communityId: string) =>
-    hostInvoke<{ id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable: boolean; exclusionGroup: string | null }[]>(
+    hostInvoke<{ id: string; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable: boolean; exclusionGroup: string | null }[]>(
       "get_roles", { communityId },
     ),
   createRole: (
@@ -92,7 +92,7 @@ export const governanceCommands = {
     /** Architecture §19.4 — when set, the member can hold at most one role per group. */
     exclusionGroup?: string,
   ) =>
-    hostInvoke<number>("create_role", {
+    hostInvoke<string>("create_role", {
       communityId,
       name,
       color,
@@ -106,7 +106,7 @@ export const governanceCommands = {
     }),
   editRole: (
     communityId: string,
-    roleId: number,
+    roleId: string,
     name: string | null,
     color: number | null,
     permissions: string | null,
@@ -132,15 +132,15 @@ export const governanceCommands = {
       selfAssignable,
       exclusionGroup: exclusionGroup ?? "unchanged",
     }),
-  deleteRole: (communityId: string, roleId: number) =>
+  deleteRole: (communityId: string, roleId: string) =>
     hostInvoke<unknown>("delete_role", { communityId, roleId }),
-  assignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
+  assignRole: (communityId: string, pseudonymKey: string, roleId: string) =>
     hostInvoke<unknown>("assign_role", { communityId, pseudonymKey, roleId }),
-  unassignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
+  unassignRole: (communityId: string, pseudonymKey: string, roleId: string) =>
     hostInvoke<unknown>("unassign_role", { communityId, pseudonymKey, roleId }),
-  selfAssignRole: (communityId: string, roleId: number) =>
+  selfAssignRole: (communityId: string, roleId: string) =>
     hostInvoke<unknown>("self_assign_role", { communityId, roleId }),
-  selfUnassignRole: (communityId: string, roleId: number) =>
+  selfUnassignRole: (communityId: string, roleId: string) =>
     hostInvoke<unknown>("self_unassign_role", { communityId, roleId }),
   timeoutMember: (communityId: string, pseudonymKey: string, durationSeconds: number, reason: string | null) =>
     hostInvoke<unknown>("timeout_member", { communityId, pseudonymKey, durationSeconds, reason }).then(() => undefined),

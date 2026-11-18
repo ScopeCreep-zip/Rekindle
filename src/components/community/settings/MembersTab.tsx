@@ -3,6 +3,7 @@ import StatusDot from "../../status/StatusDot";
 import RoleTag from "../RoleTag";
 import GovernancePublicationStatus from "../GovernancePublicationStatus";
 import type { Community, Member, Role } from "../../../stores/community.store";
+import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
 import {
   handleRemoveCommunityMember,
   handleBanMember,
@@ -41,7 +42,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
     );
   };
 
-  function toggleMemberRole(pseudonymKey: string, roleId: number, has: boolean): void {
+  function toggleMemberRole(pseudonymKey: string, roleId: string, has: boolean): void {
     if (has) {
       handleUnassignRole(props.community.id, pseudonymKey, roleId);
     } else {
@@ -226,7 +227,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
             </Show>
             <Show when={rolePickerTarget() === member.pseudonymKey}>
               <div class="role-picker-list settings-role-picker">
-                <For each={props.community.roles.filter((r) => r.id !== 0).sort((a, b) => b.position - a.position)}>
+                <For each={props.community.roles.filter((r) => r.id !== EVERYONE_ROLE_ID).sort((a, b) => b.position - a.position)}>
                   {(role) => {
                     const has = () => member.roleIds.includes(role.id);
                     return (

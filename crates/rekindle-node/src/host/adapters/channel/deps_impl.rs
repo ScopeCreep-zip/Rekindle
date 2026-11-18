@@ -55,7 +55,7 @@ impl ChannelMessagingDeps for HostChannel {
         self.my_pseudonym_impl(community_id)
     }
 
-    fn my_role_ids(&self, community_id: &str) -> Vec<u32> {
+    fn my_role_ids(&self, community_id: &str) -> Vec<rekindle_types::id::RoleId> {
         self.my_role_ids_impl(community_id)
     }
 

@@ -66,7 +66,7 @@ pub enum MembershipEvent {
         /// [`Self::MemberCardChanged`]; a frontend shows the short
         /// pseudonym until then.
         display_name: Option<String>,
-        role_ids: Vec<u32>,
+        role_ids: Vec<String>,
     },
     /// The name on a member's verified card (`M`/0, signed by the
     /// pseudonym, its owner pinned to the member's `MemberJoined`), on the
@@ -169,14 +169,14 @@ pub enum MembershipEvent {
     RolesChanged {
         community: String,
         pseudonym: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<String>,
     },
     /// A member completed onboarding.
     /// Triggered by: gossip `ControlPayload::OnboardingComplete`.
     OnboardingCompleted {
         community: String,
         pseudonym: String,
-        role_ids: Vec<u32>,
+        role_ids: Vec<String>,
     },
     /// Onboarding answers were submitted.
     /// Triggered by: gossip `ControlPayload::SubmitOnboardingAnswers`.

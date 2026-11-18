@@ -21,7 +21,7 @@ fn authored() -> Vec<(PseudonymKey, Vec<Stamped>)> {
                 4,
                 GovernanceEntry::RoleAssignment {
                     target: key(2),
-                    role_id: RoleId::from_legacy_u32(7),
+                    role_id: RoleId([7; 16]),
                 },
             ),
             at(

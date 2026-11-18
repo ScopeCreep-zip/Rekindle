@@ -62,9 +62,11 @@ pub(crate) fn config_entry(config: &OnboardingConfigDto) -> Result<GovernanceEnt
                             roles_to_assign: o
                                 .roles_to_assign
                                 .iter()
-                                .copied()
-                                .map(RoleId::from_legacy_u32)
-                                .collect(),
+                                .map(|hex| {
+                                    RoleId::from_hex(hex)
+                                        .ok_or_else(|| format!("invalid role id: {hex}"))
+                                })
+                                .collect::<Result<_, String>>()?,
                             channels_to_show: channel_ids(&o.channels_to_show)?,
                         })
                     })
@@ -146,12 +148,7 @@ pub(crate) fn config_view(onboarding: &OnboardingState) -> OnboardingConfigDto {
                         option_id: o.option_id.clone(),
                         title: o.title.clone(),
                         description: o.description.clone(),
-                        roles_to_assign: o
-                            .roles_to_assign
-                            .iter()
-                            .copied()
-                            .map(RoleId::to_legacy_u32)
-                            .collect(),
+                        roles_to_assign: o.roles_to_assign.iter().map(|id| id.to_hex()).collect(),
                         channels_to_show: o
                             .channels_to_show
                             .iter()

@@ -112,6 +112,13 @@ pub(super) fn automod_fields(request: &MemberRequest) -> Checked {
     }
 }
 
+/// A role id: the full 16 bytes as 32 hex characters (plan E3.2 S9).
+pub(super) fn role_id_field(id: &str) -> Result<(), IpcResponse> {
+    rekindle_types::id::RoleId::from_hex(id)
+        .map(|_| ())
+        .ok_or_else(|| IpcResponse::error(400, "invalid role id: must be 32 hex characters"))
+}
+
 /// An automod rule id: 16 bytes of hex.
 fn rule_id_field(id: &str) -> Result<(), IpcResponse> {
     match hex::decode(id) {

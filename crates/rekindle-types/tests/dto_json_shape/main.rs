@@ -279,7 +279,7 @@ fn onboarding_samples(add: &mut impl FnMut(&str, Value)) {
                     option_id: "opt_fps".into(),
                     title: "Shooters".into(),
                     description: None,
-                    roles_to_assign: vec![5],
+                    roles_to_assign: vec!["05".repeat(16)],
                     channels_to_show: vec![channel.clone()],
                 }],
             }],
@@ -312,7 +312,7 @@ fn onboarding_samples(add: &mut impl FnMut(&str, Value)) {
         to(CommunityMemberView {
             pseudonym_key: pk('b'),
             display_name: "Bea".into(),
-            role_ids: vec![0, 5],
+            role_ids: vec!["00".repeat(16), "05".repeat(16)],
             display_role: "Shooters".into(),
             status: "online".into(),
             timeout_until: None,
@@ -325,7 +325,7 @@ fn onboarding_samples(add: &mut impl FnMut(&str, Value)) {
             location: None,
             last_active: 0,
             group: MemberGroup::Role {
-                id: 5,
+                id: "05".repeat(16),
                 name: "Shooters".into(),
             },
             can_moderate_target: TargetModeration {

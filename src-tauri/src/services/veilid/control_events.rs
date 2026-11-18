@@ -90,7 +90,7 @@ pub(crate) async fn handle_control_events_and_threads(
                 rekindle_types::subscription_events::MembershipEvent::OnboardingCompleted {
                     community: community_id.to_string(),
                     pseudonym: pseudonym_key.clone(),
-                    role_ids: role_ids.clone(),
+                    role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
                 },
             );
         }

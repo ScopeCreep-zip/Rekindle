@@ -110,7 +110,7 @@ fn project_roles_and_categories(cs: &mut CommunityState, gov: &GovernanceState) 
         .roles
         .iter()
         .map(|(id, r)| RoleDefinition {
-            id: RoleId::to_legacy_u32(*id),
+            id: *id,
             name: r.name.clone(),
             color: r.color,
             permissions: r.permissions,
@@ -134,10 +134,10 @@ fn project_roles_and_categories(cs: &mut CommunityState, gov: &GovernanceState) 
     cs.categories.sort_by_key(|category| category.sort_order);
 }
 
-/// A role set as the sorted legacy ids every reader shows.
-fn legacy_role_ids(held: &HashSet<RoleId>) -> Vec<u32> {
-    let mut ids: Vec<u32> = held.iter().copied().map(RoleId::to_legacy_u32).collect();
-    ids.sort_unstable();
+/// A role set in one order every reader shows: by the id's bytes.
+fn sorted_role_ids(held: &HashSet<RoleId>) -> Vec<RoleId> {
+    let mut ids: Vec<RoleId> = held.iter().copied().collect();
+    ids.sort_unstable_by_key(|id| id.0);
     ids
 }
 
@@ -151,7 +151,7 @@ pub(crate) fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
         .map(PseudonymKey);
     cs.my_role_ids = me
         .and_then(|me| gov.role_assignments.get(&me))
-        .map(legacy_role_ids)
+        .map(sorted_role_ids)
         .unwrap_or_default();
 }
 
@@ -159,10 +159,10 @@ pub(crate) fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
 /// assignments (plan E3.2, D15), built once per read. The member list, the
 /// presence scan and the channel adapter read roles only from here or from
 /// [`project_my_roles`]; no row or map caches them (review RV7 M1).
-pub(crate) fn member_role_ids(gov: &GovernanceState) -> HashMap<String, Vec<u32>> {
+pub(crate) fn member_role_ids(gov: &GovernanceState) -> HashMap<String, Vec<RoleId>> {
     gov.role_assignments
         .iter()
-        .map(|(pseudonym, held)| (hex::encode(pseudonym.0), legacy_role_ids(held)))
+        .map(|(pseudonym, held)| (hex::encode(pseudonym.0), sorted_role_ids(held)))
         .collect()
 }
 
@@ -267,7 +267,7 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
         .roles
         .iter()
         .map(|(id, r)| SnapshotRole {
-            role_id: RoleId::to_legacy_u32(*id),
+            role_id: *id,
             name: r.name.clone(),
             color: r.color,
             permissions: r.permissions,
@@ -412,7 +412,7 @@ mod tests {
                 other.name
             );
         }
-        let ids: Vec<u32> = cs.roles.iter().map(|r| r.id).collect();
+        let ids: Vec<RoleId> = cs.roles.iter().map(|r| r.id).collect();
         assert_eq!(display_role_name(&ids, &cs.roles), "Owner");
     }
 }

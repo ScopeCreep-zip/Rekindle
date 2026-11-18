@@ -32,7 +32,7 @@ export async function handleCreateCommunity(name: string): Promise<void> {
         categories: [],
         members: [],
         roles: [],
-        myRoleIds: [0, 1],
+        myRoleIds: [],
         myPermissions: "0",
         myChannelPermissions: {},
         myPseudonymKey: null,
@@ -114,7 +114,7 @@ export function handleSelectCommunity(communityId: string): void {
     if (detail) {
       setCommunityState("communities", communityId, "myPseudonymKey", detail.myPseudonymKey ?? null);
       setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
-      setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds ?? [0, 1]);
+      setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds);
       setCommunityState("communities", communityId, "myPermissions", detail.myPermissions);
       setCommunityState("communities", communityId, "myChannelPermissions", detail.myChannelPermissions);
       setCommunityState("communities", communityId, "roles", detail.roles ?? []);

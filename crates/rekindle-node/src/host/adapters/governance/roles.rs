@@ -20,10 +20,10 @@ impl HostGovernance {
     pub(super) fn role_current_definition_impl(
         &self,
         community_id: &str,
-        role_id: u32,
+        role_id: RoleId,
     ) -> Option<RoleSnapshotInsert> {
         let state = self.governance_state_impl(community_id)?;
-        let role = state.roles.get(&RoleId::from_legacy_u32(role_id))?;
+        let role = state.roles.get(&role_id)?;
         Some(RoleSnapshotInsert {
             role_id,
             name: role.name.clone(),
@@ -44,16 +44,11 @@ impl HostGovernance {
     /// `u32::MAX` is the Owner role's (`origin.rs`): no created role may
     /// reach it, since `validate` admits a role only strictly below its
     /// writer's highest position.
-    pub(super) fn role_table_summary_impl(&self, community_id: &str) -> (Vec<u32>, u32) {
+    pub(super) fn role_table_summary_impl(&self, community_id: &str) -> (Vec<RoleId>, u32) {
         let Some(state) = self.governance_state_impl(community_id) else {
             return (Vec::new(), 0);
         };
-        let ids: Vec<u32> = state
-            .roles
-            .keys()
-            .copied()
-            .map(RoleId::to_legacy_u32)
-            .collect();
+        let ids: Vec<RoleId> = state.roles.keys().copied().collect();
         let next_position = state
             .roles
             .values()

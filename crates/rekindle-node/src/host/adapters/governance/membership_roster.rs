@@ -120,7 +120,7 @@ impl HostGovernance {
             let joined = CommunityEnvelope::Control(ControlPayload::MemberJoined {
                 pseudonym_key,
                 display_name: host.identity_display_name_impl(),
-                role_ids: vec![0],
+                role_ids: vec![rekindle_types::id::RoleId::EVERYONE],
                 status: status_str(host.ctx.own_presence.status()).to_string(),
                 route_blob: (!route.is_empty()).then_some(route),
             });

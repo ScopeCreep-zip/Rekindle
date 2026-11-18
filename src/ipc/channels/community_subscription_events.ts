@@ -24,7 +24,7 @@ export type MembershipEvent =
         pseudonym: string;
         /** The verified card's name; null until the card is read (plan E3.2 F9-2). */
         displayName: string | null;
-        roleIds: number[];
+        roleIds: string[];
       };
     }
   /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
@@ -55,8 +55,8 @@ export type MembershipEvent =
   | { timedOut: { community: string; targetPseudonym: string; durationSeconds: number; reason: string | null } }
   | { timeoutRemoved: { community: string; targetPseudonym: string } }
   | { timeoutStatusChanged: { community: string; pseudonym: string; timeoutUntil: number | null } }
-  | { rolesChanged: { community: string; pseudonym: string; roleIds: number[] } }
-  | { onboardingCompleted: { community: string; pseudonym: string; roleIds: number[] } }
+  | { rolesChanged: { community: string; pseudonym: string; roleIds: string[] } }
+  | { onboardingCompleted: { community: string; pseudonym: string; roleIds: string[] } }
   | { onboardingAnswersSubmitted: { community: string; senderPseudonym: string; answerCount: number } }
   | { membersRefreshed: { community: string } }
   | {
@@ -138,7 +138,8 @@ export type CryptoEvent =
 
 /** A role, as Tier 1's `RoleDisplay`. */
 export interface RoleDisplay {
-  id: number;
+  /** The full 16-byte role id, 32 hex characters. */
+  id: string;
   name: string;
   color: number;
   /**

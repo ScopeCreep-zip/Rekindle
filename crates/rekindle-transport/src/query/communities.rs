@@ -101,7 +101,7 @@ pub fn community_detail(
     member_count: u32,
     channels: Vec<ChannelOverviewDisplay>,
     roles: Vec<RoleDisplay>,
-    our_roles: Vec<u32>,
+    our_roles: &[rekindle_types::id::RoleId],
     meta: CommunityMetaSummary,
 ) -> CommunityDetail {
     CommunityDetail {
@@ -114,7 +114,7 @@ pub fn community_detail(
         channels,
         roles,
         our_pseudonym: membership.pseudonym_key.clone(),
-        our_roles,
+        our_roles: our_roles.iter().map(|id| id.to_hex()).collect(),
         removed: None,
     }
 }

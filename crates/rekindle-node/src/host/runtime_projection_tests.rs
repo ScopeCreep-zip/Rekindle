@@ -53,7 +53,7 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
         .insert(ChannelId([2; 16]), channel("second", 1));
     gov.channels
         .insert(ChannelId([1; 16]), channel("general", 0));
-    let admin = RoleId::from_legacy_u32(7);
+    let admin = RoleId([7; 16]);
     gov.roles.insert(
         admin,
         RoleState {
@@ -99,7 +99,7 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
         .iter()
         .map(|r| (r.role_id, r.name.clone()))
         .collect();
-    assert_eq!(roles, [(RoleId::to_legacy_u32(admin), "Admin".to_string())]);
+    assert_eq!(roles, [(admin, "Admin".to_string())]);
     host.shutdown().await.unwrap();
 }
 

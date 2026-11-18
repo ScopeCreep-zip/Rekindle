@@ -10,7 +10,7 @@ pub fn process_member_roles_changed<D: MembershipEventDeps>(
     deps: &D,
     community_id: &str,
     pseudonym_hex: &str,
-    role_ids: &[u32],
+    role_ids: &[rekindle_types::id::RoleId],
 ) {
     deps.emit_event(GovernanceRuntimeEvent::MemberRolesChanged {
         community_id: community_id.to_string(),

@@ -155,7 +155,7 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(pseudonym.as_bytes());
             for id in role_ids {
-                h.update(&id.to_le_bytes());
+                h.update(id.as_bytes());
             }
         }
         MembershipEvent::OnboardingCompleted {

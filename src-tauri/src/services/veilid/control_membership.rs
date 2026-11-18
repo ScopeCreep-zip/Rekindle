@@ -65,7 +65,7 @@ pub(super) fn handle_membership_payload(
                     community: community_id.to_string(),
                     pseudonym: pseudonym_key,
                     display_name: None,
-                    role_ids,
+                    role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
                 },
             );
         }

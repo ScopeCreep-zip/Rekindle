@@ -35,7 +35,8 @@ pub struct ChannelRow {
 /// A stored role definition.
 pub struct RoleRow {
     pub community_id: String,
-    pub role_id: u32,
+    /// The full 16-byte id, stored as 32 hex characters.
+    pub role_id: rekindle_types::id::RoleId,
     pub name: String,
     pub color: u32,
     pub permissions: u64,
@@ -142,7 +143,7 @@ fn roles(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<RoleRow>> {
     let rows = stmt.query_map(params![owner_key], |row| {
         Ok(RoleRow {
             community_id: get(row, "community_id")?,
-            role_id: get(row, "role_id")?,
+            role_id: crate::row::get_role_id(row, "role_id")?,
             name: get(row, "name")?,
             color: get(row, "color")?,
             permissions: get::<i64>(row, "permissions")?.cast_unsigned(),

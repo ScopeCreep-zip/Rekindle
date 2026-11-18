@@ -28,7 +28,6 @@ mod reactions_pins;
 mod roles;
 mod segments;
 mod threads;
-pub(crate) mod types;
 mod unread;
 mod video;
 
@@ -251,7 +250,6 @@ pub use threads::{
     archive_thread, create_thread, get_active_threads, get_channel_threads, get_thread_messages,
     send_thread_message, unarchive_thread,
 };
-pub use types::*;
 pub use unread::{
     __cmd__get_unread_counts, __cmd__mark_channel_read, __tauri_command_name_get_unread_counts,
     __tauri_command_name_mark_channel_read,

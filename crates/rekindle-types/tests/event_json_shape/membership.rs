@@ -100,7 +100,7 @@ fn joining() -> Vec<Sample> {
                 community: community(),
                 pseudonym: pk('e'),
                 display_name: Some(text("Eve")),
-                role_ids: vec![0, 3],
+                role_ids: vec!["00".repeat(16), "03".repeat(16)],
             },
         ),
         ev(
@@ -191,7 +191,7 @@ fn roles_and_onboarding() -> Vec<Sample> {
             MembershipEvent::RolesChanged {
                 community: community(),
                 pseudonym: pk('e'),
-                role_ids: vec![0, 3, 7],
+                role_ids: vec!["00".repeat(16), "03".repeat(16), "07".repeat(16)],
             },
         ),
         ev(
@@ -199,7 +199,7 @@ fn roles_and_onboarding() -> Vec<Sample> {
             MembershipEvent::OnboardingCompleted {
                 community: community(),
                 pseudonym: pk('e'),
-                role_ids: vec![0, 5],
+                role_ids: vec!["00".repeat(16), "05".repeat(16)],
             },
         ),
         ev(

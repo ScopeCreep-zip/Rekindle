@@ -75,26 +75,23 @@ pub struct MessageId(pub [u8; 16]);
 pub struct RoleId(pub [u8; 16]);
 
 impl RoleId {
-    /// Widen a legacy `u32` role id into the 16-byte form.
-    ///
-    /// Role ids are `u32` at every API surface (IPC, the governance
-    /// runtime's `Deps`, the frontend) but 16 bytes in CRDT state. The
-    /// mapping is little-endian into the low four bytes, and it lives
-    /// here because three crates were each carrying their own copy —
-    /// `u32_to_role_id`, `role_id_to_key`, `role_id_to_legacy_u32` —
-    /// with a comment asking the next author to keep them identical. A
-    /// different padding silently looks up a role that does not exist.
+    /// `@everyone`, the role every member holds implicitly.
+    pub const EVERYONE: Self = Self([0u8; 16]);
+
+    /// Parse 32 hex characters, the form role ids take at every API
+    /// surface (IPC, DTOs, the frontend, SQLite); `None` for anything
+    /// else. The full 16 bytes ride everywhere: a shorter form lets two
+    /// distinct roles collide (plan E3.2 S9).
     #[must_use]
-    pub fn from_legacy_u32(role_id: u32) -> Self {
-        let mut buf = [0u8; 16];
-        buf[..4].copy_from_slice(&role_id.to_le_bytes());
-        Self(buf)
+    pub fn from_hex(hex_str: &str) -> Option<Self> {
+        let bytes = hex::decode(hex_str).ok()?;
+        Some(Self(bytes.try_into().ok()?))
     }
 
-    /// The inverse of [`Self::from_legacy_u32`].
+    /// The 32-character lowercase hex form.
     #[must_use]
-    pub fn to_legacy_u32(self) -> u32 {
-        u32::from_le_bytes([self.0[0], self.0[1], self.0[2], self.0[3]])
+    pub fn to_hex(self) -> String {
+        hex::encode(self.0)
     }
 }
 

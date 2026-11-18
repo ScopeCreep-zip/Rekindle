@@ -6,7 +6,7 @@ import { computeDisplayRoleName } from "./shared";
 export async function handleAssignRole(
   communityId: string,
   pseudonymKey: string,
-  roleId: number,
+  roleId: string,
 ): Promise<void> {
   try {
     await commands.assignRole(communityId, pseudonymKey, roleId);
@@ -36,7 +36,7 @@ export async function handleAssignRole(
 export async function handleUnassignRole(
   communityId: string,
   pseudonymKey: string,
-  roleId: number,
+  roleId: string,
 ): Promise<void> {
   try {
     await commands.unassignRole(communityId, pseudonymKey, roleId);
@@ -69,7 +69,7 @@ export async function handleCreateRole(
   hoist: boolean,
   mentionable: boolean,
   selfAssignable: boolean,
-): Promise<number | null> {
+): Promise<string | null> {
   try {
     const roleId = await commands.createRole(communityId, name, color, permissions, hoist, mentionable, selfAssignable);
     // Optimistic update — add the new role to the store
@@ -88,7 +88,7 @@ export async function handleCreateRole(
 
 export async function handleEditRole(
   communityId: string,
-  roleId: number,
+  roleId: string,
   name: string | null,
   color: number | null,
   permissions: string | null,
@@ -123,7 +123,7 @@ export async function handleEditRole(
 
 export async function handleDeleteRole(
   communityId: string,
-  roleId: number,
+  roleId: string,
 ): Promise<void> {
   try {
     await commands.deleteRole(communityId, roleId);
@@ -156,7 +156,7 @@ export async function handleDeleteRole(
 
 export async function handleSelfAssignRole(
   communityId: string,
-  roleId: number,
+  roleId: string,
 ): Promise<void> {
   try {
     await commands.selfAssignRole(communityId, roleId);
@@ -194,7 +194,7 @@ export async function handleSelfAssignRole(
 
 export async function handleSelfUnassignRole(
   communityId: string,
-  roleId: number,
+  roleId: string,
 ): Promise<void> {
   try {
     await commands.selfUnassignRole(communityId, roleId);

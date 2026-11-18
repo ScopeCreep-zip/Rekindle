@@ -48,7 +48,7 @@ export interface Category {
 export interface Member {
   pseudonymKey: string;
   displayName: string;
-  roleIds: number[];
+  roleIds: string[];
   displayRole: string;
   status: string;
   timeoutUntil: number | null;
@@ -83,8 +83,12 @@ export interface MemberLocation {
   channelId: string;
 }
 
+/** `@everyone`: the all-zero 16-byte role id every member holds. */
+export const EVERYONE_ROLE_ID = "0".repeat(32);
+
 export interface Role {
-  id: number;
+  /** The full 16-byte role id, 32 hex characters (plan E3.2 S9). */
+  id: string;
   name: string;
   color: number;
   /** Serialized as a string from Rust to avoid JavaScript Number precision loss on u64. */
@@ -207,7 +211,7 @@ export interface Community {
   categories: Category[];
   members: Member[];
   roles: Role[];
-  myRoleIds: number[];
+  myRoleIds: string[];
   /** Our base permission bits (decimal u64 string), from the backend's
    *  merged governance (plan E3.2 S9); the window computes no policy. */
   myPermissions: string;

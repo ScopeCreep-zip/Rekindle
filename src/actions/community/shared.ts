@@ -15,7 +15,7 @@ const typingTimers: Record<string, number> = {};
 
 export { typingUsersStore as typingUsers, setTypingUsers, typingTimers };
 
-export function computeDisplayRoleName(roleIds: number[], roles: Role[]): string {
+export function computeDisplayRoleName(roleIds: string[], roles: Role[]): string {
   const highestRole = roleIds
     .map((roleId) => roles.find((role) => role.id === roleId))
     .filter((role): role is Role => Boolean(role))

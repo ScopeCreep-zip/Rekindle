@@ -9,9 +9,11 @@ use crate::output::format;
 use crate::output::OutputMode;
 use rekindle_client::DaemonClient;
 
-fn parse_u32(s: &str) -> anyhow::Result<u32> {
-    s.parse()
-        .map_err(|_| anyhow::anyhow!("invalid number: {s}"))
+/// A role id: the full 16 bytes as 32 hex characters (plan E3.2 S9).
+fn parse_role_id(s: &str) -> anyhow::Result<String> {
+    rekindle_types::id::RoleId::from_hex(s)
+        .map(rekindle_types::id::RoleId::to_hex)
+        .ok_or_else(|| anyhow::anyhow!("invalid role id (32 hex characters): {s}"))
 }
 
 fn parse_permissions(s: &str) -> anyhow::Result<u64> {
@@ -99,7 +101,7 @@ pub async fn dispatch_role(
             permissions,
             color,
         } => {
-            let rid = parse_u32(role_id)?;
+            let rid = parse_role_id(role_id)?;
             let perms = permissions.as_deref().map(parse_permissions).transpose()?;
             let col = color.as_deref().map(parse_color).transpose()?;
             let value = helpers::send(
@@ -121,7 +123,7 @@ pub async fn dispatch_role(
             format::print_structured(&value, mode)
         }
         RoleCmd::Delete { community, role_id } => {
-            let rid = parse_u32(role_id)?;
+            let rid = parse_role_id(role_id)?;
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleDelete {
@@ -137,7 +139,7 @@ pub async fn dispatch_role(
             member,
             role_id,
         } => {
-            let rid = parse_u32(role_id)?;
+            let rid = parse_role_id(role_id)?;
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleAssign {
@@ -154,7 +156,7 @@ pub async fn dispatch_role(
             member,
             role_id,
         } => {
-            let rid = parse_u32(role_id)?;
+            let rid = parse_role_id(role_id)?;
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleUnassign {

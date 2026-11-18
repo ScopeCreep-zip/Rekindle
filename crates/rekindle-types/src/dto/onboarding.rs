@@ -78,7 +78,8 @@ pub struct OnboardingOptionDto {
     pub description: Option<String>,
     /// Role IDs to assign when this option is selected.
     #[serde(default)]
-    pub roles_to_assign: Vec<u32>,
+    /// Full 16-byte role ids, 32 hex characters each.
+    pub roles_to_assign: Vec<String>,
     /// Channel IDs to reveal when this option is selected.
     #[serde(default)]
     pub channels_to_show: Vec<String>,
@@ -147,14 +148,14 @@ mod tests {
                         option_id: "opt_gaming".into(),
                         title: "Gaming".into(),
                         description: None,
-                        roles_to_assign: vec![5],
+                        roles_to_assign: vec!["05".repeat(16)],
                         channels_to_show: vec!["ch_gaming".into()],
                     },
                     OnboardingOptionDto {
                         option_id: "opt_dev".into(),
                         title: "Development".into(),
                         description: Some("Code and tech".into()),
-                        roles_to_assign: vec![6],
+                        roles_to_assign: vec!["06".repeat(16)],
                         channels_to_show: vec!["ch_dev".into()],
                     },
                 ],

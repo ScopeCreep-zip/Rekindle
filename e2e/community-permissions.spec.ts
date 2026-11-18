@@ -32,7 +32,7 @@ const CAROL = "c".repeat(64);
 
 // A member row as the Host serves it, with its per-member verdicts.
 const member = (key: string, name: string, may: object, outranks: boolean) => ({
-  pseudonymKey: key, displayName: name, roleIds: [0], displayRole: "@everyone",
+  pseudonymKey: key, displayName: name, roleIds: ["00000000000000000000000000000000"], displayRole: "@everyone",
   status: "online", timeoutUntil: null, lastActive: 0, group: { kind: "online" },
   canModerateTarget: may, outranks,
 });
@@ -62,11 +62,11 @@ function handler(channelPerms: string): string {
       return [{
         id: "${COMMUNITY}", name: "Lan Party", description: null,
         channels: [{ id: "ch1", name: "general", channelType: "text" }],
-        roles: [{ id: 0, name: "@everyone", color: 0, permissions: "${SEND}", position: 0,
+        roles: [{ id: "00000000000000000000000000000000", name: "@everyone", color: 0, permissions: "${SEND}", position: 0,
                   hoist: false, mentionable: false },
-                { id: 1, name: "Admins", color: 0, permissions: "${ADMINISTRATOR}", position: 9,
+                { id: "01010101010101010101010101010101", name: "Admins", color: 0, permissions: "${ADMINISTRATOR}", position: 9,
                   hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0, 1],
+        myPseudonymKey: "${ME}", myRoleIds: ["00000000000000000000000000000000", "01010101010101010101010101010101"],
         myPermissions: window.__myPermissions ?? "${SEND}",
         myChannelPermissions: ${channelPerms}, removed: null,
       }];

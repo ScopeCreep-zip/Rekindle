@@ -134,7 +134,7 @@ fn a_bootstrap_member_is_stored_once() {
     let member = MemberInfo {
         pseudonym_key: "bob".into(),
         display_name: "Bob".into(),
-        role_ids: vec![0, 1],
+        role_ids: vec!["00".repeat(16), "01".repeat(16)],
         status: "online".into(),
         route_blob: None,
         bio: Some("hi".into()),
