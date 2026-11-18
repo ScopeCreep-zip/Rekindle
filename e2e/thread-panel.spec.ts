@@ -72,3 +72,59 @@ test("the thread header names its starter, not the pseudonym", async ({ page }) 
   await expect(meta).toContainText("Started by Cid");
   await expect(meta).not.toContainText(PEER);
 });
+
+async function sendEvent(page: Page, index: number, payload: unknown): Promise<void> {
+  await page.evaluate(({ index, payload }) => {
+    const w = window as any;
+    w.__TAURI_INTERNALS__.runCallback(w.__eventChannelId, {
+      index,
+      message: { cursor: null, channel: "community-event", payload },
+    });
+  }, { index, payload });
+}
+
+const posted = (messageId: string, sender: string, body: string) => ({
+  social: {
+    threadMessagePosted: {
+      community: COMMUNITY, threadId: THREAD_ID, messageId, senderPseudonym: sender,
+      timestamp: 1760000100, body, replyToId: null,
+    },
+  },
+});
+
+// Walk 14-15, M76: a reply sent while the thread's first page is still
+// loading must survive that page's late answer.
+test("a reply sent before the thread's page loads still shows", async ({ page }) => {
+  const slowPage = HANDLER.replace(
+    'case "get_welcome_screen":',
+    `case "get_thread_messages":
+      return new Promise((resolve) => { window.__releasePage = () => resolve([]); });
+    case "get_welcome_screen":`,
+  );
+  await openThread(page, slowPage);
+  const input = page.locator(".thread-panel .message-input-field");
+  await input.fill("thread reply");
+  await input.press("Enter");
+  await expect(page.locator(".thread-panel-messages")).toContainText("thread reply");
+  await page.waitForFunction(() => typeof (window as any).__releasePage === "function");
+  await page.evaluate(() => (window as any).__releasePage());
+  await page.waitForTimeout(200);
+  await expect(page.locator(".thread-panel-messages")).toContainText("thread reply");
+});
+
+// M76: the Host publishes our own reply (the mesh never echoes it); the
+// window shows it even when no optimistic bubble is waiting for it.
+test("our own posted reply shows without a waiting bubble", async ({ page }) => {
+  await openThread(page);
+  await sendEvent(page, 0, posted("tm_1", ME, "sent from another window"));
+  await expect(page.locator(".thread-panel-messages")).toContainText("sent from another window");
+});
+
+// M76: a posted reply counts on the open thread's header.
+test("a posted reply counts in the thread header", async ({ page }) => {
+  await openThread(page);
+  await expect(page.locator(".thread-panel-meta")).toContainText("0 messages");
+  await sendEvent(page, 0, posted("tm_2", PEER, "count me in"));
+  await expect(page.locator(".thread-panel-messages")).toContainText("count me in");
+  await expect(page.locator(".thread-panel-meta")).toContainText("1 messages");
+});

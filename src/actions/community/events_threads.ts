@@ -190,7 +190,16 @@ export async function handleLoadThreadMessages(
   try {
     const messages = await commands.getThreadMessages(communityId, threadId, limit);
     const mapped = transformMessages(messages);
-    setCommunityState("threadMessages", threadId, mapped);
+    // The page may answer after a reply was sent or received (walk 14,
+    // M76: the late page replaced our own reply's bubble): keep what the
+    // page does not hold yet, after it.
+    setCommunityState("threadMessages", threadId, (prev) => {
+      const held = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
+      const later = (prev ?? []).filter((m) =>
+        m.serverMessageId ? !held.has(m.serverMessageId) : m.isOwn,
+      );
+      return [...mapped, ...later];
+    });
   } catch (e) {
     console.error("Failed to load thread messages:", e);
     addToast("Failed to load thread messages", "error");

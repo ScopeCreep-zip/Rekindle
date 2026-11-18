@@ -89,23 +89,26 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
     const { community, threadId, messageId, senderPseudonym, body, timestamp, replyToId } =
       s.threadMessagePosted;
     const c = communityState.communities[community];
-    const isOwn = c?.myPseudonymKey === senderPseudonym;
+    const existing = communityState.threadMessages[threadId] ?? [];
+    // A reply already shown (the event repeats, or a page read held it)
+    // neither shows nor counts twice.
+    if (existing.some((m) => m.serverMessageId === messageId)) return;
+    countThreadReply(threadId, timestamp);
 
-    if (isOwn) {
-      // Update optimistic entry instead of duplicating
-      setCommunityState("threadMessages", threadId, (prev) => {
-        const existing = prev ?? [];
-        const optimisticIdx = existing.findIndex((m) => m.status === "sending");
-        if (optimisticIdx >= 0) {
-          return existing.map((m, i) =>
-            i === optimisticIdx
-              ? { ...m, serverMessageId: messageId, status: "sent" as const }
-              : m,
-          );
-        }
-        return existing;
-      });
-      return;
+    if (c?.myPseudonymKey === senderPseudonym) {
+      // Our own reply, which the Host publishes since the mesh never
+      // echoes it (plan E7.13 M76): confirm the bubble waiting for it,
+      // or show it when none waits (sent from another window, or the
+      // bubble was replaced).
+      const waiting = existing.findIndex(
+        (m) => m.isOwn && m.status === "sending" && (body === null || m.body === body),
+      );
+      if (waiting >= 0) {
+        setCommunityState("threadMessages", threadId, waiting, (m) => ({
+          ...m, serverMessageId: messageId, status: "sent" as const,
+        }));
+        return;
+      }
     }
 
     // `body` is null when the gossip decoder produced the event: it
@@ -117,7 +120,7 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
       senderId: senderPseudonym,
       body: body ?? "",
       timestamp,
-      isOwn: false,
+      isOwn: c?.myPseudonymKey === senderPseudonym,
       serverMessageId: messageId,
       replyToId: replyToId ?? undefined,
     };
@@ -161,5 +164,19 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
   if ("eventReminder" in s) {
     const { title, minutesUntilStart } = s.eventReminder;
     addToast(`Event "${title}" starts in ${minutesUntilStart} min`, "info");
+  }
+}
+
+/** Count a new reply on its thread, wherever the window lists it, so the
+ * open thread's header and the thread list show it (plan E7.13 M76). */
+function countThreadReply(threadId: string, timestamp: number): void {
+  for (const channelId of Object.keys(communityState.channelThreads)) {
+    const idx = (communityState.channelThreads[channelId] ?? []).findIndex((t) => t.id === threadId);
+    if (idx < 0) continue;
+    setCommunityState("channelThreads", channelId, idx, (t) => ({
+      ...t,
+      messageCount: t.messageCount + 1,
+      lastMessageAt: Math.max(t.lastMessageAt, timestamp),
+    }));
   }
 }
