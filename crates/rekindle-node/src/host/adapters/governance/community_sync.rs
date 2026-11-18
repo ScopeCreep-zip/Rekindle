@@ -32,8 +32,8 @@ const FIRST_TICKS: u32 = 3;
 /// The steady period.
 const TICK: Duration = Duration::from_secs(30);
 
-/// Start the community sync and the invite expiry timer in `scope` (the
-/// unlock's).
+/// Start the community sync, the anti-entropy loop, the member routes
+/// writer and the invite expiry timer in `scope` (the unlock's).
 ///
 /// # Errors
 /// The scope is closed (the unlock is ending).
@@ -46,12 +46,16 @@ pub(crate) fn start(
     let reminders = host.clone();
     let markers = host.clone();
     let sweeps = host.clone();
+    let routes = host.clone();
     scope.spawn_with_token("read marker write-behind", move |stop| {
         super::unread::write_behind(markers, stop)
     })?;
     scope.spawn_with_token("community sync", move |stop| run(host, stop))?;
     scope.spawn_with_token("governance anti-entropy", move |stop| {
         super::anti_entropy_loop::run(sweeps, stop)
+    })?;
+    scope.spawn_with_token("member routes", move |stop| {
+        super::member_routes_loop::run(routes, stop)
     })?;
     scope.spawn_with_token("community invite expiry", move |stop| {
         super::invite_expiry::run(expiry, stop)

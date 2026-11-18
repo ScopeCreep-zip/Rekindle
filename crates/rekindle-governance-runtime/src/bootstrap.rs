@@ -3,7 +3,8 @@
 //! The join works from the DHT with nobody online; when the inviter is
 //! online, this exchange is how it learns of the joiner. The joiner sends
 //! `BootstrapRequest{joinerPseudonym, anchor, memberJoined}` as a bare
-//! `app_call` to `InviteSecrets.inviter_route_blob` once its `MemberJoined`
+//! `app_call` to the inviter's current route, read from its `M`/6 by the
+//! join (`crate::member_routes::read_inviter_route`), once its `MemberJoined`
 //! is durable on its member record. The request's authority is that
 //! signed op, carried with its `OpRef` (an inviter answers within the
 //! app_call reply window, too short for a DHT read): the inviter checks

@@ -117,7 +117,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         anchor: community_id.to_string(),
         inviter_member_record,
         registry_key,
-        inviter_route_blob: deps.our_route_blob(),
+        inviter_pseudonym: hex::encode(me.0),
         slot_seed,
         // From merged governance, not the local membership record: the
         // name a joiner is shown before joining should be the one the

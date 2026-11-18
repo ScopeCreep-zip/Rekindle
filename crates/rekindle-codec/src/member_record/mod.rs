@@ -1,7 +1,8 @@
 //! The subkey formats of a member's own DFLT(8) `MemberRecord` `M` (ADR
 //! 0011, plan E3.2, the D15 subkey map; `schemas/member_record.capnp`):
-//! subkey 0 the [`card`], 1 the [`beat`] and 5 the [`history_ad`]. The
-//! self-sovereign join writes all three; E3.3 and E3.4 extend the schema.
+//! subkey 0 the [`card`], 1 the [`beat`], 5 the [`history_ad`] and 6 the
+//! [`routes`]. The self-sovereign join writes all four; E3.3 and E3.4
+//! extend the schema.
 //!
 //! Every subkey is signed by the member's community pseudonym under its
 //! own domain, bound to the community and the record it is written in, so
@@ -14,12 +15,14 @@ pub mod beat;
 pub mod card;
 pub mod head_advanced;
 pub mod history_ad;
+pub mod routes;
 #[cfg(test)]
 mod tests;
 
 pub use beat::{PresenceBeat, SealedExtras, PRESENCE_BEAT_MAX_BYTES};
 pub use card::{MemberCard, SignedMemberCard, MEMBER_CARD_MAX_BYTES};
 pub use history_ad::{HISTORY_AD_MAX_BYTES, HISTORY_AD_MAX_RANGES};
+pub use routes::{MemberRoutes, MEMBER_ROUTES_MAX_BYTES};
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::member_record::MemberRecordAad;

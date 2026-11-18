@@ -32,8 +32,11 @@ pub struct InviteSecrets {
     pub anchor: String,
     /// DHT key of the inviter's member record `M`.
     pub inviter_member_record: String,
-    /// Private route blob to the inviting member for the bootstrap app_call.
-    pub inviter_route_blob: Vec<u8>,
+    /// The inviter's community pseudonym (hex): the joiner reads the
+    /// inviter's current route from `M`/6 and verifies it under this key
+    /// (plan E3.2 S7c.8), rather than carrying a route blob frozen at
+    /// minting, which dies with the inviter's route.
+    pub inviter_pseudonym: String,
     /// Community display name (for UI before full state is loaded).
     pub community_name: String,
     /// DHT key of the SMPL member registry record (deleted by E3.4).
@@ -52,7 +55,7 @@ mod tests {
         let secrets = InviteSecrets {
             anchor: "VLD0:anchor".into(),
             inviter_member_record: "VLD0:member".into(),
-            inviter_route_blob: vec![1, 2, 3, 4],
+            inviter_pseudonym: "ab".repeat(32),
             community_name: "Test Community".into(),
             registry_key: "VLD0:reg456".into(),
             slot_seed: "ab".repeat(32),
@@ -61,7 +64,7 @@ mod tests {
         let back: InviteSecrets = serde_json::from_str(&json).unwrap();
         assert_eq!(back.anchor, "VLD0:anchor");
         assert_eq!(back.inviter_member_record, "VLD0:member");
-        assert_eq!(back.inviter_route_blob, vec![1, 2, 3, 4]);
+        assert_eq!(back.inviter_pseudonym, "ab".repeat(32));
     }
 }
 

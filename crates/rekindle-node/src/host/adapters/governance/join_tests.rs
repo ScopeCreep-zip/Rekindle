@@ -32,6 +32,7 @@ fn profile() -> OwnProfile {
         display_name: "Joiner".into(),
         status: SessionStatus::Online,
         now_ms: 1_000,
+        route: Vec::new(),
     }
 }
 

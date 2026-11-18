@@ -224,6 +224,7 @@ impl HostGovernance {
             display_name: self.ctx.identity_display_name(),
             status: self.identity_status(),
             now_ms: self.ctx.clock.now_ms(),
+            route: self.our_route_blob_impl(),
         };
         let queued = std::sync::atomic::AtomicBool::new(false);
         let publish_ops = async {
@@ -335,6 +336,10 @@ impl HostGovernance {
         outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
     ) -> Result<(), rekindle_governance_runtime::GovernanceRuntimeError> {
         use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        if outcome.inviter_route.is_empty() {
+            tracing::info!(community, "no inviter route: no bootstrap exchange");
+            return Ok(());
+        }
         let joined = &outcome.joined;
         let joiner = rekindle_governance_runtime::BootstrapJoiner {
             pseudonym: outcome.identity.pseudo_hex.clone(),
@@ -349,7 +354,7 @@ impl HostGovernance {
         };
         let walked = match rekindle_governance_runtime::request_bootstrap(
             self,
-            &outcome.invite.inviter_route_blob,
+            &outcome.inviter_route,
             community,
             &joiner,
         )

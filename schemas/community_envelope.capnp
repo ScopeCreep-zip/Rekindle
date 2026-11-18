@@ -426,7 +426,8 @@ struct GovernanceUpdatedPayload @0xea0029000000a000 {
 }
 
 # The joiner's bootstrap request (plan E3.2): a bare app_call to the
-# inviter's route (`InviteSecrets.inviterRouteBlob`). Its authority is the
+# inviter's current route (its member record's `MemberRoutes`, read at
+# join time; plan E3.2 S7c.8). Its authority is the
 # joiner's signed `MemberJoined`, which the inviter fetches from the
 # joiner's member record by `memberJoined` and verifies before answering.
 struct BootstrapRequestPayload @0xea002a000000a000 {

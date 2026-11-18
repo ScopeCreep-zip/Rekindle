@@ -68,6 +68,10 @@ pub struct OwnProfile {
     pub status: SessionStatus,
     /// Now, on the host's clock (ms).
     pub now_ms: u64,
+    /// Our current general route blob, for `M`/6; empty while no route is
+    /// allocated (the route publisher writes it once one is,
+    /// [`crate::member_routes`]).
+    pub route: Vec<u8>,
 }
 
 /// Our card: the identity's display name and the HPKE key, cross-signed.
@@ -86,7 +90,7 @@ fn own_card(profile: &OwnProfile, hpke_secret: &[u8; 32]) -> MemberCard {
     }
 }
 
-async fn write_subkey(
+pub(crate) async fn write_subkey(
     port: &dyn RecordPort,
     own: &OwnRecord<'_>,
     subkey: u32,
@@ -146,7 +150,8 @@ pub async fn write_beat(
 }
 
 /// Publish our member record in §4.4's order: the card (`M`/0, so the
-/// record is openable), then `publish_ops`, which appends our ops to `M`/2
+/// record is openable) and our routes (`M`/6, so the record is reachable
+/// once an op names it), then `publish_ops`, which appends our ops to `M`/2
 /// and writes `M`/3, then the beat (`M`/1).
 ///
 /// # Errors
@@ -162,6 +167,9 @@ where
     F: Future<Output = Result<(), String>>,
 {
     write_card(port, own, profile, hpke_secret).await?;
+    if !profile.route.is_empty() {
+        crate::member_routes::write_routes(port, own, &profile.route, profile.now_ms).await?;
+    }
     publish_ops.await?;
     write_beat(port, own, profile).await
 }

@@ -198,6 +198,10 @@ pub const HISTORY_AD_BOUND: Bound = Bound {
     max_words: 1024,
 };
 
+/// `MemberRoutes` (`member_record.capnp`): its 5 KiB cap, as packed
+/// bytes.
+pub const MEMBER_ROUTES_BOUND: Bound = Bound::packed(crate::member_record::MEMBER_ROUTES_MAX_BYTES);
+
 /// A packed message whose one segment claims `words` words, all zero: a
 /// few hundred bytes on the wire that unpack to `words` words, the shape a
 /// peer would send to exhaust a reader's memory.

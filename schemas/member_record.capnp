@@ -98,6 +98,19 @@ struct HistoryRange {
   newestLamport @2 :UInt64;
 }
 
+# ── Subkey 6: the member's routes (plan E3.2 S7c.8) ─────────────────
+
+# The general private route blob every app_call to the member uses,
+# rewritten each time the member's route is replaced. `issuedAt` is the
+# writer's clock (ms); `sig` is the pseudonym's over
+# `rekindle-member-routes-v1 ‖ community ‖ memberRecord ‖ issuedAt ‖
+# general`.
+struct MemberRoutes {
+  general @0 :Data;
+  issuedAt @1 :UInt64;
+  sig @2 :Data;
+}
+
 # ── The ring hint (plan E3.2 S7, evidence §4.3) ──────────────────────
 
 # A ring watcher saw `author`'s member record `memberRecord` advance

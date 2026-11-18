@@ -201,7 +201,8 @@ struct InviteSecrets {
     current_mek: HashMap<TypedKey, MekInfo>,     // (channel, mek, generation)
     community_name: String,
     inviter_pseudonym: [u8; 32],
-    inviter_route_blob: Vec<u8>,                 // For BootstrapBundle request
+    // No route blob: the joiner reads the inviter's current route from
+    // its member record's M/6 (MemberRoutes, plan E3.2 S7c.8).
 }
 ```
 

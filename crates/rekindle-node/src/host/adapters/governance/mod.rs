@@ -42,6 +42,7 @@ mod dht;
 mod event_control;
 mod event_reminders;
 mod event_rsvps;
+mod member_routes_loop;
 pub(crate) use community_info::InfoEdit;
 pub(crate) use create_leave::ForgetError;
 pub(crate) use views::removal_display;

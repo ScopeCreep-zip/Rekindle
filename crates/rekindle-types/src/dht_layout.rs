@@ -234,8 +234,11 @@ pub mod member_record {
     pub const OUTBOX: u32 = 4;
     /// The member's history ad: `HistoryAdRecord`.
     pub const HISTORY_AD: u32 = 5;
-    /// Subkeys 6 and 7: reserved.
-    pub const FIRST_RESERVED: u32 = 6;
+    /// The member's routes: `MemberRoutes`, the general private route
+    /// blob every app_call to the member uses (plan E3.2 S7c.8, E3.4).
+    pub const ROUTES: u32 = 6;
+    /// Subkey 7: reserved.
+    pub const FIRST_RESERVED: u32 = 7;
     /// Most `OpRef`s a [`FRONTIER`] value carries.
     pub const MAX_FRONTIER_REFS: usize = 64;
     /// Total subkeys to allocate when creating the record.
@@ -282,9 +285,10 @@ mod tests {
             member_record::FRONTIER,
             member_record::OUTBOX,
             member_record::HISTORY_AD,
+            member_record::ROUTES,
         ];
-        assert_eq!(map, [0, 1, 2, 3, 4, 5]);
-        assert_eq!(member_record::FIRST_RESERVED, 6);
+        assert_eq!(map, [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(member_record::FIRST_RESERVED, 7);
         assert_eq!(member_record::SUBKEY_COUNT, 8);
         assert_eq!(member_record::MAX_FRONTIER_REFS, 64);
         let cap = usize::min(32_768, 1_048_576 / usize::from(member_record::SUBKEY_COUNT));

@@ -51,6 +51,7 @@ mod internet_flap;
 mod invisible_game;
 mod invite_expiry;
 mod invite_join_leave;
+mod invite_route_refresh;
 mod invite_unpublished;
 mod join_from_hint;
 mod kick_rotates_once;

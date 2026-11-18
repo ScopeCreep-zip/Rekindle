@@ -132,13 +132,9 @@ mod tests {
     }
 
     /// The largest `Checkpoint` op: 64 deps, 63 of them its cut heads, a
-    /// previous checkpoint and 64 page locators (8,192 members) fits one
-    /// governance op value.
-    #[test]
-    fn the_largest_checkpoint_op_fits() {
-        use crate::governance_op::{
-            decode_op, encode_op, GOVERNANCE_OP_MAX_BYTES, GOVERNANCE_OP_MAX_DEPS,
-        };
+    /// previous checkpoint and 64 page locators (8,192 members).
+    fn largest_checkpoint_op() -> rekindle_types::governance::GovernanceOp {
+        use crate::governance_op::GOVERNANCE_OP_MAX_DEPS;
         let deps: Vec<OpRef> = (0..GOVERNANCE_OP_MAX_DEPS)
             .map(|i| op_ref(u8::try_from(i).unwrap_or(u8::MAX)))
             .collect();
@@ -146,7 +142,7 @@ mod tests {
             unreachable!("built as a checkpoint")
         };
         c.cut = deps[1..].to_vec();
-        let op = rekindle_types::governance::GovernanceOp {
+        rekindle_types::governance::GovernanceOp {
             author: PseudonymKey([0xA0; 32]),
             seq: u64::MAX,
             prev: Some(OpHash([0xB0; 32])),
@@ -154,7 +150,14 @@ mod tests {
             issued_at: u64::MAX,
             body: GovernanceEntry::Checkpoint(c),
             sig: [0xC0; 64],
-        };
+        }
+    }
+
+    /// The largest `Checkpoint` op fits one governance op value.
+    #[test]
+    fn the_largest_checkpoint_op_fits() {
+        use crate::governance_op::{decode_op, encode_op, GOVERNANCE_OP_MAX_BYTES};
+        let op = largest_checkpoint_op();
         let bytes = encode_op(&op).expect("encodes");
         assert!(
             bytes.len() <= GOVERNANCE_OP_MAX_BYTES,
@@ -162,5 +165,32 @@ mod tests {
             bytes.len()
         );
         assert_eq!(decode_op(&bytes).expect("decodes").op, op);
+    }
+
+    /// Plan E3.2 S7c.8 item (5): the largest `Checkpoint` op also rides the
+    /// gossip fast path (`governanceOp @74`): in its community envelope,
+    /// signed into the `SignedEnvelope` the mesh sends, under the longest
+    /// community id and a hex pseudonym, it fits Veilid's 32,768 B
+    /// `app_message` cap (`veilid-core/proto/veilid.capnp:33-34`).
+    #[test]
+    fn the_largest_checkpoint_op_fits_a_gossiped_app_message() {
+        use crate::capnp_envelope::{encode_community_envelope, encode_signed_envelope};
+        use crate::community::envelope::{sign_envelope, CommunityEnvelope, ControlPayload};
+        use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
+        let op = crate::governance_op::encode_op(&largest_checkpoint_op()).expect("encodes");
+        let envelope =
+            encode_community_envelope(&CommunityEnvelope::Control(ControlPayload::GovernanceOp {
+                op,
+            }))
+            .expect("encodes");
+        let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+        let community = format!("VLD0:{}", "A".repeat(150));
+        let signed = sign_envelope(&key, &community, &"ab".repeat(32), &envelope);
+        let wire = encode_signed_envelope(&signed);
+        assert!(
+            wire.len() <= MAX_APP_MESSAGE_LEN,
+            "{} B over the {MAX_APP_MESSAGE_LEN} B app_message cap",
+            wire.len()
+        );
     }
 }

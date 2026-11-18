@@ -65,6 +65,9 @@ pub struct JoinStagesOutcome {
     /// The hint the walk resumed from: the caller marks the community
     /// partial from it before storing `walked` (plan E3.2 S7c.8 (1)).
     pub partial: Option<crate::partial::PartialJoin>,
+    /// The inviter's route as its `M`/6 held it when we joined, empty when
+    /// it held none: where the bootstrap exchange goes.
+    pub inviter_route: Vec<u8>,
     pub claimed: ClaimedSlot,
     pub initial_presence: InitialPresence,
 }
@@ -111,6 +114,42 @@ pub async fn read_frontier<D: GovernanceRuntimeDeps>(
     })?;
     rekindle_codec::governance_op::decode_frontier(&bytes)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("frontier of {record}: {e}")))
+}
+
+fn parse_pseudonym(hex_key: &str) -> Result<PseudonymKey, GovernanceRuntimeError> {
+    hex::decode(hex_key)
+        .ok()
+        .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
+        .map(PseudonymKey)
+        .ok_or_else(|| GovernanceRuntimeError::Encoding("invite inviter pseudonym".into()))
+}
+
+/// The inviter's current route from its `M`/6 (plan E3.2 S7c.8); empty
+/// when it holds none or it does not verify, and the join goes on from
+/// the DHT alone (no hint, no bootstrap exchange), as with an inviter
+/// that is offline.
+async fn resolve_inviter_route<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    invite: &InviteSecrets,
+    inviter: &PseudonymKey,
+) -> Vec<u8> {
+    let record = &invite.inviter_member_record;
+    let read = match deps.record_port() {
+        Ok(port) => crate::member_routes::read_inviter_route(&*port, anchor, record, inviter).await,
+        Err(e) => Err(e.to_string()),
+    };
+    match read {
+        Ok(Some(route)) => route,
+        Ok(None) => {
+            tracing::info!(community = anchor, "the inviter's record holds no route");
+            Vec::new()
+        }
+        Err(error) => {
+            tracing::warn!(community = anchor, %error, "the inviter's route was refused");
+            Vec::new()
+        }
+    }
 }
 
 /// Refuse an invite the merged state does not hold as live
@@ -238,9 +277,11 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     // verifies (plan E3.2 S7c.5), else in full.
     let code_hash = rekindle_secrets::invite::hash_invite_code(link.invite_code.as_str());
     let frontier = read_frontier(deps, &invite.inviter_member_record).await?;
+    let inviter_pseudonym = parse_pseudonym(&invite.inviter_pseudonym)?;
+    let inviter_route = resolve_inviter_route(deps, anchor, &invite, &inviter_pseudonym).await;
     let asker = Asker {
         me: &identity.pseudonym_signing,
-        route: &invite.inviter_route_blob,
+        route: &inviter_route,
         code_hash: &code_hash,
     };
     let walked = walk_for_join(deps, anchor, &cert, &frontier, &asker).await?;
@@ -253,6 +294,11 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     }
     let now = deps.clock().now_secs();
     let inviter = check_invite(&gov_state, &code_hash, now)?;
+    if inviter != inviter_pseudonym {
+        return Err(GovernanceRuntimeError::Adapter(
+            "the invite's secrets name another inviter than its InviteCreated".into(),
+        ));
+    }
 
     let (member, member_owner) = create_member_record(deps).await?;
     let joined = joined_op(
@@ -301,6 +347,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         walked: walked.held,
         joined,
         partial: walked.partial,
+        inviter_route,
         claimed,
         initial_presence,
     })

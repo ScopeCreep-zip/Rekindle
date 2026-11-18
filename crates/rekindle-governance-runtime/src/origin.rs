@@ -384,6 +384,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         display_name: deps.identity_display_name(),
         status: deps.identity_status(),
         now_ms: deps.clock().now_ms(),
+        route: deps.our_route_blob(),
     };
     let publish_ops = async {
         for op in genesis_ops {

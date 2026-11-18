@@ -33,6 +33,7 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
         display_name: "Ida".into(),
         status: SessionStatus::Online,
         now_ms: 1_000,
+        route: Vec::new(),
     };
     dht.contest(Contest::Ours);
     write_card(&*pool, &own, &profile, &[3; 32])

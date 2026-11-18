@@ -123,6 +123,10 @@ labels! {
     /// Ed25519 signature prefix: a history ad (`M`/5, plan E3.2), by the
     /// pseudonym, over `community ‖ memberRecord ‖ mekGeneration ‖ sealed`.
     HISTORY_AD = "rekindle-history-ad-v1";
+    /// Ed25519 signature prefix: a member's routes (`M`/6, plan E3.2
+    /// S7c.8), by the pseudonym, over `community ‖ memberRecord ‖ issuedAt
+    /// ‖ general`.
+    MEMBER_ROUTES = "rekindle-member-routes-v1";
     /// HKDF info: invite-secrets record key.
     INVITE_SECRETS = "rekindle-invite-secrets-v1";
     /// BLAKE3 derive-key context: a community invite code's lookup id, the
