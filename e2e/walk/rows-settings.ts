@@ -403,9 +403,14 @@ export const SETTINGS_ROWS: Row[] = [
       }
       await closeSettings(b);
       await openSettings(b, "Notifications");
+      // The unloaded defaults (off, 22-7) are what the row writes, so read
+      // back only once the stored values have loaded (the box is enabled
+      // then, NotificationsTab.tsx `qhLoaded`).
+      const box2 = await optionBox(b, "Enable quiet hours");
+      await box2.waitForEnabled({ timeout: WAIT_MS, timeoutMsg: "quiet-hours box stayed disabled on reopen" });
       const [s2, e2] = await b.$$(nums);
       const got = `${await s2.getValue()}-${await e2.getValue()}`;
-      const on = await (await optionBox(b, "Enable quiet hours")).isSelected();
+      const on = await box2.isSelected();
       await shot();
       await closeSettings(b);
       if (!on || got !== "22-7") throw new Error(`read back enabled=${on} hours=${got}`);
