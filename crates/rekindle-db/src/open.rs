@@ -237,7 +237,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 136 (plan E3.2 S10, D15): no SQL change; a governance op's signature
 /// and hash cover its Cap'n Proto canonical form without `sig`, so ops
 /// stored by older builds no longer verify.
-pub const SCHEMA_VERSION: i64 = 136;
+/// 137 (plan E3.2 S10, invite proof): no SQL change; an invite's
+/// `code_hash` is the public half of its join key and a `MemberJoined`
+/// invite proof is that key's signature, so stored invites and joins of
+/// older builds no longer verify.
+pub const SCHEMA_VERSION: i64 = 137;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
