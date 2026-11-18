@@ -19,7 +19,7 @@ pub use envelope::{
 // presence type is `rekindle_types::presence::MemberPresence`.
 pub use types::{
     BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
-    InviteEntry, MemberSummary, ModerationLevel, RoleEntryV2,
+    InviteEntry, ModerationLevel, RoleEntryV2,
 };
 
 use serde::{Deserialize, Serialize};

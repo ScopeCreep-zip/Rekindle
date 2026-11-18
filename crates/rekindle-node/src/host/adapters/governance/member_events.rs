@@ -153,8 +153,8 @@ impl HostGovernance {
 /// The membership events that take `prev` to `next`, in pseudonym order.
 /// `card_name_of` gives the name on a member's verified card, the only
 /// source of a joiner's name (plan E3.2 F9-2: the stored `member_profiles`
-/// rows are not all signed by the member, e.g. a `JoinAccepted`'s member
-/// list is the sender's word); `None` while the card is not read, and its
+/// rows are not all signed by the member, e.g. a gossip `MemberJoined`
+/// hint is the sender's word); `None` while the card is not read, and its
 /// name follows as `MemberCardChanged`. `name_of` gives a remover's card
 /// or profile name. Our own kick or ban (`me`) is left to the own-removal
 /// path.

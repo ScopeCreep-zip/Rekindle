@@ -1,11 +1,10 @@
 //! Event-plane leaf codecs plus the typed-id helpers: event info with
-//! recurrence/location, member summary, voice roster, onboarding
+//! recurrence/location, voice roster, onboarding
 //! answers, and the pseudonym/uuid16/id conversions.
 
 use super::super::len_u32;
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community::envelope::{MediaSessionKey, OnboardingAnswer, VoiceRosterEntry};
-use crate::community::types::MemberSummary;
 use crate::error::CodecError;
 use rekindle_types::event::{
     DayOfWeek, EventInfo, EventLocation, EventRsvp, RecurrenceFrequency, RecurrenceRule,
@@ -297,41 +296,6 @@ pub(crate) fn read_event_info(
         },
         recurrence,
         location,
-    })
-}
-
-// ── MemberSummary ────────────────────────────────────────────────────
-
-pub(crate) fn write_member_summary(
-    mut b: crate::community_envelope_capnp::member_summary::Builder<'_>,
-    m: &MemberSummary,
-) {
-    b.set_pseudonym_key(&m.pseudonym_key);
-    b.set_display_name(&m.display_name);
-    let mut roles = b.reborrow().init_role_ids(len_u32(m.role_ids.len()));
-    for (i, id) in m.role_ids.iter().enumerate() {
-        roles.set(len_u32(i), *id);
-    }
-    b.set_joined_at(m.joined_at);
-    b.set_subkey_index(m.subkey_index);
-    b.set_onboarding_complete(m.onboarding_complete);
-}
-
-pub(crate) fn read_member_summary(
-    r: crate::community_envelope_capnp::member_summary::Reader<'_>,
-) -> Result<MemberSummary, CodecError> {
-    let role_ids: Vec<u32> = r
-        .get_role_ids()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .collect();
-    Ok(MemberSummary {
-        pseudonym_key: text_to_string(r.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
-        display_name: text_to_string(r.get_display_name().map_err(|e| capnp_err(&e))?)?,
-        role_ids,
-        joined_at: r.get_joined_at(),
-        subkey_index: r.get_subkey_index(),
-        onboarding_complete: r.get_onboarding_complete(),
     })
 }
 

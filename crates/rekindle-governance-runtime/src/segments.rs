@@ -379,8 +379,7 @@ pub fn channel_record_keys_per_segment<D: GovernanceRuntimeDeps>(
 }
 
 /// Read the `slot_seed` from `CommunityMembership`. The seed is a 32-byte
-/// shared secret distributed to all members at join time (alongside the
-/// MEK in `JoinAccepted`).
+/// shared secret every member holds from its invite (`InviteSecrets.slot_seed`).
 fn slot_seed_from_membership(
     membership: &CommunityMembership,
     community_id: &str,

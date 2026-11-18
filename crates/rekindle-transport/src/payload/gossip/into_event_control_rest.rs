@@ -1,10 +1,9 @@
 //! Tail of [`ControlPayload::into_event`] — see `into_event_control.rs`
-//! for the split rationale. Handles events, game servers,
-//! governance, voice signaling, admin delegation, bootstrap, sync, and
-//! system payloads.
+//! for the split rationale. Handles events, game servers, voice
+//! signaling, bootstrap, sync, and system payloads.
 
 use rekindle_types::subscription_events::{
-    GovernanceEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
+    SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
 };
 
 /// Every voice signal on the gossip mesh is community-scoped — a DM
@@ -16,8 +15,8 @@ fn scope(community: String, channel: String) -> VoiceScope {
 use rekindle_codec::community::envelope::ControlPayload;
 
 /// Tail of [`ControlPayload::into_event`] — see that method for the split
-/// rationale. Handles events, game servers, governance, voice
-/// signaling, admin delegation, bootstrap, sync, and system payloads.
+/// rationale. Handles events, game servers, voice signaling,
+/// bootstrap, sync, and system payloads.
 /// Earlier variants are routed by `into_event` and never reach the
 /// `unreachable!` arm below.
 pub fn control_into_event_rest(
@@ -82,17 +81,6 @@ pub fn control_into_event_rest(
                 server_id,
             })
         }
-
-        // ── Governance ──────────────────────────────────────
-        ControlPayload::GovernanceUpdated {
-            subkey_index,
-            lamport_ts,
-            ..
-        } => SubscriptionEvent::Governance(GovernanceEvent::GovernanceSubkeyUpdated {
-            community: c(),
-            subkey_index,
-            lamport_ts,
-        }),
 
         // ── Voice signaling ─────────────────────────────────
         ControlPayload::VoiceJoin {

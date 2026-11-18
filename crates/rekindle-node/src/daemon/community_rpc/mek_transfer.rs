@@ -4,8 +4,8 @@
 //! critical path for forward secrecy: when a member departs, the
 //! elected rotator generates a new key and *delivers the wrapped MEK to
 //! each member via `app_call`*. Without this handler the daemon has no
-//! way to receive one — it learned MEKs only from a `JoinAccepted`
-//! gossip payload and from the v1.0 registry MEK vault, and the vault
+//! way to receive one — it learned MEKs only from the legacy
+//! join answer (retired, plan E3.2 S8) and from the v1.0 registry MEK vault, and the vault
 //! is being retired. A daemon member would have gone silently
 //! undecryptable after the first rotation in any community it shares
 //! with a desktop peer.

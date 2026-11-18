@@ -1,6 +1,5 @@
 //! Architecture §4.3 — flat description of a community member used by
-//! gossip envelopes (`MemberJoined` broadcasts, `JoinAccepted` member
-//! list). Mirrors the wire shape that
+//! gossip envelopes (`MemberJoined` broadcasts). Mirrors the wire shape that
 //! the gossip path serialized as untyped JSON before the v2.0 envelope
 //! migration; the typed form here is what `CommunityEnvelope` carries.
 

@@ -157,7 +157,7 @@ fn watch_relay_carries_no_payload_bytes() {
 
 /// A directed payload is never gossip-forwarded.
 ///
-/// §10.6 and the join path both depend on it: a `JoinAccepted` is
+/// §10.6 and the join path both depend on it: a `MekTransfer` is
 /// wrapped for one recipient, and amplifying it to the whole mesh
 /// within the TTL benefits nobody. Ported from a unit test that asserted
 /// the same thing about the deleted postcard envelope — where the rule
@@ -167,19 +167,22 @@ fn watch_relay_carries_no_payload_bytes() {
 fn directed_payloads_are_not_forwarded() {
     use rekindle_codec::community::envelope::ControlPayload;
 
-    let join_accepted = CommunityEnvelope::Control(ControlPayload::JoinAccepted {
-        mek_encrypted: vec![],
-        mek_generation: 0,
-        members: Vec::new(),
-        member_registry_key: None,
-        slot_index: None,
-        wrapped_slot_seed: None,
-    });
-    assert!(join_accepted.is_directed());
+    let transfer = CommunityEnvelope::Control(ControlPayload::MekTransfer(
+        rekindle_codec::community::envelope::MekTransferPayload {
+            community_id: "c".into(),
+            channel_id: None,
+            generation: 1,
+            sender_pseudonym: "s".into(),
+            wrapped_mek: vec![],
+            transfer_id: vec![],
+        },
+    ));
+    assert!(transfer.is_directed());
 
-    // Both halves of the drift, now covered by the one definition.
-    assert!(CommunityEnvelope::Control(ControlPayload::JoinRejected {
-        reason: "no".into()
+    // An answer to one peer's question is directed too.
+    assert!(CommunityEnvelope::Control(ControlPayload::SyncResponse {
+        channel_id: "general".into(),
+        messages: Vec::new(),
     })
     .is_directed());
 

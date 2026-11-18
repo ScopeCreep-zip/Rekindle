@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum MembershipEvent {
     /// A join request was submitted (operator sees this).
-    /// Triggered by: gossip `ControlPayload::MemberJoinRequest`.
+    /// No producer: the unsigned `MemberJoinRequest` wire arm is retired
+    /// (plan E3.2 S8); a join is the joiner's signed `MemberJoined` op.
     JoinRequested {
         community: String,
         pseudonym: String,
@@ -86,7 +87,9 @@ pub enum MembershipEvent {
         pseudonym: String,
     },
     /// A member was removed by an operator.
-    /// Triggered by: gossip `ControlPayload::MemberRemoved`.
+    /// Triggered by: the desktop's gossip `Kick` notice
+    /// (`control_moderation.rs`), until the merged `MemberRemoved` is the
+    /// only trigger.
     Removed {
         community: String,
         pseudonym: String,
@@ -135,7 +138,8 @@ pub enum MembershipEvent {
         target_pseudonym: String,
     },
     /// A member was timed out (temporary restriction).
-    /// Triggered by: gossip `ControlPayload::TimeoutMember`.
+    /// No producer: the unsigned `TimeoutMember` wire arm is retired
+    /// (plan E3.2 S8); a timeout is the signed governance op.
     TimedOut {
         community: String,
         target_pseudonym: String,
@@ -143,20 +147,23 @@ pub enum MembershipEvent {
         reason: Option<String>,
     },
     /// A member's timeout was removed early.
-    /// Triggered by: gossip `ControlPayload::RemoveTimeout`.
+    /// No producer: the unsigned `RemoveTimeout` wire arm is retired
+    /// (plan E3.2 S8); lifting a timeout is the signed governance op.
     TimeoutRemoved {
         community: String,
         target_pseudonym: String,
     },
     /// A member's timeout status changed (broadcast to community).
-    /// Triggered by: gossip `ControlPayload::MemberTimedOut`.
+    /// No producer: the unsigned `MemberTimedOut` wire arm is retired
+    /// (plan E3.2 S8).
     TimeoutStatusChanged {
         community: String,
         pseudonym: String,
         timeout_until: Option<u64>,
     },
     /// A member's roles changed.
-    /// Triggered by: gossip `ControlPayload::MemberRolesChanged`.
+    /// Triggered by: the Host's governance runtime event
+    /// (`host/adapters/governance/events.rs`).
     RolesChanged {
         community: String,
         pseudonym: String,

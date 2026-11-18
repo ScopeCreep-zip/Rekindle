@@ -91,8 +91,7 @@ impl CommunityEnvelope {
     /// This is the single definition. There were two, and they
     /// disagreed: `rekindle-transport`'s postcard
     /// `SignedGossipEnvelope::is_private` listed six variants while
-    /// `src-tauri`'s `is_private_control_payload` listed four, omitting
-    /// `JoinRejected` and `KickedNotification` — so a desktop node
+    /// `src-tauri`'s `is_private_control_payload` listed four — so a desktop node
     /// re-broadcast two payloads a daemon node would not. The union is
     /// the correct answer, plus the media plane, which was previously
     /// guarded separately and only on one track.
@@ -103,12 +102,8 @@ impl CommunityEnvelope {
         };
         matches!(
             payload,
-            // Wrapped or granted to a single recipient.
-            ControlPayload::JoinAccepted { .. }
-                | ControlPayload::JoinRejected { .. }
-                | ControlPayload::SlotKeypairGrant { .. }
-                | ControlPayload::AdminKeypairGrant { .. }
-                | ControlPayload::MekTransfer(_)
+            // Wrapped for a single recipient.
+            ControlPayload::MekTransfer(_)
                 | ControlPayload::MekTransferAck(_)
                 // Answers to one peer's question.
                 | ControlPayload::SyncResponse { .. }

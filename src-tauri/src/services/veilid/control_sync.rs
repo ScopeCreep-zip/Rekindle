@@ -14,10 +14,6 @@ pub(crate) fn check_gossip_moderation_permission(
 
     let required: u64 = match payload {
         ControlPayload::Kick { .. } => permissions::KICK_MEMBERS,
-        ControlPayload::Ban { .. } | ControlPayload::Unban { .. } => permissions::BAN_MEMBERS,
-        ControlPayload::TimeoutMember { .. } | ControlPayload::RemoveTimeout { .. } => {
-            permissions::TIMEOUT_MEMBERS
-        }
         _ => return true,
     };
 

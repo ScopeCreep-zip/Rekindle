@@ -104,19 +104,6 @@ struct WatchRelay @0xe6d4eb16e9bf1c2e {
 
 # ── Sub-types referenced by ControlPayload variants ───────────────────
 
-struct MemberSummary @0xe7d4eb16e9bf1c2e {
-    pseudonymKey         @0 :Text;
-    displayName          @1 :Text;
-    roleIds              @2 :List(UInt32);
-    joinedAt             @3 :UInt64;
-    subkeyIndex          @4 :UInt32;
-    onboardingComplete   @5 :Bool;
-    # Retired (plan E3.1 Z): timeouts come from merged governance; the
-    # ordinals stay reserved (no ordinal reuse).
-    obsoleteHasTimeoutUntil @6 :Bool;
-    obsoleteTimeoutUntil @7 :UInt64;
-}
-
 struct VoiceRosterEntry @0xe8d4eb16e9bf1c2e {
     pseudonymKey     @0 :Text;
     routeBlob        @1 :Data;
@@ -143,37 +130,8 @@ struct OnboardingAnswer @0xe9d4eb16e9bf1c2e {
 # Rust enum at `rekindle-protocol::dht::community::envelope`; the
 # union ordinals below are append-only.
 
-struct MemberJoinRequestPayload @0xea0001000000a000 {
-    pseudonymKey         @0 :Text;
-    displayName          @1 :Text;
-    hasInviteCode        @2 :Bool;
-    inviteCode           @3 :Text;
-    hasRouteBlob         @4 :Bool;
-    routeBlob            @5 :Data;
-    hasPrekeyBundle      @6 :Bool;
-    prekeyBundle         @7 :Data;
-    hasClaimedSubkey     @8 :Bool;
-    claimedSubkeyIndex   @9 :UInt32;
-}
-
 struct MemberLeavePayload @0xea0002000000a000 {
     pseudonymKey         @0 :Text;
-}
-
-struct JoinAcceptedPayload @0xea0003000000a000 {
-    mekEncrypted          @0 :Data;
-    mekGeneration         @1 :UInt64;
-    members               @2 :List(MemberSummary);
-    hasMemberRegistryKey  @3 :Bool;
-    memberRegistryKey     @4 :Text;
-    hasSlotIndex          @5 :Bool;
-    slotIndex             @6 :UInt32;
-    hasWrappedSlotSeed    @7 :Bool;
-    wrappedSlotSeed       @8 :Data;
-}
-
-struct JoinRejectedPayload @0xea0004000000a000 {
-    reason               @0 :Text;
 }
 
 struct MemberJoinedPayload @0xea0005000000a000 {
@@ -185,37 +143,8 @@ struct MemberJoinedPayload @0xea0005000000a000 {
     routeBlob            @5 :Data;
 }
 
-struct MemberRemovedPayload @0xea0006000000a000 {
-    pseudonymKey         @0 :Text;
-}
-
 struct KickPayload @0xea0007000000a000 {
     targetPseudonym      @0 :Text;
-}
-
-struct BanPayload @0xea0008000000a000 {
-    targetPseudonym      @0 :Text;
-}
-
-struct UnbanPayload @0xea0009000000a000 {
-    targetPseudonym      @0 :Text;
-}
-
-struct TimeoutMemberPayload @0xea000a000000a000 {
-    targetPseudonym      @0 :Text;
-    durationSeconds      @1 :UInt64;
-    hasReason            @2 :Bool;
-    reason               @3 :Text;
-}
-
-struct RemoveTimeoutPayload @0xea000b000000a000 {
-    targetPseudonym      @0 :Text;
-}
-
-struct MemberTimedOutPayload @0xea000c000000a000 {
-    pseudonymKey         @0 :Text;
-    hasTimeoutUntil      @1 :Bool;
-    timeoutUntil         @2 :UInt64;
 }
 
 struct MessageEditedPayload @0xea000d000000a000 {
@@ -301,11 +230,6 @@ struct RequestSegmentExpansionPayload @0xea0044000000a000 {
 }
 
 struct OnboardingCompletePayload @0xea0012000000a000 {
-    pseudonymKey         @0 :Text;
-    roleIds              @1 :List(UInt32);
-}
-
-struct MemberRolesChangedPayload @0xea0013000000a000 {
     pseudonymKey         @0 :Text;
     roleIds              @1 :List(UInt32);
 }
@@ -406,23 +330,6 @@ struct ChannelLockdownPayload @0xea0025000000a000 {
 struct SystemMessagePayload @0xea0026000000a000 {
     body                 @0 :Text;
     timestamp            @1 :UInt64;
-}
-
-struct AdminKeypairGrantPayload @0xea0027000000a000 {
-    wrappedOwnerKeypair  @0 :Data;
-    wrappedSlotSeed      @1 :Data;
-}
-
-struct SlotKeypairGrantPayload @0xea0028000000a000 {
-    slotIndex            @0 :UInt32;
-    segmentIndex         @1 :UInt32;
-    wrappedSlotKeypair   @2 :Data;
-}
-
-struct GovernanceUpdatedPayload @0xea0029000000a000 {
-    anchor        @0 :Text;
-    subkeyIndex          @1 :UInt32;
-    lamportTs            @2 :UInt64;
 }
 
 # The joiner's bootstrap request (plan E3.2): a bare app_call to the
@@ -724,35 +631,38 @@ struct LinkPreviewPayload @0xea0042000000a000 {
     fetchedAt            @11 :UInt64;
 }
 
-# ── 67-arm union ──────────────────────────────────────────────────────
+# ── control-payload union ─────────────────────────────────────────────
 #
 # Append-only ordinals. New variants get the next number. Removed
 # variants become the sentinel `obsolete<N>` arm that decoders skip:
 # @61 (frameAck) and @63 (bandwidthEstimate), video's own congestion
 # feedback, replaced by the media route's transport feedback (plan
-# E4.3.3).
+# E4.3.3); @0, @2, @3, @5, @7–@11, @18 and @39–@41 (the unsigned
+# membership and moderation notices, the legacy join answer, the
+# keypair grants and governanceUpdated), replaced by the signed
+# governance ops (plan E3.2 S8).
 
 struct ControlPayload @0xeaffffff00000001 {
     union {
-        memberJoinRequest        @0  :MemberJoinRequestPayload;
+        obsolete0                @0  :Void;
         memberLeave              @1  :MemberLeavePayload;
-        joinAccepted             @2  :JoinAcceptedPayload;
-        joinRejected             @3  :JoinRejectedPayload;
+        obsolete2                @2  :Void;
+        obsolete3                @3  :Void;
         memberJoined             @4  :MemberJoinedPayload;
-        memberRemoved            @5  :MemberRemovedPayload;
+        obsolete5                @5  :Void;
         kick                     @6  :KickPayload;
-        ban                      @7  :BanPayload;
-        unban                    @8  :UnbanPayload;
-        timeoutMember            @9  :TimeoutMemberPayload;
-        removeTimeout            @10 :RemoveTimeoutPayload;
-        memberTimedOut           @11 :MemberTimedOutPayload;
+        obsolete7                @7  :Void;
+        obsolete8                @8  :Void;
+        obsolete9                @9  :Void;
+        obsolete10               @10 :Void;
+        obsolete11               @11 :Void;
         messageEdited            @12 :MessageEditedPayload;
         messageDeleted           @13 :MessageDeletedPayload;
         mekRotated               @14 :MEKRotatedPayload;
         requestMek               @15 :RequestMEKPayload;
         mekTransfer              @16 :MekTransferPayload;
         onboardingComplete       @17 :OnboardingCompletePayload;
-        memberRolesChanged       @18 :MemberRolesChangedPayload;
+        obsolete18               @18 :Void;
         channelOverwriteChanged  @19 :ChannelOverwriteChangedPayload;
         reactionAdded            @20 :ReactionAddedPayload;
         reactionRemoved          @21 :ReactionRemovedPayload;
@@ -775,9 +685,9 @@ struct ControlPayload @0xeaffffff00000001 {
         raidAlert                @36 :RaidAlertPayload;
         channelLockdown          @37 :ChannelLockdownPayload;
         systemMessage            @38 :SystemMessagePayload;
-        adminKeypairGrant        @39 :AdminKeypairGrantPayload;
-        slotKeypairGrant         @40 :SlotKeypairGrantPayload;
-        governanceUpdated        @41 :GovernanceUpdatedPayload;
+        obsolete39               @39 :Void;
+        obsolete40               @40 :Void;
+        obsolete41               @41 :Void;
         bootstrapRequest         @42 :BootstrapRequestPayload;
         obsolete43               @43 :Void;
         syncRequest              @44 :SyncRequestPayload;

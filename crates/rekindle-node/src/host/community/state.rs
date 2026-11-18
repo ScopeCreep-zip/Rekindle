@@ -156,7 +156,7 @@ pub struct CommunityState {
     pub registry_owner_keypair: Option<String>,
 
     /// Slot seed for deriving member SMPL keypairs.
-    /// Distributed to ALL members via JoinAccepted (same trust level as MEK).
+    /// Every member holds it from its invite (`InviteSecrets.slot_seed`).
     /// 32 bytes, hex-encoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot_seed: Option<String>,

@@ -132,49 +132,6 @@ fn handle_gossip_moderation(
                 &target_pseudonym,
             );
         }
-        ControlPayload::Ban {
-            target_pseudonym, ..
-        } => {
-            remove_member_from_local_state(
-                app_handle,
-                state,
-                community_id,
-                target_pseudonym.clone(),
-                "ban_member_remove",
-            );
-            crate::services::community::spawn_departure_rotations(
-                app_handle,
-                state,
-                community_id,
-                &target_pseudonym,
-            );
-        }
-        ControlPayload::Unban { .. } => {}
-        ControlPayload::TimeoutMember {
-            target_pseudonym,
-            duration_seconds,
-            ..
-        } => {
-            let timeout_until = rekindle_utils::timestamp_secs() + duration_seconds;
-            crate::event_dispatch::emit_membership(
-                app_handle,
-                rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {
-                    community: community_id.to_string(),
-                    pseudonym: target_pseudonym,
-                    timeout_until: Some(timeout_until),
-                },
-            );
-        }
-        ControlPayload::RemoveTimeout { target_pseudonym } => {
-            crate::event_dispatch::emit_membership(
-                app_handle,
-                rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {
-                    community: community_id.to_string(),
-                    pseudonym: target_pseudonym,
-                    timeout_until: None,
-                },
-            );
-        }
         other => {
             tracing::trace!(
                 community = %community_id,

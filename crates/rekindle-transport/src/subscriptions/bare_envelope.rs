@@ -39,7 +39,7 @@
 //! `BootstrapRequest` and `CheckpointStateRequest` and nothing else. Every
 //! other
 //! control variant carries its authority in plaintext fields — a
-//! `MEKRotated` generation, a `GovernanceUpdated` subkey — and would be
+//! `MEKRotated` generation, a `RequestMEK` cascade index — and would be
 //! forgeable by anyone who can reach our route. Those must keep
 //! arriving signed, which is why this returns `None` for them and lets
 //! the caller NAK.

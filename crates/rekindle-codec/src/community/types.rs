@@ -110,20 +110,6 @@ pub struct RoleEntryV2 {
     pub self_assignable: bool,
 }
 
-/// A member summary in the member index (registry owner subkey 0).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemberSummary {
-    pub pseudonym_key: String,
-    pub display_name: String,
-    pub role_ids: Vec<u32>,
-    pub joined_at: u64,
-    /// The member's subkey index in the SMPL registry record.
-    pub subkey_index: u32,
-    #[serde(default)]
-    pub onboarding_complete: bool,
-}
-
 /// A ban entry in the manifest ban list (subkey 4).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

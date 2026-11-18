@@ -18,45 +18,8 @@ use super::{MediaSessionKey, OnboardingAnswer, VoiceRosterEntry};
 #[serde(tag = "type", content = "data")]
 pub enum ControlPayload {
     // ── Member lifecycle ──
-    /// Request to join the community.
-    MemberJoinRequest {
-        pseudonym_key: String,
-        display_name: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        invite_code: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        route_blob: Option<Vec<u8>>,
-        /// Signal Protocol prekey bundle for MEK delivery.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        prekey_bundle: Option<Vec<u8>>,
-        /// SMPL subkey index the joiner has already claimed via self-service join.
-        /// When present, the admin processing this request should use this index
-        /// instead of assigning a new one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        claimed_subkey_index: Option<u32>,
-    },
     /// Member voluntarily leaving.
     MemberLeave { pseudonym_key: String },
-    /// Response: join accepted by admin peer.
-    JoinAccepted {
-        mek_encrypted: Vec<u8>,
-        mek_generation: u64,
-        #[serde(default)]
-        members: Vec<crate::community::types::MemberSummary>,
-        /// The member registry DHT record key — needed for elections and presence.
-        #[serde(default)]
-        member_registry_key: Option<String>,
-        /// Slot index for the joiner in the member registry SMPL record.
-        #[serde(default)]
-        slot_index: Option<u32>,
-        /// Wrapped slot seed (ECDH-encrypted) — allows the joiner to derive
-        /// their own slot keypair locally via `rekindle_crypto::keypair_text::slot_keypair_text(seed, slot_index)`.
-        /// This eliminates any coordinator dependency for presence writing.
-        #[serde(default)]
-        wrapped_slot_seed: Option<Vec<u8>>,
-    },
-    /// Response: join rejected by admin peer.
-    JoinRejected { reason: String },
     /// Broadcast: a member joined.
     MemberJoined {
         pseudonym_key: String,
@@ -67,31 +30,9 @@ pub enum ControlPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         route_blob: Option<Vec<u8>>,
     },
-    /// Broadcast: a member was removed (left, kicked, or banned).
-    MemberRemoved { pseudonym_key: String },
-
     // ── Moderation ──
     /// Kick a member.
     Kick { target_pseudonym: String },
-    /// Ban a member.
-    Ban { target_pseudonym: String },
-    /// Unban a member.
-    Unban { target_pseudonym: String },
-    /// Timeout a member.
-    TimeoutMember {
-        target_pseudonym: String,
-        duration_seconds: u64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
-    },
-    /// Remove a member's timeout.
-    RemoveTimeout { target_pseudonym: String },
-    /// Broadcast: member timed out.
-    MemberTimedOut {
-        pseudonym_key: String,
-        timeout_until: Option<u64>,
-    },
-
     // ── Messages ──
     /// Broadcast: message edited.
     MessageEdited {
@@ -165,13 +106,6 @@ pub enum ControlPayload {
     },
     /// Broadcast: member completed onboarding.
     OnboardingComplete {
-        pseudonym_key: String,
-        role_ids: Vec<u32>,
-    },
-
-    // ── Channel management ──
-    /// Broadcast: member roles changed.
-    MemberRolesChanged {
         pseudonym_key: String,
         role_ids: Vec<u32>,
     },
@@ -274,28 +208,7 @@ pub enum ControlPayload {
     /// System message broadcast (join/leave/kick/ban events posted to chat feed).
     SystemMessage { body: String, timestamp: u64 },
 
-    // ── Admin delegation ──
-    /// Grant the governance record writer keypair plus slot seed to a newly promoted admin.
-    AdminKeypairGrant {
-        /// Governance record writer keypair encrypted for the target member.
-        wrapped_owner_keypair: Vec<u8>,
-        /// Slot seed encrypted for the target member.
-        wrapped_slot_seed: Vec<u8>,
-    },
-    /// Grant a specific slot keypair to a newly joined member.
-    SlotKeypairGrant {
-        slot_index: u32,
-        segment_index: u32,
-        /// Slot keypair encrypted for the target member.
-        wrapped_slot_keypair: Vec<u8>,
-    },
     // ── Bootstrap protocol ──
-    /// Gossip notification that a governance SMPL subkey changed.
-    GovernanceUpdated {
-        anchor: String,
-        subkey_index: u32,
-        lamport_ts: u64,
-    },
     /// The joiner's bootstrap request (plan E3.2): a bare app_call to the
     /// inviter's route. It carries no authority of its own: the inviter
     /// verifies the joiner's signed `MemberJoined` (`member_joined_op`,

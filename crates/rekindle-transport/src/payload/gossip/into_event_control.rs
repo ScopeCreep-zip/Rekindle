@@ -1,7 +1,6 @@
-//! `ControlPayload::into_event` — member lifecycle, moderation,
-//! messages, MEK management, roles, channel permissions, reactions and
+//! `ControlPayload::into_event` — messages, MEK management, roles, channel permissions, reactions and
 //! pins. The remaining categories (events, threads, game servers,
-//! governance, voice, admin delegation, bootstrap, sync, system) are
+//! voice, bootstrap, sync, system) are
 //! handled by `into_event_control_rest.rs`.
 
 use rekindle_types::subscription_events::{
@@ -23,7 +22,7 @@ use super::into_event_control_rest::control_into_event_rest;
 /// video fragments and FEC, attachment chunks, bandwidth and topology
 /// reports — consumed by the subsystems that own them and never
 /// surfaced to a subscriber — the three thread payloads, whose
-/// events the Host publishes once it has stored them, and the six
+/// events the Host publishes once it has stored them, and the three
 /// membership notices, whose verdicts the Host publishes from the merged
 /// governance. Saying so in the return type is what stops
 /// them being given an invented event just to satisfy the match.
@@ -36,44 +35,6 @@ pub fn control_into_event(
     let s = || sender.to_string();
 
     Some(match payload {
-        // ── Member lifecycle ─────────────────────────────────
-        ControlPayload::MemberJoinRequest {
-            pseudonym_key,
-            display_name,
-            invite_code,
-            ..
-        } => SubscriptionEvent::Membership(MembershipEvent::JoinRequested {
-            community: c(),
-            pseudonym: pseudonym_key,
-            display_name,
-            has_invite: invite_code.is_some(),
-        }),
-        // ── Moderation ──────────────────────────────────────
-        ControlPayload::TimeoutMember {
-            target_pseudonym,
-            duration_seconds,
-            reason,
-        } => SubscriptionEvent::Membership(MembershipEvent::TimedOut {
-            community: c(),
-            target_pseudonym,
-            duration_seconds,
-            reason,
-        }),
-        ControlPayload::RemoveTimeout { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::TimeoutRemoved {
-                community: c(),
-                target_pseudonym,
-            })
-        }
-        ControlPayload::MemberTimedOut {
-            pseudonym_key,
-            timeout_until,
-        } => SubscriptionEvent::Membership(MembershipEvent::TimeoutStatusChanged {
-            community: c(),
-            pseudonym: pseudonym_key,
-            timeout_until,
-        }),
-
         // ── Messages ────────────────────────────────────────
         ControlPayload::MessageEdited {
             channel_id,
@@ -131,15 +92,7 @@ pub fn control_into_event(
             })
         }
 
-        // ── Roles ───────────────────────────────────────────
-        ControlPayload::MemberRolesChanged {
-            pseudonym_key,
-            role_ids,
-        } => SubscriptionEvent::Membership(MembershipEvent::RolesChanged {
-            community: c(),
-            pseudonym: pseudonym_key,
-            role_ids,
-        }),
+        // ── Onboarding ──────────────────────────────────────
         ControlPayload::OnboardingComplete {
             pseudonym_key,
             role_ids,
@@ -208,8 +161,8 @@ pub fn control_into_event(
             message_id,
         }),
 
-        // The remaining categories (events, game servers,
-        // governance, voice, admin delegation, bootstrap, sync, system)
+        // The remaining categories (events, game servers, voice,
+        // bootstrap, sync, system)
         // are mapped by `into_event_rest` to keep this method under the
         // clippy::too_many_lines limit. They are listed explicitly rather
         // than via `_` so that adding a `ControlPayload` variant remains a
@@ -221,20 +174,12 @@ pub fn control_into_event(
         | ControlPayload::EventReminder { .. }
         | ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }
-        | ControlPayload::GovernanceUpdated { .. }
         | ControlPayload::VoiceJoin { .. }
         | ControlPayload::VoiceLeave { .. }
         | ControlPayload::VoiceModeSwitch { .. }
         | ControlPayload::VoiceMute { .. }
         | ControlPayload::VoiceDeafen { .. }
         | ControlPayload::VoiceRoster { .. }
-        // The legacy join answer and keypair grants: nothing acts on them
-        // since the self-sovereign join (plan E3.2 S8); their arms retire
-        // with the wire.
-        | ControlPayload::JoinAccepted { .. }
-        | ControlPayload::JoinRejected { .. }
-        | ControlPayload::AdminKeypairGrant { .. }
-        | ControlPayload::SlotKeypairGrant { .. }
         | ControlPayload::BootstrapRequest { .. }
         | ControlPayload::BootstrapResponseV2 { .. }
         | ControlPayload::SyncRequest { .. }
@@ -278,10 +223,7 @@ pub fn control_into_event(
         // twice, first without its reason.
         ControlPayload::MemberJoined { .. }
         | ControlPayload::MemberLeave { .. }
-        | ControlPayload::MemberRemoved { .. }
         | ControlPayload::Kick { .. }
-        | ControlPayload::Ban { .. }
-        | ControlPayload::Unban { .. }
         | ControlPayload::ThreadCreated { .. }
         | ControlPayload::ThreadMessageReceived { .. }
         | ControlPayload::ThreadArchived { .. }

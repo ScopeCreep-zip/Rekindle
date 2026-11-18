@@ -1,4 +1,4 @@
-//! Keys the governance runtime hands the daemon (hydration, JoinAccepted).
+//! Keys the governance runtime hands the daemon (hydration).
 //!
 //! Installed into `rekindle_transport::crypto::mek::MekCache` through
 //! `MekCacheAdapter`, so the shared convergence rule (no downgrade, lowest

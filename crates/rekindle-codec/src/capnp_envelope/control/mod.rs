@@ -1,4 +1,4 @@
-//! `ControlPayload` (67-arm union) encoder / decoder.
+//! `ControlPayload` encoder / decoder.
 //!
 //! Mirrors the Rust enum in `crate::community::envelope::ControlPayload`
 //! against the schema in `schemas/community_envelope.capnp`. Each
@@ -36,10 +36,8 @@ use events::{
     write_thread_message_received,
 };
 use keys::{
-    read_admin_keypair_grant, read_governance_updated, read_mek_rotated, read_mek_transfer,
-    read_mek_transfer_ack, read_request_mek, read_slot_keypair_grant, write_admin_keypair_grant,
-    write_governance_updated, write_mek_rotated, write_mek_transfer, write_mek_transfer_ack,
-    write_request_mek, write_slot_keypair_grant,
+    read_mek_rotated, read_mek_transfer, read_mek_transfer_ack, read_request_mek,
+    write_mek_rotated, write_mek_transfer, write_mek_transfer_ack, write_request_mek,
 };
 use media::{
     read_attachment_chunk, read_keyframe_request, read_media_capabilities,
@@ -50,13 +48,10 @@ use media::{
     write_video_parity_fragment,
 };
 use membership::{
-    read_channel_overwrite_changed, read_join_accepted, read_join_rejected,
-    read_member_join_request, read_member_joined, read_member_leave, read_member_removed,
-    read_member_roles_changed, read_onboarding_complete, read_request_segment_expansion,
-    read_submit_onboarding_answers, write_channel_overwrite_changed, write_join_accepted,
-    write_join_rejected, write_member_join_request, write_member_joined, write_member_leave,
-    write_member_removed, write_member_roles_changed, write_onboarding_complete,
-    write_request_segment_expansion, write_submit_onboarding_answers,
+    read_channel_overwrite_changed, read_member_joined, read_member_leave,
+    read_onboarding_complete, read_request_segment_expansion, read_submit_onboarding_answers,
+    write_channel_overwrite_changed, write_member_joined, write_member_leave,
+    write_onboarding_complete, write_request_segment_expansion, write_submit_onboarding_answers,
 };
 use messaging::{
     read_link_preview, read_message_deleted, read_message_edited, read_message_pinned,
@@ -65,10 +60,8 @@ use messaging::{
     write_reaction_added, write_reaction_removed,
 };
 use moderation::{
-    read_ban, read_channel_lockdown, read_kick, read_member_timed_out, read_raid_alert,
-    read_remove_timeout, read_system_message, read_timeout_member, read_unban, write_ban,
-    write_channel_lockdown, write_kick, write_member_timed_out, write_raid_alert,
-    write_remove_timeout, write_system_message, write_timeout_member, write_unban,
+    read_channel_lockdown, read_kick, read_raid_alert, read_system_message, write_channel_lockdown,
+    write_kick, write_raid_alert, write_system_message,
 };
 use voice::{
     read_soundboard_play, read_speak_request, read_speak_response, read_stage_update,
@@ -88,28 +81,9 @@ pub fn encode_control_payload(
     let mut b = b;
     use ControlPayload as CP;
     match payload {
-        CP::MemberJoinRequest { .. } => {
-            write_member_join_request(b.reborrow().init_member_join_request(), payload);
-        }
         CP::MemberLeave { .. } => write_member_leave(b.reborrow().init_member_leave(), payload),
-        CP::JoinAccepted { .. } => write_join_accepted(b.reborrow().init_join_accepted(), payload),
-        CP::JoinRejected { .. } => write_join_rejected(b.reborrow().init_join_rejected(), payload),
         CP::MemberJoined { .. } => write_member_joined(b.reborrow().init_member_joined(), payload),
-        CP::MemberRemoved { .. } => {
-            write_member_removed(b.reborrow().init_member_removed(), payload);
-        }
         CP::Kick { .. } => write_kick(b.reborrow().init_kick(), payload),
-        CP::Ban { .. } => write_ban(b.reborrow().init_ban(), payload),
-        CP::Unban { .. } => write_unban(b.reborrow().init_unban(), payload),
-        CP::TimeoutMember { .. } => {
-            write_timeout_member(b.reborrow().init_timeout_member(), payload);
-        }
-        CP::RemoveTimeout { .. } => {
-            write_remove_timeout(b.reborrow().init_remove_timeout(), payload);
-        }
-        CP::MemberTimedOut { .. } => {
-            write_member_timed_out(b.reborrow().init_member_timed_out(), payload);
-        }
         CP::MessageEdited { .. } => {
             write_message_edited(b.reborrow().init_message_edited(), payload);
         }
@@ -127,9 +101,6 @@ pub fn encode_control_payload(
         }
         CP::OnboardingComplete { .. } => {
             write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload);
-        }
-        CP::MemberRolesChanged { .. } => {
-            write_member_roles_changed(b.reborrow().init_member_roles_changed(), payload);
         }
         CP::ChannelOverwriteChanged { .. } => {
             write_channel_overwrite_changed(b.reborrow().init_channel_overwrite_changed(), payload);
@@ -179,15 +150,6 @@ pub fn encode_control_payload(
         }
         CP::SystemMessage { .. } => {
             write_system_message(b.reborrow().init_system_message(), payload);
-        }
-        CP::AdminKeypairGrant { .. } => {
-            write_admin_keypair_grant(b.reborrow().init_admin_keypair_grant(), payload);
-        }
-        CP::SlotKeypairGrant { .. } => {
-            write_slot_keypair_grant(b.reborrow().init_slot_keypair_grant(), payload);
-        }
-        CP::GovernanceUpdated { .. } => {
-            write_governance_updated(b.reborrow().init_governance_updated(), payload);
         }
         CP::BootstrapRequest { .. } => {
             write_bootstrap_request(b.reborrow().init_bootstrap_request(), payload);
@@ -267,18 +229,9 @@ pub fn encode_control_payload(
 pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, CodecError> {
     use schema::Which;
     match r.which().map_err(not_in_schema)? {
-        Which::MemberJoinRequest(p) => read_member_join_request(p.map_err(|e| capnp_err(&e))?),
         Which::MemberLeave(p) => read_member_leave(p.map_err(|e| capnp_err(&e))?),
-        Which::JoinAccepted(p) => read_join_accepted(p.map_err(|e| capnp_err(&e))?),
-        Which::JoinRejected(p) => read_join_rejected(p.map_err(|e| capnp_err(&e))?),
         Which::MemberJoined(p) => read_member_joined(p.map_err(|e| capnp_err(&e))?),
-        Which::MemberRemoved(p) => read_member_removed(p.map_err(|e| capnp_err(&e))?),
         Which::Kick(p) => read_kick(p.map_err(|e| capnp_err(&e))?),
-        Which::Ban(p) => read_ban(p.map_err(|e| capnp_err(&e))?),
-        Which::Unban(p) => read_unban(p.map_err(|e| capnp_err(&e))?),
-        Which::TimeoutMember(p) => read_timeout_member(p.map_err(|e| capnp_err(&e))?),
-        Which::RemoveTimeout(p) => read_remove_timeout(p.map_err(|e| capnp_err(&e))?),
-        Which::MemberTimedOut(p) => read_member_timed_out(p.map_err(|e| capnp_err(&e))?),
         Which::MessageEdited(p) => read_message_edited(p.map_err(|e| capnp_err(&e))?),
         Which::MessageDeleted(p) => read_message_deleted(p.map_err(|e| capnp_err(&e))?),
         Which::MekRotated(p) => read_mek_rotated(p.map_err(|e| capnp_err(&e))?),
@@ -289,7 +242,6 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
             read_request_segment_expansion(p.map_err(|e| capnp_err(&e))?)
         }
         Which::OnboardingComplete(p) => read_onboarding_complete(p.map_err(|e| capnp_err(&e))?),
-        Which::MemberRolesChanged(p) => read_member_roles_changed(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelOverwriteChanged(p) => {
             read_channel_overwrite_changed(p.map_err(|e| capnp_err(&e))?)
         }
@@ -315,9 +267,6 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::RaidAlert(p) => Ok(read_raid_alert(p.map_err(|e| capnp_err(&e))?)),
         Which::ChannelLockdown(p) => Ok(read_channel_lockdown(p.map_err(|e| capnp_err(&e))?)),
         Which::SystemMessage(p) => read_system_message(p.map_err(|e| capnp_err(&e))?),
-        Which::AdminKeypairGrant(p) => read_admin_keypair_grant(p.map_err(|e| capnp_err(&e))?),
-        Which::SlotKeypairGrant(p) => read_slot_keypair_grant(p.map_err(|e| capnp_err(&e))?),
-        Which::GovernanceUpdated(p) => read_governance_updated(p.map_err(|e| capnp_err(&e))?),
         Which::BootstrapRequest(p) => read_bootstrap_request(p.map_err(|e| capnp_err(&e))?),
         Which::BootstrapResponseV2(p) => read_bootstrap_response_v2(p.map_err(|e| capnp_err(&e))?),
         Which::SyncRequest(p) => read_sync_request(p.map_err(|e| capnp_err(&e))?),
@@ -368,9 +317,24 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::VideoFragment(p) => read_video_fragment(p.map_err(|e| capnp_err(&e))?),
         Which::VideoParityFragment(p) => read_video_parity_fragment(p.map_err(|e| capnp_err(&e))?),
         Which::KeyframeRequest(p) => read_keyframe_request(p.map_err(|e| capnp_err(&e))?),
-        // Removed variants (plan E4.3.3; @35 by E3.2 S9 own removal):
-        // skipped like an unknown one.
-        Which::Obsolete35(())
+        // Removed variants (plan E4.3.3; @35 by E3.2 S9 own removal; the
+        // unsigned membership notices, the legacy join answer, the keypair
+        // grants and `governanceUpdated` by E3.2 S8, replaced by signed
+        // governance ops): skipped like an unknown one.
+        Which::Obsolete0(())
+        | Which::Obsolete2(())
+        | Which::Obsolete3(())
+        | Which::Obsolete5(())
+        | Which::Obsolete7(())
+        | Which::Obsolete8(())
+        | Which::Obsolete9(())
+        | Which::Obsolete10(())
+        | Which::Obsolete11(())
+        | Which::Obsolete18(())
+        | Which::Obsolete35(())
+        | Which::Obsolete39(())
+        | Which::Obsolete40(())
+        | Which::Obsolete41(())
         | Which::Obsolete43(())
         | Which::Obsolete61(())
         | Which::Obsolete63(()) => Err(CodecError::UnknownVariant(

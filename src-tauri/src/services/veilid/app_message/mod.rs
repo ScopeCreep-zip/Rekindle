@@ -283,13 +283,7 @@ pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
     if let Ok(Some(CommunityEnvelope::Control(ref payload))) =
         try_decode_community_envelope(envelope_bytes)
     {
-        matches!(
-            payload,
-            ControlPayload::JoinAccepted { .. }
-                | ControlPayload::SlotKeypairGrant { .. }
-                | ControlPayload::AdminKeypairGrant { .. }
-                | ControlPayload::SyncResponse { .. }
-        )
+        matches!(payload, ControlPayload::SyncResponse { .. })
     } else {
         false
     }
