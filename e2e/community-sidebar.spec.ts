@@ -15,6 +15,14 @@ const HANDLER = `
   switch (cmd) {
     case "subscribe_events":
       return null;
+    // The Host's empty default (OnboardingAdapter::welcome_screen), never
+    // the catch-all's []: handleLoadWelcomeScreen took [] for a set screen
+    // and WelcomeScreen read [].channels.length inside that store write.
+    // Solid's runUpdates drops its queued effects when a computation throws
+    // (Effects = null), so the main pane's insert effect stayed PENDING and
+    // no later Show change reached .community-main (walk W6b).
+    case "get_welcome_screen":
+      return { description: "", channels: [] };
     case "get_identity":
       return { publicKey: "${"a".repeat(64)}", displayName: "Bea" };
     case "get_community_details":
@@ -38,11 +46,19 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator(".community-channel-header-name")).toHaveText("general");
 });
 
-test("with no events, the Upcoming section still offers All events", async ({ page }) => {
-  // Opening the panel from here is a separate open finding (walk W6b): the
-  // first switch from a channel mounts EventsPanel without inserting it.
+test("with no events, All events opens the events panel from an open channel", async ({ page }) => {
+  // Walk W6b: with the mock's [] welcome screen the panel ran without being
+  // inserted (see get_welcome_screen above).
   const link = page.locator(".sidebar-events-section .sidebar-section-more", { hasText: "All events" });
   await expect(link).toBeVisible();
+  await link.click();
+  await expect(page.locator(".community-main .event-list")).toContainText("Community Events");
+  await expect(page.locator(".community-main .event-empty")).toHaveText("No events");
+  await expect(page.locator(".community-channel-header-name")).toHaveCount(0);
+  // A channel click leaves the panel for that channel.
+  await page.locator(".channel-item", { hasText: "general" }).click();
+  await expect(page.locator(".community-channel-header-name")).toHaveText("general");
+  await expect(page.locator(".community-main .event-list")).toHaveCount(0);
 });
 
 test("with no game servers, All servers opens the list and its Add form", async ({ page }) => {

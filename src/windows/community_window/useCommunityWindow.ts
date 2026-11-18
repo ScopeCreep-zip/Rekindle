@@ -132,6 +132,10 @@ export function useCommunityWindow() {
     setReplyTo(null);
     setEditState(null);
     setActiveThread(null);
+    // A channel click leaves the events panel and the server list, which
+    // otherwise cover the channel it selects.
+    setShowEvents(false);
+    setShowServers(false);
     setShowWelcomeForCommunity(null);
     setRightPanel("members");
     setHasMoreOlder(true);
