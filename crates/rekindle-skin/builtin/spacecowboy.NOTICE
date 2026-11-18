@@ -1,0 +1,77 @@
+builtin:spacecowboy: imported by `cargo xtask import-skin --format xfire-xml`
+(plan E7.7.3 item 1; rekindle-skin::import::xfire_xml).
+
+Provenance
+  Author: Peanut , Gunowar
+  CompatibleVersion: 1.76
+  LongName: SpaceCowboy
+  Name: SpaceCowboy
+  Version: 1
+  source tree BLAKE3: 1dc982e57376b9f02ad1359471978fa02d4ec45d5a2c25d375b86fa3add663e3
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colours (49 defined)
+  TooltipCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  TooltipTextCG RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  MenuHoverCG RGBA(254,254,254,0) -> dropped: not an Xfire colour name
+  MenuDownCG RGBA(174,174,174,0) -> dropped: not an Xfire colour name
+  MenuTextCG RGBA(118,118,118,0) -> not mapped: no registry role menubar.text yet
+  UserNameCG RGBA(118,118,118,0) -> not mapped: no registry role self.name yet
+  DialogCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ListviewCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  TabText RGBA(204,204,204,0) -> dropped: not an Xfire colour name
+  ChatBGCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InGameChatArea RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InGameChatTextColor RGBA(224,224,224,0) -> dropped: not an Xfire colour name
+  InGameChatTitleColor RGBA(224,224,224,0) -> dropped: not an Xfire colour name
+  ProgressFill RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  FriendsFavoritesText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  AllServersText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  DownloadText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  FriendNameColor RGBA(190,0,0,0) -> dropped: not an Xfire colour name
+  FoFNameColor RGBA(255,0,0,0) -> dropped: not an Xfire colour name
+  HeaderText RGBA(118,118,118,0) -> dropped: not an Xfire colour name
+  HeaderColor RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  StatusText RGBA(118,118,118,0) -> dropped: not an Xfire colour name
+  StatusBG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ChannelText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  TopLevelText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  OfflineNameColor RGBA(102,102,102,0) -> dropped: not an Xfire colour name
+  Selected RGBA(20,20,20,0) -> dropped: not an Xfire colour name
+  SelectedText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  NonFocus RGBA(20,20,20,0) -> dropped: not an Xfire colour name
+  FofText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  FriendText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  ScrollbarColor RGBA(48,-102,-102,0) -> dropped: not an Xfire colour name
+  ScrollbarColorBG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InfoviewCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InfoViewText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  InfoViewFriendText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  InfoViewFofText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  InfoViewOfflineText RGBA(102,102,102,0) -> dropped: not an Xfire colour name
+  InfoViewHyperlink RGBA(235,0,0,0) -> dropped: not an Xfire colour name
+  ChatOther RGBA(118,118,118,0) -> dropped: not an Xfire colour name
+  ChatOtherText RGBA(118,118,118,0) -> dropped: not an Xfire colour name
+  ChatPersonal RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  ChatPersonalText RGBA(185,0,0,0) -> dropped: not an Xfire colour name
+  TypingNotification RGBA(254,254,254,0) -> dropped: not an Xfire colour name
+  ClanTextColor RGBA(153,153,153,0) -> dropped: not an Xfire colour name
+  VoiceTalkingShift RGBA(-40,-40,-40,0) -> dropped: not an Xfire colour name
+  ButtonHoverCG RGBA(32,32,32,0) -> dropped: not an Xfire colour name
+  ButtonDownCG RGBA(42,42,42,0) -> dropped: not an Xfire colour name
+  ButtonCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+
+State images (Hover -> hover, Down -> down, Disabled -> disabled)
+  kept 0 of 0 images
+
+Dropped
+  HTML templates: 0
+  layout components: 0
+  layout tiles: 0
+  triggers: 0
+  sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
+
+Contrast changes (minimal Oklab-lightness walk) (0 made)

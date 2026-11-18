@@ -1,0 +1,85 @@
+builtin:xslimfire: imported by `cargo xtask import-skin --format xfire-xml`
+(plan E7.7.3 item 1; rekindle-skin::import::xfire_xml).
+
+Provenance
+  Author: Grasman
+  CompatibleVersion: 1.62
+  LongName: xSLIMFIRE
+  Name: xSLIMFIRE
+  Version: 1
+  source tree BLAKE3: 861ab7eb8e7366b23dec4d7a23b278d67498498a16449ac6671cd9e9d1e54d0d
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colours (57 defined)
+  AdAreaCG RGBA(8,16,32,0) -> dropped: not an Xfire colour name
+  AllServersText RGBA(106,106,106,0) -> dropped: not an Xfire colour name
+  BevelCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  BottomBarCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  BuddyViewBG RGBA(19,19,19,0) -> dropped: not an Xfire colour name
+  BuddyViewFofText RGBA(106,106,106,0) -> dropped: not an Xfire colour name
+  BuddyViewFriendText RGBA(106,106,106,0) -> dropped: not an Xfire colour name
+  BuddyViewNonFocus RGBA(16,16,16,0) -> dropped: not an Xfire colour name
+  BuddyViewOfflineText RGBA(106,106,106,0) -> dropped: not an Xfire colour name
+  BuddyViewClanText RGBA(106,106,106,0) -> dropped: not an Xfire colour name
+  BuddyViewSelected RGBA(16,16,16,0) -> dropped: not an Xfire colour name
+  BuddyViewSelectedText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  ButtonCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ChatMainCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ChatMainDeactivatedCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ChatOtherCG RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  ChatOtherTextCG RGBA(2,100,180,0) -> not mapped: no registry role chat.peer.text yet
+  ChatPersonalCG RGBA(121,121,121,0) -> dropped: not an Xfire colour name
+  ChatPersonalTextCG RGBA(121,121,121,0) -> not mapped: no registry role chat.self.text yet
+  ChatViewCG RGBA(19,19,19,0) -> dropped: not an Xfire colour name
+  FriendsFavoritesText RGBA(106,106,106,0) -> dropped: not an Xfire colour name
+  HeaderColor RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  HeaderText RGBA(66,66,66,0) -> dropped: not an Xfire colour name
+  Hilight RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  HilightDown RGBA(-34,-11,57,0) -> dropped: not an Xfire colour name
+  HilightHover RGBA(-34,-11,127,0) -> dropped: not an Xfire colour name
+  InfoBackDropCG RGBA(8,16,32,0) -> dropped: not an Xfire colour name
+  InfoOuterCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InfoViewBG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InfoViewFofText RGBA(121,121,121,0) -> dropped: not an Xfire colour name
+  InfoViewFriendText RGBA(121,121,121,0) -> dropped: not an Xfire colour name
+  InfoViewHyperlink RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  InfoViewOfflineText RGBA(121,121,121,0) -> dropped: not an Xfire colour name
+  InfoViewText RGBA(121,121,121,0) -> dropped: not an Xfire colour name
+  InnerBevelBkCg RGBA(8,16,32,0) -> dropped: not an Xfire colour name
+  LogoCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  LogoDown RGBA(-41,24,77,0) -> dropped: not an Xfire colour name
+  LogoHover RGBA(-126,-28,52,0) -> dropped: not an Xfire colour name
+  MainCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  MainDeactivatedCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  MenuBarCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  MenuDownCG RGBA(-5,-5,-5,0) -> dropped: not an Xfire colour name
+  MenuHoverCG RGBA(50,50,50,0) -> dropped: not an Xfire colour name
+  MenuTextCG RGBA(2,100,180,0) -> not mapped: no registry role menubar.text yet
+  MenuTextCGT RGBA(87,152,205,0) -> dropped: not an Xfire colour name
+  ScrollbarColor RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ScrollbarColorBG RGBA(47,46,46,0) -> dropped: not an Xfire colour name
+  StatusBackgroundCG RGBA(0,0,0,0) -> token bg.status
+  StatusCG RGBA(106,106,106,0) -> dropped: not an Xfire colour name
+  StatusWrapCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  TooltipCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  TooltipTextCG RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  TypingNotificationCG RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  UserNameBkCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  UserNameCG RGBA(121,121,121,0) -> not mapped: no registry role self.name yet
+  VentCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  VoiceTalkingShift RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+
+State images (Hover -> hover, Down -> down, Disabled -> disabled)
+  kept 0 of 0 images
+
+Dropped
+  HTML templates: 0
+  layout components: 0
+  layout tiles: 0
+  triggers: 0
+  sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
+
+Contrast changes (minimal Oklab-lightness walk) (0 made)

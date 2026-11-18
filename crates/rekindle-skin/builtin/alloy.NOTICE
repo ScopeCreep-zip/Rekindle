@@ -1,0 +1,320 @@
+builtin:alloy: imported by `cargo xtask import-skin --format xfire-ini`
+(plan E7.7.3 item 2; rekindle-skin::import::xfire_ini).
+
+Provenance
+  LongName: Alloy
+  Version (the skin's own revision): 1
+  skin file: Alloy.ini
+  theme file: Themes.ini
+  source tree BLAKE3: 66fe43add7be55007861f723062526c0a5cf1e32c328fcd0c16768c8a94c32b0
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colour groups (55 defined)
+  ScrollbarColor RGBA(0,0,0,0) -> image shift (baked)
+  ScrollbarColorBG RGBA(153,153,153,0) -> not mapped: no registry role scrollbar.track yet
+  TooltipCG RGBA(153,153,153,0) -> not mapped: no registry role tooltip.bg yet
+  TooltipTextCG RGBA(0,0,0,0) -> not mapped: no registry role tooltip.text yet
+  InnerBevelBkCg RGBA(0,0,0,0) -> image shift (baked)
+  BevelCG RGBA(0,0,0,0) -> image shift (baked)
+  MainCG RGBA(0,0,0,0) -> image shift (baked)
+  MainDeActivatedCG RGBA(0,0,0,0) -> image shift (baked)
+  ChatMainCG RGBA(0,0,0,0) -> image shift (baked)
+  ChatMainDeactivatedCG RGBA(0,0,0,0) -> image shift (baked)
+  AdAreaCG RGBA(0,0,0,0) -> dropped: the AdView class is dropped
+  BottomBarCG RGBA(0,0,0,0) -> image shift (baked)
+  StatusWrapCG RGBA(0,0,0,0) -> image shift (baked)
+  ButtonCG RGBA(0,0,0,0) -> image shift (baked)
+  BorderCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  LogoCG RGBA(0,0,0,0) -> image shift (baked)
+  LogoDown RGBA(30,30,30,0) -> image shift (baked)
+  LogoHover RGBA(-30,-30,-30,0) -> image shift (baked)
+  Hilight RGBA(0,0,0,0) -> image shift (baked)
+  HilightDown RGBA(0,0,0,0) -> image shift (baked)
+  HilightHover RGBA(0,0,0,0) -> image shift (baked)
+  UserNameBkCG RGBA(0,0,0,0) -> image shift (baked)
+  UserNameCG RGBA(0,0,0,0) -> not mapped: no registry role self.name yet
+  MenuBarCG RGBA(0,0,0,0) -> image shift (baked)
+  MenuHoverCG RGBA(-30,-30,-30,0) -> image shift (baked)
+  MenuDownCG RGBA(30,30,30,0) -> image shift (baked)
+  MenuTextCG RGBA(0,0,0,0) -> not mapped: no registry role menubar.text yet
+  ChatViewCG RGBA(153,153,153,0) -> token bg.panel
+  ChatOtherCG RGBA(0,0,0,0) -> not mapped: no registry role chat.peer.name yet
+  ChatOtherTextCG RGBA(0,0,0,0) -> not mapped: no registry role chat.peer.text yet
+  ChatPersonalCG RGBA(0,0,0,0) -> not mapped: no registry role chat.self.name yet
+  ChatPersonalTextCG RGBA(0,0,0,0) -> not mapped: no registry role chat.self.text yet
+  TypingNotificationCG RGBA(0,0,0,0) -> not mapped: no registry role chat.typing.text yet
+  HeaderText RGBA(0,0,0,0) -> token text.secondary
+  HeaderColor RGBA(0,0,0,0) -> image shift (baked)
+  BuddyViewBG RGBA(153,153,153,0) -> token bg.primary
+  BuddyViewFriendText RGBA(0,0,0,0) -> token text.base
+  BuddyViewFofText RGBA(0,0,0,0) -> dropped: friends of friends (E7.8 research)
+  BuddyViewOfflineText RGBA(0,0,0,0) -> token status.offline-text
+  BuddyViewSelected RGBA(164,164,164,0) -> token accent.fill
+  BuddyViewNonFocus RGBA(164,164,164,0) -> not mapped: no registry role list.selected.bg.inactive yet
+  BuddyViewSelectedText RGBA(255,255,255,0) -> registry-fixed accent.fg (a skin cannot set it)
+  InfoBackDropCG RGBA(0,0,0,0) -> image shift (baked)
+  InfoOuterCG RGBA(0,0,0,0) -> image shift (baked)
+  InfoViewBG RGBA(153,153,153,0) -> token bg.secondary
+  InfoViewText RGBA(0,0,0,0) -> not mapped: no registry role profile.text yet
+  InfoViewFriendText RGBA(0,0,0,0) -> not mapped: no registry role profile.friend-text yet
+  InfoViewFofText RGBA(0,0,0,0) -> dropped: friends of friends (E7.8 research)
+  InfoViewOfflineText RGBA(0,0,0,0) -> not mapped: no registry role profile.offline-text yet
+  InfoViewHyperlink RGBA(0,0,0,0) -> not mapped: no registry role profile.link yet
+  StatusBackgroundCG RGBA(153,153,153,0) -> token bg.status
+  StatusCG RGBA(0,0,0,0) -> token text.status
+  StatusArrowCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  FriendsFavoritesText RGBA(0,0,0,0) -> dropped: server browser
+  AllServersText RGBA(0,0,0,0) -> dropped: server browser
+
+Dropped
+  images outside the window frame: 252
+  other keys (classes, sizes, cursors, sounds): 206
+  other skin files (chat, group chat, in-game): 4
+  text styles: 39
+  triggers: 34
+  window layout: 231
+  lines Windows reads no value from (4):
+    Alloy.ini: [MainWindow] Window2.Z (line 29)
+    Alloy.ini: [MainWindow] Window6.IndentRight (line 58)
+    Alloy.ini: [StatusEdit] Text.bold (line 304)
+    Alloy.ini: [SearchFiles] Cursor (line 734)
+  files not read (213):
+    AlloyScroll/Thumbs.db
+    AlloyScroll/scroll-background-horz-left.gif
+    AlloyScroll/scroll-background-horz-middle.gif
+    AlloyScroll/scroll-background-horz-right.gif
+    AlloyScroll/scroll-background-vert-bottom.gif
+    AlloyScroll/scroll-background-vert-middle.gif
+    AlloyScroll/scroll-background-vert-top.gif
+    AlloyScroll/scroll-corner.gif
+    AlloyScroll/scroll-down-disabled.gif
+    AlloyScroll/scroll-down-down.gif
+    AlloyScroll/scroll-down-hover.gif
+    AlloyScroll/scroll-down-norm.gif
+    AlloyScroll/scroll-gripper-grips-horz.gif
+    AlloyScroll/scroll-gripper-grips-vert.gif
+    AlloyScroll/scroll-gripper-horz-left-down.gif
+    AlloyScroll/scroll-gripper-horz-left-hover.gif
+    AlloyScroll/scroll-gripper-horz-left.gif
+    AlloyScroll/scroll-gripper-horz-middle-down.gif
+    AlloyScroll/scroll-gripper-horz-middle-hover.gif
+    AlloyScroll/scroll-gripper-horz-middle.gif
+    AlloyScroll/scroll-gripper-horz-right-down.gif
+    AlloyScroll/scroll-gripper-horz-right-hover.gif
+    AlloyScroll/scroll-gripper-horz-right.gif
+    AlloyScroll/scroll-gripper-vert-bottom-down.gif
+    AlloyScroll/scroll-gripper-vert-bottom-hover.gif
+    AlloyScroll/scroll-gripper-vert-bottom.gif
+    AlloyScroll/scroll-gripper-vert-middle-down.gif
+    AlloyScroll/scroll-gripper-vert-middle-hover.gif
+    AlloyScroll/scroll-gripper-vert-middle.gif
+    AlloyScroll/scroll-gripper-vert-top-down.gif
+    AlloyScroll/scroll-gripper-vert-top-hover.gif
+    AlloyScroll/scroll-gripper-vert-top.gif
+    AlloyScroll/scroll-left-disabled.gif
+    AlloyScroll/scroll-left-down.gif
+    AlloyScroll/scroll-left-hover.gif
+    AlloyScroll/scroll-left-norm.gif
+    AlloyScroll/scroll-right-disabled.gif
+    AlloyScroll/scroll-right-down.gif
+    AlloyScroll/scroll-right-hover.gif
+    AlloyScroll/scroll-right-norm.gif
+    AlloyScroll/scroll-up-disabled.gif
+    AlloyScroll/scroll-up-down.gif
+    AlloyScroll/scroll-up-hover.gif
+    AlloyScroll/scroll-up-norm.gif
+    Chatskin.ini
+    GroupChatInfoskin.ini
+    Groupchatskin.ini
+    InGameMainSkin.ini
+    InGameSkin.ini
+    Infoskin.ini
+    buttons/SearchFiles-click.gif
+    buttons/SearchFiles-hover.gif
+    buttons/SearchFiles-norm.gif
+    buttons/Thumbs.db
+    buttons/TopButtonsBar.gif
+    buttons/button-add-click.gif
+    buttons/button-add-disabled.gif
+    buttons/button-add-hover.gif
+    buttons/button-add-norm.gif
+    buttons/button-afav-click.gif
+    buttons/button-afav-disabled.gif
+    buttons/button-afav-hover.gif
+    buttons/button-afav-norm.gif
+    buttons/button-chat-Send-click.gif
+    buttons/button-chat-Send-disabled.gif
+    buttons/button-chat-Send-hover.gif
+    buttons/button-chat-Send-norm.gif
+    buttons/button-close-down.gif
+    buttons/button-close-hover.gif
+    buttons/button-close-norm.gif
+    buttons/button-game-click.gif
+    buttons/button-game-disabled.gif
+    buttons/button-game-hover.gif
+    buttons/button-game-norm.gif
+    buttons/button-im-click.gif
+    buttons/button-im-disabled.gif
+    buttons/button-im-hover.gif
+    buttons/button-im-norm.gif
+    buttons/button-info-hover.gif
+    buttons/button-info-norm.gif
+    buttons/button-info-retract-hover.gif
+    buttons/button-info-retract.gif
+    buttons/button-maximize-down.gif
+    buttons/button-maximize-hover.gif
+    buttons/button-maximize-norm.gif
+    buttons/button-minimize-down.gif
+    buttons/button-minimize-hover.gif
+    buttons/button-minimize-norm.gif
+    buttons/button-profile-click.gif
+    buttons/button-profile-disabled.gif
+    buttons/button-profile-hover.gif
+    buttons/button-profile-norm.gif
+    buttons/button-refresh-click.gif
+    buttons/button-refresh-disabled.gif
+    buttons/button-refresh-hover.gif
+    buttons/button-refresh-norm.gif
+    buttons/info-join-click.gif
+    buttons/info-join-disabled.gif
+    buttons/info-join-hover.gif
+    buttons/info-join-norm.gif
+    buttons/info-voice-click.gif
+    buttons/info-voice-disabled.gif
+    buttons/info-voice-hover.gif
+    buttons/info-voice-norm.gif
+    buttons/info-voice-trans.gif
+    buttons/status-arrow.gif
+    chatskin/ChatLogo.gif
+    chatskin/Thumbs.db
+    chatskin/chat-bottomleft.gif
+    chatskin/chat-bottommiddle.gif
+    chatskin/chat-bottomright.gif
+    chatskin/chat-middleleft.gif
+    chatskin/chat-middlemiddle.gif
+    chatskin/chat-middleright.gif
+    chatskin/chat-topleft.gif
+    chatskin/chat-topmiddle.gif
+    chatskin/chat-topright.gif
+    chatskin/chat-user-left.gif
+    chatskin/chat-user-middle.gif
+    chatskin/chat-user-right.gif
+    chatskin/chat-user.gif
+    chatskin/textbg.gif
+    chatskin/toolbar.gif
+    infoskin/Thumbs.db
+    infoskin/icon_mic_green.gif
+    infoskin/icon_mic_grey.gif
+    infoskin/icon_speaker_green.gif
+    infoskin/icon_speaker_grey.gif
+    infoskin/icon_voice_server.gif
+    infoskin/info-bottom-left.gif
+    infoskin/info-bottom-middle.gif
+    infoskin/info-bottom-right.gif
+    infoskin/info-buttonbase.gif
+    infoskin/info-middle-left.gif
+    infoskin/info-middle-middle.gif
+    infoskin/info-middle-right.gif
+    infoskin/info-top-left.gif
+    infoskin/info-top-middle.gif
+    infoskin/info-top-right.gif
+    infoskin/infovbg.gif
+    infoskin/xf-info-logo.gif
+    ingamegraphics/Logo1.gif
+    ingamegraphics/Logo1a.gif
+    ingamegraphics/Logo2 copy.gif
+    ingamegraphics/Logo2.gif
+    ingamegraphics/LogoX.gif
+    ingamegraphics/Thumbs.db
+    ingamegraphics/ig_chatwindow_left.gif
+    ingamegraphics/ig_chatwindow_middle.gif
+    ingamegraphics/ig_chatwindow_right.gif
+    ingamegraphics/igm-bg.gif
+    ingamegraphics/igm-bottom-left.gif
+    ingamegraphics/igm-bottom-middle.gif
+    ingamegraphics/igm-bottom-right.gif
+    ingamegraphics/igm-left.gif
+    ingamegraphics/igm-logo.gif
+    ingamegraphics/igm-right.gif
+    ingamegraphics/igm-top-left.gif
+    ingamegraphics/igm-top-middle.gif
+    ingamegraphics/igm-top-right.gif
+    ingamegraphics/ingame-bg.gif
+    ingamegraphics/ingame-bottom-left.gif
+    ingamegraphics/ingame-bottom-middle.gif
+    ingamegraphics/ingame-bottom-right.gif
+    ingamegraphics/ingame-left.gif
+    ingamegraphics/ingame-right.gif
+    ingamegraphics/ingame-top-left.gif
+    ingamegraphics/ingame-top-middle.gif
+    ingamegraphics/ingame-top-right.gif
+    mainskin/BVBG.gif
+    mainskin/ButtonHolder.gif
+    mainskin/TabButtonBar.gif
+    mainskin/TabDownload.gif
+    mainskin/TabFriends.gif
+    mainskin/TabServer.gif
+    mainskin/Thumbs.db
+    mainskin/Used/Thumbs.db
+    mainskin/Used/mainbg.gif
+    mainskin/XF-Logo.gif
+    mainskin/XHelp.gif
+    mainskin/XMenu.gif
+    mainskin/XTools.gif
+    mainskin/adbox.gif
+    mainskin/arrow_down.gif
+    mainskin/arrow_right.gif
+    mainskin/gripperbr.gif
+    mainskin/info-button-holder.gif
+    mainskin/leftdetail.gif
+    mainskin/listview-header-arrowdown.gif
+    mainskin/listview-header-arrowup.gif
+    mainskin/listview-header-left.gif
+    mainskin/listview-header-middle.gif
+    mainskin/listview-header-right.gif
+    mainskin/main-bottom-left.gif
+    mainskin/main-bottom-middle.gif
+    mainskin/main-bottom-right.gif
+    mainskin/main-middle-left.gif
+    mainskin/main-middle-middle.gif
+    mainskin/main-middle-right.gif
+    mainskin/main-top-left.gif
+    mainskin/main-top-middle.gif
+    mainskin/main-top-right.gif
+    mainskin/mainbg.gif
+    mainskin/mainbg2.gif
+    mainskin/rightdetail.gif
+    mainskin/status-left.gif
+    mainskin/status-middle.gif
+    mainskin/status-right.gif
+    mainskin/toolbar.gif
+    mainskin/username-left.gif
+    mainskin/username-middle.gif
+    mainskin/username-right.gif
+    strings.ini
+
+Contrast changes (minimal Oklab-lightness walk) (21 made)
+  control-border: #767676 -> #4c4c4c (1.4.11 control-border on bg.panel: 1.59:1 -> 3.01:1, required 3.00:1)
+  accent.text: #0a5a9c -> #002f6e (1.4.3 accent.text on bg.primary: 2.49:1 -> 4.51:1, required 4.50:1)
+  accent.fill: #a4a4a4 -> #767676 (1.4.3 accent.fg on accent.fill: 2.49:1 -> 4.54:1, required 4.50:1)
+  danger.text: #b00019 -> #6c0000 (1.4.3 danger.text on bg.primary: 2.57:1 -> 4.50:1, required 4.50:1)
+  text.dim: #0d4363 -> #003554 (1.4.3 text.dim on bg.primary: 3.68:1 -> 4.50:1, required 4.50:1)
+  text.clan: #0a5a9c -> #002f6e (1.4.3 text.clan on bg.primary: 2.49:1 -> 4.51:1, required 4.50:1)
+  status.online: #00872c -> #005900 (1.4.11 status.online on bg.panel: 1.63:1 -> 3.03:1, required 3.00:1)
+  status.away: #8f7000 -> #654700 (1.4.11 status.away on bg.panel: 1.64:1 -> 3.00:1, required 3.00:1)
+  status.ingame: #0078b4 -> #004e88 (1.4.11 status.ingame on bg.panel: 1.69:1 -> 3.01:1, required 3.00:1)
+  status.online-text: #007427 -> #003b00 (1.4.3 status.online-text on bg.primary: 2.08:1 -> 4.53:1, required 4.50:1)
+  status.away-text: #6a5300 -> #442e00 (1.4.3 status.away-text on bg.primary: 2.58:1 -> 4.50:1, required 4.50:1)
+  status.ingame-text: #006285 -> #003455 (1.4.3 status.ingame-text on bg.primary: 2.38:1 -> 4.54:1, required 4.50:1)
+  status.busy: #da3034 -> #9e0000 (1.4.11 status.busy on bg.panel: 1.65:1 -> 3.00:1, required 3.00:1)
+  status.offline: #737373 -> #4c4c4c (1.4.11 status.offline on bg.panel: 1.66:1 -> 3.01:1, required 3.00:1)
+  link: #0a5a9c -> #002f6e (1.4.3 link on bg.primary: 2.49:1 -> 4.51:1, required 4.50:1)
+  success.text: #00631d -> #003b00 (1.4.3 success.text on bg.primary: 2.63:1 -> 4.53:1, required 4.50:1)
+  thread-tag: #7a5500 -> #4c2900 (1.4.3 thread-tag on bg.primary: 2.35:1 -> 4.53:1, required 4.50:1)
+  mention.everyone: #9a3a00 -> #6a0500 (1.4.3 mention.everyone on bg.primary: 2.47:1 -> 4.50:1, required 4.50:1)
+  mention.role: #5a32b8 -> #3f0093 (1.4.3 mention.role on bg.primary: 2.85:1 -> 4.51:1, required 4.50:1)
+  mention.self: #a3261b -> #6c0000 (1.4.3 mention.self on bg.primary: 2.58:1 -> 4.50:1, required 4.50:1)
+  danger.fill: #df3337 -> #9e0000 (D5 danger.fill on bg.panel: 1.57:1 -> 3.00:1, required 3.00:1)

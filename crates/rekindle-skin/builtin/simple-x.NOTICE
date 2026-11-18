@@ -1,0 +1,292 @@
+builtin:simple-x: imported by `cargo xtask import-skin --format xfire-ini`
+(plan E7.7.3 item 2; rekindle-skin::import::xfire_ini).
+
+Provenance
+  LongName: Simple X
+  Version (the skin's own revision): 1
+  skin file: SimpleX.ini
+  theme file: Themes.ini
+  source tree BLAKE3: 7f5880e0454c55590e45da6aca0ebe2196de4292ce3476d2a8ccf9ec1b56ebe5
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colour groups (55 defined)
+  ScrollbarColor RGBA(0,0,0,0) -> image shift (baked)
+  ScrollbarColorBG RGBA(0,0,0,0) -> not mapped: no registry role scrollbar.track yet
+  TooltipCG RGBA(153,153,153,0) -> not mapped: no registry role tooltip.bg yet
+  TooltipTextCG RGBA(0,0,0,0) -> not mapped: no registry role tooltip.text yet
+  InnerBevelBkCg RGBA(0,0,0,0) -> image shift (baked)
+  BevelCG RGBA(0,0,0,0) -> image shift (baked)
+  MainCG RGBA(0,0,0,0) -> image shift (baked)
+  MainDeActivatedCG RGBA(0,0,0,0) -> image shift (baked)
+  ChatMainCG RGBA(0,0,0,0) -> image shift (baked)
+  ChatMainDeactivatedCG RGBA(0,0,0,0) -> image shift (baked)
+  AdAreaCG RGBA(0,0,0,0) -> dropped: the AdView class is dropped
+  BottomBarCG RGBA(0,0,0,0) -> image shift (baked)
+  StatusWrapCG RGBA(0,0,0,0) -> image shift (baked)
+  ButtonCG RGBA(0,0,0,0) -> image shift (baked)
+  BorderCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  LogoCG RGBA(0,0,0,0) -> image shift (baked)
+  LogoDown RGBA(30,30,30,0) -> image shift (baked)
+  LogoHover RGBA(-30,-30,-30,0) -> image shift (baked)
+  Hilight RGBA(0,0,0,0) -> image shift (baked)
+  HilightDown RGBA(0,0,0,0) -> image shift (baked)
+  HilightHover RGBA(0,0,0,0) -> image shift (baked)
+  UserNameBkCG RGBA(0,0,0,0) -> image shift (baked)
+  UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
+  MenuBarCG RGBA(0,0,0,0) -> image shift (baked)
+  MenuHoverCG RGBA(0,0,0,0) -> image shift (baked)
+  MenuDownCG RGBA(0,0,0,0) -> image shift (baked)
+  MenuTextCG RGBA(255,255,255,0) -> not mapped: no registry role menubar.text yet
+  ChatViewCG RGBA(0,0,0,0) -> token bg.panel
+  ChatOtherCG RGBA(255,255,255,0) -> not mapped: no registry role chat.peer.name yet
+  ChatOtherTextCG RGBA(255,255,255,0) -> not mapped: no registry role chat.peer.text yet
+  ChatPersonalCG RGBA(255,255,255,0) -> not mapped: no registry role chat.self.name yet
+  ChatPersonalTextCG RGBA(255,255,255,0) -> not mapped: no registry role chat.self.text yet
+  TypingNotificationCG RGBA(0,0,0,0) -> not mapped: no registry role chat.typing.text yet
+  HeaderText RGBA(255,255,255,0) -> token text.secondary
+  HeaderColor RGBA(0,0,0,0) -> image shift (baked)
+  BuddyViewBG RGBA(0,0,0,0) -> token bg.primary
+  BuddyViewFriendText RGBA(255,255,255,0) -> token text.base
+  BuddyViewFofText RGBA(255,255,255,0) -> dropped: friends of friends (E7.8 research)
+  BuddyViewOfflineText RGBA(255,255,255,0) -> token status.offline-text
+  BuddyViewSelected RGBA(102,102,102,0) -> token accent.fill
+  BuddyViewNonFocus RGBA(102,102,102,0) -> not mapped: no registry role list.selected.bg.inactive yet
+  BuddyViewSelectedText RGBA(0,0,0,0) -> registry-fixed accent.fg (a skin cannot set it)
+  InfoBackDropCG RGBA(0,0,0,0) -> image shift (baked)
+  InfoOuterCG RGBA(0,0,0,0) -> image shift (baked)
+  InfoViewBG RGBA(0,0,0,0) -> token bg.secondary
+  InfoViewText RGBA(255,255,255,0) -> not mapped: no registry role profile.text yet
+  InfoViewFriendText RGBA(255,255,255,0) -> not mapped: no registry role profile.friend-text yet
+  InfoViewFofText RGBA(255,255,255,0) -> dropped: friends of friends (E7.8 research)
+  InfoViewOfflineText RGBA(255,255,255,0) -> not mapped: no registry role profile.offline-text yet
+  InfoViewHyperlink RGBA(164,164,164,0) -> not mapped: no registry role profile.link yet
+  StatusBackgroundCG RGBA(0,0,0,0) -> token bg.status
+  StatusCG RGBA(255,255,255,0) -> token text.status
+  StatusArrowCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  FriendsFavoritesText RGBA(255,255,255,0) -> dropped: server browser
+  AllServersText RGBA(255,255,255,0) -> dropped: server browser
+
+Dropped
+  images outside the window frame: 231
+  other keys (classes, sizes, cursors, sounds): 203
+  other skin files (chat, group chat, in-game): 4
+  text styles: 77
+  triggers: 33
+  window layout: 279
+  lines Windows reads no value from (12):
+    SimpleX.ini: [MainWindow] Window4.IndentRight (line 45)
+    SimpleX.ini: [MainWindow] Window5.IndentRight (line 54)
+    SimpleX.ini: [MainWindow] Window6.IndentRight (line 63)
+    SimpleX.ini: [MainWindow] Window12.IndentRight (line 102)
+    SimpleX.ini: [MainWindow] Window13.IndentRight (line 110)
+    SimpleX.ini: [MenuBar] Window2.X (line 208)
+    SimpleX.ini: [MenuBar] Window3.X (line 214)
+    SimpleX.ini: [StatusEdit] Text.bold (line 348)
+    SimpleX.ini: [InfoViewButton] Skin.X (line 458)
+    SimpleX.ini: [TabHeader] Window2.X (line 593)
+    SimpleX.ini: [TabHeader] Window3.X (line 599)
+    SimpleX.ini: [SearchFiles] Cursor (line 825)
+  files not read (198):
+    CScroll/Thumbs.db
+    CScroll/scroll-background-horz-left.gif
+    CScroll/scroll-background-horz-middle.gif
+    CScroll/scroll-background-horz-right.gif
+    CScroll/scroll-background-vert-bottom.gif
+    CScroll/scroll-background-vert-middle.gif
+    CScroll/scroll-background-vert-top.gif
+    CScroll/scroll-corner.gif
+    CScroll/scroll-down-disabled.gif
+    CScroll/scroll-down-down.gif
+    CScroll/scroll-down-hover.gif
+    CScroll/scroll-down-norm.gif
+    CScroll/scroll-gripper-grips-horz.gif
+    CScroll/scroll-gripper-grips-vert.gif
+    CScroll/scroll-gripper-horz-left-down.gif
+    CScroll/scroll-gripper-horz-left-hover.gif
+    CScroll/scroll-gripper-horz-left.gif
+    CScroll/scroll-gripper-horz-middle-down.gif
+    CScroll/scroll-gripper-horz-middle-hover.gif
+    CScroll/scroll-gripper-horz-middle.gif
+    CScroll/scroll-gripper-horz-right-down.gif
+    CScroll/scroll-gripper-horz-right-hover.gif
+    CScroll/scroll-gripper-horz-right.gif
+    CScroll/scroll-gripper-vert-bottom-down.gif
+    CScroll/scroll-gripper-vert-bottom-hover.gif
+    CScroll/scroll-gripper-vert-bottom.gif
+    CScroll/scroll-gripper-vert-middle-down.gif
+    CScroll/scroll-gripper-vert-middle-hover.gif
+    CScroll/scroll-gripper-vert-middle.gif
+    CScroll/scroll-gripper-vert-top-down.gif
+    CScroll/scroll-gripper-vert-top-hover.gif
+    CScroll/scroll-gripper-vert-top.gif
+    CScroll/scroll-left-disabled.gif
+    CScroll/scroll-left-down.gif
+    CScroll/scroll-left-hover.gif
+    CScroll/scroll-left-norm.gif
+    CScroll/scroll-right-disabled.gif
+    CScroll/scroll-right-down.gif
+    CScroll/scroll-right-hover.gif
+    CScroll/scroll-right-norm.gif
+    CScroll/scroll-up-disabled.gif
+    CScroll/scroll-up-down.gif
+    CScroll/scroll-up-hover.gif
+    CScroll/scroll-up-norm.gif
+    Chatskin.ini
+    GroupChatInfoskin.ini
+    Groupchatskin.ini
+    InGameMainSkin.ini
+    InGameSkin.ini
+    Infoskin.ini
+    buttons/SearchFiles-norm.gif
+    buttons/Thumbs.db
+    buttons/TopButtonsBar.gif
+    buttons/button-add-click.gif
+    buttons/button-add-disabled.gif
+    buttons/button-add-hover.gif
+    buttons/button-add-norm.gif
+    buttons/button-afav-click.gif
+    buttons/button-afav-disabled.gif
+    buttons/button-afav-hover.gif
+    buttons/button-afav-norm.gif
+    buttons/button-chat-Send-click.gif
+    buttons/button-chat-Send-disabled.gif
+    buttons/button-chat-Send-hover.gif
+    buttons/button-chat-Send-norm.gif
+    buttons/button-close-down.gif
+    buttons/button-close-hover.gif
+    buttons/button-close-norm.gif
+    buttons/button-game-click.gif
+    buttons/button-game-disabled.gif
+    buttons/button-game-hover.gif
+    buttons/button-game-norm.gif
+    buttons/button-im-click.gif
+    buttons/button-im-disabled.gif
+    buttons/button-im-hover.gif
+    buttons/button-im-norm.gif
+    buttons/button-info-hover.gif
+    buttons/button-info-norm.gif
+    buttons/button-info-retract-hover.gif
+    buttons/button-info-retract.gif
+    buttons/button-maximize-down.gif
+    buttons/button-maximize-hover.gif
+    buttons/button-maximize-norm.gif
+    buttons/button-minimize-down.gif
+    buttons/button-minimize-hover.gif
+    buttons/button-minimize-norm.gif
+    buttons/button-profile-click.gif
+    buttons/button-profile-disabled.gif
+    buttons/button-profile-hover.gif
+    buttons/button-profile-norm.gif
+    buttons/button-refresh-click.gif
+    buttons/button-refresh-disabled.gif
+    buttons/button-refresh-hover.gif
+    buttons/button-refresh-norm.gif
+    buttons/info-join-click.gif
+    buttons/info-join-disabled.gif
+    buttons/info-join-hover.gif
+    buttons/info-join-norm.gif
+    buttons/info-voice-click.gif
+    buttons/info-voice-disabled.gif
+    buttons/info-voice-hover.gif
+    buttons/info-voice-norm.gif
+    buttons/info-voice-trans.gif
+    buttons/status-arrow-down.gif
+    buttons/status-arrow-hover.gif
+    buttons/status-arrow.gif
+    chatskin/ChatLogo-down.gif
+    chatskin/ChatLogo-hover.gif
+    chatskin/ChatLogo.gif
+    chatskin/Thumbs.db
+    chatskin/chat-bottomleft.gif
+    chatskin/chat-bottommiddle.gif
+    chatskin/chat-bottomright.gif
+    chatskin/chat-middleleft.gif
+    chatskin/chat-middlemiddle.gif
+    chatskin/chat-middleright.gif
+    chatskin/chat-topleft.gif
+    chatskin/chat-topmiddle.gif
+    chatskin/chat-topright.gif
+    chatskin/textbg.gif
+    chatskin/toolbar.gif
+    infoskin/Thumbs.db
+    infoskin/icon_mic_green.gif
+    infoskin/icon_mic_grey.gif
+    infoskin/icon_speaker_green.gif
+    infoskin/icon_speaker_grey.gif
+    infoskin/icon_voice_server.gif
+    infoskin/info-bottom-left.gif
+    infoskin/info-bottom-middle.gif
+    infoskin/info-bottom-right.gif
+    infoskin/info-buttonbase.gif
+    infoskin/info-middle-left.gif
+    infoskin/info-middle-middle.gif
+    infoskin/info-middle-right.gif
+    infoskin/info-top-left.gif
+    infoskin/info-top-middle.gif
+    infoskin/info-top-right.gif
+    infoskin/infovbg.gif
+    ingamegraphics/Thumbs.db
+    ingamegraphics/ig_chatwindow_left.gif
+    ingamegraphics/ig_chatwindow_middle.gif
+    ingamegraphics/ig_chatwindow_right.gif
+    ingamegraphics/igm-bg.gif
+    ingamegraphics/igm-bottom-left.gif
+    ingamegraphics/igm-bottom-middle.gif
+    ingamegraphics/igm-bottom-right.gif
+    ingamegraphics/igm-left.gif
+    ingamegraphics/igm-logo.gif
+    ingamegraphics/igm-right.gif
+    ingamegraphics/igm-top-left.gif
+    ingamegraphics/igm-top-middle.gif
+    ingamegraphics/igm-top-right.gif
+    ingamegraphics/ingame-bg.gif
+    ingamegraphics/ingame-bottom-left.gif
+    ingamegraphics/ingame-bottom-middle.gif
+    ingamegraphics/ingame-bottom-right.gif
+    ingamegraphics/ingame-left.gif
+    ingamegraphics/ingame-right.gif
+    ingamegraphics/ingame-top-left.gif
+    ingamegraphics/ingame-top-middle.gif
+    ingamegraphics/ingame-top-right.gif
+    mainskin/BVBG.gif
+    mainskin/ButtonHolder.gif
+    mainskin/Thumbs.db
+    mainskin/XF-Logo-down.gif
+    mainskin/XF-Logo-hover.gif
+    mainskin/XF-Logo.gif
+    mainskin/adbox.gif
+    mainskin/arrow_down.gif
+    mainskin/arrow_right.gif
+    mainskin/gripperbr.gif
+    mainskin/listview-header-arrowdown.gif
+    mainskin/listview-header-arrowup.gif
+    mainskin/listview-header-left.gif
+    mainskin/listview-header-middle.gif
+    mainskin/listview-header-right.gif
+    mainskin/main-bottom-left.gif
+    mainskin/main-bottom-middle.gif
+    mainskin/main-bottom-right.gif
+    mainskin/main-middle-left.gif
+    mainskin/main-middle-middle.gif
+    mainskin/main-middle-right.gif
+    mainskin/main-top-left.gif
+    mainskin/main-top-middle.gif
+    mainskin/main-top-right.gif
+    mainskin/mainbg.gif
+    mainskin/menubar-middle-flash.gif
+    mainskin/menubar-middle-off.gif
+    mainskin/menubar-middle.gif
+    mainskin/status-left.gif
+    mainskin/status-middle.gif
+    mainskin/status-right.gif
+    mainskin/tab_control_base.gif
+    mainskin/toolbar.gif
+    mainskin/username-left.gif
+    mainskin/username-middle.gif
+    mainskin/username-right.gif
+    strings.ini
+
+Contrast changes (minimal Oklab-lightness walk) (0 made)

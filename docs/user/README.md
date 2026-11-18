@@ -9,6 +9,7 @@ guides, walkthroughs of common tasks, and the FAQ.
 | [`install.md`](install.md) | Per-platform install instructions (Windows / macOS / Linux) |
 | [`how-to.md`](how-to.md) | Walkthroughs for common tasks: add a friend, join a community, start a voice call, pair another device |
 | [`faq.md`](faq.md) | Frequently asked questions and project-specific quirks |
+| [`skin-credits.md`](skin-credits.md) | Who made the built-in skins, and how an author has theirs removed |
 
 If you want to **build the project from source** rather than install a
 pre-built artifact, see [`../contributor/development.md`](../contributor/development.md).

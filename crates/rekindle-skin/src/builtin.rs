@@ -35,8 +35,13 @@ pub struct Builtin {
 
 /// Every built-in pack, by id: Symbiosis first (the default), then Xfire's
 /// other own skins (plan E7.7.3, "Official Xfire skins"): Classic v3 (the
-/// id `classic` is the sound bank) and Combat.
-pub const PACKS: [Builtin; 3] = [
+/// id `classic` is the sound bank) and Combat; then the fan skins (plan
+/// E7.7.3d, owner 2026-11-17) whose files import, whose authors stated no
+/// restriction, and whose own files name their authors (`Info.xml`
+/// `<Author>`, or `version.ini` comments for Alloy, Simple X and XGlow),
+/// each credited in its manifest and `NOTICE`. An author who asks has their
+/// skin removed in the next release (`docs/user/skin-credits.md`).
+pub const PACKS: [Builtin; 13] = [
     Builtin {
         id: "symbiosis",
         bytes: include_bytes!("../builtin/symbiosis.rkskin"),
@@ -48,6 +53,46 @@ pub const PACKS: [Builtin; 3] = [
     Builtin {
         id: "combat",
         bytes: include_bytes!("../builtin/combat.rkskin"),
+    },
+    Builtin {
+        id: "onyx",
+        bytes: include_bytes!("../builtin/onyx.rkskin"),
+    },
+    Builtin {
+        id: "spacecowboy",
+        bytes: include_bytes!("../builtin/spacecowboy.rkskin"),
+    },
+    Builtin {
+        id: "stealthx",
+        bytes: include_bytes!("../builtin/stealthx.rkskin"),
+    },
+    Builtin {
+        id: "total-chaos",
+        bytes: include_bytes!("../builtin/total-chaos.rkskin"),
+    },
+    Builtin {
+        id: "xslimfire",
+        bytes: include_bytes!("../builtin/xslimfire.rkskin"),
+    },
+    Builtin {
+        id: "xbioshock",
+        bytes: include_bytes!("../builtin/xbioshock.rkskin"),
+    },
+    Builtin {
+        id: "guild-wars-ui",
+        bytes: include_bytes!("../builtin/guild-wars-ui.rkskin"),
+    },
+    Builtin {
+        id: "alloy",
+        bytes: include_bytes!("../builtin/alloy.rkskin"),
+    },
+    Builtin {
+        id: "simple-x",
+        bytes: include_bytes!("../builtin/simple-x.rkskin"),
+    },
+    Builtin {
+        id: "xglow",
+        bytes: include_bytes!("../builtin/xglow.rkskin"),
     },
 ];
 
@@ -102,16 +147,30 @@ mod tests {
         assert!(find("pkg:symbiosis").is_none());
     }
 
-    /// Plan E7.7.3d: every built-in credits Xfire, Inc. and links its source.
+    /// Xfire's own packs, first in [`PACKS`]; the rest are fan skins.
+    const XFIRE_OWN: usize = 3;
+
+    /// Plan E7.7.3d: Xfire's own built-ins credit Xfire, Inc. and link
+    /// their source; every fan built-in credits the authors its own files
+    /// name, never Xfire.
     #[test]
     fn every_pack_credits_its_authors() {
-        for pack in &PACKS {
+        for (i, pack) in PACKS.iter().enumerate() {
             let m = crate::manifest::parse(&crate::package::read(pack.bytes).unwrap()).unwrap();
             let c = m
                 .credits
                 .unwrap_or_else(|| panic!("builtin:{} has no credits", pack.id));
-            assert_eq!(c.authors, ["Xfire, Inc."], "builtin:{}", pack.id);
-            assert!(c.url.is_some(), "builtin:{}", pack.id);
+            if i < XFIRE_OWN {
+                assert_eq!(c.authors, ["Xfire, Inc."], "builtin:{}", pack.id);
+                assert!(c.url.is_some(), "builtin:{}", pack.id);
+            } else {
+                assert!(!c.authors.is_empty(), "builtin:{}", pack.id);
+                assert!(
+                    !c.authors.iter().any(|a| a.contains("Xfire")),
+                    "builtin:{}",
+                    pack.id
+                );
+            }
         }
     }
 }

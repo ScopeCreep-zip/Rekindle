@@ -1,0 +1,51 @@
+builtin:total-chaos: imported by `cargo xtask import-skin --format xfire-xml`
+(plan E7.7.3 item 1; rekindle-skin::import::xfire_xml).
+
+Provenance
+  Author: Ryan Dunn
+  CompatibleVersion: 1.59
+  LongName: Total Chaos
+  Name: Total Chaos
+  Version: 0
+  Website: http://www.totalchaos.org.uk/
+  source tree BLAKE3: eac16e3d4af4bd70a94cbc4ce908d7c3d9658a3d33ce49d1da738478a232a896
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colours (22 defined)
+  AdAreaCG RGBA(8,16,32,0) -> dropped: not an Xfire colour name
+  GenBG RGBA(49,52,49,0) -> dropped: not an Xfire colour name
+  TitleBar RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  TitleBG RGBA(45,45,45,0) -> dropped: not an Xfire colour name
+  BuddyViewFriendText RGBA(230,230,230,0) -> dropped: not an Xfire colour name
+  BuddyViewFofText RGBA(180,180,180,0) -> dropped: not an Xfire colour name
+  BuddyViewOfflineText RGBA(120,120,120,0) -> dropped: not an Xfire colour name
+  BuddyViewClanText RGBA(0,200,0,0) -> dropped: not an Xfire colour name
+  BuddyViewSelected RGBA(20,20,20,0) -> dropped: not an Xfire colour name
+  BuddyViewSelectedText RGBA(60,200,0,0) -> dropped: not an Xfire colour name
+  HeaderText RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  DownloadText RGBA(230,230,230,0) -> dropped: not an Xfire colour name
+  ChannelText RGBA(180,180,180,0) -> dropped: not an Xfire colour name
+  TopLevelText RGBA(120,120,120,0) -> dropped: not an Xfire colour name
+  ScrollbarColorBG RGBA(45,45,45,0) -> dropped: not an Xfire colour name
+  ChatViewCG RGBA(45,45,45,0) -> dropped: not an Xfire colour name
+  ChatEditBG RGBA(33,33,33,0) -> dropped: not an Xfire colour name
+  ChatPersonalCG RGBA(160,160,160,0) -> dropped: not an Xfire colour name
+  ChatOtherCG RGBA(0,150,10,0) -> dropped: not an Xfire colour name
+  ChatOtherTextCG RGBA(0,230,10,0) -> not mapped: no registry role chat.peer.text yet
+  ChatPersonalTextCG RGBA(210,210,210,0) -> not mapped: no registry role chat.self.text yet
+  TypingNotificationCG RGBA(200,200,200,0) -> dropped: not an Xfire colour name
+
+State images (Hover -> hover, Down -> down, Disabled -> disabled)
+  kept 0 of 0 images
+
+Dropped
+  HTML templates: 0
+  layout components: 0
+  layout tiles: 0
+  triggers: 0
+  sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
+
+Contrast changes (minimal Oklab-lightness walk) (0 made)

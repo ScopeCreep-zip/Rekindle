@@ -1,0 +1,36 @@
+builtin:stealthx: imported by `cargo xtask import-skin --format xfire-xml`
+(plan E7.7.3 item 1; rekindle-skin::import::xfire_xml).
+
+Provenance
+  Author: MrCPU, René Schädlich
+  CompatibleVersion: 1.00
+  LongName: StealthX
+  Name: StealthX
+  Version: 1
+  Website: http://www.xfire.com/
+  source tree BLAKE3: 9361c4881e29f78713d2e78a40b890ccaf480613a8d5e1987999dbb3d9486603
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colours (7 defined)
+  MainBackColor RGBA(21,26,30,0) -> dropped: not an Xfire colour name
+  MainTextColor RGBA(138,141,142,0) -> dropped: not an Xfire colour name
+  MainListBackColor RGBA(21,26,30,0) -> dropped: not an Xfire colour name
+  MainStatusBackColor RGBA(32,37,43,0) -> dropped: not an Xfire colour name
+  FriedsOfFriendsTextColor RGBA(80,82,83,0) -> dropped: not an Xfire colour name
+  FriendsOfflineTextColor RGBA(80,82,83,0) -> dropped: not an Xfire colour name
+  ListSelectBackColor RGBA(37,43,47,0) -> dropped: not an Xfire colour name
+
+State images (Hover -> hover, Down -> down, Disabled -> disabled)
+  kept 0 of 0 images
+
+Dropped
+  HTML templates: 0
+  layout components: 0
+  layout tiles: 0
+  triggers: 0
+  sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
+
+Contrast changes (minimal Oklab-lightness walk) (0 made)

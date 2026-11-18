@@ -1,0 +1,91 @@
+builtin:guild-wars-ui: imported by `cargo xtask import-skin --format xfire-xml`
+(plan E7.7.3 item 1; rekindle-skin::import::xfire_xml).
+
+Provenance
+  Author: Chrury Sanson
+  CompatibleVersion: 1.79
+  LongName: Guild Wars UI
+  Name: GW
+  Version: 1.7
+  source tree BLAKE3: ba1318da6f72ddf24fb7c4e65244288628b14908e99a8f06028f6a34fb508455
+
+Licence
+  The skin art and palette are third-party work published without a licence.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colours (63 defined)
+  TooltipCG RGBA(153,153,153,0) -> dropped: not an Xfire colour name
+  TooltipTextCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  AdAreaCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  TitleBar RGBA(0,0,100,0) -> dropped: not an Xfire colour name
+  TitleBarDeactivated RGBA(-30,-30,-30,0) -> dropped: not an Xfire colour name
+  MenuHoverCG RGBA(30,30,30,0) -> dropped: not an Xfire colour name
+  MenuDownCG RGBA(-30,-30,-30,0) -> dropped: not an Xfire colour name
+  MenuTextCG RGBA(204,204,204,0) -> not mapped: no registry role menubar.text yet
+  UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
+  UserNameDeactiveCG RGBA(204,204,204,0) -> dropped: not an Xfire colour name
+  DialogCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  TabHeaderActiveCG RGBA(82,78,70,0) -> dropped: not an Xfire colour name
+  TabHeaderInactiveCG RGBA(0,-4,-12,0) -> dropped: not an Xfire colour name
+  DialogColorCG RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  ChatBGCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InGameChatArea RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InGameChatTextColor RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  ProgressFill RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  FriendsFavoritesText RGBA(175,230,235,0) -> dropped: not an Xfire colour name
+  AllServersText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  DownloadText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  FriendNameColor RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  FoFNameColor RGBA(153,153,153,0) -> dropped: not an Xfire colour name
+  HeaderText RGBA(255,238,187,0) -> dropped: not an Xfire colour name
+  HeaderColor RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  StatusText RGBA(204,204,204,0) -> dropped: not an Xfire colour name
+  StatusBG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ChannelText RGBA(153,153,153,0) -> dropped: not an Xfire colour name
+  TopLevelText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  NameColor RGBA(102,102,102,0) -> dropped: not an Xfire colour name
+  Selected RGBA(46,51,53,0) -> dropped: not an Xfire colour name
+  SelectedText RGBA(255,238,187,0) -> dropped: not an Xfire colour name
+  NonFocus RGBA(25,25,25,0) -> dropped: not an Xfire colour name
+  FofText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  FriendText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  ScrollbarColor RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ScrollbarColorBG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  InfoViewText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  InfoViewFriendText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  InfoViewFofText RGBA(204,204,51,0) -> dropped: not an Xfire colour name
+  InfoViewOfflineText RGBA(102,102,102,0) -> dropped: not an Xfire colour name
+  InfoViewHyperlink RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  ChatOther RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  ChatOtherText RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  ChatPersonal RGBA(102,102,102,0) -> dropped: not an Xfire colour name
+  ChatPersonalText RGBA(102,102,102,0) -> dropped: not an Xfire colour name
+  TypingNotification RGBA(204,204,204,0) -> dropped: not an Xfire colour name
+  LBGCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  ClanTextColor RGBA(2,100,180,0) -> dropped: not an Xfire colour name
+  Scrollbarcolor RGBA(0,0,50,0) -> dropped: not an Xfire colour name
+  ScrollbarcolorBG RGBA(5,15,40,0) -> dropped: not an Xfire colour name
+  BuddyViewFriendText RGBA(238,206,126,0) -> dropped: not an Xfire colour name
+  BuddyViewClanText RGBA(50,255,50,0) -> dropped: not an Xfire colour name
+  BuddyViewFofText RGBA(250,250,250,0) -> dropped: not an Xfire colour name
+  RecentText RGBA(176,148,223,0) -> dropped: not an Xfire colour name
+  status RGBA(50,72,103,0) -> dropped: not an Xfire colour name
+  TabText RGBA(250,250,250,0) -> dropped: not an Xfire colour name
+  Yellow RGBA(240,240,0,0) -> dropped: not an Xfire colour name
+  white RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  whispergreen RGBA(154,246,159,0) -> dropped: not an Xfire colour name
+  whisperblue RGBA(150,188,233,0) -> dropped: not an Xfire colour name
+  chatarea RGBA(59,63,65,0) -> dropped: not an Xfire colour name
+  InfoBG RGBA(20,11,2,0) -> dropped: not an Xfire colour name
+
+State images (Hover -> hover, Down -> down, Disabled -> disabled)
+  kept 0 of 0 images
+
+Dropped
+  HTML templates: 0
+  layout components: 0
+  layout tiles: 0
+  triggers: 0
+  sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
+
+Contrast changes (minimal Oklab-lightness walk) (0 made)
