@@ -239,7 +239,6 @@ pub fn control_into_event(
         | ControlPayload::EventReminder { .. }
         | ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }
-        | ControlPayload::GovernanceUpdated { .. }
         | ControlPayload::VoiceJoin { .. }
         | ControlPayload::VoiceLeave { .. }
         | ControlPayload::VoiceModeSwitch { .. }
@@ -299,14 +298,15 @@ pub fn control_into_event(
         | ControlPayload::ThreadMessageReceived { .. }
         | ControlPayload::ThreadArchived { .. }
         | ControlPayload::MekTransferAck(_)
-        | ControlPayload::RequestSegmentExpansion { .. }
         | ControlPayload::VoiceJoinAck { .. }
         | ControlPayload::VoiceJoinConfirmed { .. }
         | ControlPayload::VoiceMediaKey { .. }
         | ControlPayload::VoiceMediaKeyRequest { .. }
         | ControlPayload::VoiceMediaKeyAck { .. }
         // A governance op reaches the Host's op store, whose rebuild emits
-        // what changed (plan E3.2).
+        // what changed (plan E3.2); the SMPL `GovernanceUpdated` notice has
+        // no event since its subkey event went with the segments (S8).
+        | ControlPayload::GovernanceUpdated { .. }
         | ControlPayload::GovernanceOp { .. }
         | ControlPayload::HeadAdvanced { .. }
         // A snapshot request and its answer travel by app_call (S7c.3).

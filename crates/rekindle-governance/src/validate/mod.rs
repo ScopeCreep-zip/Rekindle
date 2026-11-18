@@ -16,7 +16,7 @@ use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::{
     ADMINISTRATOR, BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, KICK_MEMBERS,
     MANAGE_CHANNELS, MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS, MANAGE_MESSAGES,
-    MANAGE_ROLES, MANAGE_THREADS, SEND_MESSAGES, TIMEOUT_MEMBERS,
+    MANAGE_ROLES, MANAGE_THREADS, TIMEOUT_MEMBERS,
 };
 
 use crate::permissions::compute_permissions;
@@ -355,19 +355,6 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         // Community-wide policy (notification default + raid thresholds):
         // architecture §17.1 + §20.6 — admin-only.
         GovernanceEntry::CommunityPolicy { .. } => has(perms, MANAGE_COMMUNITY),
-
-        // Segment expansion requires admin-level access
-        GovernanceEntry::SegmentAdded { .. } => has(perms, MANAGE_COMMUNITY),
-
-        // Plate Gate lazy channel records (architecture §15.4): any member
-        // with SEND_MESSAGES can announce a new channel-segment record —
-        // they're the one creating the SMPL record and writing the first
-        // message into it. Reader-validates: peers reject ChannelSegmentLinked
-        // entries from members without channel write access, and reject
-        // entries that name a channel that doesn't exist in governance state.
-        GovernanceEntry::ChannelSegmentLinked { channel_id, .. } => {
-            has(perms, SEND_MESSAGES) && state.channels.contains_key(channel_id)
-        }
 
         GovernanceEntry::AutoModRule { .. } => has(perms, MANAGE_COMMUNITY),
 

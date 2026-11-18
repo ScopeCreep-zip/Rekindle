@@ -20,7 +20,7 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use crate::community::{GossipOverlayPlan, GossipOverlaySnapshot};
 use crate::deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
-    SegmentDescriptor, SelfPresenceSnapshot,
+    SelfPresenceSnapshot,
 };
 
 pub use state::MockState;
@@ -277,25 +277,25 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         st.calls_governance_bans.push(community_id.to_string());
         st.bans.clone()
     }
-    fn segment_descriptors(&self, community_id: &str) -> Vec<SegmentDescriptor> {
+    fn registry_key(&self, community_id: &str) -> Option<String> {
         let mut st = self.state.lock();
-        st.calls_segment_descriptors.push(community_id.to_string());
-        st.segments.clone()
+        st.calls_registry_key.push(community_id.to_string());
+        st.registry_key.clone()
     }
-    async fn scan_segment_raw(
+    async fn scan_registry_raw(
         &self,
         registry_key: &str,
         max_subkey: u32,
         skip_subkey: Option<u32>,
     ) -> Vec<(u32, Vec<u8>)> {
         let mut st = self.state.lock();
-        st.calls_scan_segment.push((
+        st.calls_scan_registry.push((
             String::new(),
             max_subkey,
             registry_key.to_string(),
             skip_subkey,
         ));
-        st.segment_raw
+        st.registry_raw
             .get(registry_key)
             .cloned()
             .unwrap_or_default()
@@ -437,11 +437,5 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .lock()
             .calls_prune_pending
             .push((community_id.to_string(), max_attempts));
-    }
-    fn maybe_auto_expand_segment(&self, community_id: &str) {
-        self.state
-            .lock()
-            .calls_auto_expand
-            .push(community_id.to_string());
     }
 }

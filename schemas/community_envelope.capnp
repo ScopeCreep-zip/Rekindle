@@ -284,22 +284,6 @@ struct MekTransferAckPayload @0xea0043000000a000 {
     ackTag               @6 :Data;
 }
 
-# P4.3 — joiner → admins request to expand the community's Plate Gate
-# segments when every slot in the highest existing segment is occupied.
-# Sent via gossip when the joiner lacks MANAGE_COMMUNITY; any admin
-# receiving this responds by calling `expand_community_segment` which
-# emits a `SegmentAdded` governance entry. The joiner watches for the
-# new segment via the merged governance state and retries slot claim.
-struct RequestSegmentExpansionPayload @0xea0044000000a000 {
-    communityId          @0 :Text;
-    requesterPseudonym   @1 :Text;
-    # Highest segment_index the joiner observed as full when the
-    # request was issued — admins use this to dedup concurrent
-    # requests (only the first admin to expand wins; later requests
-    # see the new segment and no-op).
-    fullSegmentIndex     @2 :UInt32;
-}
-
 struct OnboardingCompletePayload @0xea0012000000a000 {
     pseudonymKey         @0 :Text;
     roleIds              @1 :List(UInt32);
@@ -730,7 +714,8 @@ struct LinkPreviewPayload @0xea0042000000a000 {
 # variants become the sentinel `obsolete<N>` arm that decoders skip:
 # @61 (frameAck) and @63 (bandwidthEstimate), video's own congestion
 # feedback, replaced by the media route's transport feedback (plan
-# E4.3.3).
+# E4.3.3); @68 (requestSegmentExpansion), with the Plate Gate segments
+# (plan E3.2 S8).
 
 struct ControlPayload @0xeaffffff00000001 {
     union {
@@ -804,7 +789,7 @@ struct ControlPayload @0xeaffffff00000001 {
         topologyChange           @65 :TopologyChangePayload;
         linkPreview              @66 :LinkPreviewPayload;
         mekTransferAck           @67 :MekTransferAckPayload;
-        requestSegmentExpansion  @68 :RequestSegmentExpansionPayload;
+        obsolete68               @68 :Void;
         voiceJoinAck             @69 :VoiceJoinAckPayload;
         voiceJoinConfirmed       @70 :VoiceJoinConfirmedPayload;
         voiceMediaKey            @71 :VoiceMediaKeyPayload;

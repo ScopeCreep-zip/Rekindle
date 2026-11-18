@@ -7,10 +7,13 @@ use std::time::Duration;
 use base64::Engine as _;
 use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
+use rekindle_codec::governance_op::{encode_op, op_unsigned_bytes};
+use rekindle_governance::op::op_signing_bytes;
 use rekindle_ipc::protocol::{ChannelMessageRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_secrets::ed25519_dalek::Signer;
 use rekindle_types::config::SafetyProfile;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{GovernanceEntry, GovernanceOp};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::{ADMINISTRATOR, KICK_MEMBERS};
 
@@ -59,18 +62,26 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
         &community.governance_key,
     );
     let author = PseudonymKey(forger.verifying_key().to_bytes());
-    let (_, page) = rekindle_governance_runtime::overflow::build_signed_payload(
-        &[GovernanceEntry::CommunityMeta {
+    // An op with no deps, the lowest-lamport shape a forger can sign.
+    let mut op = GovernanceOp {
+        author,
+        seq: 0,
+        prev: None,
+        deps: Vec::new(),
+        issued_at: 0,
+        body: GovernanceEntry::CommunityMeta {
             name: Some("Taken".into()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-        }],
-        None,
-        &forger,
-        &author,
-    )
-    .unwrap();
+        },
+        sig: [0; 64],
+    };
+    let unsigned = op_unsigned_bytes(&op);
+    op.sig = forger
+        .sign(&op_signing_bytes(&community.governance_key, &unsigned))
+        .to_bytes();
+    let page = encode_op(&op).expect("encode the forged op");
     community
         .sim
         .forge_write(&community.governance_key, free_slot, page, &writer)

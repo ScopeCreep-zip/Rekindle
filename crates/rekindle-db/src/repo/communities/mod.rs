@@ -18,7 +18,6 @@ pub struct CommunityRow {
     pub mek_generation: u64,
     pub member_registry_key: Option<String>,
     pub my_subkey_index: Option<u32>,
-    pub my_segment_index: Option<u32>,
     /// Our own member row's onboarding flag.
     pub onboarding_complete: bool,
     /// `None` when the community never set one.
@@ -41,7 +40,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
     let mut stmt = conn.prepare(
         "SELECT c.id, c.name, c.description, c.icon_hash, c.banner_hash, \
          c.dht_owner_keypair, c.my_pseudonym_key, c.mek_generation, \
-         c.member_registry_key, c.my_subkey_index, c.my_segment_index, \
+         c.member_registry_key, c.my_subkey_index, \
          COALESCE(cm.onboarding_complete, 0), c.presence_policy, c.lamport_clock, \
          (SELECT COALESCE(MAX(m.lamport_ts), 0) FROM messages m \
             JOIN channels ch ON ch.owner_key = m.owner_key AND ch.id = m.conversation_id \
@@ -68,12 +67,11 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
                 mek_generation: crate::row::get_u64(row, 7)?,
                 member_registry_key: row.get(8)?,
                 my_subkey_index: row.get(9)?,
-                my_segment_index: row.get(10)?,
-                onboarding_complete: row.get::<_, i64>(11)? != 0,
+                onboarding_complete: row.get::<_, i64>(10)? != 0,
                 presence_policy: crate::row::get_json_opt(row, "presence_policy")?,
-                governance_clock: crate::row::get_u64(row, 13)?,
-                message_clock: crate::row::get_u64(row, 14)?,
-                removed_by_name: row.get(15)?,
+                governance_clock: crate::row::get_u64(row, 12)?,
+                message_clock: crate::row::get_u64(row, 13)?,
+                removed_by_name: row.get(14)?,
             })
         })?
         .collect();
@@ -104,8 +102,8 @@ fn insert_with(
         &format!(
             "{verb} INTO communities (owner_key, id, name, joined_at, \
              dht_owner_keypair, my_pseudonym_key, mek_generation, member_registry_key, \
-             my_subkey_index, my_segment_index, governance_key) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10)"
+             my_subkey_index, governance_key) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
         ),
         params![
             owner_key,
@@ -170,7 +168,6 @@ pub enum Column {
     MemberRegistryKey,
     DhtOwnerKeypair,
     MySubkeyIndex,
-    MySegmentIndex,
     MekGeneration,
     /// The pinned `GenesisCert` as the anchor holds it (plan E3.2):
     /// `rekindle_codec::governance_op::genesis::encode_genesis`.
@@ -190,7 +187,6 @@ impl Column {
             Self::MemberRegistryKey => "member_registry_key",
             Self::DhtOwnerKeypair => "dht_owner_keypair",
             Self::MySubkeyIndex => "my_subkey_index",
-            Self::MySegmentIndex => "my_segment_index",
             Self::MekGeneration => "mek_generation",
             Self::GenesisCert => "genesis_cert",
             Self::RemovedByName => "removed_by_name",
@@ -316,13 +312,11 @@ mod tests {
     }
 
     #[test]
-    fn segment_and_mek_generation_are_set() {
+    fn mek_generation_is_set() {
         let conn = fixture::conn();
         insert(&conn, OWNER, &community("c1", "One")).unwrap();
-        set(&conn, OWNER, "c1", Column::MySegmentIndex, 2).unwrap();
         set(&conn, OWNER, "c1", Column::MekGeneration, 9).unwrap();
         let row = &load_all(&conn, OWNER).unwrap()[0];
-        assert_eq!(row.my_segment_index, Some(2));
         assert_eq!(row.mek_generation, 9);
     }
 
@@ -379,14 +373,7 @@ mod tests {
         let row = &load_all(&conn, OWNER).unwrap()[0];
         assert_eq!(row.name, "One");
         assert_eq!(row.description.as_deref(), Some("about"));
-        assert_eq!(
-            (
-                row.my_subkey_index,
-                row.my_segment_index,
-                row.mek_generation
-            ),
-            (Some(8), Some(0), 3)
-        );
+        assert_eq!((row.my_subkey_index, row.mek_generation), (Some(8), 3));
         delete(&conn, OWNER, "c1").unwrap();
         assert!(load_all(&conn, OWNER).unwrap().is_empty());
     }

@@ -525,22 +525,6 @@ struct AdminDeleteEntry @0xcfd4eb16e9bf1c2e {
     obsoleteLamport              @4 :UInt64;
 }
 
-struct ChannelSegmentLinkedEntry @0xd0d4eb16e9bf1c2e {
-    channelId            @0 :Uuid16;
-    segmentIndex         @1 :UInt32;
-    recordKey            @2 :Text;
-    obsoleteLamport              @3 :UInt64;
-}
-
-struct SegmentAddedEntry @0xd1d4eb16e9bf1c2e {
-    segmentIndex         @0 :UInt32;
-    registryKey          @1 :Text;
-    governanceKey        @2 :Text;
-    slotRangeStart       @3 :UInt32;
-    slotRangeEnd         @4 :UInt32;
-    obsoleteLamport              @5 :UInt64;
-}
-
 struct AutoModRuleEntry @0xd2d4eb16e9bf1c2f {
     ruleId               @0 :Uuid16;
     name                 @1 :Text;
@@ -644,8 +628,9 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         onboardingConfig              @22 :OnboardingConfigEntry;
         welcomeScreen                 @23 :WelcomeScreenEntry;
         adminDelete                   @24 :AdminDeleteEntry;
-        channelSegmentLinked          @25 :ChannelSegmentLinkedEntry;
-        segmentAdded                  @26 :SegmentAddedEntry;
+        # Plate Gate segments, retired (plan E3.2 S8): never read.
+        obsolete25                    @25 :Void;
+        obsolete26                    @26 :Void;
         autoModRule                   @27 :AutoModRuleEntry;
         roleArchived                  @28 :RoleArchivedEntry;
         categoryUpdated               @29 :CategoryUpdatedEntry;

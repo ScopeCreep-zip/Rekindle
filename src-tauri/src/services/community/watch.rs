@@ -32,12 +32,8 @@ pub fn mark_watch_inactive(state: &Arc<AppState>, record_key: &str) {
 
 /// Every community record key the watch tier tracks, labelled for
 /// logging: top-level governance + member registry + channel logs from
-/// `open_community_records`, PLUS Plate Gate segment-N governance /
-/// registry records and channel-segment records from the merged
-/// governance state (§15.4). The presence scan reads segment
-/// registries, so they must be watched like segment 0 — otherwise a
-/// >255-member community's presence updates only surface on the poll
-/// backstop. De-duped (segment lists can overlap the top-level keys).
+/// `open_community_records` and the governance-synced channel logs.
+/// De-duped (the channel lists overlap).
 fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static str, String)> {
     let mut seen = std::collections::HashSet::new();
     let mut out: Vec<(&'static str, String)> = Vec::new();
@@ -66,15 +62,6 @@ fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static
     // already-opened skip check.
     for ch_key in community.channel_log_keys.values() {
         push("channel", ch_key.clone(), &mut seen);
-    }
-    if let Some(gov) = community.governance_state.as_ref() {
-        for seg in &gov.segments {
-            push("segment-governance", seg.governance_key.clone(), &mut seen);
-            push("segment-registry", seg.registry_key.clone(), &mut seen);
-        }
-        for csr in gov.channel_segment_records.values() {
-            push("channel-segment", csr.record_key.clone(), &mut seen);
-        }
     }
     out
 }
@@ -119,7 +106,7 @@ pub async fn hold_unheld_records(
     let Ok(pool) = state_helpers::record_pool(state) else {
         return;
     };
-    let (governance_key, registry_key, registry_writer) = {
+    let (governance_key, registry_key, registry_writer, channel_of) = {
         let communities = state.communities.read();
         let Some(cs) = communities.get(community_id) else {
             return;
@@ -130,6 +117,14 @@ pub async fn hold_unheld_records(
             cs.registry_owner_keypair
                 .clone()
                 .or_else(|| cs.slot_keypair.clone()),
+            // Which channel each channel record serves, so its lease
+            // lands in the channel slot.
+            cs.channel_log_keys
+                .iter()
+                .filter_map(|(id, key)| {
+                    Some((key.clone(), rekindle_types::id::ChannelId::from_hex(id)?))
+                })
+                .collect::<std::collections::HashMap<_, _>>(),
         )
     };
     let mut leases = rekindle_records::lease::CommunityLeases::default();
@@ -149,7 +144,13 @@ pub async fn hold_unheld_records(
                 leases.governance = Some(lease);
             }
             Ok(lease) if is_registry => leases.registry = Some(lease),
-            Ok(lease) => leases.segments.push(lease),
+            Ok(lease) => match channel_of.get(&record_key) {
+                Some(channel) => {
+                    leases.channels.insert(*channel, lease);
+                }
+                // A record no channel names any more: not ours to hold.
+                None => pool.release(lease).await,
+            },
             Err(e) => tracing::debug!(
                 community = %community_id,
                 record_key,
@@ -164,9 +165,8 @@ pub async fn hold_unheld_records(
 }
 
 /// Watch every record the community holds but its anchor (registry,
-/// channels, segments) on its lease. The anchor is immutable, and a
-/// governance change arrives through the watch ring (plan E3.2 S7). Overflow pages are never watched: the primary
-/// subkey's watch re-follows the chain. A watch rides a held lease, so the
+/// channels) on its lease. The anchor is immutable, and a
+/// governance change arrives through the watch ring (plan E3.2 S7). A watch rides a held lease, so the
 /// record is open with its sticky writer and there is nothing to re-open;
 /// a watch that dies is re-armed by the record pool.
 pub async fn watch_community_records(
@@ -181,7 +181,6 @@ pub async fn watch_community_records(
         held.registry
             .iter()
             .chain(held.channels.values())
-            .chain(held.segments.iter())
             .copied()
             .collect()
     };

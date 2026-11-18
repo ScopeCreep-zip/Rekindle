@@ -266,10 +266,8 @@ pub struct CommunityLeases {
     pub governance: Option<LeaseId>,
     pub registry: Option<LeaseId>,
     pub channels: HashMap<ChannelId, LeaseId>,
-    /// Plate Gate segment records (governance and registry per segment).
-    pub segments: Vec<LeaseId>,
-    /// `GovernanceOverflow` pages this member wrote or follows.
-    pub overflow: Vec<LeaseId>,
+    /// Thread message records (`rekindle-channel` threads).
+    pub threads: Vec<LeaseId>,
 }
 
 /// Which slot of a [`CommunityLeases`] a held record fills.
@@ -278,8 +276,7 @@ pub enum HeldKind {
     Governance,
     Registry,
     Channel,
-    Segment,
-    Overflow,
+    Thread,
 }
 
 /// What [`CommunityLeases::merge`] did: the leases to release, and the
@@ -297,8 +294,7 @@ impl CommunityLeases {
             .iter()
             .chain(self.registry.iter())
             .chain(self.channels.values())
-            .chain(self.segments.iter())
-            .chain(self.overflow.iter())
+            .chain(self.threads.iter())
             .copied()
     }
 
@@ -337,14 +333,9 @@ impl CommunityLeases {
                 self.channels.insert(channel, lease);
             }
         }
-        for lease in incoming.segments {
-            if take(lease, HeldKind::Segment, &mut merged) {
-                self.segments.push(lease);
-            }
-        }
-        for lease in incoming.overflow {
-            if take(lease, HeldKind::Overflow, &mut merged) {
-                self.overflow.push(lease);
+        for lease in incoming.threads {
+            if take(lease, HeldKind::Thread, &mut merged) {
+                self.threads.push(lease);
             }
         }
         merged

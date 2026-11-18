@@ -18,7 +18,6 @@ use rekindle_types::id::{CategoryId, ChannelId};
 use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
-use crate::segments::segment_slot_pubkeys;
 
 /// What the caller needs back to update its own local view.
 #[derive(Debug, Clone)]
@@ -40,13 +39,11 @@ pub struct NewChannel {
     pub parent_voice_channel_id: Option<ChannelId>,
 }
 
-/// Mint a channel's segment-0 SMPL record and announce it.
+/// Mint a channel's SMPL record and announce it.
 ///
 /// The record uses the universal schema keyed by the community's shared
 /// slot seed, so every member can derive their own writer keypair for it
-/// without being handed anything. Members in segment N > 0 create their
-/// own record lazily on first write — see
-/// [`crate::segments::ensure_channel_segment_record`].
+/// without being handed anything.
 pub async fn create_channel<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -65,14 +62,11 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
             GovernanceRuntimeError::Crypto("slot seed is not 32 hex-encoded bytes".to_string())
         })?;
 
-    // Segment 0. Later segments derive from global slot indices, which
-    // is why this goes through the same helper rather than hardcoding
-    // `0..255`.
-    let member_pubkeys = segment_slot_pubkeys(&slot_seed, 0)?;
+    let member_pubkeys = slot_pubkeys(&slot_seed)?;
     // Taken before the create, so nothing can fail between the create and
     // the announcement that hands the record's lease to the host.
     let record = deps.create_smpl_record(&member_pubkeys).await?;
-    if let Err(e) = crate::records::publish_created(deps, record.lease, &slot_seed, 0).await {
+    if let Err(e) = crate::records::publish_created(deps, record.lease, &slot_seed).await {
         deps.release_record(record.lease).await;
         return Err(e);
     }
@@ -120,4 +114,20 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
         record_key: record.record_key,
         position: channel.position,
     })
+}
+
+/// The 255 slot public keys that define a channel record's SMPL schema:
+/// one per slot of the community's registry, derived from the shared slot
+/// seed, so any member derives their own writer credential for a record
+/// they have only just heard about.
+pub(crate) fn slot_pubkeys(slot_seed: &[u8; 32]) -> Result<Vec<[u8; 32]>, GovernanceRuntimeError> {
+    let slots = rekindle_types::dht_layout::REGISTRY_SLOTS;
+    let mut member_pubkeys = Vec::with_capacity(slots as usize);
+    for slot in 0..slots {
+        let sk = rekindle_secrets::derive::derive_slot_keypair(slot_seed, slot).map_err(|e| {
+            GovernanceRuntimeError::Crypto(format!("derive_slot_keypair {slot}: {e}"))
+        })?;
+        member_pubkeys.push(sk.verifying_key().to_bytes());
+    }
+    Ok(member_pubkeys)
 }

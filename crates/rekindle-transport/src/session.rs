@@ -145,12 +145,6 @@ pub struct CommunityMembership {
     //
     // The daemon's `GovernanceRuntimeDeps` adapter reports these across
     // the Schwarzschild boundary as `governance_runtime::CommunityMembership`.
-    /// Plate Gate segment hosting our slot (architecture §15).
-    /// `None` = unknown/legacy; `0` = genesis segment. The global slot
-    /// used for keypair derivation is `segment * SLOTS_PER_SEGMENT +
-    /// slot_index`, so for segment 0 the two are equal.
-    pub segment_index: Option<u32>,
-
     /// Governance CRDT Lamport counter for this community.
     ///
     /// NOT the gossip mesh clock (`GossipMesh::clock`) — that one orders
@@ -187,7 +181,6 @@ mod tests {
             community_name: "dev-team".into(),
             slot_seed: None,
             channel_record_keys: HashMap::new(),
-            segment_index: Some(0),
             lamport_counter: 7,
             mek_generation: 2,
         }

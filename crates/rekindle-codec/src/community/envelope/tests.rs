@@ -357,31 +357,6 @@ fn mek_transfer_ack_capnp_roundtrip() {
 }
 
 #[test]
-fn request_segment_expansion_capnp_roundtrip() {
-    // P4.3 — RequestSegmentExpansion variant must round-trip
-    // cleanly through the Cap'n Proto codec.
-    let payload = ControlPayload::RequestSegmentExpansion {
-        community_id: "veilid:plate".into(),
-        requester_pseudonym: "feedface".repeat(4),
-        full_segment_index: 0,
-    };
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
-    let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
-            community_id,
-            requester_pseudonym,
-            full_segment_index,
-        }) => {
-            assert_eq!(community_id, "veilid:plate");
-            assert_eq!(requester_pseudonym, "feedface".repeat(4));
-            assert_eq!(full_segment_index, 0);
-        }
-        _ => panic!("wrong variant"),
-    }
-}
-
-#[test]
 fn signed_envelope_capnp_roundtrip() {
     let signed = SignedEnvelope {
         community_id: "comm_01".into(),

@@ -24,14 +24,13 @@ pub use community::{
     start_presence_poll, steady_poll_duration, write_our_presence, ClassifiedRow, DiscoveredRow,
     GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome, MemberProfileSnapshot,
     PresenceWrite, ProfileDiffOutcome, RouteRefusal, MAX_SYNC_ATTEMPTS, RAPID_TICKS,
-    RAPID_TICK_INTERVAL_SECS, STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS,
-    STEADY_TICK_INTERVAL_SECS, SUBKEYS_PER_SEGMENT,
+    RAPID_TICK_INTERVAL_SECS, REGISTRY_SLOTS, STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS,
+    STEADY_TICK_INTERVAL_SECS,
 };
 pub use deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, FriendPresenceDeps, FriendPresenceEvent,
     GameInfoSnapshot, OnlineMember, PresenceCredentials, PresenceError, RowWrite,
-    SegmentDescriptor, SelfPresenceSnapshot, SetFriendStatusOutcome, StatusPublisherDeps,
-    VoicePresenceRow,
+    SelfPresenceSnapshot, SetFriendStatusOutcome, StatusPublisherDeps, VoicePresenceRow,
 };
 pub use friend::{
     handle_value_change, parse_status, parse_status_timestamp, publish_status, status_to_wire_byte,

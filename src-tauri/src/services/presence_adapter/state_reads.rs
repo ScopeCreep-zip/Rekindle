@@ -1,5 +1,5 @@
 //! State-read helpers for `CommunityPresenceDeps` — `ensure_registry_open`,
-//! `presence_credentials`, `governance_bans`, `segment_descriptors`.
+//! `presence_credentials`, `governance_bans`, `registry_key`.
 //!
 //! Pre-port these reads were inline inside `presence_poll_tick`;
 //! lifted here so each adapter method body stays one-liner thin
@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use rekindle_presence::{PresenceCredentials, SegmentDescriptor};
+use rekindle_presence::PresenceCredentials;
 use rekindle_secrets::derive;
 
 use crate::state::AppState;
@@ -39,7 +39,7 @@ pub(super) fn presence_credentials(
     state: &Arc<AppState>,
     community_id: &str,
 ) -> Option<PresenceCredentials> {
-    let (my_pseudonym_hex, my_subkey_index, slot_keypair_str, slot_seed_hex, my_segment_index) = {
+    let (my_pseudonym_hex, my_subkey_index, slot_keypair_str, slot_seed_hex) = {
         let communities = state.communities.read();
         let c = communities.get(community_id)?;
         (
@@ -47,7 +47,6 @@ pub(super) fn presence_credentials(
             c.my_subkey_index,
             c.slot_keypair.clone(),
             c.slot_seed.clone(),
-            c.my_segment_index.unwrap_or(0),
         )
     };
 
@@ -69,7 +68,6 @@ pub(super) fn presence_credentials(
         my_subkey_index,
         slot_keypair_str,
         slot_seed_hex,
-        my_segment_index,
     })
 }
 
@@ -85,14 +83,14 @@ pub(super) fn governance_bans(state: &Arc<AppState>, community_id: &str) -> Hash
         .unwrap_or_default()
 }
 
-pub(super) fn segment_descriptors(
-    state: &Arc<AppState>,
-    community_id: &str,
-) -> Vec<SegmentDescriptor> {
-    // One `SegmentDescriptor` now, so this is the value itself. The map
-    // that used to be here rebuilt the struct field by field and
-    // dropped `governance_key` on the way.
-    crate::services::community::segments::segment_descriptors(state, community_id)
+/// The community's one slot registry: what the presence scan reads.
+pub(super) fn registry_key(state: &Arc<AppState>, community_id: &str) -> Option<String> {
+    state
+        .communities
+        .read()
+        .get(community_id)?
+        .member_registry_key
+        .clone()
 }
 
 // ---- Per-community read shortcuts used by community_deps.rs ----

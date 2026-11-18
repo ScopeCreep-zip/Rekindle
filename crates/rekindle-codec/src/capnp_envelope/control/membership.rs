@@ -136,23 +136,6 @@ pub(super) fn write_member_removed(
     p.set_pseudonym_key(pseudonym_key);
 }
 
-pub(super) fn write_request_segment_expansion(
-    mut p: cap::request_segment_expansion_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::RequestSegmentExpansion {
-        community_id,
-        requester_pseudonym,
-        full_segment_index,
-    } = payload
-    else {
-        unreachable!("write_request_segment_expansion: variant mismatch")
-    };
-    p.set_community_id(community_id);
-    p.set_requester_pseudonym(requester_pseudonym);
-    p.set_full_segment_index(*full_segment_index);
-}
-
 pub(super) fn write_onboarding_complete(
     mut p: cap::onboarding_complete_payload::Builder<'_>,
     payload: &ControlPayload,
@@ -322,18 +305,6 @@ pub(super) fn read_member_removed(
 ) -> Result<ControlPayload, CodecError> {
     Ok(ControlPayload::MemberRemoved {
         pseudonym_key: text_to_string(p.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
-    })
-}
-
-pub(super) fn read_request_segment_expansion(
-    p: cap::request_segment_expansion_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::RequestSegmentExpansion {
-        community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
-        requester_pseudonym: text_to_string(
-            p.get_requester_pseudonym().map_err(|e| capnp_err(&e))?,
-        )?,
-        full_segment_index: p.get_full_segment_index(),
     })
 }
 

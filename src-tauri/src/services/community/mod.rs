@@ -19,7 +19,6 @@ pub mod presence;
 pub mod receiver_limits;
 pub mod record_inventory;
 pub mod routes;
-pub mod segments;
 pub mod stage;
 pub mod video;
 pub mod video_session;

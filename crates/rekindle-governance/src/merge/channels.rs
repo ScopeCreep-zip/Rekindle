@@ -125,29 +125,6 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, stamp: OpStamp, state: &mu
             }
         }
 
-        // ── Threads: OR-Set ──
-        GovernanceEntry::ChannelSegmentLinked {
-            channel_id,
-            segment_index,
-            record_key,
-        } => {
-            let key = (*channel_id, *segment_index);
-            let entry_stamp = stamp;
-            let prev = state
-                .channel_segment_records
-                .get(&key)
-                .map_or(OpStamp::MIN, |s| s.linked);
-            if entry_stamp >= prev {
-                state.channel_segment_records.insert(
-                    key,
-                    crate::state::ChannelSegmentRecord {
-                        record_key: record_key.clone(),
-                        linked: entry_stamp,
-                    },
-                );
-            }
-        }
-
         // ── Lost Cargo attachment pin/unpin: LWW per attachment_id ──
         GovernanceEntry::CategoryUpdated {
             category_id,

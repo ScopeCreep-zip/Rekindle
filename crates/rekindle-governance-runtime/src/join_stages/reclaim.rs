@@ -12,7 +12,7 @@
 //! rather than *currently occupied* — so a departed member's slot reads
 //! as taken forever no matter what is written into it.
 //!
-//! Left alone that turns `SLOTS_PER_SEGMENT` into a **lifetime-joins**
+//! Left alone that turns `REGISTRY_SLOTS` into a **lifetime-joins**
 //! cap rather than a concurrent-members one, behind a hard
 //! `MAX_SEGMENTS = 8` wall, and every leaked slot is permanent recurring
 //! work: `scan_segment_raw` fetches and W26-verifies every non-empty row

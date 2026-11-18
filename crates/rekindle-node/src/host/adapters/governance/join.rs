@@ -55,7 +55,6 @@ impl HostGovernance {
             community_name: outcome.invite.community_name.clone(),
             slot_seed,
             channel_record_keys: std::collections::HashMap::new(),
-            segment_index: Some(outcome.claimed.segment_index),
             lamport_counter: 0,
             // No key yet: 0 is the sentinel for "no community key held",
             // never a generation (the genesis key is
@@ -128,7 +127,6 @@ impl HostGovernance {
         Ok(CommunityJoined {
             governance_key: id,
             name: outcome.invite.community_name.clone(),
-            segment: outcome.claimed.segment_index,
             slot: outcome.claimed.local_subkey,
             known_members: u32::try_from(outcome.initial_presence.known_members.len())
                 .unwrap_or(u32::MAX),
@@ -158,7 +156,6 @@ impl HostGovernance {
             let joined = CommunityJoined {
                 governance_key: id.to_owned(),
                 name: community.name.clone(),
-                segment: community.my_segment_index.unwrap_or_default(),
                 slot: community.my_subkey_index.unwrap_or_default(),
                 known_members: u32::try_from(community.members.len()).unwrap_or(u32::MAX),
                 pending: false,

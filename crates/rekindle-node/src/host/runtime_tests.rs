@@ -481,7 +481,6 @@ async fn discovered_registry_members_are_persisted() {
     host.governance().persist_discovered_registry_members(
         "c1",
         vec![DiscoveredMember {
-            segment_index: 0,
             slot_index: 3,
             presence: bea,
         }],

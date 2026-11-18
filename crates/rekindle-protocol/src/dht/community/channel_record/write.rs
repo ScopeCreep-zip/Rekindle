@@ -22,7 +22,7 @@ pub async fn create_smpl_channel_record(
     pool: &dyn RecordPort,
     slot_seed: &[u8; 32],
 ) -> Result<(rekindle_records::lease::LeaseId, String, String), ProtocolError> {
-    let slots = rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+    let slots = rekindle_types::dht_layout::REGISTRY_SLOTS;
     let mut slot_keys = Vec::with_capacity(slots as usize);
     for i in 0..slots {
         let signing_key = rekindle_secrets::derive::derive_slot_keypair(slot_seed, i)

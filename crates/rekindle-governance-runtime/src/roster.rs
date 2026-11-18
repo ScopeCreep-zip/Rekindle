@@ -51,12 +51,12 @@ pub struct RosterMember {
     pub display_name: Option<String>,
 }
 
-/// Every member holding a slot in one registry segment.
+/// Every member holding a slot in the community's slot registry.
 ///
 /// Offline members are included: absence is not departure, and a member
 /// away for a month still holds their slot. Only a signed departure, a
 /// ban, or an unverifiable row removes someone.
-pub async fn segment_roster<D: GovernanceRuntimeDeps>(
+pub async fn registry_roster<D: GovernanceRuntimeDeps>(
     deps: &D,
     registry_key: &str,
     gov_state: &GovernanceState,
@@ -67,7 +67,7 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
             tracing::debug!(
                 registry = %registry_key,
                 %error,
-                "roster: inspect failed; treating segment as unreadable rather than empty"
+                "roster: inspect failed; treating the registry as unreadable rather than empty"
             );
             return Vec::new();
         }
@@ -147,7 +147,7 @@ pub async fn find_my_slot<D: GovernanceRuntimeDeps>(
     my_pseudonym_hex: &str,
     gov_state: &GovernanceState,
 ) -> Option<u32> {
-    segment_roster(deps, registry_key, gov_state)
+    registry_roster(deps, registry_key, gov_state)
         .await
         .into_iter()
         .find(|m| m.pseudonym_hex == my_pseudonym_hex)

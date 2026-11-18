@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use rekindle_presence::deps::{PresenceCredentials, SegmentDescriptor, SelfPresenceSnapshot};
+use rekindle_presence::deps::{PresenceCredentials, SelfPresenceSnapshot};
 
 use super::DaemonPresenceAdapter;
 
@@ -65,16 +65,16 @@ impl DaemonPresenceAdapter {
     /// map lookup against a roster whose every row was signature-checked
     /// when it was scanned, rather than a DHT read of a shared structure
     /// any member could have written.
-    /// The writer index for our segment's channel records: every member
-    /// the roster placed in our segment, and our own slot (plan C7.12).
+    /// The writer index for the channel records: every member the roster
+    /// placed in the registry, and our own slot (plan C7.12).
     pub(super) fn member_slots_impl(&self, community_id: &str) -> Vec<u32> {
-        let Some((segment, own_slot)) = self
+        let Some(own_slot) = self
             .ctx
             .session
             .read()
             .as_ref()
             .and_then(|s| s.community(community_id))
-            .map(|m| (m.segment_index.unwrap_or(0), m.slot_index))
+            .map(|m| m.slot_index)
         else {
             return Vec::new();
         };
@@ -83,7 +83,6 @@ impl DaemonPresenceAdapter {
             .communities
             .members(community_id)
             .into_values()
-            .filter(|member| member.segment_index == segment)
             .map(|member| member.subkey_index)
             .collect();
         slots.push(own_slot);
@@ -108,50 +107,18 @@ impl DaemonPresenceAdapter {
                 rekindle_crypto::keypair_text::slot_keypair_text(&seed, membership.slot_index).ok()
             }),
             slot_seed_hex: membership.slot_seed.map(hex::encode),
-            my_segment_index: membership.segment_index.unwrap_or(0),
         })
     }
 
-    /// Segment 0 from the membership, plus every `SegmentAdded` the
-    /// governance CRDT has merged.
-    pub(super) fn segment_descriptors_impl(&self, community_id: &str) -> Vec<SegmentDescriptor> {
-        let primary = self
-            .ctx
+    /// The community's slot-registry record key, from the membership.
+    pub(super) fn registry_key_impl(&self, community_id: &str) -> Option<String> {
+        self.ctx
             .session
             .read()
             .as_ref()
             .and_then(|s| s.community(community_id))
-            .map(|m| (m.registry_key.clone(), m.governance_key.clone()));
-
-        let mut out = Vec::new();
-        if let Some((registry_key, governance_key)) = primary {
-            out.push(SegmentDescriptor {
-                segment_index: 0,
-                registry_key,
-                // Segment 0's governance record is the community's own.
-                governance_key,
-                slot_range_start: 0,
-                slot_range_end: rekindle_types::dht_layout::SLOTS_PER_SEGMENT,
-            });
-        }
-        if let Some(state) = self.ctx.communities.governance_state(community_id) {
-            for seg in &state.segments {
-                if seg.segment_index == 0 {
-                    continue;
-                }
-                out.push(SegmentDescriptor {
-                    segment_index: seg.segment_index,
-                    registry_key: seg.registry_key.clone(),
-                    // Carried rather than dropped: the merged segment
-                    // entry has it, and the type can now hold it.
-                    governance_key: seg.governance_key.clone(),
-                    slot_range_start: seg.slot_range_start,
-                    slot_range_end: seg.slot_range_end,
-                });
-            }
-        }
-        out.sort_by_key(|s| s.segment_index);
-        out
+            .map(|m| m.registry_key.clone())
+            .filter(|key| !key.is_empty())
     }
 
     /// Banned pseudonyms from merged governance — the CRDT is the

@@ -60,7 +60,7 @@ pub fn compute_profile_diff<S: BuildHasher>(
     discovered: &[DiscoveredRow],
 ) -> ProfileDiffOutcome {
     let mut updates: HashMap<String, MemberProfileSnapshot> = HashMap::new();
-    for (_segment_index, _subkey, presence) in discovered {
+    for (_subkey, presence) in discovered {
         let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
         let next = MemberProfileSnapshot {
             display_name: presence.display_name.clone(),
@@ -96,7 +96,7 @@ mod tests {
             bio: bio.map(str::to_string),
             ..Default::default()
         };
-        (0u32, 0u32, presence)
+        (0u32, presence)
     }
 
     fn snapshot(display: Option<&str>, bio: Option<&str>) -> MemberProfileSnapshot {
@@ -173,7 +173,7 @@ mod tests {
 
         // Build a row whose session has a text location.
         let mut row = row(7, Some("carol"), None);
-        row.2.session.location = Some(SessionLocation::Text {
+        row.1.session.location = Some(SessionLocation::Text {
             channel_id: "abc".to_string(),
         });
 

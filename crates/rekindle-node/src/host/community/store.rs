@@ -252,35 +252,6 @@ impl CommunityStore {
         });
     }
 
-    /// The community's segment descriptors (empty for an unknown one).
-    #[must_use]
-    pub fn segments(&self, community_id: &str) -> Vec<rekindle_types::presence::SegmentDescriptor> {
-        self.read(community_id, |c| c.segments.clone())
-            .unwrap_or_default()
-    }
-
-    /// Governance overflow chain for the community, in order.
-    #[must_use]
-    pub fn overflow_keys(&self, community_id: &str) -> Vec<String> {
-        self.read(community_id, |c| {
-            c.open_community_records.governance_overflow_keys.clone()
-        })
-        .unwrap_or_default()
-    }
-
-    /// Append to the overflow chain, skipping keys already present so a
-    /// repeated discovery pass does not grow the chain.
-    pub fn register_overflow_keys(&self, community_id: &str, keys: &[String]) {
-        self.write(community_id, |c| {
-            let chain = &mut c.open_community_records.governance_overflow_keys;
-            for key in keys {
-                if !chain.contains(key) {
-                    chain.push(key.clone());
-                }
-            }
-        });
-    }
-
     /// Replace the observed roster, and `known_members` with its keys.
     ///
     /// Wholesale rather than merged: the poll re-derives the full set each
@@ -419,7 +390,6 @@ impl CommunityStore {
             c.member_registry_key =
                 (!membership.registry_key.is_empty()).then(|| membership.registry_key.clone());
             c.my_subkey_index = Some(membership.slot_index);
-            c.my_segment_index = membership.segment_index;
             c.slot_seed = membership.slot_seed.as_ref().map(hex::encode);
             c.governance_clock = c.governance_clock.max(membership.lamport_counter);
             c.mek_generation = membership.mek_generation;

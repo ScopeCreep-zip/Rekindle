@@ -1,4 +1,4 @@
-//! Per-segment raw-bytes fetch for the registry scan.
+//! Raw-bytes fetch for the registry scan.
 //!
 //! Thin Veilid-IO helper over `RecordPool::read_changed` (plan C7.12): each
 //! tick runs ONE authoritative `inspect_dht_record(UpdateGet)` — a
@@ -31,25 +31,25 @@ use std::sync::Arc;
 use crate::state::AppState;
 use crate::state_helpers;
 
-pub(super) async fn scan_segment_raw(
+pub(super) async fn scan_registry_raw(
     state: &Arc<AppState>,
     registry_key: &str,
     max_subkey: u32,
     skip_subkey: Option<u32>,
 ) -> Vec<(u32, Vec<u8>)> {
     let Ok(pool) = state_helpers::record_pool(state) else {
-        tracing::trace!(registry_key, "scan_segment_raw: logged out — skipping");
+        tracing::trace!(registry_key, "scan_registry_raw: logged out — skipping");
         return Vec::new();
     };
 
     // One borrow for the whole scan (a table hit: the community holds its
     // registry), then one authoritative network-fanout inspect over the
-    // segment range, which yields the local-vs-network seq vectors we diff
+    // registry range, which yields the local-vs-network seq vectors we diff
     // below.
     let lease = match pool.acquire(registry_key, None, OpenIntent::Check).await {
         Ok(lease) => lease,
         Err(error) => {
-            tracing::debug!(registry_key, %error, "scan_segment_raw: registry not open — skipping");
+            tracing::debug!(registry_key, %error, "scan_registry_raw: registry not open — skipping");
             return Vec::new();
         }
     };
@@ -58,7 +58,7 @@ pub(super) async fn scan_segment_raw(
     out
 }
 
-/// [`scan_segment_raw`] on the registry's lease: the registry is the
+/// [`scan_registry_raw`] on the registry's lease: the registry is the
 /// membership index itself, so its whole range is the read
 /// (`RecordPort::read_changed`, plan C7.12).
 async fn scan_leased(
@@ -81,7 +81,7 @@ async fn scan_leased(
             tracing::debug!(
                 registry_key,
                 %error,
-                "scan_segment_raw: registry not inspectable — skipping scan this tick",
+                "scan_registry_raw: registry not inspectable — skipping scan this tick",
             );
             Vec::new()
         }

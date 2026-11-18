@@ -4,43 +4,33 @@
 //! crate-side helpers consumed by src-tauri's `join_community`
 //! orchestrator (chiral split — see `join.rs` module docs).
 //!
-//! Hosts the multi-segment governance snapshot loader, the slot-claim
-//! state machine, and the Plate Gate auto-expand-and-retry path.
+//! Hosts the slot-claim state machine and the cold-join presence scan.
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::invite_quota;
-use rekindle_governance::permissions::compute_permissions;
-use rekindle_governance::state::{GovernanceState, SegmentState};
+use rekindle_governance::state::GovernanceState;
 use rekindle_records::port::OpenIntent;
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::permissions::MANAGE_COMMUNITY;
 use rekindle_types::presence::MemberPresence;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
-use crate::event::GovernanceRuntimeEvent;
 use crate::join::{merge_presence_entry, InitialPresence};
-use crate::segments;
 
-/// Shared join-cursor state threaded through the slot-claim state
-/// machine. All three claim functions (`claim_registry_slot`,
-/// `try_claim_in_candidates`, `auto_expand_and_retry`) borrow the same
-/// cluster of fields; bundling them here keeps each signature small and
-/// the cursor immutable for the duration of a join attempt.
-///
-/// The generic `D: GovernanceRuntimeDeps` stays a function type param
-/// (not on the struct) so the adapter type never leaks into the cursor.
 /// Architecture §6.2 Step 9 — how many contended subkeys a joiner will
-/// step over within one segment before giving up on it. Five, per the
+/// step over in the registry before giving up. Five, per the
 /// spec; each attempt costs one CAS write plus one verifying read.
 const MAX_SLOT_CLAIM_ATTEMPTS: u32 = 5;
 
+/// Shared join-cursor state threaded through the slot claim; bundling it
+/// keeps each signature small and the cursor immutable for the duration of
+/// a join attempt. The generic `D: GovernanceRuntimeDeps` stays a function
+/// type param (not on the struct) so the adapter type never leaks into it.
 pub struct SlotClaimCtx<'a> {
-    /// Community identifier (used for segment expansion + mesh control).
+    /// Community identifier.
     pub community_id: &'a str,
-    /// Segment-0 invite registry key — the inviter's registry.
+    /// The invite's registry key — the community's slot registry.
     pub invite_registry_key: &'a str,
     /// Inviter's pseudonym — drives the M10.3 invite-quota check. `None` when
     /// the invite was accepted from its link pointer and governance carried no
@@ -59,12 +49,10 @@ pub struct SlotClaimCtx<'a> {
     pub display_name: Option<String>,
 }
 
-/// Outcome of a successful slot claim — segment + local subkey within
-/// that segment + the (string-formatted) writer keypair used for future
+/// Outcome of a successful slot claim — the registry subkey + the (string-formatted) writer keypair used for future
 /// writes. The adapter persists this into `CommunityState`.
 pub struct ClaimedSlot {
     pub registry_key: String,
-    pub segment_index: u32,
     pub local_subkey: u32,
     pub slot_keypair_str: String,
     /// Registry subkeys that held a value at claim time — the present-set from
@@ -81,25 +69,7 @@ pub struct ClaimedSlot {
     pub self_presence: MemberPresence,
 }
 
-/// (segment_index, registry_key, slot_range_start) for each segment to
-/// try in claim order. Segment 0 is the inviter's registry; later
-/// segments come from merged governance's `SegmentAdded` entries.
-struct SegmentClaimCandidate {
-    segment_index: u32,
-    registry_key: String,
-    slot_range_start: u32,
-}
-
-/// Inner outcome of one slot-claim attempt sweep over the candidate list.
-struct ClaimAttemptOutcome {
-    claimed: Option<ClaimedSlot>,
-    last_full_segment: Option<u32>,
-}
-
-/// Claim a registry slot for the joiner. Tries segment 0 first, then
-/// every additional segment merged from governance state. If all
-/// segments are full, delegates to `auto_expand_and_retry` (P4.3 Plate
-/// Gate).
+/// Claim a slot in the community's registry for the joiner.
 ///
 /// M10.3 — joiner-side invite quota check runs before any slot write as
 /// defense-in-depth (reader-validates also drops over-quota
@@ -122,91 +92,36 @@ pub async fn claim_registry_slot<D: GovernanceRuntimeDeps>(
         .try_into()
         .map_err(|_| GovernanceRuntimeError::Crypto("slot seed must be 32 bytes".into()))?;
 
-    let outcome =
-        try_claim_in_candidates(deps, &ctx, &slot_seed_bytes, &ctx.gov_state.segments).await?;
-    if let Some(claimed) = outcome.claimed {
+    let lease = deps
+        .acquire_record(ctx.invite_registry_key, None, OpenIntent::Check)
+        .await
+        .map_err(|e| {
+            GovernanceRuntimeError::Adapter(format!(
+                "No reachable registry — Veilid attach may have failed: {e}"
+            ))
+        })?;
+    let attempt = claim_in_registry(deps, &ctx, &slot_seed_bytes, lease).await;
+    deps.release_record(lease).await;
+    let (claimed, full) = attempt?;
+    if let Some(claimed) = claimed {
         return Ok(claimed);
     }
-
-    if let Some(full_seg) = outcome.last_full_segment {
-        return auto_expand_and_retry(deps, &ctx, &slot_seed_bytes, full_seg).await;
-    }
-    Err(GovernanceRuntimeError::Adapter(
-        "No reachable segment registry — Veilid attach may have failed".into(),
-    ))
+    Err(GovernanceRuntimeError::Adapter(if full {
+        "Community is full: every registry slot is held".into()
+    } else {
+        "Could not claim a registry slot; please retry".into()
+    }))
 }
 
-async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
+/// The claim attempts on a borrow of the registry. Returns the slot it
+/// claimed, and whether the registry proved full.
+async fn claim_in_registry<D: GovernanceRuntimeDeps>(
     deps: &D,
     ctx: &SlotClaimCtx<'_>,
     slot_seed_bytes: &[u8; 32],
-    governance_segments: &[SegmentState],
-) -> Result<ClaimAttemptOutcome, GovernanceRuntimeError> {
-    let mut candidates: Vec<SegmentClaimCandidate> = Vec::new();
-    candidates.push(SegmentClaimCandidate {
-        segment_index: 0,
-        registry_key: ctx.invite_registry_key.to_string(),
-        slot_range_start: 0,
-    });
-    for seg in governance_segments {
-        if seg.segment_index == 0 {
-            continue;
-        }
-        candidates.push(SegmentClaimCandidate {
-            segment_index: seg.segment_index,
-            registry_key: seg.registry_key.clone(),
-            slot_range_start: seg.slot_range_start,
-        });
-    }
-    candidates.sort_by_key(|c| c.segment_index);
-
-    let mut last_full_segment: Option<u32> = None;
-    for candidate in &candidates {
-        let lease = match deps
-            .acquire_record(&candidate.registry_key, None, OpenIntent::Check)
-            .await
-        {
-            Ok(lease) => lease,
-            Err(e) => {
-                tracing::warn!(
-                    segment = candidate.segment_index,
-                    error = %e,
-                    "claim_registry_slot: failed to open segment registry — skipping"
-                );
-                continue;
-            }
-        };
-        let attempt = claim_in_candidate(deps, ctx, slot_seed_bytes, candidate, lease).await;
-        deps.release_record(lease).await;
-        let (claimed_slot, segment_full) = attempt?;
-        if segment_full {
-            last_full_segment = Some(candidate.segment_index);
-        }
-
-        if let Some(claimed) = claimed_slot {
-            return Ok(ClaimAttemptOutcome {
-                claimed: Some(claimed),
-                last_full_segment,
-            });
-        }
-    }
-
-    Ok(ClaimAttemptOutcome {
-        claimed: None,
-        last_full_segment,
-    })
-}
-
-/// One candidate segment's claim attempts, on a borrow of its registry.
-/// Returns the slot it claimed, and whether the segment proved full.
-async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    ctx: &SlotClaimCtx<'_>,
-    slot_seed_bytes: &[u8; 32],
-    candidate: &SegmentClaimCandidate,
     lease: rekindle_records::lease::LeaseId,
 ) -> Result<(Option<ClaimedSlot>, bool), GovernanceRuntimeError> {
-    let mut segment_full = false;
+    let mut registry_full = false;
     // Architecture §6.2 Step 7: one inspect fanout → the present-subkey set.
     // Empty = "no value present" (not "seq == 0") so an occupied-but-seq-0
     // slot is never mis-claimed; the same set is reused by Step 12 presence
@@ -221,7 +136,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
     // rather than re-racing the same index. `reclaim` documents why
     // the array is fixed at all.
     let mut claimed_slot = None;
-    // Checked at most once per segment and only when it looks full,
+    // Checked at most once and only when the registry looks full,
     // so an ordinary join still costs one inspect and no row fetches.
     let mut reclaim_checked = false;
     for _attempt in 0..MAX_SLOT_CLAIM_ATTEMPTS {
@@ -233,12 +148,11 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
         if pick.is_none() && !reclaim_checked {
             reclaim_checked = true;
             let reusable =
-                reclaim::reclaimable_slots(deps, &candidate.registry_key, &present, ctx.gov_state)
+                reclaim::reclaimable_slots(deps, ctx.invite_registry_key, &present, ctx.gov_state)
                     .await;
             tracing::debug!(
-                segment = candidate.segment_index,
                 reusable = reusable.len(),
-                "segment full; checked for non-member slots"
+                "registry full; checked for non-member slots"
             );
             for subkey in reusable {
                 present_set.remove(&subkey);
@@ -246,12 +160,11 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
             pick = (0..255u32).find(|subkey| !present_set.contains(subkey));
         }
         let Some(local_subkey) = pick else {
-            segment_full = true;
+            registry_full = true;
             break;
         };
 
-        let global_slot = candidate.slot_range_start + local_subkey;
-        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, global_slot).map_err(|e| {
+        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, local_subkey).map_err(|e| {
             GovernanceRuntimeError::Crypto(format!("slot keypair derivation failed: {e}"))
         })?;
         let slot_kp_str =
@@ -290,7 +203,6 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
             .await?;
         if write_outcome.is_some() {
             tracing::debug!(
-                segment = candidate.segment_index,
                 local_subkey,
                 "slot claim lost the race — trying the next free subkey"
             );
@@ -310,7 +222,6 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
         // Treat it exactly like a CAS failure rather than aborting.
         if written.pseudonym_key != *ctx.my_pseudo {
             tracing::debug!(
-                segment = candidate.segment_index,
                 local_subkey,
                 "slot read-back shows another member — trying the next free subkey"
             );
@@ -319,8 +230,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
         }
 
         claimed_slot = Some(ClaimedSlot {
-            registry_key: candidate.registry_key.clone(),
-            segment_index: candidate.segment_index,
+            registry_key: ctx.invite_registry_key.to_string(),
             local_subkey,
             slot_keypair_str: slot_kp_str,
             occupied_subkeys: present_set.iter().copied().collect(),
@@ -328,84 +238,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
         });
         break;
     }
-    Ok((claimed_slot, segment_full))
-}
-
-async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    ctx: &SlotClaimCtx<'_>,
-    slot_seed_bytes: &[u8; 32],
-    full_segment_index: u32,
-) -> Result<ClaimedSlot, GovernanceRuntimeError> {
-    let community_id = ctx.community_id;
-    let perms = compute_permissions(ctx.my_pseudo, None, ctx.gov_state, deps.clock().now_secs());
-    let have_manage_community = (perms & MANAGE_COMMUNITY) != 0;
-    let requester_pseudonym = hex::encode(ctx.my_pseudo.0);
-
-    deps.emit_event(GovernanceRuntimeEvent::JoinPendingAlert {
-        have_manage_community,
-    });
-
-    if have_manage_community {
-        tracing::info!(
-            community = %community_id,
-            full_segment_index,
-            "Plate Gate: joiner has MANAGE_COMMUNITY — expanding inline"
-        );
-        segments::expand_community_segment(deps, community_id)
-            .await
-            .map_err(|e| {
-                GovernanceRuntimeError::Adapter(format!("inline segment expansion failed: {e}"))
-            })?;
-    } else {
-        tracing::info!(
-            community = %community_id,
-            full_segment_index,
-            "Plate Gate: joiner lacks MANAGE_COMMUNITY — gossiping RequestSegmentExpansion"
-        );
-        let envelope = CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
-            community_id: community_id.to_string(),
-            requester_pseudonym,
-            full_segment_index,
-        });
-        deps.send_to_mesh(community_id, &envelope)?;
-    }
-
-    // Poll up to 30s for the new segment to land in our merged
-    // governance state. Quicker than a watch-driven notify, simpler than
-    // a Notify channel, and bounded. The tokio clock, as the poll's sleep,
-    // so a paused runtime advances both together (plan C9.2).
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut new_segments: Vec<SegmentState>;
-    loop {
-        new_segments = deps
-            .governance_state(community_id)
-            .map(|gov| gov.segments)
-            .unwrap_or_default();
-        let max_seg = new_segments
-            .iter()
-            .map(|s| s.segment_index)
-            .max()
-            .unwrap_or(0);
-        if max_seg > full_segment_index {
-            break;
-        }
-        if tokio::time::Instant::now() >= deadline || crate::join_gate::should_stop(deps) {
-            return Err(GovernanceRuntimeError::Adapter(format!(
-                "Community is full and no admin expanded within 30s. The community has {} active segment(s); admins must run expand_community_segment to grow it.",
-                new_segments.len() + 1
-            )));
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-
-    let outcome = try_claim_in_candidates(deps, ctx, slot_seed_bytes, &new_segments).await?;
-    if let Some(claimed) = outcome.claimed {
-        return Ok(claimed);
-    }
-    Err(GovernanceRuntimeError::Adapter(
-        "Community segment expanded but still full — concurrent joiner race; please retry".into(),
-    ))
+    Ok((claimed_slot, registry_full))
 }
 
 /// Architecture §6.2 Step 12 — read + W26-verify the `MemberPresence` row in
@@ -504,8 +337,6 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
 
 mod reclaim;
 pub(crate) mod registry_scan;
-mod snapshot;
-pub use snapshot::{load_governance_snapshot, GovernanceSnapshot};
 
 #[cfg(test)]
 mod tests;

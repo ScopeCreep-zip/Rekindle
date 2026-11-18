@@ -455,9 +455,6 @@
 '.voice-message-duration' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
 '.raid-alert-banner' = { on = ["--color-xfire-busy 30% over --color-xfire-bg-dark"] }
 '.removal-banner' = { on = ["--color-xfire-busy 30% over --color-xfire-bg-dark"] }
-'.plate-gate-banner-text' = { on = ["--color-xfire-bg-panel"] }
-'.plate-gate-banner-btn' = { on = ["--color-xfire-accent"] }
-'.plate-gate-status' = { on = ["--color-xfire-bg-panel"] }
 '.governance-publication-pending' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg"] }
 '.governance-publication-failed' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg"] }
 '.message-forwarded-header' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }

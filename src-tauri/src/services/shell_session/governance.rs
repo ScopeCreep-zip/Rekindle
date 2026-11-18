@@ -15,11 +15,6 @@ pub(super) fn on_projected(
     projected: &GovernanceProjected,
 ) {
     let scope = crate::state_helpers::login_scope_or_closed(state);
-    // New Plate Gate segment records opened (the watch path, E3.1 C1).
-    let (s, c) = (state.clone(), community_id.to_string());
-    scope.spawn_or_drop("open new plate segments", async move {
-        crate::services::community::segments::open_new_segments(&s, &c).await;
-    });
     // The watches refreshed when the merge named a new record (E3.1 C1).
     if projected.new_watch_targets {
         let (s, c) = (state.clone(), community_id.to_string());

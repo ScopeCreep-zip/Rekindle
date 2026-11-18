@@ -141,26 +141,6 @@ export async function handlePinAttachment(
   }
 }
 
-/**
- * Plate Gate (architecture §15): admin expands the community to a new
- * SMPL segment when the highest existing segment hits its 255-slot cap.
- * Backend validates `MANAGE_COMMUNITY` and that the segment is full;
- * returns the new `segment_index`.
- */
-export async function handleExpandCommunitySegment(
-  communityId: string,
-): Promise<number | null> {
-  try {
-    const newIndex = await commands.expandCommunitySegment(communityId);
-    addToast(`Community expanded — segment ${newIndex} ready for new members`, "success");
-    return newIndex;
-  } catch (e) {
-    const msg = typeof e === "string" ? e : "Expansion failed";
-    console.error("Plate Gate expansion failed:", e);
-    addToast(msg, "error");
-    return null;
-  }
-}
 
 export async function handleUpdateCommunityPresence(
   communityId: string,

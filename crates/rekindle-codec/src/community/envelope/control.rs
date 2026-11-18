@@ -142,27 +142,6 @@ pub enum ControlPayload {
     /// P1.3 — requester → responder ack confirming successful
     /// `MekTransfer` ingestion (see [`MekTransferAckPayload`]).
     MekTransferAck(MekTransferAckPayload),
-    /// P4.3 — joiner → admins gossip request to expand the community's
-    /// Plate Gate segments. Issued by `claim_registry_slot` when every
-    /// slot in the highest existing segment is occupied AND the joiner
-    /// lacks `MANAGE_COMMUNITY`. Admins receiving this gossip
-    /// invoke `expand_community_segment` which emits a `SegmentAdded`
-    /// governance entry; the joiner watches for the new segment via
-    /// the merged governance state and retries slot claim.
-    ///
-    /// Wire format: Cap'n Proto `RequestSegmentExpansionPayload`
-    /// (ordinal 68 in `community_envelope.capnp`).
-    RequestSegmentExpansion {
-        community_id: String,
-        requester_pseudonym: String,
-        /// Highest segment_index the joiner saw as full when the
-        /// request was issued. Admins use this to dedup concurrent
-        /// expansion requests — only the first admin's
-        /// `expand_community_segment` call lands; later receivers see
-        /// `next_segment_index > full_segment_index + 1` in their
-        /// merged governance state and no-op.
-        full_segment_index: u32,
-    },
     /// Broadcast: member completed onboarding.
     OnboardingComplete {
         pseudonym_key: String,

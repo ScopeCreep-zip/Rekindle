@@ -71,24 +71,10 @@ pub struct CommunityState {
     /// DHT member registry record key (SMPL, multi-writer).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_registry_key: Option<String>,
-    /// Our subkey index in the member registry SMPL record.
-    /// **Local** to our segment's record (0..255). The corresponding global
-    /// slot index used for slot-keypair derivation is
-    /// `my_segment_index * 255 + my_subkey_index` (architecture §15.2 +
-    /// §8.3). For segment 0 these are equal.
+    /// Our subkey index in the member registry SMPL record (0..255), also
+    /// the slot index the slot keypair derives from (architecture §8.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub my_subkey_index: Option<u32>,
-    /// Plate Gate (architecture §15): which segment hosts our slot. `None`
-    /// for legacy / unknown; 0 for the genesis segment; 1..=MAX_SEGMENTS
-    /// for each expansion. Persisted to SQLite, restored on login.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub my_segment_index: Option<u32>,
-    /// Plate Gate (architecture §15): every expansion segment merged from
-    /// governance state (segment 0 is implicit, not included here).
-    /// Populated on community load and kept current by the governance
-    /// adapter's `SegmentAdded` handler — see `rekindle_governance_runtime::segments`.
-    #[serde(default)]
-    pub segments: Vec<rekindle_types::presence::SegmentDescriptor>,
     /// The watch ring (plan E3.2 S7): our ring successors' member records,
     /// each held read-only and watched, by record key.
     #[serde(skip)]

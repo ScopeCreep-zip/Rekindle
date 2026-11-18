@@ -222,33 +222,6 @@ pub struct GameInfo {
     pub server_address: Option<String>,
 }
 
-/// One registry segment of a community (architecture §15, Plate Gates).
-///
-/// Tier 1 because both `rekindle-presence` (Tier 5, scanning member
-/// rows) and `rekindle-governance-runtime` (Tier 6, expanding segments)
-/// need it, and Tier 5 cannot depend on Tier 6. They had a copy each,
-/// differing only in `governance_key` — which meant the desktop's
-/// presence adapter mapped the Tier-6 descriptor into the Tier-5 one
-/// field by field and *dropped* the governance key on the way.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SegmentDescriptor {
-    /// 0 for the genesis segment; 1.. for each Plate Gate expansion.
-    pub segment_index: u32,
-    /// SMPL member-registry record for this segment.
-    pub registry_key: String,
-    /// SMPL governance record for this segment. Empty for readers that
-    /// only scan presence rows and never merge governance.
-    pub governance_key: String,
-    /// Inclusive-exclusive global slot range this segment covers
-    /// (`segment_index * SLOTS_PER_SEGMENT` .. `+ SLOTS_PER_SEGMENT`).
-    /// 0 for readers that only scan presence rows and never merge
-    /// governance — the frontend's capacity math only uses
-    /// `segment_index`/list length, not these bounds.
-    pub slot_range_start: u32,
-    pub slot_range_end: u32,
-}
-
 /// A community member currently believed online, with what we need to
 /// reach them and how fresh that belief is.
 ///

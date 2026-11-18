@@ -13,7 +13,7 @@ use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEnt
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_presence::{
     CommunityPresenceDeps, DiscoveredMemberRow, GossipOverlayPlan, GossipOverlaySnapshot,
-    OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor, SelfPresenceSnapshot,
+    OnlineMember, PresenceCredentials, PresenceError, SelfPresenceSnapshot,
 };
 use rekindle_protocol::dht::community::channel_record;
 
@@ -387,17 +387,17 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::state_reads::governance_bans(&self.state, community_id)
     }
 
-    fn segment_descriptors(&self, community_id: &str) -> Vec<SegmentDescriptor> {
-        super::state_reads::segment_descriptors(&self.state, community_id)
+    fn registry_key(&self, community_id: &str) -> Option<String> {
+        super::state_reads::registry_key(&self.state, community_id)
     }
 
-    async fn scan_segment_raw(
+    async fn scan_registry_raw(
         &self,
         registry_key: &str,
         max_subkey: u32,
         skip_subkey: Option<u32>,
     ) -> Vec<(u32, Vec<u8>)> {
-        super::scan::scan_segment_raw(&self.state, registry_key, max_subkey, skip_subkey).await
+        super::scan::scan_registry_raw(&self.state, registry_key, max_subkey, skip_subkey).await
     }
 
     fn apply_member_state_update(
@@ -563,9 +563,5 @@ impl CommunityPresenceDeps for PresenceAdapter {
 
     fn prune_pending_syncs(&self, community_id: &str, max_attempts: u32) {
         super::pending_sync::prune_pending_syncs(&self.state, community_id, max_attempts);
-    }
-
-    fn maybe_auto_expand_segment(&self, community_id: &str) {
-        super::auto_expand::maybe_auto_expand_segment(&self.state, community_id);
     }
 }

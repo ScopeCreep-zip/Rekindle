@@ -62,28 +62,6 @@ impl HostGovernance {
         })
     }
 
-    /// Create a governance **overflow** page owned by an HKDF-derived
-    /// keypair the caller already holds. The record key is not
-    /// re-derivable (veilid mixes a random encryption key in and refuses to
-    /// recreate an existing owner+schema record), so the caller persists it
-    /// in the `overflow_next` chain and reuses it. Create runs at most once
-    /// per page.
-    pub(super) async fn create_overflow_record_impl(
-        &self,
-        owner_keypair: String,
-    ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
-        let node = self.transport()?;
-        let (lease, record_key, owner) =
-            dht_writes::create_dflt_leased(&node, Some(&owner_keypair))
-                .await
-                .map_err(|e| dht_err("create overflow record", e))?;
-        Ok(DhtRecordInfo {
-            record_key,
-            owner_keypair: Some(owner),
-            lease,
-        })
-    }
-
     pub(super) fn format_writer_keypair_impl(ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         rekindle_crypto::keypair_text::keypair_text(&ed_public, &ed_secret)
     }

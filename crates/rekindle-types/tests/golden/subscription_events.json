@@ -515,15 +515,6 @@
       }
     }
   },
-  "governance.governanceSubkeyUpdated": {
-    "governance": {
-      "governanceSubkeyUpdated": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "lamportTs": 77,
-        "subkeyIndex": 4
-      }
-    }
-  },
   "governance.inviteCreated": {
     "governance": {
       "inviteCreated": {
@@ -601,22 +592,6 @@
             "permissions": 2251799813685247,
             "position": 1,
             "selfAssignable": false
-          }
-        ]
-      }
-    }
-  },
-  "governance.segmentsChanged": {
-    "governance": {
-      "segmentsChanged": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "segments": [
-          {
-            "governanceKey": "VLD0:sssssssssssssssssssssssssssssssssssssssssss",
-            "registryKey": "VLD0:rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
-            "segmentIndex": 1,
-            "slotRangeEnd": 510,
-            "slotRangeStart": 255
           }
         ]
       }

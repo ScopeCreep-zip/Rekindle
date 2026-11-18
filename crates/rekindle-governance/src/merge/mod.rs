@@ -44,8 +44,7 @@ use crate::power::{class_of, OpClass};
 use crate::state::{
     AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
     EventState, ExpressionState, GovernanceState, InviteState, MemberState, MetadataState,
-    OnboardingState, OverwriteState, RoleState, SegmentState, ThreadState, TimeoutState,
-    WelcomeScreenState,
+    OnboardingState, OverwriteState, RoleState, ThreadState, TimeoutState, WelcomeScreenState,
 };
 use crate::validate::validate_write;
 
@@ -364,8 +363,7 @@ fn apply(
         | G::CategoryCreated { .. }
         | G::CategoryArchived { .. }
         | G::CategoryUpdated { .. }
-        | G::PermissionOverwrite { .. }
-        | G::ChannelSegmentLinked { .. } => apply_channels(entry, stamp, state),
+        | G::PermissionOverwrite { .. } => apply_channels(entry, stamp, state),
         G::MemberApproved { .. } | G::MemberRejected { .. } => {
             apply_admission(entry, stamp, state);
         }
@@ -376,7 +374,6 @@ fn apply(
         G::CommunityMeta { .. }
         | G::CommunityNotificationDefault { .. }
         | G::MEKGenerationBump { .. }
-        | G::SegmentAdded { .. }
         | G::CommunityPolicy { .. }
         | G::InviteCreated { .. }
         | G::InviteRevoked { .. } => apply_community(author, entry, stamp, state),

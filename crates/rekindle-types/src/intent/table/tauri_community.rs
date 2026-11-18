@@ -75,10 +75,6 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
     ),
     ("pin_attachment", Some(IntentKind::PinAttachment)),
     ("send_voice_message", Some(IntentKind::SendVoiceMessage)),
-    (
-        "expand_community_segment",
-        Some(IntentKind::ExpandCommunitySegment),
-    ),
     ("leave_community", Some(IntentKind::LeaveCommunity)),
     ("group_dm_create", Some(IntentKind::CreateGroupDm)),
     ("group_dm_accept", Some(IntentKind::AcceptDmInvite)),

@@ -30,7 +30,7 @@ use rekindle_types::id::ChannelId;
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
 
-/// Borrow a community's channel-log and GovernanceOverflow records
+/// Borrow a community's channel-log records
 /// concurrently (bounded). Best-effort — per-key failures are logged. Run
 /// in parallel so a cold join's 2-3 opens overlap instead of summing. No
 /// borrow starts after `until`, a deadline for starting work, never for
@@ -82,8 +82,8 @@ async fn acquire_records_concurrent<D: GovernanceRuntimeDeps>(
     taken
 }
 
-/// Take a SINGLE community's session leases (governance, registry,
-/// channel-log and GovernanceOverflow records) and hand them to the host,
+/// Take a SINGLE community's session leases (governance, registry and
+/// channel-log records) and hand them to the host,
 /// which watches them and starts the community's loops
 /// ([`GovernanceRuntimeDeps::community_records_ready`]).
 ///
@@ -129,22 +129,17 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
         }
     }
 
-    // Channel-log + GovernanceOverflow records in ONE bounded concurrent
-    // batch, so an unreachable overflow page overlaps the channel opens. The
-    // 12 s deadline (for starting borrows only) keeps the best-effort opens
-    // from starving the caller (the join's OpenRecords gate, or login
-    // hydration). A missing overflow page never aborts the pass (the read
-    // path warns and tolerates truncation, D6).
+    // Channel-log records in ONE bounded concurrent batch. The 12 s deadline
+    // (for starting borrows only) keeps the best-effort opens from starving
+    // the caller (the join's OpenRecords gate, or login hydration).
     let channels = deps.channel_log_keys_for_community(&rec.id);
-    let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
     // Channel records are borrowed writable with our slot writer (they share
     // the registry's slot seed), so a channel write restored after a re-login
-    // re-pushes as us (plan C7.13); overflow pages are read-only.
-    let mut keys: Vec<(String, Option<String>)> = channels
+    // re-pushes as us (plan C7.13).
+    let keys: Vec<(String, Option<String>)> = channels
         .iter()
         .map(|(_, key)| (key.clone(), rec.slot_writer.clone()))
         .collect();
-    keys.extend(overflow_keys.iter().map(|key| (key.clone(), None)));
     let until = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
     for (key, lease) in acquire_records_concurrent(deps, &rec.id, &keys, until).await {
         let channel = channels
@@ -155,7 +150,7 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
             Some(channel_id) => {
                 leases.channels.insert(channel_id, lease);
             }
-            None => leases.overflow.push(lease),
+            None => deps.release_record(lease).await,
         }
     }
     deps.community_records_ready(&rec.id, leases).await;
@@ -265,37 +260,20 @@ async fn install_rebuild<D: GovernanceRuntimeDeps>(
 /// Re-open every locally-held write-once community record so veilid rehydrates
 /// it: an `open_record` local-store hit schedules `add_rehydration_request`,
 /// whose background write re-propagates the already-signed local subkey to
-/// restore network consensus — no owner keypair required. Covers two record
-/// classes whose owner keypair is not retained for live writes:
-///
-/// 1. **Invite-secrets DFLT records** we authored — the DFLT owner keypair is
-///    discarded after the one-shot `publish_invite_secrets`, so without this an
-///    inviter restart lets the record age off the DHT and the invite stops
-///    resolving for new joiners.
-/// 2. **GovernanceOverflow records** this node holds — both the author's own
-///    spill pages AND any overflow chain followed as a reader (the inventory is
-///    repopulated from the `overflow_next` chain by `rebuild_governance`,
-///    which runs just before this). Re-opening keeps them on the network across a
-///    restart, symmetric for owner and member ("readers keep what they read
-///    alive", §14.1) — without it a spilled channel vanishes for joiners once the
-///    last holder restarts past the DHT TTL.
+/// restore network consensus — no owner keypair required. Covers the
+/// **invite-secrets DFLT records** we authored: the DFLT owner keypair is
+/// discarded after the one-shot `publish_invite_secrets`, so without this an
+/// inviter restart lets the record age off the DHT and the invite stops
+/// resolving for new joiners.
 ///
 /// Best-effort — per-key failures are logged, never fatal to login. Runs after
-/// each community's `rebuild_governance` so `gov_state.invites` + the overflow inventory
-/// are populated; both record classes are local-store hits (we authored or
-/// previously opened+tracked them).
+/// each community's `rebuild_governance` so `gov_state.invites` is populated;
+/// the records are local-store hits (we authored them).
 pub async fn republish_active_records<D: GovernanceRuntimeDeps>(deps: &D) {
     let invite_keys = deps.list_my_active_invite_secret_keys();
 
-    let mut overflow_keys: Vec<String> = Vec::new();
-    for (community_id, _gov_key) in deps.list_community_governance_targets() {
-        overflow_keys.extend(deps.governance_overflow_keys_for_community(&community_id));
-    }
-    overflow_keys.sort();
-    overflow_keys.dedup();
-
     let mut rehydrated = 0usize;
-    for key in invite_keys.iter().chain(overflow_keys.iter()) {
+    for key in &invite_keys {
         if crate::join_gate::should_stop(deps) {
             return;
         }
@@ -314,7 +292,6 @@ pub async fn republish_active_records<D: GovernanceRuntimeDeps>(deps: &D) {
     tracing::info!(
         rehydrated,
         invite_secrets = invite_keys.len(),
-        overflow = overflow_keys.len(),
         "re-opened active community records for rehydration"
     );
 }

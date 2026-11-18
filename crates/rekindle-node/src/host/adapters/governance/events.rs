@@ -4,12 +4,12 @@
 //! TUI over IPC), so each sees the same governance changes.
 //!
 //! Role and channel tables come from the merged CRDT (the same builders
-//! `role list` and `channel list` use), segments from the community store.
+//! `role list` and `channel list` use).
 
 use rekindle_governance::merge::QuarantineReason;
 use rekindle_governance_runtime::event::{GovernanceRuntimeEvent, JoinStageStatus};
 use rekindle_types::subscription_events::{
-    GovernanceEvent, MembershipEvent, NotificationEvent, OpQuarantineReason, SubscriptionEvent,
+    GovernanceEvent, MembershipEvent, OpQuarantineReason, SubscriptionEvent,
 };
 
 use rekindle_types::display::CategoryDisplay;
@@ -89,12 +89,6 @@ impl HostGovernance {
                     categories: self.category_displays(community_id),
                 })
             }
-            GovernanceRuntimeEvent::SegmentAdded { community_id, .. } => {
-                governance(GovernanceEvent::SegmentsChanged {
-                    community: community_id.clone(),
-                    segments: self.ctx.communities.segments(community_id),
-                })
-            }
             GovernanceRuntimeEvent::CommunityCreated { community_id, .. }
             | GovernanceRuntimeEvent::CommunityJoined { community_id, .. } => {
                 governance(self.metadata_changed(community_id))
@@ -114,20 +108,6 @@ impl HostGovernance {
                 }
                 .to_string(),
             }),
-            GovernanceRuntimeEvent::JoinPendingAlert {
-                have_manage_community,
-            } => Some(SubscriptionEvent::Notification(
-                NotificationEvent::SystemAlert {
-                    title: "Joining community…".to_string(),
-                    subject: None,
-                    body: if *have_manage_community {
-                        "Community is full — expanding capacity. This will take a few seconds."
-                    } else {
-                        "Community is full — waiting for an admin to expand it. Up to 30 seconds."
-                    }
-                    .to_string(),
-                },
-            )),
             // The runtime signals acceptance before the MEK is read or a
             // slot claimed; the gossip path's event carries both.
             GovernanceRuntimeEvent::JoinAccepted { community_id } => {

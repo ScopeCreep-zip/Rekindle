@@ -231,7 +231,6 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
 /** The community a governance event that writes under its row names, or null. */
 function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("rolesChanged" in g) return g.rolesChanged.community;
-  if ("segmentsChanged" in g) return g.segmentsChanged.community;
   if ("channelsChanged" in g) return g.channelsChanged.community;
   if ("metadataChanged" in g) return g.metadataChanged.community;
   if ("channelPermissionsChanged" in g) return g.channelPermissionsChanged.community;
@@ -263,14 +262,6 @@ function applyGovernance(g: GovernanceEvent): void {
       );
       // A role's hoist or position moves members between groups.
       refreshCommunityMembers(community);
-    }
-    return;
-  }
-
-  if ("segmentsChanged" in g) {
-    const { community, segments } = g.segmentsChanged;
-    if (communityState.communities[community]) {
-      setCommunityState("communities", community, "segments", segments);
     }
     return;
   }

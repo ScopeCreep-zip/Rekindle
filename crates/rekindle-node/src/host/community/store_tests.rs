@@ -42,17 +42,6 @@ fn governance_state_round_trips_and_is_absent_until_set() {
     assert_eq!(entry.governance_key.as_deref(), Some("c1"));
 }
 
-#[test]
-fn overflow_chain_keeps_order_and_skips_repeats() {
-    let store = CommunityStore::new(new_map());
-    store.register_overflow_keys("c1", &["page-1".into(), "page-2".into()]);
-    store.register_overflow_keys("c1", &["page-2".into(), "page-3".into()]);
-    assert_eq!(
-        store.overflow_keys("c1"),
-        vec!["page-1", "page-2", "page-3"]
-    );
-}
-
 /// `set_members` replaces the roster wholesale and keeps `known_members`
 /// equal to its keys. The member count is the merged governance's
 /// (`GovernanceState::member_count`, A/B R1-7), not this roster's, so a
@@ -85,7 +74,6 @@ fn membership(me: &PseudonymKey) -> CommunityMembership {
         community_name: "Team".into(),
         slot_seed: None,
         channel_record_keys: HashMap::new(),
-        segment_index: Some(0),
         lamport_counter: 0,
         mek_generation: 0,
     }

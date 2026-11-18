@@ -1,8 +1,3 @@
-#![allow(
-    clippy::cast_possible_truncation,
-    reason = "property test: segment counts are proptest-bounded well under u32::MAX"
-)]
-
 //! Property-based convergence tests for the CRDT merge engine.
 
 use super::*;
@@ -371,55 +366,4 @@ proptest! {
         prop_assert_eq!(thread.archived.map(|s| s.lamport), expected_archived);
     }
 
-    /// **Plate Gate (architecture §15) — segments converge under any
-    /// arrival order.** Each segment is its own join-semilattice; the
-    /// merged community state is the product CRDT under coordinate-wise
-    /// join (Shapiro 2011 / Almeida 2016 arXiv:1603.01529 §3). The
-    /// existing merge implementation appends only when `segment_index`
-    /// is new; this property test confirms that K random orderings of
-    /// the same entry set produce the same final `state.segments`.
-    #[test]
-    fn segments_converge_regardless_of_order(
-        segment_count in 1u32..=4,
-        base_lamport in 100u64..1_000,
-    ) {
-        let creator = PseudonymKey([1; 32]);
-        let community_meta = at(1, GovernanceEntry::CommunityMeta {
-            name: Some("plate-gate".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-        });
-
-        // Each segment uses an independent governance + registry key
-        // and a contiguous slot range (255 slots per segment per the
-        // architecture's universal SMPL schema).
-        let segment_entries: Vec<Stamped> = (1..=segment_count)
-            .map(|idx| at(base_lamport.saturating_add(u64::from(idx)), GovernanceEntry::SegmentAdded {
-                segment_index: idx,
-                registry_key: format!("REG{idx}"),
-                governance_key: format!("GOV{idx}"),
-                slot_range_start: idx * 255,
-                slot_range_end: idx * 255 + 255,
-            }))
-            .collect();
-
-        // Two orderings: forward and reverse. CRDT idempotence + commutativity
-        // guarantees both produce the same merged state.
-        let mut forward = vec![community_meta.clone()];
-        forward.extend(segment_entries.iter().cloned());
-        let mut reverse = vec![community_meta];
-        reverse.extend(segment_entries.iter().rev().cloned());
-
-        let state_forward = merge_entries(&creator, &[(creator.clone(), forward)]);
-        let state_reverse = merge_entries(&creator, &[(creator.clone(), reverse)]);
-
-        prop_assert_eq!(&state_forward.segments, &state_reverse.segments);
-        // Sorted by segment_index ascending (merge.rs:565).
-        for window in state_forward.segments.windows(2) {
-            prop_assert!(window[0].segment_index < window[1].segment_index);
-        }
-        // Each segment_index appears exactly once.
-        prop_assert_eq!(state_forward.segments.len() as u32, segment_count);
-    }
 }

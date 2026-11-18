@@ -325,20 +325,6 @@ impl ChannelMessagingDeps for HostChannel {
         self.gov.community_records_ready(community_id, leases).await;
     }
 
-    async fn ensure_channel_segment_record(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<String, ChannelError> {
-        rekindle_governance_runtime::ensure_channel_segment_record(
-            &self.gov,
-            community_id,
-            channel_id,
-        )
-        .await
-        .map_err(adapter)
-    }
-
     // ---------- The outbox's channel_post stream (plan E2.5) ----------
 
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), ChannelError> {

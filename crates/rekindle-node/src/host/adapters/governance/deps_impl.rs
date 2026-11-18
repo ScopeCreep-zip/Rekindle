@@ -104,13 +104,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.create_dflt_record_impl().await
     }
 
-    async fn create_overflow_record(
-        &self,
-        owner_keypair: String,
-    ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
-        self.create_overflow_record_impl(owner_keypair).await
-    }
-
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         Self::format_writer_keypair_impl(ed_public, ed_secret)
     }
@@ -308,14 +301,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
 
     fn list_my_active_invite_secret_keys(&self) -> Vec<String> {
         self.list_my_active_invite_secret_keys_impl()
-    }
-
-    fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]) {
-        self.register_governance_overflow_keys_impl(community_id, keys);
-    }
-
-    fn governance_overflow_keys_for_community(&self, community_id: &str) -> Vec<String> {
-        self.governance_overflow_keys_impl(community_id)
     }
 
     async fn apply_governance_rebuild_result(

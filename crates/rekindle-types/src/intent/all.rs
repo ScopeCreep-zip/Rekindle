@@ -115,7 +115,6 @@ impl IntentKind {
         Self::CancelEvent,
         Self::DeleteAutomodRule,
         Self::DeleteChannelOverwrite,
-        Self::ExpandCommunitySegment,
         Self::RemoveCommunityMember,
         Self::RemoveGameServer,
         Self::RespondToSpeakRequest,

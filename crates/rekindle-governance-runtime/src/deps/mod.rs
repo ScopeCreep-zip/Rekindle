@@ -123,8 +123,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// already holds is released, so repeat hand-overs do not accumulate),
     /// watches the records that were added, and starts its per-community
     /// loops (inspect, keepalive, presence poll) the first time, in its own
-    /// scope. Called by origin, hydration, a new channel, a segment
-    /// expansion and overflow pages.
+    /// scope. Called by origin, hydration and a new channel.
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases);
 
     /// Create a record of `schema` with a fresh random owner; the returned
@@ -154,21 +153,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// `InviteSecrets` blob. `owner_keypair` is `Some` (DFLT owns subkey 0)
     /// so the caller can write the blob via `set_dht_value`.
     async fn create_dflt_record(&self) -> Result<DhtRecordInfo, GovernanceRuntimeError>;
-
-    /// Create a single-owner DFLT(1) governance **overflow** record owned by the
-    /// HKDF-derived `owner_keypair` (string form, as produced by
-    /// [`GovernanceRuntimeDeps::format_writer_keypair`]). The derived owner grants
-    /// write authority on any device with no persisted keypair, but the returned
-    /// record key is NOT re-derivable — veilid mixes a random encryption key into
-    /// it and refuses to re-create an existing owner+schema record. The caller
-    /// therefore persists the returned key in the primary subkey's `overflow_next`
-    /// chain and reuses it via `open_dht_record`; create runs at most once per
-    /// page. The caller writes the overflow page to subkey 0 via `set_dht_value`
-    /// with the same writer.
-    async fn create_overflow_record(
-        &self,
-        owner_keypair: String,
-    ) -> Result<DhtRecordInfo, GovernanceRuntimeError>;
 
     /// Convert an Ed25519 `(public, secret)` byte pair into the string
     /// form that the adapter understands as `writer` for `set_dht_value`
@@ -295,7 +279,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     // ---------- Join-flow specific ----------
 
     /// Send a `CommunityEnvelope`-encoded app_call to a peer (used by
-    /// the join bootstrap-fetch and Plate Gate expand-request paths).
+    /// the join bootstrap-fetch path).
     async fn app_call_peer(
         &self,
         target_route_blob: &[u8],
@@ -357,23 +341,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// only a rehydrating re-open keeps the record on the network. Scoped to
     /// invites we authored because only those are local-store hits.
     fn list_my_active_invite_secret_keys(&self) -> Vec<String>;
-
-    /// Merge `keys` into the community's
-    /// `CommunityRecords.governance_overflow_keys` inventory. Idempotent
-    /// (de-duped). Their leases reach the host separately, through
-    /// [`Self::community_records_ready`]. The single
-    /// entry point that registers a GovernanceOverflow record into the
-    /// authoritative per-community inventory, from any producer: the write
-    /// path (author's own spill pages) and every read path (Mutual Aid §14.1
-    /// — a reader keeps alive every overflow record it follows).
-    fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]);
-
-    /// Snapshot the GovernanceOverflow record keys held in this community's
-    /// `CommunityRecords.governance_overflow_keys` inventory. Consumed by
-    /// keepalive warming (§14.1), the open+track orchestrators (§10), and
-    /// login rehydration (D5) so overflow records share the same durability
-    /// path as channels.
-    fn governance_overflow_keys_for_community(&self, community_id: &str) -> Vec<String>;
 
     /// Apply the post-merge result for one community: install the new
     /// `GovernanceState` via `set_governance_state` and persist the merged

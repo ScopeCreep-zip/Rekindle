@@ -233,27 +233,11 @@ export interface Community {
   /** Lost Cargo: attachment_id hex strings that admins have pinned (exempt
    *  from local LRU eviction). Mirrored from the merged governance state. */
   pinnedAttachments?: string[];
-  /** Plate Gate (architecture §15): merged segment metadata. Each entry
-   *  describes one expansion segment that admins added when the prior
-   *  segment hit its 255-slot cap. Segment 0 (genesis) is implicit and
-   *  not present in this list. */
-  segments?: SegmentInfo[];
-  /** Which segment hosts our slot. 0 for the primary; 1..=MAX_SEGMENTS
-   *  for expansion segments. */
-  mySegmentIndex?: number;
   /** Architecture §17.4 — raid alert flag toggled by the
    *  `raidAlert` community-event. The CommunityWindow renders a
    *  banner overlay while this is `true`; cleared by the matching
    *  `raidAlert { active: false }` event from the backend. */
   raidAlertActive?: boolean;
-}
-
-export interface SegmentInfo {
-  segmentIndex: number;
-  registryKey: string;
-  governanceKey: string;
-  slotRangeStart: number;
-  slotRangeEnd: number;
 }
 
 export interface VoiceChannelState {

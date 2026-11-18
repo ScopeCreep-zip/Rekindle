@@ -160,17 +160,6 @@ pub(super) fn write_permission_overwrite(
     p.set_deny(deny);
 }
 
-pub(super) fn write_channel_segment_linked(
-    mut p: schema_pkg::channel_segment_linked_entry::Builder<'_>,
-    channel_id: ChannelId,
-    segment_index: u32,
-    record_key: &str,
-) {
-    uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
-    p.set_segment_index(segment_index);
-    p.set_record_key(record_key);
-}
-
 pub(super) fn write_category_updated(
     mut p: schema_pkg::category_updated_entry::Builder<'_>,
     category_id: CategoryId,
@@ -305,16 +294,6 @@ pub(super) fn read_permission_overwrite(
         target_id: text_to_string(p.get_target_id().map_err(|e| capnp_err(&e))?)?,
         allow: p.get_allow(),
         deny: p.get_deny(),
-    })
-}
-
-pub(super) fn read_channel_segment_linked(
-    p: schema_pkg::channel_segment_linked_entry::Reader<'_>,
-) -> Result<GovernanceEntry, CodecError> {
-    Ok(GovernanceEntry::ChannelSegmentLinked {
-        channel_id: channel_id_from_capnp(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        segment_index: p.get_segment_index(),
-        record_key: text_to_string(p.get_record_key().map_err(|e| capnp_err(&e))?)?,
     })
 }
 

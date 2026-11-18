@@ -17,7 +17,7 @@ use rekindle_presence::community::{
 };
 use rekindle_presence::deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
-    SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
+    SelfPresenceSnapshot, VoicePresenceRow,
 };
 use rekindle_types::presence::{
     EncryptedHistoryRanges, EncryptedSessionExtras, HistoryRange, MemberSession,
@@ -82,8 +82,8 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.presence_credentials_impl(community_id)
     }
 
-    fn segment_descriptors(&self, community_id: &str) -> Vec<SegmentDescriptor> {
-        self.segment_descriptors_impl(community_id)
+    fn registry_key(&self, community_id: &str) -> Option<String> {
+        self.registry_key_impl(community_id)
     }
 
     fn governance_bans(&self, community_id: &str) -> HashSet<String> {
@@ -92,13 +92,13 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
 
     // ---------- Registry scan and roster ----------
 
-    async fn scan_segment_raw(
+    async fn scan_registry_raw(
         &self,
         registry_key: &str,
         max_subkey: u32,
         skip_subkey: Option<u32>,
     ) -> Vec<(u32, Vec<u8>)> {
-        self.scan_segment_impl(registry_key, max_subkey, skip_subkey)
+        self.scan_registry_impl(registry_key, max_subkey, skip_subkey)
             .await
     }
 
@@ -139,11 +139,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         let Some(creds) = self.presence_credentials_impl(community_id) else {
             return Ok(None);
         };
-        let Some(descriptor) = self
-            .segment_descriptors_impl(community_id)
-            .into_iter()
-            .next()
-        else {
+        let Some(registry_key) = self.registry_key_impl(community_id) else {
             return Ok(None);
         };
         // The community's registry lease is the answer (plan C7.5): when
@@ -151,11 +147,11 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         // it and hand the lease to the community. A raw re-open here would
         // replace the held record's writer and safety selection (V5).
         if self.ctx.communities.holds_registry(community_id) {
-            return Ok(Some(descriptor.registry_key));
+            return Ok(Some(registry_key));
         }
         let lease = rekindle_transport::broadcast::dht_writes::acquire_str(
             node.as_ref(),
-            &descriptor.registry_key,
+            &registry_key,
             creds.slot_keypair_str.as_deref(),
             OpenIntent::Hold,
         )
@@ -172,7 +168,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         for surplus in merged.surplus {
             rekindle_transport::broadcast::dht_writes::release(node.as_ref(), surplus).await;
         }
-        Ok(Some(descriptor.registry_key))
+        Ok(Some(registry_key))
     }
 
     fn apply_member_state_update(
@@ -412,16 +408,5 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
 
     async fn run_presence_poll_tick(&self, community_id: &str) -> Result<(), String> {
         self.run_poll_tick_impl(community_id).await
-    }
-
-    fn maybe_auto_expand_segment(&self, community_id: &str) {
-        // Expansion is a governance write, and the joiner already
-        // triggers it from `claim_registry_slot` when every segment is
-        // full. Doing it from the poll as well would race two
-        // `SegmentAdded` entries for the same index.
-        tracing::trace!(
-            community = %community_id,
-            "segment expansion is driven by the join path, not the poll"
-        );
     }
 }

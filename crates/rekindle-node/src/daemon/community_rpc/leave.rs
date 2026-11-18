@@ -115,7 +115,6 @@ mod tests {
             community_name: "test".into(),
             slot_seed: None,
             channel_record_keys: std::collections::HashMap::new(),
-            segment_index: Some(0),
             lamport_counter: 0,
             mek_generation: 1,
         }

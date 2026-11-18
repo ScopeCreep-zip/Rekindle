@@ -12,7 +12,6 @@ mod entry;
 mod mod_report;
 mod onboarding;
 mod op;
-mod payload;
 mod role_edit;
 
 #[cfg(test)]
@@ -29,5 +28,4 @@ pub use onboarding::{
     MAX_ONBOARDING_TITLE_CHARS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
 };
 pub use op::{Frontier, GenesisCert, GovernanceOp, InviteProof, OpHash, OpRef, RosterChecksum};
-pub use payload::GovernanceSubkeyPayload;
 pub use role_edit::ExclusionGroupEdit;

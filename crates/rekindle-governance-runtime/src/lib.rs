@@ -56,7 +56,6 @@ pub mod moderation;
 pub mod op_log;
 pub mod op_walk;
 pub mod origin;
-pub mod overflow;
 pub mod ownership;
 pub mod partial;
 pub mod quarantine;
@@ -64,7 +63,6 @@ pub mod rebuild_flight;
 pub(crate) mod records;
 pub mod roles;
 pub mod roster;
-pub mod segments;
 pub mod verify_cache;
 pub mod watch_ring;
 
@@ -95,8 +93,7 @@ pub use join::{
 };
 pub use join_gate::{gate, phase_expired, should_stop, JoinPhase};
 pub use join_stages::{
-    claim_registry_slot, collect_initial_presence_state, load_governance_snapshot, ClaimedSlot,
-    GovernanceSnapshot, SlotClaimCtx,
+    claim_registry_slot, collect_initial_presence_state, ClaimedSlot, SlotClaimCtx,
 };
 pub use membership_events::{
     process_admin_keypair_grant, process_join_accepted, process_member_roles_changed,
@@ -105,11 +102,3 @@ pub use membership_events::{
 };
 pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
 pub use origin::create_community;
-pub use overflow::{
-    partition_into_pages, read_governance_with_overflow, read_my_chain, MAX_OVERFLOW_PAGES,
-    OVERFLOW_PAGE_BUDGET, PRIMARY_PAGE_BUDGET,
-};
-pub use segments::{
-    channel_record_keys_per_segment, ensure_channel_segment_record, expand_community_segment,
-    highest_segment_full, open_new_segments, segment_descriptors, SegmentDescriptor, MAX_SEGMENTS,
-};

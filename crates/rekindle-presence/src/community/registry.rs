@@ -12,7 +12,7 @@ use std::hash::BuildHasher;
 use rekindle_records::lease::{max_subkey_bytes, SchemaShape};
 use rekindle_types::presence::{EncryptedHistoryRanges, HistoryRange, MemberPresence};
 
-use crate::community::scan_row::SUBKEYS_PER_SEGMENT;
+use crate::community::scan_row::REGISTRY_SLOTS;
 use crate::deps::{CommunityPresenceDeps, DiscoveredMemberRow, RowWrite};
 use rekindle_codec::presence_row::{classify_superseding_row, SupersedingRow};
 
@@ -20,7 +20,7 @@ use rekindle_codec::presence_row::{classify_superseding_row, SupersedingRow};
 /// 255×1) registry, 4112 bytes (plan V2, C7.15). `RecordPool::set`
 /// refuses anything larger before Veilid sees it.
 pub const PRESENCE_ROW_CAP: usize = max_subkey_bytes(SchemaShape {
-    subkey_count: SUBKEYS_PER_SEGMENT,
+    subkey_count: REGISTRY_SLOTS,
 });
 
 /// An Ed25519 signature; its base64 form is always 88 characters, so a
@@ -34,11 +34,8 @@ fn signed_len(presence: &MemberPresence) -> usize {
     serde_json::to_vec(&probe).map_or(usize::MAX, |bytes| bytes.len())
 }
 
-/// `(segment_index, local_subkey, presence)` tuple yielded by the
-/// per-segment registry scan. Plate Gate (architecture §15) carries
-/// segment context so downstream SQLite persistence preserves the
-/// member's location.
-pub type DiscoveredRow = (u32, u32, MemberPresence);
+/// `(subkey, presence)` tuple yielded by the registry scan.
+pub type DiscoveredRow = (u32, MemberPresence);
 
 /// Inputs for [`write_our_presence`]. Groups the registry addressing +
 /// slot credentials + history ranges so the entry point stays under the
@@ -367,9 +364,7 @@ pub fn persist_discovered_registry_members<D, S>(
 {
     let rows: Vec<DiscoveredMemberRow> = discovered_members
         .iter()
-        .map(|(segment_index, subkey, presence)| {
-            discovered_member_row(presence, *segment_index, *subkey)
-        })
+        .map(|(subkey, presence)| discovered_member_row(presence, *subkey))
         .collect();
 
     // Detect newly-seen pseudonyms and fire one `MemberDiscovered`
@@ -399,19 +394,17 @@ pub fn persist_discovered_registry_members<D, S>(
     deps.persist_discovered_member_rows(community_id, rows, banned, joined_at_secs);
 }
 
-/// The roster row for one registry `presence` at `segment_index`/`subkey`,
+/// The roster row for one registry `presence` at `subkey`
 /// (its roles are the merged role assignments, never stored on the row).
 #[must_use]
-pub fn discovered_member_row(
-    presence: &MemberPresence,
-    segment_index: u32,
-    subkey: u32,
-) -> DiscoveredMemberRow {
+pub fn discovered_member_row(presence: &MemberPresence, subkey: u32) -> DiscoveredMemberRow {
     DiscoveredMemberRow {
         pseudonym_key: hex::encode(presence.pseudonym_key.0),
         display_name: presence.display_name.clone(),
         subkey_index: subkey,
-        segment_index,
+        // The one registry; `community_members.segment_index` goes with
+        // the slot model at E3.4.
+        segment_index: 0,
         bio: presence.bio.clone(),
         pronouns: presence.pronouns.clone(),
         theme_color: presence.theme_color,

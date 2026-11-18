@@ -62,17 +62,6 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
                 h.update(b",");
             }
         }
-        GovernanceEvent::SegmentsChanged { segments, .. } => {
-            h.update(b"segments|");
-            for s in segments {
-                h.update(&s.segment_index.to_le_bytes());
-                h.update(s.registry_key.as_bytes());
-                h.update(s.governance_key.as_bytes());
-                h.update(&s.slot_range_start.to_le_bytes());
-                h.update(&s.slot_range_end.to_le_bytes());
-                h.update(b",");
-            }
-        }
         GovernanceEvent::BansChanged { .. } => {
             h.update(b"bans");
         }
@@ -129,18 +118,6 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(community.as_bytes());
             h.update(b"|");
             h.update(channel.as_bytes());
-        }
-        GovernanceEvent::GovernanceSubkeyUpdated {
-            community,
-            subkey_index,
-            lamport_ts,
-        } => {
-            h.update(b"subkey|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(&subkey_index.to_le_bytes());
-            h.update(b"|");
-            h.update(&lamport_ts.to_le_bytes());
         }
     }
 }

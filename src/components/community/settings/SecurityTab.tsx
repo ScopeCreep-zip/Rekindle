@@ -19,7 +19,6 @@ interface SecurityTabProps {
 
 const SecurityTab: Component<SecurityTabProps> = (props) => {
   const [rotating, setRotating] = createSignal(false);
-  const [expanding, setExpanding] = createSignal(false);
 
   // Architecture §10.7 + §20.6 — community-wide policy editor
   // (raid-protection thresholds + optional rules text). Loaded on mount,
@@ -38,13 +37,6 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
     const perms = calculateBasePermissions(props.community.myRoleIds, props.community.roles);
     return hasPermission(perms, MANAGE_COMMUNITY);
   });
-
-  // Architecture §15 — Plate Gate scaling: when segment 0 (or the
-  // highest segment) is full, an admin can write a SegmentAdded
-  // governance entry that allocates the next segment. We approximate
-  // "full" by checking if local member count >= 255 (the SMPL slot
-  // limit per Veilid; documented at architecture line 126).
-  const isHighestSegmentFull = createMemo(() => (props.community.members?.length ?? 0) >= 255);
 
   createEffect(() => {
     if (props.community.id) {
@@ -82,19 +74,6 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
         }
       },
     });
-  }
-
-  async function expandSegment(): Promise<void> {
-    setExpanding(true);
-    try {
-      const newSegmentIndex = await commands.expandCommunitySegment(props.community.id);
-      addToast(`Segment ${newSegmentIndex} created — new members will join here`, "success");
-    } catch (e) {
-      console.error("Failed to expand segment:", e);
-      addToast(typeof e === "string" ? e : "Failed to expand segment", "error");
-    } finally {
-      setExpanding(false);
-    }
   }
 
   async function savePolicy(): Promise<void> {
@@ -221,29 +200,6 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
         </FormField>
       </Show>
 
-      {/* Architecture §15 — Plate Gate admin expansion. */}
-      <Show when={canManageCommunity()}>
-        <FormField label="Membership Capacity">
-          <div class="settings-hint">
-            Each segment holds 255 member slots. When the highest
-            segment fills, expanding writes a `SegmentAdded` governance
-            entry that allocates a new SMPL record so new joiners have a
-            slot to claim.
-          </div>
-          <button
-            class="form-btn-secondary"
-            onClick={() => void expandSegment()}
-            disabled={!isHighestSegmentFull() || expanding()}
-            title={
-              isHighestSegmentFull()
-                ? "Allocate the next 255-slot segment"
-                : "Available once the highest segment is full"
-            }
-          >
-            {expanding() ? "Expanding..." : "Expand to new segment"}
-          </button>
-        </FormField>
-      </Show>
     </div>
   );
 };

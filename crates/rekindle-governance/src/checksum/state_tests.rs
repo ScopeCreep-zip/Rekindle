@@ -10,11 +10,10 @@ use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, T
 use super::canonical_state;
 use crate::op::OpStamp;
 use crate::state::{
-    AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord, ChannelState,
-    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
-    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
-    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
-    WelcomeScreenState,
+    AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
+    EventState, ExpressionState, GovernanceState, InviteState, MemberState, MetadataState,
+    ModReportState, NotificationDefaultState, OnboardingState, OverwriteState, PendingMemberState,
+    RoleState, RsvpState, ThreadState, TimeoutState, WelcomeScreenState,
 };
 
 fn pk() -> PseudonymKey {
@@ -320,28 +319,6 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
         (
             "ban_stamps",
             Box::new(|g| _ = g.ban_stamps.insert(pk(), s())),
-        ),
-        (
-            "segments",
-            Box::new(|g| {
-                g.segments.push(SegmentState {
-                    segment_index: 1,
-                    registry_key: "r".into(),
-                    governance_key: "g".into(),
-                    slot_range_start: 0,
-                    slot_range_end: 1,
-                });
-            }),
-        ),
-        (
-            "channel_segment_records",
-            Box::new(|g| {
-                let r = ChannelSegmentRecord {
-                    record_key: "k".into(),
-                    linked: s(),
-                };
-                g.channel_segment_records.insert((ChannelId([1; 16]), 1), r);
-            }),
         ),
         (
             "invites",
