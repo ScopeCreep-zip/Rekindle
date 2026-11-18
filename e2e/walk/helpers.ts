@@ -55,8 +55,13 @@ export async function byText(b: Browser, selector: string, text: string, timeout
  * out as async scripts in the first walk (2026-11-17).
  */
 export async function press(b: Browser, el: El): Promise<void> {
-  await el.scrollIntoView({ block: "center" });
+  // The page's own scrollIntoView, not webdriverio's: its version
+  // (webdriverio 10.1.0 build/node.js:13730) waits for two stable
+  // requestAnimationFrame callbacks in an async script, and a window behind
+  // another (the buddy list while Settings is open) runs no frames, so every
+  // press stalled to the 60 s script timeout ("execute/async" in walk 4).
   await b.execute((node: HTMLElement) => {
+    node.scrollIntoView({ block: "center" });
     const r = node.getBoundingClientRect();
     const at = { bubbles: true, cancelable: true, composed: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, button: 0 };
     const pointer = { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true };

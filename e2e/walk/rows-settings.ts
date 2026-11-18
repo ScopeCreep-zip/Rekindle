@@ -204,11 +204,15 @@ export const SETTINGS_ROWS: Row[] = [
   {
     id: "ST12",
     title: "Appearance: import skin (a non-skin file is refused)",
-    async run({ b, shot }) {
+    async run({ b, s, shot }) {
       await openSettings(b, "Appearance");
       await shown(b, ".skin-row", NET_WAIT_MS);
       await pickNextFile(b, "not-a-skin.zip", "application/zip", btoa("not a skin"));
       await (await byText(b, ".skin-import button", "Import skin")).click();
+      // ImportSkin is TrustChanging (intent/kind.rs:438): the Host holds the
+      // review first and checks the package after the commit
+      // (host/skin_tests.rs:96, review then the helper's 400).
+      if ((await resolveIntent(b, { passphrase: s.passphrase })) !== "committed") throw new Error("import showed no review");
       const err = await shown(b, ".skin-error", NET_WAIT_MS);
       const text = await err.getText();
       await shot();
