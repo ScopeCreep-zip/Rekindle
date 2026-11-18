@@ -2,6 +2,7 @@ import { commands } from "../../ipc/commands";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import { decodeBase64ToBytes } from "../../utils/base64";
+import type { WelcomeScreen } from "../../ipc/commands/dto";
 
 export async function handleUpdateCommunityProfile(
   communityId: string,
@@ -232,14 +233,37 @@ export async function handleLoadOnboardingConfig(communityId: string): Promise<v
   }
 }
 
+/** The `WelcomeScreen` DTO's shape (ipc/commands/dto.ts), entry by entry. */
+function isWelcomeScreen(v: unknown): v is WelcomeScreen {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.description === "string" &&
+    Array.isArray(o.channels) &&
+    o.channels.every((c: unknown) => {
+      if (c === null || typeof c !== "object") return false;
+      const e = c as Record<string, unknown>;
+      return typeof e.channelId === "string" && typeof e.description === "string" && (e.emoji === null || typeof e.emoji === "string");
+    })
+  );
+}
+
 export async function handleLoadWelcomeScreen(communityId: string): Promise<void> {
   try {
-    const screen = await commands.getWelcomeScreen(communityId);
+    const answer: unknown = await commands.getWelcomeScreen(communityId);
+    if (!isWelcomeScreen(answer)) {
+      // A malformed answer is refused here, at the boundary: written into
+      // the store it threw inside WelcomeScreen.tsx's render and Solid
+      // dropped the rest of that update (walk W6b, a mock's `[]`).
+      console.error("Malformed welcome screen answer:", answer);
+      setCommunityState("communities", communityId, "welcomeScreen", undefined);
+      return;
+    }
     // The Host answers its empty default when no welcome screen is set
     // (`OnboardingAdapter::welcome_screen`): that is no screen, not a blank
     // page shown on every open.
-    const isSet = screen.description !== "" || screen.channels.length > 0;
-    setCommunityState("communities", communityId, "welcomeScreen", isSet ? screen : undefined);
+    const isSet = answer.description !== "" || answer.channels.length > 0;
+    setCommunityState("communities", communityId, "welcomeScreen", isSet ? answer : undefined);
   } catch (e) {
     console.error("Failed to load welcome screen:", e);
   }
