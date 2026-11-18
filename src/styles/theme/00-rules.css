@@ -29,7 +29,8 @@
   .header-add-btn:focus-visible,
   .buddy-item:focus-visible,
   .member-item:focus-visible,
-  .group-dm-row:focus-visible {
+  .group-dm-row:focus-visible,
+  .sidebar-section-more:focus-visible {
     outline-offset: -3px;
   }
 
