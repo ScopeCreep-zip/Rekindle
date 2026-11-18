@@ -57,21 +57,38 @@ async function open(page: Page): Promise<void> {
   await expect(page.getByText("hello channel", { exact: true })).toBeVisible();
 }
 
-async function send(page: Page, cursor: unknown, payload: unknown): Promise<void> {
+async function send(page: Page, cursor: unknown, payload: unknown, index = 0): Promise<void> {
   await page.evaluate(
-    ({ cursor, payload }) => {
+    ({ cursor, payload, index }) => {
       const w = window as any;
+      // A throw is the Channel's callback's own: it must not escape to here.
       w.__TAURI_INTERNALS__.runCallback(w.__eventChannelId, {
-        index: 0,
+        index,
         message: { cursor, channel: "community-event", payload },
       });
     },
-    { cursor, payload },
+    { cursor, payload, index },
   );
 }
 
 test("the Host's Edited event shows the new body", async ({ page }) => {
   await open(page);
   await send(page, null, GOLDEN["channelMessage.edited"]);
+  await expect(page.getByText("hello channel, edited", { exact: true })).toBeVisible();
+});
+
+// Walk 13, M45: the second community's `metadataChanged` reached the first
+// community's window before that window held it; its reducer threw, the throw
+// left the Tauri Channel's next index unadvanced, and the window applied no
+// later event (the edit among them).
+test("an event for a community the window does not hold leaves later events applied", async ({ page }) => {
+  await open(page);
+  const other = `VLD0:${"h".repeat(43)}:${"i".repeat(43)}`;
+  await send(page, null, {
+    governance: {
+      metadataChanged: { community: other, name: "second", description: null, iconHash: null, bannerHash: null },
+    },
+  });
+  await send(page, null, GOLDEN["channelMessage.edited"], 1);
   await expect(page.getByText("hello channel, edited", { exact: true })).toBeVisible();
 });

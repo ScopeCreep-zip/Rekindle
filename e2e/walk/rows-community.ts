@@ -104,6 +104,9 @@ export const COMMUNITY_ROWS: Row[] = [
     title: "Select a community",
     async run({ b, s, shot }) {
       await inCommunity(b, s.communityName);
+      // Wrap the community window's Channel from here on, so a later row's
+      // failure can name every index it was handed (probe.ts pageLog).
+      await recordPage(b, [], []);
       await press(b, await byText(b, ".community-list .community-name", s.communityName, NET_WAIT_MS));
       await shown(b, ".channel-list", NET_WAIT_MS);
       await shot();
@@ -115,6 +118,7 @@ export const COMMUNITY_ROWS: Row[] = [
     title: "Sidebar: Create community",
     async run({ b, s, shot }) {
       await inCommunity(b, s.communityName);
+      await recordPage(b, [], []);
       const second = `${s.communityName}-2`;
       await (await shown(b, '.community-sidebar [title="Create Community"]')).click();
       await modalSubmit(b, 'input[placeholder="Community name..."]', second, s.passphrase);
@@ -147,6 +151,7 @@ export const COMMUNITY_ROWS: Row[] = [
     title: "Select a channel",
     async run({ b, s, shot }) {
       await inCommunity(b, s.communityName);
+      await recordPage(b, [], []);
       await (await channel(b, TEXT_CH)).click();
       await waitUntil(async () => (await (await b.$(".community-channel-header-name")).getText()) === TEXT_CH, WAIT_MS, "header did not name the channel");
       await shot();

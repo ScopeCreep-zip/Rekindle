@@ -351,11 +351,14 @@ const BASE_ROWS: Row[] = [
       await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
       await (await shown(b, '[aria-label="Create Community"]')).click();
       await typeInto(await shown(b, 'input[placeholder="Community name..."]'), s.communityName);
+      await recordPage(b, ["create_community"], ["community"]);
       await (await b.$('.modal-container button[type="submit"]')).click();
       await resolveIntent(b, { passphrase: s.passphrase });
       await gone(b, 'input[placeholder="Community name..."]', NET_WAIT_MS);
       await (await b.$('.buddy-tab[title^="Communities"]')).click();
-      await byText(b, ".community-item", s.communityName, NET_WAIT_MS);
+      await byText(b, ".community-item", s.communityName, NET_WAIT_MS).catch(async (e: Error) => {
+        throw new Error(`${e.message} (${await pageLog(b)})`);
+      });
     },
   },
   {

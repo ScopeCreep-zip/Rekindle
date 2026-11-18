@@ -47,9 +47,19 @@ type Handler = (payload: never) => void;
 /// here; the window's one backend stream feeds it.
 const handlers = new Map<string, Set<Handler>>();
 
+/// Offer `payload` to every handler of `channel`. A handler that throws is
+/// reported and the rest still run. The throw must not escape: it would
+/// unwind through the Tauri `Channel`'s callback before that advances its
+/// next index (`@tauri-apps/api` 2.12.1 core.js:137-140), and every later
+/// message to this window would wait forever behind it (walk rows M45 and
+/// B61: the window stopped applying events after one reducer threw).
 function dispatch(channel: string, payload: unknown): void {
   for (const handler of handlers.get(channel) ?? []) {
-    (handler as (p: unknown) => void)(payload);
+    try {
+      (handler as (p: unknown) => void)(payload);
+    } catch (err) {
+      console.error(`a ${channel} handler failed`, err, payload);
+    }
   }
 }
 

@@ -261,6 +261,11 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
 
   if ("metadataChanged" in g) {
     const { community, name, description, iconHash, bannerHash } = g.metadataChanged;
+    // A community this window does not hold yet (one just created or joined:
+    // its metadata event can come before the window adds it) has no row to
+    // update; the window reads its current name when it adds it. Setting a
+    // field under the missing row threw (walk row M45).
+    if (!communityState.communities[community]) return;
     if (name !== null) {
       setCommunityState("communities", community, "name", name);
     }

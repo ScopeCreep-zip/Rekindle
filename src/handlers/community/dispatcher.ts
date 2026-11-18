@@ -15,6 +15,15 @@ import {
 } from "./dispatcher_voice";
 import { reduceSubscriptionContent } from "./dispatcher_content";
 
+const SUBSCRIPTION_SLICES = [
+  reduceSubscriptionMembership,
+  reduceSubscriptionMessages,
+  reduceSubscriptionSystem,
+  reduceSubscriptionTyping,
+  reduceSubscriptionCrypto,
+  reduceSubscriptionContent,
+];
+
 /// Central community event dispatcher. Each incoming `CommunityEvent`
 /// is offered to the topic reducers in turn; the first one that
 /// recognises the event type consumes it (event types are mutually
@@ -29,12 +38,14 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       // Each slice takes the families it owns and ignores the rest;
       // unlike the legacy reducers these do not report consumption,
       // because the daemon families are disjoint by construction.
-      reduceSubscriptionMembership(event);
-      reduceSubscriptionMessages(event);
-      reduceSubscriptionSystem(event);
-      reduceSubscriptionTyping(event);
-      reduceSubscriptionCrypto(event);
-      reduceSubscriptionContent(event);
+      // A slice that throws is reported and the others still run.
+      for (const reduce of SUBSCRIPTION_SLICES) {
+        try {
+          reduce(event);
+        } catch (err) {
+          console.error(`community event slice ${reduce.name} failed`, err, event);
+        }
+      }
       return;
     }
     if (reduceMembership(event)) return;

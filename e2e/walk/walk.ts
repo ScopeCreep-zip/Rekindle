@@ -5,6 +5,7 @@
 //
 //   pnpm walk              build, then walk
 //   pnpm walk --no-build   walk the last debug build
+//   pnpm walk --rows=L3,M45  walk only the listed rows
 
 import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -57,7 +58,11 @@ async function walk(app: App): Promise<Result[]> {
   const ROW_TIMEOUT_MS = 300_000;
   const SHOT_TIMEOUT_MS = 15_000;
   try {
-    for (const row of await allRows()) {
+    // `--rows=L3,L5,M45` walks only those rows, in walk order (a row's
+    // prerequisites are the caller's to list).
+    const only = process.argv.find((a) => a.startsWith("--rows="))?.slice("--rows=".length).split(",");
+    const rows = (await allRows()).filter((r) => !only || only.includes(r.id));
+    for (const row of rows) {
       const started = Date.now();
       let shotPath: string | null = null;
       let taken = false;
