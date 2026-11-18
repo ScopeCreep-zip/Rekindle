@@ -249,11 +249,15 @@ export type GovernanceEvent =
     };
 
 /** Why the backend set a governance op aside, never applied
- *  (`GovernanceEvent::GovernanceOpQuarantined`, plan E3.2 S7c.5). */
+ *  (`GovernanceEvent::GovernanceOpQuarantined`, plan E3.2 S7c.5). The two
+ *  `unknownOp*` reasons quarantine the whole community (D15): a member
+ *  signed an op this version cannot read, likely a newer version's. */
 export type OpQuarantineReason =
   | "afterAuthorRemoval"
   | "twoCheckpointEndorsementsInOneRound"
-  | "checkpointEquivocation";
+  | "checkpointEquivocation"
+  | "unknownOpKind"
+  | "unknownOpVersion";
 
 /** Where one of our governance ops stands, decided by the backend
  *  (`GovernanceEvent::OpPublication`): pending while queued, landed once on

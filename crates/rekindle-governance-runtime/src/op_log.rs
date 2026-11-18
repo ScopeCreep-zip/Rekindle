@@ -15,10 +15,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use rekindle_codec::governance_op::{decode_op, encode_op, op_unsigned_bytes};
+use rekindle_codec::governance_op::{op_unsigned_bytes, seal_unsigned, GOVERNANCE_OP_MAX_DEPS};
 use rekindle_governance::checksum::roster_checksum;
 use rekindle_governance::merge::{self, MergeOutcome};
-use rekindle_governance::op::{op_hash, op_signing_bytes, VerifiedOp};
+use rekindle_governance::op::{op_signing_bytes, VerifiedOp};
 use rekindle_governance::power::{
     removal_target, seq_frontier, target_seq_frontier, with_target_seq_frontier,
 };
@@ -32,6 +32,7 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
+pub use crate::op_receive::{held_from_encoded, receive_bounded, receive_op};
 pub use crate::op_walk::{walk, WalkLogCache};
 pub use crate::verify_cache::verify_held_cached;
 pub use rekindle_governance::checkpoint::causal_past;
@@ -206,9 +207,17 @@ pub fn build_op(
         body,
         sig: [0; 64],
     };
+    if op.deps.len() > GOVERNANCE_OP_MAX_DEPS {
+        return Err(GovernanceRuntimeError::Encoding(format!(
+            "governance op has {} deps, the bound is {GOVERNANCE_OP_MAX_DEPS}",
+            op.deps.len()
+        )));
+    }
     let unsigned = op_unsigned_bytes(&op);
     op.sig = key.sign(&op_signing_bytes(anchor, &unsigned)).to_bytes();
-    let encoded = encode_op(&op).map_err(|e| GovernanceRuntimeError::Encoding(e.to_string()))?;
+    // The message is exactly the bytes signed plus the signature.
+    let encoded = seal_unsigned(&unsigned, &op.sig)
+        .map_err(|e| GovernanceRuntimeError::Encoding(e.to_string()))?;
     let verified = VerifiedOp::verify(anchor, op, &unsigned, |h| known.get(h).copied())
         .map_err(|e| GovernanceRuntimeError::OpRefused(format!("{e:?}")))?;
     Ok((verified, encoded))
@@ -369,6 +378,11 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             for event in crate::quarantine::newly_quarantined(community_id, &held, &outcome) {
                 deps.emit_event(event);
             }
+            let unknown =
+                crate::quarantine::newly_uninterpretable(community_id, &held, &outcome.state);
+            for event in unknown {
+                deps.emit_event(event);
+            }
             return Ok(outcome.state);
         }
     }
@@ -410,116 +424,6 @@ pub async fn fetch_held<D: GovernanceRuntimeDeps>(
         return Ok(None);
     };
     Ok(held_from_encoded(op_ref, encoded))
-}
-
-/// The op `encoded`, when it decodes and its hash is `op_ref`'s; `None`
-/// otherwise.
-#[must_use]
-pub fn held_from_encoded(op_ref: &OpRef, encoded: Vec<u8>) -> Option<HeldOp> {
-    let decoded = decode_op(&encoded).ok()?;
-    if op_hash(&decoded.unsigned, &decoded.op.sig) != op_ref.op_hash {
-        return None;
-    }
-    Some(HeldOp {
-        hash: op_ref.op_hash,
-        author: decoded.op.author.clone(),
-        author_record: op_ref.author_record.clone(),
-        seq: decoded.op.seq,
-        lamport: 0,
-        issued_at: decoded.op.issued_at,
-        encoded,
-        fate: OpFate::PendingDeps,
-    })
-}
-
-/// The gossip fast path (`governanceOp @74`): store an op a member
-/// published, as a fetched one, when it is new, its author's member record
-/// is known (its own `MemberJoined`, or the merged state's) and it does not
-/// verify as refused; then rebuild, which fetches its missing deps by
-/// `OpRef`. `true`: it was stored.
-///
-/// # Errors
-/// No cert is pinned, or the op store failed.
-pub async fn receive_op<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    encoded: Vec<u8>,
-) -> Result<bool, GovernanceRuntimeError> {
-    let Ok(decoded) = decode_op(&encoded) else {
-        return Ok(false);
-    };
-    let hash = op_hash(&decoded.unsigned, &decoded.op.sig);
-    let mut held = deps.governance_ops(community_id).await?;
-    if held.iter().any(|op| op.hash == hash) {
-        return Ok(false);
-    }
-    let cert = deps
-        .genesis_cert(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
-    let state = deps.governance_state(community_id).unwrap_or_default();
-    let record = match &decoded.op.body {
-        // A `MemberJoined` names its own record (op #0, or a re-join that
-        // binds a fresh record, owner-proved).
-        GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
-        _ => author_record(&cert, &state, &decoded.op.author),
-    };
-    let Some(author_record) = record else {
-        return Ok(false);
-    };
-    if !receive_bounded(&decoded.op, &state) {
-        return Ok(false);
-    }
-    let mut op = HeldOp {
-        hash,
-        author: decoded.op.author.clone(),
-        author_record,
-        seq: decoded.op.seq,
-        lamport: 0,
-        issued_at: decoded.op.issued_at,
-        encoded,
-        fate: OpFate::PendingDeps,
-    };
-    held.push(op.clone());
-    let set = verify_held_with(deps, community_id, &held);
-    if set.quarantined.contains(&hash) {
-        return Ok(false);
-    }
-    if let Some(verified) = set.ops.iter().find(|v| v.hash() == hash) {
-        op.lamport = verified.lamport();
-    }
-    deps.store_governance_op(community_id, &op).await?;
-    crate::dht_hydration::rebuild_governance(deps, community_id).await;
-    Ok(true)
-}
-
-/// The receive-side bounds on a gossiped op, before it is stored: its
-/// fields are within the reader bounds (`validate::bounds`, which the merge
-/// applies too), and a `MemberJoined` (op #0 or a re-join) from an author
-/// `state` does not already hold carries an invite proof naming one of the community's live
-/// `InviteCreated` codes (plan E3.2: readers check `inviteProof` against the
-/// community's `InviteCreated` set; every admission mode needs an invite),
-/// so a key with no invite cannot leave a row behind. The merge's invite
-/// gate still decides admission.
-#[must_use]
-pub fn receive_bounded(op: &GovernanceOp, state: &GovernanceState) -> bool {
-    if rekindle_governance::validate::bounds::out_of_bounds_field(&op.body).is_some() {
-        return false;
-    }
-    match &op.body {
-        // Op #0, or a re-join by an author that left or was removed.
-        GovernanceEntry::MemberJoined { invite_proof, .. } => {
-            let known = state.members.contains_key(&op.author)
-                || state.pending_members.contains_key(&op.author);
-            known
-                || invite_proof.as_ref().is_some_and(|proof| {
-                    state
-                        .invites
-                        .values()
-                        .any(|invite| invite.code_hash == proof.code_hash)
-                })
-        }
-        _ => true,
-    }
 }
 
 /// Our whole `Frontier` (`M`/3), heads and D15's roster checksum, both from

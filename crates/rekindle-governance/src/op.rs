@@ -76,6 +76,20 @@ pub fn op_signing_bytes(anchor: &str, unsigned: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Whether `sig` is `author`'s signature over op `unsigned` of community
+/// `anchor`: an op's authenticity alone, for one this reader cannot
+/// interpret and so cannot verify further (D15: it quarantines the
+/// community only when its author signed it).
+#[must_use]
+pub fn op_signature_holds(
+    anchor: &str,
+    author: &PseudonymKey,
+    unsigned: &[u8],
+    sig: &[u8; 64],
+) -> bool {
+    verify_signature(&author.0, &op_signing_bytes(anchor, unsigned), sig).is_ok()
+}
+
 /// The bytes a joiner signs for its invite proof:
 /// `INVITE_PROOF ‖ anchor ‖ code_hash ‖ member_record`.
 #[must_use]

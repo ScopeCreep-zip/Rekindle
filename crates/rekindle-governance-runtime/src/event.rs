@@ -57,6 +57,18 @@ pub enum GovernanceRuntimeEvent {
         reason: QuarantineReason,
     },
 
+    /// A held op is validly signed by a member but this reader cannot
+    /// interpret it (D15): the community is quarantined with that reason;
+    /// the Host publishes `GovernanceEvent::GovernanceOpQuarantined`
+    /// (`UnknownOpKind`/`UnknownOpVersion`), once per op
+    /// ([`crate::quarantine::newly_uninterpretable`]).
+    CommunityQuarantined {
+        community_id: String,
+        op: OpHash,
+        author: PseudonymKey,
+        what: rekindle_codec::governance_op::Uninterpretable,
+    },
+
     /// A community joined from a checkpoint hint finished its backfill and
     /// the full op set's state at the hint's cut misses the hinted
     /// snapshot's digest: a strictly endorsed checkpoint lied (plan E3.2

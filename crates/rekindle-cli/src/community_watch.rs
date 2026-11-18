@@ -343,6 +343,12 @@ fn governance(event: &GovernanceEvent) -> String {
                     "two checkpoint endorsements in one round"
                 }
                 OpQuarantineReason::CheckpointEquivocation => "checkpoint equivocation",
+                OpQuarantineReason::UnknownOpKind => {
+                    "a kind of change this version cannot read; the community is quarantined"
+                }
+                OpQuarantineReason::UnknownOpVersion => {
+                    "a newer version's change this version cannot read; the community is quarantined"
+                }
             };
             format!("op {op} by {author} quarantined: {why}")
         }

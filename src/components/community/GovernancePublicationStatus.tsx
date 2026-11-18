@@ -6,7 +6,13 @@ const QUARANTINE_TEXT: Record<OpQuarantineReason, string> = {
   afterAuthorRemoval: "written after its author's removal",
   twoCheckpointEndorsementsInOneRound: "two checkpoint endorsements in one round",
   checkpointEquivocation: "checkpoint equivocation",
+  unknownOpKind: "a kind of change this version of Rekindle cannot read",
+  unknownOpVersion: "a change from a newer version of Rekindle",
 };
+
+/** Reasons that quarantine the whole community, not one change (D15). */
+const quarantinesCommunity = (reason: OpQuarantineReason) =>
+  reason === "unknownOpKind" || reason === "unknownOpVersion";
 
 /**
  * Our governance changes the backend has not yet landed in this community
@@ -15,19 +21,32 @@ const QUARANTINE_TEXT: Record<OpQuarantineReason, string> = {
  * Below them, each governance op the backend set aside
  * (`governanceOpQuarantined`, plan E3.2 S7c.5) with its reason. First, when
  * the inviter's snapshot did not match the full history
- * (`checkpointSnapshotMismatch`, plan E3.2 S7c.8): the notice stays.
+ * (`checkpointSnapshotMismatch`, plan E3.2 S7c.8): the notice stays. A
+ * member's change this version cannot read quarantines the community (D15):
+ * one notice says so, with the reason, above the rest.
  */
 const GovernancePublicationStatus: Component<{ communityId: string }> = (props) => {
   const states = () => Object.values(communityState.opPublications[props.communityId] ?? {});
   const pending = () => states().filter((s) => s.kind === "pending").length;
   const failures = () =>
     states().flatMap((s) => (s.kind === "failed" ? [s.reason] : []));
-  const quarantined = () => Object.values(communityState.quarantinedOps[props.communityId] ?? {});
+  const held = () => Object.values(communityState.quarantinedOps[props.communityId] ?? {});
+  const quarantined = () => held().filter((op) => !quarantinesCommunity(op.reason));
+  const unreadable = () => held().filter((op) => quarantinesCommunity(op.reason));
   const mismatch = () => communityState.snapshotMismatch[props.communityId] === true;
   const name = () => communityState.communities[props.communityId]?.name ?? "This community";
   return (
-    <Show when={mismatch() || pending() > 0 || failures().length > 0 || quarantined().length > 0}>
+    <Show when={mismatch() || pending() > 0 || failures().length > 0 || held().length > 0}>
       <div class="governance-publication" role="status" aria-live="polite">
+        <Show when={unreadable()[0]}>
+          {(op) => (
+            <div class="governance-publication-failed">
+              {name()} is quarantined: a change by {op().author.slice(0, 8)} is{" "}
+              {QUARANTINE_TEXT[op().reason]}. Update Rekindle to apply it; until then
+              {" "}{name()} shows its state without that change.
+            </div>
+          )}
+        </Show>
         <Show when={mismatch()}>
           <div class="governance-publication-failed">
             The snapshot of {name()} your inviter's app sent did not match its full history.

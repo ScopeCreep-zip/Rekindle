@@ -54,6 +54,7 @@ pub mod member_routes;
 pub mod membership_events;
 pub mod moderation;
 pub mod op_log;
+pub mod op_receive;
 pub mod op_walk;
 pub mod origin;
 pub mod overflow;

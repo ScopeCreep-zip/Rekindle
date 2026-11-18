@@ -2,17 +2,21 @@
 //! `schemas/governance_op.capnp`).
 //!
 //! The author signs `GOV_OP ‖ anchor ‖ unsigned`, where `unsigned` is the
-//! op re-encoded canonically without its signature
-//! ([`op_unsigned_bytes`]). [`decode_op`] returns that canonical form
-//! beside the op, re-encoded from the decoded value rather than sliced from
-//! the input, so a reader hands `rekindle_governance::VerifiedOp::verify`
-//! exactly the bytes the author signed however the sender laid out its
-//! message. An unknown or retired body arm is
-//! [`CodecError::UnknownGovernanceArm`], which the caller quarantines.
+//! op in Cap'n Proto canonical form without its signature
+//! ([`op_unsigned_bytes`]). [`read_op`] computes that form from the
+//! received message itself (copied, `sig` cleared, canonicalized), so a
+//! reader hands `rekindle_governance::VerifiedOp::verify` exactly the bytes
+//! the author signed however the sender laid out its message, and can check
+//! the signature of an op it cannot interpret: one of an arm beyond its
+//! schema, or carrying fields it does not know (a newer version's op,
+//! [`ReadOp::Unknown`]), which the caller quarantines with that reason (D15).
+//! A retired body arm is [`CodecError::UnknownGovernanceArm`].
 
 pub mod genesis;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod unknown_tests;
 
 use rekindle_types::dht_layout::member_record::{MAX_FRONTIER_REFS, MAX_SUBKEY_VALUE_LEN};
 use rekindle_types::governance::{Frontier, GovernanceOp, OpHash, OpRef, RosterChecksum};
@@ -38,11 +42,40 @@ pub struct DecodedOp {
     pub unsigned: Vec<u8>,
 }
 
+/// What a reader could not interpret in a signed op (D15).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Uninterpretable {
+    /// A body arm beyond the reader's schema, by its number.
+    Kind(u16),
+    /// Fields the reader's schema does not have: its canonical unsigned
+    /// form re-encoded from the decoded value is not the received one.
+    Version,
+}
+
+/// A signed op the reader cannot interpret: its envelope, the canonical
+/// unsigned bytes its signature covers, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownOp {
+    pub author: PseudonymKey,
+    pub seq: u64,
+    pub issued_at: u64,
+    pub sig: [u8; 64],
+    pub unsigned: Vec<u8>,
+    pub what: Uninterpretable,
+}
+
+/// A decoded op: interpreted, or not interpretable by this reader.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReadOp {
+    Known(DecodedOp),
+    Unknown(UnknownOp),
+}
+
 /// Encode a signed op, refusing one over [`GOVERNANCE_OP_MAX_BYTES`] or
 /// with more than [`GOVERNANCE_OP_MAX_DEPS`] deps.
 pub fn encode_op(op: &GovernanceOp) -> Result<Vec<u8>, CodecError> {
     check_len("governance op deps", op.deps.len(), GOVERNANCE_OP_MAX_DEPS)?;
-    let out = encode(op, true);
+    let out = pack(&build(op, true));
     check_len("governance op", out.len(), GOVERNANCE_OP_MAX_BYTES)?;
     Ok(out)
 }
@@ -51,11 +84,66 @@ pub fn encode_op(op: &GovernanceOp) -> Result<Vec<u8>, CodecError> {
 /// `GOV_OP ‖ anchor`) and the op hash covers (before the signature).
 #[must_use]
 pub fn op_unsigned_bytes(op: &GovernanceOp) -> Vec<u8> {
-    encode(op, false)
+    let builder = build(op, false);
+    let root = builder.get_root_as_reader::<governance_op::Reader<'_>>();
+    // A builder's own root always reads back and canonicalizes.
+    root.and_then(canonical).unwrap_or_default()
 }
 
-/// Decode an op off the network, with its canonical unsigned bytes.
+/// The signed op whose canonical unsigned form is `unsigned` (an
+/// [`op_unsigned_bytes`] value) and whose signature over it is `sig`: the
+/// author's message is exactly the bytes it signed plus `sig`.
+///
+/// # Errors
+/// `unsigned` is not one single-segment message within the op bounds, or
+/// the signed op is over [`GOVERNANCE_OP_MAX_BYTES`].
+pub fn seal_unsigned(unsigned: &[u8], sig: &[u8; 64]) -> Result<Vec<u8>, CodecError> {
+    check_size("governance op", unsigned, GOVERNANCE_OP_MAX_BYTES)?;
+    let words = u32::try_from(unsigned.len() / 8).unwrap_or(u32::MAX);
+    let mut flat = Vec::with_capacity(unsigned.len() + 8);
+    flat.extend_from_slice(&0u32.to_le_bytes());
+    flat.extend_from_slice(&words.to_le_bytes());
+    flat.extend_from_slice(unsigned);
+    let mut options = capnp::message::ReaderOptions::new();
+    options.traversal_limit_in_words(Some(bounds::GOVERNANCE_OP_BOUND.max_words));
+    let message =
+        capnp::serialize::read_message(flat.as_slice(), options).map_err(|e| capnp_err(&e))?;
+    let mut builder = capnp::message::Builder::new_default();
+    builder
+        .set_root(
+            message
+                .get_root::<governance_op::Reader<'_>>()
+                .map_err(|e| capnp_err(&e))?,
+        )
+        .map_err(|e| capnp_err(&e))?;
+    let mut root = builder
+        .get_root::<governance_op::Builder<'_>>()
+        .map_err(|e| capnp_err(&e))?;
+    root.set_sig(sig);
+    let out = pack(&builder);
+    check_len("governance op", out.len(), GOVERNANCE_OP_MAX_BYTES)?;
+    Ok(out)
+}
+
+/// Decode an op off the network, with its canonical unsigned bytes; an op
+/// this reader cannot interpret is [`CodecError::UnknownGovernanceArm`]
+/// (see [`read_op`] for the op itself).
 pub fn decode_op(data: &[u8]) -> Result<DecodedOp, CodecError> {
+    match read_op(data)? {
+        ReadOp::Known(decoded) => Ok(decoded),
+        ReadOp::Unknown(UnknownOp { what, .. }) => {
+            Err(CodecError::UnknownGovernanceArm(match what {
+                Uninterpretable::Kind(arm) => format!("governance entry arm {arm}"),
+                Uninterpretable::Version => "fields beyond this reader's schema".to_owned(),
+            }))
+        }
+    }
+}
+
+/// Decode an op off the network: [`ReadOp::Known`] with its canonical
+/// unsigned bytes, or [`ReadOp::Unknown`] when its body arm is beyond this
+/// reader's schema or it carries fields the schema does not have (D15).
+pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
     check_size("governance op", data, GOVERNANCE_OP_MAX_BYTES)?;
     let message = unpack_bounded(data, bounds::GOVERNANCE_OP_BOUND)?;
     let r = message
@@ -75,18 +163,72 @@ pub fn decode_op(data: &[u8]) -> Result<DecodedOp, CodecError> {
     } else {
         Some(OpHash(fixed(prev, "governance op prev")?))
     };
-    let body = read_governance_entry(r.get_body().map_err(|e| capnp_err(&e))?)?;
+    let author = PseudonymKey(fixed(data_field(r.get_author())?, "governance op author")?);
+    let sig = fixed(data_field(r.get_sig())?, "governance op sig")?;
+    let unsigned = received_unsigned(r).map_err(|e| capnp_err(&e))?;
+    let unknown = |what| {
+        Ok(ReadOp::Unknown(UnknownOp {
+            author: author.clone(),
+            seq: r.get_seq(),
+            issued_at: r.get_issued_at(),
+            sig,
+            unsigned: unsigned.clone(),
+            what,
+        }))
+    };
+    let body_r = r.get_body().map_err(|e| capnp_err(&e))?;
+    if let Err(capnp::NotInSchema(arm)) = body_r.which() {
+        return unknown(Uninterpretable::Kind(arm));
+    }
+    let body = match read_governance_entry(body_r) {
+        Ok(body) => body,
+        // An enum value or nested arm beyond the schema inside a known arm.
+        Err(CodecError::UnknownVariant(_)) => return unknown(Uninterpretable::Version),
+        Err(e) => return Err(e),
+    };
     let op = GovernanceOp {
-        author: PseudonymKey(fixed(data_field(r.get_author())?, "governance op author")?),
+        author: author.clone(),
         seq: r.get_seq(),
         prev,
         deps,
         issued_at: r.get_issued_at(),
         body,
-        sig: fixed(data_field(r.get_sig())?, "governance op sig")?,
+        sig,
     };
-    let unsigned = op_unsigned_bytes(&op);
-    Ok(DecodedOp { op, unsigned })
+    if op_unsigned_bytes(&op) != unsigned {
+        return unknown(Uninterpretable::Version);
+    }
+    Ok(ReadOp::Known(DecodedOp { op, unsigned }))
+}
+
+/// The canonical unsigned form of a received op: the message copied as it
+/// came (fields beyond this reader's schema included), `sig` cleared, then
+/// canonicalized, so it equals the author's [`op_unsigned_bytes`].
+fn received_unsigned(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
+    let mut copy = capnp::message::Builder::new_default();
+    copy.set_root(r)?;
+    let root = copy.get_root::<governance_op::Builder<'_>>()?;
+    let mut fields: capnp::dynamic_struct::Builder<'_> =
+        capnp::dynamic_value::Builder::from(root).downcast();
+    fields.clear_named("sig")?;
+    canonical(copy.get_root_as_reader::<governance_op::Reader<'_>>()?)
+}
+
+/// `r` in Cap'n Proto canonical form (one segment, preorder, truncated),
+/// as bytes.
+fn canonical(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
+    // One first segment that holds it all (plus the root pointer): the
+    // canonical form is a single segment.
+    let words = u32::try_from(r.total_size()?.word_count + 1).unwrap_or(u32::MAX);
+    let mut out = capnp::message::Builder::new(
+        capnp::message::HeapAllocator::new().first_segment_words(words),
+    );
+    out.set_root_canonical(r)?;
+    Ok(out
+        .get_segments_for_output()
+        .first()
+        .map(|s| s.to_vec())
+        .unwrap_or_default())
 }
 
 /// Encode a member record's `Frontier` (`M`/3), refusing more than
@@ -131,8 +273,11 @@ pub fn decode_frontier(data: &[u8]) -> Result<Frontier, CodecError> {
     })
 }
 
-/// One encoder for both forms, so they differ only in `sig`.
-fn encode(op: &GovernanceOp, signed: bool) -> Vec<u8> {
+/// One builder for both forms, so they differ only in `sig`.
+fn build(
+    op: &GovernanceOp,
+    signed: bool,
+) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut builder = capnp::message::Builder::new_default();
     let mut b = builder.init_root::<governance_op::Builder<'_>>();
     b.set_author(&op.author.0);
@@ -150,7 +295,7 @@ fn encode(op: &GovernanceOp, signed: bool) -> Vec<u8> {
     if signed {
         b.set_sig(&op.sig);
     }
-    pack(&builder)
+    builder
 }
 
 pub(crate) fn write_op_ref(mut b: op_ref::Builder<'_>, r: &OpRef) {

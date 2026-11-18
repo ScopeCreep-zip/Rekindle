@@ -150,7 +150,8 @@ pub enum GovernanceEvent {
         author: String,
         reason: OpQuarantineReason,
         /// The hash (hex) of the op that caused it: the removal, or the
-        /// other `Checkpoint` op.
+        /// other `Checkpoint` op; `None` for an op this reader cannot
+        /// interpret, which quarantines the community (D15).
         cause: Option<String>,
     },
 
@@ -178,6 +179,14 @@ pub enum OpQuarantineReason {
     TwoCheckpointEndorsementsInOneRound,
     /// "checkpoint equivocation".
     CheckpointEquivocation,
+    /// A validly signed op of a kind this reader's schema does not have
+    /// (D15): the community is quarantined, likely by a newer version's
+    /// op; `cause` is `None`.
+    UnknownOpKind,
+    /// A validly signed op carrying fields this reader's schema does not
+    /// have (D15): the community is quarantined as for
+    /// [`Self::UnknownOpKind`].
+    UnknownOpVersion,
 }
 
 /// An own governance op's publication state ([`GovernanceEvent::OpPublication`]).

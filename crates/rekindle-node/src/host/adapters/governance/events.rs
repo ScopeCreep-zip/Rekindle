@@ -6,6 +6,7 @@
 //! Role and channel tables come from the merged CRDT (the same builders
 //! `role list` and `channel list` use), segments from the community store.
 
+use rekindle_codec::governance_op::Uninterpretable;
 use rekindle_governance::merge::QuarantineReason;
 use rekindle_governance_runtime::event::{GovernanceRuntimeEvent, JoinStageStatus};
 use rekindle_types::subscription_events::{
@@ -152,6 +153,21 @@ impl HostGovernance {
                 author,
                 reason,
             } => governance(op_quarantined(community_id, op, author, reason)),
+            GovernanceRuntimeEvent::CommunityQuarantined {
+                community_id,
+                op,
+                author,
+                what,
+            } => governance(GovernanceEvent::GovernanceOpQuarantined {
+                community: community_id.clone(),
+                op: hex::encode(op.0),
+                author: hex::encode(author.0),
+                reason: match what {
+                    Uninterpretable::Kind(_) => OpQuarantineReason::UnknownOpKind,
+                    Uninterpretable::Version => OpQuarantineReason::UnknownOpVersion,
+                },
+                cause: None,
+            }),
             GovernanceRuntimeEvent::CheckpointSnapshotMismatch {
                 community_id,
                 height,

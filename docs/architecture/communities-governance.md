@@ -79,9 +79,15 @@ invite and owner proofs, chain, and deps; the op's lamport is derived,
 - **Quarantine.** An op the merge refuses after its author's removal, a
   checkpoint equivocation, or fork evidence is quarantined, never
   applied in part, and announced once as `GovernanceOpQuarantined`
-  (`rekindle-governance-runtime/src/quarantine.rs`). An op whose kind the
-  codec does not know fails to decode
-  (`CodecError::UnknownGovernanceArm`) and is not stored.
+  (`rekindle-governance-runtime/src/quarantine.rs`). The signature
+  covers the op's Cap'n Proto canonical form without `sig`, which a reader
+  computes from the received message itself
+  (`rekindle-codec` `governance_op::read_op`), so an op of a kind or with
+  fields this version does not know still has a checkable signature. Such
+  an op is held (never dropped, never applied) and, when a current member
+  signed it, quarantines the community: `GovernanceOpQuarantined` with
+  reason `unknownOpKind` or `unknownOpVersion`, shown as a community notice
+  (D15). The state is the merge without it, and an op citing it waits.
 - **Equivocation.** Ops are signed by per-community device keys the
   pseudonym endorses (ADR 0022). Two ops at one `(device key, seq)` are
   fork evidence: that key is retired, ops below the fork stay valid, the
