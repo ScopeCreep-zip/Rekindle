@@ -41,6 +41,11 @@
 //!                                      (graphics 3:1) on each base.
 //!     cargo xtask check-skin-registry  The skin registry's generated files
 //!                                      are current (plan E7.7.1).
+//!     cargo xtask check-sidecars       The skin helper ships beside the
+//!                                      bundled app (plan E7.7.1, F3).
+//!     cargo xtask stage-sidecar [--target <triple>]
+//!                                      Build and stage the skin helper as
+//!                                      Tauri's externalBin expects.
 //!     cargo xtask gen-skin-registry    Write the skin registry's generated
 //!                                      CSS, TS, TUI palettes and schema.
 //!     cargo xtask import-skin --format xfire-xml --from <dir> --builtin <id>
@@ -114,6 +119,7 @@ mod platform_floor;
 mod role_ids;
 mod sec_styles;
 mod sec_surfaces;
+mod sidecars;
 mod sqlite;
 mod theme_literals;
 mod veilid_boundary;
@@ -208,6 +214,14 @@ enum Command {
     CheckMotion,
     /// Verify the macOS, WebKitGTK and Vite floors agree with the plan's E7.10 floor.
     CheckPlatformFloor,
+    /// Verify every release bundle declares, stages and ships the skin helper.
+    CheckSidecars,
+    /// Build the skin helper and stage it under `src-tauri/binaries/` for `externalBin`.
+    StageSidecar {
+        /// The target triple; defaults to the Tauri CLI's `TAURI_ENV_TARGET_TRIPLE`.
+        #[arg(long)]
+        target: Option<String>,
+    },
     /// Verify built CSS keeps the declared `@layer` order (given the built files or dir).
     CheckBuiltCss { css: Vec<PathBuf> },
     /// Verify no function body is duplicated across crates.
@@ -346,6 +360,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "platform-floor",
                     Box::new(|| platform_floor::check_platform_floor(&root)),
                 ),
+                ("sidecars", Box::new(|| sidecars::check_sidecars(&root))),
                 (
                     "duplicate-bodies",
                     Box::new(|| duplicate_bodies::check_duplicate_bodies(&root)),
@@ -412,6 +427,8 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckMotion => motion::check_motion(&root),
         Command::CheckIconGlyphs => icon_glyphs::check_icon_glyphs(&root),
         Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
+        Command::CheckSidecars => sidecars::check_sidecars(&root),
+        Command::StageSidecar { target } => sidecars::stage_sidecar(&root, target.as_deref()),
         Command::CheckBuiltCss { css } => platform_floor::check_built_css(&root, css),
         Command::CheckDuplicateBodies => duplicate_bodies::check_duplicate_bodies(&root),
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),

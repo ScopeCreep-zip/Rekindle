@@ -107,7 +107,7 @@ sudo apt install \
 # Install Rust + Node toolchains via rustup / nvm.
 pnpm install
 pnpm tauri dev   # development run
-pnpm tauri build # produce AppImage + .deb
+pnpm bundle # produce AppImage + .deb
 ```
 
 #### macOS
@@ -118,7 +118,7 @@ xcode-select --install   # if you don't already have CLT
 # Install Rust + Node via your package manager of choice.
 pnpm install
 pnpm tauri dev
-pnpm tauri build         # produces .dmg
+pnpm bundle         # produces .dmg
 ```
 
 #### Windows
@@ -131,7 +131,7 @@ pnpm tauri build         # produces .dmg
 # Install Rust + Node + pnpm via your package manager.
 pnpm install
 pnpm tauri dev
-pnpm tauri build         # produces NSIS .exe installer
+pnpm bundle         # produces NSIS .exe installer
 ```
 
 ## What gets installed where

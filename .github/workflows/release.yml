@@ -83,4 +83,6 @@ jobs:
           releaseBody: 'See the assets below to download and install this version.'
           releaseDraft: true
           prerelease: true
-          args: ${{ matrix.args }}
+          # The release overlay bundles and stages the skin helper
+          # (`cargo xtask check-sidecars`).
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json

@@ -37,7 +37,7 @@ src-tauri/target/
 # Bundle output (installers, DMGs, AppImages)
 src-tauri/bundles/
 
-# Sidecar binaries (built by copy-sidecar.mjs, included via externalBin)
+# Sidecar binaries (staged by `cargo xtask stage-sidecar`, shipped via externalBin)
 src-tauri/binaries/
 
 # ------------------------------------------------------------

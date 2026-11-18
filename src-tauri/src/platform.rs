@@ -239,7 +239,7 @@ pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
 ///   `tauri dev`'s bare binary has none, so even with host TCC
 ///   authorized + the per-origin prompt granted, `getUserMedia` rejects
 ///   with "No AVVideoCaptureSource device". Video capture on macOS
-///   requires the bundled `.app` (`pnpm tauri build --debug`); confirmed
+///   requires the bundled `.app` (`pnpm bundle --debug`); confirmed
 ///   by tauri-apps/tauri#11951. See `docs/contributor/development.md`.
 /// - In `tauri dev` the TCC grant is additionally attributed to the
 ///   RESPONSIBLE PROCESS — the terminal/IDE that launched the binary —

@@ -15,6 +15,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "bundle": "tauri build --config src-tauri/tauri.release.conf.json",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json && tsc -p tsconfig.node.json",
     "test:mock": "playwright test --project=mock",
     "test:layout": "playwright test --project=layout",

@@ -34,12 +34,12 @@ if [[ ! -d node_modules ]]; then
 fi
 
 # ── Build ────────────────────────────────────────────────────────────
-# pnpm tauri build triggers beforeBuildCommand ("pnpm build") which runs
-# copy-sidecar.mjs --release to build rekindle-server and copy it to
-# src-tauri/binaries/ with the target-triple suffix. Tauri's externalBin
-# config then includes it in the production bundle automatically.
+# pnpm bundle is `tauri build` with src-tauri/tauri.release.conf.json: its
+# beforeBuildCommand builds the frontend, then `cargo xtask stage-sidecar`
+# builds rekindle-skin-helper and stages it in src-tauri/binaries/ with the
+# target-triple suffix, and its externalBin ships it beside the app.
 info "Building Rekindle..."
-pnpm tauri build
+pnpm bundle
 
 # ── Report artifacts ─────────────────────────────────────────────────
 BUNDLE_DIR="src-tauri/target/release/bundle"

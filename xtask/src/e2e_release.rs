@@ -19,7 +19,8 @@
 //!   (`required-features`, backed by a `compile_error!` in the binary), the
 //!   feature is not a default, the resolve does not enable it, and no
 //!   package's features turn it on;
-//! - `src-tauri/tauri.conf.json` does not bundle it.
+//! - neither `src-tauri/tauri.conf.json` nor the release overlay
+//!   `src-tauri/tauri.release.conf.json` bundles it.
 
 use std::path::Path;
 
@@ -128,7 +129,7 @@ fn bundle_problems(conf: &serde_json::Value, bins: &[String]) -> Vec<String> {
             let entry = entry.replace('\\', "/");
             needles.iter().any(|n| entry.contains(n.as_str()))
         })
-        .map(|entry| format!("src-tauri/tauri.conf.json bundles the E2E bridge ({entry})"))
+        .map(|entry| format!("bundles the E2E bridge ({entry})"))
         .collect()
 }
 
@@ -209,11 +210,6 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
     }
     problems.extend(graph_problems(&meta));
     problems.extend(feature_problems(&meta));
-    let conf: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(root.join("src-tauri/tauri.conf.json"))
-            .context("reading src-tauri/tauri.conf.json")?,
-    )
-    .context("parsing src-tauri/tauri.conf.json")?;
     let bridge = meta
         .package(CRATE)
         .map(|p| {
@@ -224,7 +220,17 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    problems.extend(bundle_problems(&conf, &bridge));
+    for file in [crate::sidecars::BASE_CONF, crate::sidecars::RELEASE_CONF] {
+        let conf: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join(file)).with_context(|| format!("reading {file}"))?,
+        )
+        .with_context(|| format!("parsing {file}"))?;
+        problems.extend(
+            bundle_problems(&conf, &bridge)
+                .into_iter()
+                .map(|p| format!("{file} {p}")),
+        );
+    }
     if problems.is_empty() {
         return Ok(());
     }

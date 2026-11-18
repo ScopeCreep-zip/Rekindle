@@ -131,7 +131,7 @@ cd Rekindle
 export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
 nix develop .#frontend
 pnpm install --frozen-lockfile
-pnpm tauri build
+pnpm bundle
 
 # Hash the artefact
 sha256sum src-tauri/target/release/bundle/<os>/Rekindle*

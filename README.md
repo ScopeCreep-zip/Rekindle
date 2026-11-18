@@ -209,7 +209,7 @@ pnpm install
 pnpm tauri dev
 
 # Production build
-pnpm tauri build
+pnpm bundle
 ```
 
 ### Testing

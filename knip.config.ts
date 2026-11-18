@@ -23,7 +23,6 @@ const config: KnipConfig = {
     "vite.config.ts",
     "playwright.config.ts",
     "e2e/**/*.spec.ts",
-    "scripts/copy-sidecar.mjs",
   ],
   project: [
     "src/**/*.{ts,tsx}",

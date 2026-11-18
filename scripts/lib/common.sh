@@ -106,6 +106,6 @@ print_setup_summary() {
     echo "  Next steps:"
     echo "    cd $(basename "$PROJECT_DIR")"
     echo "    pnpm tauri dev      # Start development"
-    echo "    pnpm tauri build    # Build for distribution"
+    echo "    pnpm bundle         # Build for distribution"
     echo ""
 }

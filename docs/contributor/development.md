@@ -127,7 +127,7 @@ accept it; a previously-declined prompt needs
 The full bundled build also works when you want the production shape:
 
 ```bash
-pnpm tauri build --debug --bundles app
+pnpm bundle --debug --bundles app
 open target/debug/bundle/macos/Rekindle.app
 ```
 
@@ -188,7 +188,7 @@ pnpm install
 pnpm tauri dev
 
 # Production build
-pnpm tauri build
+pnpm bundle
 ```
 
 ## Testing

@@ -65,8 +65,21 @@ Artifacts are built per-OS via the Tauri bundler:
 ```sh
 # Inside `nix develop .#frontend` on Linux,
 # or with all prerequisites manually installed otherwise:
-pnpm tauri build
+pnpm bundle
 ```
+
+`pnpm bundle` is `tauri build --config src-tauri/tauri.release.conf.json`.
+The overlay's `beforeBuildCommand` builds the frontend and then runs
+`cargo xtask stage-sidecar`, which builds `rekindle-skin-helper` for the
+target Tauri names (`TAURI_ENV_TARGET_TRIPLE`) and stages it as
+`src-tauri/binaries/rekindle-skin-helper-<target triple>[.exe]`. Its
+`bundle.externalBin` ships it beside the app binary in every format
+(`Contents/MacOS` in the `.app`, `usr/bin` in the `.deb` and AppImage, the
+install directory in NSIS), where the Host starts it for skin import. The
+entry is not in `tauri.conf.json` because `tauri-build` needs every
+`externalBin` file on each cargo build of the GUI. `cargo xtask
+check-sidecars` fails if the overlay, the release workflow, this page or
+`scripts/build.sh` drops a link of that chain.
 
 This produces:
 
