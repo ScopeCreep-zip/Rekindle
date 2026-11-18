@@ -146,7 +146,7 @@ pub async fn hold_unheld_records(
         };
         match acquired {
             Ok(lease) if anchor.as_deref() == Some(record_key.as_str()) => {
-                leases.governance = Some(lease);
+                leases.anchor = Some(lease);
             }
             Ok(lease) if is_registry => leases.registry = Some(lease),
             Ok(lease) => leases.segments.push(lease),

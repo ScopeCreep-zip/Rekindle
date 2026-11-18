@@ -202,7 +202,7 @@ impl CommunityStore {
         self.read(community_id, |c| {
             c.leases
                 .all()
-                .filter(|l| c.leases.governance != Some(*l))
+                .filter(|l| c.leases.anchor != Some(*l))
                 .collect()
         })
         .unwrap_or_default()

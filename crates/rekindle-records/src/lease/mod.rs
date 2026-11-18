@@ -263,7 +263,8 @@ pub const fn max_subkey_bytes(shape: SchemaShape) -> usize {
 /// member leaves or logs out.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CommunityLeases {
-    pub governance: Option<LeaseId>,
+    /// The anchor `A` (ADR 0011).
+    pub anchor: Option<LeaseId>,
     pub registry: Option<LeaseId>,
     pub channels: HashMap<ChannelId, LeaseId>,
     /// Plate Gate segment records (governance and registry per segment).
@@ -275,7 +276,7 @@ pub struct CommunityLeases {
 /// Which slot of a [`CommunityLeases`] a held record fills.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeldKind {
-    Governance,
+    Anchor,
     Registry,
     Channel,
     Segment,
@@ -293,7 +294,7 @@ pub struct Merged {
 impl CommunityLeases {
     /// Every lease, for release.
     pub fn all(&self) -> impl Iterator<Item = LeaseId> + '_ {
-        self.governance
+        self.anchor
             .iter()
             .chain(self.registry.iter())
             .chain(self.channels.values())
@@ -322,9 +323,9 @@ impl CommunityLeases {
                 false
             }
         };
-        if let Some(lease) = incoming.governance {
-            if take(lease, HeldKind::Governance, &mut merged) {
-                self.governance = Some(lease);
+        if let Some(lease) = incoming.anchor {
+            if take(lease, HeldKind::Anchor, &mut merged) {
+                self.anchor = Some(lease);
             }
         }
         if let Some(lease) = incoming.registry {

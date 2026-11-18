@@ -105,7 +105,7 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
         .acquire_record(&rec.anchor, None, OpenIntent::Hold)
         .await
     {
-        Ok(lease) => leases.governance = Some(lease),
+        Ok(lease) => leases.anchor = Some(lease),
         Err(error) => {
             tracing::debug!(
                 community = %rec.id,

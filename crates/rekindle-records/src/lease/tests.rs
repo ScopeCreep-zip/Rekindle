@@ -111,7 +111,7 @@ fn subkey_caps_match_the_veilid_formula() {
 #[test]
 fn community_leases_list_every_lease() {
     let leases = CommunityLeases {
-        governance: Some(LeaseId(1)),
+        anchor: Some(LeaseId(1)),
         registry: Some(LeaseId(2)),
         channels: HashMap::from([(ChannelId([0; 16]), LeaseId(3))]),
         segments: vec![LeaseId(4)],
@@ -198,7 +198,7 @@ fn community_merge_keeps_one_lease_per_record() {
 
     let first = held.merge(
         CommunityLeases {
-            governance: Some(LeaseId(1)),
+            anchor: Some(LeaseId(1)),
             registry: Some(LeaseId(2)),
             overflow: vec![LeaseId(4), LeaseId(5)],
             ..Default::default()
@@ -210,17 +210,17 @@ fn community_merge_keeps_one_lease_per_record() {
     assert_eq!(
         first.added,
         vec![
-            (HeldKind::Governance, "gov".to_string()),
+            (HeldKind::Anchor, "gov".to_string()),
             (HeldKind::Registry, "reg".to_string()),
             (HeldKind::Overflow, "page".to_string()),
         ]
     );
 
-    // A repeat hand-over of the governance record, and a lease the pool no
+    // A repeat hand-over of the anchor record, and a lease the pool no
     // longer knows (99), are both surplus; nothing is added.
     let second = held.merge(
         CommunityLeases {
-            governance: Some(LeaseId(3)),
+            anchor: Some(LeaseId(3)),
             segments: vec![LeaseId(99)],
             ..Default::default()
         },
@@ -228,6 +228,6 @@ fn community_merge_keeps_one_lease_per_record() {
     );
     assert_eq!(second.surplus, vec![LeaseId(3), LeaseId(99)]);
     assert!(second.added.is_empty());
-    assert_eq!(held.governance, Some(LeaseId(1)));
+    assert_eq!(held.anchor, Some(LeaseId(1)));
     assert_eq!(held.all().count(), 3);
 }
