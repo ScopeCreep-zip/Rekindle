@@ -11,7 +11,7 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::SessionStatus;
 
-use super::{read_inviter_route, write_routes};
+use super::{read_member_route, write_routes};
 use crate::member_card::{publish_own_record, OwnProfile, OwnRecord};
 
 #[tokio::test]
@@ -41,12 +41,12 @@ async fn a_joiner_reads_the_inviters_route_after_it_was_replaced() {
     publish_own_record(&*pool, &own, &profile, &[3; 32], async { Ok(()) })
         .await
         .unwrap();
-    let read = read_inviter_route(&*pool, "community", &record, &inviter).await;
+    let read = read_member_route(&*pool, "community", &record, &inviter).await;
     assert_eq!(read.unwrap().as_deref(), Some(&b"route-A"[..]));
 
     // Route A dies; the route publisher writes route B.
     write_routes(&*pool, &own, b"route-B", 2_000).await.unwrap();
-    let read = read_inviter_route(&*pool, "community", &record, &inviter).await;
+    let read = read_member_route(&*pool, "community", &record, &inviter).await;
     assert_eq!(
         read.unwrap().as_deref(),
         Some(&b"route-B"[..]),
@@ -55,10 +55,10 @@ async fn a_joiner_reads_the_inviters_route_after_it_was_replaced() {
 
     // Signed by another pseudonym, or read for another community: refused.
     let other = PseudonymKey(SigningKey::from_bytes(&[6; 32]).verifying_key().to_bytes());
-    assert!(read_inviter_route(&*pool, "community", &record, &other)
+    assert!(read_member_route(&*pool, "community", &record, &other)
         .await
         .is_err());
-    assert!(read_inviter_route(&*pool, "elsewhere", &record, &inviter)
+    assert!(read_member_route(&*pool, "elsewhere", &record, &inviter)
         .await
         .is_err());
 }

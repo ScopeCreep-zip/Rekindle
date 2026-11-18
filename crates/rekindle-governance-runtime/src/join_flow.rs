@@ -136,7 +136,7 @@ async fn resolve_inviter_route<D: GovernanceRuntimeDeps>(
 ) -> Vec<u8> {
     let record = &invite.inviter_member_record;
     let read = match deps.record_port() {
-        Ok(port) => crate::member_routes::read_inviter_route(&*port, anchor, record, inviter).await,
+        Ok(port) => crate::member_routes::read_member_route(&*port, anchor, record, inviter).await,
         Err(e) => Err(e.to_string()),
     };
     match read {

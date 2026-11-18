@@ -241,19 +241,18 @@ impl InboundHandler for DaemonHandler {
                 };
                 let deps = Arc::new(super::mek_rotation::DaemonMekAdapter::new(Arc::clone(&ctx)));
                 let host = crate::host::adapters::governance::HostGovernance::new(ctx);
-                match rekindle_governance_runtime::build_bootstrap_response_v2(
-                    &host, &anchor, &joiner,
-                )
-                .await
+                match rekindle_governance_runtime::answer_bootstrap_request(&host, &anchor, &joiner)
+                    .await
                 {
-                    Ok(bytes) => {
+                    Ok(rekindle_governance_runtime::BootstrapAnswer::Frontier(bytes)) => {
                         host.deliver_key_to_joiner(deps.as_ref(), &anchor, &joiner)
                             .await;
                         CallResponse::Ok(bytes)
                     }
-                    // Partial (S7c.8 (1)): no answer, never a refusal.
-                    Err(rekindle_governance_runtime::GovernanceRuntimeError::PartialState(_)) => {
-                        CallResponse::Unanswered
+                    // Partial (S7c.8 (i)): the typed answer, never a
+                    // refusal; the joiner asks another member.
+                    Ok(rekindle_governance_runtime::BootstrapAnswer::Partial(bytes)) => {
+                        CallResponse::Ok(bytes)
                     }
                     Err(e) => CallResponse::Rejected {
                         reason: e.to_string(),

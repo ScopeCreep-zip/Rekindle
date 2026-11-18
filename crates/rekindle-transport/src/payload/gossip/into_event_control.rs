@@ -314,6 +314,8 @@ pub fn control_into_event(
         | ControlPayload::CheckpointStateResponse { .. }
         | ControlPayload::CheckpointHintRequest { .. }
         | ControlPayload::CheckpointHintResponse { .. }
+        // A partial responder's bootstrap answer, read by the joiner's call.
+        | ControlPayload::BootstrapPartial { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

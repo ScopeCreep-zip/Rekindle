@@ -830,5 +830,10 @@ struct ControlPayload @0xeaffffff00000001 {
         # (community_governance.capnp).
         checkpointHintRequest    @79 :Data;
         checkpointHintResponse   @80 :Data;
+        # A partial responder's answer to a bootstrapRequest (plan E3.2
+        # S7c.8): the anchor of a community it joined from a hint and has
+        # not backfilled; the joiner asks another member (Synapse's
+        # UNABLE_DUE_TO_PARTIAL_STATE), never a refusal.
+        bootstrapPartial         @81 :Text;
     }
 }

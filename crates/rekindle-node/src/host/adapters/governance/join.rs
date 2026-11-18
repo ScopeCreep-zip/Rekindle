@@ -326,7 +326,9 @@ impl HostGovernance {
     /// The bootstrap exchange (plan E3.2). The join already stands from
     /// the DHT; an inviter that is not online leaves it as it is, and the
     /// community key comes from the members that merge our `MemberJoined`
-    /// (`recover_behind_meks`, D16).
+    /// (`recover_behind_meks`, D16). A partial inviter answers
+    /// `bootstrapPartial` and the members our walk shows are asked instead
+    /// (S7c.8 (i), `rekindle_governance_runtime::bootstrap_peers`).
     ///
     /// # Errors
     /// The inviter answered and refused our `MemberJoined`.
@@ -355,6 +357,7 @@ impl HostGovernance {
         let walked = match rekindle_governance_runtime::request_bootstrap(
             self,
             &outcome.inviter_route,
+            &outcome.invite.inviter_member_record,
             community,
             &joiner,
         )
@@ -363,6 +366,14 @@ impl HostGovernance {
             Ok(walked) => walked,
             Err(e @ rekindle_governance_runtime::GovernanceRuntimeError::BootstrapRefused(_)) => {
                 return Err(e)
+            }
+            // Partial inviter, no other member answered: the join stands
+            // from the DHT, as with an inviter that is offline (S7c.8 (i)).
+            Err(
+                e @ rekindle_governance_runtime::GovernanceRuntimeError::BootstrapUnavailable(_),
+            ) => {
+                tracing::warn!(community, error = %e, "no member answered the bootstrap exchange");
+                return Ok(());
             }
             Err(e) => {
                 tracing::info!(community, error = %e, "bootstrap exchange not completed");

@@ -4,7 +4,7 @@
 //! online, this exchange is how it learns of the joiner. The joiner sends
 //! `BootstrapRequest{joinerPseudonym, anchor, memberJoined}` as a bare
 //! `app_call` to the inviter's current route, read from its `M`/6 by the
-//! join (`crate::member_routes::read_inviter_route`), once its `MemberJoined`
+//! join (`crate::member_routes::read_member_route`), once its `MemberJoined`
 //! is durable on its member record. The request's authority is that
 //! signed op, carried with its `OpRef` (an inviter answers within the
 //! app_call reply window, too short for a DHT read): the inviter checks
@@ -46,21 +46,48 @@ fn adapter(msg: impl Into<String>) -> GovernanceRuntimeError {
     GovernanceRuntimeError::Adapter(msg.into())
 }
 
-/// Answer a joiner's `BootstrapRequest`: check its `MemberJoined` against
-/// the `OpRef`, verify, store and merge it, then encode
-/// `bootstrapResponseV2` with our frontier.
+/// Our encoded answer to a `BootstrapRequest`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BootstrapAnswer {
+    /// `bootstrapResponseV2`: we merged the joiner's `MemberJoined`, and
+    /// the caller delivers it the community key (D16).
+    Frontier(Vec<u8>),
+    /// `bootstrapPartial` (S7c.8 (i)): we joined from a hint and have not
+    /// backfilled, so we vouch for no frontier and merged nothing; the
+    /// joiner asks another member (`crate::bootstrap_peers`).
+    Partial(Vec<u8>),
+}
+
+/// Answer a joiner's `BootstrapRequest`: while we are partial, with
+/// `bootstrapPartial`; otherwise check its `MemberJoined` against the
+/// `OpRef`, verify, store and merge it, then encode `bootstrapResponseV2`
+/// with our frontier.
 ///
 /// # Errors
-/// We are not in the community or it is partial (S7c.8 (1): the joiner's
-/// call is left unanswered, never a refusal), the op is not the joiner's `MemberJoined`
+/// We are not in the community, the op is not the joiner's `MemberJoined`
 /// or does not match its `OpRef`, the merged state does not hold the joiner as a member,
 /// or the store or the encode failed. The caller NAKs.
-pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
+pub async fn answer_bootstrap_request<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    joiner: &BootstrapJoiner,
+) -> Result<BootstrapAnswer, GovernanceRuntimeError> {
+    if crate::partial::is_partial(deps, anchor).await {
+        let payload = ControlPayload::BootstrapPartial {
+            anchor: anchor.to_owned(),
+        };
+        return encode_response(payload).map(BootstrapAnswer::Partial);
+    }
+    build_bootstrap_response_v2(deps, anchor, joiner)
+        .await
+        .map(BootstrapAnswer::Frontier)
+}
+
+async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     deps: &D,
     anchor: &str,
     joiner: &BootstrapJoiner,
 ) -> Result<Vec<u8>, GovernanceRuntimeError> {
-    crate::partial::refuse_while_partial(deps, anchor).await?;
     deps.community_membership(anchor)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(anchor.to_owned()))?;
     let author = &joiner.member_joined.author;
@@ -139,17 +166,22 @@ fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntime
     Ok(bytes)
 }
 
-/// Ask the inviter at `inviter_route` for its frontier once our
-/// `MemberJoined` is durable, and walk the op DAG from it: the ops the
-/// walk found (the caller stores the new ones and rebuilds).
+/// Ask the inviter at `inviter_route` (its member record `inviter_record`)
+/// for its frontier once our `MemberJoined` is durable, or, when it is
+/// partial, other members (`crate::bootstrap_peers`), and walk the op DAG
+/// from the frontier answered: the ops the walk found (the caller stores
+/// the new ones and rebuilds).
 ///
 /// # Errors
-/// The `app_call` failed, the inviter refused
-/// ([`GovernanceRuntimeError::BootstrapRefused`]: the reply is not a
-/// `bootstrapResponseV2` for `anchor`), or the walk failed.
+/// The inviter's `app_call` failed, the inviter refused
+/// ([`GovernanceRuntimeError::BootstrapRefused`]: the reply is neither a
+/// `bootstrapResponseV2` nor a `bootstrapPartial` for `anchor`), it was
+/// partial and no other member answered
+/// ([`GovernanceRuntimeError::BootstrapUnavailable`]), or the walk failed.
 pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
     deps: &D,
     inviter_route: &[u8],
+    inviter_record: &str,
     anchor: &str,
     joiner: &BootstrapJoiner,
 ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
@@ -162,19 +194,24 @@ pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
     });
     let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&request)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap request: {e}")))?;
-    let reply = deps.app_call_peer(inviter_route, bytes).await?;
-    let frontier = match rekindle_codec::capnp_envelope::try_decode_community_envelope(&reply) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapResponseV2 {
-            anchor: answered,
-            frontier,
-            ..
-        }))) if answered == anchor => frontier,
-        _ => {
-            return Err(GovernanceRuntimeError::BootstrapRefused(
-                "the reply is not a bootstrapResponseV2 for this community".into(),
-            ))
-        }
-    };
+    let me = joiner.member_joined.author.clone();
+    let candidates = crate::bootstrap_peers::candidates(
+        &deps.governance_state(anchor).unwrap_or_default(),
+        &me,
+        inviter_record,
+    );
+    let port = deps.record_port()?;
+    let call =
+        |route: Vec<u8>, payload: Vec<u8>| async move { deps.app_call_peer(&route, payload).await };
+    let frontier = crate::bootstrap_peers::find_frontier(
+        call,
+        &*port,
+        anchor,
+        inviter_route,
+        &candidates,
+        &bytes,
+    )
+    .await?;
     op_log::walk(deps, anchor, &frontier).await
 }
 

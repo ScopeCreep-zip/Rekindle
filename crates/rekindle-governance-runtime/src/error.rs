@@ -116,6 +116,13 @@ pub enum GovernanceRuntimeError {
     #[error("the inviter refused the join: {0}")]
     BootstrapRefused(String),
 
+    /// The inviter answered `bootstrapPartial` and none of the members
+    /// asked after it (this many) answered a frontier: each was partial,
+    /// unreachable or refused (plan E3.2 S7c.8 (i),
+    /// `crate::bootstrap_peers`). The join stands from the DHT.
+    #[error("the inviter is partial and none of the {0} other members asked answered")]
+    BootstrapUnavailable(usize),
+
     /// Our op did not land on our member record `M` within the command's
     /// deadline; it stays queued and the outbox lands it later (plan E3.2
     /// S6b).

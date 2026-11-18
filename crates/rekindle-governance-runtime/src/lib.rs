@@ -28,6 +28,7 @@ pub mod anti_entropy;
 pub mod apply;
 pub mod audit;
 pub mod bootstrap;
+pub mod bootstrap_peers;
 pub mod channels;
 pub mod checkpoint_hint;
 pub mod checkpoint_rows;
@@ -73,7 +74,9 @@ mod test_member;
 mod test_world;
 
 pub use apply::{write_checkpoint_queued, write_entry, write_entry_queued, write_invite_created};
-pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};
+pub use bootstrap::{
+    answer_bootstrap_request, request_bootstrap, BootstrapAnswer, BootstrapJoiner,
+};
 pub use deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
     GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, OpLanding, OpOutcome, UserStatusKind,

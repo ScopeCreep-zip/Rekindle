@@ -338,9 +338,6 @@ async fn dispatch_app_call<H: InboundHandler>(
     let response_bytes = if let Ok(response) =
         tokio::time::timeout(CALL_DEADLINE, handler.on_call(sender, request)).await
     {
-        if matches!(response, crate::payload::rpc::CallResponse::Unanswered) {
-            return;
-        }
         crate::payload::rpc::serialize_call_response(&response)
     } else {
         warn!(
@@ -428,7 +425,6 @@ async fn dispatch_bare_attachment_request<H: InboundHandler>(
     let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
         Ok(CallResponse::Ok(chunks)) => chunks,
         Ok(CallResponse::Ack) => NOTHING_HELD.to_vec(),
-        Ok(CallResponse::Unanswered) => return,
         Ok(CallResponse::Rejected { reason }) => {
             warn!(%reason, "attachment request refused");
             NAK.to_vec()
@@ -529,7 +525,6 @@ async fn dispatch_bare_request<H: InboundHandler>(
 ) {
     let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
         Ok(crate::payload::rpc::CallResponse::Ok(bytes)) => bytes,
-        Ok(crate::payload::rpc::CallResponse::Unanswered) => return,
         Ok(other) => {
             warn!(response = ?other, "bare request refused");
             NAK.to_vec()

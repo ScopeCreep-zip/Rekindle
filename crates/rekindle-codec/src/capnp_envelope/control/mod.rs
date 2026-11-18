@@ -9,7 +9,7 @@
 //! re-extract the variant's fields. The dispatcher only routes by
 //! discriminant.
 
-use crate::capnp_codec::{capnp_err, not_in_schema};
+use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community::envelope::ControlPayload;
 use crate::community_envelope_capnp::control_payload as schema;
 use crate::error::CodecError;
@@ -213,6 +213,7 @@ pub fn encode_control_payload(
         CP::CheckpointStateResponse { response } => b.set_checkpoint_state_response(response),
         CP::CheckpointHintRequest { request } => b.set_checkpoint_hint_request(request),
         CP::CheckpointHintResponse { response } => b.set_checkpoint_hint_response(response),
+        CP::BootstrapPartial { anchor } => b.set_bootstrap_partial(anchor),
         CP::VoiceMediaKeyAck { .. } => {
             write_voice_media_key_ack(b.reborrow().init_voice_media_key_ack(), payload);
         }
@@ -340,6 +341,9 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         }),
         Which::CheckpointHintResponse(response) => Ok(ControlPayload::CheckpointHintResponse {
             response: response.map_err(|e| capnp_err(&e))?.to_vec(),
+        }),
+        Which::BootstrapPartial(anchor) => Ok(ControlPayload::BootstrapPartial {
+            anchor: text_to_string(anchor.map_err(|e| capnp_err(&e))?)?,
         }),
         Which::GovernanceOp(op) => Ok(ControlPayload::GovernanceOp {
             op: op.map_err(|e| capnp_err(&e))?.to_vec(),

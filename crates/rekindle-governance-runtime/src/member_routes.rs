@@ -54,17 +54,20 @@ pub async fn write_routes(
     write_subkey(port, own, member_record::ROUTES, bytes).await
 }
 
-/// The inviter's current general route blob, read from `M(inviter)`/6 and
-/// verified under `inviter`; `None` while the record holds no routes.
+/// A member's current general route blob, read from `M(member)`/6 and
+/// verified under `member`; `None` while the record holds no routes. The
+/// joiner reads its inviter's this way, and, when the inviter answers
+/// `bootstrapPartial`, those of the members its walk shows
+/// (`crate::bootstrap_peers`).
 ///
 /// # Errors
-/// The record is unreadable, or its routes do not verify under `inviter`
+/// The record is unreadable, or its routes do not verify under `member`
 /// for this record.
-pub async fn read_inviter_route(
+pub async fn read_member_route(
     port: &dyn RecordPort,
     community_id: &str,
     record: &str,
-    inviter: &PseudonymKey,
+    member: &PseudonymKey,
 ) -> Result<Option<Vec<u8>>, String> {
     let lease = port
         .acquire(record, None, OpenIntent::Check)
@@ -79,7 +82,7 @@ pub async fn read_inviter_route(
         community_id,
         member_record: record,
     };
-    decode_member_routes(&value.data, at, &inviter.0)
+    decode_member_routes(&value.data, at, &member.0)
         .map(|routes| Some(routes.general))
         .map_err(|e| format!("routes of {record}: {e}"))
 }

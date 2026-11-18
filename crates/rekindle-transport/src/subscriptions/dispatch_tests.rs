@@ -76,15 +76,8 @@ impl InboundHandler for Recorder {
         false
     }
 
-    async fn on_call(&self, _sender: Option<&str>, request: InboundCall) -> CallResponse {
-        match request {
-            // A partial community's bootstrap (plan E3.2 S7c.8 (1)).
-            InboundCall::BootstrapRequest { anchor, .. } if anchor == "partial" => {
-                CallResponse::Unanswered
-            }
-            InboundCall::BootstrapRequest { .. } => CallResponse::Ok(b"answer".to_vec()),
-            _ => CallResponse::Ack,
-        }
+    async fn on_call(&self, _sender: Option<&str>, _request: InboundCall) -> CallResponse {
+        CallResponse::Ack
     }
 
     async fn on_value_change(&self, _key: &str, _subkeys: Vec<u32>, _first: Option<Vec<u8>>) {}
@@ -273,36 +266,4 @@ async fn a_gossip_call_is_refused_before_any_decode() {
             crate::operations::direct::NAK.to_vec()
         ]
     );
-}
-
-/// A bare bootstrap request.
-fn bootstrap_call(anchor: &str) -> Vec<u8> {
-    use rekindle_codec::community::envelope::ControlPayload;
-    encode_community_envelope(&CommunityEnvelope::Control(
-        ControlPayload::BootstrapRequest {
-            joiner_pseudonym: "00".repeat(32),
-            anchor: anchor.into(),
-            member_joined: rekindle_types::governance::OpRef {
-                op_hash: rekindle_types::governance::OpHash([0; 32]),
-                author: rekindle_types::id::PseudonymKey([0; 32]),
-                author_record: "VLD0:m".into(),
-                author_seq: 0,
-            },
-            member_joined_op: vec![1],
-            joiner_route: vec![2],
-        },
-    ))
-    .unwrap()
-}
-
-/// Plan E3.2 S7c.8 (1): a bootstrap the handler leaves unanswered (a
-/// partial community) gets no reply, never a NAK, which the joiner would
-/// read as a refusal and withdraw its join.
-#[tokio::test]
-async fn a_bootstrap_left_unanswered_gets_no_reply() {
-    let handler = Arc::new(Recorder::default());
-    let replies = Replies::default();
-    dispatch_app_call(&handler, &replies, AppCallId(1), &bootstrap_call("partial")).await;
-    dispatch_app_call(&handler, &replies, AppCallId(2), &bootstrap_call("whole")).await;
-    assert_eq!(*replies.0.lock(), [b"answer".to_vec()]);
 }

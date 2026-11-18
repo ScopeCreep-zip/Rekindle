@@ -96,8 +96,14 @@ async fn a_partial_community_answers_no_hint_or_snapshot_request() {
     host.shutdown().await.unwrap();
 }
 
+/// Plan E3.2 S7c.8 (i): while partial, a bootstrap request is answered
+/// with the typed `bootstrapPartial` (Synapse's
+/// `UNABLE_DUE_TO_PARTIAL_STATE`), never a frontier and never a refusal;
+/// whole, the same request is checked as usual.
 #[tokio::test]
-async fn a_partial_community_answers_no_bootstrap_request() {
+async fn a_partial_community_answers_bootstrap_partial() {
+    use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+    use rekindle_governance_runtime::BootstrapAnswer;
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     let (_, ops, checkpoint, _) = community(&host).await;
@@ -114,18 +120,25 @@ async fn a_partial_community_answers_no_bootstrap_request() {
         member_joined_op: ops[0].encoded.clone(),
         route: Vec::new(),
     };
-    let whole = rekindle_governance_runtime::build_bootstrap_response_v2(&gov, "c1", &joiner).await;
-    assert!(
-        whole.is_err() && !is_partial_refusal(&whole),
-        "whole: not refused as partial, {whole:?}"
-    );
+    let whole = rekindle_governance_runtime::answer_bootstrap_request(&gov, "c1", &joiner).await;
+    assert!(whole.is_err(), "whole: the request is checked, {whole:?}");
 
     gov.set_governance_partial("c1", Some(partial_from(&checkpoint, checkpoint.state_root)))
         .await
         .unwrap();
-    let partial =
-        rekindle_governance_runtime::build_bootstrap_response_v2(&gov, "c1", &joiner).await;
-    assert!(is_partial_refusal(&partial), "{partial:?}");
+    let answer = rekindle_governance_runtime::answer_bootstrap_request(&gov, "c1", &joiner).await;
+    let Ok(BootstrapAnswer::Partial(bytes)) = answer else {
+        panic!("partial: the typed answer, {answer:?}");
+    };
+    let decoded = rekindle_codec::capnp_envelope::try_decode_community_envelope(&bytes);
+    assert!(
+        matches!(
+            decoded,
+            Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapPartial { ref anchor })))
+                if anchor == "c1"
+        ),
+        "{decoded:?}"
+    );
     host.shutdown().await.unwrap();
 }
 

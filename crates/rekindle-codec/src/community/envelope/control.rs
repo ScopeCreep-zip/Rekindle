@@ -403,6 +403,9 @@ pub enum ControlPayload {
     CheckpointHintRequest { request: Vec<u8> },
     /// An encoded `CheckpointHintResponse` (plan E3.2 S7c.5).
     CheckpointHintResponse { response: Vec<u8> },
+    /// A partial responder's answer to a `BootstrapRequest` for `anchor`
+    /// (plan E3.2 S7c.8): ask another member, not a refusal.
+    BootstrapPartial { anchor: String },
     /// Reply to a [`Self::VoiceMediaKey`] call: `recipient` opened and
     /// installed `sender`'s key at `key_index` (plan C7.22).
     VoiceMediaKeyAck {
