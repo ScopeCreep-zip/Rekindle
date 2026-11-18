@@ -69,8 +69,9 @@ pub async fn handle_app_call(
         return;
     }
 
-    let reply = community_call(app_handle, state, call_id, &message).await;
-    reply_to_call(state, call_id, reply).await;
+    if let Some(reply) = community_call(app_handle, state, call_id, &message).await {
+        reply_to_call(state, call_id, reply).await;
+    }
 }
 
 /// Send an `app_call`'s reply.
@@ -82,89 +83,96 @@ async fn reply_to_call(state: &Arc<AppState>, call_id: veilid_core::OperationId,
     }
 }
 
-/// Answer a community-envelope `app_call`.
+/// Answer a community-envelope `app_call`; `None` leaves it unanswered (a
+/// partial community's bootstrap, plan E3.2 S7c.8 (1)).
 async fn community_call(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
     call_id: veilid_core::OperationId,
     message: &[u8],
-) -> Vec<u8> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(message) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
-            joiner_pseudonym,
-            anchor,
-            member_joined,
-            member_joined_op,
-            joiner_route,
-        }))) => {
-            let joiner = rekindle_governance_runtime::BootstrapJoiner {
-                pseudonym: joiner_pseudonym,
+) -> Option<Vec<u8>> {
+    Some(
+        match rekindle_codec::capnp_envelope::try_decode_community_envelope(message) {
+            Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+                joiner_pseudonym,
+                anchor,
                 member_joined,
                 member_joined_op,
-                route: joiner_route,
-            };
-            crate::services::community::build_bootstrap_response_v2(
-                app_handle, state, &anchor, &joiner,
-            )
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(call_id = %call_id, error = %e, "bootstrap request refused");
-                NAK.to_vec()
-            })
-        }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateRequest {
-            request,
-        }))) => {
-            // A member's state snapshot request (plan E3.2 S7c.3): the Host
-            // admits and rate-limits the signer; a refusal is a NAK.
-            match state.host.current() {
-                Some(host) => host
-                    .governance()
-                    .answer_checkpoint_state(&request)
-                    .await
-                    .unwrap_or_else(|| NAK.to_vec()),
-                None => NAK.to_vec(),
+                joiner_route,
+            }))) => {
+                let joiner = rekindle_governance_runtime::BootstrapJoiner {
+                    pseudonym: joiner_pseudonym,
+                    member_joined,
+                    member_joined_op,
+                    route: joiner_route,
+                };
+                match crate::services::community::build_bootstrap_response_v2(
+                    app_handle, state, &anchor, &joiner,
+                )
+                .await
+                {
+                    Ok(Some(response)) => response,
+                    Ok(None) => return None,
+                    Err(e) => {
+                        tracing::warn!(call_id = %call_id, error = %e, "bootstrap request refused");
+                        NAK.to_vec()
+                    }
+                }
             }
-        }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintRequest { request }))) => {
-            // A member's or a joiner's checkpoint hint request (plan E3.2
-            // S7c.5): admitted and rate-limited like a snapshot request.
-            match state.host.current() {
-                Some(host) => host
-                    .governance()
-                    .answer_checkpoint_hint(&request)
-                    .await
-                    .unwrap_or_else(|| NAK.to_vec()),
-                None => NAK.to_vec(),
+            Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateRequest {
+                request,
+            }))) => {
+                // A member's state snapshot request (plan E3.2 S7c.3): the Host
+                // admits and rate-limits the signer; a refusal is a NAK.
+                match state.host.current() {
+                    Some(host) => host
+                        .governance()
+                        .answer_checkpoint_state(&request)
+                        .await
+                        .unwrap_or_else(|| NAK.to_vec()),
+                    None => NAK.to_vec(),
+                }
             }
-        }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
-            // P1.3, review S7m part 1: reply with a `MekTransferAck` whose
-            // key-confirmation tag is keyed by the key we unwrapped, so the
-            // sender settles the transfer only on proof of the unwrap. On an
-            // unwrap failure we reply a bare `ACK` (the sender retries).
-            let received =
-                rekindle_types::channel_keys::KeyScope::from_wire(transfer.channel_id.as_deref())
-                    .ok_or_else(|| {
-                        format!("MekTransfer names no key scope: {:?}", transfer.channel_id)
-                    })
-                    .and_then(|scope| {
-                        crate::services::community::handle_incoming_mek_transfer(
-                            app_handle,
-                            state,
-                            &transfer.community_id,
-                            scope,
-                            &transfer.sender_pseudonym,
-                            &transfer.wrapped_mek,
-                        )
-                    });
-            let requester_pseudonym = {
-                let communities = state.communities.read();
-                communities
-                    .get(&transfer.community_id)
-                    .and_then(|cs| cs.my_pseudonym_key.clone())
-            };
-            match (received, requester_pseudonym) {
+            Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintRequest {
+                request,
+            }))) => {
+                // A member's or a joiner's checkpoint hint request (plan E3.2
+                // S7c.5): admitted and rate-limited like a snapshot request.
+                match state.host.current() {
+                    Some(host) => host
+                        .governance()
+                        .answer_checkpoint_hint(&request)
+                        .await
+                        .unwrap_or_else(|| NAK.to_vec()),
+                    None => NAK.to_vec(),
+                }
+            }
+            Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
+                // P1.3, review S7m part 1: reply with a `MekTransferAck` whose
+                // key-confirmation tag is keyed by the key we unwrapped, so the
+                // sender settles the transfer only on proof of the unwrap. On an
+                // unwrap failure we reply a bare `ACK` (the sender retries).
+                let received = rekindle_types::channel_keys::KeyScope::from_wire(
+                    transfer.channel_id.as_deref(),
+                )
+                .ok_or_else(|| format!("MekTransfer names no key scope: {:?}", transfer.channel_id))
+                .and_then(|scope| {
+                    crate::services::community::handle_incoming_mek_transfer(
+                        app_handle,
+                        state,
+                        &transfer.community_id,
+                        scope,
+                        &transfer.sender_pseudonym,
+                        &transfer.wrapped_mek,
+                    )
+                });
+                let requester_pseudonym = {
+                    let communities = state.communities.read();
+                    communities
+                        .get(&transfer.community_id)
+                        .and_then(|cs| cs.my_pseudonym_key.clone())
+                };
+                match (received, requester_pseudonym) {
                 (Ok(mek), Some(requester)) => rekindle_mek_rotation::encode_mek_transfer_ack(
                     &transfer, &mek, &requester,
                 )
@@ -185,43 +193,44 @@ async fn community_call(
                     b"ACK".to_vec()
                 }
             }
-        }
-        Ok(Some(CommunityEnvelope::Control(
-            payload @ (ControlPayload::VoiceMediaKey { .. }
-            | ControlPayload::VoiceMediaKeyRequest { .. }),
-        ))) => {
-            // Plan C7.22 — call-media keys arrive point to point and are
-            // acknowledged. The sender is authenticated by its pseudonym
-            // signature inside the payload (plan C7.29), not by an
-            // envelope signature.
-            crate::services::voice_signaling_adapter::answer_media_key_call(
-                app_handle, state, &payload,
-            )
-        }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
-            channel_id: _,
-            attachment_id,
-            requested_chunks,
-            requester_pseudonym,
-        }))) => {
-            // Find the community that owns this attachment by scanning each
-            // open file cache for the requested attachment_id. The requester's
-            // pseudonym is informational here — permission to read the file
-            // is implicit in being able to decrypt the FEK (which only
-            // community members can do).
-            let _ = requester_pseudonym;
-            rekindle_node::host::adapters::files::ops::serve(
-                &state.files,
+            }
+            Ok(Some(CommunityEnvelope::Control(
+                payload @ (ControlPayload::VoiceMediaKey { .. }
+                | ControlPayload::VoiceMediaKeyRequest { .. }),
+            ))) => {
+                // Plan C7.22 — call-media keys arrive point to point and are
+                // acknowledged. The sender is authenticated by its pseudonym
+                // signature inside the payload (plan C7.29), not by an
+                // envelope signature.
+                crate::services::voice_signaling_adapter::answer_media_key_call(
+                    app_handle, state, &payload,
+                )
+            }
+            Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+                channel_id: _,
                 attachment_id,
-                &requested_chunks,
-            )
-            .unwrap_or_else(|| b"ACK".to_vec())
-        }
-        _ => {
-            tracing::debug!(msg_len = message.len(), "untagged app_call — NAK");
-            NAK.to_vec()
-        }
-    }
+                requested_chunks,
+                requester_pseudonym,
+            }))) => {
+                // Find the community that owns this attachment by scanning each
+                // open file cache for the requested attachment_id. The requester's
+                // pseudonym is informational here — permission to read the file
+                // is implicit in being able to decrypt the FEK (which only
+                // community members can do).
+                let _ = requester_pseudonym;
+                rekindle_node::host::adapters::files::ops::serve(
+                    &state.files,
+                    attachment_id,
+                    &requested_chunks,
+                )
+                .unwrap_or_else(|| b"ACK".to_vec())
+            }
+            _ => {
+                tracing::debug!(msg_len = message.len(), "untagged app_call — NAK");
+                NAK.to_vec()
+            }
+        },
+    )
 }
 
 /// Answer a 1:1 `app_call` through the Host: its reply (empty for a

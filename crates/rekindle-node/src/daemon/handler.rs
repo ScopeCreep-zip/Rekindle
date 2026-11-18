@@ -251,6 +251,10 @@ impl InboundHandler for DaemonHandler {
                             .await;
                         CallResponse::Ok(bytes)
                     }
+                    // Partial (S7c.8 (1)): no answer, never a refusal.
+                    Err(rekindle_governance_runtime::GovernanceRuntimeError::PartialState(_)) => {
+                        CallResponse::Unanswered
+                    }
                     Err(e) => CallResponse::Rejected {
                         reason: e.to_string(),
                     },

@@ -163,6 +163,11 @@ pub enum CallResponse {
     Ack,
     /// Request rejected with reason.
     Rejected { reason: String },
+    /// No reply at all: the caller's `app_call` times out, which it never
+    /// reads as a refusal. A community joined from a hint answers no
+    /// bootstrap request until its backfill ends (plan E3.2 S7c.8 (1)),
+    /// and a NAK would make the joiner withdraw its join.
+    Unanswered,
 }
 
 /// Deserialize an inbound app_call payload by TypeId.
