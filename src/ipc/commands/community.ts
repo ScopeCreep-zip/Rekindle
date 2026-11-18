@@ -16,7 +16,7 @@ import type { CommunityBanView, MemberGroup } from "./dto";
 export const communityCommands = {
   // Community
   getCommunities: () =>
-    hostInvoke<{ governanceKey: string; name: string; description: string; memberCount: number; channelCount: number; ourPseudonym: string }[]>("get_communities"),
+    hostInvoke<{ anchor: string; name: string; description: string; memberCount: number; channelCount: number; ourPseudonym: string }[]>("get_communities"),
   getCommunityDetails: () =>
     hostInvoke<{
       id: string;
@@ -100,14 +100,14 @@ export const communityCommands = {
     bannerRef,
   }),
   createCommunity: (name: string) =>
-    hostInvoke<{ governanceKey: string; registryKey: string; name: string }>(
+    hostInvoke<{ anchor: string; registryKey: string; name: string }>(
       "create_community", { name },
-    ).then((created) => created.governanceKey),
+    ).then((created) => created.anchor),
   /// Joins through the Host's review of the invite (its record-key
   /// fingerprint); returns the joined community's id.
   joinCommunity: (inviteUrl: string) =>
-    hostInvoke<{ governanceKey: string; name: string }>("join_community", { inviteUrl })
-      .then((joined) => joined.governanceKey),
+    hostInvoke<{ anchor: string; name: string }>("join_community", { inviteUrl })
+      .then((joined) => joined.anchor),
   createChannel: (
     communityId: string,
     name: string,

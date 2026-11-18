@@ -129,7 +129,7 @@ export function communityDetails(channelCount = 30) {
 
 export function communitiesList(n: number) {
   return Array.from({ length: n }, (_, i) => ({
-    governanceKey: i === 0 ? COMMUNITY : `VLD0:${String(i).padStart(43, "h")}`,
+    anchor: i === 0 ? COMMUNITY : `VLD0:${String(i).padStart(43, "h")}`,
     name: longName(`Community${i}_`),
     description: longName("Description_", 120),
     memberCount: 100,

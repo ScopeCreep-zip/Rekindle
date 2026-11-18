@@ -178,7 +178,7 @@ export interface CategoryDisplay {
 export interface SegmentDescriptor {
   segmentIndex: number;
   registryKey: string;
-  governanceKey: string;
+  anchor: string;
   slotRangeStart: number;
   slotRangeEnd: number;
 }

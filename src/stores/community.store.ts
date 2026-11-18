@@ -215,7 +215,7 @@ export interface Community {
   mekGeneration: number;
   events: ScheduledEvent[];
   memberRegistryKey?: string;
-  governanceKey: string | null;
+  anchor: string | null;
   onboardingConfig?: OnboardingConfig;
   welcomeScreen?: WelcomeScreen;
   onboardingComplete?: boolean;
@@ -251,7 +251,7 @@ export interface Community {
 export interface SegmentInfo {
   segmentIndex: number;
   registryKey: string;
-  governanceKey: string;
+  anchor: string;
   slotRangeStart: number;
   slotRangeEnd: number;
 }
