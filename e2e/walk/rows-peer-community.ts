@@ -88,6 +88,43 @@ async function subItem(b: Browser, trigger: string, item: string): Promise<void>
   await press(b, await byText(b, ".context-menu .context-menu-item", item));
 }
 
+/**
+ * What the Host's member list and the window's rows hold for `community`
+ * (by name), read in the page when the peer is not listed: tells a roster
+ * the Host never wrote from a list the window never re-read.
+ */
+async function memberProbe(b: Browser, community: string): Promise<string> {
+  await b.execute((name: string) => {
+    type W = { __walkProbe?: string; __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<unknown> } };
+    const w = window as unknown as W;
+    const unwrap = (v: unknown): unknown => (v && typeof v === "object" && "data" in v ? (v as { data: unknown }).data : v);
+    w.__walkProbe = "pending";
+    void w.__TAURI_INTERNALS__.invoke("get_community_details")
+      .then(async (d) => {
+        const list = unwrap(d) as { id: string; name: string }[];
+        const c = list.find((x) => x.name === name);
+        if (!c) return `no community named ${name}`;
+        const m = unwrap(await w.__TAURI_INTERNALS__.invoke("get_community_members", { communityId: c.id })) as {
+          pseudonymKey: string;
+          displayName: string;
+        }[];
+        return `host lists ${m.length}: ${m.map((x) => `${x.displayName || "(no name)"}:${x.pseudonymKey.slice(0, 8)}`).join(", ")}`;
+      })
+      .then((r) => { w.__walkProbe = r; }, (e: unknown) => { w.__walkProbe = `probe failed: ${String(e)}`; });
+  }, community);
+  let got = "pending";
+  await waitUntil(
+    async () => {
+      got = await b.execute(() => (window as unknown as { __walkProbe?: string }).__walkProbe ?? "unset");
+      return got !== "pending";
+    },
+    10_000,
+    "member probe never answered",
+  ).catch(() => {});
+  const rows = await b.execute(() => Array.from(document.querySelectorAll(".member-item")).map((e) => e.textContent?.trim()).join(" | "));
+  return `${got}; window rows: ${rows}`;
+}
+
 export const PEER_COMMUNITY_ROWS: Row[] = [
   {
     id: "B61",
@@ -95,7 +132,9 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
     async run({ b, s, shot }) {
       await peerJoins(b, s.passphrase, s.communityName);
       await needPeer().b.saveScreenshot("e2e/walk/out/B61-peer.png");
-      await peerMember(b);
+      await peerMember(b).catch(async (e: Error) => {
+        throw new Error(`${e.message} (${await memberProbe(b, s.communityName)})`);
+      });
       await shot();
       return "the walk's member list shows the peer";
     },
