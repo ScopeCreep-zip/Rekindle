@@ -45,7 +45,7 @@ use rekindle_types::dto::skin::{
 
 use super::xfire_ini::{ini, lookup};
 use super::xfire_xml::bitmap;
-use super::{base_of, conclude, tree_hash, ImportError, Outcome, Tree};
+use super::{base_of, conclude, credits, tree_hash, ImportError, Outcome, Tree};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
 
@@ -338,7 +338,7 @@ fn image_path(slot: &str, state: RegionState) -> String {
     }
 }
 
-fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
+fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
     let regions = read
         .regions
         .iter()
@@ -383,7 +383,20 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
             format: MIRANDA_FORMAT.to_owned(),
             hash: source.to_owned(),
         }),
-        credits: None,
+        // A Clist_modern `[Skin_Description_Section]` states `Author` and
+        // `URL` (`clist_modern_skin.msf:4-6`); a tabSRMM `.tsk` states none.
+        credits: Some(credits::build(
+            tree,
+            &read
+                .info
+                .get("Author")
+                .cloned()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            &[],
+            read.info.get("URL").map(String::as_str),
+            None,
+        )),
         author: None,
         signature: None,
         variants: vec![SkinVariant {
@@ -406,12 +419,10 @@ pub fn import(tree: &Tree, id: &str) -> Result<Outcome, ImportError> {
     let read = read(tree)?;
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
-    let manifest_json =
-        serde_json::to_vec(&manifest(id, &read, &source, skin_base)).map_err(|e| {
-            ImportError::Format {
-                file: MANIFEST.to_owned(),
-                detail: e.to_string(),
-            }
+    let manifest_json = serde_json::to_vec(&manifest(tree, id, &read, &source, skin_base))
+        .map_err(|e| ImportError::Format {
+            file: MANIFEST.to_owned(),
+            detail: e.to_string(),
         })?;
     let mut files = BTreeMap::from([(MANIFEST.to_owned(), manifest_json)]);
     for (slot, r) in &read.regions {

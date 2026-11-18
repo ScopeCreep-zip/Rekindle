@@ -317,3 +317,16 @@ fn not_exactly_one_skin_file_is_refused() {
         Err(ImportError::Format { .. })
     ));
 }
+
+#[test]
+fn a_clist_modern_description_credits_its_author_and_url() {
+    let msf = MSF.replace(
+        "Author = Fixture\r\n",
+        "Author = Fixture\r\nURL = http://example.org/skin\r\n",
+    );
+    let tree = msf_tree(&msf);
+    let m = manifest(&tree, "fixture", &read(&tree).unwrap(), "", SkinBase::Dark);
+    let credits = m.credits.expect("credits");
+    assert_eq!(credits.authors, vec!["Fixture".to_owned()]);
+    assert_eq!(credits.url.as_deref(), Some("http://example.org/skin"));
+}

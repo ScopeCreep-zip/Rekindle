@@ -95,12 +95,8 @@ fn a_minimal_theme_imports_and_validates() {
     let i = imported(import(&theme(ICONS, SOUNDS), "synth").unwrap());
     let c = validate::run(&i.canonical.bytes).unwrap();
     assert_eq!(c.address(), i.canonical.address());
-    let m = manifest(
-        "synth",
-        &read(&theme(ICONS, SOUNDS)).unwrap(),
-        "",
-        SkinBase::Dark,
-    );
+    let tree = theme(ICONS, SOUNDS);
+    let m = manifest(&tree, "synth", &read(&tree).unwrap(), "", SkinBase::Dark);
     assert_eq!(
         m.icons.get("status.online").map(String::as_str),
         Some("icons/status.online.png")
@@ -146,7 +142,7 @@ fn every_emitted_icon_and_sound_key_is_a_registry_id() {
     let t = theme(&icons, &sounds);
     let i = imported(import(&t, "synth").unwrap());
     validate::run(&i.canonical.bytes).unwrap();
-    let m = manifest("synth", &read(&t).unwrap(), "", SkinBase::Dark);
+    let m = manifest(&t, "synth", &read(&t).unwrap(), "", SkinBase::Dark);
     assert_eq!(m.icons.len(), 5);
     assert_eq!(m.sounds.len(), 4);
     for (id, path) in &m.icons {
@@ -226,4 +222,22 @@ fn a_theme_without_its_loader_attributes_is_refused() {
         import(&Tree::new(), "synth"),
         Err(ImportError::MissingFile { .. })
     ));
+}
+
+#[test]
+fn the_theme_roots_author_is_credited() {
+    let mut tree = theme(ICONS, SOUNDS);
+    tree.insert(
+        "Synth/purple/sound/theme.xml".into(),
+        format!("<theme type=\"sound\" name=\"S\" author=\" Ann \">{SOUNDS}</theme>").into_bytes(),
+    );
+    tree.insert("README.txt".into(), b"Share alike.".to_vec());
+    let m = manifest(&tree, "synth", &read(&tree).unwrap(), "", SkinBase::Dark);
+    let credits = m.credits.expect("credits");
+    assert_eq!(credits.authors, vec!["test".to_owned(), "Ann".to_owned()]);
+    assert_eq!(credits.url, None);
+    assert_eq!(
+        credits.licence,
+        rekindle_types::dto::skin::OriginalLicence::Text("Share alike.".into())
+    );
 }

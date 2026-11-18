@@ -39,7 +39,7 @@ use rekindle_types::dto::skin::{
 
 use super::tree::{self, Node};
 use super::winamp::archive::{refused, MAX_ARCHIVE_BYTES, MAX_UNCOMPRESSED_BYTES};
-use super::{base_of, conclude, tree_hash, walk, ImportError, Outcome, Tree};
+use super::{base_of, conclude, credits, tree_hash, walk, ImportError, Outcome, Tree};
 use crate::limits::MAX_ENTRIES;
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
@@ -83,6 +83,10 @@ pub struct Read {
     /// Cue id → (package path, canonical WAV, source item).
     pub sounds: BTreeMap<String, (String, Vec<u8>, String)>,
     pub dropped: Vec<DroppedItem>,
+    /// Each `theme.xml` root's `author` attribute, in the order read (the
+    /// blist, status-icon and sound theme loaders read it as the theme's
+    /// author: `gtkblist-theme-loader.c:201`).
+    pub authors: Vec<String>,
 }
 
 impl Read {
@@ -271,6 +275,11 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     check_limits(tree)?;
     let root = theme_root(tree)?;
     let mut read = Read::default();
+    for kind in [BLIST, ICONS, SOUND] {
+        if let Some((_, node)) = theme(tree, &root, kind)? {
+            read.authors.extend(node.attr("author").map(str::to_owned));
+        }
+    }
     if let Some((dir, node)) = theme(tree, &root, BLIST)? {
         read.themes
             .push((BLIST, named(&dir, &node, Some(BLIST_TYPE))?));
@@ -293,7 +302,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     Ok(read)
 }
 
-fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
+fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
     let paths = |m: &BTreeMap<String, (String, Vec<u8>, String)>| {
         m.iter()
             .map(|(k, (p, ..))| (k.clone(), p.clone()))
@@ -313,7 +322,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
             format: PIDGIN_FORMAT.to_owned(),
             hash: source.to_owned(),
         }),
-        credits: None,
+        credits: Some(credits::build(tree, &read.authors, &[], None, None)),
         author: None,
         signature: None,
         variants: vec![SkinVariant {
@@ -336,12 +345,10 @@ pub fn import(tree: &Tree, id: &str) -> Result<Outcome, ImportError> {
     let read = read(tree)?;
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
-    let manifest_json =
-        serde_json::to_vec(&manifest(id, &read, &source, skin_base)).map_err(|e| {
-            ImportError::Xml {
-                file: MANIFEST.to_owned(),
-                detail: e.to_string(),
-            }
+    let manifest_json = serde_json::to_vec(&manifest(tree, id, &read, &source, skin_base))
+        .map_err(|e| ImportError::Xml {
+            file: MANIFEST.to_owned(),
+            detail: e.to_string(),
         })?;
     let mut files: BTreeMap<String, Vec<u8>> = read
         .icons

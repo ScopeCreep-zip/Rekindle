@@ -55,11 +55,10 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
 
     let mut read = Read::new(Front::TeamSpeak3);
     if let Some(package) = tree.get(&format!("{root}package.ini")) {
-        let name = std::str::from_utf8(package).ok().and_then(|t| {
-            ini(t)
-                .into_iter()
-                .find_map(|(_, k, v)| (k == "Name").then_some(v))
-        });
+        let entries = std::str::from_utf8(package).map(ini).unwrap_or_default();
+        let value = |key: &str| entries.iter().find(|(_, k, _)| k == key).map(|(.., v)| v);
+        let name = value("Name").cloned();
+        read.authors.extend(value("Author").cloned());
         read.files.push(format!(
             "{root}package.ini Name = {}",
             name.unwrap_or_default()

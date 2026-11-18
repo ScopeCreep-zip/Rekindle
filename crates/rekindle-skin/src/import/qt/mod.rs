@@ -29,7 +29,7 @@ use rekindle_types::dto::skin::{
 };
 
 use super::pidgin::{ColourRow, DroppedItem};
-use super::{base_of, conclude, tree_hash, walk, ImportError, Outcome, Tree};
+use super::{base_of, conclude, credits, tree_hash, walk, ImportError, Outcome, Tree};
 use crate::images;
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
@@ -76,6 +76,9 @@ pub struct Read {
     /// (SVG file, reference) for every image href the resolver refused.
     pub refused: Vec<(String, String)>,
     pub dropped: Vec<DroppedItem>,
+    /// The authors the pack states: a TeamSpeak 3 `package.ini` `Author`
+    /// (Mumble's `theme.ini` names none).
+    pub authors: Vec<String>,
 }
 
 impl Read {
@@ -88,6 +91,7 @@ impl Read {
             icons: BTreeMap::new(),
             refused: Vec::new(),
             dropped: Vec::new(),
+            authors: Vec::new(),
         }
     }
 
@@ -197,7 +201,7 @@ fn ini(text: &str) -> Vec<(String, String, String)> {
     out
 }
 
-fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
+fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
     let what = read.front.name();
     SkinManifest {
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
@@ -212,7 +216,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
             format: read.front.format().to_owned(),
             hash: source.to_owned(),
         }),
-        credits: None,
+        credits: Some(credits::build(tree, &read.authors, &[], None, None)),
         author: None,
         signature: None,
         variants: vec![SkinVariant {
@@ -235,7 +239,7 @@ fn package(tree: &Tree, read: &Read, id: &str) -> Result<Outcome, ImportError> {
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
     let manifest_json =
-        serde_json::to_vec(&manifest(id, read, &source, skin_base)).map_err(|e| {
+        serde_json::to_vec(&manifest(tree, id, read, &source, skin_base)).map_err(|e| {
             ImportError::Format {
                 file: MANIFEST.to_owned(),
                 detail: e.to_string(),

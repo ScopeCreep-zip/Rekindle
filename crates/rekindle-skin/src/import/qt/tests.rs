@@ -215,3 +215,18 @@ fn text_dtds_and_stylesheets_are_refused_by_the_prescan() {
     let css = br#"<?xml-stylesheet href="file:///etc/x.css"?><svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>"#;
     assert!(svg::parse(css).unwrap_err().contains("xml-stylesheet"));
 }
+
+#[test]
+fn a_teamspeak_package_ini_author_is_credited() {
+    let mut tree = ts3_tree();
+    tree.insert(
+        "package.ini".into(),
+        b"Name = Synthetic\nType = Style\nAuthor = Ann\n".to_vec(),
+    );
+    let read = teamspeak::read(&tree).unwrap();
+    let m = manifest(&tree, "synth-ts3", &read, "", SkinBase::Dark);
+    assert_eq!(m.credits.expect("credits").authors, vec!["Ann".to_owned()]);
+    let mumble = mumble::read(&mumble_tree()).unwrap();
+    let m = manifest(&mumble_tree(), "synth-mumble", &mumble, "", SkinBase::Dark);
+    assert!(m.credits.expect("credits").authors.is_empty());
+}
