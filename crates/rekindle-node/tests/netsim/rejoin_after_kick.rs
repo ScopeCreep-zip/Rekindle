@@ -40,10 +40,24 @@ async fn all_list(community: &Community, who: &str, nodes: &[usize]) -> bool {
     .await
 }
 
+/// Bea's pseudonym and her first member record, which never held her
+/// first `MemberJoined`.
+struct Rejoined {
+    bea: String,
+    first_record: String,
+}
+
 /// Node 1 (bea) joins with its first `MemberJoined` never landing on its op
 /// log, is kicked by node 0, and re-joins through a fresh invite; returns
-/// bea's pseudonym. Bea's first member record stays refusing writes.
-async fn kick_and_rejoin(community: &mut Community) -> String {
+/// bea's pseudonym. Bea's first member record stays refusing writes. A
+/// node in `apart` is partitioned from nodes 0 and 1 from before bea's
+/// first join until after her re-join (the caller heals it).
+async fn kick_and_rejoin(community: &mut Community, apart: &[usize]) -> Rejoined {
+    let partition = || Fault::Partition {
+        a: apart.to_vec(),
+        b: vec![0, 1],
+    };
+    community.sim.fault(partition());
     // Bea's first join: the inviter answers no call, so the bootstrap
     // exchange times out, and its op log refuses the `MemberJoined`.
     let link = community.invite().await;
@@ -84,8 +98,9 @@ async fn kick_and_rejoin(community: &mut Community) -> String {
     community.sim.fault(Fault::Heal);
     community.sim.fault(Fault::WriteFails {
         node: 1,
-        of: Writes::Record(first_record),
+        of: Writes::Record(first_record.clone()),
     });
+    community.sim.fault(partition());
 
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
@@ -122,13 +137,13 @@ async fn kick_and_rejoin(community: &mut Community) -> String {
         all_list(community, &bea, &[0, 1]).await,
         "the inviter and the re-joiner list bea again"
     );
-    bea
+    Rejoined { bea, first_record }
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_kicked_member_rejoins_and_posts() {
     let mut community = Community::create(2, 331).await;
-    kick_and_rejoin(&mut community).await;
+    kick_and_rejoin(&mut community, &[]).await;
     community
         .post(1, "back after the kick")
         .await
@@ -161,7 +176,7 @@ fn roster(community: &Community, i: usize) -> (Vec<PseudonymKey>, Vec<PseudonymK
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_member_joining_after_a_kick_and_rejoin_sees_the_rejoiner() {
     let mut community = Community::create(3, 337).await;
-    let bea = kick_and_rejoin(&mut community).await;
+    let bea = kick_and_rejoin(&mut community, &[]).await.bea;
     let owner = community.pseudonym(0).await;
 
     community.join(2).await;
@@ -248,7 +263,7 @@ async fn restart(community: &Community, nodes: &[usize]) {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_restart_after_a_kick_and_rejoin_keeps_the_rejoiner() {
     let mut community = Community::create(3, 347).await;
-    let bea = kick_and_rejoin(&mut community).await;
+    let bea = kick_and_rejoin(&mut community, &[]).await.bea;
     community.join(2).await;
     assert!(
         all_list(&community, &bea, &[0, 1, 2]).await,
@@ -282,4 +297,58 @@ async fn a_restart_after_a_kick_and_rejoin_keeps_the_rejoiner() {
             "node {i} reads the re-joiner's post after its restart"
         );
     }
+}
+
+/// A member that joined before bea and was cut off from her first join
+/// until after her re-join never held bea's seq 0: her first record never
+/// held it, and the gossip of it, of the kick and of the re-join all went
+/// by while it was partitioned. Once healed, the ops it then receives
+/// (the re-join `MemberJoined`, the kick) cite seq 0 at bea's first record,
+/// and its rebuild (`rebuild_ops`) must find it where the re-join mirrored
+/// it, at her fresh record (ADR 0011: an `OpRef` is a locator). It lists
+/// bea, not departed, and reads her next post, as a Matrix server back
+/// from a netsplit fetches the missing events of a re-joined member from
+/// any server in the room (`/get_missing_events`).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_member_cut_off_during_a_kick_and_rejoin_sees_the_rejoiner() {
+    let mut community = Community::create(3, 353).await;
+    community.join(2).await;
+    let rejoined = kick_and_rejoin(&mut community, &[2]).await;
+    let bea = rejoined.bea;
+    // The partition ends; bea's first record keeps refusing writes, put
+    // back before any timer runs, so seq 0 never lands there.
+    community.sim.fault(Fault::Heal);
+    community.sim.fault(Fault::WriteFails {
+        node: 1,
+        of: Writes::Record(rejoined.first_record),
+    });
+
+    assert!(
+        all_list(&community, &bea, &[0, 1, 2]).await,
+        "the member cut off lists bea once healed"
+    );
+    let bea_key = PseudonymKey::from_hex_lossy(&bea);
+    let merged = eventually(&community.sim, LIMIT, || async {
+        roster(&community, 2) == roster(&community, 0)
+    })
+    .await;
+    assert!(
+        merged,
+        "the member cut off merges the owner's roster: {:?} vs {:?}",
+        roster(&community, 2),
+        roster(&community, 0)
+    );
+    let departed = (community.nodes[2].host.governance())
+        .governance_state(&community.anchor)
+        .is_some_and(|state| state.is_departed(&bea_key));
+    assert!(!departed, "bea is not departed for the member cut off");
+
+    community
+        .post(1, "seen after the netsplit")
+        .await
+        .expect("the re-joiner posts");
+    assert!(
+        community.reads(2, "seen after the netsplit", LIMIT).await,
+        "the member cut off reads the re-joiner's post"
+    );
 }

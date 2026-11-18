@@ -310,7 +310,9 @@ pub fn fates(set: &VerifiedSet, outcome: &MergeOutcome) -> Vec<OpVerdict> {
 }
 
 /// Re-read `community_id`'s op set from the op store, fetch every missing
-/// dep by its `OpRef` (until a pass fetches nothing new), and merge under
+/// dep by its `OpRef`, at the cited record and then at its author's other
+/// records ([`locators`](crate::op_walk::locators)), until a pass fetches
+/// nothing new, and merge under
 /// the pinned cert. Records each op's fate. Returns the merged state.
 ///
 /// # Errors
@@ -323,18 +325,24 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let mut held = deps.governance_ops(community_id).await?;
-    let mut tried: BTreeSet<OpHash> = BTreeSet::new();
+    let mut tried: BTreeSet<(OpHash, String)> = BTreeSet::new();
     let logs = WalkLogCache::default();
     loop {
         let set = verify_held_with(deps, community_id, &held);
-        let wanted: Vec<OpRef> = set
-            .missing
-            .iter()
-            .filter(|r| tried.insert(r.op_hash))
-            .cloned()
+        // Each missing dep at its cited record and at every other record
+        // of its author we hold an op from, as the join walk looks
+        // (`op_walk::locators`): a re-joiner's earlier ops are cited at
+        // its first record, which may never have held them.
+        let wanted: Vec<OpRef> = crate::op_walk::locators(&set.missing, &held)
+            .into_iter()
+            .filter(|r| tried.insert((r.op_hash, r.author_record.clone())))
             .collect();
         let mut fetched = false;
         for op_ref in wanted {
+            // Two locators of one op may both answer.
+            if held.iter().any(|op| op.hash == op_ref.op_hash) {
+                continue;
+            }
             let Some(op) = fetch_held(deps, &op_ref, &logs).await? else {
                 continue;
             };

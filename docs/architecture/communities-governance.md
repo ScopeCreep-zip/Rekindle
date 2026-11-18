@@ -194,7 +194,7 @@ The decrypted `InviteSecrets`:
 
 ```rust
 struct InviteSecrets {
-    governance_key: TypedKey,
+    anchor: TypedKey,
     registry_key: TypedKey,
     slot_seed: [u8; 32],                         // For deriving slot keypairs
     channel_keys: Vec<ChannelKeyInfo>,
@@ -263,7 +263,7 @@ registry + governance records announced via
 ```rust
 GovernanceEntry::SegmentAdded {
     segment_index: u16,
-    governance_key: TypedKey,
+    anchor: TypedKey,
     registry_key: TypedKey,
     slot_range: (u16, u16),  // member slot range this segment covers
     lamport: u64,
