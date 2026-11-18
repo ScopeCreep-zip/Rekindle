@@ -18,7 +18,7 @@ const EDITED = "edited by the walk";
 const THREAD = "walk-thread";
 
 /** Switch to the open community window, or open it from the buddy list. */
-async function inCommunity(b: Browser, name: string): Promise<void> {
+export async function inCommunity(b: Browser, name: string): Promise<void> {
   const open = (await b.getWindowHandles()).find((h) => h.startsWith("community-"));
   if (open) {
     await b.switchToWindow(open);
@@ -32,7 +32,7 @@ async function inCommunity(b: Browser, name: string): Promise<void> {
   await shown(b, ".community-sidebar", NET_WAIT_MS);
 }
 
-async function contextMenu(b: Browser, el: Awaited<ReturnType<Browser["$"]>>, item: string): Promise<void> {
+export async function contextMenu(b: Browser, el: Awaited<ReturnType<Browser["$"]>>, item: string): Promise<void> {
   await b.execute((node: HTMLElement) => {
     const r = node.getBoundingClientRect();
     node.dispatchEvent(
@@ -65,7 +65,7 @@ async function msgAction(b: Browser, text: string, label: string): Promise<void>
   await press(b, btn);
 }
 
-async function openCommunitySettings(b: Browser, tab: string): Promise<void> {
+export async function openCommunitySettings(b: Browser, tab: string): Promise<void> {
   if (!(await present(b, ".modal-container .form-tabs"))) {
     await (await shown(b, '[title="Community Settings"]')).click();
     await shown(b, ".modal-container .form-tabs");
@@ -74,7 +74,7 @@ async function openCommunitySettings(b: Browser, tab: string): Promise<void> {
   await waitUntil(async () => (await (await b.$(".modal-container .form-tab-active")).getText()).trim() === tab, WAIT_MS, `${tab} tab not active`);
 }
 
-async function closeCommunityModal(b: Browser): Promise<void> {
+export async function closeCommunityModal(b: Browser): Promise<void> {
   if (await present(b, ".modal-container .modal-close-btn")) {
     await (await b.$(".modal-container .modal-close-btn")).click();
     await gone(b, ".modal-container");

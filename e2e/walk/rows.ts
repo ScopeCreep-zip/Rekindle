@@ -588,6 +588,7 @@ export async function allRows(): Promise<Row[]> {
   const { SETTINGS_ROWS } = await import("./rows-settings.ts");
   const { COMMUNITY_ROWS } = await import("./rows-community.ts");
   const { PEER_ROWS } = await import("./rows-peer.ts");
+  const { PEER_COMMUNITY_ROWS } = await import("./rows-peer-community.ts");
   const at = BASE_ROWS.findIndex((r) => r.id === SPLICE_AFTER) + 1;
-  return [...BASE_ROWS.slice(0, at), ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...BASE_ROWS.slice(at)];
+  return [...BASE_ROWS.slice(0, at), ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...PEER_COMMUNITY_ROWS, ...BASE_ROWS.slice(at)];
 }

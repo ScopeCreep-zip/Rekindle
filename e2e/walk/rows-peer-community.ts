@@ -1,0 +1,178 @@
+// Plan E7.13: the community [PEER] rows (B61, M82-M88, M2) of
+// .claude/plans/standards-remediation/evidence/app-journeys-2026-11-17.md.
+// The peer (rows-peer.ts PEER0) joins the walk's community by invite; the
+// walk's identity, its owner, moderates it from the member menu
+// (MemberList.tsx:165-300); then the walk joins a community the peer creates,
+// from the community window's sidebar (CommunitySidebar.tsx:37).
+
+import type { Browser } from "webdriverio";
+import { NET_WAIT_MS, Skip, byText, gone, present, press, resolveIntent, shown, typeInto, waitUntil } from "./helpers.ts";
+import { inBuddy } from "./nav.ts";
+import { closeCommunityModal, contextMenu, inCommunity, openCommunitySettings } from "./rows-community.ts";
+import { needPeer } from "./rows-peer.ts";
+import type { Row } from "./rows.ts";
+
+type El = Awaited<ReturnType<Browser["$"]>>;
+
+const PEER_COMMUNITY = "walk-peer-community";
+
+/** A new invite link from the open community window's settings (row CS25's steps). */
+async function createInvite(b: Browser, passphrase: string): Promise<string> {
+  await openCommunitySettings(b, "Invites");
+  const before = (await b.$$(".invite-link-display")).length;
+  await (await shown(b, ".modal-container .settings-content .form-btn-primary")).click();
+  await (await byText(b, ".modal-container .form-btn-primary", "Create")).click();
+  await resolveIntent(b, { passphrase, appearMs: 3000 });
+  await waitUntil(async () => (await b.$$(".invite-link-display")).length > before, NET_WAIT_MS, "no new invite link shown");
+  const links = await b.$$(".invite-link-display");
+  const link = (await links[links.length - 1].getText()).trim();
+  await closeCommunityModal(b);
+  return link;
+}
+
+/** Submit an invite in the open Join Community modal (JoinCommunityModal.tsx). */
+async function submitJoin(b: Browser, link: string, passphrase: string): Promise<void> {
+  await typeInto(await shown(b, 'input[placeholder="rekindle://invite/..."]'), link);
+  await (await b.$('.modal-container button[type="submit"]')).click();
+  await resolveIntent(b, { passphrase, appearMs: 3000 });
+  await gone(b, 'input[placeholder="rekindle://invite/..."]', NET_WAIT_MS);
+}
+
+/** The peer joins the walk's community from its buddy list (B61's steps). */
+async function peerJoins(b: Browser, walkPass: string, community: string): Promise<void> {
+  const p = needPeer();
+  await inCommunity(b, community);
+  const link = await createInvite(b, walkPass);
+  await inBuddy(p.b);
+  await (await shown(p.b, '.buddy-tab[title^="Communities"]')).click();
+  await (await shown(p.b, '[aria-label="Join Community"]')).click();
+  await submitJoin(p.b, link, p.s.passphrase);
+  await byText(p.b, ".community-item", community, NET_WAIT_MS);
+}
+
+async function peerMember(b: Browser): Promise<El> {
+  if (!(await present(b, ".member-item"))) await (await shown(b, '[aria-label="Show members panel"]')).click();
+  return byText(b, ".member-item", needPeer().s.displayName, NET_WAIT_MS);
+}
+
+function memberListed(b: Browser): Promise<boolean> {
+  return b.$$(".member-item").then(async (items) => {
+    for (const i of items) if ((await i.getText()).includes(needPeer().s.displayName)) return true;
+    return false;
+  });
+}
+
+/** Open the peer's member menu, a submenu (Kobalte SubTrigger) in it, and one of its items. */
+async function subItem(b: Browser, trigger: string, item: string): Promise<void> {
+  await b.execute((node: HTMLElement) => {
+    const r = node.getBoundingClientRect();
+    node.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.x + 5, clientY: r.y + 5 }));
+  }, (await peerMember(b)) as unknown as HTMLElement);
+  await shown(b, ".context-menu");
+  await press(b, await byText(b, ".context-menu .context-menu-item", trigger));
+  await press(b, await byText(b, ".context-menu .context-menu-item", item));
+}
+
+export const PEER_COMMUNITY_ROWS: Row[] = [
+  {
+    id: "B61",
+    title: "Join community by invite (peer, buddy list)",
+    async run({ b, s, shot }) {
+      await peerJoins(b, s.passphrase, s.communityName);
+      await needPeer().b.saveScreenshot("e2e/walk/out/B61-peer.png");
+      await peerMember(b);
+      await shot();
+      return "the walk's member list shows the peer";
+    },
+  },
+  {
+    id: "M82",
+    title: "Member menu > Manage roles (assign walk-role)",
+    async run({ b, s, shot }) {
+      await subItem(b, "Manage Roles", "walk-role");
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
+      await b.keys("Escape");
+      await waitUntil(async () => (await (await peerMember(b)).getText()).includes("walk-role"), NET_WAIT_MS, "the peer's member row shows no walk-role");
+      await shot();
+    },
+  },
+  {
+    id: "M83",
+    title: "Member menu > Timeout 5 minutes",
+    async run({ b, s, shot }) {
+      await subItem(b, "Timeout", "5 minutes");
+      const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
+      await shot();
+      if (outcome !== "committed") throw new Error(`timeout intent ${outcome}`);
+    },
+  },
+  {
+    id: "M84",
+    title: "Member menu > Server mute",
+    async run() {
+      throw new Skip("Server Mute shows only for a member in a voice channel (MemberList.tsx:236); the peer joins none");
+    },
+  },
+  {
+    id: "M85",
+    title: "Member menu > Server deafen",
+    async run() {
+      throw new Skip("Server Deafen shows only for a member in a voice channel (MemberList.tsx:252); the peer joins none");
+    },
+  },
+  {
+    id: "M88",
+    title: "Member menu > Block, then Unblock",
+    async run({ b, s, shot }) {
+      await contextMenu(b, await peerMember(b), "Block");
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+      await contextMenu(b, await peerMember(b), "Unblock");
+      await shot();
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+    },
+  },
+  {
+    id: "M86",
+    title: "Member menu > Kick",
+    async run({ b, s, shot }) {
+      await contextMenu(b, await peerMember(b), "Kick Member");
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
+      await waitUntil(async () => !(await memberListed(b)), NET_WAIT_MS, "the kicked peer is still listed");
+      await shot();
+    },
+  },
+  {
+    id: "M87",
+    title: "Member menu > Ban (the peer rejoins first)",
+    async run({ b, s, shot }) {
+      await peerJoins(b, s.passphrase, s.communityName);
+      await contextMenu(b, await peerMember(b), "Ban Member");
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
+      await waitUntil(async () => !(await memberListed(b)), NET_WAIT_MS, "the banned peer is still listed");
+      await shot();
+    },
+  },
+  {
+    id: "M2",
+    title: "Sidebar: Join community (the peer's community)",
+    async run({ b, s, shot }) {
+      const p = needPeer();
+      await inBuddy(p.b);
+      await (await shown(p.b, '.buddy-tab[title^="Communities"]')).click();
+      await (await shown(p.b, '[aria-label="Create Community"]')).click();
+      await typeInto(await shown(p.b, 'input[placeholder="Community name..."]'), PEER_COMMUNITY);
+      await (await p.b.$('.modal-container button[type="submit"]')).click();
+      await resolveIntent(p.b, { passphrase: p.s.passphrase });
+      await inCommunity(p.b, PEER_COMMUNITY);
+      // A community window already open on the peer shows another community.
+      await (await byText(p.b, ".community-sidebar .community-item", PEER_COMMUNITY, NET_WAIT_MS)).click();
+      const link = await createInvite(p.b, p.s.passphrase);
+      await inCommunity(b, s.communityName);
+      await (await shown(b, '[title="Join Community"]')).click();
+      await submitJoin(b, link, s.passphrase);
+      await byText(b, ".community-sidebar", PEER_COMMUNITY, NET_WAIT_MS);
+      await shot();
+      return "the walk's sidebar lists the peer's community";
+    },
+  },
+];

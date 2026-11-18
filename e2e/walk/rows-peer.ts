@@ -33,7 +33,7 @@ export async function renewPeerSession(): Promise<void> {
   peer = { ...peer, b: await renewSession(peer.app, peer.b) };
 }
 
-function needPeer(): Peer {
+export function needPeer(): Peer {
   if (!peer) throw new Skip("no peer: PEER0 did not start one");
   return peer;
 }
