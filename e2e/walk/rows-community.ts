@@ -104,8 +104,17 @@ export async function openCommunitySettings(b: Browser, tab: string): Promise<vo
 
 export async function closeCommunityModal(b: Browser): Promise<void> {
   if (await present(b, ".modal-container .modal-close-btn")) {
-    await (await b.$(".modal-container .modal-close-btn")).click();
-    await gone(b, ".modal-container");
+    await (await shown(b, ".modal-container .modal-close-btn")).click();
+    await gone(b, ".modal-container").catch(async (e: Error) => {
+      // Name what is still open (walk 20 M87: four close buttons matched).
+      const open = await b.execute(() =>
+        Array.from(document.querySelectorAll(".modal-container"))
+          .filter((m) => (m as HTMLElement).offsetParent !== null)
+          .map((m) => m.querySelector("h2, h3, .modal-title")?.textContent?.trim() ?? "(untitled)")
+          .join(" | "),
+      );
+      throw new Error(`${e.message} (open: ${open})`);
+    });
   }
 }
 

@@ -36,9 +36,9 @@ export async function shown(b: Browser, selector: string, timeout = WAIT_MS): Pr
   }
 }
 
+/** Once no match of `selector` is displayed (every match read, as `shown`). */
 export async function gone(b: Browser, selector: string, timeout = WAIT_MS): Promise<void> {
-  const el = await b.$(selector);
-  await el.waitForDisplayed({ timeout, reverse: true, timeoutMsg: `${selector} still displayed after ${timeout} ms` });
+  await waitUntil(async () => !(await present(b, selector)), timeout, `${selector} still displayed after ${timeout} ms`);
 }
 
 /**
