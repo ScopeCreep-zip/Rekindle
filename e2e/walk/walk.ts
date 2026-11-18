@@ -31,7 +31,7 @@ interface Result {
 
 function message(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
-  return text.split("\n")[0].slice(0, 300);
+  return text.split("\n")[0].slice(0, 2000);
 }
 
 async function screenshot(b: Browser, row: string): Promise<string | null> {
