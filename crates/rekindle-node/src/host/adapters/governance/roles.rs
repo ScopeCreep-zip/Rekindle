@@ -29,7 +29,7 @@ impl HostGovernance {
             name: role.name.clone(),
             color: role.color,
             permissions: role.permissions,
-            position: i32::try_from(role.position).unwrap_or(i32::MAX),
+            position: role.position,
             hoist: role.hoist,
             mentionable: role.mentionable,
             self_assignable: role.self_assignable,
@@ -39,9 +39,12 @@ impl HostGovernance {
 
     /// `(existing_role_ids, next_position)` for allocating a new role.
     ///
-    /// Next position is one past the highest in use, so a freshly
-    /// created role sorts to the bottom — matching the desktop.
-    pub(super) fn role_table_summary_impl(&self, community_id: &str) -> (Vec<u32>, i32) {
+    /// Next position is one past the highest in use below `u32::MAX`, so a
+    /// freshly created role sorts to the bottom of the ascending list.
+    /// `u32::MAX` is the Owner role's (`origin.rs`): no created role may
+    /// reach it, since `validate` admits a role only strictly below its
+    /// writer's highest position.
+    pub(super) fn role_table_summary_impl(&self, community_id: &str) -> (Vec<u32>, u32) {
         let Some(state) = self.governance_state_impl(community_id) else {
             return (Vec::new(), 0);
         };
@@ -54,9 +57,10 @@ impl HostGovernance {
         let next_position = state
             .roles
             .values()
-            .map(|r| i32::try_from(r.position).unwrap_or(i32::MAX))
+            .map(|r| r.position)
+            .filter(|position| *position < u32::MAX)
             .max()
-            .map_or(0, |max| max.saturating_add(1));
+            .map_or(0, |max| max.saturating_add(1).min(u32::MAX - 1));
         (ids, next_position)
     }
 }

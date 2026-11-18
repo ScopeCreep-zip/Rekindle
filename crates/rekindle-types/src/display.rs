@@ -156,7 +156,7 @@ pub struct RoleDisplay {
     pub name: String,
     pub color: u32,
     pub permissions: u64,
-    pub position: i32,
+    pub position: u32,
     /// Show members with this role in a separate sidebar group.
     pub hoist: bool,
     /// Whether `@role` pings everyone holding it.

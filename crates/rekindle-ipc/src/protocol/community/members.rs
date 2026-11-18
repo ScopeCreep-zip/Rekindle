@@ -34,7 +34,7 @@ pub enum MemberRequest {
         name: Option<String>,
         permissions: Option<u64>,
         color: Option<u32>,
-        position: Option<i32>,
+        position: Option<u32>,
         hoist: Option<bool>,
         mentionable: Option<bool>,
         self_assignable: Option<bool>,

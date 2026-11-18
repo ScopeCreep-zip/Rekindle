@@ -23,7 +23,7 @@ pub struct RoleDto {
         deserialize_with = "crate::serde_helpers::deserialize_u64_from_string_or_number"
     )]
     pub permissions: u64,
-    pub position: i32,
+    pub position: u32,
     pub hoist: bool,
     pub mentionable: bool,
     #[serde(default)]

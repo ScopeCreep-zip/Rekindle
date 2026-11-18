@@ -406,7 +406,7 @@ pub struct RoleDefinition {
     pub name: String,
     pub color: u32,
     pub permissions: u64,
-    pub position: i32,
+    pub position: u32,
     pub hoist: bool,
     pub mentionable: bool,
     pub self_assignable: bool,

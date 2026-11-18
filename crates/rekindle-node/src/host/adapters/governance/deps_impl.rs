@@ -499,7 +499,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.role_current_definition_impl(community_id, role_id)
     }
 
-    fn role_table_summary(&self, community_id: &str) -> (Vec<u32>, i32) {
+    fn role_table_summary(&self, community_id: &str) -> (Vec<u32>, u32) {
         self.role_table_summary_impl(community_id)
     }
 

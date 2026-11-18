@@ -277,7 +277,7 @@ fn roles_of(community_id: &str, rows: &[RoleRow]) -> Vec<RoleDefinition> {
             name: r.name.clone(),
             color: r.color,
             permissions: r.permissions,
-            position: i32::try_from(r.position).unwrap_or(i32::MAX),
+            position: r.position,
             hoist: r.hoist,
             mentionable: r.mentionable,
             self_assignable: r.self_assignable,

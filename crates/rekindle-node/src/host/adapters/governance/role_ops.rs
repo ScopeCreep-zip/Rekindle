@@ -98,7 +98,7 @@ pub fn role_displays(governance: &GovernanceState) -> Vec<RoleDisplay> {
             name: role.name.clone(),
             color: role.color,
             permissions: role.permissions,
-            position: i32::try_from(role.position).unwrap_or(i32::MAX),
+            position: role.position,
             hoist: role.hoist,
             mentionable: role.mentionable,
             self_assignable: role.self_assignable,

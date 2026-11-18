@@ -160,7 +160,7 @@ pub struct CommunityRoleView {
     /// The permission bits in decimal: a JSON number loses the bits above
     /// 2^53.
     pub permissions: String,
-    pub position: i32,
+    pub position: u32,
     pub hoist: bool,
     pub mentionable: bool,
     pub self_assignable: bool,

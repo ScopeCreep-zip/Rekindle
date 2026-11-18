@@ -540,7 +540,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// Return `(existing_ids, next_position)` for `create_role` —
     /// used to allocate a unique random role id and assign the next
     /// position slot.
-    fn role_table_summary(&self, community_id: &str) -> (Vec<u32>, i32);
+    fn role_table_summary(&self, community_id: &str) -> (Vec<u32>, u32);
 
     /// Insert a new role into AppState + DB. The `RoleSnapshotInsert`
     /// is fully populated; adapter mirrors into `community.roles` (sort

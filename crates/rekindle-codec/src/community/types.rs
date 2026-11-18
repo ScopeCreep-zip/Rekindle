@@ -98,7 +98,7 @@ pub struct RoleEntryV2 {
     pub color: u32,
     pub permissions: u64,
     /// Role hierarchy position. Higher = more authority.
-    pub position: i32,
+    pub position: u32,
     /// Whether to display this role separately in the member list.
     #[serde(default)]
     pub hoist: bool,

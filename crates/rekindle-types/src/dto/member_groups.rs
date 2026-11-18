@@ -14,7 +14,7 @@ use crate::presence::SessionStatus;
 pub struct GroupRole<'a> {
     pub id: u32,
     pub name: &'a str,
-    pub position: i32,
+    pub position: u32,
     pub hoist: bool,
 }
 
@@ -87,7 +87,7 @@ mod tests {
         }
     }
 
-    fn role(id: u32, name: &'static str, position: i32, hoist: bool) -> GroupRole<'static> {
+    fn role(id: u32, name: &'static str, position: u32, hoist: bool) -> GroupRole<'static> {
         GroupRole {
             id,
             name,

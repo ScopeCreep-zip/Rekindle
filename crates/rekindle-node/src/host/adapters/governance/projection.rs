@@ -114,7 +114,7 @@ fn project_roles_and_categories(cs: &mut CommunityState, gov: &GovernanceState) 
             name: r.name.clone(),
             color: r.color,
             permissions: r.permissions,
-            position: r.position.cast_signed(),
+            position: r.position,
             hoist: r.hoist,
             mentionable: r.mentionable,
             self_assignable: r.self_assignable,
@@ -333,8 +333,10 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
 #[cfg(test)]
 mod tests {
     use rekindle_governance::op::OpStamp;
-    use rekindle_governance::state::{GovernanceState, MemberState};
-    use rekindle_types::id::PseudonymKey;
+    use rekindle_governance::state::{GovernanceState, MemberState, RoleState};
+    use rekindle_types::id::{PseudonymKey, RoleId};
+
+    use crate::host::community::state::{display_role_name, CommunityState};
 
     fn member(gov: &mut GovernanceState, b: u8) {
         gov.members.insert(
@@ -370,5 +372,47 @@ mod tests {
         assert!(departed.contains(&hex(4)), "banned");
         assert!(!departed.contains(&hex(5)), "re-joined");
         assert!(!departed.contains(&hex(9)), "never joined");
+    }
+
+    fn role(gov: &mut GovernanceState, id: u8, name: &str, position: u32) {
+        gov.roles.insert(
+            RoleId([id; 16]),
+            RoleState {
+                name: name.into(),
+                permissions: 0,
+                position,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+                stamp: OpStamp::MIN,
+            },
+        );
+    }
+
+    /// The Owner role's position is `u32::MAX` (`origin.rs`): the projection
+    /// keeps it above every role, so the owner outranks a member holding
+    /// any other role, or none (plan E7.13, walk 19 c: it was cast to −1).
+    #[test]
+    fn the_owner_role_stays_above_every_role() {
+        let mut gov = GovernanceState::default();
+        role(&mut gov, 0, "@everyone", 0);
+        role(&mut gov, 1, "Mods", 5);
+        role(&mut gov, 2, "Top", 1 << 31);
+        role(&mut gov, 0xFF, "Owner", u32::MAX);
+        let mut cs = CommunityState::default();
+        super::project_roles_and_categories(&mut cs, &gov);
+        let owner = cs.roles.last().expect("roles projected");
+        assert_eq!(owner.name, "Owner", "ascending order ends with the Owner");
+        for other in cs.roles.iter().filter(|r| r.name != "Owner") {
+            assert!(
+                other.position < owner.position,
+                "{} ranks below",
+                other.name
+            );
+        }
+        let ids: Vec<u32> = cs.roles.iter().map(|r| r.id).collect();
+        assert_eq!(display_role_name(&ids, &cs.roles), "Owner");
     }
 }

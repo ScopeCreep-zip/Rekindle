@@ -68,7 +68,7 @@ pub async fn edit_role(
     name: Option<String>,
     color: Option<u32>,
     permissions: Option<u64>,
-    position: Option<i32>,
+    position: Option<u32>,
     hoist: Option<bool>,
     mentionable: Option<bool>,
     self_assignable: Option<bool>,
