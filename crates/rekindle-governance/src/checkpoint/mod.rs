@@ -2,6 +2,7 @@
 //! starts from, never authoritative.
 
 mod body;
+mod chain;
 mod cut;
 pub mod directory;
 mod electorate;
@@ -11,6 +12,7 @@ mod shape;
 mod snapshot;
 
 pub use body::Replay;
+pub use chain::{endorsed_link, pages_match, EndorsedLink, SignedEndorsement};
 pub use cut::{
     canonical_cut, causal_past, state_preimage, state_root, state_root_of, CutIndex, CutOp,
 };
