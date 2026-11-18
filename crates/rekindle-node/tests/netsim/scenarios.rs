@@ -24,7 +24,7 @@ use crate::harness::{eventually, Community};
 use crate::moderation::listed;
 
 /// `bytes` as a `VLD0:` key text, as Veilid prints a public or opaque key.
-fn vld0(bytes: &[u8; 32]) -> String {
+pub(crate) fn vld0(bytes: &[u8; 32]) -> String {
     format!(
         "VLD0:{}",
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
@@ -33,7 +33,7 @@ fn vld0(bytes: &[u8; 32]) -> String {
 
 /// `op` signed by `key` over the anchor-bound signing bytes, encoded as the
 /// op log and `governanceOp @74` carry it, with its hash.
-fn signed(anchor: &str, key: &SigningKey, mut op: GovernanceOp) -> (Vec<u8>, OpHash) {
+pub(crate) fn signed(anchor: &str, key: &SigningKey, mut op: GovernanceOp) -> (Vec<u8>, OpHash) {
     let unsigned = op_unsigned_bytes(&op);
     op.sig = key.sign(&op_signing_bytes(anchor, &unsigned)).to_bytes();
     (

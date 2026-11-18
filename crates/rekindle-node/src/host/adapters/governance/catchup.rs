@@ -217,3 +217,7 @@ fn best_peer_for<'a>(
     }
     Some(route_blob)
 }
+
+#[cfg(test)]
+#[path = "catchup_tests.rs"]
+mod tests;
