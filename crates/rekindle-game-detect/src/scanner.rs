@@ -36,7 +36,7 @@ impl GameDetector {
             database,
             scan_interval,
             current_game: None,
-            system: sysinfo::System::new(),
+            system: crate::platform::process_table(),
             clock,
         }
     }

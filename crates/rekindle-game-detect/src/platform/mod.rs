@@ -25,11 +25,27 @@ pub mod macos;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
+/// A process table for one scan. `sysinfo` keeps a `/proc` file open per
+/// indexed process and thread on Linux, up to half `RLIMIT_NOFILE`, to
+/// speed up later refreshes (`sysinfo` 0.32.1 `lib.rs:113-118`). A scan
+/// here builds a fresh table each time, so that cache buys nothing, and it
+/// pushed the app past 1,024 descriptors within seconds of start (1,195
+/// thread and 362 process stat files on the Linux machine, 2026-11-17),
+/// where the vendored libdbus's `select()`-based `_dbus_poll` overflows its
+/// stack `fd_set` and the process aborts ("stack smashing detected"). The
+/// limit is set to 0 once, before the first refresh, as `sysinfo` requires.
+pub(crate) fn process_table() -> sysinfo::System {
+    static NO_HELD_FILES: std::sync::Once = std::sync::Once::new();
+    NO_HELD_FILES.call_once(|| {
+        // `false` off Linux, where nothing is held; nothing to report.
+        let _ = sysinfo::set_open_files_limit(0);
+    });
+    sysinfo::System::new()
+}
+
 /// List all running process names on the current platform.
 pub fn list_process_names() -> Vec<String> {
-    use sysinfo::System;
-
-    let mut sys = System::new();
+    let mut sys = process_table();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     sys.processes()
@@ -49,9 +65,7 @@ pub fn list_process_names() -> Vec<String> {
 /// (the Windows copy credited `CreateToolhelp32Snapshot`, which
 /// `sysinfo` uses internally but this code does not name).
 pub fn get_process_path(pid: u32) -> Option<String> {
-    use sysinfo::System;
-
-    let mut sys = System::new();
+    let mut sys = process_table();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     let sysinfo_pid = sysinfo::Pid::from_u32(pid);
     sys.process(sysinfo_pid)
@@ -64,9 +78,7 @@ pub fn get_process_path(pid: u32) -> Option<String> {
 /// than [`list_process_names`] alone. Same story as
 /// [`get_process_path`] — one cross-platform implementation, not two.
 pub fn list_processes_with_paths() -> Vec<(String, Option<String>)> {
-    use sysinfo::System;
-
-    let mut sys = System::new();
+    let mut sys = process_table();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     sys.processes()
         .values()
@@ -189,6 +201,35 @@ mod tests {
         assert_eq!(
             alternate_lookup_names("cs2", None, &[]),
             vec!["cs2.exe".to_string()]
+        );
+    }
+
+    /// A scan's table holds no `/proc/<pid>/stat` or task stat file once
+    /// its refresh returns: held files are what pushed the app past 1,024
+    /// descriptors into the vendored libdbus's `select()` overflow.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_scan_holds_no_proc_stat_files() {
+        fn held_stat_files() -> usize {
+            std::fs::read_dir("/proc/self/fd")
+                .map(|dir| {
+                    dir.filter_map(Result::ok)
+                        .filter_map(|e| std::fs::read_link(e.path()).ok())
+                        .filter(|target| {
+                            let t = target.to_string_lossy();
+                            t.starts_with("/proc/") && t.ends_with("/stat")
+                        })
+                        .count()
+                })
+                .unwrap_or(0)
+        }
+        let mut sys = super::process_table();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        assert!(!sys.processes().is_empty(), "the scan found processes");
+        assert_eq!(
+            held_stat_files(),
+            0,
+            "the table keeps /proc stat files open"
         );
     }
 }
