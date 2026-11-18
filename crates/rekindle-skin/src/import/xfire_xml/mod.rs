@@ -13,8 +13,12 @@
 //!   `nine-slice`, each piece shifted by its `Images` colour and keyed
 //!   (`#FF00FF` → alpha). Xfire draws one frame for every window; the
 //!   chat window's is the one whose pieces are typed `TopLeft` … in order.
-//! * Licence: a tree whose `Info.xml` names [`XFIRE_AUTHOR`] as its
-//!   original author is Xfire's own art, usable under the owner's
+//! * Classic v3 ([`v3`]): lower-case files and attributes in either case,
+//!   attribute-form colours, every component in `xfirecomponents.xml`.
+//!   Files and attributes are matched ASCII-case-insensitively throughout.
+//! * Licence ([`super::credit`]): a tree whose `Info.xml` names
+//!   [`XFIRE_AUTHOR`] as its original author, or that an [`XfireCredit`]
+//!   proves Xfire's, is Xfire's own art, usable under the owner's
 //!   2026-10-15 ruling (Xfire is defunct); any other author's is
 //!   third-party work published without a licence. Both say Rekindle's MIT
 //!   licence does not cover the pack.
@@ -27,6 +31,7 @@ pub mod bitmap;
 pub mod colours;
 pub mod controls;
 mod notice;
+pub mod v3;
 
 use std::collections::BTreeMap;
 
@@ -36,14 +41,16 @@ use rekindle_types::dto::skin::{
     SkinVariant, TokenValue, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
 };
 
+use super::credit::{Authorship, XfireCredit};
 use super::tree::{self, Node};
 use super::walk::{self, settle};
+use super::xfire_ini::lookup;
 use super::{tree_hash, Control, ImportError, Imported, Tree};
 use crate::colour;
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
 use crate::registry::Base;
-use colours::{absolute, parse_rgba, target, Target};
+use colours::{absolute, parse_attrs, parse_rgba, target_in, Target};
 
 /// The `source.format` of an imported package.
 pub const XFIRE_XML_FORMAT: &str = "xfire-xml";
@@ -75,14 +82,32 @@ pub struct Read {
     /// The painted control slots ([`controls`]) and what they kept.
     pub controls: Vec<Control>,
     pub tally: controls::StateTally,
+    /// Which layout the tree is.
+    pub layout: Layout,
 }
 
+/// The two XML-era layouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    /// Symbiosis and Carbon Fiber: `Components/*.xml`, `RGBA()` colours.
+    Late,
+    /// Classic v3: [`v3::SOURCE`], attribute colours, v3's names.
+    ClassicV3,
+}
+
+impl Layout {
+    fn names(self) -> &'static [(&'static str, Target)] {
+        match self {
+            Self::Late => colours::NAMES,
+            Self::ClassicV3 => v3::NAMES,
+        }
+    }
+}
+
+/// A file of the tree, matched exactly, else ASCII-case-insensitively (a
+/// relative path only, as [`lookup`] checks).
 fn file<'t>(tree: &'t Tree, name: &str) -> Result<&'t [u8], ImportError> {
-    tree.get(name)
-        .map(Vec::as_slice)
-        .ok_or_else(|| ImportError::MissingFile {
-            file: name.to_owned(),
-        })
+    lookup(tree, name).map(|(_, bytes)| bytes)
 }
 
 fn xml(tree: &Tree, name: &str) -> Result<Node, ImportError> {
@@ -99,19 +124,55 @@ fn descendants<'a>(n: &'a Node, name: &str) -> Vec<&'a Node> {
 fn includes(skin: &Node) -> Vec<String> {
     descendants(skin, "Include")
         .into_iter()
-        .filter_map(|n| n.attr("File").map(str::to_owned))
+        .filter_map(|n| n.attr_ci("File").map(str::to_owned))
         .collect()
+}
+
+fn ends_with_ci(s: &str, suffix: &str) -> bool {
+    s.len() >= suffix.len()
+        && s.is_char_boundary(s.len() - suffix.len())
+        && s[s.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+}
+
+/// The theme's bitmaps: name to file.
+fn bitmaps(theme: &Node) -> BTreeMap<&str, &str> {
+    descendants(theme, "Bitmap")
+        .into_iter()
+        .filter_map(|b| b.attr_ci("Name").map(|n| (n, b.text.as_str())))
+        .collect()
+}
+
+/// The bitmap `name`, decoded and shifted by the colour `shift` (an
+/// undefined name is the identity, d1 §3.1).
+fn piece(
+    tree: &Tree,
+    bitmaps: &BTreeMap<&str, &str>,
+    colours: &[ColourRow],
+    name: &str,
+    shift: Option<&str>,
+) -> Result<RgbaImage, ImportError> {
+    let path = bitmaps.get(name).ok_or_else(|| ImportError::MissingFile {
+        file: format!("Bitmap {name}"),
+    })?;
+    let mut img = bitmap::decode(path, file(tree, path)?)?;
+    let by = shift
+        .and_then(|c| colours.iter().find(|r| r.name == c))
+        .map_or([0; 3], |r| r.value);
+    bitmap::shift(&mut img, by);
+    Ok(img)
 }
 
 fn read_colours(
     theme: &Node,
+    layout: Layout,
 ) -> Result<(Vec<ColourRow>, BTreeMap<String, TokenValue>), ImportError> {
     let mut rows = Vec::new();
     let mut tokens = BTreeMap::new();
     for c in descendants(theme, "Color") {
-        let name = c.attr("Name").unwrap_or_default().to_owned();
-        let value = parse_rgba(&name, &c.text)?;
-        let t = target(&name);
+        let name = c.attr_ci("Name").unwrap_or_default().to_owned();
+        let value = parse_attrs(&name, |k| c.attr_ci(k).map(str::to_owned))
+            .unwrap_or_else(|| parse_rgba(&name, &c.text))?;
+        let t = target_in(layout.names(), &name);
         if let Target::Token(id) = t {
             tokens.insert(id.to_owned(), walk::color(absolute(&name, &c.text, value)?));
         }
@@ -129,18 +190,21 @@ fn read_colours(
 fn nine_piece(components: &Node) -> Option<[(String, Option<String>); 9]> {
     let mut found: [Option<(String, Option<String>)>; 9] = Default::default();
     for images in descendants(components, "Images") {
-        if images.attr("State").is_some_and(|s| s != "Normal") {
+        if images
+            .attr_ci("State")
+            .is_some_and(|s| !s.eq_ignore_ascii_case("Normal"))
+        {
             continue;
         }
         for img in images.children_named("Image") {
             let Some(i) = img
-                .attr("Type")
-                .and_then(|t| bitmap::NINE.iter().position(|n| *n == t))
+                .attr_ci("Type")
+                .and_then(|t| bitmap::NINE.iter().position(|n| n.eq_ignore_ascii_case(t)))
             else {
                 continue;
             };
             if found[i].is_none() {
-                found[i] = Some((img.text.clone(), images.attr("Color").map(str::to_owned)));
+                found[i] = Some((img.text.clone(), images.attr_ci("Color").map(str::to_owned)));
             }
         }
         if found.iter().all(Option::is_some) {
@@ -154,32 +218,22 @@ fn read_frame(
     tree: &Tree,
     theme: &Node,
     colours: &[ColourRow],
+    layout: Layout,
 ) -> Result<Option<(RgbaImage, rekindle_types::dto::skin::Insets)>, ImportError> {
-    if !tree.contains_key(FRAME_SOURCE) {
+    let bitmaps = bitmaps(theme);
+    let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, colours, name, shift);
+    if layout == Layout::ClassicV3 {
+        return v3::frame(&xml(tree, v3::SOURCE)?, decode);
+    }
+    if lookup(tree, FRAME_SOURCE).is_err() {
         return Ok(None);
     }
     let Some(set) = nine_piece(&xml(tree, FRAME_SOURCE)?) else {
         return Ok(None);
     };
-    let bitmaps: BTreeMap<&str, &str> = descendants(theme, "Bitmap")
-        .into_iter()
-        .filter_map(|b| b.attr("Name").map(|n| (n, b.text.as_str())))
-        .collect();
     let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
     for (name, colour) in &set {
-        let path = bitmaps
-            .get(name.as_str())
-            .ok_or_else(|| ImportError::MissingFile {
-                file: format!("Bitmap {name}"),
-            })?;
-        let mut img = bitmap::decode(path, file(tree, path)?)?;
-        // An undefined shift name is the identity (d1 §3.1).
-        let by = colour
-            .as_deref()
-            .and_then(|c| colours.iter().find(|r| r.name == c))
-            .map_or([0; 3], |r| r.value);
-        bitmap::shift(&mut img, by);
-        pieces.push(img);
+        pieces.push(decode(name, colour.as_deref())?);
     }
     let pieces: [RgbaImage; 9] = pieces.try_into().map_err(|_| ImportError::MissingFile {
         file: FRAME_SOURCE.to_owned(),
@@ -212,9 +266,14 @@ fn count_dropped(tree: &Tree, components: &[Node]) -> BTreeMap<&'static str, usi
 pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     let skin = xml(tree, "Skin.xml")?;
     let included = includes(&skin);
+    let layout = if included.iter().any(|f| f.eq_ignore_ascii_case(v3::SOURCE)) {
+        Layout::ClassicV3
+    } else {
+        Layout::Late
+    };
     let themes_file = included
         .iter()
-        .find(|f| f.ends_with("Themes.xml"))
+        .find(|f| ends_with_ci(f, "Themes.xml"))
         .cloned()
         .unwrap_or_else(|| "Themes.xml".to_owned());
     let themes = xml(tree, &themes_file)?;
@@ -225,22 +284,30 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
             file: themes_file.clone(),
             detail: "no <Theme>".to_owned(),
         })?;
-    let (colours, tokens) = read_colours(theme)?;
-    let frame = read_frame(tree, theme, &colours)?;
+    let (colours, tokens) = read_colours(theme, layout)?;
+    let frame = read_frame(tree, theme, &colours, layout)?;
     let mut components = Vec::new();
-    for f in included.iter().filter(|f| f.starts_with("Components/")) {
-        if tree.contains_key(f) {
+    let component_file = |f: &&String| {
+        f.get(..11)
+            .is_some_and(|p| p.eq_ignore_ascii_case("Components/"))
+            || f.eq_ignore_ascii_case(v3::SOURCE)
+    };
+    for f in included.iter().filter(component_file) {
+        if lookup(tree, f).is_ok() {
             components.push(xml(tree, f)?);
         }
     }
     let (controls, tally) = controls::read(tree, theme, &colours, &components)?;
-    let info_xml = match tree.get("Info.xml") {
-        Some(bytes) => Some(tree::parse("Info.xml", bytes)?),
-        None => None,
+    let info_xml = match lookup(tree, "Info.xml") {
+        Ok((key, bytes)) => Some(tree::parse(key, bytes)?),
+        Err(_) => None,
     };
     let original_author = info_xml.as_ref().and_then(|n| {
         n.children_named("Author")
-            .find(|a| a.attr("Type") == Some("Original"))
+            .find(|a| {
+                a.attr_ci("Type")
+                    .is_some_and(|t| t.eq_ignore_ascii_case("Original"))
+            })
             .map(|a| a.text.clone())
     });
     let info = info_xml.map_or_else(BTreeMap::new, |n| {
@@ -261,6 +328,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         dropped: count_dropped(tree, &components),
         controls,
         tally,
+        layout,
     })
 }
 
@@ -284,7 +352,26 @@ fn base_of(tokens: &BTreeMap<String, TokenValue>) -> (SkinBase, Base) {
     }
 }
 
-fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
+impl Read {
+    /// Whose art the pack is: `Info.xml`'s original author first, else the
+    /// credit given, else third-party.
+    #[must_use]
+    pub fn authorship<'c>(&self, credit: Option<&'c XfireCredit>) -> Authorship<'c> {
+        match credit {
+            _ if self.is_xfire_own() => Authorship::XfireByInfo,
+            Some(c) => Authorship::XfireByCredit(c),
+            None => Authorship::ThirdParty,
+        }
+    }
+}
+
+fn manifest(
+    id: &str,
+    read: &Read,
+    source: &str,
+    base: SkinBase,
+    authorship: Authorship<'_>,
+) -> SkinManifest {
     let name: String = read
         .info
         .get("Name")
@@ -312,16 +399,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
         name,
         description: "Imported from an Xfire XML-era skin; see the NOTICE beside the package."
             .to_owned(),
-        license: SkinLicense::Text(if read.is_xfire_own() {
-            "Xfire, Inc.'s own skin art (Xfire is defunct), used under the Rekindle owner's \
-             2026-10-15 ruling. Not covered by Rekindle's MIT licence; provenance and every \
-             change are in the NOTICE beside the package."
-                .to_owned()
-        } else {
-            "Third-party Xfire skin art, published without a licence. Not covered by Rekindle's \
-             MIT licence; provenance and every change are in the NOTICE beside the package."
-                .to_owned()
-        }),
+        license: SkinLicense::Text(authorship.manifest_text()),
         source: Some(SkinSource {
             format: XFIRE_XML_FORMAT.to_owned(),
             hash: source.to_owned(),
@@ -345,11 +423,16 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
 /// # Errors
 /// What [`read`] refuses, an image that does not encode, a refusal the
 /// walk cannot settle.
-pub fn import(tree: &Tree, id: &str) -> Result<Imported, ImportError> {
+pub fn import(
+    tree: &Tree,
+    id: &str,
+    credit: Option<&XfireCredit>,
+) -> Result<Imported, ImportError> {
     let read = read(tree)?;
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
-    let manifest = manifest(id, &read, &source, skin_base);
+    let authorship = read.authorship(credit);
+    let manifest = manifest(id, &read, &source, skin_base, authorship);
     let manifest_json = serde_json::to_vec(&manifest).map_err(|e| ImportError::Xml {
         file: MANIFEST.to_owned(),
         detail: e.to_string(),
@@ -390,7 +473,7 @@ pub fn import(tree: &Tree, id: &str) -> Result<Imported, ImportError> {
             })
         }
     };
-    let notice = notice::render(id, &read, &source, &changes);
+    let notice = notice::render(id, &read, &source, authorship, &changes);
     Ok(Imported {
         canonical,
         notice,

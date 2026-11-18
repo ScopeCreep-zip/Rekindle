@@ -3,12 +3,15 @@
 //! `rekindle-skin::import`, and writes the built-in pack
 //! `crates/rekindle-skin/builtin/<id>.rkskin` with its `<id>.NOTICE`.
 //! The import is deterministic: the same tree writes the same bytes.
+//! `--credit-source`/`--credit-quote` give Xfire's authorship stated outside
+//! the files (plan E7.7.3c); `--dry-run` imports and reports, writing nothing.
 
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
 use rekindle_skin::import::{
     miranda, mumble, pidgin, teamspeak, winamp, xfire_ini, xfire_xml, Imported, Outcome, Tree,
+    XfireCredit,
 };
 use walkdir::WalkDir;
 
@@ -125,21 +128,44 @@ fn is_id(id: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
 }
 
-/// Imports `from` as the built-in `id` and writes its pack and NOTICE.
+/// One `import-skin` run.
+pub struct Request<'a> {
+    pub format: Format,
+    pub from: &'a Path,
+    pub id: &'a str,
+    /// `(source URL, quote)`: Xfire's authorship stated outside the files.
+    pub credit: Option<(&'a str, &'a str)>,
+    pub dry_run: bool,
+}
+
+/// Imports `from` as the built-in `id` and writes its pack and NOTICE (or,
+/// on a dry run, prints the outcome and writes nothing).
 ///
 /// # Errors
-/// An unreadable tree, an id outside `[a-z0-9-]`, or a refused import.
-pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result<()> {
+/// An unreadable tree, an id outside `[a-z0-9-]`, a credit that is refused
+/// or given to a format that is not Xfire's, or a refused import.
+pub fn import_skin(root: &Path, req: &Request<'_>) -> Result<()> {
+    let (format, from, id) = (req.format, req.from, req.id);
     if !is_id(id) {
         bail!("--builtin {id}: 1-64 of a-z 0-9 -");
     }
+    let credit = match req.credit {
+        Some(_) if !matches!(format, Format::XfireXml | Format::XfireIni) => {
+            bail!("--credit-source/--credit-quote: only xfire-xml and xfire-ini skins")
+        }
+        Some((source, quote)) => Some(XfireCredit::new(source, quote).map_err(|e| anyhow!("{e}"))?),
+        None => None,
+    };
     let Imported {
         canonical, notice, ..
     } = match format {
-        Format::XfireXml => xfire_xml::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?,
-        Format::XfireIni => {
-            accept(xfire_ini::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
+        Format::XfireXml => {
+            xfire_xml::import(&read_tree(from)?, id, credit.as_ref()).map_err(|e| anyhow!("{e}"))?
         }
+        Format::XfireIni => accept(
+            xfire_ini::import(&read_tree(from)?, id, credit.as_ref())
+                .map_err(|e| anyhow!("{e}"))?,
+        )?,
         Format::WinampWsz => winamp_pack(from, id)?,
         Format::Pidgin => pidgin_pack(from, id)?,
         Format::Mumble => {
@@ -152,6 +178,14 @@ pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result
             accept(miranda::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
         }
     };
+    if req.dry_run {
+        println!(
+            "    dry run: {id} imports ({} bytes, {}); nothing written",
+            canonical.bytes.len(),
+            canonical.address()
+        );
+        return Ok(());
+    }
     let dir = root.join(BUILTIN_DIR);
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let pack = dir.join(format!("{id}.rkskin"));

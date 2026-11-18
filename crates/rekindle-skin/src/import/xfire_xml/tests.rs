@@ -61,8 +61,8 @@ const PASSING: &str = r#"<Color Name="ListBGCG">RGBA(22,22,22,0)</Color>
 #[test]
 fn imports_validates_and_is_byte_identical() {
     let t = tree(PASSING);
-    let a = import(&t, "fixture").unwrap();
-    let b = import(&t, "fixture").unwrap();
+    let a = import(&t, "fixture", None).unwrap();
+    let b = import(&t, "fixture", None).unwrap();
     assert_eq!(a, b);
     assert!(a.changes.is_empty());
     let again = validate::run(&a.canonical.bytes).unwrap();
@@ -77,7 +77,7 @@ fn imports_validates_and_is_byte_identical() {
 fn non_zero_alpha_is_refused() {
     let t = tree(&PASSING.replace("RGBA(22,22,22,0)", "RGBA(22,22,22,1)"));
     assert!(matches!(
-        import(&t, "fixture"),
+        import(&t, "fixture", None),
         Err(ImportError::NonZeroAlpha { alpha: 1, .. })
     ));
 }
@@ -103,7 +103,7 @@ fn a_failing_pair_is_walked_and_recorded() {
     let t = tree(&format!(
         "{PASSING}<Color Name=\"ListOfflineTextCG\">RGBA(12,51,87,0)</Color>"
     ));
-    let a = import(&t, "fixture").unwrap();
+    let a = import(&t, "fixture", None).unwrap();
     let c = a.changes.first().unwrap();
     assert_eq!(
         (c.token.as_str(), c.original),
@@ -117,14 +117,14 @@ fn a_failing_pair_is_walked_and_recorded() {
 #[test]
 fn xfire_own_skins_carry_the_owner_ruling() {
     let mut t = tree(PASSING);
-    let third = import(&t, "fixture").unwrap();
+    let third = import(&t, "fixture", None).unwrap();
     assert!(third.notice.contains("third-party work"));
     assert!(!third.notice.contains("2026-10-15"));
     t.insert(
         "Info.xml".into(),
         br#"<SkinDescription><Author Type="Contributor">Someone</Author><Author Type="Original">Xfire, Inc.</Author><Name>Fixture</Name></SkinDescription>"#.to_vec(),
     );
-    let own = import(&t, "fixture").unwrap();
+    let own = import(&t, "fixture", None).unwrap();
     assert!(own.notice.contains("Xfire, Inc.'s own work"));
     assert!(own.notice.contains("2026-10-15"));
     assert!(own.notice.contains("MIT LICENSE does not cover"));
@@ -184,7 +184,7 @@ fn tree_with_controls(disabled_w: u32) -> Tree {
 
 #[test]
 fn title_buttons_and_the_scrollbar_keep_their_state_images() {
-    let a = import(&tree_with_controls(18), "fixture").unwrap();
+    let a = import(&tree_with_controls(18), "fixture", None).unwrap();
     let c = validate::run(&a.canonical.bytes).unwrap();
     assert_eq!(c.bytes, a.canonical.bytes);
     let r = read(&tree_with_controls(18)).unwrap();
@@ -248,6 +248,121 @@ fn a_state_image_of_another_size_is_dropped_and_named() {
         .any(|(c, s, why)| c == "ButtonClose (titlebar.btn.close)"
             && *s == "Disabled"
             && why.contains("size differs")));
-    let a = import(&tree_with_controls(17), "fixture").unwrap();
+    let a = import(&tree_with_controls(17), "fixture", None).unwrap();
     validate::run(&a.canonical.bytes).unwrap();
+}
+
+/// Classic v3's shape (plan E7.7.3b), synthetic: lower-case files,
+/// attributes in either case, attribute colours (one with no `alpha`), and
+/// the chat frame over four components of `xfirecomponents.xml`.
+fn v3_tree(colours: &str) -> Tree {
+    let mut t = Tree::new();
+    t.insert(
+        "skin.xml".into(),
+        br#"<!DOCTYPE XfireSkin SYSTEM "x.dtd"><XfireSkin><Include File="xfirethemes.xml" /><Include File="xfirecomponents.xml" /></XfireSkin>"#.to_vec(),
+    );
+    t.insert(
+        "info.xml".into(),
+        br#"<SkinDescription><Author Type="original">Xfire, Inc.</Author><Author Type="contributor">Someone</Author><Name>V3</Name><Version>3</Version></SkinDescription>"#.to_vec(),
+    );
+    let mut bitmaps = String::new();
+    for n in ["tl", "t", "tr", "l", "r", "bl", "b", "br"] {
+        let _ = write!(
+            bitmaps,
+            "<Bitmap name=\"{}\">frame/{n}.png</Bitmap>",
+            n.to_uppercase()
+        );
+        t.insert(
+            format!("frame/{n}.png"),
+            png(4, 4, Rgba([40, 100, 160, 255])),
+        );
+    }
+    t.insert(
+        "xfirethemes.xml".into(),
+        format!("<Themes><Theme name=\"default\"><Colors>{colours}</Colors><Bitmaps>{bitmaps}</Bitmaps></Theme><Theme name=\"other\"/></Themes>").into_bytes(),
+    );
+    t.insert(
+        "xfirecomponents.xml".into(),
+        br#"<Components>
+<Component Name="ChatTitleBar" Class="Tile"><Images state="Normal" Color="ChatMainCG"><Image Type="topleft">TL</Image><Image Type="top">T</Image><Image Type="topright">TR</Image></Images>
+<Images state="Disabled" Color="ChatMainDeactivatedCG"><Image Type="topleft">TL</Image></Images></Component>
+<Component Name="UserNameField" Class="Tile"><Images><Image type="left">L</Image><Image type="middle">T</Image></Images></Component>
+<Component Name="ChatLeftOuterEdge" Class="Tile"><Images Color="ChatMainCG"><Image Type="top">TL</Image><Image Type="middle">L</Image></Images></Component>
+<Component Name="ChatRightOuterEdge" Class="Tile"><Images Color="ChatMainCG"><Image type="middle">R</Image></Images></Component>
+<Component name="ChatBaseBoard" Class="Tile"><Images><Image Type="bottomleft">BL</Image><Image Type="bottom">B</Image><Image Type="bottomright">BR</Image></Images></Component>
+</Components>"#.to_vec(),
+    );
+    t
+}
+
+const V3_COLOURS: &str = r#"<Color name="BuddyViewBG" red="22" green="22" blue="22" alpha="0" />
+<Color Name="BuddyViewFriendText" red="183" green="184" blue="184" />
+<Color name="ChatMainCG" red="30" green="-30" blue="0" alpha="0" />
+<Color name="AdAreaCG">RGBA(8,16,32,0)</Color>"#;
+
+#[test]
+fn classic_v3_layout_imports() {
+    let r = read(&v3_tree(V3_COLOURS)).unwrap();
+    assert_eq!(r.layout, Layout::ClassicV3);
+    assert!(r.is_xfire_own(), "Type=\"original\" names Xfire");
+    assert_eq!(r.info.get("Version").map(String::as_str), Some("3"));
+    assert_eq!(r.tokens["bg.primary"], walk::color([22, 22, 22]));
+    assert_eq!(r.tokens["text.base"], walk::color([183, 184, 184]));
+    let (img, insets) = r.frame.unwrap();
+    assert_eq!(
+        (insets.top, insets.left, insets.bottom, insets.right),
+        (4, 4, 4, 4)
+    );
+    // The top row and the sides carry ChatMainCG (+30, -30, 0); the base
+    // board does not; each piece's #FF00FF pixel is keyed; the middle is
+    // transparent.
+    assert_eq!(img.get_pixel(5, 1).0, [70, 70, 160, 255]);
+    assert_eq!(img.get_pixel(1, 5).0, [70, 70, 160, 255]);
+    assert_eq!(img.get_pixel(5, img.height() - 2).0, [40, 100, 160, 255]);
+    assert_eq!(img.get_pixel(4, 0).0, [0, 0, 0, 0]);
+    assert_eq!(img.get_pixel(4, 4).0, [0, 0, 0, 0]);
+    let a = import(&v3_tree(V3_COLOURS), "fixture", None).unwrap();
+    assert_eq!(
+        validate::run(&a.canonical.bytes).unwrap().bytes,
+        a.canonical.bytes
+    );
+    assert!(a.notice.contains("Xfire, Inc.'s own work"), "{}", a.notice);
+    assert!(a
+        .notice
+        .contains("BuddyViewBG RGBA(22,22,22,0) -> token bg.primary"));
+    assert!(a.notice.contains("AdAreaCG RGBA(8,16,32,0) -> dropped"));
+}
+
+#[test]
+fn classic_v3_alpha_and_missing_pieces() {
+    let t = v3_tree(&V3_COLOURS.replace("blue=\"22\" alpha=\"0\"", "blue=\"22\" alpha=\"5\""));
+    assert!(matches!(
+        read(&t),
+        Err(ImportError::NonZeroAlpha { alpha: 5, .. })
+    ));
+    let mut t = v3_tree(V3_COLOURS);
+    let comps = String::from_utf8(t["xfirecomponents.xml"].clone()).unwrap();
+    t.insert(
+        "xfirecomponents.xml".into(),
+        comps
+            .replace("Type=\"bottomright\"", "Type=\"corner\"")
+            .into_bytes(),
+    );
+    assert!(read(&t).unwrap().frame.is_none());
+}
+
+#[test]
+fn a_credit_names_xfire_when_info_does_not() {
+    let credit = crate::import::XfireCredit::new(
+        "https://archive.org/details/XFireSkins",
+        "An official skin created by Xfire.",
+    )
+    .unwrap();
+    let a = import(&tree(PASSING), "fixture", Some(&credit)).unwrap();
+    assert!(
+        a.notice.contains("stated outside the\n  skin's files"),
+        "{}",
+        a.notice
+    );
+    assert!(a.notice.contains("archive.org/details/XFireSkins"));
 }

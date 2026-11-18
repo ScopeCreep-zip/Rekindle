@@ -4,13 +4,20 @@
 
 use std::fmt::Write as _;
 
+use super::super::credit::Authorship;
 use super::super::notice;
 use super::super::walk::Change;
 use super::{Read, XFIRE_INI_FORMAT};
 
 /// The NOTICE text, deterministic for one input.
 #[must_use]
-pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String {
+pub fn render(
+    id: &str,
+    read: &Read,
+    source: &str,
+    authorship: Authorship<'_>,
+    changes: &[Change],
+) -> String {
     let mut s = String::new();
     let _ = writeln!(
         s,
@@ -25,11 +32,7 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
         let _ = writeln!(s, "  {k}: {v}");
     }
     let _ = writeln!(s, "  source tree BLAKE3: {source}");
-    let _ = writeln!(
-        s,
-        "\nLicence\n  The skin art and palette are third-party work published without a licence.\n  \
-         Rekindle's MIT LICENSE does not cover this pack.\n"
-    );
+    let _ = writeln!(s, "\n{}", authorship.notice_text());
     let _ = writeln!(s, "Colour groups ({} defined)", read.colours.len());
     for c in &read.colours {
         let [r, g, b] = c.value;
@@ -42,11 +45,16 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
     }
     if let Some(f) = &read.frame {
         let i = f.insets;
+        let mut sections: Vec<&str> = f.shape.iter().flatten().map(|(sec, _)| *sec).collect();
+        sections.dedup();
         let _ = writeln!(
             s,
-            "\nRegions\n  window.frame: [Top] [Left] [Right] [Bottom], nine-slice {}/{}/{}/{}, \
-             transparent middle",
-            i.top, i.right, i.bottom, i.left
+            "\nRegions\n  window.frame: [{}], nine-slice {}/{}/{}/{}, transparent middle",
+            sections.join("] ["),
+            i.top,
+            i.right,
+            i.bottom,
+            i.left
         );
         for (state, img) in &f.images {
             let _ = writeln!(s, "    {state:?}: {}x{} px", img.width(), img.height());

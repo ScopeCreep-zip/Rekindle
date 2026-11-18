@@ -177,6 +177,53 @@ pub fn parse_rgba(name: &str, value: &str) -> Result<[i16; 3], ImportError> {
         [r, g, b, a] => ([*r, *g, *b], *a),
         _ => return Err(bad()),
     };
+    channels(name, value, rgb, alpha)
+}
+
+/// Classic v3's attribute form, `red="…" green="…" blue="…" alpha="…"`
+/// (423 of its 428 colours), under [`parse_rgba`]'s rule: `alpha` is the
+/// same unused byte, 0 (405 values) or absent (18), and a non-zero one
+/// refuses. `None` when the element carries none of the four attributes.
+///
+/// # Errors
+/// [`ImportError::NonZeroAlpha`] or [`ImportError::BadColour`] (a channel
+/// missing or not an integer).
+pub fn parse_attrs(
+    name: &str,
+    attr: impl Fn(&str) -> Option<String>,
+) -> Option<Result<[i16; 3], ImportError>> {
+    let [r, g, b, a] = ["red", "green", "blue", "alpha"].map(&attr);
+    if r.is_none() && g.is_none() && b.is_none() && a.is_none() {
+        return None;
+    }
+    let value = format!(
+        "red={} green={} blue={} alpha={}",
+        r.as_deref().unwrap_or("?"),
+        g.as_deref().unwrap_or("?"),
+        b.as_deref().unwrap_or("?"),
+        a.as_deref().unwrap_or("(absent)")
+    );
+    let bad = || ImportError::BadColour {
+        name: name.to_owned(),
+        value: value.clone(),
+    };
+    let int = |v: Option<&String>| v.and_then(|v| v.trim().parse::<i32>().ok()).ok_or_else(bad);
+    let parsed = (|| {
+        let rgb = [int(r.as_ref())?, int(g.as_ref())?, int(b.as_ref())?];
+        let alpha = match &a {
+            None => 0,
+            Some(_) => int(a.as_ref())?,
+        };
+        channels(name, &value, rgb, alpha)
+    })();
+    Some(parsed)
+}
+
+fn channels(name: &str, value: &str, rgb: [i32; 3], alpha: i32) -> Result<[i16; 3], ImportError> {
+    let bad = || ImportError::BadColour {
+        name: name.to_owned(),
+        value: value.to_owned(),
+    };
     if alpha != 0 {
         return Err(ImportError::NonZeroAlpha {
             name: name.to_owned(),
@@ -238,5 +285,47 @@ mod tests {
         ));
         assert!(parse_rgba("A", "RGBA(1,2,300,0)").is_err());
         assert!(absolute("A", "v", [-1, 0, 0]).is_err());
+    }
+
+    fn attrs<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    }
+
+    #[test]
+    fn attribute_colours_take_the_same_alpha_rule() {
+        let ok = [
+            ("red", "-34"),
+            ("green", "-11"),
+            ("blue", "57"),
+            ("alpha", "0"),
+        ];
+        assert_eq!(
+            parse_attrs("A", attrs(&ok)).unwrap().unwrap(),
+            [-34, -11, 57]
+        );
+        // Absent alpha: Classic v3's `AllServersText`, `ScrollbarColor`.
+        let absent = [("red", "141"), ("green", "190"), ("blue", "255")];
+        assert_eq!(
+            parse_attrs("A", attrs(&absent)).unwrap().unwrap(),
+            [141, 190, 255]
+        );
+        let alpha = [("red", "1"), ("green", "2"), ("blue", "3"), ("alpha", "9")];
+        assert!(matches!(
+            parse_attrs("A", attrs(&alpha)),
+            Some(Err(ImportError::NonZeroAlpha { alpha: 9, .. }))
+        ));
+        let missing = [("red", "1"), ("blue", "3"), ("alpha", "0")];
+        assert!(matches!(
+            parse_attrs("A", attrs(&missing)),
+            Some(Err(ImportError::BadColour { .. }))
+        ));
+        let wide = [("red", "1"), ("green", "256"), ("blue", "3")];
+        assert!(parse_attrs("A", attrs(&wide)).unwrap().is_err());
+        assert!(parse_attrs("A", attrs(&[])).is_none());
     }
 }

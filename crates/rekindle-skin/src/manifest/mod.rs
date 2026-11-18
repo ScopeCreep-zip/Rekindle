@@ -11,7 +11,7 @@
 //! registry's icon slots and sound cues; the regions map against the
 //! registry, and the images and sounds, by the later validator steps.
 
-mod text;
+pub(crate) mod text;
 
 use std::collections::HashSet;
 

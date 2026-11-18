@@ -25,7 +25,7 @@ use rekindle_types::dto::skin::{RegionFit, RegionState};
 
 use super::super::tree::Node;
 use super::super::{Control, ImportError, Tree};
-use super::{bitmap, descendants, file, ColourRow};
+use super::{bitmap, descendants, ColourRow};
 
 /// Where the controls are read.
 pub const SOURCE: &str = "Components/Common.xml";
@@ -134,18 +134,7 @@ struct Decoder<'a> {
 impl Decoder<'_> {
     /// Bitmap `name` decoded and shifted by the colour named `shift`.
     fn image(&self, name: &str, shift: Option<&str>) -> Result<RgbaImage, ImportError> {
-        let path = self
-            .bitmaps
-            .get(name)
-            .ok_or_else(|| ImportError::MissingFile {
-                file: format!("Bitmap {name}"),
-            })?;
-        let mut img = bitmap::decode(path, file(self.tree, path)?)?;
-        let by = shift
-            .and_then(|c| self.colours.iter().find(|r| r.name == c))
-            .map_or([0; 3], |r| r.value);
-        bitmap::shift(&mut img, by);
-        Ok(img)
+        super::piece(self.tree, &self.bitmaps, self.colours, name, shift)
     }
 }
 
@@ -195,22 +184,19 @@ pub fn read(
 ) -> Result<(Vec<Control>, StateTally), ImportError> {
     let d = Decoder {
         tree,
-        bitmaps: descendants(theme, "Bitmap")
-            .into_iter()
-            .filter_map(|b| b.attr("Name").map(|n| (n, b.text.as_str())))
-            .collect(),
+        bitmaps: super::bitmaps(theme),
         colours,
     };
     let mut tally = StateTally::default();
     let mut controls = Vec::new();
     for c in components.iter().flat_map(|n| descendants(n, "Component")) {
-        let name = c.attr("Name").unwrap_or_default();
+        let name = c.attr_ci("Name").unwrap_or_default();
         let sets: Vec<&Node> = c
             .children_named("Images")
-            .filter(|i| state(i.attr("State")) != Some(RegionState::Normal))
+            .filter(|i| state(i.attr_ci("State")) != Some(RegionState::Normal))
             .collect();
         for set in &sets {
-            let s = set.attr("State").unwrap_or_default();
+            let s = set.attr_ci("State").unwrap_or_default();
             let entry = tally.sets.entry(static_state(s)).or_default();
             entry.1 += 1;
             tally.images.1 += set.children_named("Image").count();
@@ -221,14 +207,14 @@ pub fn read(
             scrollbar(&d, c)?
         } else {
             for set in sets {
-                let why = if c.attr("Class") == Some("Tile") && name.contains("Gripper") {
+                let why = if c.attr_ci("Class") == Some("Tile") && name.contains("Gripper") {
                     "no element: the OS resizes the window"
                 } else {
                     "no region slot: its bitmap carries a label, icon or Xfire-only control"
                 };
                 tally.dropped.push((
                     name.to_owned(),
-                    static_state(set.attr("State").unwrap_or_default()),
+                    static_state(set.attr_ci("State").unwrap_or_default()),
                     why,
                 ));
             }
@@ -297,19 +283,19 @@ fn button(d: &Decoder<'_>, c: &Node, region: &'static str) -> Result<Made, Impor
     let mut dropped = Vec::new();
     let mut kept = 0;
     for set in c.children_named("Images") {
-        let Some(st) = state(set.attr("State")) else {
+        let Some(st) = state(set.attr_ci("State")) else {
             continue;
         };
         let Some(img) = set
             .children_named("Image")
-            .find(|i| i.attr("Type") == Some("Middle"))
+            .find(|i| i.attr_ci("Type") == Some("Middle"))
         else {
             continue;
         };
         if keep(
             &mut control,
             st,
-            d.image(&img.text, set.attr("Color"))?,
+            d.image(&img.text, set.attr_ci("Color"))?,
             &mut dropped,
         ) {
             kept += 1;
@@ -329,7 +315,7 @@ fn scrollbar(d: &Decoder<'_>, c: &Node) -> Result<Made, ImportError> {
         let mut dropped = Vec::new();
         let mut kept = 0;
         for set in c.children_named("Images") {
-            let Some(st) = state(set.attr("State")) else {
+            let Some(st) = state(set.attr_ci("State")) else {
                 continue;
             };
             let shift = set.attr(if p.background { "ColorBG" } else { "Color" });
@@ -337,7 +323,7 @@ fn scrollbar(d: &Decoder<'_>, c: &Node) -> Result<Made, ImportError> {
             for ty in p.pieces {
                 if let Some(img) = set
                     .children_named("Image")
-                    .find(|i| i.attr("Type") == Some(ty))
+                    .find(|i| i.attr_ci("Type") == Some(ty))
                 {
                     pieces.push(d.image(&img.text, shift)?);
                 }

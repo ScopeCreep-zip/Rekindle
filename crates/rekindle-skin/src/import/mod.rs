@@ -13,12 +13,14 @@
 //!   rasterised with every reference refused.
 //! * [`miranda`]: Miranda NG TabSRMM `.tsk` and Clist_modern `.msf` skins
 //!   (colours and 9-slice images).
+//! * [`credit`]: whose art an Xfire skin is, and the licence text it gets.
 //! * [`walk`]: the minimal Oklab-lightness walk a built-in that fails the
 //!   validator is adjusted by, every change recorded.
 //!
 //! The crate does no file I/O: the caller (`cargo xtask import-skin`, the
 //! helper) hands the tree over as a map of relative paths to bytes.
 
+pub mod credit;
 pub mod miranda;
 mod notice;
 pub mod pidgin;
@@ -30,6 +32,7 @@ pub mod winamp;
 pub mod xfire_ini;
 pub mod xfire_xml;
 
+pub use credit::XfireCredit;
 pub use qt::{mumble, teamspeak};
 
 use std::collections::BTreeMap;

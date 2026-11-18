@@ -36,6 +36,7 @@ use rekindle_types::dto::skin::{
     SkinSource, SkinVariant, TokenValue, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
 };
 
+use super::credit::{Authorship, XfireCredit};
 use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
 use super::xfire_xml::{bitmap, ColourRow};
 use super::{base_of, conclude, tree_hash, walk, ImportError, Outcome, Tree};
@@ -48,6 +49,8 @@ pub const XFIRE_INI_FORMAT: &str = "xfire-ini";
 /// The file naming the skin.
 pub const VERSION_FILE: &str = "version.ini";
 const TOKENS: &str = "tokens.json";
+/// The longest `Version` recorded, in scalars.
+pub const MAX_REVISION: usize = 32;
 
 /// The image state prefixes and the region state each becomes.
 pub const STATES: [(&str, RegionState); 4] = [
@@ -57,9 +60,12 @@ pub const STATES: [(&str, RegionState); 4] = [
     ("BtnDown", RegionState::Down),
 ];
 
-/// The frame's pieces in [`bitmap::NINE`] order: (section, key); `None` is
-/// the transparent middle.
-pub const FRAME: [Option<(&str, &str)>; 9] = [
+/// A frame shape: its pieces in [`bitmap::NINE`] order, (section, key);
+/// `None` is the transparent middle.
+pub type Shape = [Option<(&'static str, &'static str)>; 9];
+
+/// DoiDD's frame: four sections, each side's `middle` the side piece.
+pub const FRAME: Shape = [
     Some(("Top", "topleft")),
     Some(("Top", "top")),
     Some(("Top", "topright")),
@@ -71,9 +77,28 @@ pub const FRAME: [Option<(&str, &str)>; 9] = [
     Some(("Bottom", "bottomright")),
 ];
 
+/// Combat's frame (Xfire's own INI skin): one `[OuterFrame]` section naming
+/// all eight pieces, the sides as `left`/`right`.
+pub const OUTER_FRAME: Shape = [
+    Some(("OuterFrame", "topleft")),
+    Some(("OuterFrame", "top")),
+    Some(("OuterFrame", "topright")),
+    Some(("OuterFrame", "left")),
+    None,
+    Some(("OuterFrame", "right")),
+    Some(("OuterFrame", "bottomleft")),
+    Some(("OuterFrame", "bottom")),
+    Some(("OuterFrame", "bottomright")),
+];
+
+/// The shapes tried, in order: the first whose normal state is complete.
+pub const SHAPES: [&Shape; 2] = [&FRAME, &OUTER_FRAME];
+
 /// The composed window frame: its insets and one image per complete state.
 #[derive(Debug)]
 pub struct Frame {
+    /// The shape its pieces were read from.
+    pub shape: &'static Shape,
     pub insets: Insets,
     pub images: BTreeMap<RegionState, RgbaImage>,
     /// The image files decoded for it.
@@ -178,6 +203,7 @@ fn read_theme(
 fn state_pieces(
     tree: &Tree,
     skin: &Ini,
+    shape: &Shape,
     prefix: &str,
     colours: &[ColourRow],
     aliases: &BTreeMap<String, String>,
@@ -185,7 +211,7 @@ fn state_pieces(
 ) -> Result<Result<[RgbaImage; 9], Vec<String>>, ImportError> {
     let mut missing = Vec::new();
     let mut named = Vec::with_capacity(8);
-    for (sec, key) in FRAME.into_iter().flatten() {
+    for (sec, key) in shape.iter().flatten() {
         let s = skin.section(sec);
         match s.and_then(|s| s.get(&format!("{prefix}.{key}"))) {
             Some(value) => named.push((s, value)),
@@ -233,10 +259,25 @@ fn read_frame(
     colours: &[ColourRow],
     aliases: &BTreeMap<String, String>,
 ) -> Result<Option<Frame>, ImportError> {
+    for shape in SHAPES {
+        if let Some(f) = read_shape(tree, skin, shape, colours, aliases)? {
+            return Ok(Some(f));
+        }
+    }
+    Ok(None)
+}
+
+fn read_shape(
+    tree: &Tree,
+    skin: &Ini,
+    shape: &'static Shape,
+    colours: &[ColourRow],
+    aliases: &BTreeMap<String, String>,
+) -> Result<Option<Frame>, ImportError> {
     let mut frame: Option<Frame> = None;
     for (prefix, state) in STATES {
         let mut files = BTreeSet::new();
-        let pieces = match state_pieces(tree, skin, prefix, colours, aliases, &mut files)? {
+        let pieces = match state_pieces(tree, skin, shape, prefix, colours, aliases, &mut files)? {
             Ok(p) => p,
             Err(missing) => {
                 if let Some(f) = frame.as_mut().filter(|_| missing.len() < 8) {
@@ -250,6 +291,7 @@ fn read_frame(
         match frame.as_mut() {
             None if state == RegionState::Normal => {
                 frame = Some(Frame {
+                    shape,
                     insets,
                     images: BTreeMap::from([(state, img)]),
                     files,
@@ -278,7 +320,7 @@ fn count_dropped(skin: &Ini, frame: Option<&Frame>, dropped: &mut BTreeMap<&'sta
                 .iter()
                 .filter(|(_, s)| f.images.contains_key(s))
                 .any(|(p, _)| {
-                    FRAME.iter().flatten().any(|(fs, fk)| {
+                    f.shape.iter().flatten().any(|(fs, fk)| {
                         sec.eq_ignore_ascii_case(fs)
                             && (key.eq_ignore_ascii_case(&format!("{p}.{fk}"))
                                 || key.eq_ignore_ascii_case(&format!("{p}.ColorGroup")))
@@ -318,12 +360,16 @@ fn count_dropped(skin: &Ini, frame: Option<&Frame>, dropped: &mut BTreeMap<&'sta
 pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     let (version_key, version) = parse_file(tree, VERSION_FILE)?;
     let v = section(&version, version_key, "Version")?;
-    if v.get("Version") != Some("1") {
-        return Err(ImportError::Format {
-            file: version_key.to_owned(),
-            detail: "Version is not 1".to_owned(),
-        });
-    }
+    // `Version` is the skin's own revision, never a format selector: across
+    // the 43 INI skins of the 2026-11-17 research index it is `1` (37), `2`
+    // (3, Combat among them), `01.11.2005`, `1.54` and `RC 2`, all one
+    // layout. It is recorded, bounded, in the NOTICE.
+    let revision: String = v
+        .get("Version")
+        .unwrap_or_default()
+        .chars()
+        .take(MAX_REVISION)
+        .collect();
     let long = v.get("LongName").unwrap_or_default().to_owned();
     let (skin_key, skin) = parse_file(tree, &file_name(version_key, "LongName", &long)?)?;
     let main = section(&skin, skin_key, "MainWindow")?;
@@ -352,6 +398,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         .collect();
     let info = BTreeMap::from([
         ("LongName", long),
+        ("Version (the skin's own revision)", revision),
         ("skin file", skin_key.to_owned()),
         ("theme file", theme_key.to_owned()),
     ]);
@@ -378,7 +425,13 @@ fn frame_image(state: RegionState) -> String {
     format!("assets/{name}.png")
 }
 
-fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
+fn manifest(
+    id: &str,
+    read: &Read,
+    source: &str,
+    base: SkinBase,
+    authorship: Authorship<'_>,
+) -> SkinManifest {
     let mut regions = BTreeMap::new();
     if let Some(f) = &read.frame {
         let states = f
@@ -408,11 +461,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
             .map_or_else(|| id.to_owned(), |n| n.chars().take(64).collect()),
         description: "Imported from an Xfire INI-era skin; see the NOTICE beside the package."
             .to_owned(),
-        license: SkinLicense::Text(
-            "Third-party Xfire skin art, published without a licence. Not covered by Rekindle's \
-             MIT licence; provenance and every change are in the NOTICE beside the package."
-                .to_owned(),
-        ),
+        license: SkinLicense::Text(authorship.manifest_text()),
         source: Some(SkinSource {
             format: XFIRE_INI_FORMAT.to_owned(),
             hash: source.to_owned(),
@@ -431,20 +480,21 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
 }
 
 /// Imports `tree` as the package `id`: a passing package, or a draft
-/// naming every failing pair.
+/// naming every failing pair. `credit` is Xfire's authorship stated outside
+/// the files (an INI skin carries no author); without it the pack is
+/// third-party work.
 ///
 /// # Errors
 /// What [`read`] refuses, an image that does not encode.
-pub fn import(tree: &Tree, id: &str) -> Result<Outcome, ImportError> {
+pub fn import(tree: &Tree, id: &str, credit: Option<&XfireCredit>) -> Result<Outcome, ImportError> {
     let read = read(tree)?;
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
-    let manifest_json =
-        serde_json::to_vec(&manifest(id, &read, &source, skin_base)).map_err(|e| {
-            ImportError::Format {
-                file: MANIFEST.to_owned(),
-                detail: e.to_string(),
-            }
+    let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
+    let manifest_json = serde_json::to_vec(&manifest(id, &read, &source, skin_base, authorship))
+        .map_err(|e| ImportError::Format {
+            file: MANIFEST.to_owned(),
+            detail: e.to_string(),
         })?;
     let mut files = BTreeMap::from([(MANIFEST.to_owned(), manifest_json)]);
     for (state, img) in read.frame.iter().flat_map(|f| &f.images) {
@@ -465,7 +515,7 @@ pub fn import(tree: &Tree, id: &str) -> Result<Outcome, ImportError> {
         zip(&files).map_err(ImportError::Refused)
     };
     conclude(read.tokens.clone(), base, build, |changes| {
-        notice::render(id, &read, &source, changes)
+        notice::render(id, &read, &source, authorship, changes)
     })
 }
 

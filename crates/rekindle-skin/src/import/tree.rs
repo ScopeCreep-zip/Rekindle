@@ -27,6 +27,18 @@ impl Node {
         self.attrs.get(key).map(String::as_str)
     }
 
+    /// `key`'s value, matched exactly, else ASCII-case-insensitively: the
+    /// Xfire client reads `name=`/`Name=` and `state=`/`State=` alike (Classic
+    /// v3 writes both in one file, `xfirecomponents.xml`).
+    pub fn attr_ci(&self, key: &str) -> Option<&str> {
+        self.attr(key).or_else(|| {
+            self.attrs
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                .map(|(_, v)| v.as_str())
+        })
+    }
+
     /// Every descendant (self excluded) named `name`, in document order.
     pub fn descendants<'a>(&'a self, name: &str, out: &mut Vec<&'a Node>) {
         for c in &self.children {
@@ -134,6 +146,8 @@ mod tests {
         .unwrap();
         assert_eq!(n.name, "A");
         assert_eq!(n.attr("x"), Some("1"));
+        assert_eq!(n.attr_ci("X"), Some("1"));
+        assert_eq!(n.attr("X"), None);
         assert_eq!(n.children[0].text, "hi");
         assert!(parse("t", b"<A>&ext;</A>").is_err());
         assert!(parse("t", b"<A></A><B/>").is_err());

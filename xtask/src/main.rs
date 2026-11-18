@@ -56,6 +56,10 @@
 //!     cargo xtask import-skin --format teamspeak3 --from <style dir> --builtin <id>
 //!                                      Import a legacy skin as a built-in
 //!                                      pack and its NOTICE (plan E7.7.3).
+//!         [--credit-source <url> --credit-quote <text>]
+//!                                      Xfire's authorship stated outside the
+//!                                      skin's files (xfire-xml/xfire-ini).
+//!         [--dry-run]                  Import and report; write nothing.
 //!     cargo xtask check-icon-glyphs    Every ICON_* codepoint is the glyph
 //!                                      its comment names in the bundled
 //!                                      Nerd Font (plan E7.12).
@@ -202,6 +206,15 @@ enum Command {
         from: PathBuf,
         #[arg(long)]
         builtin: String,
+        /// The page stating Xfire made the skin (with `--credit-quote`).
+        #[arg(long, requires = "credit_quote")]
+        credit_source: Option<String>,
+        /// That page's words.
+        #[arg(long, requires = "credit_source")]
+        credit_quote: Option<String>,
+        /// Import and report the outcome without writing the pack.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Write the Xfire game icons, game id mapping and sound banks from the owner's tree.
     ImportXfireData {
@@ -422,7 +435,19 @@ fn dispatch(cmd: &Command) -> Result<()> {
             format,
             from,
             builtin,
-        } => import_skin::import_skin(&root, *format, from, builtin),
+            credit_source,
+            credit_quote,
+            dry_run,
+        } => import_skin::import_skin(
+            &root,
+            &import_skin::Request {
+                format: *format,
+                from,
+                id: builtin,
+                credit: credit_source.as_deref().zip(credit_quote.as_deref()),
+                dry_run: *dry_run,
+            },
+        ),
         Command::ImportXfireData { from } => import_xfire_data::import_xfire_data(&root, from),
         Command::CheckMotion => motion::check_motion(&root),
         Command::CheckIconGlyphs => icon_glyphs::check_icon_glyphs(&root),
