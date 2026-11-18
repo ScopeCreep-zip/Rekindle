@@ -227,7 +227,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// failed (removed from the community, the key did not arrive), kept for a reload.
 /// 131 (plan E3.2 S7c.6): `governance_checkpoints`, each checkpoint digest
 /// a community holds with its state and, while usable, its snapshot.
-pub const SCHEMA_VERSION: i64 = 131;
+/// 132 (plan E3.2 S7c.8): `governance_partial`, a community joined from a
+/// checkpoint hint until its backfill ends.
+pub const SCHEMA_VERSION: i64 = 132;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
