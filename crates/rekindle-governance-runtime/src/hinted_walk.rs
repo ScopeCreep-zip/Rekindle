@@ -27,6 +27,17 @@
 //! dep's lamport is at least the bound. An op that is not on top makes
 //! `merge_from` answer `NotOnTop`, and the joiner moves on.
 //!
+//! An op **beside** the cut (plan E3.2 S7c.8 (3): a join signed
+//! concurrently with the checkpoint cites the old base) may be on top
+//! without a head in its past, so the bound would inflate its lamport,
+//! which its state rows carry (a join's `joined` stamp). Each non-top cut
+//! op a post-cut op cites is therefore given its exact lamport from its
+//! in-cut past, fetched by locator down to ops the cut index gives a
+//! lamport for (authors' tops) or with no deps ([`exact_lamports`]); a
+//! post-cut op on top keeps the lamport the bound gave it. A cut op whose
+//! past cannot be fetched and checked leaves the snapshot to full replay,
+//! as an unlocatable cut power op does.
+//!
 //! [`resume_newest`] tries the verified hints newest first: `NotOnTop`
 //! moves to the next older one, none on top leaves the full replay to the
 //! caller. A resumed state is checked against the inviter's `Frontier`
@@ -273,6 +284,7 @@ where
         return Ok(None);
     };
     let (rest_held, mut cited) = walk_above(snap, start, &fetch).await?;
+    let rest_cited: BTreeSet<OpHash> = cited.keys().copied().collect();
     let refused_cited = (cited.values())
         .filter(|r| (snap.cut.power.iter()).any(|(c, applied)| !applied && c.hash == r.op_hash));
     let power_refs = power_refs
@@ -286,23 +298,136 @@ where
         }
     }
     let cut_held = fetch_each(cited.values().cloned().collect(), &fetch).await?;
-    let facts = CutFacts(
+    let mut facts = CutFacts(
         (cut_held.iter())
             .filter_map(|h| cut_fact(anchor, snap, cited.get(&h.hash)?, h))
             .collect(),
     );
+    let roots: Vec<&HeldOp> = (cut_held.iter())
+        .filter(|h| rest_cited.contains(&h.hash) && facts.0.contains_key(&h.hash))
+        .collect();
+    let Some((exact, below)) = exact_lamports(anchor, snap, &roots, &fetch).await? else {
+        return Ok(None);
+    };
+    for (hash, (_, _, lamport)) in &mut facts.0 {
+        if let Some(l) = exact.get(hash) {
+            *lamport = *l;
+        }
+    }
     let power = verify_over_cut(anchor, &facts, &power_held);
     let rest = verify_over_cut(anchor, &facts, &rest_held);
     let mut seen = BTreeSet::new();
-    let held = (rest_held.into_iter().chain(power_held).chain(cut_held))
-        .filter(|h| seen.insert(h.hash))
-        .collect();
+    let held = (rest_held
+        .into_iter()
+        .chain(power_held)
+        .chain(cut_held)
+        .chain(below))
+    .filter(|h| seen.insert(h.hash))
+    .collect();
     Ok(Some(Gathered {
         power,
         rest,
         held,
         cut_fetched: facts.hashes(),
     }))
+}
+
+/// The exact lamports of the cut ops `roots` (fetched and checked), with
+/// the cut ops fetched below them: each one's in-cut past is fetched by
+/// locator, checked as [`cut_fact`] checks, down to authors' tops (whose
+/// lamports the cut index gives) and ops with no deps. `None` when an op
+/// of that past is missing, fails its check, or cites an op outside the
+/// cut's merged ops.
+///
+/// # Errors
+/// A fetch failed.
+async fn exact_lamports<F, Fut>(
+    anchor: &str,
+    snap: &CutSnapshot,
+    roots: &[&HeldOp],
+    fetch: &F,
+) -> Result<Option<(HashMap<OpHash, u64>, Vec<HeldOp>)>, GovernanceRuntimeError>
+where
+    F: Fn(OpRef) -> Fut,
+    Fut: Future<Output = Result<Option<HeldOp>, GovernanceRuntimeError>>,
+{
+    let mut known: HashMap<OpHash, u64> = (snap.cut.authors.iter())
+        .filter_map(|(author, (_, hash))| Some((*hash, *snap.cut.lamports.get(author)?)))
+        .collect();
+    let mut deps: HashMap<OpHash, Vec<OpHash>> = HashMap::new();
+    let mut below = Vec::new();
+    let mut want: Vec<OpRef> = Vec::new();
+    for held in roots.iter().filter(|h| !known.contains_key(&h.hash)) {
+        let cites = deps_of(held);
+        deps.insert(held.hash, cites.iter().map(|r| r.op_hash).collect());
+        want.extend(cites);
+    }
+    loop {
+        let mut seen = BTreeSet::new();
+        want.retain(|r| {
+            !known.contains_key(&r.op_hash)
+                && !deps.contains_key(&r.op_hash)
+                && seen.insert(r.op_hash)
+        });
+        if want.is_empty() {
+            break;
+        }
+        if !want.iter().all(|r| in_cut(snap, r)) {
+            return Ok(None);
+        }
+        let by_hash: HashMap<OpHash, OpRef> = want.iter().map(|r| (r.op_hash, r.clone())).collect();
+        let got = fetch_each(std::mem::take(&mut want), fetch).await?;
+        if got.len() != by_hash.len() {
+            return Ok(None);
+        }
+        for held in got {
+            let r = by_hash.get(&held.hash);
+            if r.and_then(|r| cut_fact(anchor, snap, r, &held)).is_none() {
+                return Ok(None);
+            }
+            let cites = deps_of(&held);
+            deps.insert(held.hash, cites.iter().map(|r| r.op_hash).collect());
+            want.extend(cites);
+            below.push(held);
+        }
+    }
+    let mut exact = HashMap::new();
+    for root in roots {
+        let Some(l) = lamport_of(root.hash, &deps, &mut known) else {
+            return Ok(None);
+        };
+        exact.insert(root.hash, l);
+    }
+    Ok(Some((exact, below)))
+}
+
+/// `1 + max(dep lamports)` of `root` over `deps`, memoised in `known`
+/// (iterative, post-order).
+fn lamport_of(
+    root: OpHash,
+    deps: &HashMap<OpHash, Vec<OpHash>>,
+    known: &mut HashMap<OpHash, u64>,
+) -> Option<u64> {
+    let mut stack = vec![(root, false)];
+    while let Some((hash, expanded)) = stack.pop() {
+        if known.contains_key(&hash) {
+            continue;
+        }
+        let cites = deps.get(&hash)?;
+        if expanded {
+            let lamports: Option<Vec<u64>> = cites.iter().map(|d| known.get(d).copied()).collect();
+            known.insert(hash, 1 + lamports?.into_iter().max().unwrap_or(0));
+        } else {
+            stack.push((hash, true));
+            stack.extend(
+                cites
+                    .iter()
+                    .filter(|d| !known.contains_key(d))
+                    .map(|d| (*d, false)),
+            );
+        }
+    }
+    known.get(&root).copied()
 }
 
 /// D15 for a resumed `state`: when every head of the inviter's `frontier`

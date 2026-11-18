@@ -314,10 +314,11 @@ fn post_cut_permission_and_invite_checks_run_on_the_snapshot() {
     assert_matches_full(&world, &resumed);
 }
 
-/// Two cuts, `a` and the later `b`, and an op `r` above `a` but concurrent
-/// with `b` (it cites `a`'s head and not `b`'s): resuming from `b` is not
-/// on top, so the older `a` is used; with `b` alone the caller replays in
-/// full.
+/// Two cuts, `a` and the later `b`, and a power op `r` above `a` but
+/// concurrent with `b` (it cites `a`'s head and not `b`'s): resuming from
+/// `b` is not on top (a power op beside the cut could reorder its power
+/// phase, plan E3.2 S7c.8 (3)), so the older `a` is used; with `b` alone
+/// the caller replays in full.
 #[test]
 fn a_not_on_top_op_moves_to_the_older_hint_then_to_full_replay() {
     let (mut world, creator, inviter, cp) = world();
@@ -328,13 +329,16 @@ fn a_not_on_top_op_moves_to_the_older_hint_then_to_full_replay() {
         Deps::Frontier,
     );
     let b_heads = frontier_refs(&world.cert, &world.state, &world.set);
-    let r = world.author(&inviter, invite(3, "code3"), Deps::Cited(vec![cp.hash()]));
+    let approval = GovernanceEntry::MemberApproved {
+        target: Member::new(40).author(),
+    };
+    let r = world.author(&inviter, approval, Deps::Cited(vec![cp.hash()]));
     let (_, b) = snapshot_at(&world, &b_heads);
     let store = Store::of(&world);
     let front = frontier(&world);
     let resumed = resume(&world, &store, &[b.clone(), a], &front).expect("a is on top");
     assert_eq!(resumed.index, 1, "the older hint");
-    assert!(resumed.outcome.applied.contains(&r.hash()));
+    assert!((resumed.gathered.rest.iter()).any(|o| o.hash() == r.hash()));
     assert_matches_full(&world, &resumed);
     assert!(
         resume(&world, &store, &[b], &front).is_none(),
@@ -342,9 +346,11 @@ fn a_not_on_top_op_moves_to_the_older_hint_then_to_full_replay() {
     );
 }
 
-/// A join citing an older checkpoint than the hint in use is not on top
-/// of that hint's cut: the joiner resumes from the older hint, and the
-/// join lands as the full merge lands it.
+/// A join citing an older checkpoint than the hint in use lacks a head of
+/// that hint's cut: it is non-power, and every applied cut power op is in
+/// its past, so the joiner resumes from the newer hint (plan E3.2 S7c.8
+/// (3); it used the older one before), and the join lands as the full
+/// merge lands it.
 #[test]
 fn a_join_citing_an_older_checkpoint_is_replayed() {
     let (mut world, creator, inviter, cp1) = world();
@@ -364,8 +370,8 @@ fn a_join_citing_an_older_checkpoint_is_replayed() {
         Deps::Join(vec![cp1.hash(), own_invite]),
     );
     let store = Store::of(&world);
-    let resumed = resume(&world, &store, &[h2, h1], &frontier(&world)).expect("h1 is on top");
-    assert_eq!(resumed.index, 1);
+    let resumed = resume(&world, &store, &[h2, h1], &frontier(&world)).expect("h2 is on top");
+    assert_eq!(resumed.index, 0);
     assert!(resumed.outcome.applied.contains(&joined.hash()));
     assert_matches_full(&world, &resumed);
 }
@@ -432,4 +438,43 @@ fn an_equivocated_community_uses_no_hint() {
     let store = Store::of(&world);
     let resumed = resume(&world, &store, &[snap], &frontier(&world)).expect("on top");
     assert!(equivocates(&world.cert, None, 1, &resumed.gathered.rest));
+}
+
+/// A join racing the checkpoint (plan E3.2 S7c.8 (3)): its deps, taken
+/// before the checkpoint, are the creator's last genesis op (not its top
+/// in the cut) and the inviter's invite, so it is beside the cut. The
+/// joiner after it resumes from the hint, the racing join verifies with
+/// the lamport the full verification gives it (its cited cut op's exact
+/// lamport, from that op's in-cut past), and the merge is the full one.
+#[test]
+fn a_join_racing_the_checkpoint_resumes_with_its_exact_lamport() {
+    let creator = Member::new(1);
+    let mut world = World::new(&creator);
+    let inviter = Member::new(10);
+    world.join(&inviter, &creator, "code");
+    world.author(&inviter, invite(2, "code2"), Deps::Frontier);
+    world.author(
+        &creator,
+        rekindle_governance::fixture::meta("x"),
+        Deps::Frontier,
+    );
+    let racer = Member::new(30);
+    let racing_deps = world.deps_of(&racer, &inviter);
+    let body = world.checkpoint_body();
+    let cp = world.endorse(&creator, body);
+    let raced = world.author(&racer, racer.joined("code2"), Deps::Join(racing_deps));
+    world.join(&Member::new(31), &inviter, "code2");
+    let (_, snap) = snapshot_at(&world, &cp_body(&cp).cut);
+    assert!(
+        !(snap.heads.iter()).all(|h| raced.op().deps.iter().any(|d| d.op_hash == *h)),
+        "the racing join lacks a cut head"
+    );
+    let store = Store::of(&world);
+    let resumed = resume(&world, &store, &[snap], &frontier(&world)).expect("on top");
+    let ours = (resumed.gathered.rest.iter())
+        .find(|o| o.hash() == raced.hash())
+        .expect("the racing join verifies over the cut");
+    assert_eq!(ours.lamport(), raced.lamport());
+    assert!(resumed.outcome.applied.contains(&raced.hash()));
+    assert_matches_full(&world, &resumed);
 }
