@@ -10,15 +10,15 @@ use rekindle_governance::checkpoint::checkpoint_digest;
 use rekindle_governance_runtime::checkpoint_hint::answer_hint_request;
 use rekindle_governance_runtime::checkpoint_state::answer_state_request;
 use rekindle_governance_runtime::checkpointing::{tick, CheckpointClock, CheckpointStep};
-use rekindle_governance_runtime::op_log::rebuild_ops;
-use rekindle_governance_runtime::partial::PartialJoin;
+use rekindle_governance_runtime::op_log::{rebuild_ops, verify_held};
+use rekindle_governance_runtime::partial::{finish_backfill, PartialJoin};
 use rekindle_governance_runtime::{GovernanceRuntimeDeps, GovernanceRuntimeError};
 use rekindle_secrets::derive::derive_community_pseudonym;
 use rekindle_types::governance::{Checkpoint, OpRef};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{GovernanceEvent, StreamFrame, SubscriptionEvent};
 
-use super::checkpoint_rows::community;
+use super::checkpoint_rows::{community, height_one};
 use super::{create_ann, meta, offline_host, seed_governance, seed_registry_community};
 use super::{signed_chain, CREATOR_RECORD};
 
@@ -265,6 +265,56 @@ async fn a_rebuild_still_missing_the_cut_stays_partial() {
     gov.set_governance_partial("c1", Some(hint)).await.unwrap();
     let _ = rebuild_ops(&gov, "c1").await;
     assert_eq!(gov.governance_partial("c1").await.unwrap(), Some(hint));
+    host.shutdown().await.unwrap();
+}
+
+/// S7c.8 (iii): the hint's checkpoint op is held and verified, and the op
+/// set still misses an op (the creator's op after it, cited by the next
+/// one held, which waits on it): the backfill has not ended, so the
+/// community stays partial although the held cut reproduces the hinted
+/// snapshot. `finish_backfill` is driven with the verified set a rebuild
+/// hands it once a pass fetches nothing new; an offline Host's
+/// `rebuild_ops` stops at its first fetch (no transport) and never reaches
+/// it, which is why `a_rebuild_still_missing_the_cut_stays_partial` holds
+/// without the check.
+#[tokio::test]
+async fn a_set_holding_the_checkpoint_but_missing_an_op_stays_partial() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let ann = create_ann(&host).await;
+    seed_registry_community(&host, &ann.public_key).await;
+    let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[0xbb; 32]);
+    let creator = PseudonymKey(key.verifying_key().to_bytes());
+    let cert = rekindle_governance::fixture::cert(
+        &creator,
+        rekindle_types::governance::AdmissionMode::default(),
+    );
+    let first = signed_chain("c1", &key, CREATOR_RECORD, vec![meta("C")]);
+    let (checkpoint, _) = height_one(&cert, &first);
+    let ops = signed_chain(
+        "c1",
+        &key,
+        CREATOR_RECORD,
+        vec![
+            meta("C"),
+            rekindle_types::governance::GovernanceEntry::Checkpoint(checkpoint.clone()),
+            meta("D"),
+            meta("E"),
+        ],
+    );
+    let set = verify_held("c1", &[ops[0].clone(), ops[1].clone(), ops[3].clone()]);
+    assert_eq!(set.ops.len(), 2, "the checkpoint op is verified");
+    assert_eq!(set.missing.len(), 1, "the op after it is missing");
+    let gov = host.governance();
+    let hint = partial_from(&checkpoint, checkpoint.state_root);
+    gov.set_governance_partial("c1", Some(hint)).await.unwrap();
+    finish_backfill(&gov, "c1", &cert, &set).await.unwrap();
+    assert_eq!(gov.governance_partial("c1").await.unwrap(), Some(hint));
+    // Held whole, the same checkpoint ends the backfill.
+    finish_backfill(&gov, "c1", &cert, &verify_held("c1", &ops))
+        .await
+        .unwrap();
+    assert_eq!(gov.governance_partial("c1").await.unwrap(), None);
     host.shutdown().await.unwrap();
 }
 
