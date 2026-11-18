@@ -229,7 +229,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// a community holds with its state and, while usable, its snapshot.
 /// 132 (plan E3.2 S7c.8): `governance_partial`, a community joined from a
 /// checkpoint hint until its backfill ends.
-pub const SCHEMA_VERSION: i64 = 132;
+pub const SCHEMA_VERSION: i64 = 133;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
