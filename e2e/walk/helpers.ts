@@ -31,9 +31,14 @@ export async function gone(b: Browser, selector: string, timeout = WAIT_MS): Pro
   await el.waitForDisplayed({ timeout, reverse: true, timeoutMsg: `${selector} still displayed after ${timeout} ms` });
 }
 
+/**
+ * Whether any match of `selector` is displayed. webdriverio 10's `$` is
+ * strict and throws on a second match (walk 18: B61 once the peer joined the
+ * member list, two `.member-item`s), so this reads every match.
+ */
 export async function present(b: Browser, selector: string): Promise<boolean> {
-  const el = await b.$(selector);
-  return (await el.isExisting()) && (await el.isDisplayed());
+  for (const el of await b.$$(selector)) if (await el.isDisplayed()) return true;
+  return false;
 }
 
 /**
