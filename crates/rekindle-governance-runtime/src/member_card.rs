@@ -272,24 +272,18 @@ pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
     let Ok(port) = deps.record_port() else {
         return;
     };
-    let mut pending: Vec<_> = (state.pending_members.iter())
-        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.stamp))
-        .collect();
-    pending.sort_by_key(|(_, _, _, stamp)| *stamp);
-    let mut members: Vec<_> = (state.members.iter())
-        .filter(|(p, _)| !state.is_departed(p))
-        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.joined))
-        .collect();
-    members.sort_by_key(|(_, _, _, stamp)| *stamp);
-    let unnamed: Vec<MemberRecordRef<'_>> = (pending.into_iter().chain(members))
-        .filter(|(pseudonym, ..)| deps.member_card_name(community_id, pseudonym).is_none())
-        .map(|(pseudonym, record, owner, _)| MemberRecordRef {
-            community_id,
-            pseudonym,
-            record,
-            owner,
-        })
-        .collect();
+    // Our own card says our identity's name (`write_card`): a joiner's
+    // first rebuild runs before it publishes the card, and a forced read of
+    // the unwritten subkey is a fanout to its 10 s timeout (S7c.9).
+    let own = deps.my_pseudonym(community_id);
+    if let Some(own) = &own {
+        if deps.member_card_name(community_id, own).is_none() {
+            deps.note_member_card_name(community_id, own, deps.identity_display_name());
+        }
+    }
+    let unnamed = cards_to_read(&state, community_id, own.as_ref(), |p| {
+        deps.member_card_name(community_id, p).is_some()
+    });
     let port = &*port;
     let mut reads = Vec::with_capacity(unnamed.len());
     for at in unnamed {
@@ -309,6 +303,35 @@ pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
             }
         }
     }
+}
+
+/// The members whose card a refresh reads, pending ones first, each group
+/// in stamp order: never departed members, us (`own`), or those whose name
+/// we hold (`named`).
+fn cards_to_read<'a>(
+    state: &'a rekindle_governance::state::GovernanceState,
+    community_id: &'a str,
+    own: Option<&PseudonymKey>,
+    named: impl Fn(&PseudonymKey) -> bool,
+) -> Vec<MemberRecordRef<'a>> {
+    let mut pending: Vec<_> = (state.pending_members.iter())
+        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.stamp))
+        .collect();
+    pending.sort_by_key(|(_, _, _, stamp)| *stamp);
+    let mut members: Vec<_> = (state.members.iter())
+        .filter(|(p, _)| !state.is_departed(p))
+        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.joined))
+        .collect();
+    members.sort_by_key(|(_, _, _, stamp)| *stamp);
+    (pending.into_iter().chain(members))
+        .filter(|(pseudonym, ..)| own != Some(*pseudonym) && !named(pseudonym))
+        .map(|(pseudonym, record, owner, _)| MemberRecordRef {
+            community_id,
+            pseudonym,
+            record,
+            owner,
+        })
+        .collect()
 }
 
 /// Each of `reads` (a member's pseudonym and its card read), at most

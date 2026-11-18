@@ -414,8 +414,11 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// we hold one; never a field from an unverified peer payload.
     fn member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> Option<String>;
     /// Remember the display name on `pseudonym`'s card, which
-    /// `crate::member_card::read_card` verified.
+    /// `crate::member_card::read_card` verified, or on our own card, which
+    /// says `identity_display_name` (`member_card::write_card`).
     fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String);
+    /// Our pseudonym in the community, `None` while we hold none.
+    fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey>;
     /// Every op `governance_ops` holds for the community.
     async fn governance_ops(
         &self,

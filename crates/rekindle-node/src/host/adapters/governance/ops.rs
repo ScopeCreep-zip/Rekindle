@@ -526,21 +526,27 @@ pub(crate) async fn append_op_once(
     let decoded =
         rekindle_codec::governance_op::decode_op(&op).map_err(|e| format!("governance op: {e}"))?;
     let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
-    let recent = rekindle_records::chain::read_log_after(port, record, GOV_HEAD, decoded.op.seq)
-        .await
-        .map_err(|e| format!("read op log: {e}"))?;
-    let logged = recent.entries.iter().any(|entry| {
-        rekindle_codec::governance_op::decode_op(&entry.ciphertext)
-            .is_ok_and(|d| rekindle_governance::op::op_hash(&d.unsigned, &d.op.sig) == hash)
-    });
-    if logged {
-        republish_head(port, record, writer).await?;
-        return Ok(false);
+    let appended = rekindle_records::chain::append_at_unless_logged(
+        port,
+        record,
+        GOV_HEAD,
+        writer,
+        decoded.op.seq,
+        op,
+        |entry| {
+            rekindle_codec::governance_op::decode_op(entry)
+                .is_ok_and(|d| rekindle_governance::op::op_hash(&d.unsigned, &d.op.sig) == hash)
+        },
+    )
+    .await
+    .map_err(|e| format!("append op: {e}"))?;
+    match appended {
+        rekindle_records::chain::LoggedAppend::Appended(_) => Ok(true),
+        rekindle_records::chain::LoggedAppend::AlreadyLogged => {
+            republish_head(port, record, writer).await?;
+            Ok(false)
+        }
     }
-    rekindle_records::chain::append_at(port, record, GOV_HEAD, writer, &[op])
-        .await
-        .map(|_| true)
-        .map_err(|e| format!("append op: {e}"))
 }
 
 /// Write `record`'s op-log head again with the value just read from the

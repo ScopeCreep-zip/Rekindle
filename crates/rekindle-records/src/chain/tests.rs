@@ -27,16 +27,22 @@ struct Mem {
     /// A read that goes to the network never answers (an unwritten subkey's
     /// fanout running to its timeout, on an internet that stays unready).
     stall_network: bool,
+    /// Reads that went to the network.
+    network_reads: usize,
 }
 
 #[derive(Default)]
-struct MemPort(Mutex<Mem>);
+pub(super) struct MemPort(Mutex<Mem>);
 
 fn unused() -> PortError {
     PortError::Node("not used by the chain".into())
 }
 
 impl MemPort {
+    pub(super) fn network_reads(&self) -> usize {
+        self.0.lock().network_reads
+    }
+
     fn records(&self) -> usize {
         self.0.lock().records.len()
     }
@@ -126,6 +132,7 @@ impl RecordPort for MemPort {
             // (0.5.8 `get_value.rs:161-169`), as a forced one does.
             let network = force_refresh || !local;
             if network {
+                mem.network_reads += 1;
                 if let Some(data) = mem.remote.remove(&(key.clone(), subkey)) {
                     mem.records.get_mut(&key).unwrap().1[subkey as usize] = Some(data);
                 }
@@ -278,14 +285,14 @@ impl RecordPort for MemPort {
 }
 
 /// A port with one participant record: its key and owner keypair.
-async fn participant() -> (MemPort, String, String) {
+pub(super) async fn participant() -> (MemPort, String, String) {
     let port = MemPort::default();
     let (lease, key, owner) = port.create(&schema::dm_participant(), None).await.unwrap();
     port.release(lease).await;
     (port, key, owner)
 }
 
-fn entries(range: std::ops::RangeInclusive<u8>) -> Vec<Vec<u8>> {
+pub(super) fn entries(range: std::ops::RangeInclusive<u8>) -> Vec<Vec<u8>> {
     range.map(|i| vec![i; 3]).collect()
 }
 

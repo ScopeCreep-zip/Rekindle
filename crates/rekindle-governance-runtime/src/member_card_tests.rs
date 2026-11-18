@@ -93,3 +93,32 @@ async fn card_reads_run_sixteen_in_flight_in_member_order() {
     let rounds = usize::from(MEMBERS).div_ceil(WALK_FETCHES_IN_FLIGHT);
     assert_eq!(elapsed, RTT * u32::try_from(rounds).unwrap());
 }
+
+/// Plan E3.2 S7c.9: a refresh never reads our own card (a joiner's first
+/// rebuild runs before it writes it, and a forced read of the unwritten
+/// subkey is a fanout to its 10 s timeout); it reads every other member
+/// whose name we lack.
+#[test]
+fn a_refresh_reads_every_card_but_ours_and_the_named() {
+    use rekindle_governance::state::{GovernanceState, MemberState};
+    use rekindle_types::id::PseudonymKey;
+
+    let mut state = GovernanceState::default();
+    for i in 0..3u8 {
+        state.members.insert(
+            PseudonymKey([i; 32]),
+            MemberState {
+                member_record: format!("M{i}"),
+                member_record_owner: format!("o{i}"),
+                joined: rekindle_governance::op::OpStamp::MIN,
+            },
+        );
+    }
+    let own = PseudonymKey([1; 32]);
+    let named = PseudonymKey([2; 32]);
+    let read: Vec<&str> = super::cards_to_read(&state, "C", Some(&own), |p| *p == named)
+        .iter()
+        .map(|m| m.record)
+        .collect();
+    assert_eq!(read, vec!["M0"]);
+}

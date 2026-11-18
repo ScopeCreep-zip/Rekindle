@@ -24,6 +24,8 @@
 //! dropped), so it is written with [`append_at`] and read with
 //! [`read_log_after`].
 
+#[cfg(test)]
+mod logged_tests;
 mod page;
 #[cfg(test)]
 mod tests;
@@ -155,6 +157,7 @@ pub async fn append(
         writer,
         None,
         HeadRead::Local,
+        FirstHead::Read,
         entries,
     )
     .await
@@ -170,6 +173,14 @@ enum HeadRead {
     /// next seq, and a write at a seq a rival holds is a fork (D15), not a
     /// supersede.
     Network,
+}
+
+/// The head an append's first round chains onto.
+enum FirstHead {
+    /// Read it as [`HeadRead`] says.
+    Read,
+    /// The value the caller just read ([`append_at_unless_logged`]).
+    Known(Option<ChainHead>),
 }
 
 /// [`append`] to the chain whose head is `record`/`head_subkey`; `writer`
@@ -192,9 +203,57 @@ pub async fn append_at(
         writer,
         None,
         HeadRead::Network,
+        FirstHead::Read,
         entries,
     )
     .await
+}
+
+/// What [`append_at_unless_logged`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoggedAppend {
+    /// The entry is the chain's newest page now.
+    Appended(PagePointer),
+    /// An entry after the cursor already answered `logged`: nothing written.
+    AlreadyLogged,
+}
+
+/// [`append_at`] of `entry` unless an entry after `cursor` answers
+/// `logged` (a retried append whose page an earlier attempt named). One
+/// network read of the head serves both the check and the append (plan
+/// E3.2 S7c.9): a fresh op log's head is unwritten, so each read of it is
+/// a fanout to `get_value_timeout_ms`, 10 s (`veilid_config.rs:1007`), and
+/// reading it once for the check and again for the append cost a joiner's
+/// `MemberJoined` two of them.
+///
+/// # Errors
+/// As [`append_at`] and [`read_log_after`].
+pub async fn append_at_unless_logged(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+    writer: &str,
+    cursor: u64,
+    entry: Vec<u8>,
+    logged: impl Fn(&[u8]) -> bool,
+) -> Result<LoggedAppend, ChainError> {
+    let head = read_head(port, record, head_subkey).await?;
+    let recent = walk_down(port, head.as_ref().map(|h| h.newest.clone()), cursor).await?;
+    if recent.iter().any(|e| logged(&e.ciphertext)) {
+        return Ok(LoggedAppend::AlreadyLogged);
+    }
+    append_after(
+        port,
+        record,
+        head_subkey,
+        writer,
+        None,
+        HeadRead::Network,
+        FirstHead::Known(head),
+        &[entry],
+    )
+    .await
+    .map(LoggedAppend::Appended)
 }
 
 /// [`append_at`] with `entries` starting at exactly chain seq `first_seq`,
@@ -218,6 +277,7 @@ pub async fn append_exact(
         writer,
         Some(first_seq),
         HeadRead::Local,
+        FirstHead::Read,
         entries,
     )
     .await
@@ -230,6 +290,7 @@ async fn append_after(
     writer: &str,
     expected: Option<u64>,
     read: HeadRead,
+    mut first: FirstHead,
     entries: &[Vec<u8>],
 ) -> Result<PagePointer, ChainError> {
     if entries.is_empty() {
@@ -237,9 +298,12 @@ async fn append_after(
     }
     let mut round = 1;
     loop {
-        let prev = match read {
-            HeadRead::Local => own_head_at(port, record, head_subkey).await?,
-            HeadRead::Network => read_head(port, record, head_subkey).await?,
+        // The first round may chain onto a head the caller just read; a
+        // superseded round reads it again.
+        let prev = match (std::mem::replace(&mut first, FirstHead::Read), read) {
+            (FirstHead::Known(head), _) => head,
+            (FirstHead::Read, HeadRead::Local) => own_head_at(port, record, head_subkey).await?,
+            (FirstHead::Read, HeadRead::Network) => read_head(port, record, head_subkey).await?,
         };
         // The new head keeps the retire mark of the head it follows.
         let retired_through = prev.as_ref().map_or(0, |h| h.retired_through);

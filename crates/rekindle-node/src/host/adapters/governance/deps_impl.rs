@@ -377,6 +377,12 @@ impl GovernanceRuntimeDeps for HostGovernance {
         }
     }
 
+    fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey> {
+        let map = self.ctx.communities.map().read();
+        let mine = map.get(community_id)?.my_pseudonym_key.as_deref()?;
+        super::ops::pseudonym_of(mine)
+    }
+
     fn record_port(
         &self,
     ) -> Result<std::sync::Arc<dyn rekindle_records::port::RecordPort>, GovernanceRuntimeError>
