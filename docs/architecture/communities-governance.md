@@ -213,7 +213,7 @@ registry and channel records announced via a `SegmentAdded` op.
 ```rust
 GovernanceEntry::SegmentAdded {
     segment_index: u16,
-    governance_key: TypedKey,
+    anchor: TypedKey,
     registry_key: TypedKey,
     slot_range: (u16, u16),  // member slot range this segment covers
     lamport: u64,
