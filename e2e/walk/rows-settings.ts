@@ -25,6 +25,22 @@ async function otherSkin(b: Browser): Promise<{ name: string; radio: Awaited<Ret
   return null;
 }
 
+/**
+ * What the Appearance tab shows when the trial prompt never does: the
+ * shown skin, the checked radio and any refusal (AppearanceTab.tsx:164).
+ */
+async function skinProbe(b: Browser): Promise<string> {
+  return b.execute(() => {
+    const shownName = document.querySelector(".skin-row-shown .skin-name")?.textContent?.trim();
+    const checked = (document.querySelector(".skin-row input[type=radio]:checked") as HTMLElement | null)
+      ?.closest(".skin-row")
+      ?.querySelector(".skin-name")?.textContent?.trim();
+    const refusal = document.querySelector(".skin-error")?.textContent?.trim();
+    const review = !!document.querySelector(".intent-dialog-actions");
+    return `shown=${shownName}; checked=${checked}; refusal=${refusal ?? "none"}; review open=${review}`;
+  });
+}
+
 const TABS = ["Profile", "Application", "Appearance", "Notifications", "Audio", "Video", "Privacy", "Devices", "Mobile", "About"];
 
 function flipRow(id: string, tab: string, text: string): Row {
@@ -152,7 +168,9 @@ export const SETTINGS_ROWS: Row[] = [
       const { name, radio } = other;
       await radio.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await shown(b, ".skin-trial", NET_WAIT_MS);
+      await shown(b, ".skin-trial", NET_WAIT_MS).catch(async (e: Error) => {
+        throw new Error(`${e.message} after choosing ${name} (${await skinProbe(b)})`);
+      });
       await shot();
       await (await b.$(".skin-trial .sec-btn-commit")).click();
       await waitUntil(async () => !(await present(b, ".skin-trial")), NET_WAIT_MS, "trial prompt stayed after Keep");
@@ -177,7 +195,9 @@ export const SETTINGS_ROWS: Row[] = [
       }
       await other.radio.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await shown(b, ".skin-trial", NET_WAIT_MS);
+      await shown(b, ".skin-trial", NET_WAIT_MS).catch(async (e: Error) => {
+        throw new Error(`${e.message} after choosing ${other.name} (${await skinProbe(b)})`);
+      });
       await (await b.$(".skin-trial .sec-btn-secondary")).click();
       await waitUntil(async () => !(await present(b, ".skin-trial")), NET_WAIT_MS, "trial prompt stayed after Revert");
       await waitUntil(async () => (await (await b.$(".skin-row-shown .skin-name")).getText()) === kept, WAIT_MS, "skin did not revert");
@@ -198,8 +218,12 @@ export const SETTINGS_ROWS: Row[] = [
         throw new Skip(ONE_SKIN);
       }
       const btn = await byText(b, ".skin-action", "Use as login skin");
-      const row = await btn.parentElement().then((el) => el.parentElement());
-      const name = await (await row.$(".skin-name")).getText();
+      // The row's name from the page: webdriverio cannot walk up from an
+      // element `$$` returned (walk 21 ST10: "parent element ... wasn't found").
+      const name = await b.execute(() => {
+        const use = Array.from(document.querySelectorAll(".skin-action")).find((x) => x.textContent?.trim() === "Use as login skin");
+        return use?.closest(".skin-row")?.querySelector(".skin-name")?.textContent?.trim() ?? "";
+      });
       await btn.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await waitUntil(async () => (await (await b.$(".skin-badge")).parentElement().then((r) => r.$(".skin-name")).then((n) => n.getText())) === name, WAIT_MS, "Login skin badge did not move");
