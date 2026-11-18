@@ -3,12 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::governance::{GenesisCert, OpHash};
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 
-use super::{resolve, resolve_stable};
+use super::{resolve, resolve_stable, Round};
 use crate::checkpoint::CutIndex;
 use crate::op::VerifiedOp;
-use crate::power::{class_of, OpClass};
+use crate::power::{class_of, removal_target, target_seq_frontier, OpClass};
 use crate::state::GovernanceState;
 
 /// Merge `cut_ops`, the causal closure of a checkpoint's cut, under `cert`:
@@ -42,11 +42,131 @@ pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState
         .filter(|&i| !is_power(i))
         .map(|i| (set.ops[i].op().issued_at, set.ops[i].hash()))
         .max();
+    let authors_live = authors.clone();
     let cut = CutIndex {
         authors,
         power,
         power_heads,
         mainline_max,
+        holders: holders(cert, &set, &round),
+        masked: masked(&set, &round),
+        invite_codes: invite_codes(&set, &round),
+        forks: forks(cut_ops),
+        unmerged: unmerged(cut_ops, &authors_live),
     };
     (round.state, cut)
+}
+
+/// `record_gate`'s holder map after the settled round: the cert's creator,
+/// then the first applied join or move naming each record, in stamp order.
+fn holders(
+    cert: &GenesisCert,
+    set: &resolve::OpSet<'_>,
+    round: &Round,
+) -> BTreeMap<String, [u8; 32]> {
+    let mut out = BTreeMap::new();
+    out.insert(cert.creator_member_record.clone(), cert.creator_pseudonym.0);
+    for (_, op) in set
+        .ops
+        .iter()
+        .enumerate()
+        .filter(|&(o, _)| round.applied[o])
+    {
+        if let GovernanceEntry::MemberJoined { member_record, .. }
+        | GovernanceEntry::MemberRecordMoved { member_record, .. } = op.body()
+        {
+            out.entry(member_record.clone()).or_insert(op.author().0);
+        }
+    }
+    out
+}
+
+/// The targets of applied removals (`MemberRemoved`, `BanEntry`, demotion;
+/// never of the remover itself) that no applied re-join of the target with
+/// the removal in its causal past follows: every later op of theirs that
+/// has the whole cut in its causal past is masked (`gates::strong_removal`,
+/// whose `rejoined` exemption is the only one such an op can have). Each
+/// maps to the first of those removals in stamp order carrying a seq
+/// frontier, the cause `merge_outcome` quarantines under.
+fn masked(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<[u8; 32], Option<OpHash>> {
+    let mut out: BTreeMap<[u8; 32], Option<OpHash>> = BTreeMap::new();
+    for (r, op) in set
+        .ops
+        .iter()
+        .enumerate()
+        .filter(|&(r, _)| round.applied[r])
+    {
+        let Some(target) = removal_target(op.body()).filter(|t| *t != op.author()) else {
+            continue;
+        };
+        let lifted = (0..set.ops.len()).any(|j| {
+            round.applied[j]
+                && set.ops[j].author() == target
+                && matches!(set.ops[j].body(), GovernanceEntry::MemberJoined { .. })
+                && set.past.contains(j, r)
+        });
+        if lifted {
+            continue;
+        }
+        let cause = out.entry(target.0).or_insert(None);
+        if cause.is_none() && target_seq_frontier(op.body()).is_some() {
+            *cause = Some(op.hash());
+        }
+    }
+    out
+}
+
+/// Per code hash, the first applied `InviteCreated` carrying it (in stamp
+/// order, `gates::invite_gate`'s search order) and whether an applied
+/// `InviteRevoked` names it.
+fn invite_codes(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<String, ([u8; 16], bool)> {
+    let applied = || (0..set.ops.len()).filter(|&i| round.applied[i]);
+    let mut out = BTreeMap::new();
+    for c in applied() {
+        if let GovernanceEntry::InviteCreated {
+            invite_id,
+            code_hash,
+            ..
+        } = set.ops[c].body()
+        {
+            let revoked = applied().any(|v| {
+                matches!(set.ops[v].body(), GovernanceEntry::InviteRevoked { invite_id: id } if id == invite_id)
+            });
+            out.entry(code_hash.clone())
+                .or_insert((*invite_id, revoked));
+        }
+    }
+    out
+}
+
+/// Each author that signed two ops at one seq, with the lowest such seq
+/// (`resolve::prepare`'s `fork_at`).
+fn forks(cut_ops: &[VerifiedOp]) -> BTreeMap<[u8; 32], u64> {
+    let mut seen: BTreeMap<([u8; 32], u64), OpHash> = BTreeMap::new();
+    let mut out: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+    for op in cut_ops {
+        let key = (op.author().0, op.op().seq);
+        if seen.insert(key, op.hash()).is_some_and(|h| h != op.hash()) {
+            let at = out.entry(key.0).or_insert(u64::MAX);
+            *at = (*at).min(key.1);
+        }
+    }
+    out
+}
+
+/// Each author with a cut op above its merged ops (`authors`), with the
+/// highest seq of any of its cut ops.
+fn unmerged(
+    cut_ops: &[VerifiedOp],
+    live: &BTreeMap<[u8; 32], (u64, OpHash)>,
+) -> BTreeMap<[u8; 32], u64> {
+    let mut out: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+    for op in cut_ops {
+        let author = op.author().0;
+        if live.get(&author).is_none_or(|(s, _)| op.op().seq > *s) {
+            let top = out.entry(author).or_insert(0);
+            *top = (*top).max(op.op().seq);
+        }
+    }
+    out
 }

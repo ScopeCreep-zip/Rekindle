@@ -16,6 +16,7 @@ use rekindle_types::governance::RosterChecksum;
 use crate::state::GovernanceState;
 
 pub(crate) mod canon;
+pub(crate) mod decode;
 mod state;
 
 pub use state::canonical_state;

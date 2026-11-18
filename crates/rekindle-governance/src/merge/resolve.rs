@@ -42,7 +42,7 @@ pub(super) struct Ancestry {
 }
 
 impl Ancestry {
-    fn with_capacity(n: usize) -> Self {
+    pub(super) fn with_capacity(n: usize) -> Self {
         let mut row = Vec::with_capacity(n + 1);
         row.push(0);
         let mut dep_at = Vec::with_capacity(n + 1);
@@ -57,7 +57,7 @@ impl Ancestry {
     }
 
     /// Records the next op (in stamp order) and its deps.
-    fn push(&mut self, deps: &[usize]) {
+    pub(super) fn push(&mut self, deps: &[usize]) {
         let i = self.dep_at.len() - 1;
         let from = self.deps.len();
         self.deps.extend_from_slice(deps);

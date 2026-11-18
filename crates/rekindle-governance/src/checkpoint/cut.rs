@@ -27,6 +27,31 @@ pub struct CutIndex {
     /// The greatest mainline key `(issued_at, op_hash)` among the cut's
     /// non-power ops, if it has any.
     pub mainline_max: Option<(u64, OpHash)>,
+    /// `record_gate`'s holders after the cut: each member record claimed
+    /// by an applied join or move, with the pseudonym (key bytes) holding
+    /// it (plan E3.2 S7c.4a: the gate continues from them, as
+    /// `invite_gate` continues from the stored `uses`).
+    pub holders: BTreeMap<String, [u8; 32]>,
+    /// The authors whose later ops the cut's removals mask (an applied
+    /// `MemberRemoved`, `BanEntry` or demotion of them that no applied
+    /// re-join in the cut follows), each with the first such removal
+    /// carrying a seq frontier, the quarantine cause (plan E3.2 S7c.4a).
+    pub masked: BTreeMap<[u8; 32], Option<OpHash>>,
+    /// Per invite code hash, the first applied `InviteCreated` in the cut
+    /// carrying it and whether an applied `InviteRevoked` in the cut names
+    /// it: `invite_gate` reads the first such invite in a join's past
+    /// (plan E3.2 S7c.4a).
+    pub invite_codes: BTreeMap<String, ([u8; 16], bool)>,
+    /// The authors that signed two ops at one seq in the cut, each with the
+    /// lowest such seq: every op of theirs at or above it is dropped on
+    /// every reader (`resolve::prepare`), later ones included, and
+    /// `authors` counts only the ops below it (plan E3.2 S7c.4a).
+    pub forks: BTreeMap<[u8; 32], u64>,
+    /// The authors with cut ops the merge leaves out (pending, or at or
+    /// above their fork), each with the highest seq of any of its cut ops:
+    /// an op at a seq above its author's `authors` entry and at or below
+    /// this one is in the cut but never merged (plan E3.2 S7c.4a).
+    pub unmerged: BTreeMap<[u8; 32], u64>,
 }
 
 /// The canonical encoding of `cut`, under `canonical_state`'s rules.
@@ -37,12 +62,22 @@ pub fn canonical_cut(cut: &CutIndex) -> Vec<u8> {
         power,
         power_heads,
         mainline_max,
+        holders,
+        masked,
+        invite_codes,
+        forks,
+        unmerged,
     } = cut;
     let mut out = Vec::new();
     put_map(&mut out, authors);
     power.put(&mut out);
     put_set(&mut out, power_heads);
     mainline_max.put(&mut out);
+    put_map(&mut out, holders);
+    put_map(&mut out, masked);
+    put_map(&mut out, invite_codes);
+    put_map(&mut out, forks);
+    put_map(&mut out, unmerged);
     out
 }
 

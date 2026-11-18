@@ -402,6 +402,8 @@ mod membership;
 mod moderation;
 mod onboarding;
 mod resolve;
+mod resume;
+mod resume_gates;
 mod roles;
 
 #[cfg(test)]
@@ -413,6 +415,8 @@ mod op_proptests;
 #[cfg(test)]
 mod proptests;
 #[cfg(test)]
+mod resume_tests;
+#[cfg(test)]
 mod tests;
 
 use channels::apply_channels;
@@ -423,4 +427,5 @@ use expression::apply_expression;
 use membership::apply_membership;
 use moderation::{apply_admission, apply_mod_report, apply_moderation};
 use onboarding::apply_onboarding;
+pub use resume::{merge_from, NotOnTop};
 use roles::apply_roles;
