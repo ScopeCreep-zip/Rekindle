@@ -231,3 +231,32 @@ async fn import_select_set_login_and_remove_round_trip() {
     let library: SkinLibrary = data(answer);
     assert!(library.skins.iter().all(|s| s.id != entry.id));
 }
+
+#[tokio::test]
+async fn a_skin_is_chosen_while_the_network_is_detached() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    host.ctx
+        .lifecycle
+        .transition(crate::daemon::DaemonState::Detached)
+        .unwrap();
+    let canonical = validate::run(builtin::PACKS[1].bytes).unwrap();
+    host.ctx
+        .skin_helper
+        .set(stand_in(&dir, &Ok(canonical)))
+        .unwrap();
+    let other = format!("{}{}", builtin::PREFIX, builtin::PACKS[1].id);
+    let (answer, _) = run(&host, IpcRequest::SkinSelect { id: other.clone() }).await;
+    assert_eq!(
+        data::<SkinLibrary>(answer).active,
+        other,
+        "chosen while detached"
+    );
+    let (answer, _) = run(&host, IpcRequest::SkinSetLogin { id: other.clone() }).await;
+    assert_eq!(
+        data::<SkinLibrary>(answer).login,
+        other,
+        "login skin set while detached"
+    );
+}

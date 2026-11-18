@@ -396,6 +396,10 @@ const BASE_ROWS: Row[] = [
     title: "Status picker: Away, Busy, Appear Offline, Online",
     async run({ b, s }) {
       const seen: string[] = [];
+      // The Host's answer to each pick and our own presence events, named
+      // in the note when a label never shows (B63 failed on Online in walks
+      // 8, 21-23 after passing the other three).
+      await recordPage(b, ["set_status"], ["selfChanged", "SelfChanged"]);
       // Each step has its own deadline, so a stuck call fails the row with
       // its name instead of running on into B9 after the row timeout.
       for (const label of ["Away", "Busy", "Appear Offline", "Online"]) {
@@ -405,7 +409,9 @@ const BASE_ROWS: Row[] = [
         await step("press item", press(b, await step("find item", byText(b, ".status-picker-dropdown .context-menu-item", label))));
         await step("intent", resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 }));
         await step("dropdown closes", gone(b, ".status-picker-dropdown"));
-        await step("label", waitUntil(async () => (await statusLabel(b)).includes(label), WAIT_MS, `status did not show ${label}`));
+        await step("label", waitUntil(async () => (await statusLabel(b)).includes(label), WAIT_MS, `status did not show ${label}`).catch(async (e: Error) => {
+          throw new Error(`${e.message}; label shows "${await statusLabel(b)}" (${await pageLog(b)})`);
+        }));
         seen.push(await step("read label", statusLabel(b)));
       }
       return `shown: ${seen.join(", ")}`;

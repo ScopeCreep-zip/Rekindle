@@ -36,7 +36,12 @@ pub(crate) async fn route(
         request,
         IpcRequest::SkinList | IpcRequest::SkinGet { .. } | IpcRequest::SkinFile { .. }
     );
-    if !reads && !state.can_write() {
+    // A skin write is local: the identity's database and this device's
+    // data root, with no record written to the network. So it needs only
+    // an unlocked identity, and a detached network refuses none (walk 24:
+    // ST9 and ST10, sent while the node was still attaching, were refused
+    // "cannot perform write operation in state 'detached'").
+    if !reads && !state.can_query() {
         return state_error(state, "write");
     }
     let answer = match request {

@@ -69,6 +69,17 @@ async function rowRadio(b: Browser, name: string): Promise<Radio> {
   throw new Error(`no built-in skin named ${name}`);
 }
 
+/** The "Use as login skin" button of the built-in named `name`, if shown. */
+async function loginButton(b: Browser, name: string): Promise<Radio | null> {
+  for (const row of await b.$$(".skin-row")) {
+    if ((await (await row.$(".skin-name")).getText()).trim() !== name || (await offersRemove(row))) continue;
+    for (const action of await row.$$(".skin-action")) {
+      if ((await action.getText()).trim() === "Use as login skin") return action;
+    }
+  }
+  return null;
+}
+
 /** The radio of the imported skin, or null when none is listed. */
 async function importedRadio(b: Browser): Promise<Radio | null> {
   for (const row of await b.$$(".skin-row")) {
@@ -273,16 +284,29 @@ export const SETTINGS_ROWS: Row[] = [
         await closeSettings(b);
         throw new Skip(ONE_SKIN);
       }
-      const btn = await byText(b, ".skin-action", "Use as login skin");
-      // The row's name from the page: webdriverio cannot walk up from an
-      // element `$$` returned (walk 21 ST10: "parent element ... wasn't found").
+      // The skin it means, by name: the first built-in that is not the
+      // login skin now (an imported copy of a built-in shares its name,
+      // ST13, so a row is a built-in by offering no Remove).
       const name = await b.execute(() => {
-        const use = Array.from(document.querySelectorAll(".skin-action")).find((x) => x.textContent?.trim() === "Use as login skin");
-        return use?.closest(".skin-row")?.querySelector(".skin-name")?.textContent?.trim() ?? "";
+        const row = Array.from(document.querySelectorAll(".skin-row")).find((r) => {
+          const acts = Array.from(r.querySelectorAll(".skin-action")).map((x) => x.textContent?.trim());
+          return acts.includes("Use as login skin") && !acts.includes("Remove");
+        });
+        return row?.querySelector(".skin-name")?.textContent?.trim() ?? "";
       });
-      await btn.click();
+      if (!name) throw new Error("no built-in offers Use as login skin");
+      const use = await loginButton(b, name);
+      if (!use) throw new Error(`${name}: no Use as login skin button`);
+      await use.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await waitUntil(async () => (await (await b.$(".skin-badge")).parentElement().then((r) => r.$(".skin-name")).then((n) => n.getText())) === name, WAIT_MS, "Login skin badge did not move");
+      // The badge's row read in the page: webdriverio cannot walk up from an
+      // element (`parentElement()` threw "Can't call $ on parent element",
+      // walk 24), so the old read never matched.
+      const badged = (): Promise<string> => b.execute(() =>
+        document.querySelector(".skin-badge")?.closest(".skin-row")?.querySelector(".skin-name")?.textContent?.trim() ?? "");
+      await waitUntil(async () => (await badged()) === name, WAIT_MS, "Login skin badge did not move").catch(async (e: Error) => {
+        throw new Error(`${e.message}: clicked ${name}; badge on "${await badged()}"; ${await skinProbe(b)}`);
+      });
       await shot();
       await closeSettings(b);
       return `login skin badge on ${name}`;
