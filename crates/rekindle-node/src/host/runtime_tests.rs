@@ -15,6 +15,8 @@ use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};
 mod attachment_limit;
 #[path = "automod_malformed_tests.rs"]
 mod automod_malformed;
+#[path = "channel_change_tests.rs"]
+mod channel_change_tests;
 #[path = "channel_history_tests.rs"]
 mod channel_history_tests;
 #[path = "channel_ingest_tests.rs"]

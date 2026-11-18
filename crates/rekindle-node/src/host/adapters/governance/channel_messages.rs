@@ -2,12 +2,17 @@
 //! (plan E3.1 E2), on both modes: the change is gossiped to the
 //! community's mesh as `ControlPayload::MessageEdited` / `MessageDeleted`
 //! (the record entry stays; every reader applies the control), and a
-//! delete also drops our stored row.
+//! delete also drops our stored row. Our own frontends get the same
+//! `Edited` / `Deleted` event a receiver's do (plan E7.13 M45): the mesh
+//! never echoes a frame to its sender, so without it the author's own
+//! window kept the old body (Signal, Discord: the author's view changes
+//! at once).
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::id::ChannelId;
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use super::HostGovernance;
 use crate::daemon::dispatch::DaemonContext;
@@ -50,27 +55,50 @@ impl HostGovernance {
         message_id: &str,
         change: MessageChange,
     ) -> Result<(), GovernanceRuntimeError> {
-        let payload = match change {
+        let (community, channel, message) = (
+            community_id.to_string(),
+            channel_id.to_string(),
+            message_id.to_string(),
+        );
+        let (payload, own_event) = match change {
             MessageChange::Edit { body } => {
                 let (new_ciphertext, mek_generation) =
                     self.seal_edit(community_id, channel_id, &body)?;
-                ControlPayload::MessageEdited {
-                    channel_id: channel_id.to_string(),
-                    message_id: message_id.to_string(),
+                let edited_at = self.ctx.clock.now_secs();
+                let payload = ControlPayload::MessageEdited {
+                    channel_id: channel.clone(),
+                    message_id: message.clone(),
                     new_ciphertext,
                     mek_generation,
-                    edited_at: self.ctx.clock.now_secs(),
-                }
+                    edited_at,
+                };
+                let event = ChannelMessageEvent::Edited {
+                    community,
+                    channel,
+                    message_id: message,
+                    body: Some(body),
+                    edited_at,
+                };
+                (payload, event)
             }
             MessageChange::Delete => {
                 self.delete_stored(channel_id, message_id).await?;
-                ControlPayload::MessageDeleted {
-                    channel_id: channel_id.to_string(),
-                    message_id: message_id.to_string(),
-                }
+                let payload = ControlPayload::MessageDeleted {
+                    channel_id: channel.clone(),
+                    message_id: message.clone(),
+                };
+                let event = ChannelMessageEvent::Deleted {
+                    community,
+                    channel,
+                    message_id: message,
+                };
+                (payload, event)
             }
         };
-        self.send_to_mesh(community_id, &CommunityEnvelope::Control(payload))
+        self.send_to_mesh(community_id, &CommunityEnvelope::Control(payload))?;
+        self.ctx
+            .publish_event(SubscriptionEvent::ChannelMessage(own_event));
+        Ok(())
     }
 
     /// `body` sealed under the channel's current text key, with that key's
