@@ -26,6 +26,7 @@ pub fn checkpoint_digest(c: &Checkpoint) -> [u8; 32] {
         dir_root,
         dir_size,
         state_root,
+        state_size,
         mek_generation,
         eligible_set_hash,
         pages: _,
@@ -46,6 +47,7 @@ pub fn checkpoint_digest(c: &Checkpoint) -> [u8; 32] {
     h.update(dir_root);
     h.update(&dir_size.to_be_bytes());
     h.update(state_root);
+    h.update(&state_size.to_be_bytes());
     h.update(&mek_generation.to_be_bytes());
     h.update(eligible_set_hash);
     *h.finalize().as_bytes()

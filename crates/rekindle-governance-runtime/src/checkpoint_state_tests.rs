@@ -11,6 +11,10 @@ fn snapshot(fill: u8) -> Vec<u8> {
     vec![fill; 2 * SNAPSHOT_CHUNK_MAX + 1234]
 }
 
+fn size(snapshot: &[u8]) -> u32 {
+    u32::try_from(snapshot.len()).expect("a test snapshot fits")
+}
+
 fn serve(
     snapshot: &[u8],
     offset: u32,
@@ -43,7 +47,7 @@ async fn a_state_snapshot_that_misses_the_state_root_is_refused_and_another_peer
     let bad = snapshot(2);
     let root = state_root_of(&good);
     let asked = RefCell::new(Vec::new());
-    let got = first_matching(3, &root, |peer, offset| {
+    let got = first_matching(3, (&root, size(&good)), |peer, offset| {
         asked.borrow_mut().push((peer, offset));
         serve(if peer == 0 { &bad } else { &good }, offset)
     })
@@ -62,9 +66,11 @@ async fn a_state_snapshot_that_misses_the_state_root_is_refused_and_another_peer
 async fn no_matching_peer_is_none() {
     let bad = snapshot(2);
     let root = state_root_of(&snapshot(1));
-    assert!(first_matching(2, &root, |_, offset| serve(&bad, offset))
-        .await
-        .is_none());
+    assert!(
+        first_matching(2, (&root, size(&bad)), |_, offset| serve(&bad, offset))
+            .await
+            .is_none()
+    );
 }
 
 /// A peer that drips short chunks, or changes its total, is not
@@ -78,11 +84,35 @@ async fn a_short_or_inconsistent_chunk_ends_that_peer() {
         c.bytes.truncate(1);
         std::future::ready(Ok(c))
     };
-    assert!(first_matching(1, &root, short).await.is_none());
+    assert!(first_matching(1, (&root, size(&good)), short)
+        .await
+        .is_none());
     let shifting = |_: usize, offset: u32| {
         let mut c = chunk_at(&good, offset).unwrap();
         c.total += offset;
         std::future::ready(Ok(c))
     };
-    assert!(first_matching(1, &root, shifting).await.is_none());
+    assert!(first_matching(1, (&root, size(&good)), shifting)
+        .await
+        .is_none());
+}
+
+/// Plan E3.2 S7c.4a: a peer claiming a total other than the endorsed
+/// `stateSize` (here `u32::MAX`) is dropped at its first chunk, never asked
+/// for a second.
+#[tokio::test]
+async fn a_total_other_than_the_endorsed_state_size_is_refused_at_the_first_chunk() {
+    let good = snapshot(1);
+    let root = state_root_of(&good);
+    let asked = RefCell::new(0);
+    let inflated = |_: usize, offset: u32| {
+        *asked.borrow_mut() += 1;
+        let mut c = chunk_at(&good, offset).unwrap();
+        c.total = u32::MAX;
+        std::future::ready(Ok(c))
+    };
+    assert!(first_matching(1, (&root, size(&good)), inflated)
+        .await
+        .is_none());
+    assert_eq!(*asked.borrow(), 1);
 }

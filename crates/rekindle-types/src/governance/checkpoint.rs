@@ -30,6 +30,12 @@ pub struct Checkpoint {
     pub dir_size: u64,
     /// The merged state at the cut and the cut index, digested.
     pub state_root: [u8; 32],
+    /// The length of the `stateRoot` preimage (`stateSize` on the wire):
+    /// a reader fetching the snapshot refuses any other total before it
+    /// asks for a second chunk (plan E3.2 S7c.4a). The state itself has
+    /// no size bound (channels, threads, events and reports are uncapped),
+    /// so the endorsed checkpoint commits to the exact one.
+    pub state_size: u32,
     /// `state.mek_generation` at the cut.
     pub mek_generation: u64,
     /// The electorate: the sorted pseudonyms of the admitted, non-removed

@@ -31,6 +31,7 @@ pub(super) fn read_checkpoint(
         dir_root: hash32(p.get_dir_root(), "dirRoot")?,
         dir_size: p.get_dir_size(),
         state_root: hash32(p.get_state_root(), "stateRoot")?,
+        state_size: p.get_state_size(),
         mek_generation: p.get_mek_generation(),
         eligible_set_hash: hash32(p.get_eligible_set_hash(), "eligibleSetHash")?,
         pages,
@@ -52,6 +53,7 @@ pub(super) fn write_checkpoint(mut p: checkpoint_entry::Builder<'_>, c: &Checkpo
     p.set_dir_root(&c.dir_root);
     p.set_dir_size(c.dir_size);
     p.set_state_root(&c.state_root);
+    p.set_state_size(c.state_size);
     p.set_mek_generation(c.mek_generation);
     p.set_eligible_set_hash(&c.eligible_set_hash);
     let mut pages = p.init_pages(len(c.pages.len()));
@@ -101,6 +103,7 @@ mod tests {
             dir_root: [2; 32],
             dir_size: 128 * pages as u64,
             state_root: [3; 32],
+            state_size: 5,
             mek_generation: 4,
             eligible_set_hash: [5; 32],
             pages: (0..pages).map(|p| format!("VLD0:page{p:039}")).collect(),

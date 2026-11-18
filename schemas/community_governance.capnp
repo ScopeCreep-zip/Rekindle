@@ -249,6 +249,7 @@ struct CheckpointEntry {
     mekGeneration        @9 :UInt64;
     eligibleSetHash      @10 :Data;         # 32 bytes
     pages                @11 :List(Text);   # directory page record keys
+    stateSize            @12 :UInt32;       # bytes of the stateRoot preimage (S7c.4a)
 }
 
 # A member's request for a checkpoint's state snapshot (plan E3.2 S7c.3),

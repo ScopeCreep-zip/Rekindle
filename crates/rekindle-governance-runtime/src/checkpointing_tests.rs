@@ -24,6 +24,7 @@ fn endorsement(me: &PseudonymKey, round: u32) -> rekindle_governance::op::Verifi
             dir_root: [0; 32],
             dir_size: 0,
             state_root: [0; 32],
+            state_size: 0,
             mek_generation: 1,
             eligible_set_hash: [0; 32],
             pages: Vec::new(),

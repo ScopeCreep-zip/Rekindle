@@ -300,6 +300,7 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
             dir_root: [21; 32],
             dir_size: 129,
             state_root: [22; 32],
+            state_size: 0,
             mek_generation: 3,
             eligible_set_hash: [23; 32],
             pages: vec![s("VLD0:page0"), s("VLD0:page1")],

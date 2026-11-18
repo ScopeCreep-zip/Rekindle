@@ -5,7 +5,7 @@
 use rekindle_types::governance::{Checkpoint, OpHash};
 
 use super::cut::{state_preimage, state_root_of, CutIndex};
-use crate::checksum::decode::{Decanon, Reader};
+use crate::checksum::decode::{CanonReader, Decanon};
 use crate::state::GovernanceState;
 
 /// The state and cut index a checkpoint's `stateRoot` commits to.
@@ -27,7 +27,7 @@ impl CutSnapshot {
         if state_root_of(bytes) != checkpoint.state_root {
             return None;
         }
-        let mut r = Reader::new(bytes);
+        let mut r = CanonReader::new(bytes);
         let state = GovernanceState::take(&mut r)?;
         let cut = CutIndex {
             authors: Decanon::take(&mut r)?,

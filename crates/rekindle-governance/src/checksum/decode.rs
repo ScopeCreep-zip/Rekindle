@@ -23,12 +23,12 @@ use crate::state::{
 };
 
 /// A cursor over canonical bytes.
-pub(crate) struct Reader<'a> {
+pub(crate) struct CanonReader<'a> {
     bytes: &'a [u8],
     at: usize,
 }
 
-impl<'a> Reader<'a> {
+impl<'a> CanonReader<'a> {
     pub(crate) fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, at: 0 }
     }
@@ -54,17 +54,17 @@ impl<'a> Reader<'a> {
 
 /// A value with one canonical byte encoding, read back.
 pub(crate) trait Decanon: Sized {
-    fn take(r: &mut Reader<'_>) -> Option<Self>;
+    fn take(r: &mut CanonReader<'_>) -> Option<Self>;
 }
 
 /// A shared leaf type written as its serde JSON text (`canon::Json`).
-fn take_json<T: serde::de::DeserializeOwned>(r: &mut Reader<'_>) -> Option<T> {
+fn take_json<T: serde::de::DeserializeOwned>(r: &mut CanonReader<'_>) -> Option<T> {
     let n = r.len()?;
     serde_json::from_slice(r.take(n)?).ok()
 }
 
 impl Decanon for bool {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         match r.take(1)? {
             [0] => Some(false),
             [1] => Some(true),
@@ -74,32 +74,32 @@ impl Decanon for bool {
 }
 
 impl Decanon for u32 {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Self::from_be_bytes(r.take(4)?.try_into().ok()?))
     }
 }
 
 impl Decanon for u64 {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Self::from_be_bytes(r.take(8)?.try_into().ok()?))
     }
 }
 
 impl<const N: usize> Decanon for [u8; N] {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         r.take(N)?.try_into().ok()
     }
 }
 
 impl Decanon for String {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         let n = r.len()?;
         Self::from_utf8(r.take(n)?.to_vec()).ok()
     }
 }
 
 impl<T: Decanon> Decanon for Option<T> {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         match r.take(1)? {
             [0] => Some(None),
             [1] => Some(Some(T::take(r)?)),
@@ -109,7 +109,7 @@ impl<T: Decanon> Decanon for Option<T> {
 }
 
 impl<T: Decanon> Decanon for Vec<T> {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         let n = r.len()?;
         let mut out = Vec::new();
         for _ in 0..n {
@@ -120,43 +120,43 @@ impl<T: Decanon> Decanon for Vec<T> {
 }
 
 impl<A: Decanon, B: Decanon> Decanon for (A, B) {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some((A::take(r)?, B::take(r)?))
     }
 }
 
 impl<T: Decanon + Eq + Hash> Decanon for HashSet<T> {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Vec::<T>::take(r)?.into_iter().collect())
     }
 }
 
 impl<T: Decanon + Ord> Decanon for BTreeSet<T> {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Vec::<T>::take(r)?.into_iter().collect())
     }
 }
 
 impl<K: Decanon + Eq + Hash, V: Decanon> Decanon for HashMap<K, V> {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Vec::<(K, V)>::take(r)?.into_iter().collect())
     }
 }
 
 impl<K: Decanon + Ord, V: Decanon> Decanon for BTreeMap<K, V> {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Vec::<(K, V)>::take(r)?.into_iter().collect())
     }
 }
 
 impl Decanon for OpHash {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Self(Decanon::take(r)?))
     }
 }
 
 impl Decanon for OpStamp {
-    fn take(r: &mut Reader<'_>) -> Option<Self> {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Self {
             lamport: Decanon::take(r)?,
             hash: Decanon::take(r)?,
@@ -167,7 +167,7 @@ impl Decanon for OpStamp {
 macro_rules! decanon_id {
     ($($t:ty),*) => {$(
         impl Decanon for $t {
-            fn take(r: &mut Reader<'_>) -> Option<Self> {
+            fn take(r: &mut CanonReader<'_>) -> Option<Self> {
                 Some(Self(Decanon::take(r)?))
             }
         }
@@ -189,7 +189,7 @@ decanon_id!(
 macro_rules! decanon_struct {
     ($t:ident { $($f:ident $(: $json:tt)?),* $(,)? }) => {
         impl Decanon for $t {
-            fn take(r: &mut Reader<'_>) -> Option<Self> {
+            fn take(r: &mut CanonReader<'_>) -> Option<Self> {
                 Some(Self { $($f: decanon_struct!(@field r $($json)?)),* })
             }
         }

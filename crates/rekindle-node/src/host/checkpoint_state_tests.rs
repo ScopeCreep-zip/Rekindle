@@ -63,6 +63,7 @@ async fn a_state_snapshot_request_from_a_non_member_is_refused() {
         dir_root: [0; 32],
         dir_size: 0,
         state_root: state_root(&at_cut, &cut),
+        state_size: u32::try_from(state_preimage(&at_cut, &cut).len()).expect("fits"),
         mek_generation: 0,
         eligible_set_hash: [0; 32],
         pages: Vec::new(),

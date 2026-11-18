@@ -5,7 +5,7 @@
 use rekindle_types::governance::{Checkpoint, GenesisCert, GovernanceEntry, OpHash, OpRef};
 use rekindle_types::key_format::vld0_key_bytes;
 
-use super::cut::{causal_past, state_root};
+use super::cut::{causal_past, state_preimage, state_root_of};
 use super::directory::{CheckpointDirectory, DirLeafV1, MemberRecordKey};
 use super::electorate::{eligible_set, eligible_set_hash};
 use super::shape::{checkpoint_digest, frontier_hash, MAX_CUT_HEADS};
@@ -111,6 +111,7 @@ impl Replay<'_> {
         };
         let (state, index) = merge_cut(self.cert, &closure);
         let head_hashes: Vec<OpHash> = heads.iter().map(|r| r.op_hash).collect();
+        let preimage = state_preimage(&state, &index);
         let mut body = Checkpoint {
             height: prev_body.map_or(1, |p| p.height + 1),
             round: 0,
@@ -119,7 +120,8 @@ impl Replay<'_> {
             frontier_hash: frontier_hash(&head_hashes),
             dir_root: [0; 32],
             dir_size: 0,
-            state_root: state_root(&state, &index),
+            state_root: state_root_of(&preimage),
+            state_size: u32::try_from(preimage.len()).ok()?,
             mek_generation: state.mek_generation,
             eligible_set_hash: eligible_set_hash(&electorate),
             pages: Vec::new(),

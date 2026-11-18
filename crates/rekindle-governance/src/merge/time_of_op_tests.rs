@@ -42,6 +42,7 @@ fn checkpoint(cut: &[&VerifiedOp]) -> GovernanceEntry {
         dir_root: [0; 32],
         dir_size: 0,
         state_root: [0; 32],
+        state_size: 0,
         mek_generation: 1,
         eligible_set_hash: eligible_set_hash(&[pk(1)]),
         pages: Vec::new(),

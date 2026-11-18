@@ -5,8 +5,10 @@
 //! requester and rate-limits it first), and a reader fetches them from a
 //! ring peer, checks the reassembled bytes against `stateRoot` before
 //! decoding and asks the next ring peer on a mismatch
-//! ([`fetch_state_snapshot`]). With no peer that matches the caller walks
-//! the pre-cut ops, the full replay (S7c.4a's resume).
+//! ([`fetch_state_snapshot`]), refusing at the first chunk a total other
+//! than the checkpoint's endorsed `stateSize` (S7c.4a: the state has no
+//! size bound of its own, so the checkpoint commits to the exact one). With
+//! no peer that matches the caller walks the pre-cut ops, the full replay.
 
 use std::future::Future;
 
@@ -19,7 +21,7 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::checkpoint::{checkpoint_digest, state_preimage, state_root_of};
 use rekindle_governance::merge::merge_cut;
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{Checkpoint, GovernanceEntry};
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::op_log::{causal_past, verify_held_with};
@@ -110,16 +112,18 @@ pub async fn answer_state_request<D: GovernanceRuntimeDeps>(
     .map_err(|e| GovernanceRuntimeError::Encoding(format!("checkpoint state envelope: {e}")))
 }
 
-/// Reassemble one peer's snapshot through `ask(offset)`: `None` when an
-/// answer fails, changes its total, or is not the exact chunk the offset
-/// calls for (every chunk but the last is a full [`SNAPSHOT_CHUNK_MAX`]).
-async fn reassemble<F, Fut>(mut ask: F) -> Option<Vec<u8>>
+/// Reassemble one peer's `total`-byte snapshot through `ask(offset)`:
+/// `None` when an answer fails, claims another total, or is not the exact
+/// chunk the offset calls for (every chunk but the last is a full
+/// [`SNAPSHOT_CHUNK_MAX`]), so a peer claiming more than the endorsed size
+/// is dropped at its first chunk.
+async fn reassemble<F, Fut>(total: u32, mut ask: F) -> Option<Vec<u8>>
 where
     F: FnMut(u32) -> Fut,
     Fut: Future<Output = Result<CheckpointStateResponse, GovernanceRuntimeError>>,
 {
+    let total = total as usize;
     let mut chunk = ask(0).await.ok()?;
-    let total = chunk.total as usize;
     let mut bytes = Vec::new();
     loop {
         let expected = (total - bytes.len()).min(SNAPSHOT_CHUNK_MAX);
@@ -134,13 +138,14 @@ where
     }
 }
 
-/// The first of `peers` (ring order) whose reassembled snapshot hashes to
-/// `state_root`, asking peer `i` for the chunk at an offset through
-/// `ask(i, offset)`; a peer whose bytes miss it is refused and the next is
-/// asked. `None` when no peer matches: the caller walks the pre-cut ops.
+/// The first of `peers` (ring order) whose reassembled snapshot of
+/// `state_size` bytes hashes to `state_root`, asking peer `i` for the chunk
+/// at an offset through `ask(i, offset)`; a peer whose bytes miss it is
+/// refused and the next is asked. `None` when no peer matches: the caller
+/// walks the pre-cut ops.
 pub async fn first_matching<F, Fut>(
     peers: usize,
-    state_root: &[u8; 32],
+    (state_root, state_size): (&[u8; 32], u32),
     mut ask: F,
 ) -> Option<Vec<u8>>
 where
@@ -148,7 +153,7 @@ where
     Fut: Future<Output = Result<CheckpointStateResponse, GovernanceRuntimeError>>,
 {
     for peer in 0..peers {
-        match reassemble(|offset| ask(peer, offset)).await {
+        match reassemble(state_size, |offset| ask(peer, offset)).await {
             Some(bytes) if state_root_of(&bytes) == *state_root => return Some(bytes),
             Some(_) => tracing::warn!(peer, "checkpoint state snapshot misses the stateRoot"),
             None => tracing::debug!(peer, "checkpoint state snapshot not served"),
@@ -157,10 +162,10 @@ where
     None
 }
 
-/// Fetch the snapshot of the checkpoint with this `height`, `digest` and
-/// `state_root` from the ring peers at `peer_routes`, nearest first, asking
-/// as `me` (our pseudonym in `community_id`): the bytes that hash to
-/// `state_root`, or `None` when no peer matches.
+/// Fetch the snapshot of `checkpoint` from the ring peers at
+/// `peer_routes`, nearest first, asking as `me` (our pseudonym in
+/// `community_id`): its `stateSize` bytes that hash to its `stateRoot`, or
+/// `None` when no peer matches.
 ///
 /// # Errors
 /// Our request could not be encoded.
@@ -168,10 +173,10 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     me: &SigningKey,
-    checkpoint: (u64, [u8; 32], [u8; 32]),
+    checkpoint: &Checkpoint,
     peer_routes: &[Vec<u8>],
 ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-    let (height, digest, state_root) = checkpoint;
+    let (height, digest) = (checkpoint.height, checkpoint_digest(checkpoint));
     let request = |offset| {
         let request = CheckpointStateRequest {
             community: community_id.to_owned(),
@@ -189,23 +194,22 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("checkpoint state envelope: {e}")))
     };
     request(0)?;
-    Ok(
-        first_matching(peer_routes.len(), &state_root, |peer, offset| {
-            let call = request(offset);
-            async move {
-                let reply = deps.app_call_peer(&peer_routes[peer], call?).await?;
-                match try_decode_community_envelope(&reply) {
-                    Ok(Some(CommunityEnvelope::Control(
-                        ControlPayload::CheckpointStateResponse { response },
-                    ))) => decode_checkpoint_state_response(&response).map_err(|e| {
-                        GovernanceRuntimeError::Encoding(format!("checkpoint state response: {e}"))
-                    }),
-                    _ => Err(no_state("the reply is not a checkpointStateResponse")),
-                }
+    let expected = (&checkpoint.state_root, checkpoint.state_size);
+    Ok(first_matching(peer_routes.len(), expected, |peer, offset| {
+        let call = request(offset);
+        async move {
+            let reply = deps.app_call_peer(&peer_routes[peer], call?).await?;
+            match try_decode_community_envelope(&reply) {
+                Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateResponse {
+                    response,
+                }))) => decode_checkpoint_state_response(&response).map_err(|e| {
+                    GovernanceRuntimeError::Encoding(format!("checkpoint state response: {e}"))
+                }),
+                _ => Err(no_state("the reply is not a checkpointStateResponse")),
             }
-        })
-        .await,
-    )
+        }
+    })
+    .await)
 }
 
 #[cfg(test)]

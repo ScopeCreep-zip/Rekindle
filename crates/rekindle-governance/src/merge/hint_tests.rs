@@ -53,6 +53,7 @@ fn body(
         dir_root: [0; 32],
         dir_size: 0,
         state_root: [0; 32],
+        state_size: 0,
         mek_generation: 1,
         eligible_set_hash: eligible_set_hash(electorate),
         pages: Vec::new(),
@@ -159,6 +160,7 @@ fn two_digests_for_one_cut_fall_back_to_full_replay_and_are_shown() {
     let a = w.at(&w.x);
     let lie = Checkpoint {
         state_root: [9; 32],
+        state_size: 0,
         ..a.clone()
     };
     let votes = [
