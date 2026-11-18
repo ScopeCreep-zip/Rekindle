@@ -183,3 +183,100 @@ async fn the_session_names_no_own_record_before_the_stage_holds_it() {
     assert_eq!(session.identity.mailbox_dht_key, "");
     assert_eq!(session.identity.friend_list_dht_key, "");
 }
+
+/// Live walk 23 (M87): a kick keeps the community as read-only history
+/// (`own_removal.rs`), its row with the remover's name and its channels.
+/// A re-join records its membership over that row, as a Matrix re-join's
+/// `m.room.member` join supersedes the leave in the same room: the new
+/// membership's columns replace the old, the removal's name goes, and the
+/// kept history (its channels, so their messages) stays, as Discord keeps
+/// a re-joined server's messages.
+#[tokio::test]
+async fn a_rejoin_records_its_membership_over_the_kept_history() {
+    let f = Fixture::new();
+    let made = identity::create(
+        &f.root,
+        &f.stores(),
+        Some("Bea"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    let owner = made.public_key.clone();
+    drop(made);
+    let db = f.db.current().unwrap();
+    let session = RwLock::new(Some(
+        load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+            .await
+            .unwrap(),
+    ));
+    let communities =
+        crate::host::community::CommunityStore::new(crate::host::community::store::new_map());
+    let joined = |membership: CommunityMembership, joined_at: i64| NewMembership {
+        membership,
+        dht_owner_keypair: None,
+        registry_keypair: None,
+        member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
+        member_hpke_secret: Some(zeroize::Zeroizing::new([7; 32])),
+        genesis_cert: None,
+        joined_at,
+    };
+    record_membership(
+        &session,
+        &f.db,
+        &f.vault,
+        &communities,
+        joined(membership(), 1),
+    )
+    .unwrap();
+    // The kick: the remover's name kept with the row, the history kept.
+    record_removed_by_name(&session, &f.db, "gov-key", Some("Ann".into()));
+    let o = owner.clone();
+    db.call(move |conn| {
+        rekindle_db::repo::channels::insert_if_absent(
+            conn,
+            &o,
+            "gov-key",
+            &rekindle_db::repo::channels::StoredChannel {
+                id: "general",
+                name: "general",
+                channel_type: "text",
+                category_id: None,
+                topic: "",
+                slowmode_seconds: 0,
+                nsfw: false,
+                message_record_key: Some("log"),
+                mek_generation: 2,
+                parent_voice_channel_id: None,
+            },
+        )
+    })
+    .await
+    .unwrap();
+
+    let rejoined = CommunityMembership {
+        registry_key: "reg-key-2".into(),
+        slot_index: 5,
+        mek_generation: 0,
+        ..membership()
+    };
+    record_membership(&session, &f.db, &f.vault, &communities, joined(rejoined, 9)).unwrap();
+    let o = owner.clone();
+    let stored = db
+        .call(move |conn| rekindle_db::repo::communities::load::load(conn, &o))
+        .await
+        .unwrap();
+    let [row] = stored.communities.as_slice() else {
+        panic!("one community row: {:?}", stored.communities);
+    };
+    assert_eq!(row.removed_by_name, None, "the re-join clears the removal");
+    assert_eq!(row.member_registry_key.as_deref(), Some("reg-key-2"));
+    assert_eq!(row.my_subkey_index, Some(5));
+    assert_eq!(row.mek_generation, 0, "no community key held yet");
+    assert!(
+        stored.channels.iter().any(|c| c.id == "general"),
+        "the kept history stays"
+    );
+}

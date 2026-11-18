@@ -81,6 +81,7 @@ impl HostGovernance {
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
+        self.supersede_own_removal(&id).await;
         // Joined from a hint: partial until the backfill rebuild holds the
         // cut (plan E3.2 S7c.8 (1)), marked before any op is stored so a
         // restart mid-backfill stays partial.

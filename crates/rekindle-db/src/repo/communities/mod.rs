@@ -95,6 +95,7 @@ pub struct NewCommunity<'a> {
 fn insert_with(
     conn: &Connection,
     verb: &str,
+    on_conflict: &str,
     owner_key: &str,
     c: &NewCommunity<'_>,
 ) -> rusqlite::Result<()> {
@@ -103,7 +104,7 @@ fn insert_with(
             "{verb} INTO communities (owner_key, id, name, joined_at, \
              dht_owner_keypair, my_pseudonym_key, mek_generation, member_registry_key, \
              my_subkey_index, governance_key) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10){on_conflict}"
         ),
         params![
             owner_key,
@@ -130,7 +131,7 @@ pub fn insert(
     owner_key: &str,
     community: &NewCommunity<'_>,
 ) -> rusqlite::Result<()> {
-    insert_with(conn, "INSERT", owner_key, community)
+    insert_with(conn, "INSERT", "", owner_key, community)
 }
 
 /// Store a community we joined, unless it is already stored.
@@ -142,7 +143,37 @@ pub fn insert_if_absent(
     owner_key: &str,
     community: &NewCommunity<'_>,
 ) -> rusqlite::Result<()> {
-    insert_with(conn, "INSERT OR IGNORE", owner_key, community)
+    insert_with(conn, "INSERT OR IGNORE", "", owner_key, community)
+}
+
+/// Store a membership: a new row, or over the row a removal kept as
+/// read-only history (plan E3.2 S9), whose membership columns the re-join
+/// replaces and whose removal it clears, as a Matrix re-join's
+/// `m.room.member` join supersedes the leave. The kept history (its
+/// description, channels and messages, the clocks) stays, as Discord keeps
+/// a re-joined server's messages.
+///
+/// # Errors
+/// The write failed.
+pub fn upsert_membership(
+    conn: &Connection,
+    owner_key: &str,
+    community: &NewCommunity<'_>,
+) -> rusqlite::Result<()> {
+    insert_with(
+        conn,
+        "INSERT",
+        " ON CONFLICT (owner_key, id) DO UPDATE SET \
+         name = excluded.name, joined_at = excluded.joined_at, \
+         dht_owner_keypair = excluded.dht_owner_keypair, \
+         my_pseudonym_key = excluded.my_pseudonym_key, \
+         mek_generation = excluded.mek_generation, \
+         member_registry_key = excluded.member_registry_key, \
+         my_subkey_index = excluded.my_subkey_index, \
+         governance_key = excluded.governance_key, removed_by_name = NULL",
+        owner_key,
+        community,
+    )
 }
 
 /// Delete the community's row.
@@ -442,5 +473,29 @@ mod tests {
             params![OWNER],
         );
         assert!(err.is_err());
+    }
+
+    /// A re-join over the row a removal kept: the membership columns are
+    /// the new ones, the removal's name goes, the kept history stays.
+    #[test]
+    fn a_membership_over_kept_history_replaces_its_membership() {
+        let conn = fixture::conn();
+        upsert_membership(&conn, OWNER, &community("c1", "One")).unwrap();
+        set(&conn, OWNER, "c1", Column::Description, "kept").unwrap();
+        set(&conn, OWNER, "c1", Column::RemovedByName, "Ann").unwrap();
+        let rejoined = NewCommunity {
+            mek_generation: 0,
+            my_subkey_index: Some(7),
+            ..community("c1", "One")
+        };
+        upsert_membership(&conn, OWNER, &rejoined).unwrap();
+        let rows = load_all(&conn, OWNER).unwrap();
+        let [row] = rows.as_slice() else {
+            panic!("one row: {rows:?}");
+        };
+        assert_eq!(row.removed_by_name, None);
+        assert_eq!(row.my_subkey_index, Some(7));
+        assert_eq!(row.mek_generation, 0);
+        assert_eq!(row.description.as_deref(), Some("kept"));
     }
 }

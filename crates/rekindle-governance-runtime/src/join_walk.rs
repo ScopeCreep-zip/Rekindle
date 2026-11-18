@@ -12,6 +12,15 @@
 //! equivocation at the hint's height, or the joiner already has an op in the
 //! cut (a re-join: its next seq and its removals are in the cut, which it
 //! does not hold).
+//!
+//! A joiner that holds ops of its own chain (a re-join after our removal:
+//! the community stays as read-only history, its op set with it) walks in
+//! full with them held. Its next op continues that chain, as a Matrix
+//! re-join is a new `m.room.member` event in the same user's history: an
+//! op of ours our op log does not hold (queued there when we were removed,
+//! live walk 23 M87) would otherwise be missing from the walk, with every
+//! op citing it (the removal among them), and the re-join would restart
+//! our chain at seq 0, an equivocation every reader drops.
 
 use rekindle_governance::checkpoint::CutSnapshot;
 use rekindle_governance::merge::{self, MergeOutcome};
@@ -23,6 +32,7 @@ use crate::error::GovernanceRuntimeError;
 use crate::hint_chain::{verified_hints, Asker};
 use crate::hinted_walk::{equivocates, gather, resume_newest};
 use crate::op_log::{self, fetch_held, HeldOp, VerifiedSet, WalkLogCache};
+use crate::op_walk;
 use crate::partial::PartialJoin;
 
 /// What the joiner read and merged.
@@ -49,14 +59,30 @@ fn in_the_cut(snap: &CutSnapshot, joiner: &PseudonymKey) -> bool {
     snap.cut.authors.contains_key(&joiner.0) || snap.cut.unmerged.contains_key(&joiner.0)
 }
 
-/// The full walk from `frontier` and its merge.
+/// The ops of `joiner`'s own chain this node holds of `anchor`.
+///
+/// # Errors
+/// The op store could not be read.
+async fn own_held<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    joiner: &PseudonymKey,
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+    let mut held = deps.governance_ops(anchor).await?;
+    held.retain(|op| op.author == *joiner);
+    Ok(held)
+}
+
+/// The full walk from `frontier`, with `own` (our own chain's held ops)
+/// held from the start, and its merge.
 async fn full_walk<D: GovernanceRuntimeDeps>(
     deps: &D,
     anchor: &str,
     cert: &GenesisCert,
     frontier: &Frontier,
+    own: Vec<HeldOp>,
 ) -> Result<WalkedSet, GovernanceRuntimeError> {
-    let held = op_log::walk(deps, anchor, &frontier.heads).await?;
+    let held = op_walk::walk_seeded(deps, anchor, &frontier.heads, own).await?;
     let set = op_log::verify_held_with(deps, anchor, &held);
     let merged = merge::merge_outcome(cert, &set.ops);
     let hint = merged.hints.latest().map(|h| h.digest);
@@ -82,10 +108,11 @@ pub async fn walk_for_join<D: GovernanceRuntimeDeps>(
     frontier: &Frontier,
     asker: &Asker<'_>,
 ) -> Result<WalkedSet, GovernanceRuntimeError> {
-    if asker.route.is_empty() {
-        return full_walk(deps, anchor, cert, frontier).await;
-    }
     let joiner = PseudonymKey(asker.me.verifying_key().to_bytes());
+    let own = own_held(deps, anchor, &joiner).await?;
+    if asker.route.is_empty() || !own.is_empty() {
+        return full_walk(deps, anchor, cert, frontier, own).await;
+    }
     let hints = verified_hints(deps, anchor, cert, asker).await;
     let hints: Vec<_> = hints
         .into_iter()
@@ -106,13 +133,13 @@ pub async fn walk_for_join<D: GovernanceRuntimeDeps>(
     })
     .await?;
     let Some(resumed) = resumed else {
-        return full_walk(deps, anchor, cert, frontier).await;
+        return full_walk(deps, anchor, cert, frontier, Vec::new()).await;
     };
     let link = &hints[resumed.index].link;
     let below = hints.get(resumed.index + 1).map(|h| &h.snapshot.state);
     if equivocates(cert, below, link.height, &resumed.gathered.rest) {
         tracing::warn!(community = %anchor, "a checkpoint equivocation: no hint, full walk");
-        return full_walk(deps, anchor, cert, frontier).await;
+        return full_walk(deps, anchor, cert, frontier, Vec::new()).await;
     }
     tracing::info!(
         community = %anchor,

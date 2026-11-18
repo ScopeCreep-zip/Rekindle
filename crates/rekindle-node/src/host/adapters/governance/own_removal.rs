@@ -87,6 +87,23 @@ impl HostGovernance {
         }
     }
 
+    /// A re-join supersedes our removal, as a Matrix re-join's
+    /// `m.room.member` join supersedes the leave (live walk 23 M87): the
+    /// mark goes and the network side counts as up, since the join brings
+    /// the community up as a first join does (its mesh, the activation),
+    /// so no restore runs beside it and a later removal tears it down
+    /// again. `record_membership` already cleared the stored name.
+    pub(super) async fn supersede_own_removal(&self, community_id: &str) {
+        let Some(gate) = self.ctx.communities.removal_gate(community_id) else {
+            return;
+        };
+        let mut torn_down = gate.lock().await;
+        if self.ctx.communities.clear_own_removal(community_id) {
+            tracing::info!(community = %community_id, "re-joined after our removal");
+        }
+        *torn_down = false;
+    }
+
     /// `removal` with the remover's name kept with the mark (or, after a
     /// restart, with the community's row), else its card or profile now;
     /// and the remover, when no name was kept yet (A/B R5-2).

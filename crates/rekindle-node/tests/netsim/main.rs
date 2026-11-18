@@ -81,6 +81,7 @@ mod racing_join;
 mod read_marker_only_advances;
 mod refriend_after_removal;
 mod refused_request;
+mod rejoin_after_kick;
 mod rejoin_after_leave;
 mod removal_ack;
 mod resume_after_restart;

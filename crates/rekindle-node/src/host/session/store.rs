@@ -327,7 +327,7 @@ pub fn record_membership(
     }
     let row = membership.clone();
     db.fire("community membership", move |conn| {
-        repo::communities::insert(
+        repo::communities::upsert_membership(
             conn,
             &owner,
             &repo::communities::NewCommunity {

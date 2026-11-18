@@ -134,10 +134,27 @@ pub async fn walk<D: GovernanceRuntimeDeps>(
     anchor: &str,
     start: &[OpRef],
 ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+    walk_seeded(deps, anchor, start, Vec::new()).await
+}
+
+/// [`walk`] from `start` with `seed` already held: the ops of our own
+/// chain a re-join holds from the community it kept as read-only history
+/// after our removal (`join_walk`), which our op log may not hold (an op
+/// queued there when we were removed). `seed` is returned with the walked
+/// ops, and the deps it misses are walked too.
+///
+/// # Errors
+/// A fetch failed.
+pub async fn walk_seeded<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    start: &[OpRef],
+    seed: Vec<HeldOp>,
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
     let logs = WalkLogCache::default();
     let verdicts = deps.op_verify_cache(anchor);
     let logs = &logs;
-    walk_with(anchor, start, &verdicts, |op_ref| async move {
+    walk_from(anchor, start, seed, &verdicts, |op_ref| async move {
         fetch_held(deps, &op_ref, logs).await
     })
     .await
@@ -159,9 +176,27 @@ where
     F: Fn(OpRef) -> Fut,
     Fut: Future<Output = Result<Option<HeldOp>, GovernanceRuntimeError>>,
 {
-    let mut held: Vec<HeldOp> = Vec::new();
-    let mut tried: BTreeSet<OpHash> = BTreeSet::new();
+    walk_from(anchor, start, Vec::new(), verdicts, fetch).await
+}
+
+/// [`walk_with`] with `seed` held before the first level.
+async fn walk_from<F, Fut>(
+    anchor: &str,
+    start: &[OpRef],
+    seed: Vec<HeldOp>,
+    verdicts: &OpVerifyCache,
+    fetch: F,
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError>
+where
+    F: Fn(OpRef) -> Fut,
+    Fut: Future<Output = Result<Option<HeldOp>, GovernanceRuntimeError>>,
+{
+    let mut tried: BTreeSet<OpHash> = seed.iter().map(|op| op.hash).collect();
     let mut wanted: Vec<OpRef> = start.to_vec();
+    if !seed.is_empty() {
+        wanted.extend(verify_held_cached(anchor, &seed, verdicts).missing);
+    }
+    let mut held = seed;
     loop {
         let level: Vec<OpRef> = wanted
             .into_iter()
