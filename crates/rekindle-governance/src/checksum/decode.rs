@@ -236,12 +236,14 @@ decanon_struct!(ChannelState {
 decanon_struct!(PendingMemberState {
     member_record,
     member_record_owner,
+    has_invite,
     stamp
 });
 decanon_struct!(AdmissionDecision { approved, stamp });
 decanon_struct!(TimeoutState {
     duration_seconds,
     started_at,
+    reason,
     stamp
 });
 decanon_struct!(MetadataState {

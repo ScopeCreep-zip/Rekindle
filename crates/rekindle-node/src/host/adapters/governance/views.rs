@@ -29,7 +29,37 @@ fn role_view(role: &RoleDefinition) -> CommunityRoleView {
     }
 }
 
-fn community_view(c: &CommunityState) -> CommunityView {
+/// Our base and per-channel effective permissions in `c` at `now_secs`,
+/// from its merged governance; none before the first merge.
+fn my_permissions(
+    c: &CommunityState,
+    now_secs: u64,
+) -> (String, std::collections::BTreeMap<String, String>) {
+    use rekindle_governance::permissions::compute_permissions;
+    let (Some(gov), Some(me)) = (
+        c.governance_state.as_ref(),
+        (c.my_pseudonym_key.as_deref())
+            .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
+            .map(PseudonymKey),
+    ) else {
+        return ("0".into(), std::collections::BTreeMap::new());
+    };
+    let channels = gov
+        .channels
+        .keys()
+        .map(|id| {
+            let perms = compute_permissions(&me, Some(id), gov, now_secs);
+            (hex::encode(id.0), perms.to_string())
+        })
+        .collect();
+    (
+        compute_permissions(&me, None, gov, now_secs).to_string(),
+        channels,
+    )
+}
+
+fn community_view(c: &CommunityState, now_secs: u64) -> CommunityView {
+    let (my_permissions, my_channel_permissions) = my_permissions(c, now_secs);
     CommunityView {
         id: c.id.clone(),
         name: c.name.clone(),
@@ -64,6 +94,8 @@ fn community_view(c: &CommunityState) -> CommunityView {
             .collect(),
         my_role: Some(display_role_name(&c.my_role_ids, &c.roles)),
         my_role_ids: c.my_role_ids.clone(),
+        my_permissions,
+        my_channel_permissions,
         roles: c.roles.iter().map(role_view).collect(),
         my_pseudonym_key: c.my_pseudonym_key.clone(),
         mek_generation: c.mek_generation,
@@ -198,13 +230,14 @@ fn profile_view(
 impl HostGovernance {
     /// Every joined community, by name then id.
     pub(crate) fn community_views(&self) -> Vec<CommunityView> {
+        let now_secs = self.ctx.clock.now_secs();
         let mut views: Vec<CommunityView> = self
             .ctx
             .communities
             .map()
             .read()
             .values()
-            .map(community_view)
+            .map(|c| community_view(c, now_secs))
             .collect();
         for view in &mut views {
             view.removed = removal_display(&self.ctx.communities, &view.id);

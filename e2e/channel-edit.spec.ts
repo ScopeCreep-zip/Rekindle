@@ -34,7 +34,7 @@ const HANDLER = `
         channels: [{ id: "${CHANNEL}", name: "general", channelType: "text" }],
         roles: [{ id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0,
                   hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0], removed: null,
+        myPseudonymKey: "${ME}", myRoleIds: [0], myPermissions: "65536", myChannelPermissions: {}, removed: null,
       }];
     case "get_channel_messages":
       return [{ id: 1, senderId: "${ME}", body: "hello channel", timestamp: 1760000000000,

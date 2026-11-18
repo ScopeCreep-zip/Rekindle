@@ -4,8 +4,8 @@ import { voiceState } from "../../stores/voice.store";
 import { authState } from "../../stores/auth.store";
 import { typingUsers } from "../../actions/community.actions";
 import {
-  calculateBasePermissions,
   hasPermission,
+  permissionBits,
   MANAGE_CHANNELS,
   MANAGE_MESSAGES,
   MANAGE_COMMUNITY,
@@ -132,10 +132,15 @@ export function createCommunityWindowState() {
     return community?.myRoleIds ?? [];
   });
 
+  /// What we may do here, as the backend computed it from the merged
+  /// governance (plan E3.2 S9): the active channel's effective
+  /// permissions (base plus its overwrites), else the base.
   const myPerms = createMemo((): bigint => {
     const community = activeCommunity();
     if (!community) return 0n;
-    return calculateBasePermissions(myRoleIds(), community.roles);
+    const channel = activeChannel()?.id;
+    const inChannel = channel ? community.myChannelPermissions[channel] : undefined;
+    return permissionBits(inChannel ?? community.myPermissions);
   });
 
   const canManageChannels = createMemo(() => hasPermission(myPerms(), MANAGE_CHANNELS));

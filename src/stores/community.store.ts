@@ -203,6 +203,11 @@ export interface Community {
   members: Member[];
   roles: Role[];
   myRoleIds: number[];
+  /** Our base permission bits (decimal u64 string), from the backend's
+   *  merged governance (plan E3.2 S9); the window computes no policy. */
+  myPermissions: string;
+  /** Our effective permissions per channel id: base plus overwrites. */
+  myChannelPermissions: Record<string, string>;
   myPseudonymKey: string | null;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */

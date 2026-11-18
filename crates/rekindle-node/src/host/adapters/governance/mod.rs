@@ -70,6 +70,7 @@ pub(crate) mod onboarding;
 pub(crate) mod onboarding_map;
 mod ops;
 mod own_removal;
+mod permission_events;
 pub(crate) mod pins;
 pub mod projection;
 mod publication;
@@ -77,6 +78,7 @@ mod registry;
 mod removal_posts;
 pub(crate) mod search;
 mod thread_events;
+mod timeout_events;
 
 mod checkpoint_rows;
 mod checkpoint_state;

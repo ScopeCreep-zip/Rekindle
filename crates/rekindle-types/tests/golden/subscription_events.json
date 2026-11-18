@@ -481,6 +481,14 @@
       }
     }
   },
+  "governance.effectivePermissionsChanged": {
+    "governance": {
+      "effectivePermissionsChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "member": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      }
+    }
+  },
   "governance.governanceOpQuarantined": {
     "governance": {
       "governanceOpQuarantined": {
@@ -496,15 +504,6 @@
     "governance": {
       "governanceRebuilt": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
-      }
-    }
-  },
-  "governance.governanceSubkeyUpdated": {
-    "governance": {
-      "governanceSubkeyUpdated": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "lamportTs": 77,
-        "subkeyIndex": 4
       }
     }
   },

@@ -124,6 +124,7 @@ async fn a_timed_out_author_is_dropped_until_the_timeout_ends() {
         TimeoutState {
             duration_seconds: 600,
             started_at: now,
+            reason: None,
             stamp: rekindle_governance::fixture::stamp(1),
         },
     );

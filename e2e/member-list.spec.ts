@@ -57,7 +57,7 @@ const HANDLER = `
           { id: 1, name: "Admins", color: 0, permissions: "65536", position: 1,
             hoist: true, mentionable: false },
         ],
-        myPseudonymKey: "${ME}", myRoleIds: [0, 1], removed: null,
+        myPseudonymKey: "${ME}", myRoleIds: [0, 1], myPermissions: "65536", myChannelPermissions: {}, removed: null,
       }];
     case "get_community_members":
       return ${JSON.stringify(MEMBERS)};

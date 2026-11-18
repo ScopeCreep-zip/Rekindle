@@ -28,6 +28,8 @@ export const communityCommands = {
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: number[];
+      myPermissions: string;
+      myChannelPermissions: Record<string, string>;
       roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean; exclusionGroup?: string }[];
       myPseudonymKey: string | null;
       mekGeneration: number;

@@ -164,6 +164,7 @@ export function transformCommunityDetail(c: {
   categories?: { id: string; name: string; sortOrder: number }[];
   roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
   myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;
+  myPermissions: string; myChannelPermissions: Record<string, string>;
   memberRegistryKey?: string; anchor?: string | null;
   onboardingComplete?: boolean;
   myBio?: string | null; myPronouns?: string | null;
@@ -185,6 +186,7 @@ export function transformCommunityDetail(c: {
     categories: c.categories ?? [],
     members: [], roles: c.roles ?? [],
     myRoleIds: c.myRoleIds ?? [0, 1], myPseudonymKey: c.myPseudonymKey ?? null,
+    myPermissions: c.myPermissions, myChannelPermissions: c.myChannelPermissions,
     mekGeneration: c.mekGeneration ?? 0,
     events: [],
     memberRegistryKey: c.memberRegistryKey, anchor: c.anchor ?? null,

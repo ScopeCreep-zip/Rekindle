@@ -275,6 +275,7 @@ mod tests {
             TimeoutState {
                 duration_seconds: 3600,
                 started_at: 1000,
+                reason: None,
                 stamp: crate::fixture::stamp(5),
             },
         );

@@ -86,6 +86,15 @@ pub struct CommunityView {
     pub categories: Vec<CommunityCategoryView>,
     pub my_role: Option<String>,
     pub my_role_ids: Vec<u32>,
+    /// What we may do, from the merged governance (plan E3.2 S9,
+    /// architecture §9.2 `compute_permissions`): the base permission bits
+    /// as a decimal `u64` string (the webview parses it with `BigInt`, exact
+    /// past 2^53). The frontend reads these flags and computes no policy;
+    /// `EffectivePermissionsChanged` naming us says to re-read them.
+    pub my_permissions: String,
+    /// Our effective permissions per channel (id hex): the base plus the
+    /// channel's overwrites, decimal `u64` strings as `my_permissions`.
+    pub my_channel_permissions: std::collections::BTreeMap<String, String>,
     pub roles: Vec<CommunityRoleView>,
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,

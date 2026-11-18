@@ -60,6 +60,7 @@ mod tests {
             TimeoutState {
                 duration_seconds: 60,
                 started_at: 100,
+                reason: None,
                 stamp: rekindle_governance::fixture::stamp(1),
             },
         );

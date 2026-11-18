@@ -1,11 +1,10 @@
-//! `ControlPayload::into_event` — messages, MEK management, roles, channel permissions, reactions and
+//! `ControlPayload::into_event` — messages, MEK management, roles, reactions and
 //! pins. The remaining categories (events, threads, game servers,
 //! voice, bootstrap, sync, system) are
 //! handled by `into_event_control_rest.rs`.
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, CryptoEvent, GovernanceEvent, MembershipEvent, SocialEvent,
-    SubscriptionEvent,
+    ChannelMessageEvent, CryptoEvent, MembershipEvent, SocialEvent, SubscriptionEvent,
 };
 
 use rekindle_codec::community::envelope::ControlPayload;
@@ -106,14 +105,6 @@ pub fn control_into_event(
                 community: c(),
                 sender_pseudonym: s(),
                 answer_count: answers.len(),
-            })
-        }
-
-        // ── Channel permissions ─────────────────────────────
-        ControlPayload::ChannelOverwriteChanged { channel_id } => {
-            SubscriptionEvent::Governance(GovernanceEvent::ChannelPermissionsChanged {
-                community: c(),
-                channel: channel_id,
             })
         }
 
@@ -253,6 +244,9 @@ pub fn control_into_event(
         | ControlPayload::KeyframeRequest { .. }
         | ControlPayload::MediaCapabilities { .. }
         | ControlPayload::TopologyChange { .. }
-        | ControlPayload::LinkPreview { .. } => return None,
+        | ControlPayload::LinkPreview { .. }
+        // An overwrite is a governance op: the Host publishes
+        // `ChannelPermissionsChanged` from the merge (plan E3.2 S9).
+        | ControlPayload::ChannelOverwriteChanged { .. } => return None,
     })
 }

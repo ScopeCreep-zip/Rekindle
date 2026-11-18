@@ -120,14 +120,17 @@ pub enum GovernanceEvent {
     },
 
     /// A channel's permission overwrites changed.
+    /// Triggered by: the Host, when the merged governance holds a
+    /// different overwrite set for the channel (`permission_events.rs`).
     ChannelPermissionsChanged { community: String, channel: String },
 
-    /// One governance subkey was written.
-    GovernanceSubkeyUpdated {
-        community: String,
-        subkey_index: u32,
-        lamport_ts: u64,
-    },
+    /// What `member` may do changed: a role, a role assignment, an
+    /// overwrite or a timeout moved its base or any channel's effective
+    /// permissions (plan E3.2 S9). A frontend re-reads its permission
+    /// flags when `member` is us, and re-renders the member otherwise.
+    /// Triggered by: the Host, from the merged governance
+    /// (`permission_events.rs`).
+    EffectivePermissionsChanged { community: String, member: String },
 
     /// The CRDT governance state was rebuilt from the DHT.
     ///
@@ -205,7 +208,7 @@ impl GovernanceEvent {
             | Self::InviteRevoked { community, .. }
             | Self::InviteExpired { community, .. }
             | Self::ChannelPermissionsChanged { community, .. }
-            | Self::GovernanceSubkeyUpdated { community, .. }
+            | Self::EffectivePermissionsChanged { community, .. }
             | Self::GovernanceRebuilt { community }
             | Self::GovernanceOpQuarantined { community, .. }
             | Self::CheckpointSnapshotMismatch { community, .. } => community,

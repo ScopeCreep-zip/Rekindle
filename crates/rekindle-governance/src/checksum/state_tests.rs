@@ -161,6 +161,7 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                 let p = PendingMemberState {
                     member_record: "m".into(),
                     member_record_owner: "o".into(),
+                    has_invite: true,
                     stamp: s(),
                 };
                 g.pending_members.insert(pk(), p);
@@ -190,6 +191,7 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                     TimeoutState {
                         duration_seconds: 1,
                         started_at: 0,
+                        reason: Some("r".into()),
                         stamp: s(),
                     },
                 );

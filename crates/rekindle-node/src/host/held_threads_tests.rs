@@ -80,6 +80,7 @@ async fn a_held_thread_stays_held_across_a_lock_and_unlock() {
         TimeoutState {
             duration_seconds: 3600,
             started_at: host.ctx.clock.now_secs(),
+            reason: None,
             stamp: stamp(1),
         },
     );

@@ -227,6 +227,7 @@ fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
         rekindle_governance::state::TimeoutState {
             duration_seconds: 60,
             started_at: 100,
+            reason: None,
             stamp: rekindle_governance::fixture::stamp(1),
         },
     );

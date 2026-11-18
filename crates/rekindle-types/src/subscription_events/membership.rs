@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum MembershipEvent {
-    /// A join request was submitted (operator sees this).
-    /// No producer: the unsigned `MemberJoinRequest` wire arm is retired
-    /// (plan E3.2 S8); a join is the joiner's signed `MemberJoined` op.
+    /// A joiner waits for approval under `ApprovalRequired`.
+    /// Triggered by: the Host, when the merged governance first lists the
+    /// joiner's signed `MemberJoined` as pending (`member_events.rs`).
     JoinRequested {
         community: String,
         pseudonym: String,
@@ -138,8 +138,8 @@ pub enum MembershipEvent {
         target_pseudonym: String,
     },
     /// A member was timed out (temporary restriction).
-    /// No producer: the unsigned `TimeoutMember` wire arm is retired
-    /// (plan E3.2 S8); a timeout is the signed governance op.
+    /// Triggered by: the Host, when the merged governance holds a new
+    /// `TimeoutEntry` for the member (`member_events.rs`).
     TimedOut {
         community: String,
         target_pseudonym: String,
@@ -147,15 +147,17 @@ pub enum MembershipEvent {
         reason: Option<String>,
     },
     /// A member's timeout was removed early.
-    /// No producer: the unsigned `RemoveTimeout` wire arm is retired
-    /// (plan E3.2 S8); lifting a timeout is the signed governance op.
+    /// Triggered by: the Host, when the merged governance drops the
+    /// member's timeout (`RemoveTimeoutEntry`, `member_events.rs`).
     TimeoutRemoved {
         community: String,
         target_pseudonym: String,
     },
-    /// A member's timeout status changed (broadcast to community).
-    /// No producer: the unsigned `MemberTimedOut` wire arm is retired
-    /// (plan E3.2 S8).
+    /// A member's timeout status changed: `timeout_until` (unix seconds)
+    /// is when it ends, `None` once lifted. Published beside `TimedOut`
+    /// and `TimeoutRemoved`, for the member list's state.
+    /// Triggered by: the Host, from the merged governance
+    /// (`member_events.rs`).
     TimeoutStatusChanged {
         community: String,
         pseudonym: String,

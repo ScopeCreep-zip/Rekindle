@@ -29,7 +29,7 @@ const HANDLER = `
         channels: [{ id: "${GENERAL}", name: "general", channelType: "text" }],
         roles: [{ id: 0, name: "@everyone", color: 0, permissions: "${(1n << 50n).toString()}",
                   position: 0, hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0], removed: null,
+        myPseudonymKey: "${ME}", myRoleIds: [0], myPermissions: "${(1n << 50n).toString()}", myChannelPermissions: {}, removed: null,
       }];
     case "create_channel":
       window.__createAsked = true;

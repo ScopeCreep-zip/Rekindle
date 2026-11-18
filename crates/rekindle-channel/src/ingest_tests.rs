@@ -109,6 +109,7 @@ fn drops_a_timed_out_author_until_the_timeout_ends() {
         TimeoutState {
             duration_seconds: 60,
             started_at: 100,
+            reason: None,
             stamp: stamp(1),
         },
     );
@@ -253,6 +254,7 @@ fn time_out(gov: &mut GovernanceState, member: &PseudonymKey) {
         TimeoutState {
             duration_seconds: 60,
             started_at: 100,
+            reason: None,
             stamp: stamp(1),
         },
     );

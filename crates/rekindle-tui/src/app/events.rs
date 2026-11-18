@@ -301,7 +301,13 @@ impl App {
                     .push("Friend request rejected".into(), ToastLevel::Warning);
                 Some(Action::Render)
             }
-            SubscriptionEvent::Governance(GovernanceEvent::ChannelsChanged { .. }) => {
+            // A permission change re-reads the community as a channel change
+            // does (plan E3.2 S9): the dashboard shows what we may do.
+            SubscriptionEvent::Governance(
+                GovernanceEvent::ChannelsChanged { .. }
+                | GovernanceEvent::EffectivePermissionsChanged { .. }
+                | GovernanceEvent::ChannelPermissionsChanged { .. },
+            ) => {
                 self.load_dashboard_data();
                 Some(Action::Render)
             }

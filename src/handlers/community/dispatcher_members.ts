@@ -214,6 +214,7 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("channelsChanged" in g) return g.channelsChanged.community;
   if ("metadataChanged" in g) return g.metadataChanged.community;
   if ("channelPermissionsChanged" in g) return g.channelPermissionsChanged.community;
+  if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
   return null;
 }
@@ -396,6 +397,29 @@ function applyGovernance(g: GovernanceEvent): void {
     return;
   }
 
+  if ("effectivePermissionsChanged" in g) {
+    // Our own permissions moved (plan E3.2 S9): re-read the backend's
+    // flags. Another member's change shows through its roles and the
+    // member list, which re-render on their own events.
+    const { community, member } = g.effectivePermissionsChanged;
+    if (communityState.communities[community]?.myPseudonymKey !== member) return;
+    commands
+      .getCommunityDetails()
+      .then((details) => {
+        const detail = details.find((d) => d.id === community);
+        if (!detail) return;
+        setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+        setCommunityState(
+          "communities",
+          community,
+          "myChannelPermissions",
+          detail.myChannelPermissions,
+        );
+      })
+      .catch(() => {});
+    return;
+  }
+
   if ("governanceRebuilt" in g) {
     // A CRDT rebuild moves everything at once, so this is the one
     // governance event with no payload and a full re-read.
@@ -416,6 +440,13 @@ function applyGovernance(g: GovernanceEvent): void {
           );
           setCommunityState("communities", community, "categories", detail.categories ?? []);
           setCommunityState("communities", community, "myRoleIds", detail.myRoleIds ?? [0]);
+          setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+          setCommunityState(
+            "communities",
+            community,
+            "myChannelPermissions",
+            detail.myChannelPermissions,
+          );
           setCommunityState("communities", community, "mekGeneration", detail.mekGeneration ?? 0);
           setCommunityState("communities", community, "removed", detail.removed ?? null);
         }

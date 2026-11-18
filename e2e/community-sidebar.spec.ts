@@ -31,7 +31,7 @@ const handler = (welcome: string): string => `
         channels: [{ id: "ch1", name: "general", channelType: "text" }],
         roles: [{ id: 0, name: "@everyone", color: 0, permissions: "${PERMS}", position: 0,
           hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0], removed: null,
+        myPseudonymKey: "${ME}", myRoleIds: [0], myPermissions: "${PERMS}", myChannelPermissions: {}, removed: null,
       }];
     default:
       return cmd.startsWith("get_") || cmd.startsWith("list_") ? [] : null;

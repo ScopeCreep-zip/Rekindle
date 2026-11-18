@@ -242,6 +242,9 @@ pub struct AdmissionDecision {
 pub struct PendingMemberState {
     pub member_record: String,
     pub member_record_owner: String,
+    /// Whether the joiner's `MemberJoined` carried an invite proof, shown
+    /// to the members who approve it (`MembershipEvent::JoinRequested`).
+    pub has_invite: bool,
     pub stamp: OpStamp,
 }
 
@@ -434,6 +437,9 @@ pub struct ExpressionState {
 pub struct TimeoutState {
     pub duration_seconds: u64,
     pub started_at: u64,
+    /// The reason the `TimeoutEntry` gave, bounded with the entry
+    /// (`validate/bounds.rs`), shown with `MembershipEvent::TimedOut`.
+    pub reason: Option<String>,
     pub stamp: OpStamp,
 }
 

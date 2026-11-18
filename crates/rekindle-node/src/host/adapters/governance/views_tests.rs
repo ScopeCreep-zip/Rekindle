@@ -40,7 +40,7 @@ fn the_view_names_our_role_and_carries_our_standing() {
     );
     crate::host::adapters::governance::projection::project_my_roles(&mut state, &gov);
     state.mek_generation = 3;
-    let view = community_view(&state);
+    let view = community_view(&state, 0);
     assert_eq!(view.name, "Raiders");
     assert_eq!(view.my_role.as_deref(), Some("Owner"));
     assert_eq!(view.my_role_ids, vec![0]);

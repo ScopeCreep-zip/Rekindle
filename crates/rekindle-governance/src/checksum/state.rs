@@ -128,9 +128,10 @@ impl Canon for PendingMemberState {
         let Self {
             member_record,
             member_record_owner,
+            has_invite,
             stamp,
         } = self;
-        put!(out; member_record, member_record_owner, stamp);
+        put!(out; member_record, member_record_owner, has_invite, stamp);
     }
 }
 
@@ -146,9 +147,10 @@ impl Canon for TimeoutState {
         let Self {
             duration_seconds,
             started_at,
+            reason,
             stamp,
         } = self;
-        put!(out; duration_seconds, started_at, stamp);
+        put!(out; duration_seconds, started_at, reason, stamp);
     }
 }
 

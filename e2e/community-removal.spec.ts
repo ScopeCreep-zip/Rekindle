@@ -37,7 +37,7 @@ function handler(removed: string): string {
         // disables the composer.
         roles: [{ id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0,
                   hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0], removed: ${removed},
+        myPseudonymKey: "${ME}", myRoleIds: [0], myPermissions: "65536", myChannelPermissions: {}, removed: ${removed},
       }];
     case "get_welcome_screen":
       return { description: "", channels: [] };

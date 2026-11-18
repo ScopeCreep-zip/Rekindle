@@ -174,3 +174,60 @@ fn a_departure_learnt_in_catch_up_of_a_member_never_shown_announces_nothing() {
     next.op_log_records.insert(key(2), "log".into());
     assert!(transitions(&prev, &next, None) == json(Vec::new()));
 }
+
+/// Plan E3.2 S9: a joiner first held pending under `ApprovalRequired` is
+/// one `JoinRequested`, named by its card and saying whether it carried an
+/// invite; still pending on the next merge, it is nothing.
+#[test]
+fn a_pending_joiner_is_one_join_requested() {
+    let prev = with(&[2]);
+    let mut next = prev.clone();
+    next.pending_members.insert(
+        key(1),
+        rekindle_governance::state::PendingMemberState {
+            member_record: "record".into(),
+            member_record_owner: "owner".into(),
+            has_invite: true,
+            stamp: OpStamp::MIN,
+        },
+    );
+    assert_eq!(
+        transitions(&prev, &next, None),
+        serde_json::json!([{ "joinRequested": {
+            "community": C, "pseudonym": key(1).to_hex(), "displayName": "Ann", "hasInvite": true,
+        }}])
+    );
+    assert_eq!(transitions(&next, &next, None), serde_json::json!([]));
+}
+
+/// Plan E3.2 S9: a timeout is `TimedOut` with its reason and the end; its
+/// lifting is `TimeoutRemoved` and a lifted status, ours included.
+#[test]
+fn a_timeout_and_its_lifting_are_published_with_the_reason() {
+    let prev = with(&[1, 2]);
+    let mut next = prev.clone();
+    next.timeouts.insert(
+        key(2),
+        rekindle_governance::state::TimeoutState {
+            duration_seconds: 60,
+            started_at: 100,
+            reason: Some("spam".into()),
+            stamp: OpStamp::MIN,
+        },
+    );
+    let p = key(2).to_hex();
+    assert_eq!(
+        transitions(&prev, &next, Some(&key(2))),
+        serde_json::json!([
+            { "timedOut": { "community": C, "targetPseudonym": p, "durationSeconds": 60, "reason": "spam" } },
+            { "timeoutStatusChanged": { "community": C, "pseudonym": p, "timeoutUntil": 160 } },
+        ])
+    );
+    assert_eq!(
+        transitions(&next, &prev, Some(&key(2))),
+        serde_json::json!([
+            { "timeoutRemoved": { "community": C, "targetPseudonym": p } },
+            { "timeoutStatusChanged": { "community": C, "pseudonym": p, "timeoutUntil": null } },
+        ])
+    );
+}

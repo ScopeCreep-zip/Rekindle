@@ -130,17 +130,11 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(b"|");
             h.update(channel.as_bytes());
         }
-        GovernanceEvent::GovernanceSubkeyUpdated {
-            community,
-            subkey_index,
-            lamport_ts,
-        } => {
-            h.update(b"subkey|");
+        GovernanceEvent::EffectivePermissionsChanged { community, member } => {
+            h.update(b"effective_perms|");
             h.update(community.as_bytes());
             h.update(b"|");
-            h.update(&subkey_index.to_le_bytes());
-            h.update(b"|");
-            h.update(&lamport_ts.to_le_bytes());
+            h.update(member.as_bytes());
         }
     }
 }

@@ -228,13 +228,7 @@ export type GovernanceEvent =
   | { inviteRevoked: { community: string; codeHash: string } }
   | { inviteExpired: { community: string; codeHash: string } }
   | { channelPermissionsChanged: { community: string; channel: string } }
-  | {
-      governanceSubkeyUpdated: {
-        community: string;
-        subkeyIndex: number;
-        lamportTs: number;
-      };
-    }
+  | { effectivePermissionsChanged: { community: string; member: string } }
   | { governanceRebuilt: { community: string } }
   | {
       governanceOpQuarantined: {

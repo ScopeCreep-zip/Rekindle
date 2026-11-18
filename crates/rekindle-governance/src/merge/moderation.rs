@@ -43,7 +43,7 @@ pub(super) fn apply_moderation(
             target,
             duration_seconds,
             started_at,
-            ..
+            reason,
         } => {
             let existing_stamp = state.timeouts.get(target).map_or(OpStamp::MIN, |t| t.stamp);
             if stamp > existing_stamp {
@@ -52,6 +52,7 @@ pub(super) fn apply_moderation(
                     TimeoutState {
                         duration_seconds: *duration_seconds,
                         started_at: *started_at,
+                        reason: reason.clone(),
                         stamp,
                     },
                 );

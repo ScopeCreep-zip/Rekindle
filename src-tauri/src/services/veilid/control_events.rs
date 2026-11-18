@@ -18,15 +18,9 @@ pub(crate) async fn handle_control_events_and_threads(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        ControlPayload::ChannelOverwriteChanged { channel_id } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Governance(rekindle_types::subscription_events::GovernanceEvent::ChannelPermissionsChanged {
-                    community: community_id.to_string(),
-                    channel: channel_id,
-                }),
-            );
-        }
+        // An overwrite is a governance op: the Host publishes
+        // `ChannelPermissionsChanged` from the merge (plan E3.2 S9).
+        ControlPayload::ChannelOverwriteChanged { .. } => {}
         payload @ (ControlPayload::MessagePinned { .. }
         | ControlPayload::MessageUnpinned { .. }) => {
             handle_pin_payload(app_handle, state, community_id, sender_pseudonym, payload).await;

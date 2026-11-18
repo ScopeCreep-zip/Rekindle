@@ -19,6 +19,7 @@ pub(super) fn apply_membership(
         GovernanceEntry::MemberJoined {
             member_record,
             member_record_owner,
+            invite_proof,
             ..
         } => {
             state
@@ -49,6 +50,7 @@ pub(super) fn apply_membership(
                         PendingMemberState {
                             member_record: member.member_record,
                             member_record_owner: member.member_record_owner,
+                            has_invite: invite_proof.is_some(),
                             stamp,
                         },
                     );

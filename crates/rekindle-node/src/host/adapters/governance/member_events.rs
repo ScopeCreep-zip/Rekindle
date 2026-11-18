@@ -7,6 +7,11 @@
 //! full payload the merge holds: the remover and the reason, the leaver's
 //! own departure to its own frontends.
 //!
+//! A joiner waiting for approval (`JoinRequested`) and a timeout set or
+//! lifted (`TimedOut`, `TimeoutRemoved`, each with its
+//! `TimeoutStatusChanged`) are read the same way, ours included: our own
+//! windows show our timeout from the same event.
+//!
 //! The gossip notices (`Kick`, `Ban`, `MemberLeave`, `MemberJoined`, ...)
 //! publish no membership event (`rekindle-transport`
 //! `control_into_event`): a gossip frame is a hint, not authenticated for
@@ -172,6 +177,9 @@ pub(super) fn member_transitions(
         .keys()
         .chain(prev.members.keys())
         .chain(prev.pending_members.keys())
+        .chain(next.pending_members.keys())
+        .chain(next.timeouts.keys())
+        .chain(prev.timeouts.keys())
         .chain(next.bans.iter())
         .chain(prev.bans.iter())
         .collect();
@@ -184,6 +192,24 @@ pub(super) fn member_transitions(
         let newly_banned = next.bans.contains(p) && !prev.bans.contains(p);
         let newly_departed = knew && !prev.is_departed(p) && next.is_departed(p);
         let mine = me == Some(p);
+        if let Some(pending) = next
+            .pending_members
+            .get(p)
+            .filter(|_| !prev.pending_members.contains_key(p))
+        {
+            out.push(MembershipEvent::JoinRequested {
+                community: community(),
+                pseudonym: p.to_hex(),
+                display_name: card_name_of(p).unwrap_or_default(),
+                has_invite: pending.has_invite,
+            });
+        }
+        out.extend(super::timeout_events::timeout_transitions(
+            community_id,
+            p,
+            prev,
+            next,
+        ));
         if next.members.contains_key(p) && !prev.members.contains_key(p) && !next.is_departed(p) {
             out.push(MembershipEvent::Joined {
                 community: community(),

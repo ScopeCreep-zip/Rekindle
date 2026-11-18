@@ -118,7 +118,7 @@ export function communityDetails(channelCount = 30) {
         { id: 1, name: HOISTED_ROLE, color: 0x3498db, permissions: "65536", position: 1, hoist: true, mentionable: false },
       ],
       myRole: null,
-      myRoleIds: [0],
+      myRoleIds: [0], myPermissions: "65536", myChannelPermissions: {},
       myPseudonymKey: ME,
       mekGeneration: 1,
       onboardingComplete: true,

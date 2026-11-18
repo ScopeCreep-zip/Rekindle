@@ -64,6 +64,9 @@ impl HostGovernance {
         });
         let raised = raises_key_generation(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
+        let permissions = prev.as_ref().map_or_else(Default::default, |prev| {
+            super::permission_events::permission_transitions(prev, &state, now_secs)
+        });
         let (projected, held) =
             self.ctx
                 .communities
@@ -75,6 +78,9 @@ impl HostGovernance {
         }
         self.publish_member_transitions(transitions);
         self.publish_thread_archive_changes(community_id, archives);
+        if !permissions.is_empty() {
+            self.publish_permission_transitions(community_id, permissions);
+        }
         match removal {
             Some(removal) => self.on_own_removal(community_id, &removal),
             None => self.on_not_removed(community_id),
