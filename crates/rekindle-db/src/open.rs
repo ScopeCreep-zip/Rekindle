@@ -225,7 +225,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// admit `awaiting_key`, a channel post queued until its community key comes.
 /// 130 (plan E3.2 S9, F9-3): `messages.failure_reason`, why our own post
 /// failed (removed from the community, the key did not arrive), kept for a reload.
-pub const SCHEMA_VERSION: i64 = 130;
+/// 131 (plan E3.2 S7c.6): `governance_checkpoints`, each checkpoint digest
+/// a community holds with its state and, while usable, its snapshot.
+pub const SCHEMA_VERSION: i64 = 131;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
