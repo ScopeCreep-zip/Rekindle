@@ -1,31 +1,27 @@
-import { Component, createSignal, onMount, For } from "solid-js";
+import { Component, createSignal, onMount, For, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState } from "../../stores/settings.store";
 import { handleSaveSettings } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
-import type { NotificationContent } from "../../ipc/commands/types";
+import type { NotificationContent, QuietHoursSettings } from "../../ipc/commands/types";
 
 const NotificationsTab: Component = () => {
   // Architecture §17.2 / §17.3 — Do Not Disturb + quiet hours.
   const [dnd, setDnd] = createSignal<boolean>(false);
-  const [qhEnabled, setQhEnabled] = createSignal<boolean>(false);
-  const [qhStart, setQhStart] = createSignal<number>(22);
-  const [qhEnd, setQhEnd] = createSignal<number>(7);
-  // Architecture §17.2 — IANA timezone for DST-aware quiet-hours
-  // resolution. Defaults to the OS-resolved zone on first load via
-  // `Intl.DateTimeFormat().resolvedOptions().timeZone` so the user
-  // doesn't have to pick a zone before saving.
-  const [qhTimezone, setQhTimezone] = createSignal<string>(
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
+  // Quiet hours, including the IANA timezone for DST-aware resolution
+  // (§17.2). `null` until get_quiet_hours answers: the box shows unticked, the
+  // hour fields and zone show nothing, and all stay disabled, never a value
+  // not read (they used to show 22, 7 and the OS zone; the stored row
+  // defaults to UTC, `001_init.sql` quiet_hours_timezone). An edit made
+  // before the answer would also have been overwritten by it (walk row ST22).
+  const [qh, setQh] = createSignal<QuietHoursSettings | null>(null);
   // Architecture §28.8 line 3220 — IP-privacy toggle for outgoing link
   // previews. `null` until the stored value loads: the box shows unticked and
   // disabled, never a value it has not read (it used to start ticked).
   const [linkPreviewsEnabled, setLinkPreviewsEnabled] = createSignal<boolean | null>(null);
-  // Each group stays disabled until its stored value has loaded: an edit
-  // made before the answer arrived was overwritten by it (walk row ST22).
+  // DND stays disabled until its stored value has loaded: an edit made
+  // before the answer arrived was overwritten by it (walk row ST22).
   const [dndLoaded, setDndLoaded] = createSignal(false);
-  const [qhLoaded, setQhLoaded] = createSignal(false);
 
   onMount(() => {
     commands.getLinkPreviewsEnabled().then((on) => {
@@ -39,12 +35,8 @@ const NotificationsTab: Component = () => {
     }).catch((e) => {
       console.error("Failed to load DND:", e);
     });
-    commands.getQuietHours().then((qh) => {
-      setQhEnabled(qh.enabled);
-      setQhStart(qh.startHour);
-      setQhEnd(qh.endHour);
-      setQhTimezone(qh.timezone);
-      setQhLoaded(true);
+    commands.getQuietHours().then((stored) => {
+      setQh(stored);
     }).catch((e) => {
       console.error("Failed to load quiet hours:", e);
     });
@@ -86,9 +78,15 @@ const NotificationsTab: Component = () => {
     }
   }
 
-  async function persistQuietHours(): Promise<void> {
+  // Applies one edit to the loaded quiet hours and saves them; an edit while
+  // they are unknown does nothing (the controls are disabled then).
+  async function editQuietHours(change: Partial<QuietHoursSettings>): Promise<void> {
+    const current = qh();
+    if (current === null) return;
+    const next = { ...current, ...change };
+    setQh(next);
     try {
-      await commands.setQuietHours(qhEnabled(), qhStart(), qhEnd(), qhTimezone());
+      await commands.setQuietHours(next.enabled, next.startHour, next.endHour, next.timezone);
     } catch (e) {
       console.error("Failed to set quiet hours:", e);
     }
@@ -100,7 +98,12 @@ const NotificationsTab: Component = () => {
   const supportedTimezones = (): string[] => {
     const list = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
       .supportedValuesOf?.("timeZone") ?? [];
-    return [...list].sort();
+    // The stored zone is always listed: the row defaults to "UTC", which
+    // Chromium's catalog omits, and a select without its value shows the
+    // first zone instead, a value never read.
+    const stored = qh()?.timezone;
+    const zones = stored !== undefined && !list.includes(stored) ? [...list, stored] : [...list];
+    return zones.sort();
   };
 
   return (
@@ -223,12 +226,9 @@ const NotificationsTab: Component = () => {
       <label class="settings-option">
         <input
           type="checkbox"
-          checked={qhEnabled()}
-          disabled={!qhLoaded()}
-          onChange={(e) => {
-            setQhEnabled(e.currentTarget.checked);
-            void persistQuietHours();
-          }}
+          checked={qh()?.enabled === true}
+          disabled={qh() === null}
+          onChange={(e) => void editQuietHours({ enabled: e.currentTarget.checked })}
         />
         <span class="buddy-name">Enable quiet hours</span>
       </label>
@@ -238,12 +238,11 @@ const NotificationsTab: Component = () => {
           type="number"
           min={0}
           max={23}
-          value={qhStart()}
-          disabled={!qhLoaded() || !qhEnabled()}
+          value={qh()?.startHour ?? ""}
+          disabled={qh()?.enabled !== true}
           onChange={(e) => {
             const value = Math.max(0, Math.min(23, parseInt(e.currentTarget.value, 10) || 0));
-            setQhStart(value);
-            void persistQuietHours();
+            void editQuietHours({ startHour: value });
           }}
         />
       </FormField>
@@ -253,37 +252,43 @@ const NotificationsTab: Component = () => {
           type="number"
           min={0}
           max={23}
-          value={qhEnd()}
-          disabled={!qhLoaded() || !qhEnabled()}
+          value={qh()?.endHour ?? ""}
+          disabled={qh()?.enabled !== true}
           onChange={(e) => {
             const value = Math.max(0, Math.min(23, parseInt(e.currentTarget.value, 10) || 0));
-            setQhEnd(value);
-            void persistQuietHours();
+            void editQuietHours({ endHour: value });
           }}
         />
       </FormField>
       <FormField label="Timezone">
         <select
           class="form-select"
-          value={qhTimezone()}
-          disabled={!qhLoaded() || !qhEnabled()}
-          onChange={(e) => {
-            setQhTimezone(e.currentTarget.value);
-            void persistQuietHours();
-          }}
+          value={qh()?.timezone ?? ""}
+          disabled={qh()?.enabled !== true}
+          onChange={(e) => void editQuietHours({ timezone: e.currentTarget.value })}
         >
+          <Show when={qh() === null}>
+            <option value="" />
+          </Show>
           <For each={supportedTimezones()}>
             {(zone) => <option value={zone}>{zone}</option>}
           </For>
         </select>
         <div class="settings-hint">
-          DST transitions are honored automatically. Current local time:{" "}
-          {new Date().toLocaleTimeString(undefined, {
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZone: qhTimezone(),
-            timeZoneName: "short",
-          })}
+          DST transitions are honored automatically.
+          <Show when={qh()}>
+            {(loaded) => (
+              <>
+                {" "}Current local time:{" "}
+                {new Date().toLocaleTimeString(undefined, {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  timeZone: loaded().timezone,
+                  timeZoneName: "short",
+                })}
+              </>
+            )}
+          </Show>
         </div>
       </FormField>
     </>

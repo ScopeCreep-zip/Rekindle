@@ -80,9 +80,8 @@ export interface QuietHoursSettings {
   endHour: number;
   /**
    * Architecture §17.2 — IANA timezone identifier (e.g.,
-   * `"America/Los_Angeles"`). Frontend seeds with
-   * `Intl.DateTimeFormat().resolvedOptions().timeZone` on first
-   * configuration; backend uses `chrono-tz` so DST is automatic.
+   * `"America/Los_Angeles"`). The stored row defaults to `"UTC"`;
+   * backend uses `chrono-tz` so DST is automatic.
    */
   timezone: string;
 }
