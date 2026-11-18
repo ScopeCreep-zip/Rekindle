@@ -153,6 +153,8 @@ mod post_before_key;
 mod prekey_collision;
 #[path = "../netsim/prekeys.rs"]
 mod prekeys;
+#[path = "../netsim/racing_join.rs"]
+mod racing_join;
 #[path = "../netsim/read_marker_only_advances.rs"]
 mod read_marker_only_advances;
 #[path = "../netsim/refriend_after_removal.rs"]

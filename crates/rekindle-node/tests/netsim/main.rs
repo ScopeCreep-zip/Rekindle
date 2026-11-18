@@ -77,6 +77,7 @@ mod pins;
 mod post_before_key;
 mod prekey_collision;
 mod prekeys;
+mod racing_join;
 mod read_marker_only_advances;
 mod refriend_after_removal;
 mod refused_request;
