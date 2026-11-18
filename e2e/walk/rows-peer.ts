@@ -71,7 +71,12 @@ export const PEER_ROWS: Row[] = [
     title: "Second app on its own data root and port, second identity",
     async run({ b, app, shot }) {
       const papp = await launch("peer");
-      const pb = await openSession(papp, "login");
+      // `peer` is unset until the session opens, so stopPeer cannot reach an
+      // app whose session failed (it crashed after /status): stop it here.
+      const pb = await openSession(papp, "login").catch(async (err: unknown) => {
+        await papp.stop();
+        throw err;
+      });
       const ps: WalkState = {
         displayName: `peer-${randomBytes(3).toString("hex")}`,
         passphrase: randomBytes(18).toString("base64url"),

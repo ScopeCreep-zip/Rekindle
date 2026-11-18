@@ -465,6 +465,7 @@ const BASE_ROWS: Row[] = [
       await (await b.$('[aria-label="Minimize window"]')).click();
       await sleep(1000);
       const minimized = await b.execute(() => document.visibilityState);
+      const keptMinimized = (await b.getWindowHandles()).includes(BUDDY);
       await b.setWindowRect(rect.x, rect.y, rect.width, rect.height);
       await sleep(500);
       await (await b.$('[aria-label="Hide window"]')).click();
@@ -478,8 +479,20 @@ const BASE_ROWS: Row[] = [
       });
       await sleep(1000);
       await shot();
-      const note = `after minimize visibilityState=${minimized}; after hide visibilityState=${hidden}, handle kept=${stillListed}; restored via setWindowRect and show_buddy_list`;
-      if (minimized !== "hidden" || hidden !== "hidden" || !stillListed) throw new Error(note);
+      // Wayland reports no minimized state back to a client: xdg-shell's
+      // xdg_toplevel.set_minimized says "There is no way to know if the
+      // surface is currently minimized", so GDK never sets ICONIFIED, tao's
+      // is_minimized stays false (tao-0.37.1 platform_impl/linux/window.rs:
+      // 369-372) and WebKitGTK keeps the page "visible" (COSMIC walk of
+      // 9fd296f4). There the row proves what the platform shows: the
+      // minimize click keeps the window, which restores. X11 and macOS
+      // report the state, so the visibility check stays there.
+      const waylandMinimize = process.platform === "linux" && Boolean(process.env.WAYLAND_DISPLAY);
+      const minimizeShown = waylandMinimize ? keptMinimized : minimized === "hidden" && keptMinimized;
+      const note =
+        `after minimize visibilityState=${minimized}${waylandMinimize ? " (Wayland: no minimized state reported)" : ""}, handle kept=${keptMinimized}; ` +
+        `after hide visibilityState=${hidden}, handle kept=${stillListed}; restored via setWindowRect and show_buddy_list`;
+      if (!minimizeShown || hidden !== "hidden" || !stillListed) throw new Error(note);
       return note;
     },
   },

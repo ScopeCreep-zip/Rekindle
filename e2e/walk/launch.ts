@@ -135,6 +135,10 @@ export async function launch(name = "app"): Promise<App> {
   let exited = false;
   child.once("exit", () => {
     exited = true;
+    // A crash (a peer panicking at startup) ends the child with no stop()
+    // from the walk; its root holds nothing the walk reads (the log is in
+    // OUT_DIR), so it goes as soon as nothing writes to it.
+    rmSync(dataRoot, { recursive: true, force: true });
   });
 
   let stopped = false;
@@ -169,6 +173,15 @@ export async function launch(name = "app"): Promise<App> {
     };
     process.once("SIGINT", onSignal);
     process.once("SIGTERM", onSignal);
+    // Every other way out (process.exit after the table, an abort, an
+    // uncaught error, a launch a timed-out row left running) ends here,
+    // where only synchronous work runs: kill what is left, drop its root.
+    process.once("exit", () => {
+      for (const a of running) {
+        if (a.alive()) a.child.kill("SIGKILL");
+        rmSync(a.dataRoot, { recursive: true, force: true });
+      }
+    });
   }
 
   try {

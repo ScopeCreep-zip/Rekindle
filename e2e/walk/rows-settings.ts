@@ -459,7 +459,10 @@ export const SETTINGS_ROWS: Row[] = [
         await closeSettings(b);
         throw new Skip("no input channel boxes: the default input reports one channel or none (AudioTab.tsx:95)");
       }
-      const box = await b.$(".settings-content label.settings-option input[type=checkbox]");
+      // A device lists one box per channel (AudioTab.tsx:95-104): a
+      // 2-channel Linux mic shows "Input 1" and "Input 2", so pick the
+      // channel this row means by its name.
+      const box = await optionBox(b, "Input 1");
       const before = await box.isSelected();
       await box.click();
       await waitUntil(async () => (await box.isSelected()) !== before, WAIT_MS, "input channel did not flip");
