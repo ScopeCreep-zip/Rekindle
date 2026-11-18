@@ -97,7 +97,8 @@ async function memberProbe(b: Browser, community: string): Promise<string> {
   await b.execute((name: string) => {
     type W = { __walkProbe?: string; __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<unknown> } };
     const w = window as unknown as W;
-    const unwrap = (v: unknown): unknown => (v && typeof v === "object" && "data" in v ? (v as { data: unknown }).data : v);
+    // A Host call answers `Done<T>` (`{ value, undo }`, ipc/commands/dto.ts).
+    const unwrap = (v: unknown): unknown => (v && typeof v === "object" && "value" in v ? (v as { value: unknown }).value : v);
     w.__walkProbe = "pending";
     void w.__TAURI_INTERNALS__.invoke("get_community_details")
       .then(async (d) => {
