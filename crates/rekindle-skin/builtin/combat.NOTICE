@@ -1,0 +1,263 @@
+builtin:combat: imported by `cargo xtask import-skin --format xfire-ini`
+(plan E7.7.3 item 2; rekindle-skin::import::xfire_ini).
+
+Provenance
+  LongName: Combat
+  Version (the skin's own revision): 2
+  skin file: combat.ini
+  theme file: CombatThemes.ini
+  source tree BLAKE3: a580bf8861b8f0a6cb820e7a4c4a112266beba4a104501f8424382fd0f605bdf
+
+Licence
+  The skin art and palette are Xfire, Inc.'s own work, stated outside the
+  skin's files:
+    source: https://web.archive.org/web/20100105213412/http://www.xfire.com/downloads/1032/
+    quote: "The Combat skin is an official skin created by Xfire."
+  Xfire is defunct; the Rekindle owner ruled on 2026-10-15 that
+  Xfire's own assets may be used, and replaces them with the same command.
+  Rekindle's MIT LICENSE does not cover this pack.
+
+Colour groups (15 defined)
+  MenuTextCG RGBA(255,255,255,0) -> not mapped: no registry role menubar.text yet
+  UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
+  HeaderColor RGBA(0,0,0,0) -> image shift (baked)
+  ChatBGCG RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  InGameChatTextColor RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  FriendsFavoritesText RGBA(0,0,255,0) -> dropped: server browser
+  AllServersText RGBA(255,255,0,0) -> dropped: server browser
+  DownloadText RGBA(0,255,0,0) -> dropped: not an Xfire colour name
+  Friend RGBA(0,84,12,0) -> dropped: not an Xfire colour name
+  FriendofFriend RGBA(84,65,0,0) -> dropped: not an Xfire colour name
+  AllServers RGBA(169,108,30,0) -> dropped: not an Xfire colour name
+  Select RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+  Label RGBA(255,255,255,0) -> dropped: not an Xfire colour name
+  InfoViewHyperlink RGBA(0,84,12,0) -> not mapped: no registry role profile.link yet
+  ProgressFill RGBA(128,128,128,0) -> dropped: not an Xfire colour name
+
+Regions
+  window.frame: [OuterFrame], nine-slice 214/78/113/79, transparent middle
+    Normal: 333x586 px
+
+Dropped
+  images outside the window frame: 169
+  other keys (classes, sizes, cursors, sounds): 202
+  other skin files (chat, group chat, in-game): 4
+  text styles: 42
+  triggers: 40
+  window layout: 197
+  repeated keys, the first occurrence read as on Windows (21):
+    combat.ini: [MainWindow] Window4.X (line 34)
+    combat.ini: [MainWindow] Window5.X (line 40)
+    combat.ini: [MainWindow] Window14.Y (line 96)
+    combat.ini: [MainWindow] Window16.X (line 104)
+    combat.ini: [MainWindow] Window17.X (line 109)
+    combat.ini: [Knob01] Action.lbtndown (line 351)
+    combat.ini: [Knob01] Action.doubleclick (line 354)
+    combat.ini: [Knob02] Action.lbtndown (line 367)
+    combat.ini: [Knob02] Action.doubleclick (line 370)
+    combat.ini: [Knob03] Action.lbtndown (line 383)
+    combat.ini: [Knob03] Action.doubleclick (line 386)
+    combat.ini: [Knob04] Action.lbtndown (line 397)
+    combat.ini: [Knob04] Action.doubleclick (line 400)
+    combat.ini: [DownloadBlink] Action.DownloadComplete (line 410)
+    combat.ini: [DownloadBlink] Action.onfilesfocus (line 412)
+    combat.ini: [DownloadBlink] Action.onfileskillfocus (line 414)
+    combat.ini: [StatusEdit] Text.bold (line 557)
+    combat.ini: [InfoViewSwitchIn] Action.click (line 807)
+    combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
+    combat.ini: [InfoviewSwitchOut] Action.click (line 830)
+    combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
+  files not read (191):
+    CombatChatSkin.ini
+    CombatGroupChatInfoSkin.ini
+    CombatGroupChatSkin.ini
+    CombatInGameMainSkin.ini
+    CombatInGamePopUp.ini
+    CombatInGamePopUpSkin.ini
+    CombatInfoSkin.ini
+    blink_white.gif
+    c_background.gif
+    c_bottom_middle.gif
+    c_button_add_down.gif
+    c_button_add_hover.gif
+    c_button_add_norm.gif
+    c_button_add_off.gif
+    c_button_add_server_down.gif
+    c_button_add_server_hover.gif
+    c_button_add_server_norm.gif
+    c_button_add_server_off.gif
+    c_button_arrow_down.gif
+    c_button_arrow_hover.gif
+    c_button_arrow_norm.gif
+    c_button_arrow_off.gif
+    c_button_chat_down.gif
+    c_button_chat_hover.gif
+    c_button_chat_norm.gif
+    c_button_chat_off.gif
+    c_button_close_down.gif
+    c_button_close_hover.gif
+    c_button_close_norm.gif
+    c_button_close_off.gif
+    c_button_download_down.gif
+    c_button_download_hover.gif
+    c_button_download_norm.gif
+    c_button_download_off.gif
+    c_button_game_down.gif
+    c_button_game_hover.gif
+    c_button_game_norm.gif
+    c_button_game_off.gif
+    c_button_launch_down.gif
+    c_button_launch_hover.gif
+    c_button_launch_norm.gif
+    c_button_launch_off.gif
+    c_button_maximize_down.gif
+    c_button_maximize_hover.gif
+    c_button_maximize_norm.gif
+    c_button_maximize_off.gif
+    c_button_minimize_down.gif
+    c_button_minimize_hover.gif
+    c_button_minimize_norm.gif
+    c_button_minimize_off.gif
+    c_button_profile_down.gif
+    c_button_profile_hover.gif
+    c_button_profile_norm.gif
+    c_button_profile_off.gif
+    c_button_refresh_down.gif
+    c_button_refresh_hover.gif
+    c_button_refresh_norm.gif
+    c_button_refresh_off.gif
+    c_button_restore_down.gif
+    c_button_restore_hover.gif
+    c_button_restore_norm.gif
+    c_button_restore_off.gif
+    c_button_stop_down.gif
+    c_button_stop_hover.gif
+    c_button_stop_norm.gif
+    c_button_stop_off.gif
+    c_chat_groupspeak_left.gif
+    c_chat_groupspeak_middle.gif
+    c_chat_groupspeak_right.gif
+    c_close_down.gif
+    c_close_hover.gif
+    c_header_arrow_down.gif
+    c_header_arrow_up.gif
+    c_header_middle.gif
+    c_header_right.gif
+    c_infoview_in_hover.gif
+    c_infoview_in_norm.gif
+    c_infoview_out_hover.gif
+    c_infoview_out_norm.gif
+    c_knob_01.gif
+    c_knob_02.gif
+    c_knob_03.gif
+    c_menu_down.gif
+    c_menu_down_top.gif
+    c_menu_hover.gif
+    c_menu_hover_top.gif
+    c_minimize_down.gif
+    c_minimize_hover.gif
+    c_namebar_left.gif
+    c_namebar_left_off.gif
+    c_namebar_middle.gif
+    c_namebar_middle_off.gif
+    c_namebar_right.gif
+    c_namebar_right_off.gif
+    c_resize_hover.gif
+    c_top_left_off.gif
+    c_top_middle_off.gif
+    c_top_right_off.gif
+    c_white_background.gif
+    c_xfire_logo_hover.gif
+    c_xfire_logo_norm.gif
+    chat/c_chat_bottom_left.gif
+    chat/c_chat_bottom_middle.gif
+    chat/c_chat_bottom_right.gif
+    chat/c_chat_button_close_down.gif
+    chat/c_chat_button_close_hover.gif
+    chat/c_chat_button_close_norm.gif
+    chat/c_chat_button_minimize_down.gif
+    chat/c_chat_button_minimize_hover.gif
+    chat/c_chat_button_minimize_norm.gif
+    chat/c_chat_button_send_down.gif
+    chat/c_chat_button_send_hover.gif
+    chat/c_chat_button_send_norm.gif
+    chat/c_chat_divider.gif
+    chat/c_chat_infoview_in_hover.gif
+    chat/c_chat_infoview_in_norm.gif
+    chat/c_chat_infoview_out_hover.gif
+    chat/c_chat_infoview_out_norm.gif
+    chat/c_chat_left_middle.gif
+    chat/c_chat_resize_hover.gif
+    chat/c_chat_resize_norm.gif
+    chat/c_chat_right_middle.gif
+    chat/c_chat_top_left.gif
+    chat/c_chat_top_middle.gif
+    chat/c_chat_top_right.gif
+    chat/c_chat_x_hover.gif
+    chat/c_chat_x_norm.gif
+    file_download_blink.gif
+    infoview/c_infoview_bottomleft.gif
+    infoview/c_infoview_bottommiddle.gif
+    infoview/c_infoview_bottomright.gif
+    infoview/c_infoview_button_join_disabled.gif
+    infoview/c_infoview_button_join_down.gif
+    infoview/c_infoview_button_join_hover.gif
+    infoview/c_infoview_button_join_norm.gif
+    infoview/c_infoview_button_voicechat_disabled.gif
+    infoview/c_infoview_button_voicechat_down.gif
+    infoview/c_infoview_button_voicechat_hover.gif
+    infoview/c_infoview_button_voicechat_norm.gif
+    infoview/c_infoview_leftmiddle.gif
+    infoview/c_infoview_rightmiddle.gif
+    infoview/c_infoview_topleft.gif
+    infoview/c_infoview_topmiddle.gif
+    infoview/c_infoview_topright.gif
+    infoview/icon_mic_green.gif
+    infoview/icon_mic_grey.gif
+    infoview/icon_speaker_green.gif
+    infoview/icon_speaker_grey.gif
+    infoview/icon_voice_server.gif
+    ingame/c_ingame_background.gif
+    ingame/c_ingame_bottomleft.gif
+    ingame/c_ingame_bottommiddle.gif
+    ingame/c_ingame_bottomright.gif
+    ingame/c_ingame_middleleft.gif
+    ingame/c_ingame_middleright.gif
+    ingame/c_ingame_topleft.gif
+    ingame/c_ingame_topmiddle.gif
+    ingame/c_ingame_topright.gif
+    ingame/c_ingame_x.gif
+    scrollbar/c_grip_horz_left.gif
+    scrollbar/c_grip_horz_left_down.gif
+    scrollbar/c_grip_horz_mid.gif
+    scrollbar/c_grip_horz_mid_down.gif
+    scrollbar/c_grip_horz_right.gif
+    scrollbar/c_grip_horz_right_down.gif
+    scrollbar/c_grip_vert_bottom.gif
+    scrollbar/c_grip_vert_bottom_down.gif
+    scrollbar/c_grip_vert_middle.gif
+    scrollbar/c_grip_vert_middle_down.gif
+    scrollbar/c_grip_vert_top.gif
+    scrollbar/c_grip_vert_top_down.gif
+    scrollbar/c_scroll_arrow_down_dis.gif
+    scrollbar/c_scroll_arrow_down_down.gif
+    scrollbar/c_scroll_arrow_down_hover.gif
+    scrollbar/c_scroll_arrow_down_norm.gif
+    scrollbar/c_scroll_arrow_left_dis.gif
+    scrollbar/c_scroll_arrow_left_down.gif
+    scrollbar/c_scroll_arrow_left_hover.gif
+    scrollbar/c_scroll_arrow_left_norm.gif
+    scrollbar/c_scroll_arrow_right_dis.gif
+    scrollbar/c_scroll_arrow_right_down.gif
+    scrollbar/c_scroll_arrow_right_hover.gif
+    scrollbar/c_scroll_arrow_right_norm.gif
+    scrollbar/c_scroll_arrow_up_dis.gif
+    scrollbar/c_scroll_arrow_up_down.gif
+    scrollbar/c_scroll_arrow_up_hover.gif
+    scrollbar/c_scroll_arrow_up_norm.gif
+    scrollbar/c_scroll_base_horz.gif
+    scrollbar/c_scroll_base_vert.gif
+    scrollbar/c_scroll_corner.gif
+    strings.ini
+
+Contrast changes (minimal Oklab-lightness walk) (0 made)

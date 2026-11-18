@@ -33,11 +33,23 @@ pub struct Builtin {
     pub bytes: &'static [u8],
 }
 
-/// Every built-in pack, by id.
-pub const PACKS: [Builtin; 1] = [Builtin {
-    id: "symbiosis",
-    bytes: include_bytes!("../builtin/symbiosis.rkskin"),
-}];
+/// Every built-in pack, by id: Symbiosis first (the default), then Xfire's
+/// other own skins (plan E7.7.3, "Official Xfire skins"): Classic v3 (the
+/// id `classic` is the sound bank) and Combat.
+pub const PACKS: [Builtin; 3] = [
+    Builtin {
+        id: "symbiosis",
+        bytes: include_bytes!("../builtin/symbiosis.rkskin"),
+    },
+    Builtin {
+        id: "xfire-classic",
+        bytes: include_bytes!("../builtin/xfire-classic.rkskin"),
+    },
+    Builtin {
+        id: "combat",
+        bytes: include_bytes!("../builtin/combat.rkskin"),
+    },
+];
 
 /// Each pack's helper-validated canonical package, once per process.
 static VALIDATED: [OnceLock<Canonical>; PACKS.len()] = [const { OnceLock::new() }; PACKS.len()];
@@ -82,7 +94,9 @@ mod tests {
             // served is byte for byte what was imported.
             assert_eq!(c.bytes, pack.bytes, "builtin:{}", pack.id);
         }
-        assert!(find(DEFAULT).is_some());
+        assert_eq!(find(DEFAULT).map(|(i, _)| i), Some(0));
+        assert!(find("builtin:xfire-classic").is_some());
+        assert!(find("builtin:combat").is_some());
         assert!(find("builtin:nope").is_none());
         assert!(find("symbiosis").is_none());
         assert!(find("pkg:symbiosis").is_none());
