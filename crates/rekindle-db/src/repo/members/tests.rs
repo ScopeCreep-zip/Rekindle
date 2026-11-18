@@ -25,7 +25,6 @@ fn conn_with_community() -> Connection {
                 mek_generation: 0,
                 member_registry_key: None,
                 my_subkey_index: None,
-                anchor: None,
             },
         )
         .unwrap();

@@ -339,7 +339,6 @@ pub fn record_membership(
                 mek_generation: i64::try_from(row.mek_generation).unwrap_or(i64::MAX),
                 member_registry_key: Some(&row.registry_key),
                 my_subkey_index: Some(row.slot_index),
-                anchor: Some(&row.anchor),
             },
         )?;
         repo::communities::set(

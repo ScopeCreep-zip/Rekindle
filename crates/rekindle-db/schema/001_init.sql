@@ -220,7 +220,6 @@ CREATE TABLE IF NOT EXISTS communities (
     my_subkey_index INTEGER,
     -- Plate Gate: which segment the user joined into. 0 = primary.
     my_segment_index INTEGER NOT NULL DEFAULT 0,
-    governance_key TEXT,
     lamport_clock INTEGER NOT NULL DEFAULT 0,
     -- The pinned GenesisCert (plan E3.2), as the anchor's subkey 0 holds it.
     genesis_cert BLOB,

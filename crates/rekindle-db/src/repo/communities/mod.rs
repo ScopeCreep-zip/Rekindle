@@ -91,7 +91,6 @@ pub struct NewCommunity<'a> {
     pub mek_generation: i64,
     pub member_registry_key: Option<&'a str>,
     pub my_subkey_index: Option<u32>,
-    pub anchor: Option<&'a str>,
 }
 
 fn insert_with(
@@ -105,8 +104,8 @@ fn insert_with(
         &format!(
             "{verb} INTO communities (owner_key, id, name, joined_at, \
              dht_owner_keypair, my_pseudonym_key, mek_generation, member_registry_key, \
-             my_subkey_index, my_segment_index, governance_key) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10){on_conflict}"
+             my_subkey_index, my_segment_index) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0){on_conflict}"
         ),
         params![
             owner_key,
@@ -118,7 +117,6 @@ fn insert_with(
             c.mek_generation,
             c.member_registry_key,
             c.my_subkey_index,
-            c.anchor,
         ],
     )?;
     Ok(())
@@ -173,7 +171,7 @@ pub fn upsert_membership(
          member_registry_key = excluded.member_registry_key, \
          my_subkey_index = excluded.my_subkey_index, \
          my_segment_index = excluded.my_segment_index, \
-         governance_key = excluded.governance_key, removed_by_name = NULL",
+         removed_by_name = NULL",
         owner_key,
         community,
     )
@@ -343,7 +341,6 @@ mod tests {
             mek_generation: 3,
             member_registry_key: Some("registry"),
             my_subkey_index: Some(4),
-            anchor: None,
         }
     }
 

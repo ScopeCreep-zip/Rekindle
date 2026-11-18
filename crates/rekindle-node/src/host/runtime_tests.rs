@@ -425,7 +425,6 @@ async fn seed_registry_community(host: &Host, owner: &str) {
                     mek_generation: 0,
                     member_registry_key: Some("registry"),
                     my_subkey_index: None,
-                    anchor: None,
                 },
             )
         })

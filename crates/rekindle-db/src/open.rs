@@ -229,7 +229,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// a community holds with its state and, while usable, its snapshot.
 /// 132 (plan E3.2 S7c.8): `governance_partial`, a community joined from a
 /// checkpoint hint until its backfill ends.
-pub const SCHEMA_VERSION: i64 = 133;
+/// 133 (plan E3.2 S8): `community_invites.uses` dropped.
+/// 134 (plan E3.2 S8): `communities.governance_key` dropped; the community
+/// id is the anchor `A`'s key (ADR 0011).
+pub const SCHEMA_VERSION: i64 = 134;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
