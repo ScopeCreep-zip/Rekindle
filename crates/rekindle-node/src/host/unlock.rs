@@ -135,7 +135,6 @@ pub(crate) async fn run(
             prekeys_ready: Some(prekeys_ready),
             friends: super::adapters::friends::HostFriends::of(ctx),
             public_key: installed.public_key.clone(),
-            display_name: installed.display_name.clone(),
             secret: installed.secret.clone(),
         };
         if let Err(e) = scope.spawn_with_token("own records", |stop| stage.run(stop)) {

@@ -258,14 +258,19 @@ async fn handle_game_clear(ctx: &DaemonContext, state: DaemonState) -> IpcRespon
     IpcResponse::ok(&ctx.own_presence.view())
 }
 
-/// `ProfileSetNickname`.
+/// `ProfileSetNickname`: needs an unlocked identity, not the network. The
+/// name is ours at once (the identity row, the registry, the session) and
+/// reaches the profile when it can: now if the profile is held, else when
+/// the own-records stage publishes it with the name as it then stands
+/// (walk 23 B12: a rename one second after login was refused while the
+/// node was still detached; decided as `PresenceSet`, walk 24).
 async fn handle_nickname(
     ctx: &DaemonContext,
     state: DaemonState,
     display_name: &str,
 ) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
+    if !state.can_query() {
+        return state_error(state, "query");
     }
     let name = display_name.trim();
     match crate::host::own_profile::set_nickname(ctx, name).await {

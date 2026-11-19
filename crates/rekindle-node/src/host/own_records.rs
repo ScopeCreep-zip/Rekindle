@@ -60,7 +60,6 @@ pub(crate) struct OwnRecords {
     /// and publishes its first set through it before the profile names it.
     pub friends: super::adapters::friends::HostFriends,
     pub public_key: String,
-    pub display_name: String,
     pub secret: Zeroizing<[u8; 32]>,
 }
 
@@ -102,6 +101,12 @@ impl OwnRecords {
             &identity.public_key_bytes(),
             identity.secret_key_bytes(),
         );
+        // The name as it stands when the records are written; a rename
+        // while they are is published once the profile is projected.
+        let Some(display_name) = self.display_name() else {
+            return;
+        };
+        let name = display_name.as_str();
         let mut keys = OwnRecordKeys::default();
         let mut owners = (
             stored.profile.matching_keypair().map(ToString::to_string),
@@ -131,7 +136,7 @@ impl OwnRecords {
                 held
             };
             let ((device_list, later, writes), profile) =
-                tokio::join!(prekeys, this.profile(pool, &stored, &route_blob));
+                tokio::join!(prekeys, this.profile(pool, &stored, &route_blob, name));
             // The account, read by no one else, is written beside the
             // device list rather than with the first writes: those already
             // fill Veilid's 16 concurrent DHT operations (11 prekey writes,
@@ -143,7 +148,7 @@ impl OwnRecords {
                     this.device_list(pool, key, &device_list).await;
                 }
             };
-            tokio::join!(device_list, this.account(pool, &stored));
+            tokio::join!(device_list, this.account(pool, &stored, name));
             // The later slots after the profile names the record, so they
             // never hold its writes back under the DHT cap.
             this.publish_later(later, writes);
@@ -174,6 +179,7 @@ impl OwnRecords {
         // The status, now that the projection names the profile (a created
         // identity had none until this stage).
         self.presence.republish();
+        self.publish_renamed(&display_name).await;
         if let Some(shell) = &self.shell {
             shell.own_records(&keys);
         }
@@ -257,10 +263,11 @@ impl OwnRecords {
         pool: &dyn RecordPort,
         stored: &Stored,
         route_blob: &[u8],
+        display_name: &str,
     ) -> Option<(String, String)> {
         let status_message = self.presence.view().status_message;
         let fields = profile::ProfileFields {
-            display_name: &self.display_name,
+            display_name,
             status_message: &status_message,
             prekey_records: None,
             route_blob,
@@ -339,10 +346,9 @@ impl OwnRecords {
         Some((held.key, held.keypair))
     }
 
-    async fn account(&self, pool: &dyn RecordPort, stored: &Stored) {
+    async fn account(&self, pool: &dyn RecordPort, stored: &Stored, display_name: &str) {
         let now_ms = self.presence.clock().now_ms();
         let secret = &self.secret;
-        let display_name = self.display_name.as_str();
         self.owner()
             .hold(
                 pool,
@@ -371,6 +377,31 @@ impl OwnRecords {
                 },
             )
             .await;
+    }
+
+    /// Our display name as it stands now, not as it was at unlock: a
+    /// rename made before the network came up is the one the records
+    /// publish (walk 23 B12). `None` once the identity is locked.
+    fn display_name(&self) -> Option<String> {
+        (self.session.read().as_ref()).map(|s| s.identity.display_name.clone())
+    }
+
+    /// A rename made while the records were written (`published` is the
+    /// name they hold) found no profile to write (`own_profile::set_nickname`):
+    /// written now that the projection names it.
+    async fn publish_renamed(&self, published: &str) {
+        let Some(current) = self.display_name().filter(|now| now != published) else {
+            return;
+        };
+        if let Err(e) = (self.presence)
+            .write_profile(
+                rekindle_types::dht_layout::profile::DISPLAY_NAME,
+                current.into_bytes(),
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "own records: the new display name not published");
+        }
     }
 
     /// Write the keys into the session projection.

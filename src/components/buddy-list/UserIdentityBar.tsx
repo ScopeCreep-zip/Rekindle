@@ -2,6 +2,8 @@ import { Component, createSignal, Show } from "solid-js";
 import { authState, setAuthState } from "../../stores/auth.store";
 import { handleCopyPublicKey } from "../../actions/buddy.actions";
 import { commands } from "../../ipc/commands";
+import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 import StatusDot from "../status/StatusDot";
 import Avatar from "../common/Avatar";
 import NotificationCenter from "./NotificationCenter";
@@ -31,9 +33,9 @@ const UserIdentityBar: Component = () => {
       try {
         await commands.setNickname(name);
       } catch (e) {
-        console.error("Failed to set nickname:", e);
-        // Revert on failure
+        // Revert, and say why (walk 23 B12: a refusal was only logged).
         setAuthState("displayName", oldName);
+        addToast(`Name not changed: ${errorMessage(e)}`, "error");
       }
     }
     setEditing(false);

@@ -4,6 +4,8 @@ import FormField from "../../components/common/FormField";
 import { authState, setAuthState } from "../../stores/auth.store";
 import { handleSetAvatar } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
+import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 import { fetchAvatarUrl } from "../../ipc/avatar";
 import GameIcon from "../../components/game/GameIcon";
 import { formatDuration } from "../../utils/formatting";
@@ -46,9 +48,11 @@ const ProfileTab: Component = () => {
   function handleSaveName(): void {
     const name = nameInput().trim();
     if (name && name !== authState.displayName) {
+      const oldName = authState.displayName;
       setAuthState("displayName", name);
-      commands.setNickname(name).catch((e) => {
-        console.error("Failed to set nickname:", e);
+      commands.setNickname(name).catch((e: unknown) => {
+        setAuthState("displayName", oldName);
+        addToast(`Name not changed: ${errorMessage(e)}`, "error");
       });
     }
   }

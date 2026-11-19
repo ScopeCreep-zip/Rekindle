@@ -595,3 +595,32 @@ async fn a_status_picked_while_detached_is_kept() {
         serde_json::from_value(data).unwrap();
     assert_eq!(view.status, SessionStatus::Away);
 }
+
+/// A rename made while the node is detached is taken (walk 23 B12): the
+/// name needs an unlocked identity, not the network; the own-records stage
+/// publishes it with the profile when the network is up.
+#[tokio::test]
+async fn a_rename_while_detached_is_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    host.ctx
+        .lifecycle
+        .transition(DaemonState::Detached)
+        .unwrap();
+
+    let set = host
+        .call(
+            Caller::shell(),
+            IpcRequest::ProfileSetNickname {
+                display_name: "Ann Two".into(),
+            },
+        )
+        .await;
+    assert!(
+        status_of(&set).is_none(),
+        "a detached rename is taken: {set:?}"
+    );
+    let name = (host.ctx.session.read().as_ref()).map(|s| s.identity.display_name.clone());
+    assert_eq!(name.as_deref(), Some("Ann Two"));
+}
