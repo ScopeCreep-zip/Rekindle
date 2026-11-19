@@ -30,9 +30,6 @@ pub fn warmable_record_keys(cs: &CommunityState) -> Vec<String> {
         keys.push(key);
     }
 
-    // Channel DHTLog records.
-    keys.extend(cs.channel_log_keys.values().cloned());
-
     if let Some(gov) = cs.governance_state.as_ref() {
         // Plate Gate (§15.4) expansion segments — segment-N governance +
         // registry, and channel-segment records.
@@ -113,8 +110,6 @@ mod tests {
         gov: Option<GovernanceState>,
         overflow_keys: Vec<String>,
     ) -> CommunityState {
-        let mut channel_log_keys = HashMap::new();
-        channel_log_keys.insert("c1".to_string(), "chan-key-1".to_string());
         CommunityState {
             genesis_cert: None,
             held_threads: std::collections::HashSet::new(),
@@ -145,11 +140,9 @@ mod tests {
             governance_clock: 0,
             gossip: None,
             slot_keypair: None,
-            channel_log_keys,
             registry_owner_keypair: None,
             slot_seed: None,
             known_members: HashSet::new(),
-            channel_sequences: HashMap::new(),
             watched_records: HashSet::new(),
             record_sequences: HashMap::new(),
             channel_last_send_at: HashMap::new(),
@@ -199,7 +192,6 @@ mod tests {
 
         assert!(keys.contains(&"gov-key".to_string()), "anchor key");
         assert!(keys.contains(&"reg-key".to_string()), "registry key");
-        assert!(keys.contains(&"chan-key-1".to_string()), "channel key");
         assert!(keys.contains(&"ovl-key".to_string()), "overflow key");
         assert!(keys.contains(&"my-secrets".to_string()), "my active invite");
         assert!(
@@ -227,11 +219,11 @@ mod tests {
     #[test]
     fn result_is_sorted_and_deduped() {
         let me = PseudonymKey([7u8; 32]);
-        // Overflow key duplicated with the channel key to prove dedup.
+        // An overflow key duplicated to prove dedup.
         let cs = community(
             &me,
             Some(GovernanceState::default()),
-            vec!["chan-key-1".to_string(), "ovl-a".to_string()],
+            vec!["ovl-a".to_string(), "ovl-a".to_string()],
         );
         let keys = warmable_record_keys(&cs);
         let mut sorted = keys.clone();

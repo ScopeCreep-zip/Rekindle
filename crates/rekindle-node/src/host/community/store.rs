@@ -445,9 +445,6 @@ impl CommunityStore {
             if let Some(keypair) = registry_owner_keypair {
                 c.registry_owner_keypair = Some(keypair.to_string());
             }
-            for (channel_id, record_key) in &membership.channel_record_keys {
-                note_record_key(c, channel_id, record_key);
-            }
         });
     }
 
@@ -531,20 +528,5 @@ impl CommunityStore {
             .online_members
             .insert(pseudonym_hex.to_string(), member);
         true
-    }
-
-    /// A channel's record key merged governance gave it, onto the channel
-    /// the store holds (insert-only, as the session records it).
-    pub fn note_channel_record_key(&self, community_id: &str, channel_id: &str, record_key: &str) {
-        self.update(community_id, |c| note_record_key(c, channel_id, record_key));
-    }
-}
-
-/// Set a channel's record key when the store holds the channel without one.
-fn note_record_key(state: &mut CommunityState, channel_id: &str, record_key: &str) {
-    if let Some(channel) = state.channels.iter_mut().find(|c| c.id == channel_id) {
-        if channel.message_record_key.is_none() {
-            channel.message_record_key = Some(record_key.to_string());
-        }
     }
 }

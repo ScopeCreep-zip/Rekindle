@@ -279,27 +279,6 @@ pub fn set_my_onboarding_complete(
     Ok(())
 }
 
-/// Every known registry slot in the community: `(pseudonym, subkey)`.
-///
-/// # Errors
-/// The query failed.
-pub fn slots(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-) -> rusqlite::Result<Vec<(String, u32)>> {
-    let mut stmt = conn.prepare(
-        "SELECT pseudonym_key, subkey_index FROM community_members \
-         WHERE owner_key = ?1 AND community_id = ?2 AND subkey_index IS NOT NULL",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key, community_id], |row| {
-            Ok((row.get(0)?, row.get::<_, u32>(1)?))
-        })?
-        .collect();
-    rows
-}
-
 /// The member's registry slot: `(subkey, segment)`, once discovered.
 ///
 /// # Errors

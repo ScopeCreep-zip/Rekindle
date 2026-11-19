@@ -150,10 +150,6 @@ pub struct CommunityState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot_keypair: Option<String>,
 
-    /// Channel DHTLog record keys: channel_id → log spine key.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub channel_log_keys: HashMap<String, String>,
-
     /// Registry segment owner keypair for writing member index/MEK vault.
     /// Veilid `KeyPair::to_string()` format. Required to add/remove members.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -170,11 +166,6 @@ pub struct CommunityState {
     /// Used for fast membership checks on incoming community gossip envelopes.
     #[serde(skip)]
     pub known_members: HashSet<String>,
-
-    /// Per-channel message sequence counter (channel_id → next sequence).
-    /// Incremented for each message we send in a channel. Persisted to SQLite.
-    #[serde(skip)]
-    pub channel_sequences: HashMap<String, u64>,
 
     /// Record keys with an active Veilid watch in this session.
     /// Watches are an optimization; inspect polling still runs for all records.
@@ -446,9 +437,6 @@ pub struct ChannelInfo {
     /// Whether this channel is marked NSFW.
     #[serde(default)]
     pub nsfw: bool,
-    /// DHT record key for this channel's per-channel message record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_record_key: Option<String>,
     /// Current MEK generation for this channel.
     #[serde(default)]
     pub mek_generation: u64,
@@ -481,7 +469,6 @@ impl ChannelInfo {
             topic: &self.topic,
             slowmode_seconds: self.slowmode_seconds.unwrap_or(0),
             nsfw: self.nsfw,
-            message_record_key: self.message_record_key.as_deref(),
             mek_generation: self.mek_generation,
             parent_voice_channel_id: self.parent_voice_channel_id.as_deref(),
         }

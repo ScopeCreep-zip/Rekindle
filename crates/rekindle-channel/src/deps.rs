@@ -233,8 +233,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     // ---------- Community / channel state (mutation) ----------
 
-    fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
-    fn next_thread_sequence(&self, community_id: &str) -> u64;
     fn mark_last_send_at(&self, community_id: &str, channel_id: &str, now_ms: i64);
 
     // ---------- DHT ----------
@@ -309,13 +307,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         outcome: &ChannelSendOutcome,
         body: &str,
         original_author_pseudonym: &str,
-    ) -> Result<(), ChannelError>;
-
-    async fn persist_channel_sequence(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        sequence: u64,
     ) -> Result<(), ChannelError>;
 
     async fn persist_slowmode_state(

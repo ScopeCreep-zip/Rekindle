@@ -72,7 +72,6 @@ fn project_channels(cs: &mut CommunityState, gov: &GovernanceState) {
             let id = hex::encode(id.0);
             let local = existing.get(&id);
             let info = ChannelInfo {
-                message_record_key: local.and_then(|c| c.message_record_key.clone()),
                 name: ch.name.clone(),
                 channel_type: channel_type(&ch.channel_type),
                 category_id: ch.category_id.map(|c| hex::encode(c.0)),
@@ -232,10 +231,6 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
         .map(|(id, ch)| {
             let id = hex::encode(id.0);
             SnapshotChannel {
-                my_sequence: cs
-                    .channel_sequences
-                    .get(&id)
-                    .map_or(0, |s| i64::try_from(*s).unwrap_or(i64::MAX)),
                 id,
                 name: ch.name.clone(),
                 channel_type: ch.channel_type.clone(),
@@ -244,7 +239,6 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
                 topic: ch.topic.clone().unwrap_or_default(),
                 slowmode_seconds: i64::from(ch.slowmode_seconds.unwrap_or(0)),
                 nsfw: ch.nsfw.unwrap_or(false),
-                record_key: None,
                 mek_generation,
             }
         })

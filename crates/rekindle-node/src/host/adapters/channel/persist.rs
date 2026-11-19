@@ -62,24 +62,6 @@ impl HostChannel {
         .map_err(stored)
     }
 
-    pub(super) async fn persist_sequence_impl(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        sequence: u64,
-    ) -> Result<(), ChannelError> {
-        let (owner, db) = self.owner_and_db()?;
-        let (community, channel) = (community_id.to_string(), channel_id.to_string());
-        let sequence = i64::try_from(sequence).unwrap_or(i64::MAX);
-        db.call(move |conn| {
-            rekindle_db::repo::channels::set_my_sequence(
-                conn, &owner, &community, &channel, sequence,
-            )
-        })
-        .await
-        .map_err(stored)
-    }
-
     pub(super) async fn persist_slowmode_impl(
         &self,
         community_id: &str,

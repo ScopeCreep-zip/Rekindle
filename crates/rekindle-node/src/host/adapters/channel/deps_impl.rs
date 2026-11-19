@@ -22,9 +22,6 @@ use rekindle_types::id::PseudonymKey;
 
 use super::HostChannel;
 
-/// The thread counter's key among the per-channel sequences.
-const THREAD_SEQUENCE: &str = "__thread__";
-
 fn adapter(e: impl std::fmt::Display) -> ChannelError {
     ChannelError::Adapter(e.to_string())
 }
@@ -111,14 +108,6 @@ impl ChannelMessagingDeps for HostChannel {
 
     // ---------- Community / channel state (mutation) ----------
 
-    fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64 {
-        self.next_sequence_impl(community_id, channel_id)
-    }
-
-    fn next_thread_sequence(&self, community_id: &str) -> u64 {
-        self.next_sequence_impl(community_id, THREAD_SEQUENCE)
-    }
-
     fn mark_last_send_at(&self, community_id: &str, channel_id: &str, now_ms: i64) {
         self.mark_last_send_at_impl(community_id, channel_id, now_ms);
     }
@@ -202,15 +191,6 @@ impl ChannelMessagingDeps for HostChannel {
         original_author_pseudonym: &str,
     ) -> Result<(), ChannelError> {
         (self.persist_own_post(channel_id, outcome, body, Some(original_author_pseudonym))).await
-    }
-
-    async fn persist_channel_sequence(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        sequence: u64,
-    ) -> Result<(), ChannelError> {
-        (self.persist_sequence_impl(community_id, channel_id, sequence)).await
     }
 
     async fn persist_slowmode_state(

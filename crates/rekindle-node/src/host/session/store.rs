@@ -71,7 +71,6 @@ impl OwnedChannel {
             topic: &self.topic,
             slowmode_seconds: self.slowmode_seconds,
             nsfw: self.nsfw,
-            message_record_key: None,
             mek_generation,
             parent_voice_channel_id: self.parent_voice_channel_id.as_deref(),
         }

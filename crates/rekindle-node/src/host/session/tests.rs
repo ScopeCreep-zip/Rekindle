@@ -250,7 +250,6 @@ async fn a_rejoin_records_its_membership_over_the_kept_history() {
                 topic: "",
                 slowmode_seconds: 0,
                 nsfw: false,
-                message_record_key: Some("log"),
                 mek_generation: 2,
                 parent_voice_channel_id: None,
             },

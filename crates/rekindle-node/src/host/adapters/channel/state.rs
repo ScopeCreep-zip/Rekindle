@@ -163,20 +163,6 @@ impl HostChannel {
         )
     }
 
-    /// Tick a per-channel counter (`key` a channel id, or the thread key).
-    pub(super) fn next_sequence_impl(&self, community_id: &str, key: &str) -> u64 {
-        let mut map = self.ctx().communities.map().write();
-        let Some(community) = map.get_mut(community_id) else {
-            return 1;
-        };
-        let sequence = community
-            .channel_sequences
-            .entry(key.to_string())
-            .or_insert(0);
-        *sequence += 1;
-        *sequence
-    }
-
     pub(super) fn mark_last_send_at_impl(&self, community_id: &str, channel_id: &str, now: i64) {
         if let Some(community) = self.ctx().communities.map().write().get_mut(community_id) {
             community

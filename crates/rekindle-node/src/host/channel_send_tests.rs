@@ -37,7 +37,6 @@ async fn add_channel(
                     topic: "",
                     slowmode_seconds: slowmode_seconds.unwrap_or(0),
                     nsfw: false,
-                    message_record_key: Some("VLD0:channel"),
                     mek_generation: 0,
                     parent_voice_channel_id: None,
                 },

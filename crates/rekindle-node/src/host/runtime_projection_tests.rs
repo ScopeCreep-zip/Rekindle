@@ -81,8 +81,6 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
         .unwrap();
     let names: Vec<_> = projected.channels.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["general", "second"]);
-    // A channel has no record (plan E3.3): the projection names none.
-    assert!(projected.channel_log_keys.is_empty());
     assert_eq!(projected.roles.len(), 1);
     assert_eq!(projected.roles[0].name, "Admin");
     assert!(projected.governance_state.is_some());

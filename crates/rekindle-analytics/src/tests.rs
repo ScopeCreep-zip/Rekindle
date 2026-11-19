@@ -53,8 +53,8 @@ fn add_leave(conn: &Connection, pseudonym: &str, left_at: i64) {
 fn add_channel(conn: &Connection, channel_id: &str) {
     conn.execute(
         "INSERT INTO channels \
-         (owner_key, id, community_id, name, channel_type, sort_order, my_sequence) \
-         VALUES ('owner_pk', ?1, 'c1', 'general', 'text', 0, 0)",
+         (owner_key, id, community_id, name, channel_type, sort_order) \
+         VALUES ('owner_pk', ?1, 'c1', 'general', 'text', 0)",
         rusqlite::params![channel_id],
     )
     .expect("insert channel");

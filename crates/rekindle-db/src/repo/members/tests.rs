@@ -63,7 +63,7 @@ fn a_rescan_updates_profile_fields_but_keeps_joined_at() {
     let conn = conn_with_community();
     upsert_discovered(&conn, OWNER, "c1", &discovered("bob", "Bob", 3), 1).unwrap();
     upsert_discovered(&conn, OWNER, "c1", &discovered("bob", "Robert", 4), 99).unwrap();
-    assert_eq!(slots(&conn, OWNER, "c1").unwrap(), [("bob".to_string(), 4)]);
+    assert_eq!(slot(&conn, OWNER, "c1", "bob").unwrap(), Some((4, 0)));
     assert_eq!(
         any_display_name(&conn, OWNER, "bob").unwrap().as_deref(),
         Some("Robert")

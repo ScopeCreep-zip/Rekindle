@@ -56,17 +56,6 @@ fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static
     for ch_key in &community.open_community_records.channel_keys {
         push("channel", ch_key.clone(), &mut seen);
     }
-    // Channel logs come straight from governance-synced state, not from
-    // the opened-records list: a channel discovered in a governance
-    // rebuild is a watch target *before* anything has opened it, and
-    // `watch_record` now heals the open itself. Routing these through
-    // `open_community_records.channel_keys` (as an overwrite in
-    // `apply_governance_rebuild_result` once did) made that list lie
-    // about what was open, which disabled `open_new_channel_records`'
-    // already-opened skip check.
-    for ch_key in community.channel_log_keys.values() {
-        push("channel", ch_key.clone(), &mut seen);
-    }
     if let Some(gov) = community.governance_state.as_ref() {
         for seg in &gov.segments {
             push("segment-governance", seg.anchor.clone(), &mut seen);

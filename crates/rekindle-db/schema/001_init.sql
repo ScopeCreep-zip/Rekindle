@@ -274,10 +274,7 @@ CREATE TABLE IF NOT EXISTS channels (
     topic TEXT NOT NULL DEFAULT '',
     slowmode_seconds INTEGER NOT NULL DEFAULT 0,
     nsfw INTEGER NOT NULL DEFAULT 0,
-    message_record_key TEXT,
     mek_generation INTEGER NOT NULL DEFAULT 0,
-    log_key TEXT,
-    my_sequence INTEGER NOT NULL DEFAULT 0,
     -- Architecture §10.8 — text-in-voice. Hex channel id of the parent
     -- voice channel when this channel is the text companion of a voice
     -- channel; NULL for normal channels. Frontend uses this to hide

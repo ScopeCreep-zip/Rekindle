@@ -349,7 +349,6 @@ mod tests {
                 topic: "",
                 slowmode_seconds: 0,
                 nsfw: false,
-                message_record_key: None,
                 mek_generation: 1,
                 parent_voice_channel_id: None,
             },

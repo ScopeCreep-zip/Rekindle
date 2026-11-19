@@ -1,5 +1,5 @@
-//! `channels`: a community's channels as this identity knows them, with
-//! each channel's message record key.
+//! `channels`: a community's channels as this identity knows them (a
+//! channel has no record of its own, plan E3.3 slice 8).
 
 use rusqlite::{params, Connection};
 
@@ -14,7 +14,6 @@ pub struct StoredChannel<'a> {
     pub topic: &'a str,
     pub slowmode_seconds: u32,
     pub nsfw: bool,
-    pub message_record_key: Option<&'a str>,
     pub mek_generation: u64,
     pub parent_voice_channel_id: Option<&'a str>,
 }
@@ -29,8 +28,8 @@ fn insert_with(
     conn.execute(
         &format!(
             "{verb} INTO channels (owner_key, id, community_id, name, channel_type, category_id, \
-             topic, slowmode_seconds, nsfw, message_record_key, mek_generation, \
-             parent_voice_channel_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+             topic, slowmode_seconds, nsfw, mek_generation, \
+             parent_voice_channel_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
         ),
         params![
             owner_key,
@@ -42,7 +41,6 @@ fn insert_with(
             channel.topic,
             i64::from(channel.slowmode_seconds),
             i32::from(channel.nsfw),
-            channel.message_record_key,
             channel.mek_generation.cast_signed(),
             channel.parent_voice_channel_id,
         ],
@@ -93,67 +91,6 @@ pub fn delete(
     Ok(())
 }
 
-/// Set a channel's message record key when it has none: the first key
-/// learned stands (a channel's record never changes).
-///
-/// # Errors
-/// The write failed.
-pub fn set_record_key_if_absent(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    channel_id: &str,
-    record_key: &str,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE channels SET message_record_key = ?4 \
-         WHERE owner_key = ?1 AND community_id = ?2 AND id = ?3 AND message_record_key IS NULL",
-        params![owner_key, community_id, channel_id, record_key],
-    )?;
-    Ok(())
-}
-
-/// Every channel of the community that has a message record:
-/// `(channel id, record key)`.
-///
-/// # Errors
-/// The query failed.
-pub fn record_keys(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-) -> rusqlite::Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, message_record_key FROM channels \
-         WHERE owner_key = ?1 AND community_id = ?2 AND message_record_key IS NOT NULL \
-         ORDER BY id",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key, community_id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
-        .collect();
-    rows
-}
-
-/// Store our own send sequence of a channel.
-///
-/// # Errors
-/// The write failed.
-pub fn set_my_sequence(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    channel_id: &str,
-    sequence: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE channels SET my_sequence = ?1 WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
-        params![sequence, owner_key, community_id, channel_id],
-    )?;
-    Ok(())
-}
-
 /// Store the time of our last send in a channel, which its slowmode
 /// counts from.
 ///
@@ -182,7 +119,7 @@ mod tests {
     use crate::repo::communities::{self, NewCommunity};
     use crate::repo::fixture::{self, OWNER};
 
-    fn channel<'a>(id: &'a str, key: Option<&'a str>) -> StoredChannel<'a> {
+    fn channel(id: &str) -> StoredChannel<'_> {
         StoredChannel {
             id,
             name: "general",
@@ -191,14 +128,13 @@ mod tests {
             topic: "",
             slowmode_seconds: 0,
             nsfw: false,
-            message_record_key: key,
             mek_generation: 1,
             parent_voice_channel_id: None,
         }
     }
 
     #[test]
-    fn record_keys_are_set_once_and_listed() {
+    fn a_channel_is_inserted_once_and_deleted() {
         let conn = fixture::conn();
         communities::insert(
             &conn,
@@ -215,17 +151,10 @@ mod tests {
             },
         )
         .unwrap();
-        insert(&conn, OWNER, "c1", &channel("a", Some("ka"))).unwrap();
-        insert(&conn, OWNER, "c1", &channel("b", None)).unwrap();
-        insert_if_absent(&conn, OWNER, "c1", &channel("a", Some("other"))).unwrap();
-        assert!(insert(&conn, OWNER, "c1", &channel("a", None)).is_err());
-        set_record_key_if_absent(&conn, OWNER, "c1", "b", "kb").unwrap();
-        set_record_key_if_absent(&conn, OWNER, "c1", "a", "replaced").unwrap();
-        assert_eq!(
-            record_keys(&conn, OWNER, "c1").unwrap(),
-            vec![("a".into(), "ka".into()), ("b".into(), "kb".into())]
-        );
+        insert(&conn, OWNER, "c1", &channel("a")).unwrap();
+        insert_if_absent(&conn, OWNER, "c1", &channel("a")).unwrap();
+        assert!(insert(&conn, OWNER, "c1", &channel("a")).is_err());
         delete(&conn, OWNER, "c1", "a").unwrap();
-        assert_eq!(record_keys(&conn, OWNER, "c1").unwrap().len(), 1);
+        insert(&conn, OWNER, "c1", &channel("a")).unwrap();
     }
 }

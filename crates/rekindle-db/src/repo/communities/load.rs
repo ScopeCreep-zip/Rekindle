@@ -22,10 +22,7 @@ pub struct ChannelRow {
     pub topic: String,
     pub slowmode_seconds: Option<u32>,
     pub nsfw: bool,
-    pub message_record_key: Option<String>,
     pub mek_generation: u64,
-    pub log_key: Option<String>,
-    pub my_sequence: u64,
     /// `0` all, `1` mentions, `2` nothing.
     pub notification_level: i64,
     pub notification_sound_ref: Option<String>,
@@ -176,8 +173,7 @@ fn categories(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Catego
 fn channels(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<ChannelRow>> {
     let mut stmt = conn.prepare(
         "SELECT ch.id, ch.community_id, ch.name, ch.channel_type, ch.category_id, ch.topic, \
-                ch.slowmode_seconds, ch.nsfw, ch.message_record_key, ch.mek_generation, \
-                ch.log_key, ch.my_sequence, ch.parent_voice_channel_id, \
+                ch.slowmode_seconds, ch.nsfw, ch.mek_generation, ch.parent_voice_channel_id, \
                 COALESCE(np.level, 0) AS notification_level, \
                 np.sound_ref AS notification_sound_ref \
          FROM channels ch \
@@ -199,10 +195,7 @@ fn channels(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<ChannelR
             topic: get(row, "topic")?,
             slowmode_seconds: get(row, "slowmode_seconds")?,
             nsfw: get::<i64>(row, "nsfw")? != 0,
-            message_record_key: get(row, "message_record_key")?,
             mek_generation: get::<i64>(row, "mek_generation")?.cast_unsigned(),
-            log_key: get(row, "log_key")?,
-            my_sequence: get::<i64>(row, "my_sequence")?.cast_unsigned(),
             notification_level: get(row, "notification_level")?,
             notification_sound_ref: get(row, "notification_sound_ref")?,
             parent_voice_channel_id: get(row, "parent_voice_channel_id")?,

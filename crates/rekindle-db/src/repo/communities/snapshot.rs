@@ -15,10 +15,7 @@ pub struct SnapshotChannel {
     pub topic: String,
     pub slowmode_seconds: i64,
     pub nsfw: bool,
-    /// The channel's message record (also its log spine key).
-    pub record_key: Option<String>,
     pub mek_generation: i64,
-    pub my_sequence: i64,
 }
 
 /// A role definition.
@@ -113,9 +110,8 @@ fn replace_channels(
     for c in channels {
         conn.execute(
             "INSERT INTO channels (owner_key, id, community_id, name, channel_type, sort_order, \
-             category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, \
-             log_key, my_sequence) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11, ?13)",
+             category_id, topic, slowmode_seconds, nsfw, mek_generation) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 owner_key,
                 c.id,
@@ -127,9 +123,7 @@ fn replace_channels(
                 c.topic,
                 c.slowmode_seconds,
                 i32::from(c.nsfw),
-                c.record_key,
                 c.mek_generation,
-                c.my_sequence,
             ],
         )?;
     }

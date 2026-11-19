@@ -148,11 +148,8 @@ pub(crate) fn membership(state: &CommunityState) -> CommunityMembership {
             .as_deref()
             .and_then(|seed| hex::decode(seed).ok())
             .and_then(|bytes| bytes.try_into().ok()),
-        channel_record_keys: state
-            .channels
-            .iter()
-            .filter_map(|c| Some((c.id.clone(), c.message_record_key.clone()?)))
-            .collect(),
+        // A channel has no record (plan E3.3 slice 8).
+        channel_record_keys: HashMap::new(),
         segment_index: state.my_segment_index,
         lamport_counter: state.governance_clock,
         mek_generation: state.mek_generation,
@@ -184,7 +181,7 @@ fn restore_keys(
 
 fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
     let id = community.id.as_str();
-    let (channels, channel_log_keys, channel_sequences) = channels_of(id, &load.channels);
+    let channels = channels_of(id, &load.channels);
     CommunityState {
         name: community.name.clone(),
         description: community.description.clone(),
@@ -202,8 +199,6 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
         my_subkey_index: community.my_subkey_index,
         my_segment_index: community.my_segment_index,
         gossip: Some(GossipOverlay::default()),
-        channel_log_keys,
-        channel_sequences,
         channel_last_send_at: slowmode_of(id, &load.slowmode),
         known_members: load
             .members
@@ -222,51 +217,32 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
     }
 }
 
-type Channels = (
-    Vec<ChannelInfo>,
-    HashMap<String, String>,
-    HashMap<String, u64>,
-);
-
-/// One community's channels, with their log keys and our sequences.
-fn channels_of(community_id: &str, rows: &[ChannelRow]) -> Channels {
-    let mut log_keys = HashMap::new();
-    let mut sequences = HashMap::new();
-    let channels = rows
-        .iter()
+/// One community's channels.
+fn channels_of(community_id: &str, rows: &[ChannelRow]) -> Vec<ChannelInfo> {
+    rows.iter()
         .filter(|r| r.community_id == community_id)
-        .map(|r| {
-            if let Some(log_key) = &r.log_key {
-                log_keys.insert(r.id.clone(), log_key.clone());
+        .map(|r| ChannelInfo {
+            id: r.id.clone(),
+            name: r.name.clone(),
+            channel_type: r.channel_type,
+            category_id: r.category_id.clone(),
+            topic: r.topic.clone(),
+            forum_tags: None,
+            stage_speakers: Vec::new(),
+            stage_moderator: None,
+            slowmode_seconds: r.slowmode_seconds,
+            nsfw: r.nsfw,
+            mek_generation: r.mek_generation,
+            notification_level: match r.notification_level {
+                1 => "mentions",
+                2 => "nothing",
+                _ => "all",
             }
-            if r.my_sequence > 0 {
-                sequences.insert(r.id.clone(), r.my_sequence);
-            }
-            ChannelInfo {
-                id: r.id.clone(),
-                name: r.name.clone(),
-                channel_type: r.channel_type,
-                category_id: r.category_id.clone(),
-                topic: r.topic.clone(),
-                forum_tags: None,
-                stage_speakers: Vec::new(),
-                stage_moderator: None,
-                slowmode_seconds: r.slowmode_seconds,
-                nsfw: r.nsfw,
-                message_record_key: r.message_record_key.clone(),
-                mek_generation: r.mek_generation,
-                notification_level: match r.notification_level {
-                    1 => "mentions",
-                    2 => "nothing",
-                    _ => "all",
-                }
-                .to_string(),
-                notification_sound_ref: r.notification_sound_ref.clone(),
-                parent_voice_channel_id: r.parent_voice_channel_id.clone(),
-            }
+            .to_string(),
+            notification_sound_ref: r.notification_sound_ref.clone(),
+            parent_voice_channel_id: r.parent_voice_channel_id.clone(),
         })
-        .collect();
-    (channels, log_keys, sequences)
+        .collect()
 }
 
 fn roles_of(community_id: &str, rows: &[RoleRow]) -> Vec<RoleDefinition> {
