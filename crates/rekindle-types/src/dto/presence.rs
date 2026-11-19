@@ -40,6 +40,24 @@ pub struct HiddenGameView {
     pub icon_key: Option<String>,
 }
 
+/// One of our favourite game servers (plan E7.2). `invitable` is the
+/// Host's answer to whether a `GameInvite` may name it: the game is not
+/// hidden and current-game sharing is on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavouriteServerView {
+    pub game_id: u32,
+    pub game_name: String,
+    /// `src/assets/game-icons/<key>.png`, resolved from the game database.
+    pub icon_key: Option<String>,
+    /// The `ServerAddress` text (host:port).
+    pub address: String,
+    /// At most 64 characters; empty is none.
+    pub label: String,
+    pub added_at: i64,
+    pub invitable: bool,
+}
+
 /// The game we are playing, detected or set by hand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

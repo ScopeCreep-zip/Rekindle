@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  HiddenGameView, NetworkStatus, Preferences, SettingsTab,
+  FavouriteServerView, HiddenGameView, NetworkStatus, Preferences, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
@@ -80,6 +80,11 @@ export const systemCommands = {
     invoke<void>("launch_game_to_server", { gameId, serverAddress }),
   sendGameInvite: (publicKey: string, gameId: number, server: string) =>
     hostInvoke<string>("send_game_invite", { publicKey, gameId, server }),
+  getFavouriteServers: () => hostInvoke<FavouriteServerView[]>("get_favourite_servers"),
+  addFavouriteServer: (gameId: number, server: string, label: string) =>
+    hostInvoke<FavouriteServerView[]>("add_favourite_server", { gameId, server, label }),
+  removeFavouriteServer: (gameId: number, server: string) =>
+    hostInvoke<FavouriteServerView[]>("remove_favourite_server", { gameId, server }),
 
   // Settings
   getPreferences: () => invoke<Preferences>("get_preferences"),

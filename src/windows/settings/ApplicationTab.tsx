@@ -1,5 +1,6 @@
 import { Component } from "solid-js";
 import FormField from "../../components/common/FormField";
+import FavouriteServersSection from "../../components/settings/FavouriteServersSection";
 import { settingsState } from "../../stores/settings.store";
 import { handleSaveSettings, handleSetGameDetection } from "../../actions/settings.actions";
 
@@ -40,6 +41,7 @@ const ApplicationTab: Component = () => {
         Records your game time on this computer. Whether friends see the
         game you play is under Privacy.
       </div>
+      <FavouriteServersSection />
       <div class="settings-section-title">Auto-Away</div>
       <FormField label="Go away after inactivity">
         <select

@@ -117,6 +117,9 @@ impl From<ServerAddress> for String {
 
 /// Longest label a game server carries (plan E3.1 H1).
 pub const MAX_GAME_SERVER_LABEL_LEN: usize = 100;
+/// Longest label on one of our favourite servers (plan E7.2,
+/// `favourite_servers.label`'s CHECK).
+pub const MAX_FAVOURITE_LABEL_LEN: usize = 64;
 /// Longest game identifier a game server carries (plan E3.1 H1).
 pub const MAX_GAME_ID_LEN: usize = 64;
 /// Random bytes in a game server's id.

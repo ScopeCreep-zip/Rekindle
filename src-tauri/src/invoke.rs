@@ -342,6 +342,9 @@ macro_rules! game_commands {
         commands::game::get_game_name,
         commands::game::launch_game_to_server,
         commands::game::send_game_invite,
+        commands::game::get_favourite_servers,
+        commands::game::add_favourite_server,
+        commands::game::remove_favourite_server,
     ] $($rest)*) };
 }
 

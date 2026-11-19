@@ -165,7 +165,12 @@ pub(crate) async fn select(
         IpcRequest::SkinRemove { id } => {
             s.subject = Subject::Named { name: id.clone() };
         }
-        IpcRequest::SkinSelect { .. } | IpcRequest::SkinKeep { .. } => {
+        // A favourite server is local only: adding undoes removing and back
+        // (plan E7.2).
+        IpcRequest::SkinSelect { .. }
+        | IpcRequest::SkinKeep { .. }
+        | IpcRequest::FavouriteServerAdd { .. }
+        | IpcRequest::FavouriteServerRemove { .. } => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
@@ -220,6 +225,7 @@ pub(crate) async fn select(
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
         | IpcRequest::HiddenGamesGet
+        | IpcRequest::FavouriteServersGet
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet
         | IpcRequest::FriendBioGet { .. }

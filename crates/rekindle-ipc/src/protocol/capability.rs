@@ -97,6 +97,7 @@ impl IpcRequest {
             | Self::PresenceGet
             | Self::GameTotalsGet
             | Self::HiddenGamesGet
+            | Self::FavouriteServersGet
             | Self::ProfileBioGet
             | Self::AvatarGet { .. } => {
                 Some(C::IdentityRead)
@@ -192,6 +193,9 @@ impl IpcRequest {
             | Self::SetShareCurrentGame { .. }
             | Self::GameHide { .. }
             | Self::GameUnhide { .. }
+            // And which servers we keep as favourites.
+            | Self::FavouriteServerAdd { .. }
+            | Self::FavouriteServerRemove { .. }
             | Self::ProfileSetAvatar { .. }
             // What the app looks like, and what shows before unlock, is
             // the user's own.

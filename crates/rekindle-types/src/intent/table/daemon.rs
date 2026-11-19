@@ -176,6 +176,9 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     // An invite is a message to one friend (plan E7.2); joining from one is
     // the shell's `launch_game_to_server` (`LaunchGameToServer`, Routine).
     ("GameInviteSend", Some(IntentKind::SendDmMessage)),
+    ("FavouriteServersGet", None),
+    ("FavouriteServerAdd", Some(IntentKind::SetPreferences)),
+    ("FavouriteServerRemove", Some(IntentKind::SetPreferences)),
     ("AvatarGet", None),
     ("SkinList", None),
     ("SkinGet", None),

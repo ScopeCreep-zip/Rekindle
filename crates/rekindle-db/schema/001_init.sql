@@ -863,6 +863,19 @@ CREATE TABLE IF NOT EXISTS hidden_games (
     PRIMARY KEY (owner_key, game_id)
 );
 
+-- Our favourite game servers (plan E7.2; `rekindle_db::repo::favourite_servers`):
+-- a game, the `ServerAddress` text (host:port, parsed before it is stored)
+-- and a label. Local only; a friend's chat window offers each as a game
+-- invite (community servers are `game_servers`).
+CREATE TABLE IF NOT EXISTS favourite_servers (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    address TEXT NOT NULL,
+    label TEXT NOT NULL CHECK(length(label) <= 64),
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, game_id, address)
+);
+
 -- A friend's game totals (plan E7.2; `rekindle_db::repo::friend_game_totals`),
 -- as their last `GameTotals` DmFrame stated them; a new frame replaces
 -- them all. Unfriend and block remove the friend row, and these with it.

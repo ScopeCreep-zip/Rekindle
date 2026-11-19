@@ -244,8 +244,22 @@ fn own(request: &IpcRequest) -> Checked {
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::SetGameDetection { .. }
         | IpcRequest::SetShareCurrentGame { .. } => Ok(()),
-        // Game id 0 is "no database entry", never a game to hide.
-        IpcRequest::GameHide { game_id } | IpcRequest::GameUnhide { game_id } => {
+        // Game id 0 is "no database entry", never a game to hide or keep a
+        // favourite server for.
+        IpcRequest::FavouriteServerAdd { game_id, label, .. } => {
+            if *game_id == 0 {
+                return Err(IpcResponse::error(400, "invalid game id: 0"));
+            }
+            rekindle_types::key_format::text(
+                label,
+                rekindle_types::game_server::MAX_FAVOURITE_LABEL_LEN,
+            )
+            .map(|_| ())
+            .map_err(|e| IpcResponse::error(400, format!("invalid label: {e}")))
+        }
+        IpcRequest::GameHide { game_id }
+        | IpcRequest::GameUnhide { game_id }
+        | IpcRequest::FavouriteServerRemove { game_id, .. } => {
             if *game_id == 0 {
                 Err(IpcResponse::error(400, "invalid game id: 0"))
             } else {
@@ -285,6 +299,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
         | IpcRequest::HiddenGamesGet
+        | IpcRequest::FavouriteServersGet
         | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
@@ -376,6 +391,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }
+        | IpcRequest::FavouriteServerAdd { .. }
+        | IpcRequest::FavouriteServerRemove { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::LinkOpen { .. } => own(request),
         IpcRequest::SkinList

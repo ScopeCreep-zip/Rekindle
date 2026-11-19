@@ -29,3 +29,20 @@
     font-family: monospace;
   }
 }
+
+@layer components {
+
+  /* Favourite servers (plan E7.2, Settings → Application): game, host:port
+   * and label on one wrapping row. */
+  .favourite-server-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .favourite-server-form .form-input {
+    flex: 1 1 8em;
+    min-width: 0;
+  }
+}

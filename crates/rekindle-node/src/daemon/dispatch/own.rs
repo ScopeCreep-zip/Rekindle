@@ -48,6 +48,11 @@ pub(crate) async fn route(
         | IpcRequest::HiddenGamesGet
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }) => super::own_game::route(ctx, state, request).await,
+        request @ (IpcRequest::FavouriteServersGet
+        | IpcRequest::FavouriteServerAdd { .. }
+        | IpcRequest::FavouriteServerRemove { .. }) => {
+            super::own_favourite_servers::route(ctx, state, request).await
+        }
         IpcRequest::ProfileSetAvatar { image, kind } => {
             handle_avatar(ctx, state, image, kind).await
         }

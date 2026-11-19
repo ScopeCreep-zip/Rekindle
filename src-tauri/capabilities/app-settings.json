@@ -63,6 +63,9 @@
     "allow-set-bio",
     "allow-get-hidden-games",
     "allow-hide-game",
+    "allow-get-favourite-servers",
+    "allow-add-favourite-server",
+    "allow-remove-favourite-server",
     "allow-unhide-game",
     "allow-set-share-current-game",
     "allow-set-game-detection"

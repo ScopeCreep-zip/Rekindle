@@ -1,5 +1,7 @@
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
+use rekindle_types::dto::presence::{
+    FavouriteServerView, GameTotalView, HiddenGameView, OwnGame, OwnPresenceView,
+};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -56,6 +58,47 @@ pub async fn send_game_invite(
         server,
     };
     host_call::call(&state, request).await
+}
+
+/// Our favourite game servers (`IpcRequest::FavouriteServersGet`, plan
+/// E7.2), each with whether an invite may name it.
+#[tauri::command]
+pub async fn get_favourite_servers(
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<FavouriteServerView>>, CommandError> {
+    host_call::call(&state, IpcRequest::FavouriteServersGet).await
+}
+
+/// Add or relabel a favourite game server (`IpcRequest::FavouriteServerAdd`,
+/// plan E7.2): `server` arrives parsed. The list comes back.
+#[tauri::command]
+pub async fn add_favourite_server(
+    game_id: u32,
+    server: rekindle_game_detect::launcher::ServerAddress,
+    label: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<FavouriteServerView>>, CommandError> {
+    let request = IpcRequest::FavouriteServerAdd {
+        game_id,
+        server,
+        label,
+    };
+    host_call::call(&state, request).await
+}
+
+/// Remove a favourite game server (`IpcRequest::FavouriteServerRemove`,
+/// plan E7.2). The list comes back.
+#[tauri::command]
+pub async fn remove_favourite_server(
+    game_id: u32,
+    server: rekindle_game_detect::launcher::ServerAddress,
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<FavouriteServerView>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::FavouriteServerRemove { game_id, server },
+    )
+    .await
 }
 
 /// Our time in each detected game, the most recent first

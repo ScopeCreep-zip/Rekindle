@@ -213,6 +213,19 @@ export interface HiddenGameView {
   iconKey: string | null;
 }
 
+/** A personal favourite game server (plan E7.2), as the Host stores it.
+ *  `invitable` is the Host's answer to whether an invite may name it: the
+ *  game is not hidden and current-game sharing is on. */
+export interface FavouriteServerView {
+  gameId: number;
+  gameName: string;
+  iconKey: string | null;
+  address: string;
+  label: string;
+  addedAt: number;
+  invitable: boolean;
+}
+
 export type ExclusionGroupEdit =
   | { set: string }
   | "clear"

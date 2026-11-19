@@ -42,6 +42,7 @@ mod lifecycle;
 mod member_block;
 mod onboarding;
 mod own;
+mod own_favourite_servers;
 mod own_game;
 mod own_game_invite;
 mod pins;

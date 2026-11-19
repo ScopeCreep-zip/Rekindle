@@ -77,6 +77,15 @@ fn removing(host: &Host, peer: [u8; 32]) {
     friend.friendship_state = FriendshipState::Removing;
 }
 
+/// Whether `host`'s one favourite is offered for invites.
+async fn invitable(host: &Host) -> bool {
+    let (answer, _) = run(host, IpcRequest::FavouriteServersGet).await;
+    let IpcResponse::Ok { data, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    data[0]["invitable"].as_bool().unwrap()
+}
+
 fn refused(answer: &IpcResponse) -> bool {
     matches!(answer, IpcResponse::Error { .. })
 }
@@ -146,4 +155,43 @@ async fn an_invite_from_a_stranger_is_dropped() {
     pending(&host, owner, stranger, 1, &body).await;
     replay_unprocessed(&HostFriends::of(&host.ctx)).await;
     assert_eq!(mentions(&drain(&mut events).await, "GameInvite"), 0);
+}
+
+/// Favourite servers (plan E7.2): stored through the Host, each marked
+/// `invitable` only while sharing is on and the game is not hidden; a
+/// label over 64 characters is refused.
+#[tokio::test]
+async fn favourites_say_which_an_invite_may_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let server = ServerAddress::parse("203.0.113.7:27015").unwrap();
+    let add = |label: String| IpcRequest::FavouriteServerAdd {
+        game_id: CS2,
+        server: server.clone(),
+        label,
+    };
+    let (answer, _) = run(&host, add("x".repeat(65))).await;
+    assert!(refused(&answer), "label over 64: {answer:?}");
+    let (answer, _) = run(&host, add("Scrims".into())).await;
+    let IpcResponse::Ok { data, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    assert_eq!(data[0]["address"], "203.0.113.7:27015");
+    assert_eq!(data[0]["label"], "Scrims");
+    assert_eq!(data[0]["invitable"], false, "sharing is off by default");
+
+    privacy(&host, owner, true, false).await;
+    assert!(invitable(&host).await);
+    privacy(&host, owner, true, true).await;
+    assert!(!invitable(&host).await, "a hidden game is never offered");
+
+    let remove = IpcRequest::FavouriteServerRemove {
+        game_id: CS2,
+        server,
+    };
+    let (answer, _) = run(&host, remove).await;
+    let IpcResponse::Ok { data, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(data.as_array().unwrap().is_empty());
 }

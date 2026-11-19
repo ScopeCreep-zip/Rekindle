@@ -176,6 +176,7 @@ export const LOGIN_SUCCESS_HANDLER = `
       };
     case "get_hidden_games":
     case "get_game_totals":
+    case "get_favourite_servers":
       return [];
     default:
       return null;

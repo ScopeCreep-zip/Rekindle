@@ -16,9 +16,10 @@ import { subscribeDmChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../../handlers/presence-events.handlers";
 import { subscribeCallEvents } from "../../handlers/calls.handlers";
 import { hydrateState } from "../../stores/hydrate";
-import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP, ICON_SHIELD } from "../../icons";
+import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP, ICON_SHIELD, ICON_GAMEPAD } from "../../icons";
 import SafetyNumberPanel from "../../components/profile/SafetyNumberPanel";
 import GameInviteList from "../../components/chat/GameInviteList";
+import GameInvitePicker from "../../components/chat/GameInvitePicker";
 import VerifiedBadge from "../../components/profile/VerifiedBadge";
 import { useSafetyNumber } from "../../hooks/useSafetyNumber";
 import { identityPinMismatchText } from "../../utils/identity_pin";
@@ -61,6 +62,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
   // number with its mark-verified flow behind the shield button.
   const safety = useSafetyNumber(peerId);
   const [showSafety, setShowSafety] = createSignal(false);
+  const [showInvite, setShowInvite] = createSignal(false);
 
   // Extracted so both createEffect and the direct event listener can call it
   function syncMessages() {
@@ -159,6 +161,16 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           >
             <span class="nf-icon" aria-hidden="true">{ICON_SHIELD}</span>
           </button>
+          <button
+            class="chat-safety-btn"
+            onClick={() => setShowInvite(!showInvite())}
+            title="Invite to a game"
+            aria-label={`Invite ${peerName()} to a game server`}
+            aria-expanded={showInvite()}
+            aria-controls={showInvite() ? "chat-game-invite" : undefined}
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_GAMEPAD}</span>
+          </button>
         </Show>
         {/* W13-fix.1 — voice + video buttons matching the buddy-list
          *  right-click menu. Both go through the start_dm_call →
@@ -198,6 +210,11 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
       <Show when={showSafety() && isFriend()}>
         <div id="chat-safety-number" class="chat-safety-number">
           <SafetyNumberPanel peerKey={peerId} view={safety.view()} onChanged={safety.reload} />
+        </div>
+      </Show>
+      <Show when={showInvite() && isFriend()}>
+        <div id="chat-game-invite" class="chat-safety-number">
+          <GameInvitePicker peerId={peerId} peerName={peerName()} />
         </div>
       </Show>
       <div id="main-content" tabindex="-1" class="window-main">
