@@ -17,7 +17,7 @@ log-scrub = [ "dep:regex", "dep:tracing", "dep:tracing-subscriber" ]
 # frontends that read the same file.
 config = [ "dep:toml", "dep:serde", "paths" ]
 # `DataRoot`: the directories every host and frontend shares.
-paths = [ "dep:dirs", "dep:thiserror" ]
+paths = [ "dep:dirs", "dep:thiserror", "dep:rustix" ]
 
 [dependencies]
 rand = { workspace = true }
@@ -41,6 +41,11 @@ toml = { version = "0.8", optional = true }
 dirs = { version = "7", optional = true }
 serde = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
+
+# Behind the `paths` feature: Time Machine's exclusion attribute on
+# `state/` through the safe `setxattr` (plan E7.1, `paths/backup.rs`).
+[target.'cfg(target_os = "macos")'.dependencies]
+rustix = { version = "1", features = [ "fs" ], optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

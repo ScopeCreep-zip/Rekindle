@@ -50,6 +50,13 @@ pub fn claim(root: DataRoot) -> anyhow::Result<ClaimedRoot> {
     root.create_dirs()?;
     let lock = NodeLock::acquire(&root.data)?;
     rekindle_db::reset::apply(&root)?;
+    // A restored ratchet re-uses message keys (threat model I14): `state/`
+    // stays out of OS backups. Marked after the layout check, which may
+    // empty it; a volume that refuses the mark leaves every other
+    // protection in place.
+    if let Err(e) = root.exclude_state_from_backup() {
+        tracing::warn!(error = %e, "state/ could not be excluded from backups");
+    }
     tracing::info!(
         data = %root.data.display(),
         state = %root.state.display(),

@@ -12,6 +12,8 @@
 
 use std::path::PathBuf;
 
+pub mod backup;
+
 /// The bundle identifier the directories are named after. Equal to
 /// `src-tauri/tauri.conf.json`'s `identifier` (tested).
 pub const IDENTIFIER: &str = "com.rekindle.app";

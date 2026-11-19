@@ -373,6 +373,52 @@ async fn a_held_root_cannot_be_claimed_again() {
     assert!(claim(temp_root(&dir)).is_err());
 }
 
+/// Whether `state/` carries the platform's backup-exclusion mark.
+fn state_is_excluded(root: &DataRoot) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use rekindle_utils::paths::backup::{TIME_MACHINE_XATTR, TIME_MACHINE_XATTR_VALUE};
+        let out = std::process::Command::new("xattr")
+            .args(["-px", TIME_MACHINE_XATTR])
+            .arg(&root.state)
+            .output()
+            .unwrap();
+        let hex: String = TIME_MACHINE_XATTR_VALUE
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect();
+        let said: String = String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .collect();
+        said == hex
+    }
+    #[cfg(target_os = "linux")]
+    {
+        root.state
+            .join(rekindle_utils::paths::backup::DEJA_DUP_MARKER)
+            .is_file()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = root;
+        true
+    }
+}
+
+/// A claimed root keeps `state/` out of OS backups (plan E7.1, threat
+/// model I14), a fresh root and one the layout check resets alike.
+#[tokio::test]
+async fn a_claimed_root_keeps_state_out_of_backups() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = temp_root(&dir);
+    drop(claim(root.clone()).unwrap());
+    assert!(state_is_excluded(&root));
+    // Another version's layout is reset, which empties `state/`.
+    std::fs::write(root.layout_version(), "1").unwrap();
+    drop(claim(root.clone()).unwrap());
+    assert!(state_is_excluded(&root));
+}
+
 /// An own governance op lands in the op store at once (plan E3.2): the
 /// warm restore reads it beside the other authors' ops, which stay.
 #[tokio::test]
