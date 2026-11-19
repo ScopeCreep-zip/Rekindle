@@ -204,6 +204,18 @@ pub(super) fn hash_social(h: &mut blake3::Hasher, s: &SocialEvent) {
             h.update(b"|");
             h.update(message_id.as_bytes());
         }
+        SocialEvent::PollChanged {
+            community,
+            channel,
+            poll_id,
+        } => {
+            h.update(b"poll|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(poll_id.as_bytes());
+        }
         SocialEvent::ThreadCreated { community, thread } => {
             h.update(b"thread+|");
             h.update(community.as_bytes());

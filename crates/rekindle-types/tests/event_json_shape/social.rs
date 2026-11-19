@@ -16,6 +16,7 @@ pub const NAMES: &[&str] = &[
     "reactionRemoved",
     "messagePinned",
     "messageUnpinned",
+    "pollChanged",
     "threadCreated",
     "threadMessagePosted",
     "threadArchiveChanged",
@@ -41,6 +42,7 @@ pub fn variant_name(e: &SocialEvent) -> &'static str {
         SocialEvent::ReactionRemoved { .. } => "reactionRemoved",
         SocialEvent::MessagePinned { .. } => "messagePinned",
         SocialEvent::MessageUnpinned { .. } => "messageUnpinned",
+        SocialEvent::PollChanged { .. } => "pollChanged",
         SocialEvent::ThreadCreated { .. } => "threadCreated",
         SocialEvent::ThreadMessagePosted { .. } => "threadMessagePosted",
         SocialEvent::ThreadArchiveChanged { .. } => "threadArchiveChanged",
@@ -72,6 +74,7 @@ pub fn nested_names(e: &SocialEvent) -> Vec<&'static str> {
         | SocialEvent::ReactionRemoved { .. }
         | SocialEvent::MessagePinned { .. }
         | SocialEvent::MessageUnpinned { .. }
+        | SocialEvent::PollChanged { .. }
         | SocialEvent::ThreadCreated { .. }
         | SocialEvent::ThreadMessagePosted { .. }
         | SocialEvent::ThreadArchiveChanged { .. }
@@ -168,6 +171,14 @@ fn messages_and_threads() -> Vec<Sample> {
                 community: community(),
                 channel: channel(),
                 message_id: id("msg_", '1'),
+            },
+        ),
+        ev(
+            "pollChanged",
+            SocialEvent::PollChanged {
+                community: community(),
+                channel: channel(),
+                poll_id: id("poll_", '1'),
             },
         ),
         ev(

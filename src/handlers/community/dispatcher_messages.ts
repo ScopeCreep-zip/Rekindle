@@ -11,6 +11,7 @@ import { transformHistoryGap, transformMessages } from "../../utils/transformers
 import { setTypingUsers, typingTimers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
+import { handleLoadChannelMessages } from "../../actions/community/messages";
 import { withCommunity } from "./community_reread";
 
 /// Channel-message slice of the community event dispatcher (edits,
@@ -290,6 +291,12 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
     applyPinned(s.messagePinned.channel, s.messagePinned.messageId, true);
   } else if ("messageUnpinned" in s) {
     applyPinned(s.messageUnpinned.channel, s.messageUnpinned.messageId, false);
+  } else if ("pollChanged" in s) {
+    // A poll is the Host's aggregate of its authors' ops (plan E3.3 8c):
+    // re-read a channel this window holds to show it.
+    if (communityState.channelMessages[s.pollChanged.channel]) {
+      void handleLoadChannelMessages(s.pollChanged.channel, 100);
+    }
   }
 }
 

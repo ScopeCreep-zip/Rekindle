@@ -68,6 +68,18 @@ pub enum SocialEvent {
         message_id: String,
     },
 
+    // ── Polls ───────────────────────────────────────────────────
+    /// A poll of `channel` changed: created, voted in or closed. A poll is
+    /// aggregated from its ops on the authors' channel outboxes (plan E3.3
+    /// 8c), so a frontend re-reads the channel to show it.
+    /// Triggered by: one of our poll ops landing on our channel outbox, or
+    /// a poll op read from another author's.
+    PollChanged {
+        community: String,
+        channel: String,
+        poll_id: String,
+    },
+
     // ── Threads ─────────────────────────────────────────────────
     /// A new thread was created.
     /// Triggered by: gossip `ControlPayload::ThreadCreated`.

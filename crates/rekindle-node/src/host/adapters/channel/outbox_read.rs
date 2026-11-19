@@ -40,7 +40,9 @@
 use async_trait::async_trait;
 use rekindle_channel::outbox_seal::stream_of_tag;
 use rekindle_channel::ChannelMessagingDeps as _;
-use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::{
+    ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
+};
 use rekindle_codec::member_record::{decode_outbox_entry, entry_hash, links_to, ChainPosition};
 use rekindle_records::chain::ChainEntry;
 use rekindle_sync::stream::{Diffed, SinkError, StreamSink};
@@ -451,11 +453,15 @@ impl HostChannel {
             // hand raise: readers aggregate them from the authors' outboxes
             // when they are shown (`read_author_outboxes`; rules R1-R3, no
             // shared aggregate), so nothing is applied here.
+            // A poll op changes what the poll's readers show: told.
+            ChannelRecordEntry::PollCreate(ChannelPollCreate { poll_id, .. })
+            | ChannelRecordEntry::PollVote(ChannelPollVote { poll_id, .. })
+            | ChannelRecordEntry::PollClose(ChannelPollClose { poll_id, .. }) => {
+                self.poll_changed(community_id, &channel_id, &poll_id);
+                return Ok(());
+            }
             ChannelRecordEntry::AttachmentCached(_)
             | ChannelRecordEntry::Reaction(_)
-            | ChannelRecordEntry::PollCreate(_)
-            | ChannelRecordEntry::PollVote(_)
-            | ChannelRecordEntry::PollClose(_)
             | ChannelRecordEntry::HandRaise(_) => return Ok(()),
         };
         // An entry speaks only for the author whose chain holds it.

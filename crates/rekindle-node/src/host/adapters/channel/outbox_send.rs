@@ -106,6 +106,9 @@ impl HostChannel {
                 if !change {
                     self.emit_delivery_succeeded(&post.community, &post.channel, &post.message);
                 }
+                if let Some(poll_id) = post.entry.poll_id() {
+                    self.poll_changed(&post.community, &post.channel, poll_id);
+                }
                 AttemptOutcome::Sent
             }
             DrainOutcome::Deferred(reason) => {

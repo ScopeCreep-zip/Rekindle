@@ -118,6 +118,17 @@ impl PostEntry {
             Self::Message | Self::Forward { .. } | Self::Attachment { .. }
         )
     }
+
+    /// The poll a poll op (create, vote, close) is of.
+    #[must_use]
+    pub fn poll_id(&self) -> Option<&[u8; 16]> {
+        match self {
+            Self::PollCreate { poll_id, .. }
+            | Self::PollVote { poll_id, .. }
+            | Self::PollClose { poll_id, .. } => Some(poll_id),
+            _ => None,
+        }
+    }
 }
 
 impl ChannelPost {

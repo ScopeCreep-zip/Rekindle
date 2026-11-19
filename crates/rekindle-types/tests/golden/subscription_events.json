@@ -1616,6 +1616,15 @@
       }
     }
   },
+  "social.pollChanged": {
+    "social": {
+      "pollChanged": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pollId": "poll_11111111111111111111111111111111"
+      }
+    }
+  },
   "social.reactionAdded": {
     "social": {
       "reactionAdded": {

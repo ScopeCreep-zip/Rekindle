@@ -1,12 +1,12 @@
 //! The pipeline's events on the Host bus (plan E3.1 E2c): the echo of our
 //! own post as a `ChannelMessageEvent::New`, and its delivery state as a
 //! `ChannelMessageEvent::ChannelSendStatus`, which every frontend's windows
-//! read on both modes.
+//! read on both modes; and a poll's change (`SocialEvent::PollChanged`).
 
 use rekindle_channel::deps::SentChannelMessageEcho;
 use rekindle_channel::event::ChannelEvent;
 use rekindle_types::message::SendState;
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{ChannelMessageEvent, SocialEvent, SubscriptionEvent};
 
 use super::HostChannel;
 
@@ -65,5 +65,21 @@ impl HostChannel {
                 reason,
             },
         ));
+    }
+
+    /// A poll op of `poll_id` in `channel_id` landed on our outbox or was
+    /// read from an author's: the poll's aggregate changed (plan E3.3 8c,
+    /// `rekindle_channel::history::poll_states`), and a frontend re-reads
+    /// the channel to show it. Nothing else tells it: a poll has no row
+    /// and no gossip, and its create, vote and close are queued, so the
+    /// read the frontend makes when its call returns precedes the write
+    /// (walk 23 M53).
+    pub(super) fn poll_changed(&self, community_id: &str, channel_id: &str, poll_id: &[u8; 16]) {
+        self.ctx()
+            .publish_event(SubscriptionEvent::Social(SocialEvent::PollChanged {
+                community: community_id.to_owned(),
+                channel: channel_id.to_owned(),
+                poll_id: hex::encode(poll_id),
+            }));
     }
 }

@@ -296,6 +296,7 @@ export type SocialEvent =
       };
     }
   | { messageUnpinned: { community: string; channel: string; messageId: string } }
+  | { pollChanged: { community: string; channel: string; pollId: string } }
   | { threadCreated: { community: string; thread: Thread } }
   | {
       threadMessagePosted: {

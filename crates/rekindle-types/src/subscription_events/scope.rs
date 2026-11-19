@@ -210,6 +210,7 @@ fn social_community(e: &SocialEvent) -> &str {
         | SocialEvent::ReactionRemoved { community, .. }
         | SocialEvent::MessagePinned { community, .. }
         | SocialEvent::MessageUnpinned { community, .. }
+        | SocialEvent::PollChanged { community, .. }
         | SocialEvent::ThreadCreated { community, .. }
         | SocialEvent::ThreadMessagePosted { community, .. }
         | SocialEvent::ThreadArchiveChanged { community, .. }

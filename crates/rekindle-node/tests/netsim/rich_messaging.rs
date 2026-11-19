@@ -205,6 +205,16 @@ async fn thread_reply_both_ways() {
     assert!(active_for_bea().await, "bea sees her reply revive it");
 }
 
+fn saw_poll_change(events: &Events, channel: &str, poll: &str) -> bool {
+    events.any(|e| {
+        matches!(
+            e,
+            SubscriptionEvent::Social(SocialEvent::PollChanged { channel: c, poll_id, .. })
+                if c == channel && poll_id == poll
+        )
+    })
+}
+
 fn saw_archive(events: &Events, thread: &str, to: bool) -> bool {
     SimNode::saw(events, |event| {
         matches!(
@@ -263,6 +273,10 @@ async fn poll_vote_converges() {
     let key = community.anchor.clone();
     let channel = community.general_id(0).await;
     let posted = community.post(0, "lunch?").await.expect("ann posts");
+    let (ann_events, bea_events) = (
+        community.nodes[0].events().await,
+        community.nodes[1].events().await,
+    );
     let poll = ask(
         &community,
         0,
@@ -278,6 +292,18 @@ async fn poll_vote_converges() {
     )
     .await;
     let poll = poll.as_str().expect("a poll id").to_owned();
+    // A poll has no row and no gossip: each member's frontends learn of it
+    // from the Host, ann when her queued create lands, bea when she reads
+    // it from ann's outbox (walk 23 M53).
+    for (events, who) in [(&ann_events, "ann"), (&bea_events, "bea")] {
+        assert!(
+            eventually(&community.sim, LIMIT, || async {
+                saw_poll_change(events, &channel, &poll)
+            })
+            .await,
+            "{who}'s frontends are told of the poll"
+        );
+    }
 
     let voted = eventually(&community.sim, LIMIT, || async {
         community.nodes[1]
