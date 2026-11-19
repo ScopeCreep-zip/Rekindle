@@ -149,8 +149,11 @@ export const WINDOWS: WindowCase[] = [
     path: "/settings?tab=privacy",
     def: { width: 500, height: 550 },
     min: { width: 420, height: 450 },
-    ready: frame,
-    spacing: [".xfire-titlebar", ".form-tabs"],
+    ready: async (page) => {
+      await frame(page);
+      await page.getByRole("button", { name: "Disarm Quick Wipe", exact: true }).waitFor();
+    },
+    spacing: [".xfire-titlebar", ".form-tabs", ".form-field-row"],
     panes: [".settings-content"],
   },
   {
