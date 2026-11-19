@@ -8,16 +8,18 @@
 //! colour need not read on those grounds, so the Host sends, per skin
 //! base, the colour the name is drawn in: the role's own where it reaches
 //! 4.5:1 on the tag over every such ground of every built-in skin on that
-//! base (the token skin and each pack's applied variant), else the
-//! smallest Oklab-lightness move of it that does ([`walk::lightness_walk`],
-//! the editor's walk), towards white on a dark base and black on a light
-//! one. The tint stays the role's own colour, so the tag still shows it.
+//! base (the token skin and each pack's applied variant) and of the skin
+//! this device shows ([`SkinGrounds`], so an imported skin is covered
+//! too), else the smallest Oklab-lightness move of it that does
+//! ([`walk::lightness_walk`], the editor's walk), towards white on a dark
+//! base and black on a light one. The tint stays the role's own colour, so
+//! the tag still shows it.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use rekindle_types::dto::community::RoleTagColours;
-use rekindle_types::dto::skin::{SkinBase, SkinContrast, TokenValue};
+use rekindle_types::dto::skin::{SkinBase, SkinContrast, SkinError, TokenValue};
 
 use crate::builtin::PACKS;
 use crate::colour;
@@ -69,6 +71,32 @@ fn collect(base: SkinBase) -> Vec<[u8; 3]> {
     out
 }
 
+/// The role-tag grounds of one skin: the base its applied variant declares
+/// and that variant's `.role-tag-default` grounds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkinGrounds {
+    pub base: SkinBase,
+    pub grounds: Vec<[u8; 3]>,
+}
+
+impl SkinGrounds {
+    /// The grounds of the canonical package `bytes` as it is applied.
+    ///
+    /// # Errors
+    /// A package that does not read, parse or resolve.
+    pub fn of_package(bytes: &[u8]) -> Result<Self, SkinError> {
+        let p = package::read(bytes)?;
+        let m = manifest::parse(&p)?;
+        let (v, resolved) = serve::active_resolved(&p, &m)?;
+        let mut grounds = Vec::new();
+        push_grounds(&mut grounds, &resolved);
+        Ok(Self {
+            base: v.base,
+            grounds,
+        })
+    }
+}
+
 /// The role-tag grounds of `base`, worked out once per process.
 #[must_use]
 pub fn grounds(base: SkinBase) -> &'static [[u8; 3]] {
@@ -99,11 +127,20 @@ fn pack([r, g, b]: [u8; 3]) -> u32 {
     u32::from_be_bytes([0, r, g, b])
 }
 
-/// The text colour of a tag of `colour` (`0xRRGGBB`) on `base`.
+/// The text colour of a tag of `colour` (`0xRRGGBB`) on `base`, over the
+/// built-in skins' grounds and the shown skin's (`shown`) when it is on
+/// `base`.
 #[must_use]
-pub fn readable(colour: u32, base: SkinBase) -> u32 {
+pub fn readable(colour: u32, base: SkinBase, shown: Option<&SkinGrounds>) -> u32 {
     let rgb = unpack(colour);
-    let tags: Vec<[u8; 3]> = grounds(base).iter().map(|g| tag(rgb, *g)).collect();
+    let own = shown
+        .filter(|s| s.base == base)
+        .map(|s| s.grounds.as_slice());
+    let tags: Vec<[u8; 3]> = grounds(base)
+        .iter()
+        .chain(own.unwrap_or_default())
+        .map(|g| tag(rgb, *g))
+        .collect();
     let passes = |c: [u8; 3]| tags.iter().all(|t| colour::contrast(c, *t) >= TEXT_RATIO);
     if passes(rgb) {
         return colour & 0x00ff_ffff;
@@ -116,12 +153,13 @@ pub fn readable(colour: u32, base: SkinBase) -> u32 {
     pack(walked.unwrap_or(if up { [0xff; 3] } else { [0; 3] }))
 }
 
-/// Both bases' text colours of a tag of `colour`.
+/// Both bases' text colours of a tag of `colour`, given the skin this
+/// device shows (`None` where no device is: the fixtures).
 #[must_use]
-pub fn colours(colour: u32) -> RoleTagColours {
+pub fn colours(colour: u32, shown: Option<&SkinGrounds>) -> RoleTagColours {
     RoleTagColours {
-        dark: readable(colour, SkinBase::Dark),
-        light: readable(colour, SkinBase::Light),
+        dark: readable(colour, SkinBase::Dark, shown),
+        light: readable(colour, SkinBase::Light, shown),
     }
 }
 
@@ -138,8 +176,30 @@ mod tests {
 
     #[test]
     fn a_colour_that_reads_is_kept() {
-        assert_eq!(readable(0x00ff_ffff, SkinBase::Dark), 0x00ff_ffff);
-        assert_eq!(readable(0x0000_0000, SkinBase::Light), 0);
+        assert_eq!(readable(0x00ff_ffff, SkinBase::Dark, None), 0x00ff_ffff);
+        assert_eq!(readable(0x0000_0000, SkinBase::Light, None), 0);
+    }
+
+    #[test]
+    fn the_shown_skin_grounds_join_its_base_only() {
+        // An imported dark skin with a lighter ground (#404040; no built-in
+        // dark skin has one above #1e1e1e): #c0c0c0 reads on every built-in
+        // dark ground but is 3.5:1 on its tag over #404040, so it moves;
+        // the light base's colour is not touched by a dark skin.
+        let colour = 0x00c0_c0c0;
+        assert_eq!(readable(colour, SkinBase::Dark, None), colour);
+        let shown = SkinGrounds {
+            base: SkinBase::Dark,
+            grounds: vec![[0x40; 3]],
+        };
+        let out = readable(colour, SkinBase::Dark, Some(&shown));
+        assert_ne!(out, colour);
+        let ground = tag(unpack(colour), [0x40; 3]);
+        assert!(colour::contrast(unpack(out), ground) >= TEXT_RATIO);
+        assert_eq!(
+            readable(colour, SkinBase::Light, Some(&shown)),
+            readable(colour, SkinBase::Light, None)
+        );
     }
 
     #[test]
@@ -149,7 +209,7 @@ mod tests {
             (SkinBase::Light, 0x0034_98db),
             (SkinBase::Dark, 0x0020_2080),
         ] {
-            let out = readable(colour, base);
+            let out = readable(colour, base, None);
             assert_ne!(out, colour, "{base:?}");
             for g in grounds(base) {
                 let ground = tag(unpack(colour), *g);

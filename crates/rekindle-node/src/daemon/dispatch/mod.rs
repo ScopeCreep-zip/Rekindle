@@ -118,6 +118,9 @@ pub struct DaemonContext {
     /// The library skin on trial ("Keep this skin?", plan E7.7.2), which
     /// the Host reverts unless it is kept.
     pub(crate) skin_trial: crate::host::skin::TrialSlot,
+    /// The role-tag grounds of the skin this device shows, so role colours
+    /// read on an imported skin too (`host::skin::shown`).
+    pub(crate) skin_grounds: crate::host::skin::ShownGrounds,
     /// The unlocked identity's database (plan D1), shared with the
     /// handler and the inbox scan. Empty while locked.
     pub db: Arc<rekindle_db::DbHandle>,

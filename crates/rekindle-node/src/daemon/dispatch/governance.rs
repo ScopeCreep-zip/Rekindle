@@ -18,7 +18,12 @@ pub(crate) fn role_displays(
 ) -> Vec<rekindle_types::display::RoleDisplay> {
     ctx.communities
         .governance_state(community_id)
-        .map(|g| crate::host::adapters::governance::role_ops::role_displays(&g))
+        .map(|g| {
+            crate::host::adapters::governance::role_ops::role_displays(
+                &g,
+                ctx.skin_grounds.get().as_deref(),
+            )
+        })
         .unwrap_or_default()
 }
 

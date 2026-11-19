@@ -11,6 +11,7 @@ mod draft;
 pub(crate) mod ids;
 pub(crate) mod login;
 mod serve;
+mod shown;
 mod trial;
 
 use rekindle_db::repo::{preferences, skins};
@@ -25,6 +26,7 @@ use crate::daemon::DaemonState;
 use ids::{SkinId, PKG};
 
 pub(crate) use ids::check;
+pub(crate) use shown::ShownGrounds;
 pub(crate) use trial::TrialSlot;
 
 /// Route one skin request (the router's arm for them).

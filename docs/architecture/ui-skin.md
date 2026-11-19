@@ -149,7 +149,16 @@ the region map `src/styles/regions.toml` declares reads ≥ 4.5:1, the
 status dots ≥ 3:1, on the dark base, and every pair whose text the light
 base revalues reads the same on the light base, measured on white and its
 tints until the skin registry (plan E7.7.1) gives the light base its own
-grounds (`cargo xtask check-contrast-pairs`). This block is an excerpt:
+grounds (`cargo xtask check-contrast-pairs`). A skin's own colours are
+measured by the validator's step 6 (`crates/rekindle-skin/src/access`):
+the registry's pairs, the composited tints, the status dots on every row
+they sit on, and the body text on the selected list rows (accent 30 % and
+25 % over the window, `access/pairs.rs` `SELECTED_ROWS`, WCAG 1.4.3). A
+role tag's text colour is worked out by the Host
+(`crates/rekindle-skin/src/role_tag.rs`) against every built-in skin and
+the skin this device shows, so an imported skin is covered too; when the
+shown skin changes, the Host re-sends the roles whose colours change with
+it (`RolesChanged`). This block is an excerpt:
 the full set, with the per-base values and the reserved `--sec-*` tokens,
 is `src/styles/global.css`. The grey
 hierarchy (`#0a → #14 → #1a → #1e → #25 → #2a`) gives subtle elevation

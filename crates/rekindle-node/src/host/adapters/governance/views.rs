@@ -12,15 +12,17 @@ use rekindle_types::dto::member_groups::{group_members, GroupRole};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::SessionLocation;
 
+use rekindle_skin::role_tag::SkinGrounds;
+
 use super::HostGovernance;
 use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
 
-fn role_view(role: &RoleDefinition) -> CommunityRoleView {
+fn role_view(role: &RoleDefinition, shown: Option<&SkinGrounds>) -> CommunityRoleView {
     CommunityRoleView {
         id: role.id.to_hex(),
         name: role.name.clone(),
         color: role.color,
-        tag_colours: rekindle_skin::role_tag::colours(role.color),
+        tag_colours: rekindle_skin::role_tag::colours(role.color, shown),
         permissions: role.permissions.to_string(),
         position: role.position,
         hoist: role.hoist,
@@ -59,7 +61,7 @@ fn my_permissions(
     )
 }
 
-fn community_view(c: &CommunityState, now_secs: u64) -> CommunityView {
+fn community_view(c: &CommunityState, now_secs: u64, shown: Option<&SkinGrounds>) -> CommunityView {
     let (my_permissions, my_channel_permissions) = my_permissions(c, now_secs);
     CommunityView {
         id: c.id.clone(),
@@ -97,7 +99,7 @@ fn community_view(c: &CommunityState, now_secs: u64) -> CommunityView {
         my_role_ids: c.my_role_ids.iter().map(|id| id.to_hex()).collect(),
         my_permissions,
         my_channel_permissions,
-        roles: c.roles.iter().map(role_view).collect(),
+        roles: c.roles.iter().map(|r| role_view(r, shown)).collect(),
         my_pseudonym_key: c.my_pseudonym_key.clone(),
         mek_generation: c.mek_generation,
         member_registry_key: c.member_registry_key.clone(),
@@ -256,13 +258,14 @@ impl HostGovernance {
     /// Every joined community, by name then id.
     pub(crate) fn community_views(&self) -> Vec<CommunityView> {
         let now_secs = self.ctx.clock.now_secs();
+        let shown = self.ctx.skin_grounds.get();
         let mut views: Vec<CommunityView> = self
             .ctx
             .communities
             .map()
             .read()
             .values()
-            .map(|c| community_view(c, now_secs))
+            .map(|c| community_view(c, now_secs, shown.as_deref()))
             .collect();
         for view in &mut views {
             view.removed = removal_display(&self.ctx.communities, &view.id);

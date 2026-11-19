@@ -292,6 +292,7 @@ impl Host {
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
             skin_helper: std::sync::OnceLock::new(),
             skin_trial: crate::host::skin::TrialSlot::default(),
+            skin_grounds: crate::host::skin::ShownGrounds::default(),
             mode,
             read_markers: super::read_markers::PendingMarkers::default(),
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(

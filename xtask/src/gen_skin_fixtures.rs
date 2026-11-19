@@ -40,7 +40,7 @@ fn pretty(v: &Value) -> Result<String> {
 fn role_tags() -> Result<String> {
     let mut out = Map::new();
     for c in ROLE_COLOURS {
-        let t = role_tag::colours(c);
+        let t = role_tag::colours(c, None);
         out.insert(
             format!("{c:06x}"),
             json!({ "dark": t.dark, "light": t.light }),

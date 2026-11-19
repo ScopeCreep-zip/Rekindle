@@ -127,13 +127,20 @@ pub(super) async fn package_bytes(
     Ok((id, bytes))
 }
 
-/// `SkinGet`: what a window applies for `id`, or for the resolution.
+/// `SkinGet`: what a window applies for `id`, or for the resolution, whose
+/// role-tag grounds the Host records ([`super::shown`]).
 pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinApplied> {
+    let shown = id.is_none();
     let id = match id {
         Some(id) => id,
         None => resolved(ctx).await?,
     };
     let held = package_of(ctx, &id).await?;
+    if shown {
+        let grounds = rekindle_skin::role_tag::SkinGrounds::of_package(&held.bytes)
+            .map_err(|e| failed("skin grounds", format!("{e:?}")))?;
+        super::shown::note(ctx, grounds);
+    }
     let applied =
         serve::stylesheet(&held.bytes, &held.address).map_err(|e| failed("skin stylesheet", e))?;
     Ok(SkinApplied {

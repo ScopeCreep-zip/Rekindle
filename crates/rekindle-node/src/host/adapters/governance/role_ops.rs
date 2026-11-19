@@ -14,6 +14,7 @@ use std::fmt;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::roles::{self, ExclusionGroupEdit, RoleSnapshotPatch};
 use rekindle_governance_runtime::GovernanceRuntimeError;
+use rekindle_skin::role_tag::SkinGrounds;
 use rekindle_types::display::RoleDisplay;
 use rekindle_types::id::RoleId;
 use rekindle_types::permissions::MANAGE_ROLES;
@@ -87,9 +88,13 @@ impl From<GovernanceRuntimeError> for RoleRefusal {
     }
 }
 
-/// Every live role of `governance`, by id.
+/// Every live role of `governance`, by id, its tag colours readable on
+/// `shown` too (the skin this device shows, `host::skin::shown`).
 #[must_use]
-pub fn role_displays(governance: &GovernanceState) -> Vec<RoleDisplay> {
+pub fn role_displays(
+    governance: &GovernanceState,
+    shown: Option<&SkinGrounds>,
+) -> Vec<RoleDisplay> {
     let mut out: Vec<RoleDisplay> = governance
         .roles
         .iter()
@@ -97,7 +102,7 @@ pub fn role_displays(governance: &GovernanceState) -> Vec<RoleDisplay> {
             id: id.to_hex(),
             name: role.name.clone(),
             color: role.color,
-            tag_colours: rekindle_skin::role_tag::colours(role.color),
+            tag_colours: rekindle_skin::role_tag::colours(role.color, shown),
             permissions: role.permissions,
             position: role.position,
             hoist: role.hoist,
@@ -164,7 +169,7 @@ impl HostGovernance {
     #[must_use]
     pub fn role_list(&self, community_id: &str) -> Vec<RoleDisplay> {
         self.governance_state_impl(community_id)
-            .map(|g| role_displays(&g))
+            .map(|g| role_displays(&g, self.ctx.skin_grounds.get().as_deref()))
             .unwrap_or_default()
     }
 

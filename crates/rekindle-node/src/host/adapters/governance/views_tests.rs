@@ -19,7 +19,7 @@ fn owner_role() -> RoleDefinition {
 
 #[test]
 fn role_permissions_ride_as_decimal_text() {
-    let view = role_view(&owner_role());
+    let view = role_view(&owner_role(), None);
     assert_eq!(view.permissions, (u64::MAX >> 1).to_string());
     let json = serde_json::to_value(&view).unwrap();
     assert!(json["permissions"].is_string(), "{json}");
@@ -40,7 +40,7 @@ fn the_view_names_our_role_and_carries_our_standing() {
     );
     crate::host::adapters::governance::projection::project_my_roles(&mut state, &gov);
     state.mek_generation = 3;
-    let view = community_view(&state, 0);
+    let view = community_view(&state, 0, None);
     assert_eq!(view.name, "Raiders");
     assert_eq!(view.my_role.as_deref(), Some("Owner"));
     assert_eq!(view.my_role_ids, vec!["00".repeat(16)]);
@@ -173,7 +173,7 @@ fn roles_sharing_their_low_four_bytes_never_collide_in_the_view() {
     let mut state = CommunityState::new("gk");
     state.my_pseudonym_key = Some("ab".repeat(32));
     crate::host::adapters::governance::projection::project(&mut state, gov.clone());
-    let json = serde_json::to_value(community_view(&state, 0)).unwrap();
+    let json = serde_json::to_value(community_view(&state, 0, None)).unwrap();
     let id_of = |name: &str| {
         json["roles"]
             .as_array()
