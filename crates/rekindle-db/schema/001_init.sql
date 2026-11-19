@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS friends (
     -- from an accepted friend; cleared when we remove them, gone with the row
     -- when they remove or block us or we block them.
     bio TEXT CHECK(bio IS NULL OR (length(bio) BETWEEN 1 AND 190)),
+    -- Plan E7.1: the conversation's disappearing-message timer, seconds
+    -- (0 = off), set by either side with a `DisappearingTimer` (0x0160).
+    disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK(disappearing_seconds >= 0),
     CHECK((presence_epoch IS NULL) = (presence_key IS NULL)),
     PRIMARY KEY (owner_key, public_key)
 );
@@ -110,6 +113,8 @@ CREATE TABLE IF NOT EXISTS group_dms (
     roster TEXT NOT NULL CHECK(json_valid(roster) AND json_type(roster) = 'array'),
     epoch INTEGER NOT NULL CHECK(epoch >= 0),
     created_at INTEGER NOT NULL,
+    -- Plan E7.1: the group's disappearing-message timer (0 = off).
+    disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK(disappearing_seconds >= 0),
     PRIMARY KEY (owner_key, group_id)
 );
 
@@ -208,6 +213,13 @@ CREATE TABLE IF NOT EXISTS messages (
     -- moderator's pseudonym, shown as "removed by"; NULL for the author's
     -- own delete. It is set only with `deleted_at`.
     deleted_by TEXT,
+    -- Plan E7.1 (disappearing messages): the timer the message carried
+    -- (seconds, 0 = none) and when it is deleted (ms). Our own copy's
+    -- `expire_at` is set at send, a received one's at its first display
+    -- (Signal's rule); NULL while it has not started.
+    expire_seconds INTEGER NOT NULL DEFAULT 0 CHECK(expire_seconds >= 0),
+    expire_at INTEGER CHECK(expire_at IS NULL OR expire_at >= 0),
+    CHECK(expire_at IS NULL OR expire_seconds > 0),
     CHECK(deleted_at IS NULL OR (body = '' AND edited_at IS NULL)),
     CHECK(deleted_by IS NULL OR deleted_at IS NOT NULL)
 );
@@ -217,6 +229,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conv
 -- earlier post (repo::messages::channel::latest_by_sender_at_or_before).
 CREATE INDEX IF NOT EXISTS idx_messages_sender_time
   ON messages(owner_key, conversation_id, sender_key, timestamp);
+-- The expiry task's next deadline (plan E7.1).
+CREATE INDEX IF NOT EXISTS idx_messages_expire_at
+  ON messages(owner_key, expire_at) WHERE expire_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(owner_key, conversation_id, is_read) WHERE is_read = 0;
 CREATE INDEX IF NOT EXISTS idx_messages_stream_seq
   ON messages(owner_key, conversation_id, sender_key, stream_seq) WHERE stream_seq IS NOT NULL;

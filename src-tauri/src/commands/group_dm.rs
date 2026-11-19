@@ -48,6 +48,24 @@ pub async fn group_dm_leave(
     host_call::call(&state, IpcRequest::GroupDmLeave { group_id }).await
 }
 
+/// Set a DM's or group DM's disappearing-message timer
+/// (`IpcRequest::DisappearingSet`, plan E7.1).
+#[tauri::command]
+pub async fn disappearing_set(
+    conversation: String,
+    seconds: u32,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::DisappearingSet {
+            conversation,
+            seconds,
+        },
+    )
+    .await
+}
+
 /// Send `body` to a group (`IpcRequest::GroupDmSend`); the answer is the
 /// message's client id once its row and echo are committed (`queued`,
 /// then `GroupDmEvent::SendStatus`).

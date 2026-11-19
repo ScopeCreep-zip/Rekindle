@@ -196,6 +196,16 @@
       }
     }
   },
+  "channelMessage.disappearingTimerChanged": {
+    "channelMessage": {
+      "disappearingTimerChanged": {
+        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "conversationType": "dm",
+        "seconds": 3600,
+        "setBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
   "channelMessage.dmHistoryGap": {
     "channelMessage": {
       "dmHistoryGap": {
@@ -229,6 +239,17 @@
       "expressionAssetReady": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "expressionId": "exp_11111111111111111111111111111111"
+      }
+    }
+  },
+  "channelMessage.messagesExpired": {
+    "channelMessage": {
+      "messagesExpired": {
+        "clientIds": [
+          "0190a0b0-0000-7000-8000-000000000001"
+        ],
+        "conversationId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+        "conversationType": "group_dm"
       }
     }
   },

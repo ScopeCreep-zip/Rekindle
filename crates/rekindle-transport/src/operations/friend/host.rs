@@ -73,6 +73,9 @@ pub struct FriendStores {
     /// Messages from peers we asked, held until their accept lands (plan
     /// E2.5i R2-2); their `unprocessed` rows outlive a lock.
     pub held: Mutex<crate::operations::direct::held::HeldMessages>,
+    /// Wakes the Host's disappearing-message expiry task (plan E7.1): a
+    /// new `expire_at` may be the earliest.
+    pub expiry: tokio::sync::Notify,
 }
 
 impl FriendStores {

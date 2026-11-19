@@ -139,6 +139,7 @@ async fn route(
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmDecline { .. }
         | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::DisappearingSet { .. }
         | IpcRequest::GroupDmSend { .. }
         | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::GroupDmList

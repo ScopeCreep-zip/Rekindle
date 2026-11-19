@@ -84,6 +84,7 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("group_dm_accept", Some(IntentKind::AcceptDmInvite)),
     ("group_dm_decline", Some(IntentKind::DeclineDmInvite)),
     ("group_dm_leave", Some(IntentKind::LeaveGroupDm)),
+    ("disappearing_set", Some(IntentKind::SetDisappearingTimer)),
     ("group_dm_send", Some(IntentKind::SendDmMessage)),
     ("group_dm_typing", None),
     ("group_dm_list", None),

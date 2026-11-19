@@ -5,7 +5,20 @@ use rekindle_types::key_format::{self, MAX_REACTION_LEN};
 
 use crate::capnp_codec::direct::{fixed, message_body, text, ClientId};
 use crate::capnp_codec::{capnp_err, CodecError};
-use crate::direct_capnp::{dm_ack, dm_delete, dm_edit, dm_reaction, dm_text, read_up_to, typing};
+use crate::direct_capnp::{
+    disappearing_timer, dm_ack, dm_delete, dm_edit, dm_reaction, dm_text, read_up_to, typing,
+};
+
+/// A timer past four weeks refuses its frame (plan E7.1).
+fn timer(seconds: u32) -> Result<u32, CodecError> {
+    if rekindle_types::disappearing::valid(seconds) {
+        Ok(seconds)
+    } else {
+        Err(CodecError::Deserialization(format!(
+            "disappearing timer {seconds} s is past four weeks"
+        )))
+    }
+}
 
 /// The most entries one `DmAck` names: one coalescing window's worth.
 pub const MAX_DM_ACK_SEQS: usize = 256;
@@ -75,7 +88,7 @@ impl DmText {
             client_id: fixed(r.get_client_id(), "client id")?,
             body: message_body(r.get_body())?,
             reply_to,
-            expire_seconds: r.get_expire_seconds(),
+            expire_seconds: timer(r.get_expire_seconds())?,
         })
     }
 }
@@ -187,5 +200,72 @@ impl Typing {
         Self {
             typing: r.get_typing(),
         }
+    }
+}
+
+/// 0x0160 DisappearingTimer: the conversation's timer, seconds (0 = off);
+/// `group_id` names a group DM, `None` the 1:1 DM it travels in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisappearingTimer {
+    pub seconds: u32,
+    pub group_id: Option<super::GroupId>,
+}
+
+impl DisappearingTimer {
+    pub(super) fn write(&self, mut b: disappearing_timer::Builder<'_>) {
+        b.set_seconds(self.seconds);
+        if let Some(group_id) = &self.group_id {
+            b.set_group_id(group_id);
+        }
+    }
+
+    /// A group id that is neither empty nor 16 bytes is malformed.
+    pub(super) fn read(r: disappearing_timer::Reader<'_>) -> Result<Self, CodecError> {
+        let group_id = r.get_group_id().map_err(|e| capnp_err(&e))?;
+        Ok(Self {
+            seconds: timer(r.get_seconds())?,
+            group_id: if group_id.is_empty() {
+                None
+            } else {
+                Some(fixed(Ok(group_id), "timer group id")?)
+            },
+        })
+    }
+}
+
+/// A group's timer, for the round-trip of every kind.
+#[cfg(test)]
+pub(crate) fn timer_sample() -> DisappearingTimer {
+    DisappearingTimer {
+        seconds: 3_600,
+        group_id: Some([5; 16]),
+    }
+}
+
+#[cfg(test)]
+mod timer_tests {
+    use super::*;
+    use crate::capnp_codec::direct::{encode_root, DirectBody, DmTypeId};
+    use rekindle_types::disappearing::MAX_SECONDS;
+
+    #[test]
+    fn a_timer_past_four_weeks_refuses_the_frame() {
+        let bytes =
+            |seconds| encode_root::<disappearing_timer::Owned>(|mut b| b.set_seconds(seconds));
+        let ok = DirectBody::decode(DmTypeId::DisappearingTimer, &bytes(MAX_SECONDS)).unwrap();
+        assert_eq!(
+            ok,
+            DirectBody::DisappearingTimer(DisappearingTimer {
+                seconds: MAX_SECONDS,
+                group_id: None,
+            })
+        );
+        assert!(DirectBody::decode(DmTypeId::DisappearingTimer, &bytes(MAX_SECONDS + 1)).is_err());
+        let text = encode_root::<dm_text::Owned>(|mut b| {
+            b.set_client_id(&[1; 16]);
+            b.set_body("hi");
+            b.set_expire_seconds(MAX_SECONDS + 1);
+        });
+        assert!(DirectBody::decode(DmTypeId::DmText, &text).is_err());
     }
 }

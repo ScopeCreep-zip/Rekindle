@@ -456,6 +456,8 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             is_own: true,
             send_state: SendState::Delivered,
             history_gap_through: None,
+            expire_seconds: 0,
+            expire_at: None,
         }),
     );
     add(
@@ -469,6 +471,8 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             is_own: false,
             send_state: SendState::Delivered,
             history_gap_through: Some(4),
+            expire_seconds: 0,
+            expire_at: None,
         }),
     );
     add(

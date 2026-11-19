@@ -116,6 +116,7 @@ impl IpcRequest {
             Self::GroupDmAccept { .. } => ("GroupDmAccept", Write, Authenticated),
             Self::GroupDmDecline { .. } => ("GroupDmDecline", Write, Authenticated),
             Self::GroupDmLeave { .. } => ("GroupDmLeave", Write, Authenticated),
+            Self::DisappearingSet { .. } => ("DisappearingSet", Write, Authenticated),
             Self::GroupDmSend { .. } => ("GroupDmSend", Write, Authenticated),
             Self::GroupDmTyping { .. } => ("GroupDmTyping", Write, Authenticated),
             Self::GroupDmList => ("GroupDmList", Query, Authenticated),

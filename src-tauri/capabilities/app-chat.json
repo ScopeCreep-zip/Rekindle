@@ -15,6 +15,7 @@
     "allow-group-dm-list",
     "allow-group-dm-messages",
     "allow-group-dm-leave",
+    "allow-disappearing-set",
     "allow-group-dm-send",
     "allow-group-dm-typing",
     "allow-send-typing",

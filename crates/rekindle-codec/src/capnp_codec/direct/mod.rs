@@ -25,8 +25,8 @@ mod type_id;
 
 pub use body::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DirectBody,
-    DmAck, DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
-    FriendsKey, GameInvite, GameTotal, GameTotals, GroupCallMember, GroupCallOffer,
+    DisappearingTimer, DmAck, DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept,
+    FriendRequest, FriendsKey, GameInvite, GameTotal, GameTotals, GroupCallMember, GroupCallOffer,
     GroupCallParticipantLeft, GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite,
     GroupDmLeave, GroupId, IdentityRotated, PreKeyRejected, ProfileBio, ProfileKeyRotated,
     ReadUpTo, RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw,

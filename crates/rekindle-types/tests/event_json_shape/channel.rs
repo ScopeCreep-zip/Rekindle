@@ -16,6 +16,8 @@ pub const NAMES: &[&str] = &[
     "directMessageReceived",
     "dmSendStatus",
     "dmHistoryGap",
+    "disappearingTimerChanged",
+    "messagesExpired",
     "conversationFocusRequested",
 ];
 
@@ -32,6 +34,8 @@ pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
         ChannelMessageEvent::DirectMessageReceived { .. } => "directMessageReceived",
         ChannelMessageEvent::DmSendStatus { .. } => "dmSendStatus",
         ChannelMessageEvent::DmHistoryGap { .. } => "dmHistoryGap",
+        ChannelMessageEvent::DisappearingTimerChanged { .. } => "disappearingTimerChanged",
+        ChannelMessageEvent::MessagesExpired { .. } => "messagesExpired",
         ChannelMessageEvent::ConversationFocusRequested { .. } => "conversationFocusRequested",
     }
 }
@@ -148,6 +152,23 @@ pub fn samples() -> Vec<Sample> {
             ChannelMessageEvent::DmHistoryGap {
                 peer_key: pk('b'),
                 through_seq: 17,
+            },
+        ),
+        ev(
+            "disappearingTimerChanged",
+            ChannelMessageEvent::DisappearingTimerChanged {
+                conversation_id: pk('b'),
+                conversation_type: rekindle_types::message::ConversationType::Dm,
+                seconds: 3_600,
+                set_by: pk('a'),
+            },
+        ),
+        ev(
+            "messagesExpired",
+            ChannelMessageEvent::MessagesExpired {
+                conversation_id: "0f".repeat(16),
+                conversation_type: rekindle_types::message::ConversationType::GroupDm,
+                client_ids: vec!["0190a0b0-0000-7000-8000-000000000001".into()],
             },
         ),
         ev(

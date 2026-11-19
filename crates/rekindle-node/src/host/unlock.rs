@@ -183,6 +183,12 @@ pub(crate) async fn run(
         .await;
     }
     super::adapters::friends::watch_friends(ctx, &scope);
+    // 3c''. Disappearing messages (plan E7.1): the expiry task, woken at
+    // the earliest `expire_at`.
+    let expiry = super::adapters::friends::HostFriends::of(ctx);
+    scope.spawn_with_token_or_drop("disappearing expiry", move |stop| {
+        super::expiry::run(expiry, stop)
+    });
     // 3c'. The DM chains (plan E2.5, D23): with the outbox and the friends
     // up, every accepted friend's chain is diffed from our cursor, so what
     // arrived while we were away is fetched whether or not its hint was.

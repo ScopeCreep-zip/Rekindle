@@ -14,6 +14,7 @@ pub mod channel_keys;
 pub mod config;
 pub mod cross_device_sync;
 pub mod dht_layout;
+pub mod disappearing;
 pub mod display;
 pub mod domains;
 pub mod dto;

@@ -109,6 +109,7 @@ impl IntentKind {
         Self::LeaveCommunity,
         Self::CreateGroupDm,
         Self::LeaveGroupDm,
+        Self::SetDisappearingTimer,
         Self::RemoveTimeout,
         Self::TimeoutMember,
         Self::AssignRole,

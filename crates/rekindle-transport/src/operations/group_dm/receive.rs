@@ -260,6 +260,8 @@ impl GroupSink<'_> {
             reply_to.clone(),
         );
         let stream_seq = i64::try_from(seq).ok();
+        // Its timer starts when the group window displays it (plan E7.1).
+        let expire_seconds = text.expire_seconds;
         let received_at = self.host.clock().now_ms_i64();
         let (stored, timestamp) = state::db_call!(self.host, "store group message", move |conn| {
             rekindle_db::repo::received_dm::insert_received(
@@ -268,6 +270,8 @@ impl GroupSink<'_> {
                     owner_key: &owner,
                     peer_key: &group,
                     conversation_type: ConversationType::GroupDm,
+                    expire_seconds,
+                    expire_at: None,
                     sender_key: &author,
                     body: &text_body,
                     timestamp,

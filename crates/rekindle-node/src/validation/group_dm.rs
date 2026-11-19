@@ -27,6 +27,19 @@ fn group_id(id: &str) -> Checked {
 
 /// A new group's name (1-[`MAX_NAME_CHARS`] characters, not blank) and
 /// its other members: distinct keys, [`MIN_MEMBERS`]-[`MAX_MEMBERS`] with us.
+/// A timer request (plan E7.1): a friend's key or a group's id, and a
+/// timer of at most four weeks (Signal's presets or a custom value).
+fn disappearing(conversation: &str, seconds: u32) -> Checked {
+    if !rekindle_types::disappearing::valid(seconds) {
+        return Err(IpcResponse::error(400, "the timer is at most four weeks"));
+    }
+    if conversation.len() == 32 {
+        group_id(conversation)
+    } else {
+        public_key(conversation, "conversation")
+    }
+}
+
 fn create(name: &str, members: &[String]) -> Checked {
     let chars = name.chars().count();
     if name.trim().is_empty() || chars > MAX_NAME_CHARS {
@@ -71,6 +84,10 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         IpcRequest::GroupDmSend { group_id: id, body } => {
             group_id(id).and_then(|()| message_body(body))
         }
+        IpcRequest::DisappearingSet {
+            conversation,
+            seconds,
+        } => disappearing(conversation, *seconds),
         IpcRequest::GroupDmList => Ok(()),
         IpcRequest::GroupDmMessages {
             group_id: id,

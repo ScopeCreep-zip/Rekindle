@@ -49,6 +49,9 @@ pub(crate) struct NewDmFields {
     pub send_state: SendState,
     /// The entry's place in the sender's DM stream (plan E2.5).
     pub stream_seq: Option<i64>,
+    /// The timer the message carried (plan E7.1); a received one's starts
+    /// at its first display.
+    pub expire_seconds: u32,
 }
 
 impl NewDmFields {
@@ -80,6 +83,8 @@ impl NewDmFields {
             owner_key: owner,
             peer_key: &self.peer,
             conversation_type: rekindle_types::message::ConversationType::Dm,
+            expire_seconds: self.expire_seconds,
+            expire_at: None,
             sender_key: &self.sender,
             body: &self.body,
             timestamp: self.timestamp,
@@ -128,11 +133,14 @@ pub async fn send_dm(
     if acknowledges_key_change {
         acknowledge_key_change(host, to).await?;
     }
+    // The timer in force now travels with the message (plan E7.1).
+    let expire_seconds =
+        super::disappearing::timer(host, to, rekindle_types::message::ConversationType::Dm).await;
     let payload = super::outbox::payload(&DirectBody::DmText(DmText {
         client_id,
         body: body.to_string(),
         reply_to,
-        expire_seconds: 0,
+        expire_seconds,
     }))?;
     tracing::debug!(to = %to, "committing message to the outbox");
     outbox
@@ -145,9 +153,13 @@ pub async fn send_dm(
                 body: body.to_string(),
                 timestamp,
                 reply_to: reply_to.as_ref().map(client_id_text),
+                expire_seconds,
             },
         )
         .await?;
+    if expire_seconds > 0 {
+        super::disappearing::wake(host);
+    }
     // Sending the message ends our typing to `to`.
     super::typing::message_sent(host, to);
     // Its stored time: never behind our earlier messages to `to`.
@@ -164,6 +176,8 @@ pub async fn send_dm(
         is_own: true,
         send_state: SendState::Queued,
         history_gap_through: None,
+        expire_seconds: row.expire_seconds,
+        expire_at: row.expire_at,
     })
 }
 
@@ -265,6 +279,8 @@ pub async fn history(
             timestamp: row.timestamp,
             send_state: row.send_state,
             history_gap_through: row.history_gap_through,
+            expire_seconds: row.expire_seconds,
+            expire_at: row.expire_at,
         })
         .collect())
 }
@@ -306,6 +322,8 @@ pub async fn mark_read(
     })
     .await?;
     publish_unread(host, peer, count);
+    // Displayed: the timers of its received messages start (plan E7.1).
+    super::disappearing::displayed(host, peer).await;
     if let Some(message_id) = up_to {
         super::receipts::rendered(host, peer, message_id).await?;
     }

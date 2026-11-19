@@ -59,6 +59,7 @@ async fn a_row_waits_for_its_sender_and_projects_onto_its_echo() {
         body: "hi".into(),
         timestamp: 1,
         reply_to: None,
+        expire_seconds: 0,
     };
     outbox.enqueue(entry, Some(echo)).await.unwrap();
     assert_eq!(changes.recv().await.unwrap().state, SendState::Queued);

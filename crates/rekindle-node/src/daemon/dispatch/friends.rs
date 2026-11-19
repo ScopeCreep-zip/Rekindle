@@ -181,6 +181,13 @@ pub(crate) async fn route(
         IpcRequest::GroupDmAccept { group_id } => done(group_dm::accept(&host, &group_id).await),
         IpcRequest::GroupDmDecline { group_id } => done(group_dm::decline(&host, &group_id).await),
         IpcRequest::GroupDmLeave { group_id } => done(group_dm::leave(&host, &group_id).await),
+        IpcRequest::DisappearingSet {
+            conversation,
+            seconds,
+        } => {
+            let kind = crate::validation::conversation_kind(&conversation);
+            done(dm::disappearing::set(&host, &conversation, kind, seconds).await)
+        }
         IpcRequest::GroupDmSend { group_id, body } => {
             answer(group_dm::send_reviewed(&host, &group_id, &body, acknowledged.key_change).await)
         }

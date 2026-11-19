@@ -176,6 +176,30 @@ pub enum ChannelMessageEvent {
         through_seq: u64,
     },
 
+    /// The disappearing-message timer of a DM or group DM changed (plan
+    /// E7.1), set by us (`set_by` our key) or a member: every window shows
+    /// a timeline notice and its timer control takes `seconds` (0 = off).
+    /// Triggered by: our `DisappearingSet`, or a received
+    /// `DisappearingTimer` (0x0160).
+    DisappearingTimerChanged {
+        /// The peer's key, or the group's id.
+        conversation_id: String,
+        conversation_type: crate::message::ConversationType,
+        seconds: u32,
+        set_by: String,
+    },
+
+    /// Messages of a DM or group DM reached their `expire_at` and were
+    /// deleted (plan E7.1): every window drops them, and the shell
+    /// withdraws any OS notification it showed for them.
+    /// Triggered by: the Host's expiry task.
+    MessagesExpired {
+        /// The peer's key, or the group's id.
+        conversation_id: String,
+        conversation_type: crate::message::ConversationType,
+        client_ids: Vec<String>,
+    },
+
     /// Something happened that should bring a conversation to the
     /// front — an incoming call, an accepted friend request.
     ///

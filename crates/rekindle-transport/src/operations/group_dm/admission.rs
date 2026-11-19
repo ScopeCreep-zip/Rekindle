@@ -16,7 +16,8 @@ use crate::operations::friend::FriendHost;
 /// first) may deliver `kind`, alone or opening a session (`init`), as a
 /// member of a group we hold. Fails closed when the groups are unreadable.
 pub async fn admitted(host: &dyn FriendHost, sender: &str, kind: DmTypeId, init: bool) -> bool {
-    if !is_group_kind(kind) && kind != DmTypeId::StreamRecord {
+    if !is_group_kind(kind) && kind != DmTypeId::StreamRecord && kind != DmTypeId::DisappearingTimer
+    {
         return false;
     }
     let groups = match host.group_dm() {
@@ -36,6 +37,10 @@ pub async fn admitted(host: &dyn FriendHost, sender: &str, kind: DmTypeId, init:
         }];
         let named = if kind == DmTypeId::StreamRecord {
             GroupFrame::StreamRecord {
+                group_id: Some(&g.group_id),
+            }
+        } else if kind == DmTypeId::DisappearingTimer {
+            GroupFrame::DisappearingTimer {
                 group_id: Some(&g.group_id),
             }
         } else {

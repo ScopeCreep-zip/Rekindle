@@ -125,6 +125,9 @@ type_ids! {
     StatusRequest = 0x0140 => Ratchet,
     /// The cached status.
     StatusResponse = 0x0141 => Ratchet,
+    /// The conversation's disappearing-message timer (plan E7.1); a
+    /// group's names the group.
+    DisappearingTimer = 0x0160 => Ratchet,
     /// An invite to join us on a game server (plan E7.2).
     GameInvite = 0x0170 => Ratchet,
     /// Our bio (plan E7.2), on change and to a newly accepted friend.

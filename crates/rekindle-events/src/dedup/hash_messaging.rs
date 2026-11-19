@@ -132,6 +132,30 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(b"|");
             h.update(state.as_str().as_bytes());
         }
+        ChannelMessageEvent::DisappearingTimerChanged {
+            conversation_id,
+            seconds,
+            set_by,
+            ..
+        } => {
+            h.update(b"dm_timer|");
+            h.update(conversation_id.as_bytes());
+            h.update(b"|");
+            h.update(&seconds.to_le_bytes());
+            h.update(set_by.as_bytes());
+        }
+        ChannelMessageEvent::MessagesExpired {
+            conversation_id,
+            client_ids,
+            ..
+        } => {
+            h.update(b"dm_expired|");
+            h.update(conversation_id.as_bytes());
+            for id in client_ids {
+                h.update(b"|");
+                h.update(id.as_bytes());
+            }
+        }
         ChannelMessageEvent::DmHistoryGap {
             peer_key,
             through_seq,

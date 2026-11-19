@@ -88,6 +88,8 @@ pub async fn messages(
         rekindle_db::repo::group_dm_messages::group_dm_history(conn, &ok, &gid, limit, before)
     })
     .await?;
+    // The window displays them: received timers start (plan E7.1).
+    crate::operations::dm::disappearing::displayed(host, group_id).await;
     Ok(rows
         .into_iter()
         .map(|row| DmMessage {
@@ -99,6 +101,8 @@ pub async fn messages(
             timestamp: row.timestamp,
             send_state: row.send_state,
             history_gap_through: row.history_gap_through,
+            expire_seconds: row.expire_seconds,
+            expire_at: row.expire_at,
         })
         .collect())
 }

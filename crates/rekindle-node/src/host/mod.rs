@@ -18,6 +18,9 @@ mod direct_deadline_tests;
 #[cfg(test)]
 mod direct_tests;
 #[cfg(test)]
+mod disappearing_tests;
+mod expiry;
+#[cfg(test)]
 mod friend_admission_tests;
 #[cfg(test)]
 mod friend_answer_tests;

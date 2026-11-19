@@ -83,11 +83,18 @@ pub async fn send(
     let owner = state::owner(host)?;
     let client_id = mint_client_id(host);
     let message_id = client_id_text(&client_id);
+    // The group's timer in force now travels with the message (plan E7.1).
+    let expire_seconds = crate::operations::dm::disappearing::timer(
+        host,
+        group_id,
+        rekindle_types::message::ConversationType::GroupDm,
+    )
+    .await;
     let payload = dm_outbox::payload(&DirectBody::DmText(DmText {
         client_id,
         body: body.to_string(),
         reply_to: None,
-        expire_seconds: 0,
+        expire_seconds,
     }))?;
     let dm = OutgoingDm {
         client_id: message_id.clone(),
@@ -96,8 +103,12 @@ pub async fn send(
         body: body.to_string(),
         timestamp: host.clock().now_ms_i64(),
         reply_to: None,
+        expire_seconds,
     };
     host.outbox()?.enqueue_group(group_id, dm).await?;
+    if expire_seconds > 0 {
+        crate::operations::dm::disappearing::wake(host);
+    }
     // Sending the message ends our typing in the group.
     host.stores()
         .typing_out

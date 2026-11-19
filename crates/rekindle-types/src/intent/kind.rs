@@ -132,6 +132,9 @@ pub enum IntentKind {
     CreateGroupDm,
     /// Leave a group DM: every other member rotates its key.
     LeaveGroupDm,
+    /// Set a DM's or group DM's disappearing-message timer (plan E7.1):
+    /// every other member is told.
+    SetDisappearingTimer,
     // Consequential: Moderation (reversible)
     RemoveTimeout,
     TimeoutMember,
@@ -383,6 +386,7 @@ impl IntentKind {
             | Self::LeaveCommunity
             | Self::CreateGroupDm
             | Self::LeaveGroupDm
+            | Self::SetDisappearingTimer
             | Self::RemoveTimeout
             | Self::TimeoutMember
             | Self::AssignRole

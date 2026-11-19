@@ -22,6 +22,8 @@ fn echo() -> NewDm<'static> {
         owner_key: OWNER,
         peer_key: "bob",
         conversation_type: rekindle_types::message::ConversationType::Dm,
+        expire_seconds: 0,
+        expire_at: None,
         sender_key: OWNER,
         body: "hi",
         timestamp: 1,

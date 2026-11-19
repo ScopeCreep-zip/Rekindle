@@ -50,6 +50,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "delete_identity",
   "delete_role",
   "derive_video_stream_id",
+  "disappearing_set",
   "dm_peer_video_decode_codecs",
   "download_attachment",
   "edit_channel_message",

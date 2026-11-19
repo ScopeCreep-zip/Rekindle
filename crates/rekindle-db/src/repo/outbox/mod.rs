@@ -101,12 +101,15 @@ pub fn append(
     let seq = next_seq(conn, row)?;
     let echo_id = match echo {
         Some(dm) => {
+            let timestamp = written_at(conn, row.owner_key, dm)?;
             let dm = NewDm {
                 owner_key: row.owner_key,
                 message_id: row.client_id,
                 send_state: SendState::Queued,
                 stream_seq: Some(seq),
-                timestamp: written_at(conn, row.owner_key, dm)?,
+                timestamp,
+                // Our own copy's timer runs from its send (plan E7.1).
+                expire_at: rekindle_types::disappearing::expire_at(timestamp, dm.expire_seconds),
                 ..*dm
             };
             Some(insert_dm(conn, &dm)?.id)

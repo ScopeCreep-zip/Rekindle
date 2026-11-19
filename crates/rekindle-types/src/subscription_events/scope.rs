@@ -174,6 +174,21 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
             conversation_id, ..
         } => EventScope::Peer(conversation_id.clone()),
         ChannelMessageEvent::DmHistoryGap { peer_key, .. } => EventScope::Peer(peer_key.clone()),
+        ChannelMessageEvent::DisappearingTimerChanged {
+            conversation_id,
+            conversation_type,
+            ..
+        }
+        | ChannelMessageEvent::MessagesExpired {
+            conversation_id,
+            conversation_type,
+            ..
+        } => match conversation_type {
+            crate::message::ConversationType::GroupDm => {
+                EventScope::Conversation(conversation_id.clone())
+            }
+            _ => EventScope::Peer(conversation_id.clone()),
+        },
         // Bringing a conversation forward is the device's decision.
         ChannelMessageEvent::ConversationFocusRequested { .. } => EventScope::Device,
     }

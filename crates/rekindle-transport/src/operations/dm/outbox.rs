@@ -26,6 +26,9 @@ pub struct OutgoingDm {
     pub body: String,
     pub timestamp: i64,
     pub reply_to: Option<String>,
+    /// The timer the message carries (plan E7.1; 0 = none): our copy
+    /// expires at its stored time + this.
+    pub expire_seconds: u32,
 }
 
 /// The Host's outbox, as the 1:1 operations use it.

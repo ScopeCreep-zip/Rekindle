@@ -235,6 +235,11 @@ pub enum IpcRequest {
     GroupDmDecline { group_id: String },
     /// Leave `group_id`; every other member rotates its key.
     GroupDmLeave { group_id: String },
+    /// Set the disappearing-message timer of `conversation` (a friend's
+    /// key: our DM; a group's 32-hex id: the group DM) to `seconds`
+    /// (0 = off, at most four weeks; plan E7.1). Every other member is
+    /// told and every window shows the notice.
+    DisappearingSet { conversation: String, seconds: u32 },
     /// Send `body` to `group_id`; the answer is the message's client id
     /// once its row and local echo are committed (`queued`, then
     /// `GroupDmEvent::SendStatus`).

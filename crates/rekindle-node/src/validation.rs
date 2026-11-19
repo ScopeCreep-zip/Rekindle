@@ -386,6 +386,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmDecline { .. }
         | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::DisappearingSet { .. }
         | IpcRequest::GroupDmSend { .. }
         | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::GroupDmList
@@ -485,3 +486,14 @@ mod pins;
 mod rich_messaging;
 #[cfg(test)]
 mod tests;
+
+/// The conversation a validated `DisappearingSet` names (plan E7.1): a
+/// group's 32-hex id, else a friend's key.
+#[must_use]
+pub fn conversation_kind(conversation: &str) -> rekindle_types::message::ConversationType {
+    if conversation.len() == 32 {
+        rekindle_types::message::ConversationType::GroupDm
+    } else {
+        rekindle_types::message::ConversationType::Dm
+    }
+}

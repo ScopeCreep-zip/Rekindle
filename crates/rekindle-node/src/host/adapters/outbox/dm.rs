@@ -363,6 +363,7 @@ impl DmOutbox for DmStream {
             body: dm.body,
             timestamp: dm.timestamp,
             reply_to: dm.reply_to,
+            expire_seconds: dm.expire_seconds,
         };
         let enqueued = self.0.enqueue(entry, Some(echo)).await;
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
@@ -383,6 +384,7 @@ impl DmOutbox for DmStream {
             body: dm.body,
             timestamp: dm.timestamp,
             reply_to: dm.reply_to,
+            expire_seconds: dm.expire_seconds,
         };
         let enqueued = self.0.enqueue(entry, Some(echo)).await;
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))

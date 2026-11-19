@@ -5,6 +5,7 @@
 pub mod ack;
 mod chain_seq;
 mod chat;
+pub mod disappearing;
 pub mod frame;
 pub mod handshake;
 pub mod outbox;

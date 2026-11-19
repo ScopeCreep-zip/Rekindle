@@ -52,6 +52,9 @@ pub struct DmEcho {
     pub body: String,
     pub timestamp: i64,
     pub reply_to: Option<String>,
+    /// The timer the message carries (plan E7.1); the outbox's append
+    /// sets our copy's `expire_at` from it.
+    pub expire_seconds: u32,
 }
 
 /// The outbox's host over one unlocked identity.
@@ -221,6 +224,8 @@ impl OutboxDeps for HostOutbox {
                 owner_key: &owner,
                 peer_key: &e.peer_key,
                 conversation_type: e.conversation_type,
+                expire_seconds: e.expire_seconds,
+                expire_at: None,
                 sender_key: &e.sender_key,
                 body: &e.body,
                 timestamp: e.timestamp,

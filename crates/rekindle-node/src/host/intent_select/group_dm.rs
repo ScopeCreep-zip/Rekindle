@@ -31,7 +31,20 @@ pub(super) async fn selection(
             s.reversibility = Reversibility::NeedsOthers;
             return Ok(());
         }
-        IpcRequest::GroupDmAccept { group_id }
+        IpcRequest::DisappearingSet { conversation, .. } if conversation.len() != 32 => {
+            // Our DM with a friend: they are told and shown the notice.
+            if ctx.require_owner().is_ok() {
+                s.subject = super::friends::person(ctx, conversation).await?;
+            }
+            s.notifies = count(1);
+            s.reversibility = Reversibility::NeedsOthers;
+            return Ok(());
+        }
+        IpcRequest::DisappearingSet {
+            conversation: group_id,
+            ..
+        }
+        | IpcRequest::GroupDmAccept { group_id }
         | IpcRequest::GroupDmDecline { group_id }
         | IpcRequest::GroupDmLeave { group_id }
         | IpcRequest::GroupDmSend { group_id, .. } => group_id,

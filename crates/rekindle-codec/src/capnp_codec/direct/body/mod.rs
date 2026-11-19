@@ -21,7 +21,12 @@ pub use calls::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DmVideoFragment,
     GroupCallMember, GroupCallOffer, GroupCallParticipantLeft,
 };
-pub use content::{DmAck, DmDelete, DmEdit, DmReaction, DmText, ReadUpTo, Typing, MAX_DM_ACK_SEQS};
+#[cfg(test)]
+pub(crate) use content::timer_sample;
+pub use content::{
+    DisappearingTimer, DmAck, DmDelete, DmEdit, DmReaction, DmText, ReadUpTo, Typing,
+    MAX_DM_ACK_SEQS,
+};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StreamRecord,
@@ -139,6 +144,7 @@ direct_bodies! {
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,
         StatusRequest(StatusRequest) = status_request,
         StatusResponse(StatusResponse) = status_response,
+        DisappearingTimer(DisappearingTimer) = disappearing_timer,
         GameInvite(GameInvite) = game_invite,
         ProfileBio(ProfileBio) = profile_bio,
         GameTotals(GameTotals) = game_totals,

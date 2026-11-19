@@ -189,6 +189,8 @@ impl SubscriptionEvent {
                 ChannelMessageEvent::DirectMessageReceived { .. }
                 | ChannelMessageEvent::DmSendStatus { .. }
                 | ChannelMessageEvent::DmHistoryGap { .. }
+                | ChannelMessageEvent::DisappearingTimerChanged { .. }
+                | ChannelMessageEvent::MessagesExpired { .. }
                 | ChannelMessageEvent::ConversationFocusRequested { .. } => None,
             },
             Self::Typing(e) => match e {

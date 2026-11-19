@@ -127,6 +127,18 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::GameTotals(t) => {
             applied = game_totals::on_game_totals(host, sender, t).await;
         }
+        // A group's timer is checked against the group it names; a DM's
+        // needs the friend gate (plan E7.1).
+        DirectBody::DisappearingTimer(t) if t.group_id.is_some() => {
+            applied = crate::operations::dm::disappearing::on_timer(host, sender, t).await;
+        }
+        DirectBody::DisappearingTimer(t) => {
+            if !super::admission::friend_admitted(host, sender, DmTypeId::DisappearingTimer).await {
+                processed(host, &opened);
+                return Applied::Refused;
+            }
+            applied = crate::operations::dm::disappearing::on_timer(host, sender, t).await;
+        }
         DirectBody::StreamRecord(r) if r.group_id.is_some() => {
             applied = crate::operations::group_dm::on_stream_record(host, sender, r).await;
         }
@@ -254,6 +266,7 @@ async fn direct_message(
         reply_to: reply_to.clone(),
         send_state: rekindle_types::message::SendState::Delivered,
         stream_seq: i64::try_from(stream_seq).ok().filter(|s| *s >= 1),
+        expire_seconds: text.expire_seconds,
     };
     let timestamp = match fields.store_received(host).await {
         Ok((stored, at)) if stored.inserted => at,

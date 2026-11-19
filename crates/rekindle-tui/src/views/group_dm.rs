@@ -244,6 +244,8 @@ impl View for GroupDmListView {
                         is_own: false,
                         send_state: SendState::Delivered,
                         history_gap_through: None,
+                        expire_seconds: 0,
+                        expire_at: None,
                     });
                 }
             }
@@ -362,6 +364,8 @@ mod tests {
                 is_own: false,
                 send_state: SendState::Delivered,
                 history_gap_through: None,
+                expire_seconds: 0,
+                expire_at: None,
             }],
         })
         .unwrap();

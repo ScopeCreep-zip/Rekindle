@@ -1,0 +1,112 @@
+//! Disappearing messages on the Host (plan E7.1): the timer is stored and
+//! told to the friend on our DM stream, our next message carries it and
+//! expires from its send, a received one's timer starts at its display,
+//! and the expiry pass deletes what is due with its outbox row.
+
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmText};
+use rekindle_transport::operations::direct::replay_unprocessed;
+use rekindle_transport::operations::dm::{self, disappearing};
+use rekindle_types::message::ConversationType;
+
+use super::adapters::friends::HostFriends;
+use super::direct_tests::{ann, befriend, pending};
+use super::runtime::Host;
+
+/// `(expire_seconds, expire_at)` of each message with `peer`, oldest first.
+async fn expiries(host: &Host, owner: [u8; 32], peer: [u8; 32]) -> Vec<(u32, Option<i64>)> {
+    let (o, p) = (hex::encode(owner), hex::encode(peer));
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::messages::dm_history(conn, &o, &p, 50, None))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|m| (m.expire_seconds, m.expire_at))
+        .collect()
+}
+
+/// Our outbox rows on the DM stream to `peer`.
+async fn outbox_rows(host: &Host, owner: [u8; 32], peer: &str) -> usize {
+    let (o, stream) = (hex::encode(owner), format!("dm:{peer}"));
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::outbox::stream_rows(conn, &o, &stream))
+        .await
+        .unwrap()
+        .len()
+}
+
+#[tokio::test]
+async fn our_timer_is_told_and_our_message_expires_from_its_send() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let bob = rekindle_crypto::Identity::generate().public_key_bytes();
+    befriend(&host, owner, bob).await;
+    let friends = HostFriends::of(&host.ctx);
+    let peer = hex::encode(bob);
+
+    let before = outbox_rows(&host, owner, &peer).await;
+    disappearing::set(&friends, &peer, ConversationType::Dm, 30)
+        .await
+        .unwrap();
+    assert_eq!(
+        outbox_rows(&host, owner, &peer).await,
+        before + 1,
+        "the timer goes to Bob"
+    );
+    assert!(
+        disappearing::set(&friends, &peer, ConversationType::Dm, 2_419_201)
+            .await
+            .is_err()
+    );
+
+    let sent = dm::send_dm(&friends, &peer, "gone soon", None, false)
+        .await
+        .unwrap();
+    assert_eq!(sent.expire_seconds, 1);
+    assert_eq!(sent.expire_at, Some(sent.timestamp + 1_000));
+
+    // Due after its second: the pass deletes it and its send.
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    assert_eq!(disappearing::expire_due(&friends).await.unwrap(), None);
+    assert!(expiries(&host, owner, bob).await.is_empty());
+    assert_eq!(
+        outbox_rows(&host, owner, &peer).await,
+        before + 1,
+        "only the timer's row is left"
+    );
+}
+
+#[tokio::test]
+async fn a_received_timer_starts_when_the_window_displays_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let bob = rekindle_crypto::Identity::generate().public_key_bytes();
+    befriend(&host, owner, bob).await;
+    let friends = HostFriends::of(&host.ctx);
+    let text = DirectBody::DmText(DmText {
+        client_id: [3; 16],
+        body: "psst".into(),
+        reply_to: None,
+        expire_seconds: 60,
+    });
+    pending(&host, owner, bob, 0, &text).await;
+    replay_unprocessed(&friends).await;
+    assert_eq!(
+        expiries(&host, owner, bob).await,
+        [(60, None)],
+        "unread: not started"
+    );
+
+    dm::mark_read(&friends, &hex::encode(bob), None)
+        .await
+        .unwrap();
+    let started = expiries(&host, owner, bob).await;
+    let at = started[0].1.expect("displayed: started");
+    let now = rekindle_utils::timestamp_ms_i64();
+    assert!((now + 50_000..=now + 60_000).contains(&at), "{at} vs {now}");
+}

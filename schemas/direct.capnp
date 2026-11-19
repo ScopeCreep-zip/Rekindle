@@ -220,6 +220,14 @@ struct Typing {
   typing @0 :Bool;
 }
 
+# 0x0160 (E7.1), inside the ratchet (a group's on each member's pairwise
+# ratchet): the conversation's disappearing-message timer, seconds, set by
+# either side; 0 turns it off. More than four weeks refuses the frame.
+struct DisappearingTimer {
+  seconds @0 :UInt32;
+  groupId @1 :Data;                     # 16 for a group DM (E2.6); empty for a DM
+}
+
 # --- Group DMs (plan E2.6: 3-8 members, no governance, sender-owned keys).
 # 0x0120-0x0123 ride each member's pairwise ratchet; 0x0124 is the entry
 # of a member's group chain, sealed under that member's sending key. ---

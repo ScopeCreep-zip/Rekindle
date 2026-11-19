@@ -172,6 +172,8 @@
   },
   "dm.historyGap": {
     "body": "",
+    "expireAt": null,
+    "expireSeconds": 0,
     "historyGapThrough": 4,
     "id": 10,
     "isOwn": false,
@@ -189,6 +191,8 @@
   },
   "dm.message": {
     "body": "gg",
+    "expireAt": null,
+    "expireSeconds": 0,
     "historyGapThrough": null,
     "id": 9,
     "isOwn": true,

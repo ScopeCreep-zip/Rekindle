@@ -23,6 +23,10 @@ pub struct DmMessage {
     /// this seq were retired before we fetched them; shown as a gap line,
     /// never a bubble. `None` for a message.
     pub history_gap_through: Option<u64>,
+    /// The disappearing timer it carries (plan E7.1; 0 = none) and when it
+    /// is deleted (ms), `None` while a received one waits to be displayed.
+    pub expire_seconds: u32,
+    pub expire_at: Option<i64>,
 }
 
 /// The latest message of one direct conversation.

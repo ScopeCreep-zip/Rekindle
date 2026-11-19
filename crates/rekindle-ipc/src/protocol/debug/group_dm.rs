@@ -25,6 +25,14 @@ impl IpcRequest {
                 .debug_struct("GroupDmLeave")
                 .field("group_id", group_id)
                 .finish(),
+            Self::DisappearingSet {
+                conversation,
+                seconds,
+            } => f
+                .debug_struct("DisappearingSet")
+                .field("conversation", conversation)
+                .field("seconds", seconds)
+                .finish(),
             Self::GroupDmSend { group_id, body } => f
                 .debug_struct("GroupDmSend")
                 .field("group_id", group_id)

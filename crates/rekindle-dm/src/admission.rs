@@ -5,6 +5,7 @@
 //! - the group kinds 0x0120-0x0124, naming that group;
 //! - 0x0107 `StreamRecord` naming that group (the record it announces is
 //!   stored as the sender's own chain there, never another member's);
+//! - 0x0160 `DisappearingTimer` naming that group (plan E7.1);
 //! - the `PreKeyInit` that opens the pair's session, when its first
 //!   payload is itself admitted.
 //!
@@ -34,6 +35,9 @@ pub enum GroupFrame<'a> {
     /// A `StreamRecord` announcing `record_key`, for `group_id` when it is
     /// a group chain.
     StreamRecord { group_id: Option<&'a GroupId> },
+    /// A `DisappearingTimer` (plan E7.1), for `group_id` when it is a
+    /// group's (a DM's needs the friend gate).
+    DisappearingTimer { group_id: Option<&'a GroupId> },
     /// A `PreKeyInit` whose first payload is `first`.
     PreKeyInit { first: &'a GroupFrame<'a> },
 }
@@ -93,7 +97,7 @@ pub fn admit(
                 Admission::NotOnRoster
             }
         }
-        GroupFrame::StreamRecord { group_id } => {
+        GroupFrame::StreamRecord { group_id } | GroupFrame::DisappearingTimer { group_id } => {
             let Some(id) = group_id else {
                 return Admission::KindRefused;
             };

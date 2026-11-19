@@ -138,6 +138,30 @@ async fn watch_dms(
             "! some earlier messages from {} could not be delivered (through #{through_seq})",
             rekindle_client::fmt::abbreviate_key(peer_key)
         )),
+        // A disappearing-message timer change (plan E7.1).
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DisappearingTimerChanged {
+            conversation_id,
+            seconds,
+            set_by,
+            ..
+        }) if friend.is_none_or(|f| f == conversation_id) => Some(format!(
+            "* {} set disappearing messages to {}",
+            rekindle_client::fmt::abbreviate_key(set_by),
+            if *seconds == 0 {
+                "off".to_owned()
+            } else {
+                format!("{seconds} s")
+            }
+        )),
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::MessagesExpired {
+            conversation_id,
+            client_ids,
+            ..
+        }) if friend.is_none_or(|f| f == conversation_id) => Some(format!(
+            "* {} message(s) with {} disappeared",
+            client_ids.len(),
+            rekindle_client::fmt::abbreviate_key(conversation_id)
+        )),
         SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
             peer_key,
             display_name,
