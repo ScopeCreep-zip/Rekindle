@@ -10,7 +10,10 @@ use rekindle_codec::community::envelope::SignedEnvelope;
 use crate::state::{AppState, OnlineMember};
 
 /// Queue an envelope for a mesh broadcast that could not go out yet,
-/// evicting the oldest once the queue is full.
+/// evicting the oldest once the queue is full. A community whose overlay
+/// the presence poll has not built yet (just joined) gets an empty one
+/// here, still awaiting its initial sync, so the send waits for that poll
+/// instead of being dropped.
 pub(super) fn enqueue_pending_mesh(
     state: &Arc<AppState>,
     community_id: &str,
@@ -20,9 +23,9 @@ pub(super) fn enqueue_pending_mesh(
     let Some(community) = communities.get_mut(community_id) else {
         return;
     };
-    let Some(ref mut gossip) = community.gossip else {
-        return;
-    };
+    let gossip = community
+        .gossip
+        .get_or_insert_with(crate::state::GossipOverlay::default);
     if gossip.pending_mesh_broadcasts.len() >= rekindle_gossip::MAX_PENDING_MESH {
         gossip.pending_mesh_broadcasts.pop_front();
     }

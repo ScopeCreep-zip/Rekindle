@@ -26,9 +26,36 @@ impl HostGovernance {
     /// `Control(..)` and, within that, only the variants transport had a
     /// postcard helper for — everything else returned "this control
     /// variant has no transport gossip". Every variant now goes, in the
-    /// Cap'n Proto form desktop peers read. See `daemon::gossip`.
-    pub(super) fn send_to_mesh_impl(&self, community_id: &str, envelope: &CommunityEnvelope) {
+    /// Cap'n Proto form desktop peers read. See `daemon::gossip`. A send
+    /// the shell refused is logged ([`Self::send_to_mesh_checked`]).
+    pub(crate) fn send_to_mesh_impl(&self, community_id: &str, envelope: &CommunityEnvelope) {
+        if let Err(error) = self.send_to_mesh_checked(community_id, envelope) {
+            tracing::warn!(community = %community_id, %error, "mesh send refused by the shell");
+        }
+    }
+
+    /// [`Self::send_to_mesh_impl`], answering whether the envelope reached
+    /// the mesh. In the shell the gossip worker does not run
+    /// (`host::runtime` spawns it in daemon mode only, so its queue has no
+    /// reader): the envelope goes to the shell's mesh
+    /// (`ShellHooks::send_to_mesh`, until E3.4 ports the mesh). Queued on
+    /// the worker there, the governance-op fast path (`gossip_op`), the
+    /// join announcement, the `HeadAdvanced` hints and the held-behind key
+    /// requests were dropped on the desktop, and a removal reached the
+    /// removed member only through the remover's frontier watch.
+    ///
+    /// # Errors
+    /// The shell could not hand the envelope to its mesh.
+    pub(crate) fn send_to_mesh_checked(
+        &self,
+        community_id: &str,
+        envelope: &CommunityEnvelope,
+    ) -> Result<(), String> {
+        if let Some(shell) = &self.ctx.shell {
+            return shell.send_to_mesh(community_id, envelope);
+        }
         crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
+        Ok(())
     }
 
     /// Open the community's gossip mesh as its membership is recorded, before

@@ -211,13 +211,8 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), GovernanceRuntimeError> {
-        if let Some(shell) = &self.ctx.shell {
-            return shell
-                .send_to_mesh(community_id, envelope)
-                .map_err(GovernanceRuntimeError::Adapter);
-        }
-        self.send_to_mesh_impl(community_id, envelope);
-        Ok(())
+        self.send_to_mesh_checked(community_id, envelope)
+            .map_err(GovernanceRuntimeError::Adapter)
     }
 
     // ---------- Permissions ----------
@@ -467,6 +462,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
         logs: &rekindle_governance_runtime::op_walk::WalkLogCache,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
         self.fetch_governance_op_impl(op_ref, logs).await
+    }
+
+    fn gossip_governance_op(&self, community_id: &str, encoded: &[u8]) {
+        self.gossip_op(community_id, encoded.to_vec());
     }
 
     async fn publish_governance_op(

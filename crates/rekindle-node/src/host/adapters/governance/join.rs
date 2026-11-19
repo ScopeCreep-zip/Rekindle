@@ -256,6 +256,7 @@ impl HostGovernance {
         };
         let queued = std::sync::atomic::AtomicBool::new(false);
         let publish_ops = async {
+            self.gossip_op(community, outcome.joined.encoded.clone());
             match self
                 .publish_governance_op(
                     community,

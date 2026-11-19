@@ -154,9 +154,7 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
                         Arc::clone(&adapter),
                         &community_id,
                         &envelope,
-                    )
-                    .await
-                    {
+                    ) {
                         tracing::warn!(
                             community = %community_id,
                             %error,

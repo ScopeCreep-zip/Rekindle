@@ -289,7 +289,7 @@ impl HostGovernance {
                     .publish_answer(
                         community_id,
                         &record,
-                        encoded.clone(),
+                        encoded,
                         rekindle_types::config::GOVERNANCE_ANSWER_BOUND,
                     )
                     .await
@@ -307,34 +307,33 @@ impl HostGovernance {
                     .publish_invite_created(
                         community_id,
                         &record,
-                        encoded.clone(),
+                        encoded,
                         invite_id,
                         rekindle_types::config::NETWORK_ANSWER_DEADLINE,
                     )
                     .await
                     .map_err(|e| adapter("publish op", e))?;
                 // The command is refused, but the op stands (it is in our
-                // state and the outbox lands it), so the members hear it now.
+                // state, gossiped, and the outbox lands it).
                 if let crate::host::adapters::outbox::Published::Queued(reason) = published {
                     tracing::warn!(community = %community_id, %reason, "governance op not yet published, queued");
-                    self.gossip_op(community_id, encoded);
                     return Err(GovernanceRuntimeError::NotYetPublished);
                 }
                 rekindle_governance_runtime::OpOutcome::Landed
             }
             rekindle_governance_runtime::OpLanding::Queued => {
-                ops.queue(community_id, &record, encoded.clone())
+                ops.queue(community_id, &record, encoded)
                     .await
                     .map_err(|e| adapter("queue op", e))?;
                 rekindle_governance_runtime::OpOutcome::Pending
             }
         };
-        self.gossip_op(community_id, encoded);
         Ok(outcome)
     }
 
-    /// The fast path: every member hears the op before its watch fires.
-    fn gossip_op(&self, community_id: &str, encoded: Vec<u8>) {
+    /// The fast path: every member hears the op before its watch fires
+    /// (`GovernanceRuntimeDeps::gossip_governance_op`, before the install).
+    pub(super) fn gossip_op(&self, community_id: &str, encoded: Vec<u8>) {
         self.send_to_mesh_impl(
             community_id,
             &rekindle_codec::community::envelope::CommunityEnvelope::Control(

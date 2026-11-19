@@ -93,13 +93,23 @@ pub(super) fn apply_gossip_rebuild_plan(
     let Some(cs) = communities.get_mut(community_id) else {
         return;
     };
+    // Broadcasts held since the snapshot took the queue sit behind the
+    // ones still waiting, in send order (the daemon's
+    // `apply_gossip_plan_impl` does the same); replacing the queue lost them.
+    let mut pending = plan.remaining_pending;
+    if let Some(held) = cs.gossip.take() {
+        pending.extend(held.pending_mesh_broadcasts);
+    }
+    while pending.len() > rekindle_gossip::MAX_PENDING_MESH {
+        pending.pop_front();
+    }
     // The plan's maps are already the state's maps: one `OnlineMember`
     // type now, so there is nothing to convert between them.
     cs.gossip = Some(GossipOverlay {
         peers: plan.peers,
         online_members: plan.online_members,
         needs_initial_sync: plan.needs_initial_sync,
-        pending_mesh_broadcasts: plan.remaining_pending,
+        pending_mesh_broadcasts: pending,
     });
 }
 

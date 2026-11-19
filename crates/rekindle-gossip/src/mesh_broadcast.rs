@@ -74,7 +74,11 @@ pub(crate) fn sign_and_record<D: GossipDeps>(
 /// Encode + sign the envelope, insert the dedup key, then fan out via
 /// `send_to_mesh_raw`. The envelope's Lamport timestamp was taken from
 /// the community clock when it was built — that is the send's one tick.
-pub async fn send_to_mesh<D: GossipDeps>(
+///
+/// Synchronous up to the fan-out spawn: the peers are the overlay's at the
+/// call, so a caller that changes the overlay next (a removal's install
+/// prunes its target) has already chosen whom the envelope goes to.
+pub fn send_to_mesh<D: GossipDeps>(
     deps: Arc<D>,
     community_id: &str,
     envelope: &CommunityEnvelope,
@@ -85,7 +89,7 @@ pub async fn send_to_mesh<D: GossipDeps>(
 }
 
 /// Fan-out a pre-signed envelope. Idempotent + crash-safe by design:
-/// if `current_peers` returns zero, the envelope is queued for the
+/// if `current_peers` returns zero or no overlay, the envelope is queued for the
 /// next presence-poll cycle instead of being dropped (architecture
 /// A1/P4.1). On a non-empty peer list, ranks by reliability +
 /// applies the architecture §3 fan-out degree + spawns a single
@@ -95,14 +99,10 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
     // The `'G'` gossip datagram (§6 ingress ledger), as every gossip send.
     let signed_bytes = gossip_datagram(&signed);
 
-    let Some(peers) = deps.current_peers(community_id) else {
-        tracing::warn!(
-            community = %community_id,
-            "send_to_mesh_raw: community or gossip overlay missing",
-        );
-        return;
-    };
-
+    // No overlay yet (a community just joined, before its first presence
+    // poll builds one) holds the send like an empty one: the poll that
+    // lands peers drains it (architecture A1/P4.1).
+    let peers = deps.current_peers(community_id).unwrap_or_default();
     if peers.is_empty() {
         deps.enqueue_pending_mesh(community_id, signed);
         tracing::info!(
@@ -351,13 +351,15 @@ mod tests {
         assert!(st.reliability.is_empty());
     }
 
+    /// A send before the overlay is built (just joined, no presence poll
+    /// yet) is held for the drain, not dropped.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn missing_overlay_logs_and_returns() {
+    async fn missing_overlay_enqueues_for_the_drain() {
         let deps = Arc::new(MockDeps::new());
         // peers = None means overlay missing.
         send_to_mesh_raw(Arc::clone(&deps), "c1", fake_signed(b"hello"));
         let st = deps.state.lock();
-        assert!(st.pending_queue.is_empty());
+        assert_eq!(st.pending_queue.len(), 1);
         assert!(st.sent_payloads.is_empty());
     }
 

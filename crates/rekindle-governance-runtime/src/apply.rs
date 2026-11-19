@@ -50,8 +50,8 @@ fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
 }
 
 /// Apply a governance entry as our next signed op: validate it against the
-/// merged state, store it in `governance_ops`, re-merge, emit the UI
-/// events, gossip it and publish it on the governance-op outbox stream,
+/// merged state, store it in `governance_ops`, gossip it, re-merge, emit
+/// the UI events and publish it on the governance-op outbox stream,
 /// answering after its first attempt or `GOVERNANCE_ANSWER_BOUND`,
 /// whichever comes first (plan E3.2 S6b, RV4 review M1/M2): `Landed`, or
 /// `Pending` (applied, gossiped, queued; the outbox lands it and the
@@ -202,6 +202,7 @@ async fn write<D: GovernanceRuntimeDeps>(
         &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
     )
     .await?;
+    deps.gossip_governance_op(community_id, &encoded);
 
     // The state every reader merges from the op set with this op in it.
     let mut ops = set.ops;

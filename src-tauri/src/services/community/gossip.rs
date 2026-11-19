@@ -30,20 +30,12 @@ pub fn send_to_mesh(
     let Some(adapter) = build_adapter(state) else {
         return Err("app handle / db pool unavailable".to_string());
     };
-    let adapter = Arc::new(adapter);
-    let cid = community_id.to_string();
-    let env = envelope.clone();
-    // Pre-port src-tauri `send_to_mesh` was sync (returned `Result`).
-    // The crate orchestrator is async because trait methods are async;
-    // every caller already runs on a tokio worker, so spawn the
-    // pipeline and return immediately — preserves the prior
-    // fire-and-forget semantics (pipeline errors are logged inside).
-    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop("mesh send", async move {
-        if let Err(error) = rekindle_gossip::send_to_mesh(adapter, &cid, &env).await {
-            tracing::warn!(community = %cid, %error, "send_to_mesh: pipeline error");
-        }
-    });
-    Ok(())
+    // Signed and its peers chosen here, from the overlay as it stands at
+    // the call (the per-peer sends are spawned): the Host gossips a
+    // removal's op and then installs the state that prunes its target, so
+    // a send deferred to a task would miss the member it removes.
+    rekindle_gossip::send_to_mesh(Arc::new(adapter), community_id, envelope)
+        .map_err(|error| format!("send_to_mesh: {error}"))
 }
 
 /// Architecture §10.6 — directed channel-scoped send for voice/video

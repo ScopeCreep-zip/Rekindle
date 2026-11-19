@@ -175,9 +175,10 @@ impl shell_hooks::ShellHooks for Recorder {
     }
     fn send_to_mesh(
         &self,
-        _community_id: &str,
+        community_id: &str,
         _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<(), String> {
+        self.0.lock().push(format!("mesh {community_id}"));
         Ok(())
     }
     fn community_left(&self, _community_id: &str) {}
@@ -217,6 +218,29 @@ impl shell_hooks::ShellHooks for Recorder {
         _projected: &crate::host::adapters::governance::projection::GovernanceProjected,
     ) {
     }
+}
+
+/// In the shell the gossip worker does not run, so the Host's own gossip
+/// (the governance-op fast path, the join announcement, the `HeadAdvanced`
+/// hints) goes to the shell's mesh; queued on the worker it was dropped and
+/// a kick reached the removed member only through the frontier watch.
+#[tokio::test]
+async fn the_host_gossips_through_the_shell_mesh() {
+    use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+    let dir = tempfile::tempdir().unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let host = offline_host_with(&dir, Some(recorder.clone())).await;
+    let notice = CommunityEnvelope::Control(ControlPayload::Kick {
+        target_pseudonym: "ab".repeat(32),
+    });
+    crate::host::adapters::governance::HostGovernance::new(Arc::clone(&host.ctx))
+        .send_to_mesh_impl("community-1", &notice);
+    host.shutdown().await.unwrap();
+    assert!(
+        recorder.0.lock().iter().any(|e| e == "mesh community-1"),
+        "{:?}",
+        recorder.0.lock()
+    );
 }
 
 /// The Host calls the shell at its fixed points: after its own stages,
