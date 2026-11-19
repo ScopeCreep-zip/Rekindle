@@ -10,10 +10,9 @@ use crate::state_helpers;
 
 /// Route a watched record's change: a governance record (or a Plate Gate
 /// segment's) to the Host's governance arm, which rebuilds that community
-/// alone and opens the channel records it newly names (plan E3.1 C1); a
-/// channel record to the Host's channel ingest; a registry to a presence
-/// tick. `Ok(false)`
-/// for a record no community holds; `NotLoggedIn` while locked.
+/// alone (plan E3.1 C1); a registry to a presence tick (channel posts
+/// ride their authors' `M`/4 outboxes, read by the ring's watch, plan
+/// E3.3). `Ok(false)` for a record no community holds; `NotLoggedIn` while locked.
 pub(crate) async fn handle_community_record_change(
     state: &Arc<AppState>,
     dht_key: &str,
@@ -25,15 +24,6 @@ pub(crate) async fn handle_community_record_change(
     {
         return Ok(true);
     }
-    // A channel record: each changed slot's entries pass the Host's ingest
-    // and its D26 gate, as on the daemon (`daemon/handler.rs`).
-    if state_helpers::host_channel(state)?
-        .on_record_change(dht_key, subkeys)
-        .await
-    {
-        return Ok(true);
-    }
-
     let changed = {
         let communities = state.communities.read();
         communities.values().find_map(|community| {

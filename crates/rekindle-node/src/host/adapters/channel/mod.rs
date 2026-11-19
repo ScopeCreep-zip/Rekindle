@@ -37,7 +37,6 @@ mod outbox_read;
 pub(crate) mod outbox_send;
 mod persist;
 mod received;
-mod record_change;
 pub(crate) mod rich;
 pub mod stage_sound;
 mod state;

@@ -341,8 +341,6 @@ impl InboundHandler for DaemonHandler {
     ) {
         debug!(record_key, subkeys = ?changed_subkeys, "handler: on_value_change");
 
-        // An invite's inbox, a friend's participant record or a friend's
-        // profile: the Host reads every changed subkey (plan E2.5).
         // A community's governance record: that community is rebuilt (plan
         // E3.1 C1); otherwise an invite's inbox, a friend's participant
         // record or a friend's profile: the Host reads every changed subkey
@@ -360,17 +358,7 @@ impl InboundHandler for DaemonHandler {
             }
             None => false,
         };
-        // A channel record: each changed slot's posts pass the Host's
-        // ingest and its D26 gate (A/B finding R2-4).
-        let channel = match self.host.get().and_then(std::sync::Weak::upgrade) {
-            Some(ctx) if !rebuilt => {
-                crate::host::adapters::channel::HostChannel::new(&ctx)
-                    .on_record_change(record_key, &changed_subkeys)
-                    .await
-            }
-            _ => false,
-        };
-        if !rebuilt && !channel {
+        if !rebuilt {
             if let Some(host) = self.friends() {
                 host.on_watched_change(record_key, &changed_subkeys, first_value.as_deref())
                     .await;
