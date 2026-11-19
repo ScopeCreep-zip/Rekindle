@@ -134,7 +134,8 @@ groups them by concern.
 - **`communities`** — joined communities. Tracks DHT record keys
   (`manifest_key`, `member_registry_key`; the id is the anchor `A`'s key), our
   pseudonym, current MEK generation, plate-gate `my_segment_index`,
-  `my_subkey_index`, and `lamport_clock`.
+  `my_subkey_index`, `lamport_clock`, and `beat_seq` (our `M`/1 beat count,
+  advanced and persisted before each beat; plan E3.4 S1).
 - **`channels`** — channels within communities. Types: `text`,
   `voice`, `announcement`, `forum`, `stage`, `directory`, `media`,
   `events`, `dm`. Includes `topic`, `slowmode_seconds`, `nsfw`,

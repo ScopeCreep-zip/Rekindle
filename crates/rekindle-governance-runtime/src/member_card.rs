@@ -21,8 +21,8 @@ use rekindle_records::port::OpenIntent;
 use std::future::Future;
 
 use rekindle_codec::member_record::{
-    beat::decode_presence_beat, card::decode_member_card, MemberCard, PresenceBeat, RecordScope,
-    SignedMemberCard,
+    beat::decode_presence_beat, beat_number_at, card::decode_member_card, MemberCard, PresenceBeat,
+    RecordScope, SignedMemberCard, BEAT_PERIOD_MS,
 };
 use rekindle_records::port::{RecordPort, SetOutcome};
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -32,9 +32,30 @@ use rekindle_types::presence::SessionStatus;
 use rekindle_utils::random::RandomSource;
 use zeroize::Zeroizing;
 
-/// A beat's lifetime: E3.4 writes it every 60 s with
-/// `expiresAt = now + 150 s` (the 2.5x rule the friend TTL uses).
-pub const BEAT_LIFETIME_MS: u64 = 150_000;
+/// How long a beat shows its member live: 3 × the 5-minute mean beat
+/// period (plan E3.4 "Staleness"; Matrix Synapse's federation timeout is
+/// the same order).
+pub const BEAT_LIVENESS_MS: u64 = 3 * BEAT_PERIOD_MS;
+
+/// Whether a beat still shows its member live at `now_ms` on our clock
+/// (plan E3.4 Q4): for [`BEAT_LIVENESS_MS`] from the later of its beat
+/// number's time (the start of the writer's 5-minute period) and
+/// `arrived_at_ms`, when a watch or hint delivered it to us as a change. A
+/// writer whose clock runs behind ours is then still live for 15 minutes
+/// after its beat arrives.
+///
+/// A beat read cold, with nothing telling when it was written (a joiner's
+/// bootstrap read), has no arrival (`None`): only its beat number counts,
+/// since the read's own time says nothing of the beat's age.
+///
+/// The state is not judged here: an `Offline` or `Departed` beat is never
+/// live ([`BeatState::is_present`](rekindle_codec::member_record::BeatState::is_present)).
+#[must_use]
+pub fn beat_is_live(beat_number: u64, arrived_at_ms: Option<u64>, now_ms: u64) -> bool {
+    let written = beat_number.saturating_mul(BEAT_PERIOD_MS);
+    let from = arrived_at_ms.map_or(written, |arrived| arrived.max(written));
+    now_ms < from.saturating_add(BEAT_LIVENESS_MS)
+}
 
 /// The card reads a refresh keeps in flight: half of Veilid's
 /// `max_concurrent_operations` (16, veilid-core 0.5.8
@@ -75,6 +96,9 @@ impl OwnRecord<'_> {
 pub struct OwnProfile {
     pub display_name: String,
     pub status: SessionStatus,
+    /// Our beat's `seq`: the next of `communities.beat_seq`, persisted
+    /// before the write (`GovernanceRuntimeDeps::next_beat_seq`).
+    pub beat_seq: u64,
     /// Now, on the host's clock (ms).
     pub now_ms: u64,
     /// Our current general route blob, for `M`/6; empty while no route is
@@ -136,7 +160,8 @@ pub async fn write_card(
     write_subkey(port, own, member_record::CARD, bytes).await
 }
 
-/// Write our first beat (`M`/1), without extras.
+/// Write our first beat (`M`/1), without extras: `profile.beat_seq` and
+/// the beat number of `profile.now_ms`, padded with bytes from `rng`.
 ///
 /// # Errors
 /// The beat does not encode, or the write did not land.
@@ -144,16 +169,17 @@ pub async fn write_beat(
     port: &dyn RecordPort,
     own: &OwnRecord<'_>,
     profile: &OwnProfile,
+    rng: &dyn RandomSource,
 ) -> Result<(), String> {
     let beat = PresenceBeat {
-        seq: 0,
-        status: profile.status,
+        seq: profile.beat_seq,
+        state: profile.status.into(),
         voice_channel: None,
-        expires_at: profile.now_ms.saturating_add(BEAT_LIFETIME_MS),
+        beat_number: beat_number_at(profile.now_ms),
         extras: None,
     };
     let bytes = beat
-        .encode(own.scope(), own.pseudonym)
+        .encode(own.scope(), own.pseudonym, rng)
         .map_err(|e| format!("presence beat: {e}"))?;
     write_subkey(port, own, member_record::BEAT, bytes).await
 }
@@ -170,6 +196,7 @@ pub async fn publish_own_record<F>(
     own: &OwnRecord<'_>,
     profile: &OwnProfile,
     hpke_secret: &[u8; 32],
+    rng: &dyn RandomSource,
     publish_ops: F,
 ) -> Result<(), String>
 where
@@ -180,7 +207,7 @@ where
         crate::member_routes::write_routes(port, own, &profile.route, profile.now_ms).await?;
     }
     publish_ops.await?;
-    write_beat(port, own, profile).await
+    write_beat(port, own, profile, rng).await
 }
 
 /// A member's record as their `MemberJoined` names it.

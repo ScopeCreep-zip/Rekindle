@@ -375,6 +375,10 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     let profile = crate::member_card::OwnProfile {
         display_name: deps.identity_display_name(),
         status: deps.identity_status(),
+        beat_seq: deps
+            .next_beat_seq(&anchor_key)
+            .await
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: beat seq: {e}")))?,
         now_ms: deps.clock().now_ms(),
         route: deps.our_route_blob(),
     };
@@ -394,9 +398,17 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         }
         Ok(())
     };
-    crate::member_card::publish_own_record(&*port, &own, &profile, &hpke_secret, publish_ops)
-        .await
-        .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: {e}")))?;
+    let rng = deps.rng();
+    crate::member_card::publish_own_record(
+        &*port,
+        &own,
+        &profile,
+        &hpke_secret,
+        &*rng,
+        publish_ops,
+    )
+    .await
+    .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: {e}")))?;
 
     deps.ensure_files_cache_open(&anchor_key);
     deps.persist_discovered_registry_members(

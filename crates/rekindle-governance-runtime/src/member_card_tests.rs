@@ -11,7 +11,9 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::presence::SessionStatus;
 
-use super::{write_beat, write_card, OwnProfile, OwnRecord};
+use rekindle_utils::random::OsRandom;
+
+use super::{beat_is_live, write_beat, write_card, OwnProfile, OwnRecord, BEAT_LIVENESS_MS};
 
 #[tokio::test]
 async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
@@ -32,6 +34,7 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
     let profile = OwnProfile {
         display_name: "Ida".into(),
         status: SessionStatus::Online,
+        beat_seq: 1,
         now_ms: 1_000,
         route: Vec::new(),
     };
@@ -39,11 +42,13 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
     write_card(&*pool, &own, &profile, &[3; 32])
         .await
         .expect("a card that settled on ours is stored");
-    write_beat(&*pool, &own, &profile)
+    write_beat(&*pool, &own, &profile, &OsRandom)
         .await
         .expect("a beat that settled on ours is stored");
     dht.contest(Contest::None);
-    write_beat(&*pool, &own, &profile)
+    // A beat's padding is fresh at each encode, so the identical rewrite
+    // is the card's.
+    write_card(&*pool, &own, &profile, &[3; 32])
         .await
         .expect("an identical rewrite (Unchanged) is stored");
     assert!(dht.value(&record, member_record::CARD).is_some());
@@ -121,4 +126,49 @@ fn a_refresh_reads_every_card_but_ours_and_the_named() {
         .map(|m| m.record)
         .collect();
     assert_eq!(read, vec!["M0"]);
+}
+
+/// Plan E3.4 Q4: a beat is live for 15 minutes from the later of its beat
+/// number's time and its arrival, at both edges and under skewed clocks.
+#[test]
+fn a_beat_is_live_for_15_minutes_from_the_later_of_its_number_and_its_arrival() {
+    use rekindle_codec::member_record::{beat_number_at, BEAT_PERIOD_MS};
+
+    assert_eq!(BEAT_LIVENESS_MS, 15 * 60 * 1000);
+    let number = 5_871_000;
+    let written = number * BEAT_PERIOD_MS;
+    assert_eq!(beat_number_at(written + BEAT_PERIOD_MS - 1), number);
+    // Read cold: only the number counts, up to the last millisecond.
+    assert!(beat_is_live(number, None, written));
+    assert!(beat_is_live(number, None, written + BEAT_LIVENESS_MS - 1));
+    assert!(!beat_is_live(number, None, written + BEAT_LIVENESS_MS));
+    // The writer's clock runs an hour behind ours: its number is an hour
+    // old when it arrives, and it is live for 15 minutes from the arrival.
+    let arrived = written + 60 * 60 * 1000;
+    assert!(beat_is_live(
+        number,
+        Some(arrived),
+        arrived + BEAT_LIVENESS_MS - 1
+    ));
+    assert!(!beat_is_live(
+        number,
+        Some(arrived),
+        arrived + BEAT_LIVENESS_MS
+    ));
+    assert!(!beat_is_live(number, None, arrived));
+    // The writer's clock runs ahead: the number's time is the later one.
+    let early = written - 4 * BEAT_PERIOD_MS;
+    assert!(beat_is_live(
+        number,
+        Some(early),
+        written + BEAT_LIVENESS_MS - 1
+    ));
+    assert!(!beat_is_live(
+        number,
+        Some(early),
+        written + BEAT_LIVENESS_MS
+    ));
+    // No overflow at the extremes.
+    assert!(beat_is_live(u64::MAX, None, u64::MAX - 1));
+    assert!(!beat_is_live(0, Some(0), BEAT_LIVENESS_MS));
 }

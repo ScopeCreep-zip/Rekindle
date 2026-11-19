@@ -272,6 +272,9 @@ CREATE TABLE IF NOT EXISTS communities (
     -- Plate Gate: which segment the user joined into. 0 = primary.
     my_segment_index INTEGER NOT NULL DEFAULT 0,
     lamport_clock INTEGER NOT NULL DEFAULT 0,
+    -- Our presence beats' count (`M`/1 `seq`, plan E3.4 S1): advanced and
+    -- persisted before each beat is written, never reused.
+    beat_seq INTEGER NOT NULL DEFAULT 0 CHECK(beat_seq >= 0),
     -- The pinned GenesisCert (plan E3.2), as the anchor's subkey 0 holds it.
     genesis_cert BLOB,
     -- Local-only presence sharing consent (default-deny). JSON-encoded

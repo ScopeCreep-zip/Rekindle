@@ -176,6 +176,25 @@ pub fn record_removed_by_name(
     }
 }
 
+/// The next `seq` of our beat in `community_id`, persisted before it is
+/// returned (`communities.beat_seq`, plan E3.4 S1). The row is written by
+/// [`record_membership`] on the same connection, which runs its calls in
+/// order, so a beat after the membership finds it.
+///
+/// # Errors
+/// Locked, no row for the community, or the write failed.
+pub async fn next_beat_seq(
+    session: &RwLock<Option<Session>>,
+    db: &DbHandle,
+    community_id: &str,
+) -> Result<u64, String> {
+    let (owner, db) = owner_and_db(session, db).ok_or("no identity is unlocked")?;
+    let community = community_id.to_owned();
+    db.call(move |conn| repo::communities::next_beat_seq(conn, &owner, &community))
+        .await
+        .map_err(|e| format!("beat seq: {e}"))
+}
+
 /// The display name `pseudonym_hex` has on our stored roster of the
 /// community: the name the member list shows (A/B R5-2).
 pub async fn roster_name(

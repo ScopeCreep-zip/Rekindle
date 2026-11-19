@@ -52,10 +52,9 @@ use rekindle_types::config::{
 };
 use rekindle_types::governance::OpRef;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::presence::SessionStatus;
 
 use crate::error::GovernanceRuntimeError;
-use crate::member_card::{read_beat, MemberRecordRef};
+use crate::member_card::{beat_is_live, read_beat, MemberRecordRef};
 
 /// How many live members besides the inviter a joiner asks (see the
 /// module docs).
@@ -142,8 +141,10 @@ pub fn candidates(
         .collect()
 }
 
-/// Whether `candidate`'s verified beat is fresh at `now_ms`: unexpired on
-/// its writer's clock and not `Offline`.
+/// Whether `candidate`'s verified beat is fresh at `now_ms`: present
+/// (online, away or busy) and live by the 15-minute rule
+/// ([`beat_is_live`]). The beat is read cold, so only its beat number
+/// counts (plan E3.4 S1, Q4).
 async fn beat_is_fresh(
     port: &dyn RecordPort,
     anchor: &str,
@@ -157,7 +158,7 @@ async fn beat_is_fresh(
         owner: &candidate.owner,
     };
     match read_beat(port, &member).await {
-        Ok(Some(beat)) => beat.expires_at > now_ms && beat.status != SessionStatus::Offline,
+        Ok(Some(beat)) => beat.state.is_present() && beat_is_live(beat.beat_number, None, now_ms),
         Ok(None) => false,
         Err(error) => {
             tracing::debug!(community = anchor, %error, "a member's beat was refused");

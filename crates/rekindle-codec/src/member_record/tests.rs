@@ -121,24 +121,31 @@ fn max_extras() -> SessionExtras {
     }
 }
 
+fn beat(extras: Option<SealedExtras>, voice: Option<String>) -> PresenceBeat {
+    PresenceBeat {
+        seq: 7,
+        state: BeatState::Busy,
+        voice_channel: voice,
+        beat_number: 5_871_000,
+        extras,
+    }
+}
+
 #[test]
-fn beat_round_trips_within_512_bytes_at_the_maximum_field_sizes() {
+fn beat_round_trips_at_exactly_512_bytes_at_the_maximum_field_sizes() {
     let me = key(1);
     let mek = MediaEncryptionKey::from_bytes([9; 32], u64::MAX);
     let extras = max_extras();
     let beat = PresenceBeat {
         seq: u64::MAX,
-        status: SessionStatus::Busy,
-        voice_channel: Some(s(MAX_CHANNEL_ID)),
-        expires_at: u64::MAX,
-        extras: Some(SealedExtras::seal(&extras, &mek, AT, &OsRandom).unwrap()),
+        beat_number: u64::MAX,
+        ..beat(
+            Some(SealedExtras::seal(&extras, &mek, AT, &OsRandom).unwrap()),
+            Some(s(MAX_CHANNEL_ID)),
+        )
     };
-    let bytes = beat.encode(AT, &me).unwrap();
-    assert!(
-        bytes.len() <= PRESENCE_BEAT_MAX_BYTES,
-        "{} bytes",
-        bytes.len()
-    );
+    let bytes = beat.encode(AT, &me, &OsRandom).unwrap();
+    assert_eq!(bytes.len(), PRESENCE_BEAT_BYTES);
     let decoded = decode_presence_beat(&bytes, AT, &pk(&me)).unwrap();
     assert_eq!(decoded, beat);
     let sealed = decoded.extras.unwrap();
@@ -151,19 +158,80 @@ fn beat_round_trips_within_512_bytes_at_the_maximum_field_sizes() {
     assert!(decode_presence_beat(&bytes, AT, &pk(&key(2))).is_err());
 }
 
+/// Every beat packs to exactly 512 B, whatever its fields hold: an empty
+/// beat, every voice-channel length, extras sealed over every activity
+/// length, and the extreme counters (plan E3.4 Q2).
 #[test]
-fn an_invisible_beat_is_written_offline_and_extras_are_optional() {
+fn every_beat_packs_to_exactly_512_bytes_whatever_its_field_lengths() {
+    let me = key(3);
+    let mek = MediaEncryptionKey::from_bytes([4; 32], 2);
+    let mut sizes = std::collections::BTreeSet::new();
+    for voice_len in 0..=MAX_CHANNEL_ID {
+        let voice = (voice_len > 0).then(|| s(voice_len));
+        for activity in [None, Some(0), Some(1), Some(17), Some(MAX_ACTIVITY)] {
+            let extras = activity.map(|n| {
+                let body = SessionExtras {
+                    location: Some(SessionLocation::Text {
+                        channel_id: s(voice_len.max(1)),
+                    }),
+                    activity: Some(s(n)),
+                };
+                SealedExtras::seal(&body, &mek, AT, &OsRandom).unwrap()
+            });
+            for (seq, number) in [(0, 0), (1, 300), (u64::MAX, u64::MAX)] {
+                let b = PresenceBeat {
+                    seq,
+                    beat_number: number,
+                    ..beat(extras.clone(), voice.clone())
+                };
+                let bytes = b.encode(AT, &me, &OsRandom).unwrap();
+                sizes.insert(bytes.len());
+                assert_eq!(decode_presence_beat(&bytes, AT, &pk(&me)).unwrap(), b);
+            }
+        }
+    }
+    assert_eq!(sizes.into_iter().collect::<Vec<_>>(), [PRESENCE_BEAT_BYTES]);
+}
+
+/// A beat of any other size is refused before it is read, and a beat
+/// whose signed bytes changed (its padding included) is refused.
+#[test]
+fn a_beat_of_the_wrong_size_or_signature_is_refused() {
     let me = key(1);
-    let beat = PresenceBeat {
-        seq: 1,
-        status: SessionStatus::Invisible,
-        voice_channel: None,
-        expires_at: 10,
-        extras: None,
+    let bytes = beat(None, None).encode(AT, &me, &OsRandom).unwrap();
+    let mut short = bytes.clone();
+    short.pop();
+    assert!(decode_presence_beat(&short, AT, &pk(&me)).is_err());
+    let mut long = bytes.clone();
+    long.push(0);
+    assert!(decode_presence_beat(&long, AT, &pk(&me)).is_err());
+    // The last byte is padding: a flip there breaks the signature.
+    let mut flipped = bytes.clone();
+    *flipped.last_mut().unwrap() ^= 0x01;
+    assert!(decode_presence_beat(&flipped, AT, &pk(&me)).is_err());
+    assert!(decode_presence_beat(&bytes, AT, &pk(&key(2))).is_err());
+}
+
+#[test]
+fn an_invisible_beat_is_written_offline_and_departed_round_trips() {
+    let me = key(1);
+    let invisible = PresenceBeat {
+        state: SessionStatus::Invisible.into(),
+        ..beat(None, None)
     };
-    let decoded = decode_presence_beat(&beat.encode(AT, &me).unwrap(), AT, &pk(&me)).unwrap();
-    assert_eq!(decoded.status, SessionStatus::Offline);
+    let decoded =
+        decode_presence_beat(&invisible.encode(AT, &me, &OsRandom).unwrap(), AT, &pk(&me)).unwrap();
+    assert_eq!(decoded.state, BeatState::Offline);
+    assert!(!decoded.state.is_present());
     assert_eq!(decoded.extras, None);
+    let departed = PresenceBeat {
+        state: BeatState::Departed,
+        ..beat(None, None)
+    };
+    let decoded =
+        decode_presence_beat(&departed.encode(AT, &me, &OsRandom).unwrap(), AT, &pk(&me)).unwrap();
+    assert_eq!(decoded.state, BeatState::Departed);
+    assert!(!decoded.state.is_present());
     let mut over = max_extras();
     over.activity = Some(s(MAX_ACTIVITY + 1));
     let mek = MediaEncryptionKey::from_bytes([9; 32], 1);

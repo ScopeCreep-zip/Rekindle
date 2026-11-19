@@ -80,6 +80,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.insert_community_impl(community);
     }
 
+    async fn next_beat_seq(&self, community_id: &str) -> Result<u64, GovernanceRuntimeError> {
+        self.next_beat_seq_impl(community_id).await
+    }
+
     // ---------- DHT ----------
 
     async fn create_record(

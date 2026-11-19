@@ -250,6 +250,10 @@ impl HostGovernance {
         let profile = OwnProfile {
             display_name: self.ctx.identity_display_name(),
             status: self.identity_status(),
+            beat_seq: self
+                .next_beat_seq(community)
+                .await
+                .map_err(|e| format!("beat seq: {e}"))?,
             now_ms: self.ctx.clock.now_ms(),
             route: self.our_route_blob_impl(),
         };
@@ -277,6 +281,7 @@ impl HostGovernance {
             &own,
             &profile,
             &outcome.member.hpke_secret,
+            &*self.ctx.rng,
             publish_ops,
         )
         .await?;

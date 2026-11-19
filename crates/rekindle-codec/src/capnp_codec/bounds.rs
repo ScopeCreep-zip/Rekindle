@@ -147,9 +147,11 @@ pub const GENESIS_CERT_BOUND: Bound =
     Bound::packed(crate::governance_op::genesis::GENESIS_CERT_MAX_BYTES);
 
 /// `PresenceBeat` and its sealed `SessionExtras` (`member_record.capnp`):
-/// the beat subkey's own 512-byte cap, and 256 words from the schema.
+/// the beat's fixed 512 bytes, and 256 words from the schema (the padding
+/// spreads its cost over the fewest words, unpacking to about 8 bytes per 7
+/// packed, `member_record::beat_padding`).
 pub const PRESENCE_BEAT_BOUND: Bound = Bound {
-    max_bytes: crate::member_record::PRESENCE_BEAT_MAX_BYTES,
+    max_bytes: crate::member_record::PRESENCE_BEAT_BYTES,
     max_words: 256,
 };
 

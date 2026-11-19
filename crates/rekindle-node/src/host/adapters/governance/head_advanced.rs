@@ -115,8 +115,8 @@ impl HostGovernance {
         };
         community
             .ring_beat_status
-            .insert(record.to_owned(), beat.status)
-            != Some(beat.status)
+            .insert(record.to_owned(), beat.state)
+            != Some(beat.state)
     }
 
     /// A gossiped hint, in §4.3's order: dropped unless its relayer is a

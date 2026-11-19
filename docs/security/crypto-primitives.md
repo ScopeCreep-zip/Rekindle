@@ -153,6 +153,20 @@ messages, encrypted under the channel's current MEK.
   over `anchor ‖ chain seq ‖` its fields, and each entry's `prev` is
   BLAKE3 of the author's previous entry, a hash-linked feed over
   ciphertext.
+- A presence beat (`M`/1, `rekindle_codec::member_record::beat`) is
+  signed by the member's pseudonym (Ed25519) under
+  `rekindle-presence-beat-v2` over `community ‖ memberRecord ‖ seq ‖
+  status ‖ voiceChannel ‖ beatNumber ‖ extras ‖ padding`. Its extras
+  (location, activity) are sealed under the community text key of the
+  stamped generation, AAD `community ‖ memberRecord`. Every beat packs to
+  exactly 512 B: random padding words sized after Cap'n Proto packing
+  (each word holds 1–6 nonzero random bytes, so it never joins a packing
+  run and its packed cost is exact) fill the rest, and a beat of any
+  other size is refused, so the size leaks nothing about the fields
+  (plan E3.4 Q2). `seq` is persisted before each write
+  (`communities.beat_seq`) and never reused; `beatNumber` is the writer's
+  5-minute period, and a reader shows the member live for 15 minutes from
+  the later of that period and the beat's local arrival (Q4).
 - Mature, audited implementations.
 
 Voice frames also use AES-256-GCM, through SFrame (RFC 9605 suite

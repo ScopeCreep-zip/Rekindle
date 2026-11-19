@@ -110,7 +110,7 @@ labels! {
     CARD_HPKE = "rekindle-card-hpke-v1";
     /// Ed25519 signature prefix: a presence beat (`M`/1, plan E3.2), by
     /// the pseudonym.
-    PRESENCE_BEAT = "rekindle-presence-beat-v1";
+    PRESENCE_BEAT = "rekindle-presence-beat-v2";
     /// Ed25519 signature prefix: a ring watcher's `HeadAdvanced` hint
     /// (plan E3.2 S7), by the relaying member's pseudonym, over
     /// `community ‖ author ‖ memberRecord ‖ subkey ‖ seq`.

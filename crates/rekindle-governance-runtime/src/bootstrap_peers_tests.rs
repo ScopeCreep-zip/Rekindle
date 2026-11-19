@@ -19,13 +19,14 @@ use rekindle_types::presence::SessionStatus;
 
 use super::{bootstrap_peers_cap, candidates, find_frontier, BootstrapPeer, MAX_BOOTSTRAP_PEERS};
 use crate::error::GovernanceRuntimeError;
-use crate::member_card::{write_beat, OwnProfile, OwnRecord, BEAT_LIFETIME_MS};
+use crate::member_card::{write_beat, OwnProfile, OwnRecord, BEAT_LIVENESS_MS};
 use crate::member_routes::write_routes;
+use rekindle_codec::member_record::BEAT_PERIOD_MS;
 
 const BOOTSTRAP_COMMUNITY: &str = "community";
 const INVITER_ROUTE: &[u8] = b"route-inviter";
 /// Now, on the joiner's clock (ms).
-const JOINER_NOW_MS: u64 = 1_000_000;
+const JOINER_NOW_MS: u64 = 1_800_000_000_000;
 const ASKING_AT: (&str, u64) = (BOOTSTRAP_COMMUNITY, JOINER_NOW_MS);
 
 fn encode(payload: ControlPayload) -> Vec<u8> {
@@ -86,10 +87,13 @@ async fn member_beating(
     let profile = OwnProfile {
         display_name: String::new(),
         status,
+        beat_seq: 1,
         now_ms: beat_ms,
         route: Vec::new(),
     };
-    write_beat(pool, &own, &profile).await.unwrap();
+    write_beat(pool, &own, &profile, &rekindle_utils::random::OsRandom)
+        .await
+        .unwrap();
     BootstrapPeer {
         pseudonym: PseudonymKey(pseudonym.verifying_key().to_bytes()),
         record,
@@ -220,16 +224,24 @@ fn recording(
     }
 }
 
-/// A member whose beat expired, or whose fresh beat says `Offline`, is
-/// skipped without a call: the live member after them answers.
+/// A member whose beat is one beat period past the 15-minute rule, or
+/// whose fresh beat says `Offline`, is skipped without a call: the member
+/// one beat period inside the rule after them answers.
 #[tokio::test]
 async fn a_member_with_a_stale_beat_is_not_asked() {
     let pool = pool_on(Arc::new(MemDht::default()));
-    let expired = (SessionStatus::Online, JOINER_NOW_MS - BEAT_LIFETIME_MS - 1);
+    let expired = (
+        SessionStatus::Online,
+        JOINER_NOW_MS - BEAT_LIVENESS_MS - BEAT_PERIOD_MS,
+    );
     let stale = member_beating(&*pool, 1, b"route-stale", expired).await;
     let offline = (SessionStatus::Offline, JOINER_NOW_MS);
     let gone = member_beating(&*pool, 2, b"route-offline", offline).await;
-    let live = member(&*pool, 3, b"route-whole").await;
+    let inside = (
+        SessionStatus::Online,
+        JOINER_NOW_MS - BEAT_LIVENESS_MS + BEAT_PERIOD_MS,
+    );
+    let live = member_beating(&*pool, 3, b"route-whole", inside).await;
     let log = Arc::new(Mutex::new(Vec::new()));
     let call = recording(
         vec![

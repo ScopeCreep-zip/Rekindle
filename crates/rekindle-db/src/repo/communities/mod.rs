@@ -5,6 +5,9 @@ use rusqlite::{params, Connection, OptionalExtension as _};
 pub mod load;
 pub mod snapshot;
 
+#[cfg(test)]
+mod beat_seq_tests;
+
 /// A community as login loads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommunityRow {
@@ -285,6 +288,22 @@ pub fn raise_clock(
         params![clock, owner_key, id],
     )?;
     Ok(())
+}
+
+/// Advance our beat count in the community by one and return it
+/// (`beat_seq`, plan E3.4 S1): persisted before the beat it numbers is
+/// written, so no beat `seq` is reused across a restart.
+///
+/// # Errors
+/// No row for the community, or the write failed.
+pub fn next_beat_seq(conn: &Connection, owner_key: &str, id: &str) -> rusqlite::Result<u64> {
+    let seq: i64 = conn.query_row(
+        "UPDATE communities SET beat_seq = beat_seq + 1 \
+         WHERE owner_key = ?1 AND id = ?2 RETURNING beat_seq",
+        params![owner_key, id],
+        |row| row.get(0),
+    )?;
+    u64::try_from(seq).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, seq))
 }
 
 /// The community fields merged governance decides.

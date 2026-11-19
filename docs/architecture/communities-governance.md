@@ -20,6 +20,16 @@ channel messaging, voice, DMs).
 | Member record `M` | DFLT(8) | `K_M(p)`, a key only that member holds (`VaultKey::MemberRecordOwner`) | 0 card, 1 presence beat, 2 op-log head, 3 frontier, 4 outbox, 5 history ad, 6 routes (`dht_layout::member_record`) |
 | Sealed page | DFLT(1) | discarded after one write | an op-log or channel-outbox page (`dht_layout::sealed_page`) |
 
+The presence beat (`M`/1) is a fixed 512 B `PresenceBeat`
+(`schemas/member_record.capnp`): `seq` (our beat count, persisted in
+`communities.beat_seq`), a status (`online`, `away`, `busy`, `offline`,
+or `departed` after a leave), the voice channel, the beat number
+(`floor(now / 5 min)`), the community-key-sealed extras and signed
+random padding that brings every beat to exactly 512 B. A member is live
+for 15 minutes from the later of its beat number's time and the beat's
+local arrival (`member_card::beat_is_live`); a beat read cold, such as a
+joiner's bootstrap read, counts from its beat number alone.
+
 `M`/4 holds the head of the member's channel outbox chain, the same N2
 chain format as the op log on `M`/2 (`rekindle_records::chain`, never
 retired). Each entry is an `OutboxEntry` (`schemas/member_record.capnp`,

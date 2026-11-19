@@ -35,10 +35,12 @@ async fn a_joiner_reads_the_inviters_route_after_it_was_replaced() {
     let profile = OwnProfile {
         display_name: "Ida".into(),
         status: SessionStatus::Online,
+        beat_seq: 1,
         now_ms: 1_000,
         route: b"route-A".to_vec(),
     };
-    publish_own_record(&*pool, &own, &profile, &[3; 32], async { Ok(()) })
+    let rng = rekindle_utils::random::OsRandom;
+    publish_own_record(&*pool, &own, &profile, &[3; 32], &rng, async { Ok(()) })
         .await
         .unwrap();
     let read = read_member_route(&*pool, "community", &record, &inviter).await;

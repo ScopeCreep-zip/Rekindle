@@ -31,6 +31,7 @@ fn profile() -> OwnProfile {
     OwnProfile {
         display_name: "Joiner".into(),
         status: SessionStatus::Online,
+        beat_seq: 1,
         now_ms: 1_000,
         route: Vec::new(),
     }
@@ -83,7 +84,8 @@ async fn the_card_lands_before_op_zero_and_the_beat_after() {
             .is_none());
         append_op_once(port, &key, &writer, op).await.map(drop)
     };
-    publish_own_record(port, &own, &profile(), &[9; 32], publish_ops)
+    let rng = rekindle_utils::random::OsRandom;
+    publish_own_record(port, &own, &profile(), &[9; 32], &rng, publish_ops)
         .await
         .unwrap();
     let member = MemberRecordRef {
@@ -99,7 +101,8 @@ async fn the_card_lands_before_op_zero_and_the_beat_after() {
         rekindle_secrets::hpke::public_key(&[9; 32])
     );
     let beat = read_beat(port, &member).await.unwrap().unwrap();
-    assert_eq!(beat.status, SessionStatus::Online);
+    assert_eq!(beat.state, rekindle_codec::member_record::BeatState::Online);
+    assert_eq!(beat.seq, 1);
     assert!(beat.extras.is_none());
 }
 

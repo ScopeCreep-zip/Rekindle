@@ -40,24 +40,31 @@ struct CardGame {
   serverAddress @4 :Text;
 }
 
-# ── Subkey 1: the presence beat (≤ 512 B) ─────────────────────────────
+# ── Subkey 1: the presence beat (exactly 512 B) ───────────────────────
 
 enum BeatStatus {
   online @0;
   away @1;
   busy @2;
   offline @3;
+  departed @4;                 # the member left the community
 }
 
-# `sig` is the pseudonym's over `rekindle-presence-beat-v1 ‖ community ‖
-# memberRecord ‖ seq ‖ status ‖ voiceChannel ‖ expiresAt ‖ extras`.
+# `sig` is the pseudonym's over `rekindle-presence-beat-v2 ‖ community ‖
+# memberRecord ‖ seq ‖ status ‖ voiceChannel ‖ beatNumber ‖ extras ‖
+# padding`. `seq` counts the member's beats (persisted, never reused);
+# `beatNumber` is `floor(writer's clock ms / 300 000)`, the 5-minute
+# period the beat was written in. `padding` is random bytes sized after
+# packing so the packed beat is exactly 512 B, its size leaking nothing
+# (plan E3.4 Q2); it is allocated last, so it ends the message.
 struct PresenceBeat {
   seq @0 :UInt64;
   status @1 :BeatStatus;
   voiceChannel @2 :Text;
-  expiresAt @3 :UInt64;
+  beatNumber @3 :UInt64;
   extras @4 :SealedExtras;
   sig @5 :Data;
+  padding @6 :Data;
 }
 
 # A `SessionExtrasBody` sealed under the community text key of

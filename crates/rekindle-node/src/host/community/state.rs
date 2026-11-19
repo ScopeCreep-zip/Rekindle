@@ -97,7 +97,7 @@ pub struct CommunityState {
     /// transitions are relayed as `HeadAdvanced` (plan E3.2 S7).
     #[serde(skip)]
     pub ring_beat_status:
-        std::collections::BTreeMap<String, rekindle_types::presence::SessionStatus>,
+        std::collections::BTreeMap<String, rekindle_codec::member_record::BeatState>,
     /// The newest `HeadAdvanced` seq read from the DHT per (member record,
     /// subkey).
     #[serde(skip)]

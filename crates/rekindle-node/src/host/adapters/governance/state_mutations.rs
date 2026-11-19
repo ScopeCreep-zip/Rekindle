@@ -228,6 +228,16 @@ impl HostGovernance {
         self.insert_community_mek_impl(&community.id, &community.mek);
     }
 
+    /// Our next beat `seq` in `community_id` (`communities.beat_seq`).
+    pub(super) async fn next_beat_seq_impl(
+        &self,
+        community_id: &str,
+    ) -> Result<u64, rekindle_governance_runtime::GovernanceRuntimeError> {
+        crate::host::session::next_beat_seq(&self.ctx.session, &self.ctx.db, community_id)
+            .await
+            .map_err(rekindle_governance_runtime::GovernanceRuntimeError::Adapter)
+    }
+
     pub(super) fn register_governance_overflow_keys_impl(
         &self,
         community_id: &str,
