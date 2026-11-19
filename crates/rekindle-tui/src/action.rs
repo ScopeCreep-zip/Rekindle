@@ -44,6 +44,9 @@ pub enum Action {
     ReplyToSelected,
     /// Edit the currently selected message (own messages only).
     EditSelected,
+    /// Delete the selected message: ours for members, another member's as
+    /// a moderator's removal (plan E3.3; the Host judges either).
+    DeleteSelected,
 
     // ─── View transitions ───────────────────────────────────────
     ShowDashboard,
@@ -90,6 +93,24 @@ pub enum Action {
     SendDm {
         peer_key: String,
         text: String,
+    },
+    /// `ChannelMessageEdit`: our message's new body (plan E3.3 E1).
+    EditChannelMessage {
+        channel: String,
+        message_id: String,
+        text: String,
+    },
+    /// `ChannelMessageDelete`: our message, deleted for members (E3, E4).
+    DeleteChannelMessage {
+        channel: String,
+        message_id: String,
+    },
+    /// `ChannelMessageAdminDelete`: another member's message, removed as a
+    /// moderator (M1–M4).
+    RemoveChannelMessage {
+        community: String,
+        channel: String,
+        message_id: String,
     },
 
     // ─── Voice ──────────────────────────────────────────────────

@@ -342,6 +342,34 @@ impl App {
         });
     }
 
+    /// Edit, delete or remove a channel message (plan E3.3 slice 9): the
+    /// GUI's request as it is; a review the Host's gate asks for shows in
+    /// the intent overlay and a refusal as an error toast. The change itself
+    /// reaches the view as the Host's `Edited`/`Deleted` event.
+    pub(crate) fn spawn_channel_change(
+        &self,
+        request: ChannelMessageRequest,
+        context: &'static str,
+        done: String,
+    ) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client
+                .request_ok(IpcRequest::Community(CommunityRequest::Messages(request)))
+                .await
+            {
+                Ok(_) => {
+                    let _ = tx.send(Action::ShowToast {
+                        message: done,
+                        level: ToastLevel::Success,
+                    });
+                }
+                Err(e) => report_failure(&tx, context, e),
+            }
+        });
+    }
+
     /// Commit a reviewed action with `proof`; a changed fact shows the fresh
     /// review, a wrong proof shows the same one again (it is still held).
     pub(crate) fn spawn_commit_intent(
@@ -425,5 +453,8 @@ fn message_row(view: ChannelMessageView) -> dt::DecryptedMessageDisplay {
         is_encrypted: encrypted,
         needs_mek: encrypted.then_some(0),
         automod_blurred: view.automod_blurred,
+        is_own: view.is_own,
+        edited: view.edited_at.is_some(),
+        removed_by: view.removed_by,
     }
 }

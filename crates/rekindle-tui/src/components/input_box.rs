@@ -84,6 +84,13 @@ impl InputBox {
         self.mode = InputMode::Compose;
     }
 
+    /// Replace the content with `text` (an edit starts from the body).
+    pub fn set_content(&mut self, text: &str) {
+        self.textarea.select_all();
+        self.textarea.cut();
+        self.textarea.insert_str(text);
+    }
+
     /// Set the input mode.
     pub fn set_mode(&mut self, mode: InputMode) {
         self.mode = mode;

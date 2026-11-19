@@ -19,6 +19,7 @@ mod output;
 mod watch;
 
 mod channel;
+mod channel_message;
 mod community;
 mod community_watch;
 mod dm;

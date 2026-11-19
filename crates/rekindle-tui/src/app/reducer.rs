@@ -4,7 +4,7 @@ use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest};
 use rekindle_types::subscription_events::SubscriptionEvent;
 
 impl App {
@@ -263,6 +263,44 @@ impl App {
             } => {
                 self.spawn_send_channel_message(&community, &channel, text, reply_to);
             }
+            Action::EditChannelMessage {
+                channel,
+                message_id,
+                text,
+            } => self.spawn_channel_change(
+                ChannelMessageRequest::ChannelMessageEdit {
+                    channel,
+                    message_id,
+                    body: text,
+                },
+                "edit message",
+                "Message edited".to_owned(),
+            ),
+            Action::DeleteChannelMessage {
+                channel,
+                message_id,
+            } => self.spawn_channel_change(
+                ChannelMessageRequest::ChannelMessageDelete {
+                    channel,
+                    message_id,
+                },
+                "delete message",
+                format!("Message {}", rekindle_client::fmt::DELETED_FOR_MEMBERS),
+            ),
+            Action::RemoveChannelMessage {
+                community,
+                channel,
+                message_id,
+            } => self.spawn_channel_change(
+                ChannelMessageRequest::ChannelMessageAdminDelete {
+                    community,
+                    channel,
+                    message_id,
+                    reason: None,
+                },
+                "remove message",
+                "Message removed".to_owned(),
+            ),
             Action::SendDm { peer_key, text } => {
                 self.spawn_send_dm(peer_key, text);
             }

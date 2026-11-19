@@ -6,6 +6,35 @@ use std::time::Duration;
 /// `BlurContent` match, `automod_blurred`): the body stays out of sight.
 pub const AUTOMOD_BLURRED: &str = "[blurred by automod]";
 
+/// The mark after an edited channel message's body (plan E3.3, the GUI's
+/// "(edited)").
+pub const EDITED: &str = "(edited)";
+
+/// What an author's own delete did (plan E3.3 E4): "deleted for members",
+/// never "erased" (old ciphertext stays in the author's record history and
+/// in peers' copies).
+pub const DELETED_FOR_MEMBERS: &str = "deleted for members";
+
+/// The line in place of a moderator-removed message (plan E3.3 M4), as the
+/// GUI's bubble shows it.
+#[must_use]
+pub fn removed_by(moderator_name: &str) -> String {
+    format!("Removed by {moderator_name}")
+}
+
+/// A member's name in a community for display: the name `names` holds for
+/// `pseudonym`, else its abbreviated key (the GUI bubble's fallback).
+#[must_use]
+pub fn member_name<S: std::hash::BuildHasher>(
+    names: &std::collections::HashMap<String, String, S>,
+    pseudonym: &str,
+) -> String {
+    names.get(pseudonym).filter(|n| !n.is_empty()).map_or_else(
+        || abbreviate_key(pseudonym),
+        |n| rekindle_utils::text::sanitize_for_display(n),
+    )
+}
+
 /// A duration as "just now", "4m ago", "2h 13m ago", "3d 5h ago".
 #[must_use]
 pub fn format_duration_ago(duration: Duration) -> String {

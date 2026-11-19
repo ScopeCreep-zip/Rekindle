@@ -1,13 +1,15 @@
 //! Channel commands.
 
-use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest, LifecycleRequest};
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
+use crate::channel_message;
 use crate::cli::ChannelCmd;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
 use rekindle_client::DaemonClient;
+use rekindle_types::dto::channel_message::ChannelMessageView;
 
 pub async fn dispatch(
     cmd: &ChannelCmd,
@@ -138,7 +140,7 @@ pub async fn dispatch(
             limit,
             ..
         } => {
-            let (_, channel_id) = resolve_channel(client, community, channel).await?;
+            let (anchor, channel_id) = resolve_channel(client, community, channel).await?;
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::Messages(
@@ -149,8 +151,30 @@ pub async fn dispatch(
                 )),
             )
             .await?;
-            format::print_structured(&value, mode)
+            if mode.is_structured() {
+                return format::print_structured(&value, mode);
+            }
+            let views: Vec<ChannelMessageView> = serde_json::from_value(value)?;
+            let names = channel_message::member_names(client, &anchor).await?;
+            channel_message::print_history(&views, &names)
         }
+        ChannelCmd::EditMessage {
+            community,
+            channel,
+            msg_id,
+            ..
+        }
+        | ChannelCmd::DeleteMessage {
+            community,
+            channel,
+            msg_id,
+        }
+        | ChannelCmd::RemoveMessage {
+            community,
+            channel,
+            msg_id,
+            ..
+        } => channel_message::dispatch_change(cmd, community, channel, msg_id, client, mode).await,
         ChannelCmd::Watch { community, channel } => {
             watch_channel(client, community, channel, mode).await
         }
@@ -167,24 +191,8 @@ async fn resolve_channel(
     community: &str,
     channel: &str,
 ) -> anyhow::Result<(String, String)> {
-    let detail: rekindle_types::display::CommunityDetail = serde_json::from_value(
-        helpers::send(
-            client,
-            IpcRequest::Community(CommunityRequest::Lifecycle(
-                LifecycleRequest::CommunityInfo {
-                    anchor: community.to_owned(),
-                },
-            )),
-        )
-        .await?,
-    )?;
-    let channel_id = detail
-        .channels
-        .iter()
-        .find(|c| c.id == channel || c.name == channel)
-        .map(|c| c.id.clone())
-        .ok_or_else(|| anyhow::anyhow!("no channel '{channel}' in '{community}'"))?;
-    Ok((detail.anchor, channel_id))
+    let target = channel_message::target(client, community, channel).await?;
+    Ok((target.anchor, target.channel_id))
 }
 
 /// `channel watch`: stream one channel's messages until Ctrl-C.
@@ -199,6 +207,7 @@ async fn watch_channel(
     };
     // Events name the community by anchor key and the channel by id.
     let (anchor, channel_id) = resolve_channel(client, community, channel).await?;
+    let names = channel_message::member_names(client, &anchor).await?;
     let filter = SubscriptionFilter {
         categories: Some(vec![EventCategory::ChannelMessage]),
         community_scope: Some(anchor),
@@ -242,18 +251,15 @@ async fn watch_channel(
             message_id,
             removed_by,
             ..
-        }) if *channel == channel_id => Some(match removed_by {
+        }) if *channel == channel_id => {
             // Plan E3.3 E4 and M4: never "erased".
-            Some(by) => format!(
-                "({} removed by {})",
-                rekindle_client::fmt::abbreviate_key(message_id),
-                rekindle_client::fmt::abbreviate_key(by)
-            ),
-            None => format!(
-                "({} deleted for members)",
-                rekindle_client::fmt::abbreviate_key(message_id)
-            ),
-        }),
+            let outcome = removed_by
+                .as_ref()
+                .map_or(channel_message::Outcome::DeletedForMembers, |by| {
+                    channel_message::Outcome::Removed { by: by.clone() }
+                });
+            Some(channel_message::outcome_line(message_id, &outcome, &names))
+        }
         _ => None,
     })
     .await

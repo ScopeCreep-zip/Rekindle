@@ -67,6 +67,8 @@ pub struct MessageList {
     is_focused: bool,
     /// Last read message index (for unread separator).
     last_read_index: Option<usize>,
+    /// Members' names by pseudonym, for "Removed by <name>".
+    names: std::collections::HashMap<String, String>,
 }
 
 impl MessageList {
@@ -81,6 +83,7 @@ impl MessageList {
             generation: 0,
             is_focused: false,
             last_read_index: None,
+            names: std::collections::HashMap::new(),
         }
     }
 
@@ -149,6 +152,46 @@ impl MessageList {
             if sel >= self.len() && !self.is_empty() {
                 self.list_state.select(Some(self.len() - 1));
             }
+        }
+        self.generation += 1;
+    }
+
+    /// The community's member names, by pseudonym.
+    pub fn set_names(&mut self, names: std::collections::HashMap<String, String>) {
+        self.names = names;
+        self.generation += 1;
+    }
+
+    /// Its author's edit of `message_id`: the new body, marked edited. A
+    /// removed message stays removed (plan E3.3 M4, delete wins).
+    pub fn apply_edit(&mut self, message_id: &str, body: Option<&str>) {
+        if let Some(r) = self
+            .messages
+            .iter_mut()
+            .find(|r| r.msg.message_id == message_id)
+        {
+            if r.msg.removed_by.is_none() {
+                if let Some(body) = body {
+                    body.clone_into(&mut r.msg.body);
+                    r.msg.is_encrypted = false;
+                }
+                r.msg.edited = true;
+            }
+        }
+        self.generation += 1;
+    }
+
+    /// A moderator removed `message_id` (plan E3.3 M4): its body and every
+    /// revision go, a "Removed by" line stays in its place.
+    pub fn mark_removed(&mut self, message_id: &str, moderator: &str) {
+        if let Some(r) = self
+            .messages
+            .iter_mut()
+            .find(|r| r.msg.message_id == message_id)
+        {
+            r.msg.body.clear();
+            r.msg.edited = false;
+            r.msg.removed_by = Some(moderator.to_owned());
         }
         self.generation += 1;
     }
@@ -240,7 +283,18 @@ impl MessageList {
                 ]));
             }
 
-            if msg.is_encrypted {
+            if let Some(by) = &msg.removed_by {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "  {}",
+                        rekindle_client::fmt::removed_by(&rekindle_client::fmt::member_name(
+                            &self.names,
+                            by
+                        ))
+                    ),
+                    Style::new().dim().italic(),
+                )));
+            } else if msg.is_encrypted {
                 let hint = msg
                     .needs_mek
                     .map(|_gen| {
@@ -266,8 +320,16 @@ impl MessageList {
                 )));
             } else {
                 let body = helpers::sanitize_for_display(&msg.body);
-                for line in body.lines() {
-                    lines.push(Line::from(format!("  {line}")));
+                let last = body.lines().count().saturating_sub(1);
+                for (n, line) in body.lines().enumerate() {
+                    if msg.edited && n == last {
+                        lines.push(Line::from(vec![
+                            Span::raw(format!("  {line} ")),
+                            Span::styled(rekindle_client::fmt::EDITED, Style::new().dim()),
+                        ]));
+                    } else {
+                        lines.push(Line::from(format!("  {line}")));
+                    }
                 }
             }
 
@@ -322,6 +384,7 @@ impl Component for MessageList {
             KeyCode::Char('i') => Some(Action::EnterInputMode),
             KeyCode::Char('r') => Some(Action::ReplyToSelected),
             KeyCode::Char('e') => Some(Action::EditSelected),
+            KeyCode::Char('d') => Some(Action::DeleteSelected),
             KeyCode::Char('y') => {
                 // Yank focused message body to clipboard
                 if let Some(idx) = self.selected_index() {
@@ -411,6 +474,9 @@ mod tests {
             is_encrypted: false,
             needs_mek: None,
             automod_blurred: false,
+            is_own: false,
+            edited: false,
+            removed_by: None,
         }
     }
 

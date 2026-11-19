@@ -108,6 +108,16 @@ pub struct DecryptedMessageDisplay {
     /// The D26 gate hid it (an automod `BlurContent` match): it renders
     /// blurred.
     pub automod_blurred: bool,
+    /// We sent it: only our own message is edited or deleted by us.
+    #[serde(default)]
+    pub is_own: bool,
+    /// Its author edited it (plan E3.3): it shows "(edited)".
+    #[serde(default)]
+    pub edited: bool,
+    /// The moderator who removed it (plan E3.3 M4): its body is gone and it
+    /// shows "Removed by <name>".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed_by: Option<String>,
 }
 
 // ── DMs ─────────────────────────────────────────────────────────────────

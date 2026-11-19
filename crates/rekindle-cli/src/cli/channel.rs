@@ -85,6 +85,55 @@ pub enum ChannelCmd {
         reply_to: Option<String>,
     },
 
+    /// Edit one of our messages (plan E3.3 E1: only its author edits; the
+    /// latest edit wins).
+    ///
+    /// Example: rekindle channel edit-message -c "my community" -C general -i <ID> -m "fixed"
+    EditMessage {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// Message ID.
+        #[arg(long, short = 'i')]
+        msg_id: String,
+        /// The new body.
+        #[arg(long, short = 'm')]
+        message: String,
+    },
+
+    /// Delete one of our messages for members (plan E3.3 E3, E4).
+    DeleteMessage {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// Message ID.
+        #[arg(long, short = 'i')]
+        msg_id: String,
+    },
+
+    /// Remove another member's message as a moderator (`MANAGE_MESSAGES`;
+    /// plan E3.3 M1–M4: the host refuses a post whose author outranks us).
+    RemoveMessage {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// Message ID.
+        #[arg(long, short = 'i')]
+        msg_id: String,
+        /// The reason sent with the removal.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
     /// Read channel message history.
     History {
         /// Community name or anchor key.
