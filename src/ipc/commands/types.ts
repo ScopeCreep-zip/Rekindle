@@ -247,6 +247,8 @@ export interface NetworkStatus {
   mediaRoute: RouteAvailability;
   /** The Host accepts writes now (its lifecycle's `can_write`). */
   canWrite: boolean;
+  /** The indicator's bars as shown now, 0–5 (plan E7.2). */
+  bars: number;
   profileDhtKey: string | null;
   friendListDhtKey: string | null;
 }

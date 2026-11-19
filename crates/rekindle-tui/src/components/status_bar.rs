@@ -36,8 +36,9 @@ pub struct StatusBarState {
     pub breadcrumb: String,
     /// Whether the node is attached to the network.
     pub node_attached: bool,
-    /// Number of known peers.
-    pub peer_count: usize,
+    /// Veilid's attachment strength as the Host smoothed it, 0-5
+    /// (`NetworkEvent::Strength`, plan E7.2): the GUI's bars.
+    pub bars: u8,
     /// Keybinding hint string.
     pub hints: String,
 }
@@ -76,7 +77,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &StatusBarState, theme: &The
 
     let node_glyph = theme.status_glyph(state.node_attached);
     let node_text = if state.node_attached {
-        format!(" {node_glyph} {} peers ", state.peer_count)
+        format!(
+            " {node_glyph} {} ",
+            bars_text(state.bars, theme.use_unicode())
+        )
     } else {
         format!(" {node_glyph} offline ")
     };
@@ -96,4 +100,30 @@ pub fn render(frame: &mut Frame, area: Rect, state: &StatusBarState, theme: &The
     ]);
 
     frame.render_widget(Paragraph::new(line), area);
+}
+
+/// The indicator's five bars, rising, lit up to `bars`.
+fn bars_text(bars: u8, unicode: bool) -> String {
+    const LIT: [char; 5] = ['▁', '▂', '▄', '▆', '█'];
+    (1..=5u8)
+        .map(|level| match (bars >= level, unicode) {
+            (true, true) => LIT[usize::from(level - 1)],
+            (false, true) => '·',
+            (true, false) => '|',
+            (false, false) => '.',
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bars_text;
+
+    /// The TUI shows the Host's bars as the GUI does (plan E7.2).
+    #[test]
+    fn the_bars_light_up_to_the_hosts_strength() {
+        assert_eq!(bars_text(3, true), "▁▂▄··");
+        assert_eq!(bars_text(0, false), ".....");
+        assert_eq!(bars_text(5, false), "|||||");
+    }
 }

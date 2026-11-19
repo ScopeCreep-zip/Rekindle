@@ -65,7 +65,7 @@ impl App {
                 mode,
                 breadcrumb: self.breadcrumb(),
                 node_attached: self.node_was_connected,
-                peer_count: 0,
+                bars: self.network_bars,
                 hints: hints_line,
             },
             &self.theme,

@@ -39,6 +39,9 @@ const BUDDY_LIST_HANDLER = `
         statusMessage: null, gameInfo: null, group: null, unreadCount: 0,
         lastSeenAt: null, friendshipState: "pendingOut", handshakeError: null, handshakeRetrying: false,
       }];
+    case "get_network_status":
+      window.__networkReads = (window.__networkReads ?? 0) + 1;
+      return null;
     case "get_community_details":
     case "get_pending_requests":
     case "get_missed_calls":
@@ -91,4 +94,21 @@ test("the friend's unread count follows the backend's UnreadChanged", async ({ p
   // The backend counts unread (plan audit U-6); the window only renders it.
   await deliver(page, "unreadChanged.unreadChanged.dm", "chat-event");
   await expect(page.locator(".buddy-unread-badge")).toHaveText("7");
+});
+
+test("the network bars follow the pushed Strength event, with no poll", async ({ page }) => {
+  // Plan E7.2 (live finding L8): the backend smooths Veilid's attachment
+  // strength and pushes it; the window reads the state once and never polls.
+  await page.clock.install();
+  await page.reload();
+  await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
+  nextIndex = 0;
+  await expect(page.locator(".network-bar-on")).toHaveCount(0);
+
+  await deliver(page, "network.strength", "network-status");
+  await expect(page.locator(".network-bar-on")).toHaveCount(3);
+  await expect(page.locator(".network-bars")).toHaveAttribute("aria-label", "Signal 3 of 5");
+
+  await page.clock.runFor(95_000);
+  expect(await page.evaluate(() => (window as any).__networkReads)).toBe(1);
 });

@@ -7,7 +7,7 @@ use super::super::navigator::KeyResolution;
 use super::App;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, FriendEvent, GovernanceEvent, MembershipEvent, SocialEvent,
+    ChannelMessageEvent, FriendEvent, GovernanceEvent, MembershipEvent, NetworkEvent, SocialEvent,
     SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
 };
 
@@ -137,6 +137,16 @@ impl App {
             SubscriptionEvent::Presence(
                 rekindle_types::subscription_events::PresenceEvent::SelfChanged { snapshot, .. },
             ) => Some(Action::OwnPresence(Box::new(snapshot))),
+            // The status bar's network indicator (plan E7.2): the Host's
+            // smoothed bars and whether the node is attached.
+            SubscriptionEvent::Network(NetworkEvent::Strength { bars }) => {
+                self.network_bars = bars;
+                Some(Action::Render)
+            }
+            SubscriptionEvent::Network(NetworkEvent::AttachmentChanged { is_attached, .. }) => {
+                self.node_was_connected = is_attached;
+                Some(Action::Render)
+            }
             // ── Events forwarded to active view (real-time data push) ─────
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New { .. }) => {
                 if self.nav.tab_bar.selected_id() != Some("communities") {

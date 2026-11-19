@@ -268,6 +268,19 @@ export function subscribeNetworkStatus(
 }
 
 /**
+ * The network indicator's bars (`NetworkEvent::Strength`), already
+ * smoothed by the backend: the window draws what arrives (plan E7.2).
+ */
+export function subscribeNetworkStrength(onBars: (bars: number) => void): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("strength" in inner) {
+      onBars(inner.strength.bars);
+    }
+  });
+}
+
+/**
  * Lifecycle FSM transitions (`{ state, at_ms }`). The derived lifecycle
  * store observes this to surface readiness in the UI. Under E2E there is
  * no event stream; the store is seeded via `lifecycleCurrent()` instead.

@@ -2,12 +2,13 @@ import { onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { handleGetNetworkStatus } from "../actions/settings.actions";
-import { subscribeNetworkStatus } from "../ipc/channels";
+import { subscribeNetworkStatus, subscribeNetworkStrength } from "../ipc/channels";
 import type { RouteAvailability } from "../ipc/channels/notification_events";
 
 /**
- * The node's network state, as the Host reports it (`get_network_status`
- * and the `network-status` push events). One store per window: the
+ * The node's network state, as the Host reports it: `get_network_status`
+ * once when the first tracker mounts, then only the `network-status` push
+ * events (plan E7.2 deleted the 30 s poll). One store per window: the
  * buddy list's indicator reads it, and so does every action that needs
  * the network before it may start (plan E7.13: Create waits for
  * `canCreateCommunity`).
@@ -20,6 +21,12 @@ export interface NetworkState {
   mediaRoute: RouteAvailability;
   /** The Host accepts writes now (its lifecycle's `can_write`). */
   canWrite: boolean;
+  /**
+   * Veilid's attachment strength as indicator bars, 0–5, smoothed by the
+   * backend (`NetworkEvent::Strength`: a fall shows only once it lasted
+   * 5 s, plan E7.2).
+   */
+  bars: number;
 }
 
 const [networkState, setNetworkState] = createStore<NetworkState>({
@@ -29,6 +36,7 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
   hasRoute: false,
   mediaRoute: "idle",
   canWrite: false,
+  bars: 0,
 });
 
 export { networkState };
@@ -73,10 +81,10 @@ export function networkLabel(): NetworkLabel {
 }
 
 let users = 0;
-let pollTimer: ReturnType<typeof setInterval> | undefined;
-let unlisten: UnlistenFn | undefined;
+let unlisteners: UnlistenFn[] = [];
 
-async function pollNetworkStatus(): Promise<void> {
+/** The state when the first tracker mounts; the push events follow it. */
+async function readNetworkStatus(): Promise<void> {
   const status = await handleGetNetworkStatus();
   if (status) {
     setNetworkState({
@@ -86,40 +94,44 @@ async function pollNetworkStatus(): Promise<void> {
       hasRoute: status.hasRoute,
       mediaRoute: status.mediaRoute,
       canWrite: status.canWrite,
+      bars: status.bars,
     });
   }
 }
 
-function start(): void {
-  // Initial fetch + a 30 s safety net; the push events are authoritative.
-  void pollNetworkStatus();
-  pollTimer = setInterval(() => void pollNetworkStatus(), 30000);
-  void subscribeNetworkStatus((event) => {
-    setNetworkState({
-      attachmentState: event.attachmentState,
-      isAttached: event.isAttached,
-      publicInternetReady: event.publicInternetReady,
-      hasRoute: event.hasRoute,
-      mediaRoute: event.mediaRoute,
-      canWrite: event.canWrite,
-    });
-  }).then((fn) => {
-    if (users > 0) unlisten = fn;
+function keep(subscription: Promise<UnlistenFn>): void {
+  void subscription.then((fn) => {
+    if (users > 0) unlisteners.push(fn);
     else fn();
   });
 }
 
+function start(): void {
+  void readNetworkStatus();
+  keep(
+    subscribeNetworkStatus((event) => {
+      setNetworkState({
+        attachmentState: event.attachmentState,
+        isAttached: event.isAttached,
+        publicInternetReady: event.publicInternetReady,
+        hasRoute: event.hasRoute,
+        mediaRoute: event.mediaRoute,
+        canWrite: event.canWrite,
+      });
+    }),
+  );
+  keep(subscribeNetworkStrength((bars) => setNetworkState("bars", bars)));
+}
+
 function stop(): void {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = undefined;
-  unlisten?.();
-  unlisten = undefined;
+  for (const fn of unlisteners) fn();
+  unlisteners = [];
 }
 
 /**
  * Keep the store current while the calling component is mounted. Several
- * components may track at once; the first starts the poll and the
- * subscription, the last to unmount stops them.
+ * components may track at once; the first reads the state and
+ * subscribes, the last to unmount stops them.
  */
 export function trackNetworkStatus(): void {
   let mounted = false;

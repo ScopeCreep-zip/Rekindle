@@ -356,6 +356,31 @@
     background: var(--color-xfire-away);
   }
 
+  /* Attachment strength, five bars rising left to right (plan E7.2). */
+  .network-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 8px;
+  }
+
+  /* An unlit bar is its outline; a lit one is filled (no opacity, so
+     both keep the text colour's contrast on the status bar). */
+  .network-bar {
+    width: 3px;
+    box-shadow: inset 0 0 0 1px var(--color-xfire-text-dim);
+  }
+
+  .network-bar[data-level="1"] { height: 20%; }
+  .network-bar[data-level="2"] { height: 40%; }
+  .network-bar[data-level="3"] { height: 60%; }
+  .network-bar[data-level="4"] { height: 80%; }
+  .network-bar[data-level="5"] { height: 100%; }
+
+  .network-bar-on {
+    background: var(--color-xfire-text-dim);
+  }
+
   /* Media route not available: voice cannot connect (plan C7.9c). */
   .network-voice-note {
     color: var(--color-xfire-away-text);

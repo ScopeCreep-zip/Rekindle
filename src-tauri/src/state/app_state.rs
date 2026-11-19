@@ -118,6 +118,9 @@ pub struct AppState {
     /// `public_internet_ready`, as the attachment handler last saw it; the
     /// pool's retry layer waits on it.
     pub network_ready: tokio::sync::watch::Sender<bool>,
+    /// The network indicator's smoothed bars (plan E7.2): the Host's rule,
+    /// run on this shell's own Veilid path until F1.
+    pub network_strength: Arc<rekindle_events::strength::Strength>,
     /// Live community and channel keys by `(community_id, KeyScope)`.
     /// Read and written only through `state_helpers::meks`; consumers read
     /// keys through the `ChannelKeyProvider` (`state_helpers::key_provider`).
@@ -226,6 +229,7 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
+        let clock: Arc<dyn rekindle_utils::Clock> = Arc::new(rekindle_utils::SystemClock);
         Self {
             voice_packet_tx: Arc::new(RwLock::new(None)),
             voice_report_tx: Arc::new(RwLock::new(None)),
@@ -256,7 +260,10 @@ impl Default for AppState {
             event_router: crate::event_router::WebviewRouter::default(),
             host: super::host_slot::HostSlot::default(),
             own_routes: RwLock::new(None),
-            clock: Arc::new(rekindle_utils::SystemClock),
+            network_strength: Arc::new(rekindle_events::strength::Strength::new(Arc::clone(
+                &clock,
+            ))),
+            clock,
             rng: Arc::new(rekindle_utils::OsRandom),
             personal_sync_lease: Mutex::new(None),
             route_imports: RwLock::new(None),

@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import { Component, For } from "solid-js";
 import {
   isNetworkConnected,
   isNetworkConnecting,
@@ -6,6 +6,10 @@ import {
   networkState,
   trackNetworkStatus,
 } from "../../stores/network.store";
+
+/** Veilid's five attached levels ("signal strength"), one bar each. */
+const BAR_COUNT = 5;
+const BAR_LEVELS = [1, 2, 3, 4, 5];
 
 const NetworkIndicator: Component = () => {
   trackNetworkStatus();
@@ -34,14 +38,31 @@ const NetworkIndicator: Component = () => {
     }
   }
 
+  /** Veilid's attachment strength, as the backend smoothed it. */
+  function barsLabel(): string {
+    return `Signal ${networkState.bars} of ${BAR_COUNT}`;
+  }
+
   function title(): string {
     const note = voiceNote();
-    return note ? `Veilid: ${networkLabel()} — ${note}` : `Veilid: ${networkLabel()}`;
+    const head = `Veilid: ${networkLabel()}, ${barsLabel()}`;
+    return note ? `${head} — ${note}` : head;
   }
 
   return (
     <div class="network-indicator" title={title()}>
       <div class={dotClass()} />
+      <div class="network-bars" role="img" aria-label={barsLabel()}>
+        <For each={BAR_LEVELS}>
+          {(level) => (
+            <div
+              class="network-bar"
+              classList={{ "network-bar-on": networkState.bars >= level }}
+              data-level={level}
+            />
+          )}
+        </For>
+      </div>
       <span>{networkLabel()}</span>
       {voiceNote() && <span class="network-voice-note">{voiceNote()}</span>}
     </div>

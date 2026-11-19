@@ -400,6 +400,12 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
       return ${j(safetyNumber(PEER))};
     case "get_active_call":
       return ${j(call)};
+    case "get_network_status":
+      // The Host's shape (commands/window.rs NetworkStatus), with some
+      // bars lit so the indicator lays out lit and unlit bars.
+      return { attachmentState: "attached_good", isAttached: true, publicInternetReady: true,
+        hasRoute: true, mediaRoute: "available", canWrite: true, bars: 3,
+        profileDhtKey: null, friendListDhtKey: null };
     default:
       return cmd.startsWith("get_") || cmd.startsWith("list_") ? [] : null;
   }

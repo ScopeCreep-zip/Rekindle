@@ -1,5 +1,7 @@
 use rekindle_types::subscription_events::{NetworkEvent, RouteAvailability, SubscriptionEvent};
 
+use std::sync::Arc;
+
 use crate::state::AppState;
 use rekindle_lifecycle::LifecycleState;
 
@@ -74,4 +76,35 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
     }
 
     crate::event_dispatch::emit_subscription(app_handle, &SubscriptionEvent::Network(event));
+}
+
+/// Veilid's attachment changed to `attachment`: report it to the
+/// indicator's window and emit `NetworkEvent::Strength` when the shown bars
+/// change; a held fall is re-read once its hold ends. The Host's rule
+/// (`rekindle_node` `daemon/handler.rs`), run here because this shell owns
+/// the node until F1 (plan E7.2, live finding L8).
+pub fn sample_strength(app_handle: &tauri::AppHandle, state: &Arc<AppState>, attachment: &str) {
+    let report = state.network_strength.report(attachment);
+    if let Some(bars) = report.publish {
+        emit_strength(app_handle, bars);
+    }
+    if report.hold {
+        let app = app_handle.clone();
+        let strength = Arc::clone(&state.network_strength);
+        crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+            "network strength hold",
+            async move {
+                if let Some(bars) = strength.settle_held().await {
+                    emit_strength(&app, bars);
+                }
+            },
+        );
+    }
+}
+
+fn emit_strength(app_handle: &tauri::AppHandle, bars: u8) {
+    crate::event_dispatch::emit_subscription(
+        app_handle,
+        &SubscriptionEvent::Network(NetworkEvent::Strength { bars }),
+    );
 }

@@ -281,6 +281,7 @@ pub fn handle_attachment(
         );
     }
     let state_str = attachment.state.to_string();
+    super::sample_strength(app_handle, state, &state_str);
     tracing::info!(
         state = %state_str,
         public_internet_ready,

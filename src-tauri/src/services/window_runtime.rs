@@ -10,6 +10,7 @@ use crate::state::SharedState;
 pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
     let (has_route, media_route) = crate::services::veilid::route_status(state);
     let can_write = state.lifecycle.state().can_write();
+    let bars = state.network_strength.shown();
     let node = state.node.read();
     match node.as_ref() {
         Some(handle) => NetworkStatus {
@@ -19,6 +20,7 @@ pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
             has_route,
             media_route,
             can_write,
+            bars,
             profile_dht_key: handle.profile_dht_key.clone(),
             friend_list_dht_key: handle.friend_list_dht_key.clone(),
         },
@@ -29,6 +31,7 @@ pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
             has_route: false,
             media_route,
             can_write,
+            bars,
             profile_dht_key: None,
             friend_list_dht_key: None,
         },

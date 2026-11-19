@@ -50,7 +50,7 @@ pub struct DaemonHandler {
     pub(crate) host:
         Arc<std::sync::OnceLock<std::sync::Weak<crate::daemon::dispatch::DaemonContext>>>,
     /// The network indicator's smoothed bars (plan E7.2, live finding L8).
-    strength: Arc<parking_lot::Mutex<rekindle_events::strength::StrengthWindow>>,
+    strength: Arc<rekindle_events::strength::Strength>,
 }
 
 impl DaemonHandler {
@@ -71,35 +71,32 @@ impl DaemonHandler {
             transport,
             mek_rotation_tx,
             gossip_tx,
+            strength: Arc::new(rekindle_events::strength::Strength::new(Arc::clone(&clock))),
             clock,
             host,
-            strength: Arc::default(),
         }
     }
 
-    /// Veilid's attachment changed to `state`: sample the indicator's
-    /// window and publish `NetworkEvent::Strength` when the shown bars
-    /// change; a fall is re-read once its hold ends (plan E7.2, L8).
+    /// Veilid's attachment changed to `state`: report it to the indicator
+    /// and publish `NetworkEvent::Strength` when the shown bars change; a
+    /// held fall is re-read once its hold ends (plan E7.2, L8).
     fn sample_strength(&self, state: &str) {
-        let bars = rekindle_types::notification::AttachmentState::from_veilid_string(state).bars();
-        let (changed, holding) = {
-            let mut window = self.strength.lock();
-            (window.sample(self.clock.now_ms(), bars), window.holding())
-        };
-        if let Some(bars) = changed {
+        let report = self.strength.report(state);
+        if let Some(bars) = report.publish {
             publish_strength(&self.subscriptions, bars);
         }
-        if holding {
+        // Before unlock there is no Host scope and no subscriber; the next
+        // report re-reads the window.
+        let scope = self
+            .host
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .map(|ctx| ctx.unlock_scope_or_closed());
+        if let (true, Some(scope)) = (report.hold, scope) {
             let strength = Arc::clone(&self.strength);
             let subscriptions = Arc::clone(&self.subscriptions);
-            let clock = Arc::clone(&self.clock);
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(
-                    rekindle_events::strength::HOLD_MS,
-                ))
-                .await;
-                let changed = strength.lock().settle(clock.now_ms());
-                if let Some(bars) = changed {
+            scope.spawn_or_drop("network strength hold", async move {
+                if let Some(bars) = strength.settle_held().await {
                     publish_strength(&subscriptions, bars);
                 }
             });

@@ -18,6 +18,9 @@ pub struct NetworkStatus {
     /// Whether the Host accepts writes now (its lifecycle's `can_write`;
     /// plan E7.13: a community create waits for it).
     pub can_write: bool,
+    /// The indicator's bars as shown now (plan E7.2); later changes arrive
+    /// as `NetworkEvent::Strength`.
+    pub bars: u8,
     pub profile_dht_key: Option<String>,
     pub friend_list_dht_key: Option<String>,
 }
