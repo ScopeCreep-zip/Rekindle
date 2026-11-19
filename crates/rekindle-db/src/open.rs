@@ -241,7 +241,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// `code_hash` is the public half of its join key and a `MemberJoined`
 /// invite proof is that key's signature, so stored invites and joins of
 /// older builds no longer verify.
-pub const SCHEMA_VERSION: i64 = 142;
+/// 143 (plan E7.2 slices 7-11): `identity.bio` and `friends.bio`,
+/// `identity.share_current_game`, `hidden_games` and `favourite_servers`.
+pub const SCHEMA_VERSION: i64 = 143;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
