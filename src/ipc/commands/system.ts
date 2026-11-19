@@ -4,7 +4,7 @@ import type {
 } from "./types";
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
-  AuditEntryView, AuditVerified, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
+  AuditEntryView, AuditVerified, GameTotalView, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
   RegionFit, SkinApplied, SkinDraft, SkinDraftReport, SkinEntry, SkinLibrary,
 } from "./dto";
 
@@ -62,6 +62,8 @@ export const systemCommands = {
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),
+  // Our time in each detected game, the most recent first (plan E7.2).
+  getGameTotals: () => hostInvoke<GameTotalView[]>("get_game_totals"),
   getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
   launchGameToServer: (gameId: number, serverAddress: string) =>
     invoke<void>("launch_game_to_server", { gameId, serverAddress }),

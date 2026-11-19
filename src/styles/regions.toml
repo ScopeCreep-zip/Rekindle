@@ -98,6 +98,7 @@
 '.form-tab-active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab.active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-subgroup-header' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-name-offline' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-game-info' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-request-state' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
@@ -148,6 +149,11 @@
 '.profile-status-label' = { on = ["--color-xfire-bg-dark"] }
 '.profile-key-display' = { on = ["--color-xfire-bg-input"] }
 '.profile-game-name' = { on = ["--color-xfire-bg-dark"] }
+'.game-icon-generic' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"], graphic = true }
+'.game-time-empty' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.game-time-name' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.game-time-total' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.game-time-last' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.profile-status-message' = { on = ["--color-xfire-bg-dark"] }
 '.profile-empty-hint' = { on = ["--color-xfire-bg-dark"] }
 '.profile-mutual-item' = { on = ["--color-xfire-bg-dark"] }

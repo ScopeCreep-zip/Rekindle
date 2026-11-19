@@ -52,6 +52,10 @@ pub enum GameActivity {
         /// Direct server address ("ip:port") for join-game, when the
         /// game exposes one.
         server_address: Option<String>,
+        /// The game's icon, `src/assets/game-icons/<key>.png`, resolved by
+        /// the backend from the game database (plan E7.2); never on the
+        /// wire between peers.
+        icon_key: Option<String>,
     },
 }
 
@@ -81,6 +85,7 @@ impl GameActivity {
         game_id: Option<u32>,
         elapsed_seconds: Option<u32>,
         server_address: Option<String>,
+        icon_key: Option<String>,
     ) -> Self {
         match game_name {
             Some(game_name) => Self::Playing {
@@ -88,6 +93,7 @@ impl GameActivity {
                 game_id,
                 elapsed_seconds,
                 server_address,
+                icon_key,
             },
             None => Self::Idle,
         }
@@ -248,11 +254,12 @@ mod tests {
             Some(7),
             Some(1234),
             Some("10.0.0.1:16567".into()),
+            Some("xfire/4101".into()),
         );
         assert_eq!(g.game_name(), Some("Battlefield 2"));
         assert_eq!(g.game_id(), Some(7));
         assert_eq!(
-            GameActivity::from_parts(None, Some(7), None, None),
+            GameActivity::from_parts(None, Some(7), None, None, None),
             GameActivity::Idle
         );
     }
@@ -273,11 +280,12 @@ mod tests {
                 game_id: Some(7),
                 elapsed_seconds: Some(12),
                 server_address: None,
+                icon_key: Some("xfire/8507".into()),
             }),
         };
         assert_eq!(
             serde_json::to_string(&playing).unwrap(),
-            r#"{"selfChanged":{"publicKey":"abc","snapshot":{"status":null,"statusMessage":null,"game":{"playing":{"gameName":"BF2","gameId":7,"elapsedSeconds":12,"serverAddress":null}},"idle":null}}}"#
+            r#"{"selfChanged":{"publicKey":"abc","snapshot":{"status":null,"statusMessage":null,"game":{"playing":{"gameName":"BF2","gameId":7,"elapsedSeconds":12,"serverAddress":null,"iconKey":"xfire/8507"}},"idle":null}}}"#
         );
 
         let member = PresenceEvent::CommunityMemberChanged {
@@ -307,6 +315,7 @@ mod tests {
                 game_id: Some(7),
                 elapsed_seconds: Some(1234),
                 server_address: Some("10.0.0.1:16567".into()),
+                icon_key: Some("xfire/4101".into()),
             });
 
         for event in [

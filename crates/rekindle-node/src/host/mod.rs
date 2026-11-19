@@ -20,7 +20,7 @@ mod friend_admission_tests;
 #[cfg(test)]
 mod friend_answer_tests;
 mod friends;
-mod game;
+pub(crate) mod game;
 pub mod gate;
 #[cfg(test)]
 mod group_admission_tests;

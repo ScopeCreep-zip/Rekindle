@@ -115,6 +115,7 @@
 
   /* A sender's or group's name never pushes its row past the window. */
   .buddy-group-name,
+  .buddy-game-text,
   .chat-message-sender-other,
   .chat-message-sender-self {
     min-width: 0;
@@ -137,6 +138,7 @@
   }
 
   .form-row,
+  .profile-game-name,
   .stage-panel-request-actions {
     align-items: center;
     display: flex;

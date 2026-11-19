@@ -24,6 +24,7 @@ pub(crate) async fn route(
         IpcRequest::PresenceSet { status } => handle_status(ctx, state, status).await,
         IpcRequest::PresenceSetMessage { message } => handle_message(ctx, state, message).await,
         IpcRequest::PresenceGet => handle_get(ctx, state),
+        IpcRequest::GameTotalsGet => handle_game_totals(ctx, state).await,
         IpcRequest::ProfileSetNickname { display_name } => {
             handle_nickname(ctx, state, &display_name).await
         }
@@ -101,6 +102,25 @@ fn handle_get(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
         return state_error(state, "query");
     }
     IpcResponse::ok(&ctx.own_presence.view())
+}
+
+/// `GameTotalsGet` (plan E7.2): `game_sessions` summed per game, each
+/// named and given its icon key from the bundled database.
+async fn handle_game_totals(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let (db, owner) = match (ctx.require_db(), ctx.require_owner()) {
+        (Ok(db), Ok(owner)) => (db, owner),
+        (Err(e), _) | (_, Err(e)) => return e,
+    };
+    match db
+        .call(move |conn| rekindle_db::repo::game_sessions::totals(conn, &owner))
+        .await
+    {
+        Ok(totals) => IpcResponse::ok(&crate::host::game::total_views(&totals)),
+        Err(e) => IpcResponse::error(500, format!("game totals not read: {e}")),
+    }
 }
 
 /// `GamePresenceSet`: a game set by hand, until the detector's next change.

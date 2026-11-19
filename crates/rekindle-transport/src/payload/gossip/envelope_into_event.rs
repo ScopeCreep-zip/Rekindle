@@ -64,6 +64,9 @@ pub fn envelope_into_event(
                         game_info.as_ref().and_then(|g| g.game_id),
                         None,
                         None,
+                        // A member card shows no game icon (plan E7.2 names
+                        // the buddy row, the profile and the call tile).
+                        None,
                     ),
                 ),
         }),

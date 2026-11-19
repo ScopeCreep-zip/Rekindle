@@ -121,6 +121,7 @@ pub fn fan_out_own_presence(
             game_id,
             elapsed_seconds,
             server_address,
+            ..
         }) => Some(rekindle_codec::community::envelope::PresenceGameInfo {
             game_name: game_name.clone(),
             game_id: *game_id,

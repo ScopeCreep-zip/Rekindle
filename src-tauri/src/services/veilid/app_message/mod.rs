@@ -468,6 +468,10 @@ async fn handle_relayed_envelope(
                                 game_id,
                                 elapsed_seconds,
                                 server_address,
+                                // A member card shows no game icon (plan
+                                // E7.2 names the buddy row, the profile
+                                // and the call tile).
+                                None,
                             ),
                         ),
                     },

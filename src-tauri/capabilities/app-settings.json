@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-settings",
-  "description": "App-command grants for the `settings` window: preferences, notifications/DND/quiet-hours, audio/video device selection, blocked users, strand-relay management, cross-device pairing/sync, mobile push-relay registration, update checks, and identity audit-log verify/export, and the skins of Settings → Appearance (list, import, remove, select, keep, login skin, and opening the skin editor) with a skin's credited source opened through `open_external_url` (it asks in Rust before it opens).",
+  "description": "App-command grants for the `settings` window: preferences, notifications/DND/quiet-hours, audio/video device selection, blocked users, strand-relay management, cross-device pairing/sync, mobile push-relay registration, update checks, our game-time totals for Settings → Profile, and identity audit-log verify/export, and the skins of Settings → Appearance (list, import, remove, select, keep, login skin, and opening the skin editor) with a skin's credited source opened through `open_external_url` (it asks in Rust before it opens).",
   "windows": [
     "settings"
   ],
@@ -16,6 +16,7 @@
     "allow-generate-pairing-qr-svg",
     "allow-get-blocked-users",
     "allow-get-do-not-disturb",
+    "allow-get-game-totals",
     "allow-get-link-previews-enabled",
     "allow-get-preferences",
     "allow-get-quiet-hours",

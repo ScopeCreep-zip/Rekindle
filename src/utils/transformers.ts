@@ -18,7 +18,7 @@ export function transformFriend(f: FriendInfo): Friend {
     status: (f.status as Friend["status"]) ?? "offline",
     statusMessage: f.statusMessage ?? null,
     gameInfo: f.gameInfo
-      ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null, serverAddress: f.gameInfo.serverAddress ?? null }
+      ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null, serverAddress: f.gameInfo.serverAddress ?? null, iconKey: f.gameInfo.iconKey }
       : null,
     group: f.groupLabel,
     groupId: f.groupId,
@@ -264,6 +264,6 @@ export function transformNewFriend(
 
 
 /** Presence event game data → store GameInfo. */
-export function transformGameInfo(g: { gameName: string; gameId?: number | null; elapsedSeconds?: number | null; serverAddress?: string | null }): GameInfo {
-  return { gameName: g.gameName, gameId: g.gameId ?? null, startedAt: g.elapsedSeconds ?? null, serverAddress: g.serverAddress ?? null };
+export function transformGameInfo(g: { gameName: string; gameId?: number | null; elapsedSeconds?: number | null; serverAddress?: string | null; iconKey: string | null }): GameInfo {
+  return { gameName: g.gameName, gameId: g.gameId ?? null, startedAt: g.elapsedSeconds ?? null, serverAddress: g.serverAddress ?? null, iconKey: g.iconKey };
 }

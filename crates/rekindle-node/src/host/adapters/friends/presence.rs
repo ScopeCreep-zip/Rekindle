@@ -48,6 +48,8 @@ fn subscription_event(event: FriendPresenceEvent) -> SubscriptionEvent {
                 game.as_ref().map(|g| g.game_id),
                 game.as_ref().map(|g| g.elapsed_seconds),
                 game.as_ref().and_then(|g| g.server_address.clone()),
+                game.as_ref()
+                    .and_then(|g| rekindle_game_detect::GameDatabase::icon_key_for(g.game_id)),
             )),
         ),
     };
@@ -169,6 +171,7 @@ impl FriendPresenceDeps for HostFriends {
             game_name: g.game_name,
             server_info: None,
             elapsed_seconds: g.elapsed_seconds,
+            icon_key: rekindle_game_detect::GameDatabase::icon_key_for(g.game_id),
             server_address: g.server_address,
         });
         self.with_friend(friend_key, |f| f.game_info = game);

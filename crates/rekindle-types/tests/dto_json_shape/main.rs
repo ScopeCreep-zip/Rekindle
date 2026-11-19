@@ -26,7 +26,7 @@ use rekindle_types::dto::onboarding::{
     GuideStepDto, OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto,
     OnboardingQuestionDto, WelcomeChannelEntryDto, WelcomeScreenDto,
 };
-use rekindle_types::dto::presence::{OwnGame, OwnPresenceView};
+use rekindle_types::dto::presence::{GameTotalView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState};
 use rekindle_types::intent::{
@@ -52,6 +52,7 @@ fn game() -> OwnGame {
         game_name: "Counter-Strike 2".into(),
         elapsed_seconds: 90,
         server_address: Some("10.0.0.1:27015".into()),
+        icon_key: Some("xfire/8507".into()),
     }
 }
 
@@ -356,8 +357,19 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
         server_info: None,
         elapsed_seconds: 90,
         server_address: Some("10.0.0.1:27015".into()),
+        icon_key: Some("xfire/8507".into()),
     });
     add("friends.friend.accepted", to(Friend::of(&accepted)));
+    add(
+        "presence.gameTotals",
+        to(vec![GameTotalView {
+            game_id: 4181,
+            game_name: "Counter-Strike 2".into(),
+            icon_key: Some("xfire/8507".into()),
+            total_secs: 9000,
+            last_played: 1_700_000_000_000,
+        }]),
+    );
     let mut pending = FriendState::new(pk('c'), "Cy".into(), FriendshipState::PendingOut);
     pending.status = SessionStatus::Online;
     pending.handshake_error = Some("their accept carried no session data".into());

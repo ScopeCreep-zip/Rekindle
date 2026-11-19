@@ -154,6 +154,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("GamePresenceClear", Some(IntentKind::ClearGamePresence)),
     ("PresenceSetMessage", Some(IntentKind::SetStatusMessage)),
     ("PresenceGet", None),
+    ("GameTotalsGet", None),
     ("ProfileSetNickname", Some(IntentKind::SetNickname)),
     ("ProfileSetAvatar", Some(IntentKind::SetAvatar)),
     (

@@ -3,6 +3,11 @@
 //! presence's game, which publishes `SelfChanged` and writes profile
 //! subkey 4. `GamePresenceSet`/`GamePresenceClear` write the same slot;
 //! the detector's next change overrides a manual set.
+//!
+//! The publisher is also the one writer of `game_sessions` (plan E7.2):
+//! each detected session is recorded when it ends, and the one still open
+//! when the stage stops (lock, quit) is recorded then. A set by hand is
+//! not a detected session and is not recorded.
 
 use async_trait::async_trait;
 use rekindle_game_detect::{DetectedGame, GameDatabase, GameDetector, GameDetectorPublisher};
@@ -12,11 +17,85 @@ use super::own_presence::{Game, OwnPresence};
 
 struct Publisher {
     presence: OwnPresence,
+    sessions: SessionLog,
+}
+
+/// The detected session in progress and where finished ones are written.
+pub(crate) struct SessionLog {
+    db: std::sync::Arc<rekindle_db::DbHandle>,
+    owner: String,
+    clock: std::sync::Arc<dyn rekindle_utils::Clock>,
+    /// The game id and start (Unix ms) of the session in progress.
+    current: tokio::sync::Mutex<Option<(u32, i64)>>,
+}
+
+impl SessionLog {
+    pub(crate) fn new(
+        db: std::sync::Arc<rekindle_db::DbHandle>,
+        owner: String,
+        clock: std::sync::Arc<dyn rekindle_utils::Clock>,
+    ) -> Self {
+        Self {
+            db,
+            owner,
+            clock,
+            current: tokio::sync::Mutex::new(None),
+        }
+    }
+
+    /// The detector now sees `detected`: a different game or a new start
+    /// ends the session in progress, which is recorded.
+    pub(crate) async fn observe(&self, detected: Option<&DetectedGame>) {
+        let next = detected.filter(|game| game.game_id != 0).map(|game| {
+            let started = i64::try_from(game.started_at_epoch_ms).unwrap_or(i64::MAX);
+            (game.game_id, started)
+        });
+        let mut current = self.current.lock().await;
+        if *current == next {
+            return;
+        }
+        let ended = std::mem::replace(&mut *current, next);
+        drop(current);
+        if let Some(session) = ended {
+            self.record(session).await;
+        }
+    }
+
+    /// The stage stops: the session in progress ends now.
+    pub(crate) async fn finish(&self) {
+        let ended = self.current.lock().await.take();
+        if let Some(session) = ended {
+            self.record(session).await;
+        }
+    }
+
+    async fn record(&self, (game_id, started_at): (u32, i64)) {
+        let ended_at = self.clock.now_ms_i64().max(started_at);
+        let db = match self.db.current() {
+            Ok(db) => db,
+            Err(e) => {
+                tracing::warn!(error = %e, game_id, "game session not recorded");
+                return;
+            }
+        };
+        let owner = self.owner.clone();
+        let written = db
+            .call(move |conn| {
+                rekindle_db::repo::game_sessions::record(
+                    conn, &owner, game_id, started_at, ended_at,
+                )
+            })
+            .await;
+        if let Err(e) = written {
+            tracing::warn!(error = %e, game_id, "game session not recorded");
+        }
+    }
 }
 
 #[async_trait]
 impl GameDetectorPublisher for Publisher {
     async fn publish_game_status(&self, detected: Option<DetectedGame>) {
+        self.sessions.observe(detected.as_ref()).await;
         let game = detected.map(|detected| Game {
             id: detected.game_id,
             name: detected.game_name,
@@ -36,22 +115,48 @@ impl GameDetectorPublisher for Publisher {
     }
 }
 
-/// Run the detector until `stop`, stamping each game on the Host's `clock`.
-pub(crate) async fn run(
-    presence: OwnPresence,
-    clock: std::sync::Arc<dyn rekindle_utils::Clock>,
-    stop: CancellationToken,
-) {
+/// Run the detector until `stop`, stamping each game on the Host's
+/// clock, then record the session still open in `sessions`.
+pub(crate) async fn run(presence: OwnPresence, sessions: SessionLog, stop: CancellationToken) {
     let detector = GameDetector::new(
         GameDatabase::bundled(),
         rekindle_game_detect::DEFAULT_POLL_INTERVAL,
-        clock,
+        std::sync::Arc::clone(&sessions.clock),
     );
+    let publisher = std::sync::Arc::new(Publisher { presence, sessions });
     rekindle_game_detect::run_runtime(
         detector,
-        std::sync::Arc::new(Publisher { presence }),
+        std::sync::Arc::clone(&publisher),
         stop,
         rekindle_game_detect::DEFAULT_POLL_INTERVAL,
     )
     .await;
+    publisher.sessions.finish().await;
 }
+
+/// `game_sessions` totals as the profile shows them: named and given
+/// their icon key from the bundled database.
+pub(crate) fn total_views(
+    totals: &[rekindle_db::repo::game_sessions::GameTotal],
+) -> Vec<rekindle_types::dto::presence::GameTotalView> {
+    totals
+        .iter()
+        .map(|total| {
+            let entry = GameDatabase::shared().lookup_by_id(total.game_id);
+            rekindle_types::dto::presence::GameTotalView {
+                game_id: total.game_id,
+                game_name: entry.map_or_else(
+                    || format!("Game {}", total.game_id),
+                    |entry| entry.name.clone(),
+                ),
+                icon_key: entry.and_then(rekindle_game_detect::database::GameEntry::icon_key),
+                total_secs: total.total_secs,
+                last_played: total.last_played,
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+#[path = "game_tests.rs"]
+mod tests;

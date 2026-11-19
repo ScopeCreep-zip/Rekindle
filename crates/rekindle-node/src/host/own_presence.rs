@@ -404,6 +404,7 @@ impl OwnPresence {
                 game_name: game.name.clone(),
                 elapsed_seconds: self.elapsed_seconds(game),
                 server_address: game.server_address.clone().map(String::from),
+                icon_key: rekindle_game_detect::GameDatabase::icon_key_for(game.id),
             }),
             idle: state.idle,
         }
@@ -477,6 +478,7 @@ impl OwnPresence {
                 game_id: Some(game.game_id),
                 elapsed_seconds: Some(game.elapsed_seconds),
                 server_address: game.server_address,
+                icon_key: game.icon_key,
             });
         // Our own device sees our real status, Invisible included; peers
         // see the wire value (Invisible folds to "offline").

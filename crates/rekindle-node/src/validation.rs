@@ -269,6 +269,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendBlockedList
         | IpcRequest::FriendGroupDelete { group_id: _ }
         | IpcRequest::PresenceGet
+        | IpcRequest::GameTotalsGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
         | IpcRequest::AuditExport { since: _ }

@@ -21,6 +21,7 @@ pub mod community_invites;
 pub mod friend_groups;
 pub mod friends;
 pub mod game_servers;
+pub mod game_sessions;
 pub mod governance_checkpoints;
 pub mod governance_ops;
 pub mod governance_partial;

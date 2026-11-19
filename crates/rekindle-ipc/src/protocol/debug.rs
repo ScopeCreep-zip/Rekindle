@@ -137,6 +137,7 @@ impl std::fmt::Debug for IpcRequest {
             Self::Undo { .. }
             | Self::PresenceSetMessage { .. }
             | Self::PresenceGet
+            | Self::GameTotalsGet
             | Self::ProfileSetNickname { .. }
             | Self::SetReadReceiptsEnabled { .. }
             | Self::ProfileSetAvatar { .. }
@@ -182,6 +183,7 @@ impl IpcRequest {
                 .field("message_len", &message.len())
                 .finish(),
             Self::PresenceGet => write!(f, "PresenceGet"),
+            Self::GameTotalsGet => write!(f, "GameTotalsGet"),
             Self::Undo { id } => f.debug_struct("Undo").field("id", id).finish(),
             Self::ProfileSetNickname { display_name } => f
                 .debug_struct("ProfileSetNickname")

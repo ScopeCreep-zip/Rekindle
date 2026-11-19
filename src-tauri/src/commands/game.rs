@@ -1,5 +1,5 @@
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_types::dto::presence::{OwnGame, OwnPresenceView};
+use rekindle_types::dto::presence::{GameTotalView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -38,4 +38,13 @@ pub async fn launch_game_to_server(game_id: u32, server_address: String) -> Resu
     let db = rekindle_game_detect::GameDatabase::bundled();
     rekindle_game_detect::launcher::launch_to_server(&db, game_id, &server)
         .map_err(|e| e.to_string())
+}
+
+/// Our time in each detected game, the most recent first
+/// (`IpcRequest::GameTotalsGet`, plan E7.2).
+#[tauri::command]
+pub async fn get_game_totals(
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<GameTotalView>>, CommandError> {
+    host_call::call(&state, IpcRequest::GameTotalsGet).await
 }

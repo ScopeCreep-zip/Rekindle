@@ -93,7 +93,10 @@ impl IpcRequest {
     pub fn agent_capability(&self) -> Option<AgentCapability> {
         use AgentCapability as C;
         match self {
-            Self::IdentityShow | Self::PresenceGet | Self::AvatarGet { .. } => {
+            Self::IdentityShow
+            | Self::PresenceGet
+            | Self::GameTotalsGet
+            | Self::AvatarGet { .. } => {
                 Some(C::IdentityRead)
             }
             Self::NetworkStatus | Self::NetworkPeers => Some(C::NetworkRead),

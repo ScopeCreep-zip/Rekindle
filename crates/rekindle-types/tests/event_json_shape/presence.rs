@@ -70,6 +70,7 @@ fn playing() -> PresenceSnapshot {
             game_id: Some(4_101),
             elapsed_seconds: Some(1_234),
             server_address: Some(text("10.0.0.1:16567")),
+            icon_key: Some(text("xfire/4101")),
         })
 }
 

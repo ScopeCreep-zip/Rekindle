@@ -193,6 +193,7 @@ pub(crate) async fn select(
         | IpcRequest::PrekeyStatus
         | IpcRequest::FriendCode
         | IpcRequest::PresenceGet
+        | IpcRequest::GameTotalsGet
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }

@@ -254,6 +254,18 @@ function skinLibrary(s: Stress) {
   };
 }
 
+/** `n` games' totals (plan E7.2): 64-char names, an Xfire icon, a key with no file, none. */
+export function gameTotals(n: number) {
+  const keys = ["xfire/8507", "slug/no-such-icon", null];
+  return Array.from({ length: n }, (_, i) => ({
+    gameId: 4000 + i,
+    gameName: longName(`Game${i}_`),
+    iconKey: keys[i % keys.length],
+    totalSecs: 3600 * 9999 + i,
+    lastPlayed: 1_000_000 + i,
+  }));
+}
+
 export const FULL: Stress = { friends: 100, members: 100, messages: 40, communities: 12 };
 export const EMPTY: Stress = { friends: 0, members: 0, messages: 0, communities: 0 };
 
@@ -348,6 +360,8 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
     }
     case "get_game_status":
       return null;
+    case "get_game_totals":
+      return ${j(gameTotals(s.friends ? 30 : 0))};
     case "get_welcome_screen":
       // The Host's empty default (none set), or a set screen with the
       // longest description and featured channels.

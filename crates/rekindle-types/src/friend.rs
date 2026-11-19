@@ -98,4 +98,7 @@ pub struct GameInfoState {
     /// The server to join, `host:port`, parsed on ingest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_address: Option<String>,
+    /// The game's icon, `src/assets/game-icons/<key>.png`, resolved by the
+    /// backend from the game database (plan E7.2).
+    pub icon_key: Option<String>,
 }

@@ -78,5 +78,8 @@ export default defineConfig({
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     chunkSizeWarningLimit: 1024,
     reportCompressedSize: false,
+    // Game icons (plan E7.2, ~3800 small PNGs) are emitted as files, never
+    // inlined into the bundle as data URLs.
+    assetsInlineLimit: (file: string) => (file.includes("/assets/game-icons/") ? false : undefined),
   },
 });

@@ -1,0 +1,67 @@
+@layer components {
+  /* Game icons (plan E7.2): 16 px, Xfire's list-row size. */
+  .game-icon {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+  }
+
+  .game-icon-generic {
+    font-size: 14px;
+    line-height: 16px;
+    text-align: center;
+    color: var(--color-xfire-ingame-text);
+  }
+
+  /* Settings → Profile: our time in each game (plan E7.2). */
+  .game-time-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .game-time-empty {
+    margin-bottom: 16px;
+    font-size: 11px;
+    font-style: italic;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .game-time-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+  }
+
+  .game-time-total,
+  .game-time-last {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+}
+
+@layer components {
+  /* The buddy row and the profile put the game's icon before its name. */
+  .buddy-game-info {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+@layer components {
+  /* A group's "Online" / "Offline" sections (plan E7.2). */
+  .buddy-subgroup-header {
+    padding: 2px 12px 2px 24px;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+}

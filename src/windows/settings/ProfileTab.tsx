@@ -1,10 +1,13 @@
-import { Component, createSignal, createEffect } from "solid-js";
+import { Component, createSignal, createEffect, createResource, For, Show } from "solid-js";
 import Avatar from "../../components/common/Avatar";
 import FormField from "../../components/common/FormField";
 import { authState, setAuthState } from "../../stores/auth.store";
 import { handleSetAvatar } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
 import { fetchAvatarUrl } from "../../ipc/avatar";
+import GameIcon from "../../components/game/GameIcon";
+import { formatDuration } from "../../utils/formatting";
+import { formatRelativeTime } from "../../utils/time";
 
 const ProfileTab: Component = () => {
   const [nameInput, setNameInput] = createSignal("");
@@ -14,6 +17,10 @@ const ProfileTab: Component = () => {
   // changes on explicit save (or initial hydrate), so this never clobbers
   // an unsaved edit.
   createEffect(() => setNameInput(authState.displayName ?? ""));
+
+  // Our time in each detected game and when we last played it (plan E7.2),
+  // from the Host's `game_sessions`.
+  const [gameTotals] = createResource(() => commands.getGameTotals());
 
   function handleSaveName(): void {
     const name = nameInput().trim();
@@ -93,6 +100,24 @@ const ProfileTab: Component = () => {
           <button class="form-btn-primary" onClick={handleSaveStatusMessage}>Save</button>
         </div>
       </FormField>
+      <div class="settings-section-title">Game Time</div>
+      <Show
+        when={(gameTotals() ?? []).length > 0}
+        fallback={<div class="game-time-empty">{gameTotals.error ? "Game time could not be read" : "No games played yet"}</div>}
+      >
+        <ul class="game-time-list" aria-label="Game time">
+          <For each={gameTotals()}>
+            {(game) => (
+              <li class="game-time-row">
+                <GameIcon iconKey={game.iconKey} />
+                <span class="game-time-name">{game.gameName}</span>
+                <span class="game-time-total">{formatDuration(game.totalSecs)}</span>
+                <span class="game-time-last">{formatRelativeTime(game.lastPlayed)}</span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
     </>
   );
 };

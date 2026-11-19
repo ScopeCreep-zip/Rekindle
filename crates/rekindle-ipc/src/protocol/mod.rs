@@ -281,6 +281,9 @@ pub enum IpcRequest {
     /// Our own status, message, game and idle state
     /// (`dto::presence::OwnPresenceView`).
     PresenceGet,
+    /// Our time in each detected game and when we last played it, the
+    /// most recent first (`Vec<dto::presence::GameTotalView>`, plan E7.2).
+    GameTotalsGet,
     /// Change the name we show: the identity's database, the registry and
     /// profile subkey 0.
     ProfileSetNickname { display_name: String },

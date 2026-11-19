@@ -18,6 +18,7 @@ export interface GameInfo {
   gameId: number | null;
   startedAt: number | null;
   serverAddress: string | null;
+  iconKey: string | null; // `src/assets/game-icons/<key>.png`, from the backend (plan E7.2)
 }
 
 /** One audit-log row (`rekindle_types::dto::community::CommunityAuditEntry`). */
@@ -394,6 +395,16 @@ export interface OwnGame {
   gameName: string;
   elapsedSeconds: number;
   serverAddress: string | null;
+  iconKey: string | null;
+}
+
+/** Our time in one game (`GameTotalsGet`); `lastPlayed` is Unix ms, `iconKey` as on `GameInfo`. */
+export interface GameTotalView {
+  gameId: number;
+  gameName: string;
+  iconKey: string | null;
+  totalSecs: number;
+  lastPlayed: number;
 }
 
 /** What `PresenceGet` answers. */

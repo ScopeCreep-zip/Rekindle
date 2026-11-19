@@ -1234,6 +1234,7 @@
               "elapsedSeconds": 1234,
               "gameId": 4101,
               "gameName": "Battlefield 2",
+              "iconKey": "xfire/4101",
               "serverAddress": "10.0.0.1:16567"
             }
           },
@@ -1267,6 +1268,7 @@
               "elapsedSeconds": 1234,
               "gameId": 4101,
               "gameName": "Battlefield 2",
+              "iconKey": "xfire/4101",
               "serverAddress": "10.0.0.1:16567"
             }
           },

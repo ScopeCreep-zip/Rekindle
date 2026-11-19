@@ -82,6 +82,7 @@ function applyToFriend(publicKey: string, snapshot: PresenceSnapshot): void {
           gameId: playing?.gameId ?? null,
           elapsedSeconds: playing?.elapsedSeconds ?? null,
           serverAddress: playing?.serverAddress ?? null,
+          iconKey: playing?.iconKey ?? null,
         }),
       );
     }
@@ -107,6 +108,7 @@ function applyToSelf(snapshot: PresenceSnapshot): void {
           gameName: playing.gameName,
           elapsedSeconds: playing.elapsedSeconds ?? 0,
           serverAddress: playing.serverAddress,
+          iconKey: playing.iconKey,
         },
     );
   }
@@ -200,6 +202,7 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
                 gameId: playing?.gameId ?? null,
                 startedAt: playing?.elapsedSeconds ?? null,
                 serverAddress: playing?.serverAddress ?? null,
+                iconKey: playing?.iconKey ?? null,
               },
         );
       }

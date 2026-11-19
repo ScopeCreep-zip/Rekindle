@@ -103,6 +103,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("import_skin_region", HostCall::Request("SkinDraftCheck")),
     ("export_skin_schema", HostCall::Request("SkinExportSchema")),
     ("get_game_status", HostCall::Request("PresenceGet")),
+    ("get_game_totals", HostCall::Request("GameTotalsGet")),
     ("open_external_url", HostCall::Request("LinkOpen")),
     // Friends and the 1:1 paths (plan E2.1).
     ("send_message", HostCall::Request("DmSend")),

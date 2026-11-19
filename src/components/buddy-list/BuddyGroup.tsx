@@ -21,6 +21,22 @@ interface BuddyGroupProps {
   renderItem: (friend: Friend, item: JSX.Element) => JSX.Element;
 }
 
+/** One status section of a group; an empty one is not shown. */
+const BuddySection: Component<{
+  label: string;
+  friends: Friend[];
+  render: (friend: Friend) => JSX.Element;
+}> = (props) => (
+  <Show when={props.friends.length > 0}>
+    <div class="buddy-subgroup" role="group" aria-label={props.label}>
+      <div class="buddy-subgroup-header">
+        {props.label} ({props.friends.length})
+      </div>
+      <For each={props.friends}>{props.render}</For>
+    </div>
+  </Show>
+);
+
 const BuddyGroup: Component<BuddyGroupProps> = (props) => {
   const [collapsed, setCollapsed] = createSignal(false);
   const [renaming, setRenaming] = createSignal(false);
@@ -59,6 +75,39 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
 
   const isPendingGroup = () => props.name === "Awaiting Response";
 
+  // Plan E7.2: each group splits into "Online" and "Offline" sections, as
+  // Xfire's list did; the list keeps its status order inside each.
+  const online = () => props.friends.filter((f) => f.status !== "offline");
+  const offline = () => props.friends.filter((f) => f.status === "offline");
+
+  const renderBuddy = (friend: Friend) =>
+    props.renderItem(
+      friend,
+      <BuddyItem
+        publicKey={friend.publicKey}
+        displayName={friend.displayName}
+        nickname={friend.nickname}
+        status={friend.status}
+        statusMessage={friend.statusMessage}
+        gameInfo={friend.gameInfo?.gameName ?? null}
+        gameIconKey={friend.gameInfo?.iconKey ?? null}
+        gameElapsed={friend.gameInfo?.startedAt ?? null}
+        serverAddress={friend.gameInfo?.serverAddress ?? null}
+        lastSeenAt={friend.lastSeenAt}
+        unreadCount={friend.unreadCount}
+        voiceChannel={friend.voiceChannel}
+        friendshipState={friend.friendshipState}
+        requestSendState={friend.requestSendState}
+        handshakeError={friend.handshakeError}
+        handshakeRetrying={friend.handshakeRetrying}
+        unreachable={friend.unreachable}
+        identityPinMismatch={friend.identityPinMismatch}
+        selected={props.selectedKey === friend.publicKey}
+        onDoubleClick={props.onDoubleClick}
+        onSelect={props.onSelect}
+      />,
+    );
+
   return (
     <div class={isPendingGroup() ? "buddy-group-pending" : ""}>
       <Show when={!renaming()} fallback={
@@ -91,35 +140,14 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
         </div>
       </Show>
       <Show when={!collapsed()}>
-        <For each={props.friends}>
-          {(friend) =>
-            props.renderItem(
-              friend,
-              <BuddyItem
-                publicKey={friend.publicKey}
-                displayName={friend.displayName}
-                nickname={friend.nickname}
-                status={friend.status}
-                statusMessage={friend.statusMessage}
-                gameInfo={friend.gameInfo?.gameName ?? null}
-                gameElapsed={friend.gameInfo?.startedAt ?? null}
-                serverAddress={friend.gameInfo?.serverAddress ?? null}
-                lastSeenAt={friend.lastSeenAt}
-                unreadCount={friend.unreadCount}
-                voiceChannel={friend.voiceChannel}
-                friendshipState={friend.friendshipState}
-                requestSendState={friend.requestSendState}
-                handshakeError={friend.handshakeError}
-                handshakeRetrying={friend.handshakeRetrying}
-                unreachable={friend.unreachable}
-                identityPinMismatch={friend.identityPinMismatch}
-                selected={props.selectedKey === friend.publicKey}
-                onDoubleClick={props.onDoubleClick}
-                onSelect={props.onSelect}
-              />,
-            )
-          }
-        </For>
+        <Show when={isPendingGroup()} fallback={
+          <>
+            <BuddySection label="Online" friends={online()} render={renderBuddy} />
+            <BuddySection label="Offline" friends={offline()} render={renderBuddy} />
+          </>
+        }>
+          <For each={props.friends}>{renderBuddy}</For>
+        </Show>
       </Show>
     </div>
   );

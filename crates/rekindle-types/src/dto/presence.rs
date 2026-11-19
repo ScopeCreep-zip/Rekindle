@@ -15,6 +15,20 @@ pub struct OwnPresenceView {
     pub idle: IdleState,
 }
 
+/// Our time in one game (`GameTotalsGet`, plan E7.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTotalView {
+    pub game_id: u32,
+    pub game_name: String,
+    /// `src/assets/game-icons/<key>.png`, resolved from the game database.
+    pub icon_key: Option<String>,
+    /// Seconds played over every session.
+    pub total_secs: u64,
+    /// When the last session ended, Unix ms.
+    pub last_played: i64,
+}
+
 /// The game we are playing, detected or set by hand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,4 +39,7 @@ pub struct OwnGame {
     pub elapsed_seconds: u32,
     /// The server to join, `host:port`, already parsed.
     pub server_address: Option<String>,
+    /// The game's icon, `src/assets/game-icons/<key>.png`, resolved from
+    /// the game database (plan E7.2).
+    pub icon_key: Option<String>,
 }

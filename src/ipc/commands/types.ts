@@ -137,6 +137,8 @@ export interface GameStatus {
   serverInfo: string | null;
   elapsedSeconds: number;
   serverAddress: string | null;
+  /** `src/assets/game-icons/<key>.png`, resolved by the backend (plan E7.2). */
+  iconKey: string | null;
 }
 
 export interface AudioDeviceInfo {

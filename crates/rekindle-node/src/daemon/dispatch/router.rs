@@ -143,6 +143,7 @@ async fn route(
         request @ (IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::PresenceGet
+        | IpcRequest::GameTotalsGet
         | IpcRequest::ProfileSetNickname { .. }
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::ProfileSetAvatar { .. }

@@ -25,6 +25,8 @@ export type GameActivity =
         gameId: number | null;
         elapsedSeconds: number | null;
         serverAddress: string | null;
+        /** `src/assets/game-icons/<key>.png`, resolved by the backend (plan E7.2). */
+        iconKey: string | null;
       };
     };
 

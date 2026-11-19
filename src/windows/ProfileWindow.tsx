@@ -15,6 +15,7 @@ import { startEventStream } from "../ipc/channels";
 import SafetyNumberPanel from "../components/profile/SafetyNumberPanel";
 import VerifiedBadge from "../components/profile/VerifiedBadge";
 import { useSafetyNumber } from "../hooks/useSafetyNumber";
+import GameIcon from "../components/game/GameIcon";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -85,7 +86,10 @@ const ProfileWindow: Component = () => {
         <Show when={friend()?.gameInfo}>
           <div class="profile-section">
             <div class="profile-section-label">Currently Playing</div>
-            <div class="profile-game-name">{friend()!.gameInfo!.gameName}</div>
+            <div class="profile-game-name">
+              <GameIcon iconKey={friend()!.gameInfo!.iconKey} />
+              <span>{friend()!.gameInfo!.gameName}</span>
+            </div>
             <Show when={friend()!.gameInfo!.serverAddress}>
               <div class="profile-game-server">on {friend()!.gameInfo!.serverAddress}</div>
             </Show>

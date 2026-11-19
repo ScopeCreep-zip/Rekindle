@@ -272,6 +272,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::status::set_status_message,
         // game
         commands::game::get_game_status,
+        commands::game::get_game_totals,
         commands::game::get_game_name,
         commands::game::launch_game_to_server,
         // strand relay

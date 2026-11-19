@@ -16,6 +16,25 @@ pub struct GameEntry {
     /// `{addr}` is replaced with the `ip:port` at launch time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connect_template: Option<String>,
+    /// Xfire's id for this game, from `xfire_ids.json` (plan E7.2 "Game
+    /// icons"); not part of the database JSON.
+    #[serde(skip)]
+    pub xfire_id: Option<u32>,
+}
+
+impl GameEntry {
+    /// The key of this game's icon, `src/assets/game-icons/<key>.png`:
+    /// `xfire/<xfire id>` when the game is in Xfire's list, else
+    /// `slug/<icon>` (plan E7.2). Both ends hold the same database, so
+    /// the key never crosses the wire; a frontend shows the generic glyph
+    /// for a key with no file.
+    #[must_use]
+    pub fn icon_key(&self) -> Option<String> {
+        self.xfire_id.map_or_else(
+            || self.icon.as_ref().map(|slug| format!("slug/{slug}")),
+            |xfire_id| Some(format!("xfire/{xfire_id}")),
+        )
+    }
 }
 
 /// Maps process names to game information.
@@ -47,7 +66,34 @@ impl GameDatabase {
     /// Contains 50+ popular games. Users can extend this with custom JSON.
     pub fn bundled() -> Self {
         const DEFAULT_JSON: &str = include_str!("default_games.json");
-        Self::from_json(DEFAULT_JSON).expect("bundled game database is invalid JSON")
+        const XFIRE_IDS_JSON: &str = include_str!("xfire_ids.json");
+        let mut db = Self::from_json(DEFAULT_JSON).expect("bundled game database is invalid JSON");
+        let ids: XfireIdsFile =
+            serde_json::from_str(XFIRE_IDS_JSON).expect("bundled xfire_ids.json is invalid JSON");
+        db.apply_xfire_ids(&ids.games);
+        db
+    }
+
+    /// The bundled database, loaded once for the process.
+    pub fn shared() -> &'static Self {
+        static SHARED: std::sync::OnceLock<GameDatabase> = std::sync::OnceLock::new();
+        SHARED.get_or_init(Self::bundled)
+    }
+
+    /// The icon key of game `game_id` in the bundled database
+    /// ([`GameEntry::icon_key`]); `None` for an unknown game.
+    #[must_use]
+    pub fn icon_key_for(game_id: u32) -> Option<String> {
+        Self::shared()
+            .lookup_by_id(game_id)
+            .and_then(GameEntry::icon_key)
+    }
+
+    fn apply_xfire_ids(&mut self, ids: &[XfireId]) {
+        let by_id: HashMap<u32, u32> = ids.iter().map(|m| (m.id, m.xfire_id)).collect();
+        for entry in self.by_process.values_mut() {
+            entry.xfire_id = by_id.get(&entry.id).copied();
+        }
     }
 
     /// Create an empty database.
@@ -80,6 +126,18 @@ struct GameDatabaseFile {
     games: Vec<GameEntry>,
 }
 
+/// `xfire_ids.json`, written by `cargo xtask import-xfire-data` (plan E7.7.3).
+#[derive(Deserialize)]
+struct XfireIdsFile {
+    games: Vec<XfireId>,
+}
+
+#[derive(Deserialize)]
+struct XfireId {
+    id: u32,
+    xfire_id: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +164,27 @@ mod tests {
         // Case insensitive
         let entry = db.lookup_by_process("CS2.EXE").unwrap();
         assert_eq!(entry.id, 4181);
+    }
+
+    /// Counter-Strike 2 is in Xfire's list (`xfire_ids.json`), so its
+    /// icon is Xfire's; Valorant is not, so it keeps its slug; an unknown
+    /// game has none.
+    #[test]
+    fn icon_keys_prefer_the_xfire_id_then_the_slug() {
+        assert_eq!(
+            GameDatabase::icon_key_for(4181).as_deref(),
+            Some("xfire/8507")
+        );
+        let unmapped = GameDatabase::shared()
+            .by_process
+            .values()
+            .find(|e| e.xfire_id.is_none())
+            .expect("a game Xfire never listed");
+        assert_eq!(
+            unmapped.icon_key(),
+            Some(format!("slug/{}", unmapped.icon.as_ref().unwrap()))
+        );
+        assert_eq!(GameDatabase::icon_key_for(1), None);
     }
 
     /// A launcher substitutes the address once: a template with no

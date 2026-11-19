@@ -126,6 +126,19 @@ export const WINDOWS: WindowCase[] = [
     spacing: [".xfire-titlebar", ".form-tabs"],
   },
   {
+    // Settings → Profile's game time (plan E7.2): long names, 9999 h
+    // totals, an Xfire icon and the generic glyph.
+    name: "settings-profile",
+    label: "settings",
+    path: "/settings?tab=profile",
+    def: { width: 500, height: 550 },
+    min: { width: 420, height: 450 },
+    ready: frame,
+    spacing: [".xfire-titlebar", ".form-tabs"],
+    spacingWithData: [".game-time-list", ".game-time-row"],
+    panes: [".settings-content"],
+  },
+  {
     // Settings → Appearance (plan E7.7.2): the skin list, a trial's
     // "Keep this skin?" prompt over stress data, and import.
     name: "settings-appearance",

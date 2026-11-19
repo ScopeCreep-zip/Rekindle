@@ -827,6 +827,21 @@ CREATE TABLE IF NOT EXISTS paired_devices (
     PRIMARY KEY (owner_key, device_id)
 );
 
+-- Game time (plan E7.2; `rekindle_db::repo::game_sessions`): one row per
+-- detected game session, written when it ends by the Host's one game
+-- publisher. Unix ms. Local only: the profile record gains no subkey (its
+-- key travels in every invite), so totals reach friends only as
+-- ratchet-sealed DmFrame content.
+CREATE TABLE IF NOT EXISTS game_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL,
+    CHECK(ended_at >= started_at)
+);
+CREATE INDEX IF NOT EXISTS idx_game_sessions_game ON game_sessions(owner_key, game_id);
+
 -- Read markers (plan E3.1, D25; `rekindle_db::repo::read_markers`): per
 -- channel or DM, the device-independent position read up to — a channel
 -- message's `lamport_ts`, a DM peer stream's `stream_seq`. A marker only

@@ -7,6 +7,7 @@ import { ICON_VOLUME_HIGH } from "../../icons";
 import { formatRelativeTime } from "../../utils/time";
 import { identityPinMismatchText } from "../../utils/identity_pin";
 import { handleRetryHandshake } from "../../actions/buddy.actions";
+import GameIcon from "../game/GameIcon";
 
 interface BuddyItemProps {
   publicKey: string;
@@ -15,6 +16,7 @@ interface BuddyItemProps {
   status: UserStatus;
   statusMessage: string | null;
   gameInfo: string | null;
+  gameIconKey: string | null;
   gameElapsed: number | null;
   serverAddress: string | null;
   lastSeenAt: number | null;
@@ -88,7 +90,10 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
           </div>
         </Tooltip>
         <Show when={gameDisplay()}>
-          <div class="buddy-game-info">{gameDisplay()}</div>
+          <div class="buddy-game-info">
+            <GameIcon iconKey={props.gameIconKey} />
+            <span class="buddy-game-text">{gameDisplay()}</span>
+          </div>
         </Show>
         <Show when={props.friendshipState === "pendingOut" && props.requestSendState}>
           {(state) => <div class="buddy-request-state">Request {state()}</div>}
