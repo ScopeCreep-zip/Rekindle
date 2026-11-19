@@ -253,11 +253,10 @@ async fn watch_channel(
             ..
         }) if *channel == channel_id => {
             // Plan E3.3 E4 and M4: never "erased".
-            let outcome = removed_by
-                .as_ref()
-                .map_or(channel_message::Outcome::DeletedForMembers, |by| {
-                    channel_message::Outcome::Removed { by: by.clone() }
-                });
+            let outcome = removed_by.as_ref().map_or(
+                channel_message::MessageChangeOutcome::DeletedForMembers,
+                |by| channel_message::MessageChangeOutcome::Removed { by: by.clone() },
+            );
             Some(channel_message::outcome_line(message_id, &outcome, &names))
         }
         _ => None,

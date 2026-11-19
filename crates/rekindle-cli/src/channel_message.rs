@@ -24,7 +24,7 @@ use crate::output::{format, OutputMode};
 
 /// A channel as the Host names it: the community's anchor key, the
 /// channel's id, and our pseudonym in the community.
-pub struct Target {
+pub struct ChannelTarget {
     pub anchor: String,
     pub channel_id: String,
     pub our_pseudonym: String,
@@ -36,7 +36,7 @@ pub async fn target(
     client: &DaemonClient,
     community: &str,
     channel: &str,
-) -> anyhow::Result<Target> {
+) -> anyhow::Result<ChannelTarget> {
     let detail: CommunityDetail = serde_json::from_value(
         helpers::send(
             client,
@@ -54,7 +54,7 @@ pub async fn target(
         .find(|c| c.id == channel || c.name == channel)
         .map(|c| c.id.clone())
         .ok_or_else(|| anyhow::anyhow!("no channel '{channel}' in '{community}'"))?;
-    Ok(Target {
+    Ok(ChannelTarget {
         anchor: detail.anchor,
         channel_id,
         our_pseudonym: detail.our_pseudonym,
@@ -85,7 +85,7 @@ pub async fn member_names(
 
 /// What a change command did, as it is shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Outcome {
+pub enum MessageChangeOutcome {
     Edited,
     DeletedForMembers,
     /// Removed by the moderator with this pseudonym.
@@ -96,7 +96,10 @@ pub enum Outcome {
 
 /// The Host request for a change command on `target`, or `None` for any
 /// other channel command.
-pub fn change_request(cmd: &ChannelCmd, target: &Target) -> Option<(IpcRequest, Outcome)> {
+pub fn change_request(
+    cmd: &ChannelCmd,
+    target: &ChannelTarget,
+) -> Option<(IpcRequest, MessageChangeOutcome)> {
     let channel = target.channel_id.clone();
     let (request, outcome) = match cmd {
         ChannelCmd::EditMessage {
@@ -107,14 +110,14 @@ pub fn change_request(cmd: &ChannelCmd, target: &Target) -> Option<(IpcRequest, 
                 message_id: msg_id.clone(),
                 body: message.clone(),
             },
-            Outcome::Edited,
+            MessageChangeOutcome::Edited,
         ),
         ChannelCmd::DeleteMessage { msg_id, .. } => (
             ChannelMessageRequest::ChannelMessageDelete {
                 channel,
                 message_id: msg_id.clone(),
             },
-            Outcome::DeletedForMembers,
+            MessageChangeOutcome::DeletedForMembers,
         ),
         ChannelCmd::RemoveMessage { msg_id, reason, .. } => (
             ChannelMessageRequest::ChannelMessageAdminDelete {
@@ -123,7 +126,7 @@ pub fn change_request(cmd: &ChannelCmd, target: &Target) -> Option<(IpcRequest, 
                 message_id: msg_id.clone(),
                 reason: reason.clone(),
             },
-            Outcome::Removed {
+            MessageChangeOutcome::Removed {
                 by: target.our_pseudonym.clone(),
             },
         ),
@@ -138,14 +141,16 @@ pub fn change_request(cmd: &ChannelCmd, target: &Target) -> Option<(IpcRequest, 
 /// The line a change command prints once the Host ran it.
 pub fn outcome_line(
     message_id: &str,
-    outcome: &Outcome,
+    outcome: &MessageChangeOutcome,
     names: &HashMap<String, String>,
 ) -> String {
     let id = fmt::abbreviate_key(message_id);
     match outcome {
-        Outcome::Edited => format!("Message {id} edited"),
-        Outcome::DeletedForMembers => format!("Message {id} {}", fmt::DELETED_FOR_MEMBERS),
-        Outcome::Removed { by } => {
+        MessageChangeOutcome::Edited => format!("Message {id} edited"),
+        MessageChangeOutcome::DeletedForMembers => {
+            format!("Message {id} {}", fmt::DELETED_FOR_MEMBERS)
+        }
+        MessageChangeOutcome::Removed { by } => {
             format!(
                 "Message {id}: {}",
                 fmt::removed_by(&fmt::member_name(names, by))
@@ -170,9 +175,9 @@ pub async fn dispatch_change(
     helpers::send(client, request).await?;
     if mode.is_structured() {
         let (state, by) = match &outcome {
-            Outcome::Edited => ("edited", None),
-            Outcome::DeletedForMembers => ("deletedForMembers", None),
-            Outcome::Removed { by } => ("removed", Some(by.clone())),
+            MessageChangeOutcome::Edited => ("edited", None),
+            MessageChangeOutcome::DeletedForMembers => ("deletedForMembers", None),
+            MessageChangeOutcome::Removed { by } => ("removed", Some(by.clone())),
         };
         return format::print_structured(
             &serde_json::json!({ "messageId": msg_id, "state": state, "removedBy": by }),
@@ -180,7 +185,7 @@ pub async fn dispatch_change(
         );
     }
     let names = match outcome {
-        Outcome::Removed { .. } => member_names(client, &target.anchor).await?,
+        MessageChangeOutcome::Removed { .. } => member_names(client, &target.anchor).await?,
         _ => HashMap::new(),
     };
     format::print_text(&outcome_line(msg_id, &outcome, &names))

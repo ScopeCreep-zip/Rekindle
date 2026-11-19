@@ -8,23 +8,23 @@ use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest
 use rekindle_types::dto::channel_message::ChannelMessageView;
 use rekindle_types::message::SendState;
 
-use super::{change_request, history_text, outcome_line, Outcome, Target};
+use super::{change_request, history_text, outcome_line, ChannelTarget, MessageChangeOutcome};
 use crate::cli::{Cli, Command};
 
 const MSG: &str = "abcdef1234567890abcdef1234567890";
-const CAL: &str = "ca11ca11ca11ca11ca11ca11ca11ca11";
-const ANN: &str = "a22aa22aa22aa22aa22aa22aa22aa22a";
+const CAL_PSEUDONYM: &str = "ca11ca11ca11ca11ca11ca11ca11ca11";
+const ANN_PSEUDONYM: &str = "a22aa22aa22aa22aa22aa22aa22aa22a";
 
-fn target() -> Target {
-    Target {
+fn target() -> ChannelTarget {
+    ChannelTarget {
         anchor: "anchor-key".into(),
         channel_id: "chan-id".into(),
-        our_pseudonym: CAL.into(),
+        our_pseudonym: CAL_PSEUDONYM.into(),
     }
 }
 
 /// The Host request `rekindle channel <args>` sends on `target()`.
-fn request_for(args: &[&str]) -> (ChannelMessageRequest, Outcome) {
+fn request_for(args: &[&str]) -> (ChannelMessageRequest, MessageChangeOutcome) {
     let mut argv = vec!["rekindle", "channel"];
     argv.extend_from_slice(args);
     let Some(Command::Channel(cmd)) = Cli::try_parse_from(argv).unwrap().command else {
@@ -38,8 +38,8 @@ fn request_for(args: &[&str]) -> (ChannelMessageRequest, Outcome) {
 
 fn names() -> HashMap<String, String> {
     HashMap::from([
-        (CAL.to_owned(), "Cal".to_owned()),
-        (ANN.to_owned(), "Ann".to_owned()),
+        (CAL_PSEUDONYM.to_owned(), "Cal".to_owned()),
+        (ANN_PSEUDONYM.to_owned(), "Ann".to_owned()),
     ])
 }
 
@@ -61,7 +61,7 @@ fn edit_message_parses_to_the_guis_edit_request() {
         ChannelMessageRequest::ChannelMessageEdit { ref channel, ref message_id, ref body }
             if channel == "chan-id" && message_id == MSG && body == "fixed"
     ));
-    assert_eq!(outcome, Outcome::Edited);
+    assert_eq!(outcome, MessageChangeOutcome::Edited);
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn delete_message_parses_to_the_guis_delete_request() {
         ChannelMessageRequest::ChannelMessageDelete { ref channel, ref message_id }
             if channel == "chan-id" && message_id == MSG
     ));
-    assert_eq!(outcome, Outcome::DeletedForMembers);
+    assert_eq!(outcome, MessageChangeOutcome::DeletedForMembers);
 }
 
 #[test]
@@ -95,27 +95,44 @@ fn remove_message_parses_to_the_moderators_admin_delete() {
             if community == "anchor-key" && channel == "chan-id" && message_id == MSG
                 && reason.as_deref() == Some("spam")
     ));
-    assert_eq!(outcome, Outcome::Removed { by: CAL.into() });
+    assert_eq!(
+        outcome,
+        MessageChangeOutcome::Removed {
+            by: CAL_PSEUDONYM.into()
+        }
+    );
 }
 
 #[test]
 fn the_three_outcomes_print_as_the_gui_words_them() {
     let names = names();
     assert_eq!(
-        outcome_line(MSG, &Outcome::Edited, &names),
+        outcome_line(MSG, &MessageChangeOutcome::Edited, &names),
         "Message abcdef12…7890 edited"
     );
     assert_eq!(
-        outcome_line(MSG, &Outcome::DeletedForMembers, &names),
+        outcome_line(MSG, &MessageChangeOutcome::DeletedForMembers, &names),
         "Message abcdef12…7890 deleted for members"
     );
     assert_eq!(
-        outcome_line(MSG, &Outcome::Removed { by: CAL.into() }, &names),
+        outcome_line(
+            MSG,
+            &MessageChangeOutcome::Removed {
+                by: CAL_PSEUDONYM.into()
+            },
+            &names
+        ),
         "Message abcdef12…7890: Removed by Cal"
     );
     // A moderator we hold no name for: the abbreviated key.
     assert_eq!(
-        outcome_line(MSG, &Outcome::Removed { by: CAL.into() }, &HashMap::new()),
+        outcome_line(
+            MSG,
+            &MessageChangeOutcome::Removed {
+                by: CAL_PSEUDONYM.into()
+            },
+            &HashMap::new()
+        ),
         "Message abcdef12…7890: Removed by ca11ca11…ca11"
     );
 }
@@ -123,7 +140,7 @@ fn the_three_outcomes_print_as_the_gui_words_them() {
 fn view(body: &str) -> ChannelMessageView {
     ChannelMessageView {
         id: 1,
-        sender_id: ANN.into(),
+        sender_id: ANN_PSEUDONYM.into(),
         body: body.into(),
         decryption_failed: false,
         automod_blurred: false,
@@ -154,7 +171,7 @@ fn history_shows_edited_and_removed_messages_as_the_gui_does() {
     };
     assert_eq!(history_text(&edited, &names), "Ann: hello again (edited)");
     let removed = ChannelMessageView {
-        removed_by: Some(CAL.into()),
+        removed_by: Some(CAL_PSEUDONYM.into()),
         ..view("")
     };
     assert_eq!(history_text(&removed, &names), "Ann: Removed by Cal");

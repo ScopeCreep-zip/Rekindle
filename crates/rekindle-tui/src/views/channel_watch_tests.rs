@@ -12,8 +12,8 @@ use crate::action::{Action, CommandResult};
 use crate::components::Component;
 use crate::views::View;
 
-const ANN: &str = "a22aa22aa22aa22aa22aa22aa22aa22a";
-const CAL: &str = "ca11ca11ca11ca11ca11ca11ca11ca11";
+const ANN_PSEUDONYM: &str = "a22aa22aa22aa22aa22aa22aa22aa22a";
+const CAL_PSEUDONYM: &str = "ca11ca11ca11ca11ca11ca11ca11ca11";
 
 fn msg(id: &str, author: &str, body: &str, is_own: bool) -> DecryptedMessageDisplay {
     DecryptedMessageDisplay {
@@ -41,7 +41,10 @@ fn view_selecting(index: usize) -> ChannelWatchView {
     view.on_command_result(CommandResult::ChannelHistoryLoaded {
         community: "com".into(),
         channel: "gen".into(),
-        messages: vec![msg("m1", ANN, "hi", false), msg("m2", CAL, "helo", true)],
+        messages: vec![
+            msg("m1", ANN_PSEUDONYM, "hi", false),
+            msg("m2", CAL_PSEUDONYM, "helo", true),
+        ],
     })
     .unwrap();
     let member = |key: &str, name: &str| -> CommunityMemberView {
@@ -53,7 +56,7 @@ fn view_selecting(index: usize) -> ChannelWatchView {
     };
     view.on_command_result(CommandResult::CommunityMembersLoaded {
         community: "com".into(),
-        members: vec![member(ANN, "Ann"), member(CAL, "Cal")],
+        members: vec![member(ANN_PSEUDONYM, "Ann"), member(CAL_PSEUDONYM, "Cal")],
     })
     .unwrap();
     view.message_list.scroll_to_top();
@@ -147,7 +150,7 @@ fn an_edit_shows_edited_and_a_removal_shows_removed_by_the_moderator() {
             community: "com".into(),
             channel: "gen".into(),
             message_id: "m1".into(),
-            removed_by: Some(CAL.into()),
+            removed_by: Some(CAL_PSEUDONYM.into()),
         },
     ))
     .unwrap();
