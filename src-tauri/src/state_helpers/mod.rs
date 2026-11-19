@@ -34,15 +34,15 @@ pub use communities::{
 };
 pub use friends::{friend_display_name, friend_field, friend_presence_change, is_friend};
 pub use governance::{
-    anchor, governance_state, merge_message_lamport, my_permissions, next_message_lamport,
-    permissions_for, permissions_for_pseudonym,
+    anchor, governance_state, my_permissions, next_message_lamport, permissions_for,
+    permissions_for_pseudonym,
 };
 pub use identity::{
     current_identity, current_owner_key, identity_display_name, identity_secret, identity_status,
     owner_key_or_default, project_own, pseudonym_credentials, voice_self_identity,
 };
 pub use meks::{
-    clear_meks, current_mek, forget_community_keys, install_mek, key_provider, text_scope, LiveMek,
+    clear_meks, current_mek, forget_community_keys, install_mek, key_provider, LiveMek,
     LiveMekCache,
 };
 pub use node::{

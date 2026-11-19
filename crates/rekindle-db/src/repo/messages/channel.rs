@@ -224,6 +224,27 @@ pub fn find_by_message_id(
     .optional()
 }
 
+/// What a stored received channel message tells the notification gate:
+/// whether it mentions us (the receive pipeline's reader-validated verdict,
+/// plan E3.1 D25) and its wire `flags`. `None` when no row has the id.
+///
+/// # Errors
+/// The read failed.
+pub fn notify_fields(
+    conn: &Connection,
+    owner_key: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<(bool, u32)>> {
+    use rusqlite::OptionalExtension;
+    conn.query_row(
+        "SELECT mentions_me, flags FROM messages \
+         WHERE owner_key = ?1 AND conversation_type = 'channel' AND message_id = ?2 LIMIT 1",
+        params![owner_key, message_id],
+        |row| Ok((get::<bool>(row, "mentions_me")?, get::<u32>(row, "flags")?)),
+    )
+    .optional()
+}
+
 /// One stored channel message, read strictly (plan D2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredChannelMessage {
@@ -400,5 +421,27 @@ mod tests {
         assert_eq!(read[0].failure_reason.as_deref(), Some(reason));
         assert_eq!(read[1].send_state, SendState::Delivered);
         assert_eq!(read[1].failure_reason, None);
+    }
+
+    #[test]
+    fn the_notification_gate_reads_the_stored_mention_and_flags() {
+        let conn = fixture::conn();
+        fixture::community(&conn, "c");
+        let mention = ChannelMessageInsert {
+            mentions_me: true,
+            flags: 4,
+            ..row("ping", 10, 1)
+        };
+        insert(&conn, &mention).unwrap();
+        insert(&conn, &row("plain", 20, 2)).unwrap();
+        assert_eq!(
+            notify_fields(&conn, OWNER, "ping").unwrap(),
+            Some((true, 4))
+        );
+        assert_eq!(
+            notify_fields(&conn, OWNER, "plain").unwrap(),
+            Some((false, 0))
+        );
+        assert_eq!(notify_fields(&conn, OWNER, "absent").unwrap(), None);
     }
 }

@@ -102,16 +102,7 @@ pub trait GossipDeps: Send + Sync + 'static {
     /// next periodic SQLite flush.
     fn record_peer_reliability(&self, community_id: &str, peer_key: &str, success: bool);
 
-    // === Persistence (async) ===
-    /// Upsert a `message_delivery` row tagged with the attempt outcome.
-    async fn record_delivery(
-        &self,
-        message_id: &str,
-        community_id: &str,
-        recipient: &str,
-        status: &str,
-    );
-
+    // === Route resolution (async) ===
     /// Look up the peer's fresh route_blob via the community member
     /// registry. Returns `None` if no valid blob is published.
     async fn resolve_peer_route_from_dht(

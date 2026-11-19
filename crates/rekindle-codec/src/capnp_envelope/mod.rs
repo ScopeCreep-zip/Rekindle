@@ -114,26 +114,6 @@ fn write_community_envelope(
     env: &CommunityEnvelope,
 ) -> Result<(), CodecError> {
     match env {
-        CommunityEnvelope::MessageNotification {
-            channel_id,
-            message_id,
-            author_pseudonym,
-            subkey_index,
-            lamport_ts,
-            sequence,
-            content_hash,
-            timestamp,
-        } => {
-            let mut m = builder.init_message_notification();
-            m.set_channel_id(channel_id);
-            m.set_message_id(message_id);
-            m.set_author_pseudonym(author_pseudonym);
-            m.set_subkey_index(*subkey_index);
-            m.set_lamport_ts(*lamport_ts);
-            m.set_sequence(*sequence);
-            m.set_content_hash(content_hash);
-            m.set_timestamp(*timestamp);
-        }
         CommunityEnvelope::Control(payload) => {
             let ctrl = builder.init_control();
             encode_control_payload(ctrl, payload)?;
@@ -185,21 +165,11 @@ fn read_community_envelope(
 ) -> Result<CommunityEnvelope, CodecError> {
     use crate::community_envelope_capnp::community_envelope::Which;
     match reader.which().map_err(not_in_schema)? {
-        Which::MessageNotification(m) => {
-            let m = m.map_err(|e| capnp_err(&e))?;
-            Ok(CommunityEnvelope::MessageNotification {
-                channel_id: text_to_string(m.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-                message_id: text_to_string(m.get_message_id().map_err(|e| capnp_err(&e))?)?,
-                author_pseudonym: text_to_string(
-                    m.get_author_pseudonym().map_err(|e| capnp_err(&e))?,
-                )?,
-                subkey_index: m.get_subkey_index(),
-                lamport_ts: m.get_lamport_ts(),
-                sequence: m.get_sequence(),
-                content_hash: text_to_string(m.get_content_hash().map_err(|e| capnp_err(&e))?)?,
-                timestamp: m.get_timestamp(),
-            })
-        }
+        // @0 was `messageNotification` (plan E3.3 slice 8): skipped like an
+        // unknown arm.
+        Which::Obsolete0(()) => Err(CodecError::UnknownVariant(
+            "obsolete community envelope".to_string(),
+        )),
         Which::Control(c) => {
             let c = c.map_err(|e| capnp_err(&e))?;
             Ok(CommunityEnvelope::Control(decode_control_payload(c)?))
@@ -401,44 +371,6 @@ mod tests {
                 assert_eq!(participants[0].session_key.key, vec![3; 32]);
                 assert_eq!(participants[0].session_key.signature, vec![4; 64]);
                 assert_eq!(participants[1].session_key, MediaSessionKey::default());
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn message_notification_roundtrip() {
-        let env = CommunityEnvelope::MessageNotification {
-            channel_id: "ch_01".into(),
-            message_id: "msg_abc".into(),
-            author_pseudonym: "pseudo_123".into(),
-            subkey_index: 7,
-            lamport_ts: 42,
-            sequence: 3,
-            content_hash: "abc123".into(),
-            timestamp: 1_700_000_000,
-        };
-        let bytes = encode_community_envelope(&env).unwrap();
-        let back = decode_community_envelope(&bytes).unwrap();
-        match back {
-            CommunityEnvelope::MessageNotification {
-                channel_id,
-                message_id,
-                author_pseudonym,
-                subkey_index,
-                lamport_ts,
-                sequence,
-                content_hash,
-                timestamp,
-            } => {
-                assert_eq!(channel_id, "ch_01");
-                assert_eq!(message_id, "msg_abc");
-                assert_eq!(author_pseudonym, "pseudo_123");
-                assert_eq!(subkey_index, 7);
-                assert_eq!(lamport_ts, 42);
-                assert_eq!(sequence, 3);
-                assert_eq!(content_hash, "abc123");
-                assert_eq!(timestamp, 1_700_000_000);
             }
             _ => panic!("wrong variant"),
         }

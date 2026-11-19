@@ -60,8 +60,7 @@ pub use mentions::{
     MentionMatches,
 };
 pub use notifications::{
-    blake3_hex as notification_content_hash, parse_notification_level, verify_message_content_hash,
-    NotificationDecision, NotificationLevel, NotificationThrottle,
+    parse_notification_level, NotificationDecision, NotificationLevel, NotificationThrottle,
 };
 pub use pipeline::{
     enforce_slowmode_with_bypass, forward_channel_message, send_channel_message, ChannelSendResult,

@@ -109,6 +109,6 @@ pub use overflow::{
     OVERFLOW_PAGE_BUDGET, PRIMARY_PAGE_BUDGET,
 };
 pub use segments::{
-    channel_record_keys_per_segment, ensure_channel_segment_record, expand_community_segment,
-    highest_segment_full, open_new_segments, segment_descriptors, SegmentDescriptor, MAX_SEGMENTS,
+    ensure_channel_segment_record, expand_community_segment, highest_segment_full,
+    open_new_segments, segment_descriptors, SegmentDescriptor, MAX_SEGMENTS,
 };

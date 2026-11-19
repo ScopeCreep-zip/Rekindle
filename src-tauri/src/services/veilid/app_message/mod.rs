@@ -211,7 +211,6 @@ fn extract_dedup_key(signed: &SignedEnvelope) -> String {
     // dedup still suppresses replays without rejecting unknown messages.
     if let Ok(Some(env)) = try_decode_community_envelope(&signed.envelope_bytes) {
         match env {
-            CommunityEnvelope::MessageNotification { ref message_id, .. } => message_id.clone(),
             CommunityEnvelope::TypingIndicator {
                 ref channel_id,
                 ref pseudonym_key,
@@ -345,34 +344,6 @@ async fn handle_relayed_envelope(
     let community_id = signed.community_id.clone();
 
     match envelope {
-        CommunityEnvelope::MessageNotification {
-            channel_id,
-            message_id,
-            sequence,
-            subkey_index,
-            content_hash,
-            ..
-        } => {
-            let pending = crate::services::community::message_notifications::PendingMessageFetch {
-                community_id: community_id.clone(),
-                channel_id,
-                message_id,
-                subkey_index,
-                sequence,
-                content_hash,
-                attempt: 0,
-            };
-            if let Err(e) =
-                crate::services::community::handle_message_notification(app_handle, state, pending)
-                    .await
-            {
-                tracing::debug!(
-                    community = %community_id,
-                    error = %e,
-                    "message notification handling failed"
-                );
-            }
-        }
         CommunityEnvelope::TypingIndicator {
             channel_id,
             pseudonym_key,

@@ -51,24 +51,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_tampered_ciphertext_for_message_notification_hash() {
-        let ciphertext = b"ciphertext-from-sender";
-        let notification = CommunityEnvelope::MessageNotification {
-            channel_id: "ch_01".into(),
-            message_id: "msg_01".into(),
-            author_pseudonym: "author_01".into(),
-            subkey_index: 4,
-            lamport_ts: 99,
-            sequence: 7,
-            content_hash: blake3_hex(ciphertext),
-            timestamp: 1_700_000_000,
+    fn rejects_tampered_value_for_watch_relay_hash() {
+        let value = b"value-the-observer-saw";
+        let relay = CommunityEnvelope::WatchRelay {
+            record_key: "VLD0:abc".into(),
+            subkey: 4,
+            content_hash: blake3_hex(value),
+            observer_pseudonym: "observer_01".into(),
         };
 
-        let tampered = b"ciphertext-from-attacker";
-        let CommunityEnvelope::MessageNotification {
+        let tampered = b"value-from-attacker";
+        let CommunityEnvelope::WatchRelay {
             content_hash: expected_hash,
             ..
-        } = notification
+        } = relay
         else {
             unreachable!()
         };

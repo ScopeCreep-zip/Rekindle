@@ -36,16 +36,6 @@ pub fn next_message_lamport(
     tick(state, community_id, |cs| &mut cs.message_clock)
 }
 
-/// Observe a received message's Lamport timestamp: the message clock
-/// advances past it, by at most `MAX_LAMPORT_DRIFT + 1` (clamped, never
-/// rejected — the message orders by its own timestamp).
-pub fn merge_message_lamport(state: &Arc<AppState>, community_id: &str, received: u64) {
-    if let Some(cs) = state.communities.write().get_mut(community_id) {
-        let mut clock = LamportClock::new(cs.message_clock);
-        cs.message_clock = clock.merge(received);
-    }
-}
-
 fn tick(
     state: &Arc<AppState>,
     community_id: &str,
@@ -69,7 +59,7 @@ fn tick(
 /// Returns `None` when governance state isn't loaded yet or
 /// `pseudonym_hex` doesn't decode to a 32-byte key. Centralizes what was
 /// previously reimplemented, by hand, at five separate call sites —
-/// `community/message_notifications.rs`, `community/link_previews.rs`,
+/// `community/link_previews.rs`,
 /// `community/receiver_limits.rs`, `veilid/control.rs`, and
 /// `veilid/control_sync.rs` — each independently doing its own
 /// hex-decode → `PseudonymKey` → `compute_permissions`. Callers that want

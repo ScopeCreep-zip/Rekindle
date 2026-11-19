@@ -71,20 +71,6 @@ impl GossipDeps for DaemonGossipAdapter {
     /// recording, because it would look like the feature works.
     fn record_peer_reliability(&self, _community_id: &str, _peer_key: &str, _success: bool) {}
 
-    /// Same store, same absence. The desktop writes a `message_delivery`
-    /// row per attempt; the daemon has no table to write it to, and
-    /// gossip is best-effort by design (PATH 2, "Durability: None"), so
-    /// the delivery record is an observability nicety rather than part
-    /// of the protocol.
-    async fn record_delivery(
-        &self,
-        _message_id: &str,
-        _community_id: &str,
-        _recipient: &str,
-        _status: &str,
-    ) {
-    }
-
     // ---------- Route resolution ----------
 
     /// Re-read a peer's route blob from their registry presence row.

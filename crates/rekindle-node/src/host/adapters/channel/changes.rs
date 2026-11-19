@@ -3,8 +3,7 @@
 //! `ChannelRecordEntry`), never a side message. The author stores it on its
 //! own row and queues it on its channel outbox (`M`/4); a reader applies it
 //! from the outbox read, and from the slot paths for history written there
-//! before (the gossip hint's slot read, the watched change, the history
-//! read, until E3.3 slice 8). Both judge it by `rekindle_channel::changes`
+//! before (the watched change and the history read, until E3.3 slice 8). Both judge it by `rekindle_channel::changes`
 //! (E1–E3) and store it in the message's row, so it survives a reload.
 
 use rekindle_channel::changes::{self, ChangeKind, ChangeRefusal, ChangeTarget};
@@ -13,17 +12,14 @@ use rekindle_channel::ingest::Verdict;
 use rekindle_channel::outbox_seal::open_entry_body;
 use rekindle_channel::send::{BodyPosition, SlotBodyPosition};
 use rekindle_channel::ChannelMessagingDeps;
-use rekindle_codec::community::channel_record::{
-    decode_channel_page, ChannelDelete, ChannelEdit, ChannelMessage, ChannelRecordEntry,
-};
+use rekindle_codec::community::channel_record::{ChannelDelete, ChannelEdit, ChannelRecordEntry};
 use rekindle_db::repo::messages::channel_changes::{self as change_rows, StoredEdit};
-use rekindle_records::port::RecordPort;
 use rekindle_types::dht_layout::member_record::OUTBOX;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::message::{ChannelPost, PostEntry};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
-use super::ingest::{GateInputs, GatedPost, Ingested, ReceivedAt, ReceivedPost};
+use super::ingest::{GateInputs, GatedPost};
 use super::HostChannel;
 
 fn stored(e: impl std::fmt::Display) -> ChannelError {
@@ -37,13 +33,6 @@ pub(crate) enum MessageChange {
     Edit { body: String },
     /// It is deleted for members (E4).
     Delete,
-}
-
-/// One author's slot value, read for a gossip hint: its signed author and
-/// entries.
-pub(crate) struct AuthorPage {
-    pub author: PseudonymKey,
-    pub entries: Vec<ChannelRecordEntry>,
 }
 
 /// Where a reader read an author's changes.
@@ -143,42 +132,6 @@ impl HostChannel {
         };
         self.store_change(&db, &owner, source, &entry, &body, false)
             .await
-    }
-
-    /// Ingest the post a gossip hint named from `page` (when the page still
-    /// holds it), then apply every change the page's author made.
-    pub(crate) async fn ingest_page(
-        &self,
-        source: ChangeSource<'_>,
-        sequence: u64,
-        message_id: &str,
-        page: AuthorPage,
-    ) -> Result<Ingested, ChannelError> {
-        let message = page.entries.iter().find_map(|entry| match entry {
-            ChannelRecordEntry::Message(m) if m.message_id.as_deref() == Some(message_id) => {
-                Some(m.clone())
-            }
-            _ => None,
-        });
-        let ingested = match message {
-            Some(message) => {
-                let post = ReceivedPost {
-                    community_id: source.community_id.to_owned(),
-                    channel_id: source.channel_id.to_owned(),
-                    at: ReceivedAt::Slot {
-                        record_key: source.record_key.to_owned(),
-                        subkey_index: source.subkey_index,
-                    },
-                    sequence,
-                    message,
-                    forwarded_from_author: None,
-                };
-                self.ingest(post).await?
-            }
-            None => Ingested::Duplicate,
-        };
-        self.apply_changes(source, &page.entries).await;
-        Ok(ingested)
     }
 
     /// Apply each edit and delete among `entries`, all by `source.author`, to
@@ -409,43 +362,4 @@ fn change_order(entry: &ChannelRecordEntry) -> (bool, u64) {
         !matches!(entry, ChannelRecordEntry::Delete(_)),
         entry.lamport(),
     )
-}
-
-/// `author`'s slot value at `subkey_index` of `record_key`, when it holds
-/// the post `message_id` or a change of it (a gossip hint names the post).
-///
-/// # Errors
-/// The read failed, the slot is empty or fails verification, another
-/// author wrote it, or nothing in it names the message.
-pub(crate) async fn find_page(
-    pool: &dyn RecordPort,
-    record_key: &str,
-    subkey_index: u32,
-    message_id: &str,
-    author: &str,
-) -> Result<AuthorPage, String> {
-    let value = (pool.read_once(record_key, subkey_index, true).await)
-        .map_err(|e| format!("{record_key}: {e}"))?
-        .ok_or_else(|| format!("{record_key}: slot is empty"))?;
-    let (page_author, entries) =
-        decode_channel_page(&value.data).map_err(|e| format!("{record_key}: {e}"))?;
-    if !hex::encode(page_author.0).eq_ignore_ascii_case(author) {
-        return Err(format!("{record_key}: the slot is another author's"));
-    }
-    let names = |entry: &ChannelRecordEntry| match entry {
-        ChannelRecordEntry::Message(ChannelMessage {
-            message_id: Some(id),
-            ..
-        }) => id == message_id,
-        ChannelRecordEntry::Edit(edit) => edit.message_id == message_id,
-        ChannelRecordEntry::Delete(delete) => delete.message_id == message_id,
-        _ => false,
-    };
-    if !entries.iter().any(names) {
-        return Err(format!("{record_key}: no message {message_id}"));
-    }
-    Ok(AuthorPage {
-        author: page_author,
-        entries,
-    })
 }

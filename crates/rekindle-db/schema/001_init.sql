@@ -724,19 +724,6 @@ CREATE TABLE IF NOT EXISTS community_invites (
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
--- Per-message per-peer delivery tracking (Xfire imindex + SimpleX delivery states)
-CREATE TABLE IF NOT EXISTS message_delivery (
-    owner_key TEXT NOT NULL,
-    message_id TEXT NOT NULL,
-    community_id TEXT NOT NULL,
-    recipient_pseudonym TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'sending' CHECK(status IN ('sending', 'delivered', 'failed')),
-    attempts INTEGER NOT NULL DEFAULT 0,
-    last_attempt_at INTEGER,
-    PRIMARY KEY (owner_key, message_id, recipient_pseudonym),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
-);
-
 -- Strand Relay Network (architecture §13). For each friend who has volunteered
 -- to relay traffic to us, we keep their dedicated relay route blob locally so
 -- we can publish a padded relay pool subkey on our profile DHT record. Bob

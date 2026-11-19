@@ -12,8 +12,6 @@ pub mod media_ready_runtime;
 pub mod mek_rotation;
 pub mod mek_rotation_orchestrators;
 pub(crate) mod mek_rotation_support;
-pub mod message_notifications;
-pub mod message_notifications_handle;
 pub mod notifications;
 pub mod presence;
 pub mod receiver_limits;
@@ -35,10 +33,9 @@ pub use gossip::{
     send_to_channel_peers, send_to_channel_peers_now, send_to_mesh, start_peer_reliability_flush,
 };
 pub use governance::write_entry;
-pub use mek_rotation::{handle_incoming_mek_transfer, spawn_mek_request_with_retry};
+pub use mek_rotation::handle_incoming_mek_transfer;
 pub use mek_rotation_orchestrators::spawn_departure_rotations;
-pub use message_notifications_handle::handle_message_notification;
-pub use notifications::{emit_message_notification, should_emit_message_notification};
+pub use notifications::notify_stored_post;
 pub use presence::{current_presence_status, presence_poll_tick_public, write_our_presence};
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use watch::mark_watch_inactive;

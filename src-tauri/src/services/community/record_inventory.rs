@@ -152,7 +152,6 @@ mod tests {
             channel_sequences: HashMap::new(),
             watched_records: HashSet::new(),
             record_sequences: HashMap::new(),
-            peer_sequences: HashMap::new(),
             channel_last_send_at: HashMap::new(),
             peer_reliability: HashMap::new(),
             tasks: None,

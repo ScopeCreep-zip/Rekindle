@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub enum ChannelMessageEvent {
     /// A new message was posted to a community channel.
     ///
-    /// Triggered by: gossip `MessageNotification`, DHT `ValueChange` on channel log.
+    /// Triggered by: the Host's read of the author's channel outbox (`M`/4).
     /// Body is populated by the SubscriptionManager enrichment stage if the
     /// MEK for this channel is cached. If not, `body: None` and the TUI
     /// shows a placeholder until the MEK arrives.

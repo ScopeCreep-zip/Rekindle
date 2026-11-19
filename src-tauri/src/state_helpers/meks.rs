@@ -173,12 +173,6 @@ impl MekHistory for VaultMekHistory {
     }
 }
 
-/// The scope a channel's text is under, or `None` for a non-channel id.
-pub fn text_scope(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> Option<KeyScope> {
-    let channel = ChannelId::from_hex(channel_id)?;
-    Some(key_provider(state).scope_for_text(community_id, channel))
-}
-
 /// The key provider every desktop key consumer reads through.
 pub fn key_provider(state: &Arc<AppState>) -> Arc<dyn ChannelKeyProvider> {
     Arc::new(MekKeyProvider::new(

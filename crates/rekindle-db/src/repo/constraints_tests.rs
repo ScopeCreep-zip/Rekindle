@@ -35,8 +35,6 @@ fn seeded() -> Connection {
          VALUES (?1, 'c', 'e', 't', 'p', 0, 0, '{}', '{}')",
         "INSERT INTO event_rsvps (owner_key, community_id, event_id, pseudonym_key, status) \
          VALUES (?1, 'c', 'e', 'p', 'going')",
-        "INSERT INTO message_delivery (owner_key, message_id, community_id, recipient_pseudonym) \
-         VALUES (?1, 'm', 'c', 'p')",
         "INSERT INTO push_relay_registrations (owner_key, relay_pseudonym, device_push_token, \
          platform, record_keys_json, created_at) VALUES (?1, 'r', 't', 'self', '[]', 0)",
         "INSERT INTO voice_session_events (owner_key, community_id, channel_id, member_pseudonym, \
@@ -95,7 +93,6 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("community_events", "recurrence_json", "'weekly'"),
     ("community_events", "location_json", "'here'"),
     ("event_rsvps", "status", "'none'"),
-    ("message_delivery", "status", "'queued'"),
     ("group_dms", "roster", "'{}'"),
     ("push_relay_registrations", "platform", "'sms'"),
     ("push_relay_registrations", "record_keys_json", "'k'"),

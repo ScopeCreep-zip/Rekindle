@@ -10,7 +10,6 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 /// is the caller's clock (plan C9.2). Different envelope variants use
 /// different bucketing strategies:
 ///
-/// - `MessageNotification` — use the message_id directly
 /// - `TypingIndicator` — 5-second buckets per channel + sender
 /// - `PresenceUpdate` — 30-second buckets per sender
 /// - `Control` — full 16-byte BLAKE2b hash of the encoded envelope
@@ -18,7 +17,6 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 #[must_use]
 pub fn extract_mesh_dedup_key(envelope: &CommunityEnvelope, now_secs: u64) -> String {
     match envelope {
-        CommunityEnvelope::MessageNotification { message_id, .. } => message_id.clone(),
         CommunityEnvelope::TypingIndicator {
             channel_id,
             pseudonym_key,

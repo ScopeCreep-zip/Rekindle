@@ -341,43 +341,6 @@ pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
     Ok(new_record_key)
 }
 
-/// Collect every channel SMPL record key for a `(community, channel)`:
-/// the segment-0 genesis record + every `ChannelSegmentLinked` that has
-/// merged into governance state. Used by multi-segment read paths
-/// (presence sync, message-notification fetch, history catchup) so
-/// segment-N peers' messages are discoverable.
-pub fn channel_record_keys_per_segment<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    channel_id: &str,
-) -> Vec<(u32, String)> {
-    let Some(membership) = deps.community_membership(community_id) else {
-        return Vec::new();
-    };
-    let mut out: Vec<(u32, String)> = Vec::new();
-    if let Some(record_key) = membership.channel_log_keys.get(channel_id).cloned() {
-        out.push((0, record_key));
-    }
-    let channel_id_bytes: [u8; 16] = hex::decode(channel_id)
-        .ok()
-        .and_then(|b| b.try_into().ok())
-        .unwrap_or([0u8; 16]);
-    let channel_id_typed = ChannelId(channel_id_bytes);
-    if let Some(gov) = deps.governance_state(community_id) {
-        for ((cid, seg_idx), record) in &gov.channel_segment_records {
-            if *cid != channel_id_typed {
-                continue;
-            }
-            if *seg_idx == 0 {
-                continue; // segment 0 already handled
-            }
-            out.push((*seg_idx, record.record_key.clone()));
-        }
-    }
-    out.sort_by_key(|(idx, _)| *idx);
-    out
-}
-
 /// Read the `slot_seed` from `CommunityMembership`. The seed is a 32-byte
 /// shared secret every member holds from its invite (`InviteSecrets.slot_seed`).
 fn slot_seed_from_membership(

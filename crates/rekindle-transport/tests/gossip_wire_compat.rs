@@ -42,16 +42,11 @@ fn receive(datagram: &[u8]) -> SignedEnvelope {
     decode_signed_envelope(bytes).expect("decode envelope")
 }
 
-fn notification() -> CommunityEnvelope {
-    CommunityEnvelope::MessageNotification {
+/// A broadcast (not directed) envelope.
+fn broadcast() -> CommunityEnvelope {
+    CommunityEnvelope::TypingIndicator {
         channel_id: "ab".repeat(8),
-        message_id: "msg_0123".into(),
-        author_pseudonym: "cd".repeat(32),
-        subkey_index: 42,
-        lamport_ts: 9,
-        sequence: 0,
-        content_hash: "ef".repeat(32),
-        timestamp: 1_700_000_000,
+        pseudonym_key: "cd".repeat(32),
     }
 }
 
@@ -64,7 +59,7 @@ fn notification() -> CommunityEnvelope {
 #[test]
 fn a_broadcast_round_trips_through_the_shared_format() {
     let key = signing_key();
-    let envelope_bytes = encode_community_envelope(&notification()).expect("encode inner");
+    let envelope_bytes = encode_community_envelope(&broadcast()).expect("encode inner");
     let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), &envelope_bytes);
     let wire = gossip_datagram(&signed);
 
@@ -91,7 +86,7 @@ fn a_broadcast_round_trips_through_the_shared_format() {
 #[test]
 fn a_tampered_payload_fails_verification() {
     let key = signing_key();
-    let envelope_bytes = encode_community_envelope(&notification()).expect("encode");
+    let envelope_bytes = encode_community_envelope(&broadcast()).expect("encode");
     let mut signed = sign_envelope(&key, "gov-key", &my_pseudonym(), &envelope_bytes);
 
     signed.envelope_bytes[4] ^= 0xff;
@@ -179,23 +174,7 @@ fn directed_payloads_are_not_forwarded() {
     ));
     assert!(transfer.is_directed());
 
-    // A channel message notification is exactly what *must* be
-    // forwarded — the epidemic wave is how it reaches members outside
-    // the sender's fan-out.
-    assert!(!notification().is_directed());
-}
-
-/// The notification carries the manifest, not the cargo.
-///
-/// Gossip is unencrypted at the envelope layer and fans out to
-/// `min(N, 6)` peers per hop for five hops, so payload size multiplies.
-/// A notification names the message; the body stays in the record.
-#[test]
-fn message_notification_stays_compact() {
-    let bytes = encode_community_envelope(&notification()).expect("encode");
-    assert!(
-        bytes.len() < 400,
-        "MessageNotification should stay compact, was {} bytes",
-        bytes.len()
-    );
+    // A broadcast is exactly what *must* be forwarded — the epidemic
+    // wave is how it reaches members outside the sender's fan-out.
+    assert!(!broadcast().is_directed());
 }

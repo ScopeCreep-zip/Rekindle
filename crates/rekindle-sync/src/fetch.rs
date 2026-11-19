@@ -73,21 +73,21 @@ mod tests {
         assert_eq!(retry_backoff(5), Duration::from_secs(4));
     }
 
-    /// Three-path independence: gossip notification (Path 2) can populate the
-    /// fetch queue independently — no need for SMPL write confirmation or
-    /// inspect polling. The notification carries subkey_index and content_hash,
-    /// which is all FetchQueue needs to schedule a DHT fetch.
+    /// Three-path independence: a gossip watch relay (Path 2) can populate
+    /// the fetch queue independently — no need for SMPL write confirmation or
+    /// inspect polling. The relay carries the subkey and content_hash, which
+    /// is all FetchQueue needs to schedule a DHT fetch.
     #[test]
     fn gossip_notification_creates_fetch_task_independently() {
         let mut queue = FetchQueue::default();
 
-        // Simulate receiving a gossip MessageNotification with metadata only
+        // Simulate receiving a gossip WatchRelay with metadata only
         queue.push(FetchTask {
             record_key: "channel_rec_abc".into(),
-            subkey: 7, // sender's SMPL subkey_index from notification
+            subkey: 7, // the changed subkey from the relay
             expected_hash: Some(
                 "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4".into(),
-            ), // blake3 content_hash from notification
+            ), // blake3 content_hash from the relay
             attempt: 0,
         });
 

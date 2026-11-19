@@ -16,8 +16,6 @@ impl SubscriptionManager {
     /// Pipeline: rate limit → Lamport merge → `envelope_into_event` →
     /// state_effects → dedup → emit.
     ///
-    /// Whether the sender was admitted under its rate floor.
-    ///
     /// Takes the canonical `CommunityEnvelope`. It used to take a
     /// postcard `GossipPayload` — this track's own near-copy — so a
     /// desktop peer's broadcast could not be represented here at all.
@@ -27,7 +25,7 @@ impl SubscriptionManager {
         sender_pseudonym: &str,
         envelope: CommunityEnvelope,
         lamport_ts: u64,
-    ) -> bool {
+    ) {
         debug!(
             community = community_id,
             sender = %sender_pseudonym,
@@ -46,7 +44,7 @@ impl SubscriptionManager {
         // The guard is scoped so it drops before `process_event`, which
         // re-enters the manager.
         if !self.admit(community_id, sender_pseudonym, lamport_ts) {
-            return false;
+            return;
         }
 
         // `None` for payloads that are not subscriber-facing — Mutual
@@ -57,7 +55,6 @@ impl SubscriptionManager {
         {
             self.process_event(event);
         }
-        true
     }
 
     /// The sender's per-mesh gossip rate limit and our Lamport merge: the

@@ -42,30 +42,18 @@ struct SignedEnvelope @0xe0d4eb16e9bf1c2e {
     ttl              @4 :UInt8;
 }
 
-# ── Outer 5-arm union ─────────────────────────────────────────────────
+# ── Outer union (four live arms) ─────────────────────────────────────────────────
 
 struct CommunityEnvelope @0xe1d4eb16e9bf1c2e {
     union {
-        messageNotification @0 :MessageNotification;
+        # @0 was `messageNotification` (plan E3.3 slice 8): a post's hint is
+        # the author's `HeadAdvanced` for `M`/4, a control payload.
+        obsolete0           @0 :Void;
         control             @1 :ControlPayload;
         presenceUpdate      @2 :PresenceUpdate;
         typingIndicator     @3 :TypingIndicator;
         watchRelay          @4 :WatchRelay;
     }
-}
-
-# Architecture §13 — message-write notification carried over gossip.
-# Receivers fetch the actual MEK-encrypted ciphertext from the sender's
-# SMPL subkey via `get_dht_value`.
-struct MessageNotification @0xe2d4eb16e9bf1c2e {
-    channelId        @0 :Text;
-    messageId        @1 :Text;
-    authorPseudonym  @2 :Text;
-    subkeyIndex      @3 :UInt32;
-    lamportTs        @4 :UInt64;
-    sequence         @5 :UInt64;
-    contentHash      @6 :Text;
-    timestamp        @7 :UInt64;
 }
 
 # Architecture §11 — presence broadcast. Carries pseudonym + status +

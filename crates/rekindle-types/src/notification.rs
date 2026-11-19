@@ -47,7 +47,7 @@ pub enum TransportNotification {
         timestamp: u64,
     },
 
-    /// A new channel message was posted (gossip MessageNotification).
+    /// A new channel message was posted.
     ///
     /// Carries metadata only -- the message body is in the DHT channel log.
     /// Consumers use this to trigger a history read for the new message.

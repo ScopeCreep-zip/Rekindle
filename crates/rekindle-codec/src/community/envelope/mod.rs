@@ -19,30 +19,6 @@ pub use sign::{sign_envelope, verify_envelope};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum CommunityEnvelope {
-    /// Gossip notification that a new message exists in a channel SMPL record.
-    ///
-    /// Chiral Network model: gossip carries the notification (cargo manifest),
-    /// not the cargo (ciphertext). Recipients fetch the actual MEK-encrypted
-    /// content from the sender's SMPL subkey via `get_dht_value`.
-    ///
-    /// This ensures ciphertext exists only on DHT storage nodes (5 replicas),
-    /// not across the entire gossip fan-out graph (50-100+ relay nodes).
-    MessageNotification {
-        channel_id: String,
-        message_id: String,
-        author_pseudonym: String,
-        /// Sender's SMPL subkey index — where to fetch the ciphertext.
-        subkey_index: u32,
-        /// Lamport logical timestamp for causal ordering.
-        lamport_ts: u64,
-        /// Per-sender, per-channel sequence number for gap detection.
-        sequence: u64,
-        /// blake3 hash of the MEK-encrypted ciphertext, for integrity
-        /// verification after DHT fetch. Ensures the fetched value matches
-        /// what the sender wrote.
-        content_hash: String,
-        timestamp: u64,
-    },
     /// A control operation (channel/role/invite/event management, moderation, etc.).
     Control(ControlPayload),
     /// Presence update from a member.
@@ -64,8 +40,7 @@ pub enum CommunityEnvelope {
     /// to peers via gossip, so members without watch slots still learn
     /// when a record's subkey changes. The receiver is expected to
     /// `get_dht_value` to fetch the new value (we deliberately do NOT
-    /// carry ciphertext over gossip — same Chiral Network principle as
-    /// `MessageNotification`).
+    /// carry ciphertext over gossip: the Chiral Network principle).
     WatchRelay {
         /// Hex-encoded Veilid record key whose subkey changed.
         record_key: String,

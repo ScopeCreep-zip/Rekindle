@@ -365,6 +365,11 @@ pub fn spawn_host_stream(
                             }
                         }
                         crate::os_notify::notify(&app, &state, &sequenced.event);
+                        crate::services::community::notify_stored_post(
+                            &app,
+                            &state,
+                            &sequenced.event,
+                        );
                         crate::windows::follow_event(&app, &state, &sequenced.event);
                         let event = WebviewEvent::Subscription(sequenced.event);
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {

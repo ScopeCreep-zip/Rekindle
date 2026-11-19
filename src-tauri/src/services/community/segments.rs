@@ -46,14 +46,3 @@ pub async fn open_new_segments(state: &SharedState, community_id: &str) {
     };
     gov_rt::open_new_segments(&adapter, community_id).await;
 }
-
-pub fn channel_record_keys_per_segment(
-    state: &SharedState,
-    community_id: &str,
-    channel_id: &str,
-) -> Vec<(u32, String)> {
-    let Ok(adapter) = build_adapter(state) else {
-        return Vec::new();
-    };
-    gov_rt::channel_record_keys_per_segment(&adapter, community_id, channel_id)
-}

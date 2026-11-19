@@ -95,7 +95,7 @@ async fn fan_out<D: GossipDeps>(
         let data = data.clone();
         set.spawn(
             async move {
-                send_to_one_peer(deps, cid, peer, data, None).await;
+                send_to_one_peer(deps, cid, peer, data).await;
             }
             .in_current_span(),
         );

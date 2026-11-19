@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use tracing::Instrument as _;
 
-use rekindle_codec::capnp_envelope::{encode_community_envelope, try_decode_community_envelope};
+use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{self, CommunityEnvelope, SignedEnvelope};
 use rekindle_codec::ingress::gossip_datagram;
 
@@ -124,14 +124,6 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
         "send_to_mesh_raw: sending to gossip fan-out",
     );
 
-    let message_id: Option<String> = try_decode_community_envelope(&signed.envelope_bytes)
-        .ok()
-        .flatten()
-        .and_then(|envelope| match envelope {
-            CommunityEnvelope::MessageNotification { message_id, .. } => Some(message_id),
-            _ => None,
-        });
-
     let cid_owner = community_id.to_string();
     deps.scope().spawn_or_drop("mesh fan-out", async move {
         let mut set = tokio::task::JoinSet::new();
@@ -139,10 +131,9 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
             let deps_clone = Arc::clone(&deps);
             let cid = cid_owner.clone();
             let data = signed_bytes.clone();
-            let msg_id = message_id.clone();
             set.spawn(
                 async move {
-                    send_to_one_peer(deps_clone, cid, peer, data, msg_id).await;
+                    send_to_one_peer(deps_clone, cid, peer, data).await;
                 }
                 .in_current_span(),
             );
@@ -151,14 +142,13 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
     });
 }
 
-/// One peer send + route re-resolve + retry. Records delivery /
-/// reliability on every terminal outcome.
+/// One peer send + route re-resolve + retry. Records the peer's
+/// reliability on the first attempt's outcome.
 pub(crate) async fn send_to_one_peer<D: GossipDeps>(
     deps: Arc<D>,
     community_id: String,
     peer: PeerInfo,
     data: Vec<u8>,
-    msg_id: Option<String>,
 ) {
     let first = if peer.route_blob.is_empty() {
         // Peer published presence before its route allocation finished
@@ -170,10 +160,6 @@ pub(crate) async fn send_to_one_peer<D: GossipDeps>(
     };
 
     if first.is_ok() {
-        if let Some(ref mid) = msg_id {
-            deps.record_delivery(mid, &community_id, &peer.pseudonym_key, "delivered")
-                .await;
-        }
         deps.record_peer_reliability(&community_id, &peer.pseudonym_key, true);
         return;
     }
@@ -225,32 +211,16 @@ pub(crate) async fn send_to_one_peer<D: GossipDeps>(
             peer = %peer.pseudonym_key,
             "no fresh route found in DHT",
         );
-        if let Some(ref mid) = msg_id {
-            deps.record_delivery(mid, &community_id, &peer.pseudonym_key, "failed")
-                .await;
-        }
         return;
     };
 
-    match deps.send_app_message(&fresh_blob, data).await {
-        Ok(()) => {
-            if let Some(ref mid) = msg_id {
-                deps.record_delivery(mid, &community_id, &peer.pseudonym_key, "delivered")
-                    .await;
-            }
-        }
-        Err(error) => {
-            tracing::warn!(
-                community = %community_id,
-                peer = %peer.pseudonym_key,
-                %error,
-                "re-resolved route still failed",
-            );
-            if let Some(ref mid) = msg_id {
-                deps.record_delivery(mid, &community_id, &peer.pseudonym_key, "failed")
-                    .await;
-            }
-        }
+    if let Err(error) = deps.send_app_message(&fresh_blob, data).await {
+        tracing::warn!(
+            community = %community_id,
+            peer = %peer.pseudonym_key,
+            %error,
+            "re-resolved route still failed",
+        );
     }
 }
 
@@ -274,7 +244,6 @@ mod tests {
         send_results: VecDeque<Result<(), String>>,
         fresh_routes: HashMap<String, Vec<u8>>,
         sent_payloads: Vec<(Vec<u8>, Vec<u8>)>,
-        deliveries: Vec<(String, String, String, String)>,
         reliability: Vec<(String, String, bool)>,
         route_updates: Vec<(String, String, String, Vec<u8>)>,
         pending_queue: Vec<SignedEnvelope>,
@@ -347,14 +316,6 @@ mod tests {
                 .reliability
                 .push((c.to_string(), peer.to_string(), success));
         }
-        async fn record_delivery(&self, mid: &str, c: &str, r: &str, s: &str) {
-            self.state.lock().deliveries.push((
-                mid.to_string(),
-                c.to_string(),
-                r.to_string(),
-                s.to_string(),
-            ));
-        }
         async fn resolve_peer_route_from_dht(&self, _c: &str, peer: &str) -> Option<Vec<u8>> {
             self.state.lock().fresh_routes.get(peer).cloned()
         }
@@ -387,7 +348,6 @@ mod tests {
         let st = deps.state.lock();
         assert_eq!(st.pending_queue.len(), 1);
         assert!(st.sent_payloads.is_empty());
-        assert!(st.deliveries.is_empty());
         assert!(st.reliability.is_empty());
     }
 
@@ -402,7 +362,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn successful_send_records_delivered_and_marks_reliable() {
+    async fn successful_send_marks_reliable() {
         let deps = Arc::new(MockDeps::new());
         deps.state.lock().peers = Some(vec![PeerInfo {
             pseudonym_key: "alice".to_string(),
@@ -422,8 +382,6 @@ mod tests {
         let st = deps.state.lock();
         assert_eq!(st.sent_payloads.len(), 1);
         assert_eq!(st.reliability, vec![("c1".into(), "alice".into(), true)]);
-        // No message_id inside envelope_bytes → no delivery row recorded.
-        assert!(st.deliveries.is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -5,15 +5,12 @@
 //! Token-bucket throttle for per-(community, channel) notification
 //! rate-limiting (architecture §17.2 line 2402 — 5 emits per 10s
 //! window before summary mode kicks in) + `NotificationLevel`
-//! tier-cascade primitive + `verify_notification_message` content
-//! hash check + `blake3_hex` helper.
+//! tier-cascade primitive.
 
 use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 
 use parking_lot::Mutex;
-
-use rekindle_codec::community::channel_record::ChannelMessage;
 
 /// Architecture §17.2 line 2402 — "Max 5 notifications per channel per
 /// 10-second window. If exceeded, a single summary notification
@@ -143,22 +140,6 @@ impl FromStr for NotificationLevel {
 
 pub fn parse_notification_level(level: &str) -> Result<NotificationLevel, String> {
     level.parse()
-}
-
-pub use rekindle_utils::blake3_hex;
-
-/// Architecture §28.9 — verify the fetched channel-message ciphertext
-/// hashes to the announcement payload's `content_hash`. Caller passes
-/// the pending fetch's recorded hash; mismatch means the announcer
-/// lied or a peer served corrupt bytes.
-pub fn verify_message_content_hash(
-    expected_content_hash: &str,
-    message: &ChannelMessage,
-) -> Result<(), &'static str> {
-    if blake3_hex(&message.ciphertext) != expected_content_hash {
-        return Err("message notification hash mismatch");
-    }
-    Ok(())
 }
 
 #[cfg(test)]

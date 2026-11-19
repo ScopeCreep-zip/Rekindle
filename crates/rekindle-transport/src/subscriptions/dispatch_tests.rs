@@ -148,15 +148,9 @@ impl AppMessagePort for Replies {
 fn signed(ttl: u8) -> SignedEnvelope {
     let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
     let pseudonym = hex::encode(key.verifying_key().to_bytes());
-    let inner = CommunityEnvelope::MessageNotification {
-        channel_id: "ab".repeat(8),
-        message_id: format!("msg_{ttl}"),
-        author_pseudonym: pseudonym.clone(),
-        subkey_index: 1,
-        lamport_ts: 1,
-        sequence: 0,
-        content_hash: "ef".repeat(32),
-        timestamp: 1_700_000_000,
+    let inner = CommunityEnvelope::TypingIndicator {
+        channel_id: format!("ch_{ttl}"),
+        pseudonym_key: pseudonym.clone(),
     };
     let bytes = encode_community_envelope(&inner).unwrap();
     let mut signed = sign_envelope(&key, "gov-key", &pseudonym, &bytes);

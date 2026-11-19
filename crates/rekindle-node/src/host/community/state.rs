@@ -186,11 +186,6 @@ pub struct CommunityState {
     #[serde(skip)]
     pub record_sequences: HashMap<String, Vec<Option<u32>>>,
 
-    /// Per-sender per-channel sequence tracking for gap detection (Briar-inspired).
-    /// Key: (sender_pseudonym, channel_id), Value: last received sequence number.
-    #[serde(skip)]
-    pub peer_sequences: HashMap<(String, String), u64>,
-
     /// Architecture §28.7 slowmode: per-channel timestamp (ms) of our
     /// last successful send. Compared against the channel's
     /// `slowmode_seconds` to gate further writes. In-memory only —

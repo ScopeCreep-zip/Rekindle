@@ -1,6 +1,5 @@
 //! The one ingest path for received channel posts (plan E3.1 F3, D26), on
-//! both modes: the daemon's gossip receive and the desktop's notification
-//! receive both hand a post here. It opens the body, runs the
+//! both modes: the outbox read and the slot-record reads hand a post here. It opens the body, runs the
 //! `rekindle_channel::ingest` gate, stores the row (with `mentions_me`, and
 //! read when we wrote it from another device), publishes
 //! `ChannelMessageEvent::New` and the channel's `UnreadChanged`.
@@ -81,78 +80,6 @@ pub enum Ingested {
 }
 
 impl HostChannel {
-    /// Fetch the post `message_id` by `author` from `subkey_index` of
-    /// `channel_id`'s records (a gossip notification names all three) and
-    /// ingest it. The post is in the genesis channel record or in the
-    /// record of the author's segment (Plate Gates, architecture §15.4), so
-    /// every one is read, genesis first and then by segment index; each
-    /// read retries through the record pool's one retry layer.
-    ///
-    /// # Errors
-    /// No identity is unlocked, the channel has no record, or no record's
-    /// slot holds the message.
-    pub async fn ingest_notified(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        subkey_index: u32,
-        message_id: &str,
-        author: &str,
-        sequence: u64,
-    ) -> Result<Ingested, ChannelError> {
-        let records = self.channel_records(community_id, channel_id)?;
-        let pool = self.records()?;
-        let mut missed = Vec::new();
-        for record_key in records {
-            match super::changes::find_page(&*pool, &record_key, subkey_index, message_id, author)
-                .await
-            {
-                Ok(page) => {
-                    let source = super::changes::ChangeSource {
-                        community_id,
-                        channel_id,
-                        record_key: &record_key,
-                        subkey_index,
-                        outbox_seq: None,
-                        author: &page.author.clone(),
-                    };
-                    return self.ingest_page(source, sequence, message_id, page).await;
-                }
-                Err(e) => missed.push(e),
-            }
-        }
-        Err(ChannelError::Adapter(format!(
-            "no record of channel {channel_id} holds message {message_id}: {}",
-            missed.join("; ")
-        )))
-    }
-
-    /// The genesis channel record, then each segment's, by segment index.
-    fn channel_records(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<Vec<String>, ChannelError> {
-        let genesis = self
-            .channel_record_key(community_id, channel_id)
-            .ok_or_else(|| ChannelError::Adapter(format!("channel {channel_id} has no record")))?;
-        let mut segments: Vec<(u32, String)> = match (
-            ChannelId::from_hex(channel_id),
-            self.governance_state(community_id),
-        ) {
-            (Some(channel), Some(gov)) => (gov.channel_segment_records.iter())
-                .filter(|((id, _), _)| *id == channel)
-                .map(|((_, segment), record)| (*segment, record.record_key.clone()))
-                .collect(),
-            _ => Vec::new(),
-        };
-        segments.retain(|(_, key)| *key != genesis);
-        segments.sort_unstable_by_key(|(segment, _)| *segment);
-        Ok(std::iter::once(genesis)
-            .chain(segments.into_iter().map(|(_, key)| key))
-            .collect())
-    }
-
     /// Ingest one received post: gate its author, open, gate, store,
     /// publish.
     ///

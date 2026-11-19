@@ -18,8 +18,8 @@ mod state_reads;
 
 /// Adapter struct — holds the `AppState` (for in-memory community /
 /// peer-overlay reads and mutations) and a `Db` clone (for the
-/// `record_delivery` SQLite write + the `community_members` subkey
-/// lookup performed during DHT route re-resolution). The `AppHandle`
+/// `community_members` subkey lookup performed during DHT route
+/// re-resolution). The `AppHandle`
 /// is consumed at construction time in `deps_impl::build_adapter` to
 /// extract the pool; the adapter never needs it again.
 pub struct GossipAdapter {
