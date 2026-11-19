@@ -36,6 +36,13 @@ pub enum SettingsCmd {
         /// `on` or `off`.
         state: Switch,
     },
+    /// Share our game time with friends (off by default): turning it on
+    /// sends our totals to every friend; what they received stays with
+    /// them when it is turned off.
+    GameTotals {
+        /// `on` or `off`.
+        state: Switch,
+    },
 }
 
 /// The game we show.

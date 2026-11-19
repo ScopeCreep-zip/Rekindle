@@ -64,6 +64,9 @@ export const systemCommands = {
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),
   // Our time in each detected game, the most recent first (plan E7.2).
   getGameTotals: () => hostInvoke<GameTotalView[]>("get_game_totals"),
+  // What a friend last shared (empty when they share none).
+  getFriendGameTotals: (publicKey: string) =>
+    hostInvoke<GameTotalView[]>("get_friend_game_totals", { publicKey }),
   getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
   launchGameToServer: (gameId: number, serverAddress: string) =>
     invoke<void>("launch_game_to_server", { gameId, serverAddress }),
@@ -73,6 +76,8 @@ export const systemCommands = {
   // A trust-changing intent the Host reviews; the preferences come back.
   setReadReceiptsEnabled: (enabled: boolean) =>
     hostInvoke<Preferences>("set_read_receipts_enabled", { enabled }),
+  setShareGameTotals: (enabled: boolean) =>
+    hostInvoke<Preferences>("set_share_game_totals", { enabled }),
   setPreferences: (prefs: Preferences) =>
     invoke<void>("set_preferences", { prefs }),
   checkForUpdates: () => invoke<boolean>("check_for_updates"),

@@ -192,6 +192,7 @@ pub enum IntentKind {
     RegisterWithPushRelay,
     SetLinkPreviewsEnabled,
     SetReadReceiptsEnabled,
+    ShareGameTotals,
     SetPresencePolicy,
     VolunteerRelay,
     // TrustChanging: Outbound files and links
@@ -426,6 +427,7 @@ impl IntentKind {
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled
+            | Self::ShareGameTotals
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl

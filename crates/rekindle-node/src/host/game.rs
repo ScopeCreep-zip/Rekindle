@@ -7,7 +7,9 @@
 //! The publisher is also the one writer of `game_sessions` (plan E7.2):
 //! each detected session is recorded when it ends, and the one still open
 //! when the stage stops (lock, quit) is recorded then. A set by hand is
-//! not a detected session and is not recorded.
+//! not a detected session and is not recorded. Each recorded session
+//! changes our totals, which go to friends while sharing is on
+//! (`operations::friend::game_totals`, which reads the setting).
 
 use async_trait::async_trait;
 use rekindle_game_detect::{DetectedGame, GameDatabase, GameDetector, GameDetectorPublisher};
@@ -20,11 +22,30 @@ struct Publisher {
     sessions: SessionLog,
 }
 
+/// Told when a recorded session changed our totals.
+#[async_trait]
+pub(crate) trait TotalsChanged: Send + Sync {
+    async fn totals_changed(&self);
+}
+
+/// The Host's friends: our totals go to each accepted friend, only while
+/// sharing is on (plan E7.2; the transport reads the setting).
+#[async_trait]
+impl TotalsChanged for super::adapters::friends::HostFriends {
+    async fn totals_changed(&self) {
+        let reached =
+            rekindle_transport::operations::friend::game_totals::send_to_friends(self).await;
+        tracing::debug!(reached, "game totals sent after a session");
+    }
+}
+
 /// The detected session in progress and where finished ones are written.
 pub(crate) struct SessionLog {
     db: std::sync::Arc<rekindle_db::DbHandle>,
     owner: String,
     clock: std::sync::Arc<dyn rekindle_utils::Clock>,
+    /// Told after each session is written.
+    changed: std::sync::Arc<dyn TotalsChanged>,
     /// The game id and start (Unix ms) of the session in progress.
     current: tokio::sync::Mutex<Option<(u32, i64)>>,
 }
@@ -34,11 +55,13 @@ impl SessionLog {
         db: std::sync::Arc<rekindle_db::DbHandle>,
         owner: String,
         clock: std::sync::Arc<dyn rekindle_utils::Clock>,
+        changed: std::sync::Arc<dyn TotalsChanged>,
     ) -> Self {
         Self {
             db,
             owner,
             clock,
+            changed,
             current: tokio::sync::Mutex::new(None),
         }
     }
@@ -86,8 +109,9 @@ impl SessionLog {
                 )
             })
             .await;
-        if let Err(e) = written {
-            tracing::warn!(error = %e, game_id, "game session not recorded");
+        match written {
+            Ok(()) => self.changed.totals_changed().await,
+            Err(e) => tracing::warn!(error = %e, game_id, "game session not recorded"),
         }
     }
 }

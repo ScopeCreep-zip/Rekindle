@@ -1,5 +1,5 @@
-import { Component, createMemo, createSignal, For, onMount, onCleanup, Show } from "solid-js";
-import { formatDuration } from "../utils/formatting";
+import { Component, createMemo, createResource, createSignal, For, onMount, onCleanup, Show } from "solid-js";
+import { formatDuration, formatRelativeTime } from "../utils/formatting";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import StatusDot from "../components/status/StatusDot";
@@ -26,6 +26,8 @@ const ProfileWindow: Component = () => {
   const publicKey = getKeyFromUrl();
   const [confirmRemove, setConfirmRemove] = createSignal(false);
   const safety = useSafetyNumber(publicKey);
+  // What the friend last shared (plan E7.2); empty when they share none.
+  const [gameTotals] = createResource(() => commands.getFriendGameTotals(publicKey));
   let unlistenPresence: Promise<import("@tauri-apps/api/event").UnlistenFn> | undefined;
 
   onMount(() => {
@@ -98,6 +100,23 @@ const ProfileWindow: Component = () => {
                 {formatElapsed(friend()!.gameInfo!.startedAt!)}
               </div>
             </Show>
+          </div>
+        </Show>
+        <Show when={(gameTotals() ?? []).length > 0}>
+          <div class="profile-section">
+            <div class="profile-section-label">Game Time</div>
+            <ul class="game-time-list" aria-label="Game time">
+              <For each={gameTotals()}>
+                {(game) => (
+                  <li class="game-time-row">
+                    <GameIcon iconKey={game.iconKey} />
+                    <span class="game-time-name">{game.gameName}</span>
+                    <span class="game-time-total">{formatDuration(game.totalSecs)}</span>
+                    <span class="game-time-last">{formatRelativeTime(game.lastPlayed)}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
           </div>
         </Show>
         <div class="profile-section">

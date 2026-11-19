@@ -138,8 +138,10 @@ impl std::fmt::Debug for IpcRequest {
             | Self::PresenceSetMessage { .. }
             | Self::PresenceGet
             | Self::GameTotalsGet
+            | Self::FriendGameTotalsGet { .. }
             | Self::ProfileSetNickname { .. }
             | Self::SetReadReceiptsEnabled { .. }
+            | Self::SetShareGameTotals { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AvatarGet { .. }
             | Self::AuditVerify
@@ -184,6 +186,10 @@ impl IpcRequest {
                 .finish(),
             Self::PresenceGet => write!(f, "PresenceGet"),
             Self::GameTotalsGet => write!(f, "GameTotalsGet"),
+            Self::FriendGameTotalsGet { public_key } => f
+                .debug_struct("FriendGameTotalsGet")
+                .field("public_key", public_key)
+                .finish(),
             Self::Undo { id } => f.debug_struct("Undo").field("id", id).finish(),
             Self::ProfileSetNickname { display_name } => f
                 .debug_struct("ProfileSetNickname")
@@ -191,6 +197,10 @@ impl IpcRequest {
                 .finish(),
             Self::SetReadReceiptsEnabled { enabled } => f
                 .debug_struct("SetReadReceiptsEnabled")
+                .field("enabled", enabled)
+                .finish(),
+            Self::SetShareGameTotals { enabled } => f
+                .debug_struct("SetShareGameTotals")
                 .field("enabled", enabled)
                 .finish(),
             Self::ProfileSetAvatar { image, kind } => f

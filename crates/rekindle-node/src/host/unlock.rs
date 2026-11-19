@@ -157,6 +157,7 @@ pub(crate) async fn run(
             Arc::clone(&ctx.db),
             installed.public_key.clone(),
             Arc::clone(&ctx.clock),
+            Arc::new(super::adapters::friends::HostFriends::of(ctx)),
         );
         let game = scope.spawn_with_token("game detection", |stop| {
             super::game::run(presence, sessions, stop)

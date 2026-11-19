@@ -21,7 +21,7 @@ use super::Host;
 
 /// `peer` an accepted friend of `owner`'s, in the store and the projection
 /// (as an unlock loads it).
-async fn accepted(host: &Host, owner: [u8; 32], peer: [u8; 32]) {
+pub(super) async fn accepted(host: &Host, owner: [u8; 32], peer: [u8; 32]) {
     befriend(host, owner, peer).await;
     let db = host.ctx.db.current().unwrap();
     let loaded = super::session::load(

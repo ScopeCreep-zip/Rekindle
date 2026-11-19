@@ -237,7 +237,7 @@ fn own(request: &IpcRequest) -> Checked {
         // The kind is a closed set; that the bytes are of it is
         // `rekindle-image`'s check, on decode.
         IpcRequest::ProfileSetAvatar { image, kind: _ } => avatar(image),
-        IpcRequest::SetReadReceiptsEnabled { .. } => Ok(()),
+        IpcRequest::SetReadReceiptsEnabled { .. } | IpcRequest::SetShareGameTotals { .. } => Ok(()),
         IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
             .map(drop)
             .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),
@@ -332,6 +332,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. } => group_dm::check(request),
         IpcRequest::AvatarGet { public_key: key }
+        | IpcRequest::FriendGameTotalsGet { public_key: key }
         | IpcRequest::IdentitySafetyNumber { peer: key }
         | IpcRequest::IdentityMarkVerified { peer: key }
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
@@ -342,6 +343,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::ProfileSetNickname { .. }
         | IpcRequest::SetReadReceiptsEnabled { .. }
+        | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::LinkOpen { .. } => own(request),
         IpcRequest::SkinList

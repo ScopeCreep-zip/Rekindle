@@ -1,5 +1,6 @@
-//! Our own presence, profile, game, audit log, links and read-receipt
-//! setting (plan E1.1, E2.5): one implementation on both hosts, over
+//! Our own presence, profile, game, audit log, links, read-receipt and
+//! game-totals sharing settings, and a friend's shared game totals (plan
+//! E1.1, E2.5, E7.2): one implementation on both hosts, over
 //! `host::{own_presence, own_profile, audit_alert}`.
 
 use rekindle_ipc::protocol::IpcResponse;
@@ -25,11 +26,17 @@ pub(crate) async fn route(
         IpcRequest::PresenceSetMessage { message } => handle_message(ctx, state, message).await,
         IpcRequest::PresenceGet => handle_get(ctx, state),
         IpcRequest::GameTotalsGet => handle_game_totals(ctx, state).await,
+        IpcRequest::FriendGameTotalsGet { public_key } => {
+            handle_friend_game_totals(ctx, state, public_key).await
+        }
         IpcRequest::ProfileSetNickname { display_name } => {
             handle_nickname(ctx, state, &display_name).await
         }
         IpcRequest::SetReadReceiptsEnabled { enabled } => {
             handle_read_receipts(ctx, state, enabled).await
+        }
+        IpcRequest::SetShareGameTotals { enabled } => {
+            handle_share_game_totals(ctx, state, enabled).await
         }
         IpcRequest::ProfileSetAvatar { image, kind } => {
             handle_avatar(ctx, state, image, kind).await
@@ -120,6 +127,67 @@ async fn handle_game_totals(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
     {
         Ok(totals) => IpcResponse::ok(&crate::host::game::total_views(&totals)),
         Err(e) => IpcResponse::error(500, format!("game totals not read: {e}")),
+    }
+}
+
+/// `FriendGameTotalsGet` (plan E7.2): what `public_key` last shared
+/// (`friend_game_totals`), named and given icon keys as ours are.
+async fn handle_friend_game_totals(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    public_key: String,
+) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let (db, owner) = match (ctx.require_db(), ctx.require_owner()) {
+        (Ok(db), Ok(owner)) => (db, owner),
+        (Err(e), _) | (_, Err(e)) => return e,
+    };
+    match db
+        .call(move |conn| rekindle_db::repo::friend_game_totals::of(conn, &owner, &public_key))
+        .await
+    {
+        Ok(totals) => IpcResponse::ok(&crate::host::game::total_views(&totals)),
+        Err(e) => IpcResponse::error(500, format!("friend's game totals not read: {e}")),
+    }
+}
+
+/// `SetShareGameTotals`, once its review was committed (plan E7.2): turned
+/// on, our totals go to every accepted friend; turned off, nothing more is
+/// sent, and what friends already received stays with them (the plan
+/// removes a friend's copy only with the friendship). The preferences as
+/// they now are.
+async fn handle_share_game_totals(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    enabled: bool,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let (db, owner) = match (ctx.require_db(), ctx.require_owner()) {
+        (Ok(db), Ok(owner)) => (db, owner),
+        (Err(e), _) | (_, Err(e)) => return e,
+    };
+    let saved = db
+        .call(move |conn| {
+            rekindle_db::repo::preferences::set_share_game_totals(conn, &owner, enabled)?;
+            rekindle_db::repo::preferences::load(conn, &owner)
+        })
+        .await;
+    match saved {
+        Ok(prefs) => {
+            if enabled {
+                let friends = crate::host::adapters::friends::HostFriends::of(ctx);
+                let reached =
+                    rekindle_transport::operations::friend::game_totals::send_to_friends(&friends)
+                        .await;
+                tracing::debug!(reached, "game totals shared with friends");
+            }
+            IpcResponse::ok(&prefs)
+        }
+        Err(e) => IpcResponse::error(500, format!("game totals sharing not saved: {e}")),
     }
 }
 

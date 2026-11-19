@@ -13,10 +13,14 @@ const PrivacyTab: Component = () => {
   // never showing a value it has not read (walk row ST28 read the initial
   // `false` back after reopening Settings, before the load answered).
   const [readReceipts, setReadReceipts] = createSignal<boolean | null>(null);
+  const [shareGameTotals, setShareGameTotals] = createSignal<boolean | null>(null);
 
   onMount(() => {
-    commands.getPreferences().then((p) => setReadReceipts(p.readReceiptsEnabled)).catch((e) => {
-      console.error("Failed to load the read-receipt setting:", e);
+    commands.getPreferences().then((p) => {
+      setReadReceipts(p.readReceiptsEnabled);
+      setShareGameTotals(p.shareGameTotals);
+    }).catch((e) => {
+      console.error("Failed to load the privacy settings:", e);
     });
   });
 
@@ -31,6 +35,19 @@ const PrivacyTab: Component = () => {
       setReadReceipts(prefs.readReceiptsEnabled);
     } catch (e) {
       setError(`Read receipts not changed: ${String(e)}`);
+    }
+  }
+
+  // The same review; turning it on sends our totals to every friend.
+  async function handleToggleShareGameTotals(): Promise<void> {
+    const current = shareGameTotals();
+    if (current === null) return;
+    setError(null);
+    try {
+      const prefs = await commands.setShareGameTotals(!current);
+      setShareGameTotals(prefs.shareGameTotals);
+    } catch (e) {
+      setError(`Game time sharing not changed: ${String(e)}`);
     }
   }
 
@@ -78,6 +95,21 @@ const PrivacyTab: Component = () => {
       <div class="settings-hint">
         Friends see that you read their messages only when both of you turn
         read receipts on. They are never sent while you appear Invisible.
+      </div>
+      <div class="settings-section-title">Game Time</div>
+      <label class="settings-option">
+        <input
+          type="checkbox"
+          checked={shareGameTotals() === true}
+          disabled={shareGameTotals() === null}
+          onChange={() => void handleToggleShareGameTotals()}
+        />
+        <span class="buddy-name">Share game time with friends</span>
+      </label>
+      <div class="settings-hint">
+        Friends see how long you have played each game, sent to them
+        end-to-end encrypted. Turning it off stops new totals; friends keep
+        what they last received until you are no longer friends.
       </div>
       <div class="settings-section-title">Identity</div>
       <div class="form-field-row">

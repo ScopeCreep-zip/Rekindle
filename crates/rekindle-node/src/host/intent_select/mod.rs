@@ -127,6 +127,11 @@ pub(crate) async fn select(
             s.reversibility =
                 Reversibility::ReversibleByInverse(IntentKind::SetReadReceiptsEnabled);
         }
+        IpcRequest::SetShareGameTotals { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // What friends already received stays with them (plan E7.2).
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::ShareGameTotals);
+        }
         IpcRequest::ProfileSetAvatar { .. } => {
             s.subject = unlocked_identity(ctx);
             // The old picture is not kept: another one replaces it.
@@ -194,6 +199,7 @@ pub(crate) async fn select(
         | IpcRequest::FriendCode
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
+        | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }

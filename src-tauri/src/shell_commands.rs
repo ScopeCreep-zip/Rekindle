@@ -85,6 +85,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "set_read_receipts_enabled",
         HostCall::Request("SetReadReceiptsEnabled"),
     ),
+    (
+        "set_share_game_totals",
+        HostCall::Request("SetShareGameTotals"),
+    ),
     ("set_avatar", HostCall::Request("ProfileSetAvatar")),
     ("get_avatar", HostCall::Request("AvatarGet")),
     ("get_skin", HostCall::Request("SkinGet")),
@@ -104,6 +108,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("export_skin_schema", HostCall::Request("SkinExportSchema")),
     ("get_game_status", HostCall::Request("PresenceGet")),
     ("get_game_totals", HostCall::Request("GameTotalsGet")),
+    (
+        "get_friend_game_totals",
+        HostCall::Request("FriendGameTotalsGet"),
+    ),
     ("open_external_url", HostCall::Request("LinkOpen")),
     // Friends and the 1:1 paths (plan E2.1).
     ("send_message", HostCall::Request("DmSend")),

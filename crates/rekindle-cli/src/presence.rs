@@ -83,6 +83,9 @@ pub async fn dispatch_settings(
         SettingsCmd::ReadReceipts { state } => IpcRequest::SetReadReceiptsEnabled {
             enabled: matches!(state, Switch::On),
         },
+        SettingsCmd::GameTotals { state } => IpcRequest::SetShareGameTotals {
+            enabled: matches!(state, Switch::On),
+        },
     };
     let value = helpers::send(client, request).await?;
     format::print_structured(&value, mode)

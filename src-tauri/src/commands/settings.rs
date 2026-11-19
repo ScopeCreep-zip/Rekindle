@@ -59,6 +59,17 @@ pub async fn set_read_receipts_enabled(
     host_call::call(&state, IpcRequest::SetReadReceiptsEnabled { enabled }).await
 }
 
+/// Share our game totals with friends or stop (`IpcRequest::SetShareGameTotals`,
+/// plan E7.2, a trust-changing intent the Host reviews): the preferences
+/// come back.
+#[tauri::command]
+pub async fn set_share_game_totals(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetShareGameTotals { enabled }).await
+}
+
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let launcher = app.autolaunch();
     if launcher.is_enabled().map_err(|e| e.to_string())? == enabled {

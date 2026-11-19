@@ -24,6 +24,7 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_status_message", Some(IntentKind::SetStatusMessage)),
     ("get_game_status", None),
     ("get_game_totals", None),
+    ("get_friend_game_totals", None),
     ("get_game_name", None),
     (
         "launch_game_to_server",

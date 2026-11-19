@@ -164,6 +164,7 @@ impl IntentKind {
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled
+            | Self::ShareGameTotals
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl
@@ -361,6 +362,7 @@ impl IntentKind {
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled
+            | Self::ShareGameTotals
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl

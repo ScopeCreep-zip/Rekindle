@@ -106,6 +106,7 @@ impl IpcRequest {
             | Self::FriendInviteList
             | Self::FriendBlockedList
             | Self::FriendCode
+            | Self::FriendGameTotalsGet { .. }
             | Self::IdentitySafetyNumber { .. } => Some(C::FriendsRead),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
@@ -178,6 +179,8 @@ impl IpcRequest {
             | Self::ProfileSetNickname { .. }
             // Whether we tell friends what we read is the user's own.
             | Self::SetReadReceiptsEnabled { .. }
+            // So is whether friends see our game time.
+            | Self::SetShareGameTotals { .. }
             | Self::ProfileSetAvatar { .. }
             // What the app looks like, and what shows before unlock, is
             // the user's own.

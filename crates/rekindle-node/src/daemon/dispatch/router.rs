@@ -144,8 +144,10 @@ async fn route(
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
+        | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileSetNickname { .. }
         | IpcRequest::SetReadReceiptsEnabled { .. }
+        | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::GamePresenceSet { .. }

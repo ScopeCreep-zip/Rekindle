@@ -48,3 +48,14 @@ pub async fn get_game_totals(
 ) -> Result<Done<Vec<GameTotalView>>, CommandError> {
     host_call::call(&state, IpcRequest::GameTotalsGet).await
 }
+
+/// A friend's time in each game, as they last shared it
+/// (`IpcRequest::FriendGameTotalsGet`, plan E7.2); empty when they share
+/// none.
+#[tauri::command]
+pub async fn get_friend_game_totals(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<GameTotalView>>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendGameTotalsGet { public_key }).await
+}

@@ -284,12 +284,20 @@ pub enum IpcRequest {
     /// Our time in each detected game and when we last played it, the
     /// most recent first (`Vec<dto::presence::GameTotalView>`, plan E7.2).
     GameTotalsGet,
+    /// A friend's time in each game, as they last shared it (plan E7.2:
+    /// `friend_game_totals`, `Vec<dto::presence::GameTotalView>`, empty
+    /// when they share none).
+    FriendGameTotalsGet { public_key: String },
     /// Change the name we show: the identity's database, the registry and
     /// profile subkey 0.
     ProfileSetNickname { display_name: String },
     /// Turn DM read receipts on or off (plan E2.5, r10): the identity's
     /// `Preferences.read_receipts_enabled`; the preferences come back.
     SetReadReceiptsEnabled { enabled: bool },
+    /// Share our game totals with friends, or stop (plan E7.2): the
+    /// identity's `Preferences.share_game_totals`; turning it on sends them
+    /// to every accepted friend. The preferences come back.
+    SetShareGameTotals { enabled: bool },
     /// Change our avatar: the image, of the kind its sender declares (the
     /// file picker's MIME type, the file's extension), is decoded by
     /// `rekindle-image` as that kind only, made a 128 px WebP, saved and
