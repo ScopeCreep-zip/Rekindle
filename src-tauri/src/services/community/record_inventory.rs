@@ -32,13 +32,10 @@ pub fn warmable_record_keys(cs: &CommunityState) -> Vec<String> {
 
     if let Some(gov) = cs.governance_state.as_ref() {
         // Plate Gate (§15.4) expansion segments — segment-N governance +
-        // registry, and channel-segment records.
+        // registry.
         for seg in &gov.segments {
             keys.push(seg.anchor.clone());
             keys.push(seg.registry_key.clone());
-        }
-        for csr in gov.channel_segment_records.values() {
-            keys.push(csr.record_key.clone());
         }
 
         // §14.1 — the inviter keeps its own live invite-secrets DFLT records

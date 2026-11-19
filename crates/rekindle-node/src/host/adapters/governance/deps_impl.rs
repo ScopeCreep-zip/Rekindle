@@ -297,10 +297,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.list_communities_for_dht_open_impl()
     }
 
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
-        self.channel_log_keys_for_community_impl(community_id)
-    }
-
     fn list_my_active_invite_secret_keys(&self) -> Vec<String> {
         self.list_my_active_invite_secret_keys_impl()
     }

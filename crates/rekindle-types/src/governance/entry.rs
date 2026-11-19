@@ -426,21 +426,6 @@ pub enum GovernanceEntry {
         reason: Option<String>,
     },
 
-    /// Plate Gate (architecture §15.4 lazy channel records) — announces
-    /// that a channel has acquired a segment-N SMPL record for messages
-    /// from members in segment N. Written by the first segment-N member
-    /// to send a message in `channel_id` (architecture §15.4 + DS-aligned
-    /// v2 plan line 993). Other members merge this entry, then
-    /// `open_record` + watch the new key so messages from segment-N peers
-    /// are discoverable. CRDT: LWW per `(channel_id, segment_index)`.
-    ChannelSegmentLinked {
-        channel_id: ChannelId,
-        segment_index: u32,
-        /// SMPL record key for messages from segment-N members in this
-        /// channel. The schema mirrors the segment-0 record (255 slots).
-        record_key: String,
-    },
-
     /// Plate Gate (architecture §15) — adds a new registry + governance
     /// segment when the highest existing segment has its 255 slots filled.
     /// Admin-only (`MANAGE_COMMUNITY`) per §15.2; merged as ORMap-of-CRDTs

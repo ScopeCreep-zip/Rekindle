@@ -54,7 +54,6 @@ impl HostGovernance {
             registry_key: outcome.claimed.registry_key.clone(),
             community_name: outcome.invite.community_name.clone(),
             slot_seed,
-            channel_record_keys: std::collections::HashMap::new(),
             segment_index: Some(outcome.claimed.segment_index),
             lamport_counter: 0,
             // No key yet: 0 is the sentinel for "no community key held",

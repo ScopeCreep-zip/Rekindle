@@ -26,7 +26,6 @@
 use crate::event::GovernanceRuntimeEvent;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_records::port::OpenIntent;
-use rekindle_types::id::ChannelId;
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
 
@@ -82,8 +81,8 @@ async fn acquire_records_concurrent<D: GovernanceRuntimeDeps>(
     taken
 }
 
-/// Take a SINGLE community's session leases (governance, registry,
-/// channel-log and GovernanceOverflow records) and hand them to the host,
+/// Take a SINGLE community's session leases (governance, registry and
+/// GovernanceOverflow records) and hand them to the host,
 /// which watches them and starts the community's loops
 /// ([`GovernanceRuntimeDeps::community_records_ready`]).
 ///
@@ -129,42 +128,21 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
         }
     }
 
-    // Channel-log + GovernanceOverflow records in ONE bounded concurrent
-    // batch, so an unreachable overflow page overlaps the channel opens. The
+    // GovernanceOverflow records in one bounded concurrent batch. The
     // 12 s deadline (for starting borrows only) keeps the best-effort opens
     // from starving the caller (the join's OpenRecords gate, or login
     // hydration). A missing overflow page never aborts the pass (the read
     // path warns and tolerates truncation, D6).
-    let channels = deps.channel_log_keys_for_community(&rec.id);
     let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
-    // Channel records are borrowed writable with our slot writer (they share
-    // the registry's slot seed), so a channel write restored after a re-login
-    // re-pushes as us (plan C7.13); overflow pages are read-only.
-    let mut keys: Vec<(String, Option<String>)> = channels
-        .iter()
-        .map(|(_, key)| (key.clone(), rec.slot_writer.clone()))
-        .collect();
-    keys.extend(overflow_keys.iter().map(|key| (key.clone(), None)));
+    // Overflow pages are read-only. A channel has no record (plan E3.3):
+    // posts ride each author's `M`/4 outbox, held through its member record.
+    let keys: Vec<(String, Option<String>)> =
+        overflow_keys.iter().map(|key| (key.clone(), None)).collect();
     let until = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
-    for (key, lease) in acquire_records_concurrent(deps, &rec.id, &keys, until).await {
-        let channel = channels
-            .iter()
-            .find(|(_, k)| *k == key)
-            .and_then(|(id_hex, _)| channel_id_from_hex(id_hex));
-        match channel {
-            Some(channel_id) => {
-                leases.channels.insert(channel_id, lease);
-            }
-            None => leases.overflow.push(lease),
-        }
+    for (_, lease) in acquire_records_concurrent(deps, &rec.id, &keys, until).await {
+        leases.overflow.push(lease);
     }
     deps.community_records_ready(&rec.id, leases).await;
-}
-
-/// A channel id from its hex form (16 bytes).
-fn channel_id_from_hex(id_hex: &str) -> Option<ChannelId> {
-    let bytes: [u8; 16] = hex::decode(id_hex).ok()?.try_into().ok()?;
-    Some(ChannelId(bytes))
 }
 
 /// One community's member state from the DHT (plan E3.1 C2c: the Host's

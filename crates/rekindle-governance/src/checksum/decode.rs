@@ -15,11 +15,11 @@ use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, T
 
 use crate::op::OpStamp;
 use crate::state::{
-    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord,
-    ChannelState, CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState,
-    MemberState, MetadataState, ModReportState, NotificationDefaultState, OnboardingState,
-    OverwriteState, PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState,
-    TimeoutState, WelcomeScreenState,
+    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelState,
+    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
+    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
+    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
+    WelcomeScreenState,
 };
 
 /// A cursor over canonical bytes.
@@ -339,7 +339,6 @@ decanon_struct!(SegmentState {
     slot_range_start,
     slot_range_end
 });
-decanon_struct!(ChannelSegmentRecord { record_key, linked });
 decanon_struct!(InviteState {
     code_hash,
     max_uses,
@@ -395,7 +394,6 @@ decanon_struct!(GovernanceState {
     welcome_screen,
     ban_stamps,
     segments,
-    channel_segment_records,
     invites,
     expression_remove_stamps,
     community_policy,

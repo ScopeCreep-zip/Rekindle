@@ -10,11 +10,11 @@ use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, T
 use super::canonical_state;
 use crate::op::OpStamp;
 use crate::state::{
-    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord,
-    ChannelState, CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState,
-    MemberState, MetadataState, ModReportState, NotificationDefaultState, OnboardingState,
-    OverwriteState, PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState,
-    TimeoutState, WelcomeScreenState,
+    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelState,
+    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
+    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
+    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
+    WelcomeScreenState,
 };
 
 fn pk() -> PseudonymKey {
@@ -338,16 +338,6 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                     slot_range_start: 0,
                     slot_range_end: 1,
                 });
-            }),
-        ),
-        (
-            "channel_segment_records",
-            Box::new(|g| {
-                let r = ChannelSegmentRecord {
-                    record_key: "k".into(),
-                    linked: s(),
-                };
-                g.channel_segment_records.insert((ChannelId([1; 16]), 1), r);
             }),
         ),
         (

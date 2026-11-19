@@ -540,6 +540,8 @@ struct AdminDeleteEntry @0xcfd4eb16e9bf1c2e {
     author               @5 :PseudonymKey;
 }
 
+# Obsolete (plan E3.3): a channel has no record in any segment; posts
+# ride each author's `M`/4 outbox. Kept for its id; no arm reads it.
 struct ChannelSegmentLinkedEntry @0xd0d4eb16e9bf1c2e {
     channelId            @0 :Uuid16;
     segmentIndex         @1 :UInt32;
@@ -659,7 +661,7 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         onboardingConfig              @22 :OnboardingConfigEntry;
         welcomeScreen                 @23 :WelcomeScreenEntry;
         adminDelete                   @24 :AdminDeleteEntry;
-        channelSegmentLinked          @25 :ChannelSegmentLinkedEntry;
+        obsoleteChannelSegmentLinked  @25 :ChannelSegmentLinkedEntry;
         segmentAdded                  @26 :SegmentAddedEntry;
         autoModRule                   @27 :AutoModRuleEntry;
         roleArchived                  @28 :RoleArchivedEntry;

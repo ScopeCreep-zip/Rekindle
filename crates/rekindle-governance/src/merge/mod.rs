@@ -364,8 +364,7 @@ fn apply(
         | G::CategoryCreated { .. }
         | G::CategoryArchived { .. }
         | G::CategoryUpdated { .. }
-        | G::PermissionOverwrite { .. }
-        | G::ChannelSegmentLinked { .. } => apply_channels(entry, stamp, state),
+        | G::PermissionOverwrite { .. } => apply_channels(entry, stamp, state),
         G::MemberApproved { .. } | G::MemberRejected { .. } => {
             apply_admission(entry, stamp, state);
         }

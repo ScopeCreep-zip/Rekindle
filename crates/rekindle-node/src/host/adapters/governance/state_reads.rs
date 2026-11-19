@@ -82,8 +82,7 @@ impl HostGovernance {
             // `o_cnt: 0` it grants no write, so it is not carried here.
             dht_owner_keypair: None,
             governance_clock: membership.lamport_counter,
-            channel_log_keys: membership.channel_record_keys.clone(),
-            channel_ids: self.channel_ids_impl(community_id, membership),
+            channel_ids: self.channel_ids_impl(community_id),
             mek_generation: membership.mek_generation,
         })
     }
@@ -92,15 +91,13 @@ impl HostGovernance {
         self.ctx.communities.governance_state(community_id)
     }
 
-    fn channel_ids_impl(&self, community_id: &str, membership: &SessionMembership) -> Vec<String> {
+    fn channel_ids_impl(&self, community_id: &str) -> Vec<String> {
         // The merged channels (plan E3.3: a channel is its `ChannelCreated`
         // op, with no record).
-        match self.ctx.communities.governance_state(community_id) {
-            Some(state) => (state.channels.keys())
-                .map(|id| hex::encode(id.0))
-                .collect(),
-            None => membership.channel_record_keys.keys().cloned().collect(),
-        }
+        (self.ctx.communities.governance_state(community_id).into_iter())
+            .flat_map(|state| state.channels.into_keys())
+            .map(|id| hex::encode(id.0))
+            .collect()
     }
 
     /// Snapshot the gossip overlay's online members.
@@ -185,19 +182,6 @@ impl HostGovernance {
                 )
             })
             .collect()
-    }
-
-    /// Channel message-record keys for a community.
-    /// `(channel id hex, record key)` for each of the community's channels.
-    pub(super) fn channel_log_keys_for_community_impl(
-        &self,
-        community_id: &str,
-    ) -> Vec<(String, String)> {
-        let guard = self.ctx.session.read();
-        let Some(membership) = guard.as_ref().and_then(|s| s.communities.get(community_id)) else {
-            return Vec::new();
-        };
-        membership.channel_record_keys.clone().into_iter().collect()
     }
 
     pub(super) fn governance_overflow_keys_impl(&self, community_id: &str) -> Vec<String> {

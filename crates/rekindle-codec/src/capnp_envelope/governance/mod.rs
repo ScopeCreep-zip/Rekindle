@@ -45,7 +45,7 @@ mod shared;
 
 use channels::{
     read_category_archived, read_category_created, read_category_updated, read_channel_archived,
-    read_channel_created, read_channel_segment_linked, read_channel_updated,
+    read_channel_created, read_channel_updated,
     read_permission_overwrite,
 };
 use checkpoint::read_checkpoint;
@@ -102,6 +102,9 @@ pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::ObsoleteAdmissionPolicy(_) => Err(CodecError::UnknownGovernanceArm(
             "retired admissionPolicy (@37)".into(),
         )),
+        Which::ObsoleteChannelSegmentLinked(_) => Err(CodecError::UnknownGovernanceArm(
+            "retired channelSegmentLinked (@25)".into(),
+        )),
         Which::MemberJoined(p) => read_member_joined(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRecordMoved(p) => read_member_record_moved(p.map_err(|e| capnp_err(&e))?),
         Which::MemberLeft(p) => read_member_left(p.map_err(|e| capnp_err(&e))?),
@@ -139,9 +142,6 @@ pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::OnboardingConfig(p) => read_onboarding_config(p.map_err(|e| capnp_err(&e))?),
         Which::WelcomeScreen(p) => read_welcome_screen(p.map_err(|e| capnp_err(&e))?),
         Which::AdminDelete(p) => read_admin_delete(p.map_err(|e| capnp_err(&e))?),
-        Which::ChannelSegmentLinked(p) => {
-            read_channel_segment_linked(p.map_err(|e| capnp_err(&e))?)
-        }
         Which::SegmentAdded(p) => read_segment_added(p.map_err(|e| capnp_err(&e))?),
         Which::AutoModRule(p) => read_auto_mod_rule(p.map_err(|e| capnp_err(&e))?),
         Which::RoleArchived(p) => read_role_archived(p.map_err(|e| capnp_err(&e))?),

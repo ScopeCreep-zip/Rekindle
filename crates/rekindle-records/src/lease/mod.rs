@@ -18,9 +18,8 @@
 //!   watcher goes, the watch is cancelled.
 //! - The **last release closes.**
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
-use rekindle_types::id::ChannelId;
 
 /// One borrow of a record. Handed to code that must not see Veilid types
 /// (the deps traits), and to the pool, which keeps the Veilid side.
@@ -266,7 +265,6 @@ pub struct CommunityLeases {
     /// The anchor `A` (ADR 0011).
     pub anchor: Option<LeaseId>,
     pub registry: Option<LeaseId>,
-    pub channels: HashMap<ChannelId, LeaseId>,
     /// Plate Gate segment records (governance and registry per segment).
     pub segments: Vec<LeaseId>,
     /// `GovernanceOverflow` pages this member wrote or follows.
@@ -278,7 +276,6 @@ pub struct CommunityLeases {
 pub enum HeldKind {
     Anchor,
     Registry,
-    Channel,
     Segment,
     Overflow,
 }
@@ -297,7 +294,6 @@ impl CommunityLeases {
         self.anchor
             .iter()
             .chain(self.registry.iter())
-            .chain(self.channels.values())
             .chain(self.segments.iter())
             .chain(self.overflow.iter())
             .copied()
@@ -331,11 +327,6 @@ impl CommunityLeases {
         if let Some(lease) = incoming.registry {
             if take(lease, HeldKind::Registry, &mut merged) {
                 self.registry = Some(lease);
-            }
-        }
-        for (channel, lease) in incoming.channels {
-            if take(lease, HeldKind::Channel, &mut merged) {
-                self.channels.insert(channel, lease);
             }
         }
         for lease in incoming.segments {

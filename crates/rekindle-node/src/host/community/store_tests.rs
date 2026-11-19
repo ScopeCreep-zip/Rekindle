@@ -84,7 +84,6 @@ fn membership(me: &PseudonymKey) -> CommunityMembership {
         slot_index: 0,
         community_name: "Team".into(),
         slot_seed: None,
-        channel_record_keys: HashMap::new(),
         segment_index: Some(0),
         lamport_counter: 0,
         mek_generation: 0,

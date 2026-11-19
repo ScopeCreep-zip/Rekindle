@@ -5,11 +5,11 @@
 //! every stamp LWW compares is encoded with its row.
 
 use crate::state::{
-    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord,
-    ChannelState, CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState,
-    MemberState, MetadataState, ModReportState, NotificationDefaultState, OnboardingState,
-    OverwriteState, PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState,
-    TimeoutState, WelcomeScreenState,
+    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelState,
+    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
+    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
+    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
+    WelcomeScreenState,
 };
 
 use super::canon::{Canon, Json};
@@ -55,7 +55,6 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
         welcome_screen,
         ban_stamps,
         segments,
-        channel_segment_records,
         invites,
         expression_remove_stamps,
         community_policy,
@@ -69,7 +68,7 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
     put!(out; timeouts, mek_generation, metadata, notification_default, categories);
     put!(out; overwrites, threads, events, event_rsvps, expressions, admin_deletes);
     put!(out; pinned_attachments, attachment_pin_stamps, creator, automod_rules);
-    put!(out; onboarding, welcome_screen, ban_stamps, segments, channel_segment_records);
+    put!(out; onboarding, welcome_screen, ban_stamps, segments);
     put!(out; invites, expression_remove_stamps, community_policy, mod_reports);
     std::mem::take(out)
 }
@@ -323,13 +322,6 @@ impl Canon for SegmentState {
             slot_range_end,
         } = self;
         put!(out; segment_index, registry_key, anchor, slot_range_start, slot_range_end);
-    }
-}
-
-impl Canon for ChannelSegmentRecord {
-    fn put(&self, out: &mut Vec<u8>) {
-        let Self { record_key, linked } = self;
-        put!(out; record_key, linked);
     }
 }
 

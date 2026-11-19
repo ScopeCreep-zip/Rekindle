@@ -21,9 +21,8 @@ use crate::host::community::state::{
 /// What a projection changed that the shell acts on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GovernanceProjected {
-    /// The merge named a record to watch (a channel log, a Plate Gate
-    /// segment's records, a channel-segment record) that the previous state
-    /// did not.
+    /// The merge named a record to watch (a Plate Gate segment's
+    /// records) that the previous state did not.
     pub new_watch_targets: bool,
 }
 
@@ -36,11 +35,6 @@ fn watch_targets(cs: &CommunityState) -> HashSet<String> {
             g.segments
                 .iter()
                 .flat_map(|s| [s.anchor.clone(), s.registry_key.clone()])
-                .chain(
-                    g.channel_segment_records
-                        .values()
-                        .map(|r| r.record_key.clone()),
-                )
         })
         .collect()
 }

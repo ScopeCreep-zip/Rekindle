@@ -80,7 +80,7 @@ fn merge(
         match kind {
             HeldKind::Anchor => inventory.anchor = Some(key),
             HeldKind::Registry => inventory.registry_key = Some(key),
-            HeldKind::Channel | HeldKind::Segment => inventory.add_channel(key),
+            HeldKind::Segment => inventory.add_segment(key),
             HeldKind::Overflow => inventory.add_overflow(key),
         }
     }

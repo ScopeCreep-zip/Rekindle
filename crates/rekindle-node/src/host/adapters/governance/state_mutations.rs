@@ -189,7 +189,6 @@ impl HostGovernance {
             slot_index: 0,
             community_name: community.name.clone(),
             slot_seed,
-            channel_record_keys: std::collections::HashMap::new(),
             segment_index: Some(0),
             lamport_counter: 0,
             mek_generation: community.mek.generation,

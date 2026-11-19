@@ -149,7 +149,6 @@ pub(crate) fn membership(state: &CommunityState) -> CommunityMembership {
             .and_then(|seed| hex::decode(seed).ok())
             .and_then(|bytes| bytes.try_into().ok()),
         // A channel has no record (plan E3.3 slice 8).
-        channel_record_keys: HashMap::new(),
         segment_index: state.my_segment_index,
         lamport_counter: state.governance_clock,
         mek_generation: state.mek_generation,

@@ -162,8 +162,7 @@ impl HostGovernance {
             .iter()
             .map(|m| {
                 // Under `o_cnt: 0` there is no registry owner; a member
-                // writes the registry and its channel slots with its derived
-                // slot keypair.
+                // writes its registry slot with its derived slot keypair.
                 let slot_writer = m.slot_seed.as_ref().and_then(|seed| {
                     rekindle_crypto::keypair_text::slot_keypair_text(seed, m.slot_index).ok()
                 });
@@ -171,8 +170,7 @@ impl HostGovernance {
                     id: m.anchor.clone(),
                     anchor: m.anchor.clone(),
                     registry_key: (!m.registry_key.is_empty()).then(|| m.registry_key.clone()),
-                    registry_writer: slot_writer.clone(),
-                    slot_writer,
+                    registry_writer: slot_writer,
                 }
             })
             .collect()

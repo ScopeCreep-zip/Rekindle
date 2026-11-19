@@ -4,14 +4,10 @@
 //!
 //!   1. Genesis admin creates a community + a channel.
 //!   2. Admin writes `SegmentAdded` for segment 1 (architecture §15.2).
-//!   3. A new joiner appears in segment 1 and writes the very first
-//!      message there → emits `ChannelSegmentLinked`
-//!      (architecture §15.4 lazy channel record).
-//!   4. Both members' entries are merged in arbitrary order; the
-//!      resulting `GovernanceState` exposes:
-//!        - the segment-1 registry+anchor keys in `segments`
-//!        - the segment-1 channel SMPL key in `channel_segment_records`
-//!        - both members are valid writers (validate_write passes)
+//!   3. The merged `GovernanceState` exposes the segment-1 registry and
+//!      anchor keys in `segments`, and the admin's writes validate. A
+//!      channel has no record in any segment (plan E3.3): posts ride each
+//!      author's `M`/4 outbox, so no segment links a channel record.
 //!
 //! This is the in-process counterpart to the property test
 //! `segments_converge_regardless_of_order` — that one fuzzes ordering;
@@ -122,29 +118,12 @@ fn admin_entries() -> Vec<Stamped> {
     ]
 }
 
-fn joiner_entries() -> Vec<Stamped> {
-    vec![
-        // Architecture §15.4: the first segment-N message in a channel
-        // also emits a ChannelSegmentLinked governance entry so other
-        // members open + watch the new SMPL record.
-        at(
-            10,
-            GovernanceEntry::ChannelSegmentLinked {
-                channel_id: channel_id(),
-                segment_index: 1,
-                record_key: "VLD0:CH-SEGMENT-1".into(),
-            },
-        ),
-    ]
-}
-
 #[test]
 fn segment1_record_appears_in_state_and_validates() {
     let state = merge_entries(
         &admin_pseudonym(),
         &[
             (admin_pseudonym(), admin_entries()),
-            (joiner_pseudonym(), joiner_entries()),
         ],
     );
 
@@ -154,70 +133,13 @@ fn segment1_record_appears_in_state_and_validates() {
     assert_eq!(state.segments[0].registry_key, "VLD0:REG-1");
     assert_eq!(state.segments[0].anchor, "VLD0:GOV-1");
 
-    // Segment-1's lazy channel record landed under the right key.
-    let record = state
-        .channel_segment_records
-        .get(&(channel_id(), 1))
-        .expect("channel_segment_records must contain segment 1");
-    assert_eq!(record.record_key, "VLD0:CH-SEGMENT-1");
-
-    // Segment-0 channel record stays in `channels`, not in
-    // `channel_segment_records` — segment 0 is the genesis path.
     assert!(state.channels.contains_key(&channel_id()));
-    assert!(!state
-        .channel_segment_records
-        .contains_key(&(channel_id(), 0)));
 
-    // Reader-validate: both writers should validate against the merged
-    // state. Admin (creator) always passes; joiner has SEND_MESSAGES
-    // via the everyone role (id 0) and the channel exists.
+    // Reader-validate: the admin (creator) passes against the merged state.
     assert!(validate_write(
         &admin_pseudonym(),
         &admin_entries().last().unwrap().1,
         &state
     ));
-    assert!(validate_write(
-        &joiner_pseudonym(),
-        &joiner_entries().last().unwrap().1,
-        &state
-    ));
 }
 
-#[test]
-fn channel_segment_linked_lww_resolves_first_writer_race() {
-    // Race: two segment-1 writers both create the lazy channel record
-    // and announce it. LWW per (channel_id, segment_index) picks the
-    // higher-lamport entry; the loser's orphan SMPL record is never
-    // referenced by any peer's governance state.
-    let racer_a = PseudonymKey([0xCA; 32]);
-    let racer_b = PseudonymKey([0xCB; 32]);
-    let mut a_entries = admin_entries();
-    a_entries.push(at(
-        11,
-        GovernanceEntry::ChannelSegmentLinked {
-            channel_id: channel_id(),
-            segment_index: 1,
-            record_key: "VLD0:RACER-A".into(),
-        },
-    ));
-    let b_entries = vec![at(
-        12,
-        GovernanceEntry::ChannelSegmentLinked {
-            channel_id: channel_id(),
-            segment_index: 1,
-            record_key: "VLD0:RACER-B".into(),
-        },
-    )];
-
-    let state = merge_entries(
-        &admin_pseudonym(),
-        &[(admin_pseudonym(), a_entries), (racer_b.clone(), b_entries)],
-    );
-    let _ = racer_a;
-    let record = state
-        .channel_segment_records
-        .get(&(channel_id(), 1))
-        .expect("LWW must materialize one record");
-    assert_eq!(record.record_key, "VLD0:RACER-B", "higher lamport wins");
-    assert_eq!(record.linked.lamport, 12);
-}

@@ -345,11 +345,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// `state.communities` read-guard across `.await`.
     fn list_communities_for_dht_open(&self) -> Vec<CommunityDhtOpenSetup>;
 
-    /// Snapshot one community's channel records as `(channel id hex,
-    /// record key)`, in unspecified order. The id keys the channel's lease
-    /// in [`CommunityLeases::channels`].
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)>;
-
     /// Active invite-secrets DFLT record keys this identity created, across
     /// every joined community — non-expired, non-empty. Driven by
     /// `dht_hydration::republish_active_records` to keep our own

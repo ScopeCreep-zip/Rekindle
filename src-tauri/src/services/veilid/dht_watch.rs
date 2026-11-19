@@ -141,10 +141,6 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
                     gov.segments
                         .iter()
                         .any(|s| s.anchor == record_key || s.registry_key == record_key)
-                        || gov
-                            .channel_segment_records
-                            .values()
-                            .any(|csr| csr.record_key == record_key)
                 });
             matched.then(|| {
                 (

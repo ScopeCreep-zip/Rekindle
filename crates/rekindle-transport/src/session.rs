@@ -136,11 +136,6 @@ pub struct CommunityMembership {
     /// `SlotSeed`).
     pub slot_seed: Option<[u8; 32]>,
 
-    /// Per-channel message record keys owned by this member.
-    /// Maps channel_id → DHT record key (DFLT(1), member-owned): the
-    /// `channels.message_record_key` column.
-    pub channel_record_keys: HashMap<String, String>,
-
     // ── v2.0 governance-runtime fields ──
     //
     // The daemon's `GovernanceRuntimeDeps` adapter reports these across
@@ -186,7 +181,6 @@ mod tests {
             slot_index: 3,
             community_name: "dev-team".into(),
             slot_seed: None,
-            channel_record_keys: HashMap::new(),
             segment_index: Some(0),
             lamport_counter: 7,
             mek_generation: 2,

@@ -9,7 +9,7 @@ use rekindle_types::governance::GovernanceEntry;
 
 use super::channels::{
     write_category_archived, write_category_created, write_category_updated,
-    write_channel_archived, write_channel_created, write_channel_segment_linked,
+    write_channel_archived, write_channel_created,
     write_channel_updated, write_permission_overwrite,
 };
 use super::community::{
@@ -101,12 +101,6 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::ChannelCreated { .. } => {
             write_channel_created(b.reborrow().init_channel_created(), e);
         }
-        GovernanceEntry::ChannelSegmentLinked {
-            channel_id,
-            segment_index,
-            record_key,
-        } => write_channel_segment_linked(
-            b.reborrow().init_channel_segment_linked(),
             *channel_id,
             *segment_index,
             record_key,

@@ -244,11 +244,6 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
             author: pk(3),
             reason: None,
         },
-        E::ChannelSegmentLinked {
-            channel_id: ch,
-            segment_index: 1,
-            record_key: s("VLD0:s"),
-        },
         E::SegmentAdded {
             segment_index: 1,
             registry_key: s("VLD0:r"),
@@ -346,16 +341,15 @@ fn arm_index(entry: &GovernanceEntry) -> usize {
         E::OnboardingConfig { .. } => 31,
         E::WelcomeScreen { .. } => 32,
         E::AdminDelete { .. } => 33,
-        E::ChannelSegmentLinked { .. } => 34,
-        E::SegmentAdded { .. } => 35,
-        E::AutoModRule { .. } => 36,
-        E::RoleArchived { .. } => 37,
-        E::CategoryUpdated { .. } => 38,
-        E::InviteCreated { .. } => 39,
-        E::InviteRevoked { .. } => 40,
-        E::AttachmentPinned { .. } => 41,
-        E::CommunityPolicy { .. } => 42,
-        E::Checkpoint(_) => 43,
+        E::SegmentAdded { .. } => 34,
+        E::AutoModRule { .. } => 35,
+        E::RoleArchived { .. } => 36,
+        E::CategoryUpdated { .. } => 37,
+        E::InviteCreated { .. } => 38,
+        E::InviteRevoked { .. } => 39,
+        E::AttachmentPinned { .. } => 40,
+        E::CommunityPolicy { .. } => 41,
+        E::Checkpoint(_) => 42,
     }
 }
 
@@ -386,7 +380,7 @@ fn every_body_arm_round_trips() {
     let bodies = every_body();
     let arms: std::collections::BTreeSet<usize> = bodies.iter().map(arm_index).collect();
     assert_eq!(arms.len(), bodies.len(), "one value per arm");
-    assert_eq!(arms.len(), 44, "every live arm");
+    assert_eq!(arms.len(), 43, "every live arm");
     for body in bodies {
         let original = op(body, vec![op_ref(1), op_ref(2)]);
         let decoded = decode_op(&encode_op(&original).unwrap()).unwrap();

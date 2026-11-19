@@ -64,7 +64,6 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         | G::OnboardingConfig { .. }
         | G::WelcomeScreen { .. }
         | G::AdminDelete { .. }
-        | G::ChannelSegmentLinked { .. }
         | G::SegmentAdded { .. }
         | G::AutoModRule { .. }
         | G::InviteCreated { .. }

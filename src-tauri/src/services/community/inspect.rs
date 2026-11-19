@@ -19,7 +19,7 @@ pub(crate) fn tracked_record_keys(
             .anchor
             .iter()
             .chain(records.registry_key.iter())
-            .chain(records.channel_keys.iter())
+            .chain(records.segment_keys.iter())
             .cloned()
             .collect(),
     )

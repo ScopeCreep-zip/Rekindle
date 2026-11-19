@@ -170,13 +170,6 @@ pub struct GovernanceState {
     /// Tracks additional governance and registry records.
     pub segments: Vec<SegmentState>,
 
-    /// Plate Gate lazy channel records (architecture §15.4): per
-    /// `(channel_id, segment_index)` SMPL record key. Populated by
-    /// `ChannelSegmentLinked` governance entries written by the first
-    /// segment-N member to message in that channel. Segment 0's record
-    /// keys live in `channels[id].record_key` and are NOT mirrored here.
-    pub channel_segment_records: HashMap<(ChannelId, u32), ChannelSegmentRecord>,
-
     /// Active invites (InviteCreated minus InviteRevoked).
     /// Key: invite_id. Used for fast lookup by code_hash during join.
     pub invites: HashMap<[u8; 16], InviteState>,
@@ -557,20 +550,6 @@ pub struct SegmentState {
     pub anchor: String,
     pub slot_range_start: u32,
     pub slot_range_end: u32,
-}
-
-/// Plate Gate (architecture §15.4): one row per `(channel_id, segment_index)`
-/// in `channel_segment_records`. The record_key points at the SMPL DHT
-/// record holding messages from members of `segment_index` in that channel.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChannelSegmentRecord {
-    pub record_key: String,
-    /// Lamport of the `ChannelSegmentLinked` entry that announced this
-    /// record. Used for LWW disambiguation when two members race to
-    /// write the first message in a previously-empty (channel, segment)
-    /// pair (architecture §6.4 slot collision pattern, repurposed for
-    /// channel-segment creation).
-    pub linked: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]

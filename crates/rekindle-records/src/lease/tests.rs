@@ -113,11 +113,10 @@ fn community_leases_list_every_lease() {
     let leases = CommunityLeases {
         anchor: Some(LeaseId(1)),
         registry: Some(LeaseId(2)),
-        channels: HashMap::from([(ChannelId([0; 16]), LeaseId(3))]),
-        segments: vec![LeaseId(4)],
-        overflow: vec![LeaseId(5)],
+        segments: vec![LeaseId(3)],
+        overflow: vec![LeaseId(4)],
     };
-    assert_eq!(leases.all().count(), 5);
+    assert_eq!(leases.all().count(), 4);
 }
 
 #[derive(Debug, Clone)]

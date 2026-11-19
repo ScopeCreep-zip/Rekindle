@@ -1,8 +1,7 @@
 //! The governance arm of the Host's watch path (plan E3.2 S7, D4), on both
 //! modes: a ValueChange on the frontier (`M`/3) of a member record our watch
 //! ring holds reads that frontier, stores the heads we lack and, when it
-//! stored one, rebuilds that community alone and borrows every channel
-//! record the new state names that we do not hold.
+//! stored one, rebuilds that community alone.
 //! This (with a `HeadAdvanced` hint) is the only governance change trigger;
 //! the governance-record watch is gone.
 
@@ -128,7 +127,6 @@ impl HostGovernance {
             "ring member's frontier moved — rebuilding that community"
         );
         rekindle_governance_runtime::rebuild_governance(self, community).await;
-        self.open_new_channel_records(community).await;
     }
 
     /// Store the heads `record`'s frontier names that we do not hold; the
@@ -171,72 +169,6 @@ impl HostGovernance {
         (seen.get(record).copied(), stored)
     }
 
-    /// Borrow every channel record the community's membership names that
-    /// it does not hold yet, with our slot writer (channel records share the
-    /// registry's slot seed), and hold the leases on the community.
-    async fn open_new_channel_records(&self, community: &str) {
-        let Ok(transport) = self.transport() else {
-            return;
-        };
-        let named: Vec<(String, String)> = self
-            .ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.communities.get(community))
-            .map(|m| {
-                m.channel_record_keys
-                    .iter()
-                    .map(|(channel, key)| (channel.clone(), key.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let (opened, writer) = self.ctx.communities.channel_records(community);
-        let mut leases = CommunityLeases::default();
-        let mut keys = Vec::new();
-        for (channel_id, record_key) in named {
-            if opened.contains(&record_key) {
-                continue;
-            }
-            let Some(channel) = ChannelId::from_hex(&channel_id) else {
-                continue;
-            };
-            match dht_writes::acquire_str(
-                &transport,
-                &record_key,
-                writer.as_deref(),
-                OpenIntent::Hold,
-            )
-            .await
-            {
-                Ok(lease) => {
-                    leases.channels.insert(channel, lease);
-                    keys.push(record_key);
-                }
-                Err(e) => tracing::debug!(
-                    %community, channel_record = %record_key, error = %e,
-                    "newly named channel record did not open"
-                ),
-            }
-        }
-        if keys.is_empty() {
-            return;
-        }
-        self.ctx.communities.note_channel_records(community, keys);
-        // The shell holds and watches its records itself (its leases move
-        // at E3.4); the daemon's `SubscriptionManager` watches its own.
-        if let Some(shell) = &self.ctx.shell {
-            shell.community_records_ready(community, leases).await;
-            return;
-        }
-        let merged = self
-            .ctx
-            .communities
-            .hold_leases(community, leases, |l| dht_writes::key_of(&transport, l));
-        for lease in merged.surplus {
-            dht_writes::release(&transport, lease).await;
-        }
-    }
 }
 
 #[cfg(test)]

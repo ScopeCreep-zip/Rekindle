@@ -352,16 +352,6 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         // Segment expansion requires admin-level access
         GovernanceEntry::SegmentAdded { .. } => has(perms, MANAGE_COMMUNITY),
 
-        // Plate Gate lazy channel records (architecture §15.4): any member
-        // with SEND_MESSAGES can announce a new channel-segment record —
-        // they're the one creating the SMPL record and writing the first
-        // message into it. Reader-validates: peers reject ChannelSegmentLinked
-        // entries from members without channel write access, and reject
-        // entries that name a channel that doesn't exist in governance state.
-        GovernanceEntry::ChannelSegmentLinked { channel_id, .. } => {
-            has(perms, SEND_MESSAGES) && state.channels.contains_key(channel_id)
-        }
-
         GovernanceEntry::AutoModRule { .. } => has(perms, MANAGE_COMMUNITY),
 
         GovernanceEntry::RoleArchived { .. } => has(perms, MANAGE_ROLES),

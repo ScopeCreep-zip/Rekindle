@@ -23,7 +23,6 @@ use rekindle_records::port::OpenIntent;
 use rekindle_secrets::derive;
 use rekindle_secrets::keys::SlotSeed;
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::ChannelId;
 
 use crate::apply;
 use crate::deps::{CommunityMembership, GovernanceRuntimeDeps};
@@ -198,11 +197,10 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
     Ok(next_segment_index)
 }
 
-/// Borrow every segment's SMPL records (registry + governance + per-channel
-/// segment records) that the merged `GovernanceState` contains and hand the
+/// Borrow every segment's SMPL records (registry + governance) that the merged `GovernanceState` contains and hand the
 /// leases to the host. Called from the adapter after every successful merge
-/// so reads, watches and the inspect loop pick up new segments and lazy
-/// channel-segment records immediately. Idempotent: the host releases a
+/// so reads, watches and the inspect loop pick up new segments
+/// immediately. Idempotent: the host releases a
 /// lease on a record the community already holds.
 pub async fn open_new_segments<D: GovernanceRuntimeDeps>(deps: &D, community_id: &str) {
     let mut keys: Vec<String> = Vec::new();
@@ -213,15 +211,6 @@ pub async fn open_new_segments<D: GovernanceRuntimeDeps>(deps: &D, community_id:
             keys.push(descriptor.registry_key);
             keys.push(descriptor.anchor);
         }
-    }
-    // Plate Gate (architecture §15.4): channel-segment records announced
-    // via `ChannelSegmentLinked`.
-    if let Some(gov) = deps.governance_state(community_id) {
-        keys.extend(
-            gov.channel_segment_records
-                .values()
-                .map(|rec| rec.record_key.clone()),
-        );
     }
     let mut leases = rekindle_records::lease::CommunityLeases::default();
     for key in keys {
@@ -241,104 +230,6 @@ pub async fn open_new_segments<D: GovernanceRuntimeDeps>(deps: &D, community_id:
     if !leases.segments.is_empty() {
         deps.community_records_ready(community_id, leases).await;
     }
-}
-
-/// Ensure a segment-N member has a channel-segment SMPL record to write
-/// to (architecture §15.4 lazy channel records). Returns the record key.
-///
-/// For segment-0 callers this is a fast path — the genesis channel record
-/// already exists and is returned from `CommunityMembership.channel_log_keys`.
-/// For segment-N (N>0) callers this checks
-/// `governance_state.channel_segment_records`; if no entry exists yet,
-/// creates a fresh SMPL record (same universal schema as segment 0),
-/// writes a `ChannelSegmentLinked` governance entry announcing it, and
-/// returns the new key.
-pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    channel_id: &str,
-) -> Result<String, GovernanceRuntimeError> {
-    let membership = deps
-        .community_membership(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
-    let segment_index = membership.my_segment_index.unwrap_or(0);
-    if segment_index == 0 {
-        // Segment 0 fast path — the genesis record always exists.
-        return membership
-            .channel_log_keys
-            .get(channel_id)
-            .cloned()
-            .ok_or_else(|| {
-                GovernanceRuntimeError::Adapter("channel record key missing".to_string())
-            });
-    }
-
-    let channel_id_bytes: [u8; 16] = hex::decode(channel_id)
-        .ok()
-        .and_then(|b| b.try_into().ok())
-        .unwrap_or([0u8; 16]);
-    let channel_id_typed = ChannelId(channel_id_bytes);
-
-    let existing = deps.governance_state(community_id).and_then(|gov| {
-        gov.channel_segment_records
-            .get(&(channel_id_typed, segment_index))
-            .map(|rec| rec.record_key.clone())
-    });
-    if let Some(record_key) = existing {
-        return Ok(record_key);
-    }
-    if membership.slot_seed_hex.is_none() {
-        return Err(GovernanceRuntimeError::SlotSeedMissing(
-            community_id.to_string(),
-        ));
-    }
-
-    // Lazy creation: derive this segment's slot pubkeys, build the
-    // universal SMPL schema, create the record.
-    let slot_seed = slot_seed_from_membership(&membership, community_id)?;
-    let member_pubkeys = segment_slot_pubkeys(&slot_seed.0, segment_index)?;
-
-    // Announce via governance — first-writer-wins LWW. If we lose the
-    // race, messages go to our orphan record; readers pick up the
-    // canonical record once the merge applies. The lamport is taken before
-    // the create so nothing fails between it and the hand-over.
-    let new_record = deps.create_smpl_record(&member_pubkeys).await?;
-    let new_record_key = new_record.record_key.clone();
-    if let Err(e) = crate::records::publish_created(
-        deps,
-        new_record.lease,
-        &slot_seed.0,
-        segment_index * SLOTS_PER_SEGMENT,
-    )
-    .await
-    {
-        deps.release_record(new_record.lease).await;
-        return Err(e);
-    }
-    if let Err(e) = apply::write_entry(
-        deps,
-        community_id,
-        GovernanceEntry::ChannelSegmentLinked {
-            channel_id: channel_id_typed,
-            segment_index,
-            record_key: new_record_key.clone(),
-        },
-    )
-    .await
-    {
-        deps.release_record(new_record.lease).await;
-        return Err(e);
-    }
-    deps.community_records_ready(
-        community_id,
-        rekindle_records::lease::CommunityLeases {
-            segments: vec![new_record.lease],
-            ..Default::default()
-        },
-    )
-    .await;
-
-    Ok(new_record_key)
 }
 
 /// Read the `slot_seed` from `CommunityMembership`. The seed is a 32-byte
@@ -363,8 +254,7 @@ fn slot_seed_from_membership(
 /// Indices are **global** (architecture §8.3 + §15.2): segment N covers
 /// `N * SLOTS_PER_SEGMENT .. (N+1) * SLOTS_PER_SEGMENT`, so a member's
 /// keypair is a function of the seed and their global slot alone. Every
-/// record in a community — registry segments and channel segments —
-/// is keyed this way, which is what lets any member derive their own
+/// segment record in a community is keyed this way, which is what lets any member derive their own
 /// writer credential for a record they have only just heard about.
 pub fn segment_slot_pubkeys(
     slot_seed: &[u8; 32],
@@ -419,7 +309,6 @@ mod tests {
             slot_seed_hex: Some(hex::encode([5u8; 32])),
             dht_owner_keypair: None,
             governance_clock: 0,
-            channel_log_keys: std::collections::HashMap::new(),
             channel_ids: Vec::new(),
             mek_generation: 0,
         };
@@ -439,7 +328,6 @@ mod tests {
             slot_seed_hex: None,
             dht_owner_keypair: None,
             governance_clock: 0,
-            channel_log_keys: std::collections::HashMap::new(),
             channel_ids: Vec::new(),
             mek_generation: 0,
         };

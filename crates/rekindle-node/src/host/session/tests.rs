@@ -13,7 +13,6 @@ fn membership() -> CommunityMembership {
         slot_index: 3,
         community_name: "Team".into(),
         slot_seed: Some([9; 32]),
-        channel_record_keys: std::collections::HashMap::new(),
         segment_index: Some(1),
         lamport_counter: 12,
         mek_generation: 2,

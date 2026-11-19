@@ -31,10 +31,10 @@ pub fn mark_watch_inactive(state: &Arc<AppState>, record_key: &str) {
 }
 
 /// Every community record key the watch tier tracks, labelled for
-/// logging: top-level governance + member registry + channel logs from
+/// logging: top-level governance + member registry + segment records from
 /// `open_community_records`, PLUS Plate Gate segment-N governance /
-/// registry records and channel-segment records from the merged
-/// governance state (§15.4). The presence scan reads segment
+/// registry records from the merged governance state (§15). A channel
+/// has no record (plan E3.3). The presence scan reads segment
 /// registries, so they must be watched like segment 0 — otherwise a
 /// >255-member community's presence updates only surface on the poll
 /// backstop. De-duped (segment lists can overlap the top-level keys).
@@ -53,16 +53,13 @@ fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static
     if let Some(ref reg_key) = community.open_community_records.registry_key {
         push("registry", reg_key.clone(), &mut seen);
     }
-    for ch_key in &community.open_community_records.channel_keys {
-        push("channel", ch_key.clone(), &mut seen);
+    for seg_key in &community.open_community_records.segment_keys {
+        push("segment", seg_key.clone(), &mut seen);
     }
     if let Some(gov) = community.governance_state.as_ref() {
         for seg in &gov.segments {
             push("segment-governance", seg.anchor.clone(), &mut seen);
             push("segment-registry", seg.registry_key.clone(), &mut seen);
-        }
-        for csr in gov.channel_segment_records.values() {
-            push("channel-segment", csr.record_key.clone(), &mut seen);
         }
     }
     out
