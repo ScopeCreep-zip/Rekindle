@@ -7,6 +7,7 @@ export const ICON_COMMUNITIES = "\u{F0849}";     // nf-md-account_group
 export const ICON_SETTINGS = "\u{F0493}";        // nf-md-cog
 export const ICON_LOGOUT = "\u{F0343}";          // nf-md-logout
 export const ICON_SEARCH = "\u{F0349}";          // nf-md-magnify
+export const ICON_KEYBOARD = "\u{F030C}";        // nf-md-keyboard
 
 // Notifications
 export const ICON_BELL = "\u{F009A}";            // nf-md-bell

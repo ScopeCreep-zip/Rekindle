@@ -1,0 +1,66 @@
+@layer components {
+
+  /* The keyboard-shortcuts help dialog (wiring guide §13f, plan E7.3):
+   * sections of key chords and what they do, inside the shared Modal. */
+  .shortcuts-help {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  .shortcuts-help-heading {
+    margin: 0 0 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .shortcuts-help-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0;
+  }
+
+  .shortcuts-help-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .shortcuts-help-keys {
+    flex: 0 0 45%;
+    min-width: 0;
+    color: var(--color-xfire-text);
+  }
+
+  .shortcuts-help-action {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  .shortcuts-help-chord {
+    font-family: inherit;
+    white-space: nowrap;
+  }
+
+  .shortcuts-help-key {
+    display: inline-block;
+    padding: 0 4px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 3px;
+    font-family: var(--font-family-xfire);
+    font-size: 11px;
+    color: var(--color-xfire-text);
+  }
+
+  .shortcuts-help-or {
+    color: var(--color-xfire-text-dim);
+  }
+}

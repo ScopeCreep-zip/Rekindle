@@ -5,6 +5,7 @@ import "./styles/global.css";
 import AnnounceRegion from "./components/common/AnnounceRegion";
 import IntentDialog from "./components/common/IntentDialog";
 import ToastContainer from "./components/common/Toast";
+import KeyboardShortcutsDialog from "./components/common/KeyboardShortcutsDialog";
 import { useWindowInactive } from "./hooks/useWindowInactive";
 import { useSkin } from "./hooks/useSkin";
 
@@ -47,6 +48,8 @@ function App() {
        * and the undo offer of what ran, so both mount once here. */}
       <IntentDialog />
       <ToastContainer />
+      {/* The keyboard-shortcuts help (wiring guide §13f), Mod+/ in any window. */}
+      <KeyboardShortcutsDialog />
       <Suspense>
         <Switch fallback={<UnknownRoute />}>
           <Match when={route() === "/login"}>

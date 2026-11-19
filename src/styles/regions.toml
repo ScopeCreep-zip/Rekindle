@@ -228,6 +228,12 @@
 '.modal-title' = { on = ["--color-xfire-bg-panel"] }
 '.modal-close-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.modal-close-btn:hover' = { on = ["--color-xfire-overlay 10% over --color-xfire-bg-dark", "--color-xfire-overlay 10% over --color-xfire-bg-panel"] }
+# The keyboard-shortcuts dialog (E7.3) sits in the Modal's panel.
+'.shortcuts-help-heading' = { on = ["--color-xfire-bg-panel"] }
+'.shortcuts-help-keys' = { on = ["--color-xfire-bg-panel"] }
+'.shortcuts-help-action' = { on = ["--color-xfire-bg-panel"] }
+'.shortcuts-help-key' = { on = ["--color-xfire-bg-panel"] }
+'.shortcuts-help-or' = { on = ["--color-xfire-bg-panel"] }
 '.tooltip-bubble' = { on = ["--color-xfire-bg-panel"] }
 '.identity-bar-name' = { on = ["--color-xfire-bg-dark"] }
 '.identity-bar-edit' = { on = ["--color-xfire-bg-dark 50% over --color-xfire-bg-dark"] }

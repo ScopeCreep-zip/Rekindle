@@ -4,7 +4,8 @@ import { handleLogout } from "../../actions/auth.actions";
 import { setFriendsState } from "../../stores/friends.store";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
 import { canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stores/network.store";
-import { ICON_NEW_CHAT, ICON_ADD_FRIEND, ICON_PLUS, ICON_COMMUNITIES, ICON_LOGOUT } from "../../icons";
+import { ICON_NEW_CHAT, ICON_ADD_FRIEND, ICON_PLUS, ICON_COMMUNITIES, ICON_LOGOUT, ICON_KEYBOARD } from "../../icons";
+import { setShortcutsHelpOpen } from "../../stores/shortcuts_help.store";
 
 function handleToggleNewChat(): void {
   setFriendsState("showNewChat", (prev) => !prev);
@@ -64,6 +65,14 @@ const BottomActionBar: Component = () => {
         </button>
       </Show>
       <div class="action-bar-spacer" />
+      <button
+        class="action-bar-icon-btn"
+        onClick={() => setShortcutsHelpOpen(true)}
+        title="Keyboard shortcuts (Ctrl+/ or Cmd+/)"
+        aria-label="Keyboard shortcuts"
+      >
+        <span class="nf-icon" aria-hidden="true">{ICON_KEYBOARD}</span>
+      </button>
       <button class="logout-icon-btn" onClick={logout} disabled={loggingOut()} title="Logout" aria-label="Logout">
         <span class="nf-icon" aria-hidden="true">{ICON_LOGOUT}</span>
       </button>
