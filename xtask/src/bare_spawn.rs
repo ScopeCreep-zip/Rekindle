@@ -56,6 +56,12 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "app-lifetime boot: node start, dispatch loop, deep links",
     ),
     (
+        "src-tauri/src/stop_signals.rs",
+        "install",
+        "the process's stop-signal reader, installed before unlock: it turns SIGTERM/SIGINT into \
+         the graceful quit that ends every session, so no session can own it",
+    ),
+    (
         "src-tauri/src/event_dispatch.rs",
         "*",
         "app-lifetime webview event queue",
