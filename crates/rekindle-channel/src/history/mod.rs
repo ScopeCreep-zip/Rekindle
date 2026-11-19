@@ -9,7 +9,9 @@ mod materialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rekindle_codec::community::channel_record::ChannelRecordEntry;
-use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment, ReactionGroup};
+use rekindle_types::dto::channel_message::{
+    ChannelMessageView, MessageAttachment, MessagePoll, ReactionGroup,
+};
 use rekindle_types::message::SendState;
 
 use crate::deps::ChannelMessagingDeps;
@@ -54,11 +56,17 @@ pub struct RecordChange {
     pub entry: ChannelRecordEntry,
 }
 
-/// What a record read returns: its messages and the authors' changes.
+/// What a record read returns: its messages, the authors' changes, and
+/// the reactions and polls the record holds by target message id. A
+/// target need not be a message of the record: a post on its author's
+/// channel outbox (plan E3.3) is a stored row, and the reactions and polls
+/// written to the record still name it.
 #[derive(Debug, Clone, Default)]
 pub struct ChannelRecordRead {
     pub messages: Vec<RecordMessage>,
     pub changes: Vec<RecordChange>,
+    pub reactions: HashMap<String, Vec<ReactionGroup>>,
+    pub polls: HashMap<String, MessagePoll>,
 }
 
 /// The latest `limit` messages of `channel_id`'s record (only those older
@@ -181,7 +189,12 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
             }
         })
         .collect();
-    Ok(ChannelRecordRead { messages, changes })
+    Ok(ChannelRecordRead {
+        messages,
+        changes,
+        reactions,
+        polls,
+    })
 }
 
 /// Merge `incoming` into `existing`, one message per message id (or, with

@@ -3,6 +3,8 @@
 //! with the channel record's messages, of which those we did not hold and
 //! could open pass the D26 gate before they are stored or shown.
 
+use std::collections::HashMap;
+
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::history::{self, RecordMessage};
 use rekindle_channel::ingest::{BatchWindows, GateReason, SlotPosition, Verdict};
@@ -47,6 +49,7 @@ impl HostChannel {
         // read again, so its keys leaving memory never marks a kept row
         // undecryptable (A/B R3-2), and nothing posted after the removal is
         // opened, even under a key we still hold.
+        let mut attached = (HashMap::new(), HashMap::new());
         let incoming = if removed {
             Vec::new()
         } else {
@@ -60,6 +63,7 @@ impl HostChannel {
             self.apply_record_changes(community_id, channel_id, &record.changes)
                 .await;
             let deleted = deleted_by_author(&record.changes);
+            attached = (record.reactions, record.polls);
             (incoming.into_iter())
                 .map(|message| message.view)
                 .filter(|view| !deleted_view(&deleted, view))
@@ -75,6 +79,20 @@ impl HostChannel {
             .into_iter()
             .map(|row| stored_view(row, &owner, &me))
             .collect();
+        // A post on its author's outbox (plan E3.3) is no message of the
+        // record, but the reactions and polls the record holds name it.
+        let (reactions, polls) = attached;
+        for view in &mut messages {
+            let Some(id) = view.server_message_id.as_deref() else {
+                continue;
+            };
+            if view.reactions.is_none() {
+                view.reactions = reactions.get(id).cloned();
+            }
+            if view.poll.is_none() {
+                view.poll = polls.get(id).cloned();
+            }
+        }
         history::merge_message_lists(&mut messages, incoming, limit);
         Ok(messages)
     }
