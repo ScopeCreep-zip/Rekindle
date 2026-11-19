@@ -146,6 +146,9 @@ pub(crate) struct Replica {
     pub nonces: Vec<Option<(RecordValue, u64)>>,
     /// The watches this replica holds ([`super::watches`]).
     pub watches: Vec<super::watches::ReplicaWatch>,
+    /// Anonymous transactions open on this record at this store
+    /// ([`super::dht`]'s `transaction` module).
+    pub open_reads: u32,
 }
 
 /// The replicas of a new record with `subkeys` subkeys, placed among
@@ -163,6 +166,7 @@ pub(crate) fn place(key: &str, nodes: usize, subkeys: usize) -> Vec<Replica> {
             values: vec![None; subkeys],
             nonces: vec![None; subkeys],
             watches: Vec::new(),
+            open_reads: 0,
         })
         .collect()
 }

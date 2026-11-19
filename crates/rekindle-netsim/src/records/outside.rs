@@ -51,6 +51,7 @@ impl Netsim {
                 values: vec![None; subkeys],
                 nonces: vec![None; subkeys],
                 watches: Vec::new(),
+                open_reads: 0,
             };
             record.replicas.insert(i, fresh);
         }

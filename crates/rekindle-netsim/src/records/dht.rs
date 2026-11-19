@@ -49,7 +49,7 @@
 //! node's DHT cap before its effect lands.
 
 mod reads;
-mod transaction;
+pub(crate) mod transaction;
 
 use std::{collections::BTreeSet, sync::Arc};
 

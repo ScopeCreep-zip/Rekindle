@@ -16,6 +16,16 @@
 //! - it consumes the subkey's watch report mark like any read
 //!   (`transaction.rs:1537-1539`) and stores nothing locally
 //!   (`:1541-1582`); the rollback changes nothing on the replicas.
+//! - it never delays or refuses a writer: an inbound begin holds the
+//!   replica's record lock only while it snapshots
+//!   (`record_store/mod.rs:654-693`), as a set holds it only while it stores
+//!   (`:437-460`), and the end, not the set, checks the snapshot
+//!   (`inbound_transactions_interface.rs:319-330`); what it consumes is one
+//!   of the record's [`PUBLIC_TRANSACTION_LIMIT`] anonymous slots on each
+//!   accepter until the rollback, a member writer's own transactions being
+//!   counted apart (`inbound_transactions_interface.rs:100-133`); a full
+//!   replica answers `TransactionUnavailable` and the begin's fanout goes
+//!   on to the next node (`transaction_begin.rs:277`).
 //!
 //! [`DhtBackend::get_newest`]: rekindle_records::port::DhtBackend::get_newest
 
@@ -27,6 +37,32 @@ use crate::latency;
 
 /// Veilid's `CONSENSUS_TRIM_PERCENT` (`storage_manager/constants.rs:35`).
 const TRIM_PERCENT: usize = 50;
+/// Anonymous transactions a replica holds open per record
+/// (`public_transaction_limit`, `veilid_config.rs:1021`).
+pub(crate) const PUBLIC_TRANSACTION_LIMIT: u32 = 8;
+
+/// The anonymous slots one transaction holds, released at its rollback or
+/// when it fails (stores, not placement indices, which a re-placement moves).
+struct OpenRead<'a> {
+    dht: &'a SimDht,
+    key: &'a str,
+    stores: Vec<usize>,
+}
+
+impl Drop for OpenRead<'_> {
+    fn drop(&mut self) {
+        let mut inner = self.dht.net.inner.lock();
+        if let Some(record) = inner.records.get_mut(self.key) {
+            for r in record
+                .replicas
+                .iter_mut()
+                .filter(|r| self.stores.contains(&r.store))
+            {
+                r.open_reads = r.open_reads.saturating_sub(1);
+            }
+        }
+    }
+}
 
 impl SimDht {
     /// Begin, get and roll back one subkey of `key`.
@@ -39,16 +75,28 @@ impl SimDht {
         let begin_cap = replicas::SET_COUNT + (replicas::SET_COUNT * TRIM_PERCENT).div_ceil(100);
         let _begin = self.network(latency::GET, key, &[]).await?;
         let accepters: Vec<usize> = {
-            let inner = self.net.inner.lock();
-            inner.records.get(key).map_or_else(Vec::new, |r| {
-                let mut reach = reachable(&r.replicas, &inner.faults.partitions, self.node);
+            let mut inner = self.net.inner.lock();
+            let partitions = inner.faults.partitions.clone();
+            inner.records.get_mut(key).map_or_else(Vec::new, |r| {
+                let mut reach = reachable(&r.replicas, &partitions, self.node);
+                reach.retain(|i| r.replicas[*i].open_reads < PUBLIC_TRANSACTION_LIMIT);
                 reach.truncate(begin_cap);
+                if reach.len() >= replicas::SET_COUNT {
+                    for i in &reach {
+                        r.replicas[*i].open_reads += 1;
+                    }
+                }
                 reach
             })
         };
         if accepters.len() < replicas::SET_COUNT {
             return Err(try_again());
         }
+        let _open = OpenRead {
+            dht: self,
+            key,
+            stores: self.stores_of(key, &accepters),
+        };
         let _get = self
             .network(self.read_span(key, Some(&[subkey])), key, &[subkey])
             .await?;
@@ -78,5 +126,15 @@ impl SimDht {
         )
         .map(|found| Some(found.value))
         .ok_or_else(try_again)
+    }
+
+    /// The stores beside the placement indices `of` in `key`.
+    fn stores_of(&self, key: &str, of: &[usize]) -> Vec<usize> {
+        let inner = self.net.inner.lock();
+        (inner.records.get(key)).map_or_else(Vec::new, |r| {
+            of.iter()
+                .filter_map(|i| r.replicas.get(*i).map(|x| x.store))
+                .collect()
+        })
     }
 }
