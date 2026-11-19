@@ -86,6 +86,32 @@ pub fn enqueue_all(conn: &Connection, rows: &[NewRow<'_>]) -> rusqlite::Result<V
     Ok(seqs)
 }
 
+/// Store `row` at the end of its stream with no echo unless its owner
+/// already has a row under its client id, in whatever state: a send whose
+/// client id names its content once (a joiner's key at one generation,
+/// plan E3.2 D16), which a repeated request must not queue twice. Returns
+/// the new row's `stream_seq`, or `None` when the client id was queued.
+///
+/// # Errors
+/// The write failed; nothing is stored.
+pub fn enqueue_once(conn: &Connection, row: &NewRow<'_>) -> rusqlite::Result<Option<i64>> {
+    let tx = conn.unchecked_transaction()?;
+    let queued = tx
+        .query_row(
+            "SELECT 1 FROM outbox WHERE owner_key = ?1 AND client_id = ?2",
+            params![row.owner_key, row.client_id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if queued {
+        return Ok(None);
+    }
+    let seq = append(&tx, row, None)?;
+    tx.commit()?;
+    Ok(Some(seq))
+}
+
 /// Store `row` at the end of its stream, with its local echo if any (written
 /// `queued` under the row's client id and seq), inside the caller's
 /// transaction (a friend's removal stores its `Unfriended` row with the

@@ -124,6 +124,46 @@ impl HostOutbox {
         .map_err(|e| storage(&e))
     }
 
+    /// Store `row` unless a row of ours already holds its client id
+    /// ([`repo::enqueue_once`]) and publish it as `queued`; `false` when
+    /// it was already queued. The caller wakes the engine.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was stored.
+    pub(super) async fn insert_once(&self, row: NewOutboxRow) -> Result<bool, OutboxError> {
+        let (db, owner) = self.db()?;
+        let stored = row.clone();
+        let seq = db
+            .call(move |conn| {
+                repo::enqueue_once(
+                    conn,
+                    &repo::NewRow {
+                        owner_key: &owner,
+                        stream: &stored.stream,
+                        client_id: &stored.client_id,
+                        kind: stored.kind.as_str(),
+                        payload: &stored.payload,
+                        next_at: stored.next_at,
+                        deadline: stored.deadline,
+                    },
+                )
+            })
+            .await
+            .map_err(|e| storage(&e))?;
+        let Some(stream_seq) = seq else {
+            return Ok(false);
+        };
+        let _ = self.changes.send(StateChange {
+            stream: row.stream,
+            stream_seq,
+            client_id: row.client_id,
+            kind: row.kind,
+            state: SendState::Queued,
+            wedge_reason: None,
+        });
+        Ok(true)
+    }
+
     /// Store `rows` in one transaction (all or none), publish each as
     /// `queued`; the caller wakes the engine (review RV4 M3).
     ///

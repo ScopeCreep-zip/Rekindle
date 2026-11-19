@@ -275,3 +275,24 @@ async fn our_departure_discards_the_communitys_waiting_posts() {
     assert!(!posts.release("m1").await.unwrap(), "never written");
     assert_eq!(posts.waiting(None).await.unwrap(), [kept]);
 }
+
+/// A joiner's repeated bootstrap queues its key once (D16): a second
+/// commit under the same client id while its row is kept is a no-op,
+/// never a UNIQUE error, and the row keeps its first payload.
+#[tokio::test]
+async fn a_client_id_queued_once_is_not_queued_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let outbox = Outbox::new(host(dir.path(), Arc::new(Senders::default())).await);
+    let entry = || Entry {
+        kind: StreamKind::MekTransfer,
+        scope: "c:joiner".into(),
+        client_id: "MekTransfer:c:joiner:1".into(),
+        payload: b"sealed".to_vec(),
+        deadline: Deadline::Horizon,
+    };
+    let once = || outbox.deps().insert_once(outbox.new_row(entry()));
+    assert!(once().await.unwrap(), "the first commit stores the row");
+    assert!(!once().await.unwrap(), "the repeat is a no-op");
+    let row = outbox.deps().row("MekTransfer:c:joiner:1").await.unwrap();
+    assert_eq!(row.map(|r| r.payload), Some(b"sealed".to_vec()));
+}

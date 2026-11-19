@@ -123,11 +123,13 @@ pub struct MekTransfers(Arc<Outbox<HostOutbox>>);
 impl MekTransfers {
     /// Commit `sealed`, a `MekTransfer` envelope sealed to `member`, on
     /// the stream of (`community`, `member`) as `client_id`, to be called
-    /// to `route` (or the member's newer one).
+    /// to `route` (or the member's newer one). A `client_id` whose row is
+    /// still kept, in whatever state, is left as it is: a joiner's repeated
+    /// bootstrap asks for the same key again (one row per member and
+    /// generation, D16); `false` then.
     ///
     /// # Errors
-    /// The storage failed, `client_id` is already queued, or the route is
-    /// too long to frame.
+    /// The storage failed, or the route is too long to frame.
     pub async fn queue(
         &self,
         community: &str,
@@ -135,7 +137,7 @@ impl MekTransfers {
         client_id: &str,
         route: &[u8],
         sealed: &[u8],
-    ) -> Result<(), OutboxError> {
+    ) -> Result<bool, OutboxError> {
         let payload = encode(route, sealed)
             .ok_or_else(|| OutboxError::Storage("key transfer route too long".into()))?;
         let entry = Entry {
@@ -145,7 +147,11 @@ impl MekTransfers {
             payload,
             deadline: Deadline::Horizon,
         };
-        self.0.enqueue(entry, None).await.map(drop)
+        let queued = self.0.deps().insert_once(self.0.new_row(entry)).await?;
+        if queued {
+            self.0.wake();
+        }
+        Ok(queued)
     }
 
     /// `member` departed `community`: discard its rows; how many.

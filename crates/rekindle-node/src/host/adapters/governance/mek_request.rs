@@ -187,7 +187,7 @@ impl HostGovernance {
             joiner.pseudonym,
             mek.generation()
         );
-        transfers
+        let queued = transfers
             .queue(
                 community_id,
                 &joiner.pseudonym,
@@ -197,7 +197,9 @@ impl HostGovernance {
             )
             .await
             .map_err(|e| e.to_string())?;
-        tracing::info!(community = community_id, joiner = %joiner.pseudonym, "community key queued for the joiner (D16)");
+        if queued {
+            tracing::info!(community = community_id, joiner = %joiner.pseudonym, "community key queued for the joiner (D16)");
+        }
         Ok(())
     }
 
