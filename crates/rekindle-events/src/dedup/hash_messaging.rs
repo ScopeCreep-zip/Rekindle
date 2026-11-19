@@ -61,6 +61,33 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(b"|");
             h.update(state.as_str().as_bytes());
         }
+        ChannelMessageEvent::ChannelHistoryGap {
+            community,
+            channel,
+            sender_pseudonym,
+            through_seq,
+        } => {
+            h.update(b"channel_gap|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(sender_pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
+        }
+        ChannelMessageEvent::ChannelHistoryGapClosed {
+            community,
+            sender_pseudonym,
+            through_seq,
+        } => {
+            h.update(b"channel_gap_closed|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(sender_pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
+        }
         ChannelMessageEvent::AttachmentDownloaded {
             community,
             channel,

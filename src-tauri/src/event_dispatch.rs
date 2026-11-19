@@ -207,6 +207,8 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
             | ChannelMessageEvent::Edited { .. }
             | ChannelMessageEvent::Deleted { .. }
             | ChannelMessageEvent::ChannelSendStatus { .. }
+            | ChannelMessageEvent::ChannelHistoryGap { .. }
+            | ChannelMessageEvent::ChannelHistoryGapClosed { .. }
             | ChannelMessageEvent::AttachmentDownloaded { .. }
             | ChannelMessageEvent::ExpressionAssetReady { .. },
         )

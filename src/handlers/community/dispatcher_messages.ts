@@ -7,7 +7,7 @@ import type { Message } from "../../stores/chat.store";
 import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
 import { truncateKey } from "../../utils/formatting";
-import { transformMessages } from "../../utils/transformers";
+import { transformHistoryGap, transformMessages } from "../../utils/transformers";
 import { setTypingUsers, typingTimers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
@@ -105,6 +105,32 @@ function applyDelete(channel: string, messageId: string, removedBy: string | nul
   setCommunityState("channelMessages", channel, idx, (m) => ({
     ...m, body: "", editedAt: undefined, attachment: undefined, removedBy,
   }));
+}
+
+/// An author's channel outbox gap (`channelHistoryGap`, plan E3.3, D23): the
+/// backend stored the marker row; a loaded channel appends it as its history
+/// would show it, once per (author, seq). Nothing here infers a gap.
+function applyChannelGap(channel: string, sender: string, throughSeq: number): void {
+  const msgs = communityState.channelMessages[channel];
+  if (!msgs) return;
+  if (msgs.some((m) => m.senderId === sender && m.historyGapThrough === throughSeq)) return;
+  const marker = transformHistoryGap({ peerKey: sender, throughSeq });
+  setCommunityState("channelMessages", channel, (prev) => [...prev, marker]);
+}
+
+/// A read reached the author's head (`channelHistoryGapClosed`): the backend
+/// removed its markers through `throughSeq` in every channel of the community.
+function applyChannelGapClosed(community: string, sender: string, throughSeq: number): void {
+  const channels = communityState.communities[community]?.channels ?? [];
+  for (const { id } of channels) {
+    const msgs = communityState.channelMessages[id];
+    if (!msgs?.some((m) => m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)) {
+      continue;
+    }
+    setCommunityState("channelMessages", id, (prev) =>
+      prev.filter((m) => !(m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)),
+    );
+  }
 }
 
 function applyReactionAdded(
@@ -234,6 +260,12 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
         m.channelSendStatus.state,
         m.channelSendStatus.reason,
       );
+    } else if ("channelHistoryGap" in m) {
+      const g = m.channelHistoryGap;
+      applyChannelGap(g.channel, g.senderPseudonym, g.throughSeq);
+    } else if ("channelHistoryGapClosed" in m) {
+      const g = m.channelHistoryGapClosed;
+      applyChannelGapClosed(g.community, g.senderPseudonym, g.throughSeq);
     } else if ("attachmentDownloaded" in m) {
       applyAttachmentDownloaded(m.attachmentDownloaded.channel, m.attachmentDownloaded.attachmentId);
     } else if ("expressionAssetReady" in m) {

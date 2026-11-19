@@ -162,7 +162,10 @@ impl App {
                 | ChannelMessageEvent::Deleted { .. }
                 // A gap in the peer's stream (plan E2.5): the DM view
                 // draws its marker.
-                | ChannelMessageEvent::DmHistoryGap { .. },
+                | ChannelMessageEvent::DmHistoryGap { .. }
+                // A channel outbox gap opened or closed (plan E3.3, D23).
+                | ChannelMessageEvent::ChannelHistoryGap { .. }
+                | ChannelMessageEvent::ChannelHistoryGapClosed { .. },
             )
             | SubscriptionEvent::Voice(
                 VoiceEvent::ModeChanged { .. }

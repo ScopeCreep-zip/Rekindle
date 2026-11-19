@@ -9,6 +9,8 @@ pub const NAMES: &[&str] = &[
     "edited",
     "deleted",
     "channelSendStatus",
+    "channelHistoryGap",
+    "channelHistoryGapClosed",
     "attachmentDownloaded",
     "expressionAssetReady",
     "directMessageReceived",
@@ -23,6 +25,8 @@ pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
         ChannelMessageEvent::Edited { .. } => "edited",
         ChannelMessageEvent::Deleted { .. } => "deleted",
         ChannelMessageEvent::ChannelSendStatus { .. } => "channelSendStatus",
+        ChannelMessageEvent::ChannelHistoryGap { .. } => "channelHistoryGap",
+        ChannelMessageEvent::ChannelHistoryGapClosed { .. } => "channelHistoryGapClosed",
         ChannelMessageEvent::AttachmentDownloaded { .. } => "attachmentDownloaded",
         ChannelMessageEvent::ExpressionAssetReady { .. } => "expressionAssetReady",
         ChannelMessageEvent::DirectMessageReceived { .. } => "directMessageReceived",
@@ -97,6 +101,23 @@ pub fn samples() -> Vec<Sample> {
                 message_id: id("msg_", '1'),
                 state: rekindle_types::message::SendState::Sent,
                 reason: None,
+            },
+        ),
+        ev(
+            "channelHistoryGap",
+            ChannelMessageEvent::ChannelHistoryGap {
+                community: community(),
+                channel: channel(),
+                sender_pseudonym: pk('b'),
+                through_seq: 4,
+            },
+        ),
+        ev(
+            "channelHistoryGapClosed",
+            ChannelMessageEvent::ChannelHistoryGapClosed {
+                community: community(),
+                sender_pseudonym: pk('b'),
+                through_seq: 4,
             },
         ),
         ev(

@@ -161,6 +161,8 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
         | ChannelMessageEvent::Edited { community, .. }
         | ChannelMessageEvent::Deleted { community, .. }
         | ChannelMessageEvent::ChannelSendStatus { community, .. }
+        | ChannelMessageEvent::ChannelHistoryGap { community, .. }
+        | ChannelMessageEvent::ChannelHistoryGapClosed { community, .. }
         | ChannelMessageEvent::AttachmentDownloaded { community, .. }
         | ChannelMessageEvent::ExpressionAssetReady { community, .. } => {
             EventScope::Community(community.clone())

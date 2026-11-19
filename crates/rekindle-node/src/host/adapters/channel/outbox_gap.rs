@@ -9,10 +9,14 @@
 //! the author and its seq the head's chain seq. The cursor stays below the
 //! head, so a later read can still reach it; once one does, the markers
 //! through it are removed, as the history then holds what they stood for.
+//! Each change is published (`ChannelHistoryGap` per channel stored,
+//! `ChannelHistoryGapClosed` once removed), so an open window shows and
+//! drops the marker without a reload.
 
 use rekindle_db::repo::history_gap;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::message::ConversationType;
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use rekindle_channel::ChannelMessagingDeps as _;
 
@@ -50,34 +54,68 @@ impl HostChannel {
             return;
         };
         let (writer, now) = (hex::encode(author.0), self.ctx().clock.now_ms_i64());
+        let (rows, row_writer) = (channels.clone(), writer.clone());
         let stored = db
             .call(move |conn| {
-                for channel in &channels {
+                for channel in &rows {
                     let at = (channel.as_str(), ConversationType::Channel);
-                    history_gap::insert(conn, &owner, at, &writer, through, now)?;
+                    history_gap::insert(conn, &owner, at, &row_writer, through, now)?;
                 }
                 Ok(())
             })
             .await;
         if let Err(error) = stored {
             tracing::warn!(community_id, through, %error, "channel outbox gap marker not stored");
+            return;
+        }
+        for channel in channels {
+            self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
+                ChannelMessageEvent::ChannelHistoryGap {
+                    community: community_id.to_owned(),
+                    channel,
+                    sender_pseudonym: writer.clone(),
+                    through_seq: through,
+                },
+            ));
         }
     }
 
     /// Remove `author`'s gap markers through chain seq `reached`: a read
-    /// reached that head.
-    pub(crate) async fn close_outbox_gap(&self, author: &PseudonymKey, reached: u64) {
+    /// in `community_id` reached that head.
+    pub(crate) async fn close_outbox_gap(
+        &self,
+        community_id: &str,
+        author: &PseudonymKey,
+        reached: u64,
+    ) {
         let Ok((owner, db)) = self.owner_and_db() else {
             return;
         };
         let writer = hex::encode(author.0);
+        let row_writer = writer.clone();
         let closed = db
             .call(move |conn| {
-                history_gap::close(conn, &owner, ConversationType::Channel, &writer, reached)
+                history_gap::close(
+                    conn,
+                    &owner,
+                    ConversationType::Channel,
+                    &row_writer,
+                    reached,
+                )
             })
             .await;
-        if let Err(error) = closed {
-            tracing::warn!(reached, %error, "channel outbox gap marker not removed");
+        match closed {
+            Ok(0) => {}
+            Ok(_) => self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
+                ChannelMessageEvent::ChannelHistoryGapClosed {
+                    community: community_id.to_owned(),
+                    sender_pseudonym: writer,
+                    through_seq: reached,
+                },
+            )),
+            Err(error) => {
+                tracing::warn!(reached, %error, "channel outbox gap marker not removed");
+            }
         }
     }
 }

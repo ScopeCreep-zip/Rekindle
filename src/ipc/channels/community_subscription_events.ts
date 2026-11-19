@@ -380,6 +380,26 @@ export type ChannelMessageEvent =
         reason?: string;
       };
     }
+  /** The author's outbox reaches `throughSeq` and no read reached it (plan
+   *  E3.3, D23): the Host stored a gap row in `channel`; shown as the
+   *  history would show it. */
+  | {
+      channelHistoryGap: {
+        community: string;
+        channel: string;
+        senderPseudonym: string;
+        throughSeq: number;
+      };
+    }
+  /** A read reached the head: the author's gap rows through `throughSeq`
+   *  were removed in every channel of `community`. */
+  | {
+      channelHistoryGapClosed: {
+        community: string;
+        senderPseudonym: string;
+        throughSeq: number;
+      };
+    }
   /** An attachment finished downloading to the place the user chose. */
   | {
       attachmentDownloaded: {

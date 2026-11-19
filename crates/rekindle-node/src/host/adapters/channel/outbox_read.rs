@@ -269,7 +269,8 @@ impl HostChannel {
             }
         }
         if known_head > 0 {
-            self.close_outbox_gap(author, known_head).await;
+            self.close_outbox_gap(community_id, author, known_head)
+                .await;
         }
     }
 

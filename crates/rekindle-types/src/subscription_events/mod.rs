@@ -180,6 +180,8 @@ impl SubscriptionEvent {
                 | ChannelMessageEvent::Edited { community, .. }
                 | ChannelMessageEvent::Deleted { community, .. }
                 | ChannelMessageEvent::ChannelSendStatus { community, .. }
+                | ChannelMessageEvent::ChannelHistoryGap { community, .. }
+                | ChannelMessageEvent::ChannelHistoryGapClosed { community, .. }
                 | ChannelMessageEvent::AttachmentDownloaded { community, .. }
                 | ChannelMessageEvent::ExpressionAssetReady { community, .. } => Some(community),
                 // Direct-conversation events belong to a peer, not a

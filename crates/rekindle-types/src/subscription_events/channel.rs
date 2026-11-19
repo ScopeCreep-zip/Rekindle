@@ -54,6 +54,32 @@ pub enum ChannelMessageEvent {
         /// its author's own delete.
         removed_by: Option<String>,
     },
+    /// An author's channel outbox reaches a seq no read of ours reached
+    /// (plan E3.3, D23 "Gaps": loss is never silent): the author's entries
+    /// through `through_seq` may be missing from `channel`. The Host stored
+    /// the gap row (`messages.history_gap_through`) in every channel of the
+    /// community we read, and publishes one event per channel; every window
+    /// shows the marker where it falls, as the stored history would, without
+    /// a reload. None infers a gap itself.
+    /// Triggered by: a departure's outbox head no bounded gap read reached.
+    ChannelHistoryGap {
+        community: String,
+        channel: String,
+        /// The author whose outbox reaches the seq (hex pseudonym key).
+        sender_pseudonym: String,
+        /// The author's chain seq the gap reaches.
+        through_seq: u64,
+    },
+    /// A read reached the author's outbox head (plan E3.3, D23): the gap
+    /// rows of `sender_pseudonym` through `through_seq` were removed in every
+    /// channel of `community`, as the history now holds what they stood for.
+    /// Every window drops those markers.
+    /// Triggered by: an outbox read reaching a departure's head.
+    ChannelHistoryGapClosed {
+        community: String,
+        sender_pseudonym: String,
+        through_seq: u64,
+    },
     /// Our own post changed delivery state (plan E3.1 E2c): `sent` when
     /// its slot of the channel record settled at consensus, `failed` when
     /// the network superseded our page without it (a resend merges it

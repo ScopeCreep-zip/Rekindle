@@ -132,6 +132,25 @@
       }
     }
   },
+  "channelMessage.channelHistoryGap": {
+    "channelMessage": {
+      "channelHistoryGap": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "senderPseudonym": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "throughSeq": 4
+      }
+    }
+  },
+  "channelMessage.channelHistoryGapClosed": {
+    "channelMessage": {
+      "channelHistoryGapClosed": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "senderPseudonym": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "throughSeq": 4
+      }
+    }
+  },
   "channelMessage.channelSendStatus": {
     "channelMessage": {
       "channelSendStatus": {
