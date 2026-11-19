@@ -311,6 +311,46 @@ mod tests {
         );
     }
 
+    /// Linux live trace (a): the friend's status reached us before their
+    /// presence key and was dropped; once the key is stored, the read the
+    /// key's arrival runs opens the value the record still holds.
+    #[tokio::test]
+    async fn a_status_that_arrived_before_the_key_is_shown_once_the_key_lands() {
+        use rekindle_secrets::friend_presence::{seal, PresenceKey};
+        use rekindle_types::dht_layout::profile::STATUS;
+        let key = PresenceKey::new(1, [9; 32]);
+        let mut status = vec![1u8];
+        status.extend_from_slice(&999_000_i64.to_be_bytes());
+        let sealed = seal(&key, "alice", STATUS, &status).unwrap();
+        let deps = Arc::new(MockDeps {
+            state: Mutex::new(MockState {
+                friends_with_dht: vec![("alice".into(), "dht1".into())],
+                subkey_bytes: HashMap::from([(("dht1".to_string(), STATUS), sealed.clone())]),
+                ..Default::default()
+            }),
+            accepted: HashSet::from(["alice".to_string()]),
+        });
+        crate::friend::handle_value_change(&*deps, "dht1", &[STATUS], &sealed);
+        crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
+            .await
+            .unwrap()
+            .expect("the record opened")
+            .await;
+        assert!(
+            deps.state.lock().calls_set_status.is_empty(),
+            "no key yet: nothing is shown"
+        );
+        deps.state
+            .lock()
+            .presence_keys
+            .insert("alice".to_string(), key);
+        crate::read_sealed_presence(Arc::clone(&deps), "alice", "dht1").await;
+        assert_eq!(
+            deps.state.lock().calls_set_status,
+            vec![("alice".to_string(), UserStatusKind::Away)]
+        );
+    }
+
     #[test]
     fn check_stale_presences_emits_for_accepted_only() {
         let deps = MockDeps {

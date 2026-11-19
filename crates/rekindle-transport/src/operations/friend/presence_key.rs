@@ -110,6 +110,10 @@ pub(crate) async fn on_friends_key(host: &dyn FriendHost, sender: &str, body: &F
                     .insert(sender.to_string(), PresenceKey::new(body.epoch, body.key));
             }
             tracing::debug!(from = %sender, epoch, "friend presence key stored");
+            // Their STATUS and GAME_INFO may have reached us before this key
+            // and been dropped; the watch reports only a later change, so the
+            // record's current value is read now, not at their next beat.
+            host.read_friend_presence(sender).await;
             true
         }
         Ok(false) => {

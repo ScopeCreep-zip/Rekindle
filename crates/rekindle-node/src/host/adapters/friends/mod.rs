@@ -207,6 +207,22 @@ impl FriendHost for HostFriends {
         }
     }
 
+    async fn read_friend_presence(&self, peer: &str) {
+        let record = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .and_then(|s| s.friends.get(peer).and_then(|f| f.dht_record_key.clone()));
+        // No profile record known yet: its watch, when set, reads it.
+        let Some(record) = record else {
+            return;
+        };
+        let read = rekindle_presence::read_sealed_presence(Arc::new(self.clone()), peer, &record);
+        // A GET: off the receive path that stored the key.
+        self.scope().spawn_or_drop("friend presence read", read);
+    }
+
     async fn watch_participant(&self, peer: &str, record_key: &str) {
         watch::watch_participant(self, peer, record_key).await;
     }

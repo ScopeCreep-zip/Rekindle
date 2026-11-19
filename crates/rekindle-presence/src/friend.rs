@@ -308,24 +308,50 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     // watched change takes, so state and events stay one path. The reads
     // are network GETs, so they are handed back for the host to run on its
     // session scope: the accept or add that set the watch never waits.
-    let (friend_key, dht_record_key) = (friend_key.to_string(), dht_record_key.to_string());
+    let sealed = read_sealed_presence(Arc::clone(&deps), friend_key, dht_record_key);
+    let dht_record_key = dht_record_key.to_string();
+    let friend_key = friend_key.to_string();
     Ok(Some(Box::pin(async move {
-        use rekindle_types::dht_layout::profile::{DISPLAY_NAME, GAME_INFO, STATUS};
-        let (name, status, game) = tokio::join!(
+        use rekindle_types::dht_layout::profile::DISPLAY_NAME;
+        let (name, ()) = tokio::join!(
             deps.fetch_friend_dht_subkey(&dht_record_key, DISPLAY_NAME, true),
-            deps.fetch_friend_dht_subkey(&dht_record_key, STATUS, true),
-            deps.fetch_friend_dht_subkey(&dht_record_key, GAME_INFO, true),
+            sealed,
         );
         if let Some(name) = name {
             handle_name_change(&*deps, &friend_key, &name);
         }
+    })))
+}
+
+/// The one read of a friend's STATUS and GAME_INFO through
+/// [`handle_value_change`], the path a watched change takes. Run after the
+/// watch is set ([`watch_friend`]) and again when the friend's presence key
+/// is stored or moves to a new epoch (plan E2.5): a value that reached us
+/// before the key it is sealed under was dropped, and a Veilid watch only
+/// reports a later change (`watch_dht_values`, veilid-core
+/// `routing_context.rs`), so without this read it stays unseen until the
+/// friend's next publish. The value is re-read, never buffered: the record
+/// holds the friend's latest, which is the only one worth showing.
+pub fn read_sealed_presence<D: FriendPresenceDeps>(
+    deps: Arc<D>,
+    friend_key: &str,
+    dht_record_key: &str,
+) -> PresenceRead {
+    let dht_record_key = dht_record_key.to_string();
+    tracing::trace!(friend = %friend_key, "reading friend presence");
+    Box::pin(async move {
+        use rekindle_types::dht_layout::profile::{GAME_INFO, STATUS};
+        let (status, game) = tokio::join!(
+            deps.fetch_friend_dht_subkey(&dht_record_key, STATUS, true),
+            deps.fetch_friend_dht_subkey(&dht_record_key, GAME_INFO, true),
+        );
         if let Some(status) = status {
             handle_value_change(&*deps, &dht_record_key, &[STATUS], &status);
         }
         if let Some(game) = game {
             handle_value_change(&*deps, &dht_record_key, &[GAME_INFO], &game);
         }
-    })))
+    })
 }
 
 /// Publish our own status to profile subkey 2: the 9-byte
