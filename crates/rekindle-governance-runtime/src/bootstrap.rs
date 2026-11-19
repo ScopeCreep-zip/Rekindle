@@ -229,8 +229,7 @@ fn is_joiners_member_joined(
     joined
         && op.author == op_ref.author
         && op.seq == op_ref.author_seq
-        && (op.seq == 0
-            || (state.members.get(&op.author)).is_none_or(|m| m.joined.hash == op.hash))
+        && (op.seq == 0 || (state.members.get(&op.author)).is_none_or(|m| m.joined.hash == op.hash))
 }
 
 fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntimeError> {
