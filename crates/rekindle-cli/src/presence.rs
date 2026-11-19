@@ -102,7 +102,13 @@ pub async fn dispatch_game(
     client: &DaemonClient,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
-    let request = match cmd {
+    let value = helpers::send(client, game_request(cmd)).await?;
+    format::print_structured(&value, mode)
+}
+
+/// The host request one `game` subcommand sends.
+pub fn game_request(cmd: &GameCmd) -> IpcRequest {
+    match cmd {
         GameCmd::Set { name, id, server } => IpcRequest::GamePresenceSet {
             game_name: name.clone(),
             game_id: *id,
@@ -113,9 +119,17 @@ pub async fn dispatch_game(
         GameCmd::Hidden => IpcRequest::HiddenGamesGet,
         GameCmd::Hide { id } => IpcRequest::GameHide { game_id: *id },
         GameCmd::Unhide { id } => IpcRequest::GameUnhide { game_id: *id },
-    };
-    let value = helpers::send(client, request).await?;
-    format::print_structured(&value, mode)
+        GameCmd::Favourites => IpcRequest::FavouriteServersGet,
+        GameCmd::FavouriteAdd { id, server, label } => IpcRequest::FavouriteServerAdd {
+            game_id: *id,
+            server: server.clone(),
+            label: label.clone(),
+        },
+        GameCmd::FavouriteRemove { id, server } => IpcRequest::FavouriteServerRemove {
+            game_id: *id,
+            server: server.clone(),
+        },
+    }
 }
 
 pub async fn dispatch_audit(

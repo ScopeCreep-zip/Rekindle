@@ -149,3 +149,31 @@ fn skin_subcommands_parse_to_their_requests() {
         "an id is required"
     );
 }
+
+#[test]
+fn favourite_server_subcommands_parse_to_their_requests() {
+    use rekindle_ipc::protocol::IpcRequest;
+
+    let request = |args: &[&str]| match parse(args).command {
+        Some(Command::Game(cmd)) => crate::presence::game_request(&cmd),
+        _ => panic!("{args:?} is not a game command"),
+    };
+    assert!(matches!(
+        request(&["game", "favourites"]),
+        IpcRequest::FavouriteServersGet
+    ));
+    assert!(matches!(
+        request(&["game", "favourite-add", "4181", "203.0.113.7:27015", "--label", "Scrims"]),
+        IpcRequest::FavouriteServerAdd { game_id: 4181, ref server, ref label }
+            if server.as_str() == "203.0.113.7:27015" && label == "Scrims"
+    ));
+    assert!(matches!(
+        request(&["game", "favourite-remove", "4181", "203.0.113.7:27015"]),
+        IpcRequest::FavouriteServerRemove { game_id: 4181, ref server }
+            if server.as_str() == "203.0.113.7:27015"
+    ));
+    assert!(
+        Cli::try_parse_from(["rekindle", "game", "favourite-add", "4181", "host/path:1"]).is_err(),
+        "an unparsed address never leaves"
+    );
+}

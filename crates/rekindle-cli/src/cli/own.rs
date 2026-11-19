@@ -85,6 +85,27 @@ pub enum GameCmd {
         /// The game's id in the game database.
         id: u32,
     },
+    /// Our favourite servers, each with whether an invite may name it.
+    Favourites,
+    /// Add a favourite server, or relabel one already there.
+    FavouriteAdd {
+        /// The game's id in the game database.
+        id: u32,
+        /// The server, host:port.
+        #[arg(value_parser = rekindle_types::game_server::ServerAddress::parse)]
+        server: rekindle_types::game_server::ServerAddress,
+        /// A label of at most 64 characters.
+        #[arg(long, default_value = "")]
+        label: String,
+    },
+    /// Remove a favourite server.
+    FavouriteRemove {
+        /// The game's id in the game database.
+        id: u32,
+        /// The server, host:port.
+        #[arg(value_parser = rekindle_types::game_server::ServerAddress::parse)]
+        server: rekindle_types::game_server::ServerAddress,
+    },
 }
 
 /// The identity's tamper-evident audit log.
