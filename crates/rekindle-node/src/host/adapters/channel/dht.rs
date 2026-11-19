@@ -3,7 +3,6 @@
 //! with the writer keypair derived from the slot seed
 //! (`rekindle_protocol::dht::community::channel_record`).
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use rekindle_channel::deps::{ChannelEntryItem, ChannelWriteContext, DhtWrite};
@@ -49,23 +48,6 @@ impl HostChannel {
         }
         slots.sort_unstable();
         slots.dedup();
-        slots
-    }
-
-    /// Slot subkey → member pseudonym, for every member the roster placed
-    /// and us.
-    pub(super) fn stage_pseudonyms_impl(&self, community_id: &str) -> HashMap<u32, String> {
-        let mut slots: HashMap<u32, String> = (self.ctx().communities.members(community_id))
-            .into_iter()
-            .map(|(pseudonym, member)| (member.subkey_index, pseudonym))
-            .collect();
-        if let Some(membership) = self.gov.community_membership(community_id) {
-            if let (Some(slot), Some(pseudonym)) =
-                (membership.my_subkey_index, membership.my_pseudonym_hex)
-            {
-                slots.insert(slot, pseudonym);
-            }
-        }
         slots
     }
 

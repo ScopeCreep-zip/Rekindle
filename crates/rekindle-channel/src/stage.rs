@@ -1,63 +1,109 @@
-//! Phase 23.D.7 — voice-stage hand-raise SMPL operations ported from
-//! `src-tauri/services/community/stage.rs`. Persists each raise/lower
-//! to the channel record as a `ChannelHandRaise` entry; the reader
-//! aggregates the latest state per slot, mapping subkey indices back
-//! to pseudonyms via the adapter's `stage_pseudonyms_by_subkey` lookup.
+//! Voice-stage hand raises (plan E3.3): a raise or lower is an op on the
+//! member's channel outbox (`M`/4), queued on the stage channel's
+//! `channel_post` stream; readers keep each member's latest by its stream
+//! seq. The voice signaling gossip stays the live path.
 
 use std::collections::HashMap;
 
-use rekindle_codec::community::channel_record::{ChannelHandRaise, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
+use rekindle_types::message::{ChannelPost, PostEntry};
 
-use crate::deps::ChannelMessagingDeps;
+use crate::deps::{ChannelMessagingDeps, OutboxItem};
 use crate::error::ChannelError;
 
+/// Queue our hand `raised` on `channel_id`'s stage.
+///
+/// # Errors
+/// The channel is unknown or the queue failed.
 pub async fn persist_hand_raise<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     raised: bool,
 ) -> Result<(), ChannelError> {
-    let context = deps.channel_write_context(community_id, channel_id)?;
-    let hand_raise = ChannelHandRaise {
-        raised,
-        lamport: deps.increment_lamport(community_id)?,
+    deps.channel_info(community_id, channel_id)
+        .ok_or_else(|| ChannelError::ChannelNotFound(channel_id.into()))?;
+    let post = ChannelPost {
+        community: community_id.to_owned(),
+        channel: channel_id.to_owned(),
+        message: format!(
+            "hand:{}",
+            hex::encode(rekindle_utils::random::id_bytes_16())
+        ),
+        entry: PostEntry::HandRaise { raised },
     };
-    deps.write_channel_hand_raise_smpl(&context, &hand_raise)
-        .await
+    deps.queue_post(&post).await
 }
 
+/// The pseudonyms whose hand is raised on `channel_id`'s stage, sorted.
+///
+/// # Errors
+/// The channel is unknown.
 pub async fn list_hand_raises<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
 ) -> Result<Vec<String>, ChannelError> {
-    let context = deps.channel_write_context(community_id, channel_id)?;
-    let entries = deps
-        .read_all_channel_entries(community_id, &context.channel_key)
-        .await?;
+    deps.channel_info(community_id, channel_id)
+        .ok_or_else(|| ChannelError::ChannelNotFound(channel_id.into()))?;
+    Ok(raised_hands(
+        &deps.read_outbox_entries(community_id, channel_id).await,
+    ))
+}
 
-    let pseudonyms_by_subkey = deps.stage_pseudonyms_by_subkey(community_id).await?;
-    let mut latest_by_subkey = HashMap::<u32, (u64, bool)>::new();
+/// Each member's latest hand raise among `entries` by stream seq: the
+/// pseudonyms (hex) whose hand stands raised, sorted.
+#[must_use]
+pub fn raised_hands(entries: &[OutboxItem]) -> Vec<String> {
+    let mut latest = HashMap::<String, (u64, bool)>::new();
     for item in entries {
-        let ChannelRecordEntry::HandRaise(hand_raise) = item.entry else {
+        let ChannelRecordEntry::HandRaise(hand) = &item.entry else {
             continue;
         };
-        let replace = latest_by_subkey
-            .get(&item.subkey_index)
-            .is_none_or(|(lamport, _)| hand_raise.lamport >= *lamport);
-        if replace {
-            latest_by_subkey.insert(item.subkey_index, (hand_raise.lamport, hand_raise.raised));
+        let author = hex::encode(item.author.0);
+        if latest
+            .get(&author)
+            .is_none_or(|(seq, _)| item.stream_seq > *seq)
+        {
+            latest.insert(author, (item.stream_seq, hand.raised));
+        }
+    }
+    let mut raised: Vec<String> = (latest.into_iter())
+        .filter_map(|(author, (_, raised))| raised.then_some(author))
+        .collect();
+    raised.sort();
+    raised
+}
+
+#[cfg(test)]
+mod tests {
+    use super::raised_hands;
+    use crate::deps::OutboxItem;
+    use rekindle_codec::community::channel_record::{ChannelHandRaise, ChannelRecordEntry};
+    use rekindle_types::id::PseudonymKey;
+
+    fn hand(author: u8, seq: u64, raised: bool) -> OutboxItem {
+        OutboxItem {
+            author: PseudonymKey([author; 32]),
+            stream_seq: seq,
+            committed_at: 0,
+            entry: ChannelRecordEntry::HandRaise(ChannelHandRaise {
+                raised,
+                lamport: seq,
+            }),
         }
     }
 
-    let mut raised = latest_by_subkey
-        .into_iter()
-        .filter_map(|(subkey_index, (_, is_raised))| {
-            is_raised
-                .then(|| pseudonyms_by_subkey.get(&subkey_index).cloned())
-                .flatten()
-        })
-        .collect::<Vec<_>>();
-    raised.sort();
-    Ok(raised)
+    /// A member's latest raise or lower by stream seq stands, wherever it
+    /// sits in the read.
+    #[test]
+    fn the_latest_hand_raise_per_member_stands() {
+        let hands = raised_hands(&[
+            hand(1, 2, false),
+            hand(1, 1, true),
+            hand(2, 1, false),
+            hand(2, 3, true),
+        ]);
+        assert_eq!(hands, vec![hex::encode([2u8; 32])]);
+    }
 }

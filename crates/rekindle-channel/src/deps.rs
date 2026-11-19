@@ -15,9 +15,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::{
-    ChannelHandRaise, ChannelMessage, ChannelRecordEntry,
-};
+use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
@@ -298,22 +296,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         context: &ChannelWriteContext,
         channel_msg: &ChannelMessage,
     ) -> Result<DhtWrite, ChannelError>;
-
-    async fn write_channel_hand_raise_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelHandRaise,
-    ) -> Result<(), ChannelError>;
-
-    /// Resolve pseudonym hex for each known stage slot subkey. The
-    /// adapter walks AppState.communities (for our own slot) + DB
-    /// `community_members.subkey_index` (for all known peers). Returns
-    /// a map keyed by subkey index so the `list_hand_raises` reader can
-    /// map subkey entries back to identifiable members.
-    async fn stage_pseudonyms_by_subkey(
-        &self,
-        community_id: &str,
-    ) -> Result<std::collections::HashMap<u32, String>, ChannelError>;
 
     /// Create a lazy thread SMPL record, held under its creator lease.
     /// Returns the lease and the record key.

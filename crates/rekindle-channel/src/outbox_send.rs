@@ -14,8 +14,8 @@
 //! downloaded file's possession an `AttachmentCached` entry (slice 7).
 
 use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelPollClose,
-    ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
+    ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelHandRaise,
+    ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
 };
 use rekindle_types::attachment::AttachmentBitmap;
 use rekindle_types::channel_keys::KeyScope;
@@ -56,7 +56,7 @@ struct StoredBody {
 }
 
 /// The body `item` seals: an edit's new body, nothing for a delete, a
-/// possession entry, a reaction or a poll op, else our stored post's (its row must
+/// possession entry, a reaction, a poll op or a hand raise, else our stored post's (its row must
 /// be ours).
 async fn stored_body<D: ChannelMessagingDeps>(
     deps: &D,
@@ -70,7 +70,8 @@ async fn stored_body<D: ChannelMessagingDeps>(
         | PostEntry::Reaction { .. }
         | PostEntry::PollCreate { .. }
         | PostEntry::PollVote { .. }
-        | PostEntry::PollClose { .. } => {
+        | PostEntry::PollClose { .. }
+        | PostEntry::HandRaise { .. } => {
             return Ok(StoredBody {
                 text: String::new(),
                 reply_to: None,
@@ -214,6 +215,10 @@ async fn pending_of<D: ChannelMessagingDeps>(
         }),
         PostEntry::PollClose { poll_id } => ChannelRecordEntry::PollClose(ChannelPollClose {
             poll_id: *poll_id,
+            lamport: item.stream_seq,
+        }),
+        PostEntry::HandRaise { raised } => ChannelRecordEntry::HandRaise(ChannelHandRaise {
+            raised: *raised,
             lamport: item.stream_seq,
         }),
         // A delete carries no body; the entry still names its channel by

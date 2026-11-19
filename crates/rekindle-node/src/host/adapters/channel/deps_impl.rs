@@ -12,7 +12,7 @@ use rekindle_channel::deps::{
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
-use rekindle_codec::community::channel_record::{ChannelHandRaise, ChannelMessage};
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
@@ -168,32 +168,6 @@ impl ChannelMessagingDeps for HostChannel {
         )
         .await;
         delivery(written, "channel write")
-    }
-
-    async fn write_channel_hand_raise_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelHandRaise,
-    ) -> Result<(), ChannelError> {
-        let w = self.writer(context)?;
-        let written = record::write_member_hand_raise(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            entry,
-        )
-        .await;
-        delivery(written, "hand raise write").map(drop)
-    }
-
-    async fn stage_pseudonyms_by_subkey(
-        &self,
-        community_id: &str,
-    ) -> Result<HashMap<u32, String>, ChannelError> {
-        Ok(self.stage_pseudonyms_impl(community_id))
     }
 
     async fn create_smpl_thread_record(

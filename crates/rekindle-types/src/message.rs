@@ -86,6 +86,9 @@ pub enum PostEntry {
     },
     /// Our close of our poll `poll_id`.
     PollClose { poll_id: [u8; 16] },
+    /// Our hand raised or lowered on a voice stage (our latest by stream
+    /// seq stands).
+    HandRaise { raised: bool },
 }
 
 impl PostEntry {
