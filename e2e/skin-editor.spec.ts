@@ -8,6 +8,9 @@ import { preloadMocks, clearMocks } from "./fixtures/mocks";
 // Oklab-walk value E7.7.0 recorded; any other draft passes.
 
 const FAILING = "#167bc0";
+// `rekindle_skin::draft::NO_AUTHOR`: a draft started from a skin has no
+// author of its own yet, and the Host names that as one failing check.
+const NO_AUTHOR = "Add your name as the author: the export credits you first.";
 const SUGGESTED = "#3491d8";
 
 const HANDLER = `
@@ -31,12 +34,12 @@ const HANDLER = `
         { rule: "1.4.3", fg: "text.base", ground: "bg.dark", ratioX100: 1590, requiredX100: 450,
           pass: true, apcaLcX10: -950, suggestion: null },
       ],
-      failures: [],
+      failures: d.author.trim() ? [] : ["${NO_AUTHOR}"],
       license: /^[A-Za-z0-9.+-]+$/.test(d.license) ? { spdx: d.license } : { text: d.license },
       credits: { ...d.credits, authors: [d.author, ...d.credits.authors.filter((a) => a !== d.author)] },
       regionSlots: [{ id: "scrollbar.track", carriesText: false }, { id: "statusbar", carriesText: true }],
       tokensCss: "@layer skin {\\n  :root {\\n    --color-xfire-accent-text: " + value + ";\\n  }\\n}\\n",
-      exportable: !fails,
+      exportable: !fails && !!d.author.trim(),
     };
   };
   switch (cmd) {
@@ -72,10 +75,17 @@ const HANDLER = `
   }
 `;
 
-async function openEditor(page: Page): Promise<void> {
+async function startDraft(page: Page): Promise<void> {
   await preloadMocks(page, "skin-editor", HANDLER);
   await page.goto("/skin-editor");
   await expect(page.getByRole("region", { name: "Skin editor" })).toBeVisible();
+}
+
+/** The draft started, its author named, so every check passes. */
+async function openEditor(page: Page): Promise<void> {
+  await startDraft(page);
+  await page.getByLabel("Author").fill("Bea");
+  await page.getByLabel("Author").blur();
   await expect(page.locator(".skin-editor-status")).toHaveText("Every check passes.");
 }
 
@@ -129,6 +139,21 @@ test.describe("Skin editor", () => {
     expect(sent.credits.authors).toEqual(["Orig Author"]);
     expect(sent.credits.licence).toEqual({ text: "CC-BY-4.0" });
     expect(sent.from).toBe("builtin:symbiosis");
+  });
+
+  // The Linux walk (2026-11-18): "1 checks fail" with no failing pair, and
+  // "Read as an licence text."
+  test("a started draft asks for its author, counting checks in words", async ({ page }) => {
+    await startDraft(page);
+    const status = page.locator(".skin-editor-status");
+    await expect(status).toHaveText("1 check fails; export is disabled.");
+    await expect(page.locator(".skin-editor-failures li")).toHaveText(NO_AUTHOR);
+    await expect(page.locator(".skin-pair-fail")).toHaveCount(0);
+    await page.getByLabel("accent.text", { exact: true }).fill(FAILING);
+    await expect(status).toHaveText("2 checks fail; export is disabled.");
+    await page.getByLabel("Licence", { exact: true }).fill("Free for any use, with credit.");
+    await page.getByLabel("Licence", { exact: true }).blur();
+    await expect(page.getByText("Read as a licence text.")).toBeVisible();
   });
 
   test("a region import refused for its nine-slice leaves the draft unchanged", async ({ page }) => {

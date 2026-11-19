@@ -22,8 +22,14 @@
     min-width: 0;
   }
 
+  /* The licence is often a full text: the whole row, six whole lines
+     (`rows`, at a set line height, so no line is cut at the bottom). */
+  .skin-editor-licence-field {
+    grid-column: 1 / -1;
+  }
+
   .skin-editor-licence {
-    min-height: 3em;
+    line-height: 18px;
     resize: vertical;
   }
 

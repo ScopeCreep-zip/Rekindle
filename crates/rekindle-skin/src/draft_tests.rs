@@ -217,3 +217,35 @@ fn an_imported_region_goes_through_the_validator() {
         "a region without its bytes"
     );
 }
+
+/// The Linux walk (2026-11-18): "Start from the current skin" on
+/// Symbiosis said "1 checks fail" with every pair passing. The one
+/// failure was the draft's own empty author (`credits.authors[0] is
+/// empty`), shown in the validator's words. Every built-in started as a
+/// draft passes every pair; the only thing it asks for is its author,
+/// named in the editor's words; with one it exports and validates.
+#[test]
+fn every_builtin_started_as_a_draft_passes_and_asks_only_for_its_author() {
+    for pack in &crate::builtin::PACKS {
+        let mut d = from_package(pack.id, pack.bytes).unwrap();
+        let r = report(&d).unwrap();
+        let bad: Vec<_> = r.pairs.iter().filter(|p| !p.pass).collect();
+        assert!(bad.is_empty(), "builtin:{} {bad:?}", pack.id);
+        assert_eq!(r.failures, [NO_AUTHOR], "builtin:{}", pack.id);
+        d.author = "Bea".to_owned();
+        let r = report(&d).unwrap();
+        assert!(
+            r.failures.is_empty(),
+            "builtin:{} {:?}",
+            pack.id,
+            r.failures
+        );
+        assert!(r.exportable, "builtin:{}", pack.id);
+        let assets = Assets {
+            source: Some(pack.bytes.to_vec()),
+            regions: BTreeMap::new(),
+        };
+        validate::run(&package(&d, &assets).unwrap().bytes)
+            .unwrap_or_else(|e| panic!("builtin:{} {e}", pack.id));
+    }
+}

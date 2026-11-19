@@ -122,6 +122,15 @@ const SkinEditor: Component = () => {
     return [...shown.filter((p) => !p.pass), ...shown.filter((p) => p.pass)];
   });
   const failing = (): number => (report()?.pairs ?? []).filter((p) => !p.pass).length;
+  /** Tracked as a whole: a `<Show>` callback runs untracked, so the
+   * count would stay at the first report's. */
+  const status = (): string => {
+    const r = report();
+    if (!r) return "Checking…";
+    if (r.exportable) return "Every check passes.";
+    const n = failing() + r.failures.length;
+    return `${n === 1 ? "1 check fails" : `${n} checks fail`}; export is disabled.`;
+  };
 
   const pairRow = (p: SkinPairCheck) => (
     <li class="skin-pair" classList={{ "skin-pair-fail": !p.pass }}>
@@ -165,13 +174,7 @@ const SkinEditor: Component = () => {
         </button>
       </div>
       <div class="settings-hint skin-editor-status" role="status">
-        <Show when={report()} fallback="Checking…">
-          {(r) =>
-            r().exportable
-              ? "Every check passes."
-              : `${failing() + r().failures.length} checks fail; export is disabled.`
-          }
-        </Show>
+        {status()}
         <Show when={exported()}>{(a) => ` Exported ${a().slice(0, 12)}…`}</Show>
         <Show when={schemaSaved()}>{" JSON Schema saved."}</Show>
       </div>

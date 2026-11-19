@@ -15,7 +15,7 @@ const SkinEditorMeta: Component<{
 }> = (props) => {
   const edit = (patch: Partial<SkinDraft>): void => props.onChange({ ...props.draft, ...patch });
   const licenceKind = (): string =>
-    "spdx" in props.report.license ? "SPDX expression" : "licence text";
+    "spdx" in props.report.license ? "an SPDX expression" : "a licence text";
   const original = (): string | null => {
     const l = props.draft.credits.licence;
     return l === "noneStated" ? null : l.text;
@@ -39,11 +39,12 @@ const SkinEditorMeta: Component<{
           onChange={(e) => edit({ author: e.currentTarget.value })}
         />
       </label>
-      <div class="skin-editor-field">
+      <div class="skin-editor-field skin-editor-licence-field">
         <label class="skin-editor-field">
           <span class="form-label">Licence</span>
           <textarea
             class="form-input skin-editor-licence"
+            rows={6}
             placeholder="An SPDX expression (CC-BY-4.0) or the licence's full text"
             aria-describedby="skin-editor-licence-kind"
             value={props.draft.license}
@@ -51,7 +52,7 @@ const SkinEditorMeta: Component<{
           />
         </label>
         <span class="settings-hint" id="skin-editor-licence-kind">
-          Read as an {licenceKind()}.
+          Read as {licenceKind()}.
         </span>
       </div>
       <label class="skin-editor-field">

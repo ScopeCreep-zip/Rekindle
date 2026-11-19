@@ -252,6 +252,32 @@ fn apca_x10(m: &Measured) -> i32 {
     format!("{lc:.0}").parse().unwrap_or(0)
 }
 
+/// The editor's wording for a draft with no author of its own yet.
+pub const NO_AUTHOR: &str = "Add your name as the author: the export credits you first.";
+
+/// What the validator would refuse in the draft's manifest. A draft
+/// started from a skin has no author of its own yet; the export credits
+/// its author first (owner 2026-11-18: everyone gets credit), so that is
+/// named in the editor's words, and the rest of the manifest is checked
+/// as if it were filled in, so nothing else hides behind it.
+fn manifest_failures(draft: &SkinDraft) -> Result<Vec<String>, SkinError> {
+    let mut out = Vec::new();
+    let probe = if draft.author.trim().is_empty() {
+        out.push(NO_AUTHOR.to_owned());
+        SkinDraft {
+            author: "-".to_owned(),
+            ..draft.clone()
+        }
+    } else {
+        draft.clone()
+    };
+    let built = build(&probe, None)?;
+    if let Err(e) = package::read(&built.bytes).and_then(|p| manifest::parse(&p).map(drop)) {
+        out.push(e.to_string());
+    }
+    Ok(out)
+}
+
 /// The Host's report on `draft` (`SkinValidateDraft`).
 ///
 /// # Errors
@@ -288,10 +314,7 @@ pub fn report(draft: &SkinDraft) -> Result<SkinDraftReport, SkinError> {
         .filter(|r| !matches!(r, SkinRule::Contrast { .. }))
         .map(|r| r.to_string())
         .collect();
-    let built = build(draft, None)?;
-    if let Err(e) = package::read(&built.bytes).and_then(|p| manifest::parse(&p).map(drop)) {
-        failures.push(e.to_string());
-    }
+    failures.extend(manifest_failures(draft)?);
     let tokens_css = output::tokens_css(&resolved).ok_or_else(|| {
         SkinError::new(
             TOKENS,
