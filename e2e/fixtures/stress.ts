@@ -315,8 +315,12 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
       return { ...lib, trial: lib.trial && { ...lib.trial, revertsAtMs: Date.now() + 15000 } };
     }
     case "skin_draft_start":
-      return { name: ${j(longName("Skin_").slice(0, 64))}, base: ${j(base)}, contrast: "standard",
-        tokens: {} };
+      return { name: ${j(longName("Skin_").slice(0, 64))}, description: ${j(longName("Desc_").slice(0, 280))},
+        author: ${j(longName("Author_").slice(0, 64))}, license: ${j("Free for any use. ".repeat(20))},
+        credits: { authors: ${j(Array.from({ length: 16 }, (_, i) => longName(`Orig${i}_`).slice(0, 64)))},
+          contributors: [${j(longName("Contrib_").slice(0, 64))}], url: ${j("https://example.org/" + "s".repeat(80))},
+          licence: { text: ${j("Original licence terms. ".repeat(30))} } },
+        base: ${j(base)}, contrast: "standard", tokens: {}, from: "builtin:symbiosis", regions: {} };
     case "validate_skin_draft": {
       // The skin editor (plan E7.7.5): a failing pair with its suggestion,
       // a refusal at its longest, and passing pairs with long grounds.
@@ -336,6 +340,10 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
         failures: [${j("danger.fill: D1 hue 200.0°, chroma 0.050; danger must read red ".repeat(3))}],
         tokensCss: "",
         exportable: false,
+        license: { text: args.draft.license },
+        credits: { ...args.draft.credits, authors: [args.draft.author, ...args.draft.credits.authors] },
+        regionSlots: [{ id: "scrollbar.track", carriesText: false },
+          { id: "scrollbar.thumb-horizontal", carriesText: false }, { id: "statusbar", carriesText: true }],
       };
     }
     case "get_game_status":

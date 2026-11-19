@@ -66,6 +66,12 @@ pub async fn open_settings_window(
     windows::open_settings(&app, tab)
 }
 
+/// Open the skin editor from Settings → Appearance (plan E7.7.5).
+#[tauri::command]
+pub async fn open_skin_editor_window(app: tauri::AppHandle) -> Result<(), String> {
+    windows::open_skin_editor(&app)
+}
+
 /// Open a community window, or the community browser when `community_id`
 /// is absent.
 #[tauri::command]

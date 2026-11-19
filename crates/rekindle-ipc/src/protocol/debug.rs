@@ -154,6 +154,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::SkinValidateDraft { .. }
             | Self::SkinDraftStart { .. }
             | Self::SkinExportDraft { .. }
+            | Self::SkinDraftCheck { .. }
+            | Self::SkinExportSchema { .. }
             | Self::LinkOpen { .. } => self.fmt_own(f),
             Self::PresenceSet { .. }
             | Self::GamePresenceSet { .. }
@@ -227,6 +229,15 @@ impl IpcRequest {
             Self::SkinExportDraft { draft, path } => f
                 .debug_struct("SkinExportDraft")
                 .field("tokens", &draft.tokens.len())
+                .field("path_len", &path.len())
+                .finish(),
+            Self::SkinDraftCheck { draft } => f
+                .debug_struct("SkinDraftCheck")
+                .field("tokens", &draft.tokens.len())
+                .field("regions", &draft.regions.len())
+                .finish(),
+            Self::SkinExportSchema { path } => f
+                .debug_struct("SkinExportSchema")
                 .field("path_len", &path.len())
                 .finish(),
             Self::LinkOpen { url } => f

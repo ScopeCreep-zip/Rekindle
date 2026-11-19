@@ -5,7 +5,6 @@ import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
 import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
 import SkinCredits from "../../components/settings/SkinCredits";
-import SkinEditor from "../../components/settings/SkinEditor";
 
 /** A Host refusal as the line the tab shows. */
 function refusal(e: unknown): string | null {
@@ -32,8 +31,6 @@ const AppearanceTab: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   /** The skin whose credits are open, if any. */
   const [creditsOf, setCreditsOf] = createSignal<string | null>(null);
-  /** The skin editor (plan E7.7.5) is open in place of the list. */
-  const [editing, setEditing] = createSignal(false);
   let fileInput: HTMLInputElement | undefined;
 
   const apply = (lib: SkinLibrary): void => {
@@ -141,10 +138,6 @@ const AppearanceTab: Component = () => {
           />
         )}
       </Show>
-      <Show when={editing()}>
-        <SkinEditor onClose={() => setEditing(false)} />
-      </Show>
-      <Show when={!editing()}>
       <div class="settings-section-title">Skin</div>
       <div class="skin-list" role="radiogroup" aria-label="Skin">
         <For each={library()?.skins ?? []}>{row}</For>
@@ -165,12 +158,14 @@ const AppearanceTab: Component = () => {
             if (file) void importFile(file);
           }}
         />
-        <button class="form-btn-secondary" onClick={() => setEditing(true)}>
+        <button
+          class="form-btn-secondary"
+          onClick={() => void run(() => commands.openSkinEditorWindow())}
+        >
           Edit a skin…
         </button>
         <span class="settings-hint">A skin is checked before it is added.</span>
       </div>
-      </Show>
       <Show when={error()}>
         {(message) => <div class="settings-hint skin-error" role="alert">{message()}</div>}
       </Show>

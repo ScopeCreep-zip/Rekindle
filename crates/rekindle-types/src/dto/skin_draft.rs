@@ -7,18 +7,60 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dto::skin::{SkinBase, SkinContrast, TokenValue};
+use crate::dto::skin::{RegionFit, SkinBase, SkinContrast, SkinCredits, SkinLicense, TokenValue};
 
-/// A skin being edited: one variant's tokens, by registry id. A token the
-/// draft does not set takes the base's default, as in a package.
+/// A skin being edited: one variant's tokens, by registry id, its credits
+/// and licence, the regions the author imported, and the package it
+/// started from. A token the draft does not set takes the base's default,
+/// as in a package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkinDraft {
     /// The display name the exported manifest carries.
     pub name: String,
+    /// The manifest's description (≤ 280 scalars, may be empty).
+    pub description: String,
+    /// Who made this skin: credited first in the exported `credits.authors`
+    /// (owner 2026-11-18: everyone gets credit for their work).
+    pub author: String,
+    /// The licence the author grants: an SPDX expression, or the full text
+    /// when it is not one (the Host decides which, as the validator reads it).
+    pub license: String,
+    /// What the skin came from, carried forward by "Start from the current
+    /// skin": the source's credited authors and contributors, its URL, and
+    /// the licence it was made under. The author adds to it, never replaces it.
+    pub credits: SkinCredits,
     pub base: SkinBase,
     pub contrast: SkinContrast,
     pub tokens: BTreeMap<String, TokenValue>,
+    /// The package the draft started from (`builtin:<id>` or `pkg:<hex>`):
+    /// its regions, icons and sounds go into the export unless a region
+    /// below replaces one.
+    pub from: Option<String>,
+    /// Regions the author imported, by registry region id.
+    pub regions: BTreeMap<String, SkinDraftRegion>,
+}
+
+/// One imported region: a PNG or GIF the author chose, read by the Host
+/// and checked by the same validator as any package.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkinDraftRegion {
+    /// The image file, an absolute path the OS open dialog returned.
+    pub path: String,
+    /// Stretch, tile, or nine-slice with its insets.
+    pub fit: RegionFit,
+    /// The colour token under the region's text, where it carries text.
+    pub text_backing: Option<String>,
+}
+
+/// A registry region the editor may import an image for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinRegionSlot {
+    pub id: String,
+    /// The region carries text, so it needs a `textBacking` token.
+    pub carries_text: bool,
 }
 
 /// The Host's report on a draft.
@@ -37,6 +79,13 @@ pub struct SkinDraftReport {
     pub tokens_css: String,
     /// No pair fails and nothing else is refused: export is allowed.
     pub exportable: bool,
+    /// The licence the export states, as the Host read the draft's.
+    pub license: SkinLicense,
+    /// The credits the export carries: the author first, then what the
+    /// skin came from.
+    pub credits: SkinCredits,
+    /// Every registry region an image may be imported for.
+    pub region_slots: Vec<SkinRegionSlot>,
 }
 
 /// One themeable registry key.

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-settings",
-  "description": "App-command grants for the `settings` window: preferences, notifications/DND/quiet-hours, audio/video device selection, blocked users, strand-relay management, cross-device pairing/sync, mobile push-relay registration, update checks, and identity audit-log verify/export, and the skins of Settings → Appearance (list, import, remove, select, keep, login skin) with a skin's credited source opened through `open_external_url` (it asks in Rust before it opens).",
+  "description": "App-command grants for the `settings` window: preferences, notifications/DND/quiet-hours, audio/video device selection, blocked users, strand-relay management, cross-device pairing/sync, mobile push-relay registration, update checks, and identity audit-log verify/export, and the skins of Settings → Appearance (list, import, remove, select, keep, login skin, and opening the skin editor) with a skin's credited source opened through `open_external_url` (it asks in Rust before it opens).",
   "windows": [
     "settings"
   ],
@@ -13,9 +13,6 @@
     "allow-ensure-personal-sync-record",
     "allow-import-skin",
     "allow-keep-skin",
-    "allow-validate-skin-draft",
-    "allow-skin-draft-start",
-    "allow-export-skin-draft",
     "allow-generate-pairing-qr-svg",
     "allow-get-blocked-users",
     "allow-get-do-not-disturb",
@@ -31,6 +28,7 @@
     "allow-native-video-active",
     "allow-native-video-capture-available",
     "allow-open-external-url",
+    "allow-open-skin-editor-window",
     "allow-read-paired-devices",
     "allow-read-sync-manifest",
     "allow-read-sync-preferences",

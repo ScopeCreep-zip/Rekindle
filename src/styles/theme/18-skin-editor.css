@@ -1,5 +1,5 @@
 @layer components {
-  /* The skin editor (plan E7.7.5), a sub-panel of Settings → Appearance. */
+  /* The skin editor (plan E7.7.5), its own window opened from Settings. */
   .skin-editor {
     display: flex;
     flex-direction: column;
@@ -14,8 +14,62 @@
     gap: 4px 8px;
   }
 
-  .skin-editor-name {
+  /* Name, author, licence, description, web page, and the credits. */
+  .skin-editor-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 6px 12px;
+    min-width: 0;
+  }
+
+  .skin-editor-licence {
+    min-height: 3em;
+    resize: vertical;
+  }
+
+  .skin-editor-credits {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .skin-editor-credits ul,
+  .skin-regions {
+    margin: 0;
+    padding: 0 0 0 16px;
+  }
+
+  .skin-editor-original {
+    min-width: 0;
+  }
+
+  /* Region import: the region, its fit, the nine-slice insets. */
+  .skin-region-import {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .skin-region-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    min-width: 0;
+  }
+
+  .skin-region-row > select {
     flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .skin-region-inset {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 60px;
     min-width: 0;
   }
 

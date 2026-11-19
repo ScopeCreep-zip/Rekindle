@@ -164,7 +164,9 @@ async fn route(
         | IpcRequest::SkinKeep { .. }
         | IpcRequest::SkinValidateDraft { .. }
         | IpcRequest::SkinDraftStart { .. }
-        | IpcRequest::SkinExportDraft { .. }) => {
+        | IpcRequest::SkinExportDraft { .. }
+        | IpcRequest::SkinDraftCheck { .. }
+        | IpcRequest::SkinExportSchema { .. }) => {
             crate::host::skin::route(ctx, state, request).await
         }
 

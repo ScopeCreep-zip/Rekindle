@@ -170,6 +170,10 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("SkinValidateDraft", None),
     ("SkinDraftStart", None),
     ("SkinExportDraft", None),
+    // Region import checks the draft's package and stores nothing; the
+    // schema export writes the file the user chose (its dialog confirms).
+    ("SkinDraftCheck", None),
+    ("SkinExportSchema", None),
     ("SkinImport", Some(IntentKind::ImportSkin)),
     ("SkinRemove", Some(IntentKind::RemoveSkin)),
     // The identity's skin is a preference (E6.8's `PatchPreferences`).

@@ -507,13 +507,45 @@ export type TokenValue =
   | { type: "number"; data: number }
   | { type: "fontFamily"; data: string };
 
+/// How a region image fills its box (`rekindle_types::dto::skin::RegionFit`).
+export type RegionFit =
+  | { type: "stretch" }
+  | { type: "tile" }
+  | { type: "nineSlice"; data: { top: number; right: number; bottom: number; left: number } };
+
+/// A skin's licence (`SkinLicense`): an SPDX expression or its full text.
+export type SkinLicense = { spdx: string } | { text: string };
+
+/// One imported region (`SkinDraftRegion`): an image the Host reads and
+/// the validator checks.
+export interface SkinDraftRegion {
+  path: string;
+  fit: RegionFit;
+  textBacking: string | null;
+}
+
+/// A registry region an image may be imported for (`SkinRegionSlot`).
+export interface SkinRegionSlot {
+  id: string;
+  carriesText: boolean;
+}
+
 /// A skin being edited (`rekindle_types::dto::skin_draft::SkinDraft`, plan
-/// E7.7.5): one variant's tokens by registry id.
+/// E7.7.5): one variant's tokens by registry id, its author, licence and
+/// the credits it carries from its source, and its imported regions.
 export interface SkinDraft {
   name: string;
+  description: string;
+  author: string;
+  /// An SPDX expression or the licence's full text (the Host reads which).
+  license: string;
+  credits: SkinCredits;
   base: "light" | "dark";
   contrast: "standard" | "high";
   tokens: Record<string, TokenValue>;
+  /// The package it started from (`builtin:<id>` or `pkg:<hash>`).
+  from: string | null;
+  regions: Record<string, SkinDraftRegion>;
 }
 
 /// One themeable registry key, resolved (`SkinDraftToken`).
@@ -550,4 +582,8 @@ export interface SkinDraftReport {
   failures: string[];
   tokensCss: string;
   exportable: boolean;
+  /// The licence and credits the export carries, as the Host reads them.
+  license: SkinLicense;
+  credits: SkinCredits;
+  regionSlots: SkinRegionSlot[];
 }

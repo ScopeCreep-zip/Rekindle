@@ -189,6 +189,8 @@ impl IpcRequest {
             | Self::SkinValidateDraft { .. }
             | Self::SkinDraftStart { .. }
             | Self::SkinExportDraft { .. }
+            | Self::SkinDraftCheck { .. }
+            | Self::SkinExportSchema { .. }
             | Self::AuditVerify
             | Self::AuditExport { .. }
             | Self::LinkOpen { .. }

@@ -1,5 +1,7 @@
 import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
+import SkinEditorMeta from "./SkinEditorMeta";
+import SkinRegionImport from "./SkinRegionImport";
 import type {
   SkinDraft,
   SkinDraftReport,
@@ -30,20 +32,24 @@ function message(e: unknown): string {
 const DRAFT_STYLE = "skin-draft-tokens";
 
 /**
- * The skin editor (plan E7.7.5, Telegram's model), a Settings sub-panel:
- * searchable registry keys with a colour picker, live apply to this
- * window only, and beside every declared pair the Host's WCAG ratio and
+ * The skin editor (plan E7.7.5, Telegram's model), its own window opened
+ * from Settings → Appearance: the skin's name, description, author,
+ * licence and the credits it carries from its source; searchable registry
+ * keys with a colour picker, live apply to this window only (the editor
+ * window is the editing window: no draft crosses to another window, ADR
+ * 0013); region import; and beside every declared pair the Host's WCAG ratio and
  * pass/fail (APCA advisory) with its suggested passing colour, applied
  * only by the author's click. Every check is the Host's
  * (`validate_skin_draft`); export is enabled only when the Host's report
  * says every check passes, and the Host's validator gates it again.
  */
-const SkinEditor: Component<{ onClose: () => void }> = (props) => {
+const SkinEditor: Component = () => {
   const [draft, setDraft] = createSignal<SkinDraft | null>(null);
   const [report, setReport] = createSignal<SkinDraftReport | null>(null);
   const [query, setQuery] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [exported, setExported] = createSignal<string | null>(null);
+  const [schemaSaved, setSchemaSaved] = createSignal(false);
   let sequence = 0;
 
   const style = document.createElement("style");
@@ -59,7 +65,9 @@ const SkinEditor: Component<{ onClose: () => void }> = (props) => {
       setReport(r);
       setError(null);
       style.textContent = r.tokensCss;
-      if (!style.isConnected) document.head.append(style);
+      // Last in <head> on every report, so it wins over the device skin's
+      // `<link>` (the same `@layer skin`) however late `useSkin` adds it.
+      document.head.append(style);
     } catch (e) {
       if (mine === sequence) setError(message(e));
     }
@@ -76,6 +84,14 @@ const SkinEditor: Component<{ onClose: () => void }> = (props) => {
   function set(token: string, value: TokenValue): void {
     const d = draft();
     if (d) void check({ ...d, tokens: { ...d.tokens, [token]: value } });
+  }
+
+  async function exportSchema(): Promise<void> {
+    try {
+      setSchemaSaved(await commands.exportSkinSchema());
+    } catch (e) {
+      setError(message(e));
+    }
   }
 
   async function exportDraft(): Promise<void> {
@@ -134,15 +150,6 @@ const SkinEditor: Component<{ onClose: () => void }> = (props) => {
   return (
     <div class="skin-editor" aria-label="Skin editor" role="region">
       <div class="skin-editor-bar">
-        <input
-          class="form-input skin-editor-name"
-          aria-label="Skin name"
-          value={draft()?.name ?? ""}
-          onChange={(e) => {
-            const d = draft();
-            if (d) void check({ ...d, name: e.currentTarget.value });
-          }}
-        />
         <button class="form-btn-secondary" onClick={() => void startFromCurrent()}>
           Start from the current skin
         </button>
@@ -153,8 +160,8 @@ const SkinEditor: Component<{ onClose: () => void }> = (props) => {
         >
           Export…
         </button>
-        <button class="form-btn-secondary" onClick={() => props.onClose()}>
-          Close the editor
+        <button class="form-btn-secondary" onClick={() => void exportSchema()}>
+          Export JSON Schema…
         </button>
       </div>
       <div class="settings-hint skin-editor-status" role="status">
@@ -166,9 +173,19 @@ const SkinEditor: Component<{ onClose: () => void }> = (props) => {
           }
         </Show>
         <Show when={exported()}>{(a) => ` Exported ${a().slice(0, 12)}…`}</Show>
+        <Show when={schemaSaved()}>{" JSON Schema saved."}</Show>
       </div>
       <Show when={error()}>
         {(m) => <div class="settings-hint skin-error" role="alert">{m()}</div>}
+      </Show>
+      <Show when={draft() && report()}>
+        <SkinEditorMeta draft={draft()!} report={report()!} onChange={(d) => void check(d)} />
+        <SkinRegionImport
+          draft={draft()!}
+          report={report()!}
+          onImported={(d) => void check(d)}
+          onError={(m) => setError(m)}
+        />
       </Show>
       <input
         class="form-input skin-editor-search"

@@ -5,7 +5,7 @@ import type {
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
   AuditEntryView, AuditVerified, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
-  SkinApplied, SkinDraft, SkinDraftReport, SkinEntry, SkinLibrary,
+  RegionFit, SkinApplied, SkinDraft, SkinDraftReport, SkinEntry, SkinLibrary,
 } from "./dto";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
@@ -53,6 +53,12 @@ export const systemCommands = {
   skinDraftStart: (id: string | null = null) => hostInvoke<SkinDraft>("skin_draft_start", { id }),
   // The shell asks where to save; `null` when the user cancelled.
   exportSkinDraft: (draft: SkinDraft) => hostInvoke<string | null>("export_skin_draft", { draft }),
+  // Region import: the shell asks for the image, the Host validates the
+  // draft with it; the draft with the region, or `null` if cancelled.
+  importSkinRegion: (draft: SkinDraft, region: string, fit: RegionFit, textBacking: string | null) =>
+    hostInvoke<SkinDraft | null>("import_skin_region", { draft, region, fit, textBacking }),
+  // The token file's JSON Schema for DTCG tools; `false` if cancelled.
+  exportSkinSchema: () => hostInvoke<boolean>("export_skin_schema"),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),
@@ -84,6 +90,8 @@ export const systemCommands = {
     invoke<void>("open_chat_window", { target: { group: groupId } }),
   openSettingsWindow: (tab?: SettingsTab) =>
     invoke<void>("open_settings_window", { tab: tab ?? null }),
+  /// The skin editor, a Settings sub-window (plan E7.7.5).
+  openSkinEditorWindow: () => invoke<void>("open_skin_editor_window"),
   /// `communityId` absent opens the community browser.
   openCommunityWindow: (communityId?: string) =>
     invoke<void>("open_community_window", { communityId: communityId ?? null }),

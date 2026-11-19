@@ -88,33 +88,60 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
         IpcRequest::SkinSelect { id } | IpcRequest::SkinSetLogin { id } => parse(id)
             .map(drop)
             .ok_or_else(|| refuse("expected builtin:<id> or pkg:<64 hex>")),
-        IpcRequest::SkinValidateDraft { draft } => draft_bounds(draft),
+        IpcRequest::SkinValidateDraft { draft } | IpcRequest::SkinDraftCheck { draft } => {
+            draft_bounds(draft)
+        }
         IpcRequest::SkinExportDraft { draft, path } => {
             draft_bounds(draft)?;
-            if path.is_empty() || !std::path::Path::new(path).is_absolute() {
-                return Err(refuse("expected an absolute export path"));
-            }
-            Ok(())
+            absolute(path, "export path")
         }
+        IpcRequest::SkinExportSchema { path } => absolute(path, "export path"),
         other => unreachable!("{} is not a skin request", other.name()),
     }
 }
 
-/// A draft within a token file's bounds (`rekindle_skin::tokens`): the
-/// Host's report names every other rule.
-fn draft_bounds(draft: &rekindle_types::dto::skin_draft::SkinDraft) -> Result<(), IpcResponse> {
-    let max = rekindle_skin::tokens::MAX_TOKENS;
-    if draft.tokens.len() as u64 > max || draft.name.len() > MAX_DRAFT_NAME_BYTES {
-        return Err(IpcResponse::error(
-            400,
-            format!("invalid skin draft: at most {max} tokens and a name of {MAX_DRAFT_NAME_BYTES} bytes"),
-        ));
+fn absolute(path: &str, what: &str) -> Result<(), IpcResponse> {
+    if path.is_empty() || !std::path::Path::new(path).is_absolute() {
+        return Err(refuse(&format!("expected an absolute {what}")));
     }
     Ok(())
 }
 
-/// A draft name's bytes: the manifest's 64 scalars at 4 bytes each.
-const MAX_DRAFT_NAME_BYTES: usize = 256;
+/// A draft within a package's bounds (`rekindle_skin::tokens`, the
+/// registry's regions, the manifest's licence text): the Host's report and
+/// the validator name every other rule. Its source is a skin id, and each
+/// imported region is a registry region read from an absolute path.
+fn draft_bounds(draft: &rekindle_types::dto::skin_draft::SkinDraft) -> Result<(), IpcResponse> {
+    let max = rekindle_skin::tokens::MAX_TOKENS;
+    let texts = [&draft.name, &draft.author, &draft.description];
+    if draft.tokens.len() as u64 > max
+        || texts.iter().any(|t| t.len() > MAX_DRAFT_TEXT_BYTES)
+        || draft.license.len() > MAX_LICENSE_BYTES
+    {
+        return Err(IpcResponse::error(
+            400,
+            format!(
+                "invalid skin draft: at most {max} tokens, {MAX_DRAFT_TEXT_BYTES}-byte texts and a {MAX_LICENSE_BYTES}-byte licence"
+            ),
+        ));
+    }
+    if let Some(from) = &draft.from {
+        parse(from).ok_or_else(|| refuse("expected builtin:<id> or pkg:<64 hex>"))?;
+    }
+    for (id, region) in &draft.regions {
+        if rekindle_skin::regions::slot_of(id).is_none() {
+            return Err(refuse("expected a registry region"));
+        }
+        absolute(&region.path, "region image path")?;
+    }
+    Ok(())
+}
+
+/// A draft text's bytes: the manifest's description, 280 scalars at 4
+/// bytes each (the name and author are 64).
+const MAX_DRAFT_TEXT_BYTES: usize = 1120;
+/// A licence's full text: the manifest's 64 Ki scalars at 4 bytes each.
+const MAX_LICENSE_BYTES: usize = 256 * 1024;
 
 #[cfg(test)]
 mod tests {

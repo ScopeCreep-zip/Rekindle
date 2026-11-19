@@ -159,23 +159,21 @@ export const WINDOWS: WindowCase[] = [
     spacingWithData: [".skin-list"],
   },
   {
-    // Plan E7.7.5: the skin editor open in Settings → Appearance, a
-    // failing pair with its suggestion and a refusal at its longest.
-    name: "settings-skin-editor",
-    label: "settings",
-    path: "/settings?tab=appearance",
-    def: { width: 500, height: 550 },
-    min: { width: 420, height: 450 },
+    // Plan E7.7.5: the skin editor's own window (a Settings sub-window,
+    // `windows::open_skin_editor`'s sizes): the credits carried from the
+    // source, region import, a failing pair with its suggestion and a
+    // refusal at its longest.
+    name: "skin-editor",
+    label: "skin-editor",
+    path: "/skin-editor",
+    def: { width: 640, height: 620 },
+    min: { width: 480, height: 480 },
     ready: async (page) => {
       await frame(page);
-      await page.locator(".skin-row").first().waitFor();
-      // By keyboard, so focus indicators stay keyboard-modality afterwards.
-      await page.getByRole("button", { name: "Edit a skin…" }).focus();
-      await page.keyboard.press("Enter");
       await page.locator(".skin-pair").first().waitFor();
     },
-    spacing: [".xfire-titlebar", ".form-tabs"],
-    spacingWithData: [".skin-editor", ".skin-pairs"],
+    spacing: [".xfire-titlebar", ".skin-editor-bar"],
+    spacingWithData: [".skin-editor-meta", ".skin-region-import", ".skin-pairs"],
   },
 ];
 

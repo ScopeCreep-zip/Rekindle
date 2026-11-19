@@ -277,7 +277,10 @@ fn only_media_windows_capture() {
     for kind in WindowKind::ALL {
         let expected = !matches!(
             kind,
-            WindowKind::Login | WindowKind::Profile | WindowKind::BuddyList
+            WindowKind::Login
+                | WindowKind::Profile
+                | WindowKind::BuddyList
+                | WindowKind::SkinEditor
         );
         assert_eq!(kind.captures_media(), expected, "{kind:?}");
     }
@@ -306,6 +309,10 @@ fn owned_frontend_code(kind: WindowKind) -> (&'static str, Option<&'static str>)
         ),
         WindowKind::Call => ("src/windows/CallWindow.tsx", None),
         WindowKind::Profile => ("src/windows/ProfileWindow.tsx", None),
+        WindowKind::SkinEditor => (
+            "src/windows/SkinEditorWindow.tsx",
+            Some("src/windows/skin_editor"),
+        ),
     }
 }
 
@@ -587,5 +594,29 @@ fn prop_variants_still_call_commands() {
             reach.scan_calls(file, &src, &wrappers);
         }
         assert!(!reach.commands.is_empty(), "{dir} calls no command");
+    }
+}
+
+/// The skin editor's draft commands (plan E7.7.5) are granted to its own
+/// window alone, so the ACL refuses them from every other window (the
+/// Settings window that opens it included).
+#[test]
+fn only_the_skin_editor_holds_the_draft_commands() {
+    let editor = BTreeSet::from([WindowKind::SkinEditor.pattern().to_owned()]);
+    for cmd in [
+        "validate_skin_draft",
+        "skin_draft_start",
+        "export_skin_draft",
+        "import_skin_region",
+        "export_skin_schema",
+    ] {
+        let perm = allow_permission(cmd);
+        let windows: BTreeSet<String> = shipped()
+            .iter()
+            .chain(dev().iter())
+            .filter(|c| c.permissions.contains(&perm))
+            .flat_map(|c| c.windows.iter().cloned())
+            .collect();
+        assert_eq!(windows, editor, "`{cmd}` is granted beyond the editor");
     }
 }

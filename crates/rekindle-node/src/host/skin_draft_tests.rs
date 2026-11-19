@@ -9,8 +9,10 @@ use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
 use rekindle_skin::import::walk::color;
 use rekindle_skin::{builtin, draft, validate};
-use rekindle_types::dto::skin::{SkinBase, SkinContrast};
-use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftReport};
+use rekindle_types::dto::skin::{
+    Insets, OriginalLicence, RegionFit, SkinBase, SkinContrast, SkinCredits,
+};
+use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftRegion, SkinDraftReport};
 use rekindle_types::dto::skin_library::SkinEntry;
 
 use super::skin_requests::{data, run, stand_in};
@@ -19,9 +21,20 @@ use super::{create_ann, offline_host, status_of};
 fn a_draft(accent_text: [u8; 3]) -> SkinDraft {
     SkinDraft {
         name: "Night".to_owned(),
+        description: String::new(),
+        author: "Ana".to_owned(),
+        license: "MIT".to_owned(),
+        credits: SkinCredits {
+            authors: Vec::new(),
+            contributors: Vec::new(),
+            url: None,
+            licence: OriginalLicence::NoneStated,
+        },
         base: SkinBase::Dark,
         contrast: SkinContrast::Standard,
         tokens: BTreeMap::from([("accent.text".to_owned(), color(accent_text))]),
+        from: None,
+        regions: BTreeMap::new(),
     }
 }
 
@@ -44,7 +57,12 @@ async fn a_draft_is_reported_without_a_review_and_a_failing_pair_blocks_export()
     let bad = report.pairs.iter().find(|p| !p.pass).unwrap();
     assert!(bad.suggestion.is_some());
     // The helper is the gate: it refuses the package, naming the ratio.
-    let refusal = validate::run(&draft::package(&failing).unwrap().bytes).unwrap_err();
+    let refusal = validate::run(
+        &draft::package(&failing, &draft::Assets::default())
+            .unwrap()
+            .bytes,
+    )
+    .unwrap_err();
     host.ctx
         .skin_helper
         .set(stand_in(&dir, &Err(refusal.clone())))
@@ -79,7 +97,12 @@ async fn a_draft_starts_from_the_shown_skin_and_exports_for_a_byte_identical_imp
         host.call(Caller::shell(), IpcRequest::SkinDraftStart { id: None })
             .await,
     );
-    assert_eq!(start, draft::from_package(&shown.bytes).unwrap());
+    let from = start.from.clone().expect("the shown skin's id");
+    assert_eq!(start, draft::from_package(&from, &shown.bytes).unwrap());
+    assert!(
+        matches!(start.credits.licence, OriginalLicence::Text(_)),
+        "the licence it was made under carries forward"
+    );
     // An export writes the helper's canonical bytes to the chosen file.
     let path = dir.path().join("start.rkskin");
     let export = IpcRequest::SkinExportDraft {
@@ -117,4 +140,53 @@ async fn a_draft_past_its_bounds_or_a_relative_path_is_refused() {
         )
         .await;
     assert_eq!(status_of(&answer), Some(400), "{answer:?}");
+}
+
+/// Region import goes through the Host: a relative image path is refused
+/// before the gate, an unreadable one names itself, and the JSON Schema
+/// export writes the token file's schema.
+#[tokio::test]
+async fn a_region_import_reads_its_image_in_the_host_and_the_schema_exports() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    let with = |path: String| {
+        let mut d = a_draft([0x34, 0x91, 0xd8]);
+        d.regions.insert(
+            "scrollbar.track".to_owned(),
+            SkinDraftRegion {
+                path,
+                fit: RegionFit::NineSlice(Insets {
+                    top: 2,
+                    right: 2,
+                    bottom: 2,
+                    left: 2,
+                }),
+                text_backing: None,
+            },
+        );
+        IpcRequest::SkinDraftCheck { draft: d }
+    };
+    let answer = host
+        .call(Caller::shell(), with("track.png".to_owned()))
+        .await;
+    assert_eq!(status_of(&answer), Some(400), "{answer:?}");
+    let missing = dir.path().join("missing.png").display().to_string();
+    match host.call(Caller::shell(), with(missing)).await {
+        IpcResponse::Error { message, .. } => {
+            assert!(message.contains("skin region unreadable"), "{message}");
+        }
+        other => panic!("expected the read failure, got {other:?}"),
+    }
+    let path = dir.path().join("skin.schema.json");
+    let schema = IpcRequest::SkinExportSchema {
+        path: path.display().to_string(),
+    };
+    let (answer, review) = run(&host, schema).await;
+    assert!(review.is_none(), "the save dialog is its confirmation");
+    let () = data(answer);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        rekindle_skin::generate::json_schema()
+    );
 }

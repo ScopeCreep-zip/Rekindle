@@ -63,6 +63,27 @@ pub async fn save_path(
         .transpose()
 }
 
+/// Ask for a file the Host will read (the skin editor's region image),
+/// titled `title` and filtered to `extensions`: the picked path, or `None`
+/// if the user cancelled. The Host's validator checks what it holds.
+pub async fn open_path(
+    window: &tauri::WebviewWindow,
+    title: &str,
+    filter: &str,
+    extensions: &[&str],
+) -> Result<Option<String>, CommandError> {
+    let builder = window
+        .dialog()
+        .file()
+        .set_parent(window)
+        .set_title(title)
+        .add_filter(filter, extensions);
+    dialog_path(|done| builder.pick_file(done))
+        .await?
+        .map(path_string)
+        .transpose()
+}
+
 /// The Host's record of an attachment, or a 404.
 async fn record(
     state: &SharedState,

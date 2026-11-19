@@ -8,7 +8,8 @@
     "community-*",
     "settings",
     "profile-*",
-    "call-*"
+    "call-*",
+    "skin-editor"
   ],
   "permissions": [
     "allow-subscribe-events",

@@ -1,18 +1,34 @@
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::{SkinBase, SkinContrast, SkinRule};
-use rekindle_types::dto::skin_draft::SkinDraft;
+use rekindle_types::dto::skin::{Insets, RegionFit, SkinBase, SkinContrast, SkinRule};
+use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftRegion};
 
 use super::*;
+use crate::import::pidgin::tests::png;
 use crate::validate;
 
 fn draft(tokens: BTreeMap<String, TokenValue>) -> SkinDraft {
     SkinDraft {
         name: "My Skin".to_owned(),
+        description: String::new(),
+        author: "Ana".to_owned(),
+        license: "CC-BY-4.0".to_owned(),
+        credits: SkinCredits {
+            authors: Vec::new(),
+            contributors: Vec::new(),
+            url: None,
+            licence: OriginalLicence::NoneStated,
+        },
         base: SkinBase::Dark,
         contrast: SkinContrast::Standard,
         tokens,
+        from: None,
+        regions: BTreeMap::new(),
     }
+}
+
+fn no_assets() -> Assets {
+    Assets::default()
 }
 
 /// The accent fill's colour as text: 4.42:1 on `#0a0a0a` and worse on
@@ -70,7 +86,7 @@ fn a_failing_pair_blocks_export_and_its_suggestion_fixes_it() {
 
 #[test]
 fn a_failing_draft_is_refused_by_the_validator_with_the_named_ratio() {
-    let built = package(&failing()).unwrap();
+    let built = package(&failing(), &no_assets()).unwrap();
     let err = validate::run(&built.bytes).unwrap_err();
     assert!(
         matches!(&err.rule, SkinRule::Contrast { token, measured_x100, .. }
@@ -86,7 +102,7 @@ fn an_exported_draft_validates_reimports_byte_identically_and_starts_a_draft() {
         color([0x12, 0x14, 0x18]),
     )]));
     assert!(report(&d).unwrap().exportable);
-    let built = package(&d).unwrap();
+    let built = package(&d, &no_assets()).unwrap();
     let canonical = validate::run(&built.bytes).unwrap();
     assert_eq!(
         canonical.bytes, built.bytes,
@@ -96,10 +112,12 @@ fn an_exported_draft_validates_reimports_byte_identically_and_starts_a_draft() {
         validate::run(&canonical.bytes).unwrap().bytes,
         canonical.bytes
     );
-    let back = from_package(&canonical.bytes).unwrap();
-    assert_eq!(back, d);
+    let back = from_package("pkg:x", &canonical.bytes).unwrap();
+    assert_eq!(back.tokens, d.tokens);
+    assert_eq!(back.license, "CC-BY-4.0");
+    assert_eq!(back.credits.authors, ["Ana"]);
     d.name = "  ".to_owned();
-    assert_eq!(manifest_of(&d).id, "draft");
+    assert_eq!(slug(&d.name), "draft");
     assert_eq!(slug("Neon -- Night 2"), "neon-night-2");
 }
 
@@ -109,4 +127,93 @@ fn an_unknown_or_fixed_token_is_refused() {
     assert!(report(&unknown).is_err());
     let fixed = draft(BTreeMap::from([("accent.fg".to_owned(), color([1, 2, 3]))]));
     assert!(report(&fixed).is_err());
+}
+
+/// Owner 2026-11-18: the export states the author's licence and credits
+/// the author, then the skin it came from (its authors and the licence it
+/// was made under), and keeps the source's regions and their images.
+#[test]
+fn a_derived_export_credits_its_source_and_keeps_its_regions() {
+    let (_, pack) = crate::builtin::find("builtin:symbiosis").unwrap();
+    let source = crate::manifest::parse(&package::read(pack.bytes).unwrap()).unwrap();
+    let mut d = from_package("builtin:symbiosis", pack.bytes).unwrap();
+    let original = source.credits.clone().unwrap();
+    assert_eq!(d.credits.authors, original.authors);
+    assert!(matches!(d.credits.licence, OriginalLicence::Text(_)));
+    d.author = "Bea".to_owned();
+    d.license = "MIT".to_owned();
+    let assets = Assets {
+        source: Some(pack.bytes.to_vec()),
+        regions: BTreeMap::new(),
+    };
+    let built = package(&d, &assets).unwrap();
+    let canonical = validate::run(&built.bytes).unwrap();
+    assert_eq!(
+        validate::run(&canonical.bytes).unwrap().bytes,
+        canonical.bytes
+    );
+    let m = crate::manifest::parse(&package::read(&canonical.bytes).unwrap()).unwrap();
+    assert_eq!(m.license, SkinLicense::Spdx("MIT".to_owned()));
+    let credits = m.credits.unwrap();
+    assert_eq!(credits.authors[0], "Bea");
+    assert_eq!(&credits.authors[1..], &original.authors[..]);
+    assert_eq!(credits.licence, d.credits.licence);
+    assert_eq!(
+        m.regions.keys().collect::<Vec<_>>(),
+        source.regions.keys().collect::<Vec<_>>()
+    );
+    assert!(!m.regions.is_empty(), "symbiosis paints regions");
+    // A licence that is not an SPDX expression is stated as its text.
+    assert!(matches!(
+        license_of("Free for non-commercial use."),
+        SkinLicense::Text(_)
+    ));
+}
+
+fn with_region(insets: Insets) -> (SkinDraft, Assets) {
+    let mut d = draft(BTreeMap::new());
+    d.regions.insert(
+        "scrollbar.track".to_owned(),
+        SkinDraftRegion {
+            path: "/tmp/track.png".to_owned(),
+            fit: RegionFit::NineSlice(insets),
+            text_backing: None,
+        },
+    );
+    let assets = Assets {
+        source: None,
+        regions: BTreeMap::from([("scrollbar.track".to_owned(), png(16))]),
+    };
+    (d, assets)
+}
+
+#[test]
+fn an_imported_region_goes_through_the_validator() {
+    let (d, assets) = with_region(Insets {
+        top: 4,
+        right: 4,
+        bottom: 4,
+        left: 4,
+    });
+    let canonical = validate::run(&package(&d, &assets).unwrap().bytes).unwrap();
+    let m = crate::manifest::parse(&package::read(&canonical.bytes).unwrap()).unwrap();
+    assert_eq!(
+        m.regions["scrollbar.track"].image,
+        "assets/regions/scrollbar.track.png"
+    );
+    let (bad, assets) = with_region(Insets {
+        top: 9,
+        right: 4,
+        bottom: 9,
+        left: 4,
+    });
+    let err = validate::run(&package(&bad, &assets).unwrap().bytes).unwrap_err();
+    assert!(
+        matches!(err.rule, SkinRule::NineSliceInsets { .. }),
+        "{err:?}"
+    );
+    assert!(
+        package(&bad, &no_assets()).is_err(),
+        "a region without its bytes"
+    );
 }

@@ -20,10 +20,12 @@ pub enum WindowKind {
     Community,
     Call,
     Profile,
+    /// The skin editor (plan E7.7.5), a Settings sub-window.
+    SkinEditor,
 }
 
 impl WindowKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Login,
         Self::BuddyList,
         Self::Settings,
@@ -31,6 +33,7 @@ impl WindowKind {
         Self::Community,
         Self::Call,
         Self::Profile,
+        Self::SkinEditor,
     ];
 
     /// The label (singletons) or label pattern (per-entity windows) that
@@ -45,6 +48,7 @@ impl WindowKind {
             Self::Community => "community-*",
             Self::Call => "call-*",
             Self::Profile => "profile-*",
+            Self::SkinEditor => SKIN_EDITOR,
         }
     }
 
@@ -55,14 +59,14 @@ impl WindowKind {
     /// - voice messages (chat, community message input);
     /// - device settings and the pairing QR scanner (settings).
     ///
-    /// Login, profile and the buddy list never capture (group-call audio
+    /// Login, profile, the skin editor and the buddy list never capture (group-call audio
     /// runs on the native pipeline), so the media-capture grant is withheld
     /// from them.
     #[must_use]
     pub const fn captures_media(self) -> bool {
         match self {
             Self::Settings | Self::Chat | Self::Community | Self::Call => true,
-            Self::Login | Self::BuddyList | Self::Profile => false,
+            Self::Login | Self::BuddyList | Self::Profile | Self::SkinEditor => false,
         }
     }
 }
@@ -83,6 +87,8 @@ impl WindowKind {
 pub const LOGIN: &str = "login";
 pub const BUDDY_LIST: &str = "buddy-list";
 pub const SETTINGS: &str = "settings";
+/// The skin editor: one at a time, opened from Settings → Appearance.
+pub const SKIN_EDITOR: &str = "skin-editor";
 
 /// `chat-` + the first 16 hex digits of the peer's identity key.
 #[must_use]
@@ -225,6 +231,10 @@ mod tests {
             Some(WindowKind::Community)
         );
         assert_eq!(WindowKind::of_label("settingsx"), None);
+        assert_eq!(
+            WindowKind::of_label(SKIN_EDITOR),
+            Some(WindowKind::SkinEditor)
+        );
         assert_eq!(WindowKind::of_label("unknown"), None);
         assert_eq!(peer_labels("not-a-key"), Vec::<String>::new());
         assert_eq!(peer_labels(HEX64).len(), 2);

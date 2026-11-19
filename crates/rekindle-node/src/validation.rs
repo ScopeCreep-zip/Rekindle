@@ -353,7 +353,9 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::SkinKeep { .. }
         | IpcRequest::SkinValidateDraft { .. }
         | IpcRequest::SkinDraftStart { .. }
-        | IpcRequest::SkinExportDraft { .. } => crate::host::skin::check(request),
+        | IpcRequest::SkinExportDraft { .. }
+        | IpcRequest::SkinDraftCheck { .. }
+        | IpcRequest::SkinExportSchema { .. } => crate::host::skin::check(request),
         IpcRequest::GamePresenceSet {
             game_name,
             game_id: _,

@@ -266,6 +266,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::skin::validate_skin_draft,
         commands::skin::skin_draft_start,
         commands::skin::export_skin_draft,
+        commands::skin::import_skin_region,
+        commands::skin::export_skin_schema,
         commands::skin::set_login_skin,
         commands::status::set_status_message,
         // game
@@ -311,6 +313,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // deep links (consent flow)
         commands::window::open_chat_window,
         commands::window::open_settings_window,
+        commands::window::open_skin_editor_window,
         commands::window::open_community_window,
         commands::window::open_profile_window,
         commands::window::open_call_window,

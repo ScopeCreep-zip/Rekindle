@@ -100,6 +100,8 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ),
     ("skin_draft_start", HostCall::Request("SkinDraftStart")),
     ("export_skin_draft", HostCall::Request("SkinExportDraft")),
+    ("import_skin_region", HostCall::Request("SkinDraftCheck")),
+    ("export_skin_schema", HostCall::Request("SkinExportSchema")),
     ("get_game_status", HostCall::Request("PresenceGet")),
     ("open_external_url", HostCall::Request("LinkOpen")),
     // Friends and the 1:1 paths (plan E2.1).
@@ -347,6 +349,7 @@ pub const SHELL_LOCAL: &[&str] = &[
     "open_chat_window",
     "open_community_window",
     "open_settings_window",
+    "open_skin_editor_window",
     "open_profile_window",
     "open_call_window",
     "get_game_name",

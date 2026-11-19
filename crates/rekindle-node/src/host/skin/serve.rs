@@ -114,12 +114,17 @@ async fn package_of(ctx: &DaemonContext, id: &str) -> Answer<Held> {
 
 /// The canonical package of `id`, or of the skin shown now (the
 /// editor's "Start from the current skin").
-pub(super) async fn package_bytes(ctx: &DaemonContext, id: Option<String>) -> Answer<Vec<u8>> {
+/// Answers the id with the bytes.
+pub(super) async fn package_bytes(
+    ctx: &DaemonContext,
+    id: Option<String>,
+) -> Answer<(String, Vec<u8>)> {
     let id = match id {
         Some(id) => id,
         None => resolved(ctx).await?,
     };
-    Ok(package_of(ctx, &id).await?.bytes)
+    let bytes = package_of(ctx, &id).await?.bytes;
+    Ok((id, bytes))
 }
 
 /// `SkinGet`: what a window applies for `id`, or for the resolution.

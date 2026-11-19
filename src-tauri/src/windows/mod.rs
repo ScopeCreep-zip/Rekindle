@@ -69,6 +69,7 @@ const fn size(kind: WindowKind) -> Size {
         WindowKind::Community => ((900.0, 650.0), (750.0, 500.0)),
         WindowKind::Call => ((420.0, 540.0), (360.0, 420.0)),
         WindowKind::Profile => ((380.0, 500.0), (340.0, 420.0)),
+        WindowKind::SkinEditor => ((640.0, 620.0), (480.0, 480.0)),
     };
     Size { inner, min }
 }
@@ -302,6 +303,27 @@ pub fn open_call_window(app: &AppHandle, call: &str) -> Result<(), String> {
     let builder =
         base_builder(app, WindowKind::Call, &label, format!("/call?id={call}")).title("Call");
     finish(builder, WindowKind::Call).map(drop)
+}
+
+/// Open (or raise) the skin editor (plan E7.7.5: a Settings sub-window,
+/// one at a time). Its draft's live style applies to its own document
+/// only; the commands that read and export a draft are granted to it alone
+/// (`capabilities/app-skin-editor.json`).
+pub fn open_skin_editor(app: &AppHandle) -> Result<(), String> {
+    if raise(app, labels::SKIN_EDITOR) {
+        return Ok(());
+    }
+    let mut builder = base_builder(
+        app,
+        WindowKind::SkinEditor,
+        labels::SKIN_EDITOR,
+        "/skin-editor".to_owned(),
+    )
+    .title("Rekindle - Skin Editor");
+    if let Some(settings) = app.get_webview_window(labels::SETTINGS) {
+        builder = builder.parent(&settings).map_err(|e| e.to_string())?;
+    }
+    finish(builder, WindowKind::SkinEditor).map(drop)
 }
 
 /// Open a profile window for a friend or community member.

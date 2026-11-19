@@ -3,7 +3,8 @@
 //! choice, trial and login skin. Host calls, one request each.
 
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftReport};
+use rekindle_types::dto::skin::RegionFit;
+use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftRegion, SkinDraftReport};
 use rekindle_types::dto::skin_library::{SkinApplied, SkinEntry, SkinLibrary};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -114,6 +115,77 @@ pub async fn export_skin_draft(
         host_call::call(&state, IpcRequest::SkinExportDraft { draft, path }).await?;
     Ok(Done {
         value: Some(done.value),
+        undo: done.undo,
+    })
+}
+
+/// Region import (plan E7.7.5): ask for a PNG or GIF, then have the Host
+/// run the draft with it through the validator. The draft with the region,
+/// or `None` if the user cancelled; a bad image or nine-slice is refused
+/// by name and the draft is unchanged.
+#[tauri::command]
+pub async fn import_skin_region(
+    draft: SkinDraft,
+    region: String,
+    fit: RegionFit,
+    text_backing: Option<String>,
+    window: tauri::WebviewWindow,
+    state: State<'_, SharedState>,
+) -> Result<Done<Option<SkinDraft>>, CommandError> {
+    let picked = crate::services::community_files_runtime::open_path(
+        &window,
+        "Import a region image",
+        "PNG or GIF",
+        &["png", "gif"],
+    )
+    .await?;
+    let Some(path) = picked else {
+        return Ok(Done {
+            value: None,
+            undo: None,
+        });
+    };
+    let mut next = draft;
+    next.regions.insert(
+        region,
+        SkinDraftRegion {
+            path,
+            fit,
+            text_backing,
+        },
+    );
+    let checked: Done<String> = host_call::call(
+        &state,
+        IpcRequest::SkinDraftCheck {
+            draft: next.clone(),
+        },
+    )
+    .await?;
+    Ok(Done {
+        value: Some(next),
+        undo: checked.undo,
+    })
+}
+
+/// Ask where to save the token file's JSON Schema (for DTCG tools), then
+/// have the Host write it: `true` once written, `false` if cancelled.
+#[tauri::command]
+pub async fn export_skin_schema(
+    window: tauri::WebviewWindow,
+    state: State<'_, SharedState>,
+) -> Result<Done<bool>, CommandError> {
+    let Some(path) =
+        crate::services::community_files_runtime::save_path(&window, "rekindle-skin.schema.json")
+            .await?
+    else {
+        return Ok(Done {
+            value: false,
+            undo: None,
+        });
+    };
+    let done: Done<()> = host_call::call(&state, IpcRequest::SkinExportSchema { path }).await?;
+    Ok(Done {
+        value: true,
         undo: done.undo,
     })
 }

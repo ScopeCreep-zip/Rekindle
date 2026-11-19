@@ -1,8 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
 
-// Plan E7.7.5: the skin editor renders the Host's report and sends the
-// author's edits. This mock plays the Host: `validate_skin_draft` fails
+// Plan E7.7.5: the skin editor, a Settings sub-window, renders the Host's
+// report and sends the author's edits. This mock plays the Host: `validate_skin_draft` fails
 // the pair `accent.text` on `bg.dark` while the draft sets the accent fill's
 // colour as text (4.42:1, plan E7.7.0) and suggests `#3491d8`, the
 // Oklab-walk value E7.7.0 recorded; any other draft passes.
@@ -32,6 +32,9 @@ const HANDLER = `
           pass: true, apcaLcX10: -950, suggestion: null },
       ],
       failures: [],
+      license: /^[A-Za-z0-9.+-]+$/.test(d.license) ? { spdx: d.license } : { text: d.license },
+      credits: { ...d.credits, authors: [d.author, ...d.credits.authors.filter((a) => a !== d.author)] },
+      regionSlots: [{ id: "scrollbar.track", carriesText: false }, { id: "statusbar", carriesText: true }],
       tokensCss: "@layer skin {\\n  :root {\\n    --color-xfire-accent-text: " + value + ";\\n  }\\n}\\n",
       exportable: !fails,
     };
@@ -44,7 +47,22 @@ const HANDLER = `
       return { id: "builtin:symbiosis", base: "dark", regions: [], palette: [],
         tokensHref: "skin://localhost/${"a".repeat(64)}/tokens.css" };
     case "skin_draft_start":
-      return { name: "Symbiosis", base: "dark", contrast: "standard", tokens: {} };
+      return { name: "Symbiosis", description: "", author: "", license: "CC-BY-4.0",
+        credits: { authors: ["Orig Author"], contributors: [], url: null, licence: { text: "CC-BY-4.0" } },
+        base: "dark", contrast: "standard", tokens: {}, from: "builtin:symbiosis", regions: {} };
+    case "import_skin_region": {
+      // The Host's validator on a 16 px image: insets that meet are refused.
+      const i = args.fit.data;
+      if (args.fit.type === "nineSlice" && (i.top + i.bottom >= 16 || i.left + i.right >= 16)) {
+        throw { type: "failed", data: { message: "skin refused: assets/regions/" + args.region
+          + ".png: nine-slice insets " + i.top + " " + i.right + " " + i.bottom + " " + i.left
+          + " do not fit 16x16" } };
+      }
+      return { ...args.draft, regions: { ...args.draft.regions,
+        [args.region]: { path: "/tmp/track.png", fit: args.fit, textBacking: args.textBacking } } };
+    }
+    case "export_skin_schema":
+      return true;
     case "validate_skin_draft":
       return report(args.draft);
     case "export_skin_draft":
@@ -55,9 +73,8 @@ const HANDLER = `
 `;
 
 async function openEditor(page: Page): Promise<void> {
-  await preloadMocks(page, "settings", HANDLER);
-  await page.goto("/settings?tab=appearance");
-  await page.getByRole("button", { name: "Edit a skin…" }).click();
+  await preloadMocks(page, "skin-editor", HANDLER);
+  await page.goto("/skin-editor");
   await expect(page.getByRole("region", { name: "Skin editor" })).toBeVisible();
   await expect(page.locator(".skin-editor-status")).toHaveText("Every check passes.");
 }
@@ -67,6 +84,67 @@ const exportButton = (page: Page) => page.getByRole("button", { name: "Export…
 test.describe("Skin editor", () => {
   test.afterEach(async ({ page }) => {
     await clearMocks(page);
+  });
+
+  test("Settings opens the editor as its own window, never in place", async ({ page }) => {
+    await preloadMocks(page, "settings", HANDLER);
+    await page.goto("/settings?tab=appearance");
+    await page.getByRole("button", { name: "Edit a skin…" }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as any).__ipcCalls.map((c: { cmd: string }) => c.cmd).includes("open_skin_editor_window"),
+        ),
+      )
+      .toBe(true);
+    await expect(page.locator(".skin-editor")).toHaveCount(0);
+    await expect(page.locator("#skin-draft-tokens")).toHaveCount(0);
+    const draftCalls = await page.evaluate(() =>
+      (window as any).__ipcCalls
+        .map((c: { cmd: string }) => c.cmd)
+        .filter((c: string) => c.includes("skin_draft")),
+    );
+    expect(draftCalls).toEqual([]);
+  });
+
+  test("the export carries the author, the licence and the source's credits", async ({ page }) => {
+    await openEditor(page);
+    const credits = page.getByLabel("Credits the export carries");
+    await expect(credits).toContainText("Orig Author");
+    await page.getByLabel("Author").fill("Bea");
+    await page.getByLabel("Author").blur();
+    await page.getByLabel("Licence", { exact: true }).fill("MIT");
+    await page.getByLabel("Licence", { exact: true }).blur();
+    await expect(credits.locator("li").first()).toHaveText("Bea");
+    await expect(credits.locator("li").nth(1)).toHaveText("Orig Author");
+    await expect(page.getByText("Read as an SPDX expression.")).toBeVisible();
+    await exportButton(page).click();
+    await expect(page.locator(".skin-editor-status")).toContainText("Exported bbbbbbbbbbbb");
+    const sent = await page.evaluate(() =>
+      (window as any).__ipcCalls.filter((c: { cmd: string }) => c.cmd === "export_skin_draft").at(-1)
+        .args.draft,
+    );
+    expect(sent.author).toBe("Bea");
+    expect(sent.license).toBe("MIT");
+    expect(sent.credits.authors).toEqual(["Orig Author"]);
+    expect(sent.credits.licence).toEqual({ text: "CC-BY-4.0" });
+    expect(sent.from).toBe("builtin:symbiosis");
+  });
+
+  test("a region import refused for its nine-slice leaves the draft unchanged", async ({ page }) => {
+    await openEditor(page);
+    await page.getByLabel("Region", { exact: true }).selectOption("scrollbar.track");
+    await page.getByLabel("top").fill("9");
+    await page.getByLabel("bottom").fill("9");
+    await page.getByRole("button", { name: "Import image…" }).click();
+    await expect(page.locator(".skin-error")).toContainText("nine-slice insets 9 4 9 4");
+    await expect(page.locator(".skin-regions li")).toHaveCount(0);
+    await page.getByLabel("top").fill("4");
+    await page.getByLabel("bottom").fill("4");
+    await page.getByRole("button", { name: "Import image…" }).click();
+    await expect(page.locator(".skin-regions li")).toHaveText("scrollbar.track: nineSlice");
+    await page.getByRole("button", { name: "Export JSON Schema…" }).click();
+    await expect(page.locator(".skin-editor-status")).toContainText("JSON Schema saved.");
   });
 
   test("a failing pair disables export and names its ratio", async ({ page }) => {
@@ -99,7 +177,7 @@ test.describe("Skin editor", () => {
     await expect(page.locator(".skin-editor-status")).toContainText("Exported bbbbbbbbbbbb");
   });
 
-  test("live apply restyles only this window and goes with the editor", async ({ page }) => {
+  test("live apply restyles the editor window without changing the device skin", async ({ page }) => {
     await openEditor(page);
     await page.getByLabel("accent.text", { exact: true }).fill("#ff8800");
     await expect
@@ -117,7 +195,5 @@ test.describe("Skin editor", () => {
         .filter((c: string) => ["select_skin", "import_skin", "keep_skin"].includes(c)),
     );
     expect(global).toEqual([]);
-    await page.getByRole("button", { name: "Close the editor" }).click();
-    await expect(page.locator("#skin-draft-tokens")).toHaveCount(0);
   });
 });

@@ -432,7 +432,9 @@
     padding: 6px 10px;
   }
 
-  .push-relay-meta {
+  /* A label over its value: push-relay rows, the skin editor's fields. */
+  .push-relay-meta,
+  .skin-editor-field {
     display: flex;
     flex-direction: column;
     gap: 2px;

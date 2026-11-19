@@ -341,6 +341,15 @@ pub enum IpcRequest {
         draft: rekindle_types::dto::skin_draft::SkinDraft,
         path: String,
     },
+    /// Region import: the draft's whole package (its source's assets and
+    /// imported regions) through `rekindle-skin-helper`, refused with the
+    /// rule it breaks; answers the package's address (nothing is stored).
+    SkinDraftCheck {
+        draft: rekindle_types::dto::skin_draft::SkinDraft,
+    },
+    /// The JSON Schema of a skin token file for DTCG tools (Figma plugins,
+    /// Style Dictionary), written to `path`, a file the user chose.
+    SkinExportSchema { path: String },
     /// Set game presence info.
     GamePresenceSet {
         game_name: String,

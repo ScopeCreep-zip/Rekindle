@@ -66,6 +66,12 @@ pub(crate) async fn route(
         IpcRequest::SkinExportDraft { draft, path } => draft::export(ctx, draft, path)
             .await
             .map(|a| IpcResponse::ok(&a)),
+        IpcRequest::SkinDraftCheck { draft } => draft::check(ctx, draft)
+            .await
+            .map(|c| IpcResponse::ok(&c.address())),
+        IpcRequest::SkinExportSchema { path } => draft::export_schema(path)
+            .await
+            .map(|()| IpcResponse::ok(&())),
         other => unreachable!("{} is not a skin request", other.name()),
     };
     answer.unwrap_or_else(|refused| refused)
