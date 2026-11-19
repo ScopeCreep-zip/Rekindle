@@ -132,6 +132,7 @@ mod tests {
                     mek_generation: 0,
                     timestamp: 1000,
                     reply_to: None,
+                    revives: None,
                     lamport_ts: 1,
                     message_id: Some("m1".into()),
                     attachment: None,

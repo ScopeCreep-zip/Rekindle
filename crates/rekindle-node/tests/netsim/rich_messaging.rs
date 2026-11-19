@@ -163,6 +163,46 @@ async fn thread_reply_both_ways() {
         saw_own_reply(&bea_events, &thread, "count me in"),
         "bea's Host publishes her own reply to her frontends"
     );
+
+    // Architecture §4.6: a new message unarchives a manually archived
+    // thread. Ordered causally (rule E1): bea's earlier reply names no
+    // archive, so ann's second archive stands; bea's reply after seeing it
+    // names it and revives the thread on every reader.
+    ask(
+        &community,
+        0,
+        CommunityRequest::Rich(RichRequest::ThreadArchive {
+            community: key.clone(),
+            thread_id: thread.clone(),
+        }),
+    )
+    .await;
+    let archived = eventually(&community.sim, LIMIT, || async { !active_for_bea().await }).await;
+    assert!(archived, "an earlier reply does not revive a later archive");
+    ask(
+        &community,
+        1,
+        CommunityRequest::Rich(RichRequest::ThreadSend {
+            community: key.clone(),
+            thread_id: thread.clone(),
+            body: "reopening".into(),
+        }),
+    )
+    .await;
+    let revived = eventually(&community.sim, LIMIT, || async {
+        community.nodes[0]
+            .call(IpcRequest::Community(CommunityRequest::Rich(
+                RichRequest::ThreadListActive {
+                    community: key.clone(),
+                    channel_id: channel.clone(),
+                },
+            )))
+            .await
+            .is_ok_and(|v| v.to_string().contains(&thread))
+    })
+    .await;
+    assert!(revived, "ann sees bea's reply revive the archived thread");
+    assert!(active_for_bea().await, "bea sees her reply revive it");
 }
 
 fn saw_archive(events: &Events, thread: &str, to: bool) -> bool {

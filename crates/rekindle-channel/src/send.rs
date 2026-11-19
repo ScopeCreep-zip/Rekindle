@@ -97,6 +97,7 @@ pub fn build_channel_message(params: BuildChannelMessageParams) -> ChannelMessag
         mek_generation,
         timestamp: u64::try_from(timestamp_ms).unwrap_or_default(),
         reply_to,
+        revives: None,
         lamport_ts,
         message_id: Some(message_id),
         attachment: None,

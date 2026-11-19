@@ -148,9 +148,13 @@ async fn pending_of<D: ChannelMessagingDeps>(
                 mentioned_pseudonyms,
                 mentioned_roles,
             });
-            if let PostEntry::Attachment { offer, flags } = &post.entry {
-                message.attachment = Some(offer.clone());
-                message.flags |= flags;
+            match &post.entry {
+                PostEntry::Attachment { offer, flags } => {
+                    message.attachment = Some(offer.clone());
+                    message.flags |= flags;
+                }
+                PostEntry::ThreadReply { revives, .. } => message.revives.clone_from(revives),
+                _ => {}
             }
             ChannelRecordEntry::Message(message)
         }

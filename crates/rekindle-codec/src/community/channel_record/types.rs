@@ -23,6 +23,13 @@ pub struct ChannelMessage {
     /// The message id of the message this one replies to, when it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<String>,
+    /// A thread reply's revival of a manually archived thread: the hex op
+    /// hash of the `ThreadArchived` its author saw standing when it replied.
+    /// It revives exactly that archive, never a later one (plan E3.3;
+    /// architecture §4.6 "any new message ... implicitly unarchives it",
+    /// ordered causally since no cross-author clock exists, rule E1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revives: Option<String>,
     /// Lamport logical timestamp for causal ordering.
     #[serde(default)]
     pub lamport_ts: u64,

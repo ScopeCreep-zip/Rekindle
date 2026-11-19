@@ -21,21 +21,17 @@ pub fn default_auto_archive_seconds(thread_type: &str) -> u64 {
     }
 }
 
-/// Architecture §14 — a thread is archived when it was manually
-/// archived at a lamport >= last activity, OR when it has been idle
-/// past its auto-archive window.
+/// Architecture §4.6 — a thread is archived when a manual archive stands
+/// (no `ThreadUnarchived` after it and no reply naming it, see
+/// `ChannelMessage::revives`), OR when it has been idle past its
+/// auto-archive window (a local UI rule, T3).
 #[must_use]
 pub fn is_thread_archived(
-    archived_lamport: Option<u64>,
+    manually_archived: bool,
     last_activity_secs: u64,
     auto_archive_seconds: u64,
     now_secs: u64,
 ) -> bool {
-    // A manual archive is a governance op and stands until the thread's
-    // unarchive op (plan E3.3): replies ride their authors' outboxes,
-    // which share no order with governance ops, so a reply cannot revive
-    // it.
-    let manually_archived = archived_lamport.is_some();
     let auto_archived = last_activity_secs > 0
         && last_activity_secs.saturating_add(auto_archive_seconds) < now_secs;
     manually_archived || auto_archived

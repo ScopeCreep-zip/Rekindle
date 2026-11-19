@@ -101,6 +101,9 @@ pub enum PostEntry {
         parent_channel: String,
         body: String,
         sent_at_ms: u64,
+        /// The thread's standing manual archive (its op hash hex) when we
+        /// replied: our reply revives it.
+        revives: Option<String>,
     },
 }
 

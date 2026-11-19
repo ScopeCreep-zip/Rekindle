@@ -97,22 +97,36 @@ pub(super) fn open_thread_body<D: ChannelMessagingDeps>(
     .and_then(|plaintext| String::from_utf8(plaintext).ok())
 }
 
-/// The newest reply's commit time (seconds) and the reply count of
-/// `thread_id`.
+/// A thread's activity as its replies leave it.
+pub(super) struct ThreadActivity {
+    /// The newest reply's commit time, seconds.
+    pub last_activity: u64,
+    pub message_count: u32,
+    /// A reply names the standing archive passed in: the thread is live.
+    pub revived: bool,
+}
+
+/// The activity of `thread_id`, judging its replies against the standing
+/// manual archive `archived_op` (op hash hex).
 pub(super) async fn thread_activity<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     thread_id: &str,
-) -> (u64, u32) {
+    archived_op: Option<&str>,
+) -> ThreadActivity {
     let replies = thread_replies(deps, community_id, thread_id).await;
     let last_activity = (replies.iter())
         .map(|(item, _)| item.committed_at / 1000)
         .max()
         .unwrap_or(0);
-    (
+    let revived = archived_op.is_some_and(|op| {
+        (replies.iter()).any(|(_, message)| message.revives.as_deref() == Some(op))
+    });
+    ThreadActivity {
         last_activity,
-        u32::try_from(replies.len()).unwrap_or(u32::MAX),
-    )
+        message_count: u32::try_from(replies.len()).unwrap_or(u32::MAX),
+        revived,
+    }
 }
 
 pub(super) fn uuid_simple() -> String {

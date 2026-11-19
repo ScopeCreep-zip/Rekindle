@@ -263,8 +263,11 @@ struct ThreadMessageReceivedPayload @0xea001e000000a000 {
     threadId             @0 :Text;
     messageId            @1 :Text;
     senderPseudonym      @2 :Text;
-    ciphertext           @3 :Data;
-    mekGeneration        @4 :UInt64;
+    # Obsolete (plan E3.3 slice 8d): a reply's body rides its author's
+    # channel outbox (M/4), sealed at its stream position; the notice
+    # carries none. Never written, never read.
+    obsoleteCiphertext   @3 :Data;
+    obsoleteMekGeneration @4 :UInt64;
     timestamp            @5 :UInt64;
     hasReplyToId         @6 :Bool;
     replyToId            @7 :Text;

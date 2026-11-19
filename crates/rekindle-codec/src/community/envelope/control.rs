@@ -152,13 +152,12 @@ pub enum ControlPayload {
     ThreadCreated {
         thread: rekindle_types::thread::ThreadInfo,
     },
-    /// Broadcast: thread message received.
+    /// Broadcast: a thread reply exists (plan E3.3): its body rides the
+    /// author's channel outbox, so the notice carries none.
     ThreadMessageReceived {
         thread_id: String,
         message_id: String,
         sender_pseudonym: String,
-        ciphertext: Vec<u8>,
-        mek_generation: u64,
         timestamp: u64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to_id: Option<String>,

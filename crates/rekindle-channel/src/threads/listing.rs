@@ -46,13 +46,14 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
         dto.forum_tag.clone_from(&thread.forum_tag);
         dto.auto_archive_seconds = u32::try_from(thread.auto_archive_seconds).unwrap_or(u32::MAX);
 
-        let (last_activity, message_count) =
-            thread_activity(deps, community_id, &thread_id_hex).await;
-        dto.last_message_at = last_activity;
-        dto.message_count = message_count;
+        let archived_op = thread.archived.map(|stamp| hex::encode(stamp.hash.0));
+        let activity =
+            thread_activity(deps, community_id, &thread_id_hex, archived_op.as_deref()).await;
+        dto.last_message_at = activity.last_activity;
+        dto.message_count = activity.message_count;
         dto.archived = is_thread_archived(
-            thread.archived.map(|stamp| stamp.lamport),
-            last_activity,
+            archived_op.is_some() && !activity.revived,
+            activity.last_activity,
             thread.auto_archive_seconds,
             now,
         );

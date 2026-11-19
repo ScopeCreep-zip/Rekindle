@@ -55,6 +55,7 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
             parent_channel: thread.parent_channel_id_hex.clone(),
             body: body.to_owned(),
             sent_at_ms,
+            revives: thread.archived_op.clone(),
         },
     };
     deps.queue_post(&post).await?;
@@ -62,8 +63,6 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
         thread_id: thread_id.to_string(),
         message_id: sent.message_id.clone(),
         sender_pseudonym: sent.sender_pseudonym.clone(),
-        ciphertext: Vec::new(),
-        mek_generation: 0,
         timestamp: sent.timestamp,
         reply_to_id: None,
     });

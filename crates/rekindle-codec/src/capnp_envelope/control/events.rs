@@ -74,8 +74,6 @@ pub(super) fn write_thread_message_received(
         thread_id,
         message_id,
         sender_pseudonym,
-        ciphertext,
-        mek_generation,
         timestamp,
         reply_to_id,
     } = payload
@@ -85,8 +83,6 @@ pub(super) fn write_thread_message_received(
     p.set_thread_id(thread_id);
     p.set_message_id(message_id);
     p.set_sender_pseudonym(sender_pseudonym);
-    p.set_ciphertext(ciphertext);
-    p.set_mek_generation(*mek_generation);
     p.set_timestamp(*timestamp);
     p.set_has_reply_to_id(reply_to_id.is_some());
     if let Some(r) = reply_to_id {
@@ -195,8 +191,6 @@ pub(super) fn read_thread_message_received(
         thread_id: text_to_string(p.get_thread_id().map_err(|e| capnp_err(&e))?)?,
         message_id: text_to_string(p.get_message_id().map_err(|e| capnp_err(&e))?)?,
         sender_pseudonym: text_to_string(p.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
-        ciphertext: p.get_ciphertext().map_err(|e| capnp_err(&e))?.to_vec(),
-        mek_generation: p.get_mek_generation(),
         timestamp: p.get_timestamp(),
         reply_to_id: if p.get_has_reply_to_id() {
             Some(text_to_string(

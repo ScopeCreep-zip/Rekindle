@@ -30,6 +30,7 @@ fn post(n: u64) -> ChannelRecordEntry {
         mek_generation: 1,
         timestamp: 1_000 + n,
         reply_to: None,
+        revives: None,
         lamport_ts: n,
         message_id: Some(format!("msg_{n}")),
         attachment: None,

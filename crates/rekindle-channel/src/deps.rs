@@ -115,7 +115,9 @@ pub struct ThreadStateSnapshot {
     pub forum_tag: Option<String>,
     pub auto_archive_seconds: u64,
     pub created_lamport: u64,
-    pub archived_lamport: Option<u64>,
+    /// The standing manual archive's op hash (hex), if archived: a reply
+    /// that names it revives the thread (plan E3.3, architecture §4.6).
+    pub archived_op: Option<String>,
     pub creator_pseudonym_hex: String,
 }
 

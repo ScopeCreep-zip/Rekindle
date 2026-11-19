@@ -37,6 +37,7 @@ fn post(message_id: &str, body: &str) -> ReceivedPost {
             mek_generation: 1,
             timestamp: 2_000,
             reply_to: None,
+            revives: None,
             lamport_ts,
             message_id: Some(message_id.into()),
             attachment: None,

@@ -93,7 +93,7 @@ impl HostChannel {
             forum_tag: thread.forum_tag.clone(),
             auto_archive_seconds: thread.auto_archive_seconds,
             created_lamport: thread.created.lamport,
-            archived_lamport: thread.archived.map(|stamp| stamp.lamport),
+            archived_op: thread.archived.map(|stamp| hex::encode(stamp.hash.0)),
             creator_pseudonym_hex: hex::encode(thread.creator.0),
         })
     }

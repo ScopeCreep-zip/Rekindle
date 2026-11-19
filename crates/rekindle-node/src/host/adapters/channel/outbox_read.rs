@@ -432,6 +432,7 @@ impl HostChannel {
                     mek_generation: f.mek_generation,
                     timestamp: f.timestamp,
                     reply_to: None,
+                    revives: None,
                     lamport_ts: f.lamport_ts,
                     message_id: f.message_id,
                     attachment: None,

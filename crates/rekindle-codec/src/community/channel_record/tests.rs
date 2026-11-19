@@ -22,6 +22,7 @@ fn sample_message() -> ChannelMessage {
         mek_generation: 2,
         timestamp: 1234,
         reply_to: None,
+        revives: None,
         lamport_ts: 9,
         message_id: Some("msg-1".into()),
         attachment: None,
