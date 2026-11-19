@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-profile",
-  "description": "App-command grants for `profile-*` windows: opening a chat, starting a call, removing the viewed friend, and their safety number with its mark-verified flow.",
+  "description": "App-command grants for `profile-*` windows: opening a chat, starting a call, removing the viewed friend, their safety number with its mark-verified flow, and the game time they share.",
   "windows": [
     "profile-*"
   ],
   "permissions": [
     "allow-clear-identity-verification",
+    "allow-get-friend-game-totals",
     "allow-get-safety-number",
     "allow-mark-identity-verified",
     "allow-open-chat-window",
