@@ -9,7 +9,7 @@ export default defineConfig({
     // Frontend-only tests with mocked IPC (fast, no Rust backend needed)
     {
       name: "mock",
-      testMatch: ["login.spec.ts", "events.spec.ts", "chat-window.spec.ts", "group-dm.spec.ts", "community-removal.spec.ts", "window-focus.spec.ts", "skin-apply.spec.ts", "skin-appearance.spec.ts", "skin-editor.spec.ts", "member-list.spec.ts", "community-permissions.spec.ts", "profile-window.spec.ts", "channel-history.spec.ts", "channel-awaiting-key.spec.ts", "friend-groups.spec.ts", "status-picker.spec.ts", "community-sidebar.spec.ts", "settings-quiet-hours.spec.ts", "channel-edit.spec.ts", "channel-moderator-delete.spec.ts", "settings-loaded-values.spec.ts", "community-unheld.spec.ts", "thread-panel.spec.ts", "create-community.spec.ts", "channel-create.spec.ts", "game-time.spec.ts", "buddy-sections.spec.ts"],
+      testMatch: ["login.spec.ts", "events.spec.ts", "chat-window.spec.ts", "group-dm.spec.ts", "community-removal.spec.ts", "window-focus.spec.ts", "skin-apply.spec.ts", "skin-appearance.spec.ts", "skin-editor.spec.ts", "member-list.spec.ts", "community-permissions.spec.ts", "profile-window.spec.ts", "channel-history.spec.ts", "channel-awaiting-key.spec.ts", "friend-groups.spec.ts", "status-picker.spec.ts", "community-sidebar.spec.ts", "settings-quiet-hours.spec.ts", "channel-edit.spec.ts", "channel-moderator-delete.spec.ts", "settings-loaded-values.spec.ts", "community-unheld.spec.ts", "thread-panel.spec.ts", "create-community.spec.ts", "channel-create.spec.ts", "game-time.spec.ts", "buddy-sections.spec.ts", "a11y-keyboard.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
     // Geometry of every routed window (plan E7.12), mocked IPC like `mock`,
@@ -18,6 +18,13 @@ export default defineConfig({
     {
       name: "layout",
       testMatch: "layout/**/*.spec.ts",
+      use: { ...devices["Desktop Safari"] },
+    },
+    // WCAG 2.2 AA under axe-core (plan E7.3 "Gate"), mocked IPC, on WebKit
+    // like `layout`.
+    {
+      name: "a11y",
+      testMatch: "a11y/**/*.spec.ts",
       use: { ...devices["Desktop Safari"] },
     },
     // Real E2E tests against live Rust backend (SQLite + Stronghold + Ed25519)

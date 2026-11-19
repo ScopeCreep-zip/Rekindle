@@ -115,7 +115,7 @@ test("New group goes through the Host's review and lists the group", async ({ pa
   await create.click();
 
   await page.getByRole("button", { name: /^Create group dm/ }).click();
-  await expect(page.getByRole("button", { name: /Open group chat raid night, 3 members/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "raid night 3 members, group chat" })).toBeVisible();
   const calls = await page.evaluate(() => (window as any).__ipcCalls);
   const sent = calls.find((c: { cmd: string }) => c.cmd === "group_dm_create");
   expect(sent.args).toEqual({ name: "raid night", members: [BOB, CAROL] });
@@ -129,7 +129,7 @@ test("an invite shows Accept and Decline, and Accept is reviewed", async ({ page
   await page.getByRole("button", { name: "Accept invite to raid night" }).click();
   await page.getByRole("button", { name: /^Accept dm invite/ }).click();
   await expect(page.getByRole("group", { name: "Invite to raid night" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Open group chat raid night/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^raid night/ })).toBeVisible();
   const calls = await page.evaluate(() => (window as any).__ipcCalls);
   expect(calls.some((c: { cmd: string; args: { groupId?: string } }) =>
     c.cmd === "group_dm_accept" && c.args.groupId === INVITED)).toBe(true);

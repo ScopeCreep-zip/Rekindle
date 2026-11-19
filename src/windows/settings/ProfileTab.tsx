@@ -79,6 +79,7 @@ const ProfileTab: Component = () => {
           <input
             class="form-input"
             type="text"
+            aria-label="Display name"
             value={nameInput()}
             onInput={(e: InputEvent) => setNameInput((e.target as HTMLInputElement).value)}
             onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") handleSaveName(); }}
@@ -92,6 +93,7 @@ const ProfileTab: Component = () => {
           <input
             class="form-input"
             type="text"
+            aria-label="Status message"
             placeholder="What's on your mind?"
             value={statusMsgInput()}
             onInput={(e: InputEvent) => setStatusMsgInput((e.target as HTMLInputElement).value)}

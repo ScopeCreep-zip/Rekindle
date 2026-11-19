@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json && tsc -p tsconfig.node.json",
     "test:mock": "playwright test --project=mock",
     "test:layout": "playwright test --project=layout",
+    "test:a11y": "playwright test --project=a11y",
     "test:security": "playwright test --config playwright.security.config.ts",
     "test:e2e": "E2E=true playwright test --project=e2e",
     "test:e2e:headed": "E2E=true playwright test --project=e2e --headed",
@@ -33,6 +34,7 @@
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.12.1",

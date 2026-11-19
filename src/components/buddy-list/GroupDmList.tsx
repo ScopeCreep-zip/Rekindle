@@ -62,12 +62,13 @@ const GroupDmList: Component = () => {
           {(group) => (
             <button
               class="group-dm-row"
-              aria-label={`Open group chat ${group.name}, ${group.members.length} members`}
               onDblClick={() => handleOpenGroupChat(group.groupId)}
               onKeyDown={(e) => e.key === "Enter" && handleOpenGroupChat(group.groupId)}
             >
               <span class="buddy-name">{group.name}</span>
               <span class="group-dm-count">{group.members.length}</span>
+              {/* The name is the visible text (axe `label-content-name-mismatch`, SC 2.5.3). */}
+              <span class="live-region-sr-only"> members, group chat</span>
             </button>
           )}
         </For>

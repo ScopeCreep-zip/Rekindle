@@ -179,6 +179,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
         </div>
         <div
           class="active-call-quality"
+          role="img"
           title={`Connection quality: ${voiceState.connectionQuality}`}
           aria-label={`Connection quality: ${voiceState.connectionQuality}`}
         >

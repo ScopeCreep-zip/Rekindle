@@ -55,6 +55,9 @@ const LiveRegion: Component<LiveRegionProps> = (props) => {
       aria-relevant="additions"
       aria-atomic="false"
       aria-label={props.label ?? "messages"}
+      // The region is the scroller: keyboard users scroll it from the tab
+      // order (axe `scrollable-region-focusable`, SC 2.1.1; plan E7.3).
+      tabIndex={0}
     >
       {props.children}
     </div>
