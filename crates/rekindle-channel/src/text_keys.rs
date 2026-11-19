@@ -8,7 +8,7 @@ use rekindle_types::id::ChannelId;
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
-use crate::send::{decrypt_channel_body, encrypt_channel_body, BodyPosition};
+use crate::send::{decrypt_channel_body, encrypt_channel_body, At};
 
 fn text_scope<D: ChannelMessagingDeps + ?Sized>(
     deps: &D,
@@ -37,11 +37,11 @@ pub(crate) fn holds_text_key<D: ChannelMessagingDeps + ?Sized>(
 /// Seal `body` at `at` under the current text key of `channel_id` (the
 /// parent channel, for a thread). Returns the ciphertext and the
 /// generation that sealed it — the generation the message must carry.
-pub(crate) fn seal_text<D: ChannelMessagingDeps + ?Sized>(
+pub(crate) fn seal_text<'a, D: ChannelMessagingDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
-    at: BodyPosition<'_>,
+    at: impl Into<At<'a>>,
     body: &[u8],
 ) -> Result<(Vec<u8>, u64), ChannelError> {
     let scope = text_scope(deps, community_id, channel_id)?;
@@ -60,12 +60,12 @@ pub(crate) fn seal_text<D: ChannelMessagingDeps + ?Sized>(
 /// Open a text body sealed at `at` under exactly `generation` of
 /// `channel_id`'s text scope. `None` when that generation is not held or
 /// the body does not authenticate at `at`.
-pub(crate) fn open_text<D: ChannelMessagingDeps + ?Sized>(
+pub(crate) fn open_text<'a, D: ChannelMessagingDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     generation: u64,
-    at: BodyPosition<'_>,
+    at: impl Into<At<'a>>,
     ciphertext: &[u8],
 ) -> Option<Vec<u8>> {
     let scope = text_scope(deps, community_id, channel_id).ok()?;

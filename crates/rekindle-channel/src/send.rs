@@ -18,7 +18,7 @@ use rekindle_codec::community::channel_record::{ChannelMessage, CHANNEL_OWNER_SU
 use crate::error::ChannelError;
 
 pub use rekindle_secrets::channel_body::{
-    decrypt_channel_body, encrypt_channel_body, BodyPosition,
+    decrypt_channel_body, encrypt_channel_body, At, BodyPosition, SlotPosition,
 };
 
 /// Architecture §28.4 — channel SMPL subkey index for a member writing

@@ -8,7 +8,7 @@ use rekindle_types::id::{ChannelId, ThreadId};
 use crate::deps::{ChannelMessagingDeps, ThreadStateSnapshot};
 use crate::error::ChannelError;
 use crate::send::{
-    build_channel_message, channel_message_subkey, BodyPosition, BuildChannelMessageParams,
+    build_channel_message, channel_message_subkey, BuildChannelMessageParams, SlotPosition,
 };
 
 pub(super) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
@@ -123,7 +123,7 @@ pub(super) fn build_thread_message<D: ChannelMessagingDeps>(
         deps,
         community_id,
         parent_channel_id,
-        BodyPosition {
+        SlotPosition {
             channel_record_key: record_key,
             subkey_index: channel_message_subkey(slot_index),
             lamport_ts,
@@ -170,7 +170,7 @@ pub(super) fn decrypt_thread_body<D: ChannelMessagingDeps>(
         community_id,
         parent_channel_id,
         message.mek_generation,
-        BodyPosition {
+        SlotPosition {
             channel_record_key: record_key,
             subkey_index,
             lamport_ts: message.lamport_ts,

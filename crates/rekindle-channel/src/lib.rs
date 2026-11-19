@@ -73,8 +73,8 @@ pub use polls::{
 pub use reactions::{build_reaction, build_reaction_envelope, persist_reaction};
 pub use receive::{extract_mention_signals, MentionSignals};
 pub use send::{
-    build_channel_message, decrypt_channel_body, encrypt_channel_body, slowmode_check,
-    BodyPosition, BuildChannelMessageParams,
+    build_channel_message, decrypt_channel_body, encrypt_channel_body, slowmode_check, At,
+    BodyPosition, BuildChannelMessageParams, SlotPosition,
 };
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use threads::{

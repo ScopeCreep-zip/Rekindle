@@ -15,7 +15,7 @@
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
-use crate::send::BodyPosition;
+use crate::send::SlotPosition;
 
 /// A reader caps a message at this many edits (E2).
 pub const MAX_EDITS: u32 = 10;
@@ -94,7 +94,7 @@ pub fn seal_edit<D: ChannelMessagingDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
-    at: BodyPosition<'_>,
+    at: SlotPosition<'_>,
     body: &str,
 ) -> Result<(Vec<u8>, u64), ChannelError> {
     crate::text_keys::seal_text(deps, community_id, channel_id, at, body.as_bytes())
@@ -107,7 +107,7 @@ pub fn open_edit<D: ChannelMessagingDeps + ?Sized>(
     community_id: &str,
     channel_id: &str,
     generation: u64,
-    at: BodyPosition<'_>,
+    at: SlotPosition<'_>,
     ciphertext: &[u8],
 ) -> Option<String> {
     crate::text_keys::open_text(deps, community_id, channel_id, generation, at, ciphertext)

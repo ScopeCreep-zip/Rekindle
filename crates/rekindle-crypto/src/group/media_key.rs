@@ -16,4 +16,4 @@
 //! Canonical home is `rekindle-secrets` per rule B1: crypto lives in
 //! Tier 2 and nowhere else.
 
-pub use rekindle_secrets::keys::{ChannelAad, MediaEncryptionKey};
+pub use rekindle_secrets::keys::{ChannelAad, MediaEncryptionKey, SlotChannelAad};

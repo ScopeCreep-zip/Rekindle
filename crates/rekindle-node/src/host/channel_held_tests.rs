@@ -5,7 +5,7 @@
 use rekindle_codec::community::channel_record::{
     ChannelDelete, ChannelMessage, ChannelRecordEntry,
 };
-use rekindle_secrets::channel_body::{encrypt_channel_body, BodyPosition};
+use rekindle_secrets::channel_body::{encrypt_channel_body, SlotPosition};
 
 use super::channel_change_tests::{
     apply, edit, reader, reload, AUTHOR, EDIT_CHANNEL, RECORD, SUBKEY, TEXT_KEY,
@@ -17,7 +17,7 @@ use crate::host::Host;
 /// `AUTHOR`'s post `message_id` with `body`, as a record read hands it on.
 fn post(message_id: &str, body: &str) -> ReceivedPost {
     let lamport_ts = 3;
-    let at = BodyPosition {
+    let at = SlotPosition {
         channel_record_key: RECORD,
         subkey_index: SUBKEY,
         lamport_ts,

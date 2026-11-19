@@ -277,7 +277,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     // reader opens with: bound to the record, our subkey and the Lamport.
     let body_ciphertext = rekindle_secrets::channel_body::encrypt_channel_body(
         ctx.text_key.as_bytes(),
-        rekindle_secrets::channel_body::BodyPosition {
+        rekindle_secrets::channel_body::SlotPosition {
             channel_record_key: &ctx.channel_key,
             subkey_index: u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + ctx.slot_index,
             lamport_ts,

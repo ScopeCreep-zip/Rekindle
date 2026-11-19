@@ -6,7 +6,7 @@
 use rekindle_codec::community::channel_record::{ChannelDelete, ChannelEdit, ChannelRecordEntry};
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
 use rekindle_governance::state::GovernanceState;
-use rekindle_secrets::channel_body::{encrypt_channel_body, BodyPosition};
+use rekindle_secrets::channel_body::{encrypt_channel_body, SlotPosition};
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::message::SendState;
@@ -84,7 +84,7 @@ pub(super) async fn reader(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, St
 }
 
 pub(super) fn edit(body: &str, seq: u64) -> ChannelRecordEntry {
-    let at = BodyPosition {
+    let at = SlotPosition {
         channel_record_key: RECORD,
         subkey_index: SUBKEY,
         lamport_ts: seq,

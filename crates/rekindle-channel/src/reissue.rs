@@ -12,7 +12,7 @@ use crate::error::ChannelError;
 use crate::mentions::resolve_outbound_mentions;
 use crate::pipeline::{build_message_notification, emit_settled};
 use crate::send::{
-    build_channel_message, channel_message_subkey, BodyPosition, BuildChannelMessageParams,
+    build_channel_message, channel_message_subkey, BuildChannelMessageParams, SlotPosition,
 };
 
 /// Write `post` again: its stored body sealed afresh at the slot's next
@@ -53,7 +53,7 @@ pub async fn reissue_channel_post<D: ChannelMessagingDeps>(
         deps,
         community_id,
         channel_id,
-        BodyPosition {
+        SlotPosition {
             channel_record_key: &context.channel_key,
             subkey_index: subkey,
             lamport_ts,

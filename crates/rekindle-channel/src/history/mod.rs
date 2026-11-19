@@ -14,7 +14,7 @@ use rekindle_types::message::SendState;
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
-use crate::send::BodyPosition;
+use crate::send::SlotPosition;
 
 pub use materialize::{build_poll_states, build_reaction_groups};
 
@@ -126,7 +126,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 community_id,
                 channel_id,
                 message.mek_generation,
-                BodyPosition {
+                SlotPosition {
                     channel_record_key: &record_key,
                     subkey_index,
                     lamport_ts: message.lamport_ts,
