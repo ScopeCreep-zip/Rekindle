@@ -80,29 +80,20 @@ fn status_response(
 
     // Subscription system stats
     let sub_guard = ctx.subscriptions.read();
-    let (
-        active_watches,
-        gossip_meshes,
-        gossip_mesh_peers,
-        unread_friend_requests,
-        dedup_entries,
-        dedup_suppressed,
-        poll_loop_active,
-    ) = if let Some(ref sub_mgr) = *sub_guard {
-        let meshes = sub_mgr.meshes().read();
-        let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
-        (
-            sub_mgr.watch_count(),
-            meshes.len(),
-            mesh_peers,
-            sub_mgr.unread_friend_requests(),
-            sub_mgr.dedup_entries(),
-            sub_mgr.dedup_suppressed(),
-            true,
-        )
-    } else {
-        (0, 0, 0, 0, 0, 0, false)
-    };
+    let (gossip_meshes, gossip_mesh_peers, unread_friend_requests, dedup_entries, dedup_suppressed) =
+        if let Some(ref sub_mgr) = *sub_guard {
+            let meshes = sub_mgr.meshes().read();
+            let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
+            (
+                meshes.len(),
+                mesh_peers,
+                sub_mgr.unread_friend_requests(),
+                sub_mgr.dedup_entries(),
+                sub_mgr.dedup_suppressed(),
+            )
+        } else {
+            (0, 0, 0, 0, 0)
+        };
     drop(sub_guard);
 
     // Network detail
@@ -138,7 +129,6 @@ fn status_response(
         peer_count: snap.as_ref().map_or(0, |s| s.peer_count),
         route_allocated: snap.as_ref().is_some_and(|s| s.route_allocated),
         route_age_secs: snap.as_ref().and_then(|s| s.route_age_secs),
-        active_watches,
         gossip_meshes,
         gossip_mesh_peers,
         unread_channels,
@@ -146,7 +136,6 @@ fn status_response(
         unread_friend_requests,
         dedup_entries,
         dedup_suppressed,
-        poll_loop_active,
         community_count: session.map_or(0, |s| s.communities.len()),
         friend_count: session.map_or(0, |s| {
             s.friends
@@ -390,11 +379,6 @@ fn build_checks(
     // ── SUBSCRIPTIONS — event system health ─────────────────────────
     let sub_guard = ctx.subscriptions.read();
     if let Some(ref sub_mgr) = *sub_guard {
-        checks.push(Check::pass(
-            "subscriptions.watches",
-            "subscriptions",
-            sub_mgr.watch_count().to_string(),
-        ));
         let meshes = sub_mgr.meshes().read();
         let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
         checks.push(Check::pass(

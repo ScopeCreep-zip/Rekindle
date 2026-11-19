@@ -149,14 +149,10 @@ impl HostGovernance {
         }
         self.release_watch_ring(&id).await;
         let (leases, ring_leases) = self.ctx.communities.take_leases(&id);
-        let watch_leases = self
-            .ctx
-            .subscriptions
-            .read()
-            .as_ref()
-            .map(|subs| subs.teardown_community(&id))
-            .unwrap_or_default();
-        for lease in leases.all().chain(ring_leases).chain(watch_leases) {
+        if let Some(subs) = self.ctx.subscriptions.read().as_ref() {
+            subs.teardown_community(&id);
+        }
+        for lease in leases.all().chain(ring_leases) {
             rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
         }
         self.forget_keys(&id);

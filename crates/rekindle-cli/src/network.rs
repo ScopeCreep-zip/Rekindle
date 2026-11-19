@@ -130,7 +130,6 @@ fn print_status_compact(
             rekindle_client::fmt::format_uptime(snapshot.uptime_secs),
         ),
         ("Communities", snapshot.community_count.to_string()),
-        ("Watches", snapshot.active_watches.to_string()),
         (
             "Gossip Meshes",
             format!(

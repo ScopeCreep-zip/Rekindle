@@ -341,20 +341,6 @@ impl InboundHandler for DaemonHandler {
     ) {
         debug!(record_key, subkeys = ?changed_subkeys, "handler: on_value_change");
 
-        // Mutual Aid §14.3 — pay the watch slot forward.
-        //
-        // Veilid reserves 8 signed + 32 anonymous watch slots per
-        // record, so in a community of any size most members hold none.
-        // Holding one makes us an eager-push node in Plumtree terms, and
-        // the obligation that comes with it is to lazy-push what we saw
-        // to everyone who could not get a slot. Principle 12: "a member
-        // who relays for peers gets relayed for in return."
-        //
-        // Only for a change we observed through our own watch — a relay
-        // we ourselves fetched from a peer's relay must not be
-        // re-relayed, or one change echoes around the mesh.
-        self.relay_watch_change(record_key, &changed_subkeys, first_value.as_deref());
-
         // An invite's inbox, a friend's participant record or a friend's
         // profile: the Host reads every changed subkey (plan E2.5).
         // A community's governance record: that community is rebuilt (plan

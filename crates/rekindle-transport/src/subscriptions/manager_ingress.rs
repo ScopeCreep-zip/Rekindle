@@ -3,7 +3,7 @@
 
 use tracing::debug;
 
-use super::{state_effects, watches, SubscriptionManager};
+use super::{state_effects, SubscriptionManager};
 use crate::gossip::GossipAdmission;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 
@@ -158,24 +158,11 @@ impl SubscriptionManager {
         changed_subkeys: Vec<u32>,
         _first_value: Option<Vec<u8>>,
     ) {
-        let watch_kind = self.watches.read().get(record_key).map(|e| e.kind.clone());
-        let Some(kind) = watch_kind else {
-            self.process_event(SubscriptionEvent::Network(
-                events::NetworkEvent::ValueChanged {
-                    record_key: record_key.into(),
-                    changed_subkeys,
-                },
-            ));
-            return;
-        };
-
-        match kind {
-            // PATH 3: a channel segment record's slot changed. The Host
-            // reads the slot and ingests each post through the D26 gate,
-            // publishing `ChannelMessageEvent::New` for what it admits; an
-            // event from here, before the gate, would show a removed
-            // member's write (A/B finding R2-4).
-            watches::WatchKind::ChannelRecord { .. } => {}
-        }
+        self.process_event(SubscriptionEvent::Network(
+            events::NetworkEvent::ValueChanged {
+                record_key: record_key.into(),
+                changed_subkeys,
+            },
+        ));
     }
 }

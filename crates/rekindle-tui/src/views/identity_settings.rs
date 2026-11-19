@@ -52,8 +52,6 @@ pub struct IdentitySettingsView {
     route_allocated: bool,
     route_age_secs: Option<u64>,
     attachment: String,
-    /// Subscription system.
-    active_watches: usize,
     community_count: usize,
     friend_count: usize,
     /// DHT record keys.
@@ -85,7 +83,6 @@ impl IdentitySettingsView {
             route_allocated: false,
             route_age_secs: None,
             attachment: "unknown".into(),
-            active_watches: 0,
             community_count: 0,
             friend_count: 0,
             profile_dht_key: String::new(),
@@ -107,7 +104,6 @@ impl IdentitySettingsView {
         self.route_allocated = snapshot.route_allocated;
         self.route_age_secs = snapshot.route_age_secs;
         self.attachment.clone_from(&snapshot.attachment);
-        self.active_watches = snapshot.active_watches;
         self.community_count = snapshot.community_count;
         self.friend_count = snapshot.friend_count;
         self.signing_key_loaded = snapshot.checks.iter().any(|c| {
@@ -138,7 +134,6 @@ impl IdentitySettingsView {
             "not allocated".into()
         };
         items.push(Self::kv_item("  Route", &route_str));
-        items.push(Self::kv_item("  Watches", &self.active_watches.to_string()));
         items.push(Self::kv_item("  Prekeys", &self.prekeys));
         if let Some(code) = &self.friend_code {
             items.push(Self::kv_item("  Friend Code", &code.url));
@@ -205,10 +200,6 @@ impl IdentitySettingsView {
                 &self.community_count.to_string(),
             ));
             items.push(Self::kv_item("    Friends", &self.friend_count.to_string()));
-            items.push(Self::kv_item(
-                "    Active Watches",
-                &self.active_watches.to_string(),
-            ));
         }
 
         // ── Actions section ──────────────────────────────────

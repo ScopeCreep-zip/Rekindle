@@ -66,7 +66,6 @@ pub(crate) async fn daemon_overlays(
 
     // The subscription manager (three-tier inbound: watch + gossip + poll).
     let sub_mgr = rekindle_transport::SubscriptionManager::new(
-        Arc::clone(&transport),
         Arc::clone(&ctx.session),
         unlock_scope.child("subscriptions"),
         Arc::clone(&ctx.clock),
@@ -76,9 +75,7 @@ pub(crate) async fn daemon_overlays(
     }
     // Typing indicators expire and the dedup cache sheds by TTL only if the
     // maintenance loop sweeps them.
-    let started = sub_mgr
-        .start_poll_loop(60)
-        .and_then(|()| sub_mgr.start_maintenance_loop());
+    let started = sub_mgr.start_maintenance_loop();
     if let Err(closed) = started {
         sub_mgr.shutdown().await;
         return Err(IpcResponse::error(
@@ -87,7 +84,6 @@ pub(crate) async fn daemon_overlays(
         ));
     }
     tracing::info!(
-        watches = sub_mgr.watch_count(),
         communities = session.communities.len(),
         "subscription manager initialized"
     );

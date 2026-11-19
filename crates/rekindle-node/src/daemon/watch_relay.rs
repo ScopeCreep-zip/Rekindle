@@ -14,12 +14,13 @@
 //! the `GRAFT`. Principle 12: "a member who relays for peers gets
 //! relayed for in return."
 //!
-//! Split from `handler.rs` because it is one coherent concern — the
-//! send half hangs off `on_value_change`, the receive half off
-//! `on_community_gossip`, and they only make sense together.
+//! Only the receive half lives here: the send half relayed changes of the
+//! transport's per-channel-record watches, deleted with the channel slot
+//! record (plan E3.3 slice 8). A member's outbox change reaches peers as
+//! the S7 ring's `HeadAdvanced` hint instead.
 
 use rekindle_transport::InboundHandler;
-use tracing::{debug, trace};
+use tracing::debug;
 
 use super::handler::DaemonHandler;
 
@@ -54,24 +55,6 @@ impl DaemonHandler {
             return;
         };
 
-        // If we hold our own watch on this record, our value-change
-        // callback covers the same change — skip the redundant fetch.
-        // Members without a slot fall through, which is the whole point
-        // of the relay.
-        let we_watch = self
-            .subscriptions
-            .read()
-            .as_ref()
-            .is_some_and(|manager| manager.has_watch(record_key));
-        if we_watch {
-            trace!(
-                record_key,
-                subkey,
-                "watch relay: own watch covers this record"
-            );
-            return;
-        }
-
         let Ok(Some(value)) = rekindle_transport::broadcast::dht_writes::read_once_str(
             transport.as_ref(),
             record_key,
@@ -96,74 +79,5 @@ impl DaemonHandler {
 
         self.on_value_change(record_key, vec![subkey], Some(value))
             .await;
-    }
-}
-
-impl DaemonHandler {
-    /// Broadcast a `WatchRelay` for a change our own watch reported.
-    ///
-    /// The relay names the record, the subkey and a BLAKE3 hash of the
-    /// new value — never the value. Gossip is unencrypted at the
-    /// envelope layer, so shipping the bytes would hand a channel
-    /// message's ciphertext to every forwarding hop; the hash is what a
-    /// watchless peer verifies its own fetch against.
-    ///
-    /// Silent when we hold no watch on the record: `on_value_change`
-    /// also fires for values we pulled after someone else's relay, and
-    /// re-relaying those would put one change into an endless loop
-    /// around the mesh (the dedup cache would break the loop, but only
-    /// after the traffic had gone out).
-    pub(super) fn relay_watch_change(
-        &self,
-        record_key: &str,
-        changed_subkeys: &[u32],
-        value: Option<&[u8]>,
-    ) {
-        let Some(value) = value else {
-            // No first value means either a multi-subkey change (the
-            // caller must fetch each one anyway) or a dead watch. In
-            // both cases we have no hash to publish.
-            return;
-        };
-        let Some(subkey) = changed_subkeys.first().copied() else {
-            return;
-        };
-        let we_watch = self
-            .subscriptions
-            .read()
-            .as_ref()
-            .is_some_and(|manager| manager.has_watch(record_key));
-        if !we_watch {
-            return;
-        }
-
-        // Which community does this record belong to, and who are we in
-        // it? A relay has to be attributable — `observer_pseudonym` is
-        // what lets a receiver weigh it.
-        let Some((community_id, observer)) = self.community_for_record(record_key) else {
-            return;
-        };
-
-        let envelope = rekindle_codec::community::envelope::CommunityEnvelope::WatchRelay {
-            record_key: record_key.to_string(),
-            subkey,
-            content_hash: blake3::hash(value).to_hex().to_string(),
-            observer_pseudonym: observer,
-        };
-        crate::daemon::gossip::send(&self.gossip_tx, &community_id, &envelope);
-    }
-
-    /// `(community_id, my_pseudonym)` for whichever community owns this
-    /// record — governance, registry, or one of its channel records.
-    fn community_for_record(&self, record_key: &str) -> Option<(String, String)> {
-        let guard = self.session.read();
-        let session = guard.as_ref()?;
-        session.communities.values().find_map(|m| {
-            let ours = m.anchor == record_key
-                || m.registry_key == record_key
-                || m.channel_record_keys.values().any(|k| k == record_key);
-            (ours && !m.pseudonym_key.is_empty())
-                .then(|| (m.anchor.clone(), m.pseudonym_key.clone()))
-        })
     }
 }

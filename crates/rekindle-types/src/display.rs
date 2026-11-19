@@ -218,7 +218,6 @@ pub struct StatusSnapshot {
     pub route_age_secs: Option<u64>,
 
     // ── Subscription system ─────────────────────────────────
-    pub active_watches: usize,
     pub gossip_meshes: usize,
     pub gossip_mesh_peers: usize,
     pub unread_channels: usize,
@@ -226,7 +225,6 @@ pub struct StatusSnapshot {
     pub unread_friend_requests: u32,
     pub dedup_entries: usize,
     pub dedup_suppressed: u64,
-    pub poll_loop_active: bool,
 
     // ── Social ──────────────────────────────────────────────
     pub community_count: usize,

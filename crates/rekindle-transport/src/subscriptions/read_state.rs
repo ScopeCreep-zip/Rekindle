@@ -40,11 +40,6 @@ impl SubscriptionManager {
         self.state.write().voice.participants(community, channel)
     }
 
-    /// Total active watch count (for diagnostics).
-    pub fn watch_count(&self) -> usize {
-        self.watches.read().count()
-    }
-
     /// Active dedup digest entries (for diagnostics).
     pub fn dedup_entries(&self) -> usize {
         self.dedup.read().len()
