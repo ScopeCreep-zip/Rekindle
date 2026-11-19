@@ -84,6 +84,10 @@ impl HostGovernance {
         community_id: &str,
         membership: CommunityMembership,
     ) -> Result<Vec<SlotHead>, GovernanceRuntimeError> {
+        let me = (membership.my_pseudonym_hex.as_deref())
+            .and_then(|me| hex::decode(me).ok())
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(PseudonymKey);
         let slot_index = membership
             .my_subkey_index
             .ok_or_else(|| GovernanceRuntimeError::SlotIndexMissing(community_id.to_owned()))?;
@@ -106,10 +110,10 @@ impl HostGovernance {
             }
         }
         // Our channel outbox, every entry of which we wrote; none when we
-        // never posted to it.
-        if let Some(record) = self.own_member_record(community_id) {
-            let newest = (local_newest_entry(&*pool, &record, OUTBOX).await).map_err(adapter)?;
-            heads.extend(newest.map(|entry| outbox_head(record, &entry)));
+        // never posted to it. Its record is the merged state's, kept after
+        // our own departure merged (a restored backup still writes it).
+        if let Some(me) = me {
+            heads.extend(self.outbox_head_of(community_id, &*pool, &me).await);
         }
         Ok(heads)
     }
@@ -154,7 +158,7 @@ impl HostGovernance {
                 }
             }
         }
-        if let Some(head) = self.removed_outbox_head(community_id, &*pool, target).await {
+        if let Some(head) = self.outbox_head_of(community_id, &*pool, target).await {
             heads.push(head);
         }
         if heads.is_empty() {
@@ -169,7 +173,7 @@ impl HostGovernance {
 
     /// The head of `target`'s channel outbox as our local copy holds it
     /// (its member record from the merged state, kept after it departs).
-    async fn removed_outbox_head(
+    async fn outbox_head_of(
         &self,
         community_id: &str,
         pool: &dyn RecordPort,
