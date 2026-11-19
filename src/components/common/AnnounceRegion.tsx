@@ -29,7 +29,7 @@ const AnnounceRegion: Component = () => {
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        class="live-region-sr-only"
+        class="sr-only"
       >
         {politeMessage()}
       </div>
@@ -37,7 +37,7 @@ const AnnounceRegion: Component = () => {
         role="alert"
         aria-live="assertive"
         aria-atomic="true"
-        class="live-region-sr-only"
+        class="sr-only"
       >
         {assertiveMessage()}
       </div>

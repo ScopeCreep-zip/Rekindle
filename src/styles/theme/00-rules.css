@@ -32,7 +32,10 @@
   .xfire-titlebar-btn:focus-visible,
   .member-item:focus-visible,
   .group-dm-row:focus-visible,
-  .sidebar-section-more:focus-visible {
+  .sidebar-section-more:focus-visible,
+  /* A message log is the scroller its pane clips (plan E7.3: focusable for
+   * SC 2.1.1), so its ring is drawn inside too. */
+  [role="log"][tabindex]:focus-visible {
     outline-offset: -3px;
   }
 
@@ -74,9 +77,10 @@
     overflow: hidden;
   }
 
-  /* Architecture §32 a11y — visually-hidden helper for ARIA live regions
+  /* Architecture §32 a11y — visually-hidden helper (`.sr-only`, the standard
+   * clip/1px pattern the layout checks skip) for ARIA live regions
    * and screen-reader-only labels (D3 / D5 announcements). */
-  .live-region-sr-only {
+  .sr-only {
     position: absolute;
     width: 1px;
     height: 1px;

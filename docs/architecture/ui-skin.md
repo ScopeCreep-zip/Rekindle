@@ -205,7 +205,7 @@ addresses this with three patterns from the architecture's a11y audit:
   (the modern alternative to the deprecated `left: -9999px` trick) so
   screen readers still announce it; on focus it pops to the top-left
   corner so keyboard users can bypass nav.
-- **Live regions.** `.live-region-sr-only` (visually hidden via
+- **Live regions.** `.sr-only` (visually hidden via
   `clip-path`) wraps ARIA live regions for screen-reader-only
   announcements (incoming-message toasts, presence changes).
 
