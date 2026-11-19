@@ -62,11 +62,55 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
     let audit = restore_audit(ctx, &public_key, failed_attempts).await;
     // The identity's trusted clients get their clearance back (plan D1).
     crate::daemon::clients::load(ctx).await;
+    if let Some(notice) = memory_notice(&held_secrets_locked(ctx)) {
+        ctx.publish_event(notice);
+    }
     Ok(Installed {
         public_key,
         display_name,
         secret,
         audit,
+    })
+}
+
+/// Whether each secret the unlocked identity holds for the session (the
+/// vault's entry key, the signing key) sits in locked pages.
+fn held_secrets_locked(ctx: &DaemonContext) -> [bool; 2] {
+    let vault = ctx
+        .vault
+        .lock()
+        .as_ref()
+        .is_none_or(rekindle_vault::VaultStore::entry_key_locked);
+    let signing = ctx
+        .signing_key
+        .read()
+        .as_ref()
+        .is_none_or(crate::state::signing_key::SigningKeyHandle::is_locked);
+    [vault, signing]
+}
+
+/// The notice an unlock raises once when the OS refused to lock any held
+/// secret (plan E7.1: "A failed lock is logged and the key still loads";
+/// the user is told too, as GnuPG warns of insecure memory): the key may
+/// reach swap, and raising the lock limit (`ulimit -l`) fixes it.
+pub(crate) fn memory_notice(
+    locked: &[bool],
+) -> Option<rekindle_types::subscription_events::SubscriptionEvent> {
+    use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
+    let refused = locked.iter().filter(|l| !**l).count();
+    (refused > 0).then(|| {
+        tracing::warn!(
+            refused,
+            "the unlocked identity's keys are not in locked memory"
+        );
+        SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+            title: "Keys not in locked memory".into(),
+            subject: None,
+            body: "The system refused to lock this identity's keys in memory, so they may be \
+                   written to swap. Rekindle keeps running; raise the locked-memory limit \
+                   (ulimit -l) to protect them."
+                .into(),
+        })
     })
 }
 
@@ -128,5 +172,33 @@ async fn restore_audit(
             tracing::warn!(error = %e, "audit chain not restored");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
+
+    use super::memory_notice;
+
+    #[test]
+    fn every_secret_locked_raises_no_notice() {
+        assert!(memory_notice(&[true, true]).is_none());
+    }
+
+    #[test]
+    fn a_refused_lock_raises_one_system_alert() {
+        let Some(SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+            title,
+            body,
+            subject,
+        })) = memory_notice(&[true, false])
+        else {
+            panic!("a refused lock is shown to the user");
+        };
+        assert_eq!(title, "Keys not in locked memory");
+        assert!(body.contains("ulimit -l"), "{body}");
+        assert!(subject.is_none());
+        assert!(memory_notice(&[false, false]).is_some());
     }
 }

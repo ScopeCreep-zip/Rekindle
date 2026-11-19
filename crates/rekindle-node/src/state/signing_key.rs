@@ -38,6 +38,13 @@ impl SigningKeyHandle {
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.bytes.expose()
     }
+
+    /// Whether the OS locked the key's pages (false when the lock budget
+    /// refused; the key still signs).
+    #[must_use]
+    pub fn is_locked(&self) -> bool {
+        self.bytes.is_locked()
+    }
 }
 
 impl std::fmt::Debug for SigningKeyHandle {

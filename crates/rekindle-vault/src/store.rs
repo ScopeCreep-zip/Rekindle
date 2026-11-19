@@ -186,6 +186,13 @@ impl VaultStore {
         &self.path
     }
 
+    /// Whether the OS locked the entry key's pages for this store's life
+    /// (false when the lock budget refused; the store still works).
+    #[must_use]
+    pub fn entry_key_locked(&self) -> bool {
+        self.entry_key.is_locked()
+    }
+
     /// Insert-or-replace the entry addressed by `vault_key`. The value is
     /// sealed with AES-256-GCM under the per-entry key before being stored.
     pub fn put(&self, vault_key: &VaultKey, value: &[u8]) -> Result<(), VaultError> {

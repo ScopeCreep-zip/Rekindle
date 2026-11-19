@@ -7,8 +7,8 @@ use super::super::navigator::KeyResolution;
 use super::App;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, FriendEvent, GovernanceEvent, MembershipEvent, NetworkEvent, SocialEvent,
-    SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
+    ChannelMessageEvent, FriendEvent, GovernanceEvent, MembershipEvent, NetworkEvent,
+    NotificationEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
 };
 
 /// How to name a call in a toast — `#channel`, or the peer for a DM.
@@ -395,6 +395,17 @@ impl App {
                     ToastLevel::Error,
                 );
                 self.reload_friends();
+                Some(Action::Render)
+            }
+            // The Host's app-level alerts (a refused memory lock, unsent
+            // changes kept, a declined request): shown as the Host wrote them.
+            SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                ref title,
+                ref body,
+                ..
+            }) => {
+                self.notifications
+                    .push(format!("{title}: {body}"), ToastLevel::Warning);
                 Some(Action::Render)
             }
             SubscriptionEvent::Friend(FriendEvent::HandshakeFailed { ref reason, .. }) => {
