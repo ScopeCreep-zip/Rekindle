@@ -21,6 +21,8 @@ import type {
 } from "../ipc/commands/dto";
 import { isCommandError } from "../ipc/commands/dto";
 import { errorMessage } from "../utils/error";
+import { kindPhrase } from "../utils/intent_text";
+import { addToast, removeToast } from "./toast.store";
 
 interface Pending {
   review: IntentReview;
@@ -113,15 +115,27 @@ export async function cancelReview(): Promise<void> {
 }
 
 let undoTimer: ReturnType<typeof setTimeout> | null = null;
+let undoToast: number | null = null;
 
-/** Offer an undo until it expires. */
-function presentUndo(offer: UndoOffer): void {
+function clearUndo(): void {
   if (undoTimer !== null) clearTimeout(undoTimer);
+  if (undoToast !== null) removeToast(undoToast);
+  undoTimer = null;
+  undoToast = null;
+  setIntentState("undo", null);
+}
+
+/** Offer an undo, as a toast with one action (plan E7.3), until the Host's
+ *  offer expires: the window is the Host's, not a UI timer. */
+function presentUndo(offer: UndoOffer): void {
+  clearUndo();
   setIntentState("undo", offer);
-  undoTimer = setTimeout(
-    () => setIntentState("undo", null),
-    Math.max(0, offer.expiresAtMs - Date.now()),
-  );
+  undoToast = addToast("Done.", "info", {
+    label: "Undo",
+    ariaLabel: `Undo: ${kindPhrase(offer.inverse)}`,
+    run: takeUndo,
+  });
+  undoTimer = setTimeout(clearUndo, Math.max(0, offer.expiresAtMs - Date.now()));
 }
 
 /** Take back the offered action. The inverse is a request of its own: a
@@ -129,7 +143,7 @@ function presentUndo(offer: UndoOffer): void {
 export async function takeUndo(): Promise<void> {
   const offer = intentState.undo;
   if (offer === null) return;
-  setIntentState("undo", null);
+  clearUndo();
   await hostInvoke("undo", { id: offer.id });
 }
 

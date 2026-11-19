@@ -42,6 +42,16 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
     props.onSelect(props.publicKey);
   }
 
+  // Plan E7.3: the row is a roving-tabindex list item (`roving_list.ts`):
+  // focusing it selects it, as a click does, and Enter opens the chat, as a
+  // double click does.
+  function handleKeyDown(e: KeyboardEvent): void {
+    if (e.key === "Enter" && e.target === e.currentTarget) {
+      e.preventDefault();
+      handleDblClick();
+    }
+  }
+
   // B7: the secure session did not open; Retry asks the Host to send the
   // first contact again (its review and the row's state come from there).
   function handleRetry(e: MouseEvent): void {
@@ -76,6 +86,8 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
       class={`buddy-item ${props.selected ? "buddy-item-selected" : ""}`}
       onClick={handleClick}
       onDblClick={handleDblClick}
+      onFocus={handleClick}
+      onKeyDown={handleKeyDown}
     >
       <Show when={(props.friendshipState ?? "accepted") !== "pendingOut"}>
         <StatusDot status={props.status} />

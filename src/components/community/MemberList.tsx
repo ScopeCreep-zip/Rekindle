@@ -5,6 +5,7 @@ import { EVERYONE_ROLE_ID, Member, Role, communityState } from "../../stores/com
 import StatusDot from "../status/StatusDot";
 import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
+import { rovingList } from "../../utils/roving_list";
 import MemberProfilePopup from "./MemberProfilePopup";
 import {
   ICON_SHIELD,
@@ -351,7 +352,7 @@ const MemberList: Component<MemberListProps> = (props) => {
   }
 
   return (
-    <div class="member-list">
+    <div class="member-list" ref={rovingList(".member-item")}>
       <div class="member-list-header">
         Members — {props.members.length}
       </div>

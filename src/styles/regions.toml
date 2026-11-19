@@ -568,7 +568,9 @@
 # focus ring, and each control whose border is what identifies it, with the
 # grounds next to it.
 [boundaries]
-'*:focus-visible' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary", "--color-xfire-bg-secondary", "--color-xfire-bg-tertiary", "--color-xfire-bg-input", "--color-xfire-bg-status"] }
+# The last three are the list rows' hover and selected grounds, where the
+# rows' inset ring sits (plan E7.3 "Focus visible").
+'*:focus-visible' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary", "--color-xfire-bg-secondary", "--color-xfire-bg-tertiary", "--color-xfire-bg-input", "--color-xfire-bg-status", "--color-xfire-overlay 5% over --color-xfire-bg-dark", "--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.skip-link:focus' = { on = ["--color-xfire-bg-dark"] }
 '.form-input' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-select' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }

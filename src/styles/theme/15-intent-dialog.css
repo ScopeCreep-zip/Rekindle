@@ -11,10 +11,10 @@
     font-size: 12px;
   }
 
-  /* The undo offer's one action (its row layout is grouped with
+  /* A toast's one action (the undo offer is the first) (its row layout is grouped with
    * `.active-call-panel-header`). The dialog's body and action row are
    * grouped with the add-friend panel's. */
-  .toast-undo-button {
+  .toast-action-button {
     background: transparent;
     border: 1px solid currentColor;
     border-radius: 3px;

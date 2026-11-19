@@ -13,7 +13,12 @@ import {
   assertTextNotClipped,
   assertTimestampsInline,
 } from "../fixtures/layout";
-import { assertComposerAligned, assertEllipsisLegible, assertTitlebarTitleBounded } from "../fixtures/layout-text";
+import {
+  assertComposerAligned,
+  assertEllipsisLegible,
+  assertTitlebarTargets,
+  assertTitlebarTitleBounded,
+} from "../fixtures/layout-text";
 import { EMPTY, FULL, type Stress } from "../fixtures/stress";
 import { WINDOWS, open, panesOf, sizes, spacingOf } from "./windows";
 
@@ -48,6 +53,7 @@ for (const w of WINDOWS) {
         await assertTitlebarTitleBounded(page, root);
         await assertComposerAligned(page, root);
         await assertFocusVisibleNotClipped(page, root);
+        await assertTitlebarTargets(page, root);
       });
     }
   }

@@ -77,6 +77,12 @@
     pointer-events: none;
   }
 
+  /* The polite and assertive regions (plan E7.3) lay their toasts out as
+   * one stack. */
+  .toast-region {
+    display: contents;
+  }
+
   .toast-item {
     padding: 8px 14px;
     border-radius: 4px;

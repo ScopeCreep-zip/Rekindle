@@ -22,6 +22,7 @@ import { handleStartDmCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";
 import ScrollArea from "../common/ScrollArea";
+import { rovingList } from "../../utils/roving_list";
 import SimpleInputModal from "../common/SimpleInputModal";
 
 /** The list of our sent requests, shown as a group of its own. */
@@ -263,7 +264,7 @@ const BuddyList: Component = () => {
   }
 
   return (
-    <ScrollArea class="buddy-list">
+    <ScrollArea class="buddy-list" ref={rovingList(".buddy-item")}>
       <Show when={hasFriends()} fallback={
         <div class="empty-placeholder">
           <div class="empty-placeholder-title">No Friends Yet</div>

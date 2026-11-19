@@ -3,6 +3,7 @@ import { ContextMenu } from "@kobalte/core/context-menu";
 import type { Channel, Category, Member } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
 import CategoryHeader from "./CategoryHeader";
+import { rovingList } from "../../utils/roving_list";
 import {
   ICON_CHANNEL_TEXT,
   ICON_VOLUME_HIGH,
@@ -150,6 +151,9 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           as="div"
           class={`channel-item ${props.selectedId === channel.id ? "channel-item-selected" : ""}`}
           onClick={() => props.onSelect(channel.id)}
+          onKeyDown={(e: KeyboardEvent) => {
+            if (e.key === "Enter" && e.target === e.currentTarget) props.onSelect(channel.id);
+          }}
         >
           <span class={channelIconClass(channel)}>{channelIcon(channel)}</span>
           <span class="channel-name">{channel.name}</span>
@@ -185,7 +189,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
   }
 
   return (
-    <div class="channel-list">
+    <div class="channel-list" ref={rovingList(".channel-item")}>
       <For each={categorizedChannels()}>
         {(group) => {
           const isCollapsed = () => group.category ? collapsedCategories().has(group.category.id) : false;

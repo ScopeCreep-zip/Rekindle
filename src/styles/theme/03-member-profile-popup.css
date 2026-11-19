@@ -346,7 +346,7 @@
     height: 100%;
   }
   .active-call-panel-header,
-  .toast-undo {
+  .toast-with-action {
     display: flex;
     align-items: center;
     gap: 10px;

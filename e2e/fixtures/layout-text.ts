@@ -127,3 +127,27 @@ export async function assertComposerAligned(page: Page, root: Locator): Promise<
   }, CENTRE_TOLERANCE);
   expect.soft(bad, "composer controls off one centre line").toEqual([]);
 }
+
+/** WCAG 2.2 SC 2.5.8's minimum target, in CSS px. */
+export const MIN_TARGET = 24;
+
+/**
+ * Plan E7.3 "Target size": every titlebar button is at least 24 × 24 CSS px.
+ * They sit side by side, so SC 2.5.8's spacing exception does not apply.
+ */
+export async function assertTitlebarTargets(page: Page, root: Locator): Promise<void> {
+  await install(page);
+  const bad = await root.evaluate((rootEl, min) => {
+    const g = (window as any).__geo;
+    const out: string[] = [];
+    for (const btn of Array.from(rootEl.querySelectorAll(".xfire-titlebar-btn"))) {
+      if (!g.shown(btn)) continue;
+      const r = btn.getBoundingClientRect();
+      if (r.width < min - 0.01 || r.height < min - 0.01) {
+        out.push(`${g.describe(btn)} is ${r.width.toFixed(1)}x${r.height.toFixed(1)}`);
+      }
+    }
+    return out;
+  }, MIN_TARGET);
+  expect.soft(bad, `titlebar button under ${MIN_TARGET}x${MIN_TARGET}`).toEqual([]);
+}

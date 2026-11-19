@@ -28,6 +28,8 @@
   .menu-bar-item:focus-visible,
   .header-add-btn:focus-visible,
   .buddy-item:focus-visible,
+  .channel-item:focus-visible,
+  .xfire-titlebar-btn:focus-visible,
   .member-item:focus-visible,
   .group-dm-row:focus-visible,
   .sidebar-section-more:focus-visible {
@@ -126,9 +128,11 @@
   }
 
 
+  /* WCAG 2.2 SC 2.5.8 (plan E7.3): 24 x 24 targets, side by side, so the
+   * spacing exception does not apply; the glyph keeps its size. */
   .xfire-titlebar-btn {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
