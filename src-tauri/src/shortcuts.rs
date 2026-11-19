@@ -11,6 +11,9 @@ use tauri_plugin_global_shortcut::{
     ShortcutState,
 };
 
+use futures::StreamExt;
+use rekindle_node::host::panic_shortcut::{self, DesktopSession, PanicRoute};
+
 use crate::state::SharedState;
 
 /// The fixed chords: toggle the buddy list, toggle voice mute. macOS uses
@@ -29,6 +32,9 @@ const CHORDS: [&str; 2] = ["ctrl+shift+x", "ctrl+shift+m"];
 /// registered here (rather than in the builder chain) so the handler can
 /// capture [`SharedState`].
 pub fn register(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::error::Error>> {
+    // Managed first: the panic shortcut's portal route (a Wayland session)
+    // needs no OS hot-key manager.
+    app.manage(PanicChord::default());
     let shortcut_state = Arc::clone(state);
     let plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(move |app_handle, shortcut, event| {
@@ -61,7 +67,6 @@ pub fn register(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std
         }
         Err(e) => return Err(e.into()),
     }
-    app.manage(PanicChord::default());
     let shortcuts = app.global_shortcut();
     for chord in CHORDS {
         settle_registration(chord, shortcuts.register(chord))?;
@@ -89,14 +94,25 @@ fn settle_registration(
 
 /// The panic shortcut registered for the unlocked identity (plan E7.1,
 /// quick wipe) and the unlock's scope its trigger runs on, kept so the
-/// lock unregisters exactly it. Managed by [`register`].
+/// lock releases exactly it. Managed by [`register`]. An async lock: a
+/// portal binding is made and released across awaits, and an arm must not
+/// interleave with the unlock's registration.
 #[derive(Default)]
-pub struct PanicChord(parking_lot::Mutex<PanicHeld>);
+pub struct PanicChord(tokio::sync::Mutex<PanicHeld>);
 
 #[derive(Default)]
 struct PanicHeld {
-    shortcut: Option<Shortcut>,
+    registered: Option<Registered>,
     scope: Option<Arc<SessionScope>>,
+}
+
+/// How the held panic shortcut was registered
+/// (`rekindle_node::host::panic_shortcut::route`).
+enum Registered {
+    /// The OS grab, through the global-shortcut plugin.
+    Grab(Shortcut),
+    /// The GlobalShortcuts portal (a Wayland session).
+    Portal(crate::portal_shortcuts::PortalBinding),
 }
 
 /// The stored `app_settings.panic_shortcut` as a chord. The Host checked
@@ -115,80 +131,159 @@ pub fn parse_panic_chord(stored: Option<&str>) -> Result<Option<Shortcut>, Strin
         .transpose()
 }
 
+/// This process's desktop session (`panic_shortcut::DesktopSession`).
+fn desktop_session() -> DesktopSession {
+    if cfg!(target_os = "linux") {
+        DesktopSession::from_linux_env(
+            std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
+            std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
+        )
+    } else {
+        DesktopSession::Native
+    }
+}
+
+/// How a panic shortcut would be delivered on this desktop, decided by
+/// the backend's policy (`panic_shortcut::route`); the portal is asked
+/// only on a Wayland session.
+pub async fn panic_route() -> PanicRoute {
+    let session = desktop_session();
+    let portal = session == DesktopSession::Wayland && crate::portal_shortcuts::offered().await;
+    panic_shortcut::route(session, portal)
+}
+
 /// The unlock began: its scope runs the panic shortcut's trigger, and the
 /// stored `chord` is registered (see [`set_panic_chord`]).
 ///
 /// # Errors
 /// As [`set_panic_chord`].
-pub fn begin_panic_session(
+pub async fn begin_panic_session(
     app: &tauri::AppHandle,
     state: &SharedState,
     scope: &Arc<SessionScope>,
     chord: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     if let Some(held) = app.try_state::<PanicChord>() {
-        held.0.lock().scope = Some(Arc::clone(scope));
+        held.0.lock().await.scope = Some(Arc::clone(scope));
     }
-    set_panic_chord(app, state, chord)
+    set_panic_chord(app, state, chord).await
 }
 
-/// The unlock ended: the panic shortcut is unregistered and its scope
+/// The unlock ended: the panic shortcut is released and its scope
 /// forgotten.
-pub fn end_panic_session(app: &tauri::AppHandle, state: &SharedState) {
-    if let Err(e) = set_panic_chord(app, state, None) {
+pub async fn end_panic_session(app: &tauri::AppHandle, state: &SharedState) {
+    if let Err(e) = set_panic_chord(app, state, None).await {
         tracing::warn!(error = %e, "the panic shortcut was not unregistered");
     }
     if let Some(held) = app.try_state::<PanicChord>() {
-        held.0.lock().scope = None;
+        held.0.lock().await.scope = None;
     }
 }
 
 /// Make `chord` the panic shortcut (plan E7.1): the previous one is
-/// unregistered, and `chord`, when there is one, registered to send
-/// `QuickWipeTrigger` to the Host on the unlock's scope. `None` (the lock,
-/// or a disarm) leaves none. A chord the OS refuses is an error: a user
-/// who armed it must not believe it works.
+/// released, and `chord`, when there is one, registered by this desktop's
+/// [`panic_route`] to send `QuickWipeTrigger` to the Host on the unlock's
+/// scope. `None` (the lock, or a disarm) leaves none. Returns the binding
+/// the user is shown: the chord for the OS grab, the compositor's trigger
+/// description for the portal. A chord that cannot be delivered is an
+/// error: a user who armed it must not believe it works.
 ///
 /// # Errors
-/// The chord does not parse, no identity is unlocked, the OS refused it,
-/// or global shortcuts are unavailable on this system.
-pub fn set_panic_chord(
+/// The chord does not parse, no identity is unlocked, the OS or the
+/// portal refused it, or this desktop has no delivery for it.
+pub async fn set_panic_chord(
     app: &tauri::AppHandle,
     state: &SharedState,
     chord: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let next = parse_panic_chord(chord)?;
-    let (Some(held), Some(shortcuts)) = (
-        app.try_state::<PanicChord>(),
-        app.try_state::<GlobalShortcut<tauri::Wry>>(),
-    ) else {
+    let Some(held) = app.try_state::<PanicChord>() else {
         return match next {
             Some(_) => Err("global shortcuts are unavailable on this system".into()),
-            None => Ok(()),
+            None => Ok(None),
         };
     };
-    let mut held = held.0.lock();
-    if let Some(previous) = held.shortcut.take() {
-        if let Err(e) = shortcuts.unregister(previous) {
-            tracing::warn!(error = %e, "the previous panic shortcut stays registered");
+    let mut held = held.0.lock().await;
+    match held.registered.take() {
+        Some(Registered::Grab(previous)) => {
+            if let Some(shortcuts) = app.try_state::<GlobalShortcut<tauri::Wry>>() {
+                if let Err(e) = shortcuts.unregister(previous) {
+                    tracing::warn!(error = %e, "the previous panic shortcut stays registered");
+                }
+            }
         }
+        Some(Registered::Portal(binding)) => binding.close().await,
+        None => {}
     }
-    let Some(shortcut) = next else {
-        return Ok(());
+    let (Some(shortcut), Some(chord)) = (next, chord) else {
+        return Ok(None);
     };
     let Some(scope) = held.scope.clone() else {
         return Err("no identity is unlocked".into());
     };
-    let trigger_state = Arc::clone(state);
+    let (registered, shown) = match panic_route().await {
+        PanicRoute::OsGrab => {
+            grab(app, state, &scope, shortcut)?;
+            (Registered::Grab(shortcut), chord.to_string())
+        }
+        PanicRoute::Portal => {
+            let binding = portal_bind(state, &scope, chord).await?;
+            let shown = binding.trigger.clone();
+            (Registered::Portal(binding), shown)
+        }
+        PanicRoute::Unavailable(reason) => return Err(reason.into()),
+    };
+    held.registered = Some(registered);
+    Ok(Some(shown))
+}
+
+/// Register `shortcut` with the OS grab.
+fn grab(
+    app: &tauri::AppHandle,
+    state: &SharedState,
+    scope: &Arc<SessionScope>,
+    shortcut: Shortcut,
+) -> Result<(), String> {
+    let shortcuts = app
+        .try_state::<GlobalShortcut<tauri::Wry>>()
+        .ok_or("global shortcuts are unavailable on this system")?;
+    let (scope, trigger_state) = (Arc::clone(scope), Arc::clone(state));
     shortcuts
         .on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 trigger_quick_wipe(&scope, Arc::clone(&trigger_state));
             }
         })
-        .map_err(|e| format!("the panic shortcut could not be registered: {e}"))?;
-    held.shortcut = Some(shortcut);
-    Ok(())
+        .map_err(|e| format!("the panic shortcut could not be registered: {e}"))
+}
+
+/// Bind `chord` through the GlobalShortcuts portal and listen for its
+/// presses on `scope` (the lock cancels the listener).
+async fn portal_bind(
+    state: &SharedState,
+    scope: &Arc<SessionScope>,
+    chord: &str,
+) -> Result<crate::portal_shortcuts::PortalBinding, String> {
+    let binding = crate::portal_shortcuts::bind(chord).await?;
+    let activations = match binding.activations().await {
+        Ok(activations) => activations,
+        Err(reason) => {
+            binding.close().await;
+            return Err(reason);
+        }
+    };
+    let (trigger_scope, trigger_state) = (Arc::clone(scope), Arc::clone(state));
+    let listening = scope.spawn("panic shortcut portal", async move {
+        futures::pin_mut!(activations);
+        while activations.next().await.is_some() {
+            trigger_quick_wipe(&trigger_scope, Arc::clone(&trigger_state));
+        }
+    });
+    if listening.is_err() {
+        binding.close().await;
+        return Err("no identity is unlocked".into());
+    }
+    Ok(binding)
 }
 
 /// The panic shortcut was pressed: the Host wipes (`QuickWipeTrigger`,

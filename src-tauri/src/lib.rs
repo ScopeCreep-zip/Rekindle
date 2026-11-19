@@ -15,6 +15,7 @@ mod invoke;
 pub mod keystore;
 mod os_notify;
 mod platform;
+mod portal_shortcuts;
 mod services;
 mod setup;
 /// The port ledger: which Tauri commands are Host calls, the shell's own,

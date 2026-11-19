@@ -79,6 +79,10 @@ tauri = { version = "2.12", features = [ "macos-private-api", "tray-icon", "imag
 # zbus's own executor; the notification plugin's blocking `show` panicked
 # inside the async runtime, so the plugin is not used.
 notify-rust = "4"
+# The panic shortcut on a Wayland session (plan E7.1, `portal_shortcuts.rs`):
+# the GlobalShortcuts portal over the session bus. The same zbus 5 notify-rust
+# already brings in; no new crate.
+zbus = "5"
 # tauri-plugin-window-state removed — causes infinite windowDidMove loop on macOS
 # with prevent_exit(), see tauri#11489
 

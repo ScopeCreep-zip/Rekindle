@@ -86,21 +86,34 @@ async fn register_panic_shortcut(
         .call(move |conn| rekindle_db::repo::preferences::panic_shortcut(conn, &owner))
         .await
         .map_err(|e| format!("the panic shortcut is unreadable: {e}"))?;
-    if let Err(reason) = crate::shortcuts::begin_panic_session(app, state, scope, stored.as_deref())
-    {
-        tracing::error!(%reason, "the panic shortcut is not registered");
-        crate::event_dispatch::emit_notification(
-            app,
-            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
-                title: "Panic shortcut not active".into(),
-                subject: None,
-                body: format!(
-                    "{reason}. The duress passphrase still works; choose another shortcut in \
+    let alert =
+        match crate::shortcuts::begin_panic_session(app, state, scope, stored.as_deref()).await {
+            // The desktop bound another trigger than the stored chord (the
+            // GlobalShortcuts portal's dialog): the user is told what it is.
+            Ok(Some(bound)) if Some(bound.as_str()) != stored.as_deref() => (
+                "Panic shortcut bound",
+                format!("The desktop bound the panic shortcut to {bound}."),
+            ),
+            Ok(_) => return Ok(()),
+            Err(reason) => {
+                tracing::error!(%reason, "the panic shortcut is not registered");
+                (
+                    "Panic shortcut not active",
+                    format!(
+                        "{reason}. The duress passphrase still works; choose another shortcut in \
                      Settings → Privacy."
-                ),
-            },
-        );
-    }
+                    ),
+                )
+            }
+        };
+    crate::event_dispatch::emit_notification(
+        app,
+        rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+            title: alert.0.into(),
+            subject: None,
+            body: alert.1,
+        },
+    );
     Ok(())
 }
 

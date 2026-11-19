@@ -72,6 +72,7 @@ pub(crate) mod unlocked;
 
 #[cfg(test)]
 pub(crate) mod fixture;
+pub mod panic_shortcut;
 pub mod signals;
 mod wake;
 pub mod watchdog;
