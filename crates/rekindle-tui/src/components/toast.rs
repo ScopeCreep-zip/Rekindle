@@ -55,6 +55,15 @@ impl NotificationStack {
         }
     }
 
+    /// The shown toasts, newest first, as (message, level).
+    #[cfg(test)]
+    pub(crate) fn visible(&self) -> Vec<(String, ToastLevel)> {
+        self.toasts
+            .iter()
+            .map(|t| (t.message.clone(), t.level))
+            .collect()
+    }
+
     /// Push a new notification.
     ///
     /// Deduplicates: if an identical message exists within the dedup window,

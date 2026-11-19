@@ -65,7 +65,7 @@ impl DaemonClient {
         let keypair = rekindle_ipc::noise_keys::load_or_create_agent_keypair(CLIENT_KEY_NAME)
             .await
             .map_err(ClientError::Ipc)?;
-        let mut client = BusClient::connect_with_retry(
+        let client = BusClient::connect_with_retry(
             Uuid::now_v7(),
             &socket,
             // Read at each attempt: a daemon that starts between two
@@ -80,11 +80,21 @@ impl DaemonClient {
             IpcError::BuildMismatch { client, host } => ClientError::BuildMismatch { client, host },
             other => ClientError::Connect(other.to_string()),
         })?;
+        Ok(Self::from_bus(client))
+    }
+
+    /// Wrap a bus connection that already completed its handshake.
+    ///
+    /// [`DaemonClient::connect`] finds the user's daemon and key; this is the
+    /// seam a frontend's tests use to run over a bus they serve themselves
+    /// (a `BusServer` on a temporary socket), with no daemon.
+    #[must_use]
+    pub fn from_bus(mut client: BusClient) -> Self {
         let event_rx = client.take_event_receiver();
-        Ok(Self {
+        Self {
             client: Arc::new(client),
             event_rx: parking_lot::Mutex::new(event_rx),
-        })
+        }
     }
 
     /// Take the host's stream frames. Returns `None` after the first call.

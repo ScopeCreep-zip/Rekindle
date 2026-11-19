@@ -495,3 +495,7 @@ fn member_label(pseudonym: &str, name: Option<&str>) -> String {
     let key = crate::helpers::abbreviate_key(pseudonym);
     name.map_or_else(|| key.clone(), |name| format!("{name} ({key})"))
 }
+
+#[cfg(test)]
+#[path = "events_tests.rs"]
+mod tests;

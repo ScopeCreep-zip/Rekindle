@@ -34,3 +34,8 @@ rekindle-client = { path = "../rekindle-client" }
 rekindle-ipc = { path = "../rekindle-ipc" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
+
+[dev-dependencies]
+# The reducer tests serve a bus on a temporary socket (app/events_tests.rs).
+tempfile = "3"
+uuid = { version = "1", features = [ "v7" ] }
