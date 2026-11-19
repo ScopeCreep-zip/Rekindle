@@ -176,13 +176,20 @@
     background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
+  /* The count overlays the bell's top-right corner inside its 24 px box, so
+   * nothing spills from the button or its header row; "99+" is the widest
+   * count and fits (E7.12 layout suite). */
   .notification-badge {
     position: absolute;
-    top: -2px;
-    right: -4px;
+    top: 0;
+    right: 0;
+    box-sizing: border-box;
     min-width: 14px;
+    max-width: 100%;
     height: 14px;
-    padding: 0 3px;
+    padding: 0 2px;
+    overflow: hidden;
+    white-space: nowrap;
     border-radius: 7px;
     background: var(--color-xfire-danger);
     color: var(--color-xfire-danger-fg);

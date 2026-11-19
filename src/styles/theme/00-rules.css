@@ -33,6 +33,8 @@
   .member-item:focus-visible,
   .group-dm-row:focus-visible,
   .sidebar-section-more:focus-visible,
+  /* "+ Category" sits at the foot of the channel list, which clips it. */
+  .channel-create-category-btn:focus-visible,
   /* A message log is the scroller its pane clips (plan E7.3: focusable for
    * SC 2.1.1), so its ring is drawn inside too. */
   [role="log"][tabindex]:focus-visible {
