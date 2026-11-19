@@ -158,6 +158,25 @@ export const WINDOWS: WindowCase[] = [
     spacing: [".xfire-titlebar", ".form-tabs"],
     spacingWithData: [".skin-list"],
   },
+  {
+    // Plan E7.7.5: the skin editor open in Settings → Appearance, a
+    // failing pair with its suggestion and a refusal at its longest.
+    name: "settings-skin-editor",
+    label: "settings",
+    path: "/settings?tab=appearance",
+    def: { width: 500, height: 550 },
+    min: { width: 420, height: 450 },
+    ready: async (page) => {
+      await frame(page);
+      await page.locator(".skin-row").first().waitFor();
+      // By keyboard, so focus indicators stay keyboard-modality afterwards.
+      await page.getByRole("button", { name: "Edit a skin…" }).focus();
+      await page.keyboard.press("Enter");
+      await page.locator(".skin-pair").first().waitFor();
+    },
+    spacing: [".xfire-titlebar", ".form-tabs"],
+    spacingWithData: [".skin-editor", ".skin-pairs"],
+  },
 ];
 
 /** The content panes `w` renders with or without data. */

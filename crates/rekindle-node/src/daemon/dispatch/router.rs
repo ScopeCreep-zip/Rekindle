@@ -161,7 +161,12 @@ async fn route(
         | IpcRequest::SkinRemove { .. }
         | IpcRequest::SkinSelect { .. }
         | IpcRequest::SkinSetLogin { .. }
-        | IpcRequest::SkinKeep { .. }) => crate::host::skin::route(ctx, state, request).await,
+        | IpcRequest::SkinKeep { .. }
+        | IpcRequest::SkinValidateDraft { .. }
+        | IpcRequest::SkinDraftStart { .. }
+        | IpcRequest::SkinExportDraft { .. }) => {
+            crate::host::skin::route(ctx, state, request).await
+        }
 
         // ── Voice ────────────────────────────────────────────────
         IpcRequest::VoiceJoin {

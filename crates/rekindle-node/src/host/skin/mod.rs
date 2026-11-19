@@ -7,6 +7,7 @@
 //! `SkinGet`, `SkinFile` (the `skin://` scheme's bytes) and
 //! `SystemEvent::SkinChanged` are the serving-and-apply half ([`serve`]).
 
+mod draft;
 pub(crate) mod ids;
 pub(crate) mod login;
 mod serve;
@@ -56,6 +57,15 @@ pub(crate) async fn route(
             Ok(()) => list(ctx).await.map(|l| IpcResponse::ok(&l)),
             Err(refused) => Err(refused),
         },
+        IpcRequest::SkinValidateDraft { draft } => {
+            draft::validate(draft).await.map(|r| IpcResponse::ok(&r))
+        }
+        IpcRequest::SkinDraftStart { id } => {
+            draft::start(ctx, id).await.map(|d| IpcResponse::ok(&d))
+        }
+        IpcRequest::SkinExportDraft { draft, path } => draft::export(ctx, draft, path)
+            .await
+            .map(|a| IpcResponse::ok(&a)),
         other => unreachable!("{} is not a skin request", other.name()),
     };
     answer.unwrap_or_else(|refused| refused)

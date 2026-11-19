@@ -1,0 +1,93 @@
+@layer components {
+  /* The skin editor (plan E7.7.5), a sub-panel of Settings → Appearance. */
+  .skin-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .skin-editor-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+  }
+
+  .skin-editor-name {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .skin-editor-failures,
+  .skin-tokens,
+  .skin-pairs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .skin-token {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .skin-token-picker {
+    flex: none;
+    width: 28px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--color-xfire-border);
+    background: none;
+  }
+
+  .skin-token-id {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--color-xfire-text);
+  }
+
+  .skin-pair {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    padding: 2px 4px;
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  .skin-pair-fail {
+    border-left: 3px solid var(--color-xfire-danger);
+    font-weight: 700;
+  }
+
+  .skin-pair-name {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+
+  .skin-pair-rule,
+  .skin-pair-apca {
+    font-weight: 400;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .skin-suggest {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .skin-swatch {
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--color-xfire-border);
+  }
+}

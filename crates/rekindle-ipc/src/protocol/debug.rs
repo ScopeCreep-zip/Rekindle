@@ -151,6 +151,9 @@ impl std::fmt::Debug for IpcRequest {
             | Self::SkinKeep { .. }
             | Self::SkinGet { .. }
             | Self::SkinFile { .. }
+            | Self::SkinValidateDraft { .. }
+            | Self::SkinDraftStart { .. }
+            | Self::SkinExportDraft { .. }
             | Self::LinkOpen { .. } => self.fmt_own(f),
             Self::PresenceSet { .. }
             | Self::GamePresenceSet { .. }
@@ -214,6 +217,18 @@ impl IpcRequest {
                 .finish(),
             Self::SkinGet { id } => f.debug_struct("SkinGet").field("id", id).finish(),
             Self::SkinFile { path } => f.debug_struct("SkinFile").field("path", path).finish(),
+            Self::SkinValidateDraft { draft } => f
+                .debug_struct("SkinValidateDraft")
+                .field("tokens", &draft.tokens.len())
+                .finish(),
+            Self::SkinDraftStart { id } => {
+                f.debug_struct("SkinDraftStart").field("id", id).finish()
+            }
+            Self::SkinExportDraft { draft, path } => f
+                .debug_struct("SkinExportDraft")
+                .field("tokens", &draft.tokens.len())
+                .field("path_len", &path.len())
+                .finish(),
             Self::LinkOpen { url } => f
                 .debug_struct("LinkOpen")
                 .field("url_len", &url.len())

@@ -314,6 +314,30 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
       const lib = ${j(skinLibrary(s))};
       return { ...lib, trial: lib.trial && { ...lib.trial, revertsAtMs: Date.now() + 15000 } };
     }
+    case "skin_draft_start":
+      return { name: ${j(longName("Skin_").slice(0, 64))}, base: ${j(base)}, contrast: "standard",
+        tokens: {} };
+    case "validate_skin_draft": {
+      // The skin editor (plan E7.7.5): a failing pair with its suggestion,
+      // a refusal at its longest, and passing pairs with long grounds.
+      const colour = (r, g, b) => ({ type: "color", data: { r, g, b, a: 255 } });
+      const pair = (fg, ground, ratioX100, pass) => ({ rule: "1.4.3", fg, ground, ratioX100,
+        requiredX100: 450, pass, apcaLcX10: -1075,
+        suggestion: pass ? null : { token: fg, rgb: [52, 145, 216], ratioX100: 583 } });
+      return {
+        tokens: ["accent.text", "bg.dark", "bg.panel", "text.base", "status.online"].map(
+          (id, i) => ({ id, css: "--color-xfire-" + id.replace(".", "-"), set: i === 0,
+            value: colour(20 * i, 30 * i, 40 * i) })),
+        pairs: [
+          pair("accent.text", "bg.dark", 442, false),
+          pair("text.base", "danger.fill 60.0% over bg.dark", 1590, true),
+          pair("status.online", "accent.fill 12.0% over bg.panel", 812, true),
+        ],
+        failures: [${j("danger.fill: D1 hue 200.0°, chroma 0.050; danger must read red ".repeat(3))}],
+        tokensCss: "",
+        exportable: false,
+      };
+    }
     case "get_game_status":
       return null;
     case "get_welcome_screen":

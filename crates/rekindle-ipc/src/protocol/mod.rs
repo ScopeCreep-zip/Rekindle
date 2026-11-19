@@ -325,6 +325,22 @@ pub enum IpcRequest {
     /// (`/{package}/{file}`, `rekindle_skin::serve`): a built-in, the
     /// device login copy, or (unlocked) a library package.
     SkinFile { path: String },
+    /// The skin editor (plan E7.7.5): the Host's report on a draft, every
+    /// declared pair's ratio and pass/fail, the suggested passing colours
+    /// and the draft's token stylesheet (a read; nothing is stored).
+    SkinValidateDraft {
+        draft: rekindle_types::dto::skin_draft::SkinDraft,
+    },
+    /// "Start from the current skin": `id`'s active variant as a draft, or
+    /// with `None` the skin this device shows now.
+    SkinDraftStart { id: Option<String> },
+    /// Export a draft: built, validated in `rekindle-skin-helper` (refused
+    /// while any check fails, naming it) and written to `path`, a file the
+    /// user chose; answers the package's address.
+    SkinExportDraft {
+        draft: rekindle_types::dto::skin_draft::SkinDraft,
+        path: String,
+    },
     /// Set game presence info.
     GamePresenceSet {
         game_name: String,

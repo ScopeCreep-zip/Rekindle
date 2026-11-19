@@ -50,10 +50,14 @@ fn refuse(what: &str) -> IpcResponse {
 /// A 400 naming the field.
 pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
     match request {
-        IpcRequest::SkinList | IpcRequest::SkinGet { id: None } => Ok(()),
-        IpcRequest::SkinGet { id: Some(id) } => parse(id)
-            .map(drop)
-            .ok_or_else(|| refuse("expected builtin:<id> or pkg:<64 hex>")),
+        IpcRequest::SkinList
+        | IpcRequest::SkinGet { id: None }
+        | IpcRequest::SkinDraftStart { id: None } => Ok(()),
+        IpcRequest::SkinGet { id: Some(id) } | IpcRequest::SkinDraftStart { id: Some(id) } => {
+            parse(id)
+                .map(drop)
+                .ok_or_else(|| refuse("expected builtin:<id> or pkg:<64 hex>"))
+        }
         // The scheme's path: one package address and one file, nothing
         // else (`rekindle_skin::serve::parse_path`).
         IpcRequest::SkinFile { path } => rekindle_skin::serve::parse_path(path)
@@ -84,9 +88,33 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
         IpcRequest::SkinSelect { id } | IpcRequest::SkinSetLogin { id } => parse(id)
             .map(drop)
             .ok_or_else(|| refuse("expected builtin:<id> or pkg:<64 hex>")),
+        IpcRequest::SkinValidateDraft { draft } => draft_bounds(draft),
+        IpcRequest::SkinExportDraft { draft, path } => {
+            draft_bounds(draft)?;
+            if path.is_empty() || !std::path::Path::new(path).is_absolute() {
+                return Err(refuse("expected an absolute export path"));
+            }
+            Ok(())
+        }
         other => unreachable!("{} is not a skin request", other.name()),
     }
 }
+
+/// A draft within a token file's bounds (`rekindle_skin::tokens`): the
+/// Host's report names every other rule.
+fn draft_bounds(draft: &rekindle_types::dto::skin_draft::SkinDraft) -> Result<(), IpcResponse> {
+    let max = rekindle_skin::tokens::MAX_TOKENS;
+    if draft.tokens.len() as u64 > max || draft.name.len() > MAX_DRAFT_NAME_BYTES {
+        return Err(IpcResponse::error(
+            400,
+            format!("invalid skin draft: at most {max} tokens and a name of {MAX_DRAFT_NAME_BYTES} bytes"),
+        ));
+    }
+    Ok(())
+}
+
+/// A draft name's bytes: the manifest's 64 scalars at 4 bytes each.
+const MAX_DRAFT_NAME_BYTES: usize = 256;
 
 #[cfg(test)]
 mod tests {

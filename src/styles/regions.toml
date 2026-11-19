@@ -136,6 +136,11 @@
 '.skin-credits' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
 '.skin-credits-stated' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
 '.skin-credits-term' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
+# The skin editor (plan E7.7.5) sits on the Settings window's `.app-frame`.
+'.skin-token-id' = { on = ["--color-xfire-bg-dark"] }
+'.skin-pair' = { on = ["--color-xfire-bg-dark"] }
+'.skin-pair-rule' = { on = ["--color-xfire-bg-dark"] }
+'.skin-pair-apca' = { on = ["--color-xfire-bg-dark"] }
 '.settings-category-label' = { on = ["--color-xfire-bg-panel"] }
 '.settings-about-text' = { on = ["--color-xfire-bg-dark"] }
 '.settings-about-value' = { on = ["--color-xfire-bg-dark"] }

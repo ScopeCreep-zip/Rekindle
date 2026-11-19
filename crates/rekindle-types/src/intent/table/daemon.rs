@@ -164,6 +164,12 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("SkinList", None),
     ("SkinGet", None),
     ("SkinFile", None),
+    // The editor (plan E7.7.5): validation is not an intent; an export
+    // writes the file the user chose in the OS save dialog and changes no
+    // state, so that dialog is its confirmation.
+    ("SkinValidateDraft", None),
+    ("SkinDraftStart", None),
+    ("SkinExportDraft", None),
     ("SkinImport", Some(IntentKind::ImportSkin)),
     ("SkinRemove", Some(IntentKind::RemoveSkin)),
     // The identity's skin is a preference (E6.8's `PatchPreferences`).

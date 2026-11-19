@@ -499,3 +499,55 @@ export interface TargetModeration {
   ban: boolean;
   timeout: boolean;
 }
+
+/// A design-token value (`rekindle_types::dto::skin::TokenValue`).
+export type TokenValue =
+  | { type: "color"; data: { r: number; g: number; b: number; a: number } }
+  | { type: "dimension"; data: number }
+  | { type: "number"; data: number }
+  | { type: "fontFamily"; data: string };
+
+/// A skin being edited (`rekindle_types::dto::skin_draft::SkinDraft`, plan
+/// E7.7.5): one variant's tokens by registry id.
+export interface SkinDraft {
+  name: string;
+  base: "light" | "dark";
+  contrast: "standard" | "high";
+  tokens: Record<string, TokenValue>;
+}
+
+/// One themeable registry key, resolved (`SkinDraftToken`).
+export interface SkinDraftToken {
+  id: string;
+  css: string;
+  value: TokenValue;
+  set: boolean;
+}
+
+/// A passing colour for a failing pair (`SkinSuggestion`).
+export interface SkinSuggestion {
+  token: string;
+  rgb: [number, number, number];
+  ratioX100: number;
+}
+
+/// One declared contrast pair, measured by the Host (`SkinPairCheck`).
+export interface SkinPairCheck {
+  rule: string;
+  fg: string;
+  ground: string;
+  ratioX100: number;
+  requiredX100: number;
+  pass: boolean;
+  apcaLcX10: number;
+  suggestion: SkinSuggestion | null;
+}
+
+/// The Host's report on a draft (`SkinDraftReport`).
+export interface SkinDraftReport {
+  tokens: SkinDraftToken[];
+  pairs: SkinPairCheck[];
+  failures: string[];
+  tokensCss: string;
+  exportable: boolean;
+}

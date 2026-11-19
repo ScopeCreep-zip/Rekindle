@@ -3,6 +3,7 @@
 //! choice, trial and login skin. Host calls, one request each.
 
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftReport};
 use rekindle_types::dto::skin_library::{SkinApplied, SkinEntry, SkinLibrary};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -73,4 +74,46 @@ pub async fn set_login_skin(
     state: State<'_, SharedState>,
 ) -> Result<Done<SkinLibrary>, CommandError> {
     host_call::call(&state, IpcRequest::SkinSetLogin { id }).await
+}
+
+/// The skin editor (plan E7.7.5): the Host's report on a draft.
+#[tauri::command]
+pub async fn validate_skin_draft(
+    draft: SkinDraft,
+    state: State<'_, SharedState>,
+) -> Result<Done<SkinDraftReport>, CommandError> {
+    host_call::call(&state, IpcRequest::SkinValidateDraft { draft }).await
+}
+
+/// "Start from the current skin": `id`'s draft, or the skin shown now.
+#[tauri::command]
+pub async fn skin_draft_start(
+    id: Option<String>,
+    state: State<'_, SharedState>,
+) -> Result<Done<SkinDraft>, CommandError> {
+    host_call::call(&state, IpcRequest::SkinDraftStart { id }).await
+}
+
+/// Ask where to save the draft, then have the Host validate and write it:
+/// the package address, or `None` if the user cancelled.
+#[tauri::command]
+pub async fn export_skin_draft(
+    draft: SkinDraft,
+    window: tauri::WebviewWindow,
+    state: State<'_, SharedState>,
+) -> Result<Done<Option<String>>, CommandError> {
+    let Some(path) =
+        crate::services::community_files_runtime::save_path(&window, "skin.rkskin").await?
+    else {
+        return Ok(Done {
+            value: None,
+            undo: None,
+        });
+    };
+    let done: Done<String> =
+        host_call::call(&state, IpcRequest::SkinExportDraft { draft, path }).await?;
+    Ok(Done {
+        value: Some(done.value),
+        undo: done.undo,
+    })
 }

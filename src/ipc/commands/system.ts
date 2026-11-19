@@ -5,7 +5,7 @@ import type {
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
   AuditEntryView, AuditVerified, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
-  SkinApplied, SkinEntry, SkinLibrary,
+  SkinApplied, SkinDraft, SkinDraftReport, SkinEntry, SkinLibrary,
 } from "./dto";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
@@ -47,6 +47,12 @@ export const systemCommands = {
   selectSkin: (id: string) => hostInvoke<SkinLibrary>("select_skin", { id }),
   keepSkin: (id: string, keep: boolean) => hostInvoke<SkinLibrary>("keep_skin", { id, keep }),
   setLoginSkin: (id: string) => hostInvoke<SkinLibrary>("set_login_skin", { id }),
+  // The skin editor (plan E7.7.5): every check is the Host's.
+  validateSkinDraft: (draft: SkinDraft) =>
+    hostInvoke<SkinDraftReport>("validate_skin_draft", { draft }),
+  skinDraftStart: (id: string | null = null) => hostInvoke<SkinDraft>("skin_draft_start", { id }),
+  // The shell asks where to save; `null` when the user cancelled.
+  exportSkinDraft: (draft: SkinDraft) => hostInvoke<string | null>("export_skin_draft", { draft }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),

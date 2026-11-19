@@ -11,6 +11,9 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("get_skin", None),
     // Each forwards its Host request (`shell_commands.rs`), with that row's kind.
     ("list_skins", None),
+    ("validate_skin_draft", None),
+    ("skin_draft_start", None),
+    ("export_skin_draft", None),
     ("import_skin", Some(IntentKind::ImportSkin)),
     ("remove_skin", Some(IntentKind::RemoveSkin)),
     ("select_skin", Some(IntentKind::SetPreferences)),

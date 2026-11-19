@@ -45,6 +45,24 @@ fn path_string(path: PathBuf) -> Result<String, CommandError> {
         .map_err(|_| CommandError::internal("the picked path is not UTF-8"))
 }
 
+/// Ask where to save a file the Host will write (an attachment download,
+/// the skin editor's export), suggesting `name`: the picked path, or
+/// `None` if the user cancelled.
+pub async fn save_path(
+    window: &tauri::WebviewWindow,
+    name: &str,
+) -> Result<Option<String>, CommandError> {
+    let builder = window
+        .dialog()
+        .file()
+        .set_parent(window)
+        .set_file_name(name);
+    dialog_path(|done| builder.save_file(done))
+        .await?
+        .map(path_string)
+        .transpose()
+}
+
 /// The Host's record of an attachment, or a 404.
 async fn record(
     state: &SharedState,

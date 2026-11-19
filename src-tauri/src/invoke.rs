@@ -263,6 +263,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::skin::remove_skin,
         commands::skin::select_skin,
         commands::skin::keep_skin,
+        commands::skin::validate_skin_draft,
+        commands::skin::skin_draft_start,
+        commands::skin::export_skin_draft,
         commands::skin::set_login_skin,
         commands::status::set_status_message,
         // game

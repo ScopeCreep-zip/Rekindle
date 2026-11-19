@@ -197,6 +197,9 @@ pub(crate) async fn select(
         | IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }
         | IpcRequest::SkinFile { .. }
+        | IpcRequest::SkinValidateDraft { .. }
+        | IpcRequest::SkinDraftStart { .. }
+        | IpcRequest::SkinExportDraft { .. }
         | IpcRequest::AuditVerify
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
