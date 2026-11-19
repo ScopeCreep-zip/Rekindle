@@ -152,10 +152,12 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
             Audience::kinds(&WindowKind::ALL)
         }
         // "Keep this skin?" is asked where skins are chosen: Settings →
-        // Appearance renders it from the payload (plan E7.7.2).
-        SubscriptionEvent::System(SystemEvent::SkinTrialChanged { .. }) => {
-            Audience::kinds(&[WindowKind::Settings])
-        }
+        // Appearance renders it from the payload (plan E7.7.2). The quick
+        // wipe's state shows in Settings → Privacy, where it is armed (plan
+        // E7.1); the shell's own registration follows it in `shell_session`.
+        SubscriptionEvent::System(
+            SystemEvent::SkinTrialChanged { .. } | SystemEvent::QuickWipeChanged { .. },
+        ) => Audience::kinds(&[WindowKind::Settings]),
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them.
         SubscriptionEvent::Notification(_)
@@ -198,6 +200,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         // Every window applies it, not only the community dispatcher.
         SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => "skin-event",
         SubscriptionEvent::System(SystemEvent::SkinTrialChanged { .. }) => "skin-trial-event",
+        SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
         SubscriptionEvent::Voice(_) => "voice-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the

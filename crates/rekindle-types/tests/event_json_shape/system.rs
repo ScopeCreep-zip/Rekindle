@@ -15,6 +15,7 @@ pub const NAMES: &[&str] = &[
     "auditChainBroken",
     "skinChanged",
     "skinTrialChanged",
+    "quickWipeChanged",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
@@ -29,6 +30,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::AuditChainBroken { .. } => "auditChainBroken",
         SystemEvent::SkinChanged { .. } => "skinChanged",
         SystemEvent::SkinTrialChanged { .. } => "skinTrialChanged",
+        SystemEvent::QuickWipeChanged { .. } => "quickWipeChanged",
     }
 }
 
@@ -130,6 +132,13 @@ fn sync() -> Vec<Sample> {
                     previous: "builtin:symbiosis".into(),
                     reverts_at_ms: 1_700_000_015_000,
                 }),
+            },
+        ),
+        ev(
+            "quickWipeChanged",
+            SystemEvent::QuickWipeChanged {
+                armed: true,
+                shortcut: Some("CommandOrControl+Shift+F12".into()),
             },
         ),
     ]

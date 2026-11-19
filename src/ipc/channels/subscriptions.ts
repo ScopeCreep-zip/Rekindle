@@ -240,6 +240,26 @@ export function subscribeSkinTrial(
   );
 }
 
+/** The quick wipe's state the Host published when an arm or disarm committed. */
+export interface QuickWipeChange {
+  armed: boolean;
+  shortcut: string | null;
+}
+
+/**
+ * Subscribe to the quick wipe's state (`SystemEvent::QuickWipeChanged`,
+ * plan E7.1): Settings receives it on `quick-wipe-event` once the Host
+ * commits an arm or disarm; the shell registers the panic shortcut on the
+ * same event.
+ */
+export function subscribeQuickWipe(
+  onChange: (change: QuickWipeChange) => void,
+): Promise<UnlistenFn> {
+  return on<{ system: { quickWipeChanged: QuickWipeChange } }>("quick-wipe-event", (payload) =>
+    onChange(payload.system.quickWipeChanged),
+  );
+}
+
 export function subscribeNotificationEvents(
   onEvent: (event: NotificationEvent) => void,
 ): Promise<UnlistenFn> {

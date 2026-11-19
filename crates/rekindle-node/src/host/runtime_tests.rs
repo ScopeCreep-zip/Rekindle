@@ -47,6 +47,8 @@ mod onboarding_bounds;
 mod own_removal;
 #[path = "partial_tests.rs"]
 mod partial;
+#[path = "quick_wipe_tests.rs"]
+mod quick_wipe;
 #[path = "shell_hooks_tests.rs"]
 mod shell_hooks_tests;
 #[cfg(unix)]

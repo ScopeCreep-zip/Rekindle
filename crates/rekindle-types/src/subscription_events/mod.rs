@@ -267,7 +267,8 @@ impl SubscriptionEvent {
                 // Audit chain breakage is a local-device event, not community-scoped.
                 SystemEvent::AuditChainBroken { .. }
                 | SystemEvent::SkinChanged { .. }
-                | SystemEvent::SkinTrialChanged { .. } => None,
+                | SystemEvent::SkinTrialChanged { .. }
+                | SystemEvent::QuickWipeChanged { .. } => None,
             },
             // Not community-scoped: a friend event, a network state
             // change and an unread bump all belong to the device, not

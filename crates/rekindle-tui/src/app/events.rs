@@ -372,22 +372,15 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::System(SystemEvent::RaidAlert { active, .. }) => {
-                let msg = if active {
-                    "Raid alert activated!"
-                } else {
-                    "Raid alert cleared"
-                };
-                let level = if active {
-                    ToastLevel::Error
-                } else {
-                    ToastLevel::Success
-                };
-                self.notifications.push(msg.into(), level);
-                Some(Action::Render)
+                Some(self.raid_toast(active))
             }
             SubscriptionEvent::System(SystemEvent::ChannelLockdown { locked, .. }) => {
                 Some(self.lockdown_toast(locked))
             }
+            SubscriptionEvent::System(SystemEvent::QuickWipeChanged {
+                armed,
+                ref shortcut,
+            }) => Some(self.quick_wipe_toast(armed, shortcut.as_deref())),
 
             // ── Silent events (no UI impact) ─────────────────────────────
             SubscriptionEvent::System(
@@ -469,6 +462,16 @@ impl App {
     }
 
     /// A channel's lockdown began or ended.
+    fn raid_toast(&mut self, active: bool) -> Action {
+        let (msg, level) = if active {
+            ("Raid alert activated!", ToastLevel::Error)
+        } else {
+            ("Raid alert cleared", ToastLevel::Success)
+        };
+        self.notifications.push(msg.into(), level);
+        Action::Render
+    }
+
     fn lockdown_toast(&mut self, locked: bool) -> Action {
         let (msg, level) = if locked {
             ("Channel locked down", ToastLevel::Warning)
@@ -476,6 +479,18 @@ impl App {
             ("Channel lockdown lifted", ToastLevel::Success)
         };
         self.notifications.push(msg.into(), level);
+        Action::Render
+    }
+
+    /// The quick wipe was armed or disarmed (plan E7.1). The TUI has no
+    /// global grab: the panic shortcut is the GUI's, so it is named as such.
+    fn quick_wipe_toast(&mut self, armed: bool, shortcut: Option<&str>) -> Action {
+        let msg = match (armed, shortcut) {
+            (true, Some(chord)) => format!("Quick wipe armed (GUI panic shortcut {chord})"),
+            (true, None) => "Quick wipe armed".to_owned(),
+            (false, _) => "Quick wipe disarmed".to_owned(),
+        };
+        self.notifications.push(msg, ToastLevel::Warning);
         Action::Render
     }
 

@@ -152,21 +152,89 @@ pub async fn panic_route() -> PanicRoute {
     panic_shortcut::route(session, portal)
 }
 
-/// The unlock began: its scope runs the panic shortcut's trigger, and the
-/// stored `chord` is registered (see [`set_panic_chord`]).
-///
-/// # Errors
-/// As [`set_panic_chord`].
-pub async fn begin_panic_session(
-    app: &tauri::AppHandle,
-    state: &SharedState,
-    scope: &Arc<SessionScope>,
-    chord: Option<&str>,
-) -> Result<Option<String>, String> {
+/// The unlock began: its scope runs the panic shortcut's trigger and the
+/// listener that follows the Host's `QuickWipeChanged` (see
+/// [`follow_panic_changes`]).
+pub async fn begin_panic_session(app: &tauri::AppHandle, scope: &Arc<SessionScope>) {
     if let Some(held) = app.try_state::<PanicChord>() {
         held.0.lock().await.scope = Some(Arc::clone(scope));
     }
-    set_panic_chord(app, state, chord).await
+}
+
+/// Make `chord` the panic shortcut ([`set_panic_chord`]) and tell the user
+/// what they must know: a chord that cannot be delivered (they armed it and
+/// must not believe it works), or the other trigger the desktop bound (the
+/// GlobalShortcuts portal's dialog). The one registration the unlock and a
+/// committed arm or disarm (`QuickWipeChanged`) take.
+pub async fn apply_panic_chord(app: &tauri::AppHandle, state: &SharedState, chord: Option<&str>) {
+    let alert = match set_panic_chord(app, state, chord).await {
+        Ok(Some(bound)) if Some(bound.as_str()) != chord => (
+            "Panic shortcut bound",
+            format!("The desktop bound the panic shortcut to {bound}."),
+        ),
+        Ok(_) => return,
+        Err(reason) => {
+            tracing::error!(%reason, "the panic shortcut is not registered");
+            (
+                "Panic shortcut not active",
+                format!(
+                    "{reason}. The duress passphrase still works; choose another shortcut in \
+                     Settings → Privacy."
+                ),
+            )
+        }
+    };
+    // Standing: a security alert stays for the session, so a window that
+    // subscribes later still shows it (`SessionJournal::publish_standing`).
+    state.host.get().await.publish_standing(
+        rekindle_types::subscription_events::SubscriptionEvent::Notification(
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title: alert.0.into(),
+                subject: None,
+                body: alert.1,
+            },
+        ),
+    );
+}
+
+/// How a followed stream of the Host's frames ended.
+#[derive(Debug, PartialEq, Eq)]
+pub enum FollowEnd {
+    /// `InvalidSession` (this listener fell behind) or the stream closed:
+    /// take it again, live.
+    Resubscribe,
+    /// The Host is stopping.
+    Stopped,
+}
+
+/// Follow the Host's `frames`, handing each `QuickWipeChanged`'s chord to
+/// `apply` ([`apply_panic_chord`] in the app) as it comes: the chord of an
+/// arming with a shortcut, `None` for a disarm or an arming without one.
+pub async fn follow_panic_changes<S, F, Fut>(frames: S, mut apply: F) -> FollowEnd
+where
+    S: futures::Stream<Item = rekindle_types::subscription_events::StreamFrame>,
+    F: FnMut(Option<String>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    use rekindle_types::subscription_events::{StreamFrame, SystemEvent};
+    futures::pin_mut!(frames);
+    while let Some(frame) = frames.next().await {
+        match frame {
+            StreamFrame::Event(sequenced) => {
+                if let SubscriptionEvent::System(SystemEvent::QuickWipeChanged {
+                    armed,
+                    shortcut,
+                }) = sequenced.event
+                {
+                    apply(shortcut.filter(|_| armed)).await;
+                }
+            }
+            StreamFrame::Resumed(_) => {}
+            StreamFrame::InvalidSession => return FollowEnd::Resubscribe,
+            StreamFrame::HostStopping { .. } => return FollowEnd::Stopped,
+        }
+    }
+    FollowEnd::Resubscribe
 }
 
 /// The unlock ended: the panic shortcut is released and its scope
@@ -191,7 +259,7 @@ pub async fn end_panic_session(app: &tauri::AppHandle, state: &SharedState) {
 /// # Errors
 /// The chord does not parse, no identity is unlocked, the OS or the
 /// portal refused it, or this desktop has no delivery for it.
-pub async fn set_panic_chord(
+async fn set_panic_chord(
     app: &tauri::AppHandle,
     state: &SharedState,
     chord: Option<&str>,
@@ -372,6 +440,58 @@ mod tests {
         );
         assert!(parse_panic_chord(None).unwrap().is_none());
         assert!(parse_panic_chord(Some("Shift+NotAKey")).is_err());
+    }
+
+    /// The Host's `QuickWipeChanged` drives the registrar: an arming
+    /// registers its chord, an arming without one and a disarm release it,
+    /// every other event leaves it, and the follower ends on the Host's
+    /// stop (plan E7.1: a committed arm or disarm is live at once).
+    #[tokio::test]
+    async fn quick_wipe_changes_drive_registration_and_release() {
+        use rekindle_types::subscription_events::{
+            Cursor, Sequenced, StopReason, StreamFrame, SystemEvent,
+        };
+        let event = |seq, event| {
+            StreamFrame::Event(Sequenced {
+                cursor: Cursor { epoch: 1, seq },
+                event,
+            })
+        };
+        let changed = |armed, shortcut: Option<&str>| {
+            SubscriptionEvent::System(SystemEvent::QuickWipeChanged {
+                armed,
+                shortcut: shortcut.map(str::to_owned),
+            })
+        };
+        let frames = futures::stream::iter(vec![
+            event(1, changed(true, Some("CommandOrControl+Shift+F12"))),
+            event(
+                2,
+                SubscriptionEvent::System(SystemEvent::AuditChainBroken { cursor: 1 }),
+            ),
+            event(3, changed(false, None)),
+            event(4, changed(true, None)),
+            StreamFrame::HostStopping {
+                reason: StopReason::Requested,
+            },
+            event(5, changed(true, Some("Shift+F1"))),
+        ]);
+        let calls = parking_lot::Mutex::new(Vec::new());
+        let end = follow_panic_changes(frames, |chord| {
+            calls.lock().push(chord);
+            async {}
+        })
+        .await;
+        assert_eq!(end, FollowEnd::Stopped);
+        assert_eq!(
+            calls.into_inner(),
+            vec![Some("CommandOrControl+Shift+F12".to_string()), None, None]
+        );
+        let behind = futures::stream::iter(vec![StreamFrame::InvalidSession]);
+        assert_eq!(
+            follow_panic_changes(behind, |_| async {}).await,
+            FollowEnd::Resubscribe
+        );
     }
 
     #[test]

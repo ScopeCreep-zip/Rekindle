@@ -1767,6 +1767,14 @@
       }
     }
   },
+  "system.quickWipeChanged": {
+    "system": {
+      "quickWipeChanged": {
+        "armed": true,
+        "shortcut": "CommandOrControl+Shift+F12"
+      }
+    }
+  },
   "system.raidAlert": {
     "system": {
       "raidAlert": {

@@ -105,15 +105,15 @@ pub struct QuickWipeState {
 /// the Host reviews it with exactly what a trigger destroys and asks for
 /// the identity's passphrase). The panic shortcut is parsed, and refused
 /// when this desktop cannot deliver it (`panic_shortcut::route`: a Wayland
-/// session without the GlobalShortcuts portal), before the Host sees it;
-/// it is registered once the Host armed it, and one the OS or the portal
-/// refuses is an error, so the user never believes an inert shortcut is
-/// armed.
+/// session without the GlobalShortcuts portal), before the Host sees it.
+/// The shell registers it when the arming commits, on the Host's
+/// `QuickWipeChanged` (`shell_session::unlocked`), and alerts when the OS
+/// or the portal refuses it, so the user never believes an inert shortcut
+/// is armed.
 #[tauri::command]
 pub async fn quick_wipe_arm(
     duress_passphrase: Passphrase,
     shortcut: Option<String>,
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<Done<QuickWipeState>, CommandError> {
     let refused = |message: String| CommandError::Failed {
@@ -129,36 +129,24 @@ pub async fn quick_wipe_arm(
             return Err(refused(reason.into()));
         }
     }
-    let done: Done<QuickWipeState> = host_call::call(
+    host_call::call(
         &state,
         IpcRequest::QuickWipeArm {
             duress_passphrase,
             shortcut,
         },
     )
-    .await?;
-    crate::shortcuts::set_panic_chord(&app, state.inner(), done.value.shortcut.as_deref())
-        .await
-        .map_err(|reason| {
-            CommandError::internal(format!(
-                "the duress passphrase is armed, but {reason}; choose another shortcut"
-            ))
-        })?;
-    Ok(done)
+    .await
 }
 
 /// Disarm the quick wipe (`IpcRequest::QuickWipeDisarm`, Protected): the
-/// duress passphrase forgotten and the panic shortcut released.
+/// duress passphrase forgotten; the shell releases the panic shortcut when
+/// it commits, on the Host's `QuickWipeChanged`.
 #[tauri::command]
 pub async fn quick_wipe_disarm(
-    app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<Done<QuickWipeState>, CommandError> {
-    let done: Done<QuickWipeState> = host_call::call(&state, IpcRequest::QuickWipeDisarm).await?;
-    crate::shortcuts::set_panic_chord(&app, state.inner(), None)
-        .await
-        .map_err(CommandError::internal)?;
-    Ok(done)
+    host_call::call(&state, IpcRequest::QuickWipeDisarm).await
 }
 
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {

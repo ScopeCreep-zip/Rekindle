@@ -149,6 +149,16 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
                 h.update(&t.reverts_at_ms.to_le_bytes());
             }
         }
+        SystemEvent::QuickWipeChanged { armed, shortcut } => {
+            // Each committed arm or disarm is its own fact, re-arming the
+            // same chord included: the shell registers on every one, so
+            // the commit time is part of its identity.
+            h.update(b"quick_wipe|");
+            h.update(&[u8::from(*armed)]);
+            h.update(shortcut.as_deref().unwrap_or("").as_bytes());
+            h.update(b"|");
+            h.update(&now_ms.to_le_bytes());
+        }
     }
 }
 

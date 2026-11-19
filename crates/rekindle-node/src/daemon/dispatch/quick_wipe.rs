@@ -72,7 +72,10 @@ pub(crate) async fn handle_arm(
         })
         .await;
     match saved {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "armed": true, "shortcut": shortcut })),
+        Ok(()) => {
+            changed(ctx, true, shortcut.clone());
+            IpcResponse::ok(&serde_json::json!({ "armed": true, "shortcut": shortcut }))
+        }
         Err(e) => IpcResponse::error(500, format!("panic shortcut not saved: {e}")),
     }
 }
@@ -99,9 +102,23 @@ pub(crate) async fn handle_disarm(ctx: &DaemonContext, state: DaemonState) -> Ip
         .call(move |conn| rekindle_db::repo::preferences::set_panic_shortcut(conn, &owner, None))
         .await;
     match saved {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "armed": false })),
+        Ok(()) => {
+            changed(ctx, false, None);
+            IpcResponse::ok(&serde_json::json!({ "armed": false }))
+        }
         Err(e) => IpcResponse::error(500, format!("panic shortcut not cleared: {e}")),
     }
+}
+
+/// The quick wipe's new state for every frontend (`QuickWipeChanged`): the
+/// GUI registers or releases the panic shortcut on it, so a chord is live
+/// the moment its arming commits, never only from the next unlock.
+fn changed(ctx: &DaemonContext, armed: bool, shortcut: Option<String>) {
+    use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
+    ctx.publish_event(SubscriptionEvent::System(SystemEvent::QuickWipeChanged {
+        armed,
+        shortcut,
+    }));
 }
 
 /// `QuickWipeTrigger`: the panic shortcut's wipe; 409 while no shortcut

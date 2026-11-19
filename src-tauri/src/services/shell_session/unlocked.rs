@@ -68,12 +68,15 @@ pub(super) async fn run(
 }
 
 /// The quick wipe's panic shortcut (plan E7.1), registered while the
-/// identity is unlocked (`ended` unregisters it). A stored chord the OS
-/// refuses is told to the user at once: they armed it and must not believe
-/// it works.
+/// identity is unlocked (`ended` unregisters it): the stored chord now,
+/// then each change the Host publishes when an arm or disarm commits
+/// (`QuickWipeChanged`), both through `shortcuts::apply_panic_chord`. The
+/// Host's stream is taken before the stored chord is read, so an arming
+/// that commits in between is still applied.
 ///
 /// # Errors
-/// The identity's database cannot be read.
+/// The identity's database cannot be read, the Host's stream did not open,
+/// or the scope closed.
 async fn register_panic_shortcut(
     state: &SharedState,
     app: &tauri::AppHandle,
@@ -81,42 +84,57 @@ async fn register_panic_shortcut(
     owner: &str,
     scope: &Arc<SessionScope>,
 ) -> Result<(), String> {
+    use rekindle_ipc::HostApi as _;
+    let host = state
+        .host
+        .current()
+        .ok_or("the host is not running the unlock")?;
+    let frames = host
+        .subscribe(None)
+        .await
+        .map_err(|e| format!("the host's event stream did not open: {e}"))?;
     let owner = owner.to_string();
     let stored = pool
         .call(move |conn| rekindle_db::repo::preferences::panic_shortcut(conn, &owner))
         .await
         .map_err(|e| format!("the panic shortcut is unreadable: {e}"))?;
-    let alert =
-        match crate::shortcuts::begin_panic_session(app, state, scope, stored.as_deref()).await {
-            // The desktop bound another trigger than the stored chord (the
-            // GlobalShortcuts portal's dialog): the user is told what it is.
-            Ok(Some(bound)) if Some(bound.as_str()) != stored.as_deref() => (
-                "Panic shortcut bound",
-                format!("The desktop bound the panic shortcut to {bound}."),
-            ),
-            Ok(_) => return Ok(()),
-            Err(reason) => {
-                tracing::error!(%reason, "the panic shortcut is not registered");
-                (
-                    "Panic shortcut not active",
-                    format!(
-                        "{reason}. The duress passphrase still works; choose another shortcut in \
-                     Settings → Privacy."
-                    ),
-                )
+    crate::shortcuts::begin_panic_session(app, scope).await;
+    crate::shortcuts::apply_panic_chord(app, state, stored.as_deref()).await;
+    let (app, state) = (app.clone(), Arc::clone(state));
+    scope
+        .spawn_with_token("panic shortcut changes", move |stop| async move {
+            let mut frames = Some(frames);
+            loop {
+                let stream = match frames.take() {
+                    Some(stream) => stream,
+                    None => match host.subscribe(None).await {
+                        Ok(stream) => stream,
+                        Err(e) => {
+                            tracing::error!(error = %e, "the panic shortcut stopped following the host");
+                            return;
+                        }
+                    },
+                };
+                let apply = |chord: Option<String>| {
+                    let (app, state) = (app.clone(), Arc::clone(&state));
+                    async move {
+                        crate::shortcuts::apply_panic_chord(&app, &state, chord.as_deref()).await;
+                    }
+                };
+                let frames = futures::stream::unfold(stream, |mut stream| async move {
+                    stream.next().await.map(|frame| (frame, stream))
+                });
+                tokio::select! {
+                    () = stop.cancelled() => return,
+                    end = crate::shortcuts::follow_panic_changes(frames, apply) => {
+                        if end == crate::shortcuts::FollowEnd::Stopped {
+                            return;
+                        }
+                    }
+                }
             }
-        };
-    // Standing: raised at login, before the buddy list has subscribed.
-    state.host.get().await.publish_standing(
-        rekindle_types::subscription_events::SubscriptionEvent::Notification(
-            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
-                title: alert.0.into(),
-                subject: None,
-                body: alert.1,
-            },
-        ),
-    );
-    Ok(())
+        })
+        .map_err(|e| e.to_string())
 }
 
 /// The unported network stages, each a task of `scope`.

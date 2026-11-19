@@ -1,11 +1,14 @@
-import { Component, Show, createSignal } from "solid-js";
+import { Component, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { subscribeQuickWipe } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
 
 /// The quick wipe (plan E7.1): arm a duress passphrase and an optional
 /// panic shortcut, or disarm both. The Host reviews each (Protected: the
 /// review lists exactly what a trigger destroys and asks for the
-/// identity's passphrase). Whether a duress passphrase is armed is never
-/// shown: the vault header does not reveal it, so neither does this page.
+/// identity's passphrase). The status is the Host's `QuickWipeChanged`,
+/// published when the review commits. Whether a duress passphrase is armed
+/// is never read back: the vault header does not reveal it, so this page
+/// shows only what this session committed.
 const QuickWipeSection: Component = () => {
   const [duress, setDuress] = createSignal("");
   const [confirm, setConfirm] = createSignal("");
@@ -16,16 +19,24 @@ const QuickWipeSection: Component = () => {
   const mismatch = (): boolean => confirm().length > 0 && confirm() !== duress();
   const canArm = (): boolean => duress().length > 0 && confirm() === duress();
 
+  onMount(() => {
+    const sub = subscribeQuickWipe((change) => {
+      if (!change.armed) setStatus("Quick wipe disarmed.");
+      else if (change.shortcut) setStatus(`Quick wipe armed (shortcut ${change.shortcut}).`);
+      else setStatus("Quick wipe armed.");
+    });
+    onCleanup(() => void sub.then((unlisten) => unlisten()));
+  });
+
   async function arm(): Promise<void> {
     if (!canArm()) return;
     setError(null);
     setStatus(null);
     try {
       const chord = shortcut().trim();
-      const state = await commands.quickWipeArm(duress(), chord.length > 0 ? chord : null);
+      await commands.quickWipeArm(duress(), chord.length > 0 ? chord : null);
       setDuress("");
       setConfirm("");
-      setStatus(state.shortcut ? `Quick wipe armed (shortcut ${state.shortcut}).` : "Quick wipe armed.");
     } catch (e) {
       setError(`Quick wipe not armed: ${String(e)}`);
     }
@@ -37,7 +48,6 @@ const QuickWipeSection: Component = () => {
     try {
       await commands.quickWipeDisarm();
       setShortcut("");
-      setStatus("Quick wipe disarmed.");
     } catch (e) {
       setError(`Quick wipe not disarmed: ${String(e)}`);
     }

@@ -76,4 +76,13 @@ pub enum SystemEvent {
     SkinTrialChanged {
         trial: Option<crate::dto::skin_library::SkinTrial>,
     },
+    /// The quick wipe was armed (`armed`, with its panic shortcut or none)
+    /// or disarmed (plan E7.1). The GUI registers or releases the panic
+    /// shortcut's OS grab (or portal binding) on it, the path its unlock
+    /// takes; the TUI and CLI, which have no global grab, show the state.
+    /// Triggered by: the committed `QuickWipeArm`, `QuickWipeDisarm`.
+    QuickWipeChanged {
+        armed: bool,
+        shortcut: Option<String>,
+    },
 }
