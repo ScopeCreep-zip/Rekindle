@@ -88,8 +88,13 @@ pub enum PostEntry {
     /// Our close of our poll `poll_id`, naming the votes it counts: each
     /// voter's pseudonym hex and the stream seq of the vote counted, as our
     /// reader held them when we closed (plan E3.3, rule E1).
+    /// One part of the close (`part` of `parts`, sharing `close_id`): a
+    /// close over more voters than one entry holds is several entries.
     PollClose {
         poll_id: [u8; 16],
+        close_id: [u8; 16],
+        part: u16,
+        parts: u16,
         counted: Vec<(String, u64)>,
     },
     /// Our hand raised or lowered on a voice stage (our latest by stream

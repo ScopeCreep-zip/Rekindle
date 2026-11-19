@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use rekindle_codec::community::channel_record::ChannelPollCounted;
 use rekindle_types::domains;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::message::{ChannelPost, PostEntry};
@@ -182,17 +183,61 @@ pub async fn persist_poll_close<D: ChannelMessagingDeps>(
         }
     }
     // The close names the votes our reader counts now; readers count
-    // exactly those.
-    queue_poll_op(
-        deps,
-        community_id,
-        channel_id,
-        PostEntry::PollClose {
+    // exactly those, once every part is read.
+    for part in poll_close_parts(poll_id, snapshot.counted)? {
+        queue_poll_op(deps, community_id, channel_id, part).await?;
+    }
+    Ok(())
+}
+
+/// The voters one close part names: an entry is at most one sealed page
+/// (32,768 B less the page and entry overhead, plan E3.3), and a voter
+/// costs at most ~100 B of the part's JSON (a 64-char pseudonym hex and a
+/// u64 seq), so 256 voters leave room to spare.
+pub const CLOSE_VOTERS_PER_PART: usize = 256;
+
+/// The parts of our close of `poll_id` over `counted` (voter, stream seq),
+/// [`CLOSE_VOTERS_PER_PART`] voters each, sharing one fresh close id; a
+/// close with no votes is one empty part.
+///
+/// # Errors
+/// More parts than a `u16` counts.
+pub fn poll_close_parts(
+    poll_id: [u8; 16],
+    counted: Vec<(String, u64)>,
+) -> Result<Vec<PostEntry>, ChannelError> {
+    let chunks: Vec<Vec<(String, u64)>> = if counted.is_empty() {
+        vec![Vec::new()]
+    } else {
+        counted
+            .chunks(CLOSE_VOTERS_PER_PART)
+            .map(<[_]>::to_vec)
+            .collect()
+    };
+    let parts = u16::try_from(chunks.len())
+        .map_err(|_| ChannelError::Adapter("too many voters to close".to_string()))?;
+    let close_id = rekindle_utils::random::id_bytes_16();
+    Ok((0u16..)
+        .zip(chunks)
+        .map(|(part, counted)| PostEntry::PollClose {
             poll_id,
-            counted: snapshot.counted,
-        },
-    )
-    .await
+            close_id,
+            part,
+            parts,
+            counted,
+        })
+        .collect())
+}
+
+/// `counted` (voter, stream seq) as a close entry names it.
+#[must_use]
+pub fn counted_entries(counted: &[(String, u64)]) -> Vec<ChannelPollCounted> {
+    (counted.iter())
+        .map(|(voter, stream_seq)| ChannelPollCounted {
+            voter: voter.clone(),
+            stream_seq: *stream_seq,
+        })
+        .collect()
 }
 
 pub async fn get_poll_results<D: ChannelMessagingDeps>(
@@ -327,5 +372,97 @@ mod tests {
         let ann = poll_id_of(&PseudonymKey([1; 32]), &nonce);
         assert_eq!(ann, poll_id_of(&PseudonymKey([1; 32]), &nonce));
         assert_ne!(ann, poll_id_of(&PseudonymKey([2; 32]), &nonce));
+    }
+
+    /// A close over 1,000 voters (each at the largest seq) is parts that
+    /// each fit one entry, and a reader that has read every part counts
+    /// every voter; one part short, the poll is still open.
+    #[test]
+    fn a_close_past_one_page_is_parts_that_each_fit() {
+        use crate::deps::OutboxItem;
+        use crate::outbox_chain::{seal_batch, PendingEntry};
+        use rekindle_codec::community::channel_record::{
+            ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
+        };
+        let creator = PseudonymKey([1; 32]);
+        let nonce = [5u8; 16];
+        let poll_id = poll_id_of(&creator, &nonce);
+        let voter = |i: u16| {
+            let mut key = [0u8; 32];
+            key[..2].copy_from_slice(&i.to_be_bytes());
+            key[31] = 0xee;
+            PseudonymKey(key)
+        };
+        let counted: Vec<(String, u64)> = (0..1000)
+            .map(|i| (hex::encode(voter(i).0), u64::MAX))
+            .collect();
+        let parts = poll_close_parts(poll_id, counted).unwrap();
+        assert!(parts.len() > 1);
+        let author = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[3; 32]);
+        let mut entries = vec![OutboxItem {
+            author: creator.clone(),
+            stream_seq: 1,
+            committed_at: 1,
+            entry: ChannelRecordEntry::PollCreate(ChannelPollCreate {
+                nonce,
+                message_id: "m".into(),
+                question: "q".into(),
+                answers: vec!["a".into(), "b".into()],
+                multi_select: false,
+                expires_at: None,
+                lamport: 1,
+            }),
+        }];
+        entries.extend((0..1000).map(|i| OutboxItem {
+            author: voter(i),
+            stream_seq: u64::MAX,
+            committed_at: 2,
+            entry: ChannelRecordEntry::PollVote(ChannelPollVote {
+                poll_id,
+                selected_answers: vec![0],
+                lamport: 1,
+            }),
+        }));
+        for (seq, part) in (2u64..).zip(parts) {
+            let PostEntry::PollClose {
+                close_id,
+                part,
+                parts,
+                counted,
+                ..
+            } = part
+            else {
+                panic!("a close part");
+            };
+            let entry = ChannelRecordEntry::PollClose(ChannelPollClose {
+                poll_id,
+                lamport: seq,
+                close_id,
+                part,
+                parts,
+                counted: counted_entries(&counted),
+            });
+            let pending = PendingEntry {
+                channel_tag: [7; 16],
+                stream_seq: u64::MAX,
+                generation: u64::MAX,
+                entry: entry.clone(),
+            };
+            seal_batch(None, &"a".repeat(64), &author, u64::MAX, &[pending])
+                .expect("each part fits one entry");
+            entries.push(OutboxItem {
+                author: creator.clone(),
+                stream_seq: seq,
+                committed_at: 3,
+                entry,
+            });
+        }
+        let short = &entries[..entries.len() - 1];
+        assert!(crate::history::poll_tallies(short)[&poll_id]
+            .closed_at
+            .is_none());
+        let poll = &crate::history::poll_tallies(&entries)[&poll_id];
+        assert!(poll.closed_at.is_some());
+        assert_eq!(poll.votes.len(), 1000);
     }
 }

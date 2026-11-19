@@ -75,27 +75,7 @@ pub fn poll_tallies(entries: &[OutboxItem]) -> BTreeMap<[u8; 16], PollTally> {
             );
         }
     }
-    // The author's first close by stream seq closes the poll.
-    let mut closes: HashMap<[u8; 16], (u64, u64, HashMap<String, u64>)> = HashMap::new();
-    for item in entries {
-        let ChannelRecordEntry::PollClose(close) = &item.entry else {
-            continue;
-        };
-        let Some(poll) = polls.get(&close.poll_id) else {
-            continue;
-        };
-        if poll.author != hex::encode(item.author.0)
-            || closes
-                .get(&close.poll_id)
-                .is_some_and(|(seq, _, _)| *seq <= item.stream_seq)
-        {
-            continue;
-        }
-        let counted = (close.counted.iter())
-            .map(|c| (c.voter.clone(), c.stream_seq))
-            .collect();
-        closes.insert(close.poll_id, (item.stream_seq, item.committed_at, counted));
-    }
+    let closes = complete_closes(entries, &polls);
     let mut latest: HashMap<([u8; 16], String), (u64, Vec<u8>)> = HashMap::new();
     for item in entries {
         let ChannelRecordEntry::PollVote(vote) = &item.entry else {
@@ -141,6 +121,65 @@ pub fn poll_tallies(entries: &[OutboxItem]) -> BTreeMap<[u8; 16], PollTally> {
 /// A message's poll, keyed by (message id, the creator's pseudonym hex): a
 /// poll shows only on its creator's own message.
 pub type PollsByMessage = HashMap<(String, String), MessagePoll>;
+
+/// A close's parts as read so far.
+struct CloseParts {
+    parts: u16,
+    /// (stream seq, commit time) of its earliest part.
+    first: (u64, u64),
+    counted: BTreeMap<u16, Vec<(String, u64)>>,
+}
+
+/// Each poll's close among `entries`: the creator's earliest close (by its
+/// first part's stream seq) whose every part is read, as (stream seq,
+/// commit time, the votes it counts by voter). A part naming another part
+/// count than its close's first is ignored.
+fn complete_closes(
+    entries: &[OutboxItem],
+    polls: &BTreeMap<[u8; 16], PollTally>,
+) -> HashMap<[u8; 16], (u64, u64, HashMap<String, u64>)> {
+    let mut read: BTreeMap<([u8; 16], [u8; 16]), CloseParts> = BTreeMap::new();
+    for item in entries {
+        let ChannelRecordEntry::PollClose(close) = &item.entry else {
+            continue;
+        };
+        let by_creator = (polls.get(&close.poll_id))
+            .is_some_and(|poll| poll.author == hex::encode(item.author.0));
+        if !by_creator || close.part >= close.parts {
+            continue;
+        }
+        let parts = read
+            .entry((close.poll_id, close.close_id))
+            .or_insert_with(|| CloseParts {
+                parts: close.parts,
+                first: (item.stream_seq, item.committed_at),
+                counted: BTreeMap::new(),
+            });
+        if parts.parts != close.parts {
+            continue;
+        }
+        parts.first = parts.first.min((item.stream_seq, item.committed_at));
+        let counted = (close.counted.iter()).map(|c| (c.voter.clone(), c.stream_seq));
+        parts
+            .counted
+            .entry(close.part)
+            .or_insert_with(|| counted.collect());
+    }
+    let mut closes: HashMap<[u8; 16], (u64, u64, HashMap<String, u64>)> = HashMap::new();
+    for ((poll_id, _), close) in read {
+        let complete = close.counted.len() == usize::from(close.parts);
+        if !complete
+            || closes
+                .get(&poll_id)
+                .is_some_and(|(seq, _, _)| *seq <= close.first.0)
+        {
+            continue;
+        }
+        let counted = close.counted.into_values().flatten().collect();
+        closes.insert(poll_id, (close.first.0, close.first.1, counted));
+    }
+    closes
+}
 
 /// Each poll among `entries` as the message it is attached to shows it
 /// (`my_pseudonym`'s own answers selected), keyed by (message id, creator);
@@ -293,6 +332,9 @@ mod tests {
                 ChannelRecordEntry::PollClose(ChannelPollClose {
                     poll_id: poll(),
                     lamport: 1,
+                    close_id: [1; 16],
+                    part: 0,
+                    parts: 1,
                     counted: Vec::new(),
                 }),
             ),
@@ -304,6 +346,9 @@ mod tests {
                 ChannelRecordEntry::PollClose(ChannelPollClose {
                     poll_id: poll(),
                     lamport: 2,
+                    close_id: [2; 16],
+                    part: 0,
+                    parts: 1,
                     counted: vec![counted(2, 2), counted(3, 2)],
                 }),
             ),

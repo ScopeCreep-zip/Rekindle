@@ -112,6 +112,9 @@ pub struct ChannelPollVote {
 /// voter's vote, so readers count exactly those votes: a vote's validity
 /// against the close is the closer's view of each voter's stream, never a
 /// commit time (rule E1: no trusted clock; the departure-head pattern).
+/// A close names more voters than one entry holds (one sealed page, plan
+/// E3.3 `EntryTooLarge`), so it is `parts` entries sharing `close_id`, each
+/// naming its share of the voters; readers apply it once every part is read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPollClose {
@@ -119,7 +122,13 @@ pub struct ChannelPollClose {
     pub poll_id: [u8; 16],
     /// Lamport logical timestamp for close ordering.
     pub lamport: u64,
-    /// The votes the close counts, one per voter.
+    /// The close this part belongs to.
+    pub close_id: [u8; 16],
+    /// This part's index, below `parts`.
+    pub part: u16,
+    /// How many parts the close has (at least one).
+    pub parts: u16,
+    /// This part's share of the votes the close counts, one per voter.
     pub counted: Vec<ChannelPollCounted>,
 }
 
