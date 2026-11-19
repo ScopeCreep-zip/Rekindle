@@ -56,10 +56,17 @@ struct AttachmentBitmap {
 }
 ```
 
-The offer is announced in the channel record (alongside the message it
-attaches to). The bitmap is announced via gossip: peers periodically
-broadcast which chunks they currently hold for the attachments they
-care about. This lets requesters do BitTorrent-style swarm fetch — pick
+The offer rides the message it attaches to, an entry of the author's
+channel outbox (member record subkey 4, plan E3.3 slice 7, ADR 0011).
+The author holds every chunk when it seals the offer, so the offer is
+its possession: it writes no `AttachmentCached`. A member that finishes
+a download appends an `AttachmentCached` entry (a full bitmap) to its
+own channel outbox, a row of its `channel_post` stream with no echo. A
+downloader finds its sources by reading the members' outbox entries of
+the channel (`read_author_outboxes`): the offer's author plus each
+`AttachmentCached` author. Nothing is written to a channel record slot.
+Peers may also gossip which chunks they currently hold for the
+attachments they care about. This lets requesters do BitTorrent-style swarm fetch — pick
 the rarest chunk and ask the smallest set of peers that hold it.
 
 ## Per-file FEK (Signal/Matrix pattern)

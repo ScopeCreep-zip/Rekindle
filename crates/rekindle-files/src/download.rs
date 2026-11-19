@@ -26,14 +26,14 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::permissions;
 use uuid::Uuid;
 
-use crate::deps::{FilesDeps, FilesEvent};
+use crate::deps::{ChannelPost, FilesDeps, FilesEvent};
 use crate::dht_scan::{discover_sources_in_entries, fetch_offer_in_entries, DiscoveredSource};
 use crate::error::FilesError;
 use crate::fek::unwrap_fek_for_offer;
 use crate::manifest::validate_offer;
 use crate::verify::{verify_chunk, verify_merkle_root};
-use rekindle_codec::community::channel_record::ChannelAttachmentCached;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
+use rekindle_types::message::PostEntry;
 
 /// An attachment whose chunks are all in the local cache, with the key
 /// that decrypts them.
@@ -162,26 +162,18 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
         });
     }
 
-    // Advertise full possession to the swarm.
-    let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
-    let slot_keypair = deps.slot_keypair(community_id)?;
-    let slot_index = deps.my_subkey_index(community_id)?;
-    let sender_pseudonym = deps.my_pseudonym(community_id)?;
-    let cached = ChannelAttachmentCached {
-        attachment_id,
-        chunk_bitmap: AttachmentBitmap::full(chunk_count).as_bytes().to_vec(),
-        chunk_count,
-        author_pseudonym: sender_pseudonym,
-        lamport_ts: deps.increment_lamport(community_id)?,
+    // Advertise full possession to the swarm: an `AttachmentCached`
+    // entry on our channel outbox (plan E3.3 slice 7).
+    let possession = ChannelPost {
+        community: community_id.to_owned(),
+        channel: channel_id.to_owned(),
+        message: format!("cached-{}", Uuid::new_v4()),
+        entry: PostEntry::Cached {
+            attachment_id,
+            chunk_count,
+        },
     };
-    deps.write_attachment_cached_to_smpl(
-        community_id,
-        &channel_log_key,
-        slot_index,
-        &slot_keypair,
-        &cached,
-    )
-    .await?;
+    deps.queue_post(&possession).await?;
 
     Ok(FetchedAttachment { offer, fek })
 }

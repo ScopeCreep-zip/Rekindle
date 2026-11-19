@@ -97,11 +97,11 @@ impl HostChannel {
         post: &rekindle_types::message::ChannelPost,
         outcome: &DrainOutcome,
     ) -> AttemptOutcome {
-        // An edit or delete has no row of its own to mark: its row id is
-        // not a message.
+        // An edit, a delete or a possession entry has no row of its own to
+        // mark: its row id is not a message.
         let change = matches!(
             post.entry,
-            PostEntry::Edit { .. } | PostEntry::Delete { .. }
+            PostEntry::Edit { .. } | PostEntry::Delete { .. } | PostEntry::Cached { .. }
         );
         match outcome {
             DrainOutcome::Sent(seq) => {

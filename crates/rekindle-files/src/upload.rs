@@ -14,7 +14,6 @@
 
 use std::path::Path;
 
-use rekindle_codec::community::channel_record::ChannelAttachmentCached;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::permissions;
 use uuid::Uuid;
@@ -23,7 +22,6 @@ use crate::chunker::{Chunker, CHUNK_SIZE_BYTES, MAX_FILE_SIZE_BYTES};
 use crate::deps::FilesDeps;
 use crate::error::FilesError;
 use crate::manifest::validate_offer;
-use rekindle_types::attachment::AttachmentBitmap;
 
 /// JSON payload stored in `messages.attachment_json` so the local UI can
 /// render the file metadata without re-fetching the offer from the DHT.
@@ -83,9 +81,6 @@ pub struct UploadRequest {
 /// the outer `community_id` arg directly so we don't carry it in the
 /// context.)
 struct UploadContext {
-    channel_key: String,
-    slot_keypair: String,
-    slot_index: u32,
     sender_pseudonym: String,
     /// The channel's current text key; its generation is stamped on the
     /// FEK wrap and the carrying message.
@@ -103,15 +98,9 @@ fn build_upload_context<D: FilesDeps>(
             "forum channels accept posts only through thread creation".into(),
         ));
     }
-    let channel_key = deps.channel_log_key(community_id, channel_id)?;
-    let slot_keypair = deps.slot_keypair(community_id)?;
-    let slot_index = deps.my_subkey_index(community_id)?;
     let sender_pseudonym = deps.my_pseudonym(community_id)?;
     let text_key = crate::keys::current_text_key(deps, community_id, channel_id)?;
     Ok(UploadContext {
-        channel_key,
-        slot_keypair,
-        slot_index,
         sender_pseudonym,
         text_key,
     })
@@ -305,24 +294,8 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     // updated timestamp.
     deps.persist_slowmode_state(community_id, channel_id, timestamp_now(deps));
 
-    // Announce full possession via AttachmentCached entry on our subkey.
-    let cached_lamport = deps.increment_lamport(community_id)?;
-    let cached = ChannelAttachmentCached {
-        attachment_id,
-        chunk_bitmap: AttachmentBitmap::full(chunk_count).as_bytes().to_vec(),
-        chunk_count,
-        author_pseudonym: ctx.sender_pseudonym.clone(),
-        lamport_ts: cached_lamport,
-    };
-    deps.write_attachment_cached_to_smpl(
-        community_id,
-        &ctx.channel_key,
-        ctx.slot_index,
-        &ctx.slot_keypair,
-        &cached,
-    )
-    .await?;
-
+    // No `AttachmentCached` of ours: the offer on our message says we
+    // hold every chunk (`discover_sources`).
     Ok(hex::encode(attachment_id))
 }
 
@@ -399,7 +372,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn happy_path_queues_message_attachment_cached_and_persists_row() {
+    async fn happy_path_queues_message_and_persists_row() {
         let deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(7, [42u8; 32]);
         let bytes = b"hello world payload".to_vec();
         let result = upload_bytes_as_attachment(
@@ -421,11 +394,10 @@ mod tests {
         assert_eq!(attachment_id_hex.len(), 32, "16-byte UUID hex");
 
         let calls = deps.calls.lock();
-        assert_eq!(calls.posts_queued.len(), 1, "one channel_post row");
         assert_eq!(
-            calls.attachment_cacheds_written.len(),
+            calls.posts_queued.len(),
             1,
-            "one AttachmentCached"
+            "one channel_post row, no possession entry of the uploader's"
         );
         assert_eq!(calls.channel_messages_persisted.len(), 1, "one SQLite row");
         assert_eq!(

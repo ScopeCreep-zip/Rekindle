@@ -9,12 +9,12 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use rekindle_channel::deps::ChannelMessagingDeps;
-use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_files::{ChannelPost, FilesDeps, FilesError, FilesEvent};
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
-use rekindle_protocol::dht::community::channel_record::{self as record, AppendOutcome};
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::message::PostEntry;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 use uuid::Uuid;
 
@@ -26,16 +26,6 @@ fn transport(e: impl std::fmt::Display) -> FilesError {
 
 /// The channel subkeys a member slot can hold.
 const CHANNEL_SLOTS: u32 = 255;
-
-impl HostFiles {
-    fn membership(
-        &self,
-        community_id: &str,
-    ) -> Result<rekindle_governance_runtime::deps::CommunityMembership, FilesError> {
-        (self.gov.community_membership(community_id))
-            .ok_or_else(|| FilesError::NotFound(format!("community {community_id}")))
-    }
-}
 
 #[async_trait]
 impl FilesDeps for HostFiles {
@@ -62,16 +52,6 @@ impl FilesDeps for HostFiles {
         (self.channel.channel_record_key(community_id, channel_id)).ok_or_else(|| {
             FilesError::NotFound(format!("channel_log_key {community_id}/{channel_id}"))
         })
-    }
-
-    fn slot_keypair(&self, community_id: &str) -> Result<String, FilesError> {
-        (self.membership(community_id)?.slot_keypair)
-            .ok_or_else(|| FilesError::NotFound(format!("slot_keypair {community_id}")))
-    }
-
-    fn my_subkey_index(&self, community_id: &str) -> Result<u32, FilesError> {
-        (self.membership(community_id)?.my_subkey_index)
-            .ok_or_else(|| FilesError::NotFound(format!("my_subkey_index {community_id}")))
     }
 
     fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool {
@@ -151,35 +131,12 @@ impl FilesDeps for HostFiles {
     }
 
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), FilesError> {
-        (self.channel.queue_post(post).await).map_err(|e| FilesError::Db(e.to_string()))
-    }
-
-    async fn write_attachment_cached_to_smpl(
-        &self,
-        community_id: &str,
-        channel_log_key: &str,
-        slot_index: u32,
-        slot_keypair: &str,
-        cached: &ChannelAttachmentCached,
-    ) -> Result<(), FilesError> {
-        let credentials = (self.channel.pseudonym_credentials(community_id)).map_err(transport)?;
-        let written = record::write_member_attachment_cached(
-            &*self.records()?,
-            channel_log_key,
-            slot_index,
-            slot_keypair,
-            credentials.pseudonym,
-            &credentials.signing_key,
-            cached,
-        )
-        .await;
-        // A held page lands when it can (plan C7.13); an `AttachmentCached`
-        // entry carries no delivery state, so held is written.
-        match written {
-            Ok(AppendOutcome::Stored | AppendOutcome::Held)
-            | Err(rekindle_protocol::ProtocolError::PoolClosed) => Ok(()),
-            Err(e) => Err(transport(format!("AttachmentCached write: {e}"))),
-        }
+        // A possession entry has no `messages` row to echo it.
+        let queued = match post.entry {
+            PostEntry::Cached { .. } => self.channel.queue_change_impl(post).await,
+            _ => self.channel.queue_post(post).await,
+        };
+        queued.map_err(|e| FilesError::Db(e.to_string()))
     }
 
     async fn channel_entries(

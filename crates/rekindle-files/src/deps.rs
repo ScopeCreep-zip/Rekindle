@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;
@@ -118,10 +118,6 @@ pub trait FilesDeps: FileCacheDeps {
 
     fn channel_log_key(&self, community_id: &str, channel_id: &str) -> Result<String, FilesError>;
 
-    fn slot_keypair(&self, community_id: &str) -> Result<String, FilesError>;
-
-    fn my_subkey_index(&self, community_id: &str) -> Result<u32, FilesError>;
-
     fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool;
 
     // ── Permissions + slowmode + mentions ──────────────────────────
@@ -163,25 +159,17 @@ pub trait FilesDeps: FileCacheDeps {
 
     // ── DHT operations (async, veilid-core abstracted away) ────────
 
-    /// Store `post`'s outbox `channel_post` row, its echo the attachment
-    /// message already written `queued` (plan E3.3 slice 7).
+    /// Store `post`'s outbox `channel_post` row (plan E3.3 slice 7): an
+    /// attachment message's echo is its row already written `queued`; a
+    /// possession entry (`PostEntry::Cached`) has none.
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), FilesError>;
-
-    async fn write_attachment_cached_to_smpl(
-        &self,
-        community_id: &str,
-        channel_log_key: &str,
-        slot_index: u32,
-        slot_keypair: &str,
-        cached: &ChannelAttachmentCached,
-    ) -> Result<(), FilesError>;
 
     /// The entries of `channel_id` (plan E3.3 "Files move onto MSR"):
     /// every member's channel outbox entries of it, verified and linked by
     /// tag (`read_author_outboxes(channel)`), then the channel record's
-    /// slot entries (older history and `AttachmentCached` until slice 8).
-    /// Used by `fetch_offer` (a Message carrying the attachment) and
-    /// `discover_sources` (`AttachmentCached` entries).
+    /// slot entries (older history, until slice 8). Used by `fetch_offer`
+    /// (a Message carrying the attachment) and `discover_sources` (its
+    /// author, and the `AttachmentCached` entries of the outboxes).
     async fn channel_entries(
         &self,
         community_id: &str,

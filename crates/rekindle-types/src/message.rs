@@ -58,6 +58,15 @@ pub enum PostEntry {
         offer: crate::attachment::AttachmentOffer,
         flags: u32,
     },
+    /// We hold every chunk of the attachment `attachment_id` (its offer's
+    /// `chunk_count` chunks), downloaded: an `AttachmentCached` entry on our
+    /// outbox (plan E3.3 slice 7), which a downloader reads to find its
+    /// sources. Its row has no echo. The uploader writes none: the offer on
+    /// its own message says it holds the file (`docs/architecture/files.md`).
+    Cached {
+        attachment_id: [u8; 16],
+        chunk_count: u32,
+    },
     /// An edit of our post `target` on our outbox (plan E3.3): its new
     /// body, sealed when the stream drains it at the entry's stream seq,
     /// and our seq `seq` that orders our edits (rule E1).

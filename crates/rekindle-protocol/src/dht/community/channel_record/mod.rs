@@ -9,9 +9,9 @@ mod write;
 
 pub use read::{read_all_channel_entries, read_all_channel_messages};
 pub use write::{
-    create_smpl_channel_record, write_member_attachment_cached, write_member_forward,
-    write_member_hand_raise, write_member_message, write_member_poll_close,
-    write_member_poll_create, write_member_poll_vote, write_member_reaction, AppendOutcome,
+    create_smpl_channel_record, write_member_forward, write_member_hand_raise,
+    write_member_message, write_member_poll_close, write_member_poll_create,
+    write_member_poll_vote, write_member_reaction, AppendOutcome,
 };
 
 #[cfg(test)]

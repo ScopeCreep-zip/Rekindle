@@ -15,7 +15,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -29,7 +29,6 @@ use rekindle_types::attachment::AttachmentOffer;
 /// Records of mutations + emissions for test assertions.
 #[derive(Default)]
 pub struct MockCalls {
-    pub attachment_cacheds_written: Vec<ChannelAttachmentCached>,
     pub channel_messages_persisted: Vec<String>, // message_id
     pub slowmode_persists: Vec<(String, String, i64)>, // community, channel, now_ms
     pub local_path_persists: Vec<(String, String, String)>, // owner, channel, attachment_id_hex
@@ -49,8 +48,6 @@ pub struct MockDeps {
     pub owner_key: String,
     pub my_pseudonym: String,
     pub channel_log_key: String,
-    pub slot_keypair: String,
-    pub my_subkey_index: u32,
     pub forum_channel: bool,
     pub permission_pass: bool,
     pub slowmode_pass: bool,
@@ -100,8 +97,6 @@ impl MockDeps {
             owner_key: "owner-pub-key".to_string(),
             my_pseudonym: "me-pseudonym".to_string(),
             channel_log_key: "channel-log-key-hex".to_string(),
-            slot_keypair: "stub-slot-keypair".to_string(),
-            my_subkey_index: 5,
             forum_channel: false,
             permission_pass: true,
             slowmode_pass: true,
@@ -201,14 +196,6 @@ impl FilesDeps for MockDeps {
         Ok(self.channel_log_key.clone())
     }
 
-    fn slot_keypair(&self, _c: &str) -> Result<String, FilesError> {
-        Ok(self.slot_keypair.clone())
-    }
-
-    fn my_subkey_index(&self, _c: &str) -> Result<u32, FilesError> {
-        Ok(self.my_subkey_index)
-    }
-
     fn channel_is_forum(&self, _c: &str, _ch: &str) -> bool {
         self.forum_channel
     }
@@ -254,21 +241,6 @@ impl FilesDeps for MockDeps {
 
     async fn queue_post(&self, post: &crate::deps::ChannelPost) -> Result<(), FilesError> {
         self.calls.lock().posts_queued.push(post.clone());
-        Ok(())
-    }
-
-    async fn write_attachment_cached_to_smpl(
-        &self,
-        _c: &str,
-        _key: &str,
-        _idx: u32,
-        _keypair: &str,
-        cached: &ChannelAttachmentCached,
-    ) -> Result<(), FilesError> {
-        self.calls
-            .lock()
-            .attachment_cacheds_written
-            .push(cached.clone());
         Ok(())
     }
 

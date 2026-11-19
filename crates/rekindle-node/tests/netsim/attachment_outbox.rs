@@ -94,11 +94,23 @@ async fn a_failed_attachment_post_sends_on_retry() {
     });
     let dir = tempfile::tempdir().expect("a folder");
     // The upload stores and queues its post before its DHT writes; offline
-    // the possession write refuses, and the post's sends defer until the
-    // outbox deadline fails it.
-    let _ = upload(&community, dir.path()).await;
-    let horizon = rekindle_outbox::OUTBOX_DEADLINE + Duration::from_secs(3600);
-    tokio::time::sleep(horizon).await;
+    // the post's sends (and its possession entry's) defer until the
+    // outbox deadline fails it. The month passes on every node's wall
+    // clock at once (the outbox deadline is wall time, as in `dm_hint_loss`
+    // and `offline_day`), so the run need not tick through it.
+    let id = upload(&community, dir.path())
+        .await
+        .expect("ann attaches offline");
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    let month =
+        i64::try_from((rekindle_outbox::OUTBOX_DEADLINE + Duration::from_secs(86_400)).as_millis())
+            .expect("a month in ms");
+    for node in 0..2 {
+        sim.fault(Fault::ClockSkew { node, ms: month });
+    }
+    // The next pass is due within the stream's backoff cap (300 s); the
+    // history is read once the DHT is back (it reads the channel record).
+    tokio::time::sleep(Duration::from_secs(600)).await;
     sim.fault(Fault::DhtOffline {
         node: 0,
         offline: false,
@@ -111,10 +123,10 @@ async fn a_failed_attachment_post_sends_on_retry() {
         own["sendState"], "failed",
         "failed past the outbox deadline"
     );
-    let id = own["attachment"]["attachmentId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    assert_eq!(
+        own["attachment"]["attachmentId"].as_str(),
+        Some(id.as_str())
+    );
     let message = own["serverMessageId"].as_str().unwrap().to_owned();
     community.nodes[0]
         .ok(IpcRequest::OutboxRetry { client_id: message })
@@ -124,4 +136,34 @@ async fn a_failed_attachment_post_sends_on_retry() {
     })
     .await;
     assert!(held, "the retried attachment post reaches bea");
+}
+
+/// A member that downloaded the file advertises it with an
+/// `AttachmentCached` entry on its own outbox, so a later reader fetches it
+/// from that member while the uploader answers nothing.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_downloader_serves_the_file_from_the_possession_on_its_outbox() {
+    let community = Community::of(3, 237).await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    let dir = tempfile::tempdir().expect("a folder");
+    let id = upload(&community, dir.path()).await.expect("ann attaches");
+    for i in 1..3 {
+        let held = eventually(&community.sim, LIMIT, || async {
+            row(&community, i, &id).await.is_some()
+        })
+        .await;
+        assert!(held, "member {i} holds the attachment post");
+    }
+    assert!(
+        downloads(&community, 1, &id, dir.path()).await,
+        "bea downloads it from ann"
+    );
+    community.sim.fault(Fault::Unanswered {
+        node: 0,
+        unanswered: true,
+    });
+    assert!(
+        downloads(&community, 2, &id, dir.path()).await,
+        "cal downloads it from bea, whose outbox says she holds it"
+    );
 }

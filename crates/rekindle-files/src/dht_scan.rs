@@ -40,10 +40,13 @@ pub fn fetch_offer_in_entries(
     None
 }
 
-/// Build the per-peer source list from `AttachmentCached` entries.
-/// Applies LWW per `(author_pseudonym, attachment_id)` — only the
-/// highest-lamport entry per author is kept. Entries with mismatched
-/// `chunk_count` or invalid bitmap-length are silently dropped.
+/// Build the per-peer source list: the author of the message carrying the
+/// offer holds every chunk (it sealed the offer over its cached chunks, so
+/// it writes no `AttachmentCached`, plan E3.3 slice 7), and each
+/// `AttachmentCached` entry's author holds its bitmap. Applies LWW per
+/// `(author_pseudonym, attachment_id)` — only the highest-lamport entry per
+/// author is kept. Entries with mismatched `chunk_count` or invalid
+/// bitmap-length are silently dropped.
 #[must_use]
 pub fn discover_sources_in_entries(
     entries: &[ChannelRecordEntry],
@@ -52,8 +55,18 @@ pub fn discover_sources_in_entries(
 ) -> Vec<DiscoveredSource> {
     let mut latest: HashMap<String, (u64, AttachmentBitmap)> = HashMap::new();
     for entry in entries {
-        let ChannelRecordEntry::AttachmentCached(cached) = entry else {
-            continue;
+        let cached = match entry {
+            ChannelRecordEntry::Message(msg)
+                if msg.attachment.as_ref().is_some_and(|offer| {
+                    offer.attachment_id == attachment_id && offer.chunk_count == chunk_count
+                }) =>
+            {
+                let full = AttachmentBitmap::full(chunk_count);
+                latest.insert(msg.sender_pseudonym.clone(), (u64::MAX, full));
+                continue;
+            }
+            ChannelRecordEntry::AttachmentCached(cached) => cached,
+            _ => continue,
         };
         if cached.attachment_id != attachment_id {
             continue;
@@ -256,5 +269,21 @@ mod tests {
         let entries = vec![msg_entry(None)];
         let sources = discover_sources_in_entries(&entries, [1u8; 16], 4);
         assert!(sources.is_empty());
+    }
+
+    /// The uploader writes no `AttachmentCached`: the author of the message
+    /// carrying the offer is a source of every chunk (plan E3.3 slice 7).
+    #[test]
+    fn the_offer_author_is_a_source_of_every_chunk() {
+        let aid = [8u8; 16];
+        let entries = vec![
+            msg_entry(Some(offer_with_id(aid, 3))),
+            msg_entry(Some(offer_with_id([1u8; 16], 3))),
+        ];
+        let sources = discover_sources_in_entries(&entries, aid, 3);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].pseudonym, "sender");
+        assert!(sources[0].bitmap.is_complete());
+        assert!(discover_sources_in_entries(&entries, aid, 4).is_empty());
     }
 }

@@ -5,9 +5,9 @@ use rekindle_records::port::{RecordPort, SetOutcome};
 
 use crate::error::ProtocolError;
 use rekindle_codec::community::channel_record::{
-    decode_own_page, encode_page_entries, ChannelAttachmentCached, ChannelForward,
-    ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
-    ChannelReaction, ChannelRecordEntry, CHANNEL_OWNER_SUBKEY_COUNT,
+    decode_own_page, encode_page_entries, ChannelForward, ChannelHandRaise, ChannelMessage,
+    ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelReaction, ChannelRecordEntry,
+    CHANNEL_OWNER_SUBKEY_COUNT,
 };
 
 /// Maximum serialized size for a member's message page (~30KB, leaving DHT overhead room).
@@ -192,29 +192,6 @@ pub async fn write_member_hand_raise(
         author_pseudonym,
         pseudonym_signing_key,
         ChannelRecordEntry::HandRaise(hand_raise.clone()),
-    )
-    .await
-}
-
-/// Write an `AttachmentCached` entry to a member's subkey in the channel SMPL
-/// record (Lost Cargo source advertisement, architecture §28.9 line 3268).
-pub async fn write_member_attachment_cached(
-    pool: &dyn RecordPort,
-    channel_key: &str,
-    member_index: u32,
-    writer: &str,
-    author_pseudonym: rekindle_types::id::PseudonymKey,
-    pseudonym_signing_key: &ed25519_dalek::SigningKey,
-    cached: &ChannelAttachmentCached,
-) -> Result<AppendOutcome, ProtocolError> {
-    write_member_entry(
-        pool,
-        channel_key,
-        member_index,
-        writer,
-        author_pseudonym,
-        pseudonym_signing_key,
-        ChannelRecordEntry::AttachmentCached(cached.clone()),
     )
     .await
 }

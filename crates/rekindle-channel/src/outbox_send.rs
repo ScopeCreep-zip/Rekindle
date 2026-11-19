@@ -10,11 +10,13 @@
 //! sealed pages ([`OutboxWriter::append`]). An edit or delete of our post
 //! is an entry of the same stream (plan E3.3): an edit's new body is
 //! sealed at the edit's own position, a delete has none. An attachment
-//! message is a message entry carrying the offer its row holds (slice 7).
+//! message is a message entry carrying the offer its row holds, and a
+//! downloaded file's possession an `AttachmentCached` entry (slice 7).
 
 use rekindle_codec::community::channel_record::{
-    ChannelDelete, ChannelEdit, ChannelForward, ChannelRecordEntry,
+    ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelRecordEntry,
 };
+use rekindle_types::attachment::AttachmentBitmap;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::ChannelId;
 use rekindle_types::message::{ChannelPost, PostEntry};
@@ -46,6 +48,45 @@ pub enum DrainOutcome {
     Failed(String),
 }
 
+/// The body a post's entry seals, and the reply its message names.
+struct StoredBody {
+    text: String,
+    reply_to: Option<String>,
+}
+
+/// The body `item` seals: an edit's new body, nothing for a delete or a
+/// possession entry, else our stored post's (its row must be ours).
+async fn stored_body<D: ChannelMessagingDeps>(
+    deps: &D,
+    item: &DrainPost,
+    author_hex: &str,
+) -> Result<StoredBody, DrainOutcome> {
+    let post = &item.post;
+    // An edit or delete names its target; a post is its own row.
+    let (target, body) = match &post.entry {
+        PostEntry::Cached { .. } => {
+            return Ok(StoredBody {
+                text: String::new(),
+                reply_to: None,
+            })
+        }
+        PostEntry::Edit { target, body, .. } => (target.as_str(), Some(body.as_str())),
+        PostEntry::Delete { target, .. } => (target.as_str(), Some("")),
+        _ => (post.message.as_str(), None),
+    };
+    let stored = deps
+        .find_channel_message_by_id(&post.channel, target)
+        .await
+        .ok_or_else(|| DrainOutcome::Failed(format!("post {target} not in history")))?;
+    if stored.sender_key != author_hex {
+        return Err(DrainOutcome::Failed(format!("post {target} is not ours")));
+    }
+    Ok(StoredBody {
+        text: body.map_or(stored.body, str::to_owned),
+        reply_to: stored.reply_to,
+    })
+}
+
 /// The entry `post` writes, its body sealed at `stream_seq`.
 async fn pending_of<D: ChannelMessagingDeps>(
     deps: &D,
@@ -57,32 +98,19 @@ async fn pending_of<D: ChannelMessagingDeps>(
     let (community_id, channel_id) = (post.community.as_str(), post.channel.as_str());
     let author = writer.author.verifying_key().to_bytes();
     let author_hex = hex::encode(author);
-    // An edit or delete names its target; a post is its own row.
-    let (target, body) = match &post.entry {
-        PostEntry::Edit { target, body, .. } => (target.as_str(), Some(body.as_str())),
-        PostEntry::Delete { target, .. } => (target.as_str(), Some("")),
-        _ => (post.message.as_str(), None),
-    };
-    let stored = deps
-        .find_channel_message_by_id(channel_id, target)
-        .await
-        .ok_or_else(|| DrainOutcome::Failed(format!("post {target} not in history")))?;
-    if stored.sender_key != author_hex {
-        return Err(DrainOutcome::Failed(format!("post {target} is not ours")));
-    }
+    let body = stored_body(deps, item, &author_hex).await?;
     let at = BodyPosition {
         anchor: writer.anchor,
         channel_id,
         author: &author,
         stream_seq: item.stream_seq,
     };
-    let body = body.unwrap_or(stored.body.as_str());
-    let sealed = seal_at(deps, community_id, at, body.as_bytes())?;
+    let sealed = seal_at(deps, community_id, at, body.text.as_bytes())?;
     let timestamp_ms = i64::try_from(committed_at).unwrap_or(i64::MAX);
     let entry = match &post.entry {
         PostEntry::Message | PostEntry::Attachment { .. } => {
             let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
-                resolve_outbound_mentions(deps, community_id, &author_hex, &stored.body);
+                resolve_outbound_mentions(deps, community_id, &author_hex, &body.text);
             let mut message = build_channel_message(BuildChannelMessageParams {
                 sequence: item.stream_seq,
                 sender_pseudonym: author_hex,
@@ -91,7 +119,7 @@ async fn pending_of<D: ChannelMessagingDeps>(
                 timestamp_ms,
                 lamport_ts: item.stream_seq,
                 message_id: post.message.clone(),
-                reply_to: stored.reply_to.clone(),
+                reply_to: body.reply_to.clone(),
                 mention_flag_bits: mention_flags,
                 mentioned_pseudonyms,
                 mentioned_roles,
@@ -129,6 +157,18 @@ async fn pending_of<D: ChannelMessagingDeps>(
             mek_generation: sealed.generation,
             edited_at: *edited_at,
             lamport_ts: *seq,
+        }),
+        // Our possession of a downloaded file: a full bitmap, ordered by
+        // its stream seq; no body, the tag still names its channel.
+        PostEntry::Cached {
+            attachment_id,
+            chunk_count,
+        } => ChannelRecordEntry::AttachmentCached(ChannelAttachmentCached {
+            attachment_id: *attachment_id,
+            chunk_bitmap: AttachmentBitmap::full(*chunk_count).as_bytes().to_vec(),
+            chunk_count: *chunk_count,
+            author_pseudonym: author_hex,
+            lamport_ts: item.stream_seq,
         }),
         // A delete carries no body; the entry still names its channel by
         // the tag of the key it was drained under.
