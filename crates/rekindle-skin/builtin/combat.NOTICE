@@ -37,7 +37,11 @@ Colour groups (15 defined)
 Regions
   window.frame: [OuterFrame], nine-slice 214/78/113/79, transparent middle
     Normal: 333x586 px
+  buddylist.infobar: [CombatDragBar], 261x35 px, NineSlice(Insets { top: 0, right: 42, bottom: 0, left: 43 }); states normal
   titlebar.btn.minimize: [Minimizebox], 12x12 px, Stretch; states normal, hover, down
+  buddylist.group-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
+  statusbar.arrow: [DownArrow], 20x20 px, Stretch; states normal, hover, down
+  buddylist.action-button: [AddFriendButton], 36x50 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
   scrollbar.button-up: [DefaultScrollbar], 11x29 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: [DefaultScrollbar], 11x9 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: [DefaultScrollbar], 9x11 px, Stretch; states normal, hover, down, disabled
@@ -47,14 +51,17 @@ Regions
   scrollbar.track: [DefaultScrollbar], 11x405 px, NineSlice(Insets { top: 135, right: 0, bottom: 135, left: 0 }); states normal
   scrollbar.track-horizontal: [DefaultScrollbar], 405x11 px, NineSlice(Insets { top: 0, right: 135, bottom: 0, left: 135 }); states normal
   scrollbar.corner: [DefaultScrollbar], 11x11 px, Stretch; states normal
+  chat.toolbar: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
+  chat.group-header: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
+  dropped [CombatDragBar (buddylist.infobar)] Disabled: the slot has no such state
 
 Dropped
-  images with no region slot: 125
-  other keys (classes, sizes, cursors, sounds): 202
+  images with no region slot: 237
+  other keys (classes, sizes, cursors, sounds): 433
   other skin files (chat, group chat, in-game): 4
-  text styles: 42
-  triggers: 40
-  window layout: 197
+  text styles: 92
+  triggers: 83
+  window layout: 589
   lines Windows reads no value from (21):
     combat.ini: [MainWindow] Window4.X (line 34)
     combat.ini: [MainWindow] Window5.X (line 40)
@@ -77,10 +84,8 @@ Dropped
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (159):
-    CombatChatSkin.ini
+  files not read (140):
     CombatGroupChatInfoSkin.ini
-    CombatGroupChatSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
     CombatInGamePopUpSkin.ini
@@ -88,17 +93,11 @@ Dropped
     blink_white.gif
     c_background.gif
     c_bottom_middle.gif
-    c_button_add_down.gif
-    c_button_add_hover.gif
-    c_button_add_norm.gif
     c_button_add_off.gif
     c_button_add_server_down.gif
     c_button_add_server_hover.gif
     c_button_add_server_norm.gif
     c_button_add_server_off.gif
-    c_button_arrow_down.gif
-    c_button_arrow_hover.gif
-    c_button_arrow_norm.gif
     c_button_arrow_off.gif
     c_button_chat_down.gif
     c_button_chat_hover.gif
@@ -144,15 +143,10 @@ Dropped
     c_button_stop_hover.gif
     c_button_stop_norm.gif
     c_button_stop_off.gif
-    c_chat_groupspeak_left.gif
-    c_chat_groupspeak_middle.gif
-    c_chat_groupspeak_right.gif
     c_close_down.gif
     c_close_hover.gif
     c_header_arrow_down.gif
     c_header_arrow_up.gif
-    c_header_middle.gif
-    c_header_right.gif
     c_infoview_in_hover.gif
     c_infoview_in_norm.gif
     c_infoview_out_hover.gif
@@ -166,12 +160,6 @@ Dropped
     c_menu_hover_top.gif
     c_minimize_down.gif
     c_minimize_hover.gif
-    c_namebar_left.gif
-    c_namebar_left_off.gif
-    c_namebar_middle.gif
-    c_namebar_middle_off.gif
-    c_namebar_right.gif
-    c_namebar_right_off.gif
     c_resize_hover.gif
     c_top_left_off.gif
     c_top_middle_off.gif

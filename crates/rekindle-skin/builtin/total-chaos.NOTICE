@@ -47,15 +47,19 @@ Regions
   scrollbar.thumb-horizontal: the scrollbar DefaultScrollbar, 5x14 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal, hover, down
   scrollbar.track: the scrollbar DefaultScrollbar, 13x3 px, NineSlice(Insets { top: 1, right: 0, bottom: 1, left: 0 }); states normal
   scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 3x13 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  buddylist.menubar: the component MenuBar, 196x69 px, NineSlice(Insets { top: 0, right: 83, bottom: 0, left: 83 }); states normal
+  buddylist.group-header: the component BuddyView, 3x18 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  buddylist.actionbar: the component BottomBar, 359x66 px, NineSlice(Insets { top: 0, right: 161, bottom: 0, left: 161 }); states normal
+  buddylist.action-button: the component AddButton, 43x30 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
   titlebar.btn.minimize: the title button Minimize, 12x12 px, Stretch; states normal, hover, down
   titlebar.btn.maximize: the title button Maximize, 12x12 px, Stretch; states normal, hover, down
   titlebar.btn.close: the title button Close, 12x12 px, Stretch; states normal, hover, down
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 30 of 138 images
+  kept 32 of 138 images
   Disabled sets: kept 1 of 22
-  Down sets: kept 4 of 48
-  Hover sets: kept 4 of 45
+  Down sets: kept 5 of 48
+  Hover sets: kept 5 of 45
   other sets: kept 0 of 2
   dropped FileMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped FileMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -73,8 +77,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ChatHelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GCHelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GCHelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TCLink Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TCLink Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddServerButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control

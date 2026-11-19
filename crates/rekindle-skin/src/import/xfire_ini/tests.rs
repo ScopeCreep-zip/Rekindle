@@ -87,7 +87,12 @@ fn tree() -> Tree {
         t.insert(format!("main/{k}.png"), png());
     }
     // Never read: a malformed chat skin and junk.
-    t.insert("Fix chatskin.ini".into(), b"not an ini".to_vec());
+    // The chat skin file is read for its surfaces (plan E7.7.7 S2); this
+    // one has none, so it stays named among the files not read.
+    t.insert(
+        "Fix chatskin.ini".into(),
+        b"[MainWindow]\r\nClass=MainWindow\r\n".to_vec(),
+    );
     t.insert("Thumbs.db".into(), vec![0; 16]);
     t
 }
@@ -381,4 +386,17 @@ fn version_ini_comments_credit_the_authors() {
     let i = passed(import(&t, FOLDER, "fixture", None).unwrap());
     let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
     assert_eq!(m.credits.unwrap().authors, ["Ann"]);
+}
+
+/// Plan E7.7.7 S2: a chat skin file the skin names and ships is read like
+/// the skin file, so a malformed one refuses the import.
+#[test]
+fn a_malformed_chat_skin_file_refuses() {
+    let mut t = tree();
+    t.insert("Fix chatskin.ini".into(), b"not an ini".to_vec());
+    let err = read(&t, FOLDER).unwrap_err();
+    assert!(
+        matches!(err, ImportError::Format { ref file, .. } if file == "Fix chatskin.ini"),
+        "{err:?}"
+    );
 }

@@ -167,7 +167,12 @@ pub fn surface_entries() -> Vec<(String, rekindle_skin::regions::css::RegionMap)
     use rekindle_skin::regions::css::RegionMap;
     rekindle_skin::regions::SLOTS
         .iter()
-        .filter(|s| s.css && (s.id.starts_with("buddylist.") || s.id.starts_with("statusbar")))
+        .filter(|s| {
+            s.css
+                && ["buddylist.", "statusbar", "chat."]
+                    .iter()
+                    .any(|p| s.id.starts_with(p))
+        })
         .map(|s| {
             let el = format!(".{}", s.id.replace('.', "-"));
             let map = if s.labelled {

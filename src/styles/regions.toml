@@ -283,6 +283,7 @@
 '.empty-placeholder' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-unread-badge' = { on = ["--color-xfire-danger"] }
 '.chat-peer-status' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
+'.chat-peer-status-label' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-sending' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-sent' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-queued' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
@@ -292,9 +293,9 @@
 '.message-status-note-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.network-banner' = { on = ["--color-xfire-away 30% over --color-xfire-bg-dark"] }
 '.action-bar-icon-btn' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
-'.chat-safety-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"], on_hover = ["--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
-'.chat-call-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"], on_hover = ["--color-xfire-online 20% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
-'.chat-call-btn-active' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"], on_hover = ["--color-xfire-busy 20% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
+'.chat-safety-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-panel"], on_hover = ["--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
+'.chat-call-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-panel"], on_hover = ["--color-xfire-online 20% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
+'.chat-call-btn-active' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-panel"], on_hover = ["--color-xfire-busy 20% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
 '.message-retry-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-retry-btn:hover' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-discard-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
@@ -652,3 +653,15 @@
 'buddylist.row-selected' = { elements = [".buddy-list-window .buddy-item-selected"], labels = [".buddy-list-window .buddy-item-selected .buddy-item-content"] }
 'buddylist.actionbar' = { elements = [".buddy-list-window .action-bar"], labels = [".buddy-list-window .action-bar-icon-btn", ".buddy-list-window .logout-icon-btn"] }
 'buddylist.action-button' = { elements = [".buddy-list-window .action-bar-icon-btn"] }
+# Plan E7.7.7 S2: the chat window's surfaces, scoped to its root
+# (`.chat-window`, ChatWindow.tsx). Xfire's chat window has no image for
+# the message list (its ground is a colour, `bg.panel`) and Rekindle has
+# no send button (Enter sends) nor a mute control here (it is the call
+# window's), so those have no slot. The group header's bitmap is the
+# member strip's: the Leave button keeps its own danger tint, which over
+# a bitmap would put its text on the image.
+'chat.toolbar' = { elements = [".chat-window .chat-peer-status"], labels = [".chat-window .chat-peer-status-label", ".chat-window .chat-safety-btn", ".chat-window .chat-call-btn"] }
+'chat.call-button' = { elements = [".chat-window .chat-call-btn"] }
+'chat.call-button-active' = { elements = [".chat-window .chat-call-btn.chat-call-btn-active"] }
+'chat.input' = { elements = [".chat-window .message-input-shell"], labels = [".chat-window .message-input-attach-btn", ".chat-window .message-input-mic-btn"] }
+'chat.group-header' = { elements = [".chat-window .group-chat-members"], labels = [".chat-window .group-chat-member"] }

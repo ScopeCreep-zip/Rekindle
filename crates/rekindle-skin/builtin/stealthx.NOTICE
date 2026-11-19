@@ -26,6 +26,7 @@ Colours (7 defined)
 Regions
   window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 97x128 px, nine-slice 35/27/35/27
   buddylist.menubar: the component MenuBackground, 42x6 px, NineSlice(Insets { top: 0, right: 13, bottom: 0, left: 16 }); states normal
+  buddylist.group-header: the component BuddyView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   titlebar.btn.minimize: the title button WndMin, 12x12 px, Stretch; states normal, hover, down
   titlebar.btn.maximize: the title button WndMax, 12x12 px, Stretch; states normal, hover, down
   titlebar.btn.close: the title button WndClose, 12x12 px, Stretch; states normal, hover, down
@@ -38,6 +39,7 @@ Regions
   scrollbar.track: the scrollbar DefaultScrollbar, 19x42 px, NineSlice(Insets { top: 1, right: 0, bottom: 1, left: 0 }); states normal
   scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 42x19 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   scrollbar.corner: the scrollbar DefaultScrollbar, 19x19 px, Stretch; states normal
+  chat.group-header: the component GroupChatInfoView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
   kept 30 of 128 images

@@ -61,6 +61,19 @@
 }
 @layer skin {
   :root {
+    --skin-region-buddylist-action-button: url("skin://localhost/fixture/430c64bebcca5a298acb1d364d85bd75938079aa3ac33f4cb3e2df7122260a3d.png") 4 4 4 4 fill / 4px 4px 4px 4px / 0 stretch;
+    --skin-region-buddylist-action-button-backing: var(--color-xfire-bg-dark);
+    --skin-region-buddylist-action-button-slice-top: 4px;
+    --skin-region-buddylist-action-button-slice-right: 4px;
+    --skin-region-buddylist-action-button-slice-bottom: 4px;
+    --skin-region-buddylist-action-button-slice-left: 4px;
+    --skin-region-buddylist-action-button--hover: url("skin://localhost/fixture/cb7425b68ccbfdfdcc93b004ae033c391cdb01e01133916a0d62ff13d2747eae.png") 4 4 4 4 fill / 4px 4px 4px 4px / 0 stretch;
+    --skin-region-buddylist-action-button--down: url("skin://localhost/fixture/cb7425b68ccbfdfdcc93b004ae033c391cdb01e01133916a0d62ff13d2747eae.png") 4 4 4 4 fill / 4px 4px 4px 4px / 0 stretch;
+    --skin-region-buddylist-action-button--disabled: url("skin://localhost/fixture/719f96dbbc1e343ecbb52072581ccb7d3f526321b42beae8475f6de4b6180a7d.png") 4 4 4 4 fill / 4px 4px 4px 4px / 0 stretch;
+    --skin-region-buddylist-group-header: url("skin://localhost/fixture/e12bf36c5cdfd24138c43ead4d22494a7e9cbef8d98a439d529fd10e23772726.png") 0 5 0 5 fill / 0px 5px 0px 5px / 0 stretch;
+    --skin-region-buddylist-group-header-backing: var(--color-xfire-bg-dark);
+    --skin-region-buddylist-infobar: url("skin://localhost/fixture/967d10be0b418de6ea10c18b87fa5403746d74b20b271e3de7f4d87f83d4131f.png") 0 6 0 6 fill / 0px 6px 0px 6px / 0 stretch;
+    --skin-region-buddylist-infobar-backing: var(--color-xfire-bg-dark);
     --skin-region-scrollbar-button-down: url("skin://localhost/fixture/1af5452331570c6c6217bcbe6682a2674807b3cb9bb59d78e919559c64c2ffa2.png") 0 fill / 0 / 0 stretch;
     --skin-region-scrollbar-button-down-length: 11px;
     --skin-region-scrollbar-button-down--hover: url("skin://localhost/fixture/1af5452331570c6c6217bcbe6682a2674807b3cb9bb59d78e919559c64c2ffa2.png") 0 fill / 0 / 0 stretch;
@@ -90,6 +103,13 @@
     --skin-region-scrollbar-thumb-horizontal--down: url("skin://localhost/fixture/1edc006a68c3ae1df5364ebc7c9096fc2d43dc3f651cdee3fecdb194bae974b6.png") 0 2 0 2 fill / 0px 2px 0px 2px / 0 stretch;
     --skin-region-scrollbar-track: url("skin://localhost/fixture/8163432f95fdd416a18420ae6c156583845225753e3060220c3b6c5724d97ceb.png") 1 0 1 0 fill / 1px 0px 1px 0px / 0 stretch;
     --skin-region-scrollbar-track-horizontal: url("skin://localhost/fixture/a80bd4325978ae4c1bd2eae8f613192bd2da98a4131ab203cf9261350216bbfc.png") 0 1 0 1 fill / 0px 1px 0px 1px / 0 stretch;
+    --skin-region-statusbar: url("skin://localhost/fixture/4ce97a263cfed44a3e44c95e7e58f5ad9b37f84a4b8bab596315c52ff9870699.png") 0 6 0 6 fill / 0px 6px 0px 6px / 0 stretch;
+    --skin-region-statusbar-backing: var(--color-xfire-bg-status);
+    --skin-region-statusbar-arrow: url("skin://localhost/fixture/9ee2294940983232f1aebf278cf2b3a505c4d1b7488c7bb134787ed531ccd121.png") 0 fill / 0 / 0 stretch;
+    --skin-region-statusbar-arrow-width: 22px;
+    --skin-region-statusbar-arrow-height: 22px;
+    --skin-region-statusbar-arrow--hover: url("skin://localhost/fixture/0ec8d2ea15bfc2f5a601b9dff18f28cdac2a9aaa18ef4b3edabdc21f61c0baf7.png") 0 fill / 0 / 0 stretch;
+    --skin-region-statusbar-arrow--down: url("skin://localhost/fixture/0ec8d2ea15bfc2f5a601b9dff18f28cdac2a9aaa18ef4b3edabdc21f61c0baf7.png") 0 fill / 0 / 0 stretch;
     --skin-region-titlebar-btn-close: url("skin://localhost/fixture/eec3103324eff16283e9ccb179c52953bed84ee6f393d0cd4006c7a8b48a1b65.png") 0 fill / 0 / 0 stretch;
     --skin-region-titlebar-btn-close--hover: url("skin://localhost/fixture/ac98892392b031afd0aa2ffbadba2fb9d8d3d0b13313e68b3fea429448bb62bf.png") 0 fill / 0 / 0 stretch;
     --skin-region-titlebar-btn-close--down: url("skin://localhost/fixture/ac98892392b031afd0aa2ffbadba2fb9d8d3d0b13313e68b3fea429448bb62bf.png") 0 fill / 0 / 0 stretch;

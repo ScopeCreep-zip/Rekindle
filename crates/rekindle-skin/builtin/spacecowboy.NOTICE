@@ -66,6 +66,10 @@ Colours (49 defined)
 
 Regions
   window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 245x215 px, nine-slice 20/30/20/30
+  buddylist.tab: the component TabNormalButton, 73x20 px, NineSlice(Insets { top: 0, right: 11, bottom: 0, left: 11 }); states normal, down, selected
+  buddylist.group-header: the component BuddyView, 13x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 4 }); states normal
+  buddylist.action-button: the component AddButton, 54x18 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
+  statusbar: the component StatusWrapper, 116x18 px, NineSlice(Insets { top: 0, right: 15, bottom: 0, left: 1 }); states normal
   titlebar.btn.minimize: the title button Minimize, 14x14 px, Stretch; states normal, hover, down
   titlebar.btn.maximize: the title button Maximize, 14x14 px, Stretch; states normal, hover, down
   titlebar.btn.close: the title button Close, 14x14 px, Stretch; states normal, hover, down
@@ -79,10 +83,10 @@ Regions
   scrollbar.track-horizontal: the scrollbar ScrollbarA, 3x10 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 30 of 140 images
-  Disabled sets: kept 1 of 21
-  Down sets: kept 4 of 46
-  Hover sets: kept 4 of 44
+  kept 36 of 140 images
+  Disabled sets: kept 2 of 21
+  Down sets: kept 6 of 46
+  Hover sets: kept 5 of 44
   other sets: kept 0 of 2
   dropped FileMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped FileMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -90,12 +94,8 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ToolsMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped TabNormalButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ImButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ImButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ImButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -123,6 +123,7 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped DownloadInfoButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownloadInfoButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownloadInfoButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped DownArrow (statusbar.arrow) Hover: its size differs from the normal image's
   dropped DownArrow other: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownArrow Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownArrow other: no region slot: its bitmap carries a label, icon or Xfire-only control

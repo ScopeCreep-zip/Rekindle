@@ -229,6 +229,13 @@ fn the_app_css_resets_every_region_rule_under_forced_colors() {
     assert!(css.rfind("var(--skin-region-").unwrap() < media);
     assert!(css.ends_with("    }\n  }\n}\n"));
     let forced = &css[media..];
+    // The element rules share one selector list (each matches at its own
+    // specificity); a pseudo-element rule stays alone, since a list with a
+    // selector the engine does not know is dropped whole.
+    let selector_lines: Vec<&str> = forced
+        .lines()
+        .map(|l| l.trim().trim_end_matches('{').trim().trim_end_matches(','))
+        .collect();
     for list in [
         ".close",
         ".close:hover",
@@ -236,6 +243,10 @@ fn the_app_css_resets_every_region_rule_under_forced_colors() {
         ".close:focus-visible",
         ".close:disabled, .close[aria-disabled=\"true\"]",
         ":where(:root[data-window-inactive]) .close",
+    ] {
+        assert!(selector_lines.contains(&list), "{list}");
+    }
+    for list in [
         "::-webkit-scrollbar-thumb:vertical:window-inactive",
         "::-webkit-scrollbar-corner",
     ] {
@@ -246,8 +257,14 @@ fn the_app_css_resets_every_region_rule_under_forced_colors() {
             "{list}"
         );
     }
-    let painted = components.matches("border-image: var(").count();
-    assert_eq!(forced.matches("border-image: none;").count(), painted);
+    let pseudo_rules = components
+        .split("\n  }\n")
+        .filter(|r| r.contains("border-image: var(") && r.trim_start().starts_with("::"))
+        .count();
+    assert_eq!(
+        forced.matches("border-image: none;").count(),
+        1 + pseudo_rules
+    );
 }
 
 #[test]
@@ -400,4 +417,28 @@ fn the_skin_css_sizes_the_arrow_and_backs_a_labelled_bar() {
         css.contains("    --skin-region-buddylist-infobar-backing: var(--color-xfire-bg-dark);\n")
     );
     assert!(!css.contains("-slice-"), "{css}");
+}
+
+/// Plan E7.7.7 S2: the chat window's call buttons take their states, the
+/// hang-up button's rules follow the call button's so its own image wins
+/// where both match, and the toolbar is a labelled bar.
+#[test]
+fn the_app_css_paints_the_chat_buttons_and_backs_the_toolbar() {
+    let css = app_css("h", &full_map()).unwrap();
+    assert!(css.contains("  .chat-call-button:hover {\n    border-image: var(--skin-region-chat-call-button--hover, var(--skin-region-chat-call-button));\n  }\n"), "{css}");
+    assert!(css.contains("  .chat-call-button-active {\n    border-image: var(--skin-region-chat-call-button-active);\n"));
+    assert!(
+        css.find(".chat-call-button:active").unwrap()
+            < css.find(".chat-call-button-active {").unwrap()
+    );
+    let b = "var(--skin-region-chat-toolbar-backing)";
+    assert!(css.contains(&format!(
+        "  .chat-toolbar-label {{\n    background-image: linear-gradient({b}, {b});\n  }}\n"
+    )));
+    assert!(css.contains("  .chat-input-label {\n"));
+    assert!(css.contains("  .chat-group-header-label {\n"));
+    assert!(
+        css.contains(".chat-call-button::before"),
+        "a text button gets its backing"
+    );
 }

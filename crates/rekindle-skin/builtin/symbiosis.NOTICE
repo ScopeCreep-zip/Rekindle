@@ -103,12 +103,17 @@ Regions
   buddylist.actionbar: the component FriendsButtonBar, 17x84 px, NineSlice(Insets { top: 0, right: 8, bottom: 0, left: 8 }); states normal
   buddylist.action-button: the component ButtonAddFriend, 75x41 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   buddylist.tab: the component ButtonFriendsTab, 57x48 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, selected
+  chat.input: the component ChatEditContainer, 30x30 px, Stretch; states normal
+  chat.toolbar: the component ChatButtonBar, 17x44 px, NineSlice(Insets { top: 0, right: 8, bottom: 0, left: 8 }); states normal
+  chat.call-button: the component ChatButtonCall, 75x41 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
+  chat.call-button-active: the component ChatButtonLeaveCall, 75x41 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
+  chat.group-header: the component GroupChatUsersList, 6x19 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 40 of 367 images
-  Disabled sets: kept 5 of 76
-  Down sets: kept 7 of 124
-  Hover sets: kept 7 of 118
+  kept 46 of 367 images
+  Disabled sets: kept 7 of 76
+  Down sets: kept 9 of 124
+  Hover sets: kept 9 of 118
   other sets: kept 0 of 18
   dropped XfireLogo Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped XfireLogo Down: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -242,12 +247,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ChatButtonJoin Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatButtonJoin Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatButtonJoin Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped ChatButtonCall Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped ChatButtonCall Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped ChatButtonCall Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped ChatButtonLeaveCall Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped ChatButtonLeaveCall Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped ChatButtonLeaveCall Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ButtonGroupChatInfoIn Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ButtonGroupChatInfoIn Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ButtonGroupChatInfoOut Hover: no region slot: its bitmap carries a label, icon or Xfire-only control

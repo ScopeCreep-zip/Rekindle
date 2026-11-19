@@ -61,6 +61,20 @@
 }
 @layer skin {
   :root {
+    --skin-region-buddylist-action-button: url("skin://localhost/fixture/d2d96dff97cd2aed14727c7b620312c3f151be9650b5cc5c598bb64f72da8e95.png") 4 4 4 4 fill / 4px 4px 4px 4px / 0 stretch;
+    --skin-region-buddylist-action-button-backing: var(--color-xfire-bg-dark);
+    --skin-region-buddylist-action-button-slice-top: 4px;
+    --skin-region-buddylist-action-button-slice-right: 4px;
+    --skin-region-buddylist-action-button-slice-bottom: 4px;
+    --skin-region-buddylist-action-button-slice-left: 4px;
+    --skin-region-buddylist-action-button--hover: url("skin://localhost/fixture/2e59e53f72c279b9913d7db3bfd6ba008bbaba6a729cd0fade1f574366a1e7b5.png") 4 4 4 4 fill / 4px 4px 4px 4px / 0 stretch;
+    --skin-region-buddylist-action-button--down: url("skin://localhost/fixture/6e11898f5c244966fc530eebec1e4de493c352615f205b0b5bf4f84ce1ab521a.png") 4 4 4 4 fill / 4px 4px 4px 4px / 0 stretch;
+    --skin-region-buddylist-actionbar: url("skin://localhost/fixture/2623f037214eae0d30c6d940dd6a499d90ec4c89da26071a7006bf36a633bba6.png") 0 161 0 161 fill / 0px 161px 0px 161px / 0 stretch;
+    --skin-region-buddylist-actionbar-backing: var(--color-xfire-bg-dark);
+    --skin-region-buddylist-group-header: url("skin://localhost/fixture/a6a7d50327125c73b510c2499d473dac5b5a076887a059c7d2d522c028dbb9f4.png") 0 1 0 1 fill / 0px 1px 0px 1px / 0 stretch;
+    --skin-region-buddylist-group-header-backing: var(--color-xfire-bg-dark);
+    --skin-region-buddylist-menubar: url("skin://localhost/fixture/e8b4deb7b2c10cf7d33b3a3a845af6f30c050a238f978813ab325b8198268367.png") 0 83 0 83 fill / 0px 83px 0px 83px / 0 stretch;
+    --skin-region-buddylist-menubar-backing: var(--color-xfire-bg-dark);
     --skin-region-scrollbar-button-down: url("skin://localhost/fixture/0ee97283da75f141f0b2741933209c229893f8050562bbbe14284839dbf3764d.png") 0 fill / 0 / 0 stretch;
     --skin-region-scrollbar-button-down-length: 15px;
     --skin-region-scrollbar-button-down--hover: url("skin://localhost/fixture/0ee97283da75f141f0b2741933209c229893f8050562bbbe14284839dbf3764d.png") 0 fill / 0 / 0 stretch;

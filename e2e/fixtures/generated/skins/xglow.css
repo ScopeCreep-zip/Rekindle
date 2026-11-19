@@ -61,6 +61,8 @@
 }
 @layer skin {
   :root {
+    --skin-region-buddylist-group-header: url("skin://localhost/fixture/19fa06d752a971fce2b0c1380af1b6cc946d525566ff05973f991025cf6b32a5.png") 0 1 0 1 fill / 0px 1px 0px 1px / 0 stretch;
+    --skin-region-buddylist-group-header-backing: var(--color-xfire-bg-dark);
     --skin-region-scrollbar-button-down: url("skin://localhost/fixture/c1572dcd2d3ba38060ad325f1576346bef5d40dd401cfd5fcb9f91510e744b10.png") 0 fill / 0 / 0 stretch;
     --skin-region-scrollbar-button-down-length: 7px;
     --skin-region-scrollbar-button-down--hover: url("skin://localhost/fixture/c1572dcd2d3ba38060ad325f1576346bef5d40dd401cfd5fcb9f91510e744b10.png") 0 fill / 0 / 0 stretch;
@@ -90,6 +92,10 @@
     --skin-region-scrollbar-thumb-horizontal--down: url("skin://localhost/fixture/b41ea91c459ce9ae3fbd2337bfdcf7f5526a6742279c42d30255fb46498388bc.png") 0 7 0 7 fill / 0px 7px 0px 7px / 0 stretch;
     --skin-region-scrollbar-track: url("skin://localhost/fixture/79cdd90570b66560a8995f44937b58045fd3997706c1722208601e631da9f9ef.png") 7 0 7 0 fill / 7px 0px 7px 0px / 0 stretch;
     --skin-region-scrollbar-track-horizontal: url("skin://localhost/fixture/0f80b40f11c11abed9ed33eade76605dc8cbbdf11d483576592fc8b37e422fc2.png") 0 7 0 7 fill / 0px 7px 0px 7px / 0 stretch;
+    --skin-region-statusbar-arrow: url("skin://localhost/fixture/1affbf15c65791a24c9ac234a2995688ab59e16e5be8f85673f6ff7ebe9864ff.png") 0 fill / 0 / 0 stretch;
+    --skin-region-statusbar-arrow-width: 17px;
+    --skin-region-statusbar-arrow-height: 17px;
+    --skin-region-statusbar-arrow--hover: url("skin://localhost/fixture/1affbf15c65791a24c9ac234a2995688ab59e16e5be8f85673f6ff7ebe9864ff.png") 0 fill / 0 / 0 stretch;
     --skin-region-titlebar-btn-minimize: url("skin://localhost/fixture/fe7508860a2ec6f6aaaa3315f8d2334f288be162e7d6cc99d5835ada566ac4ef.png") 0 fill / 0 / 0 stretch;
     --skin-region-titlebar-btn-minimize--down: url("skin://localhost/fixture/3351c9c311f454aa56c2f9681b818199b3470a82240d0481a4bce92acc222d36.png") 0 fill / 0 / 0 stretch;
   }

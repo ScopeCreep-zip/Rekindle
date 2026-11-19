@@ -576,3 +576,6 @@ mod fan_tests;
 
 #[cfg(test)]
 mod surfaces_tests;
+
+#[cfg(test)]
+mod chat_surfaces_tests;

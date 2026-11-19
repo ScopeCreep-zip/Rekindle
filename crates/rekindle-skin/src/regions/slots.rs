@@ -162,9 +162,14 @@ const ACTION_LABEL_INSET: (u32, u32) = (8, 4);
 /// The buddy-list window's ground (`.app-frame`, `regions.toml`
 /// `'.buddy-tab' = { on = ["--color-xfire-bg-dark"] }`).
 const ON_DARK: &[&str] = &["bg.dark"];
+/// The chat toolbar's ground (`.chat-peer-status`: `bg.panel` at 80% over
+/// the window's `bg.dark`); a skinned bar backs its labels with `bg.panel`.
+const ON_PANEL: &[&str] = &["bg.panel"];
+/// The chat window's call buttons hold one 14 px glyph in 24 px.
+const CALL_LABEL_INSET: (u32, u32) = (4, 4);
 
 /// The region slots. Every slot appears in every window.
-pub const SLOTS: [RegionSlot; 25] = [
+pub const SLOTS: [RegionSlot; 30] = [
     // The whole window behind its content. DoiDD's frame has hover, down
     // and disabled (window-inactive) images.
     slot("window.frame", Extent::Window, Extent::Window, &[]).states(&[
@@ -292,6 +297,53 @@ pub const SLOTS: [RegionSlot; 25] = [
     .painted(BUTTON)
     .label_inset(ACTION_LABEL_INSET)
     .grounds(ON_DARK),
+    slot(
+        "chat.toolbar",
+        Extent::Window,
+        CHROME,
+        &[
+            normal("text.dim"),
+            normal("status.online-text"),
+            normal("danger.text"),
+        ],
+    )
+    .labelled(&[], ON_PANEL),
+    slot(
+        "chat.call-button",
+        ACTION_WIDTH,
+        ACTION_HEIGHT,
+        &[normal("status.online-text")],
+    )
+    .painted(BUTTON)
+    .label_inset(CALL_LABEL_INSET)
+    .grounds(ON_PANEL),
+    slot(
+        "chat.call-button-active",
+        ACTION_WIDTH,
+        ACTION_HEIGHT,
+        &[normal("danger.text")],
+    )
+    .painted(BUTTON)
+    .label_inset(CALL_LABEL_INSET)
+    .grounds(ON_PANEL),
+    slot(
+        "chat.input",
+        Extent::Window,
+        Extent::Range { min: 34, max: 96 },
+        &[
+            normal("text.dim"),
+            normal("accent.text"),
+            normal("danger.text"),
+        ],
+    )
+    .labelled(&[], ON_DARK),
+    slot(
+        "chat.group-header",
+        Extent::Window,
+        Extent::Range { min: 20, max: 40 },
+        &[normal("text.dim")],
+    )
+    .labelled(&[], ON_DARK),
     // One titlebar button each (Xfire `ButtonMinimize` …; Winamp
     // TITLEBAR.BMP). The glyph is drawn over the image, never replaced.
     slot("titlebar.btn.minimize", CHROME, CHROME, &[]).painted(BUTTON),

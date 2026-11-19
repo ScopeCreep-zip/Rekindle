@@ -199,8 +199,11 @@
     color: var(--color-xfire-text-dim);
   }
 
+  /* Its own colour: a skinned toolbar backs the label with `bg.panel`
+   * (plan E7.7.7), so the label's text is declared on that ground too. */
   .chat-peer-status-label {
     text-transform: capitalize;
+    color: var(--color-xfire-text-dim);
   }
 
   /* The safety number behind the header's shield (plan E2.3). */

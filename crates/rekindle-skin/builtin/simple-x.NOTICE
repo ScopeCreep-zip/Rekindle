@@ -73,9 +73,14 @@ Regions
   window.frame: [Top] [Middle] [Bottom], nine-slice 126/92/126/90, transparent middle
     Normal: 272x377 px
     WindowInactive not emitted: missing [Middle] Disabled.left, [Middle] Disabled.right, [Bottom] Disabled.bottomleft, [Bottom] Disabled.bottom, [Bottom] Disabled.bottomright
+  buddylist.infobar: [UserNameField], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
+  statusbar: [StatusWrapper], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
+  statusbar.arrow: [DownArrow], 22x22 px, Stretch; states normal, hover, down
   titlebar.btn.close: [CloseBox], 16x16 px, Stretch; states normal, hover, down
   titlebar.btn.minimize: [MinimizeBox], 16x16 px, Stretch; states normal, hover, down
   titlebar.btn.maximize: [MaximizeBox], 16x16 px, Stretch; states normal, hover, down
+  buddylist.group-header: [BuddyView], 110x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal
+  buddylist.action-button: [AddButton], 59x22 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   scrollbar.button-up: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: [DefaultScrollbar], 11x10 px, Stretch; states normal, hover, down, disabled
@@ -87,7 +92,7 @@ Regions
   scrollbar.corner: [DefaultScrollbar], 10x10 px, Stretch; states normal
 
 Dropped
-  images with no region slot: 159
+  images with no region slot: 134
   other keys (classes, sizes, cursors, sounds): 203
   other skin files (chat, group chat, in-game): 4
   text styles: 77
@@ -106,7 +111,7 @@ Dropped
     SimpleX.ini: [TabHeader] Window2.X (line 593)
     SimpleX.ini: [TabHeader] Window3.X (line 599)
     SimpleX.ini: [SearchFiles] Cursor (line 825)
-  files not read (140):
+  files not read (124):
     CScroll/Thumbs.db
     CScroll/scroll-gripper-grips-horz.gif
     CScroll/scroll-gripper-grips-vert.gif
@@ -119,10 +124,6 @@ Dropped
     buttons/SearchFiles-norm.gif
     buttons/Thumbs.db
     buttons/TopButtonsBar.gif
-    buttons/button-add-click.gif
-    buttons/button-add-disabled.gif
-    buttons/button-add-hover.gif
-    buttons/button-add-norm.gif
     buttons/button-afav-click.gif
     buttons/button-afav-disabled.gif
     buttons/button-afav-hover.gif
@@ -160,9 +161,6 @@ Dropped
     buttons/info-voice-hover.gif
     buttons/info-voice-norm.gif
     buttons/info-voice-trans.gif
-    buttons/status-arrow-down.gif
-    buttons/status-arrow-hover.gif
-    buttons/status-arrow.gif
     chatskin/ChatLogo-down.gif
     chatskin/ChatLogo-hover.gif
     chatskin/ChatLogo.gif
@@ -230,22 +228,13 @@ Dropped
     mainskin/gripperbr.gif
     mainskin/listview-header-arrowdown.gif
     mainskin/listview-header-arrowup.gif
-    mainskin/listview-header-left.gif
-    mainskin/listview-header-middle.gif
-    mainskin/listview-header-right.gif
     mainskin/main-middle-middle.gif
     mainskin/mainbg.gif
     mainskin/menubar-middle-flash.gif
     mainskin/menubar-middle-off.gif
     mainskin/menubar-middle.gif
-    mainskin/status-left.gif
-    mainskin/status-middle.gif
-    mainskin/status-right.gif
     mainskin/tab_control_base.gif
     mainskin/toolbar.gif
-    mainskin/username-left.gif
-    mainskin/username-middle.gif
-    mainskin/username-right.gif
     strings.ini
 
 Contrast changes (minimal Oklab-lightness walk) (0 made)

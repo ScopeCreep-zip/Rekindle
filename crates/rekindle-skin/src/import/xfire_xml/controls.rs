@@ -17,8 +17,8 @@
 //!   gutters and corner its background one (`ColorBG`, `ColorGroupBG`).
 //! * A state whose image differs in size from the normal one is dropped
 //!   (the validator refuses it), and named in the `NOTICE`.
-//! * The buddy-list window's bars and buttons fill their surface slots
-//!   ([`super::surfaces`], XML era; plan E7.7.7).
+//! * The buddy-list and chat windows' bars and buttons fill their surface
+//!   slots ([`super::surfaces`], both eras; plan E7.7.7).
 //! * Every other state set stays dropped: Xfire's other push buttons,
 //!   menus, tabs and launchers bake their label or icon into the bitmap,
 //!   and a region never replaces a label (plan E7.7.1); the resize
@@ -379,7 +379,12 @@ pub fn read(
             .map(|set| XmlSet { d: &d, set })
             .collect();
         if fill(name, c.attr_ci("Class"), &sets, &mut controls, &mut tally)?
-            || super::surfaces::fill(name, &sets, &mut controls, &mut tally)?
+            || super::surfaces::fill(
+                (name, super::surfaces::Window::Main, false),
+                &sets,
+                &mut controls,
+                &mut tally,
+            )?
         {
             continue;
         }

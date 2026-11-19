@@ -16,6 +16,7 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::RegionState;
 
 use super::super::xfire_xml::controls::{fill, is_read_piece, StateImages, StateTally};
+use super::super::xfire_xml::surfaces::{self, Window};
 use super::super::xfire_xml::{bitmap, ColourRow};
 use super::super::{Control, ImportError, Tree};
 use super::ini::{Ini, Section};
@@ -103,6 +104,7 @@ pub fn is_read(key: &str) -> bool {
     STATES.iter().any(|(p, _)| {
         is_prefixed(key, p)
             && (is_read_piece(&key[p.len() + 1..])
+                || surfaces::is_read_piece(&key[p.len() + 1..])
                 || key[p.len() + 1..].eq_ignore_ascii_case("ColorGroup")
                 || key[p.len() + 1..].eq_ignore_ascii_case("ColorGroupBG"))
     })
@@ -125,9 +127,25 @@ pub fn read(
 ) -> Result<(Vec<Control>, StateTally, BTreeSet<String>), ImportError> {
     let mut controls = Vec::new();
     let mut tally = StateTally::default();
+    let used = read_file(skin, images, Window::Main, (&mut controls, &mut tally))?;
+    Ok((controls, tally, used))
+}
+
+/// Fills `controls` from the sections of one skin file, `window`: the
+/// main skin file's title buttons, scrollbar and surfaces, or a chat
+/// window file's surfaces only (plan E7.7.7 S2). Returns the sections read.
+///
+/// # Errors
+/// A missing or refused image.
+pub fn read_file(
+    ini: &Ini,
+    images: &Images<'_>,
+    window: Window,
+    (controls, tally): (&mut Vec<Control>, &mut StateTally),
+) -> Result<BTreeSet<String>, ImportError> {
     let mut used = BTreeSet::new();
     let mut seen = BTreeSet::new();
-    for section in &skin.sections {
+    for section in &ini.sections {
         if !seen.insert(section.name.to_ascii_lowercase()) {
             continue;
         }
@@ -141,15 +159,12 @@ pub fn read(
                 state,
             })
             .collect();
-        if fill(
-            &section.name,
-            section.get("Class"),
-            &sets,
-            &mut controls,
-            &mut tally,
-        )? {
+        let filled = (window == Window::Main
+            && fill(&section.name, section.get("Class"), &sets, controls, tally)?)
+            || surfaces::fill((&section.name, window, true), &sets, controls, tally)?;
+        if filled {
             used.insert(section.name.to_ascii_lowercase());
         }
     }
-    Ok((controls, tally, used))
+    Ok(used)
 }

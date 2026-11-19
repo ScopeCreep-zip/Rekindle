@@ -107,3 +107,72 @@ fn middle_sides_title_buttons_and_the_scrollbar_import() {
     // The logo button, the grip overlay and `[Middle]`'s middle have no slot.
     assert!(a.notice.contains("images with no region slot: 3"));
 }
+
+/// Plan E7.7.7 S2: Combat's shape. The main skin's status arrow, list
+/// header, name bar and add button, and each chat window file's
+/// `[GCMenuBar]` into the slot of the window that file is for.
+#[test]
+fn combat_surfaces_import_from_the_skin_and_its_chat_files() {
+    let mut t = tree();
+    let mut skin = skin_ini().replace(
+        "ColorGroupTheme=FanThemes\r\n",
+        "ColorGroupTheme=FanThemes\r\nChatSkin=FanChat\r\nGroupChatSkin=FanGroup\r\n",
+    );
+    skin.push_str(
+        "[DownArrow]\r\nClass=Menu\r\nGraphics.middle=s\\arrow.png\r\nHover.middle=s\\arrow-h.png\r\n\
+         [BuddyView]\r\nClass=BuddyListView\r\nGraphics.HeaderLeft=s\\hl.png\r\n\
+         Graphics.HeaderMiddle=s\\hm.png\r\nGraphics.HeaderRight=s\\hr.png\r\n\
+         [CombatDragBar]\r\nClass=Tile\r\nGraphics.left=s\\nl.png\r\nGraphics.middle=s\\nm.png\r\n\
+         Graphics.right=s\\nr.png\r\nDisabled.left=s\\nl.png\r\nDisabled.middle=s\\nm.png\r\n\
+         Disabled.right=s\\nr.png\r\n\
+         [AddFriendButton]\r\nClass=PushButton\r\nGraphics.middle=s\\add.png\r\n\
+         [GCMenuBar]\r\nClass=Tile\r\nGraphics.left=s\\ml.png\r\nGraphics.middle=s\\mm.png\r\n\
+         Graphics.right=s\\mr.png\r\n",
+    );
+    t.insert(format!("{FOLDER}.ini"), skin.into_bytes());
+    let bar = |p: &str| {
+        format!(
+            "[MainWindow]\r\nClass=MainWindow\r\n[GCMenuBar]\r\nClass=Tile\r\n\
+             Graphics.left=s\\{p}l.png\r\nGraphics.middle=s\\{p}m.png\r\nGraphics.right=s\\{p}r.png\r\n"
+        )
+    };
+    t.insert("FanChat.ini".into(), bar("c").into_bytes());
+    t.insert("FanGroup.ini".into(), bar("g").into_bytes());
+    for f in [
+        "arrow", "arrow-h", "hl", "hm", "hr", "nl", "nm", "nr", "add",
+    ]
+    .into_iter()
+    .chain(["cl", "cm", "cr", "gl", "gm", "gr", "ml", "mm", "mr"])
+    {
+        t.insert(format!("s/{f}.png"), png(10));
+    }
+    let r = read(&t, FOLDER).unwrap();
+    let region = |id: &str| r.controls.iter().find(|c| c.region == id);
+    let arrow = region("statusbar.arrow").unwrap();
+    assert!(arrow.images.contains_key(&RegionState::Hover));
+    assert!(region("buddylist.group-header").is_some());
+    assert!(region("buddylist.action-button").is_some());
+    // The name bar's Disabled set has no state on the info bar: dropped.
+    let info = region("buddylist.infobar").unwrap();
+    assert_eq!(info.images.len(), 1);
+    // The main file's own `[GCMenuBar]` fills nothing: each chat window's
+    // bar is read in its own file.
+    assert_eq!(r.tally.sources["chat.toolbar"], "GCMenuBar");
+    assert!(r.unread.iter().any(|f| f == "s/ml.png"));
+    assert!(!r.unread.iter().any(|f| f == "s/cl.png" || f == "s/gl.png"));
+    assert!(!r
+        .unread
+        .iter()
+        .any(|f| f == "FanChat.ini" || f == "FanGroup.ini"));
+    assert!(region("chat.toolbar").is_some() && region("chat.group-header").is_some());
+    let Outcome::Passed(a) = import(&t, FOLDER, "fan", None).unwrap() else {
+        panic!("a draft");
+    };
+    assert_eq!(
+        validate::run(&a.canonical.bytes).unwrap().bytes,
+        a.canonical.bytes
+    );
+    assert!(a.notice.contains(
+        "dropped [CombatDragBar (buddylist.infobar)] Disabled: the slot has no such state"
+    ));
+}

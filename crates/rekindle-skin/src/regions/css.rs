@@ -373,9 +373,23 @@ fn rules(map: &BTreeMap<String, RegionMap>) -> Result<(String, String), String> 
         }
     }
     let mut a11y = format!("  @media (prefers-reduced-motion: reduce) {{\n{motion}  }}\n");
-    // Last, at each rule's own specificity, so every state is reset too.
+    // Last, at each rule's own specificity, so every state is reset too:
+    // a selector list matches at the specificity of the selector that
+    // matches (Selectors 4 §17), so the element rules share one list. A
+    // pseudo-element rule stays alone: a list holding a selector the
+    // engine does not know is dropped whole (Selectors 4 §4.1).
     a11y.push_str("  @media (forced-colors: active) {\n");
-    for list in &painted {
+    let (pseudo, plain): (Vec<&String>, Vec<&String>) =
+        painted.iter().partition(|l| l.contains("::"));
+    if !plain.is_empty() {
+        let joined: Vec<&str> = plain.iter().map(|l| l.as_str()).collect();
+        let _ = write!(
+            a11y,
+            "    {} {{\n      border-image: none;\n    }}\n",
+            joined.join(",\n    ")
+        );
+    }
+    for list in pseudo {
         let _ = write!(a11y, "    {list} {{\n      border-image: none;\n    }}\n");
     }
     if !backed.is_empty() {

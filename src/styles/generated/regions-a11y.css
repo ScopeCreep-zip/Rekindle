@@ -68,6 +68,51 @@
     .buddy-list-window .action-bar-icon-btn:disabled, .buddy-list-window .action-bar-icon-btn[aria-disabled="true"] {
       border-image: var(--skin-region-buddylist-action-button--disabled--still, var(--skin-region-buddylist-action-button--disabled, var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button))));
     }
+    .chat-window .chat-peer-status {
+      border-image: var(--skin-region-chat-toolbar--still, var(--skin-region-chat-toolbar));
+    }
+    .chat-window .chat-call-btn {
+      border-image: var(--skin-region-chat-call-button--still, var(--skin-region-chat-call-button));
+    }
+    :where(:root[data-window-inactive]) .chat-window .chat-call-btn {
+      border-image: var(--skin-region-chat-call-button--windowinactive--still, var(--skin-region-chat-call-button--windowinactive, var(--skin-region-chat-call-button--still, var(--skin-region-chat-call-button))));
+    }
+    .chat-window .chat-call-btn:hover {
+      border-image: var(--skin-region-chat-call-button--hover--still, var(--skin-region-chat-call-button--hover, var(--skin-region-chat-call-button--still, var(--skin-region-chat-call-button))));
+    }
+    .chat-window .chat-call-btn:focus-visible {
+      border-image: var(--skin-region-chat-call-button--focused--still, var(--skin-region-chat-call-button--focused, var(--skin-region-chat-call-button--still, var(--skin-region-chat-call-button))));
+    }
+    .chat-window .chat-call-btn:active {
+      border-image: var(--skin-region-chat-call-button--down--still, var(--skin-region-chat-call-button--down, var(--skin-region-chat-call-button--still, var(--skin-region-chat-call-button))));
+    }
+    .chat-window .chat-call-btn:disabled, .chat-window .chat-call-btn[aria-disabled="true"] {
+      border-image: var(--skin-region-chat-call-button--disabled--still, var(--skin-region-chat-call-button--disabled, var(--skin-region-chat-call-button--still, var(--skin-region-chat-call-button))));
+    }
+    .chat-window .chat-call-btn.chat-call-btn-active {
+      border-image: var(--skin-region-chat-call-button-active--still, var(--skin-region-chat-call-button-active));
+    }
+    :where(:root[data-window-inactive]) .chat-window .chat-call-btn.chat-call-btn-active {
+      border-image: var(--skin-region-chat-call-button-active--windowinactive--still, var(--skin-region-chat-call-button-active--windowinactive, var(--skin-region-chat-call-button-active--still, var(--skin-region-chat-call-button-active))));
+    }
+    .chat-window .chat-call-btn.chat-call-btn-active:hover {
+      border-image: var(--skin-region-chat-call-button-active--hover--still, var(--skin-region-chat-call-button-active--hover, var(--skin-region-chat-call-button-active--still, var(--skin-region-chat-call-button-active))));
+    }
+    .chat-window .chat-call-btn.chat-call-btn-active:focus-visible {
+      border-image: var(--skin-region-chat-call-button-active--focused--still, var(--skin-region-chat-call-button-active--focused, var(--skin-region-chat-call-button-active--still, var(--skin-region-chat-call-button-active))));
+    }
+    .chat-window .chat-call-btn.chat-call-btn-active:active {
+      border-image: var(--skin-region-chat-call-button-active--down--still, var(--skin-region-chat-call-button-active--down, var(--skin-region-chat-call-button-active--still, var(--skin-region-chat-call-button-active))));
+    }
+    .chat-window .chat-call-btn.chat-call-btn-active:disabled, .chat-window .chat-call-btn.chat-call-btn-active[aria-disabled="true"] {
+      border-image: var(--skin-region-chat-call-button-active--disabled--still, var(--skin-region-chat-call-button-active--disabled, var(--skin-region-chat-call-button-active--still, var(--skin-region-chat-call-button-active))));
+    }
+    .chat-window .message-input-shell {
+      border-image: var(--skin-region-chat-input--still, var(--skin-region-chat-input));
+    }
+    .chat-window .group-chat-members {
+      border-image: var(--skin-region-chat-group-header--still, var(--skin-region-chat-group-header));
+    }
     .xfire-titlebar-btn-minimize {
       border-image: var(--skin-region-titlebar-btn-minimize--still, var(--skin-region-titlebar-btn-minimize));
     }
@@ -268,121 +313,66 @@
     }
   }
   @media (forced-colors: active) {
-    .buddy-list-window > .status-bar {
-      border-image: none;
-    }
-    .status-picker-arrow {
-      border-image: none;
-    }
-    .status-picker-arrow:hover {
-      border-image: none;
-    }
-    .status-picker-arrow:active {
-      border-image: none;
-    }
-    .buddy-list-window .menu-bar {
-      border-image: none;
-    }
-    .buddy-list-window .identity-bar {
-      border-image: none;
-    }
-    .buddy-tab {
-      border-image: none;
-    }
-    :where(:root[data-window-inactive]) .buddy-tab {
-      border-image: none;
-    }
-    .buddy-tab:hover {
-      border-image: none;
-    }
-    .buddy-tab:focus-visible {
-      border-image: none;
-    }
-    .buddy-tab[aria-selected="true"] {
-      border-image: none;
-    }
-    .buddy-tab:active {
-      border-image: none;
-    }
-    .buddy-group-header {
-      border-image: none;
-    }
-    .buddy-list-window .buddy-item-selected {
-      border-image: none;
-    }
-    .buddy-list-window .action-bar {
-      border-image: none;
-    }
-    .buddy-list-window .action-bar-icon-btn {
-      border-image: none;
-    }
-    :where(:root[data-window-inactive]) .buddy-list-window .action-bar-icon-btn {
-      border-image: none;
-    }
-    .buddy-list-window .action-bar-icon-btn:hover {
-      border-image: none;
-    }
-    .buddy-list-window .action-bar-icon-btn:focus-visible {
-      border-image: none;
-    }
-    .buddy-list-window .action-bar-icon-btn:active {
-      border-image: none;
-    }
-    .buddy-list-window .action-bar-icon-btn:disabled, .buddy-list-window .action-bar-icon-btn[aria-disabled="true"] {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-minimize {
-      border-image: none;
-    }
-    :where(:root[data-window-inactive]) .xfire-titlebar-btn-minimize {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-minimize:hover {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-minimize:focus-visible {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-minimize:active {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-minimize:disabled, .xfire-titlebar-btn-minimize[aria-disabled="true"] {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-maximize {
-      border-image: none;
-    }
-    :where(:root[data-window-inactive]) .xfire-titlebar-btn-maximize {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-maximize:hover {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-maximize:focus-visible {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-maximize:active {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-maximize:disabled, .xfire-titlebar-btn-maximize[aria-disabled="true"] {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-close {
-      border-image: none;
-    }
-    :where(:root[data-window-inactive]) .xfire-titlebar-btn-close {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-close:hover {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-close:focus-visible {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-close:active {
-      border-image: none;
-    }
-    .xfire-titlebar-btn-close:disabled, .xfire-titlebar-btn-close[aria-disabled="true"] {
+    .buddy-list-window > .status-bar,
+    .status-picker-arrow,
+    .status-picker-arrow:hover,
+    .status-picker-arrow:active,
+    .buddy-list-window .menu-bar,
+    .buddy-list-window .identity-bar,
+    .buddy-tab,
+    :where(:root[data-window-inactive]) .buddy-tab,
+    .buddy-tab:hover,
+    .buddy-tab:focus-visible,
+    .buddy-tab[aria-selected="true"],
+    .buddy-tab:active,
+    .buddy-group-header,
+    .buddy-list-window .buddy-item-selected,
+    .buddy-list-window .action-bar,
+    .buddy-list-window .action-bar-icon-btn,
+    :where(:root[data-window-inactive]) .buddy-list-window .action-bar-icon-btn,
+    .buddy-list-window .action-bar-icon-btn:hover,
+    .buddy-list-window .action-bar-icon-btn:focus-visible,
+    .buddy-list-window .action-bar-icon-btn:active,
+    .buddy-list-window .action-bar-icon-btn:disabled, .buddy-list-window .action-bar-icon-btn[aria-disabled="true"],
+    .chat-window .chat-peer-status,
+    .chat-window .chat-call-btn,
+    :where(:root[data-window-inactive]) .chat-window .chat-call-btn,
+    .chat-window .chat-call-btn:hover,
+    .chat-window .chat-call-btn:focus-visible,
+    .chat-window .chat-call-btn:active,
+    .chat-window .chat-call-btn:disabled, .chat-window .chat-call-btn[aria-disabled="true"],
+    .chat-window .chat-call-btn.chat-call-btn-active,
+    :where(:root[data-window-inactive]) .chat-window .chat-call-btn.chat-call-btn-active,
+    .chat-window .chat-call-btn.chat-call-btn-active:hover,
+    .chat-window .chat-call-btn.chat-call-btn-active:focus-visible,
+    .chat-window .chat-call-btn.chat-call-btn-active:active,
+    .chat-window .chat-call-btn.chat-call-btn-active:disabled, .chat-window .chat-call-btn.chat-call-btn-active[aria-disabled="true"],
+    .chat-window .message-input-shell,
+    .chat-window .group-chat-members,
+    .xfire-titlebar-btn-minimize,
+    :where(:root[data-window-inactive]) .xfire-titlebar-btn-minimize,
+    .xfire-titlebar-btn-minimize:hover,
+    .xfire-titlebar-btn-minimize:focus-visible,
+    .xfire-titlebar-btn-minimize:active,
+    .xfire-titlebar-btn-minimize:disabled, .xfire-titlebar-btn-minimize[aria-disabled="true"],
+    .xfire-titlebar-btn-maximize,
+    :where(:root[data-window-inactive]) .xfire-titlebar-btn-maximize,
+    .xfire-titlebar-btn-maximize:hover,
+    .xfire-titlebar-btn-maximize:focus-visible,
+    .xfire-titlebar-btn-maximize:active,
+    .xfire-titlebar-btn-maximize:disabled, .xfire-titlebar-btn-maximize[aria-disabled="true"],
+    .xfire-titlebar-btn-close,
+    :where(:root[data-window-inactive]) .xfire-titlebar-btn-close,
+    .xfire-titlebar-btn-close:hover,
+    .xfire-titlebar-btn-close:focus-visible,
+    .xfire-titlebar-btn-close:active,
+    .xfire-titlebar-btn-close:disabled, .xfire-titlebar-btn-close[aria-disabled="true"],
+    .form-btn-secondary,
+    :where(:root[data-window-inactive]) .form-btn-secondary,
+    .form-btn-secondary:hover,
+    .form-btn-secondary:focus-visible,
+    .form-btn-secondary:active,
+    .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
       border-image: none;
     }
     ::-webkit-scrollbar-track:vertical {
@@ -511,26 +501,10 @@
     ::-webkit-scrollbar-corner:window-inactive {
       border-image: none;
     }
-    .form-btn-secondary {
-      border-image: none;
-    }
-    :where(:root[data-window-inactive]) .form-btn-secondary {
-      border-image: none;
-    }
-    .form-btn-secondary:hover {
-      border-image: none;
-    }
-    .form-btn-secondary:focus-visible {
-      border-image: none;
-    }
-    .form-btn-secondary:active {
-      border-image: none;
-    }
-    .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
-      border-image: none;
-    }
     .buddy-tab::before,
     .buddy-list-window .action-bar-icon-btn::before,
+    .chat-window .chat-call-btn::before,
+    .chat-window .chat-call-btn.chat-call-btn-active::before,
     .form-btn-secondary::before {
       content: none;
     }
@@ -542,7 +516,13 @@
     .buddy-group-header > span,
     .buddy-list-window .buddy-item-selected .buddy-item-content,
     .buddy-list-window .action-bar-icon-btn,
-    .buddy-list-window .logout-icon-btn {
+    .buddy-list-window .logout-icon-btn,
+    .chat-window .chat-peer-status-label,
+    .chat-window .chat-safety-btn,
+    .chat-window .chat-call-btn,
+    .chat-window .message-input-attach-btn,
+    .chat-window .message-input-mic-btn,
+    .chat-window .group-chat-member {
       background-image: none;
     }
   }

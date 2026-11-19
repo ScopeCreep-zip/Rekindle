@@ -5,8 +5,10 @@
 //! * Three files are read, each by the bounded [`ini`] reader and nothing
 //!   else: `version.ini` (`[Version] Version=1`, `LongName`), the skin
 //!   file `<folder>.ini` (`[MainWindow]`), and the theme its
-//!   `ColorGroupTheme=` names (`<name>.ini`, section `[default]`). Every
-//!   other file (chat, info, in-game skins, `strings.ini`, `Thumbs.db`,
+//!   `ColorGroupTheme=` names (`<name>.ini`, section `[default]`), and the
+//!   chat and group chat skin files its `ChatSkin=`/`GroupChatSkin=` name,
+//!   for their surfaces only (plan E7.7.7 S2; read when one fills a slot).
+//!   Every other file (info, in-game skins, `strings.ini`, `Thumbs.db`,
 //!   `.psd`) is named in the `NOTICE` and never decoded.
 //! * The skin file is named by the skin's folder, never by `LongName`,
 //!   which is only the name shown: in all 45 INI archives of the research
@@ -51,6 +53,7 @@ use super::credit::{Authorship, XfireCredit};
 use super::credits;
 use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
 use super::xfire_xml::controls::StateTally;
+use super::xfire_xml::surfaces::Window;
 use super::xfire_xml::ColourRow;
 use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
 use crate::output::{token_file, zip};
@@ -294,10 +297,29 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         aliases: &aliases,
         files: std::cell::RefCell::default(),
     };
-    let (controls, tally, control_sections) = controls::read(&skin, &images)?;
-    let control_files = images.files.into_inner();
+    let (mut controls, mut tally, control_sections) = controls::read(&skin, &images)?;
     count_dropped(&skin, (frame.as_ref(), &control_sections), &mut dropped);
-    let read_files = [version_key, skin_key, theme_key];
+    let mut read_files = vec![version_key, skin_key, theme_key];
+    for (key, window) in [
+        ("ChatSkin", Window::Chat),
+        ("GroupChatSkin", Window::GroupChat),
+    ] {
+        let Some(name) = main.get(key) else { continue };
+        // A skin that names a file it does not ship has no chat surfaces;
+        // a shipped file is read like the others (a malformed one refuses).
+        let file = file_name(skin_key, key, name)?;
+        if lookup(tree, &file).is_err() {
+            continue;
+        }
+        let (chat_key, chat) = parse_file(tree, &file)?;
+        let sections = controls::read_file(&chat, &images, window, (&mut controls, &mut tally))?;
+        if sections.is_empty() {
+            continue;
+        }
+        count_dropped(&chat, (None, &sections), &mut dropped);
+        read_files.push(chat_key);
+    }
+    let control_files = images.files.into_inner();
     let repeated = [
         (version_key, &version),
         (skin_key, &skin),

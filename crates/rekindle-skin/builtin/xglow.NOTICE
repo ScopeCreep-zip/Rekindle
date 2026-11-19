@@ -28,6 +28,7 @@ Regions
   window.frame: [Top] [Left] [Right] [Bottom], nine-slice 133/124/245/125, transparent middle
     Normal: 250x379 px
   titlebar.btn.minimize: [MinimizeButton], 13x13 px, Stretch; states normal, down
+  buddylist.group-header: [BuddyView], 3x14 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   scrollbar.button-up: [XglowScrollbar], 7x7 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: [XglowScrollbar], 7x7 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: [XglowScrollbar], 7x7 px, Stretch; states normal, hover, down, disabled
@@ -37,9 +38,10 @@ Regions
   scrollbar.track: [XglowScrollbar], 7x21 px, NineSlice(Insets { top: 7, right: 0, bottom: 7, left: 0 }); states normal
   scrollbar.track-horizontal: [XglowScrollbar], 21x7 px, NineSlice(Insets { top: 0, right: 7, bottom: 0, left: 7 }); states normal
   scrollbar.corner: [XglowScrollbar], 7x7 px, Stretch; states normal
+  statusbar.arrow: [DownArrow], 17x17 px, Stretch; states normal, hover
 
 Dropped
-  images with no region slot: 111
+  images with no region slot: 106
   other keys (classes, sizes, cursors, sounds): 144
   other skin files (chat, group chat, in-game): 3
   text styles: 47
@@ -92,7 +94,7 @@ Dropped
     Xglow.ini: [BuddyView] Text.color_header (line 363)
     Xglow.ini: [ExecuteDownload] Action.click (line 654)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
-  files not read (163):
+  files not read (160):
     ChatSkin.ini
     InGameMainSkin.ini
     InGameSkin.ini
@@ -107,7 +109,6 @@ Dropped
     buttons/chat-down.gif
     buttons/chat-hover.gif
     buttons/chat.gif
-    buttons/downarrow.gif
     buttons/downloads-down.gif
     buttons/downloads-hover.gif
     buttons/downloads.gif
@@ -118,10 +119,8 @@ Dropped
     buttons/friends.gif
     buttons/gripper.gif
     buttons/gripper1.gif
-    buttons/header.gif
     buttons/header_arrow_down.gif
     buttons/header_arrow_up.gif
-    buttons/header_divider.gif
     buttons/help-hover.gif
     buttons/help.gif
     buttons/info-down.gif

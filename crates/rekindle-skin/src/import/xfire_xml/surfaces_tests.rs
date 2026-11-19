@@ -9,7 +9,7 @@ use rekindle_types::dto::skin::{Insets, RegionFit, RegionState};
 use super::*;
 use crate::{manifest as parse_manifest, package, validate};
 
-fn png(w: u32, h: u32, shade: u8) -> Vec<u8> {
+pub(super) fn png(w: u32, h: u32, shade: u8) -> Vec<u8> {
     let img = RgbaImage::from_pixel(w, h, Rgba([shade, shade, shade, 255]));
     encode_png(&DynamicImage::ImageRgba8(img)).unwrap()
 }

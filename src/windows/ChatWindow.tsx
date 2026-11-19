@@ -12,7 +12,8 @@ const ChatWindow: Component = () => {
   const group = params.get("group") ?? "";
 
   return (
-    <div class="app-frame">
+    // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
+    <div class="app-frame chat-window">
       {/* Architecture §32 a11y — keyboard skip link past the header. */}
       <a href="#main-content" class="skip-link">Skip to messages</a>
       <Switch

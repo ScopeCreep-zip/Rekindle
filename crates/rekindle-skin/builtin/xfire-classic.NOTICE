@@ -88,7 +88,15 @@ Colours (68 defined)
 
 Regions
   window.frame: the nine-piece frame of xfirecomponents.xml (ChatTitleBar, the outer edges' middles, ChatBaseBoard; transparent middle), 248x184 px, nine-slice 47/74/37/74
+  buddylist.infobar: the component UserNameField, 109x17 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 5 }); states normal
   titlebar.btn.close: the title button CloseBox, 18x17 px, Stretch; states normal, hover, down
+  buddylist.action-button: the component AddButton, 40x24 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
+  statusbar: the component StatusWrapper, 149x26 px, NineSlice(Insets { top: 0, right: 24, bottom: 0, left: 25 }); states normal
+  statusbar.arrow: the component DownArrow, 16x14 px, Stretch; states normal, hover, down
+  buddylist.actionbar: the component BottomBar, 142x21 px, NineSlice(Insets { top: 0, right: 21, bottom: 0, left: 21 }); states normal
+  chat.toolbar: the component ChatBottomBar, 142x21 px, NineSlice(Insets { top: 0, right: 21, bottom: 0, left: 21 }); states normal
+  buddylist.menubar: the component MenuBar, 166x19 px, NineSlice(Insets { top: 0, right: 33, bottom: 0, left: 33 }); states normal
+  buddylist.group-header: the component BuddyView, 102x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   scrollbar.button-up: the scrollbar DefaultScrollbar, 11x15 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: the scrollbar DefaultScrollbar, 11x15 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: the scrollbar DefaultScrollbar, 15x11 px, Stretch; states normal, hover, down, disabled
@@ -97,21 +105,22 @@ Regions
   scrollbar.thumb-horizontal: the scrollbar DefaultScrollbar, 110x11 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal, hover, down
   scrollbar.track: the scrollbar DefaultScrollbar, 11x106 px, NineSlice(Insets { top: 3, right: 0, bottom: 3, left: 0 }); states normal
   scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 106x11 px, NineSlice(Insets { top: 0, right: 3, bottom: 0, left: 3 }); states normal
+  buddylist.tab: the component TabNormalButton, 71x16 px, NineSlice(Insets { top: 0, right: 18, bottom: 0, left: 3 }); states normal
   titlebar.btn.minimize: the title button MinimizeBox, 18x17 px, Stretch; states normal, hover, down
+  chat.call-button: the component InfoHostChatButton, 35x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
+  chat.call-button-active: the component InfoLeaveChatButton, 35x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
+  chat.group-header: the component GroupChatInfoView, 102x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 28 of 282 images
-  Disabled sets: kept 1 of 40
-  Down sets: kept 3 of 61
-  Hover sets: kept 3 of 67
+  kept 38 of 282 images
+  Disabled sets: kept 3 of 40
+  Down sets: kept 7 of 61
+  Hover sets: kept 7 of 67
   other sets: kept 0 of 44
   dropped MainTitleBar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatTitleBar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TheXCover Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TheXCover Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped AddButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddServerButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddServerButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -139,8 +148,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped DownloadInfoButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownloadInfoButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownloadInfoButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped DownArrow Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped DownArrow Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GripperBottomRight Hover: no element: the OS resizes the window
   dropped ChatGripperBottomRight Hover: no element: the OS resizes the window
   dropped InfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -155,7 +162,7 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ToolsMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped TabNormalButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped TabNormalButton (buddylist.tab) Down: its size differs from the normal image's
   dropped TabServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped SystemMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -198,9 +205,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped InfoJoinGameButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoJoinGameButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoJoinGameButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped InfoHostChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped InfoHostChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped InfoHostChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoHostGroupChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoHostGroupChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoHostGroupChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -210,8 +214,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped InfoJoinGroupChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoJoinGroupChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoJoinGroupChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped InfoLeaveChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped InfoLeaveChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoLeaveGroupChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoLeaveGroupChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoTalkingStateButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
