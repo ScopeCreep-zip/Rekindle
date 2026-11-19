@@ -184,7 +184,7 @@ pub async fn persist_poll_close<D: ChannelMessagingDeps>(
     }
     // The close names the votes our reader counts now; readers count
     // exactly those, once every part is read.
-    for part in poll_close_parts(poll_id, snapshot.counted)? {
+    for part in poll_close_parts(poll_id, &snapshot.counted)? {
         queue_poll_op(deps, community_id, channel_id, part).await?;
     }
     Ok(())
@@ -204,7 +204,7 @@ pub const CLOSE_VOTERS_PER_PART: usize = 256;
 /// More parts than a `u16` counts.
 pub fn poll_close_parts(
     poll_id: [u8; 16],
-    counted: Vec<(String, u64)>,
+    counted: &[(String, u64)],
 ) -> Result<Vec<PostEntry>, ChannelError> {
     let chunks: Vec<Vec<(String, u64)>> = if counted.is_empty() {
         vec![Vec::new()]
@@ -396,7 +396,7 @@ mod tests {
         let counted: Vec<(String, u64)> = (0..1000)
             .map(|i| (hex::encode(voter(i).0), u64::MAX))
             .collect();
-        let parts = poll_close_parts(poll_id, counted).unwrap();
+        let parts = poll_close_parts(poll_id, &counted).unwrap();
         assert!(parts.len() > 1);
         let author = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[3; 32]);
         let mut entries = vec![OutboxItem {
