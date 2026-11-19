@@ -117,6 +117,17 @@ labels! {
     /// (plan E3.2 S7), by the relaying member's pseudonym, over
     /// `community ‖ author ‖ memberRecord ‖ subkey ‖ seq`.
     HEAD_ADVANCED = "rekindle-head-advanced-v1";
+    /// Ed25519 signature prefix: a channel outbox entry (`M`/4, plan
+    /// E3.3), by the author's pseudonym, over `anchor ‖ chain seq ‖ entry
+    /// bytes without sig`.
+    OUTBOX_ENTRY = "rekindle-outbox-entry-v1";
+    /// HKDF info prefix: a channel's tag, `HKDF(text key of the entry's
+    /// generation, domain ‖ channelId)[..16]` (plan E3.3); a thread's uses
+    /// its thread id.
+    CHANNEL_TAG = "rekindle-channel-tag-v1";
+    /// AEAD AAD prefix: a channel body, `domain ‖ anchor ‖ channel_id ‖
+    /// author ‖ stream_seq_le64` (plan E3.3).
+    CHANNEL_BODY_AAD = "rekindle-channel-body-aad-v1";
     /// BLAKE3 domain of the watch ring order (plan E3.2 S7, §4.5):
     /// `r(p) = blake3(domain ‖ communityId ‖ p)`.
     WATCH_RING = "rekindle-watch-ring-v1";

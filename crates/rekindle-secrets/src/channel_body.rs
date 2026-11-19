@@ -6,7 +6,29 @@
 //! slot and Lamport position it was written at, on every track.
 
 use crate::keys::{ChannelAad, MediaEncryptionKey};
+use hkdf::Hkdf;
+use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
+use sha2::Sha256;
+
+/// A channel tag's length: the first 16 bytes of the HKDF output.
+pub const CHANNEL_TAG_LEN: usize = 16;
+
+/// The tag an outbox entry of `stream_id` (a channel id, or a thread id for
+/// a thread) carries in clear under the text key of its generation (plan
+/// E3.3): `HKDF(key, domains::CHANNEL_TAG ‖ stream_id)[..16]`. Only a
+/// holder of that generation can tell which entries belong to the stream.
+#[must_use]
+pub fn channel_tag(key: &[u8; 32], stream_id: &str) -> [u8; CHANNEL_TAG_LEN] {
+    let mut info = Vec::with_capacity(domains::CHANNEL_TAG.len() + stream_id.len());
+    info.extend_from_slice(domains::CHANNEL_TAG.as_bytes());
+    info.extend_from_slice(stream_id.as_bytes());
+    let mut tag = [0u8; CHANNEL_TAG_LEN];
+    Hkdf::<Sha256>::new(None, key)
+        .expand(&info, &mut tag)
+        .expect("16-byte output is a valid HKDF-SHA256 length");
+    tag
+}
 
 /// Where a channel body is written: the AAD it is bound to.
 #[derive(Debug, Clone, Copy)]
@@ -80,6 +102,16 @@ mod tests {
         ] {
             assert!(decrypt_channel_body(&[1u8; 32], moved, &ct).is_err());
         }
+    }
+
+    /// A tag is fixed by the key and the stream: another generation's key
+    /// or another channel gives another tag.
+    #[test]
+    fn a_tag_is_bound_to_its_key_and_stream() {
+        let tag = channel_tag(&[1u8; 32], "chan-a");
+        assert_eq!(tag, channel_tag(&[1u8; 32], "chan-a"));
+        assert_ne!(tag, channel_tag(&[2u8; 32], "chan-a"));
+        assert_ne!(tag, channel_tag(&[1u8; 32], "chan-b"));
     }
 
     /// A body encrypted without AAD (the old path) does not decrypt.
