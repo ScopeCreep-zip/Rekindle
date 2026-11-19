@@ -20,6 +20,7 @@ fn role_view(role: &RoleDefinition) -> CommunityRoleView {
         id: role.id.to_hex(),
         name: role.name.clone(),
         color: role.color,
+        tag_colours: rekindle_skin::role_tag::colours(role.color),
         permissions: role.permissions.to_string(),
         position: role.position,
         hoist: role.hoist,

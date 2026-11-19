@@ -1,7 +1,7 @@
 import { Component, For, Show, createEffect, createSignal, createMemo, JSX } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
-import { EVERYONE_ROLE_ID, Member, Role, communityState } from "../../stores/community.store";
+import { EVERYONE_ROLE_ID, Member, Role, RoleTagColours, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
@@ -99,13 +99,13 @@ const MemberList: Component<MemberListProps> = (props) => {
     return null;
   }
 
-  function memberRoles(member: Member): { name: string; color: number }[] {
+  function memberRoles(member: Member): { name: string; color: number; tagColours?: RoleTagColours }[] {
     const resolved = member.roleIds
       .map((id) => props.roles.find((r) => r.id === id))
       .filter((r): r is Role => r != null && r.name !== "@everyone")
       .sort((a, b) => b.position - a.position);
     return resolved.length > 0
-      ? resolved.map((r) => ({ name: r.name, color: r.color }))
+      ? resolved.map((r) => ({ name: r.name, color: r.color, tagColours: r.tagColours }))
       : member.displayRole && member.displayRole !== "@everyone"
         ? [{ name: member.displayRole, color: 0 }]
         : [];
@@ -324,7 +324,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </Show>
             <div class="member-roles-row">
               <For each={roles()}>
-                {(role) => <RoleTag name={role.name} color={role.color} />}
+                {(role) => <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />}
               </For>
               <Show when={member.timeoutUntil}>
                 <span class="nf-icon timeout-indicator" title="Timed out">{ICON_TIMEOUT}</span>

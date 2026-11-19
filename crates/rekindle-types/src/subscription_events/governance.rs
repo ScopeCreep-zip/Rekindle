@@ -234,6 +234,10 @@ mod tests {
             id: "03".repeat(16),
             name: "Mod".into(),
             color: 0x00_FF_00,
+            tag_colours: crate::dto::community::RoleTagColours {
+                dark: 0x00_FF_00,
+                light: 0x00_6B_00,
+            },
             permissions: crate::permissions::ALL,
             position: 1,
             hoist: true,

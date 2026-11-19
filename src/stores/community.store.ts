@@ -86,11 +86,18 @@ export interface MemberLocation {
 /** `@everyone`: the all-zero 16-byte role id every member holds. */
 export const EVERYONE_ROLE_ID = "0".repeat(32);
 
+/** A role tag's text colour per skin base, `0xRRGGBB` (the Host's `RoleTagColours`). */
+export interface RoleTagColours {
+  dark: number;
+  light: number;
+}
+
 export interface Role {
   /** The full 16-byte role id, 32 hex characters (plan E3.2 S9). */
   id: string;
   name: string;
   color: number;
+  tagColours: RoleTagColours;
   /** Serialized as a string from Rust to avoid JavaScript Number precision loss on u64. */
   permissions: string;
   position: number;

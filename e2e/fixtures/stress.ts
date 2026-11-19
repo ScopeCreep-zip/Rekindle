@@ -3,6 +3,24 @@
 // `preloadMocks` (e2e/fixtures/mocks.ts). Every builder returns plain JSON,
 // so it crosses the page boundary as a literal.
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+/** The Host's role-tag colours for the fixture role colours, written from
+ *  `rekindle_skin::role_tag` by `cargo xtask gen-skin-fixtures` (plan E7.3). */
+const ROLE_TAGS: Record<string, { dark: number; light: number }> = JSON.parse(
+  readFileSync(fileURLToPath(new URL("./generated/role-tags.json", import.meta.url)), "utf8"),
+);
+
+/** A role's `color` and the `tagColours` the Host sends with it. */
+function roleColour(color: number) {
+  // No colour draws the default tag, which reads no tag colours.
+  if (color === 0) return { color, tagColours: { dark: 0, light: 0 } };
+  const tagColours = ROLE_TAGS[color.toString(16).padStart(6, "0")];
+  if (!tagColours) throw new Error(`role colour ${color.toString(16)} is not in xtask gen_skin_fixtures::ROLE_COLOURS`);
+  return { color, tagColours };
+}
+
 /** A display name of `n` characters with no spaces: the worst case for wrapping. */
 export function longName(prefix: string, n = 64): string {
   return (prefix + "W".repeat(n)).slice(0, n);
@@ -114,8 +132,8 @@ export function communityDetails(channelCount = 30) {
         topic: longName("Topic_", 120),
       })),
       roles: [
-        { id: "00000000000000000000000000000000", name: "@everyone", color: 0, permissions: "65536", position: 0, hoist: false, mentionable: false },
-        { id: "01010101010101010101010101010101", name: HOISTED_ROLE, color: 0x3498db, permissions: "65536", position: 1, hoist: true, mentionable: false },
+        { id: "00000000000000000000000000000000", name: "@everyone", ...roleColour(0), permissions: "65536", position: 0, hoist: false, mentionable: false },
+        { id: "01010101010101010101010101010101", name: HOISTED_ROLE, ...roleColour(0x3498db), permissions: "65536", position: 1, hoist: true, mentionable: false },
       ],
       myRole: null,
       myRoleIds: ["00000000000000000000000000000000"], myPermissions: "65536", myChannelPermissions: {},

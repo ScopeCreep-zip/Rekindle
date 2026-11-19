@@ -46,6 +46,11 @@
 //!     cargo xtask stage-sidecar [--target <triple>]
 //!                                      Build and stage the skin helper as
 //!                                      Tauri's externalBin expects.
+//!     cargo xtask check-skin-fixtures  The e2e skin and role-tag fixtures
+//!                                      are current (plan E7.3).
+//!     cargo xtask gen-skin-fixtures    Write the built-in skins'
+//!                                      stylesheets and role-tag colours
+//!                                      for the e2e suites.
 //!     cargo xtask gen-skin-registry    Write the skin registry's generated
 //!                                      CSS, TS, TUI palettes and schema.
 //!     cargo xtask import-skin --format xfire-xml --from <dir> --builtin <id>
@@ -107,6 +112,7 @@ mod e2e_release;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
+mod gen_skin_fixtures;
 mod gen_skin_registry;
 mod icon_glyphs;
 mod import_skin;
@@ -198,6 +204,10 @@ enum Command {
     CheckSkinRegistry,
     /// Write the skin registry's generated CSS, TS, TUI palettes and JSON Schema.
     GenSkinRegistry,
+    /// Verify the e2e skin and role-tag fixtures are current.
+    CheckSkinFixtures,
+    /// Write the built-in skins' stylesheets and role-tag colours for the e2e suites.
+    GenSkinFixtures,
     /// Import a legacy skin tree as the built-in pack `crates/rekindle-skin/builtin/<id>.rkskin`.
     ImportSkin {
         #[arg(long, value_enum)]
@@ -364,6 +374,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "skin-registry",
                     Box::new(|| gen_skin_registry::check_skin_registry(&root)),
                 ),
+                (
+                    "skin-fixtures",
+                    Box::new(|| gen_skin_fixtures::check_skin_fixtures(&root)),
+                ),
                 ("motion", Box::new(|| motion::check_motion(&root))),
                 (
                     "icon-glyphs",
@@ -431,6 +445,8 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckContrastPairs => contrast_pairs::check_contrast_pairs(&root),
         Command::CheckSkinRegistry => gen_skin_registry::check_skin_registry(&root),
         Command::GenSkinRegistry => gen_skin_registry::gen_skin_registry(&root),
+        Command::CheckSkinFixtures => gen_skin_fixtures::check_skin_fixtures(&root),
+        Command::GenSkinFixtures => gen_skin_fixtures::gen_skin_fixtures(&root),
         Command::ImportSkin {
             format,
             from,

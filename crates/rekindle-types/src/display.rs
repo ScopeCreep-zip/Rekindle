@@ -156,6 +156,9 @@ pub struct RoleDisplay {
     pub id: String,
     pub name: String,
     pub color: u32,
+    /// The role name's text colour on each base, readable on the tag
+    /// (plan E7.3, SC 1.4.3); the Host works it out from `color`.
+    pub tag_colours: crate::dto::community::RoleTagColours,
     pub permissions: u64,
     pub position: u32,
     /// Show members with this role in a separate sidebar group.

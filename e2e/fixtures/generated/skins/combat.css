@@ -1,0 +1,97 @@
+@layer skin {
+  :root {
+    --color-xfire-bg-dark: #ffffff;
+    --color-xfire-bg-panel: #ffffff;
+    --color-xfire-bg-input: #ffffff;
+    --color-xfire-bg-status: #ffffff;
+    --color-xfire-bg: #ffffff;
+    --color-xfire-bg-primary: #ffffff;
+    --color-xfire-bg-secondary: #ffffff;
+    --color-xfire-bg-tertiary: #ffffff;
+    --color-xfire-border: #d4d4d4;
+    --color-xfire-control-border: #767676;
+    --color-xfire-text-primary: #1a1a1a;
+    --color-xfire-text-secondary: #545454;
+    --color-xfire-accent: #000000;
+    --color-xfire-accent-text: #0a5a9c;
+    --color-xfire-accent-fg: #ffffff;
+    --color-xfire-danger: #df3337;
+    --color-xfire-danger-fg: #ffffff;
+    --color-xfire-danger-text: #b00019;
+    --color-xfire-text-on-fill: #ffffff;
+    --color-xfire-text: #00540c;
+    --color-xfire-text-dim: #0d4363;
+    --color-xfire-text-clan: #0a5a9c;
+    --color-xfire-text-status: #595959;
+    --color-xfire-text-timestamp: #545454;
+    --color-xfire-online: #007011;
+    --color-xfire-away: #7a5b00;
+    --color-xfire-ingame: #00649f;
+    --color-xfire-online-text: #007427;
+    --color-xfire-away-text: #6a5300;
+    --color-xfire-ingame-text: #006285;
+    --color-xfire-busy: #c1081e;
+    --color-xfire-offline: #5f5f5f;
+    --color-xfire-offline-text: #5b5b5b;
+    --color-xfire-link: #0a5a9c;
+    --color-xfire-focus-outline: #0b5cad;
+    --color-xfire-success: #00631d;
+    --color-xfire-success-fill: #00892d;
+    --color-xfire-titlebar-start: #dbe7f6;
+    --color-xfire-titlebar-end: #c3d6ef;
+    --color-xfire-titlebar-text: #000000;
+    --tint-fill-strong: 100%;
+    --tint-fill: 100%;
+    --tint-fill-soft: 100%;
+    --color-xfire-shadow: #000000;
+    --color-xfire-scrim: #000000;
+    --color-xfire-scrim-danger-text: #ff5955;
+    --color-xfire-video-backing: #000000;
+    --color-xfire-overlay: #000000;
+    --color-xfire-shade: #ffffff;
+    --color-xfire-fill-shade: #000000;
+    --color-xfire-thread-tag: #7a5500;
+    --color-xfire-mention-everyone: #9a3a00;
+    --color-xfire-mention-role: #5a32b8;
+    --color-xfire-mention-self: #a3261b;
+    --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
+    --font-family-icons: "Symbols Nerd Font Mono";
+    --chrome-height: 28px;
+  }
+}
+@layer skin {
+  :root {
+    --skin-region-scrollbar-button-down: url("skin://localhost/fixture/45092db52ec0884352efd67a037c148b1bce5ffd6c38dc60c40143e10abfc54e.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-down-length: 9px;
+    --skin-region-scrollbar-button-down--hover: url("skin://localhost/fixture/feb78df2714e50b0476f2d00a00a9d67eb7535220aba3a196f6f9d91a5d2c14b.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-down--down: url("skin://localhost/fixture/6b37a86df23b184bed2e77f1cb73027f308c9822f35a5e531f80481a049880c4.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-down--disabled: url("skin://localhost/fixture/1792bbe021cd8eb2e41cc426c4a06da42a0ad87a106c7c18bcc63b2467f028f0.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-left: url("skin://localhost/fixture/2f7d4347c2a2f991665d9d958ddeda35db426b13f40f3bf35a6183959e88e969.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-left-length: 9px;
+    --skin-region-scrollbar-button-left--hover: url("skin://localhost/fixture/b4dc290fea2644016c54158621791367a86d570890d825129e3312f76a860dc4.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-left--down: url("skin://localhost/fixture/17e73965cd9b4288fb1f7f215ad45f1918c6a9acedda14fb4c5e898c78d212e3.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-left--disabled: url("skin://localhost/fixture/7550929a8841ecef39ac5175278c0a1ae2933ef87a246d51cb19f2573436f656.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-right: url("skin://localhost/fixture/5cb200867754c3f46b3b18774f790487addf893ebe06fb0558ed25a6c266075e.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-right-length: 9px;
+    --skin-region-scrollbar-button-right--hover: url("skin://localhost/fixture/9435d3dc590cec501a4e9dca00efc6dd24dbbd20e781b9c186be332869751e64.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-right--down: url("skin://localhost/fixture/ba3f85321f6f566cf7010ddf2406acc650d396c9cbbcc4052a2a594dc0c52134.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-right--disabled: url("skin://localhost/fixture/7ce1b20de5067430b3b71ba71717ec33749c3f5e76db2a62e2a5bee40641a7f5.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-up: url("skin://localhost/fixture/8273a10f16b2f95c0164a356d18c2dccefe298c0aaf19407e012b4e8b75aaaf6.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-up-length: 29px;
+    --skin-region-scrollbar-button-up--hover: url("skin://localhost/fixture/b9e564cb5c1b315ef5b77883c95b34d10a5b9132d4f07de8885731b701285034.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-up--down: url("skin://localhost/fixture/a30350b5954f1d9b7e30d3a0fb084438ab7eb4865e8ac8c6b0a2dbfe37047350.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-button-up--disabled: url("skin://localhost/fixture/66acb2925782326ad7673b0163e5651cd7ea5c0f4afea4dbf307adbafb7afa8e.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-corner: url("skin://localhost/fixture/bbb2bf34e86e707bc24562d8a2e69e474eda3a56d6fd75574a5457d6d5eeeaab.png") 0 fill / 0 / 0 stretch;
+    --skin-region-scrollbar-thumb: url("skin://localhost/fixture/f5b9634ae2cee2ae408490574bb5d1c02f951ef003f022775196857babcb0352.png") 3 0 2 0 fill / 3px 0px 2px 0px / 0 stretch;
+    --skin-region-scrollbar-thumb--hover: url("skin://localhost/fixture/f5b9634ae2cee2ae408490574bb5d1c02f951ef003f022775196857babcb0352.png") 3 0 2 0 fill / 3px 0px 2px 0px / 0 stretch;
+    --skin-region-scrollbar-thumb--down: url("skin://localhost/fixture/1bdb0c187fafd261ef90af82e4a79c2186f4f26cce3dc4538744d1bc35fcc8d9.png") 3 0 2 0 fill / 3px 0px 2px 0px / 0 stretch;
+    --skin-region-scrollbar-thumb-horizontal: url("skin://localhost/fixture/e6a4d5e0b25039f0cf7c85edec01b1a9552e5d651090694825ff171ff438d2b3.png") 0 2 0 2 fill / 0px 2px 0px 2px / 0 stretch;
+    --skin-region-scrollbar-thumb-horizontal--hover: url("skin://localhost/fixture/e6a4d5e0b25039f0cf7c85edec01b1a9552e5d651090694825ff171ff438d2b3.png") 0 2 0 2 fill / 0px 2px 0px 2px / 0 stretch;
+    --skin-region-scrollbar-thumb-horizontal--down: url("skin://localhost/fixture/449cb3c7f78fbe8bd47a75ef27935ae7f233c4c8b3c587ae607f1bd1f56e976e.png") 0 2 0 2 fill / 0px 2px 0px 2px / 0 stretch;
+    --skin-region-scrollbar-track: url("skin://localhost/fixture/0221f666d09899a0bf11144304d618a23eacc7b10a0d79401504677b63166420.png") 135 0 135 0 fill / 135px 0px 135px 0px / 0 stretch;
+    --skin-region-scrollbar-track-horizontal: url("skin://localhost/fixture/8789646bdec94e1adcb2f35693954883c743e83f13c58c0417a8ebffb2752ba0.png") 0 135 0 135 fill / 0px 135px 0px 135px / 0 stretch;
+    --skin-region-titlebar-btn-minimize: url("skin://localhost/fixture/1953cb8ae14c45354a023e821cfcae493fba30d85f51c96336a694ec6fa1e33d.png") 0 fill / 0 / 0 stretch;
+    --skin-region-titlebar-btn-minimize--hover: url("skin://localhost/fixture/1953cb8ae14c45354a023e821cfcae493fba30d85f51c96336a694ec6fa1e33d.png") 0 fill / 0 / 0 stretch;
+    --skin-region-titlebar-btn-minimize--down: url("skin://localhost/fixture/1953cb8ae14c45354a023e821cfcae493fba30d85f51c96336a694ec6fa1e33d.png") 0 fill / 0 / 0 stretch;
+  }
+}

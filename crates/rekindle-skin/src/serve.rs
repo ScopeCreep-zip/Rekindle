@@ -16,7 +16,9 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::{SkinBase, SkinContrast, SkinError, SkinRule, SkinVariant};
+use rekindle_types::dto::skin::{
+    SkinBase, SkinContrast, SkinError, SkinManifest, SkinRule, SkinVariant, TokenValue,
+};
 use rekindle_types::dto::skin_library::SkinPaletteColour;
 
 use crate::generate::tui_colours;
@@ -24,7 +26,7 @@ use crate::output::tokens_css;
 use crate::package::{self, Package};
 use crate::regions::css::skin_css;
 use crate::regions::still;
-use crate::registry::{resolve, Base, ENTRIES};
+use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
 use crate::{manifest, tokens};
 
 /// The stylesheet's file name.
@@ -138,6 +140,24 @@ pub struct Stylesheet {
     pub palette: Vec<SkinPaletteColour>,
 }
 
+/// The active variant of the read package `p` and its tokens after the
+/// defaults merge.
+///
+/// # Errors
+/// The manifest names no variant, or its token file is missing or does
+/// not parse.
+pub fn active_resolved<'m>(
+    p: &Package<'_>,
+    m: &'m SkinManifest,
+) -> Result<(&'m SkinVariant, Vec<(&'static TokenEntry, TokenValue)>), SkinError> {
+    let v = active(&m.variants).ok_or_else(|| unreadable("no variant"))?;
+    let file = p
+        .get(&v.tokens)
+        .ok_or_else(|| unreadable("no token file"))?;
+    let skin = tokens::parse(&v.tokens, file)?;
+    Ok((v, resolve(ENTRIES, Base::of(v.base, v.contrast), &skin)))
+}
+
 fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
     p.files().map(|(n, b)| (n.to_owned(), b.to_vec())).collect()
 }
@@ -152,12 +172,7 @@ fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
 pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> {
     let p = package::read(bytes)?;
     let m = manifest::parse(&p)?;
-    let v = active(&m.variants).ok_or_else(|| unreadable("no variant"))?;
-    let file = p
-        .get(&v.tokens)
-        .ok_or_else(|| unreadable("no token file"))?;
-    let skin = tokens::parse(&v.tokens, file)?;
-    let resolved = resolve(ENTRIES, Base::of(v.base, v.contrast), &skin);
+    let (v, resolved) = active_resolved(&p, &m)?;
     let mut css = tokens_css(&resolved).ok_or_else(|| unreadable("tokens do not emit"))?;
     let base = format!("{}/{address}", origin());
     css.push_str(&skin_css(&m, &files(&p), &base).ok_or_else(|| unreadable("regions"))?);

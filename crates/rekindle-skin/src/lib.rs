@@ -56,6 +56,7 @@ pub mod output;
 pub mod package;
 pub mod regions;
 pub mod registry;
+pub mod role_tag;
 pub mod serve;
 pub mod sounds;
 pub mod tokens;

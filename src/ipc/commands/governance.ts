@@ -78,7 +78,7 @@ export const governanceCommands = {
 
   // Roles
   getRoles: (communityId: string) =>
-    hostInvoke<{ id: string; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable: boolean; exclusionGroup: string | null }[]>(
+    hostInvoke<{ id: string; name: string; color: number; tagColours: { dark: number; light: number }; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable: boolean; exclusionGroup: string | null }[]>(
       "get_roles", { communityId },
     ),
   createRole: (

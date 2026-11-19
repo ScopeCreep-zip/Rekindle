@@ -221,6 +221,16 @@
     white-space: nowrap;
   }
 
+  /* The role's name in the Host's readable colour for the base (plan E7.3,
+     SC 1.4.3); RoleTag sets both per role. */
+  .role-tag-coloured {
+    color: var(--role-tag-dark);
+  }
+
+  :root[data-skin-base="light"] .role-tag-coloured {
+    color: var(--role-tag-light);
+  }
+
   .role-tag-default {
     background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
     color: var(--color-xfire-text-dim);

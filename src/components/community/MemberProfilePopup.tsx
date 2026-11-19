@@ -284,7 +284,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         <Show when={memberRoles().length > 0}>
           <div class="profile-popup-roles">
             <For each={memberRoles()}>
-              {(role) => <RoleTag name={role.name} color={role.color} />}
+              {(role) => <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />}
             </For>
           </div>
         </Show>

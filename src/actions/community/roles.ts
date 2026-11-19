@@ -71,14 +71,9 @@ export async function handleCreateRole(
   selfAssignable: boolean,
 ): Promise<string | null> {
   try {
-    const roleId = await commands.createRole(communityId, name, color, permissions, hoist, mentionable, selfAssignable);
-    // Optimistic update — add the new role to the store
-    const community = communityState.communities[communityId];
-    if (community) {
-      const newRole = { id: roleId, name, color, permissions, position: 0, hoist, mentionable, selfAssignable };
-      setCommunityState("communities", communityId, "roles", [...community.roles, newRole]);
-    }
-    return roleId;
+    // The role reaches the store with the Host's `RolesChanged`, which
+    // carries what only the Host works out (its tag colours, plan E7.3).
+    return await commands.createRole(communityId, name, color, permissions, hoist, mentionable, selfAssignable);
   } catch (e) {
     console.error("Failed to create role:", e);
     addToast("Failed to create role", "error");

@@ -125,7 +125,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 class="settings-role-color"
                 style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : tokenVar("text.dim") }}
               />
-              <RoleTag name={role.name} color={role.color} />
+              <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
               <span class="settings-role-position">pos: {role.position}</span>
               <Show when={role.hoist}>
                 <span class="settings-role-position">hoisted</span>

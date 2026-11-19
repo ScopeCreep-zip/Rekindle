@@ -30,7 +30,7 @@ export const communityCommands = {
       myRoleIds: string[];
       myPermissions: string;
       myChannelPermissions: Record<string, string>;
-      roles: { id: string; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean; exclusionGroup?: string }[];
+      roles: { id: string; name: string; color: number; tagColours: { dark: number; light: number }; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean; exclusionGroup?: string }[];
       myPseudonymKey: string | null;
       mekGeneration: number;
       onboardingComplete: boolean;

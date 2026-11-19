@@ -164,7 +164,7 @@ export function transformCommunityDetail(c: {
   bannerHash?: string | null;
   channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
   categories?: { id: string; name: string; sortOrder: number }[];
-  roles?: { id: string; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
+  roles?: { id: string; name: string; color: number; tagColours: { dark: number; light: number }; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
   myRoleIds?: string[]; myPseudonymKey?: string | null; mekGeneration?: number;
   myPermissions: string; myChannelPermissions: Record<string, string>;
   memberRegistryKey?: string; anchor?: string | null;

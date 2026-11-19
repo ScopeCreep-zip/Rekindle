@@ -142,6 +142,8 @@ export interface RoleDisplay {
   id: string;
   name: string;
   color: number;
+  /** The name's readable text colour per skin base (plan E7.3). */
+  tagColours: { dark: number; light: number };
   /**
    * Permission bitmask. A plain JSON number, safe while
    * `permissions::ALL` stays under 2^53 — the Rust side asserts that.

@@ -97,6 +97,7 @@ pub fn role_displays(governance: &GovernanceState) -> Vec<RoleDisplay> {
             id: id.to_hex(),
             name: role.name.clone(),
             color: role.color,
+            tag_colours: rekindle_skin::role_tag::colours(role.color),
             permissions: role.permissions,
             position: role.position,
             hoist: role.hoist,

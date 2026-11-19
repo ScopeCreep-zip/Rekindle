@@ -584,7 +584,11 @@
             "name": "Moderator",
             "permissions": 2251799813685247,
             "position": 1,
-            "selfAssignable": false
+            "selfAssignable": false,
+            "tagColours": {
+              "dark": 65280,
+              "light": 27392
+            }
           }
         ]
       }

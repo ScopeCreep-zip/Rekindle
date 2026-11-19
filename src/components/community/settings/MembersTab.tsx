@@ -50,12 +50,11 @@ const MembersTab: Component<MembersTabProps> = (props) => {
     }
   }
 
-  function memberAllRoles(member: Member): { name: string; color: number }[] {
+  function memberAllRoles(member: Member): Role[] {
     return member.roleIds
       .map((id) => props.community.roles.find((r) => r.id === id))
       .filter((r): r is Role => r != null && r.name !== "@everyone")
-      .sort((a, b) => b.position - a.position)
-      .map((r) => ({ name: r.name, color: r.color }));
+      .sort((a, b) => b.position - a.position);
   }
 
   // What we may do to a member is the Host's per-member verdict (plan
@@ -159,7 +158,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
               <span class="member-name">{member.displayName}</span>
               <div class="member-roles-row">
                 <For each={memberAllRoles(member)}>
-                  {(role) => <RoleTag name={role.name} color={role.color} />}
+                  {(role) => <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />}
                 </For>
               </div>
               <Show when={member.timeoutUntil}>

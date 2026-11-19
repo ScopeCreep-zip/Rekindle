@@ -131,6 +131,10 @@ fn structure() -> Vec<Sample> {
                     id: "03".repeat(16),
                     name: text("Moderator"),
                     color: 0x00_FF_00,
+                    tag_colours: rekindle_types::dto::community::RoleTagColours {
+                        dark: 0x00_FF_00,
+                        light: 0x00_6B_00,
+                    },
                     permissions: rekindle_types::permissions::ALL,
                     position: 1,
                     hoist: true,

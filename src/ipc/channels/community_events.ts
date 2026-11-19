@@ -55,7 +55,7 @@ export type CommunityEvent =
       type: "rolesChanged";
       data: {
         communityId: string;
-        roles: { id: string; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
+        roles: { id: string; name: string; color: number; tagColours: { dark: number; light: number }; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
       };
     }
   | {

@@ -159,6 +159,17 @@ pub struct CommunityCategoryView {
     pub sort_order: i32,
 }
 
+/// A role tag's text colour on each skin base (plan E7.3, SC 1.4.3): the
+/// role's own colour where it reaches 4.5:1 on the tag over every ground
+/// a built-in skin of that base draws it on, else that colour moved in
+/// Oklab lightness until it does (`rekindle_skin::role_tag`). `0xRRGGBB`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleTagColours {
+    pub dark: u32,
+    pub light: u32,
+}
+
 /// A role of a [`CommunityView`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -167,6 +178,8 @@ pub struct CommunityRoleView {
     pub id: String,
     pub name: String,
     pub color: u32,
+    /// The name's readable text colour per base.
+    pub tag_colours: RoleTagColours,
     /// The permission bits in decimal: a JSON number loses the bits above
     /// 2^53.
     pub permissions: String,
