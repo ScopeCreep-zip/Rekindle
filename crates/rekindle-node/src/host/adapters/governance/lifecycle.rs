@@ -65,9 +65,18 @@ impl HostGovernance {
     /// mesh with no online member yet takes the no-peers branch (PATH 2 has
     /// no durability; the op rides the governance-op stream to `M`). The
     /// shell opens its own services (`ShellHooks::community_records_ready`).
+    ///
+    /// The community's overlay is built here too, empty (its first presence
+    /// poll fills it): a send before that poll is held for the drain
+    /// (`enqueue_pending_mesh_impl`), never dropped for a missing overlay.
+    /// Only a removed community's teardown leaves it without one.
     pub(crate) fn open_gossip_mesh(&self, community_id: &str) {
         if self.ctx.shell.is_some() {
             return;
+        }
+        if let Some(c) = self.ctx.communities.map().write().get_mut(community_id) {
+            c.gossip
+                .get_or_insert_with(crate::host::community::GossipOverlay::default);
         }
         if let Some(broadcast) = self.ctx.broadcast_mgr.read().as_ref() {
             broadcast.register_mesh(community_id);
