@@ -5,15 +5,38 @@ import { preloadMocks, clearMocks } from "./fixtures/mocks";
 // get_quiet_hours when the Notifications tab mounts. A user's edit made
 // before that answer arrived was overwritten by it (the stored row came back
 // disabled after the click enabled it).
+//
+// The stored row answers only when the test releases it (`release`), as
+// settings-loaded-values does: a fixed 800 ms answer delay raced the
+// window's mount under a loaded machine, so the test sometimes looked for
+// the empty, disabled controls after the stored values had already landed.
 
-const HANDLER = `
+// Held until the test's release(); a call made after it answers at once.
+const LATER = `
+  const later = (v) => {
+    if (window.__storedReleased) return Promise.resolve(v);
+    window.__storedWaiting ??= [];
+    return new Promise((r) => window.__storedWaiting.push(() => r(v)));
+  };
+`;
+
+/** Let the stored quiet hours answer. */
+function release(page: import("@playwright/test").Page) {
+  return page.evaluate(() => {
+    const w = window as unknown as { __storedReleased?: boolean; __storedWaiting?: (() => void)[] };
+    w.__storedReleased = true;
+    for (const answer of (w.__storedWaiting ?? []).splice(0)) answer();
+  });
+}
+
+const HANDLER = `${LATER}
   const w = window;
   switch (cmd) {
     case "subscribe_events":
       return null;
     case "get_quiet_hours":
-      // The stored row (disabled), answered after the user's first click.
-      return new Promise((r) => setTimeout(() => r({ enabled: false, startHour: 22, endHour: 8, timezone: "UTC" }), 800));
+      // The stored row (disabled), answered when the test releases it.
+      return later({ enabled: false, startHour: 22, endHour: 8, timezone: "UTC" });
     case "set_quiet_hours":
       (w.__qhSets ??= []).push(args);
       return null;
@@ -32,9 +55,10 @@ test("the quiet-hours controls stay disabled until the stored hours load, then e
   const box = page.locator("label.settings-option", { hasText: "Enable quiet hours" }).locator("input[type=checkbox]");
   const start = page.locator('input.form-input[type="number"]').first();
   await expect(box).toBeVisible();
-  // Before get_quiet_hours answers (800 ms), no edit can be made that the
-  // answer would then overwrite.
+  // Before get_quiet_hours answers, no edit can be made that the answer
+  // would then overwrite.
   await expect(box).toBeDisabled();
+  await release(page);
   await expect(box).toBeEnabled({ timeout: 5_000 });
   await expect(box).not.toBeChecked();
   await box.check();
@@ -44,12 +68,12 @@ test("the quiet-hours controls stay disabled until the stored hours load, then e
 
 // Plan E7.13 (the ST28 class): before get_quiet_hours answers, the controls
 // show no value they have not read. They used to show 22, 7 and the OS zone.
-const STORED_ON = `
+const STORED_ON = `${LATER}
   switch (cmd) {
     case "subscribe_events":
       return null;
     case "get_quiet_hours":
-      return new Promise((r) => setTimeout(() => r({ enabled: true, startHour: 23, endHour: 6, timezone: "UTC" }), 800));
+      return later({ enabled: true, startHour: 23, endHour: 6, timezone: "UTC" });
     default:
       return null;
   }
@@ -84,6 +108,7 @@ test("the quiet-hours controls show no value until the stored hours load", async
     ],
     zone: "",
   });
+  await release(page);
   await expect(box).toBeChecked({ timeout: 5_000 });
   await expect(hours.nth(0)).toHaveValue("23");
   await expect(hours.nth(1)).toHaveValue("6");

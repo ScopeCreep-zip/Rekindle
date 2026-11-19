@@ -1,5 +1,6 @@
-import { expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { preloadMocks } from "../fixtures/mocks";
+import { firstPaint } from "../fixtures/paint";
 import { CALL, CHANNEL, COMMUNITY, GROUP, PEER, stressHandler, type Stress } from "../fixtures/stress";
 
 // The routed windows (`src/main.tsx` Switch) at the sizes the shell opens
@@ -32,9 +33,8 @@ export interface WindowCase {
 }
 
 // A window's first paint on a cold dev server under load can exceed the 5 s
-// default; this waits for the frame to exist, it asserts nothing about layout.
-const frame = (page: Page) =>
-  expect(page.locator(".app-frame").first()).toBeVisible({ timeout: 20_000 });
+// default (`fixtures/paint.ts`).
+const frame = firstPaint;
 
 export const WINDOWS: WindowCase[] = [
   {

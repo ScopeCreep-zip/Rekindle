@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
 import { PEER, stressHandler, FULL } from "./fixtures/stress";
+import { firstPaint } from "./fixtures/paint";
 
 // Plan E7.2 "Sharing totals with friends": Settings → Privacy's switch is a
 // trust-changing intent the Host reviews (U1), off until its stored value
@@ -49,6 +50,7 @@ test.afterEach(async ({ page }) => {
 test("sharing game time is off, and turning it on goes through the Host's review", async ({ page }) => {
   await preloadMocks(page, "settings", SETTINGS);
   await page.goto("/settings?tab=privacy");
+  await firstPaint(page);
   const box = page.getByRole("checkbox", { name: "Share game time with friends" });
   await expect(box).toBeEnabled();
   await expect(box).not.toBeChecked();
@@ -67,6 +69,7 @@ test("a friend's profile lists the game time they shared, with its icon", async 
   const handler = `if (cmd === "get_friend_game_totals") { window.__totalsFor = args.publicKey; return ${totals}; }\n${stressHandler(FULL)}`;
   await preloadMocks(page, `profile-${PEER.slice(0, 16)}`, handler);
   await page.goto(`/profile?key=${PEER}`);
+  await firstPaint(page);
   const rows = page.getByRole("list", { name: "Game time" }).getByRole("listitem");
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toContainText("Counter-Strike 2");
@@ -79,6 +82,7 @@ test("a friend who shares nothing shows no game time section", async ({ page }) 
   const handler = `if (cmd === "get_friend_game_totals") return [];\n${stressHandler(FULL)}`;
   await preloadMocks(page, `profile-${PEER.slice(0, 16)}`, handler);
   await page.goto(`/profile?key=${PEER}`);
+  await firstPaint(page);
   await expect(page.locator(".profile-display-name")).toBeVisible();
   await expect(page.getByRole("list", { name: "Game time" })).toHaveCount(0);
 });
