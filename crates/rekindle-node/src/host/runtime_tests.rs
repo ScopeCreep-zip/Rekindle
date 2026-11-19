@@ -11,8 +11,6 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 
 use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};
 
-#[path = "shell_hooks_tests.rs"]
-mod shell_hooks_tests;
 #[path = "attachment_limit_tests.rs"]
 mod attachment_limit;
 #[path = "automod_malformed_tests.rs"]
@@ -49,6 +47,8 @@ mod onboarding_bounds;
 mod own_removal;
 #[path = "partial_tests.rs"]
 mod partial;
+#[path = "shell_hooks_tests.rs"]
+mod shell_hooks_tests;
 #[cfg(unix)]
 #[path = "skin_draft_tests.rs"]
 mod skin_draft;
