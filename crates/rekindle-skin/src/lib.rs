@@ -44,6 +44,7 @@
 pub mod access;
 pub mod builtin;
 mod colour;
+pub mod draft;
 pub mod flash;
 pub mod generate;
 pub mod helper;

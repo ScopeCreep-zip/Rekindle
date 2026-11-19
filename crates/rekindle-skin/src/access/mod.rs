@@ -15,6 +15,7 @@
 //! Nothing is auto-fixed: each failure is a [`SkinRule`] naming the rule,
 //! the pair and the measured and required values.
 
+pub mod apca;
 pub mod pairs;
 pub mod science;
 
@@ -163,6 +164,69 @@ fn opaque_grounds<'t>(table: &'t [(&'t TokenEntry, TokenValue)]) -> Vec<&'t str>
     out
 }
 
+/// One declared contrast pair, measured on composited colours (the
+/// editor's per-pair report, plan E7.7.5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Measured {
+    pub rule: String,
+    pub fg: String,
+    /// How the ground is named (see [`describe`]).
+    pub ground: String,
+    /// The text composited over the ground, and the opaque ground.
+    pub fg_rgb: [u8; 3],
+    pub ground_rgb: [u8; 3],
+    pub ratio: f64,
+    pub required_x100: u16,
+}
+
+impl Measured {
+    #[must_use]
+    pub fn passes(&self) -> bool {
+        self.ratio * 100.0 >= f64::from(self.required_x100)
+    }
+
+    fn refusal(self) -> Option<SkinRule> {
+        (!self.passes()).then(|| SkinRule::Contrast {
+            measured_x100: scaled(self.ratio, 100.0),
+            required_x100: u32::from(self.required_x100),
+            rule: self.rule,
+            token: self.fg,
+            ground: self.ground,
+        })
+    }
+}
+
+fn measure_on(
+    rule: &str,
+    v: &Variant<'_>,
+    fg: &str,
+    under: [u8; 3],
+    ground: String,
+    min_x100: u16,
+) -> Measured {
+    let fg_rgb = colour::over(v.colour(fg), under);
+    Measured {
+        rule: rule.to_owned(),
+        fg: fg.to_owned(),
+        ground,
+        fg_rgb,
+        ground_rgb: under,
+        ratio: colour::contrast(fg_rgb, under),
+        required_x100: min_x100,
+    }
+}
+
+fn measure(rule: &str, v: &Variant<'_>, fg: &str, ground: &Ground, min_x100: u16) -> Measured {
+    measure_on(
+        rule,
+        v,
+        fg,
+        v.surface(ground),
+        describe(v, ground),
+        min_x100,
+    )
+}
+
 fn contrast_rule(
     rule: &str,
     v: &Variant<'_>,
@@ -170,15 +234,56 @@ fn contrast_rule(
     ground: &Ground,
     min_x100: u16,
 ) -> Option<SkinRule> {
-    let under = v.surface(ground);
-    let ratio = colour::contrast(colour::over(v.colour(fg), under), under);
-    (ratio * 100.0 < f64::from(min_x100)).then(|| SkinRule::Contrast {
-        rule: rule.to_owned(),
-        token: fg.to_owned(),
-        ground: describe(v, ground),
-        measured_x100: scaled(ratio, 100.0),
-        required_x100: u32::from(min_x100),
-    })
+    measure(rule, v, fg, ground, min_x100).refusal()
+}
+
+fn constraint_rule(min_ratio_x100: u16) -> &'static str {
+    if min_ratio_x100 >= 450 {
+        "1.4.3"
+    } else {
+        "1.4.11"
+    }
+}
+
+fn cutout_pair(base: Base, v: &Variant<'_>, x: &str) -> Measured {
+    let ground = "the StatusDot cutout".to_owned();
+    measure_on("S2", v, x, cutout_ground(base), ground, 300)
+}
+
+/// Every declared contrast pair of a variant on `base`, passing or not:
+/// the registry's constraints, [`PAIRS`], S2 and S3, in that order.
+#[must_use]
+pub fn measured(base: Base, resolved: &[(&TokenEntry, TokenValue)]) -> Vec<Measured> {
+    let v = Variant::new(resolved);
+    let mut out = Vec::new();
+    for (e, _) in resolved {
+        for c in e.constraints {
+            let rule = constraint_rule(c.min_ratio_x100);
+            for ground in c.on {
+                out.push(measure(
+                    rule,
+                    &v,
+                    e.id,
+                    &Ground::Token(ground),
+                    c.min_ratio_x100,
+                ));
+            }
+        }
+    }
+    for p in PAIRS {
+        for g in p.on {
+            out.push(measure(p.rule, &v, p.fg, g, p.floor.x100()));
+        }
+    }
+    for x in STATUSES.iter().filter(|x| **x != "status.offline") {
+        out.push(cutout_pair(base, &v, x));
+    }
+    for x in STATUSES {
+        for row in STATUS_ROWS {
+            out.push(measure("S3", &v, x, row, Floor::Graphic.x100()));
+        }
+    }
+    out
 }
 
 /// D1 and D3's category test: OKLCH chroma ≥ 0.06 and hue 12°–36°.
@@ -248,18 +353,8 @@ fn status_failures(base: Base, v: &Variant<'_>) -> Vec<SkinRule> {
             }
         }
     }
-    let cutout = cutout_ground(base);
     for x in STATUSES.iter().filter(|x| **x != "status.offline") {
-        let ratio = colour::contrast(colour::over(v.colour(x), cutout), cutout);
-        if ratio < 3.0 {
-            out.push(SkinRule::Contrast {
-                rule: "S2".to_owned(),
-                token: (*x).to_owned(),
-                ground: "the StatusDot cutout".to_owned(),
-                measured_x100: scaled(ratio, 100.0),
-                required_x100: 300,
-            });
-        }
+        out.extend(cutout_pair(base, v, x).refusal());
     }
     for x in STATUSES {
         for row in STATUS_ROWS {
@@ -293,11 +388,7 @@ pub fn failures(base: Base, resolved: &[(&TokenEntry, TokenValue)]) -> Vec<SkinR
     }
     for (e, _) in resolved {
         for c in e.constraints {
-            let rule = if c.min_ratio_x100 >= 450 {
-                "1.4.3"
-            } else {
-                "1.4.11"
-            };
+            let rule = constraint_rule(c.min_ratio_x100);
             for ground in c.on {
                 out.extend(contrast_rule(
                     rule,

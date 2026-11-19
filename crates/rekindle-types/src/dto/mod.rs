@@ -13,6 +13,7 @@ pub mod member_groups;
 pub mod onboarding;
 pub mod presence;
 pub mod skin;
+pub mod skin_draft;
 pub mod skin_library;
 
 pub use command::{CommandError, Done};

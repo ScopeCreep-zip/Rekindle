@@ -197,7 +197,7 @@ pub enum WalkResult {
 
 /// What the walk sets to fix `fg` on `ground`: the text token, else its
 /// ground, else `None` (both fixed, or one fixed and the other derived).
-fn target_of(fg: &str, ground: &str) -> Option<(String, String)> {
+pub(crate) fn target_of(fg: &str, ground: &str) -> Option<(String, String)> {
     if settable(fg) {
         Some((fg.to_owned(), ground.to_owned()))
     } else if settable(ground) {

@@ -111,7 +111,7 @@ pub struct Body {
 /// The variant a skin is applied with: its first standard-contrast
 /// variant (the forced-colours and high-contrast overrides are `@layer
 /// a11y`'s), else its first.
-fn active(variants: &[SkinVariant]) -> Option<&SkinVariant> {
+pub(crate) fn active(variants: &[SkinVariant]) -> Option<&SkinVariant> {
     variants
         .iter()
         .find(|v| v.contrast == SkinContrast::Standard)
