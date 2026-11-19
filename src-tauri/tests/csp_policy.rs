@@ -177,3 +177,41 @@ fn freeze_prototype_enabled() {
         "app.security.freezePrototype must be true"
     );
 }
+
+/// Tauri's isolation pattern (plan E7.1, roadmap 3.3): every IPC message
+/// passes `dist-isolation/`'s `__TAURI_ISOLATION_HOOK__` before Rust sees
+/// it, and the hook allows only the generated command list (`cargo xtask
+/// check-isolation-commands` keeps it current).
+#[test]
+fn isolation_pattern_is_on() {
+    let pattern = &config()["app"]["security"]["pattern"];
+    assert_eq!(pattern["use"].as_str(), Some("isolation"), "{pattern}");
+    assert_eq!(
+        pattern["options"]["dir"].as_str(),
+        Some("../dist-isolation"),
+        "{pattern}"
+    );
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../dist-isolation");
+    let hook = std::fs::read_to_string(dir.join("index.js")).expect("dist-isolation/index.js");
+    assert!(hook.contains("window.__TAURI_ISOLATION_HOOK__ ="));
+    assert!(hook.contains("REKINDLE_ISOLATION_COMMANDS.includes(cmd)"));
+    assert!(dir.join("commands.js").is_file());
+}
+
+/// The isolation iframe loads from a scheme Tauri names at build time
+/// (`isolation-<uuid>:`, or `http://isolation-<uuid>.localhost` on
+/// Windows), and Tauri adds it to `default-src` only (`tauri` 2.12.1
+/// `src/manager/mod.rs:430-437`). A `frame-src` would win over that and block
+/// the iframe, so frames fall back to `default-src`, which allows `'self'`
+/// and nothing remote.
+#[test]
+fn frames_fall_back_to_a_self_only_default_src() {
+    let policy = csp();
+    assert_eq!(directive(&policy, "frame-src"), None, "{policy}");
+    assert_eq!(directive(&policy, "child-src"), None, "{policy}");
+    assert_eq!(
+        directive(&policy, "default-src").as_deref(),
+        Some("'self'"),
+        "{policy}"
+    );
+}

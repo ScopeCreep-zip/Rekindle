@@ -354,7 +354,7 @@ load-bearing defence.
 | `font-src` | `'self' data:` | Standard. |
 | `object-src` | `'none'` | Forbids `<object>`/`<embed>`/`<applet>`. |
 | `frame-ancestors` | `'none'` | No third party can frame our window. |
-| `frame-src` | `'none'` | We never embed iframes. |
+| `frame-src` | not declared | Falls back to `default-src 'self'`, to which Tauri adds only the isolation iframe's build-time scheme (`isolation-<uuid>:`); a `frame-src` would win and block that iframe. No remote frame. Enforced by `tests/csp_policy.rs`. |
 | `base-uri` | `'self'` | Defeats `<base>` injection redirecting relative URLs. |
 | `form-action` | `'self'` | Defeats form-action hijack to attacker-controlled origin. |
 | `manifest-src` | `'none'` | We don't ship a web app manifest. |
@@ -382,6 +382,7 @@ privileged label.
 | No `core:default` / plugin `*:default` bundles | **Met** — no plugin grants in any window. Dialogs and URL opening run in Rust behind `upload_attachment`, `download_attachment` and `open_external_url`; `tauri-plugin-notification` is gone (OS notifications from Rust, `os_notify.rs`) |
 | Debug commands absent from release | **Met** — `#[cfg(debug_assertions)]` on the commands; their grants live in `capabilities-dev/`, loaded only in debug builds |
 | Policy enforced in CI | **Met** — `src-tauri/tests/capability_policy.rs` (no blanket grants, login allowlist, every command granted, window patterns match `windows.rs`, debug grants only in `capabilities-dev/`) |
+| Every IPC message checked before Rust (isolation pattern, roadmap 3.3) | **Met** — `app.security.pattern` is `isolation`; `dist-isolation/index.js`'s `__TAURI_ISOLATION_HOOK__` passes a message only when its `cmd` is in `dist-isolation/commands.js` (generated from `src/invoke.rs` and the capability grants by `cargo xtask gen-isolation-commands`, checked current by `cargo xtask check`) and its payload is a plain object; Tauri's channel fetch is the one `null` payload. Tested by `e2e/security/isolation.spec.ts` and `tests/csp_policy.rs` |
 | Description field documents rationale | **Met** — each capability file's `description` field |
 | New permissions require security review | **Process** — PR template flags any change touching `capabilities/` |
 

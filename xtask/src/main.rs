@@ -39,6 +39,12 @@
 //!                                      declares its ground.
 //!     cargo xtask check-contrast-pairs Every declared pair reads 4.5:1
 //!                                      (graphics 3:1) on each base.
+//!     cargo xtask check-isolation-commands
+//!                                      The isolation hook's command list is
+//!                                      current (plan E7.1, roadmap 3.3).
+//!     cargo xtask gen-isolation-commands
+//!                                      Write dist-isolation/commands.js from
+//!                                      invoke.rs and the capability grants.
 //!     cargo xtask check-skin-registry  The skin registry's generated files
 //!                                      are current (plan E7.7.1).
 //!     cargo xtask check-sidecars       The skin helper ships beside the
@@ -112,6 +118,7 @@ mod e2e_release;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
+mod gen_isolation_commands;
 mod gen_skin_fixtures;
 mod gen_skin_registry;
 mod icon_glyphs;
@@ -200,6 +207,10 @@ enum Command {
     CheckDeclaredGrounds,
     /// Verify every declared text-on-ground pair reads 4.5:1 (graphics 3:1) on each base.
     CheckContrastPairs,
+    /// Verify the isolation hook's command list matches invoke.rs and the capability grants.
+    CheckIsolationCommands,
+    /// Write the isolation hook's command list (`dist-isolation/commands.js`).
+    GenIsolationCommands,
     /// Verify the skin registry's generated files are current and its defaults meet their constraints.
     CheckSkinRegistry,
     /// Write the skin registry's generated CSS, TS, TUI palettes and JSON Schema.
@@ -371,6 +382,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| contrast_pairs::check_contrast_pairs(&root)),
                 ),
                 (
+                    "isolation-commands",
+                    Box::new(|| gen_isolation_commands::check_isolation_commands(&root)),
+                ),
+                (
                     "skin-registry",
                     Box::new(|| gen_skin_registry::check_skin_registry(&root)),
                 ),
@@ -443,6 +458,8 @@ fn dispatch(cmd: &Command) -> Result<()> {
         }
         Command::CheckDeclaredGrounds => declared_grounds::check_declared_grounds(&root),
         Command::CheckContrastPairs => contrast_pairs::check_contrast_pairs(&root),
+        Command::CheckIsolationCommands => gen_isolation_commands::check_isolation_commands(&root),
+        Command::GenIsolationCommands => gen_isolation_commands::gen_isolation_commands(&root),
         Command::CheckSkinRegistry => gen_skin_registry::check_skin_registry(&root),
         Command::GenSkinRegistry => gen_skin_registry::gen_skin_registry(&root),
         Command::CheckSkinFixtures => gen_skin_fixtures::check_skin_fixtures(&root),
