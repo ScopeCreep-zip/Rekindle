@@ -26,4 +26,8 @@ pub enum VaultError {
     /// `create` found a vault or header already there.
     #[error("a vault already exists at this path")]
     AlreadyExists,
+    /// The passphrase is the armed duress passphrase (plan E7.1): the
+    /// caller wipes the data root and answers nothing further.
+    #[error("duress passphrase")]
+    Duress,
 }

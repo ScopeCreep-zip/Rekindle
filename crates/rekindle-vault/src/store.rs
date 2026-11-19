@@ -97,7 +97,13 @@ impl VaultStore {
         passphrase: &str,
         header: &crate::header::VaultHeader,
     ) -> Result<(Self, AppDbKey), VaultError> {
+        // The duress derivation first, the real one second, always both
+        // (plan E7.1): an open takes the same time armed or not.
+        let duress = crate::duress::matches(passphrase, header)?;
         let keys = derive_keys(passphrase, header)?;
+        if duress {
+            return Err(VaultError::Duress);
+        }
         let conn = Connection::open(path)?;
         let key_pragma = format!("x'{}'", hex::encode(*keys.sqlcipher));
         // Keying, then the first read, which makes SQLCipher decrypt the
@@ -300,15 +306,7 @@ fn aad(namespace: &str, key: &str) -> Vec<u8> {
 }
 
 fn derive_keys(passphrase: &str, header: &crate::header::VaultHeader) -> Result<Keys, VaultError> {
-    let argon = argon2::Argon2::new(
-        argon2::Algorithm::Argon2id,
-        argon2::Version::V0x13,
-        header.params()?,
-    );
-    let mut master = Zeroizing::new(vec![0u8; header.output_len as usize]);
-    argon
-        .hash_password_into(passphrase.as_bytes(), &header.salt, &mut master)
-        .map_err(|e| VaultError::Kdf(e.to_string()))?;
+    let master = header.stretch(passphrase, &header.salt)?;
     let derive = |label: &str| Zeroizing::new(blake3::derive_key(label, &master));
     // The two keys that outlive the unlock go straight into locked memory.
     let locked = |label: &str| {

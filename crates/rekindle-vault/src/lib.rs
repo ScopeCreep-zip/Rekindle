@@ -38,6 +38,7 @@
 //! Phase 2 of the decomposed-harvest plan; see
 //! `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 2.
 
+pub mod duress;
 pub mod error;
 pub mod header;
 pub mod key;

@@ -19,6 +19,7 @@ rekindle-types = { path = "../rekindle-types" }
 rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl" ] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+subtle = "2"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zeroize = { version = "1", features = [ "derive" ] }
