@@ -12,8 +12,6 @@ pub const NAMES: &[&str] = &[
     "channelLockdown",
     "bootstrapRequested",
     "bootstrapReceived",
-    "syncRequested",
-    "syncReceived",
     "auditChainBroken",
     "skinChanged",
     "skinTrialChanged",

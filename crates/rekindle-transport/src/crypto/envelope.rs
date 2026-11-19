@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn reframed_type_id_rejected() {
         let s = signed(b"payload");
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::GossipBroadcast), NOW_MS).is_err());
     }
 
     /// A signature over the v2 field layout (`seq` and a correlation-id
@@ -219,7 +219,7 @@ mod tests {
             .sign(&v2)
             .to_bytes()
             .to_vec();
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::GossipBroadcast), NOW_MS).is_err());
     }
 
     #[test]
@@ -243,14 +243,14 @@ mod tests {
     fn tampered_payload_rejected() {
         let mut s = signed(b"original");
         s.payload = b"tampered".to_vec();
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::GossipBroadcast), NOW_MS).is_err());
     }
 
     #[test]
     fn tampered_timestamp_rejected() {
         let mut s = signed(b"original");
         s.timestamp -= 1;
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::GossipBroadcast), NOW_MS).is_err());
     }
 
     #[test]
@@ -261,6 +261,6 @@ mod tests {
                 .verifying_key()
                 .to_bytes(),
         );
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::GossipBroadcast), NOW_MS).is_err());
     }
 }
