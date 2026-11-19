@@ -151,7 +151,7 @@ fn merged_delete(author: u8) -> GovernanceState {
     )
 }
 
-const MESSAGE: &str = "msg_07070707070707070707070707070707";
+const REMOVED_POST: &str = "msg_07070707070707070707070707070707";
 
 #[test]
 fn every_reader_applies_a_delete_of_a_lower_authors_post_to_that_author_only() {
@@ -159,11 +159,11 @@ fn every_reader_applies_a_delete_of_a_lower_authors_post_to_that_author_only() {
     let state = merged_delete(3);
     let channel = MODERATED_CHANNEL.to_hex();
     assert_eq!(
-        removed_by(&state, &channel, MESSAGE, &hex::encode(key(3).0)),
+        removed_by(&state, &channel, REMOVED_POST, &hex::encode(key(3).0)),
         Some(key(2))
     );
     assert_eq!(
-        removed_by(&state, &channel, MESSAGE, &hex::encode(key(1).0)),
+        removed_by(&state, &channel, REMOVED_POST, &hex::encode(key(1).0)),
         None,
         "a post by another author is not this delete's"
     );
@@ -176,7 +176,7 @@ fn no_reader_applies_a_delete_of_a_higher_authors_post() {
     assert!(state.admin_deletes.is_empty(), "M1: the merge refuses it");
     let channel = MODERATED_CHANNEL.to_hex();
     assert_eq!(
-        removed_by(&state, &channel, MESSAGE, &hex::encode(key(1).0)),
+        removed_by(&state, &channel, REMOVED_POST, &hex::encode(key(1).0)),
         None
     );
 }

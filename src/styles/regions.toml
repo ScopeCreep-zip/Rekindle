@@ -507,6 +507,7 @@
 '.welcome-channel-entry' = { on = ["--color-xfire-bg-secondary"], on_hover = ["--color-xfire-bg-tertiary"] }
 '.welcome-channel-name' = { on = ["--color-xfire-bg-secondary"] }
 '.welcome-channel-desc' = { on = ["--color-xfire-bg-secondary"] }
+'.message-removed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-decrypt-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-decrypt-failed-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-automod-blur' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
