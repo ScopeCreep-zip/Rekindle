@@ -187,7 +187,9 @@ export const SETTINGS_ROWS: Row[] = [
     },
   },
   flipRow("ST6", "Application", "Start Minimized"),
-  flipRow("ST7", "Application", "Show Game Activity"),
+  // E7.2 (`904f2ca7`) split detection (Application) from showing the game
+  // to friends (Privacy, "Show friends the game I'm playing").
+  flipRow("ST7", "Application", "Detect running games"),
   {
     id: "ST8",
     title: "Application: auto-away minutes",

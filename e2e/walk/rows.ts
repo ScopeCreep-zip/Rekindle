@@ -616,8 +616,10 @@ export async function allRows(): Promise<Row[]> {
   const { VOICE_ROWS } = await import("./rows-voice.ts");
   const at = BASE_ROWS.findIndex((r) => r.id === SPLICE_AFTER) + 1;
   // The voice rows need the peer in the walk's community (B61) and end
-  // before the member-menu rows that kick it (M88 → M86).
-  const voiceAt = PEER_COMMUNITY_ROWS.findIndex((r) => r.id === "M88");
+  // before the member-menu rows that restrict it: M83 times it out for five
+  // minutes, which takes its voice permission (Linux walk at 832def39: M12,
+  // M84, M85 failed "missing permission 0x100000000"), then M88 → M86 kick it.
+  const voiceAt = PEER_COMMUNITY_ROWS.findIndex((r) => r.id === "M83");
   const peerCommunity = [...PEER_COMMUNITY_ROWS.slice(0, voiceAt), ...VOICE_ROWS, ...PEER_COMMUNITY_ROWS.slice(voiceAt)];
   return [...BASE_ROWS.slice(0, at), ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...peerCommunity, ...BASE_ROWS.slice(at)];
 }

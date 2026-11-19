@@ -139,10 +139,13 @@ export const PEER_ROWS: Row[] = [
     title: "Toggle safety-number panel",
     async run({ b, shot }) {
       needPeer();
-      await (await shown(b, ".chat-safety-btn")).click();
+      // The game-invite button shares the class for its look (E7.2,
+      // DirectChat.tsx): the safety number's is the one so titled.
+      const toggle = '.chat-safety-btn[title="Safety number"]';
+      await (await shown(b, toggle)).click();
       await shown(b, "section.sec-safety-number", NET_WAIT_MS);
       await shot();
-      await (await b.$(".chat-safety-btn")).click();
+      await (await b.$(toggle)).click();
       await gone(b, ".sec-safety-number");
     },
   },

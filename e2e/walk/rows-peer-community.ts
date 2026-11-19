@@ -78,6 +78,15 @@ function memberListed(b: Browser): Promise<boolean> {
   });
 }
 
+/** The peer's community window on `community` shows its removal banner (CommunityWindow.tsx `.removal-banner`). */
+async function peerSeesRemoval(community: string): Promise<void> {
+  const p = needPeer();
+  await inCommunity(p.b, community);
+  // A community window already open on the peer may show another community.
+  await (await byText(p.b, ".community-sidebar .community-item", community, NET_WAIT_MS)).click();
+  await shown(p.b, ".removal-banner", NET_WAIT_MS);
+}
+
 /** Open the peer's member menu, a submenu (Kobalte SubTrigger) in it, and one of its items. */
 async function subItem(b: Browser, trigger: string, item: string, community: string): Promise<void> {
   await b.execute((node: HTMLElement) => {
@@ -225,6 +234,14 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
       await contextMenu(b, await peerMember(b), "Kick Member");
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
       await waitUntil(async () => !(await memberListed(b)), NET_WAIT_MS, "the kicked peer is still listed");
+      // The kick is done when the kicked peer has merged its own removal (as
+      // the netsim's rejoin_after_kick waits, "bea merges its own removal"):
+      // it learns from the remover's `MemberRemoved` on the DHT
+      // (own_removal.rs), seconds after our list drops it. A rejoin before
+      // that finds the peer still a current member and answers it without a
+      // join (join.rs `already_joined`, RV7 M3): walk 23 M87, whose join ran
+      // at 17:04:55, three seconds before the peer merged the removal.
+      await peerSeesRemoval(s.communityName);
       await shot();
     },
   },
