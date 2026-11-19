@@ -102,3 +102,36 @@ fn the_first_re_ask_is_jittered_above_its_floor() {
     assert!(draws.len() > 1, "drawn, not fixed");
     assert_eq!(StreamKind::MediaKey.first_reask(o.deps().rng()), None);
 }
+
+/// Live finding L-DM1: a row whose `app_call` went unanswered (a lost
+/// `StreamRecord`) is sent and due again after its backoff without the ack
+/// floor, well before the first re-ask, and the wait is drawn.
+#[tokio::test]
+async fn an_unanswered_call_is_sent_again_soon_not_at_the_first_re_ask() {
+    let o = outbox();
+    let mut waits = std::collections::BTreeSet::new();
+    for id in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+        o.enqueue(entry(StreamKind::Dm, id, id), ()).await.unwrap();
+        let row = o.deps().row(id).await.unwrap().unwrap();
+        let now = o.deps().clock().now_ms_i64();
+        o.settle_attempt(&row, AttemptOutcome::Unanswered, now)
+            .await
+            .unwrap();
+        assert_eq!(state_of(&o, id), Some(SendState::Sent), "the frame left");
+        let wait = next_at(&o, id) - now;
+        assert!(
+            (500..=1_000).contains(&wait),
+            "first retry is the 1 s step's equal jitter, no floor: {wait}"
+        );
+        waits.insert(wait);
+    }
+    assert!(waits.len() > 1, "drawn, not fixed");
+    assert_eq!(
+        StreamKind::Dm.unanswered_retry(),
+        crate::OutboxRetry::Backoff {
+            base: std::time::Duration::from_secs(1),
+            cap: std::time::Duration::from_secs(300),
+            floor: std::time::Duration::ZERO,
+        }
+    );
+}

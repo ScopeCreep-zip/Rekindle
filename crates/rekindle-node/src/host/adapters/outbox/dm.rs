@@ -323,6 +323,7 @@ fn outcome(attempt: Attempt) -> AttemptOutcome {
         Attempt::Appending(frame) => AttemptOutcome::Appending(frame),
         Attempt::Awaiting => AttemptOutcome::Awaiting,
         Attempt::Receipted => AttemptOutcome::Receipted,
+        Attempt::Unanswered => AttemptOutcome::Unanswered,
         Attempt::Deferred => AttemptOutcome::Deferred,
         Attempt::Wedged(reason) => AttemptOutcome::Wedged(reason),
         Attempt::Superseded(reason) => AttemptOutcome::Superseded(reason),

@@ -146,6 +146,23 @@ impl StreamKind {
         matches!(self, Self::Dm).then(|| Duration::from_millis(floor + rng.below(floor / 2 + 1)))
     }
 
+    /// When a row of this kind whose `app_call` went unanswered
+    /// ([`crate::AttemptOutcome::Unanswered`]) is sent again: its backoff
+    /// without the floor. The floor waits out an ack that may still come
+    /// (a `DmAck`'s 2–10 s delay); an unanswered call has already waited
+    /// its timeout, and no ack follows a frame that never arrived (live
+    /// finding L-DM1). Equal jitter, as every backoff (threat model: no
+    /// deterministic timing).
+    #[must_use]
+    pub fn unanswered_retry(self) -> OutboxRetry {
+        let OutboxRetry::Backoff { base, cap, .. } = self.policy();
+        OutboxRetry::Backoff {
+            base,
+            cap,
+            floor: Duration::ZERO,
+        }
+    }
+
     /// Whether the user may Retry a failed row of this kind. A call media
     /// key may not: the session's end discards it, and a key is never
     /// given a fresh deadline past the call it keys.

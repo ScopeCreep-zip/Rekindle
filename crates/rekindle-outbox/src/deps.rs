@@ -89,6 +89,15 @@ pub enum AttemptOutcome {
     /// pump): the row stays `queued`, is not attempted again while the
     /// append is in flight, and lands on [`OutboxDeps::append`]'s outcome.
     Appending(Vec<u8>),
+    /// The frame went as an `app_call` and no answer came within the call
+    /// timeout, or the peer could not take it (a NAK, a retry-later): it
+    /// may be lost. Veilid's `app_call` is the one send whose loss is seen
+    /// (a question waits for its answer, 0.5.8 `rpc_app_call.rs:36`, and
+    /// times out at `:135`; an `app_message` is a statement, `rpc_app_message.rs:24`).
+    /// The row counts as sent and is sent again after its kind's
+    /// [`StreamKind::unanswered_retry`], not its first re-ask: nothing else
+    /// will answer it (live finding L-DM1).
+    Unanswered,
     /// It could not be sent now (no route, no sender yet); try again.
     Deferred,
     /// It can never be sent as it stands (`prekey_rejected`): the row

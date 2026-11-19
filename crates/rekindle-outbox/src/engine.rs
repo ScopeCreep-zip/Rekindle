@@ -239,6 +239,22 @@ impl<D: OutboxDeps> Outbox<D> {
                     self.deps.publish(StateChange::of(row, state, None));
                 }
             }
+            AttemptOutcome::Unanswered => {
+                let state = merge(row.state, StateInput::LocalSent);
+                let wait = row.kind.unanswered_retry().delay(attempts, self.deps.rng());
+                let wait = i64::try_from(wait.as_millis()).unwrap_or(i64::MAX);
+                let update = RowUpdate {
+                    state,
+                    attempts,
+                    next_at: self.now().saturating_add(wait).min(row.deadline),
+                    deadline: row.deadline,
+                    wedge_reason: None,
+                };
+                self.deps.update(&row.client_id, &update).await?;
+                if state != row.state {
+                    self.deps.publish(StateChange::of(row, state, None));
+                }
+            }
             AttemptOutcome::Wedged(reason) => self.fail(row, reason).await?,
             AttemptOutcome::Superseded(reason) => {
                 self.deps.settle(&row.client_id, SendState::Failed).await?;

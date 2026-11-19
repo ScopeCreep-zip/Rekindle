@@ -230,6 +230,9 @@ pub enum Attempt {
     Awaiting,
     /// The peer's `app_call` reply received it (a `FriendRequest`).
     Receipted,
+    /// It went as an `app_call` (a `StreamRecord`) and no receipt came: it
+    /// may be lost, and is sent again soon ([`record_call`]).
+    Unanswered,
     /// The hint left, and the entry (this frame) goes to the stream's
     /// appender; the append's outcome is its landing (the DM pump).
     Appending(Vec<u8>),
@@ -287,6 +290,7 @@ enum Framed {
 pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -> Vec<Attempt> {
     let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
     let mut chained: Vec<(usize, Vec<u8>, Vec<u8>, DmTypeId)> = Vec::new();
+    let mut records: Vec<(usize, Vec<u8>, DmTypeId)> = Vec::new();
     // Route liveness (plan RH1r-c S1–S4): every row here waits for the
     // peer's `DmAck`, so its sends count against their route, and a suspect
     // round runs first when one is due: its re-read, which may replace the
@@ -304,21 +308,12 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
         }
         let outcome = match frame_row(host, to, row, true).await {
             Err(outcome) => outcome,
-            // A `StreamRecord` waits for the peer's `DmAck` (resent until
-            // then) like any `dm` row.
+            // A `StreamRecord` is called beside the run's hints
+            // ([`record_call`]).
             Ok(Framed::Record(datagram, type_id)) => {
-                match send::route_send_datagram(host, to, &datagram, type_id, true).await {
-                    Ok(true) => {
-                        super::route_health::sent(host, to, type_id);
-                        Attempt::Sent
-                    }
-                    Ok(false) => {
-                        tracing::debug!(to = %to, ?type_id, "dm row deferred: no usable route");
-                        Attempt::Deferred
-                    }
-                    Err(e @ FriendError::NotReady(_)) => attempt_of(e),
-                    Err(e) => Attempt::Wedged(e.to_string()),
-                }
+                records.push((outcomes.len(), datagram, type_id));
+                outcomes.push(None);
+                continue;
             }
             Ok(Framed::Entry {
                 hint,
@@ -338,17 +333,68 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     // stream's appender ([`append`]), so the peer has each message without
     // waiting on a DHT write, its own or an earlier one's (live A/B finding
     // 42, the DM pump); an ack that beats the landing waits on the row.
-    for (i, datagram, chain, type_id) in chained {
-        if hint {
-            match send::route_send_datagram(host, to, &datagram, type_id, true).await {
-                Ok(true) => super::route_health::sent(host, to, type_id),
+    // A `StreamRecord`'s call runs beside them, so no hint waits for its
+    // round trip.
+    let hints = async {
+        for (_, datagram, _, type_id) in chained.iter().filter(|_| hint) {
+            match send::route_send_datagram(host, to, datagram, *type_id, true).await {
+                Ok(true) => super::route_health::sent(host, to, *type_id),
                 Ok(false) => {}
                 Err(e) => tracing::debug!(to = %to, error = %e, "chain entry hint not sent"),
             }
         }
+    };
+    let calls = futures::future::join_all(records.into_iter().map(
+        |(i, datagram, type_id)| async move { (i, record_call(host, to, datagram, type_id).await) },
+    ));
+    let ((), called) = futures::join!(hints, calls);
+    for (i, outcome) in called {
+        outcomes[i] = Some(outcome);
+    }
+    for (i, _, chain, _) in chained {
         outcomes[i] = Some(Attempt::Appending(chain));
     }
     finish(outcomes)
+}
+
+/// Send our `StreamRecord` (`datagram`) to `to` as an `app_call` (live
+/// finding L-DM1). It is the one frame that names our chain to the peer:
+/// lost, nothing else can lead them to it, and as an `app_message` (a
+/// statement, Veilid 0.5.8 `rpc_app_message.rs:24`) its loss is seen only
+/// when no `DmAck` comes by the first re-ask (`DM_FIRST_REASK`, 30 s). A
+/// call is answered or times out (`rpc_app_call.rs:36`, `:135`), and a lost
+/// question also counts against the route in Veilid's own stats
+/// (`route_stats.rs:144-147`, so the route is retested), so a lost record
+/// is sent again within a call timeout and a short backoff
+/// ([`Attempt::Unanswered`]). The peer answers once the frame is committed
+/// (`direct::receive_call`); the receipt only proves arrival: the row still
+/// waits for the peer's `DmAck` (D22: `delivered` comes from the ack), so
+/// the hardened ack and its 2–10 s delay are unchanged.
+async fn record_call(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+    type_id: DmTypeId,
+) -> Attempt {
+    match send::call_datagram_answer(host, to, datagram).await {
+        Ok(send::CallAnswer::Receipt) => {
+            super::route_health::sent(host, to, type_id);
+            Attempt::Sent
+        }
+        Ok(_) => {
+            super::route_health::sent(host, to, type_id);
+            tracing::debug!(to = %to, "stream record not receipted — sent again soon");
+            Attempt::Unanswered
+        }
+        Err(e @ (FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_))) => {
+            attempt_of(e)
+        }
+        Err(e) => {
+            super::route_health::sent(host, to, type_id);
+            tracing::debug!(to = %to, error = %e, "stream record call unanswered — sent again soon");
+            Attempt::Unanswered
+        }
+    }
 }
 
 /// Hint `row` again, a chain entry whose append landed and whose `DmAck`
