@@ -91,3 +91,41 @@ fn a_received_timer_starts_at_display_and_expiry_deletes_the_rows_and_their_send
     assert_eq!(left, ["kept"]);
     assert_eq!(next_expiry(&conn, OWNER).unwrap(), None);
 }
+
+/// Plan E7.1: an expired message's logged plaintext and a leftover
+/// `unprocessed` row of it go in the same transaction; others stay.
+#[test]
+fn expiry_deletes_the_send_log_and_unprocessed_rows_of_its_messages() {
+    let conn = seeded();
+    insert_dm(&conn, &dm(OWNER, "mine", 30, Some(31_000))).unwrap();
+    insert_dm(&conn, &dm("bob", "theirs", 60, Some(31_000))).unwrap();
+    for (n, id) in [(1u8, "mine"), (2, "other")] {
+        conn.execute(
+            "INSERT INTO message_send_log (owner_key, peer, msg_id, type_id, ratchet_key, \
+             plaintext_sealed, sent_at, client_id) \
+             VALUES (?1, 'bob', ?2, 256, zeroblob(32), x'00', 0, ?3)",
+            params![OWNER, [n; 32].as_slice(), id],
+        )
+        .unwrap();
+    }
+    for (n, id) in [(1, "theirs"), (2, "other")] {
+        conn.execute(
+            "INSERT INTO unprocessed (owner_key, peer_identity, header_dh, header_n, type_id, \
+             plaintext, received_at, client_id) VALUES (?1, 'bob', zeroblob(32), ?2, 256, \
+             x'00', 0, ?3)",
+            params![OWNER, n, id],
+        )
+        .unwrap();
+    }
+    delete_expired(&conn, OWNER, 31_000).unwrap();
+    for table in ["message_send_log", "unprocessed"] {
+        let left: Vec<String> = conn
+            .prepare(&format!("SELECT client_id FROM {table}"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(left, ["other"], "{table}");
+    }
+}

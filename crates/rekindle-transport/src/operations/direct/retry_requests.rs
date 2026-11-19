@@ -181,6 +181,7 @@ pub(super) async fn on_retry_request(
         &logged.plaintext,
         &frame::ad_extra(type_id),
         logged.type_id,
+        logged.client_id.clone(),
     )
     .await
     {

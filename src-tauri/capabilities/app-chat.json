@@ -14,6 +14,7 @@
     "allow-outbox-discard",
     "allow-group-dm-list",
     "allow-group-dm-messages",
+    "allow-group-dm-mark-read",
     "allow-group-dm-leave",
     "allow-disappearing-set",
     "allow-group-dm-send",

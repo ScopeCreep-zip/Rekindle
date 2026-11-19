@@ -216,7 +216,8 @@ pub async fn encrypt_and_record_outbound(
 /// [`encrypt_and_record_outbound`] for a user-content message of kind
 /// `type_id`, logged in `message_send_log` in the same transaction under
 /// its header id and sending ratchet key (plan E2.5, D24), so a
-/// `RetryRequest` can have it resent.
+/// `RetryRequest` can have it resent, with its `client_id` so a
+/// disappearing message's expiry deletes the row (plan E7.1).
 ///
 /// # Errors
 /// See [`RatchetError`].
@@ -227,6 +228,7 @@ pub async fn encrypt_record_and_log_outbound(
     plaintext: &[u8],
     ad_extra: &[u8],
     type_id: u16,
+    client_id: Option<String>,
 ) -> Result<Outgoing, RatchetError> {
     let (local, peer) = (local.clone(), peer.clone());
     let (plaintext, ad_extra) = (plaintext.to_vec(), ad_extra.to_vec());
@@ -246,6 +248,7 @@ pub async fn encrypt_record_and_log_outbound(
             ratchet_key: message.header.dh,
             plaintext,
             sent_at: local.now_ms,
+            client_id,
         };
         crate::repo::send_log::insert(conn, &owner, &sent)?;
         Ok(outgoing)

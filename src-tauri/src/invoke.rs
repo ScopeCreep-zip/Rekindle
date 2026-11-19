@@ -76,6 +76,7 @@ macro_rules! group_dm_commands {
         commands::group_dm::group_dm_typing,
         commands::group_dm::group_dm_list,
         commands::group_dm::group_dm_messages,
+        commands::group_dm::group_dm_mark_read,
     ] $($rest)*) };
 }
 

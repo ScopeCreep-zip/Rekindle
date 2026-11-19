@@ -143,6 +143,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("GroupDmTyping", None),
     ("GroupDmList", None),
     ("GroupDmMessages", None),
+    ("GroupDmMarkRead", None),
     // The gate answers these itself (plan D3.3).
     ("IntentCommit", None),
     ("IntentCancel", None),

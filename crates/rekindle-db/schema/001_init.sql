@@ -1233,8 +1233,14 @@ CREATE TABLE IF NOT EXISTS unprocessed (
     attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
     received_at INTEGER NOT NULL CHECK(received_at >= 0),
     quarantined_at INTEGER CHECK(quarantined_at IS NULL OR quarantined_at >= 0),
+    -- The stored message's client id, set in the transaction that stores it
+    -- (plan E7.1), so its expiry deletes a row a crash left behind and a
+    -- replay cannot bring an expired message back.
+    client_id TEXT CHECK(client_id IS NULL OR length(client_id) BETWEEN 1 AND 64),
     PRIMARY KEY (owner_key, peer_identity, header_dh, header_n)
 );
+CREATE INDEX IF NOT EXISTS idx_unprocessed_client_id
+    ON unprocessed(owner_key, client_id) WHERE client_id IS NOT NULL;
 
 -- The send log (plan E2.5, D24 send half): every user-content ratchet
 -- message we sent, written in the ratchet's transaction, so a peer that
@@ -1254,8 +1260,13 @@ CREATE TABLE IF NOT EXISTS message_send_log (
     plaintext_sealed BLOB NOT NULL,
     sent_at INTEGER NOT NULL CHECK(sent_at >= 0),
     archived_at INTEGER CHECK(archived_at IS NULL OR archived_at >= 0),
+    -- The content's client id (plan E7.1), so a disappearing message's
+    -- expiry deletes its logged plaintext; NULL for a kind with none.
+    client_id TEXT CHECK(client_id IS NULL OR length(client_id) BETWEEN 1 AND 64),
     PRIMARY KEY (owner_key, peer, msg_id)
 );
+CREATE INDEX IF NOT EXISTS idx_message_send_log_client_id
+    ON message_send_log(owner_key, client_id) WHERE client_id IS NOT NULL;
 
 -- Our retry requests (plan E2.5, D24): a ratchet message from `peer` we
 -- could not open, held (`pending`) until the source's CaughtUp, then sent

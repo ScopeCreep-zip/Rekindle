@@ -25,7 +25,7 @@ pub(crate) use pairwise::member_profile;
 pub use pairwise::GroupFirstContact;
 pub(crate) use pairwise::{member_bundle, opens_member_session};
 pub use review::{key_changes, send_reviewed};
-pub use view::{find, list, messages};
+pub use view::{find, list, mark_read, messages};
 pub(crate) mod first_contact {
     //! The group first contact, as the prekey rejection flow sees it.
     pub(crate) use super::pairwise::{acknowledged, began, on_rejected};

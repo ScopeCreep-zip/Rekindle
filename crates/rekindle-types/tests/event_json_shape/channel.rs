@@ -1,6 +1,8 @@
 //! `ChannelMessageEvent` samples.
 
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, ConversationContext, SubscriptionEvent,
+};
 
 use crate::{channel, community, id, pk, text, Sample};
 
@@ -157,8 +159,7 @@ pub fn samples() -> Vec<Sample> {
         ev(
             "disappearingTimerChanged",
             ChannelMessageEvent::DisappearingTimerChanged {
-                conversation_id: pk('b'),
-                conversation_type: rekindle_types::message::ConversationType::Dm,
+                context: ConversationContext::Dm { peer_key: pk('b') },
                 seconds: 3_600,
                 set_by: pk('a'),
             },
@@ -166,8 +167,9 @@ pub fn samples() -> Vec<Sample> {
         ev(
             "messagesExpired",
             ChannelMessageEvent::MessagesExpired {
-                conversation_id: "0f".repeat(16),
-                conversation_type: rekindle_types::message::ConversationType::GroupDm,
+                context: ConversationContext::GroupDm {
+                    group_id: "0f".repeat(16),
+                },
                 client_ids: vec!["0190a0b0-0000-7000-8000-000000000001".into()],
             },
         ),

@@ -60,20 +60,31 @@ impl NewDmFields {
     ///
     /// # Errors
     /// The identity is locked, or the write failed.
+    /// Store a received message; its `unprocessed` row, when it came as
+    /// one, is tagged with its client id in the same transaction (plan
+    /// E7.1), so its expiry deletes a row a crash left behind.
     pub(crate) async fn store_received(
         self,
         host: &dyn FriendHost,
+        unprocessed: Option<rekindle_db::repo::unprocessed::UnprocessedKey>,
     ) -> Result<(rekindle_db::repo::messages::StoredDm, i64), FriendError> {
         let owner = state::owner(host)?;
+        let owner_key = host.local_party()?.owner();
         let received_at = host.clock().now_ms_i64();
         state::db_call!(host, "store direct message", move |conn| {
+            let tx = conn.unchecked_transaction()?;
             let dm = self.new_dm(&owner);
-            rekindle_db::repo::received_dm::insert_received(
-                conn,
+            let stored = rekindle_db::repo::received_dm::insert_received(
+                &tx,
                 &dm,
                 received_at,
                 super::MAX_FUTURE_SKEW_MS,
-            )
+            )?;
+            if let Some(key) = unprocessed {
+                rekindle_db::repo::unprocessed::tag(&tx, &owner_key, &key, &self.message_id)?;
+            }
+            tx.commit()?;
+            Ok(stored)
         })
         .await
     }

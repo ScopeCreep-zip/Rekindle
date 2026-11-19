@@ -143,7 +143,8 @@ async fn route(
         | IpcRequest::GroupDmSend { .. }
         | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::GroupDmList
-        | IpcRequest::GroupDmMessages { .. }) => {
+        | IpcRequest::GroupDmMessages { .. }
+        | IpcRequest::GroupDmMarkRead { .. }) => {
             friends::route(ctx, state, request, acknowledged).await
         }
 

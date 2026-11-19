@@ -54,6 +54,10 @@ impl IpcRequest {
                 .field("limit", limit)
                 .field("before", before)
                 .finish(),
+            Self::GroupDmMarkRead { group_id } => f
+                .debug_struct("GroupDmMarkRead")
+                .field("group_id", group_id)
+                .finish(),
             other => unreachable!("{} is not a group-DM request", other.name()),
         }
     }

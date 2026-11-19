@@ -11,7 +11,9 @@ use rekindle_codec::capnp_codec::direct::{DirectBody, DisappearingTimer};
 use rekindle_db::repo::disappearing;
 use rekindle_types::disappearing::valid;
 use rekindle_types::message::ConversationType;
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, ConversationContext, SubscriptionEvent,
+};
 
 use super::{client_id_text, handshake, mint_client_id};
 use crate::operations::friend::{state, FriendError, FriendHost};
@@ -115,10 +117,12 @@ fn publish_change(
     seconds: u32,
     set_by: &str,
 ) {
+    let Some(context) = ConversationContext::of(conversation, kind) else {
+        return;
+    };
     host.publish(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DisappearingTimerChanged {
-            conversation_id: conversation.to_owned(),
-            conversation_type: kind,
+            context,
             seconds,
             set_by: set_by.to_owned(),
         },
@@ -202,10 +206,12 @@ pub async fn expire_due(host: &dyn FriendHost) -> Result<Option<i64>, FriendErro
     })
     .await?;
     for e in gone {
+        let Some(context) = ConversationContext::of(&e.conversation_id, e.conversation_type) else {
+            continue;
+        };
         host.publish(SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::MessagesExpired {
-                conversation_id: e.conversation_id,
-                conversation_type: e.conversation_type,
+                context,
                 client_ids: e.client_ids,
             },
         ));

@@ -7,6 +7,44 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The DM or group DM an event is about (plan E7.1's `context`), shaped
+/// as `TypingContext`'s two conversation arms. A community channel's
+/// timer is its `ChannelUpdated` governance op, not this.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ConversationContext {
+    /// A 1:1 DM with `peer_key`.
+    Dm { peer_key: String },
+    /// A group DM (plan E2.6).
+    GroupDm { group_id: String },
+}
+
+impl ConversationContext {
+    /// The context of conversation `id` (the peer's key, or the group's
+    /// id) of `kind`; `None` for a channel.
+    #[must_use]
+    pub fn of(id: &str, kind: crate::message::ConversationType) -> Option<Self> {
+        match kind {
+            crate::message::ConversationType::Dm => Some(Self::Dm {
+                peer_key: id.to_owned(),
+            }),
+            crate::message::ConversationType::GroupDm => Some(Self::GroupDm {
+                group_id: id.to_owned(),
+            }),
+            crate::message::ConversationType::Channel => None,
+        }
+    }
+
+    /// The peer's key, or the group's id.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Dm { peer_key } => peer_key,
+            Self::GroupDm { group_id } => group_id,
+        }
+    }
+}
+
 /// Channel message lifecycle events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -182,9 +220,7 @@ pub enum ChannelMessageEvent {
     /// Triggered by: our `DisappearingSet`, or a received
     /// `DisappearingTimer` (0x0160).
     DisappearingTimerChanged {
-        /// The peer's key, or the group's id.
-        conversation_id: String,
-        conversation_type: crate::message::ConversationType,
+        context: ConversationContext,
         seconds: u32,
         set_by: String,
     },
@@ -194,9 +230,7 @@ pub enum ChannelMessageEvent {
     /// withdraws any OS notification it showed for them.
     /// Triggered by: the Host's expiry task.
     MessagesExpired {
-        /// The peer's key, or the group's id.
-        conversation_id: String,
-        conversation_type: crate::message::ConversationType,
+        context: ConversationContext,
         client_ids: Vec<String>,
     },
 

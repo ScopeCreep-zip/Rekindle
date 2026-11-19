@@ -121,6 +121,7 @@ impl IpcRequest {
             Self::GroupDmTyping { .. } => ("GroupDmTyping", Write, Authenticated),
             Self::GroupDmList => ("GroupDmList", Query, Authenticated),
             Self::GroupDmMessages { .. } => ("GroupDmMessages", Query, Authenticated),
+            Self::GroupDmMarkRead { .. } => ("GroupDmMarkRead", Write, Authenticated),
 
             Self::Undo { .. } => ("Undo", Write, Authenticated),
             Self::Subscribe { .. } => ("Subscribe", Query, Authenticated),

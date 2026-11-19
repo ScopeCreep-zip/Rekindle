@@ -77,6 +77,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         IpcRequest::GroupDmAccept { group_id: id }
         | IpcRequest::GroupDmDecline { group_id: id }
         | IpcRequest::GroupDmLeave { group_id: id }
+        | IpcRequest::GroupDmMarkRead { group_id: id }
         | IpcRequest::GroupDmTyping {
             group_id: id,
             typing: _,

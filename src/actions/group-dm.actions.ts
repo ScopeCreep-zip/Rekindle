@@ -60,9 +60,22 @@ export async function handleLoadGroupMessages(groupId: string, limit: number): P
       messages: rows.map(transformDmMessage),
       typing,
     });
+    markGroupDisplayed(groupId);
   } catch (e) {
     console.error("group_dm_messages failed", e);
   }
+}
+
+/** Once the frame with the group's messages is painted in a focused
+ *  window, the Host starts their disappearing timers (plan E7.1), as a
+ *  DM's start at `mark_read`. */
+function markGroupDisplayed(groupId: string): void {
+  requestAnimationFrame(() => {
+    if (!document.hasFocus()) return;
+    commands.groupDmMarkRead(groupId).catch((e) => {
+      console.error("group_dm_mark_read failed", e);
+    });
+  });
 }
 
 /** Send `body` to the group; once the Host commits its row, the stored

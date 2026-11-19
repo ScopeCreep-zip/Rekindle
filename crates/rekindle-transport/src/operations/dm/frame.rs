@@ -48,6 +48,21 @@ pub fn is_logged(type_id: DmTypeId) -> bool {
     )
 }
 
+/// The message a logged kind is about, as its send-log row's `client_id`
+/// (plan E7.1): a text's own id, an edit's, delete's or reaction's
+/// target, so the message's expiry deletes every logged plaintext of it.
+#[must_use]
+pub fn logged_client_id(body: &DirectBody) -> Option<String> {
+    let id = match body {
+        DirectBody::DmText(t) => &t.client_id,
+        DirectBody::DmEdit(e) => &e.target_client_id,
+        DirectBody::DmDelete(d) => &d.target_client_id,
+        DirectBody::DmReaction(r) => &r.target_client_id,
+        _ => return None,
+    };
+    Some(super::client_id_text(id))
+}
+
 /// The HPKE info label of a sealed kind; `None` for the other carriers.
 #[must_use]
 pub fn sealed_info(type_id: DmTypeId) -> Option<&'static str> {
@@ -177,6 +192,7 @@ pub async fn ratchet_frame_at(
             &plaintext,
             &ad_extra(type_id),
             type_id.as_u16(),
+            logged_client_id(body),
         )
         .await
     } else {

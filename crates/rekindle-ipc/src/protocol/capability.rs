@@ -152,7 +152,8 @@ impl IpcRequest {
             | Self::GroupDmSend { .. }
             | Self::GroupDmTyping { .. }
             | Self::DmTyping { .. }
-            | Self::DmMarkRead { .. } => Some(C::ImWrite),
+            | Self::DmMarkRead { .. }
+            | Self::GroupDmMarkRead { .. } => Some(C::ImWrite),
             Self::PresenceSet { .. }
             | Self::PresenceSetMessage { .. }
             | Self::GamePresenceSet { .. }

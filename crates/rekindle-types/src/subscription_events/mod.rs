@@ -25,7 +25,7 @@ mod typing;
 mod voice;
 
 pub use call::{CallEvent, DirectCallInfo};
-pub use channel::ChannelMessageEvent;
+pub use channel::{ChannelMessageEvent, ConversationContext};
 pub use crypto::CryptoEvent;
 pub use friend::FriendEvent;
 pub use governance::{GovernanceEvent, OpPublicationState, OpQuarantineReason};

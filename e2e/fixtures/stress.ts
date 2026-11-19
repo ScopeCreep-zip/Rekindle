@@ -340,6 +340,8 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
       )};
     case "group_dm_messages":
       return ${j(dmHistory(s.messages))};
+    case "group_dm_mark_read":
+      return null;
     case "get_skin":
       return { id: "builtin:symbiosis", base: ${j(base)}, regions: [],
         tokensHref: ${j(`skin://localhost/${ME}/tokens.css`)} };

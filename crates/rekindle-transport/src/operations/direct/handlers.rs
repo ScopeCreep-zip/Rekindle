@@ -268,7 +268,7 @@ async fn direct_message(
         stream_seq: i64::try_from(stream_seq).ok().filter(|s| *s >= 1),
         expire_seconds: text.expire_seconds,
     };
-    let timestamp = match fields.store_received(host).await {
+    let timestamp = match fields.store_received(host, opened.unprocessed).await {
         Ok((stored, at)) if stored.inserted => at,
         // A replay of a message already applied: no second unread or event.
         Ok(_) => return true,

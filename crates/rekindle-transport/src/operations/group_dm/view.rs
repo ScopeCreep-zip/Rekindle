@@ -70,6 +70,18 @@ pub async fn find(
         .find(|v| v.group_id == group_id))
 }
 
+/// The group's window displayed its messages (plan E7.1): received ones
+/// whose disappearing timer had not started start it now, as a DM's do at
+/// `mark_read`; a history load alone starts nothing.
+///
+/// # Errors
+/// A malformed id.
+pub async fn mark_read(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendError> {
+    parse_group_id(group_id)?;
+    crate::operations::dm::disappearing::displayed(host, group_id).await;
+    Ok(())
+}
+
 /// The newest `limit` messages of `group_id` before `before` (ms), oldest
 /// first.
 ///
@@ -88,8 +100,6 @@ pub async fn messages(
         rekindle_db::repo::group_dm_messages::group_dm_history(conn, &ok, &gid, limit, before)
     })
     .await?;
-    // The window displays them: received timers start (plan E7.1).
-    crate::operations::dm::disappearing::displayed(host, group_id).await;
     Ok(rows
         .into_iter()
         .map(|row| DmMessage {

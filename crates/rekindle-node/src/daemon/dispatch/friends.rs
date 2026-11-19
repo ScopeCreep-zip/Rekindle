@@ -200,6 +200,9 @@ pub(crate) async fn route(
             limit,
             before,
         } => answer(group_dm::messages(&host, &group_id, limit, before).await),
+        IpcRequest::GroupDmMarkRead { group_id } => {
+            done(group_dm::mark_read(&host, &group_id).await)
+        }
         other => unreachable!("{} is not a friend or DM request", other.name()),
     }
 }

@@ -199,8 +199,11 @@
   "channelMessage.disappearingTimerChanged": {
     "channelMessage": {
       "disappearingTimerChanged": {
-        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "conversationType": "dm",
+        "context": {
+          "dm": {
+            "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
         "seconds": 3600,
         "setBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
@@ -248,8 +251,11 @@
         "clientIds": [
           "0190a0b0-0000-7000-8000-000000000001"
         ],
-        "conversationId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
-        "conversationType": "group_dm"
+        "context": {
+          "groupDm": {
+            "groupId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
+          }
+        }
       }
     }
   },

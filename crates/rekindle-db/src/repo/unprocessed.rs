@@ -49,6 +49,32 @@ pub struct Unprocessed {
     pub received_at: i64,
 }
 
+/// Name the message stored from row `key` by its `client_id`, in the
+/// transaction that stores it (plan E7.1): its expiry then deletes a row
+/// a crash left behind, so a replay cannot bring the message back.
+///
+/// # Errors
+/// The write failed.
+pub fn tag(
+    conn: &Connection,
+    owner: &[u8; 32],
+    key: &UnprocessedKey,
+    client_id: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE unprocessed SET client_id = ?5 WHERE owner_key = ?1 AND peer_identity = ?2 \
+         AND header_dh = ?3 AND header_n = ?4",
+        params![
+            identity_text(owner),
+            identity_text(&key.peer_identity),
+            key.header_dh,
+            key.header_n,
+            client_id
+        ],
+    )?;
+    Ok(())
+}
+
 /// Record a decrypted message (inside the ratchet's transaction).
 pub fn insert(
     conn: &Connection,

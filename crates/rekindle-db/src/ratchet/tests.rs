@@ -505,6 +505,7 @@ async fn a_logged_message_is_resent_only_on_its_ratchet_key() {
         b"the original",
         AD_EXTRA,
         DM,
+        Some("m-lost".into()),
     )
     .await
     .unwrap()
@@ -537,6 +538,7 @@ async fn a_logged_message_is_resent_only_on_its_ratchet_key() {
         &logged.plaintext,
         AD_EXTRA,
         logged.type_id,
+        logged.client_id.clone(),
     )
     .await
     .unwrap()

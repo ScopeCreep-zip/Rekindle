@@ -110,3 +110,53 @@ async fn a_received_timer_starts_when_the_window_displays_it() {
     let now = rekindle_utils::timestamp_ms_i64();
     assert!((now + 50_000..=now + 60_000).contains(&at), "{at} vs {now}");
 }
+
+/// A received group message's timer starts when the group window marks it
+/// read (`GroupDmMarkRead`), not when its history loads (plan E7.1).
+#[tokio::test]
+async fn a_group_timer_starts_at_mark_read_not_at_history_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let (o, group) = (hex::encode(owner), "0f".repeat(16));
+    let (og, gid) = (o.clone(), group.clone());
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            rekindle_db::repo::messages::insert_dm(
+                conn,
+                &rekindle_db::repo::messages::NewDm {
+                    owner_key: &og,
+                    peer_key: &gid,
+                    conversation_type: ConversationType::GroupDm,
+                    expire_seconds: 60,
+                    expire_at: None,
+                    sender_key: &"b".repeat(64),
+                    body: "psst",
+                    timestamp: 1_000,
+                    is_read: false,
+                    message_id: "m-1",
+                    reply_to: None,
+                    send_state: rekindle_types::message::SendState::Delivered,
+                    stream_seq: None,
+                },
+            )
+        })
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        let shown = rekindle_transport::operations::group_dm::messages(&friends, &group, 50, None)
+            .await
+            .unwrap();
+        assert_eq!(shown[0].expire_at, None, "a history load starts nothing");
+    }
+    rekindle_transport::operations::group_dm::mark_read(&friends, &group)
+        .await
+        .unwrap();
+    let shown = rekindle_transport::operations::group_dm::messages(&friends, &group, 50, None)
+        .await
+        .unwrap();
+    assert!(shown[0].expire_at.is_some(), "marked read: started");
+}

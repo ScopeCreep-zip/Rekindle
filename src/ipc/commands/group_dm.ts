@@ -40,4 +40,7 @@ export const groupDmCommands = {
    *  oldest first. */
   groupDmMessages: (groupId: string, limit: number, before?: number) =>
     hostInvoke<DmMessage[]>("group_dm_messages", { groupId, limit, before: before ?? null }),
+  /** The group window painted its messages: received disappearing timers
+   *  start (plan E7.1); a history load alone starts none. */
+  groupDmMarkRead: (groupId: string) => hostInvoke<unknown>("group_dm_mark_read", { groupId }),
 };

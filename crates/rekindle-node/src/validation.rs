@@ -390,7 +390,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmSend { .. }
         | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::GroupDmList
-        | IpcRequest::GroupDmMessages { .. } => group_dm::check(request),
+        | IpcRequest::GroupDmMessages { .. }
+        | IpcRequest::GroupDmMarkRead { .. } => group_dm::check(request),
         IpcRequest::GameInviteSend {
             public_key: key,
             game_id,

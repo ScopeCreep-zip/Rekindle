@@ -94,8 +94,8 @@ pub struct Expired {
 }
 
 /// Delete, in one transaction, every message whose `expire_at` is at or
-/// before `now` (ms), with the outbox rows of our own (their sends stop);
-/// the FTS triggers drop their index rows. What went, by conversation.
+/// before `now` (ms), with their `outbox`, `message_send_log` and
+/// `unprocessed` rows; the FTS triggers drop their index rows. What went, by conversation.
 ///
 /// # Errors
 /// The transaction failed; nothing was deleted.
@@ -124,10 +124,15 @@ pub fn delete_expired(
             rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, e.into())
         })?;
         if let Some(id) = &client_id {
-            tx.execute(
+            // Its sends stop, its logged plaintext goes (no RetryRequest can
+            // resend it), and a received one's leftover row cannot replay it.
+            for sql in [
                 "DELETE FROM outbox WHERE owner_key = ?1 AND client_id = ?2",
-                params![owner_key, id],
-            )?;
+                "DELETE FROM message_send_log WHERE owner_key = ?1 AND client_id = ?2",
+                "DELETE FROM unprocessed WHERE owner_key = ?1 AND client_id = ?2",
+            ] {
+                tx.execute(sql, params![owner_key, id])?;
+            }
         }
         match out.last_mut() {
             Some(e) if e.conversation_id == conversation_id => e.client_ids.extend(client_id),

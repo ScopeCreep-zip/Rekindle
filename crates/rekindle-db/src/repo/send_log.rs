@@ -35,6 +35,9 @@ pub struct LoggedSend {
     pub plaintext: Vec<u8>,
     /// Milliseconds.
     pub sent_at: i64,
+    /// The content's client id (plan E7.1: its expiry deletes this row);
+    /// `None` for a kind with none.
+    pub client_id: Option<String>,
 }
 
 /// The plaintext is never printed.
@@ -54,7 +57,7 @@ impl std::fmt::Debug for LoggedSend {
 pub fn insert(conn: &Connection, owner: &[u8; 32], sent: &LoggedSend) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO message_send_log (owner_key, peer, msg_id, type_id, ratchet_key, \
-         plaintext_sealed, sent_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         plaintext_sealed, sent_at, client_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             identity_text(owner),
             identity_text(&sent.peer),
@@ -62,7 +65,8 @@ pub fn insert(conn: &Connection, owner: &[u8; 32], sent: &LoggedSend) -> rusqlit
             sent.type_id,
             sent.ratchet_key,
             sent.plaintext,
-            sent.sent_at
+            sent.sent_at,
+            sent.client_id
         ],
     )?;
     Ok(())
@@ -79,7 +83,7 @@ pub fn get(
     msg_id: &[u8; 32],
 ) -> rusqlite::Result<Option<LoggedSend>> {
     conn.query_row(
-        "SELECT type_id, ratchet_key, plaintext_sealed, sent_at FROM message_send_log \
+        "SELECT type_id, ratchet_key, plaintext_sealed, sent_at, client_id FROM message_send_log \
          WHERE owner_key = ?1 AND peer = ?2 AND msg_id = ?3 AND archived_at IS NULL",
         params![identity_text(owner), identity_text(peer), msg_id],
         |row| {
@@ -90,6 +94,7 @@ pub fn get(
                 ratchet_key: row.get(1)?,
                 plaintext: row.get(2)?,
                 sent_at: row.get(3)?,
+                client_id: row.get(4)?,
             })
         },
     )
@@ -158,6 +163,7 @@ mod tests {
             ratchet_key: [9; 32],
             plaintext: vec![id; 8],
             sent_at,
+            client_id: None,
         }
     }
 

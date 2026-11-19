@@ -20,9 +20,9 @@
 mod body;
 mod frame;
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod group_tests;
+#[cfg(test)]
+mod tests;
 mod type_id;
 
 pub use body::{

@@ -255,6 +255,9 @@ pub enum IpcRequest {
         limit: u32,
         before: Option<i64>,
     },
+    /// The group's window displayed its messages (plan E7.1): the
+    /// received messages whose disappearing timer had not started start it.
+    GroupDmMarkRead { group_id: String },
 
     // ── Intents (plan D3.3, ADR 0019) ──────────────────────────────
     /// Commit a held action with the proof its review asked for.

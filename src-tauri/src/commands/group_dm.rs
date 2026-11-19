@@ -98,6 +98,16 @@ pub async fn group_dm_list(
     host_call::call(&state, IpcRequest::GroupDmList).await
 }
 
+/// The group's window displayed its messages: received disappearing
+/// timers start (`IpcRequest::GroupDmMarkRead`, plan E7.1).
+#[tauri::command]
+pub async fn group_dm_mark_read(
+    group_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<()>, CommandError> {
+    host_call::call(&state, IpcRequest::GroupDmMarkRead { group_id }).await
+}
+
 /// The newest `limit` messages of a group before `before` (ms), oldest
 /// first (`IpcRequest::GroupDmMessages`).
 #[tauri::command]
