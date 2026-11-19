@@ -207,7 +207,11 @@ pub(super) async fn selection(
             s.reversibility = Reversibility::NeedsOthers;
             s.notifies = Notifies::Subject;
         }
-        IpcRequest::DmSend { peer_key, .. } => {
+        IpcRequest::DmSend { peer_key, .. }
+        | IpcRequest::GameInviteSend {
+            public_key: peer_key,
+            ..
+        } => {
             s.subject = person(ctx, peer_key).await?;
             s.notifies = Notifies::Subject;
             s.escalations.extend(key_change(ctx, peer_key).await?);

@@ -78,6 +78,8 @@ export const systemCommands = {
   getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
   launchGameToServer: (gameId: number, serverAddress: string) =>
     invoke<void>("launch_game_to_server", { gameId, serverAddress }),
+  sendGameInvite: (publicKey: string, gameId: number, server: string) =>
+    hostInvoke<string>("send_game_invite", { publicKey, gameId, server }),
 
   // Settings
   getPreferences: () => invoke<Preferences>("get_preferences"),

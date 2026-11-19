@@ -150,6 +150,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::HiddenGamesGet
             | Self::GameHide { .. }
             | Self::GameUnhide { .. }
+            | Self::GameInviteSend { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AvatarGet { .. }
             | Self::AuditVerify
@@ -237,6 +238,15 @@ impl IpcRequest {
                 .debug_struct("GameUnhide")
                 .field("game_id", game_id)
                 .finish(),
+            Self::GameInviteSend {
+                public_key,
+                game_id,
+                ..
+            } => f
+                .debug_struct("GameInviteSend")
+                .field("public_key", public_key)
+                .field("game_id", game_id)
+                .finish_non_exhaustive(),
             Self::ProfileSetAvatar { image, kind } => f
                 .debug_struct("ProfileSetAvatar")
                 .field("image_len", &image.len())

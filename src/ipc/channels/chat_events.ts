@@ -133,7 +133,10 @@ export type FriendEvent =
   | { identityPinMismatch: { peerKey: string; displayName: string } }
   | { identityPinRestored: { peerKey: string } }
   | { verificationChanged: { peerKey: string; verified: boolean } }
-  | { blockChanged: { peerKey: string; blocked: boolean } };
+  | { blockChanged: { peerKey: string; blocked: boolean } }
+  /** An accepted friend invites us to their game server (plan E7.2);
+   *  `server` is the Host-parsed host:port. Joining is reviewed. */
+  | { gameInvite: { peerKey: string; gameId: number; server: string } };
 
 /** Peer on the other end of a direct call; absent for a group call. */
 export interface DirectCallInfo {

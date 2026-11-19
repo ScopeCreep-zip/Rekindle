@@ -72,6 +72,11 @@ pub(crate) async fn route(
         IpcRequest::AuditVerify => handle_audit_verify(ctx, state).await,
         IpcRequest::AuditExport { since } => handle_audit_export(ctx, state, since).await,
         IpcRequest::LinkOpen { url } => handle_link_open(&url),
+        IpcRequest::GameInviteSend {
+            public_key,
+            game_id,
+            server,
+        } => super::own_game_invite::send(ctx, state, &public_key, game_id, server).await,
         other => unreachable!("{} is not one of our own requests", other.name()),
     }
 }

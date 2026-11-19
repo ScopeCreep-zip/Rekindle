@@ -72,9 +72,9 @@ impl DaemonHandler {
             transport,
             mek_rotation_tx,
             gossip_tx,
-            strength,
             clock,
             host,
+            strength,
         }
     }
 

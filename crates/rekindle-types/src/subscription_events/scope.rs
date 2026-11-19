@@ -199,7 +199,8 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::IdentityPinMismatch { peer_key, .. }
         | FriendEvent::IdentityPinRestored { peer_key }
         | FriendEvent::VerificationChanged { peer_key, .. }
-        | FriendEvent::BlockChanged { peer_key, .. } => peer_key,
+        | FriendEvent::BlockChanged { peer_key, .. }
+        | FriendEvent::GameInvite { peer_key, .. } => peer_key,
     }
 }
 

@@ -153,6 +153,7 @@
 '.game-time-empty' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.game-time-name' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.game-time-total' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.game-invite' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.game-time-last' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.bio-count' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.bio-count-over' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }

@@ -169,6 +169,7 @@ fn samples() -> Vec<DirectBody> {
             last_seen: 1_700_000_000,
             route_blob: vec![7; 20],
         }),
+        DirectBody::GameInvite(body::game_invite_sample()),
         DirectBody::ProfileBio(body::profile_bio_sample()),
         DirectBody::GameTotals(body::game_totals_sample()),
         DirectBody::CallInvite(CallInvite {

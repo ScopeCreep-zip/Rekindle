@@ -299,6 +299,15 @@ struct StatusRequest {
   targetPubkey @0 :Text;
 }
 
+# 0x0170 (E7.2), inside the ratchet: an invite to join us on a game
+# server. `server` is a `ServerAddress` (host:port), parsed on decode; an
+# invalid one refuses the frame. No join secret: no game SDK mints or
+# checks one.
+struct GameInvite {
+  gameId @0 :UInt32;
+  server @1 :Text;
+}
+
 # 0x0171 (E7.2), inside the ratchet: our bio, on change and to a newly
 # accepted friend; empty clears it. 190 characters at most, refused on
 # decode past that. Never in the profile record (see GameTotals).

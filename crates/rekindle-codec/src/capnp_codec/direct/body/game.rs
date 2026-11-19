@@ -2,7 +2,41 @@
 //! with friends.
 
 use crate::capnp_codec::{capnp_err, CodecError};
-use crate::direct_capnp::{game_totals, profile_bio};
+use crate::direct_capnp::{game_invite, game_totals, profile_bio};
+use rekindle_types::game_server::ServerAddress;
+
+/// 0x0170 GameInvite: join us on `server` in game `game_id`. The decoder
+/// parses `server` with [`ServerAddress::parse`], so an address that could
+/// carry a path, query or launch argument never leaves the codec.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameInvite {
+    pub game_id: u32,
+    pub server: ServerAddress,
+}
+
+impl GameInvite {
+    pub(super) fn write(&self, mut b: game_invite::Builder<'_>) {
+        b.set_game_id(self.game_id);
+        b.set_server(self.server.as_str());
+    }
+
+    pub(super) fn read(r: game_invite::Reader<'_>) -> Result<Self, CodecError> {
+        let game_id = r.get_game_id();
+        if game_id == 0 {
+            return Err(CodecError::Deserialization(
+                "GameInvite names game 0".into(),
+            ));
+        }
+        let text = r
+            .get_server()
+            .map_err(|e| capnp_err(&e))?
+            .to_str()
+            .map_err(|e| CodecError::Deserialization(format!("GameInvite: {e}")))?;
+        let server = ServerAddress::parse(text)
+            .map_err(|e| CodecError::Deserialization(format!("GameInvite server: {e}")))?;
+        Ok(Self { game_id, server })
+    }
+}
 
 /// 0x0171 ProfileBio: our bio, `None` clearing it. The decoder holds it to
 /// `rekindle_types::presence::limits::bio` (190 characters, no control
@@ -87,6 +121,15 @@ impl GameTotals {
     }
 }
 
+/// An invite sample for the every-body round trip.
+#[cfg(test)]
+pub(crate) fn invite_sample() -> GameInvite {
+    GameInvite {
+        game_id: 4181,
+        server: ServerAddress::parse("203.0.113.7:27015").unwrap(),
+    }
+}
+
 /// A bio sample for the every-body round trip.
 #[cfg(test)]
 pub(crate) fn bio_sample() -> ProfileBio {
@@ -134,6 +177,34 @@ mod tests {
         assert_eq!(
             DirectBody::decode(DmTypeId::ProfileBio, &bytes).unwrap(),
             DirectBody::ProfileBio(ProfileBio { bio: None })
+        );
+    }
+
+    /// Plan E7.2: a `GameInvite` whose server is not a plain host:port (a
+    /// URI, a launch argument, no port) or that names game 0 is refused on
+    /// decode, so it is never shown or launched.
+    #[test]
+    fn bad_game_invites_are_refused() {
+        let bytes = |game_id: u32, server: &str| {
+            crate::capnp_codec::direct::encode_root::<game_invite::Owned>(|mut b| {
+                b.set_game_id(game_id);
+                b.set_server(server);
+            })
+        };
+        for server in [
+            "steam://connect/1.2.3.4:27015",
+            "1.2.3.4:27015 +exec x",
+            "1.2.3.4",
+        ] {
+            assert!(DirectBody::decode(DmTypeId::GameInvite, &bytes(7, server)).is_err());
+        }
+        assert!(DirectBody::decode(DmTypeId::GameInvite, &bytes(0, "1.2.3.4:27015")).is_err());
+        assert_eq!(
+            DirectBody::decode(DmTypeId::GameInvite, &bytes(7, "1.2.3.4:27015")).unwrap(),
+            DirectBody::GameInvite(GameInvite {
+                game_id: 7,
+                server: ServerAddress::parse("1.2.3.4:27015").unwrap(),
+            })
         );
     }
 

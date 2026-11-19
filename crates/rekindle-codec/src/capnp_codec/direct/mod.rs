@@ -26,12 +26,13 @@ mod type_id;
 pub use body::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DirectBody,
     DmAck, DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
-    FriendsKey, GameTotal, GameTotals, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft,
-    GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite, GroupDmLeave, GroupId,
-    IdentityRotated, PreKeyRejected, ProfileBio, ProfileKeyRotated, ReadUpTo, RegisterPushRelay,
-    RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RequestAuth, RetryRequest,
-    SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse, StreamRecord, Typing,
-    UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS, MAX_GAME_TOTALS,
+    FriendsKey, GameInvite, GameTotal, GameTotals, GroupCallMember, GroupCallOffer,
+    GroupCallParticipantLeft, GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite,
+    GroupDmLeave, GroupId, IdentityRotated, PreKeyRejected, ProfileBio, ProfileKeyRotated,
+    ReadUpTo, RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw,
+    RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StatusRequest,
+    StatusResponse, StreamRecord, Typing, UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS,
+    MAX_GAME_TOTALS,
 };
 pub use frame::{
     ContentHint, DmContent, DmFrame, FrameBody, PqPrekey, PreKeyInitBody, RatchetBody,

@@ -324,6 +324,15 @@ pub enum IpcRequest {
     GameHide { game_id: u32 },
     /// Take a game off the hide list (plan E7.2). The hide list comes back.
     GameUnhide { game_id: u32 },
+    /// Invite an accepted friend to join us on a game server (plan E7.2): a
+    /// ratchet-sealed `GameInvite` (0x0170) through the outbox. `server`
+    /// is parsed on decode, so no unparsed address enters. Refused for a
+    /// hidden game and while `share_current_game` is off. The outbox id.
+    GameInviteSend {
+        public_key: String,
+        game_id: u32,
+        server: rekindle_types::game_server::ServerAddress,
+    },
     /// Change our avatar: the image, of the kind its sender declares (the
     /// file picker's MIME type, the file's extension), is decoded by
     /// `rekindle-image` as that kind only, made a 128 px WebP, saved and

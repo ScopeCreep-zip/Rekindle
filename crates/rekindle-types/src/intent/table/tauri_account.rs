@@ -38,6 +38,7 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
         "launch_game_to_server",
         Some(IntentKind::LaunchGameToServer),
     ),
+    ("send_game_invite", Some(IntentKind::SendDmMessage)),
     ("volunteer_relay", Some(IntentKind::VolunteerRelay)),
     ("revoke_relay", Some(IntentKind::RevokeRelay)),
     ("list_received_relay_offers", None),

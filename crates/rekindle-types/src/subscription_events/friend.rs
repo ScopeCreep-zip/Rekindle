@@ -124,4 +124,13 @@ pub enum FriendEvent {
     /// also removes the friend ([`Self::Removed`]).
     /// Triggered by: the `FriendBlock` / `FriendUnblock` actions.
     BlockChanged { peer_key: String, blocked: bool },
+    /// An accepted friend invites us to join them on a game server (plan
+    /// E7.2). `server` is a parsed `ServerAddress` (host:port), shown as is;
+    /// joining is a separate, reviewed action.
+    /// Triggered by: an inbound 1:1 `GameInvite` (0x0170).
+    GameInvite {
+        peer_key: String,
+        game_id: u32,
+        server: crate::game_server::ServerAddress,
+    },
 }

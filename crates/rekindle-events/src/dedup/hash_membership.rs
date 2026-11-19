@@ -280,6 +280,16 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(peer_key.as_bytes());
             h.update(&[u8::from(*verified)]);
         }
+        FriendEvent::GameInvite {
+            peer_key,
+            game_id,
+            server,
+        } => {
+            h.update(b"game_invite|");
+            h.update(peer_key.as_bytes());
+            h.update(&game_id.to_le_bytes());
+            h.update(server.as_str().as_bytes());
+        }
         FriendEvent::BlockChanged { peer_key, blocked } => {
             h.update(b"blocked|");
             h.update(peer_key.as_bytes());

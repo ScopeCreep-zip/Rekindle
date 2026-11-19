@@ -40,7 +40,7 @@ pub(super) async fn accepted(host: &Host, owner: [u8; 32], peer: [u8; 32]) {
 }
 
 /// The events already in `stream`, as text.
-async fn drain(stream: &mut rekindle_events::EventStream) -> Vec<String> {
+pub(super) async fn drain(stream: &mut rekindle_events::EventStream) -> Vec<String> {
     let mut seen = Vec::new();
     while let Ok(Some(frame)) =
         tokio::time::timeout(std::time::Duration::from_millis(200), stream.next()).await
@@ -51,7 +51,7 @@ async fn drain(stream: &mut rekindle_events::EventStream) -> Vec<String> {
 }
 
 /// How many of `events` mention `needle`.
-fn mentions(events: &[String], needle: &str) -> usize {
+pub(super) fn mentions(events: &[String], needle: &str) -> usize {
     events.iter().filter(|e| e.contains(needle)).count()
 }
 

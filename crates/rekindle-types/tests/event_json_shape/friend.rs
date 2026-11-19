@@ -24,6 +24,7 @@ pub const NAMES: &[&str] = &[
     "identityPinRestored",
     "verificationChanged",
     "blockChanged",
+    "gameInvite",
 ];
 
 pub fn variant_name(e: &FriendEvent) -> &'static str {
@@ -47,6 +48,7 @@ pub fn variant_name(e: &FriendEvent) -> &'static str {
         FriendEvent::IdentityPinRestored { .. } => "identityPinRestored",
         FriendEvent::VerificationChanged { .. } => "verificationChanged",
         FriendEvent::BlockChanged { .. } => "blockChanged",
+        FriendEvent::GameInvite { .. } => "gameInvite",
     }
 }
 
@@ -168,6 +170,15 @@ pub fn samples() -> Vec<Sample> {
             FriendEvent::BlockChanged {
                 peer_key: pk('b'),
                 blocked: false,
+            },
+        ),
+        ev(
+            "gameInvite",
+            FriendEvent::GameInvite {
+                peer_key: pk('b'),
+                game_id: 4181,
+                server: rekindle_types::game_server::ServerAddress::parse("203.0.113.7:27015")
+                    .unwrap(),
             },
         ),
     ]

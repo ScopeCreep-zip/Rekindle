@@ -140,6 +140,7 @@ impl IpcRequest {
             Self::HiddenGamesGet => ("HiddenGamesGet", Query, Authenticated),
             Self::GameHide { .. } => ("GameHide", Write, Authenticated),
             Self::GameUnhide { .. } => ("GameUnhide", Write, Authenticated),
+            Self::GameInviteSend { .. } => ("GameInviteSend", Write, Authenticated),
             Self::ProfileSetAvatar { .. } => ("ProfileSetAvatar", Write, Authenticated),
             Self::AvatarGet { .. } => ("AvatarGet", Query, Authenticated),
             Self::SkinList => ("SkinList", Query, Authenticated),

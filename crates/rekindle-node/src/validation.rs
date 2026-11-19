@@ -347,6 +347,16 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. } => group_dm::check(request),
+        IpcRequest::GameInviteSend {
+            public_key: key,
+            game_id,
+            ..
+        } => {
+            if *game_id == 0 {
+                return Err(IpcResponse::error(400, "invalid game id: 0"));
+            }
+            public_key(key, "public key")
+        }
         IpcRequest::AvatarGet { public_key: key }
         | IpcRequest::FriendGameTotalsGet { public_key: key }
         | IpcRequest::FriendBioGet { public_key: key }

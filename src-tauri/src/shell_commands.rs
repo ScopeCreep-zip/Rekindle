@@ -100,6 +100,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("get_hidden_games", HostCall::Request("HiddenGamesGet")),
     ("hide_game", HostCall::Request("GameHide")),
     ("unhide_game", HostCall::Request("GameUnhide")),
+    ("send_game_invite", HostCall::Request("GameInviteSend")),
     ("set_avatar", HostCall::Request("ProfileSetAvatar")),
     ("get_avatar", HostCall::Request("AvatarGet")),
     ("get_skin", HostCall::Request("SkinGet")),

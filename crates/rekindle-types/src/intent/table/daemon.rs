@@ -173,6 +173,9 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("HiddenGamesGet", None),
     ("GameHide", Some(IntentKind::SetPreferences)),
     ("GameUnhide", Some(IntentKind::ShareCurrentGame)),
+    // An invite is a message to one friend (plan E7.2); joining from one is
+    // the shell's `launch_game_to_server` (`LaunchGameToServer`, Routine).
+    ("GameInviteSend", Some(IntentKind::SendDmMessage)),
     ("AvatarGet", None),
     ("SkinList", None),
     ("SkinGet", None),

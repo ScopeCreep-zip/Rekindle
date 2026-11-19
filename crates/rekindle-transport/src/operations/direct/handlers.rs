@@ -13,7 +13,8 @@ use super::Routed;
 use crate::operations::dm::{client_id_text, NewDmFields};
 use crate::operations::friend::inbound::{self, IncomingFriendAccept, IncomingFriendRequest};
 use crate::operations::friend::{
-    bio, game_totals, identity_rotation, presence_key, session_reset, state, FriendHost,
+    bio, game_invite, game_totals, identity_rotation, presence_key, session_reset, state,
+    FriendHost,
 };
 use crate::operations::{relay, typing};
 
@@ -119,6 +120,9 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         }
         DirectBody::ProfileBio(b) => {
             applied = bio::on_profile_bio(host, sender, b).await;
+        }
+        DirectBody::GameInvite(i) => {
+            applied = game_invite::on_game_invite(host, sender, i);
         }
         DirectBody::GameTotals(t) => {
             applied = game_totals::on_game_totals(host, sender, t).await;

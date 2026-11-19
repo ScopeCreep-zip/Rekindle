@@ -341,6 +341,7 @@ macro_rules! game_commands {
         commands::game::unhide_game,
         commands::game::get_game_name,
         commands::game::launch_game_to_server,
+        commands::game::send_game_invite,
     ] $($rest)*) };
 }
 

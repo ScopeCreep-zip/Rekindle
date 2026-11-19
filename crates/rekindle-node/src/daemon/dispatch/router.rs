@@ -156,6 +156,7 @@ async fn route(
         | IpcRequest::HiddenGamesGet
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }
+        | IpcRequest::GameInviteSend { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::GamePresenceSet { .. }

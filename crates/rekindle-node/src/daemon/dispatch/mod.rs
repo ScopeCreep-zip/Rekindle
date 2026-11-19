@@ -43,6 +43,7 @@ mod member_block;
 mod onboarding;
 mod own;
 mod own_game;
+mod own_game_invite;
 mod pins;
 mod rich_messaging;
 mod router;

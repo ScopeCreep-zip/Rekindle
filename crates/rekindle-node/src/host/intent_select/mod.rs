@@ -104,6 +104,7 @@ pub(crate) async fn select(
         | IpcRequest::IdentityMarkVerified { .. }
         | IpcRequest::IdentityClearVerification { .. }
         | IpcRequest::DmSend { .. }
+        | IpcRequest::GameInviteSend { .. }
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::OutboxDiscard { .. } => friends::selection(ctx, request, &mut s).await?,
         IpcRequest::GroupDmCreate { .. }

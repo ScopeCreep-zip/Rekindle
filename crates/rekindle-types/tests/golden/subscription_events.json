@@ -333,6 +333,15 @@
       }
     }
   },
+  "friend.gameInvite": {
+    "friend": {
+      "gameInvite": {
+        "gameId": 4181,
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "server": "203.0.113.7:27015"
+      }
+    }
+  },
   "friend.groupChanged": {
     "friend": {
       "groupChanged": {

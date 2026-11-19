@@ -410,6 +410,7 @@ impl App {
                 | FriendEvent::Reachability { .. }
                 | FriendEvent::IdentityPinRestored { .. }
                 | FriendEvent::BlockChanged { .. }
+                | FriendEvent::GameInvite { .. }
                 | FriendEvent::GroupChanged { .. }
                 | FriendEvent::NicknameChanged { .. }
                 | FriendEvent::DisplayNameChanged { .. }

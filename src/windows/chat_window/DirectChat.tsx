@@ -18,6 +18,7 @@ import { subscribeCallEvents } from "../../handlers/calls.handlers";
 import { hydrateState } from "../../stores/hydrate";
 import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP, ICON_SHIELD } from "../../icons";
 import SafetyNumberPanel from "../../components/profile/SafetyNumberPanel";
+import GameInviteList from "../../components/chat/GameInviteList";
 import VerifiedBadge from "../../components/profile/VerifiedBadge";
 import { useSafetyNumber } from "../../hooks/useSafetyNumber";
 import { identityPinMismatchText } from "../../utils/identity_pin";
@@ -200,6 +201,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         </div>
       </Show>
       <div id="main-content" tabindex="-1" class="window-main">
+      <GameInviteList peerId={peerId} peerName={peerName()} />
       <MessageList
         messages={messages()}
         ownName={ownName()}

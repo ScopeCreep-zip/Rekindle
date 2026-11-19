@@ -40,6 +40,24 @@ pub async fn launch_game_to_server(game_id: u32, server_address: String) -> Resu
         .map_err(|e| e.to_string())
 }
 
+/// Invite an accepted friend to join us on a game server
+/// (`IpcRequest::GameInviteSend`, plan E7.2). `server` arrives parsed: a
+/// text that is not `host:port` fails to deserialize. The outbox id.
+#[tauri::command]
+pub async fn send_game_invite(
+    public_key: String,
+    game_id: u32,
+    server: rekindle_game_detect::launcher::ServerAddress,
+    state: State<'_, SharedState>,
+) -> Result<Done<String>, CommandError> {
+    let request = IpcRequest::GameInviteSend {
+        public_key,
+        game_id,
+        server,
+    };
+    host_call::call(&state, request).await
+}
+
 /// Our time in each detected game, the most recent first
 /// (`IpcRequest::GameTotalsGet`, plan E7.2).
 #[tauri::command]

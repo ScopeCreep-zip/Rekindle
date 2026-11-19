@@ -140,6 +140,7 @@ impl IpcRequest {
             | Self::GroupDmList
             | Self::GroupDmMessages { .. } => Some(C::ImHistory),
             Self::DmSend { .. }
+            | Self::GameInviteSend { .. }
             | Self::OutboxRetry { .. }
             | Self::OutboxDiscard { .. }
             | Self::GroupDmCreate { .. }
