@@ -27,6 +27,7 @@ pub mod ingest;
 pub mod mentions;
 pub mod notifications;
 pub mod outbox_chain;
+pub mod outbox_seal;
 pub mod pipeline;
 pub mod polls;
 pub mod reactions;
