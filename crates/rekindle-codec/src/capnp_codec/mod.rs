@@ -93,6 +93,11 @@ pub(crate) fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocat
     output
 }
 
+/// The deepest pointer nesting a decoder follows (security roadmap 2.11;
+/// capnp's default is 64). No Rekindle schema nests deeper than a handful
+/// of levels; `at_cap_tests` decodes every type at its carrier's cap.
+pub(crate) const NESTING_LIMIT: i32 = 16;
+
 /// Deserialize packed bytes into a Cap'n Proto message reader within
 /// `bound`: input longer than `bound.max_bytes` is refused before it is
 /// scanned, and a message of more than `bound.max_words` words while it is
@@ -100,7 +105,9 @@ pub(crate) fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocat
 /// datagram could otherwise unpack into megabytes (the traversal limit
 /// also bounds the segment sizes the header may claim). Every decoder reads
 /// through here with its type's bound from [`bounds`]; there is no
-/// unbounded reader (`cargo xtask check-capnp-bounds`).
+/// unbounded reader (`cargo xtask check-capnp-bounds`). Pointers nest at
+/// most [`NESTING_LIMIT`] deep (roadmap 2.11), so a peer cannot make the
+/// reader recurse through a chain of nested structs or lists.
 pub(crate) fn unpack_bounded(
     data: &[u8],
     bound: bounds::Bound,
@@ -114,6 +121,7 @@ pub(crate) fn unpack_bounded(
     }
     let mut options = capnp::message::ReaderOptions::new();
     options.traversal_limit_in_words(Some(bound.max_words));
+    options.nesting_limit(NESTING_LIMIT);
     capnp::serialize_packed::read_message(data, options).map_err(|e| capnp_err(&e))
 }
 

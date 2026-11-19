@@ -240,3 +240,48 @@ fn a_short_prekey_or_signature_is_refused() {
     assert!(identity::decode_opk_slot(&super::pack(&builder)).is_err());
     assert!(identity::decode_prekey_head(b"not a head").is_err());
 }
+
+/// Packed bytes of a chain of `depth` structs, each holding one pointer to
+/// the next, written as raw words (no schema nests this deep).
+fn nested_chain(depth: usize) -> Vec<u8> {
+    // A struct pointer at offset 0 with no data words and one pointer.
+    const NEXT: u64 = 1 << 48;
+    let words = depth + 1;
+    let mut raw = Vec::with_capacity(8 * (words + 1));
+    raw.extend_from_slice(&0u32.to_le_bytes());
+    raw.extend_from_slice(&u32::try_from(words).expect("small").to_le_bytes());
+    for _ in 0..depth {
+        raw.extend_from_slice(&NEXT.to_le_bytes());
+    }
+    raw.extend_from_slice(&0u64.to_le_bytes());
+    let reader = capnp::serialize::read_message(&raw[..], capnp::message::ReaderOptions::new())
+        .expect("raw message");
+    let mut builder = capnp::message::Builder::new_default();
+    builder
+        .set_root(
+            reader
+                .get_root::<capnp::any_pointer::Reader<'_>>()
+                .expect("root"),
+        )
+        .expect("copy");
+    super::pack(&builder)
+}
+
+#[test]
+fn a_message_nested_deeper_than_the_limit_is_refused() {
+    let bound = super::bounds::Bound {
+        max_bytes: 4096,
+        max_words: 4096,
+    };
+    let walk = |depth: usize| {
+        let message = super::unpack_bounded(&nested_chain(depth), bound).expect("unpack");
+        message
+            .get_root::<capnp::any_pointer::Reader<'_>>()
+            .and_then(|root| root.target_size())
+            .map(|_| ())
+    };
+    let limit = usize::try_from(super::NESTING_LIMIT).expect("positive");
+    assert!(walk(limit - 1).is_ok(), "a chain inside the limit reads");
+    let err = walk(limit + 4).expect_err("a deeper chain is refused");
+    assert!(err.to_string().contains("nested"), "{err}");
+}
