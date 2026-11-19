@@ -295,7 +295,8 @@ impl HostGovernance {
 }
 
 /// The member records whose channel outbox a departure in `state` heads
-/// and `prev` did not (plan E3.3).
+/// and `prev` did not (plan E3.3), in record order (the reads they start
+/// run in it, C9.2).
 fn new_outbox_heads(
     prev: Option<&rekindle_governance::state::GovernanceState>,
     state: &rekindle_governance::state::GovernanceState,
@@ -309,5 +310,7 @@ fn new_outbox_heads(
                 .and_then(|h| h.get(record));
             (before != Some(now)).then(|| record.clone())
         })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
         .collect()
 }

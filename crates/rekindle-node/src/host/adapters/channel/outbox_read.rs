@@ -276,7 +276,12 @@ impl HostChannel {
         });
         let members =
             (state.members.iter()).map(|(author, member)| (author, &member.member_record));
-        for (author, record) in members.chain(departed) {
+        // In author order: the merged state's maps iterate in an order of
+        // their own per instance, and each read's DHT calls go out in the
+        // order the reads run (C9.2, one seed one trace).
+        let mut authors: Vec<_> = members.chain(departed).collect();
+        authors.sort_unstable_by_key(|(author, _)| author.0);
+        for (author, record) in authors {
             self.read_author_outbox(community_id, author, record, true)
                 .await;
         }

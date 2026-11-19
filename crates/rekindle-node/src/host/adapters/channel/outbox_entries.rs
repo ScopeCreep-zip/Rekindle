@@ -36,8 +36,11 @@ impl HostChannel {
             let (head, _) = heads.get(record)?.iter().next_back()?;
             Some((author.clone(), record.clone(), u64::from(*head)))
         });
+        // In author order, as the catch-up reads (`catch_up_outboxes`).
+        let mut authors: Vec<_> = members.chain(departed).collect();
+        authors.sort_unstable_by_key(|(author, _, _)| author.0);
         let mut entries = Vec::new();
-        for (author, record, through) in members.chain(departed).collect::<Vec<_>>() {
+        for (author, record, through) in authors {
             match read_log_after(&*port, &record, OUTBOX, 0).await {
                 Ok(read) => entries.extend(
                     (read.entries.iter())
