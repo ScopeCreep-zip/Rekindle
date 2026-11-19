@@ -221,9 +221,7 @@ impl shell_hooks::ShellHooks for Recorder {
 }
 
 /// In the shell the gossip worker does not run, so the Host's own gossip
-/// (the governance-op fast path, the join announcement, the `HeadAdvanced`
-/// hints) goes to the shell's mesh; queued on the worker it was dropped and
-/// a kick reached the removed member only through the frontier watch.
+/// goes to the shell's mesh; queued on the worker it was dropped.
 #[tokio::test]
 async fn the_host_gossips_through_the_shell_mesh() {
     use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};

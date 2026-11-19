@@ -484,13 +484,8 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         op_ref: &rekindle_types::governance::OpRef,
         logs: &crate::op_walk::WalkLogCache,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
-    /// Gossip our just-stored op to the community mesh (`governanceOp @74`,
-    /// the fast path: every member hears it before its watch fires). It
-    /// runs before the op's state is installed, while the overlay is still
-    /// the one the op was written against: a `MemberRemoved` or `BanEntry`
-    /// prunes its target from the overlay at the install
-    /// (`projection::prune_departed`), and the target must still hear the
-    /// op that removes it, or it learns only through our frontier watch.
+    /// Gossip our stored op (`governanceOp @74`) before its install, which
+    /// prunes a removed member that must still hear the op removing it.
     fn gossip_governance_op(&self, community_id: &str, encoded: &[u8]);
 
     /// Queue our encoded op on the governance-op outbox stream
