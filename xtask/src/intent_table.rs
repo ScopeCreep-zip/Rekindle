@@ -1,5 +1,5 @@
 //! `check-intent-table` (rule B23, plan U1.2): every Tauri command
-//! registered in `src-tauri/src/invoke.rs` and every `IpcRequest` variant
+//! registered in `src-tauri/src/invoke.rs` (its domain macros) and every `IpcRequest` variant
 //! is classified in `rekindle_types::intent::COMMAND_TABLE`, and the table
 //! names nothing that does not exist. A new command does not ship until it
 //! is an intent of some class or listed as not one, so no frontend can
@@ -15,7 +15,7 @@ const IPC_PROTOCOL: &str = "crates/rekindle-ipc/src/protocol/mod.rs";
 const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community";
 const TABLE: &str = "crates/rekindle-types/src/intent/table";
 
-/// The command names in `invoke.rs`'s `generate_handler!` list.
+/// The command names in `invoke.rs`'s domain lists.
 fn tauri_commands(src: &str) -> Vec<String> {
     src.split("commands::")
         .skip(1)

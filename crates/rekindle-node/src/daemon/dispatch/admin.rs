@@ -35,6 +35,9 @@ pub(crate) fn handle_network_status(ctx: &DaemonContext, state: DaemonState) -> 
         "peer_count": snap.peer_count,
         "route_allocated": snap.route_allocated,
         "route_age_secs": snap.route_age_secs,
+        // The indicator's smoothed bars (plan E7.2), as `NetworkEvent::Strength`
+        // last published them, so the CLI and a late-starting TUI show them.
+        "bars": ctx.network_strength.shown(),
         "circuit_summary": {
             "total": circuit.total,
             "healthy": circuit.healthy,

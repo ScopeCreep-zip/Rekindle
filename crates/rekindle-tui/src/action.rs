@@ -266,4 +266,9 @@ pub enum CommandResult {
     OwnPresenceLoaded {
         view: rekindle_types::dto::presence::OwnPresenceView,
     },
+    /// The Host's network bars when the TUI started (`NetworkStatus`,
+    /// plan E7.2), live after this from `NetworkEvent::Strength`.
+    NetworkBarsLoaded {
+        bars: u8,
+    },
 }

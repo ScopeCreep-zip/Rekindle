@@ -101,6 +101,21 @@ impl App {
                 )));
             }
 
+            // The network bars now (plan E7.2), live after this from
+            // `NetworkEvent::Strength`: a TUI started after the last change
+            // would otherwise show none.
+            if let Some(bars) = client
+                .request_ok(IpcRequest::NetworkStatus)
+                .await
+                .ok()
+                .and_then(|v| v.get("bars").and_then(serde_json::Value::as_u64))
+                .and_then(|b| u8::try_from(b).ok())
+            {
+                let _ = tx.send(Action::CommandComplete(Box::new(
+                    CommandResult::NetworkBarsLoaded { bars },
+                )));
+            }
+
             // Friend list (for dashboard friends panel)
             if let Ok(Ok(friends)) = client
                 .request_ok(IpcRequest::FriendList)

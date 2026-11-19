@@ -273,6 +273,9 @@ pub struct DaemonContext {
     pub(crate) own_prekey_writes: Arc<tokio::sync::Mutex<()>>,
     /// The game stage, running only while detection is on (plan E7.2).
     pub(crate) game: crate::host::game_stage::GameControl,
+    /// The network indicator's smoothed bars (plan E7.2), shared with the
+    /// inbound handler that samples them; `NetworkStatus` reads them.
+    pub(crate) network_strength: Arc<rekindle_events::strength::Strength>,
     /// This context, for work that outlives a call (`HostFriends::owned`).
     pub(crate) this: std::sync::Weak<DaemonContext>,
 }

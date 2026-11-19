@@ -210,12 +210,11 @@ impl Host {
         let (presence_start_tx, presence_start_rx) =
             crate::daemon::presence_adapter::supervisor::channel();
 
-        let friend_host: Arc<std::sync::OnceLock<std::sync::Weak<DaemonContext>>> =
-            Arc::new(std::sync::OnceLock::new());
-        // One subscription-manager slot for the context and the inbound
-        // handler: the handler routes what the transport receives to the
-        // manager the unlock installs in the context.
+        let friend_host = Arc::new(std::sync::OnceLock::<std::sync::Weak<DaemonContext>>::new());
+        // One subscription-manager slot and one network indicator for the context and the
+        // inbound handler, which feeds both from what the transport reports.
         let subscriptions = Arc::new(RwLock::new(None));
+        let strength = Arc::new(rekindle_events::strength::Strength::new(Arc::clone(&clock)));
         let daemon_handler = || {
             let handler_transport = Arc::new(RwLock::new(None));
             let handler = Arc::new(DaemonHandler::new(
@@ -227,6 +226,7 @@ impl Host {
                 gossip_tx.clone(),
                 Arc::clone(&clock),
                 Arc::clone(&friend_host),
+                Arc::clone(&strength),
             ));
             (handler, handler_transport)
         };
@@ -291,6 +291,7 @@ impl Host {
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
             game: crate::host::game_stage::GameControl::default(),
+            network_strength: strength,
             skin_helper: std::sync::OnceLock::new(),
             skin_trial: crate::host::skin::TrialSlot::default(),
             skin_grounds: crate::host::skin::ShownGrounds::default(),

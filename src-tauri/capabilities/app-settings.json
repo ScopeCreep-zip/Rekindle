@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-settings",
-  "description": "App-command grants for the `settings` window: preferences, notifications/DND/quiet-hours, audio/video device selection, blocked users, strand-relay management, cross-device pairing/sync, mobile push-relay registration, update checks, our game-time totals for Settings → Profile, and identity audit-log verify/export, and the skins of Settings → Appearance (list, import, remove, select, keep, login skin, and opening the skin editor) with a skin's credited source opened through `open_external_url` (it asks in Rust before it opens).",
+  "description": "App-command grants for the `settings` window: preferences, notifications/DND/quiet-hours, audio/video device selection, blocked users, strand-relay management, cross-device pairing/sync, mobile push-relay registration, update checks, our game-time totals and bio for Settings → Profile, the game-sharing switches and hide list of Settings → Privacy, the game-detection switch of Settings → Application, and identity audit-log verify/export, and the skins of Settings → Appearance (list, import, remove, select, keep, login skin, and opening the skin editor) with a skin's credited source opened through `open_external_url` (it asks in Rust before it opens).",
   "windows": [
     "settings"
   ],
@@ -58,6 +58,13 @@
     "allow-volunteer-relay",
     "allow-write-paired-devices",
     "allow-write-sync-manifest",
-    "allow-write-sync-preferences"
+    "allow-write-sync-preferences",
+    "allow-get-bio",
+    "allow-set-bio",
+    "allow-get-hidden-games",
+    "allow-hide-game",
+    "allow-unhide-game",
+    "allow-set-share-current-game",
+    "allow-set-game-detection"
   ]
 }

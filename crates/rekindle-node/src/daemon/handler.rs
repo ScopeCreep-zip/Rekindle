@@ -63,6 +63,7 @@ impl DaemonHandler {
         gossip_tx: crate::daemon::gossip::GossipSender,
         clock: Arc<dyn rekindle_utils::Clock>,
         host: Arc<std::sync::OnceLock<std::sync::Weak<crate::daemon::dispatch::DaemonContext>>>,
+        strength: Arc<rekindle_events::strength::Strength>,
     ) -> Self {
         Self {
             subscriptions,
@@ -71,7 +72,7 @@ impl DaemonHandler {
             transport,
             mek_rotation_tx,
             gossip_tx,
-            strength: Arc::new(rekindle_events::strength::Strength::new(Arc::clone(&clock))),
+            strength,
             clock,
             host,
         }

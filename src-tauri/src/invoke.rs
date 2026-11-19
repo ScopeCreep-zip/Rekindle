@@ -1,14 +1,31 @@
 //! Tauri IPC command registration.
 //!
-//! Holds the full `generate_handler!` command list, split out of `lib.rs` to
-//! keep the entrypoint thin.
+//! `generate_handler!` takes one flat list, so each command domain owns a
+//! `*_commands!` macro listing its entries, and [`handler`] folds every
+//! domain into that one list through `fold_commands!`. A new command goes in
+//! its domain's macro; a new domain is a new macro plus one name in
+//! [`handler`]. This file stays the single registration point: `build.rs`
+//! (the ACL manifest), `tests/capability_policy.rs` and `cargo xtask
+//! check-intent-table` read the entries between each domain macro's
+//! `$next!([$($done)*` and `] $($rest)*) };` lines
+//! (`build_support/invoke_commands.rs`). A domain macro left out of
+//! [`handler`] is an unused macro, which `deny(warnings)` rejects.
 
 use crate::commands;
 
-/// Build the invoke handler with every registered frontend → Rust command.
-pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![
-        // auth
+/// Appends the next domain's entries to `$done`, then hands the rest on;
+/// with no domain left, expands to the one `generate_handler!` list.
+macro_rules! fold_commands {
+    ([$($done:tt)*]) => {
+        tauri::generate_handler![$($done)*]
+    };
+    ([$($done:tt)*] $domain:ident $($rest:ident)*) => {
+        $domain!(fold_commands [$($done)*] $($rest)*)
+    };
+}
+
+macro_rules! auth_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::auth::create_identity,
         commands::auth::login,
         commands::auth::get_identity,
@@ -20,15 +37,36 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::auth::audit_verify,
         commands::auth::audit_export,
         commands::auth::lifecycle_current,
+    ] $($rest)*) };
+}
+
+macro_rules! event_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::event::subscribe_events,
-        // the intent gate
+    ] $($rest)*) };
+}
+
+macro_rules! intent_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::intent::intent_commit,
         commands::intent::intent_cancel,
         commands::intent::undo,
-        // chat
+    ] $($rest)*) };
+}
+
+macro_rules! chat_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::chat::send_message,
         commands::chat::outbox_retry,
         commands::chat::outbox_discard,
+        commands::chat::send_typing,
+        commands::chat::get_message_history,
+        commands::chat::mark_read,
+    ] $($rest)*) };
+}
+
+macro_rules! group_dm_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::group_dm::group_dm_create,
         commands::group_dm::group_dm_accept,
         commands::group_dm::group_dm_decline,
@@ -37,10 +75,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::group_dm::group_dm_typing,
         commands::group_dm::group_dm_list,
         commands::group_dm::group_dm_messages,
-        commands::chat::send_typing,
-        commands::chat::get_message_history,
-        commands::chat::mark_read,
-        // friends
+    ] $($rest)*) };
+}
+
+macro_rules! friends_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::friends::add_friend_from_code,
         commands::friends::get_friend_code,
         commands::friends::rotate_friend_token,
@@ -67,7 +106,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::friends::get_safety_number,
         commands::friends::mark_identity_verified,
         commands::friends::clear_identity_verification,
-        // community
+    ] $($rest)*) };
+}
+
+macro_rules! community_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::community::create_community,
         commands::community::join_community,
         commands::community::create_channel,
@@ -198,7 +241,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::report_video_encoder_status,
         commands::community::delete_emoji,
         commands::community::list_expressions,
-        // community threads
         commands::community::create_thread,
         commands::community::get_active_threads,
         commands::community::get_channel_threads,
@@ -206,7 +248,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::get_thread_messages,
         commands::community::archive_thread,
         commands::community::unarchive_thread,
-        // community events
         commands::community::create_event,
         commands::community::edit_event,
         commands::community::delete_event,
@@ -215,14 +256,16 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::set_event_rsvp,
         commands::community::list_event_attendees,
         commands::community::get_events,
-        // community game servers
         commands::community::add_game_server,
         commands::community::remove_game_server,
         commands::community::get_game_servers,
-        // community unread tracking
         commands::community::mark_channel_read,
         commands::community::get_unread_counts,
-        // voice
+    ] $($rest)*) };
+}
+
+macro_rules! voice_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::voice::join_voice_channel,
         commands::voice::leave_voice,
         commands::voice::request_to_speak,
@@ -236,7 +279,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::voice::set_voice_mode,
         commands::voice::server_mute_member,
         commands::voice::server_deafen_member,
-        // direct calls (Plan §Failure 5)
+    ] $($rest)*) };
+}
+
+macro_rules! calls_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::calls::start_dm_call,
         commands::calls::accept_dm_call,
         commands::calls::decline_dm_call,
@@ -251,7 +298,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::calls::get_active_call,
         commands::calls::get_missed_calls,
         commands::calls::dm_peer_video_decode_codecs,
-        // status
+    ] $($rest)*) };
+}
+
+macro_rules! status_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::status::set_status,
         commands::status::set_nickname,
         commands::status::get_bio,
@@ -259,7 +310,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::status::set_bio,
         commands::status::set_avatar,
         commands::status::get_avatar,
-        // skin (plan E7.7.2)
+        commands::status::set_status_message,
+    ] $($rest)*) };
+}
+
+macro_rules! skin_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::skin::get_skin,
         commands::skin::list_skins,
         commands::skin::import_skin,
@@ -272,8 +328,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::skin::import_skin_region,
         commands::skin::export_skin_schema,
         commands::skin::set_login_skin,
-        commands::status::set_status_message,
-        // game
+    ] $($rest)*) };
+}
+
+macro_rules! game_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::game::get_game_status,
         commands::game::get_game_totals,
         commands::game::get_friend_game_totals,
@@ -282,18 +341,34 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::game::unhide_game,
         commands::game::get_game_name,
         commands::game::launch_game_to_server,
-        // strand relay
+    ] $($rest)*) };
+}
+
+macro_rules! relay_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::relay::volunteer_relay,
         commands::relay::revoke_relay,
         commands::relay::list_received_relay_offers,
         commands::relay::list_volunteered_relay_friends,
-        // direct messages
+    ] $($rest)*) };
+}
+
+macro_rules! dm_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::dm::send_dm_video_frame,
         commands::dm::register_dm_video_channel,
         commands::dm::unregister_dm_video_channel,
-        // search (architecture §23)
+    ] $($rest)*) };
+}
+
+macro_rules! search_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::search::search_messages,
-        // cross-device sync (architecture §28.4)
+    ] $($rest)*) };
+}
+
+macro_rules! sync_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::sync::ensure_personal_sync_record,
         commands::sync::start_pairing_session,
         commands::sync::generate_pairing_qr_svg,
@@ -304,11 +379,19 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::sync::write_sync_preferences,
         commands::sync::read_paired_devices,
         commands::sync::write_paired_devices,
-        // mobile push relay
+    ] $($rest)*) };
+}
+
+macro_rules! push_relay_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::push_relay::register_with_push_relay,
         commands::push_relay::unregister_with_push_relay,
         commands::push_relay::list_push_relay_registrations,
-        // settings
+    ] $($rest)*) };
+}
+
+macro_rules! settings_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::settings::get_preferences,
         commands::settings::set_preferences,
         commands::settings::set_read_receipts_enabled,
@@ -316,12 +399,14 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::settings::set_game_detection,
         commands::settings::set_share_current_game,
         commands::settings::check_for_updates,
-        // notifications
-        // windows
+    ] $($rest)*) };
+}
+
+macro_rules! window_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::window::show_buddy_list,
         commands::window::quit_app,
         commands::window::open_external_url,
-        // deep links (consent flow)
         commands::window::open_chat_window,
         commands::window::open_settings_window,
         commands::window::open_skin_editor_window,
@@ -329,8 +414,39 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::window::open_profile_window,
         commands::window::open_call_window,
         commands::window::get_network_status,
-        // Phase 2 — dev-only vault diagnostics (compiled out of release).
+    ] $($rest)*) };
+}
+
+macro_rules! vault_commands {
+    ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         #[cfg(debug_assertions)]
         commands::vault::vault_diagnostics,
-    ]
+    ] $($rest)*) };
+}
+
+/// Build the invoke handler with every registered frontend → Rust command.
+pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    fold_commands!(
+        []
+        auth_commands
+        event_commands
+        intent_commands
+        chat_commands
+        group_dm_commands
+        friends_commands
+        community_commands
+        voice_commands
+        calls_commands
+        status_commands
+        skin_commands
+        game_commands
+        relay_commands
+        dm_commands
+        search_commands
+        sync_commands
+        push_relay_commands
+        settings_commands
+        window_commands
+        vault_commands
+    )
 }

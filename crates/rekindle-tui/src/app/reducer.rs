@@ -283,6 +283,7 @@ impl App {
             CommandResult::OwnPresenceLoaded { view } => {
                 self.nav.dashboard_mut().set_own_presence(view);
             }
+            CommandResult::NetworkBarsLoaded { bars } => self.network_bars = *bars,
             CommandResult::CommunityListLoaded { communities } => {
                 self.cached_communities = communities
                     .iter()
