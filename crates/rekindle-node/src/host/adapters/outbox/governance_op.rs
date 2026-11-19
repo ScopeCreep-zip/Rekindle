@@ -317,6 +317,32 @@ impl GovernanceOps {
         }
     }
 
+    /// Where each of our op rows of `community` not yet sent stands, by op
+    /// hash (hex): what a window opened after their `Pending` reads.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn publications(
+        &self,
+        community: &str,
+    ) -> Result<BTreeMap<String, rekindle_types::subscription_events::OpPublicationState>, String>
+    {
+        let stream = StreamKind::GovernanceOp.stream(community);
+        let rows = rekindle_outbox::OutboxDeps::prefix_rows(self.outbox.deps(), &stream)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(rows
+            .iter()
+            .filter(|r| r.stream == stream && is_op_row(&r.client_id))
+            .filter_map(|r| {
+                Some((
+                    r.client_id.clone(),
+                    super::governance_publication::row_state(r)?,
+                ))
+            })
+            .collect())
+    }
+
     /// Whether the op `client_id` (its hash, hex) is still queued on its
     /// stream: stored, not landed, not failed. Durable across restarts.
     ///

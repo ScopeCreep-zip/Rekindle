@@ -110,6 +110,7 @@ fn community_view(c: &CommunityState, now_secs: u64, shown: Option<&SkinGrounds>
         my_theme_color: c.my_theme_color,
         my_badges: c.my_badges.clone(),
         removed: None,
+        op_publications: std::collections::BTreeMap::new(),
     }
 }
 
@@ -255,8 +256,9 @@ fn moderation_of(
 }
 
 impl HostGovernance {
-    /// Every joined community, by name then id.
-    pub(crate) fn community_views(&self) -> Vec<CommunityView> {
+    /// Every joined community, by name then id, with where each of our
+    /// ops not yet landed stands (the outbox's `governance_op` rows).
+    pub(crate) async fn community_views(&self) -> Vec<CommunityView> {
         let now_secs = self.ctx.clock.now_secs();
         let shown = self.ctx.skin_grounds.get();
         let mut views: Vec<CommunityView> = self
@@ -269,6 +271,14 @@ impl HostGovernance {
             .collect();
         for view in &mut views {
             view.removed = removal_display(&self.ctx.communities, &view.id);
+        }
+        if let Some(ops) = self.ctx.outbox.governance_ops() {
+            for view in &mut views {
+                match ops.publications(&view.id).await {
+                    Ok(states) => view.op_publications = states,
+                    Err(error) => tracing::warn!(%error, "queued governance ops not read"),
+                }
+            }
         }
         views.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         views

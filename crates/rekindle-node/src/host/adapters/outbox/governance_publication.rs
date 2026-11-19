@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use rekindle_outbox::{Outbox, OutboxDeps as _, StateChange, StreamKind};
+use rekindle_outbox::{Outbox, OutboxDeps as _, OutboxRow, StateChange, StreamKind};
 use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::OpPublicationState;
 use tokio::sync::broadcast;
@@ -32,6 +32,21 @@ fn announced(change: &StateChange) -> Option<OpPublicationState> {
         SendState::Failed => Some(OpPublicationState::Failed(
             change
                 .wedge_reason
+                .clone()
+                .unwrap_or_else(|| "its row was discarded".to_owned()),
+        )),
+        _ => None,
+    }
+}
+
+/// Where a stored op row stands for a window that reads it at load:
+/// `Pending` while it waits, `Failed` with its reason; `None` once sent
+/// (its landing and any later refusal are the verdict's, announced live).
+pub(super) fn row_state(row: &OutboxRow) -> Option<OpPublicationState> {
+    match row.state {
+        SendState::Queued | SendState::AwaitingKey => Some(OpPublicationState::Pending),
+        SendState::Failed => Some(OpPublicationState::Failed(
+            row.wedge_reason
                 .clone()
                 .unwrap_or_else(|| "its row was discarded".to_owned()),
         )),
@@ -126,5 +141,36 @@ mod tests {
         );
         assert_eq!(announced(&change(SendState::Sent, None)), None);
         assert_eq!(community_of("governance_op:VLD0:a"), Some("VLD0:a"));
+    }
+
+    fn row(state: SendState, reason: Option<&str>) -> OutboxRow {
+        OutboxRow {
+            stream: "governance_op:VLD0:a".into(),
+            stream_seq: 1,
+            client_id: "ab".into(),
+            kind: StreamKind::GovernanceOp,
+            payload: Vec::new(),
+            state,
+            attempts: 0,
+            next_at: 0,
+            deadline: 0,
+            wedge_reason: reason.map(str::to_owned),
+            sent_at: None,
+        }
+    }
+
+    /// A window opened after an op's `Pending` reads it from its row
+    /// (walk M86: a window that missed the event kept no state for it).
+    #[test]
+    fn a_waiting_row_reads_pending_a_failed_one_failed_and_a_sent_one_nothing() {
+        assert_eq!(
+            row_state(&row(SendState::Queued, None)),
+            Some(OpPublicationState::Pending)
+        );
+        assert_eq!(
+            row_state(&row(SendState::Failed, Some("past its deadline"))),
+            Some(OpPublicationState::Failed("past its deadline".into()))
+        );
+        assert_eq!(row_state(&row(SendState::Sent, None)), None);
     }
 }

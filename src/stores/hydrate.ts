@@ -2,6 +2,7 @@ import { commands } from "../ipc/commands";
 import { setAuthState } from "./auth.store";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { setFriendsState } from "./friends.store";
+import { reconcile } from "solid-js/store";
 import { setCommunityState } from "./community.store";
 import { transformExpression, transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
 import {
@@ -49,6 +50,12 @@ export async function hydrateState(): Promise<void> {
   try {
     const details = await commands.getCommunityDetails();
     setCommunityState("communities", transformCommunityMap(details));
+    // Our ops not yet landed, from the Host (ADR 0013: a new window gets no
+    // replay, so one opened after an op's `Pending` reads it here).
+    setCommunityState(
+      "opPublications",
+      reconcile(Object.fromEntries(details.map((c) => [c.id, c.opPublications ?? {}]))),
+    );
     // Hydrate members for each community (fire-and-forget, parallel)
     for (const c of details) {
       commands.getCommunityMembers(c.id).then((members) => {

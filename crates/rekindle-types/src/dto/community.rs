@@ -114,6 +114,13 @@ pub struct CommunityView {
     /// read-only history, and the window names who removed us.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<crate::display::CommunityRemovalDisplay>,
+    /// Where each of our governance ops not yet landed stands (its hash,
+    /// hex): what a window opened after their `Pending` events reads at
+    /// load (ADR 0013: a new window hydrates, nothing is replayed); later
+    /// changes arrive as `GovernanceEvent::OpPublication`.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub op_publications:
+        std::collections::BTreeMap<String, crate::subscription_events::OpPublicationState>,
 }
 
 /// One channel's unread messages and mentions after our read marker

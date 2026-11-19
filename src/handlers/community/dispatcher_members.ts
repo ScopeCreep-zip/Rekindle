@@ -1,3 +1,4 @@
+import { produce } from "solid-js/store";
 import type { CommunityEvent } from "../../ipc/channels";
 import type {
   CommunitySubscriptionEvent,
@@ -357,13 +358,15 @@ function applyGovernance(g: GovernanceEvent): void {
 
   if ("opPublication" in g) {
     const { community, op, state } = g.opPublication;
-    // A landed op leaves the map; pending and failed ones stay shown.
-    setCommunityState("opPublications", community, (prev) => {
-      const next = { ...(prev ?? {}) };
-      if (state.kind === "landed") delete next[op];
-      else next[op] = state;
-      return next;
-    });
+    // A landed op leaves the map; pending and failed ones stay shown. The
+    // removal is a `produce` delete: a store setter merges an object it is
+    // given into the one it holds, so a copy without the op kept it (walk
+    // M86, "Publishing 6 changes" after all six landed).
+    if (state.kind !== "landed") {
+      setCommunityState("opPublications", community, (prev) => ({ ...(prev ?? {}), [op]: state }));
+    } else if (communityState.opPublications[community]?.[op]) {
+      setCommunityState("opPublications", community, produce((ops) => { delete ops[op]; }));
+    }
     return;
   }
 

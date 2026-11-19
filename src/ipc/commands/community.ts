@@ -1,5 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type { ImageKind } from "./system";
+import type { OpPublicationState } from "../channels/community_subscription_events";
 
 /// A voice message as the Host decoded it: the Ogg Opus audio and the
 /// duration and waveform read from it (base64 fields).
@@ -44,6 +45,8 @@ export const communityCommands = {
     byName: string | null;
     reason?: string | null;
   } | null;
+      /** Our ops not yet landed, by op hash (`CommunityView::op_publications`). */
+      opPublications?: Record<string, OpPublicationState>;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{

@@ -143,11 +143,15 @@ pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str)
 }
 
 /// Every joined community as its window renders it (plan E3.1 D1b).
-pub(crate) fn handle_views(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) async fn handle_views(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
-    IpcResponse::ok(&crate::daemon::dispatch::adapter(ctx).community_views())
+    IpcResponse::ok(
+        &crate::daemon::dispatch::adapter(ctx)
+            .community_views()
+            .await,
+    )
 }
 
 /// A community's member list (plan E3.1 D1b).

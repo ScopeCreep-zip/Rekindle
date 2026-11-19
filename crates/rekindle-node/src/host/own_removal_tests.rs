@@ -103,7 +103,9 @@ async fn views_list_and_info_carry_our_removal() {
     use crate::daemon::DaemonState;
     let dir = tempfile::tempdir().unwrap();
     let (host, bea) = removed_host(&dir).await;
-    let views = HostGovernance::new(Arc::clone(&host.ctx)).community_views();
+    let views = HostGovernance::new(Arc::clone(&host.ctx))
+        .community_views()
+        .await;
     let removed = views[0]
         .removed
         .clone()
