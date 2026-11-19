@@ -540,26 +540,37 @@ impl Default for GossipOverlay {
 pub struct HeadHints(std::collections::BTreeMap<(String, u32), u64>);
 
 impl HeadHints {
-    /// Is a hint at `hinted` worth a read: above the seq last read?
-    /// Records nothing.
+    /// Is a hint at `hinted` worth a read: above the seq last read, or
+    /// for a subkey never read? Records nothing. A subkey's first value
+    /// is at seq 0 (Veilid `ValueSeqNum::next` from NONE,
+    /// `veilid_api/types/dht/value_seq_num.rs:24`), so an unread subkey
+    /// is not "read at 0": a fresh member record's first outbox entry
+    /// is hinted at seq 0 and must be read.
     #[must_use]
     pub fn worth_reading(&self, record: &str, subkey: u32, hinted: u64) -> bool {
-        hinted > self.read_at(record, subkey)
+        self.read_at(record, subkey)
+            .is_none_or(|read| hinted > read)
     }
 
     /// Record the seq the DHT read returned: `true` when it moved past
-    /// the last one read, so the hint is acted on.
+    /// the last one read (any seq for a subkey never read), so the hint
+    /// is acted on.
     pub fn record_read(&mut self, record: &str, subkey: u32, read: u64) -> bool {
-        let seen = self.0.entry((record.to_owned(), subkey)).or_insert(0);
-        let moved = read > *seen;
-        *seen = (*seen).max(read);
-        moved
+        let seen = self.0.entry((record.to_owned(), subkey));
+        match seen {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(read);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                let moved = read > *slot.get();
+                *slot.get_mut() = (*slot.get()).max(read);
+                moved
+            }
+        }
     }
 
-    fn read_at(&self, record: &str, subkey: u32) -> u64 {
-        self.0
-            .get(&(record.to_owned(), subkey))
-            .copied()
-            .unwrap_or(0)
+    fn read_at(&self, record: &str, subkey: u32) -> Option<u64> {
+        self.0.get(&(record.to_owned(), subkey)).copied()
     }
 }

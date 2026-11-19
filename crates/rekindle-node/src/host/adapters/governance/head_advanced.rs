@@ -275,4 +275,19 @@ mod tests {
             "an unmoved read is not acted on"
         );
     }
+
+    /// A subkey's first value is at seq 0 (Veilid `ValueSeqNum::next`
+    /// from NONE): a hint at seq 0 for a subkey never read is worth a
+    /// read, and that read is acted on, so a re-joiner's first post on
+    /// its fresh member record reaches the members by its own hint
+    /// (netsim `a_rejoin_missed_by_gossip_converges_by_the_sweep`).
+    #[test]
+    fn a_first_value_at_seq_0_is_read() {
+        let mut hints = HeadHints::default();
+        assert!(hints.worth_reading("M", 4, 0), "subkey 4 was never read");
+        assert!(hints.record_read("M", 4, 0), "the first read is acted on");
+        assert!(!hints.worth_reading("M", 4, 0), "seq 0 was read");
+        assert!(!hints.record_read("M", 4, 0));
+        assert!(hints.worth_reading("M", 4, 1));
+    }
 }
