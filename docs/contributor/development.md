@@ -178,6 +178,44 @@ plus `rekindle_video=debug,rekindle_voice=debug` — the media-plane
 dropped-frame paths log at debug. Auto-rebuild is untouched: `tauri
 dev` itself runs unwrapped.
 
+### Debugging a Running App: Attach Is Refused (Deliberate)
+
+Both processes that hold secrets, the GUI and `rekindled`, harden
+themselves first thing in `main` (plan E7.1,
+`crates/rekindle-node/src/host/hardening.rs` `forbid_core_dumps`):
+`RLIMIT_CORE` is set to 0 (soft and hard) on macOS and Linux, and on
+Linux `prctl(PR_SET_DUMPABLE, 0)` marks the process not dumpable. Two
+consequences for development, both intended:
+
+- **No core files.** A crash leaves no core dump to load afterwards
+  (the hard limit is 0, so `ulimit -c unlimited` in the launching shell
+  does not bring it back). Reproduce the crash under the debugger.
+- **No attaching on Linux.** With `PR_SET_DUMPABLE` 0, the kernel's
+  ptrace access check refuses `PTRACE_ATTACH` from any process without
+  `CAP_SYS_PTRACE`, including your own debugger running as the same user
+  (ptrace(2), "Ptrace access mode checking"). `gdb -p` / `lldb -p` on a
+  running Rekindle fails with "Operation not permitted". This is the
+  protection itself: it is what keeps other same-user processes (malware
+  in the session) from reading the keys out of the app's memory, as the
+  threat model's I7 row describes. Do not add a switch to turn it
+  off.
+
+To diagnose a crash or hang, **launch the app under the debugger from
+the start**, so the debugger is the tracer before the hardening runs (an
+existing tracer stays attached):
+
+```bash
+# GUI (debug build), Linux or macOS
+cargo build -p rekindle-desktop
+gdb --args target/debug/rekindle-desktop     # or: lldb -- target/debug/rekindle-desktop
+
+# Daemon
+cargo build -p rekindle-node --bin rekindled
+gdb --args target/debug/rekindled
+```
+
+Use a throwaway identity: a debugger reads every secret in the process.
+
 ## Build Commands
 
 ```bash
