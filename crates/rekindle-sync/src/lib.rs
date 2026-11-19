@@ -1,10 +1,7 @@
 pub mod cross_device;
 pub mod fetch;
-pub mod gap;
 pub mod history;
 pub mod inspect;
-#[cfg(test)]
-mod path_independence;
 pub mod stream;
 pub mod verify;
 pub mod warming;

@@ -384,7 +384,7 @@ pub use reads::{
 };
 
 mod waiting;
-pub use waiting::{enqueue_waiting_for_message, release_waiting, wait_for_key};
+pub use waiting::{enqueue_waiting_for_message, release_waiting};
 
 mod ending;
 mod receipts;

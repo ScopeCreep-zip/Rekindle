@@ -166,9 +166,10 @@ exercised by the property tests in
 
 Cross-device sync uses the same primitives as community catch-up:
 
-- **`rekindle_sync::gap::GapDetector::detect(local, network)`** — given
-  per-subkey local sequence numbers and the freshly inspected network
-  values, return the list of subkeys where `network > local`.
+- **The D23 stream engine (`rekindle_sync::stream`)** — a per-writer
+  cursor; an entry past `cursor + 1` is a gap held for the diff, and a
+  diff that cannot reach the writer's named head stores a gap marker
+  (plan E3.3; the per-subkey `GapDetector` is deleted).
 - **`rekindle_sync::history::HistoryAd`** — a lightweight advert of
   which Lamport ranges a peer holds. Pickup logic in
   `select_best_peer` finds the peer with the widest range that covers a
@@ -211,7 +212,7 @@ pairing flow again.
 
 | Concern | File |
 |---------|------|
-| Crate-level sync primitives | `crates/rekindle-sync/src/{fetch,gap,history,inspect,verify,warming,watch}.rs` |
+| Crate-level sync primitives | `crates/rekindle-sync/src/{fetch,history,inspect,stream,verify,warming,watch}.rs` |
 | Personal record lifecycle | `src-tauri/src/services/cross_device_sync/record.rs` |
 | Pairing handshake (both directions) | `src-tauri/src/services/cross_device_sync/pairing.rs` |
 | Subkey encrypt/decrypt + read/write | `src-tauri/src/services/cross_device_sync/subkey_io.rs` |

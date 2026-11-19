@@ -63,29 +63,3 @@ pub fn release_waiting(
     tx.commit()?;
     Ok(released)
 }
-
-/// Park the post `client_id` (the user's Retry of one whose key still has
-/// not come) waiting for the key again until `deadline`, its echo with
-/// it. Returns whether a `queued` or `failed` row was parked.
-///
-/// # Errors
-/// The write failed; nothing changed.
-pub fn wait_for_key(
-    conn: &Connection,
-    owner_key: &str,
-    client_id: &str,
-    deadline: i64,
-) -> rusqlite::Result<bool> {
-    let tx = conn.unchecked_transaction()?;
-    let parked = tx.execute(
-        "UPDATE outbox SET state = 'awaiting_key', attempts = 0, next_at = ?3, deadline = ?3, \
-         wedge_reason = NULL WHERE owner_key = ?1 AND client_id = ?2 \
-         AND kind = 'channel_post' AND state IN ('queued', 'failed')",
-        params![owner_key, client_id, deadline],
-    )? > 0;
-    if parked {
-        project(&tx, owner_key, client_id, SendState::AwaitingKey)?;
-    }
-    tx.commit()?;
-    Ok(parked)
-}
