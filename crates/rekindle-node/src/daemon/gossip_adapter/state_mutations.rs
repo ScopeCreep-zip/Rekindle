@@ -27,20 +27,32 @@ impl DaemonGossipAdapter {
             .check_and_insert(community_id, sender, dedup_key);
     }
 
-    /// Hold a broadcast that found no peers.
-    ///
-    /// The daemon has no pending-mesh queue. Dropping is the correct
-    /// outcome rather than a shortfall: gossip is PATH 2, explicitly
-    /// "Durability: None" in the architecture, and the SMPL write on
-    /// PATH 1 already carries the content. A peer that was offline for
-    /// this wave picks it up from the record via PATH 3. Queueing would
-    /// re-deliver a notification for something the recipient will have
-    /// already read.
-    pub(super) fn enqueue_pending_mesh_impl(community_id: &str, signed: &SignedEnvelope) {
+    /// Hold a broadcast that found no peers (architecture A1/P4.1): it
+    /// waits on the community's `pending_mesh_broadcasts`, oldest dropped
+    /// past `MAX_PENDING_MESH`, and the next presence poll that finds
+    /// online peers re-sends it (`rekindle_presence::community::poll`'s
+    /// drain, as on the desktop). Gossip carries no durability, but it
+    /// is not always redundant with PATH 1: an op whose `M`/2 append can
+    /// never land (a restored backup's op at a seq the log already holds,
+    /// D15) reaches the members only this way, and a node just unlocked
+    /// has no peers until its first poll.
+    pub(super) fn enqueue_pending_mesh_impl(&self, community_id: &str, signed: SignedEnvelope) {
+        let mut map = self.ctx.communities.map().write();
+        let Some(gossip) = map.get_mut(community_id).and_then(|c| c.gossip.as_mut()) else {
+            tracing::debug!(
+                community = %community_id,
+                "gossip: no peers online and no overlay; broadcast not held"
+            );
+            return;
+        };
+        if gossip.pending_mesh_broadcasts.len() >= rekindle_gossip::MAX_PENDING_MESH {
+            gossip.pending_mesh_broadcasts.pop_front();
+        }
+        gossip.pending_mesh_broadcasts.push_back(signed);
         tracing::debug!(
             community = %community_id,
-            sender = %signed.sender_pseudonym,
-            "gossip: no peers online, dropping broadcast (PATH 1 write is authoritative)"
+            held = gossip.pending_mesh_broadcasts.len(),
+            "gossip: no peers online, broadcast held for the next poll with peers"
         );
     }
 

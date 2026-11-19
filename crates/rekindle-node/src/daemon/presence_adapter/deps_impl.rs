@@ -189,24 +189,14 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.send_to_mesh_impl(community_id, &envelope);
     }
 
-    fn send_to_mesh_raw(&self, community_id: &str, _envelope: SignedEnvelope) {
-        // The daemon's broadcast path signs its own envelopes from the
-        // community pseudonym inside `broadcast::gossip`, so a
-        // pre-signed one has no way in without a second signing path.
-        // Nothing calls this on this track today; logging keeps it
-        // visible if something starts to.
-        tracing::debug!(
-            community = %community_id,
-            "send_to_mesh_raw: no pre-signed broadcast path on the daemon track"
-        );
+    fn send_to_mesh_raw(&self, _community_id: &str, envelope: SignedEnvelope) {
+        // A held broadcast is already signed: the worker fans it out
+        // unchanged, as a relay, never signing it twice.
+        crate::daemon::gossip::forward(&self.ctx.gossip_tx, envelope);
     }
 
-    fn read_gossip_snapshot(&self, _community_id: &str) -> GossipOverlaySnapshot {
-        // Always empty on this track: the daemon syncs on unlock via
-        // `SubscriptionManager` rather than gating on
-        // `needs_initial_sync`, and `BroadcastManager` sends through the
-        // mesh directly, so no envelopes are held back for later.
-        GossipOverlaySnapshot::default()
+    fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
+        self.take_gossip_snapshot_impl(community_id)
     }
 
     fn apply_gossip_rebuild_plan(&self, community_id: &str, plan: GossipOverlayPlan) {

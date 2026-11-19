@@ -52,7 +52,7 @@ impl GossipDeps for DaemonGossipAdapter {
     // ---------- Overlay mutations ----------
 
     fn enqueue_pending_mesh(&self, community_id: &str, signed: SignedEnvelope) {
-        Self::enqueue_pending_mesh_impl(community_id, &signed);
+        self.enqueue_pending_mesh_impl(community_id, signed);
     }
 
     fn update_peer_route(

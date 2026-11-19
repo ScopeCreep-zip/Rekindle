@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_presence::community::GossipOverlayPlan;
+use rekindle_presence::community::{GossipOverlayPlan, GossipOverlaySnapshot};
 use rekindle_presence::deps::OnlineMember;
 
 use super::DaemonPresenceAdapter;
@@ -132,15 +132,44 @@ impl DaemonPresenceAdapter {
     /// clock have to move together or a concurrent broadcast can pick a
     /// peer list from before the rebuild and a Lamport stamp from after.
     pub(super) fn apply_gossip_plan_impl(&self, community_id: &str, plan: GossipOverlayPlan) {
-        let guard = self.ctx.subscriptions.read();
-        let Some(manager) = guard.as_ref() else {
+        if let Some(manager) = self.ctx.subscriptions.read().as_ref() {
+            let mut meshes = manager.meshes().write();
+            if let Some(mesh) = meshes.get_mut(community_id) {
+                mesh.online_members = to_mesh_members(plan.online_members);
+                mesh.peers = to_mesh_members(plan.peers);
+            }
+        }
+        if plan.remaining_pending.is_empty() {
             return;
-        };
-        let mut meshes = manager.meshes().write();
-        let Some(mesh) = meshes.get_mut(community_id) else {
-            return;
-        };
-        mesh.online_members = to_mesh_members(plan.online_members);
-        mesh.peers = to_mesh_members(plan.peers);
+        }
+        let mut map = self.ctx.communities.map().write();
+        if let Some(gossip) = map.get_mut(community_id).and_then(|c| c.gossip.as_mut()) {
+            // Broadcasts held since the snapshot sit behind the ones
+            // still waiting, in send order.
+            let newer =
+                std::mem::replace(&mut gossip.pending_mesh_broadcasts, plan.remaining_pending);
+            gossip.pending_mesh_broadcasts.extend(newer);
+            while gossip.pending_mesh_broadcasts.len() > rekindle_gossip::MAX_PENDING_MESH {
+                gossip.pending_mesh_broadcasts.pop_front();
+            }
+        }
+    }
+
+    /// The overlay snapshot the poll plans from: the daemon syncs on
+    /// unlock through `SubscriptionManager`, so `needs_initial_sync` stays
+    /// off, and the held broadcasts are taken here (the plan re-sends them
+    /// once peers are online, or hands them back to
+    /// [`Self::apply_gossip_plan_impl`]), so no tick sends one twice.
+    pub(super) fn take_gossip_snapshot_impl(&self, community_id: &str) -> GossipOverlaySnapshot {
+        let mut map = self.ctx.communities.map().write();
+        let pending = map
+            .get_mut(community_id)
+            .and_then(|c| c.gossip.as_mut())
+            .map(|g| std::mem::take(&mut g.pending_mesh_broadcasts))
+            .unwrap_or_default();
+        GossipOverlaySnapshot {
+            needs_initial_sync: false,
+            pending_mesh_broadcasts: pending,
+        }
     }
 }
