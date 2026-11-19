@@ -21,6 +21,7 @@ pub mod deps;
 pub mod error;
 pub mod event;
 pub mod expressions;
+pub mod held;
 pub mod history;
 pub mod ingest;
 pub mod mentions;

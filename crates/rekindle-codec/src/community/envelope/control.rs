@@ -34,21 +34,6 @@ pub enum ControlPayload {
     // ── Moderation ──
     /// Kick a member.
     Kick { target_pseudonym: String },
-    // ── Messages ──
-    /// Broadcast: message edited.
-    MessageEdited {
-        channel_id: String,
-        message_id: String,
-        new_ciphertext: Vec<u8>,
-        mek_generation: u64,
-        edited_at: u64,
-    },
-    /// Broadcast: message deleted.
-    MessageDeleted {
-        channel_id: String,
-        message_id: String,
-    },
-
     // ── MEK management ──
     /// Broadcast: MEK rotated by the deterministic rotator.
     MEKRotated {

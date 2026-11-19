@@ -37,6 +37,9 @@ export interface Message {
   /** When its author last edited it, in seconds (plan E3.3); absent when
    *  unedited. Stored on every reader, so it survives a reload. */
   editedAt?: number;
+  /** The moderator's pseudonym when a moderator removed it (plan E3.3 M4):
+   *  its body is gone and the window shows "Removed by". */
+  removedBy?: string;
   attachment?: {
     attachmentId: string;
     filename: string;

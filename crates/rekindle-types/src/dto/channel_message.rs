@@ -117,4 +117,8 @@ pub struct ChannelMessageView {
     /// a reload; absent for an unedited message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edited_at: Option<i64>,
+    /// The moderator who removed it (plan E3.3 M4): its body is gone and
+    /// every frontend shows "removed by"; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed_by: Option<String>,
 }

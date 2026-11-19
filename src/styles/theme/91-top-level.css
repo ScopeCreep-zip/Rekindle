@@ -44,6 +44,14 @@
     gap: 10px;
   }
 
+  /* A moderator's delete (plan E3.3 M4): the body is gone, the line
+   * names the moderator. */
+  .message-removed {
+    padding: 8px 12px;
+    color: var(--color-xfire-text-secondary);
+    font-style: italic;
+  }
+
   .message-automod-blur-text {
     filter: blur(4px);
     user-select: none;

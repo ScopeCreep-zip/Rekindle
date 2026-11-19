@@ -441,6 +441,7 @@ impl View for ChannelWatchView {
                 community,
                 channel,
                 message_id,
+                ..
             }) if *community == self.community && *channel == self.channel => {
                 self.message_list.remove_by_id(message_id);
             }

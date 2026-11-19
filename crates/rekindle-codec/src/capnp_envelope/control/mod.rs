@@ -54,9 +54,8 @@ use membership::{
     write_onboarding_complete, write_request_segment_expansion, write_submit_onboarding_answers,
 };
 use messaging::{
-    read_link_preview, read_message_deleted, read_message_edited, read_message_pinned,
-    read_message_unpinned, read_reaction_added, read_reaction_removed, write_link_preview,
-    write_message_deleted, write_message_edited, write_message_pinned, write_message_unpinned,
+    read_link_preview, read_message_pinned, read_message_unpinned, read_reaction_added,
+    read_reaction_removed, write_link_preview, write_message_pinned, write_message_unpinned,
     write_reaction_added, write_reaction_removed,
 };
 use moderation::{
@@ -84,12 +83,6 @@ pub fn encode_control_payload(
         CP::MemberLeave { .. } => write_member_leave(b.reborrow().init_member_leave(), payload),
         CP::MemberJoined { .. } => write_member_joined(b.reborrow().init_member_joined(), payload),
         CP::Kick { .. } => write_kick(b.reborrow().init_kick(), payload),
-        CP::MessageEdited { .. } => {
-            write_message_edited(b.reborrow().init_message_edited(), payload);
-        }
-        CP::MessageDeleted { .. } => {
-            write_message_deleted(b.reborrow().init_message_deleted(), payload);
-        }
         CP::MEKRotated { .. } => write_mek_rotated(b.reborrow().init_mek_rotated(), payload),
         CP::RequestMEK { .. } => write_request_mek(b.reborrow().init_request_mek(), payload),
         CP::MekTransfer { .. } => write_mek_transfer(b.reborrow().init_mek_transfer(), payload),
@@ -232,8 +225,6 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::MemberLeave(p) => read_member_leave(p.map_err(|e| capnp_err(&e))?),
         Which::MemberJoined(p) => read_member_joined(p.map_err(|e| capnp_err(&e))?),
         Which::Kick(p) => read_kick(p.map_err(|e| capnp_err(&e))?),
-        Which::MessageEdited(p) => read_message_edited(p.map_err(|e| capnp_err(&e))?),
-        Which::MessageDeleted(p) => read_message_deleted(p.map_err(|e| capnp_err(&e))?),
         Which::MekRotated(p) => read_mek_rotated(p.map_err(|e| capnp_err(&e))?),
         Which::RequestMek(p) => read_request_mek(p.map_err(|e| capnp_err(&e))?),
         Which::MekTransfer(p) => read_mek_transfer(p.map_err(|e| capnp_err(&e))?),
@@ -330,6 +321,8 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         | Which::Obsolete9(())
         | Which::Obsolete10(())
         | Which::Obsolete11(())
+        | Which::Obsolete12(())
+        | Which::Obsolete13(())
         | Which::Obsolete18(())
         | Which::Obsolete35(())
         | Which::Obsolete39(())

@@ -6,7 +6,7 @@
 //! change, the history read). Both judge it by `rekindle_channel::changes`
 //! (E1–E3) and store it in the message's row, so it survives a reload.
 
-use rekindle_channel::changes::{self, ChangeKind, ChangeTarget};
+use rekindle_channel::changes::{self, ChangeKind, ChangeRefusal, ChangeTarget};
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::Verdict;
 use rekindle_channel::send::{channel_message_subkey, BodyPosition};
@@ -225,7 +225,7 @@ impl HostChannel {
         }
     }
 
-    async fn apply_change(
+    pub(super) async fn apply_change(
         &self,
         db: &rekindle_db::Db,
         owner: &str,
@@ -240,8 +240,12 @@ impl HostChannel {
             _ => return Ok(()),
         };
         let target = (self.change_target(db, owner, source.channel_id, message_id)).await?;
-        changes::judge_change(target.as_ref(), &author, kind)
-            .map_err(ChannelError::ChangeRefused)?;
+        if let Err(refusal) = changes::judge_change(target.as_ref(), &author, kind) {
+            if refusal == ChangeRefusal::NoTarget {
+                self.hold_change(source, entry);
+            }
+            return Err(ChannelError::ChangeRefused(refusal));
+        }
         let (body, blurred) = match entry {
             ChannelRecordEntry::Edit(edit) => {
                 let at = BodyPosition {
@@ -342,6 +346,7 @@ impl HostChannel {
                 community,
                 channel,
                 message_id: delete.message_id,
+                removed_by: None,
             },
             _ => return Ok(()),
         };

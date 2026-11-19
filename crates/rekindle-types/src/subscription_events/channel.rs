@@ -34,7 +34,7 @@ pub enum ChannelMessageEvent {
         automod_blurred: bool,
     },
     /// A message was edited.
-    /// Triggered by: gossip `ControlPayload::MessageEdited`.
+    /// Triggered by: an edit entry in its author's record (plan E3.3).
     Edited {
         community: String,
         channel: String,
@@ -43,12 +43,16 @@ pub enum ChannelMessageEvent {
         /// New decrypted body after edit. None if MEK unavailable.
         body: Option<String>,
     },
-    /// A message was deleted.
-    /// Triggered by: gossip `ControlPayload::MessageDeleted`.
+    /// A message was deleted for members (plan E3.3 E4).
+    /// Triggered by: a delete entry in its author's record, or a merged
+    /// moderator `AdminDelete` (M4).
     Deleted {
         community: String,
         channel: String,
         message_id: String,
+        /// The moderator who removed it, shown as "removed by"; `None` for
+        /// its author's own delete.
+        removed_by: Option<String>,
     },
     /// Our own post changed delivery state (plan E3.1 E2c): `sent` when
     /// its slot of the channel record settled at consensus, `failed` when

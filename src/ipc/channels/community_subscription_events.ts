@@ -363,7 +363,9 @@ export type ChannelMessageEvent =
         body: string;
       };
     }
-  | { deleted: { community: string; channel: string; messageId: string } }
+  /** Deleted for members (plan E3.3 E4); `removedBy` is the moderator
+   *  when a moderator removed it (M4), `null` for its author's delete. */
+  | { deleted: { community: string; channel: string; messageId: string; removedBy: string | null } }
   /** Our own post settled at consensus (`sent`), was superseded or its key
    *  never came (`failed`, with the `reason` to show), waits for the
    *  community key (`awaiting_key`) or was released to its write (`queued`). */

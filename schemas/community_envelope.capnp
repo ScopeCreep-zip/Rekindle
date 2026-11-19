@@ -147,19 +147,6 @@ struct KickPayload @0xea0007000000a000 {
     targetPseudonym      @0 :Text;
 }
 
-struct MessageEditedPayload @0xea000d000000a000 {
-    channelId            @0 :Text;
-    messageId            @1 :Text;
-    newCiphertext        @2 :Data;
-    mekGeneration        @3 :UInt64;
-    editedAt             @4 :UInt64;
-}
-
-struct MessageDeletedPayload @0xea000e000000a000 {
-    channelId            @0 :Text;
-    messageId            @1 :Text;
-}
-
 struct MEKRotatedPayload @0xea000f000000a000 {
     hasChannelId         @0 :Bool;
     channelId            @1 :Text;
@@ -640,7 +627,10 @@ struct LinkPreviewPayload @0xea0042000000a000 {
 # E4.3.3); @0, @2, @3, @5, @7–@11, @18 and @39–@41 (the unsigned
 # membership and moderation notices, the legacy join answer, the
 # keypair grants and governanceUpdated), replaced by the signed
-# governance ops (plan E3.2 S8).
+# governance ops (plan E3.2 S8); @12 and @13 (messageEdited and
+# messageDeleted, the context-free edit seal and the moderator's delete
+# notice), replaced by the edit and delete entries in the author's record
+# and the readers' apply of the `AdminDelete` op (plan E3.3).
 
 struct ControlPayload @0xeaffffff00000001 {
     union {
@@ -656,8 +646,8 @@ struct ControlPayload @0xeaffffff00000001 {
         obsolete9                @9  :Void;
         obsolete10               @10 :Void;
         obsolete11               @11 :Void;
-        messageEdited            @12 :MessageEditedPayload;
-        messageDeleted           @13 :MessageDeletedPayload;
+        obsolete12               @12 :Void;
+        obsolete13               @13 :Void;
         mekRotated               @14 :MEKRotatedPayload;
         requestMek               @15 :RequestMEKPayload;
         mekTransfer              @16 :MekTransferPayload;

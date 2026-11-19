@@ -5,16 +5,16 @@
 //! A delete is the durable `GovernanceEntry::AdminDelete`, which every
 //! reader validates (`MANAGE_MESSAGES`, `validate_write`); it is checked
 //! here with that same function before it is written, so a refusal answers
-//! at once instead of being dropped by every peer. The `MessageDeleted`
-//! control tells online members now, our stored row goes, and the window
-//! hears `ChannelMessageEvent::Deleted` on the Host bus.
+//! at once instead of being dropped by every peer. Our row becomes the
+//! tombstone every reader stores from the merged op (plan E3.3 M4), and
+//! the window hears `ChannelMessageEvent::Deleted` naming us.
 //!
 //! The channel we are in is the store's `my_session_location`, which our
 //! presence row carries; it is republished at once by one presence poll
 //! (the shell's own until presence moves at E3.4, `rekindled`'s presence
 //! adapter otherwise).
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::validate::validate_write;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
@@ -22,7 +22,6 @@ use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::presence::SessionLocation;
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use super::moderation::{pseudonym, ModerationRefusal};
 use super::HostGovernance;
@@ -142,8 +141,8 @@ impl HostGovernance {
         Ok(deleted)
     }
 
-    /// The `AdminDelete` entry, the `MessageDeleted` control, our row and
-    /// the window's event, for one message.
+    /// The `AdminDelete` entry, then our row's tombstone and the window's
+    /// event, for one message.
     async fn write_delete(
         &self,
         community_id: &str,
@@ -162,25 +161,16 @@ impl HostGovernance {
             },
         )
         .await?;
-        // The entry is durable and every reader applies it; the control
-        // only tells online members sooner, and our row is our copy.
-        let notice = CommunityEnvelope::Control(ControlPayload::MessageDeleted {
-            channel_id: channel_id.to_owned(),
-            message_id: target.id.to_owned(),
-        });
-        if let Err(e) = self.send_to_mesh(community_id, &notice) {
-            tracing::warn!(community = %community_id, error = %e, "admin delete: notice not sent");
-        }
-        if let Err(e) = self.delete_stored(channel_id, target.id).await {
+        // The entry is durable and every reader applies it from its merge;
+        // our row is our copy, stored the same way.
+        let me = self
+            .community_membership_impl(community_id)
+            .and_then(|m| m.my_pseudonym_hex)
+            .and_then(|hex| pseudonym(&hex))
+            .ok_or(ModerationRefusal::NotAMember)?;
+        if let Err(e) = (self.store_admin_delete(community_id, channel_id, target.id, &me)).await {
             tracing::warn!(community = %community_id, error = %e, "admin delete: stored row kept");
         }
-        self.ctx.publish_event(SubscriptionEvent::ChannelMessage(
-            ChannelMessageEvent::Deleted {
-                community: community_id.to_owned(),
-                channel: channel_id.to_owned(),
-                message_id: target.id.to_owned(),
-            },
-        ));
         Ok(())
     }
 

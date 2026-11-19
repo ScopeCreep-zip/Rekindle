@@ -14,7 +14,7 @@ use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
-use rekindle_types::id::ChannelId;
+use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::message::SendState;
 use rekindle_types::permissions::MANAGE_MESSAGES;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, SystemEvent};
@@ -88,6 +88,9 @@ pub enum Ingested {
     /// We were removed from the community: nothing of it is opened or
     /// stored, whichever path read it (plan E3.2 S9, R3-1).
     Removed,
+    /// A moderator's merged `AdminDelete` names it (plan E3.3 M4): it is
+    /// stored removed, never opened.
+    RemovedByModerator,
 }
 
 impl HostChannel {
@@ -203,6 +206,9 @@ impl HostChannel {
         if held.is_some() {
             return Ok(Ingested::Duplicate);
         }
+        if let Some(by) = self.removed_by_moderator(&post, &message_id) {
+            return self.store_removed(owner, &db, post, message_id, by).await;
+        }
         let community = post.community_id.as_str();
         let inputs = self.gate_inputs(&owner, &db, community).await?;
         let author = GatedPost {
@@ -256,6 +262,9 @@ impl HostChannel {
             mentions_me,
         };
         self.store_received(owner, &db, post.clone(), row).await?;
+        let author = PseudonymKey::from_hex_lossy(&post.message.sender_pseudonym);
+        self.release_held(&post.community_id, &author, &message_id)
+            .await;
         self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::New {
                 community: post.community_id.clone(),
@@ -488,6 +497,31 @@ impl HostChannel {
             backfill: post.backfill,
             slot: post.slot,
         }
+    }
+
+    /// Store a post a moderator removed before it reached us (plan E3.3
+    /// M4, delete-wins): an empty row tombstoned as removed by `by`.
+    async fn store_removed(
+        &self,
+        owner: String,
+        db: &rekindle_db::Db,
+        post: ReceivedPost,
+        message_id: String,
+        by: PseudonymKey,
+    ) -> Result<Ingested, ChannelError> {
+        let row = Row {
+            message_id: message_id.clone(),
+            body: String::new(),
+            blurred: false,
+            own: false,
+            mentions_me: false,
+        };
+        self.store_received(owner, db, post.clone(), row).await?;
+        (self.gov)
+            .store_admin_delete(&post.community_id, &post.channel_id, &message_id, &by)
+            .await
+            .map_err(|e| ChannelError::Adapter(e.to_string()))?;
+        Ok(Ingested::RemovedByModerator)
     }
 
     async fn store_received(

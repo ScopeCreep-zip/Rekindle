@@ -241,10 +241,13 @@ pub struct StoredChannelMessage {
     pub failure_reason: Option<String>,
     /// When its author last edited it, in seconds (plan E3.3).
     pub edited_at: Option<i64>,
+    /// The moderator who removed it (plan E3.3 M4); its body is gone.
+    pub removed_by: Option<String>,
 }
 
 /// Up to `limit` messages of `channel_id`, oldest first; with `before`, only
-/// those older than it. A message its author deleted is not one (plan E3.3). Ordered by the message lamport (the wall clock when
+/// those older than it. A message its author deleted is not one; one a moderator removed is, with its
+/// body gone and `removed_by` set (plan E3.3 M4). Ordered by the message lamport (the wall clock when
 /// a row has none), ties by sender, as every peer orders a channel.
 ///
 /// # Errors
@@ -258,10 +261,10 @@ pub fn page(
 ) -> rusqlite::Result<Vec<StoredChannelMessage>> {
     let mut stmt = conn.prepare(
         "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, \
-                attachment_json, flags, send_state, failure_reason, edited_at \
+                attachment_json, flags, send_state, failure_reason, edited_at, deleted_by \
          FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
-           AND deleted_at IS NULL AND (?3 IS NULL OR timestamp < ?3) \
+           AND (deleted_at IS NULL OR deleted_by IS NOT NULL) AND (?3 IS NULL OR timestamp < ?3) \
          ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?4",
     )?;
     let rows = stmt.query_map(params![owner_key, channel_id, before, limit], |row| {
@@ -286,6 +289,7 @@ pub fn page(
             send_state,
             failure_reason: get(row, "failure_reason")?,
             edited_at: get(row, "edited_at")?,
+            removed_by: get(row, "deleted_by")?,
         })
     })?;
     let mut out = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -313,24 +317,6 @@ pub fn fail_own_post(
         params![owner_key, message_id, reason],
     )?;
     Ok(changed > 0)
-}
-
-/// Delete one stored channel message by its protocol id; whether a row went.
-///
-/// # Errors
-/// The delete failed.
-pub fn delete(
-    conn: &Connection,
-    owner_key: &str,
-    channel_id: &str,
-    message_id: &str,
-) -> rusqlite::Result<bool> {
-    let n = conn.execute(
-        "DELETE FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-         AND conversation_type = 'channel' AND message_id = ?3",
-        params![owner_key, channel_id, message_id],
-    )?;
-    Ok(n > 0)
 }
 
 #[cfg(test)]
@@ -378,10 +364,6 @@ mod tests {
                 .body,
             "b"
         );
-        assert!(delete(&conn, OWNER, "ch", "b").unwrap());
-        assert!(find_by_message_id(&conn, OWNER, "ch", "b")
-            .unwrap()
-            .is_none());
     }
 
     #[test]

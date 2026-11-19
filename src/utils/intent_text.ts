@@ -76,7 +76,7 @@ export function factText(fact: Fact): string {
       "Confirming does not verify it.";
   }
   if ("membersAffected" in fact) return `${fact.membersAffected.count} members are affected.`;
-  return `${fact.messagesDeleted.count} messages are deleted for everyone.`;
+  return `${fact.messagesDeleted.count} messages are deleted for members.`;
 }
 
 export function escalationText(escalation: Escalation): string {

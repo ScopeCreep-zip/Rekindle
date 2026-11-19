@@ -5,6 +5,7 @@ import { Popover } from "@kobalte/core/popover";
 import ReactionBar from "./ReactionBar";
 import EmojiPicker from "./EmojiPicker";
 import MessageRichBody from "./MessageRichBody";
+import { communityState } from "../../stores/community.store";
 import PollCard from "./PollCard";
 import ThreadStarter from "./ThreadStarter";
 import AttachmentDisplay from "./AttachmentDisplay";
@@ -116,6 +117,14 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     () => props.message.flags != null && (props.message.flags & FLAG_VOICE_MESSAGE) !== 0,
   );
 
+  /** The moderator who removed it, by their name in this community when
+   *  we hold it (plan E3.3 M4). */
+  const removedByName = (): string => {
+    const by = props.message.removedBy ?? "";
+    const community = props.communityId ? communityState.communities[props.communityId] : undefined;
+    return community?.members?.find((m) => m.pseudonymKey === by)?.displayName ?? `${by.slice(0, 8)}…`;
+  };
+
   // Architecture §32 a11y — screen-reader announcement composed from
   // sender + timestamp + body. Read by the parent message-list's
   // `role="log"` live region whenever a new bubble is appended.
@@ -125,9 +134,11 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       minute: "2-digit",
     });
     const sender = props.senderName || (props.message.isOwn ? "You" : "Unknown");
-    const body = props.message.decryptionFailed
-      ? "Unable to decrypt — waiting for encryption keys"
-      : props.message.body;
+    const body = props.message.removedBy
+      ? `Removed by ${removedByName()}`
+      : props.message.decryptionFailed
+        ? "Unable to decrypt — waiting for encryption keys"
+        : props.message.body;
     return `${sender} at ${ts}: ${body}`;
   };
 
@@ -277,6 +288,10 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       </div>
 
       <Show
+        when={!props.message.removedBy}
+        fallback={<div class="message-removed">Removed by {removedByName()}</div>}
+      >
+      <Show
         when={props.message.decryptionFailed}
         fallback={
           <Show
@@ -296,6 +311,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           <span class="message-decrypt-failed-icon nf-icon">&#xf023;</span>
           Unable to decrypt — waiting for encryption keys
         </div>
+      </Show>
       </Show>
 
       {/* Architecture §28.8 — sender-fetched OpenGraph card. The

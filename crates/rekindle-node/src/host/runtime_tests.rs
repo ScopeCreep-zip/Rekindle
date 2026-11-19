@@ -17,6 +17,8 @@ mod attachment_limit;
 mod automod_malformed;
 #[path = "channel_change_tests.rs"]
 mod channel_change_tests;
+#[path = "channel_held_tests.rs"]
+mod channel_held_tests;
 #[path = "channel_history_tests.rs"]
 mod channel_history_tests;
 #[path = "channel_ingest_tests.rs"]

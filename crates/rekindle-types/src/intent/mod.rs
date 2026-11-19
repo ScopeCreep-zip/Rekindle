@@ -308,7 +308,8 @@ pub enum Fact {
     /// This many members are affected.
     #[serde(rename_all = "camelCase")]
     MembersAffected { count: u32 },
-    /// This many messages are deleted for everyone.
+    /// This many messages are deleted for members (plan E3.3 E4: never
+    /// "erased", the ciphertext stays in copies).
     #[serde(rename_all = "camelCase")]
     MessagesDeleted { count: u32 },
     /// The subject can see our presence and reach us.

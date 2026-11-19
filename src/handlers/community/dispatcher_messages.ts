@@ -89,11 +89,22 @@ function applyEdit(channel: string, messageId: string, body: string, editedAt: n
   }
 }
 
-function applyDelete(channel: string, messageId: string): void {
-  if (!communityState.channelMessages[channel]) return;
-  setCommunityState("channelMessages", channel, (prev) =>
-    prev.filter((m) => m.serverMessageId !== messageId),
-  );
+/** Its author's delete takes the message out; a moderator's leaves a
+ *  "Removed by" line in its place (plan E3.3 M4). */
+function applyDelete(channel: string, messageId: string, removedBy: string | null): void {
+  const msgs = communityState.channelMessages[channel];
+  if (!msgs) return;
+  if (removedBy === null) {
+    setCommunityState("channelMessages", channel, (prev) =>
+      prev.filter((m) => m.serverMessageId !== messageId),
+    );
+    return;
+  }
+  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+  if (idx < 0) return;
+  setCommunityState("channelMessages", channel, idx, (m) => ({
+    ...m, body: "", editedAt: undefined, attachment: undefined, removedBy,
+  }));
 }
 
 function applyReactionAdded(
@@ -215,7 +226,7 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
     if ("edited" in m) {
       applyEdit(m.edited.channel, m.edited.messageId, m.edited.body, m.edited.editedAt);
     } else if ("deleted" in m) {
-      applyDelete(m.deleted.channel, m.deleted.messageId);
+      applyDelete(m.deleted.channel, m.deleted.messageId, m.deleted.removedBy);
     } else if ("channelSendStatus" in m) {
       applySendStatus(
         m.channelSendStatus.channel,

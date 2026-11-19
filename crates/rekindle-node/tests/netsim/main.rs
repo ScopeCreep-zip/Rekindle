@@ -69,6 +69,7 @@ mod mek_transfer_retry;
 mod member_events;
 mod mod_report;
 mod moderation;
+mod moderator_delete;
 mod no_timed_inspect;
 mod offline_day;
 mod onboarding;

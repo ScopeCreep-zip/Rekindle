@@ -193,7 +193,12 @@ CREATE TABLE IF NOT EXISTS messages (
     -- The body and every revision are purged and later edits refused; the
     -- row stays, so a re-read of the author's record never restores it.
     deleted_at INTEGER,
-    CHECK(deleted_at IS NULL OR (body = '' AND edited_at IS NULL))
+    -- A moderator's tombstone (plan E3.3 M4, the `AdminDelete` op): the
+    -- moderator's pseudonym, shown as "removed by"; NULL for the author's
+    -- own delete. It is set only with `deleted_at`.
+    deleted_by TEXT,
+    CHECK(deleted_at IS NULL OR (body = '' AND edited_at IS NULL)),
+    CHECK(deleted_by IS NULL OR deleted_at IS NOT NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);

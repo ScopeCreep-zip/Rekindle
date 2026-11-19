@@ -17,15 +17,17 @@ use crate::host::adapters::channel::changes::ChangeSource;
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
-const EDIT_CHANNEL: &str = "fedcba9876543210fedcba9876543210";
-const RECORD: &str = "VLD0:channel";
-const SUBKEY: u32 = 9;
-const TEXT_KEY: [u8; 32] = [7; 32];
-const AUTHOR: PseudonymKey = PseudonymKey([1; 32]);
+pub(super) const EDIT_CHANNEL: &str = "fedcba9876543210fedcba9876543210";
+pub(super) const RECORD: &str = "VLD0:channel";
+pub(super) const SUBKEY: u32 = 9;
+pub(super) const TEXT_KEY: [u8; 32] = [7; 32];
+pub(super) const AUTHOR: PseudonymKey = PseudonymKey([1; 32]);
 const OTHER_AUTHOR: PseudonymKey = PseudonymKey([2; 32]);
 
 /// The channel-message events published within a short wait.
-async fn channel_events(stream: &mut rekindle_events::EventStream) -> Vec<ChannelMessageEvent> {
+pub(super) async fn channel_events(
+    stream: &mut rekindle_events::EventStream,
+) -> Vec<ChannelMessageEvent> {
     let mut out = Vec::new();
     while let Ok(Some(frame)) =
         tokio::time::timeout(std::time::Duration::from_millis(50), stream.next()).await
@@ -41,7 +43,7 @@ async fn channel_events(stream: &mut rekindle_events::EventStream) -> Vec<Channe
 
 /// Ann's Host holding `AUTHOR`'s message `m1` ("first") in `c1`, the
 /// community's text key, and a merged state that refuses nobody.
-async fn reader(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String) {
+pub(super) async fn reader(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String) {
     let host = offline_host(dir).await;
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
@@ -81,7 +83,7 @@ async fn reader(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String) {
     (host, owner)
 }
 
-fn edit(body: &str, seq: u64) -> ChannelRecordEntry {
+pub(super) fn edit(body: &str, seq: u64) -> ChannelRecordEntry {
     let at = BodyPosition {
         channel_record_key: RECORD,
         subkey_index: SUBKEY,
@@ -96,7 +98,7 @@ fn edit(body: &str, seq: u64) -> ChannelRecordEntry {
     })
 }
 
-async fn apply(host: &Host, author: &PseudonymKey, entries: &[ChannelRecordEntry]) {
+pub(super) async fn apply(host: &Host, author: &PseudonymKey, entries: &[ChannelRecordEntry]) {
     let source = ChangeSource {
         community_id: "c1",
         channel_id: EDIT_CHANNEL,
@@ -110,7 +112,7 @@ async fn apply(host: &Host, author: &PseudonymKey, entries: &[ChannelRecordEntry
 }
 
 /// What a reload shows: each row's body and edit time.
-async fn reload(host: &Host, owner: &str) -> Vec<(String, Option<i64>)> {
+pub(super) async fn reload(host: &Host, owner: &str) -> Vec<(String, Option<i64>)> {
     let owner = owner.to_owned();
     (host.ctx.db.current().unwrap())
         .call(move |conn| rows::page(conn, &owner, EDIT_CHANNEL, None, 10))

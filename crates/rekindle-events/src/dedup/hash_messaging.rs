@@ -36,6 +36,7 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             community,
             channel,
             message_id,
+            ..
         } => {
             h.update(b"deleted|");
             h.update(community.as_bytes());

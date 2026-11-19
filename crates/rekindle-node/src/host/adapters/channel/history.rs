@@ -10,6 +10,7 @@ use rekindle_channel::ChannelMessagingDeps;
 use rekindle_db::repo::messages::channel::{
     self as rows, ChannelMessageInsert, StoredChannelMessage,
 };
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment};
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
@@ -242,6 +243,19 @@ impl HostChannel {
         }
         self.insert_record_messages(owner, channel_id, fresh)
             .await?;
+        // Delete wins (plan E3.3 M4): a post a moderator removed is stored
+        // removed, and the record's copy is never shown.
+        self.gov.apply_admin_deletes(community_id).await;
+        if let Some(state) = self.gov.governance_state(community_id) {
+            shown.retain(|m| {
+                !(m.view.server_message_id.as_deref()).is_some_and(|id| {
+                    crate::host::adapters::governance::channel_messages::removed_by(
+                        &state, channel_id, id,
+                    )
+                    .is_some()
+                })
+            });
+        }
         for (message_id, reason) in reports {
             self.report_to_moderators(community_id, channel_id, &message_id, &reason)
                 .await;
@@ -370,5 +384,6 @@ pub(crate) fn stored_view(
             .filter(|_| row.send_state == SendState::Failed),
         send_state: row.send_state,
         edited_at: row.edited_at,
+        removed_by: row.removed_by,
     }
 }

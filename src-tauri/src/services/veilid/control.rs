@@ -23,11 +23,9 @@ pub(crate) async fn handle_relayed_control(
                 payload,
             );
         }
-        payload @ (ControlPayload::MessageEdited { .. }
-        | ControlPayload::MessageDeleted { .. }
-        | ControlPayload::ReactionAdded { .. }
+        payload @ (ControlPayload::ReactionAdded { .. }
         | ControlPayload::ReactionRemoved { .. }) => {
-            handle_channel_event_payload(app_handle, state, community_id, payload);
+            handle_channel_event_payload(app_handle, community_id, payload);
         }
         payload @ (ControlPayload::RequestMEK { .. }
         | ControlPayload::RequestSegmentExpansion { .. }) => {
@@ -46,84 +44,14 @@ pub(crate) async fn handle_relayed_control(
     }
 }
 
-/// An edit's new body, opened under exactly the generation of the
-/// channel's text key the edit names.
-fn decrypt_edited_message_body(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    mek_generation: u64,
-    new_ciphertext: &[u8],
-) -> String {
-    let key = crate::state_helpers::text_scope(state, community_id, channel_id).and_then(|scope| {
-        crate::state_helpers::key_provider(state).key(
-            community_id,
-            scope,
-            rekindle_types::channel_keys::KeyEpoch(mek_generation),
-        )
-    });
-    let Some(key) = key else {
-        return "(no MEK available)".to_string();
-    };
-    match rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(*key, mek_generation)
-        .decrypt(new_ciphertext)
-    {
-        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-        Err(_) => "(decryption failed)".to_string(),
-    }
-}
-
 fn handle_channel_event_payload(
     app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
     community_id: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        ControlPayload::MessageEdited {
-            channel_id,
-            message_id,
-            new_ciphertext,
-            mek_generation,
-            edited_at,
-        } => {
-            let new_body = decrypt_edited_message_body(
-                state,
-                community_id,
-                &channel_id,
-                mek_generation,
-                &new_ciphertext,
-            );
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
-                    rekindle_types::subscription_events::ChannelMessageEvent::Edited {
-                        community: community_id.to_string(),
-                        channel: channel_id,
-                        message_id,
-                        body: Some(new_body),
-                        edited_at,
-                    },
-                ),
-            );
-        }
-        ControlPayload::MessageDeleted {
-            channel_id,
-            message_id,
-        } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
-                    rekindle_types::subscription_events::ChannelMessageEvent::Deleted {
-                        community: community_id.to_string(),
-                        channel: channel_id,
-                        message_id,
-                    },
-                ),
-            );
-        }
         ControlPayload::ReactionAdded {
             channel_id,
             message_id,

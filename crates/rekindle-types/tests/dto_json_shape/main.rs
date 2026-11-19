@@ -125,6 +125,7 @@ fn samples() -> Map<String, Value> {
             send_state: rekindle_types::message::SendState::Delivered,
             failure_reason: None,
             edited_at: None,
+            removed_by: None,
         }),
     );
     add(

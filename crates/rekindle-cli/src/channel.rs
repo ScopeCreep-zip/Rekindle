@@ -240,11 +240,20 @@ async fn watch_channel(
         SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
             channel,
             message_id,
+            removed_by,
             ..
-        }) if *channel == channel_id => Some(format!(
-            "(deleted {})",
-            rekindle_client::fmt::abbreviate_key(message_id)
-        )),
+        }) if *channel == channel_id => Some(match removed_by {
+            // Plan E3.3 E4 and M4: never "erased".
+            Some(by) => format!(
+                "({} removed by {})",
+                rekindle_client::fmt::abbreviate_key(message_id),
+                rekindle_client::fmt::abbreviate_key(by)
+            ),
+            None => format!(
+                "({} deleted for members)",
+                rekindle_client::fmt::abbreviate_key(message_id)
+            ),
+        }),
         _ => None,
     })
     .await

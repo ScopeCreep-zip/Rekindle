@@ -104,8 +104,12 @@ pub async fn handle_message_notification(
             return Ok(());
         }
         // Removed: nothing of a community we were removed from is shown,
-        // and no key is asked for (plan E3.2 S9, R3-1).
-        Ingested::Duplicate | Ingested::Dropped(_) | Ingested::Removed => return Ok(()),
+        // and no key is asked for (plan E3.2 S9, R3-1). A post a moderator
+        // removed is stored removed and never shown (plan E3.3 M4).
+        Ingested::Duplicate
+        | Ingested::Dropped(_)
+        | Ingested::Removed
+        | Ingested::RemovedByModerator => return Ok(()),
     };
     let sender_pseudonym = message.sender_pseudonym.clone();
     emit_message_received(

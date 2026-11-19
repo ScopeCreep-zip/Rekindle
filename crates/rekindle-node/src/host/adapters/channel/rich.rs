@@ -89,6 +89,7 @@ fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView
         },
         failure_reason: None,
         edited_at: None,
+        removed_by: None,
     }
 }
 

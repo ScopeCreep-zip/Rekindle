@@ -42,10 +42,10 @@ use crate::checkpoint::{self, EndorsementFault, Hints};
 use crate::op::{OpStamp, VerifiedOp};
 use crate::power::{class_of, OpClass};
 use crate::state::{
-    AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
-    EventState, ExpressionState, GovernanceState, InviteState, MemberState, MetadataState,
-    OnboardingState, OverwriteState, RoleState, SegmentState, ThreadState, TimeoutState,
-    WelcomeScreenState,
+    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelState,
+    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
+    MetadataState, OnboardingState, OverwriteState, RoleState, SegmentState, ThreadState,
+    TimeoutState, WelcomeScreenState,
 };
 use crate::validate::validate_write;
 
@@ -393,8 +393,19 @@ fn apply(
         | G::UnbanEntry { .. }
         | G::TimeoutEntry { .. }
         | G::RemoveTimeoutEntry { .. }
-        | G::AdminDelete { .. }
         | G::AutoModRule { .. } => apply_moderation(entry, stamp, state),
+        // A tombstone (plan E3.3 M4): the first delete merged keeps its
+        // moderator, so every reader names the same one.
+        G::AdminDelete {
+            message_id,
+            channel_id,
+            ..
+        } => {
+            (state.admin_deletes.entry(*message_id)).or_insert_with(|| AdminDeleteState {
+                by: author.clone(),
+                channel_id: *channel_id,
+            });
+        }
         G::ModReport { .. } => apply_mod_report(author, entry, stamp, state),
         G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => {
             apply_onboarding(entry, stamp, state);

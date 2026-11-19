@@ -5,11 +5,11 @@
 //! every stamp LWW compares is encoded with its row.
 
 use crate::state::{
-    AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord, ChannelState,
-    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
-    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
-    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
-    WelcomeScreenState,
+    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord,
+    ChannelState, CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState,
+    MemberState, MetadataState, ModReportState, NotificationDefaultState, OnboardingState,
+    OverwriteState, PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState,
+    TimeoutState, WelcomeScreenState,
 };
 
 use super::canon::{Canon, Json};
@@ -139,6 +139,13 @@ impl Canon for AdmissionDecision {
     fn put(&self, out: &mut Vec<u8>) {
         let Self { approved, stamp } = self;
         put!(out; approved, stamp);
+    }
+}
+
+impl Canon for AdminDeleteState {
+    fn put(&self, out: &mut Vec<u8>) {
+        let Self { by, channel_id } = self;
+        put!(out; by, channel_id);
     }
 }
 

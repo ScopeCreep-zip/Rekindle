@@ -71,6 +71,7 @@ pub fn samples() -> Vec<Sample> {
                 community: community(),
                 channel: channel(),
                 message_id: id("msg_", '1'),
+                removed_by: Some(pk('c')),
             },
         ),
         ev(

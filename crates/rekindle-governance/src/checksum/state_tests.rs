@@ -10,11 +10,11 @@ use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, T
 use super::canonical_state;
 use crate::op::OpStamp;
 use crate::state::{
-    AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord, ChannelState,
-    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
-    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
-    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
-    WelcomeScreenState,
+    AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord,
+    ChannelState, CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState,
+    MemberState, MetadataState, ModReportState, NotificationDefaultState, OnboardingState,
+    OverwriteState, PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState,
+    TimeoutState, WelcomeScreenState,
 };
 
 fn pk() -> PseudonymKey {
@@ -271,7 +271,13 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
         ),
         (
             "admin_deletes",
-            Box::new(move |g| _ = g.admin_deletes.insert(id)),
+            Box::new(move |g| {
+                let delete = AdminDeleteState {
+                    by: pk(),
+                    channel_id: ChannelId([1; 16]),
+                };
+                _ = g.admin_deletes.insert(id, delete);
+            }),
         ),
         (
             "pinned_attachments",

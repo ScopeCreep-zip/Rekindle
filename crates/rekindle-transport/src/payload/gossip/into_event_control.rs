@@ -4,7 +4,7 @@
 //! handled by `into_event_control_rest.rs`.
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, CryptoEvent, MembershipEvent, SocialEvent, SubscriptionEvent,
+    CryptoEvent, MembershipEvent, SocialEvent, SubscriptionEvent,
 };
 
 use rekindle_codec::community::envelope::ControlPayload;
@@ -34,28 +34,6 @@ pub fn control_into_event(
     let s = || sender.to_string();
 
     Some(match payload {
-        // ── Messages ────────────────────────────────────────
-        ControlPayload::MessageEdited {
-            channel_id,
-            message_id,
-            edited_at,
-            ..
-        } => SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited {
-            community: c(),
-            channel: channel_id,
-            message_id,
-            edited_at,
-            body: None, // populated by enrichment stage
-        }),
-        ControlPayload::MessageDeleted {
-            channel_id,
-            message_id,
-        } => SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
-            community: c(),
-            channel: channel_id,
-            message_id,
-        }),
-
         // ── MEK management ──────────────────────────────────
         ControlPayload::MEKRotated {
             channel_id,

@@ -66,11 +66,6 @@ pub(super) fn apply_moderation(
             }
         }
 
-        // ── Metadata: LWW ──
-        GovernanceEntry::AdminDelete { message_id, .. } => {
-            state.admin_deletes.insert(*message_id);
-        }
-
         // ── Plate Gate lazy channel records (architecture §15.4):
         //    LWW per (channel_id, segment_index). First-writer wins on
         //    creation; later messages from the same segment write to the

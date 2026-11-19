@@ -121,3 +121,48 @@ fn a_tombstone_is_final_and_purges_the_revisions() {
     assert!(body.is_empty(), "every revision is purged");
     assert!(!tombstone(&conn, OWNER, "ch", "m1", "alice", 300).unwrap());
 }
+
+fn removal(by: &str) -> AdminTombstone<'_> {
+    AdminTombstone {
+        owner_key: OWNER,
+        channel_id: "ch",
+        message_id: "m1",
+        by,
+        deleted_at: 300,
+    }
+}
+
+#[test]
+fn a_moderators_delete_is_a_tombstone_shown_as_removed_by() {
+    let conn = fixture::conn();
+    seed(&conn);
+    assert!(store_edit(&conn, &edit("alice", "second", 5)).unwrap());
+    assert!(
+        admin_tombstone(&conn, &removal("mod")).unwrap(),
+        "any author's message"
+    );
+    assert!(
+        !store_edit(&conn, &edit("alice", "after", 9)).unwrap(),
+        "delete wins: a later edit is refused"
+    );
+    assert!(
+        !admin_tombstone(&conn, &removal("other")).unwrap(),
+        "the first moderator stays"
+    );
+    let page = channel::page(&conn, OWNER, "ch", None, 10).unwrap();
+    assert_eq!(page.len(), 1, "the removed message stays in the page");
+    assert_eq!(page[0].body, "", "every revision is purged");
+    assert_eq!(page[0].removed_by.as_deref(), Some("mod"));
+    assert_eq!(page[0].edited_at, None);
+}
+
+#[test]
+fn a_moderators_delete_after_the_authors_changes_nothing() {
+    let conn = fixture::conn();
+    seed(&conn);
+    assert!(tombstone(&conn, OWNER, "ch", "m1", "alice", 200).unwrap());
+    assert!(!admin_tombstone(&conn, &removal("mod")).unwrap());
+    assert!(channel::page(&conn, OWNER, "ch", None, 10)
+        .unwrap()
+        .is_empty());
+}

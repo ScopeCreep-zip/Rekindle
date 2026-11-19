@@ -30,6 +30,7 @@ pub(crate) mod changes;
 pub mod deps_impl;
 mod dht;
 mod events;
+pub(crate) mod held_changes;
 pub(crate) mod history;
 pub mod ingest;
 pub(crate) mod not_delivered;

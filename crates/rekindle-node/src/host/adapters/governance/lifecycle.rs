@@ -200,6 +200,8 @@ impl HostGovernance {
     ) {
         self.set_governance_state_impl(community_id, gov_state);
         self.persist_governance_snapshot(community_id).await;
+        // Moderator deletes are applied from every merge (plan E3.3 M4).
+        self.apply_admin_deletes(community_id).await;
         self.schedule_follow_up(community_id);
     }
 

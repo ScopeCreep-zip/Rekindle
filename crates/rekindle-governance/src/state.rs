@@ -135,8 +135,10 @@ pub struct GovernanceState {
     /// Active expressions after OR-Set add/remove merge.
     pub expressions: HashMap<[u8; 16], ExpressionState>,
 
-    /// Admin-deleted message IDs (tombstones).
-    pub admin_deletes: HashSet<[u8; 16]>,
+    /// Admin-deleted message IDs (tombstones, plan E3.3 M4): who deleted
+    /// each and in which channel. The first delete merged keeps its
+    /// moderator; readers apply it to their rows under delete-wins.
+    pub admin_deletes: HashMap<[u8; 16], AdminDeleteState>,
 
     /// Pinned attachment IDs — exempt from LRU eviction in local file
     /// caches (Lost Cargo, architecture §28.9 line 3283). Driven by
@@ -431,6 +433,15 @@ pub struct ExpressionState {
     /// Architecture §18.1 line 2459 — gates `USE_EXTERNAL_EMOJIS`.
     pub available_to_peers: bool,
     pub stamp: OpStamp,
+}
+
+/// A moderator's delete of a channel message (`AdminDelete`, plan E3.3
+/// M4): the moderator a reader names ("removed by") and the channel the
+/// delete was judged in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdminDeleteState {
+    pub by: PseudonymKey,
+    pub channel_id: ChannelId,
 }
 
 #[derive(Debug, Clone, PartialEq)]

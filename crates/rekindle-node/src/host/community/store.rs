@@ -8,6 +8,9 @@
 //! overflow chain, the observed roster and the per-member roles, all on the
 //! one [`CommunityState`].
 
+use rekindle_channel::held::HeldChanges;
+
+use crate::host::adapters::channel::held_changes::HeldChange;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
@@ -66,6 +69,9 @@ pub struct CommunityStore {
     /// The post-rebuild follow-up per community (S7l): at most one runs,
     /// and the rebuilds that finish meanwhile only mark it dirty.
     follow_ups: Arc<parking_lot::Mutex<BTreeMap<String, FollowUp>>>,
+    /// The channel edits and deletes that arrived before their message
+    /// (plan E3.3 E5), bounded, keyed by author pseudonym and message id.
+    held_changes: Arc<parking_lot::Mutex<HeldChanges<HeldChange>>>,
 }
 
 impl CommunityStore {
@@ -81,7 +87,14 @@ impl CommunityStore {
             op_verify: Arc::default(),
             frontier_writes: Arc::default(),
             follow_ups: Arc::default(),
+            held_changes: Arc::default(),
         }
+    }
+
+    /// The channel changes waiting for their message (plan E3.3 E5).
+    #[must_use]
+    pub(crate) fn held_changes(&self) -> &parking_lot::Mutex<HeldChanges<HeldChange>> {
+        &self.held_changes
     }
 
     /// The shared map itself.

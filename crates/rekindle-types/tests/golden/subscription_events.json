@@ -156,7 +156,8 @@
       "deleted": {
         "channel": "ch_cccccccccccccccccccccccccccccccc",
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "messageId": "msg_11111111111111111111111111111111"
+        "messageId": "msg_11111111111111111111111111111111",
+        "removedBy": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       }
     }
   },
