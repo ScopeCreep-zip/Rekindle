@@ -18,13 +18,7 @@ use rekindle_types::dto::CommandError;
 /// in-process host with no node and the GUI's hooks, and the state that
 /// shares the host's identity slots.
 async fn test_env(dir: &std::path::Path) -> (DataRoot, SharedState) {
-    let data = dir.join("data");
-    let root = DataRoot {
-        config: dir.join("config"),
-        logs: dir.join("logs"),
-        state: data.join("state"),
-        data,
-    };
+    let root = DataRoot::under(dir);
     let state: SharedState = Arc::new(AppState::default());
     let host = rekindle_node::host::Host::start(rekindle_node::host::HostConfig {
         root: rekindle_node::host::claim(root.clone()).unwrap(),

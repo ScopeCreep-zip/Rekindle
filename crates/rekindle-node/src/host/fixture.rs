@@ -19,13 +19,7 @@ pub struct Fixture {
 
 /// A data root laid out under `dir` (nothing created).
 pub fn temp_root(dir: &tempfile::TempDir) -> DataRoot {
-    let data = dir.path().join("data");
-    DataRoot {
-        config: dir.path().join("config"),
-        logs: dir.path().join("logs"),
-        state: data.join("state"),
-        data,
-    }
+    DataRoot::under(dir.path())
 }
 
 impl Fixture {

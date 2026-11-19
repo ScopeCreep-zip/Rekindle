@@ -75,14 +75,23 @@ const fn size(kind: WindowKind) -> Size {
 }
 
 /// The builder every window starts from: frameless transparent chrome,
-/// the navigation guard, no new windows, and the media-permission policy
-/// for `kind`.
+/// the navigation guard, no new windows, the media-permission policy for
+/// `kind`, and the data root's webview store.
+///
+/// # Errors
+/// No data root is managed yet (`setup::run` manages it before the first
+/// window): a window is never built on the platform's default store when
+/// the root names another.
 fn base_builder<'a>(
     app: &'a AppHandle,
     kind: WindowKind,
     label: &str,
     path: String,
-) -> WebviewWindowBuilder<'a, Wry, AppHandle> {
+) -> Result<WebviewWindowBuilder<'a, Wry, AppHandle>, String> {
+    let store = app
+        .try_state::<rekindle_db::paths::DataRoot>()
+        .map(|root| root.webview.clone())
+        .ok_or("no data root is managed")?;
     let dev_origin = if tauri::is_dev() {
         app.config().build.dev_url.clone()
     } else {
@@ -90,7 +99,7 @@ fn base_builder<'a>(
     };
     let captures_media = kind.captures_media();
     let Size { inner, min } = size(kind);
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
         .inner_size(inner.0, inner.1)
         .min_inner_size(min.0, min.1)
         .decorations(false)
@@ -101,7 +110,27 @@ fn base_builder<'a>(
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_permission_request(move |_, permission| {
             navigation::permission_for(captures_media, permission)
-        })
+        });
+    Ok(with_store(builder, &store))
+}
+
+/// Point the webview at `store`: a real install keeps the platform's
+/// defaults; a contained root (the WebDriver walk) gets its own data
+/// directory, which WebKitGTK and WebView2 keep every store in, and on
+/// macOS, where WKWebView ignores it, a non-persistent store.
+fn with_store<'a>(
+    builder: WebviewWindowBuilder<'a, Wry, AppHandle>,
+    store: &rekindle_db::paths::WebviewStore,
+) -> WebviewWindowBuilder<'a, Wry, AppHandle> {
+    match store {
+        rekindle_db::paths::WebviewStore::Platform(_) => builder,
+        rekindle_db::paths::WebviewStore::Contained(dir) => {
+            let builder = builder.data_directory(dir.clone());
+            #[cfg(target_os = "macos")]
+            let builder = builder.incognito(true);
+            builder
+        }
+    }
 }
 
 /// Build the window, then enable platform media capture if `kind` captures.
@@ -145,7 +174,7 @@ pub fn open_login(app: &AppHandle, preselect: Option<&PublicKeyHex>) -> Result<(
         Some(key) => format!("/login?account={key}"),
         None => "/login".to_owned(),
     };
-    let builder = base_builder(app, WindowKind::Login, labels::LOGIN, path)
+    let builder = base_builder(app, WindowKind::Login, labels::LOGIN, path)?
         .title("Rekindle")
         .center();
     finish(builder, WindowKind::Login).map(drop)
@@ -164,7 +193,7 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
         WindowKind::BuddyList,
         labels::BUDDY_LIST,
         "/buddy-list".to_owned(),
-    )
+    )?
     .title("Rekindle")
     .max_inner_size(400.0, 900.0);
     finish(builder, WindowKind::BuddyList).map(drop)
@@ -211,7 +240,7 @@ pub async fn open_chat_window(
             )
         }
     };
-    let builder = base_builder(app, WindowKind::Chat, &label, path).title(title);
+    let builder = base_builder(app, WindowKind::Chat, &label, path)?.title(title);
     finish(builder, WindowKind::Chat).map(drop)
 }
 
@@ -235,7 +264,7 @@ pub fn open_settings(app: &AppHandle, tab: Option<SettingsTab>) -> Result<(), St
         Some(tab) => format!("/settings?tab={}", tab.as_str()),
         None => "/settings".to_owned(),
     };
-    let builder = base_builder(app, WindowKind::Settings, labels::SETTINGS, path)
+    let builder = base_builder(app, WindowKind::Settings, labels::SETTINGS, path)?
         .title("Rekindle - Settings");
     finish(builder, WindowKind::Settings).map(drop)
 }
@@ -259,7 +288,7 @@ pub fn open_community_window(
         Some(id) => format!("/community?id={id}"),
         None => "/community".to_owned(),
     };
-    let builder = base_builder(app, WindowKind::Community, &label, path)
+    let builder = base_builder(app, WindowKind::Community, &label, path)?
         .title(titles::community(state, community.as_ref()));
     finish(builder, WindowKind::Community).map(drop)
 }
@@ -301,7 +330,7 @@ pub fn open_call_window(app: &AppHandle, call: &str) -> Result<(), String> {
         return Ok(());
     }
     let builder =
-        base_builder(app, WindowKind::Call, &label, format!("/call?id={call}")).title("Call");
+        base_builder(app, WindowKind::Call, &label, format!("/call?id={call}"))?.title("Call");
     finish(builder, WindowKind::Call).map(drop)
 }
 
@@ -318,7 +347,7 @@ pub fn open_skin_editor(app: &AppHandle) -> Result<(), String> {
         WindowKind::SkinEditor,
         labels::SKIN_EDITOR,
         "/skin-editor".to_owned(),
-    )
+    )?
     .title("Rekindle - Skin Editor");
     if let Some(settings) = app.get_webview_window(labels::SETTINGS) {
         builder = builder.parent(&settings).map_err(|e| e.to_string())?;
@@ -344,7 +373,7 @@ pub async fn open_profile_window(
         WindowKind::Profile,
         &label,
         format!("/profile?key={peer}"),
-    )
+    )?
     .title(title);
     finish(builder, WindowKind::Profile).map(drop)
 }

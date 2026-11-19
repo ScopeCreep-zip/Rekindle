@@ -38,6 +38,39 @@ pub struct DataRoot {
     pub logs: PathBuf,
     /// `data/state`: per-session state a reset removes (plan D1).
     pub state: PathBuf,
+    /// Where the GUI's webview keeps its stores (plan E7.1, quick wipe):
+    /// the windows are built for it (`windows::base_builder`) and a wipe
+    /// removes its [`WebviewStore::dirs`], so both follow this root.
+    pub webview: WebviewStore,
+}
+
+/// Where the GUI's webview keeps its stores, decided with the root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WebviewStore {
+    /// A real install ([`DataRoot::resolve`]): the webview's platform
+    /// defaults, outside `DataRoot.data` for macOS WebKit
+    /// (`~/Library/WebKit/<id>`, `~/Library/Caches/<id>`), Linux
+    /// (`dirs::cache_dir()/<id>`; WebKitGTK's data directory is Tauri's
+    /// `app_local_data_dir`, `DataRoot.data` itself) and Windows WebView2
+    /// (`%LOCALAPPDATA%\<id>\EBWebView`).
+    Platform(Vec<PathBuf>),
+    /// A root under one base ([`DataRoot::under`], the WebDriver walk):
+    /// the windows get this data directory (WebKitGTK and WebView2 keep
+    /// every store in it) and, on macOS, where WKWebView has no directory
+    /// API, a non-persistent store; nothing outside the base is written or
+    /// wiped.
+    Contained(PathBuf),
+}
+
+impl WebviewStore {
+    /// The directories a wipe removes.
+    #[must_use]
+    pub fn dirs(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Platform(dirs) => dirs.clone(),
+            Self::Contained(dir) => vec![dir.clone()],
+        }
+    }
 }
 
 impl DataRoot {
@@ -68,6 +101,7 @@ impl DataRoot {
             config,
             logs,
             state,
+            webview: WebviewStore::Platform(platform_webview_dirs()?),
         })
     }
 
@@ -83,6 +117,7 @@ impl DataRoot {
             logs: base.join("logs"),
             state: data.join("state"),
             data,
+            webview: WebviewStore::Contained(base.join("webview")),
         }
     }
 
@@ -112,35 +147,6 @@ impl DataRoot {
     #[must_use]
     pub fn file_cache(&self) -> PathBuf {
         self.data.join("file_cache")
-    }
-
-    /// The webview's stores outside `DataRoot.data` (plan E7.1, quick
-    /// wipe): macOS WebKit's `~/Library/WebKit/<id>` and
-    /// `~/Library/Caches/<id>`; Linux `dirs::cache_dir()/<id>` (WebKitGTK's
-    /// data directory is `DataRoot.data` itself); Windows WebView2's
-    /// `%LOCALAPPDATA%\<id>\EBWebView`. Only the GUI has them.
-    ///
-    /// # Errors
-    /// A platform directory cannot be resolved.
-    pub fn webview_dirs() -> Result<Vec<PathBuf>, PathsError> {
-        #[cfg(target_os = "macos")]
-        {
-            let home = dirs::home_dir().ok_or(PathsError("home"))?;
-            Ok(vec![
-                home.join("Library/WebKit").join(IDENTIFIER),
-                home.join("Library/Caches").join(IDENTIFIER),
-            ])
-        }
-        #[cfg(windows)]
-        {
-            let local = dirs::data_local_dir().ok_or(PathsError("local data"))?;
-            Ok(vec![local.join(IDENTIFIER).join("EBWebView")])
-        }
-        #[cfg(not(any(target_os = "macos", windows)))]
-        {
-            let cache = dirs::cache_dir().ok_or(PathsError("cache"))?;
-            Ok(vec![cache.join(IDENTIFIER)])
-        }
     }
 
     /// The device login skin, `data/skins/` (plan E7.7.2): `login.json`
@@ -218,6 +224,29 @@ impl DataRoot {
     }
 }
 
+/// The webview's platform stores outside `DataRoot.data` (see
+/// [`WebviewStore::Platform`]).
+fn platform_webview_dirs() -> Result<Vec<PathBuf>, PathsError> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = dirs::home_dir().ok_or(PathsError("home"))?;
+        Ok(vec![
+            home.join("Library/WebKit").join(IDENTIFIER),
+            home.join("Library/Caches").join(IDENTIFIER),
+        ])
+    }
+    #[cfg(windows)]
+    {
+        let local = dirs::data_local_dir().ok_or(PathsError("local data"))?;
+        Ok(vec![local.join(IDENTIFIER).join("EBWebView")])
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        let cache = dirs::cache_dir().ok_or(PathsError("cache"))?;
+        Ok(vec![cache.join(IDENTIFIER)])
+    }
+}
+
 /// Create `dir` and set it owner-only (`0700`) on Unix.
 fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
@@ -242,6 +271,18 @@ mod tests {
         assert_ne!(root.data, root.config);
     }
 
+    /// A wipe on a root under a base (the walk's) removes only webview
+    /// stores below that base, never a real install's (Linux finding F1).
+    #[test]
+    fn a_contained_root_wipes_only_webview_stores_below_its_base() {
+        let base = std::path::Path::new("/tmp/walk-root");
+        let dirs = super::DataRoot::under(base).webview.dirs();
+        assert!(!dirs.is_empty());
+        for dir in &dirs {
+            assert!(dir.starts_with(base), "{}", dir.display());
+        }
+    }
+
     use super::*;
 
     /// The desktop's directories are named after `tauri.conf.json`'s
@@ -260,6 +301,7 @@ mod tests {
         assert_eq!(root.config, dirs::config_dir().unwrap().join(IDENTIFIER));
         assert_eq!(root.state, root.data.join("state"));
         assert_eq!(root.identity_files("pk"), root.state.join("pk.files"));
+        assert!(matches!(root.webview, WebviewStore::Platform(_)));
         assert!(root.logs.ends_with(if cfg!(target_os = "macos") {
             "Library/Logs/com.rekindle.app"
         } else {

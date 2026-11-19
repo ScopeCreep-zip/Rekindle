@@ -68,13 +68,7 @@ async fn main() {
         .init();
 
     let dir = std::env::temp_dir().join(format!("rekindle-e2e-{}", std::process::id()));
-    let data = dir.join("data");
-    let root = DataRoot {
-        config: dir.join("config"),
-        logs: dir.join("logs"),
-        state: data.join("state"),
-        data,
-    };
+    let root = DataRoot::under(&dir);
     // The host claims the temp root (its lock and layout check) and runs
     // with no node, with the GUI's shell hooks: the E2E suite drives the
     // identity lifecycle through the same Host calls the window makes.

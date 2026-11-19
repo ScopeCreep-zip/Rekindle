@@ -249,3 +249,19 @@ async fn the_shell_does_not_refuse_its_own_calls() {
     assert!(status_of(&answer).is_none(), "{answer:?}");
     assert_eq!(host.ctx.lifecycle.state(), DaemonState::Locked);
 }
+
+/// A shell-mode stop does not wait out the worker deadline: the panic
+/// teardown worker ends when the stop is requested (Linux finding: every
+/// duress exit logged `workers still running ... running=1`, 2 s of 2.5 s).
+#[tokio::test]
+async fn a_shell_host_stops_before_the_worker_deadline() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host_with(&dir, Some(Arc::new(Recorder::default()))).await;
+    let started = std::time::Instant::now();
+    host.shutdown().await.unwrap();
+    assert!(
+        started.elapsed() < crate::daemon::shutdown::WORKER_STOP_DEADLINE,
+        "stop took {:?}",
+        started.elapsed()
+    );
+}

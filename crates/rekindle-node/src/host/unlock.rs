@@ -440,12 +440,23 @@ async fn save_unsent(ctx: &DaemonContext, unsent: Vec<rekindle_records::port::Un
 
 /// End the session after a task panicked (the shell's scope hook): a lock
 /// teardown with `TaskPanicked`, on the Host's worker that owns the
-/// context. Runs for the life of the host.
+/// context. Runs until the Host's stop is requested: the only sender is
+/// the context's own `unlock_panics`, which this worker keeps alive, so the
+/// channel never closes by itself (it held every shell-mode stop to the
+/// full `WORKER_STOP_DEADLINE`). The stop's own teardown ends the session.
 pub(crate) async fn run_panic_teardowns(
     ctx: Arc<DaemonContext>,
     mut panics: tokio::sync::mpsc::UnboundedReceiver<String>,
 ) {
-    while let Some(task) = panics.recv().await {
+    loop {
+        let task = tokio::select! {
+            biased;
+            () = ctx.shutdown.requested() => return,
+            task = panics.recv() => match task {
+                Some(task) => task,
+                None => return,
+            },
+        };
         if transition(&ctx, DaemonState::Locking).is_err() {
             continue;
         }

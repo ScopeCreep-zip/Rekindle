@@ -6,7 +6,7 @@
 //! and Veilid's storage; `skins/`; `file_cache/`; the node lock),
 //! `DataRoot.config` (`config.toml`, `agent-keys/`), `DataRoot.logs`, and the
 //! bus runtime directory's `bus.pub`. The GUI also clears its webview
-//! stores (`DataRoot::webview_dirs`), which only it holds.
+//! stores (`DataRoot::webview`), which only it holds.
 //!
 //! It runs in two parts because the node still holds Veilid's storage and
 //! the root's node lock while the request is answered:
@@ -123,7 +123,7 @@ pub fn finish(root: &DataRoot) -> Result<(), WipeError> {
 }
 
 /// Remove each of `paths` (the GUI's webview stores,
-/// `DataRoot::webview_dirs`), after its webviews are gone.
+/// `DataRoot::webview`), after its webviews are gone.
 ///
 /// # Errors
 /// A path that exists could not be removed.

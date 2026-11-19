@@ -18,13 +18,7 @@ use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource
 
 /// A Host started over `dir`, with no identity unlocked.
 pub(super) async fn started(dir: &tempfile::TempDir) -> Arc<Host> {
-    let data = dir.path().join("data");
-    let root = rekindle_db::paths::DataRoot {
-        config: dir.path().join("config"),
-        logs: dir.path().join("logs"),
-        state: data.join("state"),
-        data,
-    };
+    let root = rekindle_db::paths::DataRoot::under(dir.path());
     Host::start(HostConfig {
         root: claim(root).unwrap(),
         stores: HostStores::default(),

@@ -89,12 +89,10 @@ pub async fn graceful_shutdown(state: &SharedState, root: Option<&rekindle_db::p
     //    the data root (the shell's node is the GUI's, so the Host left
     //    these to it; `rekindle_node::host::wipe`).
     if let (true, Some(root)) = (wiped, root) {
+        // The webview stores are the root's own (`DataRoot::webview`): a
+        // root under a test base never reaches a real install's.
         let finished = rekindle_node::host::wipe::finish(root)
-            .map_err(|e| e.to_string())
-            .and_then(|()| rekindle_db::paths::DataRoot::webview_dirs().map_err(|e| e.to_string()))
-            .and_then(|dirs| {
-                rekindle_node::host::wipe::remove_paths(&dirs).map_err(|e| e.to_string())
-            });
+            .and_then(|()| rekindle_node::host::wipe::remove_paths(&root.webview.dirs()));
         match finished {
             Ok(()) => tracing::info!("data root and webview stores wiped"),
             Err(e) => tracing::error!(error = %e, "wipe incomplete"),

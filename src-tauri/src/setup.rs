@@ -59,6 +59,10 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
         return Ok(());
     }
 
+    // Managed before the first window: every window's webview store is the
+    // root's (`windows::base_builder`, `DataRoot::webview`).
+    app.manage(root);
+
     #[cfg(debug_assertions)]
     add_dev_capabilities(app)?;
     // The first window. It is built here rather than declared in
@@ -103,8 +107,6 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
 
     // Register global keyboard shortcuts (plugin registered here for state access)
     shortcuts::register(app, state)?;
-
-    app.manage(root);
 
     // The identity's vault handle, filled at unlock and emptied at lock
     // (`host::identity`). AppState owns the same handle so services with

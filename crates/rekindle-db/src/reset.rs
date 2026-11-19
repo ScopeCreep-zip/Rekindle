@@ -208,13 +208,7 @@ mod tests {
     use super::*;
 
     fn root(dir: &Path) -> DataRoot {
-        let data = dir.join("data");
-        DataRoot {
-            config: dir.join("config"),
-            logs: dir.join("logs"),
-            state: data.join("state"),
-            data,
-        }
+        DataRoot::under(dir)
     }
 
     #[test]

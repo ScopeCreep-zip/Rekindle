@@ -40,13 +40,7 @@ pub struct Refused {
 }
 
 fn temp_root(dir: &tempfile::TempDir) -> rekindle_db::paths::DataRoot {
-    let data = dir.path().join("data");
-    rekindle_db::paths::DataRoot {
-        config: dir.path().join("config"),
-        logs: dir.path().join("logs"),
-        state: data.join("state"),
-        data,
-    }
+    rekindle_db::paths::DataRoot::under(dir.path())
 }
 
 /// The caller every scenario request comes from: a bus client with admin

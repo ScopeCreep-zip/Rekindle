@@ -119,13 +119,7 @@ mod tests {
     ) -> (rekindle_netsim::Netsim, Arc<Host>) {
         let (sim, mut nodes) = rekindle_netsim::Netsim::nodes(1, 81);
         let node = nodes.remove(0);
-        let data = dir.path().join("data");
-        let root = rekindle_db::paths::DataRoot {
-            config: dir.path().join("config"),
-            logs: dir.path().join("logs"),
-            state: data.join("state"),
-            data,
-        };
+        let root = rekindle_db::paths::DataRoot::under(dir.path());
         let storage_dir = root.data.join("veilid").display().to_string();
         let host = Host::start(HostConfig {
             root: claim(root).unwrap(),
