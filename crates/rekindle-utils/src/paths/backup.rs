@@ -47,7 +47,7 @@ pub const DEJA_DUP_MARKER: &str = ".deja-dup-ignore";
 
 impl DataRoot {
     /// Mark `state/` excluded from OS backups (see the module docs). Run
-    /// after the layout check settled `state/` (`rekindle_node::host::claim`),
+    /// after the layout check settled `state/` (`rekindle_db::reset::apply`),
     /// since a layout reset empties the directory.
     ///
     /// # Errors
