@@ -2,15 +2,25 @@
 
 use std::sync::Arc;
 
+use zeroize::Zeroizing;
+
 use crate::state::{AppState, IdentityState, UserStatus};
 
 /// The 32-byte identity secret, if an identity is loaded.
 ///
 /// THE accessor for `state.identity_secret` — adapter `Deps` impls
 /// delegate here (wrapping in their own error type where their trait
-/// wants a `Result`) instead of each re-spelling the lock-and-copy.
-pub fn identity_secret(state: &Arc<AppState>) -> Option<[u8; 32]> {
-    *state.identity_secret.lock()
+/// wants a `Result`) instead of each re-spelling the lock-and-copy. The
+/// copy is zeroized when the caller drops it (roadmap 1.8).
+pub fn identity_secret(state: &AppState) -> Option<Zeroizing<[u8; 32]>> {
+    state.identity_secret.lock().clone()
+}
+
+/// The identity secret as plain bytes, for the `Deps` traits whose
+/// signature takes them (`rekindle-mek-rotation`, `rekindle-gossip`,
+/// `rekindle-calls`, `rekindle-voice`).
+pub fn identity_secret_bytes(state: &AppState) -> Option<[u8; 32]> {
+    identity_secret(state).map(|secret| *secret)
 }
 
 /// Current identity's public key, or error `"not logged in"`.
@@ -47,10 +57,7 @@ pub fn pseudonym_credentials(
     state: &Arc<AppState>,
     community_id: &str,
 ) -> Result<(rekindle_types::id::PseudonymKey, ed25519_dalek::SigningKey), String> {
-    let secret = {
-        let guard = state.identity_secret.lock();
-        *guard.as_ref().ok_or("identity secret not available")?
-    };
+    let secret = identity_secret(state).ok_or("identity secret not available")?;
     let signing_key = rekindle_secrets::derive::derive_community_pseudonym(&secret, community_id);
     let pseudo_bytes = signing_key.verifying_key().to_bytes();
     let pseudonym = rekindle_types::id::PseudonymKey(pseudo_bytes);
@@ -143,5 +150,26 @@ pub fn project_own(
             ..
         } if *public_key == id.public_key => id.display_name.clone_from(name),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use parking_lot::Mutex;
+    use zeroize::ZeroizeOnDrop;
+
+    use crate::state::AppState;
+
+    /// Compiles only for a slot whose secret zeroizes when the slot is
+    /// cleared or replaced.
+    fn zeroizes_when_cleared<T: ZeroizeOnDrop>(_slot: &Mutex<Option<T>>) {}
+
+    /// Roadmap 1.9: logging out (`shell_session::ended::clear`) sets the
+    /// slot to `None`, which drops the secret; the slot's type is what
+    /// makes that drop wipe it.
+    #[test]
+    fn the_identity_secret_slot_zeroizes_on_clear() {
+        let check: fn(&AppState) = |state| zeroizes_when_cleared(&state.identity_secret);
+        let _ = check;
     }
 }

@@ -193,6 +193,13 @@ pub fn apply(root: &DataRoot) -> Result<LayoutCheck, ResetError> {
             write_version(root)?;
         }
     }
+    // A restored ratchet re-uses message keys (threat model I14): `state/`
+    // stays out of OS backups, marked once the layout is settled (a reset
+    // empties it). A volume that refuses the mark leaves every other
+    // protection in place.
+    if let Err(e) = root.exclude_state_from_backup() {
+        tracing::warn!(error = %e, "state/ could not be excluded from backups");
+    }
     Ok(check)
 }
 

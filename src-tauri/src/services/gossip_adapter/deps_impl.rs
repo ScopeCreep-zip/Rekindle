@@ -21,7 +21,7 @@ impl GossipDeps for GossipAdapter {
     }
 
     fn identity_secret(&self) -> Option<[u8; 32]> {
-        state_helpers::identity_secret(&self.state)
+        state_helpers::identity_secret_bytes(&self.state)
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {

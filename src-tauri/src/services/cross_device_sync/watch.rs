@@ -74,10 +74,10 @@ pub async fn try_handle_personal_sync_change(
     if handle.record_key != record_key {
         return false;
     }
-    let Some(master_secret) = *state.identity_secret.lock() else {
+    let Some(master_secret) = crate::state_helpers::identity_secret(state) else {
         return false;
     };
-    let sync_key = SyncKey::from_master_secret(&master_secret);
+    let sync_key = SyncKey::from_master_secret(&master_secret[..]);
 
     for &subkey in subkeys {
         if !(SUBKEY_MANIFEST..=SUBKEY_DEVICE_LIST).contains(&subkey) {

@@ -14,6 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::message::AgentType;
+use rekindle_types::passphrase::Passphrase;
 
 // ── Subscription filter (re-exported from rekindle-types) ──────────────
 
@@ -41,7 +42,7 @@ pub enum IpcRequest {
     /// transition to Operational.
     Unlock {
         identity: String,
-        passphrase: String,
+        passphrase: Passphrase,
     },
     /// Lock the daemon (zeroize signing key, transition to Locked).
     Lock,
@@ -63,7 +64,7 @@ pub enum IpcRequest {
     /// opened identity (`dto::identity::IdentityView`).
     IdentityCreate {
         display_name: Option<String>,
-        passphrase: String,
+        passphrase: Passphrase,
     },
     /// The identities on this device (the registry; no unlock needed).
     IdentityList,
@@ -71,13 +72,16 @@ pub enum IpcRequest {
     IdentityShow,
     /// Export the unlocked identity as an archive (base64): its registry
     /// entry, vault and header, sealed by the vault's passphrase.
-    IdentityExport { passphrase: String },
+    IdentityExport { passphrase: Passphrase },
     /// Install an identity from an exported archive (base64); it is
     /// opened with `passphrase` to verify it, and stays locked.
-    IdentityImport { archive: String, passphrase: String },
+    IdentityImport {
+        archive: String,
+        passphrase: Passphrase,
+    },
     /// Rotate the unlocked identity's Ed25519 keypair: friends are told,
     /// then the identity is locked and moved to its new key.
-    IdentityRotate { passphrase: String },
+    IdentityRotate { passphrase: Passphrase },
     /// Delete `identity`. Protected: the host's intent gate asks for its
     /// passphrase (plan D3.3).
     IdentityDelete { identity: String },

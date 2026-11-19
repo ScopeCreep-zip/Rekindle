@@ -26,7 +26,7 @@ impl CallSignalingDeps for CallsAdapter {
     }
 
     fn identity_secret(&self) -> Result<[u8; 32], CallError> {
-        state_helpers::identity_secret(&self.state).ok_or(CallError::IdentityNotLoaded)
+        state_helpers::identity_secret_bytes(&self.state).ok_or(CallError::IdentityNotLoaded)
     }
 
     fn registry(&self) -> Arc<dyn CallRegistry> {

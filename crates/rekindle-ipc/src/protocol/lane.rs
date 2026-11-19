@@ -191,16 +191,16 @@ mod tests {
             IpcRequest::Lock,
             IpcRequest::Unlock {
                 identity: String::new(),
-                passphrase: String::new(),
+                passphrase: rekindle_types::passphrase::Passphrase::default(),
             },
             IpcRequest::Logout,
             IpcRequest::Shutdown,
             IpcRequest::IdentityRotate {
-                passphrase: String::new(),
+                passphrase: rekindle_types::passphrase::Passphrase::default(),
             },
             IpcRequest::IdentityImport {
                 archive: String::new(),
-                passphrase: String::new(),
+                passphrase: rekindle_types::passphrase::Passphrase::default(),
             },
             IpcRequest::IdentityWipe,
         ] {
@@ -224,14 +224,14 @@ mod tests {
         assert_eq!(
             IpcRequest::Unlock {
                 identity: String::new(),
-                passphrase: String::new(),
+                passphrase: rekindle_types::passphrase::Passphrase::default(),
             }
             .required_clearance(),
             SecurityLevel::Open
         );
         assert_eq!(
             IpcRequest::IdentityExport {
-                passphrase: String::new(),
+                passphrase: rekindle_types::passphrase::Passphrase::default(),
             }
             .required_clearance(),
             SecurityLevel::Admin

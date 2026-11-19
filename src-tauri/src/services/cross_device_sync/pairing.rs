@@ -126,9 +126,12 @@ pub async fn handle_pairing_app_call(
     let master_secret =
         pairing_key.unwrap_master_secret(&payload.wrapped_master_secret, &payload.nonce)?;
     // Verify it matches our identity — the new device claimed to be us.
-    let our_secret = *state.identity_secret.lock().as_ref().ok_or("no identity")?;
+    let our_secret = crate::state_helpers::identity_secret(state).ok_or("no identity")?;
     if master_secret.len() != our_secret.len()
-        || master_secret.iter().zip(&our_secret).any(|(a, b)| a != b)
+        || master_secret
+            .iter()
+            .zip(our_secret.iter())
+            .any(|(a, b)| a != b)
     {
         return Err("pairing payload master secret does not match this identity".to_string());
     }
@@ -176,9 +179,9 @@ pub fn build_pairing_payload(
     pairing_salt: &[u8],
     display_name: &str,
 ) -> Result<PairingPayload, String> {
-    let secret = *state.identity_secret.lock().as_ref().ok_or("no identity")?;
+    let secret = crate::state_helpers::identity_secret(state).ok_or("no identity")?;
     let pairing_key = PairingKey::derive(pairing_code, pairing_salt);
-    let (wrapped, nonce) = pairing_key.wrap_master_secret(&secret)?;
+    let (wrapped, nonce) = pairing_key.wrap_master_secret(&secret[..])?;
     Ok(PairingPayload {
         wrapped_master_secret: wrapped,
         nonce: nonce.to_vec(),

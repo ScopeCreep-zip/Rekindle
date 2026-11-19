@@ -178,7 +178,7 @@ async fn login_after_logout_restores_the_same_keypair() {
     let created = create(&state, "roundtrip-pass", Some("Charlie"))
         .await
         .unwrap();
-    let create_secret = state.identity_secret.lock().expect("a secret");
+    let create_secret = state.identity_secret.lock().clone().expect("a secret");
 
     logout(&state).await;
     assert!(state.identity.read().is_none());

@@ -45,7 +45,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn identity_secret(&self) -> Result<[u8; 32], VoiceError> {
-        state_helpers::identity_secret(&self.state).ok_or(VoiceError::IdentityNotLoaded)
+        state_helpers::identity_secret_bytes(&self.state).ok_or(VoiceError::IdentityNotLoaded)
     }
 
     fn voice_engine_present(&self) -> bool {

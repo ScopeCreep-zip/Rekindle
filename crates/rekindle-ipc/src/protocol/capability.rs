@@ -252,7 +252,7 @@ mod tests {
         );
         assert_eq!(
             IpcRequest::IdentityExport {
-                passphrase: String::new()
+                passphrase: rekindle_types::passphrase::Passphrase::default()
             }
             .agent_capability(),
             None

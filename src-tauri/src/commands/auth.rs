@@ -5,6 +5,7 @@
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
 use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::passphrase::Passphrase;
 use tauri::State;
 
 use crate::host_call;
@@ -14,7 +15,7 @@ use crate::state::SharedState;
 /// Without a name it is `User_` and its key's first eight characters.
 #[tauri::command]
 pub async fn create_identity(
-    passphrase: String,
+    passphrase: Passphrase,
     display_name: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<IdentityView>, CommandError> {
@@ -32,7 +33,7 @@ pub async fn create_identity(
 #[tauri::command]
 pub async fn login(
     public_key: String,
-    passphrase: String,
+    passphrase: Passphrase,
     state: State<'_, SharedState>,
 ) -> Result<Done<IdentityView>, CommandError> {
     host_call::call(

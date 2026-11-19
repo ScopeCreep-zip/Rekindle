@@ -226,7 +226,7 @@ fn create_transport_impl(
                 "voice transport: pseudonym credentials unavailable, packets cannot be signed");
         }
     } else {
-        let secret_bytes = *state.identity_secret.lock();
+        let secret_bytes = crate::state_helpers::identity_secret(state);
         if let Some(bytes) = secret_bytes {
             let signing_key = ed25519_dalek::SigningKey::from_bytes(&bytes);
             transport.set_signing_key(signing_key);
@@ -338,7 +338,7 @@ pub(super) fn spawn_voice_loops_impl(
             .ok()
             .map(|(_, signing_key)| signing_key)
     } else {
-        let secret = *state.identity_secret.lock();
+        let secret = crate::state_helpers::identity_secret(state);
         secret.map(|bytes| ed25519_dalek::SigningKey::from_bytes(&bytes))
     };
     if report_signing_key.is_none() {

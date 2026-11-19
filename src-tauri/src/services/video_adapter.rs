@@ -59,7 +59,7 @@ impl VideoDeps for VideoAdapter {
     }
 
     fn community_signing_key(&self, community_id: &str) -> Option<SigningKey> {
-        let secret = (*self.state.identity_secret.lock())?;
+        let secret = crate::state_helpers::identity_secret(&self.state)?;
         Some(rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id))
     }
 

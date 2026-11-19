@@ -38,8 +38,9 @@ pub use governance::{
     permissions_for_pseudonym,
 };
 pub use identity::{
-    current_identity, current_owner_key, identity_display_name, identity_secret, identity_status,
-    owner_key_or_default, project_own, pseudonym_credentials, voice_self_identity,
+    current_identity, current_owner_key, identity_display_name, identity_secret,
+    identity_secret_bytes, identity_status, owner_key_or_default, project_own,
+    pseudonym_credentials, voice_self_identity,
 };
 pub use meks::{
     clear_meks, current_mek, forget_community_keys, install_mek, key_provider, LiveMek,

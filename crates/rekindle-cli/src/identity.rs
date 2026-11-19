@@ -37,7 +37,7 @@ pub async fn cmd_init(
         client,
         IpcRequest::IdentityCreate {
             display_name: Some(display_name),
-            passphrase: passphrase.as_str().to_owned(),
+            passphrase: passphrase.as_str().into(),
         },
     )
     .await?;
@@ -129,7 +129,7 @@ async fn unlock(
         client,
         IpcRequest::Unlock {
             identity: identity.to_owned(),
-            passphrase: passphrase.as_str().to_owned(),
+            passphrase: passphrase.as_str().into(),
         },
     )
     .await
@@ -147,7 +147,7 @@ async fn export_identity(
     let value = helpers::send(
         client,
         IpcRequest::IdentityExport {
-            passphrase: passphrase.as_str().to_owned(),
+            passphrase: passphrase.as_str().into(),
         },
     )
     .await?;
@@ -176,7 +176,7 @@ async fn import_identity(
         client,
         IpcRequest::IdentityImport {
             archive: base64::engine::general_purpose::STANDARD.encode(bytes),
-            passphrase: passphrase.as_str().to_owned(),
+            passphrase: passphrase.as_str().into(),
         },
     )
     .await?;
@@ -222,7 +222,7 @@ pub async fn dispatch(
             let value = helpers::send(
                 client,
                 IpcRequest::IdentityRotate {
-                    passphrase: passphrase.as_str().to_owned(),
+                    passphrase: passphrase.as_str().into(),
                 },
             )
             .await?;

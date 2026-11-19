@@ -89,9 +89,8 @@ async fn setup(
     let handle = cross_device_sync::open_personal_sync_record(state, pool)
         .await
         .ok_or("personal sync record not initialized")?;
-    let secret_opt: Option<[u8; 32]> = *state.identity_secret.lock();
-    let secret = secret_opt.ok_or("no identity")?;
-    Ok((handle, SyncKey::from_master_secret(&secret)))
+    let secret = crate::state_helpers::identity_secret(state).ok_or("no identity")?;
+    Ok((handle, SyncKey::from_master_secret(&secret[..])))
 }
 
 /// Architecture §28.4 line 3088 — new device side.

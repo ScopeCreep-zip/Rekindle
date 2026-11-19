@@ -357,11 +357,13 @@ async fn unlock_opened(
     let stored = vault
         .get(&VaultKey::IdentityEd25519)?
         .ok_or_else(|| IdentityError::Corrupt("no private key in the vault".into()))?;
-    let secret: [u8; 32] = stored
-        .as_slice()
-        .try_into()
-        .map_err(|_| IdentityError::Corrupt("private key is not 32 bytes".into()))?;
-    let secret = Zeroizing::new(secret);
+    // Copied straight into the zeroizing buffer: no bare `[u8; 32]` local
+    // is left on the stack (roadmap 1.8).
+    let mut secret = Zeroizing::new([0u8; 32]);
+    if stored.len() != secret.len() {
+        return Err(IdentityError::Corrupt("private key is not 32 bytes".into()));
+    }
+    secret.copy_from_slice(&stored);
     if rekindle_crypto::Identity::from_secret_bytes(&secret).public_key_hex() != public_key {
         return Err(IdentityError::Corrupt(
             "the vault's key does not match the identity".into(),

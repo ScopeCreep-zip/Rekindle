@@ -383,10 +383,13 @@ fn state_is_excluded(root: &DataRoot) -> bool {
             .arg(&root.state)
             .output()
             .unwrap();
-        let hex: String = TIME_MACHINE_XATTR_VALUE
+        let hex = TIME_MACHINE_XATTR_VALUE
             .iter()
-            .map(|b| format!("{b:02X}"))
-            .collect();
+            .fold(String::new(), |mut hex, b| {
+                use std::fmt::Write as _;
+                let _ = write!(hex, "{b:02X}");
+                hex
+            });
         let said: String = String::from_utf8_lossy(&out.stdout)
             .split_whitespace()
             .collect();

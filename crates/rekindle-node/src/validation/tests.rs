@@ -428,11 +428,11 @@ fn identity_requests_name_a_key_and_a_new_passphrase_is_not_empty() {
     }));
     assert!(!rejected(&IpcRequest::Unlock {
         identity: "ab".repeat(32),
-        passphrase: String::new(),
+        passphrase: rekindle_types::passphrase::Passphrase::default(),
     }));
     assert!(rejected(&IpcRequest::IdentityCreate {
         display_name: Some("Alice".into()),
-        passphrase: String::new(),
+        passphrase: rekindle_types::passphrase::Passphrase::default(),
     }));
     assert!(rejected(&IpcRequest::IdentityImport {
         archive: String::new(),

@@ -82,13 +82,9 @@ async fn push_onboarding_complete(
     let Some(handle) = open_personal_sync_record(state, pool).await else {
         return Ok(());
     };
-    let master_secret = state
-        .identity_secret
-        .lock()
-        .as_ref()
-        .copied()
+    let master_secret = crate::state_helpers::identity_secret(state)
         .ok_or_else(|| "identity secret not available".to_string())?;
-    let sync_key = rekindle_secrets::sync_key::SyncKey::from_master_secret(&master_secret);
+    let sync_key = rekindle_secrets::sync_key::SyncKey::from_master_secret(&master_secret[..]);
     let mut doc = read_read_state(state, &handle, &sync_key)
         .await
         .unwrap_or_default();

@@ -37,6 +37,7 @@ pub mod link_preview;
 pub mod member;
 pub mod message;
 pub mod notification;
+pub mod passphrase;
 pub mod permissions;
 pub mod preferences;
 pub mod presence;
