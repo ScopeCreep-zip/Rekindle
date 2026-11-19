@@ -166,7 +166,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
            *  channel as before. */}
           <button
             class="community-leave-btn"
-            title="Search this community (Cmd/Ctrl-Shift-F)"
+            title="Search this community (Cmd/Ctrl+F or Cmd/Ctrl+K searches the open channel)"
             aria-label="Search community"
             onClick={() => {
               vm.setSearchInitialChannel(null);
