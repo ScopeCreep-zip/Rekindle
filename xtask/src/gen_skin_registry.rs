@@ -15,7 +15,7 @@ use anyhow::{anyhow, Context, Result};
 use std::collections::BTreeMap;
 
 use rekindle_skin::generate::{json_schema, tokens_css, tokens_ts, tui_palette, HEADER};
-use rekindle_skin::regions::css::{app_a11y_css, app_css};
+use rekindle_skin::regions::css::{app_a11y_css, app_css, RegionMap};
 use rekindle_skin::registry::{constraint_failures, Base, ENTRIES};
 
 /// The generated stylesheet directory: its literals and repeats are the
@@ -23,8 +23,26 @@ use rekindle_skin::registry::{constraint_failures, Base, ENTRIES};
 /// staleness check guards it.
 pub(crate) const GENERATED_STYLES: &str = "src/styles/generated/";
 
-/// The region map's `[regions]`: slot id → the app elements it paints.
-fn region_elements() -> Result<BTreeMap<String, Vec<String>>> {
+/// One `[regions]` entry's string list `key` (`elements`, `labels`);
+/// empty when the entry has none.
+fn strings(id: &str, item: &toml_edit::Item, key: &str) -> Result<Vec<String>> {
+    let Some(list) = item.as_table_like().and_then(|f| f.get(key)) else {
+        return Ok(Vec::new());
+    };
+    list.as_array()
+        .ok_or_else(|| anyhow!("[regions] `{id}`: `{key}` is not an array"))?
+        .iter()
+        .map(|e| {
+            e.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| anyhow!("[regions] `{id}`: a `{key}` entry is not a string"))
+        })
+        .collect()
+}
+
+/// The region map's `[regions]`: slot id → the app elements it paints and
+/// the children carrying a labelled slot's text.
+fn region_elements() -> Result<BTreeMap<String, RegionMap>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .ok_or_else(|| anyhow!("xtask has no parent directory"))?;
@@ -37,19 +55,12 @@ fn region_elements() -> Result<BTreeMap<String, Vec<String>>> {
         .ok_or_else(|| anyhow!("{} has no [regions] table", crate::declared_grounds::MAP))?;
     let mut out = BTreeMap::new();
     for (id, item) in table.iter() {
-        let elements = item
-            .as_table_like()
-            .and_then(|f| f.get("elements"))
-            .and_then(|e| e.as_array())
-            .ok_or_else(|| anyhow!("[regions] `{id}` has no `elements = [...]`"))?
-            .iter()
-            .map(|e| {
-                e.as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| anyhow!("[regions] `{id}`: an element is not a string"))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        out.insert(id.to_owned(), elements);
+        let elements = strings(id, item, "elements")?;
+        if elements.is_empty() {
+            return Err(anyhow!("[regions] `{id}` has no `elements = [...]`"));
+        }
+        let labels = strings(id, item, "labels")?;
+        out.insert(id.to_owned(), RegionMap { elements, labels });
     }
     Ok(out)
 }

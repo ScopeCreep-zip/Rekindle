@@ -54,14 +54,22 @@ fn run_f83_on(manifest_json: &Value, image: &[u8], panel: [u8; 4]) -> Result<(),
     let manifest = manifest::parse(&package)?;
     let canonical = images::validate(&package, &manifest)?;
     let [r, g, b, a] = panel;
-    let skin = BTreeMap::from([("bg.panel".to_owned(), TokenValue::Color { r, g, b, a })]);
+    // `panel` is the backing under test: `bg.panel` for the secondary
+    // button, `titlebar.start` (the titlebar's declared ground) for it.
+    let skin = BTreeMap::from([
+        ("bg.panel".to_owned(), TokenValue::Color { r, g, b, a }),
+        (
+            "titlebar.start".to_owned(),
+            TokenValue::Color { r, g, b, a },
+        ),
+    ]);
     let resolved = resolve(ENTRIES, Base::Dark, &skin);
     regions::validate(&manifest, &canonical, &resolved)
 }
 
 #[test]
 fn f83_fails_a_weak_backing_at_the_worst_pixel() {
-    let m = titlebar_manifest(Some("bg.panel"));
+    let m = titlebar_manifest(Some("titlebar.start"));
     let err = run_f83(&m, [0, 0, 0, 0x40]).expect_err("the white pixel shows through");
     assert_eq!(err.entry, "assets/title.png");
     let SkinRule::TextOverBitmap {
@@ -79,15 +87,46 @@ fn f83_fails_a_weak_backing_at_the_worst_pixel() {
         (region.as_str(), token.as_str()),
         ("titlebar", "titlebar.text")
     );
-    assert_eq!(backing, "bg.panel");
+    assert_eq!(backing, "titlebar.start");
     assert_eq!(required_x100, 450);
     assert!(measured_x100 < 450, "{measured_x100}");
 }
 
 #[test]
 fn f83_passes_an_opaque_backing() {
-    let m = titlebar_manifest(Some("bg.panel"));
+    let m = titlebar_manifest(Some("titlebar.start"));
     run_f83(&m, [0, 0, 0, 0xff]).unwrap();
+}
+
+/// Plan E7.7.7: a text slot's backing is a ground its text is declared on
+/// (`regions.toml` `on`), so the pair checks still hold over the bitmap.
+#[test]
+fn a_text_backing_off_the_declared_grounds_is_refused() {
+    let m = titlebar_manifest(Some("bg.panel"));
+    let err = run_f83(&m, [0, 0, 0, 0xff]).unwrap_err();
+    let SkinRule::BadValue { field, expected } = &err.rule else {
+        panic!("{err:?}");
+    };
+    assert_eq!(field, "regions.titlebar.textBacking");
+    assert!(expected.contains("titlebar.start"), "{expected}");
+    // A labelled surface slot takes its own ground and passes.
+    let ok = region_manifest("buddylist.infobar", Some("bg.dark"));
+    run_f83(&ok, [0, 0, 0, 0xff]).unwrap();
+    let off = region_manifest("buddylist.infobar", Some("bg.panel"));
+    assert!(run_f83(&off, [0, 0, 0, 0xff]).is_err());
+}
+
+/// Every text slot names the grounds its backing may be, each a registry
+/// colour; a slot without text names none.
+#[test]
+fn every_text_slot_names_its_grounds() {
+    for s in &regions::SLOTS {
+        assert_eq!(s.text.is_empty(), s.grounds.is_empty(), "{}", s.id);
+        for g in s.grounds {
+            assert!(ENTRIES.iter().any(|e| e.id == *g), "{}: {g}", s.id);
+        }
+        assert!(!s.labelled || s.css, "{}: a labelled slot is painted", s.id);
+    }
 }
 
 #[test]

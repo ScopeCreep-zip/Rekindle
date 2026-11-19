@@ -17,6 +17,8 @@
 //!   gutters and corner its background one (`ColorBG`, `ColorGroupBG`).
 //! * A state whose image differs in size from the normal one is dropped
 //!   (the validator refuses it), and named in the `NOTICE`.
+//! * The buddy-list window's bars and buttons fill their surface slots
+//!   ([`super::surfaces`], XML era; plan E7.7.7).
 //! * Every other state set stays dropped: Xfire's other push buttons,
 //!   menus, tabs and launchers bake their label or icon into the bitmap,
 //!   and a region never replaces a label (plan E7.7.1); the resize
@@ -265,7 +267,10 @@ impl StateImages for XmlSet<'_> {
 
 /// `pieces` of one axis as one image and its nine-slice, through
 /// [`bitmap::compose`] with empty cells off the axis.
-fn three(pieces: [RgbaImage; 3], vertical: bool) -> Result<(RgbaImage, RegionFit), ImportError> {
+pub(super) fn three(
+    pieces: [RgbaImage; 3],
+    vertical: bool,
+) -> Result<(RgbaImage, RegionFit), ImportError> {
     let e = RgbaImage::new(0, 0);
     let [a, b, c] = pieces;
     let nine = if vertical {
@@ -298,7 +303,7 @@ fn three(pieces: [RgbaImage; 3], vertical: bool) -> Result<(RgbaImage, RegionFit
 }
 
 /// Counts a control's non-normal sets into `tally`.
-fn count_sets<S: StateImages>(tally: &mut StateTally, sets: &[S]) {
+pub(super) fn count_sets<S: StateImages>(tally: &mut StateTally, sets: &[S]) {
     for set in sets
         .iter()
         .filter(|s| s.state() != Some(RegionState::Normal))
@@ -373,7 +378,9 @@ pub fn read(
             .children_named("Images")
             .map(|set| XmlSet { d: &d, set })
             .collect();
-        if fill(name, c.attr_ci("Class"), &sets, &mut controls, &mut tally)? {
+        if fill(name, c.attr_ci("Class"), &sets, &mut controls, &mut tally)?
+            || super::surfaces::fill(name, &sets, &mut controls, &mut tally)?
+        {
             continue;
         }
         let why = if c.attr_ci("Class") == Some("Tile") && name.contains("Gripper") {
@@ -402,7 +409,7 @@ type Dropped = Vec<(&'static str, &'static str)>;
 /// Each control, its dropped states and how many source images it kept.
 type Made = Vec<(Control, Dropped, usize)>;
 
-fn set_name(s: RegionState) -> &'static str {
+pub(super) fn set_name(s: RegionState) -> &'static str {
     match s {
         RegionState::Hover => "Hover",
         RegionState::Down => "Down",

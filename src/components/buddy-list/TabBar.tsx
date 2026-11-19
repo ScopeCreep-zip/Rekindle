@@ -11,9 +11,11 @@ const TabBar: Component = () => {
   }
 
   return (
-    <div class="buddy-tab-bar">
+    <div class="buddy-tab-bar" role="tablist" aria-label="Buddy list">
       <button
         class={`buddy-tab ${buddyListUI.activeTab === "friends" ? "buddy-tab-active" : ""}`}
+        role="tab"
+        aria-selected={buddyListUI.activeTab === "friends"}
         onClick={handleFriendsTab}
         title="Friends (Alt+1)"
       >
@@ -21,6 +23,8 @@ const TabBar: Component = () => {
       </button>
       <button
         class={`buddy-tab ${buddyListUI.activeTab === "communities" ? "buddy-tab-active" : ""}`}
+        role="tab"
+        aria-selected={buddyListUI.activeTab === "communities"}
         onClick={handleCommunitiesTab}
         title="Communities (Alt+2)"
       >

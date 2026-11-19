@@ -41,6 +41,8 @@ const StatusPicker: Component<StatusPickerProps> = (props) => {
         <span class="buddy-name">
           {statusOptions.find((o) => o.value === props.currentStatus)?.label}
         </span>
+        {/* Plan E7.7.7: a skin's status arrow (slot `statusbar.arrow`); 0 × 0 without one. */}
+        <span class="status-picker-arrow" aria-hidden="true" />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="context-menu status-picker-dropdown">

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::{encode_png, DynamicImage, Rgba, RgbaImage};
-use rekindle_skin::regions::css::{app_a11y_css, app_css, skin_css};
+use rekindle_skin::regions::css::{app_a11y_css, app_css, skin_css, RegionMap};
 use rekindle_skin::registry::{resolve, Base, ENTRIES};
 use rekindle_skin::{images, manifest, package, regions};
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule};
@@ -130,15 +130,16 @@ fn the_skin_css_addresses_images_by_hash_under_the_base() {
     assert!(skin_css(&manifest, &canonical, "skin://x\") }").is_none());
 }
 
-fn map(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
+fn map(entries: &[(&str, &[&str])]) -> BTreeMap<String, RegionMap> {
     entries
         .iter()
-        .map(|(k, v)| ((*k).to_owned(), v.iter().map(|s| (*s).to_owned()).collect()))
+        .map(|(k, v)| ((*k).to_owned(), RegionMap::elements(v)))
+        .chain(common::surface_entries())
         .collect()
 }
 
 /// Every painted slot on one test element each.
-fn full_map() -> BTreeMap<String, Vec<String>> {
+fn full_map() -> BTreeMap<String, RegionMap> {
     map(&[
         ("titlebar.btn.minimize", &[".min"]),
         ("titlebar.btn.maximize", &[".max"]),
@@ -204,7 +205,10 @@ fn the_app_css_maps_states_to_selectors() {
         .unwrap_err()
         .contains("scrollbar.corner"));
     let mut unknown = full.clone();
-    unknown.insert("titlebar".to_owned(), vec![".xfire-titlebar".to_owned()]);
+    unknown.insert(
+        "titlebar".to_owned(),
+        RegionMap::elements(&[".xfire-titlebar"]),
+    );
     assert!(app_css("h", &unknown)
         .unwrap_err()
         .contains("not a painted region slot"));
@@ -283,8 +287,11 @@ fn the_app_css_backs_a_text_slot_between_image_and_label() {
     assert!(css.contains(&before), "{css}");
     assert_eq!(
         css.matches("isolation: isolate;").count(),
-        1,
-        "text slots only"
+        regions::SLOTS
+            .iter()
+            .filter(|s| s.css && !s.text.is_empty() && !s.labelled)
+            .count(),
+        "element-backed text slots only"
     );
     // Under forced colors the backing is not generated.
     let a11y = app_a11y_css("h", &full_map()).unwrap();
@@ -294,7 +301,7 @@ fn the_app_css_backs_a_text_slot_between_image_and_label() {
     let mut pseudo = full_map();
     pseudo.insert(
         "button.secondary".to_owned(),
-        vec!["::-webkit-scrollbar".to_owned()],
+        RegionMap::elements(&["::-webkit-scrollbar"]),
     );
     assert!(app_css("h", &pseudo)
         .unwrap_err()
@@ -334,4 +341,63 @@ fn the_skin_css_writes_a_text_slot_slice_widths() {
     let (manifest, canonical) = check(&m, (18, 16), &[]).unwrap();
     let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
     assert!(!css.contains("-slice-"));
+}
+
+/// Plan E7.7.7: a labelled bar paints its bitmap on the container and the
+/// backing on each label; the status arrow is sized to its image; the
+/// chosen tab reads its `selected` image.
+#[test]
+fn the_app_css_backs_labels_sizes_the_arrow_and_marks_the_chosen_tab() {
+    let css = app_css("h", &full_map()).unwrap();
+    assert!(css.contains("  .buddylist-infobar {\n    border-image: var(--skin-region-buddylist-infobar);\n    image-rendering: pixelated;\n  }\n"), "{css}");
+    let b = "var(--skin-region-buddylist-infobar-backing)";
+    assert!(css.contains(&format!(
+        "  .buddylist-infobar-label {{\n    background-image: linear-gradient({b}, {b});\n  }}\n"
+    )));
+    assert!(
+        !css.contains(".buddylist-infobar::before"),
+        "labelled: no ::before"
+    );
+    assert!(css.contains("    width: var(--skin-region-statusbar-arrow-width, 0);\n    height: var(--skin-region-statusbar-arrow-height, 0);\n"));
+    assert!(css.contains("  .buddylist-tab[aria-selected=\"true\"] {\n    border-image: var(--skin-region-buddylist-tab--selected, var(--skin-region-buddylist-tab));\n  }\n"));
+    // The chosen tab stays chosen under the pointer: selected after hover.
+    assert!(
+        css.find(".buddylist-tab:hover").unwrap()
+            < css.find(".buddylist-tab[aria-selected").unwrap()
+    );
+    let a11y = app_a11y_css("h", &full_map()).unwrap();
+    let forced = &a11y[a11y.find("forced-colors").unwrap()..];
+    assert!(forced.contains(".buddylist-infobar-label"));
+    assert!(forced.contains("      background-image: none;\n"));
+
+    let mut unlabelled = full_map();
+    unlabelled.insert("buddylist.infobar".to_owned(), RegionMap::elements(&[".x"]));
+    assert!(app_css("h", &unlabelled).unwrap_err().contains("labels"));
+    let mut labelled = full_map();
+    labelled.insert(
+        "buddylist.tab".to_owned(),
+        RegionMap::labelled(&[".t"], &[".l"]),
+    );
+    assert!(app_css("h", &labelled)
+        .unwrap_err()
+        .contains("not a labelled slot"));
+}
+
+/// The skin half: the arrow's size from its image; a labelled bar's
+/// backing token and no slice widths (its labels are backed in full).
+#[test]
+fn the_skin_css_sizes_the_arrow_and_backs_a_labelled_bar() {
+    let arrow = manifest_with("statusbar.arrow", &json!({ "type": "stretch" }), &[]);
+    let (manifest, canonical) = check(&arrow, (21, 19), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(css.contains("    --skin-region-statusbar-arrow-width: 21px;\n    --skin-region-statusbar-arrow-height: 19px;\n"));
+
+    let mut bar = manifest_with("buddylist.infobar", &nine(), &[]);
+    bar["regions"]["buddylist.infobar"]["textBacking"] = json!("bg.dark");
+    let (manifest, canonical) = check(&bar, (18, 16), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(
+        css.contains("    --skin-region-buddylist-infobar-backing: var(--color-xfire-bg-dark);\n")
+    );
+    assert!(!css.contains("-slice-"), "{css}");
 }

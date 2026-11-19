@@ -241,6 +241,9 @@ pub enum RegionState {
     Disabled,
     Focused,
     WindowInactive,
+    /// The chosen one of a group: the active tab (Xfire's `PushType=
+    /// "Sticky"` tab buttons, plan E7.7.7), the selected row.
+    Selected,
     Ringing,
     Talking,
     Muted,
@@ -257,6 +260,7 @@ impl RegionState {
             Self::Disabled => "disabled",
             Self::Focused => "focused",
             Self::WindowInactive => "windowInactive",
+            Self::Selected => "selected",
             Self::Ringing => "ringing",
             Self::Talking => "talking",
             Self::Muted => "muted",

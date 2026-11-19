@@ -640,3 +640,15 @@
 'scrollbar.button-right' = { elements = ["::-webkit-scrollbar-button:horizontal:end:increment"] }
 'scrollbar.corner' = { elements = ["::-webkit-scrollbar-corner"] }
 'button.secondary' = { elements = [".form-btn-secondary"] }
+# Plan E7.7.7: the buddy-list window's surfaces, scoped to its root
+# (`.buddy-list-window`). A labelled slot's `labels` are the children
+# that carry its text: each paints the slot's backing under its own text.
+'statusbar' = { elements = [".buddy-list-window > .status-bar"], labels = [".buddy-list-window > .status-bar .status-picker", ".buddy-list-window > .status-bar .network-indicator"] }
+'statusbar.arrow' = { elements = [".status-picker-arrow"] }
+'buddylist.menubar' = { elements = [".buddy-list-window .menu-bar"], labels = [".buddy-list-window .menu-bar-item"] }
+'buddylist.infobar' = { elements = [".buddy-list-window .identity-bar"], labels = [".buddy-list-window .identity-bar-top-row", ".buddy-list-window .identity-bar-status-msg"] }
+'buddylist.tab' = { elements = [".buddy-tab"] }
+'buddylist.group-header' = { elements = [".buddy-group-header"], labels = [".buddy-group-header > span"] }
+'buddylist.row-selected' = { elements = [".buddy-list-window .buddy-item-selected"], labels = [".buddy-list-window .buddy-item-selected .buddy-item-content"] }
+'buddylist.actionbar' = { elements = [".buddy-list-window .action-bar"], labels = [".buddy-list-window .action-bar-icon-btn", ".buddy-list-window .logout-icon-btn"] }
+'buddylist.action-button' = { elements = [".buddy-list-window .action-bar-icon-btn"] }

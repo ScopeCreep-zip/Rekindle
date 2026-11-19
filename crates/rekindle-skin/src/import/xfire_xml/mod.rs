@@ -31,6 +31,7 @@ pub mod bitmap;
 pub mod colours;
 pub mod controls;
 mod notice;
+pub mod surfaces;
 pub mod tiles;
 pub mod v3;
 
@@ -572,3 +573,6 @@ mod tests;
 
 #[cfg(test)]
 mod fan_tests;
+
+#[cfg(test)]
+mod surfaces_tests;

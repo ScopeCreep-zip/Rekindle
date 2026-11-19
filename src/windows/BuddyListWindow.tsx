@@ -122,7 +122,7 @@ const BuddyListWindow: Component = () => {
   });
 
   return (
-    <div class="app-frame">
+    <div class="app-frame buddy-list-window">
       {/* Architecture §32 a11y — keyboard skip link past menu/identity rail. */}
       <a href="#main-content" class="skip-link">Skip to buddy list</a>
       <Titlebar title="Rekindle" hideOnClose />

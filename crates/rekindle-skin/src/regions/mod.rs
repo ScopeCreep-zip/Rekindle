@@ -34,6 +34,8 @@
 //!   must leave a centre in every measured box (else `border-image` would
 //!   shrink them and the backing would not meet the centre), refused as
 //!   [`SkinRule::TextRegionNoCentre`].
+//! * **A labelled slot's backing** paints each label in full, so the
+//!   text is on the backing over every pixel of the container's box.
 //! * **Window sizes** are `src-tauri/src/windows/mod.rs:54-72` (minimum)
 //!   and `:107` (the buddy list's maximum). A window without a maximum is
 //!   measured at [`MAX_IMAGE_SIDE`]: once a box side reaches the image's
@@ -295,6 +297,20 @@ pub fn validate(
                 ))
             }
         };
+        if let Some(b) = backing_id.filter(|_| !slot.text.is_empty()) {
+            if !slot.grounds.contains(&b) {
+                return Err(SkinError::new(
+                    MANIFEST,
+                    SkinRule::BadValue {
+                        field: format!("regions.{id}.textBacking"),
+                        expected: format!(
+                            "one of the grounds its text is declared on: {}",
+                            slot.grounds.join(", ")
+                        ),
+                    },
+                ));
+            }
+        }
         let backing = match backing_id {
             Some(b) => Some(colour_token(
                 &tokens,
@@ -335,7 +351,7 @@ pub fn validate(
                 };
                 let Some(backing) = backing else { continue };
                 let centre = match region.fit {
-                    RegionFit::NineSlice(i) if slot.css => Some(i),
+                    RegionFit::NineSlice(i) if slot.css && !slot.labelled => Some(i),
                     _ => None,
                 };
                 let ctx = Measure {

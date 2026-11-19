@@ -152,7 +152,12 @@ impl Control {
                 .collect(),
             tint: None,
             mask: None,
-            text_backing: None,
+            // A text slot's backing is the first ground its text is
+            // declared on (plan E7.7.7): the ground the app draws there.
+            text_backing: crate::regions::slot_of(self.region)
+                .filter(|s| !s.text.is_empty())
+                .and_then(|s| s.grounds.first())
+                .map(|g| (*g).to_owned()),
         }
     }
 

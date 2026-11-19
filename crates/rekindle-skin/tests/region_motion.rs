@@ -9,7 +9,7 @@ use rekindle_image::{
     decode_limited, encode_gif, encode_png, DecodeLimits, DynamicImage, Frame, Frames, ImageKind,
     Rgba, RgbaImage,
 };
-use rekindle_skin::regions::css::{app_a11y_css, app_css, skin_css};
+use rekindle_skin::regions::css::{app_a11y_css, app_css, skin_css, RegionMap};
 use rekindle_skin::regions::still::first_frame;
 use rekindle_skin::serve::{body, parse_path, stylesheet, File};
 use rekindle_skin::{images, manifest, package, validate};
@@ -127,7 +127,7 @@ fn the_still_is_served_by_its_address_like_every_other_image() {
     );
 }
 
-fn small_map() -> BTreeMap<String, Vec<String>> {
+fn small_map() -> BTreeMap<String, RegionMap> {
     let mut map = BTreeMap::new();
     for (slot, el) in [
         ("titlebar.btn.minimize", ".min"),
@@ -162,8 +162,9 @@ fn small_map() -> BTreeMap<String, Vec<String>> {
         ("scrollbar.corner", "::-webkit-scrollbar-corner"),
         ("button.secondary", ".btn2"),
     ] {
-        map.insert(slot.to_owned(), vec![el.to_owned()]);
+        map.insert(slot.to_owned(), RegionMap::elements(&[el]));
     }
+    map.extend(common::surface_entries());
     map
 }
 

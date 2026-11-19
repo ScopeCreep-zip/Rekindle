@@ -24,6 +24,20 @@
 //!   button's own ([`Extent::Range`]), never the window's, and the band it
 //!   samples on each side is the smaller of the slice and
 //!   [`RegionSlot::label_inset`].
+//! * A container slot that holds text in its children (a bar, a header, a
+//!   selected row: plan E7.7.7) is `labelled`: `regions.toml` names the
+//!   children that carry its text, and each paints the backing as its own
+//!   `background-image` over the container's bitmap (CSS Backgrounds 3:
+//!   a box's background paints under its content, and a child paints over
+//!   its ancestor's border image), so the bitmap shows around the labels
+//!   and never under their text. Its F83 box is the container's.
+//! * A text slot's backing is one of its `grounds`: the ground tokens its
+//!   text is declared on in `regions.toml` (`on = [...]`, plan E7.7.0), so
+//!   the pair checks that already hold for that text on that ground keep
+//!   holding over any bitmap.
+//! * A `sized` slot has no box until a skin fills it: the generator sizes
+//!   its element to the image (the status arrow), so without a skin it
+//!   takes no room.
 //! * A state is one of Rekindle's own enums. A skin image for a state the
 //!   slot does not list is refused, so every image a skin ships is one a
 //!   selector can show.
@@ -92,9 +106,17 @@ pub struct RegionSlot {
     /// its padding edge and its label over all its variants: the backing
     /// reaches at least this far in. Zero for a slot backed edge to edge.
     pub label_inset: (u32, u32),
+    /// The registry colour tokens its text is declared on: a skin's
+    /// `textBacking` must be one of them. Empty when it carries no text.
+    pub grounds: &'static [&'static str],
+    /// Its text is on children `regions.toml` names (`labels`), each
+    /// backed in full; the element itself carries none.
+    pub labelled: bool,
+    /// The generator sizes its element to the image (0 without a skin).
+    pub sized: bool,
 }
 
-use RegionState::{Disabled, Down, Focused, Hover, WindowInactive};
+use RegionState::{Disabled, Down, Focused, Hover, Selected, WindowInactive};
 
 /// A push button's states (Xfire `PushButton`: Normal, Hover, Down,
 /// Disabled; Winamp `_DEPRESSED`).
@@ -120,9 +142,29 @@ const SECONDARY_HEIGHT: Extent = Extent::Range { min: 16, max: 40 };
 /// `.settings-member-actions` (`07-member-profile-popup.css:58`; the others
 /// are 16/8 px at `00-rules.css:207` and 10/5 px at `90-top-level.css:31`).
 const SECONDARY_LABEL_INSET: (u32, u32) = (6, 2);
+/// A buddy-list tab's states: Xfire's tab buttons are `PushType="Sticky"`
+/// in one `GroupId` (Symbiosis `Components/MainWindow.xml:910`), so the
+/// chosen tab keeps its Down image: [`Selected`].
+const TAB: &[RegionState] = &[Hover, Down, Selected, Focused, WindowInactive];
+/// `.buddy-tab` (`08-community-events.css:131`): `flex: 1` of a window
+/// 300–400 px wide, two tabs, so 150–200 px; measured from 40 for a
+/// third tab. 6 px padding around an 11 px label (≈ 25 px) up to the 2 px
+/// borders of `prefers-contrast: more`.
+const TAB_WIDTH: Extent = Extent::Range { min: 40, max: 400 };
+const TAB_HEIGHT: Extent = Extent::Range { min: 24, max: 40 };
+/// Its padding: 8 px each side, 6 px top and bottom.
+const TAB_LABEL_INSET: (u32, u32) = (8, 6);
+/// `.action-bar-icon-btn` (`06-member-profile-popup.css:310`): 4/8 px
+/// padding around a 14 px glyph.
+const ACTION_WIDTH: Extent = Extent::Range { min: 24, max: 64 };
+const ACTION_HEIGHT: Extent = Extent::Range { min: 20, max: 40 };
+const ACTION_LABEL_INSET: (u32, u32) = (8, 4);
+/// The buddy-list window's ground (`.app-frame`, `regions.toml`
+/// `'.buddy-tab' = { on = ["--color-xfire-bg-dark"] }`).
+const ON_DARK: &[&str] = &["bg.dark"];
 
 /// The region slots. Every slot appears in every window.
-pub const SLOTS: [RegionSlot; 17] = [
+pub const SLOTS: [RegionSlot; 25] = [
     // The whole window behind its content. DoiDD's frame has hover, down
     // and disabled (window-inactive) images.
     slot("window.frame", Extent::Window, Extent::Window, &[]).states(&[
@@ -138,16 +180,118 @@ pub const SLOTS: [RegionSlot; 17] = [
         CHROME,
         &[normal("titlebar.text")],
     )
-    .states(&[WindowInactive]),
+    .states(&[WindowInactive])
+    .grounds(&["titlebar.start", "titlebar.end"]),
     // Every titlebar button (Miranda's one `Titlebutton` set).
     slot("titlebar.buttons", CHROME, CHROME, &[]).states(BUTTON),
-    // `.status-bar` (`01-form-primitives.css:62`, 11 px).
+    // The buddy list's `.status-bar` (`01-form-primitives.css:82`, 11 px,
+    // on `bg.status`): its labels are the status picker (`.buddy-name`,
+    // `text.base`, beside a status dot) and the network indicator
+    // (`text.dim`). Xfire `StatusBarContainer`.
     slot(
         "statusbar",
         Extent::Window,
         CHROME,
-        &[normal("text.status")],
-    ),
+        &[
+            normal("text.status"),
+            normal("text.base"),
+            normal("text.dim"),
+        ],
+    )
+    .labelled(&[], &["bg.status"]),
+    // The status picker's arrow (Xfire `ButtonStatusChanger`, 21 × 19, an
+    // arrow glyph and no label), sized to the image.
+    slot("statusbar.arrow", Extent::Window, Extent::Window, &[])
+        .painted(&[Hover, Down])
+        .sized(),
+    // `.menu-bar` (`08-community-events.css:170`, 22 px; its items
+    // `text.dim`, `text.base` on hover). Xfire `MenuBackground`.
+    slot(
+        "buddylist.menubar",
+        Extent::Window,
+        Extent::Range { min: 22, max: 22 },
+        &[normal("text.dim"), normal("text.base")],
+    )
+    .labelled(&[], &["bg.dark", "bg.panel"]),
+    // `.identity-bar` (`04-member-profile-popup.css:281`): the name
+    // (`status.offline-text`), key (`text.dim`, `link` on hover), game
+    // (`accent.text`) and status message (`text.dim`). Xfire `InfoBar`.
+    slot(
+        "buddylist.infobar",
+        Extent::Window,
+        Extent::Range { min: 36, max: 64 },
+        &[
+            normal("status.offline-text"),
+            normal("text.dim"),
+            normal("link"),
+            normal("accent.text"),
+        ],
+    )
+    .labelled(&[], ON_DARK),
+    // `.buddy-tab` (`08-community-events.css:131`): `text.dim`,
+    // `text.base` on hover, `accent.text` when active. Xfire's tab
+    // buttons (`ButtonFriendsTab` …).
+    slot(
+        "buddylist.tab",
+        TAB_WIDTH,
+        TAB_HEIGHT,
+        &[
+            normal("text.dim"),
+            normal("text.base"),
+            normal("accent.text"),
+        ],
+    )
+    .painted(TAB)
+    .label_inset(TAB_LABEL_INSET)
+    .grounds(ON_DARK),
+    // `.buddy-group-header` (`00-rules.css:363`, `text.dim`, its arrow,
+    // name and count spans). Xfire's list header (`XfireView`
+    // `HeaderLeft/Middle/Right`).
+    slot(
+        "buddylist.group-header",
+        Extent::Window,
+        Extent::Range { min: 20, max: 32 },
+        &[normal("text.dim")],
+    )
+    .labelled(&[], ON_DARK),
+    // `.buddy-item-selected` (`00-rules.css:392`): the row's content
+    // (name, status line, game). Xfire paints it with a colour
+    // (`ListColorSelectedCG`), so no Xfire image fills it.
+    slot(
+        "buddylist.row-selected",
+        Extent::Window,
+        Extent::Range { min: 20, max: 64 },
+        &[
+            normal("text.primary"),
+            normal("text.secondary"),
+            normal("status.offline-text"),
+            normal("accent.text"),
+        ],
+    )
+    .labelled(&[], ON_DARK),
+    // `.action-bar` (`05-member-profile-popup.css:127`): its buttons'
+    // glyphs (`accent.text`; logout `text.dim`). Xfire `FriendsButtonBar`.
+    slot(
+        "buddylist.actionbar",
+        Extent::Window,
+        Extent::Range { min: 24, max: 40 },
+        &[normal("accent.text"), normal("text.dim")],
+    )
+    .labelled(&[], ON_DARK),
+    // `.action-bar-icon-btn` (`06-member-profile-popup.css:310`, glyph
+    // `accent.text`): the frame of each action button; the glyph is drawn
+    // over the backing. Xfire's friends buttons (`ButtonAddFriend`,
+    // `ButtonInfo`) bake their label into the bitmap, which the backing
+    // covers: only their bevel shows.
+    slot(
+        "buddylist.action-button",
+        ACTION_WIDTH,
+        ACTION_HEIGHT,
+        &[normal("accent.text")],
+    )
+    .painted(BUTTON)
+    .label_inset(ACTION_LABEL_INSET)
+    .grounds(ON_DARK),
     // One titlebar button each (Xfire `ButtonMinimize` …; Winamp
     // TITLEBAR.BMP). The glyph is drawn over the image, never replaced.
     slot("titlebar.btn.minimize", CHROME, CHROME, &[]).painted(BUTTON),
@@ -192,7 +336,8 @@ pub const SLOTS: [RegionSlot; 17] = [
         &[normal("text.base")],
     )
     .painted(BUTTON)
-    .label_inset(SECONDARY_LABEL_INSET),
+    .label_inset(SECONDARY_LABEL_INSET)
+    .grounds(&["bg.panel", "bg.dark", "bg.secondary"]),
 ];
 
 const fn normal(token: &'static str) -> RegionText {
@@ -216,6 +361,9 @@ const fn slot(
         states: &[],
         css: false,
         label_inset: (0, 0),
+        grounds: &[],
+        labelled: false,
+        sized: false,
     }
 }
 
@@ -235,6 +383,32 @@ impl RegionSlot {
     const fn label_inset(self, label_inset: (u32, u32)) -> Self {
         Self {
             label_inset,
+            ..self
+        }
+    }
+
+    const fn grounds(self, grounds: &'static [&'static str]) -> Self {
+        Self { grounds, ..self }
+    }
+
+    /// Painted, its text on the children `regions.toml` names.
+    const fn labelled(
+        self,
+        states: &'static [RegionState],
+        grounds: &'static [&'static str],
+    ) -> Self {
+        Self {
+            states,
+            css: true,
+            grounds,
+            labelled: true,
+            ..self
+        }
+    }
+
+    const fn sized(self) -> Self {
+        Self {
+            sized: true,
             ..self
         }
     }

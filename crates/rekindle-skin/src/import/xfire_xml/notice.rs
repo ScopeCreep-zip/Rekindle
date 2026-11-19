@@ -91,8 +91,10 @@ fn controls(s: &mut String, read: &Read) {
             c.region,
             if c.region.starts_with("titlebar") {
                 "the title button"
-            } else {
+            } else if c.region.starts_with("scrollbar") {
                 "the scrollbar"
+            } else {
+                "the component"
             },
             read.tally.sources.get(c.region).map_or("", String::as_str),
             c.fit,

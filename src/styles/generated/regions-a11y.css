@@ -5,6 +5,69 @@
  * `utilities` and below `sec` only. */
 @layer a11y {
   @media (prefers-reduced-motion: reduce) {
+    .buddy-list-window > .status-bar {
+      border-image: var(--skin-region-statusbar--still, var(--skin-region-statusbar));
+    }
+    .status-picker-arrow {
+      border-image: var(--skin-region-statusbar-arrow--still, var(--skin-region-statusbar-arrow));
+    }
+    .status-picker-arrow:hover {
+      border-image: var(--skin-region-statusbar-arrow--hover--still, var(--skin-region-statusbar-arrow--hover, var(--skin-region-statusbar-arrow--still, var(--skin-region-statusbar-arrow))));
+    }
+    .status-picker-arrow:active {
+      border-image: var(--skin-region-statusbar-arrow--down--still, var(--skin-region-statusbar-arrow--down, var(--skin-region-statusbar-arrow--still, var(--skin-region-statusbar-arrow))));
+    }
+    .buddy-list-window .menu-bar {
+      border-image: var(--skin-region-buddylist-menubar--still, var(--skin-region-buddylist-menubar));
+    }
+    .buddy-list-window .identity-bar {
+      border-image: var(--skin-region-buddylist-infobar--still, var(--skin-region-buddylist-infobar));
+    }
+    .buddy-tab {
+      border-image: var(--skin-region-buddylist-tab--still, var(--skin-region-buddylist-tab));
+    }
+    :where(:root[data-window-inactive]) .buddy-tab {
+      border-image: var(--skin-region-buddylist-tab--windowinactive--still, var(--skin-region-buddylist-tab--windowinactive, var(--skin-region-buddylist-tab--still, var(--skin-region-buddylist-tab))));
+    }
+    .buddy-tab:hover {
+      border-image: var(--skin-region-buddylist-tab--hover--still, var(--skin-region-buddylist-tab--hover, var(--skin-region-buddylist-tab--still, var(--skin-region-buddylist-tab))));
+    }
+    .buddy-tab:focus-visible {
+      border-image: var(--skin-region-buddylist-tab--focused--still, var(--skin-region-buddylist-tab--focused, var(--skin-region-buddylist-tab--still, var(--skin-region-buddylist-tab))));
+    }
+    .buddy-tab[aria-selected="true"] {
+      border-image: var(--skin-region-buddylist-tab--selected--still, var(--skin-region-buddylist-tab--selected, var(--skin-region-buddylist-tab--still, var(--skin-region-buddylist-tab))));
+    }
+    .buddy-tab:active {
+      border-image: var(--skin-region-buddylist-tab--down--still, var(--skin-region-buddylist-tab--down, var(--skin-region-buddylist-tab--still, var(--skin-region-buddylist-tab))));
+    }
+    .buddy-group-header {
+      border-image: var(--skin-region-buddylist-group-header--still, var(--skin-region-buddylist-group-header));
+    }
+    .buddy-list-window .buddy-item-selected {
+      border-image: var(--skin-region-buddylist-row-selected--still, var(--skin-region-buddylist-row-selected));
+    }
+    .buddy-list-window .action-bar {
+      border-image: var(--skin-region-buddylist-actionbar--still, var(--skin-region-buddylist-actionbar));
+    }
+    .buddy-list-window .action-bar-icon-btn {
+      border-image: var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button));
+    }
+    :where(:root[data-window-inactive]) .buddy-list-window .action-bar-icon-btn {
+      border-image: var(--skin-region-buddylist-action-button--windowinactive--still, var(--skin-region-buddylist-action-button--windowinactive, var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button))));
+    }
+    .buddy-list-window .action-bar-icon-btn:hover {
+      border-image: var(--skin-region-buddylist-action-button--hover--still, var(--skin-region-buddylist-action-button--hover, var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button))));
+    }
+    .buddy-list-window .action-bar-icon-btn:focus-visible {
+      border-image: var(--skin-region-buddylist-action-button--focused--still, var(--skin-region-buddylist-action-button--focused, var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button))));
+    }
+    .buddy-list-window .action-bar-icon-btn:active {
+      border-image: var(--skin-region-buddylist-action-button--down--still, var(--skin-region-buddylist-action-button--down, var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button))));
+    }
+    .buddy-list-window .action-bar-icon-btn:disabled, .buddy-list-window .action-bar-icon-btn[aria-disabled="true"] {
+      border-image: var(--skin-region-buddylist-action-button--disabled--still, var(--skin-region-buddylist-action-button--disabled, var(--skin-region-buddylist-action-button--still, var(--skin-region-buddylist-action-button))));
+    }
     .xfire-titlebar-btn-minimize {
       border-image: var(--skin-region-titlebar-btn-minimize--still, var(--skin-region-titlebar-btn-minimize));
     }
@@ -205,6 +268,69 @@
     }
   }
   @media (forced-colors: active) {
+    .buddy-list-window > .status-bar {
+      border-image: none;
+    }
+    .status-picker-arrow {
+      border-image: none;
+    }
+    .status-picker-arrow:hover {
+      border-image: none;
+    }
+    .status-picker-arrow:active {
+      border-image: none;
+    }
+    .buddy-list-window .menu-bar {
+      border-image: none;
+    }
+    .buddy-list-window .identity-bar {
+      border-image: none;
+    }
+    .buddy-tab {
+      border-image: none;
+    }
+    :where(:root[data-window-inactive]) .buddy-tab {
+      border-image: none;
+    }
+    .buddy-tab:hover {
+      border-image: none;
+    }
+    .buddy-tab:focus-visible {
+      border-image: none;
+    }
+    .buddy-tab[aria-selected="true"] {
+      border-image: none;
+    }
+    .buddy-tab:active {
+      border-image: none;
+    }
+    .buddy-group-header {
+      border-image: none;
+    }
+    .buddy-list-window .buddy-item-selected {
+      border-image: none;
+    }
+    .buddy-list-window .action-bar {
+      border-image: none;
+    }
+    .buddy-list-window .action-bar-icon-btn {
+      border-image: none;
+    }
+    :where(:root[data-window-inactive]) .buddy-list-window .action-bar-icon-btn {
+      border-image: none;
+    }
+    .buddy-list-window .action-bar-icon-btn:hover {
+      border-image: none;
+    }
+    .buddy-list-window .action-bar-icon-btn:focus-visible {
+      border-image: none;
+    }
+    .buddy-list-window .action-bar-icon-btn:active {
+      border-image: none;
+    }
+    .buddy-list-window .action-bar-icon-btn:disabled, .buddy-list-window .action-bar-icon-btn[aria-disabled="true"] {
+      border-image: none;
+    }
     .xfire-titlebar-btn-minimize {
       border-image: none;
     }
@@ -403,8 +529,21 @@
     .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
       border-image: none;
     }
+    .buddy-tab::before,
+    .buddy-list-window .action-bar-icon-btn::before,
     .form-btn-secondary::before {
       content: none;
+    }
+    .buddy-list-window > .status-bar .status-picker,
+    .buddy-list-window > .status-bar .network-indicator,
+    .buddy-list-window .menu-bar-item,
+    .buddy-list-window .identity-bar-top-row,
+    .buddy-list-window .identity-bar-status-msg,
+    .buddy-group-header > span,
+    .buddy-list-window .buddy-item-selected .buddy-item-content,
+    .buddy-list-window .action-bar-icon-btn,
+    .buddy-list-window .logout-icon-btn {
+      background-image: none;
     }
   }
 }

@@ -160,3 +160,22 @@ pub fn package(manifest: &Value, extra: &[Entry]) -> Vec<u8> {
     entries.extend_from_slice(extra);
     zip(&entries)
 }
+
+/// The plan E7.7.7 surface slots on one test element each (labelled
+/// slots with one label `.<slot>-label`), for a complete region map.
+pub fn surface_entries() -> Vec<(String, rekindle_skin::regions::css::RegionMap)> {
+    use rekindle_skin::regions::css::RegionMap;
+    rekindle_skin::regions::SLOTS
+        .iter()
+        .filter(|s| s.css && (s.id.starts_with("buddylist.") || s.id.starts_with("statusbar")))
+        .map(|s| {
+            let el = format!(".{}", s.id.replace('.', "-"));
+            let map = if s.labelled {
+                RegionMap::labelled(&[&el], &[&format!("{el}-label")])
+            } else {
+                RegionMap::elements(&[&el])
+            };
+            (s.id.to_owned(), map)
+        })
+        .collect()
+}

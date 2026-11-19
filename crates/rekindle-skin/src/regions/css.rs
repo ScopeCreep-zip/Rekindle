@@ -68,6 +68,18 @@
 //!   inherit` rounds the padding box; the inset layer is inside its corner
 //!   arcs once a slice reaches the radius, and the image's own corners are
 //!   the skin's.
+//! * A labelled container slot (a bar, a header, the selected row: plan
+//!   E7.7.7) paints its bitmap on the container and the backing on each
+//!   label the `[regions]` entry names (`labels = [...]`), as the label's
+//!   own `background-image` (a one-colour gradient of
+//!   [`backing_property`]): a child's background paints over its
+//!   ancestor's border image and under its own text, so the bitmap shows
+//!   around the labels and never under their text. Unset, the gradient is
+//!   invalid at computed-value time and `background-image` is `none`, so
+//!   without a skin the labels look as the app draws them. Under
+//!   `forced-colors: active` the labels' `background-image` is `none` too.
+//! * A sized slot's element (the status arrow) is as wide and tall as its
+//!   image ([`size_property`]) and 0 × 0 without a skin.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -80,6 +92,41 @@ use super::still;
 use crate::images::extension;
 use crate::limits::MAX_IMAGE_ALLOC;
 use crate::registry::{TokenType, ENTRIES};
+
+/// One `[regions]` entry of `src/styles/regions.toml`: the elements a
+/// slot paints and, for a labelled slot, the children carrying its text.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RegionMap {
+    pub elements: Vec<String>,
+    pub labels: Vec<String>,
+}
+
+impl RegionMap {
+    /// An entry painting `elements`, with no labels.
+    #[must_use]
+    pub fn elements(elements: &[&str]) -> Self {
+        Self {
+            elements: elements.iter().map(|e| (*e).to_owned()).collect(),
+            labels: Vec::new(),
+        }
+    }
+
+    /// An entry painting `elements` with its text on `labels`.
+    #[must_use]
+    pub fn labelled(elements: &[&str], labels: &[&str]) -> Self {
+        Self {
+            labels: labels.iter().map(|e| (*e).to_owned()).collect(),
+            ..Self::elements(elements)
+        }
+    }
+}
+
+/// The custom property holding a sized slot's `side` (`width` or
+/// `height`): its image's, set by [`skin_css`].
+#[must_use]
+pub fn size_property(slot: &str, side: &str) -> String {
+    format!("{}-{side}", property(slot, None))
+}
 
 /// The scrollbar button slots and the side along their scroll axis.
 const BUTTON_LENGTH: [(&str, &str); 4] = [
@@ -161,7 +208,8 @@ fn state_selector(element: &str, state: RegionState) -> Option<String> {
         RegionState::Down => format!("{element}:active"),
         RegionState::Disabled if pseudo => format!("{element}:disabled"),
         RegionState::Disabled => format!("{element}:disabled, {element}[aria-disabled=\"true\"]"),
-        RegionState::Focused if pseudo => return None,
+        RegionState::Focused | RegionState::Selected if pseudo => return None,
+        RegionState::Selected => format!("{element}[aria-selected=\"true\"]"),
         RegionState::Focused => format!("{element}:focus-visible"),
         // WebKit's scrollbar pseudo-class; elsewhere the attribute E7.7.2's
         // apply step sets on `:root` while the window is not focused, under
@@ -175,10 +223,11 @@ fn state_selector(element: &str, state: RegionState) -> Option<String> {
 }
 
 /// Cascade order: a later state wins at equal specificity.
-const ORDER: [RegionState; 5] = [
+const ORDER: [RegionState; 6] = [
     RegionState::WindowInactive,
     RegionState::Hover,
     RegionState::Focused,
+    RegionState::Selected,
     RegionState::Down,
     RegionState::Disabled,
 ];
@@ -190,7 +239,7 @@ const ORDER: [RegionState; 5] = [
 /// # Errors
 /// A map entry naming no painted slot, a painted slot the map lacks or
 /// maps to no element, or a state a pseudo-element cannot take.
-pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<String, String> {
+pub fn app_css(header: &str, map: &BTreeMap<String, RegionMap>) -> Result<String, String> {
     let (components, _) = rules(map)?;
     Ok(format!(
         "/* {header}\n *\n * Region slots (`rekindle-skin::regions`) on the elements\n * `src/styles/regions.toml` `[regions]` names; a skin sets the custom\n * properties in `@layer skin`. The user's settings are in\n * `regions-a11y.css`. */\n@layer components {{\n{components}}}\n"
@@ -204,7 +253,7 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
 ///
 /// # Errors
 /// What [`app_css`] returns.
-pub fn app_a11y_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<String, String> {
+pub fn app_a11y_css(header: &str, map: &BTreeMap<String, RegionMap>) -> Result<String, String> {
     let (_, a11y) = rules(map)?;
     Ok(format!(
         "/* {header}\n *\n * The region rules of `regions.css` under the user's settings, in\n * `@layer a11y`, which `global.css` orders above `components` and\n * `utilities` and below `sec` only. */\n@layer a11y {{\n{a11y}}}\n"
@@ -212,7 +261,7 @@ pub fn app_a11y_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result
 }
 
 /// The bodies of the region rules' `@layer components` and `@layer a11y`.
-fn rules(map: &BTreeMap<String, Vec<String>>) -> Result<(String, String), String> {
+fn rules(map: &BTreeMap<String, RegionMap>) -> Result<(String, String), String> {
     for id in map.keys() {
         if !slot_of(id).is_some_and(|s| s.css) {
             return Err(format!("[regions] `{id}`: not a painted region slot"));
@@ -222,19 +271,52 @@ fn rules(map: &BTreeMap<String, Vec<String>>) -> Result<(String, String), String
     // backing `::before`.
     let mut painted: Vec<String> = Vec::new();
     let mut backed: Vec<String> = Vec::new();
+    // Every label of a labelled slot.
+    let mut labels: Vec<String> = Vec::new();
     // Every rule again, reading the still under reduced motion.
     let mut motion = String::new();
     let mut out = String::new();
     for slot in SLOTS.iter().filter(|s| s.css) {
-        let elements = map
+        let entry = map
             .get(slot.id)
-            .filter(|e| !e.is_empty())
+            .filter(|e| !e.elements.is_empty())
             .ok_or_else(|| format!("[regions] has no elements for `{}`", slot.id))?;
+        let elements = &entry.elements;
+        match (slot.labelled, entry.labels.is_empty()) {
+            (true, true) => {
+                return Err(format!(
+                    "[regions] `{}` carries text on its children: it needs `labels = [...]`",
+                    slot.id
+                ))
+            }
+            (false, false) => {
+                return Err(format!(
+                    "[regions] `{}` is not a labelled slot: it takes no `labels`",
+                    slot.id
+                ))
+            }
+            _ => {}
+        }
+        if let Some(l) = entry.labels.iter().find(|l| l.contains("::")) {
+            return Err(format!(
+                "`{}`: label `{l}` carries text, so it must be an element",
+                slot.id
+            ));
+        }
         let normal = property(slot.id, None);
         let length = button_side(slot.id)
             .map(|side| format!("    {side}: var({}, 0);\n", length_property(slot.id)))
             .unwrap_or_default();
-        let text = !slot.text.is_empty();
+        let size = if slot.sized {
+            format!(
+                "    width: var({}, 0);\n    height: var({}, 0);\n",
+                size_property(slot.id, "width"),
+                size_property(slot.id, "height")
+            )
+        } else {
+            String::new()
+        };
+        let text = !slot.text.is_empty() && !slot.labelled;
         let stack = if text {
             "    position: relative;\n    isolation: isolate;\n"
         } else {
@@ -242,7 +324,7 @@ fn rules(map: &BTreeMap<String, Vec<String>>) -> Result<(String, String), String
         };
         let _ = write!(
             out,
-            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n{length}{stack}  }}\n",
+            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n{length}{size}{stack}  }}\n",
             elements.join(",\n  ")
         );
         painted.push(elements.join(",\n    "));
@@ -252,6 +334,15 @@ fn rules(map: &BTreeMap<String, Vec<String>>) -> Result<(String, String), String
             "    {} {{\n      border-image: {normal_still};\n    }}\n",
             elements.join(",\n    ")
         );
+        if slot.labelled {
+            let _ = write!(
+                out,
+                "  {} {{\n    background-image: linear-gradient(var({b}), var({b}));\n  }}\n",
+                entry.labels.join(",\n  "),
+                b = backing_property(slot.id)
+            );
+            labels.extend(entry.labels.iter().cloned());
+        }
         if text {
             out.push_str(&backing_rule(slot.id, elements)?);
             backed.extend(elements.iter().map(|e| format!("{e}::before")));
@@ -292,6 +383,13 @@ fn rules(map: &BTreeMap<String, Vec<String>>) -> Result<(String, String), String
             a11y,
             "    {} {{\n      content: none;\n    }}\n",
             backed.join(",\n    ")
+        );
+    }
+    if !labels.is_empty() {
+        let _ = write!(
+            a11y,
+            "    {} {{\n      background-image: none;\n    }}\n",
+            labels.join(",\n    ")
         );
     }
     a11y.push_str("  }\n");
@@ -388,6 +486,11 @@ pub fn skin_css(
         if let Some(d) = still_decl(still_property(id, None), &region.image, region.fit) {
             decls.push_str(&d);
         }
+        if slot.sized {
+            let (width, height) = dimensions(&region.image, images)?;
+            let _ = writeln!(decls, "    {}: {width}px;", size_property(id, "width"));
+            let _ = writeln!(decls, "    {}: {height}px;", size_property(id, "height"));
+        }
         if let Some(side) = button_side(id) {
             let (width, height) = dimensions(&region.image, images)?;
             let px = if side == "height" { height } else { width };
@@ -399,11 +502,13 @@ pub fn skin_css(
                 .iter()
                 .find(|e| e.id == token && matches!(e.ty, TokenType::Color))?;
             let _ = writeln!(decls, "    {}: var({});", backing_property(id), entry.css);
+            // A labelled slot backs its labels in full: no slice widths.
             let widths = match region.fit {
-                RegionFit::NineSlice(i) => [i.top, i.right, i.bottom, i.left],
-                RegionFit::Stretch | RegionFit::Tile => [0; 4],
+                _ if slot.labelled => None,
+                RegionFit::NineSlice(i) => Some([i.top, i.right, i.bottom, i.left]),
+                RegionFit::Stretch | RegionFit::Tile => Some([0; 4]),
             };
-            for (side, px) in SIDES.into_iter().zip(widths) {
+            for (side, px) in widths.into_iter().flat_map(|w| SIDES.into_iter().zip(w)) {
                 let _ = writeln!(decls, "    {}: {px}px;", slice_property(id, side));
             }
         }

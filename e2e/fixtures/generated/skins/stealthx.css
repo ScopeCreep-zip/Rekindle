@@ -61,6 +61,8 @@
 }
 @layer skin {
   :root {
+    --skin-region-buddylist-menubar: url("skin://localhost/fixture/c61938cd323aaf2507182230ba3894392f8432d28cc820a15c0a604852ac247b.png") 0 13 0 16 fill / 0px 13px 0px 16px / 0 stretch;
+    --skin-region-buddylist-menubar-backing: var(--color-xfire-bg-dark);
     --skin-region-scrollbar-button-down: url("skin://localhost/fixture/d048b70536cf88bec5f50757535124854e14357cabf501523ac69f174ea9da1b.png") 0 fill / 0 / 0 stretch;
     --skin-region-scrollbar-button-down-length: 20px;
     --skin-region-scrollbar-button-down--hover: url("skin://localhost/fixture/6de8549ddb2bdd87467dcdc924ccf27240a61f42e051a0049d2d3378b305582b.png") 0 fill / 0 / 0 stretch;
