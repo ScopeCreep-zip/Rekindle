@@ -9,7 +9,7 @@
 use rekindle_channel::changes::{self, ChangeKind, ChangeRefusal, ChangeTarget};
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::Verdict;
-use rekindle_channel::send::{channel_message_subkey, SlotPosition};
+use rekindle_channel::send::{channel_message_subkey, SlotBodyPosition};
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_codec::community::channel_record::{
     decode_channel_page, ChannelDelete, ChannelEdit, ChannelMessage, ChannelRecordEntry,
@@ -89,7 +89,7 @@ impl HostChannel {
         let now = self.now_secs();
         let (entry, body, digest) = match change {
             MessageChange::Edit { body } => {
-                let at = SlotPosition {
+                let at = SlotBodyPosition {
                     channel_record_key: &context.channel_key,
                     subkey_index,
                     lamport_ts: seq,
@@ -248,7 +248,7 @@ impl HostChannel {
         }
         let (body, blurred) = match entry {
             ChannelRecordEntry::Edit(edit) => {
-                let at = SlotPosition {
+                let at = SlotBodyPosition {
                     channel_record_key: source.record_key,
                     subkey_index: source.subkey_index,
                     lamport_ts: edit.lamport_ts,

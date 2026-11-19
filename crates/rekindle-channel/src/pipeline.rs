@@ -20,7 +20,7 @@ use crate::error::ChannelError;
 use crate::mentions::resolve_outbound_mentions;
 use crate::send::{
     build_channel_message, channel_message_subkey, slowmode_check, BuildChannelMessageParams,
-    SlotPosition,
+    SlotBodyPosition,
 };
 
 /// Architecture §28.7 — slowmode gate that combines the pure
@@ -171,7 +171,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         deps,
         community_id,
         channel_id,
-        SlotPosition {
+        SlotBodyPosition {
             channel_record_key: &context.channel_key,
             subkey_index: channel_message_subkey(context.slot_index),
             lamport_ts,
@@ -326,7 +326,7 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         deps,
         dest_community_id,
         dest_channel_id,
-        SlotPosition {
+        SlotBodyPosition {
             channel_record_key: &dest_context.channel_key,
             subkey_index: channel_message_subkey(dest_context.slot_index),
             lamport_ts,

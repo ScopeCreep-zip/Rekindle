@@ -14,7 +14,7 @@ use crate::send::{decrypt_channel_body, encrypt_channel_body, BodyPosition};
 /// A body sealed for an outbox entry: its ciphertext, the generation that
 /// sealed it and the stream's tag under that generation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SealedBody {
+pub struct SealedEntryBody {
     pub ciphertext: Vec<u8>,
     pub generation: u64,
     pub channel_tag: [u8; CHANNEL_TAG_LEN],
@@ -31,7 +31,7 @@ pub fn seal_entry_body(
     scope: KeyScope,
     at: BodyPosition<'_>,
     body: &[u8],
-) -> Result<SealedBody, ChannelError> {
+) -> Result<SealedEntryBody, ChannelError> {
     let (epoch, key) = channel_keys::current_key(keys, community_id, scope).ok_or_else(|| {
         ChannelError::MekMissing {
             community: community_id.into(),
@@ -40,7 +40,7 @@ pub fn seal_entry_body(
     })?;
     let ciphertext = encrypt_channel_body(&key, at, body)
         .map_err(|e| ChannelError::Encrypt(format!("outbox entry body: {e}")))?;
-    Ok(SealedBody {
+    Ok(SealedEntryBody {
         ciphertext,
         generation: epoch.0,
         channel_tag: channel_tag(&key, at.channel_id),

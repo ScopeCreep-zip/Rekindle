@@ -5,7 +5,7 @@
 //!
 //! There is no decrypt without AAD: a body is bound to its community,
 //! channel, author and the author's stream position, on every track. The
-//! slot model's position ([`SlotPosition`]) opens the bodies still on the
+//! slot model's position ([`SlotBodyPosition`]) opens the bodies still on the
 //! channel SMPL records until plan E3.3 slice 8 deletes them.
 
 use crate::keys::{ChannelAad, MediaEncryptionKey, SlotChannelAad};
@@ -61,13 +61,13 @@ impl BodyPosition<'_> {
 /// Where a body on a channel SMPL record slot was written (the slot
 /// model, deleted in plan E3.3 slice 8).
 #[derive(Debug, Clone, Copy)]
-pub struct SlotPosition<'a> {
+pub struct SlotBodyPosition<'a> {
     pub channel_record_key: &'a str,
     pub subkey_index: u32,
     pub lamport_ts: u64,
 }
 
-impl SlotPosition<'_> {
+impl SlotBodyPosition<'_> {
     fn aad(&self) -> Vec<u8> {
         SlotChannelAad {
             channel_record_key: self.channel_record_key.as_bytes(),
@@ -82,7 +82,7 @@ impl SlotPosition<'_> {
 #[derive(Debug, Clone, Copy)]
 pub enum At<'a> {
     Body(BodyPosition<'a>),
-    Slot(SlotPosition<'a>),
+    Slot(SlotBodyPosition<'a>),
 }
 
 impl At<'_> {
@@ -100,8 +100,8 @@ impl<'a> From<BodyPosition<'a>> for At<'a> {
     }
 }
 
-impl<'a> From<SlotPosition<'a>> for At<'a> {
-    fn from(at: SlotPosition<'a>) -> Self {
+impl<'a> From<SlotBodyPosition<'a>> for At<'a> {
+    fn from(at: SlotBodyPosition<'a>) -> Self {
         Self::Slot(at)
     }
 }
@@ -136,7 +136,7 @@ mod tests {
         author: &AUTHOR,
         stream_seq: 42,
     };
-    const SLOT: SlotPosition<'static> = SlotPosition {
+    const SLOT: SlotBodyPosition<'static> = SlotBodyPosition {
         channel_record_key: "VLD0:record",
         subkey_index: 3,
         lamport_ts: 42,
@@ -185,15 +185,15 @@ mod tests {
             b"hello"
         );
         for moved in [
-            SlotPosition {
+            SlotBodyPosition {
                 channel_record_key: "VLD0:other",
                 ..SLOT
             },
-            SlotPosition {
+            SlotBodyPosition {
                 subkey_index: 4,
                 ..SLOT
             },
-            SlotPosition {
+            SlotBodyPosition {
                 lamport_ts: 43,
                 ..SLOT
             },

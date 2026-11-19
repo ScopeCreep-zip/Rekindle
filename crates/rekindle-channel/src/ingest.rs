@@ -20,7 +20,7 @@ use rekindle_types::governance::AutoModAction;
 
 use crate::automod::{rule_matches, AutoModCompiledCache};
 use crate::deps::ChannelMessagingDeps;
-use crate::send::SlotPosition as SlotBodyAt;
+use crate::send::SlotBodyPosition;
 
 /// One received post, as the gate judges it.
 #[derive(Debug, Clone, Copy)]
@@ -321,7 +321,7 @@ pub fn open_body<D: ChannelMessagingDeps>(
         community_id,
         channel_id,
         message.mek_generation,
-        SlotBodyAt {
+        SlotBodyPosition {
             channel_record_key: record_key,
             subkey_index,
             lamport_ts: message.lamport_ts,

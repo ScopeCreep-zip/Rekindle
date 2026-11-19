@@ -47,7 +47,7 @@ pub struct OutboxWriter<'a> {
 
 /// What an append did with each pending entry, in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Committed {
+pub enum OutboxCommit {
     /// Appended now, at this chain seq.
     Appended(u64),
     /// Already on the chain from an earlier attempt, at this chain seq.
@@ -58,7 +58,7 @@ pub enum Committed {
 /// rest were not appended.
 #[derive(Debug)]
 pub struct AppendReport {
-    pub committed: Vec<Committed>,
+    pub committed: Vec<OutboxCommit>,
     pub error: Option<ChannelError>,
 }
 
@@ -159,7 +159,7 @@ impl OutboxWriter<'_> {
 
     /// Append `pending` (one drain, in queue order) to our outbox chain.
     /// Entries already on the newest page (a retried drain) are reported
-    /// [`Committed::Already`] and not appended again.
+    /// [`OutboxCommit::Already`] and not appended again.
     pub async fn append(&self, pending: &[PendingEntry], committed_at: u64) -> AppendReport {
         let (tip, on_page) = match self.newest_page().await {
             Ok(found) => found,
@@ -181,7 +181,7 @@ impl OutboxWriter<'_> {
         // prefix.
         for p in pending {
             match already(p) {
-                Some(seq) => committed.push(Committed::Already(seq)),
+                Some(seq) => committed.push(OutboxCommit::Already(seq)),
                 None => break,
             }
         }
@@ -197,7 +197,7 @@ impl OutboxWriter<'_> {
         tip: Option<&ChainTip>,
         fresh: &[PendingEntry],
         committed_at: u64,
-        committed: &mut Vec<Committed>,
+        committed: &mut Vec<OutboxCommit>,
     ) -> Option<ChannelError> {
         if fresh.is_empty() {
             return None;
@@ -219,7 +219,7 @@ impl OutboxWriter<'_> {
                 return Some(storage(&error));
             }
             for _ in run {
-                committed.push(Committed::Appended(next));
+                committed.push(OutboxCommit::Appended(next));
                 next += 1;
             }
         }
