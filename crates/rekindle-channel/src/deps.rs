@@ -16,8 +16,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use rekindle_codec::community::channel_record::{
-    ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
-    ChannelRecordEntry,
+    ChannelHandRaise, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
@@ -299,24 +298,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         context: &ChannelWriteContext,
         channel_msg: &ChannelMessage,
     ) -> Result<DhtWrite, ChannelError>;
-
-    async fn write_channel_poll_create_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollCreate,
-    ) -> Result<(), ChannelError>;
-
-    async fn write_channel_poll_vote_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollVote,
-    ) -> Result<(), ChannelError>;
-
-    async fn write_channel_poll_close_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollClose,
-    ) -> Result<(), ChannelError>;
 
     async fn write_channel_hand_raise_smpl(
         &self,

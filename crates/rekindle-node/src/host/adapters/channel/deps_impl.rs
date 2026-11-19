@@ -12,9 +12,7 @@ use rekindle_channel::deps::{
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
-use rekindle_codec::community::channel_record::{
-    ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
-};
+use rekindle_codec::community::channel_record::{ChannelHandRaise, ChannelMessage};
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
@@ -170,63 +168,6 @@ impl ChannelMessagingDeps for HostChannel {
         )
         .await;
         delivery(written, "channel write")
-    }
-
-    async fn write_channel_poll_create_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollCreate,
-    ) -> Result<(), ChannelError> {
-        let w = self.writer(context)?;
-        let written = record::write_member_poll_create(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            entry,
-        )
-        .await;
-        delivery(written, "poll create write").map(drop)
-    }
-
-    async fn write_channel_poll_vote_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollVote,
-    ) -> Result<(), ChannelError> {
-        let w = self.writer(context)?;
-        let written = record::write_member_poll_vote(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            entry,
-        )
-        .await;
-        delivery(written, "poll vote write").map(drop)
-    }
-
-    async fn write_channel_poll_close_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        entry: &ChannelPollClose,
-    ) -> Result<(), ChannelError> {
-        let w = self.writer(context)?;
-        let written = record::write_member_poll_close(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            entry,
-        )
-        .await;
-        delivery(written, "poll close write").map(drop)
     }
 
     async fn write_channel_hand_raise_smpl(

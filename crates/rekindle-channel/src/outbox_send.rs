@@ -14,7 +14,8 @@
 //! downloaded file's possession an `AttachmentCached` entry (slice 7).
 
 use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelRecordEntry,
+    ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelPollClose,
+    ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
 };
 use rekindle_types::attachment::AttachmentBitmap;
 use rekindle_types::channel_keys::KeyScope;
@@ -55,7 +56,7 @@ struct StoredBody {
 }
 
 /// The body `item` seals: an edit's new body, nothing for a delete, a
-/// possession entry or a reaction, else our stored post's (its row must
+/// possession entry, a reaction or a poll op, else our stored post's (its row must
 /// be ours).
 async fn stored_body<D: ChannelMessagingDeps>(
     deps: &D,
@@ -65,7 +66,11 @@ async fn stored_body<D: ChannelMessagingDeps>(
     let post = &item.post;
     // An edit or delete names its target; a post is its own row.
     let (target, body) = match &post.entry {
-        PostEntry::Cached { .. } | PostEntry::Reaction { .. } => {
+        PostEntry::Cached { .. }
+        | PostEntry::Reaction { .. }
+        | PostEntry::PollCreate { .. }
+        | PostEntry::PollVote { .. }
+        | PostEntry::PollClose { .. } => {
             return Ok(StoredBody {
                 text: String::new(),
                 reply_to: None,
@@ -182,6 +187,35 @@ async fn pending_of<D: ChannelMessagingDeps>(
             *added,
             item.stream_seq,
         )),
+        // Poll ops, ordered by their stream seq; no body.
+        PostEntry::PollCreate {
+            poll_id,
+            target,
+            question,
+            answers,
+            multi_select,
+            expires_at,
+        } => ChannelRecordEntry::PollCreate(ChannelPollCreate {
+            poll_id: *poll_id,
+            message_id: target.clone(),
+            question: question.clone(),
+            answers: answers.clone(),
+            multi_select: *multi_select,
+            expires_at: *expires_at,
+            lamport: item.stream_seq,
+        }),
+        PostEntry::PollVote {
+            poll_id,
+            selected_answers,
+        } => ChannelRecordEntry::PollVote(ChannelPollVote {
+            poll_id: *poll_id,
+            selected_answers: selected_answers.clone(),
+            lamport: item.stream_seq,
+        }),
+        PostEntry::PollClose { poll_id } => ChannelRecordEntry::PollClose(ChannelPollClose {
+            poll_id: *poll_id,
+            lamport: item.stream_seq,
+        }),
         // A delete carries no body; the entry still names its channel by
         // the tag of the key it was drained under.
         PostEntry::Delete {

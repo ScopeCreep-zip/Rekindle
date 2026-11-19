@@ -5,6 +5,7 @@
 //! stores what it did not hold and answers with [`merge_message_lists`].
 
 mod materialize;
+mod poll_states;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -18,9 +19,8 @@ use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
 use crate::send::SlotBodyPosition;
 
-pub use materialize::{
-    build_poll_states, build_reaction_groups, MAX_REACTIONS_PER_MESSAGE, MAX_REACTION_KEY_LEN,
-};
+pub use materialize::{build_reaction_groups, MAX_REACTIONS_PER_MESSAGE, MAX_REACTION_KEY_LEN};
+pub use poll_states::{build_poll_states, poll_tallies, PollTally};
 
 /// One message of the channel record, as read: its view, and what the host
 /// stores it with.
@@ -87,12 +87,15 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
     before: Option<u64>,
     limit: u32,
 ) -> Result<ChannelRecordRead, ChannelError> {
-    // Reactions ride their reactors' outboxes (plan E3.3, R1–R3).
-    let reactions =
-        build_reaction_groups(&deps.read_outbox_entries(community_id, channel_id).await);
+    // Reactions and polls ride their authors' outboxes (plan E3.3).
+    let outbox = deps.read_outbox_entries(community_id, channel_id).await;
+    let me = deps.my_pseudonym_hex(community_id).unwrap_or_default();
+    let reactions = build_reaction_groups(&outbox);
+    let polls = build_poll_states(&outbox, &me);
     let Some(record_key) = deps.channel_record_key(community_id, channel_id) else {
         return Ok(ChannelRecordRead {
             reactions,
+            polls,
             ..ChannelRecordRead::default()
         });
     };
@@ -113,9 +116,6 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
             entry: item.entry.clone(),
         })
         .collect();
-    let pseudonyms = deps.stage_pseudonyms_by_subkey(community_id).await?;
-    let me = deps.my_pseudonym_hex(community_id).unwrap_or_default();
-    let polls = build_poll_states(&entries, &pseudonyms, &me);
     let mut messages: Vec<_> = entries
         .iter()
         .filter_map(|item| match &item.entry {

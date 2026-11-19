@@ -1,29 +1,26 @@
-//! Phase 23.D.5 — channel polls orchestration ported from
-//! `src-tauri/services/community/channel_polls.rs`. All protocol logic
-//! (validate, dedup, snapshot aggregation, DHT write) lives here
-//! parameterised over `ChannelMessagingDeps`; src-tauri retains a
-//! thin facade.
+//! Channel polls (plan E3.3): a create, vote or close is an op on its
+//! author's channel outbox (`M`/4), queued on the channel's `channel_post`
+//! stream; a vote or close is judged against the poll as our reader
+//! aggregates it from the authors' outboxes.
 
 use std::collections::HashMap;
 
-use rekindle_codec::community::channel_record::{
-    ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
-};
+use rekindle_types::message::{ChannelPost, PostEntry};
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
 
-/// Aggregated snapshot of a poll's state computed by walking the channel
-/// record entries. The author_subkey is used to gate close authority;
-/// the latest_votes map is keyed by voter subkey index so each member
-/// counts once regardless of vote-replay attempts.
+/// A poll's state as our reader aggregates it from its authors' outboxes
+/// ([`crate::history::poll_tallies`]): what a vote or close is judged by.
 pub struct PollSnapshot {
-    pub author_subkey: u32,
+    /// The author's pseudonym hex.
+    pub author: String,
     pub answer_count: usize,
     pub multi_select: bool,
     pub expired: bool,
     pub closed: bool,
-    pub latest_votes: HashMap<u32, Vec<u8>>,
+    /// Each voter's counted answers, by pseudonym hex.
+    pub latest_votes: HashMap<String, Vec<u8>>,
 }
 
 /// Validate poll-create inputs. Pure — no deps.
@@ -72,6 +69,36 @@ pub fn dedupe_selected_answers(selected_answers: Vec<u8>) -> Vec<u8> {
     selected_answers
 }
 
+/// Queue `entry` (a poll op) on `channel_id`'s `channel_post` stream: an op
+/// on our channel outbox (`M`/4) with no `messages` row.
+async fn queue_poll_op<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+    entry: PostEntry,
+) -> Result<(), ChannelError> {
+    let post = ChannelPost {
+        community: community_id.to_owned(),
+        channel: channel_id.to_owned(),
+        message: format!(
+            "poll:{}",
+            hex::encode(rekindle_utils::random::id_bytes_16())
+        ),
+        entry,
+    };
+    deps.queue_post(&post).await
+}
+
+fn require_channel<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+) -> Result<(), ChannelError> {
+    deps.channel_info(community_id, channel_id)
+        .map(drop)
+        .ok_or_else(|| ChannelError::ChannelNotFound(channel_id.into()))
+}
+
 pub async fn persist_poll_create<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -83,11 +110,11 @@ pub async fn persist_poll_create<D: ChannelMessagingDeps>(
     duration_seconds: Option<u64>,
 ) -> Result<String, ChannelError> {
     validate_poll_create(question, &answers)?;
-    let context = deps.channel_write_context(community_id, channel_id)?;
+    require_channel(deps, community_id, channel_id)?;
     let poll_id = random_poll_id();
-    let entry = ChannelPollCreate {
+    let entry = PostEntry::PollCreate {
         poll_id,
-        message_id: message_id.to_string(),
+        target: message_id.to_string(),
         question: question.trim().to_string(),
         answers: answers
             .into_iter()
@@ -95,10 +122,8 @@ pub async fn persist_poll_create<D: ChannelMessagingDeps>(
             .collect(),
         multi_select,
         expires_at: duration_seconds.map(|seconds| deps.now_secs().saturating_add(seconds)),
-        lamport: deps.increment_lamport(community_id)?,
     };
-    deps.write_channel_poll_create_smpl(&context, &entry)
-        .await?;
+    queue_poll_op(deps, community_id, channel_id, entry).await?;
     Ok(hex::encode(poll_id))
 }
 
@@ -114,22 +139,15 @@ pub async fn persist_poll_vote<D: ChannelMessagingDeps>(
             "at least one answer must be selected".to_string(),
         ));
     }
-    let context = deps.channel_write_context(community_id, channel_id)?;
+    require_channel(deps, community_id, channel_id)?;
     let poll_id = parse_poll_id(poll_id_hex)?;
-    validate_poll_vote(
-        deps,
-        community_id,
-        &context.channel_key,
-        poll_id,
-        &selected_answers,
-    )
-    .await?;
-    let entry = ChannelPollVote {
+    let snapshot = load_poll_snapshot(deps, community_id, channel_id, poll_id).await?;
+    validate_poll_vote(&snapshot, &selected_answers)?;
+    let entry = PostEntry::PollVote {
         poll_id,
         selected_answers: dedupe_selected_answers(selected_answers),
-        lamport: deps.increment_lamport(community_id)?,
     };
-    deps.write_channel_poll_vote_smpl(&context, &entry).await
+    queue_poll_op(deps, community_id, channel_id, entry).await
 }
 
 pub async fn persist_poll_close<D: ChannelMessagingDeps>(
@@ -139,23 +157,24 @@ pub async fn persist_poll_close<D: ChannelMessagingDeps>(
     poll_id_hex: &str,
     allow_moderator_override: bool,
 ) -> Result<(), ChannelError> {
-    let context = deps.channel_write_context(community_id, channel_id)?;
+    require_channel(deps, community_id, channel_id)?;
     let poll_id = parse_poll_id(poll_id_hex)?;
     if !allow_moderator_override {
-        ensure_poll_author(
-            deps,
-            community_id,
-            &context.channel_key,
-            context.slot_index,
-            poll_id,
-        )
-        .await?;
+        let snapshot = load_poll_snapshot(deps, community_id, channel_id, poll_id).await?;
+        let me = deps.my_pseudonym_hex(community_id).unwrap_or_default();
+        if snapshot.author != me {
+            return Err(ChannelError::PermissionDenied(
+                "only the poll author or a moderator can close this poll".to_string(),
+            ));
+        }
     }
-    let entry = ChannelPollClose {
-        poll_id,
-        lamport: deps.increment_lamport(community_id)?,
-    };
-    deps.write_channel_poll_close_smpl(&context, &entry).await
+    queue_poll_op(
+        deps,
+        community_id,
+        channel_id,
+        PostEntry::PollClose { poll_id },
+    )
+    .await
 }
 
 pub async fn get_poll_results<D: ChannelMessagingDeps>(
@@ -164,9 +183,9 @@ pub async fn get_poll_results<D: ChannelMessagingDeps>(
     channel_id: &str,
     poll_id_hex: &str,
 ) -> Result<Vec<u32>, ChannelError> {
-    let context = deps.channel_write_context(community_id, channel_id)?;
+    require_channel(deps, community_id, channel_id)?;
     let poll_id = parse_poll_id(poll_id_hex)?;
-    let snapshot = load_poll_snapshot(deps, community_id, &context.channel_key, poll_id).await?;
+    let snapshot = load_poll_snapshot(deps, community_id, channel_id, poll_id).await?;
     let mut counts = vec![0_u32; snapshot.answer_count];
     for selected in snapshot.latest_votes.into_values() {
         for index in selected {
@@ -178,31 +197,10 @@ pub async fn get_poll_results<D: ChannelMessagingDeps>(
     Ok(counts)
 }
 
-async fn ensure_poll_author<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-    channel_key: &str,
-    slot_index: u32,
-    poll_id: [u8; 16],
-) -> Result<(), ChannelError> {
-    let snapshot = load_poll_snapshot(deps, community_id, channel_key, poll_id).await?;
-    if snapshot.author_subkey == slot_index {
-        Ok(())
-    } else {
-        Err(ChannelError::PermissionDenied(
-            "only the poll author or a moderator can close this poll".to_string(),
-        ))
-    }
-}
-
-async fn validate_poll_vote<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-    channel_key: &str,
-    poll_id: [u8; 16],
+fn validate_poll_vote(
+    snapshot: &PollSnapshot,
     selected_answers: &[u8],
 ) -> Result<(), ChannelError> {
-    let snapshot = load_poll_snapshot(deps, community_id, channel_key, poll_id).await?;
     if snapshot.closed {
         return Err(ChannelError::Adapter("poll is closed".to_string()));
     }
@@ -225,81 +223,24 @@ async fn validate_poll_vote<D: ChannelMessagingDeps>(
     Ok(())
 }
 
+/// `poll_id`'s state, aggregated from `channel_id`'s outbox entries.
 async fn load_poll_snapshot<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
-    channel_key: &str,
+    channel_id: &str,
     poll_id: [u8; 16],
 ) -> Result<PollSnapshot, ChannelError> {
-    let entries = deps
-        .read_all_channel_entries(community_id, channel_key)
-        .await?;
-
-    let mut author_subkey = None;
-    let mut best_create_order = None;
-    let mut answer_count = 0_usize;
-    let mut multi_select = false;
-    let mut expires_at = None;
-    let mut closed_lamport = None;
-    let mut latest_votes: HashMap<u32, Vec<u8>> = HashMap::new();
-
-    for item in &entries {
-        let ChannelRecordEntry::PollCreate(create) = &item.entry else {
-            continue;
-        };
-        if create.poll_id != poll_id {
-            continue;
-        }
-        let order = (create.lamport, item.subkey_index);
-        let should_replace = match (best_create_order, author_subkey) {
-            (None, _) => true,
-            (Some(best_order), Some(existing_author_subkey)) => {
-                existing_author_subkey == item.subkey_index && order >= best_order
-            }
-            _ => false,
-        };
-        if should_replace {
-            best_create_order = Some(order);
-            author_subkey = Some(item.subkey_index);
-            answer_count = create.answers.len();
-            multi_select = create.multi_select;
-            expires_at = create.expires_at;
-        }
-    }
-
-    let Some(author_subkey) = author_subkey else {
-        return Err(ChannelError::Adapter("poll not found".to_string()));
-    };
-
-    for item in &entries {
-        match &item.entry {
-            ChannelRecordEntry::PollClose(close)
-                if close.poll_id == poll_id && item.subkey_index == author_subkey =>
-            {
-                if closed_lamport.is_none_or(|lamport| close.lamport >= lamport) {
-                    closed_lamport = Some(close.lamport);
-                }
-            }
-            ChannelRecordEntry::PollVote(vote) if vote.poll_id == poll_id => {
-                if closed_lamport.is_some_and(|lamport| vote.lamport > lamport) {
-                    continue;
-                }
-                latest_votes.insert(
-                    item.subkey_index,
-                    dedupe_selected_answers(vote.selected_answers.clone()),
-                );
-            }
-            _ => {}
-        }
-    }
-
+    let entries = deps.read_outbox_entries(community_id, channel_id).await;
+    let poll = crate::history::poll_tallies(&entries)
+        .remove(&poll_id)
+        .ok_or_else(|| ChannelError::Adapter("poll not found".to_string()))?;
     Ok(PollSnapshot {
-        author_subkey,
-        answer_count,
-        multi_select,
-        expired: expires_at.is_some_and(|ts| ts <= deps.now_secs()),
-        closed: closed_lamport.is_some(),
-        latest_votes,
+        answer_count: poll.answers.len(),
+        multi_select: poll.multi_select,
+        expired: poll.expires_at.is_some_and(|ts| ts <= deps.now_secs()),
+        closed: poll.closed_at.is_some(),
+        latest_votes: poll.votes.into_iter().collect(),
+        author: poll.author,
     })
 }
 

@@ -70,6 +70,22 @@ pub enum PostEntry {
         emoji: String,
         added: bool,
     },
+    /// Our poll `poll_id` attached to `target`, our message.
+    PollCreate {
+        poll_id: [u8; 16],
+        target: String,
+        question: String,
+        answers: Vec<String>,
+        multi_select: bool,
+        expires_at: Option<u64>,
+    },
+    /// Our vote on the poll `poll_id` (our latest by stream seq counts).
+    PollVote {
+        poll_id: [u8; 16],
+        selected_answers: Vec<u8>,
+    },
+    /// Our close of our poll `poll_id`.
+    PollClose { poll_id: [u8; 16] },
 }
 
 impl PostEntry {
