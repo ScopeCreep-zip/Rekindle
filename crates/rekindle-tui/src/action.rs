@@ -68,6 +68,14 @@ pub enum Action {
         channel: String,
     },
     ShowDoctor,
+    /// A friend's profile (`peer_key`), or ours (`None`): bio and game
+    /// time (plan E7.2). `name` is what the opener showed.
+    ShowProfile {
+        peer_key: Option<String>,
+        name: String,
+    },
+    /// Our favourite game servers (plan E7.2).
+    ShowFavourites,
     ShowCommunityInfo {
         community: String,
     },
@@ -124,6 +132,17 @@ pub enum Action {
     SendGroupDm {
         group_id: String,
         text: String,
+    },
+
+    // ─── Favourite servers (plan E7.2) ──────────────────────────
+    AddFavourite {
+        game_id: u32,
+        server: rekindle_types::game_server::ServerAddress,
+        label: String,
+    },
+    RemoveFavourite {
+        game_id: u32,
+        server: rekindle_types::game_server::ServerAddress,
     },
 
     // ─── Clipboard ───────────────────────────────────────────────
@@ -270,5 +289,16 @@ pub enum CommandResult {
     /// plan E7.2), live after this from `NetworkEvent::Strength`.
     NetworkBarsLoaded {
         bars: u8,
+    },
+    /// A profile's bio and game time (plan E7.2): a friend's as they last
+    /// shared them (`peer_key`), or ours (`None`).
+    ProfileLoaded {
+        peer_key: Option<String>,
+        bio: Option<String>,
+        totals: Vec<rekindle_types::dto::presence::GameTotalView>,
+    },
+    /// Our favourite game servers (`FavouriteServersGet`, plan E7.2).
+    FavouritesLoaded {
+        servers: Vec<rekindle_types::dto::presence::FavouriteServerView>,
     },
 }

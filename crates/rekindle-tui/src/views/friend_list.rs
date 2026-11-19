@@ -412,6 +412,14 @@ impl View for FriendListView {
                 }),
                 _ => None,
             },
+            // The selected friend's bio and shared game time (plan E7.2).
+            KeyCode::Char('p') => match self.selected()? {
+                Selected::Friend(f) => Some(Action::ShowProfile {
+                    peer_key: Some(f.public_key.clone()),
+                    name: f.display_name.clone(),
+                }),
+                _ => None,
+            },
             KeyCode::Char('a') => match self.selected()? {
                 Selected::Request(r) => Some(Action::AcceptFriendRequest {
                     public_key: r.public_key.clone(),

@@ -9,9 +9,11 @@ pub mod community_info;
 pub mod dashboard;
 pub mod dm_inbox;
 pub mod doctor;
+pub mod favourites;
 pub mod friend_list;
 pub mod group_dm;
 pub mod identity_settings;
+pub mod profile;
 pub mod voice_session;
 
 use anyhow::Result;
@@ -55,14 +57,31 @@ use crate::theme::ThemeManager;
 pub enum ViewKind {
     Dashboard,
     IdentitySettings,
-    ChannelWatch { community: String, channel: String },
+    ChannelWatch {
+        community: String,
+        channel: String,
+    },
     DmInbox,
-    DmThread { peer_key: String },
-    VoiceSession { community: String, channel: String },
+    DmThread {
+        peer_key: String,
+    },
+    VoiceSession {
+        community: String,
+        channel: String,
+    },
     FriendList,
     GroupDms,
     Doctor,
-    CommunityInfo { community: String },
+    CommunityInfo {
+        community: String,
+    },
+    /// A friend's profile, or ours (`peer_key` `None`), plan E7.2.
+    Profile {
+        peer_key: Option<String>,
+        name: String,
+    },
+    /// Our favourite game servers (plan E7.2).
+    Favourites,
 }
 
 /// Trait for all TUI views.
@@ -137,6 +156,8 @@ pub struct ViewRegistry {
     group_dms: Option<group_dm::GroupDmListView>,
     doctor_view: Option<doctor::DoctorView>,
     community_info: Option<community_info::CommunityInfoView>,
+    profile: Option<profile::ProfileView>,
+    favourites: Option<favourites::FavouritesView>,
 }
 
 impl ViewRegistry {
@@ -153,6 +174,8 @@ impl ViewRegistry {
             group_dms: None,
             doctor_view: None,
             community_info: None,
+            profile: None,
+            favourites: None,
         }
     }
 
@@ -221,6 +244,20 @@ impl ViewRegistry {
                         Some(community_info::CommunityInfoView::new(community.clone()));
                 }
             }
+            ViewKind::Profile { peer_key, name } => {
+                let needs_create = self
+                    .profile
+                    .as_ref()
+                    .is_none_or(|v| v.peer_key() != peer_key.as_deref());
+                if needs_create {
+                    self.profile = Some(profile::ProfileView::new(peer_key.clone(), name.clone()));
+                }
+            }
+            ViewKind::Favourites => {
+                if self.favourites.is_none() {
+                    self.favourites = Some(favourites::FavouritesView::new());
+                }
+            }
         }
         self.current = kind;
     }
@@ -266,6 +303,14 @@ impl ViewRegistry {
                 .community_info
                 .as_mut()
                 .expect("community_info view should exist after transition"),
+            ViewKind::Profile { .. } => self
+                .profile
+                .as_mut()
+                .expect("profile view should exist after transition"),
+            ViewKind::Favourites => self
+                .favourites
+                .as_mut()
+                .expect("favourites view should exist after transition"),
         }
     }
 }

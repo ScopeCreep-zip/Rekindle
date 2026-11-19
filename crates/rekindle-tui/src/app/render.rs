@@ -194,6 +194,11 @@ impl App {
             ViewKind::FriendList => "Friends".into(),
             ViewKind::GroupDms => "Groups".into(),
             ViewKind::Doctor => "Doctor".into(),
+            ViewKind::Profile { peer_key: None, .. } => "Dashboard > Profile".into(),
+            ViewKind::Profile { name, .. } => {
+                format!("Friends > {}", crate::helpers::sanitize_for_display(name))
+            }
+            ViewKind::Favourites => "Dashboard > Favourite servers".into(),
             ViewKind::CommunityInfo { community } => {
                 format!("{} / Info", self.community_name(community))
             }

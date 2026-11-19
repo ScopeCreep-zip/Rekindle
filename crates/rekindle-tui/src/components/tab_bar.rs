@@ -100,9 +100,13 @@ impl TabBarState {
     pub fn sync_to_view(&mut self, view: &crate::views::ViewKind) {
         use crate::views::ViewKind;
         let tab_id = match view {
-            ViewKind::Dashboard | ViewKind::Doctor | ViewKind::IdentitySettings => "dashboard",
+            ViewKind::Dashboard
+            | ViewKind::Doctor
+            | ViewKind::IdentitySettings
+            | ViewKind::Favourites
+            | ViewKind::Profile { peer_key: None, .. } => "dashboard",
             ViewKind::DmInbox | ViewKind::DmThread { .. } | ViewKind::GroupDms => "dms",
-            ViewKind::FriendList => "friends",
+            ViewKind::FriendList | ViewKind::Profile { .. } => "friends",
             ViewKind::ChannelWatch { .. }
             | ViewKind::CommunityInfo { .. }
             | ViewKind::VoiceSession { .. } => "communities",

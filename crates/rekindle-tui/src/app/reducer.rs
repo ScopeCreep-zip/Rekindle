@@ -169,6 +169,35 @@ impl App {
                     .navigate(ViewKind::Doctor, self.theme.use_unicode());
                 self.load_dashboard_data(); // StatusSnapshot includes checks
             }
+            Action::ShowProfile { peer_key, name } => {
+                let kind = ViewKind::Profile {
+                    peer_key: peer_key.clone(),
+                    name,
+                };
+                self.nav.navigate(kind, self.theme.use_unicode());
+                self.load_profile(peer_key);
+            }
+            Action::ShowFavourites => {
+                self.nav
+                    .navigate(ViewKind::Favourites, self.theme.use_unicode());
+                self.load_favourites();
+            }
+            Action::AddFavourite {
+                game_id,
+                server,
+                label,
+            } => self.spawn_favourites(
+                IpcRequest::FavouriteServerAdd {
+                    game_id,
+                    server,
+                    label,
+                },
+                "add favourite server",
+            ),
+            Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
+                IpcRequest::FavouriteServerRemove { game_id, server },
+                "remove favourite server",
+            ),
             Action::ShowCommunityInfo { community } => {
                 let kind = ViewKind::CommunityInfo {
                     community: community.clone(),
