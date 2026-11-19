@@ -49,8 +49,32 @@ export interface DmHistoryGap {
   throughSeq: number;
 }
 
+/** The DM or group DM an event names (`ConversationContext`, plan E7.1). */
+export type ConversationContext = { dm: { peerKey: string } } | { groupDm: { groupId: string } };
+
+/** The peer's key, or the group's id. */
+export function conversationId(context: ConversationContext): string {
+  return "dm" in context ? context.dm.peerKey : context.groupDm.groupId;
+}
+
+/** A conversation's disappearing timer changed: `setBy` (our key or a
+ *  member's) set it to `seconds` (0 = off). */
+export interface DisappearingTimerChanged {
+  context: ConversationContext;
+  seconds: number;
+  setBy: string;
+}
+
+/** The Host deleted these messages at their `expireAt`. */
+export interface MessagesExpired {
+  context: ConversationContext;
+  clientIds: string[];
+}
+
 export type ChannelMessageEvent =
   | { directMessageReceived: DirectMessageReceived }
+  | { disappearingTimerChanged: DisappearingTimerChanged }
+  | { messagesExpired: MessagesExpired }
   | { dmSendStatus: DmSendStatus }
   | { dmHistoryGap: DmHistoryGap }
   | {

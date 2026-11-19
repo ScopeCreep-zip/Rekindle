@@ -22,8 +22,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
+use rekindle_types::disappearing::notice_text;
 use rekindle_types::display::{DmMessageDisplay, DmThreadDisplay};
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, UnreadContext};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, ConversationContext, SubscriptionEvent, UnreadContext,
+};
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -164,6 +167,12 @@ impl DmInboxView {
             .messages
             .iter()
             .map(|msg| {
+                if msg.notice {
+                    return Line::styled(
+                        format!("  -- {} --", helpers::sanitize_for_display(&msg.body)),
+                        Style::new().dim().italic(),
+                    );
+                }
                 let sender = if msg.is_self { "you" } else { &msg.sender_name };
                 let sender = helpers::sanitize_for_display(sender);
                 let body = helpers::sanitize_for_display(&msg.body);
@@ -180,6 +189,54 @@ impl DmInboxView {
 
         let para = Paragraph::new(lines).block(block);
         frame.render_widget(para, area);
+    }
+}
+
+impl DmInboxView {
+    /// A DM's disappearing timer changed (its notice joins the thread) or
+    /// the Host deleted expired messages (they leave it); plan E7.1.
+    /// Whether `event` was one of the two.
+    fn on_disappearing(&mut self, event: &ChannelMessageEvent) -> bool {
+        match event {
+            ChannelMessageEvent::DisappearingTimerChanged {
+                context: ConversationContext::Dm { peer_key },
+                seconds,
+                set_by,
+            } => {
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
+                    let who = if set_by == peer_key {
+                        thread.peer_name.clone()
+                    } else {
+                        "You".to_string()
+                    };
+                    let now = rekindle_utils::timestamp_ms_i64().cast_unsigned();
+                    thread.messages.push(DmMessageDisplay {
+                        sender_key: set_by.clone(),
+                        sender_name: who.clone(),
+                        body: notice_text(&who, *seconds),
+                        timestamp: now,
+                        is_self: set_by != peer_key,
+                        client_id: None,
+                        notice: true,
+                    });
+                }
+                true
+            }
+            ChannelMessageEvent::MessagesExpired {
+                context: ConversationContext::Dm { peer_key },
+                client_ids,
+            } => {
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
+                    thread.messages.retain(|m| {
+                        m.client_id
+                            .as_ref()
+                            .is_none_or(|id| !client_ids.contains(id))
+                    });
+                }
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -314,6 +371,11 @@ impl View for DmInboxView {
             }
             return Ok(());
         }
+        if let SubscriptionEvent::ChannelMessage(event) = event {
+            if self.on_disappearing(event) {
+                return Ok(());
+            }
+        }
         if let SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
             peer_key,
             timestamp,
@@ -321,6 +383,7 @@ impl View for DmInboxView {
             body,
             decryption_failed,
             is_own,
+            server_message_id,
             ..
         }) = event
         {
@@ -345,6 +408,8 @@ impl View for DmInboxView {
                 },
                 timestamp: *timestamp,
                 is_self: *is_own,
+                client_id: server_message_id.clone(),
+                notice: false,
             };
             if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
                 thread.messages.push(display_msg);

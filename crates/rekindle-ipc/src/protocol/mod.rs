@@ -240,6 +240,10 @@ pub enum IpcRequest {
     /// (0 = off, at most four weeks; plan E7.1). Every other member is
     /// told and every window shows the notice.
     DisappearingSet { conversation: String, seconds: u32 },
+    /// The disappearing-message timer `conversation` (as
+    /// `DisappearingSet` names it) carries now (0 = off; plan E7.1), with
+    /// the presets the chat window's timer control offers.
+    DisappearingGet { conversation: String },
     /// Send `body` to `group_id`; the answer is the message's client id
     /// once its row and local echo are committed (`queued`, then
     /// `GroupDmEvent::SendStatus`).

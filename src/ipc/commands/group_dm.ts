@@ -2,7 +2,7 @@
 // every policy; these are thin wrappers. Create, accept, decline and leave
 // are reviewed by the Host (`hostInvoke` presents the intent dialog).
 import { hostInvoke } from "../invoke";
-import type { DmMessage } from "./dto";
+import type { DisappearingTimerView, DmMessage } from "./dto_dm";
 
 /** One member of a group, labelled by the backend (our nickname for them,
  *  or their fingerprint). */
@@ -43,4 +43,12 @@ export const groupDmCommands = {
   /** The group window painted its messages: received disappearing timers
    *  start (plan E7.1); a history load alone starts none. */
   groupDmMarkRead: (groupId: string) => hostInvoke<unknown>("group_dm_mark_read", { groupId }),
+  /** The disappearing timer of a DM (the friend's key) or group DM (its
+   *  id), with the presets the control offers (plan E7.1). */
+  disappearingGet: (conversation: string) =>
+    hostInvoke<DisappearingTimerView>("disappearing_get", { conversation }),
+  /** Set that timer (0 = off); reviewed by the Host (`SetDisappearingTimer`),
+   *  then every window hears `disappearingTimerChanged`. */
+  disappearingSet: (conversation: string, seconds: number) =>
+    hostInvoke<unknown>("disappearing_set", { conversation, seconds }),
 };

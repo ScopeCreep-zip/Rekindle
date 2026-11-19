@@ -1,6 +1,13 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents, subscribeGroupDmEvents } from "../ipc/channels";
-import { isLegacy, type GroupDmEvent, type GroupDmMember } from "../ipc/channels/chat_events";
+import {
+  conversationId,
+  isLegacy,
+  type ChannelMessageEvent,
+  type GroupDmEvent,
+  type GroupDmMember,
+} from "../ipc/channels/chat_events";
+import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
 import type { GroupDmMemberView, SendState } from "../ipc/commands";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
@@ -65,7 +72,12 @@ function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unkn
     isOwn: false,
     sendState: "delivered",
     historyGapThrough: null,
+    expireSeconds: 0,
+    expireAt: null,
   });
+  // The live copy's timer is unknown until its row is read.
+  row.expireSeconds = undefined;
+  row.expireAt = undefined;
   setGroupDmState("conversations", groupId, "messages", (rows) => [...rows, row]);
   setGroupDmState("conversations", groupId, "typing", m.sender.publicKey, false);
 }
@@ -94,9 +106,33 @@ function setTyping(groupId: string, who: string, typing: boolean): void {
   setGroupDmState("conversations", groupId, "typing", who, typing);
 }
 
+// The group's disappearing timer changed (its notice joins the timeline),
+// or the Host deleted expired messages (plan E7.1).
+function applyDisappearing(groupId: string, event: ChannelMessageEvent, ownKey: () => string): void {
+  if ("disappearingTimerChanged" in event) {
+    const change = event.disappearingTimerChanged;
+    if (conversationId(change.context) !== groupId) return;
+    const notice = applyTimerChanged(change, ownKey());
+    if (!groupDmState.conversations[groupId]) {
+      setGroupDmState("conversations", groupId, { messages: [], typing: {} });
+    }
+    setGroupDmState("conversations", groupId, "messages", (rows) => [...rows, notice]);
+    return;
+  }
+  if ("messagesExpired" in event) {
+    const gone = event.messagesExpired;
+    if (conversationId(gone.context) !== groupId || !groupDmState.conversations[groupId]) return;
+    setGroupDmState("conversations", groupId, "messages", (rows) => withoutExpired(rows, gone.clientIds));
+  }
+}
+
 /** One group's chat window: its roster, members' messages, our sends'
  *  states and typing. */
-export function subscribeGroupChatEvents(groupId: string): Promise<UnlistenFn>[] {
+export function subscribeGroupChatEvents(
+  groupId: string,
+  ownKey: () => string,
+  onDisplayed: () => void,
+): Promise<UnlistenFn>[] {
   const lifecycle = subscribeGroupDmEvents((event) => {
     applyListEvent(event);
     if ("sendStatus" in event && event.sendStatus.groupId === groupId) {
@@ -104,6 +140,7 @@ export function subscribeGroupChatEvents(groupId: string): Promise<UnlistenFn>[]
     }
     if ("message" in event && event.message.groupId === groupId) {
       appendMessage(groupId, event.message);
+      onDisplayed();
       return;
     }
     if ("historyGap" in event && event.historyGap.groupId === groupId) {
@@ -112,7 +149,12 @@ export function subscribeGroupChatEvents(groupId: string): Promise<UnlistenFn>[]
     }
   });
   const typing = subscribeChatEvents((event) => {
-    if (isLegacy(event) || !("typing" in event)) return;
+    if (isLegacy(event)) return;
+    if ("channelMessage" in event) {
+      applyDisappearing(groupId, event.channelMessage, ownKey);
+      return;
+    }
+    if (!("typing" in event)) return;
     const t = event.typing;
     const started = "started" in t;
     const inner = "started" in t ? t.started : t.stopped;

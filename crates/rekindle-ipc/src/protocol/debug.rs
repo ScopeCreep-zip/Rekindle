@@ -86,6 +86,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::GroupDmDecline { .. }
             | Self::GroupDmLeave { .. }
             | Self::DisappearingSet { .. }
+            | Self::DisappearingGet { .. }
             | Self::GroupDmSend { .. }
             | Self::GroupDmTyping { .. }
             | Self::GroupDmList

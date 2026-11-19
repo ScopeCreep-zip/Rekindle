@@ -2,7 +2,7 @@
 //! validates it, reviews its intent and runs `operations::group_dm`.
 
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_types::dto::dm::DmMessage;
+use rekindle_types::dto::dm::{DisappearingTimerView, DmMessage};
 use rekindle_types::dto::group_dm::GroupDmView;
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -64,6 +64,16 @@ pub async fn disappearing_set(
         },
     )
     .await
+}
+
+/// The disappearing-message timer a DM or group DM carries now
+/// (`IpcRequest::DisappearingGet`, plan E7.1).
+#[tauri::command]
+pub async fn disappearing_get(
+    conversation: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<DisappearingTimerView>, CommandError> {
+    host_call::call(&state, IpcRequest::DisappearingGet { conversation }).await
 }
 
 /// Send `body` to a group (`IpcRequest::GroupDmSend`); the answer is the

@@ -4,6 +4,7 @@ import { authState } from "../stores/auth.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
 import { transformDmMessage } from "../utils/transformers";
+import { awaitsExpiry, withNotices } from "./disappearing.actions";
 
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
@@ -114,7 +115,7 @@ export async function handleLoadHistory(
     if (mapped.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
         peerId,
-        messages: mapped,
+        messages: withNotices(mapped, existing?.messages ?? []),
         isTyping: existing?.isTyping ?? false,
         lastRead: existing?.lastRead ?? 0,
       });
@@ -143,12 +144,19 @@ function renderedThrough(peerId: string): string | null {
 
 /// Mark the conversation read once the frame with its messages is
 /// painted; the Host publishes the zero count (`UnreadChanged`), which
-/// every window renders.
+/// every window renders, and starts the disappearing timers of what was
+/// displayed (plan E7.1): their expiry is then read from the stored rows.
 export function handleResetUnread(peerId: string): void {
   requestAnimationFrame(() => {
-    commands.markRead(peerId, renderedThrough(peerId)).catch((e) => {
-      console.error("Failed to mark read:", e);
-    });
+    commands
+      .markRead(peerId, renderedThrough(peerId))
+      .then(() => {
+        const messages = chatState.conversations[peerId]?.messages ?? [];
+        if (awaitsExpiry(messages)) void handleLoadHistory(peerId, Math.max(50, messages.length));
+      })
+      .catch((e) => {
+        console.error("Failed to mark read:", e);
+      });
   });
 }
 

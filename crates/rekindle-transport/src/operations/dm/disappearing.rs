@@ -10,6 +10,7 @@
 use rekindle_codec::capnp_codec::direct::{DirectBody, DisappearingTimer};
 use rekindle_db::repo::disappearing;
 use rekindle_types::disappearing::valid;
+use rekindle_types::dto::dm::DisappearingTimerView;
 use rekindle_types::message::ConversationType;
 use rekindle_types::subscription_events::{
     ChannelMessageEvent, ConversationContext, SubscriptionEvent,
@@ -38,6 +39,25 @@ pub(crate) async fn timer(
         tracing::warn!(error = %e, "disappearing timer unreadable; message sent with none");
         0
     })
+}
+
+/// The timer `conversation` (a friend's key, or a group's id) carries now,
+/// with the presets and bound the chat window's control offers.
+///
+/// # Errors
+/// Not unlocked, or the storage failed.
+pub async fn current(
+    host: &dyn FriendHost,
+    conversation: &str,
+    kind: ConversationType,
+) -> Result<DisappearingTimerView, FriendError> {
+    let owner = state::owner(host)?;
+    let id = conversation.to_owned();
+    let seconds = state::db_call!(host, "read the disappearing timer", move |conn| {
+        disappearing::timer(conn, &owner, &id, kind)
+    })
+    .await?;
+    Ok(DisappearingTimerView::of(seconds))
 }
 
 /// Set the timer on our DM with `conversation` or our group DM

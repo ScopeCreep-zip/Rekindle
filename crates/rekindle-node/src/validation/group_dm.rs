@@ -89,6 +89,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             conversation,
             seconds,
         } => disappearing(conversation, *seconds),
+        IpcRequest::DisappearingGet { conversation } => disappearing(conversation, 0),
         IpcRequest::GroupDmList => Ok(()),
         IpcRequest::GroupDmMessages {
             group_id: id,

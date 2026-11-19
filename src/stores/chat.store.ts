@@ -64,6 +64,14 @@ export interface Message extends Omit<IpcMessage, "sendState"> {
    *  this seq are gone. The row is the backend's, drawn as a gap line in
    *  place of a bubble. */
   historyGapThrough?: number;
+  /** The disappearing timer it carries (plan E7.1; 0 = none), from the
+   *  stored row; absent on a live copy until a reload reads the row. */
+  expireSeconds?: number;
+  /** When the Host deletes it (ms), from the stored row. */
+  expireAt?: number;
+  /** A timeline notice, not a message (plan E7.1): `setBy` set the
+   *  conversation's disappearing timer to `seconds` (0 = off). */
+  timerNotice?: { seconds: number; setBy: string };
 }
 
 /** VOICE_MESSAGE bit on `Message.flags` per architecture §16.4. */

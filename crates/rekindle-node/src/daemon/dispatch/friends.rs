@@ -188,6 +188,10 @@ pub(crate) async fn route(
             let kind = crate::validation::conversation_kind(&conversation);
             done(dm::disappearing::set(&host, &conversation, kind, seconds).await)
         }
+        IpcRequest::DisappearingGet { conversation } => {
+            let kind = crate::validation::conversation_kind(&conversation);
+            answer(dm::disappearing::current(&host, &conversation, kind).await)
+        }
         IpcRequest::GroupDmSend { group_id, body } => {
             answer(group_dm::send_reviewed(&host, &group_id, &body, acknowledged.key_change).await)
         }

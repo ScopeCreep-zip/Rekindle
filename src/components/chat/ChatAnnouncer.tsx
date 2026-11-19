@@ -1,5 +1,6 @@
 import { Component, For, createEffect, createSignal } from "solid-js";
 import type { Message } from "../../stores/chat.store";
+import { timerNoticeText } from "../../utils/disappearing";
 import { messageAnnouncement } from "../../utils/message_announcement";
 
 /** Lines kept in the region; older ones are dropped silently. */
@@ -53,7 +54,11 @@ const ChatAnnouncer: Component<ChatAnnouncerProps> = (props) => {
     mark = last;
     const added = fresh
       .filter((m) => !m.isOwn && m.historyGapThrough === undefined)
-      .map((m) => ({ text: messageAnnouncement(m, props.senderName(m), () => m.removedBy ?? "") }));
+      .map((m) => ({
+        text: m.timerNotice
+          ? timerNoticeText(props.senderName(m), false, m.timerNotice.seconds)
+          : messageAnnouncement(m, props.senderName(m), () => m.removedBy ?? ""),
+      }));
     if (added.length > 0) setLines((prev) => [...prev, ...added].slice(-KEPT_LINES));
   });
 

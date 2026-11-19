@@ -60,6 +60,7 @@ export const ICON_GAMEPAD = "\u{F0297}";          // nf-md-gamepad_variant
 export const ICON_SERVER = "\u{F048B}";           // nf-md-server
 export const ICON_BAN = "\u{F029B}";              // nf-md-gavel
 export const ICON_TIMEOUT = "\u{F0954}";          // nf-md-clock (queued message, member timed out)
+export const ICON_TIMER_SAND = "\u{F051F}";       // nf-md-timer_sand (disappearing messages)
 export const ICON_SHIELD = "\u{F088F}";           // nf-md-shield_account
 export const ICON_KEY = "\u{F0306}";              // nf-md-key
 export const ICON_PERMS = "\u{F099D}";            // nf-md-shield_lock

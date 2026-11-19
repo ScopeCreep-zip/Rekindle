@@ -29,6 +29,32 @@ pub struct DmMessage {
     pub expire_at: Option<i64>,
 }
 
+/// A DM's or group DM's disappearing-message timer as its chat window's
+/// control shows it (`DisappearingGet`, plan E7.1): the timer in force,
+/// the presets to offer and the longest custom value, all the Host's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisappearingTimerView {
+    /// The timer in force, in seconds (0 = off).
+    pub seconds: u32,
+    /// [`crate::disappearing::PRESETS`].
+    pub presets: Vec<u32>,
+    /// [`crate::disappearing::MAX_SECONDS`].
+    pub max_seconds: u32,
+}
+
+impl DisappearingTimerView {
+    /// The control's view of a conversation whose timer is `seconds`.
+    #[must_use]
+    pub fn of(seconds: u32) -> Self {
+        Self {
+            seconds,
+            presets: crate::disappearing::PRESETS.to_vec(),
+            max_seconds: crate::disappearing::MAX_SECONDS,
+        }
+    }
+}
+
 /// The latest message of one direct conversation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

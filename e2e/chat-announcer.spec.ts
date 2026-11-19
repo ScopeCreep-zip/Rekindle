@@ -39,7 +39,7 @@ const HANDLER = `
     case "group_dm_messages":
       return [{
         id: 1, messageId: null, senderId: "${BOB}", body: "stored line", timestamp: 1700000000000,
-        isOwn: false, sendState: "sent", historyGapThrough: null,
+        isOwn: false, sendState: "sent", historyGapThrough: null, expireSeconds: 0, expireAt: null,
       }];
     case "group_dm_list":
       return [{

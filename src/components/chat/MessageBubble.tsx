@@ -1,5 +1,6 @@
 import { Component, Show, createSignal } from "solid-js";
 import type { Message } from "../../stores/chat.store";
+import ExpiryIndicator from "./ExpiryIndicator";
 import { createMemo } from "solid-js";
 import { Popover } from "@kobalte/core/popover";
 import ReactionBar from "./ReactionBar";
@@ -174,6 +175,9 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         </span>
         <Show when={props.message.editedAt}>
           <span class="edit-indicator">(edited)</span>
+        </Show>
+        <Show when={props.message.expireAt !== undefined || (props.message.expireSeconds ?? 0) > 0}>
+          <ExpiryIndicator expireAt={props.message.expireAt} expireSeconds={props.message.expireSeconds} />
         </Show>
         <Show when={statusIcon()}>
           <span class={`${statusClass()} nf-icon`}>{statusIcon()}</span>

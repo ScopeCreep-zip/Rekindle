@@ -54,22 +54,7 @@ export interface InviteDto {
   url: string | null;
 }
 
-// ── Friends and direct messages (plan E2.1; `rekindle_types::dto::{friends, dm}`) ──
-
-/** One direct message, as a chat window shows it. */
-export interface DmMessage {
-  id: number;
-  /** Its client id, which a reply names; null for a row from before E2.3. */
-  messageId: string | null;
-  senderId: string;
-  body: string;
-  timestamp: number;
-  isOwn: boolean;
-  sendState: SendState;
-  /** A history-gap marker row (plan E2.5, D23): the peer's entries through
-   *  this seq were retired before we fetched them; null for a message. */
-  historyGapThrough: number | null;
-}
+// ── Friends (plan E2.1; `rekindle_types::dto::friends`; direct messages are `dto_dm.ts`) ──
 
 /** An incoming friend request, waiting for our answer. */
 export interface PendingRequest {

@@ -10,6 +10,7 @@ import type { Thread } from "../../stores/community.store";
 import MessageBubble from "./MessageBubble";
 import LiveRegion from "../common/LiveRegion";
 import ChatAnnouncer from "./ChatAnnouncer";
+import { timerNoticeText } from "../../utils/disappearing";
 
 interface MessageListProps {
   communityId?: string;
@@ -185,6 +186,14 @@ const MessageList: Component<MessageListProps> = (props) => {
             return (
               <div class="dm-history-gap" role="note">
                 Some earlier messages could not be delivered
+              </div>
+            );
+          }
+          // A disappearing-timer change (plan E7.1) is a notice line.
+          if (msg.timerNotice !== undefined) {
+            return (
+              <div class="dm-timer-notice" role="note">
+                {timerNoticeText(senderNameOf(msg), msg.isOwn, msg.timerNotice.seconds)}
               </div>
             );
           }

@@ -2,7 +2,8 @@ import { batch } from "solid-js";
 import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
-import { isLegacy } from "../ipc/channels/chat_events";
+import { conversationId, isLegacy } from "../ipc/channels/chat_events";
+import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
 import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
@@ -290,6 +291,26 @@ export function subscribeDmChatEvents(
     if ("channelMessage" in event && "dmSendStatus" in event.channelMessage) {
       const state = event.channelMessage.dmSendStatus;
       if (state.conversationId === peerId) applyMessageState(state);
+      return;
+    }
+
+    // The conversation's disappearing timer changed (plan E7.1): the
+    // control takes it and the timeline shows who set it to what.
+    if ("channelMessage" in event && "disappearingTimerChanged" in event.channelMessage) {
+      const change = event.channelMessage.disappearingTimerChanged;
+      if (conversationId(change.context) !== peerId) return;
+      const notice = applyTimerChanged(change, getOwnKey());
+      handleIncomingMessage(peerId, notice);
+      onIncoming();
+      return;
+    }
+
+    // The Host deleted expired messages (plan E7.1): drop them here.
+    if ("channelMessage" in event && "messagesExpired" in event.channelMessage) {
+      const gone = event.channelMessage.messagesExpired;
+      if (conversationId(gone.context) !== peerId || !chatState.conversations[peerId]) return;
+      setChatState("conversations", peerId, "messages", (msgs) => withoutExpired(msgs, gone.clientIds));
+      onIncoming();
       return;
     }
 

@@ -17,10 +17,13 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
+use rekindle_types::disappearing::{notice_text, remaining_short};
 use rekindle_types::dto::dm::DmMessage;
 use rekindle_types::dto::group_dm::GroupDmView;
 use rekindle_types::message::SendState;
-use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, ConversationContext, GroupDmEvent, SubscriptionEvent,
+};
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -37,6 +40,9 @@ pub struct GroupDmListView {
     list_state: ListState,
     /// The group whose messages are shown, and those messages.
     open: Option<(String, Vec<DmMessage>)>,
+    /// The open group's disappearing-timer notices (plan E7.1): when, and
+    /// the line; events, not stored rows, so a reload keeps them.
+    notices: Vec<(i64, String)>,
     input_box: InputBox,
 }
 
@@ -57,6 +63,7 @@ impl GroupDmListView {
             groups: Vec::new(),
             list_state: ListState::default(),
             open: None,
+            notices: Vec::new(),
             input_box: InputBox::new(),
         }
     }
@@ -89,6 +96,7 @@ impl GroupDmListView {
         let still_held = |id: &str| self.groups.iter().any(|g| g.group_id == id && !g.pending);
         if self.open.as_ref().is_some_and(|(id, _)| !still_held(id)) {
             self.open = None;
+            self.notices.clear();
         }
     }
 
@@ -127,7 +135,8 @@ impl GroupDmListView {
             .iter()
             .find(|g| &g.group_id == group_id)
             .map_or_else(String::new, |g| helpers::sanitize_for_display(&g.name));
-        let lines = messages
+        let now = rekindle_utils::timestamp_ms_i64();
+        let mut rows: Vec<(i64, Line<'static>)> = messages
             .iter()
             .map(|m| {
                 let who = if m.is_own {
@@ -141,13 +150,64 @@ impl GroupDmListView {
                     (true, SendState::Failed) => " (failed)",
                     _ => "",
                 };
-                Line::raw(format!(
-                    "[{time}] {who}: {}{state}",
+                // The countdown to the Host's `expire_at` (plan E7.1).
+                let expiry = m
+                    .expire_at
+                    .map(|at| format!(" (disappears in {})", remaining_short(at, now)))
+                    .unwrap_or_default();
+                let line = Line::raw(format!(
+                    "[{time}] {who}: {}{state}{expiry}",
                     helpers::sanitize_for_display(&m.body)
-                ))
+                ));
+                (m.timestamp, line)
             })
             .collect();
+        rows.extend(self.notices.iter().map(|(at, text)| {
+            let line = Line::styled(
+                format!("-- {} --", helpers::sanitize_for_display(text)),
+                Style::new().add_modifier(Modifier::DIM | Modifier::ITALIC),
+            );
+            (*at, line)
+        }));
+        rows.sort_by_key(|(at, _)| *at);
+        let lines = rows.into_iter().map(|(_, line)| line).collect();
         (format!(" {title} "), lines)
+    }
+}
+
+impl GroupDmListView {
+    /// The open group's disappearing timer changed (its notice joins the
+    /// timeline) or the Host deleted expired messages; plan E7.1.
+    fn on_disappearing(&mut self, event: &ChannelMessageEvent) {
+        let Some(open) = self.open.as_ref().map(|(id, _)| id.clone()) else {
+            return;
+        };
+        match event {
+            ChannelMessageEvent::DisappearingTimerChanged {
+                context: ConversationContext::GroupDm { group_id },
+                seconds,
+                set_by,
+            } if *group_id == open => {
+                let who = self.label(&open, set_by);
+                self.notices.push((
+                    rekindle_utils::timestamp_ms_i64(),
+                    notice_text(&who, *seconds),
+                ));
+            }
+            ChannelMessageEvent::MessagesExpired {
+                context: ConversationContext::GroupDm { group_id },
+                client_ids,
+            } if *group_id == open => {
+                if let Some((_, messages)) = &mut self.open {
+                    messages.retain(|m| {
+                        m.message_id
+                            .as_ref()
+                            .is_none_or(|id| !client_ids.contains(id))
+                    });
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -206,6 +266,9 @@ impl View for GroupDmListView {
         match result {
             CommandResult::GroupDmsLoaded { groups } => self.set_groups(groups),
             CommandResult::GroupMessagesLoaded { group_id, messages } => {
+                if self.open.as_ref().map(|(id, _)| id) != Some(&group_id) {
+                    self.notices.clear();
+                }
                 self.open = Some((group_id, messages));
             }
             _ => {}
@@ -216,6 +279,10 @@ impl View for GroupDmListView {
     /// The open group's messages follow its stream: a member's message is
     /// appended once, and our echo's row takes its send status.
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
+        if let SubscriptionEvent::ChannelMessage(event) = event {
+            self.on_disappearing(event);
+            return Ok(());
+        }
         let SubscriptionEvent::GroupDm(event) = event else {
             return Ok(());
         };
@@ -374,5 +441,68 @@ mod tests {
         view.on_command_result(CommandResult::GroupDmsLoaded { groups: vec![] })
             .unwrap();
         assert!(view.open.is_none());
+    }
+
+    /// Plan E7.1: a message shows its countdown, a timer change its notice
+    /// (named by the member's label), and an expired message leaves.
+    #[test]
+    fn disappearing_shows_the_countdown_and_notice_and_drops_expired() {
+        let mut view = GroupDmListView::new();
+        let open = group('b', false);
+        let id = open.group_id.clone();
+        view.on_command_result(CommandResult::GroupDmsLoaded { groups: vec![open] })
+            .unwrap();
+        let now = rekindle_utils::timestamp_ms_i64();
+        view.on_command_result(CommandResult::GroupMessagesLoaded {
+            group_id: id.clone(),
+            messages: vec![DmMessage {
+                id: 1,
+                message_id: Some("m1".into()),
+                sender_id: "b".repeat(64),
+                body: "psst".into(),
+                timestamp: now - 1_000,
+                is_own: false,
+                send_state: SendState::Delivered,
+                history_gap_through: None,
+                expire_seconds: 300,
+                expire_at: Some(now + 299_000),
+            }],
+        })
+        .unwrap();
+        let (_, lines) = view.message_lines();
+        assert!(
+            lines[0]
+                .to_string()
+                .ends_with("bob: psst (disappears in 5m)"),
+            "{}",
+            lines[0]
+        );
+
+        let context = ConversationContext::GroupDm {
+            group_id: id.clone(),
+        };
+        view.on_subscription_event(&SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::DisappearingTimerChanged {
+                context: context.clone(),
+                seconds: 3_600,
+                set_by: "b".repeat(64),
+            },
+        ))
+        .unwrap();
+        let (_, lines) = view.message_lines();
+        assert_eq!(
+            lines[1].to_string(),
+            "-- bob set disappearing messages to 1 hour --"
+        );
+
+        view.on_subscription_event(&SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::MessagesExpired {
+                context,
+                client_ids: vec!["m1".into()],
+            },
+        ))
+        .unwrap();
+        let (_, lines) = view.message_lines();
+        assert_eq!(lines.len(), 1, "only the notice is left");
     }
 }

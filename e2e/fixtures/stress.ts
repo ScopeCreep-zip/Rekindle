@@ -167,6 +167,8 @@ export function dmHistory(n: number) {
     isOwn: i % 2 === 1,
     sendState: "delivered",
     historyGapThrough: null,
+    expireSeconds: 0,
+    expireAt: null,
   }));
 }
 
@@ -342,6 +344,8 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
       return ${j(dmHistory(s.messages))};
     case "group_dm_mark_read":
       return null;
+    case "disappearing_get":
+      return 0;
     case "get_skin":
       return { id: "builtin:symbiosis", base: ${j(base)}, regions: [],
         tokensHref: ${j(`skin://localhost/${ME}/tokens.css`)} };

@@ -72,6 +72,7 @@ macro_rules! group_dm_commands {
         commands::group_dm::group_dm_decline,
         commands::group_dm::group_dm_leave,
         commands::group_dm::disappearing_set,
+        commands::group_dm::disappearing_get,
         commands::group_dm::group_dm_send,
         commands::group_dm::group_dm_typing,
         commands::group_dm::group_dm_list,

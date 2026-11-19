@@ -139,7 +139,8 @@ impl IpcRequest {
             Self::DmInbox { .. }
             | Self::DmHistory { .. }
             | Self::GroupDmList
-            | Self::GroupDmMessages { .. } => Some(C::ImHistory),
+            | Self::GroupDmMessages { .. }
+            | Self::DisappearingGet { .. } => Some(C::ImHistory),
             Self::DmSend { .. }
             | Self::GameInviteSend { .. }
             | Self::OutboxRetry { .. }

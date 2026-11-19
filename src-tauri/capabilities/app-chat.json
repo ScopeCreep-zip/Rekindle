@@ -17,6 +17,7 @@
     "allow-group-dm-mark-read",
     "allow-group-dm-leave",
     "allow-disappearing-set",
+    "allow-disappearing-get",
     "allow-group-dm-send",
     "allow-group-dm-typing",
     "allow-send-typing",

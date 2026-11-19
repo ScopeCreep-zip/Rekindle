@@ -33,6 +33,10 @@ impl IpcRequest {
                 .field("conversation", conversation)
                 .field("seconds", seconds)
                 .finish(),
+            Self::DisappearingGet { conversation } => f
+                .debug_struct("DisappearingGet")
+                .field("conversation", conversation)
+                .finish(),
             Self::GroupDmSend { group_id, body } => f
                 .debug_struct("GroupDmSend")
                 .field("group_id", group_id)

@@ -170,6 +170,20 @@
     "status": "online",
     "timeoutUntil": null
   },
+  "dm.disappearingTimer": {
+    "maxSeconds": 2419200,
+    "presets": [
+      0,
+      30,
+      300,
+      3600,
+      28800,
+      86400,
+      604800,
+      2419200
+    ],
+    "seconds": 3600
+  },
   "dm.historyGap": {
     "body": "",
     "expireAt": null,

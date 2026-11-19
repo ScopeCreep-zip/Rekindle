@@ -118,6 +118,22 @@ impl App {
         Action::Render
     }
 
+    /// The status bar's network indicator takes the Host's bars and
+    /// attachment.
+    fn network_event(&mut self, event: &NetworkEvent) -> Action {
+        match event {
+            NetworkEvent::Strength { bars } => self.network_bars = *bars,
+            NetworkEvent::AttachmentChanged { is_attached, .. } => {
+                self.node_was_connected = *is_attached;
+            }
+            // Routed by the caller's other arms.
+            NetworkEvent::LocalRoutesDied { .. }
+            | NetworkEvent::RemoteRoutesDied { .. }
+            | NetworkEvent::ValueChanged { .. } => {}
+        }
+        Action::Render
+    }
+
     /// Convert a daemon subscription event into a TUI action.
     ///
     /// Every `SubscriptionEvent` variant is explicitly matched — no wildcard.
@@ -139,14 +155,9 @@ impl App {
             ) => Some(Action::OwnPresence(Box::new(snapshot))),
             // The status bar's network indicator (plan E7.2): the Host's
             // smoothed bars and whether the node is attached.
-            SubscriptionEvent::Network(NetworkEvent::Strength { bars }) => {
-                self.network_bars = bars;
-                Some(Action::Render)
-            }
-            SubscriptionEvent::Network(NetworkEvent::AttachmentChanged { is_attached, .. }) => {
-                self.node_was_connected = is_attached;
-                Some(Action::Render)
-            }
+            SubscriptionEvent::Network(
+                event @ (NetworkEvent::Strength { .. } | NetworkEvent::AttachmentChanged { .. }),
+            ) => Some(self.network_event(&event)),
             // ── Events forwarded to active view (real-time data push) ─────
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New { .. }) => {
                 if self.nav.tab_bar.selected_id() != Some("communities") {
@@ -173,6 +184,9 @@ impl App {
                 // A gap in the peer's stream (plan E2.5): the DM view
                 // draws its marker.
                 | ChannelMessageEvent::DmHistoryGap { .. }
+                // Disappearing timer notices and expiries (plan E7.1).
+                | ChannelMessageEvent::DisappearingTimerChanged { .. }
+                | ChannelMessageEvent::MessagesExpired { .. }
                 // A channel outbox gap opened or closed (plan E3.3, D23).
                 | ChannelMessageEvent::ChannelHistoryGap { .. }
                 | ChannelMessageEvent::ChannelHistoryGapClosed { .. },

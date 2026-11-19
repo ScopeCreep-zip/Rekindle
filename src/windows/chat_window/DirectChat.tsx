@@ -23,6 +23,8 @@ import GameInvitePicker from "../../components/chat/GameInvitePicker";
 import VerifiedBadge from "../../components/profile/VerifiedBadge";
 import { useSafetyNumber } from "../../hooks/useSafetyNumber";
 import { identityPinMismatchText } from "../../utils/identity_pin";
+import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
+import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.
@@ -133,7 +135,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
     // Await hydration so stores are populated before loading history
     await hydrateState();
     setChatState("activeConversation", peerId);
-    await handleLoadHistory(peerId, 50);
+    await Promise.all([handleLoadHistory(peerId, 50), handleLoadDisappearingTimer(peerId)]);
     setHistoryReady(true);
     handleResetUnread(peerId);
     window.addEventListener("focus", onFocus);
@@ -174,6 +176,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           >
             <span class="nf-icon" aria-hidden="true">{ICON_GAMEPAD}</span>
           </button>
+          <DisappearingTimerControl conversation={peerId} label={`your chat with ${peerName()}`} />
         </Show>
         {/* W13-fix.1 — voice + video buttons matching the buddy-list
          *  right-click menu. Both go through the start_dm_call →

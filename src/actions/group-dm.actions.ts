@@ -3,6 +3,7 @@ import { commands, type GroupDmView } from "../ipc/commands";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { transformDmMessage } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
+import { awaitsExpiry, withNotices } from "./disappearing.actions";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.
@@ -53,28 +54,40 @@ export function handleOpenGroupChat(groupId: string): void {
 
 /** Load the group's newest `limit` stored messages. */
 export async function handleLoadGroupMessages(groupId: string, limit: number): Promise<void> {
+  if (await loadGroupRows(groupId, limit)) handleGroupDisplayed(groupId);
+}
+
+/** Read the stored rows, keeping the window's timer notices. */
+async function loadGroupRows(groupId: string, limit: number): Promise<boolean> {
   try {
     const rows = await commands.groupDmMessages(groupId, limit);
-    const typing = groupDmState.conversations[groupId]?.typing ?? {};
+    const held = groupDmState.conversations[groupId];
     setGroupDmState("conversations", groupId, {
-      messages: rows.map(transformDmMessage),
-      typing,
+      messages: withNotices(rows.map(transformDmMessage), held?.messages ?? []),
+      typing: held?.typing ?? {},
     });
-    markGroupDisplayed(groupId);
+    return true;
   } catch (e) {
     console.error("group_dm_messages failed", e);
+    return false;
   }
 }
 
 /** Once the frame with the group's messages is painted in a focused
  *  window, the Host starts their disappearing timers (plan E7.1), as a
- *  DM's start at `mark_read`. */
-function markGroupDisplayed(groupId: string): void {
+ *  DM's start at `mark_read`; their expiry is then read from the rows. */
+export function handleGroupDisplayed(groupId: string): void {
   requestAnimationFrame(() => {
     if (!document.hasFocus()) return;
-    commands.groupDmMarkRead(groupId).catch((e) => {
-      console.error("group_dm_mark_read failed", e);
-    });
+    commands
+      .groupDmMarkRead(groupId)
+      .then(() => {
+        const messages = groupDmState.conversations[groupId]?.messages ?? [];
+        if (awaitsExpiry(messages)) void loadGroupRows(groupId, Math.max(50, messages.length));
+      })
+      .catch((e) => {
+        console.error("group_dm_mark_read failed", e);
+      });
   });
 }
 

@@ -15,7 +15,7 @@ use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
     CommunityMemberView, MemberGroup, TargetModeration,
 };
-use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
+use rekindle_types::dto::dm::{DisappearingTimerView, DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
     SafetyNumberView,
@@ -475,6 +475,7 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             expire_at: None,
         }),
     );
+    add("dm.disappearingTimer", to(DisappearingTimerView::of(3600)));
     add(
         "dm.inboxEntry",
         to(DmInboxEntry {

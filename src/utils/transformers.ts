@@ -1,5 +1,5 @@
 import type { FriendInfo, Message as IpcMessage } from "../ipc/commands";
-import type { DmMessage } from "../ipc/commands/dto";
+import type { DmMessage } from "../ipc/commands/dto_dm";
 import type { DmHistoryGap } from "../ipc/channels/chat_events";
 import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
@@ -93,6 +93,8 @@ export function transformDmMessage(m: DmMessage): Message {
     ...transformMessage(m),
     serverMessageId: m.messageId ?? undefined,
     historyGapThrough: m.historyGapThrough ?? undefined,
+    expireSeconds: m.expireSeconds,
+    expireAt: m.expireAt ?? undefined,
   };
 }
 

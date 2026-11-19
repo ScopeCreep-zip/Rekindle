@@ -140,6 +140,12 @@ pub struct DmMessageDisplay {
     pub body: String,
     pub timestamp: u64,
     pub is_self: bool,
+    /// Its client id, which `MessagesExpired` names (plan E7.1); `None`
+    /// when the source carried none.
+    pub client_id: Option<String>,
+    /// A timeline notice (a disappearing-timer change, plan E7.1) drawn
+    /// as a line of its own, not a message.
+    pub notice: bool,
 }
 
 // ── Roles ───────────────────────────────────────────────────────────────

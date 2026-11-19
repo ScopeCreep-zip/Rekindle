@@ -50,9 +50,17 @@ async fn our_timer_is_told_and_our_message_expires_from_its_send() {
     let peer = hex::encode(bob);
 
     let before = outbox_rows(&host, owner, &peer).await;
+    let read =
+        |s| async move { disappearing::current(s, &hex::encode(bob), ConversationType::Dm).await };
+    assert_eq!(read(&friends).await.unwrap().seconds, 0, "off until set");
     disappearing::set(&friends, &peer, ConversationType::Dm, 1)
         .await
         .unwrap();
+    assert_eq!(
+        read(&friends).await.unwrap().seconds,
+        1,
+        "the window's control reads it"
+    );
     assert_eq!(
         outbox_rows(&host, owner, &peer).await,
         before + 1,

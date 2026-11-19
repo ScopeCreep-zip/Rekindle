@@ -149,6 +149,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("group_dm_decline", HostCall::Request("GroupDmDecline")),
     ("group_dm_leave", HostCall::Request("GroupDmLeave")),
     ("disappearing_set", HostCall::Request("DisappearingSet")),
+    ("disappearing_get", HostCall::Request("DisappearingGet")),
     (
         "update_community_info",
         HostCall::Request("CommunityUpdateInfo"),

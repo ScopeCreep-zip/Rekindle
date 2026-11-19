@@ -259,6 +259,7 @@ pub(crate) async fn select(
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. }
         | IpcRequest::GroupDmMarkRead { .. }
+        | IpcRequest::DisappearingGet { .. }
         | IpcRequest::DmTyping { .. }
         | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::DmInbox { .. }

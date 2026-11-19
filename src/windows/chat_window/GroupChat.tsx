@@ -16,7 +16,10 @@ import {
   handleSendGroupDm,
   handleLoadGroupDms,
   handleLoadGroupMessages,
+  handleGroupDisplayed,
 } from "../../actions/group-dm.actions";
+import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
+import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
@@ -46,15 +49,22 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
   // Stored history is in: from here on, new messages are announced (§13b).
   const [historyReady, setHistoryReady] = createSignal(false);
   const unlisteners: Promise<UnlistenFn>[] = [];
+  // Focusing the window displays what it shows: received disappearing
+  // timers start (plan E7.1).
+  const onFocus = (): void => handleGroupDisplayed(groupId);
   onMount(async () => {
-    unlisteners.push(...subscribeGroupChatEvents(groupId));
+    unlisteners.push(
+      ...subscribeGroupChatEvents(groupId, () => authState.publicKey ?? "", onFocus),
+    );
     void startEventStream(() => void hydrateState());
     await hydrateState();
     await handleLoadGroupDms();
-    await handleLoadGroupMessages(groupId, 50);
+    await Promise.all([handleLoadGroupMessages(groupId, 50), handleLoadDisappearingTimer(groupId)]);
     setHistoryReady(true);
+    window.addEventListener("focus", onFocus);
   });
   onCleanup(() => {
+    window.removeEventListener("focus", onFocus);
     for (const p of unlisteners) p.then((unlisten) => unlisten());
   });
 
@@ -77,6 +87,9 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
         <ul class="group-chat-members" aria-label={`Members of ${name()}`}>
           <For each={members()}>{(m) => <li class="group-chat-member">{m.label}</li>}</For>
         </ul>
+        <Show when={held()}>
+          <DisappearingTimerControl conversation={groupId} label={name()} />
+        </Show>
         <button
           class="group-chat-leave"
           aria-label={`Leave ${name()}`}

@@ -1,0 +1,56 @@
+import { Component, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { ICON_TIMER_SAND } from "../../icons";
+import { remainingShort, remainingText } from "../../utils/disappearing";
+
+// One clock for every indicator on the page, running only while one is
+// shown. It only redraws the countdown: the Host deletes the message at
+// its `expireAt` and the window drops it on `messagesExpired`.
+const [now, setNow] = createSignal(Date.now());
+let shown = 0;
+let tick: ReturnType<typeof setInterval> | undefined;
+
+function watchClock(): void {
+  shown += 1;
+  if (tick === undefined) {
+    setNow(Date.now());
+    tick = setInterval(() => setNow(Date.now()), 1000);
+  }
+}
+
+function unwatchClock(): void {
+  shown -= 1;
+  if (shown === 0 && tick !== undefined) {
+    clearInterval(tick);
+    tick = undefined;
+  }
+}
+
+/** A message's disappearing countdown (plan E7.1): the time left until the
+ *  Host's `expireAt`, or a still glyph while a received message's timer
+ *  waits for it to be displayed. */
+const ExpiryIndicator: Component<{ expireAt?: number; expireSeconds?: number }> = (props) => {
+  watchClock();
+  onCleanup(unwatchClock);
+  const left = createMemo(() => (props.expireAt === undefined ? null : props.expireAt - now()));
+  return (
+    <Show
+      when={left() !== null}
+      fallback={
+        <Show when={(props.expireSeconds ?? 0) > 0}>
+          <span class="message-expiry" title="Disappears once read">
+            <span class="nf-icon" aria-hidden="true">{ICON_TIMER_SAND}</span>
+            <span class="sr-only">Disappears once read</span>
+          </span>
+        </Show>
+      }
+    >
+      <span class="message-expiry" title={`Disappears in ${remainingText(left()!)}`}>
+        <span class="nf-icon" aria-hidden="true">{ICON_TIMER_SAND}</span>
+        <span aria-hidden="true">{remainingShort(left()!)}</span>
+        <span class="sr-only">Disappears in {remainingText(left()!)}</span>
+      </span>
+    </Show>
+  );
+};
+
+export default ExpiryIndicator;

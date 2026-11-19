@@ -195,6 +195,8 @@ fn inbox_thread(entry: DmInboxEntry) -> dt::DmThreadDisplay {
             body: entry.body,
             timestamp,
             is_self: !from_peer,
+            client_id: None,
+            notice: false,
         }],
         peer_key: entry.peer_key,
         peer_name,

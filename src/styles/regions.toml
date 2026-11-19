@@ -554,6 +554,21 @@
 '.group-chat-member' = { on = ["--color-xfire-bg-dark"] }
 '.group-chat-leave' = { on = ["--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark"] }
 
+# Disappearing messages (plan E7.1): the header button sits on the DM
+# header (`.chat-peer-status`) or the group header (`.group-chat-header`);
+# its drop-down is a `--color-xfire-bg-panel` panel; the notice and the
+# countdown sit on the message list.
+'.chat-disappearing-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-dark"], on_hover = ["--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-text-dim 15% over --color-xfire-bg-dark"] }
+'.chat-disappearing-btn-on' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-dark"], on_hover = ["--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-text-dim 15% over --color-xfire-bg-dark"] }
+'.chat-disappearing-help' = { on = ["--color-xfire-bg-panel"] }
+'.chat-disappearing-preset' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-panel"] }
+'.chat-disappearing-custom-label' = { on = ["--color-xfire-bg-panel"] }
+'.chat-disappearing-amount' = { on = ["--color-xfire-bg-input"] }
+'.chat-disappearing-unit' = { on = ["--color-xfire-bg-input"] }
+'.chat-disappearing-set' = { on = ["--color-xfire-accent"] }
+'.dm-timer-notice' = { on = ["--color-xfire-bg-panel"] }
+'.message-expiry' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+
 # `@layer sec` (plan E7.7.0b): the reserved `--sec-*` grounds, measured on
 # the dark, light and `prefers-contrast: more` values of `global.css`.
 [sec]
