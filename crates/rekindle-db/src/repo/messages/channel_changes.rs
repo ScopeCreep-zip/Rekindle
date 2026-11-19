@@ -133,11 +133,15 @@ pub struct AdminTombstone<'a> {
     pub message_id: &'a str,
     /// The moderator's pseudonym, shown as "removed by".
     pub by: &'a str,
+    /// The post's author the delete names (plan E3.3 M1): a row by anyone
+    /// else is not this delete's.
+    pub author: &'a str,
     pub deleted_at: u64,
 }
 
-/// Tombstone a member's message for a moderator's `AdminDelete`: whoever
-/// wrote it, its body, every revision and its attachment record are
+/// Tombstone a member's message for a moderator's `AdminDelete`, when its
+/// author is the one the delete names (the rank was judged against that
+/// author, M1): its body, every revision and its attachment record are
 /// purged and `by` is kept. Delete wins: a row already deleted (by its
 /// author or a moderator) does not change. Whether the row changed.
 ///
@@ -148,13 +152,14 @@ pub fn admin_tombstone(conn: &Connection, delete: &AdminTombstone<'_>) -> rusqli
         "UPDATE messages SET body = '', edited_at = NULL, attachment_json = NULL, \
                 deleted_at = ?5, deleted_by = ?4 \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
-           AND message_id = ?3 AND deleted_at IS NULL",
+           AND message_id = ?3 AND sender_key = ?6 AND deleted_at IS NULL",
         params![
             delete.owner_key,
             delete.channel_id,
             delete.message_id,
             delete.by,
-            i64::try_from(delete.deleted_at).unwrap_or(i64::MAX)
+            i64::try_from(delete.deleted_at).unwrap_or(i64::MAX),
+            delete.author
         ],
     )?;
     Ok(changed > 0)

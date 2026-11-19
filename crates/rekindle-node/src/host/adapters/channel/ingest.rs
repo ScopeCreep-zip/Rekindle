@@ -518,7 +518,13 @@ impl HostChannel {
         };
         self.store_received(owner, db, post.clone(), row).await?;
         (self.gov)
-            .store_admin_delete(&post.community_id, &post.channel_id, &message_id, &by)
+            .store_admin_delete(
+                &post.community_id,
+                &post.channel_id,
+                &message_id,
+                &by,
+                &post.message.sender_pseudonym,
+            )
             .await
             .map_err(|e| ChannelError::Adapter(e.to_string()))?;
         Ok(Ingested::RemovedByModerator)

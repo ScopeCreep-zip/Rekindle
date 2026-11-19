@@ -275,6 +275,7 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                 let delete = AdminDeleteState {
                     by: pk(),
                     channel_id: ChannelId([1; 16]),
+                    author: pk(),
                 };
                 _ = g.admin_deletes.insert(id, delete);
             }),

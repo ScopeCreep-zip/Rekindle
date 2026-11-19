@@ -1,6 +1,7 @@
 //! `AdminDelete` is checked against the writer's permissions in the
 //! message's channel: `MANAGE_MESSAGES` after that channel's overwrites,
-//! and only where the writer can read.
+//! and only where the writer can read; and (plan E3.3 M1) only of a post
+//! whose author ranks no higher than the writer.
 
 use std::collections::{HashMap, HashSet};
 
@@ -15,6 +16,7 @@ use rekindle_types::permissions::MANAGE_MESSAGES;
 
 const DELETE_CHANNEL: ChannelId = ChannelId([5; 16]);
 const MODERATOR_ROLE: RoleId = RoleId([9; 16]);
+const ADMIN_ROLE: RoleId = RoleId([10; 16]);
 
 fn key(byte: u8) -> PseudonymKey {
     PseudonymKey([byte; 32])
@@ -34,26 +36,39 @@ fn role(name: &str, permissions: u64, position: u32) -> RoleState {
     }
 }
 
-/// `key(1)` created the community; `key(2)` holds a role with
-/// `MANAGE_MESSAGES`; `key(3)` holds only @everyone.
+/// `key(1)` created the community; `key(2)` and `key(5)` hold a role with
+/// `MANAGE_MESSAGES`; `key(4)` holds a higher one; `key(3)` holds only
+/// @everyone.
 fn community() -> GovernanceState {
     GovernanceState {
         creator: Some(key(1)),
         roles: HashMap::from([
             (RoleId([0; 16]), role("everyone", DEFAULT_EVERYONE, 0)),
             (MODERATOR_ROLE, role("moderator", MANAGE_MESSAGES, 1)),
+            (ADMIN_ROLE, role("admin", MANAGE_MESSAGES, 2)),
         ]),
-        role_assignments: HashMap::from([(key(2), HashSet::from([MODERATOR_ROLE]))]),
+        role_assignments: HashMap::from([
+            (key(2), HashSet::from([MODERATOR_ROLE])),
+            (key(5), HashSet::from([MODERATOR_ROLE])),
+            (key(4), HashSet::from([ADMIN_ROLE])),
+        ]),
         ..GovernanceState::default()
     }
 }
 
-fn delete() -> GovernanceEntry {
+/// A delete of a post by `author`.
+fn delete_of(author: u8) -> GovernanceEntry {
     GovernanceEntry::AdminDelete {
         message_id: [7; 16],
         channel_id: DELETE_CHANNEL,
+        author: key(author),
         reason: None,
     }
+}
+
+/// A delete of a post by the @everyone member `key(3)`.
+fn delete() -> GovernanceEntry {
+    delete_of(3)
 }
 
 /// A member overwrite's target id: the pseudonym in lowercase hex.
@@ -102,4 +117,24 @@ fn a_channel_denying_manage_messages_refuses_the_delete() {
     let mut state = community();
     deny_for_moderator(&mut state, MANAGE_MESSAGES);
     assert!(!validate_write(&key(2), &delete(), &state));
+}
+
+#[test]
+fn a_moderator_may_remove_a_post_of_an_equal_rank() {
+    assert!(validate_write(&key(2), &delete_of(5), &community()));
+    assert!(validate_write(&key(2), &delete_of(2), &community()));
+}
+
+#[test]
+fn a_moderator_may_not_remove_a_higher_ranked_authors_post() {
+    let state = community();
+    assert!(!validate_write(&key(2), &delete_of(4), &state));
+    assert!(validate_write(&key(4), &delete_of(2), &state));
+}
+
+#[test]
+fn only_the_creator_removes_the_creators_post() {
+    let state = community();
+    assert!(!validate_write(&key(4), &delete_of(1), &state));
+    assert!(validate_write(&key(1), &delete_of(4), &state));
 }

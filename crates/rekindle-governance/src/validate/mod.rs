@@ -329,10 +329,16 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         // A moderator deletes in a channel they can read, with the channel's
         // overwrites applied (Discord's MANAGE_MESSAGES is channel-scoped):
         // an overwrite that hides the channel or denies MANAGE_MESSAGES
-        // there refuses the delete.
-        GovernanceEntry::AdminDelete { channel_id, .. } => has(
+        // there refuses the delete. M1 (plan E3.3): the post's author ranks
+        // no higher than the deleter, at this op's causal position.
+        GovernanceEntry::AdminDelete {
+            channel_id, author, ..
+        } => target::acts_on_post_of(
             compute_permissions(writer, Some(channel_id), state, 0),
             MANAGE_MESSAGES,
+            writer,
+            author,
+            state,
         ),
 
         // Lost Cargo: pinning a file requires MANAGE_COMMUNITY (admin-only)

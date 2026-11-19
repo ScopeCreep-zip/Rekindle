@@ -128,6 +128,7 @@ fn removal(by: &str) -> AdminTombstone<'_> {
         channel_id: "ch",
         message_id: "m1",
         by,
+        author: "alice",
         deleted_at: 300,
     }
 }
@@ -165,4 +166,19 @@ fn a_moderators_delete_after_the_authors_changes_nothing() {
     assert!(channel::page(&conn, OWNER, "ch", None, 10)
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn a_moderators_delete_naming_another_author_changes_nothing() {
+    let conn = fixture::conn();
+    seed(&conn);
+    let delete = AdminTombstone {
+        author: "mallory",
+        ..removal("mod")
+    };
+    assert!(
+        !admin_tombstone(&conn, &delete).unwrap(),
+        "M1 judged the rank against the author the delete names"
+    );
+    assert_eq!(shown(&conn)[0].0, "first");
 }

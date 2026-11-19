@@ -399,11 +399,13 @@ fn apply(
         G::AdminDelete {
             message_id,
             channel_id,
+            author: post_author,
             ..
         } => {
             (state.admin_deletes.entry(*message_id)).or_insert_with(|| AdminDeleteState {
                 by: author.clone(),
                 channel_id: *channel_id,
+                author: post_author.clone(),
             });
         }
         G::ModReport { .. } => apply_mod_report(author, entry, stamp, state),

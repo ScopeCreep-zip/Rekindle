@@ -533,6 +533,9 @@ struct AdminDeleteEntry @0xcfd4eb16e9bf1c2e {
     hasReason            @2 :Bool;
     reason               @3 :Text;
     obsoleteLamport              @4 :UInt64;
+    # The removed post's author: M1 ranks the moderator against it, and
+    # readers apply the delete only to a post by it (plan E3.3).
+    author               @5 :PseudonymKey;
 }
 
 struct ChannelSegmentLinkedEntry @0xd0d4eb16e9bf1c2e {

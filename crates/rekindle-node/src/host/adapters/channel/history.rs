@@ -250,7 +250,10 @@ impl HostChannel {
             shown.retain(|m| {
                 !(m.view.server_message_id.as_deref()).is_some_and(|id| {
                     crate::host::adapters::governance::channel_messages::removed_by(
-                        &state, channel_id, id,
+                        &state,
+                        channel_id,
+                        id,
+                        &m.view.sender_id,
                     )
                     .is_some()
                 })

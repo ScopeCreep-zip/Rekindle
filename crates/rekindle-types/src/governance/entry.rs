@@ -415,10 +415,16 @@ pub enum GovernanceEntry {
         channels: Vec<WelcomeChannel>,
     },
 
-    /// Admin delete a message (tombstone). Requires MANAGE_MESSAGES.
+    /// Admin delete a message (tombstone). Requires MANAGE_MESSAGES in the
+    /// channel and a role no lower than the post's author's (plan E3.3 M1),
+    /// so the op names the author: the validator judges the rank at the
+    /// op's causal position, and readers apply the delete only to a post
+    /// by that author.
     AdminDelete {
         message_id: [u8; 16],
         channel_id: ChannelId,
+        /// The removed post's author.
+        author: PseudonymKey,
         reason: Option<String>,
     },
 

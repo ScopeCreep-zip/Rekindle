@@ -107,6 +107,7 @@ impl HostChannel {
             &state,
             &post.channel_id,
             message_id,
+            &post.message.sender_pseudonym,
         )
     }
 }

@@ -46,6 +46,24 @@ pub(super) fn acts_on_lower(
         && state.member_max_position(target) < state.member_max_position(writer)
 }
 
+/// The rank rule of a moderator's delete (plan E3.3 M1): the deleter
+/// holds `bit` and a role no lower than the post's author's. It is the
+/// rank half of [`acts_on_lower`] made non-strict, as M1 words it ("a role
+/// ≥ the author's"): a moderator may remove a peer moderator's post but
+/// not a higher one's, and no one but the creator (who passes the
+/// validator's creator bypass first) removes the creator's.
+pub(super) fn acts_on_post_of(
+    perms: u64,
+    bit: u64,
+    writer: &PseudonymKey,
+    author: &PseudonymKey,
+    state: &GovernanceState,
+) -> bool {
+    has(perms, bit)
+        && state.creator.as_ref() != Some(author)
+        && state.member_max_position(author) <= state.member_max_position(writer)
+}
+
 /// Whether `writer`'s `action` against `target` passes the validator's
 /// permission half (the entry itself well formed): the creator always,
 /// a banned writer never, else [`acts_on_lower`].

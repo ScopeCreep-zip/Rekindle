@@ -436,12 +436,14 @@ pub struct ExpressionState {
 }
 
 /// A moderator's delete of a channel message (`AdminDelete`, plan E3.3
-/// M4): the moderator a reader names ("removed by") and the channel the
-/// delete was judged in.
+/// M4): the moderator a reader names ("removed by"), the channel the
+/// delete was judged in and the post's author it names (M1: readers apply
+/// it only to a post by that author).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdminDeleteState {
     pub by: PseudonymKey,
     pub channel_id: ChannelId,
+    pub author: PseudonymKey,
 }
 
 #[derive(Debug, Clone, PartialEq)]

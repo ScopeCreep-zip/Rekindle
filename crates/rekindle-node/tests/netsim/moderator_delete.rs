@@ -4,10 +4,12 @@
 //! body gone, shown as "removed by" the moderator, and a reload (the stored
 //! rows merged with the channel record, which still holds the post) never
 //! restores it. No gossip notice carries it (`messageDeleted` @13 retired).
+//! M1: a moderator removes only a post whose author ranks no higher.
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest, MemberRequest};
+use rekindle_types::permissions::MANAGE_MESSAGES;
 
 use crate::harness::{eventually, Community};
 
@@ -74,6 +76,102 @@ async fn moderator_delete_removes_for_everyone() {
             shown(&community, i, &id).await,
             Some((String::new(), Some(ann.clone()))),
             "node {i}: a later reload never restores the post"
+        );
+    }
+}
+
+/// Node `by` asks to remove message `id` of the general channel.
+async fn delete_as(
+    community: &Community,
+    by: usize,
+    id: &str,
+) -> Result<serde_json::Value, crate::harness::Refused> {
+    let request = ChannelMessageRequest::ChannelMessageAdminDelete {
+        community: community.anchor.clone(),
+        channel: community.general_id(by).await,
+        message_id: id.to_owned(),
+        reason: None,
+    };
+    community.nodes[by]
+        .call(IpcRequest::Community(CommunityRequest::Messages(request)))
+        .await
+}
+
+/// Node `i`'s post `body`: its message id, once every node reads it.
+async fn posted(community: &Community, i: usize, body: &str) -> String {
+    let posted = community.post(i, body).await.expect("the member posts");
+    for reader in 0..community.nodes.len() {
+        assert!(
+            community.history_holds(reader, body, LIMIT).await,
+            "node {reader} reads {body:?}"
+        );
+    }
+    posted["messageId"]
+        .as_str()
+        .expect("a message id")
+        .to_owned()
+}
+
+/// M1: bea, a moderator, removes cal's post (cal holds only @everyone),
+/// and every member shows it removed by bea; bea's delete of ann's post
+/// (ann, the creator, outranks every role) is refused, and ann's post
+/// stays for every member.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_moderator_removes_only_lower_ranked_posts() {
+    let community = Community::of(3, 217).await;
+    let role = community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleCreate {
+                community: community.anchor.clone(),
+                name: "moderators".into(),
+                permissions: MANAGE_MESSAGES,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        )))
+        .await;
+    let role_id = role.as_str().expect("a role id").to_owned();
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleAssign {
+                community: community.anchor.clone(),
+                member_pseudonym: community.pseudonym(1).await,
+                role_id: role_id.clone(),
+            },
+        )))
+        .await;
+    assert!(
+        community.holds_role(1, &role_id).await,
+        "bea is a moderator"
+    );
+
+    let cals = posted(&community, 2, "spam from cal").await;
+    let anns = posted(&community, 0, "rules from ann").await;
+    delete_as(&community, 1, &cals)
+        .await
+        .expect("bea removes cal's post");
+    let bea = community.pseudonym(1).await;
+    for i in 0..3 {
+        assert!(
+            removed_for(&community, i, &cals, &bea).await,
+            "node {i} shows cal's post removed by bea: {:?}",
+            shown(&community, i, &cals).await
+        );
+    }
+
+    assert!(
+        delete_as(&community, 1, &anns).await.is_err(),
+        "M1: bea may not remove the creator's post"
+    );
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    for i in 0..3 {
+        assert_eq!(
+            shown(&community, i, &anns).await,
+            Some(("rules from ann".to_owned(), None)),
+            "node {i} still shows ann's post"
         );
     }
 }

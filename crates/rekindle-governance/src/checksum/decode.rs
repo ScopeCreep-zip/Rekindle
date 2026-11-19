@@ -240,7 +240,11 @@ decanon_struct!(PendingMemberState {
     stamp
 });
 decanon_struct!(AdmissionDecision { approved, stamp });
-decanon_struct!(AdminDeleteState { by, channel_id });
+decanon_struct!(AdminDeleteState {
+    by,
+    channel_id,
+    author
+});
 decanon_struct!(TimeoutState {
     duration_seconds,
     started_at,

@@ -144,8 +144,12 @@ impl Canon for AdmissionDecision {
 
 impl Canon for AdminDeleteState {
     fn put(&self, out: &mut Vec<u8>) {
-        let Self { by, channel_id } = self;
-        put!(out; by, channel_id);
+        let Self {
+            by,
+            channel_id,
+            author,
+        } = self;
+        put!(out; by, channel_id, author);
     }
 }
 

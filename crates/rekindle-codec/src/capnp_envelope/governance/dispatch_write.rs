@@ -42,11 +42,13 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::AdminDelete {
             message_id,
             channel_id,
+            author,
             reason,
         } => write_admin_delete(
             b.reborrow().init_admin_delete(),
             message_id,
             *channel_id,
+            author,
             reason.as_deref(),
         ),
         GovernanceEntry::AttachmentPinned {

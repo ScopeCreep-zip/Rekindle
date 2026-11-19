@@ -31,29 +31,40 @@ fn adapter(message: impl Into<String>) -> GovernanceRuntimeError {
 }
 
 /// The moderator whose merged `AdminDelete` removed
-/// `message_id` of `channel_id`, when one did and still may (M2: a delete
-/// the current state no longer grants soft-fails). The delete names its
-/// channel, and only a channel of this community's state counts, so a
-/// moderator elsewhere cannot remove a post here by its id.
+/// `message_id` of `channel_id` by `author` (pseudonym hex), when one did
+/// and still may (M2: a delete the current state no longer grants
+/// soft-fails). The delete names its channel and the post's author, and
+/// only a channel of this community's state and the post's own author
+/// count, so a moderator elsewhere cannot remove a post here by its id,
+/// nor a post of a higher-ranked author by naming a lower one (M1).
 pub(crate) fn removed_by(
     state: &GovernanceState,
     channel_id: &str,
     message_id: &str,
+    author: &str,
 ) -> Option<PseudonymKey> {
     let bytes = super::channel_message_ops::message_id_bytes(message_id)?;
     let delete = state.admin_deletes.get(&bytes)?;
     let granted = delete.channel_id.to_hex() == channel_id
         && state.channels.contains_key(&delete.channel_id)
-        && super::channel_message_ops::may_delete_messages(state, &delete.by, delete.channel_id)
-            .is_ok();
+        && super::moderation::pseudonym(author).as_ref() == Some(&delete.author)
+        && super::channel_message_ops::may_delete_messages(
+            state,
+            &delete.by,
+            delete.channel_id,
+            &delete.author,
+        )
+        .is_ok();
     granted.then(|| delete.by.clone())
 }
 
-/// One removal to store: the channel, the message and the moderator.
+/// One removal to store: the channel, the message, the moderator and the
+/// post's author the delete names.
 struct Removal {
     channel_id: String,
     message_id: String,
     by: String,
+    author: String,
 }
 
 impl HostGovernance {
@@ -68,11 +79,13 @@ impl HostGovernance {
             .filter_map(|(bytes, delete)| {
                 let channel_id = delete.channel_id.to_hex();
                 let message_id = format!("msg_{}", hex::encode(bytes));
-                let by = hex::encode(removed_by(&state, &channel_id, &message_id)?.0);
+                let author = hex::encode(delete.author.0);
+                let by = hex::encode(removed_by(&state, &channel_id, &message_id, &author)?.0);
                 Some(Removal {
                     channel_id,
                     message_id,
                     by,
+                    author,
                 })
             })
             .collect();
@@ -92,8 +105,9 @@ impl HostGovernance {
         }
     }
 
-    /// Store a moderator's delete of `message_id` by `by` (pseudonym hex)
-    /// on our row and tell the window, when the row changed.
+    /// Store a moderator's delete by `by` of `message_id`, a post by
+    /// `author` (pseudonym hex), on our row and tell the window, when the
+    /// row changed.
     ///
     /// # Errors
     /// No identity is unlocked, or the store failed.
@@ -103,11 +117,13 @@ impl HostGovernance {
         channel_id: &str,
         message_id: &str,
         by: &PseudonymKey,
+        author: &str,
     ) -> Result<(), GovernanceRuntimeError> {
         let removal = Removal {
             channel_id: channel_id.to_owned(),
             message_id: message_id.to_owned(),
             by: hex::encode(by.0),
+            author: author.to_owned(),
         };
         let now = self.ctx.clock.now_secs();
         for removal in self.store_removals(vec![removal], now).await? {
@@ -133,6 +149,7 @@ impl HostGovernance {
                     channel_id: &removal.channel_id,
                     message_id: &removal.message_id,
                     by: &removal.by,
+                    author: &removal.author,
                     deleted_at: now,
                 };
                 if change_rows::admin_tombstone(conn, &delete)? {

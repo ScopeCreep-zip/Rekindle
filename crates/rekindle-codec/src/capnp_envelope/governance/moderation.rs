@@ -64,10 +64,12 @@ pub(super) fn write_admin_delete(
     mut p: schema_pkg::admin_delete_entry::Builder<'_>,
     message_id: &[u8; 16],
     channel_id: ChannelId,
+    author: &PseudonymKey,
     reason: Option<&str>,
 ) {
     uuid16_to_capnp(p.reborrow().init_message_id(), message_id);
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
+    pseudonym_key_to_capnp(p.reborrow().init_author(), author);
     p.set_has_reason(reason.is_some());
     if let Some(r) = reason {
         p.set_reason(r);
@@ -150,6 +152,7 @@ pub(super) fn read_admin_delete(
     Ok(GovernanceEntry::AdminDelete {
         message_id: uuid16_from_capnp(p.get_message_id().map_err(|e| capnp_err(&e))?)?,
         channel_id: channel_id_from_capnp(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+        author: pseudonym_key_from_capnp(p.get_author().map_err(|e| capnp_err(&e))?)?,
         reason: if p.get_has_reason() {
             Some(text_to_string(p.get_reason().map_err(|e| capnp_err(&e))?)?)
         } else {

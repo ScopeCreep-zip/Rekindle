@@ -243,6 +243,7 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
         E::AdminDelete {
             message_id: [13; 16],
             channel_id: ch,
+            author: pk(3),
             reason: None,
         },
         E::ChannelSegmentLinked {
