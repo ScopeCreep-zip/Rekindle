@@ -23,9 +23,14 @@ pub fn handle_exit(app_handle: &tauri::AppHandle) {
     tracing::info!("RunEvent::Exit fired — starting graceful shutdown");
     let state: tauri::State<'_, SharedState> = app_handle.state();
     let state = state.inner().clone();
+    // Managed at setup, before the Host starts; absent only if setup
+    // failed first, and then there is no Host to have wiped anything.
+    let root = app_handle
+        .try_state::<rekindle_db::paths::DataRoot>()
+        .map(|root| root.inner().clone());
     tauri::async_runtime::block_on(async move {
         let started = std::time::Instant::now();
-        graceful_shutdown(&state).await;
+        graceful_shutdown(&state, root.as_ref()).await;
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis(),
             "graceful shutdown finished"
@@ -33,19 +38,37 @@ pub fn handle_exit(app_handle: &tauri::AppHandle) {
     });
 }
 
+/// The Host wiped the data root (`StreamFrame::HostStopping { DataWiped }`,
+/// plan E7.1): clear every webview's browsing data, then quit. The quit
+/// runs [`graceful_shutdown`], which finishes the wipe once the node has
+/// stopped and removes the webview directories. Nothing restarts the app.
+pub fn exit_after_wipe(app: &tauri::AppHandle) {
+    for (label, window) in app.webview_windows() {
+        if let Err(e) = window.clear_all_browsing_data() {
+            tracing::error!(window = %label, error = %e, "webview data not cleared");
+        }
+    }
+    app.exit(0);
+}
+
 /// Shut down all background services before the process exits: the Host
 /// (its bus, then the session's teardown with `EndReason::Exit`), then the
-/// app-lifetime dispatch loop and the Veilid node.
-pub async fn graceful_shutdown(state: &SharedState) {
+/// app-lifetime dispatch loop and the Veilid node. After a wipe, the rest
+/// of the data root and the webview stores go once the node has stopped.
+pub async fn graceful_shutdown(state: &SharedState, root: Option<&rekindle_db::paths::DataRoot>) {
     tracing::info!("graceful shutdown: stopping background services");
 
     // 1. The in-process host: its bus drains (every request in flight is
     //    answered), then it ends the session (its tasks, the Offline
     //    status, the records, our routes, the keys) before the node it
     //    serves over stops.
+    let mut wiped = false;
     if let Some(host) = state.host.current() {
-        if let Err(e) = host.shutdown().await {
-            tracing::warn!(error = %format!("{e:#}"), "host shutdown");
+        match host.shutdown().await {
+            Ok(reason) => {
+                wiped = reason == rekindle_node::daemon::shutdown::ExitReason::DataWiped;
+            }
+            Err(e) => tracing::warn!(error = %format!("{e:#}"), "host shutdown"),
         }
     }
 
@@ -61,6 +84,22 @@ pub async fn graceful_shutdown(state: &SharedState) {
 
     // 3. The Veilid node itself.
     services::veilid::shutdown_app(state).await;
+
+    // 4. After a wipe: what the node held, then the webview stores outside
+    //    the data root (the shell's node is the GUI's, so the Host left
+    //    these to it; `rekindle_node::host::wipe`).
+    if let (true, Some(root)) = (wiped, root) {
+        let finished = rekindle_node::host::wipe::finish(root)
+            .map_err(|e| e.to_string())
+            .and_then(|()| rekindle_db::paths::DataRoot::webview_dirs().map_err(|e| e.to_string()))
+            .and_then(|dirs| {
+                rekindle_node::host::wipe::remove_paths(&dirs).map_err(|e| e.to_string())
+            });
+        match finished {
+            Ok(()) => tracing::info!("data root and webview stores wiped"),
+            Err(e) => tracing::error!(error = %e, "wipe incomplete"),
+        }
+    }
 
     tracing::info!("graceful shutdown complete");
 }

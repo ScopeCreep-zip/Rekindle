@@ -87,7 +87,9 @@ async fn run(
 fn encode(state: &ServerState, frame: &StreamFrame) -> Option<Vec<u8>> {
     let community_scope = match frame {
         StreamFrame::Event(sequenced) => sequenced.event.community().map(String::from),
-        StreamFrame::Resumed(_) | StreamFrame::InvalidSession => None,
+        StreamFrame::Resumed(_)
+        | StreamFrame::InvalidSession
+        | StreamFrame::HostStopping { .. } => None,
     };
     let msg: Message<BusPayload> = Message {
         wire_version: WIRE_VERSION,

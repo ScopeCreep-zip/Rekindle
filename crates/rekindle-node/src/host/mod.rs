@@ -72,6 +72,7 @@ pub(crate) mod fixture;
 mod signals;
 mod wake;
 pub mod watchdog;
+pub mod wipe;
 
 use rekindle_db::paths::DataRoot;
 

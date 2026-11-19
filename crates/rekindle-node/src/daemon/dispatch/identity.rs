@@ -292,9 +292,9 @@ pub(crate) async fn handle_delete(
     }
 }
 
-/// Handle IdentityWipe — factory reset: release the unlock, delete every
-/// identity, then exit; the host deletes the Veilid storage once the
-/// transport has stopped, and the daemon restarts empty.
+/// Handle IdentityWipe — factory reset: release the unlock, sweep the
+/// whole data root (`host::wipe`), then exit; what the node holds goes once
+/// it has stopped, and the daemon restarts empty.
 pub(crate) async fn handle_wipe(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
     if !state.can_write() && state != DaemonState::Locked {
         return state_error(state, "wipe");
@@ -304,14 +304,15 @@ pub(crate) async fn handle_wipe(ctx: &DaemonContext, state: DaemonState) -> IpcR
             return refused;
         }
     }
-    // Everything under `state/` but Veilid's storage, which the transport
-    // still holds open, and the layout stamp, which stays true.
-    let swept = rekindle_db::reset::run(&[rekindle_db::reset::ResetDir {
-        path: ctx.root.state.clone(),
-        keep: &["veilid", "layout-version"],
-    }]);
+    // The whole wipe set but what the node still holds (Veilid's storage,
+    // the node lock), which `host::wipe::finish` takes once it has stopped.
+    let swept = rekindle_ipc::runtime_dir()
+        .map_err(|e| format!("wipe incomplete: no runtime directory: {e}"))
+        .and_then(|bus_dir| {
+            crate::host::wipe::sweep_root(&ctx.root, &bus_dir).map_err(|e| e.to_string())
+        });
     if let Err(e) = swept {
-        return IpcResponse::error(500, format!("wipe incomplete: {e}"));
+        return IpcResponse::error(500, e);
     }
     if let Err(refused) = transition(ctx, DaemonState::ShuttingDown) {
         return refused;

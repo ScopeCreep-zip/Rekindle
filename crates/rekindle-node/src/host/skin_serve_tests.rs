@@ -115,6 +115,7 @@ async fn a_library_skin_is_announced_and_served_no_store() {
             }
             StreamFrame::Resumed(_) => {}
             StreamFrame::InvalidSession => panic!("invalid session"),
+            StreamFrame::HostStopping { .. } => panic!("host stopping"),
         }
     };
     assert_eq!(announced.id, entry.id);

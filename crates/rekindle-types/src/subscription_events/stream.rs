@@ -43,4 +43,38 @@ pub enum StreamFrame {
     /// The subscriber's cursor cannot be served (another epoch, evicted,
     /// or the subscriber fell behind): reload state, then subscribe anew.
     InvalidSession,
+    /// The host is stopping (plan E7.1). Sent once to every live stream,
+    /// whatever its filters, before the bus drains; unsequenced and never
+    /// replayed. A client handles it as the end of the stream; on
+    /// [`StopReason::DataWiped`] the GUI clears its webview stores and exits.
+    HostStopping { reason: StopReason },
+}
+
+/// Why the host is stopping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StopReason {
+    /// A stop was asked for (an IPC `Shutdown`, a signal, the app quitting).
+    Requested,
+    /// The quick wipe or a factory reset took the data root.
+    DataWiped,
+    /// The host stops on a fault (a handler panicked, its subscriber failed).
+    Fault,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StopReason, StreamFrame};
+
+    /// The stop frame's wire shape, as the bus and the GUI carry it.
+    #[test]
+    fn the_stop_frame_serializes_as_its_golden_sample() {
+        let frame = StreamFrame::HostStopping {
+            reason: StopReason::DataWiped,
+        };
+        assert_eq!(
+            serde_json::to_value(&frame).expect("json"),
+            serde_json::json!({ "hostStopping": { "reason": "dataWiped" } })
+        );
+    }
 }

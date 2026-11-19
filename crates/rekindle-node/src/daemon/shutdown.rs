@@ -37,12 +37,24 @@ pub enum ExitReason {
     /// The daemon's own bus subscriber could not connect, so nothing
     /// would ever be answered.
     SubscriberFailed,
-    /// Everything was wiped; the host deletes the Veilid storage once the
-    /// transport has stopped, and the daemon restarts empty.
+    /// Everything was wiped; the host removes what the node held
+    /// (`host::wipe::finish`) once the transport has stopped, and the
+    /// daemon restarts empty.
     DataWiped,
 }
 
 impl ExitReason {
+    /// What the stop frame tells every subscriber (plan E7.1).
+    #[must_use]
+    pub fn stop_reason(self) -> rekindle_types::subscription_events::StopReason {
+        use rekindle_types::subscription_events::StopReason;
+        match self {
+            Self::Requested => StopReason::Requested,
+            Self::DataWiped => StopReason::DataWiped,
+            Self::HandlerPanic | Self::SubscriberFailed => StopReason::Fault,
+        }
+    }
+
     /// The process exit status for this reason.
     #[must_use]
     pub fn exit_code(self) -> u8 {

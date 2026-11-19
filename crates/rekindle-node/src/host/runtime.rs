@@ -161,9 +161,8 @@ pub struct Host {
     mode: HostMode,
     workers: tokio_util::task::TaskTracker,
     bus: Option<Bus>,
-    veilid_dir: std::path::PathBuf,
     /// Held for the life of the host.
-    _root: ClaimedRoot,
+    claimed: ClaimedRoot,
 }
 
 impl Host {
@@ -375,6 +374,15 @@ impl Host {
             let teardowns = super::unlock::run_panic_teardowns(Arc::clone(&ctx), unlock_panics_rx);
             workers.spawn(teardowns.in_current_span());
         }
+        // Every subscriber hears the stop as soon as it is asked for, from
+        // whichever handler asked (the shell's GUI included).
+        let stopping = Arc::clone(&ctx);
+        workers.spawn(async move {
+            stopping.shutdown.requested().await;
+            stopping
+                .journal
+                .close(stopping.shutdown.reason().stop_reason());
+        });
 
         let bus = if serve_bus {
             Some(super::serve::serve(&ctx).await?)
@@ -390,8 +398,7 @@ impl Host {
             mode,
             workers,
             bus,
-            veilid_dir,
-            _root: claimed,
+            claimed,
         }))
     }
 
@@ -473,6 +480,10 @@ impl Host {
         watchdog::notify_stopping();
         tracing::info!("host stopping");
         self.ctx.shutdown.request(ExitReason::Requested);
+        // Before the bus drains (the first request wins the reason).
+        self.ctx
+            .journal
+            .close(self.ctx.shutdown.reason().stop_reason());
         if let Some(bus) = &self.bus {
             // The subscriber stops reading, answers what is in flight and
             // flushes its connection; only then is the bus drained, so a
@@ -507,16 +518,12 @@ impl Host {
         }
 
         let reason = self.ctx.shutdown.reason();
-        if reason == ExitReason::DataWiped {
-            // Only now: the transport held this storage open until it stopped.
-            match std::fs::remove_dir_all(&self.veilid_dir) {
-                Ok(()) => tracing::info!("veilid storage wiped"),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => anyhow::bail!(
-                    "wipe incomplete: cannot delete {}: {e}",
-                    self.veilid_dir.display()
-                ),
-            }
+        // Only now: the transport held Veilid's storage and the node lock
+        // until it stopped. The shell's node is the GUI's, so the shell
+        // finishes the wipe after it stops it (`graceful_shutdown`).
+        if reason == ExitReason::DataWiped && self.mode == HostMode::Daemon {
+            super::wipe::finish(self.claimed.root())?;
+            tracing::info!("data root wiped");
         }
         settle(&self.ctx.lifecycle, DaemonState::Stopped);
         tracing::info!(?reason, "host stopped");

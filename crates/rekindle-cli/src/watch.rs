@@ -44,6 +44,11 @@ pub async fn stream(
                          fell behind); run it again"
                     ),
                     Some(StreamFrame::Resumed(_)) => continue,
+                    // The daemon is stopping; the watch ends with it.
+                    Some(StreamFrame::HostStopping { reason }) => {
+                        tracing::info!(?reason, "the daemon is stopping");
+                        return Ok(());
+                    }
                 };
                 let Some(line) = render(&event) else { continue };
                 if mode.is_structured() {

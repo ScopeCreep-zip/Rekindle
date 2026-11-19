@@ -16,7 +16,9 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use rekindle_types::subscription_events::{Cursor, Sequenced, StreamFrame, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    Cursor, Sequenced, StopReason, StreamFrame, SubscriptionEvent,
+};
 use rekindle_utils::RandomSource;
 use tokio::sync::broadcast;
 
@@ -40,6 +42,8 @@ pub struct SessionJournal {
     capacity: usize,
     /// The host's RNG (plan C9.2): each epoch is drawn from it.
     rng: Arc<dyn RandomSource>,
+    /// Set by [`SessionJournal::close`]: the stop frame goes out once.
+    closed: std::sync::atomic::AtomicBool,
 }
 
 /// A fresh random epoch below 2^53 (exact as a JavaScript number).
@@ -71,7 +75,19 @@ impl SessionJournal {
             live: broadcast::channel(live_capacity).0,
             capacity,
             rng,
+            closed: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// The host is stopping: send [`StreamFrame::HostStopping`] to every
+    /// live subscriber, once (later calls send nothing). It is not
+    /// journaled, so no replay carries it (plan E7.1).
+    pub fn close(&self, reason: StopReason) {
+        if self.closed.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return;
+        }
+        // No subscriber is not an error.
+        let _ = self.live.send(StreamFrame::HostStopping { reason });
     }
 
     /// Begin a new epoch (unlock and lock): empty the ring and tell every
@@ -323,5 +339,29 @@ mod tests {
         for _ in 0..64 {
             assert!(new_epoch(&rekindle_utils::random::OsRandom) < (1 << 53));
         }
+    }
+
+    #[tokio::test]
+    async fn the_stop_frame_reaches_live_streams_once_and_is_never_replayed() {
+        let journal = SessionJournal::new(16, 16, Arc::new(rekindle_utils::random::OsRandom));
+        journal.publish(ev("a"));
+        let mut live = journal.subscribe(None);
+        journal.close(StopReason::DataWiped);
+        journal.close(StopReason::Requested);
+        journal.publish(ev("b"));
+        assert!(matches!(
+            live.next().await,
+            Some(StreamFrame::HostStopping {
+                reason: StopReason::DataWiped
+            })
+        ));
+        assert_eq!(live.next().await.as_ref().and_then(seq_of), Some(2));
+        let replay = journal.replay(Cursor {
+            epoch: journal.head().epoch,
+            seq: 0,
+        });
+        assert!(replay
+            .iter()
+            .all(|f| !matches!(f, StreamFrame::HostStopping { .. })));
     }
 }

@@ -380,6 +380,15 @@ pub fn spawn_host_stream(
                         .event_router
                         .deliver_all(&OutboundEnvelope::invalid_session()),
                     StreamFrame::Resumed(_) => {}
+                    // The stream ends here. After a wipe the GUI clears its
+                    // webviews and exits (plan E7.1); any other stop is the
+                    // GUI's own quit, already under way.
+                    StreamFrame::HostStopping { reason } => {
+                        if reason == rekindle_types::subscription_events::StopReason::DataWiped {
+                            crate::shutdown::exit_after_wipe(&app);
+                        }
+                        return;
+                    }
                 }
             }
             // The stream ended after an `InvalidSession` (this task fell
@@ -481,6 +490,8 @@ pub fn replay_for(
             }
             StreamFrame::Resumed(cursor) => Some(OutboundEnvelope::resumed(cursor)),
             StreamFrame::InvalidSession => Some(OutboundEnvelope::invalid_session()),
+            // Never journaled, so a replay never holds it.
+            StreamFrame::HostStopping { .. } => None,
         })
         .collect()
 }

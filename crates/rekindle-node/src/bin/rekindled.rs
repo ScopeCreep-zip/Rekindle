@@ -18,12 +18,25 @@ async fn main() -> ExitCode {
     }
     rekindle_utils::log_scrub::install_panic_hook();
     let args = rekindle_node::host::HostArgs::parse();
-    let _log = match rekindle_node::host::init_tracing() {
+    let log = match rekindle_node::host::init_tracing() {
         Ok(guard) => guard,
         Err(e) => return fail(&e),
     };
     tracing::debug!(?args, "rekindled starting");
     match run().await {
+        Ok(reason) if reason == rekindle_node::daemon::shutdown::ExitReason::DataWiped => {
+            // The host finished the wipe; the appender wrote its last lines
+            // since. Drop it, then take the log directory once more, so
+            // nothing writes it after it is gone (plan E7.1).
+            drop(log);
+            match rekindle_db::paths::DataRoot::resolve()
+                .map_err(anyhow::Error::from)
+                .and_then(|root| Ok(rekindle_node::host::wipe::finish(&root)?))
+            {
+                Ok(()) => ExitCode::from(reason.exit_code()),
+                Err(e) => fail(&e),
+            }
+        }
         Ok(reason) => ExitCode::from(reason.exit_code()),
         Err(e) => {
             tracing::error!(error = %format!("{e:#}"), "rekindled failed");

@@ -114,6 +114,35 @@ impl DataRoot {
         self.data.join("file_cache")
     }
 
+    /// The webview's stores outside `DataRoot.data` (plan E7.1, quick
+    /// wipe): macOS WebKit's `~/Library/WebKit/<id>` and
+    /// `~/Library/Caches/<id>`; Linux `dirs::cache_dir()/<id>` (WebKitGTK's
+    /// data directory is `DataRoot.data` itself); Windows WebView2's
+    /// `%LOCALAPPDATA%\<id>\EBWebView`. Only the GUI has them.
+    ///
+    /// # Errors
+    /// A platform directory cannot be resolved.
+    pub fn webview_dirs() -> Result<Vec<PathBuf>, PathsError> {
+        #[cfg(target_os = "macos")]
+        {
+            let home = dirs::home_dir().ok_or(PathsError("home"))?;
+            Ok(vec![
+                home.join("Library/WebKit").join(IDENTIFIER),
+                home.join("Library/Caches").join(IDENTIFIER),
+            ])
+        }
+        #[cfg(windows)]
+        {
+            let local = dirs::data_local_dir().ok_or(PathsError("local data"))?;
+            Ok(vec![local.join(IDENTIFIER).join("EBWebView")])
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            let cache = dirs::cache_dir().ok_or(PathsError("cache"))?;
+            Ok(vec![cache.join(IDENTIFIER)])
+        }
+    }
+
     /// The device login skin, `data/skins/` (plan E7.7.2): `login.json`
     /// and at most one stripped, render-only package, the only skin data
     /// readable before unlock. It sits outside `state/`, so a schema reset

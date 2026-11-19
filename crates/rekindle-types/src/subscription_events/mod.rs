@@ -36,7 +36,7 @@ pub use notification::{AlertSubject, NotificationEvent};
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use scope::EventScope;
 pub use social::SocialEvent;
-pub use stream::{Cursor, Sequenced, StreamFrame};
+pub use stream::{Cursor, Sequenced, StopReason, StreamFrame};
 pub use system::SystemEvent;
 pub use typing::{TypingContext, TypingEvent};
 pub use voice::{LinkMeasurement, VoiceEvent, VoiceParticipant, VoiceScope};

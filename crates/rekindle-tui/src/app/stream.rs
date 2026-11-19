@@ -7,7 +7,7 @@
 //! (`InvalidSession`: another unlock, evicted, or the TUI fell behind) the
 //! TUI reloads its data and subscribes anew from the live stream.
 
-use rekindle_types::subscription_events::{Cursor, StreamFrame};
+use rekindle_types::subscription_events::{Cursor, StopReason, StreamFrame};
 
 use super::App;
 use crate::action::Action;
@@ -65,6 +65,19 @@ impl App {
                         level: crate::action::ToastLevel::Error,
                     });
                 }
+            }
+            // The daemon is stopping (plan E7.1). After a wipe there is
+            // nothing left to show, so the TUI quits; otherwise it says so
+            // and waits for the connection to close.
+            StreamFrame::HostStopping { reason } => {
+                let action = match reason {
+                    StopReason::DataWiped => Action::Quit,
+                    StopReason::Requested | StopReason::Fault => Action::ShowToast {
+                        message: "the daemon is stopping".into(),
+                        level: crate::action::ToastLevel::Warning,
+                    },
+                };
+                let _ = self.action_tx.send(action);
             }
         }
     }
