@@ -229,8 +229,21 @@ impl HostGovernance {
     /// Diff the channel outbox (`M`/4) of the member whose record is
     /// `record` (plan E3.3: a hint or a ring change of subkey 4), never a
     /// governance rebuild.
+    /// A departed author's outbox is read too (its record kept in
+    /// `op_log_records`): an entry at or below its departure's head is kept,
+    /// and a post it held while cut off reaches us only after the departure
+    /// merged (netsim `a_leavers_withheld_last_write_is_kept_by_every_member`).
     pub(super) async fn read_channel_outbox(&self, community_id: &str, record: &str) {
-        let Some(author) = self.author_of_record(community_id, record) else {
+        let departed = || {
+            let state = self.ctx.communities.governance_state(community_id)?;
+            (state.op_log_records.iter())
+                .find(|(author, r)| *r == record && state.is_departed(author))
+                .map(|(author, _)| author.clone())
+        };
+        let Some(author) = self
+            .author_of_record(community_id, record)
+            .or_else(departed)
+        else {
             return;
         };
         crate::host::adapters::channel::HostChannel::new(&self.ctx)

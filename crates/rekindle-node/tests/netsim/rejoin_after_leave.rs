@@ -115,32 +115,34 @@ async fn leave(community: &Community, i: usize, who: &str) {
     );
 }
 
-/// Node `reader`'s merged heads of `departed`'s slots in the general
-/// channel's record.
-async fn general_heads(community: &Community, reader: usize, departed: &str) -> usize {
+/// Node `reader`'s merged departure heads of `departed`'s channel outboxes
+/// (plan E3.3: posts are entries of the author's own outbox, `M`/4), as
+/// (member record, chain seq) pairs.
+fn outbox_heads(community: &Community, reader: usize, departed: &str) -> Vec<(String, u32)> {
     let governance = community.nodes[reader].host.governance();
-    let general = community.general_id(0).await;
-    let Some(record_key) = (governance.community_membership(&community.anchor))
-        .and_then(|m| m.channel_log_keys.get(&general).cloned())
-    else {
-        return 0;
-    };
     (governance.governance_state(&community.anchor))
         .and_then(|state| {
-            (state
-                .departed_heads
-                .get(&PseudonymKey::from_hex_lossy(departed)))
-            .and_then(|heads| heads.get(&record_key).map(std::collections::BTreeSet::len))
+            (state.departed_heads)
+                .get(&PseudonymKey::from_hex_lossy(departed))
+                .cloned()
         })
-        .unwrap_or(0)
+        .map(|heads| {
+            (heads.into_iter())
+                .flat_map(|(record, held)| {
+                    held.into_iter().map(move |(seq, _)| (record.clone(), seq))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// A/B finding F8-1 (2026-11-17): the owner kicks a member right after it
-/// left, re-joined into a new slot and posted, before the registry poll
-/// puts it on the roster. The removal heads the member's slot from the
-/// pages it signed, not from the roster, and keeps the leave's head of the
-/// old slot beside it, so every member records both heads and a member
-/// joining after the kick keeps the member's post from the current slot.
+/// left, re-joined and posted, before the registry poll puts it on the
+/// roster. Since plan E3.3 the member posts to its own channel outbox, and
+/// its re-join writes a fresh member record: the removal heads the outbox
+/// of the current record and keeps the leave's head of the old record
+/// beside it, so every member records both heads and a member joining after
+/// the kick keeps the member's post from the current record.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_kick_right_after_a_rejoin_heads_the_current_slot_and_keeps_the_old() {
     let mut community = Community::create(4, 331).await;
@@ -178,28 +180,24 @@ async fn a_kick_right_after_a_rejoin_heads_the_current_slot_and_keeps_the_old() 
     for reader in [0, 2] {
         assert!(
             eventually(&community.sim, LIMIT, || async {
-                general_heads(&community, reader, &bea).await == 2
+                let heads = outbox_heads(&community, reader, &bea);
+                let records: std::collections::BTreeSet<_> = heads.iter().map(|(r, _)| r).collect();
+                heads.len() == 2 && records.len() == 2
             })
             .await,
-            "node {reader} holds the leave's head and the kick's head of the current slot \
-             (holds {})",
-            general_heads(&community, reader, &bea).await
+            "node {reader} holds the leave's head of the old record and the kick's head of \
+             the current one (holds {:?})",
+            outbox_heads(&community, reader, &bea)
         );
     }
-    // A member joining after the kick reads the roster's slots only, so
-    // the old slot's page reaches it only once history reads cover
-    // departed members (plan S9 open item (i)), and it holds no key of the
-    // pre-rotation text (item (iii)); it keeps the current slot's entry
-    // from exactly the kick's head.
-    community.join(3).await;
+    // Plan E3.3: a member joining after the kick holds no key of the
+    // pre-kick generation (plan S9 item (iii)), so it cannot link the
+    // member's outbox entries to a channel (the tag is derived from that
+    // key), as the slot record's position once did. The kick's head of the
+    // current record is checked where the key is held: node 2 keeps the
+    // re-joiner's post through it.
     assert!(
-        eventually(&community.sim, LIMIT, || async {
-            (community.history(3, None, 100).await).is_ok_and(|page| {
-                page.iter()
-                    .any(|m| m["senderId"].as_str() == Some(bea.as_str()))
-            })
-        })
-        .await,
-        "a member joining after the kick keeps the current slot's entry"
+        community.reads(2, "back again", LIMIT).await,
+        "a member holding the key keeps the current record's entry after the kick"
     );
 }

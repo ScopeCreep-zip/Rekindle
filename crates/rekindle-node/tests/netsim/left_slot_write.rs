@@ -18,9 +18,15 @@
 //!
 //! Plan E3.2 S9: a head names the exact slot value, its seq and the digest
 //! of its page, so a leaver that signs a head above its published seq and
-//! fills the gap later (veilid-core 0.5.8 `set_value` `min_seqnum`) gets no
-//! gap post kept, while an honest leaver's last write, withheld until after
-//! the leave, is kept by every member.
+//! fills the gap later gets no gap post kept, while an honest leaver's last
+//! write, withheld until after the leave, is kept by every member.
+//!
+//! Plan E3.3 moved posts from the channel record's slot to the author's
+//! own channel outbox (`M`/4), so each scenario now writes there and the
+//! departure heads that outbox: its member record, the chain seq of its
+//! newest entry and the digest of that entry. The property is unchanged:
+//! readers keep a departed author's entry only at or below a head they
+//! reproduce from the chain (the D26 gate, reader-validates).
 
 use std::time::Duration;
 
@@ -45,15 +51,26 @@ async fn unlock(community: &Community, i: usize) {
     .await;
 }
 
+/// The member record whose channel outbox (`M`/4) `departed` posted to,
+/// as node `reader`'s merged state names it (kept after it departs).
+pub(crate) fn outbox_record(community: &Community, reader: usize, departed: &str) -> String {
+    (community.nodes[reader].host.governance())
+        .governance_state(&community.anchor)
+        .and_then(|state| {
+            (state.op_log_records)
+                .get(&PseudonymKey::from_hex_lossy(departed))
+                .cloned()
+        })
+        .expect("the departed member's record")
+}
+
 /// Assert node `reader`'s merged state records a head for `departed`'s
-/// departure in the general channel's record, the one record it posted in,
-/// and in no other.
-pub(crate) async fn assert_departure_heads(community: &Community, reader: usize, departed: &str) {
+/// departure of its channel outbox, the one place it posted (plan E3.3:
+/// posts are entries of the author's own outbox, no longer slot writes),
+/// and of nothing else.
+pub(crate) fn assert_departure_heads(community: &Community, reader: usize, departed: &str) {
     let governance = community.nodes[reader].host.governance();
-    let general = community.general_id(0).await;
-    let record_key = (governance.community_membership(&community.anchor))
-        .and_then(|m| m.channel_log_keys.get(&general).cloned())
-        .expect("the general channel's record");
+    let record_key = outbox_record(community, reader, departed);
     let heads = (governance.governance_state(&community.anchor))
         .and_then(|state| {
             (state.departed_heads)
@@ -64,7 +81,7 @@ pub(crate) async fn assert_departure_heads(community: &Community, reader: usize,
     assert_eq!(
         heads.keys().collect::<Vec<_>>(),
         vec![&record_key],
-        "node {reader} holds the departure's head of the general channel's record"
+        "node {reader} holds the departure's head of the member's channel outbox"
     );
 }
 
@@ -99,7 +116,7 @@ async fn a_leavers_back_dated_slot_write_is_kept_by_no_member() {
             .await,
             "node {reader} merges the leave"
         );
-        assert_departure_heads(&community, reader, &bea).await;
+        assert_departure_heads(&community, reader, &bea);
     }
     community.nodes[1].ok(IpcRequest::Lock).await;
     crate::data_root::restore(&community.sim, &community.nodes[1], &backup);
@@ -115,12 +132,12 @@ async fn a_leavers_back_dated_slot_write_is_kept_by_no_member() {
     community
         .post(1, "bea back-dated before leaving")
         .await
-        .expect("the restored backup writes its slot");
+        .expect("the restored backup queues its post");
     assert!(
         community
             .history_holds(1, "bea back-dated before leaving", LIMIT)
             .await,
-        "the post is in the leaver's slot"
+        "the post is in the leaver's own history"
     );
     community.sim.fault(Fault::Heal);
     community.sim.quiesce().await;
@@ -153,7 +170,7 @@ async fn heads_of(community: &Community, i: usize, departed: &str) -> Vec<SlotHe
         .expect("the slot heads")
 }
 
-/// Node `reader`'s merged heads of `departed`'s slots in `record_key`.
+/// Node `reader`'s merged heads of `departed`'s writes in `record_key`.
 fn merged_head(
     community: &Community,
     reader: usize,
@@ -183,14 +200,15 @@ async fn holds_none(community: &Community, i: usize, body: &str) {
     );
 }
 
-/// Plan E3.2 S9: a modified leaver signs a `MemberLeft` whose head
-/// reserves seqs above the one it published (its seq + 5, a digest of a
-/// page it never wrote), then, from a backup restored after the leave,
-/// writes into the gap with `min_seqnum` (a public 0.5.8 `set_value`
-/// option) at exactly the head's seq. No member keeps the gap post: not
-/// the readers who held the leaver's genuine post live, who still show
-/// that (a post-departure write lifts no held row out), and not a member
-/// joining after the leave, which reads only the gap value.
+/// Plan E3.2 S9 on the outbox (E3.3): a modified leaver signs a
+/// `MemberLeft` whose head reserves chain seqs above the one it published
+/// (its seq + 5, a digest of an entry it never wrote), then, from a backup
+/// restored after the leave, appends into the gap until its chain reaches
+/// exactly the head's seq. (The slot model filled the gap with `min_seqnum`
+/// at the subkey; the outbox chain's seq runs without gaps, so the gap is
+/// filled by appending.) No member keeps a gap post: not the readers who
+/// held the leaver's genuine post live, who still show that, and not a
+/// member joining after the leave.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_leavers_reserved_seq_gap_is_kept_by_no_member() {
     let mut community = Community::create(4, 167).await;
@@ -206,7 +224,7 @@ async fn a_leavers_reserved_seq_gap_is_kept_by_no_member() {
     }
     let honest = heads_of(&community, 1, &bea).await;
     let [honest] = honest.as_slice() else {
-        panic!("one head, the general channel's: {honest:?}");
+        panic!("one head, the member's channel outbox's: {honest:?}");
     };
     let reserved = SlotHead {
         record_key: honest.record_key.clone(),
@@ -243,31 +261,33 @@ async fn a_leavers_reserved_seq_gap_is_kept_by_no_member() {
         b: vec![1],
     });
     unlock(&community, 1).await;
-    community.sim.fault(Fault::MinSeqnum {
-        node: 1,
-        key: reserved.record_key.clone(),
-        min_seqnum: Some(reserved.seq),
-    });
-    community
-        .post(1, "bea in the reserved gap")
-        .await
-        .expect("the restored backup writes its slot");
+    for n in 1..=5 {
+        community
+            .post(1, &format!("bea in the reserved gap {n}"))
+            .await
+            .expect("the restored backup queues its post");
+    }
     assert!(
         community
-            .history_holds(1, "bea in the reserved gap", LIMIT)
+            .history_holds(1, "bea in the reserved gap 5", LIMIT)
             .await,
-        "the post is in the leaver's slot"
+        "the posts are in the leaver's own history"
     );
-    assert_eq!(
-        heads_of(&community, 1, &bea).await.first().map(|h| h.seq),
-        Some(reserved.seq),
-        "the gap write landed at the reserved head's seq"
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            (heads_of(&community, 1, &bea).await.iter())
+                .any(|h| h.record_key == reserved.record_key && h.seq == reserved.seq)
+        })
+        .await,
+        "the gap appends reach the reserved head's chain seq"
     );
     community.sim.fault(Fault::Heal);
     community.sim.quiesce().await;
     community.join(3).await;
     for reader in [0, 2, 3] {
-        holds_none(&community, reader, "bea in the reserved gap").await;
+        for n in 1..=5 {
+            holds_none(&community, reader, &format!("bea in the reserved gap {n}")).await;
+        }
     }
     for reader in [0, 2] {
         let page = community.history(reader, None, 100).await.expect("history");
@@ -280,11 +300,10 @@ async fn a_leavers_reserved_seq_gap_is_kept_by_no_member() {
 }
 
 /// The honest control: a leaver's last post, written while it is cut off
-/// (held, never delivered live), is the value its leave's head names
-/// (`moderation::leave`, the production leave op). After the heal every
-/// member keeps it and the earlier post from the leaver's slot, the last one
-/// from history alone. The exact-value rule keeps a cumulative page's whole
-/// history.
+/// (held, never delivered live), is the newest entry of its outbox, which
+/// its leave's head names (`moderation::leave`, the production leave op).
+/// After the heal every member keeps it and the earlier post: the head
+/// entry commits to the chain below it.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_leavers_withheld_last_write_is_kept_by_every_member() {
     let community = Community::of(4, 173).await;
@@ -303,7 +322,7 @@ async fn a_leavers_withheld_last_write_is_kept_by_every_member() {
     let _ = community.post(1, "bea last, held").await;
     assert!(
         community.history_holds(1, "bea last, held", LIMIT).await,
-        "the held post is in the leaver's slot"
+        "the held post is in the leaver's own history"
     );
     rekindle_governance_runtime::moderation::leave(
         &community.nodes[1].host.governance(),

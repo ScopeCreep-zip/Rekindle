@@ -63,6 +63,7 @@ impl HostGovernance {
             super::thread_events::thread_archive_transitions(prev, &state)
         });
         let raised = raises_key_generation(prev.as_ref(), &state);
+        let departed_outboxes = new_outbox_heads(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
         let permissions = prev.as_ref().map_or_else(Default::default, |prev| {
             super::permission_events::permission_transitions(prev, &state, now_secs)
@@ -88,6 +89,30 @@ impl HostGovernance {
         if raised {
             self.repair_after_grace(community_id);
         }
+        self.read_departed_outboxes(community_id, departed_outboxes);
+    }
+
+    /// A merged departure recorded a new head of the member's channel
+    /// outbox (plan E3.3): read the outbox once, so what it holds at or
+    /// below the head reaches us. A departed author's own hint is dropped
+    /// (a hint's relayer must be a member) and the watch ring holds only
+    /// members, so a post the member appended while cut off from us and
+    /// before its departure is otherwise never read; the head itself names
+    /// the chain seq to read to.
+    fn read_departed_outboxes(&self, community_id: &str, records: Vec<String>) {
+        if records.is_empty() {
+            return;
+        }
+        let host = self.clone();
+        let community = community_id.to_string();
+        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
+            "departed channel outboxes read",
+            async move {
+                for record in records {
+                    host.read_channel_outbox(&community, &record).await;
+                }
+            },
+        );
     }
 
     /// A merge raised the community key's generation (a
@@ -267,4 +292,22 @@ impl HostGovernance {
             }
         }
     }
+}
+
+/// The member records whose channel outbox a departure in `state` heads
+/// and `prev` did not (plan E3.3).
+fn new_outbox_heads(
+    prev: Option<&rekindle_governance::state::GovernanceState>,
+    state: &rekindle_governance::state::GovernanceState,
+) -> Vec<String> {
+    (state.departed_heads.iter())
+        .filter_map(|(author, heads)| {
+            let record = state.op_log_records.get(author)?;
+            let now = heads.get(record)?;
+            let before = prev
+                .and_then(|p| p.departed_heads.get(author))
+                .and_then(|h| h.get(record));
+            (before != Some(now)).then(|| record.clone())
+        })
+        .collect()
 }

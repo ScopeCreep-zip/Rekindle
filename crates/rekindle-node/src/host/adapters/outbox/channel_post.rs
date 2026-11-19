@@ -244,6 +244,28 @@ impl ChannelPosts {
         Ok(rows.iter().filter_map(post_of).collect())
     }
 
+    /// Every post of ours still unsettled in `community`'s `channel` will
+    /// not reach its readers (our removal, plan E3.2 S9 on the outbox,
+    /// E3.3): each settles `failed` with `reason`. Returns them.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn fail_channel(
+        &self,
+        community: &str,
+        channel: &str,
+        reason: &str,
+    ) -> Result<Vec<ChannelPost>, OutboxError> {
+        let rows = (self.0)
+            .settle_stream(
+                StreamKind::ChannelPost,
+                &format!("{community}:{channel}"),
+                Err(reason.to_owned()),
+            )
+            .await?;
+        Ok(rows.iter().filter_map(post_of).collect())
+    }
+
     /// `message`'s write could not be made: its row settles `failed`.
     ///
     /// # Errors

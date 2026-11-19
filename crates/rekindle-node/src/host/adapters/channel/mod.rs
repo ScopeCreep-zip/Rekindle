@@ -59,6 +59,11 @@ impl crate::host::Host {
 }
 
 impl HostChannel {
+    /// The channel adapter over `gov`'s Host.
+    pub(crate) fn of_governance(gov: &HostGovernance) -> Self {
+        Self { gov: gov.clone() }
+    }
+
     /// The channel adapter over `ctx`.
     pub(crate) fn new(ctx: &DaemonContext) -> Self {
         Self {

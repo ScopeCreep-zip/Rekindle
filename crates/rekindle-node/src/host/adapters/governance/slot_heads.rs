@@ -10,6 +10,14 @@
 //! gap (veilid-core 0.5.8 `set_value` `min_seqnum`) never matches. A reader computing the heads itself at merge time
 //! would hold a different value than its peers and keep different posts.
 //!
+//! A member's channel outbox (`M`/4, plan E3.3) is headed the same way:
+//! the record is its member record, the seq is the chain seq of its newest
+//! entry and the digest is of that entry's bytes ([`outbox_head`]). The
+//! chain is hash-linked and its pages sealed, so the head entry commits to
+//! every entry below it, and an entry appended after the departure, or one
+//! written into a gap below a head the member signed above its published
+//! chain, is never at a head every reader reproduces.
+//!
 //! Our own slot is found from our membership, never from the roster: the
 //! registry poll skips our own row, so the roster never holds us (A/B
 //! 2026-11-17: a leave read its slot from the roster, found none, and
@@ -17,9 +25,11 @@
 
 use rekindle_governance_runtime::deps::CommunityMembership;
 use rekindle_governance_runtime::GovernanceRuntimeError;
+use rekindle_records::chain::{local_newest_entry, ChainEntry};
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{OpenIntent, PortError, RecordPort, RecordValue, ReportScope};
 use rekindle_types::dht_layout::channel::OWNER_SUBKEY_COUNT;
+use rekindle_types::dht_layout::member_record::OUTBOX;
 use rekindle_types::governance::SlotHead;
 use rekindle_types::id::PseudonymKey;
 
@@ -95,6 +105,12 @@ impl HostGovernance {
                 heads.push(slot_head(record_key, slot, &value));
             }
         }
+        // Our channel outbox, every entry of which we wrote; none when we
+        // never posted to it.
+        if let Some(record) = self.own_member_record(community_id) {
+            let newest = (local_newest_entry(&*pool, &record, OUTBOX).await).map_err(adapter)?;
+            heads.extend(newest.map(|entry| outbox_head(record, &entry)));
+        }
         Ok(heads)
     }
 
@@ -138,6 +154,9 @@ impl HostGovernance {
                 }
             }
         }
+        if let Some(head) = self.removed_outbox_head(community_id, &*pool, target).await {
+            heads.push(head);
+        }
         if heads.is_empty() {
             tracing::info!(
                 community_id,
@@ -146,6 +165,31 @@ impl HostGovernance {
             );
         }
         Ok(heads)
+    }
+
+    /// The head of `target`'s channel outbox as our local copy holds it
+    /// (its member record from the merged state, kept after it departs).
+    async fn removed_outbox_head(
+        &self,
+        community_id: &str,
+        pool: &dyn RecordPort,
+        target: &PseudonymKey,
+    ) -> Option<SlotHead> {
+        let state = self.governance_state_impl(community_id)?;
+        let record = (state.members.get(target).map(|m| m.member_record.clone()))
+            .or_else(|| state.op_log_records.get(target).cloned())?;
+        match local_newest_entry(pool, &record, OUTBOX).await {
+            Ok(newest) => newest.map(|entry| outbox_head(record, &entry)),
+            Err(e) => {
+                tracing::warn!(
+                    community_id,
+                    record,
+                    error = %e,
+                    "channel outbox head not read for a removal; the member's outbox entries are kept by no reader"
+                );
+                None
+            }
+        }
     }
 
     /// The channel records `segment`'s members write (every segment's when
@@ -189,6 +233,26 @@ fn slot_head(record_key: String, slot: u32, value: &RecordValue) -> SlotHead {
         record_key,
         seq: value.seq,
     }
+}
+
+/// The departure head of a member's channel outbox: its member record,
+/// the chain seq of `newest`, its newest entry, and the digest of that
+/// entry's bytes (plan E3.3).
+fn outbox_head(member_record: String, newest: &ChainEntry) -> SlotHead {
+    let seq = u32::try_from(newest.seq).unwrap_or(u32::MAX);
+    SlotHead {
+        digest: outbox_head_digest(&member_record, seq, &newest.ciphertext),
+        record_key: member_record,
+        seq,
+    }
+}
+
+/// The digest a departure head names of the entry at chain seq `seq` of
+/// `member_record`'s channel outbox: the slot head digest over the outbox
+/// subkey and the entry's bytes, so a reader reproduces it from the chain.
+#[must_use]
+pub(crate) fn outbox_head_digest(member_record: &str, seq: u32, entry: &[u8]) -> [u8; 32] {
+    rekindle_secrets::slot_head::slot_head_digest(member_record, OUTBOX, seq, entry)
 }
 
 /// Every writer slot's value we hold locally whose page `author` signed,

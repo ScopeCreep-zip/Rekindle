@@ -205,11 +205,14 @@ impl HostChannel {
             body: "",
             timestamp_ms: post.message.timestamp,
             held_before_secs: None,
-            backfill,
+            // An outbox entry placed at or below a departure's head is
+            // judged at that causal position, whichever trigger read it.
+            backfill: backfill || post.departure_position().is_some(),
             // A live post, or the desktop's catch-up read, which does not
-            // carry the slot seq: a removed author's post is kept from
-            // history only by the read that knows it (A/B finding R3-8).
-            slot: None,
+            // carry the slot seq, keeps none of a removed author's posts;
+            // an outbox read carries the head the chain verified (A/B
+            // finding R3-8, plan E3.3).
+            slot: post.departure_position(),
         };
         if let Some(reason) = self.author_refused(&inputs, &author) {
             tracing::debug!(community, channel = %post.channel_id, ?reason, "post dropped");
@@ -374,8 +377,8 @@ impl HostChannel {
                 body,
                 timestamp_ms: post.message.timestamp,
                 held_before_secs,
-                backfill,
-                slot: None,
+                backfill: backfill || post.departure_position().is_some(),
+                slot: post.departure_position(),
             },
         ))
     }

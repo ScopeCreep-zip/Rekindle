@@ -28,8 +28,23 @@ pub enum ReceivedAt {
         subkey_index: u32,
     },
     /// In its author's channel outbox at `stream_seq`; the anchor is the
-    /// community's.
-    Outbox { stream_seq: u64 },
+    /// community's. `departure_head`: the author departed, and its entry
+    /// is at or below a head its departures recorded of this outbox, which
+    /// the chain we read verified (plan E3.3 over A/B R3-8 and S9).
+    Outbox {
+        stream_seq: u64,
+        departure_head: Option<OutboxHead>,
+    },
+}
+
+/// A departure's head of a member's channel outbox (`M`/4) that the chain
+/// we read reproduces: the member record, the head's chain seq and the
+/// digest of the entry at it (`rekindle_secrets::slot_head`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboxHead {
+    pub member_record: String,
+    pub seq: u32,
+    pub digest: [u8; 32],
 }
 
 impl ReceivedPost {
@@ -42,10 +57,28 @@ impl ReceivedPost {
                 record_key,
                 subkey_index: *subkey_index,
             },
-            ReceivedAt::Outbox { stream_seq } => ingest::PostAt::Outbox {
+            ReceivedAt::Outbox { stream_seq, .. } => ingest::PostAt::Outbox {
                 anchor: &self.community_id,
                 stream_seq: *stream_seq,
             },
+        }
+    }
+
+    /// The departure head the gate judges a departed author's post by
+    /// (`ingest::GateItem::slot`): only an outbox entry the chain placed at
+    /// or below a recorded head carries one. A slot read's post carries
+    /// none here; the history read judges it with its slot value.
+    pub(super) fn departure_position(&self) -> Option<ingest::SlotPosition<'_>> {
+        match &self.at {
+            ReceivedAt::Outbox {
+                departure_head: Some(head),
+                ..
+            } => Some(ingest::SlotPosition {
+                record_key: &head.member_record,
+                seq: head.seq,
+                digest: head.digest,
+            }),
+            _ => None,
         }
     }
 }

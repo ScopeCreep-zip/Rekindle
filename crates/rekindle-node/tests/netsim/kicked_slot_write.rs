@@ -1,7 +1,7 @@
 //! A/B finding R2-4 (plan E3.2, A/B round 1): a removed member's post that
-//! reaches the readers through the channel record (its slot stays writable
-//! until E3.3) passes the same D26 membership gate as its gossip copy, so
-//! no member stores or shows it, not even as undecryptable.
+//! reaches the readers through its channel outbox (since plan E3.3; before
+//! it, the channel record's slot) passes the same D26 membership gate as
+//! every post, so no member stores or shows it, not even as undecryptable.
 //!
 //! The member is cut off from the others while it is kicked, so it posts
 //! before it can learn its removal; the post's gossip is lost to the
@@ -121,13 +121,15 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
             .await,
             "node {reader} merges the kick"
         );
-        crate::left_slot_write::assert_departure_heads(&community, reader, &bea).await;
+        crate::left_slot_write::assert_departure_heads(&community, reader, &bea);
     }
+    // Plan E3.3: the member's posts are entries of its own outbox, linked
+    // to a channel only by a tag derived from their generation's text key.
+    // A member joining after the kick holds no key of the pre-kick
+    // generation (plan S9 item (iii)), so it cannot link the genuine post,
+    // as the slot record's position once did without a key; it is held to
+    // the same refusal of the back-dated post as every reader below.
     community.join(3).await;
-    assert!(
-        holds_entry_of(&community, 3, &bea).await,
-        "a member joining after the kick holds the member's genuine post"
-    );
     community.sim.fault(Fault::ClockSkew {
         node: 1,
         ms: -3_600_000,
@@ -135,7 +137,7 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
     let _ = community.post(1, "bea back-dated before the kick").await;
     community.sim.fault(Fault::Heal);
     community.sim.quiesce().await;
-    for reader in [0, 2] {
+    for reader in [0, 2, 3] {
         assert!(
             !community
                 .reads(
@@ -153,11 +155,17 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
             "node {reader} holds no back-dated post: {page:?}"
         );
         assert!(
-            page.iter()
-                .any(|m| m["body"].as_str() == Some("bea before the kick")),
+            reader == 3
+                || page
+                    .iter()
+                    .any(|m| m["body"].as_str() == Some("bea before the kick")),
             "node {reader} still shows the genuine pre-kick post: {page:?}"
         );
     }
+    assert!(
+        !holds_entry_of(&community, 3, &bea).await,
+        "a member joining after the kick holds no entry of the member it cannot link"
+    );
 }
 
 /// Node `i`'s own post `body` from its history: its stored send state and

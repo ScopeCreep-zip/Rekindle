@@ -24,6 +24,7 @@
 //! dropped), so it is written with [`append_at`] and read with
 //! [`read_log_after`].
 
+mod local;
 #[cfg(test)]
 mod logged_tests;
 mod page;
@@ -31,6 +32,7 @@ mod page;
 mod tests;
 
 use crate::port::OpenIntent;
+pub use local::local_newest_entry;
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_codec::capnp_codec::chain::{ChainHead, ChainPage};
 use rekindle_types::dht_layout::dm_participant;

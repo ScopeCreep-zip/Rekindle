@@ -17,6 +17,7 @@ use rekindle_outbox::{AttemptOutcome, OutboxRow};
 use rekindle_types::message::PostEntry;
 
 use super::HostChannel;
+use crate::host::adapters::governance::removal_posts::REMOVED_NOT_DELIVERED;
 use crate::host::adapters::outbox::{post_of_row, StreamSender};
 
 /// The `channel_post` sender over the Host's channel adapter.
@@ -59,11 +60,12 @@ impl HostChannel {
         let Some(community) = posts.first().map(|p| p.post.community.clone()) else {
             return Vec::new();
         };
-        // Removed from the community: nothing of ours reaches its readers.
-        if let Err(error) = self.refuse_removed(&community) {
+        // Removed from the community: nothing of ours reaches its readers,
+        // and the post reads why (plan E3.2 S9, F9-3).
+        if self.refuse_removed(&community).is_err() {
             return posts
                 .iter()
-                .map(|_| AttemptOutcome::Superseded(error.to_string()))
+                .map(|_| AttemptOutcome::Superseded(REMOVED_NOT_DELIVERED.to_owned()))
                 .collect();
         }
         let own = match self.gov.own_outbox(&community) {
