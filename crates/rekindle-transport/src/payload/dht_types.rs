@@ -39,10 +39,6 @@ pub use rekindle_protocol::dht::friends::FriendList;
 // kept its own copy of each table. Eight v1.0 owner-block constants
 // (REGISTRY_POLICY, _SCHEMA_VERSION, _OPS_LOG and the five RESERVED_*)
 // went with the o_cnt:0 migration — they had no readers.
-pub use rekindle_types::dht_layout::channel::{
-    MEMBER_SUBKEY_COUNT as CHANNEL_MEMBER_SUBKEY_COUNT,
-    OWNER_SUBKEY_COUNT as CHANNEL_OWNER_SUBKEY_COUNT,
-};
 pub use rekindle_types::dht_layout::mailbox::{
     ROUTE_BLOB as MAILBOX_SUBKEY_ROUTE_BLOB, SUBKEY_COUNT as MAILBOX_SUBKEY_COUNT,
 };

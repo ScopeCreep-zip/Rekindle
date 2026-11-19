@@ -1,5 +1,7 @@
 //! The lease table's invariants: the refcount Veilid does not keep.
 
+use std::collections::HashMap;
+
 use proptest::prelude::*;
 
 use super::*;

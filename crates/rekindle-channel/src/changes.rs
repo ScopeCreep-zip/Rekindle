@@ -13,9 +13,6 @@
 //! An edit's body is sealed at the edit entry's own position (the record,
 //! the author's slot and the edit's seq), never the message's.
 
-use crate::deps::ChannelMessagingDeps;
-use crate::send::SlotBodyPosition;
-
 /// A reader caps a message at this many edits (E2).
 pub const MAX_EDITS: u32 = 10;
 
@@ -110,20 +107,6 @@ fn judge_target<'a>(
         return Err(ChangeRefusal::Deleted);
     }
     Ok(target)
-}
-
-/// Open an edit's body sealed at `at` under exactly `generation`; `None`
-/// when we hold no key that opens it.
-pub fn open_edit<D: ChannelMessagingDeps + ?Sized>(
-    deps: &D,
-    community_id: &str,
-    channel_id: &str,
-    generation: u64,
-    at: SlotBodyPosition<'_>,
-    ciphertext: &[u8],
-) -> Option<String> {
-    crate::text_keys::open_text(deps, community_id, channel_id, generation, at, ciphertext)
-        .map(|b| String::from_utf8_lossy(&b).into_owned())
 }
 
 #[cfg(test)]

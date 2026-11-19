@@ -2,7 +2,6 @@
 //! their field attributes reference.
 
 use rekindle_types::base64_bytes;
-use rekindle_types::domains;
 use serde::{Deserialize, Serialize};
 
 /// A message entry written to a channel record subkey.
@@ -256,23 +255,6 @@ pub enum ChannelRecordEntry {
     Delete(ChannelDelete),
 }
 
-/// A decoded channel record entry together with the subkey it came from.
-#[derive(Debug, Clone)]
-pub struct ChannelRecordItem {
-    pub subkey_index: u32,
-    /// The author whose signature the slot value carries: an edit or a
-    /// delete is applied only to that author's own message (plan E3.3 E1).
-    pub author: rekindle_types::id::PseudonymKey,
-    /// The seq of the slot value it was read from.
-    pub seq: u32,
-    /// The digest of that slot value's decrypted page
-    /// (`rekindle_secrets::slot_head::slot_head_digest`): a departed
-    /// member's post is kept only from the value its departure named
-    /// (plan E3.2 S9).
-    pub slot_digest: [u8; 32],
-    pub entry: ChannelRecordEntry,
-}
-
 impl ChannelRecordEntry {
     pub fn lamport(&self) -> u64 {
         match self {
@@ -287,39 +269,5 @@ impl ChannelRecordEntry {
             Self::Edit(edit) => edit.lamport_ts,
             Self::Delete(delete) => delete.lamport_ts,
         }
-    }
-}
-
-/// Architecture §26 W26 — wraps the per-subkey entry vec with the
-/// author's pseudonym + an Ed25519 signature. The SMPL slot keypair on
-/// `set_dht_value` is community-shared (every member knows the slot
-/// seed), so without this wrapper any member could forge entries
-/// claiming to be any other member. Receivers MUST verify the signature
-/// against `author_pseudonym` before treating the entries as authentic.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelSubkeyPayload {
-    pub author_pseudonym: rekindle_types::id::PseudonymKey,
-    pub entries: Vec<ChannelRecordEntry>,
-    /// 64-byte Ed25519 signature over [`ChannelSubkeyPayload::signing_bytes`]. Empty `Vec`
-    /// only on legacy/disk fixtures predating SCHEMA_VERSION 59.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub signature: Vec<u8>,
-}
-
-impl ChannelSubkeyPayload {
-    /// Canonical bytes the author signs. Includes a domain tag so the
-    /// signature can't be lifted into a different protocol context
-    /// (governance, presence, gossip). Includes the entry count so a
-    /// truncated re-write by a forger is rejected.
-    pub fn signing_bytes(&self) -> Vec<u8> {
-        let entries_json = serde_json::to_vec(&self.entries).unwrap_or_default();
-        let mut out =
-            Vec::with_capacity(domains::CHANNEL_SUBKEY.len() + 32 + 8 + entries_json.len());
-        out.extend_from_slice(domains::CHANNEL_SUBKEY.as_bytes());
-        out.extend_from_slice(&self.author_pseudonym.0);
-        out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
-        out.extend_from_slice(&entries_json);
-        out
     }
 }

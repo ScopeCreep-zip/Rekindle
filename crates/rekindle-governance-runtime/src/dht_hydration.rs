@@ -136,8 +136,10 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
     let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
     // Overflow pages are read-only. A channel has no record (plan E3.3):
     // posts ride each author's `M`/4 outbox, held through its member record.
-    let keys: Vec<(String, Option<String>)> =
-        overflow_keys.iter().map(|key| (key.clone(), None)).collect();
+    let keys: Vec<(String, Option<String>)> = overflow_keys
+        .iter()
+        .map(|key| (key.clone(), None))
+        .collect();
     let until = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
     for (_, lease) in acquire_records_concurrent(deps, &rec.id, &keys, until).await {
         leases.overflow.push(lease);

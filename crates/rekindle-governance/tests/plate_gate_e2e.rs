@@ -120,12 +120,7 @@ fn admin_entries() -> Vec<Stamped> {
 
 #[test]
 fn segment1_record_appears_in_state_and_validates() {
-    let state = merge_entries(
-        &admin_pseudonym(),
-        &[
-            (admin_pseudonym(), admin_entries()),
-        ],
-    );
+    let state = merge_entries(&admin_pseudonym(), &[(admin_pseudonym(), admin_entries())]);
 
     // Segment 1's expansion landed.
     assert_eq!(state.segments.len(), 1);
@@ -142,4 +137,3 @@ fn segment1_record_appears_in_state_and_validates() {
         &state
     ));
 }
-

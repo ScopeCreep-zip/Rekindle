@@ -4,11 +4,9 @@
 //! ‖ stream_seq_le64` ([`ChannelAad`]).
 //!
 //! There is no decrypt without AAD: a body is bound to its community,
-//! channel, author and the author's stream position, on every track. The
-//! slot model's position ([`SlotBodyPosition`]) opens the bodies still on the
-//! channel SMPL records until plan E3.3 slice 8 deletes them.
+//! channel, author and the author's stream position, on every track.
 
-use crate::keys::{ChannelAad, MediaEncryptionKey, SlotChannelAad};
+use crate::keys::{ChannelAad, MediaEncryptionKey};
 use hkdf::Hkdf;
 use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
@@ -58,70 +56,22 @@ impl BodyPosition<'_> {
     }
 }
 
-/// Where a body on a channel SMPL record slot was written (the slot
-/// model, deleted in plan E3.3 slice 8).
-#[derive(Debug, Clone, Copy)]
-pub struct SlotBodyPosition<'a> {
-    pub channel_record_key: &'a str,
-    pub subkey_index: u32,
-    pub lamport_ts: u64,
-}
-
-impl SlotBodyPosition<'_> {
-    fn aad(&self) -> Vec<u8> {
-        SlotChannelAad {
-            channel_record_key: self.channel_record_key.as_bytes(),
-            subkey_index: self.subkey_index,
-            lamport_ts: self.lamport_ts,
-        }
-        .to_bytes()
-    }
-}
-
-/// A body's position: an outbox entry's, or a slot's.
-#[derive(Debug, Clone, Copy)]
-pub enum At<'a> {
-    Body(BodyPosition<'a>),
-    Slot(SlotBodyPosition<'a>),
-}
-
-impl At<'_> {
-    fn aad(&self) -> Vec<u8> {
-        match self {
-            Self::Body(at) => at.aad(),
-            Self::Slot(at) => at.aad(),
-        }
-    }
-}
-
-impl<'a> From<BodyPosition<'a>> for At<'a> {
-    fn from(at: BodyPosition<'a>) -> Self {
-        Self::Body(at)
-    }
-}
-
-impl<'a> From<SlotBodyPosition<'a>> for At<'a> {
-    fn from(at: SlotBodyPosition<'a>) -> Self {
-        Self::Slot(at)
-    }
-}
-
 /// Encrypt a channel body under `key` (32 bytes) at `at`.
-pub fn encrypt_channel_body<'a>(
+pub fn encrypt_channel_body(
     key: &[u8; 32],
-    at: impl Into<At<'a>>,
+    at: BodyPosition<'_>,
     body: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    MediaEncryptionKey::from_bytes(*key, 0).encrypt_with_aad(body, &at.into().aad())
+    MediaEncryptionKey::from_bytes(*key, 0).encrypt_with_aad(body, &at.aad())
 }
 
 /// Decrypt a body written by [`encrypt_channel_body`] at the same `at`.
-pub fn decrypt_channel_body<'a>(
+pub fn decrypt_channel_body(
     key: &[u8; 32],
-    at: impl Into<At<'a>>,
+    at: BodyPosition<'_>,
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    MediaEncryptionKey::from_bytes(*key, 0).decrypt_with_aad(ciphertext, &at.into().aad())
+    MediaEncryptionKey::from_bytes(*key, 0).decrypt_with_aad(ciphertext, &at.aad())
 }
 
 #[cfg(test)]
@@ -136,11 +86,6 @@ mod tests {
         author: &AUTHOR,
         stream_seq: 42,
     };
-    const SLOT: SlotBodyPosition<'static> = SlotBodyPosition {
-        channel_record_key: "VLD0:record",
-        subkey_index: 3,
-        lamport_ts: 42,
-    };
 
     #[test]
     fn round_trip() {
@@ -149,7 +94,7 @@ mod tests {
     }
 
     /// A body re-placed under another community, channel, author or
-    /// stream position does not open, nor as a slot body.
+    /// stream position does not open.
     #[test]
     fn bound_to_its_position() {
         let ct = encrypt_channel_body(&[1u8; 32], AT, b"hello").unwrap();
@@ -169,33 +114,6 @@ mod tests {
             BodyPosition {
                 stream_seq: 43,
                 ..AT
-            },
-        ] {
-            assert!(decrypt_channel_body(&[1u8; 32], moved, &ct).is_err());
-        }
-        assert!(decrypt_channel_body(&[1u8; 32], SLOT, &ct).is_err());
-    }
-
-    /// A slot body stays bound to its record, slot and Lamport position.
-    #[test]
-    fn a_slot_body_is_bound_to_its_slot() {
-        let ct = encrypt_channel_body(&[1u8; 32], SLOT, b"hello").unwrap();
-        assert_eq!(
-            decrypt_channel_body(&[1u8; 32], SLOT, &ct).unwrap(),
-            b"hello"
-        );
-        for moved in [
-            SlotBodyPosition {
-                channel_record_key: "VLD0:other",
-                ..SLOT
-            },
-            SlotBodyPosition {
-                subkey_index: 4,
-                ..SLOT
-            },
-            SlotBodyPosition {
-                lamport_ts: 43,
-                ..SLOT
             },
         ] {
             assert!(decrypt_channel_body(&[1u8; 32], moved, &ct).is_err());

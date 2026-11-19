@@ -45,8 +45,7 @@ mod shared;
 
 use channels::{
     read_category_archived, read_category_created, read_category_updated, read_channel_archived,
-    read_channel_created, read_channel_updated,
-    read_permission_overwrite,
+    read_channel_created, read_channel_updated, read_permission_overwrite,
 };
 use checkpoint::read_checkpoint;
 use community::{

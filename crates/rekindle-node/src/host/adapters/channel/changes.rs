@@ -2,19 +2,17 @@
 //! author's change is an entry in its own record (the edit or delete kind of
 //! `ChannelRecordEntry`), never a side message. The author stores it on its
 //! own row and queues it on its channel outbox (`M`/4); a reader applies it
-//! from the outbox read, and from the slot paths for history written there
-//! before (the watched change and the history read, until E3.3 slice 8). Both judge it by `rekindle_channel::changes`
+//! from the outbox read. Both judge it by `rekindle_channel::changes`
 //! (E1–E3) and store it in the message's row, so it survives a reload.
 
 use rekindle_channel::changes::{self, ChangeKind, ChangeRefusal, ChangeTarget};
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::Verdict;
 use rekindle_channel::outbox_seal::open_entry_body;
-use rekindle_channel::send::{BodyPosition, SlotBodyPosition};
+use rekindle_channel::send::BodyPosition;
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_codec::community::channel_record::{ChannelDelete, ChannelEdit, ChannelRecordEntry};
 use rekindle_db::repo::messages::channel_changes::{self as change_rows, StoredEdit};
-use rekindle_types::dht_layout::member_record::OUTBOX;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::message::{ChannelPost, PostEntry};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
@@ -40,11 +38,8 @@ pub(crate) enum MessageChange {
 pub(crate) struct ChangeSource<'a> {
     pub community_id: &'a str,
     pub channel_id: &'a str,
-    pub record_key: &'a str,
-    pub subkey_index: u32,
-    /// The entry's stream seq when it was read from the author's outbox
-    /// (`record_key`/`subkey_index` are then its member record and `M`/4).
-    pub outbox_seq: Option<u64>,
+    /// The entry's stream seq in the author's channel outbox (`M`/4).
+    pub stream_seq: u64,
     pub author: &'a PseudonymKey,
 }
 
@@ -75,7 +70,10 @@ impl HostChannel {
         let edit = matches!(change, MessageChange::Edit { .. });
         changes::judge_own_change(target.as_ref(), &me, edit)
             .map_err(ChannelError::ChangeRefused)?;
-        let own = (self.gov.own_outbox(community_id)).map_err(ChannelError::Adapter)?;
+        // Refused when we hold no outbox in the community.
+        self.gov
+            .own_outbox(community_id)
+            .map_err(ChannelError::Adapter)?;
         let now = self.now_secs();
         let target = message_id.to_owned();
         let nonce = hex::encode(rekindle_utils::random::id_bytes_16_from(
@@ -126,9 +124,7 @@ impl HostChannel {
         let source = ChangeSource {
             community_id,
             channel_id,
-            record_key: &own.member_record,
-            subkey_index: OUTBOX,
-            outbox_seq: Some(seq),
+            stream_seq: seq,
             author: &author,
         };
         self.store_change(&db, &owner, source, &entry, &body, false)
@@ -222,30 +218,15 @@ impl HostChannel {
     }
 
     /// An edit's new body, opened at its own position: its outbox entry's
-    /// `{anchor, channel, author, streamSeq}`, or its slot's.
+    /// `{anchor, channel, author, streamSeq}`.
     fn open_change_body(&self, source: ChangeSource<'_>, edit: &ChannelEdit) -> Option<String> {
-        let Some(stream_seq) = source.outbox_seq else {
-            let at = SlotBodyPosition {
-                channel_record_key: source.record_key,
-                subkey_index: source.subkey_index,
-                lamport_ts: edit.lamport_ts,
-            };
-            return changes::open_edit(
-                self,
-                source.community_id,
-                source.channel_id,
-                edit.mek_generation,
-                at,
-                &edit.ciphertext,
-            );
-        };
         let channel = rekindle_types::id::ChannelId::from_hex(source.channel_id)?;
         let scope = self.keys().scope_for_text(source.community_id, channel);
         let at = BodyPosition {
             anchor: source.community_id,
             channel_id: source.channel_id,
             author: &source.author.0,
-            stream_seq,
+            stream_seq: source.stream_seq,
         };
         let keys = self.keys();
         open_entry_body(

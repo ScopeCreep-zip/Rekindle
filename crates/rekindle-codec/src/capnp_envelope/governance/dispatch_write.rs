@@ -9,8 +9,8 @@ use rekindle_types::governance::GovernanceEntry;
 
 use super::channels::{
     write_category_archived, write_category_created, write_category_updated,
-    write_channel_archived, write_channel_created,
-    write_channel_updated, write_permission_overwrite,
+    write_channel_archived, write_channel_created, write_channel_updated,
+    write_permission_overwrite,
 };
 use super::community::{
     write_community_meta, write_community_notification_default, write_community_policy,
@@ -101,10 +101,6 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::ChannelCreated { .. } => {
             write_channel_created(b.reborrow().init_channel_created(), e);
         }
-            *channel_id,
-            *segment_index,
-            record_key,
-        ),
         GovernanceEntry::ChannelUpdated { .. } => {
             write_channel_updated(b.reborrow().init_channel_updated(), e);
         }

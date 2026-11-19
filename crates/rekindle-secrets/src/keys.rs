@@ -65,29 +65,6 @@ impl ChannelAad<'_> {
     }
 }
 
-/// The slot model's channel AAD, architecture §8 line 1626:
-/// `channel_record_key || subkey_index_le32 || lamport_ts_le64`. It opens
-/// bodies on the channel SMPL records, which plan E3.3 slice 8 deletes
-/// with it; new posts are sealed under [`ChannelAad`].
-#[derive(Debug, Clone, Copy)]
-pub struct SlotChannelAad<'a> {
-    pub channel_record_key: &'a [u8],
-    pub subkey_index: u32,
-    pub lamport_ts: u64,
-}
-
-impl SlotChannelAad<'_> {
-    /// Encode to the canonical wire bytes consumed by AES-GCM.
-    #[must_use]
-    pub fn to_bytes(self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(self.channel_record_key.len() + 4 + 8);
-        out.extend_from_slice(self.channel_record_key);
-        out.extend_from_slice(&self.subkey_index.to_le_bytes());
-        out.extend_from_slice(&self.lamport_ts.to_le_bytes());
-        out
-    }
-}
-
 /// Media Encryption Key for group/channel message encryption.
 ///
 /// Each channel has its own MEK. Rotated on membership changes via the
@@ -263,8 +240,7 @@ impl MediaEncryptionKey {
         })
     }
 
-    /// Encrypt bound to `aad` (a [`ChannelAad`]'s or [`SlotChannelAad`]'s
-    /// bytes). Output is `nonce(12) || ciphertext+tag`. The receiver must
+    /// Encrypt bound to `aad` (a [`ChannelAad`]'s bytes). Output is `nonce(12) || ciphertext+tag`. The receiver must
     /// reconstruct the same AAD or decryption fails.
     pub fn encrypt_with_aad(&self, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
@@ -362,10 +338,11 @@ mod tests {
     #[test]
     fn aad_roundtrip() {
         let mek = MediaEncryptionKey::generate(1);
-        let aad = SlotChannelAad {
-            channel_record_key: b"VLD0:channel",
-            subkey_index: 3,
-            lamport_ts: 99,
+        let aad = ChannelAad {
+            anchor: "VLD0:anchor",
+            channel_id: "chan-a",
+            author: &[9; 32],
+            stream_seq: 99,
         };
         let ct = mek
             .encrypt_with_aad(b"hello", &aad.to_bytes())
@@ -379,26 +356,27 @@ mod tests {
     #[test]
     fn aad_mismatch_fails_decrypt() {
         let mek = MediaEncryptionKey::generate(1);
-        let aad = SlotChannelAad {
-            channel_record_key: b"VLD0:channel-a",
-            subkey_index: 3,
-            lamport_ts: 99,
+        let aad = ChannelAad {
+            anchor: "VLD0:anchor",
+            channel_id: "chan-a",
+            author: &[9; 32],
+            stream_seq: 99,
         };
         let ct = mek
             .encrypt_with_aad(b"hello", &aad.to_bytes())
             .expect("encrypt");
 
         for wrong in [
-            SlotChannelAad {
-                channel_record_key: b"VLD0:channel-b",
+            ChannelAad {
+                channel_id: "chan-b",
                 ..aad
             },
-            SlotChannelAad {
-                subkey_index: 4,
+            ChannelAad {
+                author: &[8; 32],
                 ..aad
             },
-            SlotChannelAad {
-                lamport_ts: 100,
+            ChannelAad {
+                stream_seq: 100,
                 ..aad
             },
         ] {
@@ -414,10 +392,11 @@ mod tests {
     #[test]
     fn aad_and_plain_paths_do_not_cross() {
         let mek = MediaEncryptionKey::generate(1);
-        let aad = SlotChannelAad {
-            channel_record_key: b"VLD0:channel",
-            subkey_index: 0,
-            lamport_ts: 1,
+        let aad = ChannelAad {
+            anchor: "VLD0:anchor",
+            channel_id: "chan-a",
+            author: &[9; 32],
+            stream_seq: 99,
         };
         let plain = mek.encrypt(b"hi").expect("encrypt");
         assert!(mek.decrypt_with_aad(&plain, &aad.to_bytes()).is_err());

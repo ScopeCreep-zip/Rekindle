@@ -51,35 +51,6 @@ pub struct CommunityMetadataV2 {
     pub last_refreshed: u64,
 }
 
-/// A channel entry in the manifest channel directory (subkey 1).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelEntryV2 {
-    pub id: String,
-    pub name: String,
-    pub kind: ChannelKind,
-    pub sort_order: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category_id: Option<String>,
-    #[serde(default)]
-    pub topic: String,
-    #[serde(default)]
-    pub slowmode_seconds: u32,
-    #[serde(default)]
-    pub nsfw: bool,
-    /// DHT record key for this channel's message record (SMPL).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_record_key: Option<String>,
-    /// Current MEK generation for this channel.
-    #[serde(default)]
-    pub mek_generation: u64,
-    #[serde(default)]
-    pub permission_overwrites: Vec<super::PermissionOverwrite>,
-    /// DHTLog spine key for persistent message history.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub log_key: Option<String>,
-}
-
 /// A category entry in the manifest category directory (subkey 2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

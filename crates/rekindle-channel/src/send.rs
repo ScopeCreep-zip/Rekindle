@@ -13,20 +13,13 @@
 //! `rekindle_secrets::channel_body`, shared by every host and re-exported
 //! here.
 
-use rekindle_codec::community::channel_record::{ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT};
+use rekindle_codec::community::channel_record::ChannelMessage;
 
 use crate::error::ChannelError;
 
 pub use rekindle_secrets::channel_body::{
-    decrypt_channel_body, encrypt_channel_body, At, BodyPosition, SlotBodyPosition,
+    decrypt_channel_body, encrypt_channel_body, BodyPosition,
 };
-
-/// Architecture §28.4 — channel SMPL subkey index for a member writing
-/// their slot's stream of messages. Pure offset from `CHANNEL_OWNER_SUBKEY_COUNT`.
-#[must_use]
-pub fn channel_message_subkey(member_index: u32) -> u32 {
-    u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + member_index
-}
 
 /// Architecture §28.7 — slowmode gate. Returns `Ok(())` when the send
 /// is allowed; returns `Err(SlowmodeActive)` with milliseconds-to-wait

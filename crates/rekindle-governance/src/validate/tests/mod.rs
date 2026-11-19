@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::state::{GovernanceState, RoleState};
-use rekindle_types::permissions::{READ_HISTORY, VIEW_CHANNELS};
+use rekindle_types::permissions::{READ_HISTORY, SEND_MESSAGES, VIEW_CHANNELS};
 use std::collections::{HashMap, HashSet};
 
 fn pseudo(b: u8) -> PseudonymKey {

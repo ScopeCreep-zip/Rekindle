@@ -10,11 +10,7 @@ use std::collections::BTreeSet;
 use rekindle_codec::member_record::head_advanced::RELAYED_SUBKEYS;
 use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontiers};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
-use rekindle_records::lease::CommunityLeases;
-use rekindle_records::port::OpenIntent;
-use rekindle_transport::broadcast::dht_writes;
 use rekindle_types::dht_layout::member_record::{FRONTIER, OUTBOX};
-use rekindle_types::id::ChannelId;
 
 use super::HostGovernance;
 
@@ -168,7 +164,6 @@ impl HostGovernance {
         );
         (seen.get(record).copied(), stored)
     }
-
 }
 
 #[cfg(test)]

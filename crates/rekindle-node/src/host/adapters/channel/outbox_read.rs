@@ -556,9 +556,7 @@ impl HostChannel {
         let source = super::changes::ChangeSource {
             community_id: read.community_id,
             channel_id,
-            record_key: read.member_record,
-            subkey_index: OUTBOX,
-            outbox_seq: Some(stream_seq),
+            stream_seq,
             author: &author,
         };
         self.apply_changes(source, std::slice::from_ref(change))

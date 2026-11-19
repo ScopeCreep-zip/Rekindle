@@ -5,11 +5,9 @@
 use rekindle_codec::community::channel_record::{
     ChannelDelete, ChannelMessage, ChannelRecordEntry,
 };
-use rekindle_secrets::channel_body::{encrypt_channel_body, SlotBodyPosition};
+use rekindle_secrets::channel_body::{encrypt_channel_body, BodyPosition};
 
-use super::channel_change_tests::{
-    apply, edit, reader, reload, AUTHOR, EDIT_CHANNEL, RECORD, SUBKEY, TEXT_KEY,
-};
+use super::channel_change_tests::{apply, edit, reader, reload, AUTHOR, EDIT_CHANNEL, TEXT_KEY};
 use crate::host::adapters::channel::ingest::{Ingested, ReceivedAt, ReceivedPost};
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
@@ -17,17 +15,18 @@ use crate::host::Host;
 /// `AUTHOR`'s post `message_id` with `body`, as a record read hands it on.
 fn post(message_id: &str, body: &str) -> ReceivedPost {
     let lamport_ts = 3;
-    let at = SlotBodyPosition {
-        channel_record_key: RECORD,
-        subkey_index: SUBKEY,
-        lamport_ts,
+    let at = BodyPosition {
+        anchor: "c1",
+        channel_id: EDIT_CHANNEL,
+        author: &AUTHOR.0,
+        stream_seq: 1,
     };
     ReceivedPost {
         community_id: "c1".into(),
         channel_id: EDIT_CHANNEL.into(),
-        at: ReceivedAt::Slot {
-            record_key: RECORD.into(),
-            subkey_index: SUBKEY,
+        at: ReceivedAt::Outbox {
+            stream_seq: 1,
+            departure_head: None,
         },
         sequence: 1,
         message: ChannelMessage {

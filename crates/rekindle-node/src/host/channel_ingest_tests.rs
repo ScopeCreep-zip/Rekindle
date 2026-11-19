@@ -58,9 +58,9 @@ fn post(timestamp_secs: u64) -> ReceivedPost {
     ReceivedPost {
         community_id: "c1".into(),
         channel_id: INGEST_CHANNEL.into(),
-        at: ReceivedAt::Slot {
-            record_key: "VLD0:channel".into(),
-            subkey_index: 1,
+        at: ReceivedAt::Outbox {
+            stream_seq: 1,
+            departure_head: None,
         },
         sequence: 1,
         message: ChannelMessage {

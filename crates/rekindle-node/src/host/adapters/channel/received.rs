@@ -1,6 +1,5 @@
-//! A received channel post and where its body was sealed: at a slot of a
-//! channel record (history before the outbox) or at its stream seq in its
-//! author's channel outbox (plan E3.3).
+//! A received channel post and where its body was sealed: at its stream
+//! seq in its author's channel outbox (plan E3.3; a channel has no record).
 
 use rekindle_channel::ingest;
 use rekindle_codec::community::channel_record::ChannelMessage;
@@ -21,12 +20,6 @@ pub struct ReceivedPost {
 /// Where a received post's body was sealed (`ingest::PostAt`, owned).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReceivedAt {
-    /// At `subkey_index` of the channel record `record_key` (history
-    /// written before the outbox, until E3.3 slice 8).
-    Slot {
-        record_key: String,
-        subkey_index: u32,
-    },
     /// In its author's channel outbox at `stream_seq`; the anchor is the
     /// community's. `departure_head`: the author departed, and its entry
     /// is at or below a head its departures recorded of this outbox, which
@@ -49,25 +42,16 @@ pub struct OutboxHead {
 
 impl ReceivedPost {
     pub(super) fn body_at(&self) -> ingest::PostAt<'_> {
-        match &self.at {
-            ReceivedAt::Slot {
-                record_key,
-                subkey_index,
-            } => ingest::PostAt::Slot {
-                record_key,
-                subkey_index: *subkey_index,
-            },
-            ReceivedAt::Outbox { stream_seq, .. } => ingest::PostAt::Outbox {
-                anchor: &self.community_id,
-                stream_seq: *stream_seq,
-            },
+        let ReceivedAt::Outbox { stream_seq, .. } = &self.at;
+        ingest::PostAt {
+            anchor: &self.community_id,
+            stream_seq: *stream_seq,
         }
     }
 
     /// The departure head the gate judges a departed author's post by
     /// (`ingest::GateItem::slot`): only an outbox entry the chain placed at
-    /// or below a recorded head carries one. A slot read's post carries
-    /// none here; the history read judges it with its slot value.
+    /// or below a recorded head carries one.
     pub(super) fn departure_position(&self) -> Option<ingest::SlotPosition<'_>> {
         match &self.at {
             ReceivedAt::Outbox {
@@ -78,7 +62,7 @@ impl ReceivedPost {
                 seq: head.seq,
                 digest: head.digest,
             }),
-            _ => None,
+            ReceivedAt::Outbox { .. } => None,
         }
     }
 }

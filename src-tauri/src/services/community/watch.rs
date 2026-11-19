@@ -150,7 +150,7 @@ pub async fn hold_unheld_records(
 }
 
 /// Watch every record the community holds but its anchor (registry,
-/// channels, segments) on its lease. The anchor is immutable, and a
+/// segments; a channel has no record, plan E3.3) on its lease. The anchor is immutable, and a
 /// governance change arrives through the watch ring (plan E3.2 S7). Overflow pages are never watched: the primary
 /// subkey's watch re-follows the chain. A watch rides a held lease, so the
 /// record is open with its sticky writer and there is nothing to re-open;
@@ -166,7 +166,6 @@ pub async fn watch_community_records(
         let held = &community.leases;
         held.registry
             .iter()
-            .chain(held.channels.values())
             .chain(held.segments.iter())
             .copied()
             .collect()

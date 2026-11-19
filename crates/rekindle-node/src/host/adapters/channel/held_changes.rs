@@ -20,9 +20,7 @@ use super::HostChannel;
 pub(crate) struct HeldChange {
     community_id: String,
     channel_id: String,
-    record_key: String,
-    subkey_index: u32,
-    outbox_seq: Option<u64>,
+    stream_seq: u64,
     author: PseudonymKey,
     entry: ChannelRecordEntry,
 }
@@ -34,7 +32,7 @@ fn held_size(change: &HeldChange) -> usize {
         ChannelRecordEntry::Delete(delete) => delete.message_id.len(),
         _ => 0,
     };
-    body + change.community_id.len() + change.channel_id.len() + change.record_key.len() + 64
+    body + change.community_id.len() + change.channel_id.len() + 64
 }
 
 fn message_of(entry: &ChannelRecordEntry) -> Option<&str> {
@@ -54,9 +52,7 @@ impl HostChannel {
         let change = HeldChange {
             community_id: source.community_id.to_owned(),
             channel_id: source.channel_id.to_owned(),
-            record_key: source.record_key.to_owned(),
-            subkey_index: source.subkey_index,
-            outbox_seq: source.outbox_seq,
+            stream_seq: source.stream_seq,
             author: source.author.clone(),
             entry: entry.clone(),
         };
@@ -88,9 +84,7 @@ impl HostChannel {
             let source = ChangeSource {
                 community_id: &change.community_id,
                 channel_id: &change.channel_id,
-                record_key: &change.record_key,
-                subkey_index: change.subkey_index,
-                outbox_seq: change.outbox_seq,
+                stream_seq: change.stream_seq,
                 author: &change.author,
             };
             self.apply_changes(source, std::slice::from_ref(&change.entry))

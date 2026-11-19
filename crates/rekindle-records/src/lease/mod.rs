@@ -20,7 +20,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-
 /// One borrow of a record. Handed to code that must not see Veilid types
 /// (the deps traits), and to the pool, which keeps the Veilid side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

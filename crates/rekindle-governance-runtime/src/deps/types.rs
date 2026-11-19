@@ -6,8 +6,6 @@
 //! host structures cross as snapshots, so the crate never needs the
 //! host's state types.
 
-use std::collections::HashMap;
-
 use rekindle_governance::state::GovernanceState;
 
 /// User-status flavor crossing the `Deps` boundary.

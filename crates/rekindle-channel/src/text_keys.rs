@@ -8,7 +8,7 @@ use rekindle_types::id::ChannelId;
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
-use crate::send::{decrypt_channel_body, At};
+use crate::send::{decrypt_channel_body, BodyPosition};
 
 fn text_scope<D: ChannelMessagingDeps + ?Sized>(
     deps: &D,
@@ -37,12 +37,12 @@ pub(crate) fn holds_text_key<D: ChannelMessagingDeps + ?Sized>(
 /// Open a text body sealed at `at` under exactly `generation` of
 /// `channel_id`'s text scope. `None` when that generation is not held or
 /// the body does not authenticate at `at`.
-pub(crate) fn open_text<'a, D: ChannelMessagingDeps + ?Sized>(
+pub(crate) fn open_text<D: ChannelMessagingDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     generation: u64,
-    at: impl Into<At<'a>>,
+    at: BodyPosition<'_>,
     ciphertext: &[u8],
 ) -> Option<Vec<u8>> {
     let scope = text_scope(deps, community_id, channel_id).ok()?;

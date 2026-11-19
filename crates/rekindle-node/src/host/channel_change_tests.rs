@@ -6,7 +6,7 @@
 use rekindle_codec::community::channel_record::{ChannelDelete, ChannelEdit, ChannelRecordEntry};
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
 use rekindle_governance::state::GovernanceState;
-use rekindle_secrets::channel_body::{encrypt_channel_body, SlotBodyPosition};
+use rekindle_secrets::channel_body::{encrypt_channel_body, BodyPosition};
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::message::SendState;
@@ -18,8 +18,6 @@ use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
 pub(super) const EDIT_CHANNEL: &str = "fedcba9876543210fedcba9876543210";
-pub(super) const RECORD: &str = "VLD0:channel";
-pub(super) const SUBKEY: u32 = 9;
 pub(super) const TEXT_KEY: [u8; 32] = [7; 32];
 pub(super) const AUTHOR: PseudonymKey = PseudonymKey([1; 32]);
 const OTHER_AUTHOR: PseudonymKey = PseudonymKey([2; 32]);
@@ -84,10 +82,11 @@ pub(super) async fn reader(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, St
 }
 
 pub(super) fn edit(body: &str, seq: u64) -> ChannelRecordEntry {
-    let at = SlotBodyPosition {
-        channel_record_key: RECORD,
-        subkey_index: SUBKEY,
-        lamport_ts: seq,
+    let at = BodyPosition {
+        anchor: "c1",
+        channel_id: EDIT_CHANNEL,
+        author: &AUTHOR.0,
+        stream_seq: seq,
     };
     ChannelRecordEntry::Edit(ChannelEdit {
         message_id: "m1".into(),
@@ -99,17 +98,18 @@ pub(super) fn edit(body: &str, seq: u64) -> ChannelRecordEntry {
 }
 
 pub(super) async fn apply(host: &Host, author: &PseudonymKey, entries: &[ChannelRecordEntry]) {
-    let source = ChangeSource {
-        community_id: "c1",
-        channel_id: EDIT_CHANNEL,
-        record_key: RECORD,
-        subkey_index: SUBKEY,
-        outbox_seq: None,
-        author,
-    };
-    HostChannel::new(&host.ctx)
-        .apply_changes(source, entries)
-        .await;
+    // Each entry is read at its own stream seq, where its body was sealed.
+    for entry in entries {
+        let source = ChangeSource {
+            community_id: "c1",
+            channel_id: EDIT_CHANNEL,
+            stream_seq: entry.lamport(),
+            author,
+        };
+        HostChannel::new(&host.ctx)
+            .apply_changes(source, std::slice::from_ref(entry))
+            .await;
+    }
 }
 
 /// What a reload shows: each row's body and edit time.

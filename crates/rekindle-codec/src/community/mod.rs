@@ -18,8 +18,8 @@ pub use envelope::{
 // name, carrying `is_coordinator` / `coordinator_since`. The live
 // presence type is `rekindle_types::presence::MemberPresence`.
 pub use types::{
-    BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
-    InviteEntry, ModerationLevel,
+    BanEntry, CategoryEntry, ChannelKind, CommunityMetadataV2, CommunityPolicy, InviteEntry,
+    ModerationLevel,
 };
 
 use serde::{Deserialize, Serialize};

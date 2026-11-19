@@ -100,8 +100,6 @@ labels! {
     GOV_OVERFLOW = "rekindle-gov-overflow-v1";
     /// Signature prefix: governance SMPL subkey payload.
     GOV_SUBKEY = "rekindle-gov-subkey-v1";
-    /// Signature prefix: channel message-record subkey payload.
-    CHANNEL_SUBKEY = "rekindle-channel-subkey-v1";
     /// Signature prefix: member-registry presence row.
     PRESENCE_ROW = "rekindle-presence-v1";
     /// Ed25519 signature prefix: a member card (`M`/0, plan E3.2), by the

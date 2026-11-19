@@ -94,10 +94,14 @@ impl HostGovernance {
     fn channel_ids_impl(&self, community_id: &str) -> Vec<String> {
         // The merged channels (plan E3.3: a channel is its `ChannelCreated`
         // op, with no record).
-        (self.ctx.communities.governance_state(community_id).into_iter())
-            .flat_map(|state| state.channels.into_keys())
-            .map(|id| hex::encode(id.0))
-            .collect()
+        (self
+            .ctx
+            .communities
+            .governance_state(community_id)
+            .into_iter())
+        .flat_map(|state| state.channels.into_keys())
+        .map(|id| hex::encode(id.0))
+        .collect()
     }
 
     /// Snapshot the gossip overlay's online members.
