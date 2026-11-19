@@ -1,0 +1,45 @@
+//! A transaction get reaches a newer value a minority of the closest
+//! replicas holds, which a forced get settles past ([`super::dht`]'s
+//! `transaction` module, 0.5.8 `outbound_transaction_manager/mod.rs:1947-1966`
+//! against `get_value.rs:49-88`).
+
+use std::sync::Arc;
+
+use rekindle_records::port::{DhtBackend, OpenIntent, RecordSchema};
+
+use super::dht::SimDht;
+use super::replicas::reachable;
+use crate::Netsim;
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_transaction_get_reaches_a_minority_holders_newer_value() {
+    let (sim, nodes) = Netsim::nodes(2, 41);
+    let _pump = sim.start();
+    let a = SimDht::new(0, Arc::clone(&sim.net), Arc::clone(&nodes[0].rng));
+    let b = SimDht::new(1, Arc::clone(&sim.net), Arc::clone(&nodes[1].rng));
+    let key = a
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap()
+        .key;
+    a.set(&key, 0, vec![1], None).await.unwrap();
+    {
+        // The fourth closest replica alone holds seq 1, as a write that
+        // landed only on replicas the other side of a partition leaves it.
+        let mut inner = sim.net.inner.lock();
+        let partitions = inner.faults.partitions.clone();
+        let record = inner.records.get_mut(&key).unwrap();
+        let fourth = reachable(&record.replicas, &partitions, 1)[3];
+        let mut newer = record.replicas[0].values[0].clone().unwrap();
+        newer.seq += 1;
+        newer.data = vec![2];
+        record.replicas[fourth].values[0] = Some(newer);
+    }
+    b.open(&key, None, OpenIntent::Check).await.unwrap();
+    let got = b.get(&key, 0, true).await.unwrap().unwrap();
+    assert_eq!(got.data, vec![1], "a get stops at three holders of seq 0");
+    let newest = b.get_newest(&key, 0).await.unwrap().unwrap();
+    assert_eq!((newest.seq, newest.data), (got.seq + 1, vec![2]));
+    let local = b.get(&key, 0, false).await.unwrap().unwrap();
+    assert_eq!(local.data, vec![1], "a transaction stores nothing locally");
+}

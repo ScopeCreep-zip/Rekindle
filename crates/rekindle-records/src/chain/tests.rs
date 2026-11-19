@@ -236,6 +236,10 @@ impl RecordPort for MemPort {
         Err(unused())
     }
 
+    async fn read_newest(&self, _: LeaseId, _: u32) -> Result<Option<RecordValue>, PortError> {
+        Err(unused())
+    }
+
     async fn watch(&self, _: LeaseId, _: &[u32]) -> Result<(), PortError> {
         Err(unused())
     }

@@ -24,6 +24,12 @@
 //! by the D26 gate as from a non-member (A/B R3-8, plan S9 carried onto
 //! the outbox).
 //!
+//! A departure's head is a head the reader knows exists: a read that stops
+//! below it (the closest replicas agree on an older head the departed
+//! writer can no longer repair) runs bounded gap reads through a DHT
+//! transaction ([`rekindle_records::chain::read_log_reaching`]); one that
+//! still falls short leaves the cursor below the head and is not caught up.
+//!
 //! Triggers: the author's or a relayer's `HeadAdvanced` for subkey 4 and a
 //! ring change of subkey 4 diff that author; a catch-up (a community's
 //! load: an unlock, a join, a community key installed) diffs every member. Older history stays on the channel records
@@ -175,6 +181,7 @@ impl HostChannel {
         let standing = self
             .standing(&*port, community_id, author, member_record)
             .await;
+        let known_head = self.known_head(community_id, author, member_record);
         let sink = OutboxSink {
             channel: self,
             community_id,
@@ -186,9 +193,18 @@ impl HostChannel {
         let stream = outbox_stream(community_id);
         let writer = format!("{}:{member_record}", hex::encode(author.0));
         match engine
-            .diff_log(&*port, &sink, (&stream, &writer), member_record, OUTBOX)
+            .diff_log(
+                &*port,
+                &sink,
+                (&stream, &writer),
+                member_record,
+                (OUTBOX, known_head),
+            )
             .await
         {
+            Ok(diffed) if diffed.unreached.is_some() => {
+                tracing::warn!(community_id, author = %writer, head = ?diffed.unreached, applied = diffed.applied, "channel outbox head a departure recorded is on no replica we reached: the history keeps the gap");
+            }
             Ok(diffed) if diffed.applied > 0 => {
                 tracing::info!(community_id, author = %writer, applied = diffed.applied, "channel outbox read");
             }
@@ -219,6 +235,18 @@ impl HostChannel {
         }
     }
 
+    /// The highest head of `member_record`'s outbox a departure of
+    /// `author` recorded (0: none), which the read must reach (D23).
+    fn known_head(&self, community_id: &str, author: &PseudonymKey, member_record: &str) -> u64 {
+        let Some(state) = self.governance_state(community_id) else {
+            return 0;
+        };
+        (state.departed_heads.get(author))
+            .and_then(|heads| heads.get(member_record))
+            .and_then(|heads| heads.iter().next_back())
+            .map_or(0, |(seq, _)| u64::from(*seq))
+    }
+
     /// `author`'s standing: a member, or departed with the highest head its
     /// departures recorded of `member_record`'s outbox whose entry in the
     /// chain has the head's digest (none when none does, so the reader
@@ -241,11 +269,14 @@ impl HostChannel {
             .unwrap_or_default();
         for (seq, digest) in heads.into_iter().rev() {
             let wanted = u64::from(seq);
-            let read = rekindle_records::chain::read_log_after(
+            // A head the closest replicas have not caught up to is read
+            // from the replicas that hold it (D23 gap read).
+            let read = rekindle_records::chain::read_log_reaching(
                 port,
                 member_record,
                 OUTBOX,
                 wanted.saturating_sub(1),
+                wanted,
             )
             .await;
             let at_head =

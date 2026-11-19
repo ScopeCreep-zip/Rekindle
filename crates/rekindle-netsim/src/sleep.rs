@@ -95,6 +95,14 @@ impl<B: DhtBackend> DhtBackend for Sleepable<B> {
         self.run(self.inner.get(key, subkey, force_refresh)).await
     }
 
+    async fn get_newest(
+        &self,
+        key: &str,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.run(self.inner.get_newest(key, subkey)).await
+    }
+
     async fn set(
         &self,
         key: &str,

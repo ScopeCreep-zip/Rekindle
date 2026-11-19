@@ -66,6 +66,14 @@ impl RecordPort for RecordPool {
         RecordPool::get(self, lease, subkey, force_refresh).await
     }
 
+    async fn read_newest(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, PortError> {
+        RecordPool::read_newest(self, lease, subkey).await
+    }
+
     async fn set(
         &self,
         lease: LeaseId,

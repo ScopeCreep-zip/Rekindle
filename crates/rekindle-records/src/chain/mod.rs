@@ -470,6 +470,48 @@ pub async fn read_log_after(
     })
 }
 
+/// Gap reads ([`RecordPort::read_newest_once`]) [`read_log_reaching`] runs
+/// before it leaves a known head unreached.
+pub const GAP_READS: usize = 3;
+
+/// [`read_log_after`] for a reader that knows the chain reaches
+/// `at_least` (a departure recorded that head, plan E3.3 D23): when the read
+/// stops below it, a get having settled on an older head that the closest
+/// replicas still agree on (0.5.8 `get_value.rs:49-88`), the head is read
+/// from the newest value a transaction's node set holds, up to
+/// [`GAP_READS`] times. The read returned can still stop short; the caller
+/// keeps the gap open.
+///
+/// # Errors
+/// As [`read_log_after`]; a failed gap read only counts against the
+/// bound.
+pub async fn read_log_reaching(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+    cursor: u64,
+    at_least: u64,
+) -> Result<ChainRead, ChainError> {
+    let read = read_log_after(port, record, head_subkey, cursor).await?;
+    if read.last_seq >= at_least {
+        return Ok(read);
+    }
+    for _ in 0..GAP_READS {
+        let Ok(Some(value)) = port.read_newest_once(record, head_subkey).await else {
+            continue;
+        };
+        let newest = page::decode_head(&value.data)?.newest;
+        if newest.last_seq >= at_least {
+            return Ok(ChainRead {
+                last_seq: newest.last_seq,
+                entries: walk_down(port, Some(newest), cursor).await?,
+                retired_gap: None,
+            });
+        }
+    }
+    Ok(read)
+}
+
 /// The entries above `floor`, in sequence order, walking back from
 /// `newest`.
 async fn walk_down(

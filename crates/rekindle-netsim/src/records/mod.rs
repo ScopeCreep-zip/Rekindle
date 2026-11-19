@@ -71,6 +71,8 @@ mod report_tests;
 pub(crate) mod size;
 mod stores;
 #[cfg(test)]
+mod transaction_tests;
+#[cfg(test)]
 mod watch_tests;
 pub(crate) mod watches;
 

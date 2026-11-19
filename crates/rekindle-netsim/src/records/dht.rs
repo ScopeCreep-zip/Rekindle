@@ -33,9 +33,10 @@
 //!   local result, the Sync ones' from nothing (`:316-332`), then take the
 //!   newest seq of the replicas the node reaches; `offline_subkeys` is the
 //!   node's own push queue plus its sets in flight (`:284-290`);
-//! - a create checks the schema as Veilid ([`super::validate_schema`]);
-//! - a watch's expiration is absolute: too soon on the node's own clock
-//!   (its skew), clamped by each replica on true time;
+//! - a create checks the schema as Veilid ([`super::validate_schema`]); a
+//!   watch's expiration is absolute: too soon on the node's own clock (its
+//!   skew), clamped by each replica on true time; a transaction get is
+//!   [`transaction`];
 //! - an open of a locally held record may queue a rehydration
 //!   ([`super::rehydrate`]'s `on_open`); a call that reads or writes replicas uses the
 //!   record on their stores ([`super::stores`]);
@@ -46,6 +47,9 @@
 //! Every call that reaches the network costs Veilid's latency
 //! ([`crate::latency`]) under the per-(node, record, subkey) locks and the
 //! node's DHT cap before its effect lands.
+
+mod reads;
+mod transaction;
 
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -144,27 +148,6 @@ impl SimDht {
                 true
             }
             _ => false,
-        }
-    }
-
-    /// Whether a replica the node reaches holds a value at any of
-    /// `subkeys` (all when `None`).
-    fn held(&self, key: &str, subkeys: Option<&[u32]>) -> bool {
-        let inner = self.net.inner.lock();
-        inner.records.get(key).is_some_and(|r| {
-            let reach = reachable(&r.replicas, &inner.faults.partitions, self.node);
-            replicas::holds(&r.replicas, &reach, subkeys)
-        })
-    }
-
-    /// A read's latency: [`latency::GET`] when a reached replica holds a
-    /// value at any of `subkeys` (all when `None`), else the fanout's
-    /// [`latency::DEADLINE`].
-    fn read_span(&self, key: &str, subkeys: Option<&[u32]>) -> Span {
-        if self.held(key, subkeys) {
-            latency::GET
-        } else {
-            latency::DEADLINE
         }
     }
 
@@ -405,6 +388,14 @@ impl DhtBackend for SimDht {
             subkey,
             force_refresh,
         ))
+    }
+
+    async fn get_newest(
+        &self,
+        key: &str,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.transaction_get(key, subkey).await
     }
 
     async fn set(

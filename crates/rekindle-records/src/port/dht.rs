@@ -153,6 +153,23 @@ pub trait DhtBackend: Send + Sync {
         force_refresh: bool,
     ) -> Result<Option<RecordValue>, DhtCallError>;
 
+    /// Read a subkey from the newest value any node of a transaction's set
+    /// holds, past a get's first agreeing set: a read-only DHT transaction
+    /// (begin, get, rollback). Veilid's begin asks `set_value_count`
+    /// accepters plus a trim among the closest nodes and keeps each one's
+    /// seqs (0.5.8 `storage_manager/transaction.rs:177-181`,
+    /// `transaction_begin.rs:338-347,398-402`); its get asks only the nodes
+    /// whose begin seq is the newest
+    /// (`outbound_transaction_manager/mod.rs:1947-1966`) and stores nothing
+    /// locally (`transaction.rs:1541-1582`). A reader signs with an
+    /// anonymous key (`transaction.rs:212-224`). A get stops at
+    /// `get_value_count` holders of the first seq that reaches them
+    /// (`get_value.rs:49-88`), and an inspect returns only seqs
+    /// (`veilid_api/types/dht/dht_record_report.rs:9-20`), so neither
+    /// fetches a newer value only a minority of the closest nodes holds.
+    async fn get_newest(&self, key: &str, subkey: u32)
+        -> Result<Option<RecordValue>, DhtCallError>;
+
     /// Write a subkey as `writer` (the open's writer when `None`), never
     /// offline: `Some` is the value the write settled on, returned when it
     /// differs from ours or when some node holds a rival at its seq, so it

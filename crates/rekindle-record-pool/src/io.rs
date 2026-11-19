@@ -44,6 +44,26 @@ impl RecordPool {
         .map_err(|e| to_port(&e))
     }
 
+    /// Read a subkey through a read-only DHT transaction: the newest value
+    /// a transaction's node set holds (a gap read,
+    /// [`DhtBackend::get_newest`](rekindle_records::port::DhtBackend::get_newest)).
+    ///
+    /// # Errors
+    /// The lease is not held, or the read failed within the retry budget.
+    pub async fn read_newest(
+        &self,
+        id: LeaseId,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, PortError> {
+        let (key, _) = self.lookup(id)?;
+        self.run_retrying("dht transaction get", move |backend| {
+            let k = key.clone();
+            async move { backend.get_newest(&k, subkey).await }
+        })
+        .await
+        .map_err(|e| to_port(&e))
+    }
+
     /// Inspect the leased record.
     ///
     /// # Errors

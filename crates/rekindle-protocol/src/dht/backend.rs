@@ -289,6 +289,26 @@ impl DhtBackend for VeilidDht {
             .map_err(|e| dht_error(&e))
     }
 
+    async fn get_newest(
+        &self,
+        key: &str,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        let key = record_key(key)?;
+        let tx = self
+            .rc
+            .api()
+            .transact_dht_records(vec![key.clone()], None)
+            .await
+            .map_err(|e| dht_error(&e))?;
+        let read = tx.get(key, subkey).await;
+        // Read-only: nothing to commit (0.5.8 `dht_transaction.rs:169`).
+        let rolled_back = tx.rollback().await;
+        let value = read.map_err(|e| dht_error(&e))?;
+        rolled_back.map_err(|e| dht_error(&e))?;
+        Ok(value.as_ref().map(record_value))
+    }
+
     async fn set(
         &self,
         key: &str,

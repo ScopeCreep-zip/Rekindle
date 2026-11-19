@@ -91,6 +91,10 @@ pub struct Diffed {
     pub gap_through: Option<u64>,
     /// Another diff of the stream was running: it reads again instead.
     pub coalesced: bool,
+    /// A head the reader knows exists that no read reached
+    /// ([`chain::read_log_reaching`]): the cursor stays below it and the
+    /// diff does not report caught up.
+    pub unreached: Option<u64>,
 }
 
 /// Which chain a diff reads.
@@ -98,14 +102,25 @@ pub struct Diffed {
 enum Chain {
     /// A participant record's retiring chain (`HEAD` at its subkey 0).
     Participant,
-    /// A never-retired log whose head is this subkey.
-    Log(u32),
+    /// A never-retired log whose head is `head_subkey`, known to reach
+    /// `at_least` (0: no head known).
+    Log { head_subkey: u32, at_least: u64 },
 }
 
 /// The diffs in flight, one per stream: whether a trigger landed during it.
 #[derive(Debug, Default)]
 pub struct StreamEngine {
     running: Mutex<HashMap<(String, String), bool>>,
+}
+
+impl Chain {
+    /// The head a log is known to reach (0: none known).
+    fn at_least(self) -> u64 {
+        match self {
+            Self::Participant => 0,
+            Self::Log { at_least, .. } => at_least,
+        }
+    }
 }
 
 impl StreamEngine {
@@ -153,7 +168,10 @@ impl StreamEngine {
 
     /// Diff `writer`'s never-retired log chain whose head is
     /// `record`/`head_subkey` (a member's channel outbox, `M`/4, plan
-    /// E3.3), as [`diff`](Self::diff) does a participant record.
+    /// E3.3), as [`diff`](Self::diff) does a participant record. `at_least`
+    /// is a head the reader knows the log reaches (a departure's, 0: none):
+    /// a read short of it runs bounded gap reads, and if none reaches it the
+    /// diff reports it [`unreached`](Diffed::unreached).
     ///
     /// # Errors
     /// As [`diff`](Self::diff).
@@ -163,14 +181,17 @@ impl StreamEngine {
         sink: &dyn StreamSink,
         (stream, writer): (&str, &str),
         record: &str,
-        head_subkey: u32,
+        (head_subkey, at_least): (u32, u64),
     ) -> Result<Diffed, StreamError> {
         self.diff_chain(
             port,
             sink,
             (stream, writer),
             record,
-            Chain::Log(head_subkey),
+            Chain::Log {
+                head_subkey,
+                at_least,
+            },
         )
         .await
     }
@@ -198,6 +219,7 @@ impl StreamEngine {
                 Ok(d) => {
                     total.applied += d.applied;
                     total.gap_through = d.gap_through.or(total.gap_through);
+                    total.unreached = d.unreached;
                 }
                 Err(e) => {
                     self.release(&key, true);
@@ -208,7 +230,9 @@ impl StreamEngine {
                 break;
             }
         }
-        sink.caught_up(stream, writer).await;
+        if total.unreached.is_none() {
+            sink.caught_up(stream, writer).await;
+        }
         Ok(total)
     }
 
@@ -222,10 +246,12 @@ impl StreamEngine {
         let mut cursor = sink.cursor(stream, writer).await?;
         let read = match source {
             Chain::Participant => chain::read_after(port, record, cursor).await?,
-            Chain::Log(head_subkey) => {
-                chain::read_log_after(port, record, head_subkey, cursor).await?
-            }
+            Chain::Log {
+                head_subkey,
+                at_least,
+            } => chain::read_log_reaching(port, record, head_subkey, cursor, at_least).await?,
         };
+        let unreached = (read.last_seq < source.at_least()).then(|| source.at_least());
         let mut done = Diffed::default();
         if let Some(through) = read.retired_gap {
             sink.history_gap(stream, writer, through).await?;
@@ -248,6 +274,7 @@ impl StreamEngine {
                 }
             }
         }
+        done.unreached = unreached;
         Ok(done)
     }
 }

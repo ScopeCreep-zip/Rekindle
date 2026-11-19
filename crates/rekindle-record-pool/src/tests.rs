@@ -84,6 +84,14 @@ impl DhtBackend for TestDht {
         Ok(None)
     }
 
+    async fn get_newest(
+        &self,
+        _key: &str,
+        _subkey: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        Ok(None)
+    }
+
     async fn set(
         &self,
         _key: &str,

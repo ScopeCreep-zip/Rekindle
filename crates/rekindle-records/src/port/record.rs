@@ -298,6 +298,21 @@ pub trait RecordPort: Send + Sync {
         subkeys: &[u32],
     ) -> Result<Vec<(u32, RecordValue)>, PortError>;
 
+    /// Read `subkey` of the leased record from the newest value a
+    /// transaction's node set holds ([`DhtBackend::get_newest`]): a gap read,
+    /// for a reader that knows a newer value exists than a get returned
+    /// (plan E3.3, D23). Nothing is stored locally.
+    ///
+    /// # Errors
+    /// The lease is not held, or the read failed within the retry budget.
+    ///
+    /// [`DhtBackend::get_newest`]: crate::port::DhtBackend::get_newest
+    async fn read_newest(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, PortError>;
+
     /// Watch `subkeys` of the leased record (empty stops this borrower's
     /// watch).
     async fn watch(&self, lease: LeaseId, subkeys: &[u32]) -> Result<(), PortError>;
@@ -354,6 +369,19 @@ pub trait RecordPort: Send + Sync {
     ) -> Result<Option<RecordValue>, PortError> {
         let lease = self.acquire(key, None, OpenIntent::Check).await?;
         let read = self.get(lease, subkey, force_refresh).await;
+        self.release(lease).await;
+        read
+    }
+
+    /// [`read_newest`](Self::read_newest) of one subkey of `key` on a
+    /// borrow of its own, opened as [`OpenIntent::Check`].
+    async fn read_newest_once(
+        &self,
+        key: &str,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, PortError> {
+        let lease = self.acquire(key, None, OpenIntent::Check).await?;
+        let read = self.read_newest(lease, subkey).await;
         self.release(lease).await;
         read
     }

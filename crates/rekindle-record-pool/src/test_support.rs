@@ -207,6 +207,15 @@ impl DhtBackend for MemDht {
         Ok(self.value(key, subkey))
     }
 
+    /// One store, so the transaction's newest value is the stored one.
+    async fn get_newest(
+        &self,
+        key: &str,
+        subkey: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        Ok(self.value(key, subkey))
+    }
+
     async fn set(
         &self,
         key: &str,
