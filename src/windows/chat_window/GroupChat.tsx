@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, onCleanup, onMount } from "solid-js";
+import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { startEventStream } from "../../ipc/channels";
 import Titlebar from "../../components/titlebar/Titlebar";
@@ -43,6 +43,8 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       .map((k) => memberNames()[k] ?? k.slice(0, 12));
   });
 
+  // Stored history is in: from here on, new messages are announced (§13b).
+  const [historyReady, setHistoryReady] = createSignal(false);
   const unlisteners: Promise<UnlistenFn>[] = [];
   onMount(async () => {
     unlisteners.push(...subscribeGroupChatEvents(groupId));
@@ -50,6 +52,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     await hydrateState();
     await handleLoadGroupDms();
     await handleLoadGroupMessages(groupId, 50);
+    setHistoryReady(true);
   });
   onCleanup(() => {
     for (const p of unlisteners) p.then((unlisten) => unlisten());
@@ -90,6 +93,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           memberNames={memberNames()}
           onRetry={(id) => void handleRetryGroupSend(groupId, id)}
           onDiscard={(id) => void handleDiscardGroupSend(groupId, id)}
+          historyReady={historyReady()}
         />
         <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
         <MessageInput

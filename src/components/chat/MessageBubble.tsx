@@ -12,6 +12,7 @@ import AttachmentDisplay from "./AttachmentDisplay";
 import VoiceMessagePlayer from "./VoiceMessagePlayer";
 import { FLAG_VOICE_MESSAGE } from "../../stores/chat.store";
 import { formatTimestamp } from "../../utils/formatting";
+import { messageAnnouncement } from "../../utils/message_announcement";
 import { linkPreviewKey, linkPreviews } from "../../stores/link_preview.store";
 import { commands } from "../../ipc/commands";
 import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX, ICON_FORWARD, ICON_CHECK_ALL, ICON_EYE} from "../../icons";
@@ -125,22 +126,10 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     return community?.members?.find((m) => m.pseudonymKey === by)?.displayName ?? `${by.slice(0, 8)}…`;
   };
 
-  // Architecture §32 a11y — screen-reader announcement composed from
-  // sender + timestamp + body. Read by the parent message-list's
-  // `role="log"` live region whenever a new bubble is appended.
-  const ariaAnnouncement = (): string => {
-    const ts = new Date(props.message.timestamp).toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-    const sender = props.senderName || (props.message.isOwn ? "You" : "Unknown");
-    const body = props.message.removedBy
-      ? `Removed by ${removedByName()}`
-      : props.message.decryptionFailed
-        ? "Unable to decrypt — waiting for encryption keys"
-        : props.message.body;
-    return `${sender} at ${ts}: ${body}`;
-  };
+  // Architecture §32 a11y — the bubble's accessible name: sender, time and
+  // body (shared with the chat window's new-message announcer).
+  const ariaAnnouncement = (): string =>
+    messageAnnouncement(props.message, props.senderName, removedByName);
 
   return (
     <div

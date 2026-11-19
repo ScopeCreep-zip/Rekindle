@@ -63,6 +63,8 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
   const safety = useSafetyNumber(peerId);
   const [showSafety, setShowSafety] = createSignal(false);
   const [showInvite, setShowInvite] = createSignal(false);
+  // Stored history is in: from here on, new messages are announced (§13b).
+  const [historyReady, setHistoryReady] = createSignal(false);
 
   // Extracted so both createEffect and the direct event listener can call it
   function syncMessages() {
@@ -132,6 +134,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
     await hydrateState();
     setChatState("activeConversation", peerId);
     await handleLoadHistory(peerId, 50);
+    setHistoryReady(true);
     handleResetUnread(peerId);
     window.addEventListener("focus", onFocus);
   });
@@ -225,6 +228,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         peerName={peerName()}
         onRetry={handleRetry}
         onDiscard={handleDiscard}
+        historyReady={historyReady()}
       />
       {/* A connected call's controls (timer, mute, hangup, video) live in
        *  its own call window, which the backend opens on connect. */}

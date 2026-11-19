@@ -24,6 +24,12 @@ interface LiveRegionProps {
    * that both consumers run against this exact node.
    */
   ref?: (el: HTMLDivElement) => void;
+  /**
+   * False when a separate announcer reads new content (the chat window's
+   * `ChatAnnouncer`): the region keeps its `log` role and name but is not
+   * live, so loading history is not read out. Defaults to true.
+   */
+  announces?: boolean;
   children: JSX.Element;
 }
 
@@ -51,7 +57,7 @@ const LiveRegion: Component<LiveRegionProps> = (props) => {
       class={props.class}
       ref={props.ref}
       role="log"
-      aria-live={props.priority ?? "polite"}
+      aria-live={props.announces === false ? "off" : (props.priority ?? "polite")}
       aria-relevant="additions"
       aria-atomic="false"
       aria-label={props.label ?? "messages"}

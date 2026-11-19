@@ -9,6 +9,7 @@ import {
 import type { Thread } from "../../stores/community.store";
 import MessageBubble from "./MessageBubble";
 import LiveRegion from "../common/LiveRegion";
+import ChatAnnouncer from "./ChatAnnouncer";
 
 interface MessageListProps {
   communityId?: string;
@@ -41,6 +42,13 @@ interface MessageListProps {
   canBulkDelete?: boolean;
   /** Invoked with the selected ids when the moderator confirms bulk delete. */
   onBulkDelete?: (messageIds: string[]) => void;
+  /**
+   * The chat window (1:1 and group) passes whether its stored history has
+   * loaded: new messages are then announced by `ChatAnnouncer` and the
+   * list itself stays silent, so history is never read out. Left out
+   * (community channels), the list is its own polite log as before.
+   */
+  historyReady?: boolean;
 }
 
 const MessageList: Component<MessageListProps> = (props) => {
@@ -110,6 +118,10 @@ const MessageList: Component<MessageListProps> = (props) => {
     return map;
   });
 
+  function senderNameOf(msg: Message): string {
+    return msg.isOwn ? props.ownName : (props.memberNames?.[msg.senderId] ?? props.peerName);
+  }
+
   function handleEnterSelection(): void {
     if (!props.channelId) return;
     startBulkSelection(props.channelId);
@@ -122,8 +134,10 @@ const MessageList: Component<MessageListProps> = (props) => {
   }
 
   return (
+    <>
     <LiveRegion
       class="chat-message-area"
+      announces={props.historyReady === undefined}
       ref={(el) => (containerRef = el)}
       label={props.channelId ? "Channel messages" : "Direct message conversation"}
     >
@@ -185,7 +199,7 @@ const MessageList: Component<MessageListProps> = (props) => {
               communityId={props.communityId}
               channelId={props.channelId}
               message={msg}
-              senderName={msg.isOwn ? props.ownName : (props.memberNames?.[msg.senderId] ?? props.peerName)}
+              senderName={senderNameOf(msg)}
               myPseudonymKey={props.myPseudonymKey}
               replyToMessage={msg.replyToId ? messageMap().get(msg.replyToId) ?? null : null}
               threadInfo={thread() ? { name: thread()!.name, messageCount: thread()!.messageCount, threadId: thread()!.id, archived: thread()!.archived } : undefined}
@@ -213,6 +227,14 @@ const MessageList: Component<MessageListProps> = (props) => {
         }}
       </For>
     </LiveRegion>
+    <Show when={props.historyReady !== undefined}>
+      <ChatAnnouncer
+        messages={props.messages}
+        historyReady={props.historyReady === true}
+        senderName={senderNameOf}
+      />
+    </Show>
+    </>
   );
 };
 
