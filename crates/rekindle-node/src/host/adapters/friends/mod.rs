@@ -181,8 +181,8 @@ impl FriendHost for HostFriends {
 
     async fn watch_friend(&self, peer: &str, profile_dht_key: &str) {
         match rekindle_presence::watch_friend(Arc::new(self.clone()), peer, profile_dht_key).await {
-            // The name read is a GET: off the path that set the watch.
-            Ok(Some(name_read)) => self.scope().spawn_or_drop("friend name read", name_read),
+            // The presence read is a GET: off the path that set the watch.
+            Ok(Some(read)) => self.scope().spawn_or_drop("friend presence read", read),
             Ok(None) => {}
             Err(e) => tracing::trace!(peer = %peer, error = %e, "friend presence not watched"),
         }

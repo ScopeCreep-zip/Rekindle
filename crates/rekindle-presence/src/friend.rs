@@ -253,9 +253,9 @@ fn parse_game_info(data: &[u8]) -> Option<GameInfoSnapshot> {
     })
 }
 
-/// The one read of a friend's display name after their watch is set
-/// ([`watch_friend`]); the host runs it on its own task.
-pub type NameRead = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+/// The one read of a friend's display name, status and game after their
+/// watch is set ([`watch_friend`]); the host runs it on its own task.
+pub type PresenceRead = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
 
 /// Subscribe to a friend's DHT presence record. On hard failures
 /// (invalid key, open fails) the friend is added to the
@@ -265,7 +265,7 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     deps: Arc<D>,
     friend_key: &str,
     dht_record_key: &str,
-) -> Result<Option<NameRead>, PresenceError> {
+) -> Result<Option<PresenceRead>, PresenceError> {
     deps.set_friend_dht_record_key(friend_key, dht_record_key);
 
     let lease = match deps.acquire_friend_record(dht_record_key).await {
@@ -300,21 +300,30 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     }
     // Held either way: the pool re-arms a held record's watch.
     deps.hold_friend_record(friend_key, lease).await;
-    // The name is read once now: a watch reports changes, not the value
-    // the record already holds (live A/B finding 39). The read is a network
-    // GET, so it is handed back for the host to run on its session scope:
-    // the accept or add that set the watch never waits on it.
+    // The name, status and game are read once now: a Veilid watch reports
+    // changes, not the value the record already holds (`watch_dht_values`,
+    // veilid-core `routing_context.rs`; live A/B finding 39), so a status the
+    // friend published before our watch would stay unseen until their next
+    // publish. Status and game go through `handle_value_change`, the path a
+    // watched change takes, so state and events stay one path. The reads
+    // are network GETs, so they are handed back for the host to run on its
+    // session scope: the accept or add that set the watch never waits.
     let (friend_key, dht_record_key) = (friend_key.to_string(), dht_record_key.to_string());
     Ok(Some(Box::pin(async move {
-        if let Some(name) = deps
-            .fetch_friend_dht_subkey(
-                &dht_record_key,
-                rekindle_types::dht_layout::profile::DISPLAY_NAME,
-                true,
-            )
-            .await
-        {
+        use rekindle_types::dht_layout::profile::{DISPLAY_NAME, GAME_INFO, STATUS};
+        let (name, status, game) = tokio::join!(
+            deps.fetch_friend_dht_subkey(&dht_record_key, DISPLAY_NAME, true),
+            deps.fetch_friend_dht_subkey(&dht_record_key, STATUS, true),
+            deps.fetch_friend_dht_subkey(&dht_record_key, GAME_INFO, true),
+        );
+        if let Some(name) = name {
             handle_name_change(&*deps, &friend_key, &name);
+        }
+        if let Some(status) = status {
+            handle_value_change(&*deps, &dht_record_key, &[STATUS], &status);
+        }
+        if let Some(game) = game {
+            handle_value_change(&*deps, &dht_record_key, &[GAME_INFO], &game);
         }
     })))
 }

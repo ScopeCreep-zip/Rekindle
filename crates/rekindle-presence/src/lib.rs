@@ -34,7 +34,7 @@ pub use deps::{
 };
 pub use friend::{
     handle_value_change, parse_status, parse_status_timestamp, publish_status, status_to_wire_byte,
-    watch_friend, NameRead, FRIEND_WATCH_SUBKEYS, PROFILE_STATUS_SUBKEY,
+    watch_friend, PresenceRead, FRIEND_WATCH_SUBKEYS, PROFILE_STATUS_SUBKEY,
     STALE_PRESENCE_THRESHOLD_MS,
 };
 pub use friend_sync::check_stale_friend_presences;

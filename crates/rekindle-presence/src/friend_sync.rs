@@ -47,6 +47,8 @@ mod tests {
         calls_watch_subkeys: Vec<(u64, Vec<u32>)>,
         calls_fetch_subkey: Vec<(String, u32, bool)>,
         calls_set_offline: Vec<(String, i64)>,
+        calls_set_status: Vec<(String, UserStatusKind)>,
+        calls_set_game: Vec<(String, Option<GameInfoSnapshot>)>,
         calls_is_accepted: Vec<String>,
         calls_emit: Vec<FriendPresenceEvent>,
         calls_hold: Vec<(String, u64)>,
@@ -93,7 +95,15 @@ mod tests {
         ) -> Option<rekindle_secrets::friend_presence::PresenceKey> {
             self.state.lock().presence_keys.get(friend_key).cloned()
         }
-        fn set_friend_status(&self, _: &str, _: UserStatusKind) -> SetFriendStatusOutcome {
+        fn set_friend_status(
+            &self,
+            friend_key: &str,
+            status: UserStatusKind,
+        ) -> SetFriendStatusOutcome {
+            self.state
+                .lock()
+                .calls_set_status
+                .push((friend_key.to_string(), status));
             SetFriendStatusOutcome {
                 was_offline: false,
                 friend_existed: true,
@@ -106,7 +116,12 @@ mod tests {
                 .push((friend_key.to_string(), ts));
         }
         fn set_friend_last_heartbeat(&self, _: &str, _: i64) {}
-        fn set_friend_game_info(&self, _: &str, _: Option<GameInfoSnapshot>) {}
+        fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>) {
+            self.state
+                .lock()
+                .calls_set_game
+                .push((friend_key.to_string(), game));
+        }
         fn set_friend_display_name(&self, _: &str, _: &str) -> bool {
             true
         }
@@ -200,13 +215,15 @@ mod tests {
     }
 
     /// Plan E2.5 (D23): a friend's watch is opened on their profile record
-    /// and held, and the watch brings each change. The display name is read
-    /// once after the watch is set, since a watch reports changes, not the
-    /// value held (live A/B finding 39); nothing else is read.
+    /// and held, and the watch brings each change. The display name, status
+    /// and game are read once after the watch is set, since a Veilid watch
+    /// reports changes, not the value held (live A/B finding 39, walk C1);
+    /// nothing else is read.
     #[tokio::test]
-    async fn watching_a_friend_holds_the_watch_and_reads_the_name_once() {
+    async fn watching_a_friend_holds_the_watch_and_reads_presence_once() {
+        use rekindle_types::dht_layout::profile::{DISPLAY_NAME, GAME_INFO, STATUS};
         let deps = Arc::new(MockDeps::default());
-        let name_read = crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
+        let presence_read = crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
             .await
             .unwrap()
             .expect("the record opened");
@@ -214,7 +231,7 @@ mod tests {
             deps.state.lock().calls_fetch_subkey.is_empty(),
             "the watch itself reads nothing"
         );
-        name_read.await;
+        presence_read.await;
         let st = deps.state.lock();
         assert_eq!(st.calls_set_dht_key, vec![("dht1".into(), "alice".into())]);
         assert_eq!(st.calls_open_friend, vec!["dht1".to_string()]);
@@ -223,14 +240,74 @@ mod tests {
             vec![(1, crate::FRIEND_WATCH_SUBKEYS.to_vec())]
         );
         assert_eq!(st.calls_hold, vec![("alice".to_string(), 1)]);
+        let mut fetched = st.calls_fetch_subkey.clone();
+        fetched.sort_by_key(|(_, subkey, _)| *subkey);
         assert_eq!(
-            st.calls_fetch_subkey,
-            vec![(
-                "dht1".to_string(),
-                rekindle_types::dht_layout::profile::DISPLAY_NAME,
-                true
-            )],
-            "only the display name is read, once"
+            fetched,
+            vec![
+                ("dht1".to_string(), DISPLAY_NAME, true),
+                ("dht1".to_string(), STATUS, true),
+                ("dht1".to_string(), GAME_INFO, true),
+            ],
+            "the name, status and game are each read once"
+        );
+    }
+
+    /// Walk C1: a status and game the friend published before our watch was
+    /// set are shown once the watch is up (a watch reports only later
+    /// changes), through the same path a watched change takes.
+    #[tokio::test]
+    async fn a_status_published_before_the_watch_is_shown_after_it() {
+        use rekindle_codec::capnp_codec::presence::{encode_game_status, GameInfo};
+        use rekindle_secrets::friend_presence::{seal, PresenceKey};
+        use rekindle_types::dht_layout::profile::{GAME_INFO, STATUS};
+        let key = PresenceKey::new(1, [7; 32]);
+        let mut status = vec![2u8];
+        status.extend_from_slice(&999_000_i64.to_be_bytes());
+        let game = encode_game_status(&GameInfo {
+            game_id: 4181,
+            game_name: "Counter-Strike 2".into(),
+            server_info: None,
+            elapsed_seconds: 30,
+            server_address: None,
+        });
+        let deps = Arc::new(MockDeps {
+            state: Mutex::new(MockState {
+                friends_with_dht: vec![("alice".into(), "dht1".into())],
+                presence_keys: HashMap::from([("alice".to_string(), key.clone())]),
+                subkey_bytes: HashMap::from([
+                    (
+                        ("dht1".to_string(), STATUS),
+                        seal(&key, "alice", STATUS, &status).unwrap(),
+                    ),
+                    (
+                        ("dht1".to_string(), GAME_INFO),
+                        seal(&key, "alice", GAME_INFO, &game).unwrap(),
+                    ),
+                ]),
+                ..Default::default()
+            }),
+            accepted: HashSet::from(["alice".to_string()]),
+        });
+        crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
+            .await
+            .unwrap()
+            .expect("the record opened")
+            .await;
+        let st = deps.state.lock();
+        assert_eq!(
+            st.calls_set_status,
+            vec![("alice".to_string(), UserStatusKind::Busy)]
+        );
+        assert!(st.calls_emit.iter().any(|e| matches!(
+            e,
+            FriendPresenceEvent::StatusChanged { friend_key, status: UserStatusKind::Busy }
+                if friend_key == "alice"
+        )));
+        assert_eq!(st.calls_set_game.len(), 1);
+        assert_eq!(
+            st.calls_set_game[0].1.as_ref().map(|g| g.game_id),
+            Some(4181)
         );
     }
 
