@@ -56,6 +56,7 @@ fn record_message() -> RecordMessage {
             failure_reason: None,
             edited_at: None,
             removed_by: None,
+            history_gap_through: None,
         },
         reply_to: None,
         mek_generation: 0,

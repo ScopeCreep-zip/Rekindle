@@ -127,6 +127,7 @@ fn samples() -> Map<String, Value> {
             failure_reason: None,
             edited_at: None,
             removed_by: None,
+            history_gap_through: None,
         }),
     );
     add(

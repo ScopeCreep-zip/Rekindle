@@ -28,7 +28,8 @@
 //! below it (the closest replicas agree on an older head the departed
 //! writer can no longer repair) runs bounded gap reads through a DHT
 //! transaction ([`rekindle_records::chain::read_log_reaching`]); one that
-//! still falls short leaves the cursor below the head and is not caught up.
+//! still falls short leaves the cursor below the head, is not caught up,
+//! and stores a history-gap marker (`outbox_gap.rs`).
 //!
 //! Triggers: the author's or a relayer's `HeadAdvanced` for subkey 4 and a
 //! ring change of subkey 4 diff that author; a catch-up (a community's
@@ -41,7 +42,7 @@ use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_codec::member_record::{decode_outbox_entry, entry_hash, links_to, ChainPosition};
 use rekindle_records::chain::ChainEntry;
-use rekindle_sync::stream::{SinkError, StreamSink};
+use rekindle_sync::stream::{Diffed, SinkError, StreamSink};
 use rekindle_types::dht_layout::member_record::OUTBOX;
 use rekindle_types::id::PseudonymKey;
 
@@ -249,8 +250,14 @@ impl HostChannel {
             )
             .await
         {
-            Ok(diffed) if diffed.unreached.is_some() => {
-                tracing::warn!(community_id, author = %writer, head = ?diffed.unreached, applied = diffed.applied, "channel outbox head a departure recorded is on no replica we reached: the history keeps the gap");
+            Ok(Diffed {
+                unreached: Some(head),
+                applied,
+                ..
+            }) => {
+                tracing::warn!(community_id, author = %writer, head, applied, "channel outbox head a departure recorded is on no replica we reached: the history keeps the gap");
+                self.mark_outbox_gap(community_id, author, head).await;
+                return;
             }
             Ok(diffed) if diffed.applied > 0 => {
                 tracing::info!(community_id, author = %writer, applied = diffed.applied, "channel outbox read");
@@ -258,7 +265,11 @@ impl HostChannel {
             Ok(_) => {}
             Err(error) => {
                 tracing::debug!(community_id, author = %writer, %error, "channel outbox not read yet");
+                return;
             }
+        }
+        if known_head > 0 {
+            self.close_outbox_gap(author, known_head).await;
         }
     }
 
@@ -365,17 +376,6 @@ impl HostChannel {
         stream_of_tag(&*keys, community_id, streams, generation, tag).map(str::to_owned)
     }
 
-    /// Whether we hold no community-scope key of `community_id` yet (a
-    /// joiner before its first key arrives).
-    fn awaits_first_key(&self, community_id: &str) -> bool {
-        self.keys()
-            .current_epoch(
-                community_id,
-                rekindle_types::channel_keys::KeyScope::Community,
-            )
-            .is_none()
-    }
-
     /// Apply one chain entry of `author`'s outbox: verified, linked to its
     /// channel by tag, its post ingested. `Err` only when the store failed
     /// (the cursor stays and the next trigger reads it again).
@@ -400,12 +400,13 @@ impl HostChannel {
         let Some(channel_id) =
             self.channel_of_tag(community_id, decoded.generation, &decoded.channel_tag)
         else {
-            // A joiner holds no community key until its first `MekTransfer`
-            // (D11, D16): no tag maps yet, so the cursor stays on this entry
-            // and the catch-up the key's install starts reads it again.
-            // Once a key is held, an entry no key maps is of a channel we do
-            // not read or from before our keys, and the chain covers it.
-            if self.awaits_first_key(community_id) {
+            // A joiner before its first `MekTransfer` (D11, D16), or a
+            // reader owed a converged generation's key it does not hold
+            // yet: the cursor stays on this entry and the catch-up the key's
+            // install starts reads it again (`outbox_hold.rs`). Otherwise an
+            // entry no key maps is of a channel we do not read or from
+            // before our keys, and the chain covers it.
+            if self.entry_waits_for_key(community_id, decoded.generation) {
                 return Err(rekindle_channel::ChannelError::MekMissing {
                     community: community_id.to_owned(),
                     channel: String::new(),

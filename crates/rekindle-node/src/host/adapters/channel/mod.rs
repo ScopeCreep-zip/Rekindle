@@ -32,6 +32,8 @@ pub(crate) mod history;
 pub mod ingest;
 pub(crate) mod not_delivered;
 mod outbox_entries;
+mod outbox_gap;
+mod outbox_hold;
 mod outbox_read;
 pub(crate) mod outbox_send;
 mod persist;

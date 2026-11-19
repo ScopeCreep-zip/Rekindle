@@ -121,4 +121,10 @@ pub struct ChannelMessageView {
     /// every frontend shows "removed by"; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed_by: Option<String>,
+    /// A history-gap row, not a message (plan E3.3, D23): `sender_id`'s
+    /// channel outbox reaches this chain seq and no read reached it, so
+    /// some of its posts may be missing here; every frontend shows a gap
+    /// line. Absent for a message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_gap_through: Option<u64>,
 }

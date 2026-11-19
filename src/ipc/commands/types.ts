@@ -40,6 +40,9 @@ export interface Message {
   /** The moderator's pseudonym when a moderator removed it (plan E3.3 M4):
    *  its body is gone and the window shows "Removed by". */
   removedBy?: string;
+  /** A history-gap row, not a message (plan E3.3, D23): the sender's
+   *  channel outbox reaches this chain seq and no read reached it. */
+  historyGapThrough?: number | null;
   attachment?: {
     attachmentId: string;
     filename: string;

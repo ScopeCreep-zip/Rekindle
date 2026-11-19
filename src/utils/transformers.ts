@@ -67,6 +67,7 @@ export function transformMessage(m: IpcMessage): Message {
     failureReason: m.isOwn ? m.failureReason : undefined,
     editedAt: m.editedAt,
     removedBy: m.removedBy,
+    historyGapThrough: m.historyGapThrough ?? undefined,
   };
 }
 

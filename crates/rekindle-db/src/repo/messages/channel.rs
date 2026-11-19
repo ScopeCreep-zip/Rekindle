@@ -243,6 +243,9 @@ pub struct StoredChannelMessage {
     pub edited_at: Option<i64>,
     /// The moderator who removed it (plan E3.3 M4); its body is gone.
     pub removed_by: Option<String>,
+    /// A history-gap marker row (plan E3.3, D23): the sender's channel
+    /// outbox reaches this chain seq and no read reached it; body empty.
+    pub history_gap_through: Option<u64>,
 }
 
 /// Up to `limit` messages of `channel_id`, oldest first; with `before`, only
@@ -261,7 +264,8 @@ pub fn page(
 ) -> rusqlite::Result<Vec<StoredChannelMessage>> {
     let mut stmt = conn.prepare(
         "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, \
-                attachment_json, flags, send_state, failure_reason, edited_at, deleted_by \
+                attachment_json, flags, send_state, failure_reason, edited_at, deleted_by, \
+                history_gap_through \
          FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
            AND (deleted_at IS NULL OR deleted_by IS NOT NULL) AND (?3 IS NULL OR timestamp < ?3) \
@@ -290,6 +294,16 @@ pub fn page(
             failure_reason: get(row, "failure_reason")?,
             edited_at: get(row, "edited_at")?,
             removed_by: get(row, "deleted_by")?,
+            history_gap_through: get::<Option<i64>>(row, "history_gap_through")?
+                .map(u64::try_from)
+                .transpose()
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Integer,
+                        Box::new(e),
+                    )
+                })?,
         })
     })?;
     let mut out = rows.collect::<rusqlite::Result<Vec<_>>>()?;

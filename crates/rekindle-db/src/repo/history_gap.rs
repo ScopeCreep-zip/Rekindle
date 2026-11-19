@@ -42,3 +42,27 @@ pub fn insert(
         |row| row.get(0),
     )
 }
+
+/// Remove `writer`'s gap markers of `kind` conversations through
+/// `reached` (plan E3.3, D23): a later read reached the head they marked,
+/// so the entries they stood for are in the history now. Returns how many
+/// were removed.
+///
+/// # Errors
+/// `reached` is not a stored seq (above `i64::MAX`), or the write failed.
+pub fn close(
+    conn: &Connection,
+    owner_key: &str,
+    kind: rekindle_types::message::ConversationType,
+    writer: &str,
+    reached: u64,
+) -> rusqlite::Result<usize> {
+    let reached =
+        i64::try_from(reached).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    conn.execute(
+        "DELETE FROM messages WHERE owner_key = ?1 AND conversation_type = ?2 \
+         AND sender_key = ?3 AND history_gap_through IS NOT NULL \
+         AND history_gap_through <= ?4",
+        params![owner_key, kind.as_str(), writer, reached],
+    )
+}

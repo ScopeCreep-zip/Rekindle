@@ -174,9 +174,11 @@ CREATE TABLE IF NOT EXISTS messages (
     -- our outbox seq to the peer, a received one the sender's; a
     -- `ReadUpTo` names it. NULL for a channel message.
     stream_seq INTEGER CHECK(stream_seq IS NULL OR stream_seq >= 1),
-    -- A DM history gap (plan E2.5, D23): a local marker row, never sent.
+    -- A history gap (plan E2.5, D23): a local marker row, never sent.
     -- The peer's chain entries up to this seq were retired before we
-    -- fetched them; body empty, sender the peer. NULL for a message.
+    -- fetched them; body empty, sender the peer. In a channel (plan E3.3)
+    -- the sender's outbox reaches this chain seq and no read reached it,
+    -- marked in every channel we read. NULL for a message.
     history_gap_through INTEGER
         CHECK(history_gap_through IS NULL OR history_gap_through >= 1),
     -- The message mentions us (plan E3.1, D25): written by the receive

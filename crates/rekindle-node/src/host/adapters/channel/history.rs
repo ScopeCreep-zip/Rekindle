@@ -407,5 +407,6 @@ pub(crate) fn stored_view(
         send_state: row.send_state,
         edited_at: row.edited_at,
         removed_by: row.removed_by,
+        history_gap_through: row.history_gap_through,
     }
 }

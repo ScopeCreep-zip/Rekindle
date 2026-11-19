@@ -177,6 +177,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                     failure_reason: None,
                     edited_at: None,
                     removed_by: None,
+                    history_gap_through: None,
                 },
                 reply_to: message.reply_to.clone(),
                 mek_generation: message.mek_generation,
@@ -312,6 +313,7 @@ mod tests {
             failure_reason: None,
             edited_at: None,
             removed_by: None,
+            history_gap_through: None,
         }
     }
 
