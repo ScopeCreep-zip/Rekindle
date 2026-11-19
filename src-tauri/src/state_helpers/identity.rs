@@ -13,7 +13,11 @@ use crate::state::{AppState, IdentityState, UserStatus};
 /// wants a `Result`) instead of each re-spelling the lock-and-copy. The
 /// copy is zeroized when the caller drops it (roadmap 1.8).
 pub fn identity_secret(state: &AppState) -> Option<Zeroizing<[u8; 32]>> {
-    state.identity_secret.lock().clone()
+    state
+        .identity_secret
+        .lock()
+        .as_ref()
+        .map(|secret| Zeroizing::new(*secret.expose()))
 }
 
 /// The identity secret as plain bytes, for the `Deps` traits whose

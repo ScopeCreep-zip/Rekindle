@@ -63,8 +63,9 @@ pub struct AppState {
     pub shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
     /// The identity's Ed25519 secret, stored at unlock for the unported
     /// paths that sign or derive from it (communities, voice, sync).
-    /// Zeroized when it is cleared or replaced (roadmap 1.9).
-    pub identity_secret: Mutex<Option<zeroize::Zeroizing<[u8; 32]>>>,
+    /// Zeroized when it is cleared or replaced (roadmap 1.9), in locked
+    /// memory while held (roadmap 5.2).
+    pub identity_secret: Mutex<Option<rekindle_secrets::locked::LockedBox<32>>>,
     /// The unlocked identity's tamper-evident audit chain
     /// (`rekindle_node::host::audit`). `None` while locked.
     pub audit_chain: Arc<rekindle_node::host::audit::ChainSlot>,

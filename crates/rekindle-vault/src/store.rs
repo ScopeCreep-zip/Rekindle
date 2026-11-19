@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use aes_gcm::{aead::Aead, AeadCore, Aes256Gcm, KeyInit};
 use parking_lot::Mutex;
+use rekindle_secrets::locked::LockedBox;
 use rekindle_types::domains;
 use rusqlite::{params, Connection, OptionalExtension};
 use zeroize::Zeroizing;
@@ -12,13 +13,14 @@ use crate::schema;
 
 /// The SQLCipher key of the identity's database (plan D1), derived from the
 /// vault passphrase, so unlocking the vault opens the database too.
-pub struct AppDbKey(Zeroizing<[u8; 32]>);
+/// Held in locked memory (plan E7.1, roadmap 5.2).
+pub struct AppDbKey(LockedBox<32>);
 
 impl AppDbKey {
     /// The raw key, for `PRAGMA key`.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
+        self.0.expose()
     }
 }
 
@@ -35,14 +37,15 @@ impl std::fmt::Debug for AppDbKey {
 /// new one; [`VaultStore::open`] never creates anything.
 pub struct VaultStore {
     conn: Mutex<Connection>,
-    entry_key: Zeroizing<[u8; 32]>,
+    /// Locked for the store's lifetime (plan E7.1, roadmap 5.2).
+    entry_key: LockedBox<32>,
     path: PathBuf,
 }
 
 /// The three keys a passphrase unlocks.
 struct Keys {
     sqlcipher: Zeroizing<[u8; 32]>,
-    entry: Zeroizing<[u8; 32]>,
+    entry: LockedBox<32>,
     app_db: AppDbKey,
 }
 
@@ -182,7 +185,7 @@ impl VaultStore {
     pub fn put(&self, vault_key: &VaultKey, value: &[u8]) -> Result<(), VaultError> {
         let namespace = vault_key.namespace();
         let key = vault_key.key();
-        let (nonce, ct) = seal_aes_gcm(&self.entry_key, &aad(namespace, &key), value)?;
+        let (nonce, ct) = seal_aes_gcm(self.entry_key.expose(), &aad(namespace, &key), value)?;
         self.conn.lock().execute(
             "INSERT OR REPLACE INTO entries (namespace, key, nonce, ciphertext) VALUES (?1, ?2, ?3, ?4)",
             params![namespace, key.as_ref(), nonce, ct],
@@ -205,7 +208,7 @@ impl VaultStore {
             .optional()?;
         match row {
             Some((nonce, ct)) => Ok(Some(open_aes_gcm(
-                &self.entry_key,
+                self.entry_key.expose(),
                 &aad(namespace, &key),
                 &nonce,
                 &ct,
@@ -307,10 +310,18 @@ fn derive_keys(passphrase: &str, header: &crate::header::VaultHeader) -> Result<
         .hash_password_into(passphrase.as_bytes(), &header.salt, &mut master)
         .map_err(|e| VaultError::Kdf(e.to_string()))?;
     let derive = |label: &str| Zeroizing::new(blake3::derive_key(label, &master));
+    // The two keys that outlive the unlock go straight into locked memory.
+    let locked = |label: &str| {
+        LockedBox::new_with(|buf| {
+            let mut hasher = blake3::Hasher::new_derive_key(label);
+            hasher.update(&master);
+            hasher.finalize_xof().fill(buf);
+        })
+    };
     Ok(Keys {
         sqlcipher: derive(domains::VAULT_SQLCIPHER_KEY),
-        entry: derive(domains::VAULT_ENTRY_KEY),
-        app_db: AppDbKey(derive(domains::VAULT_APP_DB_KEY)),
+        entry: locked(domains::VAULT_ENTRY_KEY),
+        app_db: AppDbKey(locked(domains::VAULT_APP_DB_KEY)),
     })
 }
 

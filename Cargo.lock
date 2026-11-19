@@ -7078,6 +7078,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a96887878f22d7bad8a3b6dc5b7440e0ada9a245242924394987b21cf2210a4c"
 
 [[package]]
+name = "region"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bc10200af9f8297cb52df7e0e1db8d9ad3e8782981d69b25eedf858f5455ca2"
+dependencies = [
+ "bitflags 2.13.0",
+ "libc",
+ "mach2",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rekindle-analytics"
 version = "0.1.0"
 dependencies = [
@@ -7873,10 +7885,12 @@ dependencies = [
  "libcrux-ml-kem",
  "parking_lot 0.12.5",
  "rand 0.8.5",
+ "region",
  "rekindle-types",
  "rekindle-utils",
  "sha2 0.10.9",
  "subtle",
+ "tracing",
  "x25519-dalek 2.0.1",
  "zeroize",
 ]

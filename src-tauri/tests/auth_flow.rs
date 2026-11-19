@@ -127,7 +127,7 @@ async fn create_identity_writes_the_vault_database_and_registry_and_unlocks() {
     // The unlock reached the shell: the vault (the friend authority and the
     // ratchet are the Host's, plans E2.1, E2.3).
     assert!(state.keystore.lock().is_some());
-    assert_ne!(*state.identity_secret.lock(), None);
+    assert!(state.identity_secret.lock().is_some());
 
     // Files and registry.
     assert!(root.identity_vault(&created.public_key).exists());
@@ -178,13 +178,18 @@ async fn login_after_logout_restores_the_same_keypair() {
     let created = create(&state, "roundtrip-pass", Some("Charlie"))
         .await
         .unwrap();
-    let create_secret = state.identity_secret.lock().clone().expect("a secret");
+    let create_secret = *state
+        .identity_secret
+        .lock()
+        .as_ref()
+        .expect("a secret")
+        .expose();
 
     logout(&state).await;
     assert!(state.identity.read().is_none());
     assert!(state.keystore.lock().is_none());
     assert!(state.db.current().is_err(), "logout closes the database");
-    assert_eq!(*state.identity_secret.lock(), None);
+    assert!(state.identity_secret.lock().is_none());
 
     let login = login(&state, &created.public_key, "roundtrip-pass")
         .await
@@ -192,7 +197,10 @@ async fn login_after_logout_restores_the_same_keypair() {
 
     assert_eq!(login.public_key, created.public_key);
     assert_eq!(login.display_name, "Charlie");
-    assert_eq!(*state.identity_secret.lock(), Some(create_secret));
+    assert_eq!(
+        state.identity_secret.lock().as_ref().map(|s| *s.expose()),
+        Some(create_secret)
+    );
     let identity = state.identity.read();
     let id = identity.as_ref().expect("identity should be restored");
     assert_eq!(id.public_key, created.public_key);

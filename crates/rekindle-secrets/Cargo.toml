@@ -36,6 +36,10 @@ rand = { workspace = true }
 data-encoding = "2"
 subtle = "2"
 zeroize = { version = "1", features = [ "derive" ] }
+# `locked::LockedBox` (plan E7.1, roadmap 5.2): `region::lock` is a safe
+# function (mlock / VirtualLock), so the crate stays `forbid(unsafe_code)`.
+region = "4"
+tracing = { workspace = true }
 
 [dev-dependencies]
 curve25519-dalek = { version = "4.1", features = [ "rand_core", "digest" ] }

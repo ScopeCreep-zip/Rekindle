@@ -23,6 +23,7 @@ pub mod group_dm;
 pub mod hpke;
 pub mod invite;
 pub mod keys;
+pub mod locked;
 pub mod media_sender_key;
 pub mod mek;
 pub mod mek_ack;

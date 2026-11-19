@@ -23,7 +23,9 @@ pub(super) async fn run(
     scope: &Arc<SessionScope>,
 ) -> Result<(), String> {
     // What the shell's unported code reads of the unlock (→ E3.1, E4.1).
-    *state.identity_secret.lock() = Some(view.secret.clone());
+    *state.identity_secret.lock() = Some(rekindle_secrets::locked::LockedBox::from_bytes(
+        &view.secret,
+    ));
     *state.identity.write() = Some(IdentityState {
         public_key: view.public_key.clone(),
         display_name: view.display_name.clone(),
