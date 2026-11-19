@@ -35,6 +35,7 @@ mod group_admission_tests;
 mod group_content_tests;
 #[cfg(test)]
 mod group_dm_tests;
+pub mod hardening;
 #[cfg(test)]
 mod history_order_tests;
 #[cfg(test)]

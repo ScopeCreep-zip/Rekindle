@@ -72,6 +72,18 @@ fn single_instance<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything holds a secret: the in-process Host holds the same
+    // keys as `rekindled` until F1 (plan E7.1, roadmap 5.1). A process that
+    // cannot be hardened does not run.
+    if let Err(e) = rekindle_node::host::hardening::forbid_core_dumps() {
+        // Logging is not set up yet; stderr is the one channel. A closed
+        // stderr leaves nothing else to report to.
+        let _ = std::io::Write::write_fmt(
+            &mut std::io::stderr(),
+            format_args!("rekindle: cannot forbid core dumps: {e}\n"),
+        );
+        std::process::exit(1);
+    }
     #[cfg(target_os = "linux")]
     platform::linux_display_setup();
 

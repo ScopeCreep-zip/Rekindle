@@ -12,6 +12,10 @@ use clap::Parser;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Before anything holds a secret (plan E7.1, roadmap 5.1).
+    if let Err(e) = rekindle_node::host::hardening::forbid_core_dumps() {
+        return fail(&anyhow::anyhow!("cannot forbid core dumps: {e}"));
+    }
     rekindle_utils::log_scrub::install_panic_hook();
     let args = rekindle_node::host::HostArgs::parse();
     let _log = match rekindle_node::host::init_tracing() {
