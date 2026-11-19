@@ -43,6 +43,15 @@ pub fn entry_hash(bytes: &[u8]) -> [u8; 32] {
     *blake3::hash(bytes).as_bytes()
 }
 
+/// Whether `entry` links to the entry before it in its author's chain:
+/// `before` is the [`entry_hash`] of that entry's stored bytes, `None`
+/// when `entry` is the chain's first. A reader records a broken link as an
+/// anomaly and still applies the entry (plan E3.3 "Per-author chain").
+#[must_use]
+pub fn links_to(entry: &OutboxEntry, before: Option<[u8; 32]>) -> bool {
+    entry.prev == before
+}
+
 fn kind_of(entry: &ChannelRecordEntry) -> OutboxEntryKind {
     match entry {
         ChannelRecordEntry::Message(_) => OutboxEntryKind::Message,

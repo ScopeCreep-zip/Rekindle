@@ -39,7 +39,7 @@ use async_trait::async_trait;
 use rekindle_channel::outbox_seal::stream_of_tag;
 use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
-use rekindle_codec::member_record::{decode_outbox_entry, ChainPosition};
+use rekindle_codec::member_record::{decode_outbox_entry, entry_hash, links_to, ChainPosition};
 use rekindle_records::chain::ChainEntry;
 use rekindle_sync::stream::{SinkError, StreamSink};
 use rekindle_types::dht_layout::member_record::OUTBOX;
@@ -73,6 +73,10 @@ struct OutboxSink<'a> {
     /// Whether the author is a member, or which departure head keeps its
     /// entries.
     standing: Standing,
+    /// The chain the entries are read from (the link check's reads).
+    port: &'a dyn rekindle_records::port::RecordPort,
+    /// The seq and stored-bytes hash of the entry this diff applied last.
+    last: parking_lot::Mutex<Option<(u64, [u8; 32])>>,
 }
 
 #[async_trait]
@@ -99,11 +103,13 @@ impl StreamSink for OutboxSink<'_> {
             backfill: self.backfill,
             departed: matches!(self.standing, Standing::Departed(_)),
             departure_head,
+            before: self.before(entry.seq).await,
         };
         self.channel
             .apply_outbox_entry(&read, entry)
             .await
             .map_err(sink_error)?;
+        *self.last.lock() = Some((entry.seq, entry_hash(&entry.ciphertext)));
         self.advance(stream, writer, entry.seq).await
     }
 
@@ -124,6 +130,34 @@ impl StreamSink for OutboxSink<'_> {
 }
 
 impl OutboxSink<'_> {
+    /// The entry before `seq` in the chain, as its link must name it:
+    /// none for the first, the hash of the entry this diff applied before
+    /// it, or else of the entry read from the chain.
+    async fn before(&self, seq: u64) -> Before {
+        if seq <= 1 {
+            return Before::Known(None);
+        }
+        let wanted = seq - 1;
+        if let Some((at, hash)) = *self.last.lock() {
+            if at == wanted {
+                return Before::Known(Some(hash));
+            }
+        }
+        let read = rekindle_records::chain::read_log_reaching(
+            self.port,
+            self.member_record,
+            OUTBOX,
+            wanted.saturating_sub(1),
+            wanted,
+        )
+        .await;
+        (read.ok())
+            .and_then(|read| read.entries.into_iter().find(|e| e.seq == wanted))
+            .map_or(Before::Unread, |e| {
+                Before::Known(Some(entry_hash(&e.ciphertext)))
+            })
+    }
+
     async fn advance(&self, stream: &str, writer: &str, seq: u64) -> Result<(), SinkError> {
         let (owner, db) = self.channel.owner_and_db().map_err(sink_error)?;
         let now = self.channel.ctx().clock.now_ms_i64();
@@ -156,6 +190,17 @@ struct OutboxRead<'a> {
     /// Whether the author has departed.
     departed: bool,
     departure_head: Option<OutboxHead>,
+    /// What the entry's `prev` must name ([`OutboxSink::before`]).
+    before: Before,
+}
+
+/// The entry before one being read, as its `prev` must name it.
+#[derive(Debug, Clone, Copy)]
+enum Before {
+    /// The hash of its stored bytes, `None` for the chain's first entry.
+    Known(Option<[u8; 32]>),
+    /// Its read failed, so the link is not checked.
+    Unread,
 }
 
 impl HostChannel {
@@ -189,6 +234,8 @@ impl HostChannel {
             member_record,
             backfill,
             standing,
+            port: &*port,
+            last: parking_lot::Mutex::new(None),
         };
         let stream = outbox_stream(community_id);
         let writer = format!("{}:{member_record}", hex::encode(author.0));
@@ -344,6 +391,7 @@ impl HostChannel {
                 return Ok(());
             }
         };
+        self.check_link(read, entry.seq, &decoded);
         let Some(channel_id) =
             self.channel_of_tag(community_id, decoded.generation, &decoded.channel_tag)
         else {
@@ -390,6 +438,9 @@ impl HostChannel {
                     .await;
                 return Ok(());
             }
+            // A holder's possession of a file: the files lookup reads it
+            // (`read_author_outboxes`), nothing is applied.
+            ChannelRecordEntry::AttachmentCached(_) => return Ok(()),
             other => {
                 tracing::debug!(community_id, seq = entry.seq, kind = ?std::mem::discriminant(&other), "channel outbox entry kind not read yet");
                 return Ok(());
@@ -425,6 +476,42 @@ impl HostChannel {
             _ => {}
         }
         Ok(())
+    }
+
+    /// A broken `prev` link is recorded as an anomaly (plan E3.3
+    /// "Per-author chain"): logged and written to the audit chain; the
+    /// entry is still applied, as its signature at its seq holds.
+    fn check_link(
+        &self,
+        read: &OutboxRead<'_>,
+        seq: u64,
+        decoded: &rekindle_codec::member_record::OutboxEntry,
+    ) {
+        let Before::Known(before) = read.before else {
+            return;
+        };
+        if links_to(decoded, before) {
+            return;
+        }
+        let author = hex::encode(read.author);
+        tracing::warn!(community_id = read.community_id, %author, member_record = read.member_record, seq, "channel outbox chain broken: the entry does not link to the one before it");
+        let (Ok(owner), Ok(db)) = (self.ctx().require_owner(), self.ctx().db.current()) else {
+            return;
+        };
+        crate::host::audit::append(
+            &self.ctx().audit_chain,
+            &db,
+            &self.ctx().vault,
+            &owner,
+            rekindle_audit::AuditKind::ChainBroken,
+            serde_json::json!({
+                "community_id": read.community_id,
+                "author": author,
+                "member_record": read.member_record,
+                "seq": seq,
+            }),
+            self.ctx().clock.now_ms_i64(),
+        );
     }
 
     /// Apply an edit or delete read at chain seq `entry.seq` of the

@@ -29,6 +29,10 @@ pub enum AuditKind {
     /// A daemon request handled while unlocked (payload `{"request":
     /// name}`): the variant name only, never a field (plan D1).
     Request,
+    /// A member's channel outbox entry whose `prev` does not name the
+    /// entry before it (payload `{"community_id", "author",
+    /// "member_record", "seq"}`, plan E3.3 "Per-author chain").
+    ChainBroken,
 }
 
 /// Logical contents of one audit event. The `payload_json` field of an

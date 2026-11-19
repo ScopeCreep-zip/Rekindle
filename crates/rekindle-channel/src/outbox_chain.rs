@@ -279,6 +279,34 @@ mod tests {
         );
     }
 
+    /// A reader checks each entry's link: to the entry before it, or to
+    /// nothing for the chain's first; any other bytes break the chain.
+    #[test]
+    fn a_reader_finds_a_broken_link() {
+        use rekindle_codec::member_record::links_to;
+        let author = SigningKey::from_bytes(&[3; 32]);
+        let public = author.verifying_key().to_bytes();
+        let batch = [pending(1, "a".into()), pending(2, "b".into())];
+        let sealed = seal_batch(None, "anchor", &author, 10, &batch).unwrap();
+        let at = |chain_seq| ChainPosition {
+            anchor: "anchor",
+            chain_seq,
+        };
+        let first = decode_outbox_entry(&sealed[0], at(1), &public).unwrap();
+        let second = decode_outbox_entry(&sealed[1], at(2), &public).unwrap();
+        assert!(links_to(&first, None));
+        assert!(links_to(&second, Some(entry_hash(&sealed[0]))));
+        assert!(
+            !links_to(&second, None),
+            "the second is not a chain's first"
+        );
+        assert!(!links_to(&second, Some(entry_hash(&sealed[1]))));
+        assert!(!links_to(
+            &first,
+            Some(entry_hash(b"an entry before the first"))
+        ));
+    }
+
     /// An entry no page holds alone is refused with `EntryTooLarge`.
     #[test]
     fn an_oversized_entry_is_refused() {
