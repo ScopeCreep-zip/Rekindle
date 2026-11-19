@@ -33,8 +33,9 @@
 //!
 //! Triggers: the author's or a relayer's `HeadAdvanced` for subkey 4 and a
 //! ring change of subkey 4 diff that author; a catch-up (a community's
-//! load: an unlock, a join, a community key installed) diffs every member. Older history stays on the channel records
-//! until E3.3 slice 8.
+//! load: an unlock, a join, a community key installed) diffs every member. A
+//! thread reply's tag names a thread, not a channel, so it maps to no
+//! channel here and is read by the thread view (`read_author_outboxes`).
 
 use async_trait::async_trait;
 use rekindle_channel::outbox_seal::stream_of_tag;
@@ -445,13 +446,16 @@ impl HostChannel {
                     .await;
                 return Ok(());
             }
-            // A holder's possession of a file: the files lookup reads it
-            // (`read_author_outboxes`), nothing is applied.
-            ChannelRecordEntry::AttachmentCached(_) => return Ok(()),
-            other => {
-                tracing::debug!(community_id, seq = entry.seq, kind = ?std::mem::discriminant(&other), "channel outbox entry kind not read yet");
-                return Ok(());
-            }
+            // A holder's possession of a file, a reaction, a poll op or a
+            // hand raise: readers aggregate them from the authors' outboxes
+            // when they are shown (`read_author_outboxes`; rules R1-R3, no
+            // shared aggregate), so nothing is applied here.
+            ChannelRecordEntry::AttachmentCached(_)
+            | ChannelRecordEntry::Reaction(_)
+            | ChannelRecordEntry::PollCreate(_)
+            | ChannelRecordEntry::PollVote(_)
+            | ChannelRecordEntry::PollClose(_)
+            | ChannelRecordEntry::HandRaise(_) => return Ok(()),
         };
         // An entry speaks only for the author whose chain holds it.
         if message.sender_pseudonym != author_hex {

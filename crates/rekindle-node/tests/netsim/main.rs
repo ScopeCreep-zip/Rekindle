@@ -77,6 +77,7 @@ mod onboarding;
 mod one_community_rebuild;
 mod outbox_catch_up;
 mod outbox_handshake;
+mod outbox_partial_drain;
 mod outbox_stream_independence;
 mod own_removal;
 mod own_removal_quiet;
