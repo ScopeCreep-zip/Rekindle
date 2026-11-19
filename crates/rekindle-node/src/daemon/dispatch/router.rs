@@ -151,6 +151,11 @@ async fn route(
         | IpcRequest::ProfileSetBio { .. }
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
+        | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetShareCurrentGame { .. }
+        | IpcRequest::HiddenGamesGet
+        | IpcRequest::GameHide { .. }
+        | IpcRequest::GameUnhide { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::GamePresenceSet { .. }

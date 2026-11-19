@@ -10,6 +10,12 @@
 //! not a detected session and is not recorded. Each recorded session
 //! changes our totals, which go to friends while sharing is on
 //! (`operations::friend::game_totals`, which reads the setting).
+//!
+//! Detection is split from sharing (plan E7.2, prod research batch 7):
+//! the stage runs only while `game_detection_enabled` is on
+//! (`game_stage::GameControl` starts and stops it), and the detected game
+//! becomes our shown game only while `share_current_game` is on and the
+//! game is not on the hide list; otherwise it is recorded locally only.
 
 use async_trait::async_trait;
 use rekindle_game_detect::{DetectedGame, GameDatabase, GameDetector, GameDetectorPublisher};
@@ -17,9 +23,19 @@ use tokio_util::sync::CancellationToken;
 
 use super::own_presence::{Game, OwnPresence};
 
-struct Publisher {
+pub(crate) struct Publisher {
     presence: OwnPresence,
     sessions: SessionLog,
+    /// What the detector last saw, and whether we showed it.
+    detected: tokio::sync::Mutex<Detected>,
+}
+
+#[derive(Default)]
+struct Detected {
+    game: Option<DetectedGame>,
+    /// Our shown game came from the detector (so stopping or hiding
+    /// clears it; a game set by hand is left).
+    shown: bool,
 }
 
 /// Told when a recorded session changed our totals.
@@ -116,41 +132,99 @@ impl SessionLog {
     }
 }
 
-#[async_trait]
-impl GameDetectorPublisher for Publisher {
-    async fn publish_game_status(&self, detected: Option<DetectedGame>) {
-        self.sessions.observe(detected.as_ref()).await;
-        let game = detected.map(|detected| Game {
-            id: detected.game_id,
-            name: detected.game_name,
-            server_info: detected
-                .rich_presence
-                .as_ref()
-                .and_then(|rp| rp.details.clone()),
-            server_address: detected
-                .rich_presence
-                .as_ref()
-                .and_then(rekindle_game_detect::rich_presence::RichPresence::server_address),
-            started_at_ms: detected.started_at_epoch_ms,
-        });
+impl Publisher {
+    pub(crate) fn new(presence: OwnPresence, sessions: SessionLog) -> Self {
+        Self {
+            presence,
+            sessions,
+            detected: tokio::sync::Mutex::new(Detected::default()),
+        }
+    }
+
+    /// `detected` as friends may see it: `None` while sharing the current
+    /// game is off, for a hidden game, or when the settings are unreadable
+    /// (nothing is shown that was not allowed).
+    async fn shareable(&self, detected: Option<&DetectedGame>) -> Option<Game> {
+        let detected = detected?;
+        let (owner, game_id) = (self.sessions.owner.clone(), detected.game_id);
+        let db = self.sessions.db.current().ok()?;
+        let allowed = db
+            .call(move |conn| {
+                let share = rekindle_db::repo::preferences::load(conn, &owner)?.share_current_game;
+                Ok(share && !rekindle_db::repo::hidden_games::is_hidden(conn, &owner, game_id)?)
+            })
+            .await
+            .map_err(|e| tracing::warn!(error = %e, "game sharing settings unreadable"))
+            .unwrap_or(false);
+        allowed.then(|| shown_game(detected))
+    }
+
+    /// Show what the detector holds as the settings now allow: after a
+    /// detected change, or when sharing or the hide list changed. A game
+    /// set by hand is left unless the detector's game replaces it.
+    async fn apply(&self, detected: &mut Detected) {
+        let game = self.shareable(detected.game.as_ref()).await;
+        if game.is_none() && !detected.shown {
+            return;
+        }
+        detected.shown = game.is_some();
         if let Err(e) = self.presence.set_game(game).await {
             tracing::warn!(error = %e, "detected game not published");
         }
     }
+
+    /// The sharing setting or the hide list changed.
+    pub(crate) async fn reapply(&self) {
+        let mut detected = self.detected.lock().await;
+        self.apply(&mut detected).await;
+    }
+
+    /// Detection was turned off (its task has ended): the game it showed
+    /// is cleared.
+    pub(crate) async fn withdraw(&self) {
+        let mut detected = self.detected.lock().await;
+        detected.game = None;
+        self.apply(&mut detected).await;
+    }
+}
+
+fn shown_game(detected: &DetectedGame) -> Game {
+    Game {
+        id: detected.game_id,
+        name: detected.game_name.clone(),
+        server_info: detected
+            .rich_presence
+            .as_ref()
+            .and_then(|rp| rp.details.clone()),
+        server_address: detected
+            .rich_presence
+            .as_ref()
+            .and_then(rekindle_game_detect::rich_presence::RichPresence::server_address),
+        started_at_ms: detected.started_at_epoch_ms,
+    }
+}
+
+#[async_trait]
+impl GameDetectorPublisher for Publisher {
+    async fn publish_game_status(&self, detected: Option<DetectedGame>) {
+        self.sessions.observe(detected.as_ref()).await;
+        let mut held = self.detected.lock().await;
+        held.game = detected;
+        self.apply(&mut held).await;
+    }
 }
 
 /// Run the detector until `stop`, stamping each game on the Host's
-/// clock, then record the session still open in `sessions`. It scans at
-/// the identity's `game_scan_interval_secs`, the one interval setting
-/// (plan E7.2: the runtime's own 30 s constant drifted from it).
-pub(crate) async fn run(presence: OwnPresence, sessions: SessionLog, stop: CancellationToken) {
-    let interval = sessions.scan_interval().await;
+/// clock, then record the session still open. It scans at the identity's
+/// `game_scan_interval_secs`, the one interval setting (plan E7.2: the
+/// runtime's own 30 s constant drifted from it).
+pub(crate) async fn run(publisher: std::sync::Arc<Publisher>, stop: CancellationToken) {
+    let interval = publisher.sessions.scan_interval().await;
     let detector = GameDetector::new(
         GameDatabase::bundled(),
         interval,
-        std::sync::Arc::clone(&sessions.clock),
+        std::sync::Arc::clone(&publisher.sessions.clock),
     );
-    let publisher = std::sync::Arc::new(Publisher { presence, sessions });
     rekindle_game_detect::run_runtime(detector, std::sync::Arc::clone(&publisher), stop, interval)
         .await;
     publisher.sessions.finish().await;

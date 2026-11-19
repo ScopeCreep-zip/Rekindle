@@ -46,9 +46,6 @@ export async function handleSaveSettings(
       ...(settings.startMinimized !== undefined && {
         startMinimized: settings.startMinimized,
       }),
-      ...(settings.showGameActivity !== undefined && {
-        gameDetectionEnabled: settings.showGameActivity,
-      }),
       ...(settings.autoAwayMinutes !== undefined && {
         autoAwayMinutes: settings.autoAwayMinutes,
       }),
@@ -72,6 +69,17 @@ export async function handleSaveSettings(
     setSettingsState(settings);
   } catch (e) {
     console.error("Failed to save settings:", e);
+  }
+}
+
+/// Turn game detection on or off: the Host starts or stops its scanner at
+/// once and answers with what it stored, which the switch shows.
+export async function handleSetGameDetection(enabled: boolean): Promise<void> {
+  try {
+    const prefs = await commands.setGameDetection(enabled);
+    setSettingsState({ showGameActivity: prefs.gameDetectionEnabled });
+  } catch (e) {
+    addToast(`Game detection not changed: ${String(e)}`, "error");
   }
 }
 

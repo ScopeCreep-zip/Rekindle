@@ -96,6 +96,7 @@ impl IpcRequest {
             Self::IdentityShow
             | Self::PresenceGet
             | Self::GameTotalsGet
+            | Self::HiddenGamesGet
             | Self::ProfileBioGet
             | Self::AvatarGet { .. } => {
                 Some(C::IdentityRead)
@@ -184,6 +185,12 @@ impl IpcRequest {
             | Self::SetReadReceiptsEnabled { .. }
             // So is whether friends see our game time.
             | Self::SetShareGameTotals { .. }
+            // And whether we scan for games, which friends see, and which
+            // games are never shown.
+            | Self::SetGameDetection { .. }
+            | Self::SetShareCurrentGame { .. }
+            | Self::GameHide { .. }
+            | Self::GameUnhide { .. }
             | Self::ProfileSetAvatar { .. }
             // What the app looks like, and what shows before unlock, is
             // the user's own.

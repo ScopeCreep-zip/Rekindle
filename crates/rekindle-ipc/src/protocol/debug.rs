@@ -145,6 +145,11 @@ impl std::fmt::Debug for IpcRequest {
             | Self::ProfileSetNickname { .. }
             | Self::SetReadReceiptsEnabled { .. }
             | Self::SetShareGameTotals { .. }
+            | Self::SetGameDetection { .. }
+            | Self::SetShareCurrentGame { .. }
+            | Self::HiddenGamesGet
+            | Self::GameHide { .. }
+            | Self::GameUnhide { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AvatarGet { .. }
             | Self::AuditVerify
@@ -214,6 +219,23 @@ impl IpcRequest {
             Self::SetShareGameTotals { enabled } => f
                 .debug_struct("SetShareGameTotals")
                 .field("enabled", enabled)
+                .finish(),
+            Self::SetGameDetection { enabled } => f
+                .debug_struct("SetGameDetection")
+                .field("enabled", enabled)
+                .finish(),
+            Self::SetShareCurrentGame { enabled } => f
+                .debug_struct("SetShareCurrentGame")
+                .field("enabled", enabled)
+                .finish(),
+            Self::HiddenGamesGet => write!(f, "HiddenGamesGet"),
+            Self::GameHide { game_id } => f
+                .debug_struct("GameHide")
+                .field("game_id", game_id)
+                .finish(),
+            Self::GameUnhide { game_id } => f
+                .debug_struct("GameUnhide")
+                .field("game_id", game_id)
                 .finish(),
             Self::ProfileSetAvatar { image, kind } => f
                 .debug_struct("ProfileSetAvatar")

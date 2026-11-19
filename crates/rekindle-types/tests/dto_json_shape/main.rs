@@ -26,7 +26,7 @@ use rekindle_types::dto::onboarding::{
     GuideStepDto, OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto,
     OnboardingQuestionDto, WelcomeChannelEntryDto, WelcomeScreenDto,
 };
-use rekindle_types::dto::presence::{GameTotalView, OwnGame, OwnPresenceView};
+use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState};
 use rekindle_types::intent::{
@@ -369,6 +369,14 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             icon_key: Some("xfire/8507".into()),
             total_secs: 9000,
             last_played: 1_700_000_000_000,
+        }]),
+    );
+    add(
+        "presence.hiddenGames",
+        to(vec![HiddenGameView {
+            game_id: 4181,
+            game_name: "Counter-Strike 2".into(),
+            icon_key: Some("xfire/8507".into()),
         }]),
     );
     let mut pending = FriendState::new(pk('c'), "Cy".into(), FriendshipState::PendingOut);

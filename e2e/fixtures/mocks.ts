@@ -172,7 +172,11 @@ export const LOGIN_SUCCESS_HANDLER = `
         gameScanIntervalSecs: 30,
         readReceiptsEnabled: false,
         shareGameTotals: false,
+        shareCurrentGame: false,
       };
+    case "get_hidden_games":
+    case "get_game_totals":
+      return [];
     default:
       return null;
   }

@@ -14,6 +14,9 @@ pub struct Preferences {
     pub notifications_enabled: bool,
     pub notification_sound: bool,
     pub start_minimized: bool,
+    /// Scan the process table for games, for the local game-time history
+    /// (plan E7.2). Changed only by `SetGameDetection`, which starts or
+    /// stops the scanner at once.
     pub game_detection_enabled: bool,
     /// Seconds between game scans, 1–3600.
     pub game_scan_interval_secs: u32,
@@ -56,6 +59,10 @@ pub struct Preferences {
     /// Send our game totals to friends (plan E7.2): opt-in, off by
     /// default. Changed only by the trust-changing `SetShareGameTotals`.
     pub share_game_totals: bool,
+    /// Show friends the game we are playing (plan E7.2): split from
+    /// detection, off by default. Changed only by the trust-changing
+    /// `SetShareCurrentGame`; a game on the hide list is never shown.
+    pub share_current_game: bool,
     /// What an OS notification shows (prod research batch 7, Signal's
     /// "Show: name and message / name only / no name or message").
     pub notification_content: NotificationContent,
@@ -125,6 +132,7 @@ impl Default for Preferences {
             in_call_dnd_auto_enable: true,
             read_receipts_enabled: false,
             share_game_totals: false,
+            share_current_game: false,
             notification_content: NotificationContent::NameOnly,
         }
     }

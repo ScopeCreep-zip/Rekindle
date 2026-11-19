@@ -132,6 +132,20 @@ pub(crate) async fn select(
             // Friends already received it: setting another one reverses it.
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetBio);
         }
+        IpcRequest::SetGameDetection { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // Local only: setting it back reverses it (plan E7.2).
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
+        }
+        IpcRequest::SetShareCurrentGame { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // Friends already saw the game: turning it off stops showing it.
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::ShareCurrentGame);
+        }
+        IpcRequest::GameHide { .. } | IpcRequest::GameUnhide { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::ShareCurrentGame);
+        }
         IpcRequest::SetShareGameTotals { .. } => {
             s.subject = unlocked_identity(ctx);
             // What friends already received stays with them (plan E7.2).
@@ -204,6 +218,7 @@ pub(crate) async fn select(
         | IpcRequest::FriendCode
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
+        | IpcRequest::HiddenGamesGet
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet
         | IpcRequest::FriendBioGet { .. }

@@ -86,6 +86,12 @@ pub async fn dispatch_settings(
         SettingsCmd::GameTotals { state } => IpcRequest::SetShareGameTotals {
             enabled: matches!(state, Switch::On),
         },
+        SettingsCmd::GameDetection { state } => IpcRequest::SetGameDetection {
+            enabled: matches!(state, Switch::On),
+        },
+        SettingsCmd::ShareGame { state } => IpcRequest::SetShareCurrentGame {
+            enabled: matches!(state, Switch::On),
+        },
     };
     let value = helpers::send(client, request).await?;
     format::print_structured(&value, mode)
@@ -104,6 +110,9 @@ pub async fn dispatch_game(
             server_address: server.clone(),
         },
         GameCmd::Clear => IpcRequest::GamePresenceClear,
+        GameCmd::Hidden => IpcRequest::HiddenGamesGet,
+        GameCmd::Hide { id } => IpcRequest::GameHide { game_id: *id },
+        GameCmd::Unhide { id } => IpcRequest::GameUnhide { game_id: *id },
     };
     let value = helpers::send(client, request).await?;
     format::print_structured(&value, mode)

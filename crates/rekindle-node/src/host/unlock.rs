@@ -152,17 +152,12 @@ pub(crate) async fn run(
             source: Arc::clone(&ctx.idle),
             owner: installed.public_key.clone(),
         };
-        let idle = scope.spawn_with_token("idle", |stop| stage.run(stop));
-        let presence = ctx.own_presence.clone();
-        let sessions = super::game::SessionLog::new(
-            Arc::clone(&ctx.db),
-            installed.public_key.clone(),
-            Arc::clone(&ctx.clock),
-            Arc::new(super::adapters::friends::HostFriends::of(ctx)),
-        );
-        let game = scope.spawn_with_token("game detection", |stop| {
-            super::game::run(presence, sessions, stop)
-        });
+        let idle = scope
+            .spawn_with_token("idle", |stop| stage.run(stop))
+            .map_err(|e| e.to_string());
+        // Game detection only while it is on (plan E7.2): off, no scanner.
+        let game =
+            super::game_stage::start_if_enabled(ctx, &scope, installed.public_key.clone()).await;
         if let Err(e) = idle.and(game) {
             return fail(
                 ctx,
@@ -383,6 +378,7 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
         }
     }
     ctx.outbox.stop();
+    ctx.game.forget();
     super::adapters::files::close(ctx);
     if ctx.mode == HostMode::Daemon {
         crate::daemon::dispatch::daemon_teardown(ctx).await;

@@ -70,6 +70,27 @@ pub async fn set_share_game_totals(
     host_call::call(&state, IpcRequest::SetShareGameTotals { enabled }).await
 }
 
+/// Scan for games or stop (`IpcRequest::SetGameDetection`, plan E7.2):
+/// local only, taking effect at once; the preferences come back.
+#[tauri::command]
+pub async fn set_game_detection(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetGameDetection { enabled }).await
+}
+
+/// Show friends our current game or stop (`IpcRequest::SetShareCurrentGame`,
+/// plan E7.2, a trust-changing intent the Host reviews): the preferences
+/// come back.
+#[tauri::command]
+pub async fn set_share_current_game(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetShareCurrentGame { enabled }).await
+}
+
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let launcher = app.autolaunch();
     if launcher.is_enabled().map_err(|e| e.to_string())? == enabled {

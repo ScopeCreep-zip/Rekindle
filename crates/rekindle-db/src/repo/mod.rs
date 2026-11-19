@@ -30,6 +30,7 @@ pub mod group_dm_invites;
 pub mod group_dm_messages;
 pub mod group_dms;
 pub mod held_threads;
+pub mod hidden_games;
 pub mod history_gap;
 pub mod identity;
 pub mod intent_facts;

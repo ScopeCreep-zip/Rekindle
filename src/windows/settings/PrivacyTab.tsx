@@ -5,6 +5,7 @@ import RelaySettingsSection from "../../components/settings/RelaySettingsSection
 import { authState } from "../../stores/auth.store";
 import { commands } from "../../ipc/commands";
 import { handleUnblockUser } from "../../actions/buddy.actions";
+import HiddenGamesSection from "../../components/settings/HiddenGamesSection";
 
 const PrivacyTab: Component = () => {
   const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
@@ -14,11 +15,13 @@ const PrivacyTab: Component = () => {
   // `false` back after reopening Settings, before the load answered).
   const [readReceipts, setReadReceipts] = createSignal<boolean | null>(null);
   const [shareGameTotals, setShareGameTotals] = createSignal<boolean | null>(null);
+  const [shareCurrentGame, setShareCurrentGame] = createSignal<boolean | null>(null);
 
   onMount(() => {
     commands.getPreferences().then((p) => {
       setReadReceipts(p.readReceiptsEnabled);
       setShareGameTotals(p.shareGameTotals);
+      setShareCurrentGame(p.shareCurrentGame);
     }).catch((e) => {
       console.error("Failed to load the privacy settings:", e);
     });
@@ -48,6 +51,19 @@ const PrivacyTab: Component = () => {
       setShareGameTotals(prefs.shareGameTotals);
     } catch (e) {
       setError(`Game time sharing not changed: ${String(e)}`);
+    }
+  }
+
+  // The same review; on, friends see the game we play (never a hidden one).
+  async function handleToggleShareCurrentGame(): Promise<void> {
+    const current = shareCurrentGame();
+    if (current === null) return;
+    setError(null);
+    try {
+      const prefs = await commands.setShareCurrentGame(!current);
+      setShareCurrentGame(prefs.shareCurrentGame);
+    } catch (e) {
+      setError(`Current game sharing not changed: ${String(e)}`);
     }
   }
 
@@ -96,6 +112,21 @@ const PrivacyTab: Component = () => {
         Friends see that you read their messages only when both of you turn
         read receipts on. They are never sent while you appear Invisible.
       </div>
+      <div class="settings-section-title">Current Game</div>
+      <label class="settings-option">
+        <input
+          type="checkbox"
+          checked={shareCurrentGame() === true}
+          disabled={shareCurrentGame() === null}
+          onChange={() => void handleToggleShareCurrentGame()}
+        />
+        <span class="buddy-name">Show friends the game I'm playing</span>
+      </label>
+      <div class="settings-hint">
+        Off, games are still detected for your own game time, but friends
+        never see what you play. Hidden games are never shown either way.
+      </div>
+      <HiddenGamesSection />
       <div class="settings-section-title">Game Time</div>
       <label class="settings-option">
         <input

@@ -395,6 +395,7 @@
     "readReceiptsEnabled": true,
     "ringtoneEnabled": true,
     "ringtoneVolume": 0.4000000059604645,
+    "shareCurrentGame": false,
     "shareGameTotals": false,
     "startMinimized": false,
     "videoDeviceId": null,
@@ -407,6 +408,13 @@
       "iconKey": "xfire/8507",
       "lastPlayed": 1700000000000,
       "totalSecs": 9000
+    }
+  ],
+  "presence.hiddenGames": [
+    {
+      "gameId": 4181,
+      "gameName": "Counter-Strike 2",
+      "iconKey": "xfire/8507"
     }
   ],
   "presence.view.autoAway": {

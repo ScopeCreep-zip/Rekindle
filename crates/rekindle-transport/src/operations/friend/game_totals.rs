@@ -15,7 +15,9 @@ use super::{state, FriendHost};
 use crate::operations::dm;
 
 /// Our totals as the frame states them, when sharing is on; `None` while
-/// it is off or unreadable (nothing is sent).
+/// it is off or unreadable (nothing is sent). A hidden game is left out
+/// (plan E7.2: never shown to anyone), so hiding one and sending again
+/// takes it from friends' copies, which each frame replaces.
 async fn ours_if_shared(host: &dyn FriendHost) -> Option<DirectBody> {
     let owner = state::owner(host).ok()?;
     let read = state::db_call!(host, "read the game totals to share", move |conn| {
@@ -23,7 +25,10 @@ async fn ours_if_shared(host: &dyn FriendHost) -> Option<DirectBody> {
         if !prefs.share_game_totals {
             return Ok(None);
         }
-        game_sessions::totals(conn, &owner).map(Some)
+        let hidden = rekindle_db::repo::hidden_games::list(conn, &owner)?;
+        let mut totals = game_sessions::totals(conn, &owner)?;
+        totals.retain(|total| !hidden.contains(&total.game_id));
+        Ok(Some(totals))
     })
     .await;
     let totals = match read {

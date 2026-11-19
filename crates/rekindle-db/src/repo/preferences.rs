@@ -19,7 +19,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
              noise_suppression, echo_cancellation, auto_away_minutes, \
              auto_volunteer_relay_for_new_friends, ringtone_enabled, ringtone_volume, \
              in_call_dnd_auto_enable, read_receipts_enabled, notification_content, \
-             share_game_totals \
+             share_game_totals, share_current_game \
              FROM app_settings WHERE owner_key = ?1",
             params![owner_key],
             |row| {
@@ -54,6 +54,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
                         })?
                     },
                     share_game_totals: row.get(20)?,
+                    share_current_game: row.get(21)?,
                     input_channels: BTreeMap::new(),
                 })
             },
@@ -80,8 +81,11 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
 
 /// Save the identity's preferences: the preference columns (the row's
 /// other settings stay) and the input channels, in one transaction.
-/// `read_receipts_enabled` is not saved here: it changes only through
-/// [`set_read_receipts_enabled`], the trust-changing intent's write.
+/// `read_receipts_enabled`, `share_game_totals`, `share_current_game` and
+/// `game_detection_enabled` are not saved here: each changes only through
+/// its own request's write ([`set_read_receipts_enabled`],
+/// [`set_share_game_totals`], [`set_share_current_game`],
+/// [`set_game_detection_enabled`]), which the Host reviews and acts on.
 ///
 /// # Errors
 /// A write failed, or a value is out of its column's range.
@@ -89,18 +93,16 @@ pub fn save(conn: &mut Connection, owner_key: &str, prefs: &Preferences) -> rusq
     let tx = conn.transaction()?;
     tx.execute(
         "INSERT INTO app_settings (owner_key, notifications_enabled, notification_sound, \
-         start_minimized, game_detection_enabled, game_scan_interval_secs, input_device, \
+         start_minimized, game_scan_interval_secs, input_device, \
          output_device, video_device_id, video_device_label, input_volume, output_volume, \
          noise_suppression, echo_cancellation, auto_away_minutes, \
          auto_volunteer_relay_for_new_friends, ringtone_enabled, ringtone_volume, \
          in_call_dnd_auto_enable, notification_content) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, \
-         ?20) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19) \
          ON CONFLICT(owner_key) DO UPDATE SET \
          notifications_enabled = excluded.notifications_enabled, \
          notification_sound = excluded.notification_sound, \
          start_minimized = excluded.start_minimized, \
-         game_detection_enabled = excluded.game_detection_enabled, \
          game_scan_interval_secs = excluded.game_scan_interval_secs, \
          input_device = excluded.input_device, \
          output_device = excluded.output_device, \
@@ -121,7 +123,6 @@ pub fn save(conn: &mut Connection, owner_key: &str, prefs: &Preferences) -> rusq
             prefs.notifications_enabled,
             prefs.notification_sound,
             prefs.start_minimized,
-            prefs.game_detection_enabled,
             prefs.game_scan_interval_secs,
             prefs.input_device,
             prefs.output_device,
@@ -186,6 +187,43 @@ pub fn set_share_game_totals(
     conn.execute(
         "INSERT INTO app_settings (owner_key, share_game_totals) VALUES (?1, ?2) \
          ON CONFLICT(owner_key) DO UPDATE SET share_game_totals = excluded.share_game_totals",
+        params![owner_key, enabled],
+    )?;
+    Ok(())
+}
+
+/// Turn game detection on or off (`SetGameDetection`, plan E7.2); the
+/// row's other settings stay.
+///
+/// # Errors
+/// The write failed.
+pub fn set_game_detection_enabled(
+    conn: &Connection,
+    owner_key: &str,
+    enabled: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (owner_key, game_detection_enabled) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET \
+         game_detection_enabled = excluded.game_detection_enabled",
+        params![owner_key, enabled],
+    )?;
+    Ok(())
+}
+
+/// Turn showing our current game to friends on or off
+/// (`SetShareCurrentGame`, plan E7.2); the row's other settings stay.
+///
+/// # Errors
+/// The write failed.
+pub fn set_share_current_game(
+    conn: &Connection,
+    owner_key: &str,
+    enabled: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (owner_key, share_current_game) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET share_current_game = excluded.share_current_game",
         params![owner_key, enabled],
     )?;
     Ok(())
@@ -348,5 +386,27 @@ mod tests {
             ..Preferences::default()
         };
         assert!(save(&mut conn, OWNER, &prefs).is_err());
+    }
+
+    /// Detection and showing the current game change only through their
+    /// own writes (plan E7.2): the desktop's bulk save cannot turn the
+    /// scanner on behind the Host, nor start sharing without its review.
+    #[test]
+    fn detection_and_current_game_sharing_change_only_through_their_setters() {
+        let mut conn = fixture::conn();
+        let prefs = load(&conn, OWNER).unwrap();
+        assert!(prefs.game_detection_enabled);
+        assert!(!prefs.share_current_game, "sharing is off by default");
+        set_game_detection_enabled(&conn, OWNER, false).unwrap();
+        set_share_current_game(&conn, OWNER, true).unwrap();
+        let mut prefs = load(&conn, OWNER).unwrap();
+        assert!(!prefs.game_detection_enabled);
+        assert!(prefs.share_current_game);
+        prefs.game_detection_enabled = true;
+        prefs.share_current_game = false;
+        save(&mut conn, OWNER, &prefs).unwrap();
+        let stored = load(&conn, OWNER).unwrap();
+        assert!(!stored.game_detection_enabled, "the bulk save leaves it");
+        assert!(stored.share_current_game, "the bulk save leaves it");
     }
 }

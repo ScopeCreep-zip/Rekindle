@@ -166,6 +166,13 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
         Some(IntentKind::SetReadReceiptsEnabled),
     ),
     ("SetShareGameTotals", Some(IntentKind::ShareGameTotals)),
+    // Detection is local only (plan E7.2); showing the game, or a hidden
+    // one again, widens what friends see.
+    ("SetGameDetection", Some(IntentKind::SetPreferences)),
+    ("SetShareCurrentGame", Some(IntentKind::ShareCurrentGame)),
+    ("HiddenGamesGet", None),
+    ("GameHide", Some(IntentKind::SetPreferences)),
+    ("GameUnhide", Some(IntentKind::ShareCurrentGame)),
     ("AvatarGet", None),
     ("SkinList", None),
     ("SkinGet", None),

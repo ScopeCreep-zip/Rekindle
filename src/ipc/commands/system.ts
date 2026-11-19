@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  NetworkStatus, Preferences, SettingsTab,
+  HiddenGameView, NetworkStatus, Preferences, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
@@ -72,6 +72,9 @@ export const systemCommands = {
   // What a friend last shared (empty when they share none).
   getFriendGameTotals: (publicKey: string) =>
     hostInvoke<GameTotalView[]>("get_friend_game_totals", { publicKey }),
+  getHiddenGames: () => hostInvoke<HiddenGameView[]>("get_hidden_games"),
+  hideGame: (gameId: number) => hostInvoke<HiddenGameView[]>("hide_game", { gameId }),
+  unhideGame: (gameId: number) => hostInvoke<HiddenGameView[]>("unhide_game", { gameId }),
   getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
   launchGameToServer: (gameId: number, serverAddress: string) =>
     invoke<void>("launch_game_to_server", { gameId, serverAddress }),
@@ -83,6 +86,10 @@ export const systemCommands = {
     hostInvoke<Preferences>("set_read_receipts_enabled", { enabled }),
   setShareGameTotals: (enabled: boolean) =>
     hostInvoke<Preferences>("set_share_game_totals", { enabled }),
+  setGameDetection: (enabled: boolean) =>
+    hostInvoke<Preferences>("set_game_detection", { enabled }),
+  setShareCurrentGame: (enabled: boolean) =>
+    hostInvoke<Preferences>("set_share_current_game", { enabled }),
   setPreferences: (prefs: Preferences) =>
     invoke<void>("set_preferences", { prefs }),
   checkForUpdates: () => invoke<boolean>("check_for_updates"),

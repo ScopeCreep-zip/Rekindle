@@ -1,7 +1,7 @@
 import { Component } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState } from "../../stores/settings.store";
-import { handleSaveSettings } from "../../actions/settings.actions";
+import { handleSaveSettings, handleSetGameDetection } from "../../actions/settings.actions";
 
 const ApplicationTab: Component = () => {
   function handleToggle(key: keyof typeof settingsState): void {
@@ -32,10 +32,14 @@ const ApplicationTab: Component = () => {
         <input
           type="checkbox"
           checked={settingsState.showGameActivity}
-          onChange={() => handleToggle("showGameActivity")}
+          onChange={() => void handleSetGameDetection(!settingsState.showGameActivity)}
         />
-        <span class="buddy-name">Show Game Activity</span>
+        <span class="buddy-name">Detect running games</span>
       </label>
+      <div class="settings-hint">
+        Records your game time on this computer. Whether friends see the
+        game you play is under Privacy.
+      </div>
       <div class="settings-section-title">Auto-Away</div>
       <FormField label="Go away after inactivity">
         <select

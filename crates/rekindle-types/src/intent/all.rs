@@ -159,6 +159,7 @@ impl IntentKind {
         Self::SetLinkPreviewsEnabled,
         Self::SetReadReceiptsEnabled,
         Self::ShareGameTotals,
+        Self::ShareCurrentGame,
         Self::SetPresencePolicy,
         Self::VolunteerRelay,
         Self::OpenExternalUrl,

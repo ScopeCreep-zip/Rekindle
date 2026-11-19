@@ -240,7 +240,18 @@ fn own(request: &IpcRequest) -> Checked {
         // The kind is a closed set; that the bytes are of it is
         // `rekindle-image`'s check, on decode.
         IpcRequest::ProfileSetAvatar { image, kind: _ } => avatar(image),
-        IpcRequest::SetReadReceiptsEnabled { .. } | IpcRequest::SetShareGameTotals { .. } => Ok(()),
+        IpcRequest::SetReadReceiptsEnabled { .. }
+        | IpcRequest::SetShareGameTotals { .. }
+        | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetShareCurrentGame { .. } => Ok(()),
+        // Game id 0 is "no database entry", never a game to hide.
+        IpcRequest::GameHide { game_id } | IpcRequest::GameUnhide { game_id } => {
+            if *game_id == 0 {
+                Err(IpcResponse::error(400, "invalid game id: 0"))
+            } else {
+                Ok(())
+            }
+        }
         IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
             .map(drop)
             .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),
@@ -273,6 +284,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendGroupDelete { group_id: _ }
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
+        | IpcRequest::HiddenGamesGet
         | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
@@ -350,6 +362,10 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::ProfileSetBio { .. }
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
+        | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetShareCurrentGame { .. }
+        | IpcRequest::GameHide { .. }
+        | IpcRequest::GameUnhide { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::LinkOpen { .. } => own(request),
         IpcRequest::SkinList

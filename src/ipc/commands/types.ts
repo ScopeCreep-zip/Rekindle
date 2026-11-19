@@ -201,6 +201,16 @@ export interface Preferences {
   /** Send our game totals to friends (plan E7.2): opt-in, off by default;
    *  set only by `setShareGameTotals`, never by `setPreferences`. */
   shareGameTotals: boolean;
+  /** Show friends the game we play (plan E7.2): split from detection, off
+   *  by default; set only by `setShareCurrentGame`. */
+  shareCurrentGame: boolean;
+}
+
+/** A game on the hide list (plan E7.2): never shown to anyone. */
+export interface HiddenGameView {
+  gameId: number;
+  gameName: string;
+  iconKey: string | null;
 }
 
 export type ExclusionGroupEdit =

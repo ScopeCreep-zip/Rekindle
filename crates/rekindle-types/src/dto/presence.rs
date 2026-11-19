@@ -29,6 +29,17 @@ pub struct GameTotalView {
     pub last_played: i64,
 }
 
+/// A game on the hide list (`HiddenGamesGet`, plan E7.2): never shown to
+/// anyone, still recorded for the local history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiddenGameView {
+    pub game_id: u32,
+    pub game_name: String,
+    /// `src/assets/game-icons/<key>.png`, resolved from the game database.
+    pub icon_key: Option<String>,
+}
+
 /// The game we are playing, detected or set by hand.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

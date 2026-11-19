@@ -331,7 +331,8 @@ fn local(cmd: &str) -> Option<Result<Value, CommandError>> {
             "gameDetectionEnabled": true,
             "gameScanIntervalSecs": 30,
             "readReceiptsEnabled": false,
-            "shareGameTotals": false
+            "shareGameTotals": false,
+            "shareCurrentGame": false
         }),
 
         // ── Game / Network ───────────────────────────────────────────

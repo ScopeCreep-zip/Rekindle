@@ -43,6 +43,11 @@ pub(crate) async fn route(
         IpcRequest::SetShareGameTotals { enabled } => {
             handle_share_game_totals(ctx, state, enabled).await
         }
+        request @ (IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetShareCurrentGame { .. }
+        | IpcRequest::HiddenGamesGet
+        | IpcRequest::GameHide { .. }
+        | IpcRequest::GameUnhide { .. }) => super::own_game::route(ctx, state, request).await,
         IpcRequest::ProfileSetAvatar { image, kind } => {
             handle_avatar(ctx, state, image, kind).await
         }

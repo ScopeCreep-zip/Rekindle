@@ -307,6 +307,23 @@ pub enum IpcRequest {
     /// identity's `Preferences.share_game_totals`; turning it on sends them
     /// to every accepted friend. The preferences come back.
     SetShareGameTotals { enabled: bool },
+    /// Scan for games or stop (plan E7.2): the identity's
+    /// `Preferences.game_detection_enabled`, local only. Off, no process is
+    /// scanned; the change takes effect at once. The preferences come back.
+    SetGameDetection { enabled: bool },
+    /// Show friends the game we play, or stop (plan E7.2): the identity's
+    /// `Preferences.share_current_game`, split from detection, off by
+    /// default; a hidden game is never shown. The preferences come back.
+    SetShareCurrentGame { enabled: bool },
+    /// The games on the hide list (plan E7.2,
+    /// `Vec<dto::presence::HiddenGameView>`).
+    HiddenGamesGet,
+    /// Hide a game from everyone (plan E7.2): never our shown game, never in
+    /// the totals friends receive; still recorded locally. The hide list
+    /// comes back.
+    GameHide { game_id: u32 },
+    /// Take a game off the hide list (plan E7.2). The hide list comes back.
+    GameUnhide { game_id: u32 },
     /// Change our avatar: the image, of the kind its sender declares (the
     /// file picker's MIME type, the file's extension), is decoded by
     /// `rekindle-image` as that kind only, made a 128 px WebP, saved and

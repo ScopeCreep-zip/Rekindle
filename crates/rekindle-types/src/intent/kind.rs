@@ -194,6 +194,7 @@ pub enum IntentKind {
     SetLinkPreviewsEnabled,
     SetReadReceiptsEnabled,
     ShareGameTotals,
+    ShareCurrentGame,
     SetPresencePolicy,
     VolunteerRelay,
     // TrustChanging: Outbound files and links
@@ -430,6 +431,7 @@ impl IntentKind {
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled
             | Self::ShareGameTotals
+            | Self::ShareCurrentGame
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl

@@ -277,6 +277,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::game::get_game_status,
         commands::game::get_game_totals,
         commands::game::get_friend_game_totals,
+        commands::game::get_hidden_games,
+        commands::game::hide_game,
+        commands::game::unhide_game,
         commands::game::get_game_name,
         commands::game::launch_game_to_server,
         // strand relay
@@ -310,6 +313,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::settings::set_preferences,
         commands::settings::set_read_receipts_enabled,
         commands::settings::set_share_game_totals,
+        commands::settings::set_game_detection,
+        commands::settings::set_share_current_game,
         commands::settings::check_for_updates,
         // notifications
         // windows

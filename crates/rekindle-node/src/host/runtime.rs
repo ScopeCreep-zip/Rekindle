@@ -290,6 +290,7 @@ impl Host {
             own_profile_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
+            game: crate::host::game_stage::GameControl::default(),
             skin_helper: std::sync::OnceLock::new(),
             skin_trial: crate::host::skin::TrialSlot::default(),
             skin_grounds: crate::host::skin::ShownGrounds::default(),

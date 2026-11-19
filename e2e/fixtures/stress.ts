@@ -318,7 +318,7 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
     case "get_preferences":
       return { notificationsEnabled: true, notificationSound: true, startMinimized: false, autoStart: false,
         gameDetectionEnabled: true, gameScanIntervalSecs: 30, readReceiptsEnabled: false,
-        shareGameTotals: false };
+        shareGameTotals: false, shareCurrentGame: false };
     case "get_friends":
       return ${j(friends(s.friends))};
     case "get_communities":

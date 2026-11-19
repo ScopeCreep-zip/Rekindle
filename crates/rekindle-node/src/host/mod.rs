@@ -23,6 +23,7 @@ mod friend_admission_tests;
 mod friend_answer_tests;
 mod friends;
 pub(crate) mod game;
+pub(crate) mod game_stage;
 #[cfg(test)]
 mod game_totals_tests;
 pub mod gate;

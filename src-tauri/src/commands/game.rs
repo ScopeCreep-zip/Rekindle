@@ -1,5 +1,5 @@
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_types::dto::presence::{GameTotalView, OwnGame, OwnPresenceView};
+use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -58,4 +58,32 @@ pub async fn get_friend_game_totals(
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<GameTotalView>>, CommandError> {
     host_call::call(&state, IpcRequest::FriendGameTotalsGet { public_key }).await
+}
+
+/// The games hidden from everyone (`IpcRequest::HiddenGamesGet`, plan E7.2).
+#[tauri::command]
+pub async fn get_hidden_games(
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<HiddenGameView>>, CommandError> {
+    host_call::call(&state, IpcRequest::HiddenGamesGet).await
+}
+
+/// Hide a game from everyone (`IpcRequest::GameHide`, plan E7.2): the hide
+/// list comes back.
+#[tauri::command]
+pub async fn hide_game(
+    game_id: u32,
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<HiddenGameView>>, CommandError> {
+    host_call::call(&state, IpcRequest::GameHide { game_id }).await
+}
+
+/// Take a game off the hide list (`IpcRequest::GameUnhide`, plan E7.2, a
+/// trust-changing intent the Host reviews): the hide list comes back.
+#[tauri::command]
+pub async fn unhide_game(
+    game_id: u32,
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<HiddenGameView>>, CommandError> {
+    host_call::call(&state, IpcRequest::GameUnhide { game_id }).await
 }

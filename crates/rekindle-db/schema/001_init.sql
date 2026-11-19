@@ -487,7 +487,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
     notifications_enabled INTEGER NOT NULL DEFAULT 1 CHECK(notifications_enabled IN (0, 1)),
     notification_sound INTEGER NOT NULL DEFAULT 1 CHECK(notification_sound IN (0, 1)),
     start_minimized INTEGER NOT NULL DEFAULT 0 CHECK(start_minimized IN (0, 1)),
+    -- Game detection scans the process table for the local game-time
+    -- history only (plan E7.2); set only by `SetGameDetection`, which
+    -- starts or stops the scanner, never by the bulk preference save.
     game_detection_enabled INTEGER NOT NULL DEFAULT 1 CHECK(game_detection_enabled IN (0, 1)),
+    -- The current game shown to friends (plan E7.2, prod research batch 7):
+    -- opt-in, off by default, split from detection. Set only by the
+    -- trust-changing `SetShareCurrentGame`.
+    share_current_game INTEGER NOT NULL DEFAULT 0 CHECK(share_current_game IN (0, 1)),
     game_scan_interval_secs INTEGER NOT NULL DEFAULT 15
         CHECK(game_scan_interval_secs BETWEEN 1 AND 3600),
     input_device TEXT,
@@ -845,6 +852,16 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     CHECK(ended_at >= started_at)
 );
 CREATE INDEX IF NOT EXISTS idx_game_sessions_game ON game_sessions(owner_key, game_id);
+
+-- Games never shown to anyone (plan E7.2, prod research batch 7;
+-- `rekindle_db::repo::hidden_games`): a hidden game is still recorded in
+-- `game_sessions` for the local history, but it is never the current game
+-- friends see and never in the totals sent to them.
+CREATE TABLE IF NOT EXISTS hidden_games (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    PRIMARY KEY (owner_key, game_id)
+);
 
 -- A friend's game totals (plan E7.2; `rekindle_db::repo::friend_game_totals`),
 -- as their last `GameTotals` DmFrame stated them; a new frame replaces

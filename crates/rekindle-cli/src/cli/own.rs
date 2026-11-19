@@ -43,6 +43,18 @@ pub enum SettingsCmd {
         /// `on` or `off`.
         state: Switch,
     },
+    /// Scan for running games, for the local game-time history (on by
+    /// default); off, no process is scanned.
+    GameDetection {
+        /// `on` or `off`.
+        state: Switch,
+    },
+    /// Show friends the game we are playing (off by default); a hidden
+    /// game is never shown.
+    ShareGame {
+        /// `on` or `off`.
+        state: Switch,
+    },
 }
 
 /// The game we show.
@@ -61,6 +73,18 @@ pub enum GameCmd {
     },
     /// Show no game.
     Clear,
+    /// The games hidden from everyone.
+    Hidden,
+    /// Hide a game from everyone (still recorded locally).
+    Hide {
+        /// The game's id in the game database.
+        id: u32,
+    },
+    /// Take a game off the hide list.
+    Unhide {
+        /// The game's id in the game database.
+        id: u32,
+    },
 }
 
 /// The identity's tamper-evident audit log.

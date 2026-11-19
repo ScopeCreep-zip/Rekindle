@@ -42,6 +42,7 @@ mod lifecycle;
 mod member_block;
 mod onboarding;
 mod own;
+mod own_game;
 mod pins;
 mod rich_messaging;
 mod router;
@@ -270,6 +271,8 @@ pub struct DaemonContext {
     /// compares the record with our rows, so one running beside a rotation
     /// would put the old set back over the new one (E2.B finding F9).
     pub(crate) own_prekey_writes: Arc<tokio::sync::Mutex<()>>,
+    /// The game stage, running only while detection is on (plan E7.2).
+    pub(crate) game: crate::host::game_stage::GameControl,
     /// This context, for work that outlives a call (`HostFriends::owned`).
     pub(crate) this: std::sync::Weak<DaemonContext>,
 }
