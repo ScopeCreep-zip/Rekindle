@@ -209,7 +209,11 @@ fn holds_joined(
 /// not hold as a member (it left or was removed; the merge's re-join rule,
 /// `gates::rejoined`, decides whether it stands). A member's community
 /// pseudonym is fixed per identity and community (`derive_community_pseudonym`),
-/// so a re-join continues its own op chain.
+/// so a re-join continues its own op chain. A re-join we already merged
+/// (its `MemberJoined` reached us by gossip or the watch ring before its
+/// request, walk M87) holds the author as a member admitted by this very
+/// op (`MemberState::joined`), and is answered like any other: the request
+/// is idempotent, as the merge is.
 fn is_joiners_member_joined(
     op: &op_log::HeldOp,
     op_ref: &OpRef,
@@ -225,7 +229,8 @@ fn is_joiners_member_joined(
     joined
         && op.author == op_ref.author
         && op.seq == op_ref.author_seq
-        && (op.seq == 0 || !state.members.contains_key(&op.author))
+        && (op.seq == 0
+            || (state.members.get(&op.author)).is_none_or(|m| m.joined.hash == op.hash))
 }
 
 fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntimeError> {
@@ -337,6 +342,65 @@ mod tests {
             panic!("not a bootstrapResponseV2");
         };
         assert_eq!(frontier.len(), MAX_FRONTIER_REFS);
+    }
+
+    /// A re-join `MemberJoined` (seq 2) by `author`, as held.
+    fn rejoin(author: PseudonymKey) -> (HeldOp, OpRef) {
+        let op = rekindle_types::governance::GovernanceOp {
+            author: author.clone(),
+            seq: 2,
+            prev: None,
+            deps: Vec::new(),
+            issued_at: 1,
+            body: rekindle_types::governance::GovernanceEntry::MemberJoined {
+                member_record: record_key(7),
+                member_record_owner: "o".into(),
+                invite_proof: None,
+                owner_proof: vec![0; 64],
+            },
+            sig: [0; 64],
+        };
+        let held = HeldOp {
+            hash: OpHash([9; 32]),
+            author: author.clone(),
+            author_record: record_key(7),
+            seq: 2,
+            lamport: 5,
+            issued_at: 1,
+            encoded: rekindle_codec::governance_op::encode_op(&op).expect("encodes"),
+            fate: op_log::OpFate::Applied,
+        };
+        let op_ref = OpRef {
+            op_hash: held.hash,
+            author,
+            author_record: record_key(7),
+            author_seq: 2,
+        };
+        (held, op_ref)
+    }
+
+    fn member(hash: OpHash) -> rekindle_governance::state::MemberState {
+        rekindle_governance::state::MemberState {
+            member_record: record_key(7),
+            member_record_owner: "o".into(),
+            joined: rekindle_governance::op::OpStamp { lamport: 5, hash },
+        }
+    }
+
+    /// Walk M87: the inviter merged the peer's re-join from gossip before
+    /// its `BootstrapRequest` arrived, and refused it as a member's second
+    /// join; a re-join admitted by this very op is the joiner's, while one
+    /// by a member admitted by another op is not.
+    #[test]
+    fn a_rejoin_already_merged_is_the_joiners_member_joined() {
+        let author = PseudonymKey([4; 32]);
+        let (held, op_ref) = rejoin(author.clone());
+        let mut state = rekindle_governance::state::GovernanceState::default();
+        assert!(is_joiners_member_joined(&held, &op_ref, &state));
+        state.members.insert(author.clone(), member(held.hash));
+        assert!(is_joiners_member_joined(&held, &op_ref, &state));
+        state.members.insert(author, member(OpHash([1; 32])));
+        assert!(!is_joiners_member_joined(&held, &op_ref, &state));
     }
 
     #[test]
