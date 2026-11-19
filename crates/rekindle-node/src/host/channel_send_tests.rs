@@ -186,8 +186,8 @@ async fn post_state(host: &Host, owner: &str, id: &'static str) -> Option<SendSt
 
 /// Plan E3.2 S7l (F9-1): a key's install releases the posts waiting for it
 /// one release at a time. While another release holds the lock, the post
-/// stays waiting; once it is free, the post leaves `awaiting_key` (offline,
-/// its write cannot be made, so it settles `failed`; never left waiting).
+/// stays waiting; once it is free, the post leaves `awaiting_key` for its
+/// stream (offline, the sender defers it; never left waiting).
 #[tokio::test]
 async fn a_release_of_waiting_posts_waits_for_the_one_running() {
     let dir = tempfile::tempdir().unwrap();
@@ -208,8 +208,7 @@ async fn a_release_of_waiting_posts_waits_for_the_one_running() {
         community: "c1".into(),
         channel: SEND_CHANNEL.into(),
         message: "m1".into(),
-        record_key: "VLD0:channel".into(),
-        subkey: 4,
+        entry: rekindle_types::message::PostEntry::Message,
     };
     posts.queue_waiting(&post, i64::MAX / 2).await.unwrap();
     let running = host.ctx.outbox.channel_release_lock();

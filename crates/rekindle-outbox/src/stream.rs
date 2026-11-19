@@ -158,10 +158,8 @@ impl StreamKind {
     #[must_use]
     pub fn policy(self) -> OutboxRetry {
         let (base, cap) = match self {
-            // The record pool's write of the slot is the send (plan E2.5).
-            Self::ChannelPost => return OutboxRetry::SettledExternally,
-            // A group send and an op append are chain writes, retried
-            // like a DM.
+            // A group send, an op append and a channel post (plan E3.3,
+            // our `M`/4 outbox) are chain writes, retried like a DM.
             // A DM's retry never comes before its ack can (live A/B
             // finding 49): the peer's `DmAck` leaves up to
             // `DM_ACK_DELAY_MAX_MS` after the entry, and its send may take
@@ -173,7 +171,7 @@ impl StreamKind {
                     floor: DM_RETRY_FLOOR,
                 }
             }
-            Self::GroupDm | Self::GovernanceOp => (1, 300),
+            Self::GroupDm | Self::GovernanceOp | Self::ChannelPost => (1, 300),
             // A key transfer is a receipted control call, like a
             // handshake frame: its peer may be offline for a while.
             Self::FriendHandshake | Self::MekTransfer => {
@@ -218,29 +216,19 @@ pub enum OutboxRetry {
         cap: Duration,
         floor: Duration,
     },
-    /// Never attempted by the engine: no sender, no attempt, no backoff
-    /// pass. Only the host's settle of the stream
-    /// ([`crate::Outbox::settle_stream`]) or the row's deadline settles it
-    /// (a `channel_post`, whose send is the record pool's write).
-    SettledExternally,
 }
 
 impl OutboxRetry {
-    /// The wait after the `attempts`-th attempt (1 for the first); `None`
-    /// for a policy the engine never attempts.
+    /// The wait after the `attempts`-th attempt (1 for the first).
     #[must_use]
-    pub fn delay(self, attempts: u32, rng: &dyn RandomSource) -> Option<Duration> {
-        match self {
-            Self::SettledExternally => None,
-            Self::Backoff { base, cap, floor } => {
-                let step = base
-                    .saturating_mul(1u32 << attempts.saturating_sub(1).min(20))
-                    .min(cap);
-                let step_ms = u64::try_from(step.as_millis()).unwrap_or(u64::MAX);
-                let half = step_ms / 2;
-                Some(floor + Duration::from_millis(half + rng.below(step_ms - half + 1)))
-            }
-        }
+    pub fn delay(self, attempts: u32, rng: &dyn RandomSource) -> Duration {
+        let Self::Backoff { base, cap, floor } = self;
+        let step = base
+            .saturating_mul(1u32 << attempts.saturating_sub(1).min(20))
+            .min(cap);
+        let step_ms = u64::try_from(step.as_millis()).unwrap_or(u64::MAX);
+        let half = step_ms / 2;
+        floor + Duration::from_millis(half + rng.below(step_ms - half + 1))
     }
 }
 

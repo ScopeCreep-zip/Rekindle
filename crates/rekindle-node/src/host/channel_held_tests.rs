@@ -10,7 +10,7 @@ use rekindle_secrets::channel_body::{encrypt_channel_body, SlotBodyPosition};
 use super::channel_change_tests::{
     apply, edit, reader, reload, AUTHOR, EDIT_CHANNEL, RECORD, SUBKEY, TEXT_KEY,
 };
-use crate::host::adapters::channel::ingest::{Ingested, ReceivedPost};
+use crate::host::adapters::channel::ingest::{Ingested, ReceivedAt, ReceivedPost};
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
@@ -25,8 +25,10 @@ fn post(message_id: &str, body: &str) -> ReceivedPost {
     ReceivedPost {
         community_id: "c1".into(),
         channel_id: EDIT_CHANNEL.into(),
-        record_key: RECORD.into(),
-        subkey_index: SUBKEY,
+        at: ReceivedAt::Slot {
+            record_key: RECORD.into(),
+            subkey_index: SUBKEY,
+        },
         sequence: 1,
         message: ChannelMessage {
             sequence: 1,

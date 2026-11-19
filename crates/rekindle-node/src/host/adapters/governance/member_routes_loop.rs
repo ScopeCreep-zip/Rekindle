@@ -60,7 +60,7 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
 
 impl HostGovernance {
     /// Our member record in `community_id`, as our `MemberJoined` names it.
-    fn own_member_record(&self, community_id: &str) -> Option<String> {
+    pub(super) fn own_member_record(&self, community_id: &str) -> Option<String> {
         let map = self.ctx.communities.map().read();
         let c = map.get(community_id)?;
         let me = c.my_pseudonym_key.as_deref()?;

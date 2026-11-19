@@ -93,6 +93,15 @@ pub struct Diffed {
     pub coalesced: bool,
 }
 
+/// Which chain a diff reads.
+#[derive(Debug, Clone, Copy)]
+enum Chain {
+    /// A participant record's retiring chain (`HEAD` at its subkey 0).
+    Participant,
+    /// A never-retired log whose head is this subkey.
+    Log(u32),
+}
+
 /// The diffs in flight, one per stream: whether a trigger landed during it.
 #[derive(Debug, Default)]
 pub struct StreamEngine {
@@ -138,6 +147,42 @@ impl StreamEngine {
         writer: &str,
         record: &str,
     ) -> Result<Diffed, StreamError> {
+        self.diff_chain(port, sink, (stream, writer), record, Chain::Participant)
+            .await
+    }
+
+    /// Diff `writer`'s never-retired log chain whose head is
+    /// `record`/`head_subkey` (a member's channel outbox, `M`/4, plan
+    /// E3.3), as [`diff`](Self::diff) does a participant record.
+    ///
+    /// # Errors
+    /// As [`diff`](Self::diff).
+    pub async fn diff_log(
+        &self,
+        port: &dyn RecordPort,
+        sink: &dyn StreamSink,
+        (stream, writer): (&str, &str),
+        record: &str,
+        head_subkey: u32,
+    ) -> Result<Diffed, StreamError> {
+        self.diff_chain(
+            port,
+            sink,
+            (stream, writer),
+            record,
+            Chain::Log(head_subkey),
+        )
+        .await
+    }
+
+    async fn diff_chain(
+        &self,
+        port: &dyn RecordPort,
+        sink: &dyn StreamSink,
+        (stream, writer): (&str, &str),
+        record: &str,
+        chain: Chain,
+    ) -> Result<Diffed, StreamError> {
         let key = (stream.to_string(), writer.to_string());
         if !self.claim(&key) {
             return Ok(Diffed {
@@ -147,7 +192,7 @@ impl StreamEngine {
         }
         let mut total = Diffed::default();
         loop {
-            let pass = Self::pass(port, sink, stream, writer, record).await;
+            let pass = Self::pass(port, sink, (stream, writer), record, chain).await;
             let failed = pass.is_err();
             match pass {
                 Ok(d) => {
@@ -170,12 +215,17 @@ impl StreamEngine {
     async fn pass(
         port: &dyn RecordPort,
         sink: &dyn StreamSink,
-        stream: &str,
-        writer: &str,
+        (stream, writer): (&str, &str),
         record: &str,
+        source: Chain,
     ) -> Result<Diffed, StreamError> {
         let mut cursor = sink.cursor(stream, writer).await?;
-        let read = chain::read_after(port, record, cursor).await?;
+        let read = match source {
+            Chain::Participant => chain::read_after(port, record, cursor).await?,
+            Chain::Log(head_subkey) => {
+                chain::read_log_after(port, record, head_subkey, cursor).await?
+            }
+        };
         let mut done = Diffed::default();
         if let Some(through) = read.retired_gap {
             sink.history_gap(stream, writer, through).await?;

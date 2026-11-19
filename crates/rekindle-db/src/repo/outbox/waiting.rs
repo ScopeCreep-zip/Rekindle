@@ -38,8 +38,8 @@ pub fn enqueue_waiting_for_message(
     Ok(seq)
 }
 
-/// Release the waiting post `client_id` to its write: `queued`, with
-/// `deadline` (its write's), its echo with it. Returns whether it was
+/// Release the waiting post `client_id` to its stream: `queued`, due at
+/// `now`, with `deadline` (its write's), its echo with it. Returns whether it was
 /// waiting; a row another release took first, or none, is left alone, so
 /// a post is written once.
 ///
@@ -49,13 +49,13 @@ pub fn release_waiting(
     conn: &Connection,
     owner_key: &str,
     client_id: &str,
-    deadline: i64,
+    (now, deadline): (i64, i64),
 ) -> rusqlite::Result<bool> {
     let tx = conn.unchecked_transaction()?;
     let released = tx.execute(
-        "UPDATE outbox SET state = 'queued', next_at = ?3, deadline = ?3, wedge_reason = NULL \
+        "UPDATE outbox SET state = 'queued', next_at = ?3, deadline = ?4, wedge_reason = NULL \
          WHERE owner_key = ?1 AND client_id = ?2 AND state = 'awaiting_key'",
-        params![owner_key, client_id, deadline],
+        params![owner_key, client_id, now, deadline],
     )? > 0;
     if released {
         project(&tx, owner_key, client_id, SendState::Queued)?;

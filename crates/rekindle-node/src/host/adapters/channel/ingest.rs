@@ -10,7 +10,6 @@ use rekindle_channel::ingest::{self, BlockList, GateItem, GateReason, SlotPositi
 use std::sync::Arc;
 
 use rekindle_channel::{AutoModCompiledCache, ChannelMessagingDeps};
-use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
@@ -19,23 +18,11 @@ use rekindle_types::message::SendState;
 use rekindle_types::permissions::MANAGE_MESSAGES;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, SystemEvent};
 
+pub use super::received::{ReceivedAt, ReceivedPost};
 use super::HostChannel;
 
 fn stored(e: impl std::fmt::Display) -> ChannelError {
     ChannelError::Adapter(format!("store: {e}"))
-}
-
-/// A received post: where it was written and what it holds.
-#[derive(Debug, Clone)]
-pub struct ReceivedPost {
-    pub community_id: String,
-    pub channel_id: String,
-    pub record_key: String,
-    pub subkey_index: u32,
-    pub sequence: u64,
-    pub message: ChannelMessage,
-    /// The original author, when the post is a forward.
-    pub forwarded_from_author: Option<String>,
 }
 
 /// The columns of a received row the ingest decides.
@@ -232,8 +219,7 @@ impl HostChannel {
             self,
             community,
             &post.channel_id,
-            &post.record_key,
-            post.subkey_index,
+            post.body_at(),
             &post.message,
         ) else {
             return Ok(Ingested::Undecryptable);

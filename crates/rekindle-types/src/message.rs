@@ -23,17 +23,50 @@ pub struct SyncedMessage {
     pub lamport_ts: Option<i64>,
 }
 
-/// Our community channel post and the record slot its write targets (plan
-/// E2.5, C7.14): the payload of its outbox `channel_post` row, which
-/// settles when that slot's write does.
+/// Our community channel post (plan E3.3): the payload of its outbox
+/// `channel_post` row. A message or forward is an entry of our member
+/// record's channel outbox (`M`/4), sealed when the stream's sender drains
+/// it; an attachment message is still written to the channel record's slot
+/// and settled by that write until it moves onto the outbox (E3.3 slice 7).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChannelPost {
     pub community: String,
     pub channel: String,
     /// The post's client id, its row's.
     pub message: String,
-    pub record_key: String,
-    pub subkey: u32,
+    pub entry: PostEntry,
+}
+
+/// What a `channel_post` row writes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum PostEntry {
+    /// A message entry on our outbox, its body read from our row.
+    Message,
+    /// A forward entry on our outbox: our row's body is the snapshot of
+    /// `original_message` by `original_author` in `original_channel`.
+    Forward {
+        original_channel: String,
+        original_message: String,
+        original_author: String,
+    },
+    /// An attachment message on the channel record's slot.
+    SlotAttachment { record_key: String, subkey: u32 },
+}
+
+impl ChannelPost {
+    /// The row's stream scope: one `channel_post` stream per channel for
+    /// outbox entries (`<community>:<channel>`, in queue order), the slot
+    /// for an attachment message.
+    #[must_use]
+    pub fn scope(&self) -> String {
+        match &self.entry {
+            PostEntry::SlotAttachment { record_key, subkey } => format!("{record_key}:{subkey}"),
+            PostEntry::Message | PostEntry::Forward { .. } => {
+                format!("{}:{}", self.community, self.channel)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

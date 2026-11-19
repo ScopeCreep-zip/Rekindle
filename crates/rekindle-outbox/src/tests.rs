@@ -45,7 +45,6 @@ struct Store {
     /// Settled entries as their echo keeps them: stream, seq, id, state.
     settled: Vec<(String, i64, String, SendState)>,
     attempted: Vec<String>,
-    reissued: Vec<String>,
     outcomes: VecDeque<AttemptOutcome>,
     /// The stream seqs our chain records as landed (`on_chain`).
     chain: HashSet<i64>,
@@ -297,14 +296,6 @@ impl OutboxDeps for Fake {
         let mut s = self.store.lock();
         s.outcomes.pop_front().unwrap_or(AttemptOutcome::Sent)
     }
-    async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
-        let mut s = self.store.lock();
-        s.reissued.push(row.client_id.clone());
-        if row.client_id.starts_with("gone") {
-            return Err("no slot".into());
-        }
-        Ok(())
-    }
     fn publish(&self, change: StateChange) {
         self.store
             .lock()
@@ -545,7 +536,7 @@ async fn rows_outlive_the_engine_and_resends_are_received_once() {
 #[test]
 fn backoff_is_jittered_within_its_step_and_capped() {
     let rng = CounterRng(AtomicU64::new(3));
-    let ms = |kind: StreamKind, n| kind.policy().delay(n, &rng).unwrap().as_millis();
+    let ms = |kind: StreamKind, n| kind.policy().delay(n, &rng).as_millis();
     let first = ms(StreamKind::GroupDm, 1);
     assert!((500..=1_000).contains(&first), "{first}");
     let third = ms(StreamKind::GroupDm, 3);
@@ -554,11 +545,7 @@ fn backoff_is_jittered_within_its_step_and_capped() {
     assert!((7_500..=15_000).contains(&late), "{late}");
     let again = CounterRng(AtomicU64::new(3));
     assert_eq!(
-        StreamKind::GroupDm
-            .policy()
-            .delay(1, &again)
-            .unwrap()
-            .as_millis(),
+        StreamKind::GroupDm.policy().delay(1, &again).as_millis(),
         first
     );
     assert_eq!(
@@ -566,7 +553,10 @@ fn backoff_is_jittered_within_its_step_and_capped() {
         Some(StreamKind::FriendHandshake)
     );
     assert_eq!(StreamKind::parse("group_dm"), Some(StreamKind::GroupDm));
-    assert_eq!(StreamKind::ChannelPost.policy().delay(1, &rng), None);
+    assert_eq!(
+        StreamKind::ChannelPost.policy(),
+        StreamKind::GovernanceOp.policy()
+    );
 }
 
 mod channel_post;

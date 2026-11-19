@@ -16,8 +16,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use rekindle_codec::community::channel_record::{
-    ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate,
-    ChannelPollVote, ChannelReaction, ChannelRecordEntry,
+    ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
+    ChannelReaction, ChannelRecordEntry,
 };
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
@@ -184,12 +184,11 @@ pub enum DhtWrite {
     /// Stored at consensus.
     Stored,
     /// Missed consensus; the host's record pool holds the write, re-pushes
-    /// it until it lands, and reports the settle
-    /// ([`crate::on_write_settled`]).
+    /// it until it lands, and reports the settle.
     Held,
 }
 
-/// A sent post and its record slot; its outbox row settles with the slot.
+/// A sent post: the payload of its outbox `channel_post` row.
 pub use rekindle_types::message::ChannelPost;
 
 /// Sent-message echo for the local "you said this" UI event.
@@ -287,12 +286,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         channel_msg: &ChannelMessage,
     ) -> Result<DhtWrite, ChannelError>;
 
-    async fn write_channel_forward_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        forward: &ChannelForward,
-    ) -> Result<DhtWrite, ChannelError>;
-
     async fn write_member_reaction_smpl(
         &self,
         context: &ChannelWriteContext,
@@ -382,10 +375,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     /// then on only the outbox moves the post's delivery state.
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), ChannelError>;
 
-    /// The write of `record_key`/`subkey` settled: every post waiting on it
-    /// settles `sent` when it `landed`, else `failed`. Returns them.
-    async fn settle_posts(&self, record_key: &str, subkey: u32, landed: bool) -> Vec<ChannelPost>;
-
     /// `message`'s write could not be made: its row settles `failed`.
     async fn fail_post(&self, message: &str);
 
@@ -405,11 +394,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     /// Release the waiting post `message` to its write (`queued`). `false`
     /// when it was not waiting: another release took it.
     async fn release_waiting_post(&self, message: &str) -> bool;
-
-    /// Park the post `message` (the user's Retry, its key still absent)
-    /// waiting for the key until `deadline_ms`. `false` when it is not a
-    /// queued or failed post.
-    async fn park_waiting_post(&self, message: &str, deadline_ms: i64) -> bool;
 
     // ---------- DB (channel messages) ----------
 

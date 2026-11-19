@@ -13,8 +13,8 @@ use rekindle_channel::deps::{
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
 use rekindle_codec::community::channel_record::{
-    ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate,
-    ChannelPollVote, ChannelReaction,
+    ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
+    ChannelReaction,
 };
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
@@ -173,25 +173,6 @@ impl ChannelMessagingDeps for HostChannel {
         delivery(written, "channel write")
     }
 
-    async fn write_channel_forward_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        forward: &ChannelForward,
-    ) -> Result<DhtWrite, ChannelError> {
-        let w = self.writer(context)?;
-        let written = record::write_member_forward(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            forward,
-        )
-        .await;
-        delivery(written, "channel forward write")
-    }
-
     async fn write_member_reaction_smpl(
         &self,
         context: &ChannelWriteContext,
@@ -345,10 +326,6 @@ impl ChannelMessagingDeps for HostChannel {
         self.queue_post_impl(post).await
     }
 
-    async fn settle_posts(&self, record_key: &str, subkey: u32, landed: bool) -> Vec<ChannelPost> {
-        self.settle_posts_impl(record_key, subkey, landed).await
-    }
-
     async fn fail_post(&self, message: &str) {
         self.fail_post_impl(message).await;
     }
@@ -366,12 +343,7 @@ impl ChannelMessagingDeps for HostChannel {
     }
 
     async fn release_waiting_post(&self, message: &str) -> bool {
-        self.move_waiting_post_impl(message, None).await
-    }
-
-    async fn park_waiting_post(&self, message: &str, deadline_ms: i64) -> bool {
-        self.move_waiting_post_impl(message, Some(deadline_ms))
-            .await
+        self.release_waiting_post_impl(message).await
     }
 
     // ---------- DB (channel messages) ----------

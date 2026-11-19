@@ -75,6 +75,14 @@ impl OutboxSlot {
             ctx.this.upgrade().expect("a context in use is alive"),
         );
         self.install_governance_op_sender(governance.clone());
+        self.senders.install(
+            StreamKind::ChannelPost,
+            Arc::new(
+                crate::host::adapters::channel::outbox_send::ChannelPostSender(
+                    crate::host::adapters::channel::HostChannel::new(ctx),
+                ),
+            ),
+        );
         self.install_mek_transfer_sender(governance.clone());
         self.install_bootstrap_sender(governance.clone());
         *self.current.write() = Some(Arc::clone(&outbox));

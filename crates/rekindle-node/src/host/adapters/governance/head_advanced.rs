@@ -14,7 +14,7 @@ use rekindle_codec::member_record::{beat::decode_presence_beat, RecordScope};
 use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::port::OpenIntent;
-use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX};
 use rekindle_types::id::PseudonymKey;
 
 use super::moderation::pseudonym;
@@ -191,9 +191,9 @@ impl HostGovernance {
     /// frontier (3), the writer's commit point, is caught up and the
     /// community rebuilt when the read stored a head we lacked
     /// ([`HostGovernance::refresh_member_record`], which shares the ring
-    /// change's (record, frontier seq) mark); an op-log head (2), a
-    /// beat (1) or an outbox (4) has no governance effect alone, so it is
-    /// only recorded.
+    /// change's (record, frontier seq) mark); an outbox (4) is diffed by
+    /// the channel outbox reader (plan E3.3); an op-log head (2) or a beat
+    /// (1) has no governance effect alone, so it is only recorded.
     async fn read_hinted(&self, community_id: &str, hint: HeadAdvanced) {
         let record = hint.member_record.as_str();
         let Ok(lease) = self.acquire_record(record, None, OpenIntent::Check).await else {
@@ -215,10 +215,27 @@ impl HostGovernance {
         let Some(read) = read else {
             return;
         };
-        let mut map = self.ctx.communities.map().write();
-        if let Some(c) = map.get_mut(community_id) {
-            c.head_hints.record_read(record, hint.subkey, read);
+        {
+            let mut map = self.ctx.communities.map().write();
+            if let Some(c) = map.get_mut(community_id) {
+                c.head_hints.record_read(record, hint.subkey, read);
+            }
         }
+        if hint.subkey == OUTBOX {
+            self.read_channel_outbox(community_id, record).await;
+        }
+    }
+
+    /// Diff the channel outbox (`M`/4) of the member whose record is
+    /// `record` (plan E3.3: a hint or a ring change of subkey 4), never a
+    /// governance rebuild.
+    pub(super) async fn read_channel_outbox(&self, community_id: &str, record: &str) {
+        let Some(author) = self.author_of_record(community_id, record) else {
+            return;
+        };
+        crate::host::adapters::channel::HostChannel::new(&self.ctx)
+            .read_author_outbox(community_id, &author, record, false)
+            .await;
     }
 }
 

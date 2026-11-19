@@ -2,13 +2,14 @@
 //! finding F9-1, decided from research 2026-11-17): it is **queued, not
 //! refused**. Its outbox `channel_post` row waits in state `awaiting_key`,
 //! keyed by its client id, its plaintext in its `messages` row (SQLCipher),
-//! until the key is installed; then it is released in composition order per
-//! channel and written as the user's Retry writes a post
-//! ([`crate::reissue::reissue_channel_post`]): sealed then under the newest
-//! generation held (never at queue time, so a rotation while it waited
-//! cannot leave it under an old key) and stamped with the release time (the
-//! composed time stays in the local row only). A later post of the channel
-//! queues behind a waiting one. Past [`KEY_WAIT_MS`] from composition it
+//! until the key is installed; then it is released (`queued`) in
+//! composition order per channel, and its stream's sender seals and appends
+//! it like any post ([`crate::outbox_send`], plan E3.3): sealed then under
+//! the newest generation held (never at queue time, so a rotation while it
+//! waited cannot leave it under an old key) and stamped with the commit time
+//! (the composed time stays in the local row only). A later post of the
+//! channel queues behind a waiting one; a post released or retried while
+//! the key is absent again is deferred by the sender until it is held. Past [`KEY_WAIT_MS`] from composition it
 //! fails with "the community key did not arrive" (Retry or Delete); our
 //! departure discards it; a lock keeps it.
 //!
@@ -22,13 +23,11 @@ use std::collections::HashSet;
 
 use rekindle_types::message::SendState;
 
-use crate::deps::{
-    ChannelMessagingDeps, ChannelPost, ChannelSendOutcome, ChannelWriteContext,
-    SentChannelMessageEcho,
-};
+use rekindle_types::message::PostEntry;
+
+use crate::deps::{ChannelMessagingDeps, ChannelPost, ChannelSendOutcome, SentChannelMessageEcho};
 use crate::error::ChannelError;
 use crate::pipeline::{random_message_id, ChannelSendResult};
-use crate::send::channel_message_subkey;
 
 /// How long a post waits for its channel's key from composition: one day
 /// (Signal-Desktop's `MAX_RETRY_TIME = durations.DAY`, plan F9-1).
@@ -72,7 +71,6 @@ pub async fn must_wait<D: ChannelMessagingDeps>(
 /// The store failed.
 pub async fn queue_awaiting_key<D: ChannelMessagingDeps>(
     deps: &D,
-    context: &ChannelWriteContext,
     composed: Composed<'_>,
 ) -> Result<ChannelSendResult, ChannelError> {
     let Composed {
@@ -105,8 +103,7 @@ pub async fn queue_awaiting_key<D: ChannelMessagingDeps>(
         community: community_id.to_string(),
         channel: channel_id.to_string(),
         message: message_id.clone(),
-        record_key: context.channel_key.clone(),
-        subkey: channel_message_subkey(context.slot_index),
+        entry: PostEntry::Message,
     };
     let state = match deps
         .queue_waiting_post(&post, timestamp_ms.saturating_add(KEY_WAIT_MS))
@@ -144,8 +141,8 @@ pub async fn queue_awaiting_key<D: ChannelMessagingDeps>(
 }
 
 /// A key of `community_id` was installed: release its waiting posts whose
-/// channel's key we now hold, each channel's in composition order, each
-/// written as a Retry writes it. A channel still without its key, or whose
+/// channel's key we now hold to their stream (`queued`), each channel's in
+/// composition order. A channel still without its key, or whose
 /// head another release took, is left to that key's release.
 pub async fn release_waiting_posts<D: ChannelMessagingDeps>(deps: &D, community_id: &str) {
     let mut held_back: HashSet<String> = HashSet::new();
@@ -166,42 +163,5 @@ pub async fn release_waiting_posts<D: ChannelMessagingDeps>(deps: &D, community_
             &post.message,
             SendState::Queued,
         );
-        if let Err(error) = crate::reissue::reissue_channel_post(deps, &post).await {
-            tracing::warn!(%error, message = %post.message, "released channel post not written");
-            deps.fail_post(&post.message).await;
-            deps.emit_delivery_failed(&post.community, &post.channel, &post.message);
-        }
     }
-}
-
-/// The user's Retry of `post`: written again when its channel's key is
-/// held, else waiting for it again for [`KEY_WAIT_MS`] from now.
-///
-/// # Errors
-/// As [`crate::reissue::reissue_channel_post`]; a post that cannot be
-/// parked.
-pub async fn retry_post<D: ChannelMessagingDeps>(
-    deps: &D,
-    post: &ChannelPost,
-) -> Result<SendState, ChannelError> {
-    if crate::text_keys::holds_text_key(deps, &post.community, &post.channel)? {
-        return crate::reissue::reissue_channel_post(deps, post).await;
-    }
-    let now_ms = i64::try_from(deps.now_secs().saturating_mul(1000)).unwrap_or(i64::MAX);
-    if !deps
-        .park_waiting_post(&post.message, now_ms.saturating_add(KEY_WAIT_MS))
-        .await
-    {
-        return Err(ChannelError::Adapter(format!(
-            "post {} cannot wait for the key",
-            post.message
-        )));
-    }
-    deps.emit_send_state(
-        &post.community,
-        &post.channel,
-        &post.message,
-        SendState::AwaitingKey,
-    );
-    Ok(SendState::AwaitingKey)
 }

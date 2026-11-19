@@ -36,7 +36,7 @@ pub use dm::OutboxSlot;
 pub use governance_op::{GovernanceOps, Published};
 pub use media_key::{MediaKeyCarrier, MediaKeyDelivery, MediaKeyStreams, SESSION_ENDED};
 pub use mek_transfer::MekTransfers;
-pub use senders::{Reissuer, Senders, StreamSender};
+pub use senders::{Senders, StreamSender};
 
 /// How many state changes a slow subscriber may fall behind by.
 const CHANGES: usize = 256;
@@ -465,10 +465,6 @@ impl OutboxDeps for HostOutbox {
         frames: &[(Vec<u8>, i64)],
     ) -> Vec<AttemptOutcome> {
         self.senders.append(kind, stream, frames).await
-    }
-
-    async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
-        self.senders.reissue(row).await
     }
 
     fn publish(&self, change: StateChange) {

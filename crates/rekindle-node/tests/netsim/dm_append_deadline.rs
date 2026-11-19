@@ -76,9 +76,7 @@ async fn append_outlives_reask_then_maintenance_settles() {
     );
     // The latest the handed-off row is due again (its first backoff step
     // past the floor, `OutboxRetry::delay`), and so re-hinted.
-    let OutboxRetry::Backoff { base, floor, .. } = StreamKind::Dm.policy() else {
-        panic!("a dm row backs off");
-    };
+    let OutboxRetry::Backoff { base, floor, .. } = StreamKind::Dm.policy();
     let rehint = floor.max(DM_APPEND_DEADLINE) + base;
     let bound = rehint + MESSAGE.max * 4;
     // The internet comes back at the bound: the append's page and `HEAD`

@@ -21,7 +21,7 @@ use rekindle_records::port::RecordPort;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
-use super::ingest::{GateInputs, GatedPost, Ingested, ReceivedPost};
+use super::ingest::{GateInputs, GatedPost, Ingested, ReceivedAt, ReceivedPost};
 use super::HostChannel;
 
 fn stored(e: impl std::fmt::Display) -> ChannelError {
@@ -178,8 +178,10 @@ impl HostChannel {
                 let post = ReceivedPost {
                     community_id: source.community_id.to_owned(),
                     channel_id: source.channel_id.to_owned(),
-                    record_key: source.record_key.to_owned(),
-                    subkey_index: source.subkey_index,
+                    at: ReceivedAt::Slot {
+                        record_key: source.record_key.to_owned(),
+                        subkey_index: source.subkey_index,
+                    },
                     sequence,
                     message,
                     forwarded_from_author: None,

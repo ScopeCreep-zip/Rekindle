@@ -12,7 +12,7 @@ use rekindle_types::governance::AutoModAction;
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
 use super::{create_ann, offline_host, seed_registry_community};
-use crate::host::adapters::channel::ingest::ReceivedPost;
+use crate::host::adapters::channel::ingest::{ReceivedAt, ReceivedPost};
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
@@ -59,8 +59,10 @@ fn post(timestamp_secs: u64) -> ReceivedPost {
     ReceivedPost {
         community_id: "c1".into(),
         channel_id: INGEST_CHANNEL.into(),
-        record_key: "VLD0:channel".into(),
-        subkey_index: 1,
+        at: ReceivedAt::Slot {
+            record_key: "VLD0:channel".into(),
+            subkey_index: 1,
+        },
         sequence: 1,
         message: ChannelMessage {
             sequence: 1,

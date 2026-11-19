@@ -13,17 +13,14 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use rekindle_channel::error::ChannelError;
-use rekindle_channel::ChannelSendResult;
+use rekindle_channel::{ChannelMessagingDeps as _, ChannelSendResult};
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_lifecycle::{ScopeClosed, SessionScope};
-use rekindle_outbox::OutboxRow;
 use rekindle_records::port::RecordPort;
 
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::governance::HostGovernance;
-use crate::host::adapters::outbox::{post_of_row, Reissuer};
 
 mod blocks;
 pub(crate) mod changes;
@@ -34,7 +31,10 @@ pub(crate) mod held_changes;
 pub(crate) mod history;
 pub mod ingest;
 pub(crate) mod not_delivered;
+mod outbox_read;
+pub(crate) mod outbox_send;
 mod persist;
+mod received;
 mod record_change;
 pub(crate) mod rich;
 pub mod stage_sound;
@@ -168,31 +168,11 @@ pub(crate) fn removed_refusal(error: &ChannelError, what: &str) -> Option<IpcRes
     })
 }
 
-/// The outbox's Retry of a failed channel post: its write is made again
-/// under its client id (`rekindle_channel::reissue`), or, while its
-/// channel's key is still absent, it waits for the key again (plan E3.2
-/// S7l, `rekindle_channel::awaiting_key::retry_post`).
-struct PostReissuer(HostChannel);
-
-#[async_trait]
-impl Reissuer for PostReissuer {
-    async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
-        let post = post_of_row(row)?;
-        self.0
-            .refuse_removed(&post.community)
-            .map_err(|e| e.to_string())?;
-        rekindle_channel::awaiting_key::retry_post(&self.0, &post)
-            .await
-            .map(drop)
-            .map_err(|e| e.to_string())
-    }
-}
-
-/// Follow the session's record pool for settled writes (plan C7.13): a
-/// channel write that missed consensus is held and re-pushed by the pool,
-/// and when its slot settles the posts waiting on it are delivered, or
-/// failed when the network superseded our page. Installs the outbox's
-/// Retry of a failed post. Runs on the unlock scope.
+/// Follow the session's record pool for settled writes (plan C7.13): an
+/// attachment post's slot write (on the channel record until E3.3 slice 7)
+/// that missed consensus is held and re-pushed by the pool, and when its
+/// slot settles the posts waiting on it are delivered, or failed when the
+/// network superseded our page. Runs on the unlock scope.
 ///
 /// # Errors
 /// [`ScopeClosed`] when the unlock already ended.
@@ -202,9 +182,6 @@ pub(crate) fn start_settle(
     pool: &Arc<dyn RecordPort>,
 ) -> Result<(), ScopeClosed> {
     let channel = HostChannel::new(ctx);
-    if let Some(posts) = ctx.outbox.channel_posts() {
-        posts.install_reissuer(Arc::new(PostReissuer(channel.clone())));
-    }
     start_key_deadline(ctx, scope)?;
     let mut settled = pool.settled();
     scope.spawn_with_token("channel delivery settle", |stop| async move {
@@ -218,13 +195,17 @@ pub(crate) fn start_settle(
                 }
                 Some(Ok(event)) => event,
             };
-            rekindle_channel::on_write_settled(
-                &channel,
-                &event.record_key,
-                event.subkey,
-                event.landed,
-            )
-            .await;
+            let settled = channel
+                .settle_slot_posts(&event.record_key, event.subkey, event.landed)
+                .await;
+            for post in settled {
+                tracing::info!(message = %post.message, landed = event.landed, "attachment post settled");
+                if event.landed {
+                    channel.emit_delivery_succeeded(&post.community, &post.channel, &post.message);
+                } else {
+                    channel.emit_delivery_failed(&post.community, &post.channel, &post.message);
+                }
+            }
         }
     })
 }

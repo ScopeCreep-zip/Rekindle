@@ -74,6 +74,7 @@ mod no_timed_inspect;
 mod offline_day;
 mod onboarding;
 mod one_community_rebuild;
+mod outbox_catch_up;
 mod outbox_handshake;
 mod outbox_stream_independence;
 mod own_removal;

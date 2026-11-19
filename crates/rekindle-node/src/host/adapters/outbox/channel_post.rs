@@ -1,19 +1,22 @@
-//! The `channel_post` stream (plan E2.5, C7.14): a community channel post
-//! is a row of the stream of the record slot its write targets, with the
-//! post's `messages` row as its echo. The record pool's write is the send,
-//! so the kind has no [`super::StreamSender`] and the engine never attempts
-//! its rows (`OutboxRetry::SettledExternally`): the pool's settle of the
-//! slot settles every row waiting on it, `sent` when our page landed and
-//! `failed` when the network superseded it, or the deadline fails it. The
-//! user's Retry makes the post's write again under its client id through
-//! the channel send path's [`super::Reissuer`] ([`ChannelPosts::install_reissuer`]). The rows outlive a lock, as the pool's held write does
-//! (a `dht_write` row), so the next unlock's settle still finds them.
+//! The `channel_post` stream (plan E3.3, D22): our community channel post
+//! is a row of its channel's stream `channel_post:<community>:<channel>`,
+//! with the post's `messages` row as its echo. The stream's sender
+//! (`HostChannel`'s `ChannelPostSender`, modelled on the `governance_op`
+//! sender) drains the due rows in queue order onto our member record's
+//! channel outbox (`M`/4); a row settles `sent` when the head we published
+//! names its chain seq, and the outbox retries the rest. The user's Retry
+//! of a failed post queues the same row again (the engine's retry).
 //!
 //! A post composed before we held its channel's key waits on its row in
 //! state `awaiting_key` (plan E3.2 S7l, F9-1) until the key's install
 //! releases it ([`ChannelPosts::release`]), its deadline (one day from
 //! composition) fails it, or our departure discards it
-//! ([`ChannelPosts::discard_community`]); a lock keeps it.
+//! ([`ChannelPosts::discard_community`]); a lock keeps it. A released or
+//! retried post whose key is absent again is deferred by the sender.
+//!
+//! An attachment message is still written to the channel record's slot
+//! until E3.3 slice 7: its row is in the slot's stream and settles with the
+//! slot write ([`ChannelPosts::settle_slot`]); the sender defers it.
 
 use std::sync::Arc;
 
@@ -23,13 +26,13 @@ use rekindle_outbox::{
 };
 use rekindle_types::message::ChannelPost;
 
-use super::{storage, HostOutbox, OutboxSlot, Reissuer};
+use super::{storage, HostOutbox, OutboxSlot};
 use crate::host::runtime::Host;
 
 /// The reason a post whose page the network superseded fails with.
 pub const SUPERSEDED: &str = "superseded";
 
-fn scope(record_key: &str, subkey: u32) -> String {
+fn slot_scope(record_key: &str, subkey: u32) -> String {
     format!("{record_key}:{subkey}")
 }
 
@@ -45,12 +48,6 @@ pub fn post_of_row(row: &OutboxRow) -> Result<ChannelPost, String> {
 }
 
 impl ChannelPosts {
-    /// Install the channel send path's rewrite of a retried post, until
-    /// the outbox stops.
-    pub fn install_reissuer(&self, reissuer: Arc<dyn Reissuer>) {
-        (self.0.deps().senders).install_reissuer(StreamKind::ChannelPost, reissuer);
-    }
-
     /// Store `post`'s row, its echo the post already written `queued`.
     ///
     /// # Errors
@@ -59,7 +56,7 @@ impl ChannelPosts {
         let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
         let row = self.0.new_row(Entry {
             kind: StreamKind::ChannelPost,
-            scope: scope(&post.record_key, post.subkey),
+            scope: post.scope(),
             client_id: post.message.clone(),
             payload,
             deadline: Deadline::Horizon,
@@ -96,7 +93,7 @@ impl ChannelPosts {
         let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
         let row = self.0.new_row(Entry {
             kind: StreamKind::ChannelPost,
-            scope: scope(&post.record_key, post.subkey),
+            scope: post.scope(),
             client_id: post.message.clone(),
             payload,
             deadline: Deadline::At(deadline),
@@ -122,7 +119,7 @@ impl ChannelPosts {
     }
 
     /// The posts waiting for their channel's key, of `community` only when
-    /// given, each channel slot's first-composed first.
+    /// given, each channel's first-composed first.
     ///
     /// # Errors
     /// The storage failed.
@@ -139,45 +136,19 @@ impl ChannelPosts {
             .collect())
     }
 
-    /// Release the waiting post `message` to its write: `queued`, with a
-    /// write's deadline from now. `false` when it was not waiting.
+    /// Release the waiting post `message` to its stream: `queued`, due now,
+    /// with a write's deadline from now. `false` when it was not waiting.
     ///
     /// # Errors
     /// The storage failed.
     pub async fn release(&self, message: &str) -> Result<bool, OutboxError> {
-        let deadline = self
-            .0
-            .deps()
-            .clock
-            .now_ms_i64()
-            .saturating_add(i64::try_from(OUTBOX_DEADLINE.as_millis()).unwrap_or(i64::MAX));
-        self.set_waiting(message, deadline, true).await
-    }
-
-    /// Park the post `message` waiting for its key again until `deadline`.
-    ///
-    /// # Errors
-    /// The storage failed.
-    pub async fn park(&self, message: &str, deadline: i64) -> Result<bool, OutboxError> {
-        self.set_waiting(message, deadline, false).await
-    }
-
-    async fn set_waiting(
-        &self,
-        message: &str,
-        deadline: i64,
-        release: bool,
-    ) -> Result<bool, OutboxError> {
+        let now = self.0.deps().clock.now_ms_i64();
+        let deadline =
+            now.saturating_add(i64::try_from(OUTBOX_DEADLINE.as_millis()).unwrap_or(i64::MAX));
         let (db, owner) = self.0.deps().db()?;
         let message = message.to_owned();
         let changed = db
-            .call(move |conn| {
-                if release {
-                    repo::release_waiting(conn, &owner, &message, deadline)
-                } else {
-                    repo::wait_for_key(conn, &owner, &message, deadline)
-                }
-            })
+            .call(move |conn| repo::release_waiting(conn, &owner, &message, (now, deadline)))
             .await
             .map_err(|e| storage(&e))?;
         self.0.wake();
@@ -224,13 +195,13 @@ impl ChannelPosts {
             .and_then(post_of))
     }
 
-    /// The write of `record_key`/`subkey` settled: every post waiting on
-    /// it is `sent` when it `landed`, else `failed` ([`SUPERSEDED`]).
-    /// Returns the posts settled.
+    /// The slot write of `record_key`/`subkey` settled: every attachment
+    /// post waiting on it is `sent` when it `landed`, else `failed`
+    /// ([`SUPERSEDED`]). Returns the posts settled.
     ///
     /// # Errors
     /// The storage failed.
-    pub async fn settle(
+    pub async fn settle_slot(
         &self,
         record_key: &str,
         subkey: u32,
@@ -242,7 +213,11 @@ impl ChannelPosts {
             Err(SUPERSEDED.to_owned())
         };
         let rows = (self.0)
-            .settle_stream(StreamKind::ChannelPost, &scope(record_key, subkey), outcome)
+            .settle_stream(
+                StreamKind::ChannelPost,
+                &slot_scope(record_key, subkey),
+                outcome,
+            )
             .await?;
         Ok(rows.iter().filter_map(post_of).collect())
     }
@@ -262,7 +237,7 @@ impl ChannelPosts {
         let rows = (self.0)
             .settle_stream(
                 StreamKind::ChannelPost,
-                &scope(record_key, subkey),
+                &slot_scope(record_key, subkey),
                 Err(reason.to_owned()),
             )
             .await?;
@@ -302,8 +277,7 @@ impl OutboxSlot {
 }
 
 impl Host {
-    /// The unlocked identity's `channel_post` stream, for the GUI's channel
-    /// send and settle path (`rekindle-channel`'s pipeline, until E3.1).
+    /// The unlocked identity's `channel_post` stream.
     #[must_use]
     pub fn channel_posts(&self) -> Option<ChannelPosts> {
         self.ctx.outbox.channel_posts()

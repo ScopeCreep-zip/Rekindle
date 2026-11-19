@@ -212,7 +212,9 @@ impl FilesDeps for HostFiles {
     }
 
     async fn settle_posts(&self, record_key: &str, subkey: u32) {
-        self.channel.settle_posts(record_key, subkey, true).await;
+        self.channel
+            .settle_slot_posts(record_key, subkey, true)
+            .await;
     }
 
     async fn fail_post(&self, message_id: &str) {

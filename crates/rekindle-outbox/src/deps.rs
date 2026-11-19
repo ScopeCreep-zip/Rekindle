@@ -270,11 +270,6 @@ pub trait OutboxDeps: Send + Sync {
         stream: &str,
         frames: &[(Vec<u8>, i64)],
     ) -> Vec<AttemptOutcome>;
-    /// Make again the external write that carries `row`, a row of a kind
-    /// the engine never attempts (the user's Retry of a failed channel
-    /// post, under its client id); the write's settle settles the row.
-    /// `Err(reason)` when it cannot be made.
-    async fn reissue(&self, row: &OutboxRow) -> Result<(), String>;
     /// Deliver a state change to the user's windows and frontends.
     fn publish(&self, change: StateChange);
 }

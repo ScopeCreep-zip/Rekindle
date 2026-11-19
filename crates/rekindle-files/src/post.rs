@@ -9,6 +9,7 @@ use rekindle_codec::community::channel_record::ChannelMessage;
 
 use crate::deps::{ChannelPost, ChannelWrite, FilesDeps};
 use crate::error::FilesError;
+use rekindle_types::message::PostEntry;
 
 /// Where an attachment message is written.
 pub(crate) struct PostTarget<'a> {
@@ -37,8 +38,10 @@ pub(crate) async fn write_post<D: FilesDeps>(
         community: target.community_id.to_owned(),
         channel: target.channel_id.to_owned(),
         message: message_id.to_owned(),
-        record_key: target.record_key.to_owned(),
-        subkey: target.subkey,
+        entry: PostEntry::SlotAttachment {
+            record_key: target.record_key.to_owned(),
+            subkey: target.subkey,
+        },
     };
     deps.queue_post(&post).await?;
     let written = deps
@@ -60,6 +63,8 @@ pub(crate) async fn write_post<D: FilesDeps>(
 
 #[cfg(test)]
 mod tests {
+    use rekindle_types::message::PostEntry;
+
     use crate::deps::ChannelWrite;
     use crate::test_mock::MockDeps;
     use crate::upload::{upload_bytes_as_attachment, UploadRequest};
@@ -89,7 +94,10 @@ mod tests {
         upload(&deps).await;
         let calls = deps.calls.lock();
         assert_eq!(calls.posts_queued.len(), 1, "a channel_post row");
-        assert_eq!(calls.posts_queued[0].record_key, deps.channel_log_key);
+        assert!(matches!(
+            &calls.posts_queued[0].entry,
+            PostEntry::SlotAttachment { record_key, .. } if *record_key == deps.channel_log_key
+        ));
         assert!(calls.posts_settled.is_empty(), "left to the pool's settle");
         assert!(calls.posts_failed.is_empty());
     }
@@ -99,10 +107,9 @@ mod tests {
         let deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(7, [4; 32]);
         upload(&deps).await;
         let calls = deps.calls.lock();
-        let queued = &calls.posts_queued[0];
-        assert_eq!(
-            calls.posts_settled,
-            [(queued.record_key.clone(), queued.subkey)]
-        );
+        let PostEntry::SlotAttachment { record_key, subkey } = &calls.posts_queued[0].entry else {
+            panic!("an attachment post is written to its slot");
+        };
+        assert_eq!(calls.posts_settled, [(record_key.clone(), *subkey)]);
     }
 }

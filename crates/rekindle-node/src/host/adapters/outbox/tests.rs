@@ -156,12 +156,16 @@ async fn queued_post(
     })
     .await
     .unwrap();
+    // An attachment post, written to the channel record's slot until E3.3
+    // slice 7.
     rekindle_types::message::ChannelPost {
         community: "c1".into(),
         channel: "ch1".into(),
         message: id.into(),
-        record_key: "rk".into(),
-        subkey: 4,
+        entry: rekindle_types::message::PostEntry::SlotAttachment {
+            record_key: "rk".into(),
+            subkey: 4,
+        },
     }
 }
 
@@ -181,15 +185,16 @@ async fn a_post_queued_offline_settles_from_the_pools_settle() {
     let posts = super::ChannelPosts(Arc::clone(&outbox));
     let first = queued_post(&outbox, "m1").await;
     posts.queue(&first).await.unwrap();
-    // The pool's write is the send: a pass leaves the row queued.
+    // The pool's slot write is the send: with no sender a pass leaves the
+    // row queued.
     outbox.pump().await.unwrap();
     assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Queued));
-    let settled = posts.settle("rk", 4, true).await.unwrap();
+    let settled = posts.settle_slot("rk", 4, true).await.unwrap();
     assert_eq!(settled, [first]);
     assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Sent));
     let second = queued_post(&outbox, "m2").await;
     posts.queue(&second).await.unwrap();
-    assert_eq!(posts.settle("rk", 4, false).await.unwrap(), [second]);
+    assert_eq!(posts.settle_slot("rk", 4, false).await.unwrap(), [second]);
     assert_eq!(post_state(&outbox, "m2").await, Some(SendState::Failed));
     assert_eq!(outbox.unsettled().await.unwrap(), 0);
 }
@@ -214,8 +219,7 @@ async fn waiting_post(
         community: community.into(),
         channel: "ch1".into(),
         message: id.into(),
-        record_key: "rk".into(),
-        subkey: 4,
+        entry: rekindle_types::message::PostEntry::Message,
     };
     let posts = super::ChannelPosts(Arc::clone(outbox));
     posts.queue_waiting(&post, deadline).await.unwrap();
@@ -224,8 +228,8 @@ async fn waiting_post(
 
 const LATER: i64 = i64::MAX / 2;
 
-/// A waiting post is not on our page: the slot's write settles only the
-/// posts that were written; the waiting ones are listed first-composed
+/// A waiting post is not in the slot's stream: the slot's write settles
+/// only the attachment posts written to it; the waiting ones are listed first-composed
 /// first and released once each.
 #[tokio::test]
 async fn a_waiting_post_is_not_settled_by_its_slots_write_and_is_released_once() {
@@ -239,7 +243,7 @@ async fn a_waiting_post_is_not_settled_by_its_slots_write_and_is_released_once()
     let first = waiting_post(&outbox, "c1", "m2", LATER).await;
     let second = waiting_post(&outbox, "c1", "m3", LATER).await;
     outbox.pump().await.unwrap();
-    assert_eq!(posts.settle("rk", 4, true).await.unwrap(), [written]);
+    assert_eq!(posts.settle_slot("rk", 4, true).await.unwrap(), [written]);
     assert_eq!(
         post_state(&outbox, "m2").await,
         Some(SendState::AwaitingKey)

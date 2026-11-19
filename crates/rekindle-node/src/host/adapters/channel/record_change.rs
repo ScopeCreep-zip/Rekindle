@@ -13,7 +13,7 @@ use rekindle_codec::community::channel_record::{
 };
 use rekindle_types::id::ChannelId;
 
-use super::ingest::{Ingested, ReceivedPost};
+use super::ingest::{Ingested, ReceivedAt, ReceivedPost};
 use super::HostChannel;
 
 impl HostChannel {
@@ -135,8 +135,10 @@ impl HostChannel {
             let post = ReceivedPost {
                 community_id: community_id.to_owned(),
                 channel_id: channel_id.to_owned(),
-                record_key: record_key.to_owned(),
-                subkey_index,
+                at: ReceivedAt::Slot {
+                    record_key: record_key.to_owned(),
+                    subkey_index,
+                },
                 sequence,
                 message,
                 forwarded_from_author: None,

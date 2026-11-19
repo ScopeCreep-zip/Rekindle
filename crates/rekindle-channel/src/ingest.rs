@@ -306,29 +306,67 @@ fn automod(rules: &AutoModCompiledCache, body: &str) -> Verdict {
     verdict
 }
 
-/// Open `message`'s body, written at `subkey_index` of `record_key`, under
-/// the generation it names; `None` when we hold no key that opens it.
+/// Where a received post's body was sealed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostAt<'a> {
+    /// At its slot of a channel record (history written before the
+    /// outbox, read until E3.3 slice 8).
+    Slot {
+        record_key: &'a str,
+        subkey_index: u32,
+    },
+    /// In its author's channel outbox (`M`/4) at its stream seq (plan E3.3).
+    Outbox { anchor: &'a str, stream_seq: u64 },
+}
+
+/// Open `message`'s body, sealed `at`, under the generation it names;
+/// `None` when we hold no key that opens it.
 pub fn open_body<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
-    record_key: &str,
-    subkey_index: u32,
+    at: PostAt<'_>,
     message: &ChannelMessage,
 ) -> Option<String> {
-    crate::text_keys::open_text(
-        deps,
-        community_id,
-        channel_id,
-        message.mek_generation,
-        SlotBodyPosition {
-            channel_record_key: record_key,
+    let open = |at: crate::send::At<'_>| {
+        crate::text_keys::open_text(
+            deps,
+            community_id,
+            channel_id,
+            message.mek_generation,
+            at,
+            &message.ciphertext,
+        )
+    };
+    let body = match at {
+        PostAt::Slot {
+            record_key,
             subkey_index,
-            lamport_ts: message.lamport_ts,
-        },
-        &message.ciphertext,
-    )
-    .map(|b| String::from_utf8_lossy(&b).into_owned())
+        } => open(
+            SlotBodyPosition {
+                channel_record_key: record_key,
+                subkey_index,
+                lamport_ts: message.lamport_ts,
+            }
+            .into(),
+        ),
+        PostAt::Outbox { anchor, stream_seq } => {
+            let author: [u8; 32] = hex::decode(&message.sender_pseudonym)
+                .ok()?
+                .try_into()
+                .ok()?;
+            open(
+                crate::send::BodyPosition {
+                    anchor,
+                    channel_id,
+                    author: &author,
+                    stream_seq,
+                }
+                .into(),
+            )
+        }
+    }?;
+    Some(String::from_utf8_lossy(&body).into_owned())
 }
 
 #[cfg(test)]

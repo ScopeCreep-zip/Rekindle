@@ -19,7 +19,7 @@ use rekindle_types::message::SendState;
 
 use super::{Outbox, DEADLINE_REASON, KEY_DID_NOT_ARRIVE};
 use crate::deps::{AttemptOutcome, OutboxDeps, OutboxError, OutboxRow};
-use crate::stream::{OutboxRetry, StreamKind};
+use crate::stream::StreamKind;
 
 /// The streams with an attempt running.
 #[derive(Default)]
@@ -63,9 +63,7 @@ impl<D: OutboxDeps> Outbox<D> {
         due.retain(|row| kind.is_none_or(|k| row.kind == k));
         let mut streams: BTreeMap<String, Vec<OutboxRow>> = BTreeMap::new();
         for row in self.select_due(due, self.now()).await? {
-            if row.kind.policy() != OutboxRetry::SettledExternally {
-                streams.entry(row.stream.clone()).or_default().push(row);
-            }
+            streams.entry(row.stream.clone()).or_default().push(row);
         }
         let mut claimed = self.attempting.0.lock();
         Ok(streams

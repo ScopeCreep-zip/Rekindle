@@ -51,7 +51,7 @@ async fn an_offline_peer_keeps_a_dm_queued_past_twenty_attempts_until_the_deadli
 #[test]
 fn a_dm_retry_waits_for_the_longest_ack() {
     let rng = CounterRng(AtomicU64::new(3));
-    let ms = |n| StreamKind::Dm.policy().delay(n, &rng).unwrap().as_millis();
+    let ms = |n| StreamKind::Dm.policy().delay(n, &rng).as_millis();
     assert_eq!(crate::stream::DM_RETRY_FLOOR.as_millis(), 15_000);
     let first = ms(1);
     assert!((15_500..=16_000).contains(&first), "{first}");

@@ -13,7 +13,7 @@ use crate::deps::{
     AttemptOutcome, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate, StateChange,
 };
 use crate::state::{merge, PeerAck, StateInput};
-use crate::stream::{OutboxRetry, StreamKind};
+use crate::stream::StreamKind;
 
 mod attempts;
 mod discard;
@@ -94,17 +94,14 @@ impl<D: OutboxDeps> Outbox<D> {
     }
 
     /// When `kind`'s row is next due after `attempts` attempts (0: its
-    /// first) at `now`: a kind the engine never attempts
-    /// ([`crate::OutboxRetry::SettledExternally`]) is due only at its
-    /// `deadline`, where the pass fails it first.
+    /// first) at `now`, never past its `deadline`, where the pass fails it.
     fn next_due(&self, kind: StreamKind, attempts: u32, now: i64, deadline: i64) -> i64 {
-        if attempts == 0 && kind.policy() != OutboxRetry::SettledExternally {
+        if attempts == 0 {
             return now;
         }
-        match kind.policy().delay(attempts, self.deps.rng()) {
-            Some(wait) => now.saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX)),
-            None => deadline,
-        }
+        let wait = kind.policy().delay(attempts, self.deps.rng());
+        now.saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX))
+            .min(deadline)
     }
 
     /// When `row`, now `state`, is due again: one that just reached `sent`
@@ -283,9 +280,6 @@ impl<D: OutboxDeps> Outbox<D> {
     /// # Errors
     /// The storage failed.
     pub async fn flush(&self, kind: StreamKind) -> Result<usize, OutboxError> {
-        if kind.policy() == OutboxRetry::SettledExternally {
-            return Ok(0);
-        }
         self.attempt_due(i64::MAX, Some(kind)).await
     }
 
@@ -382,9 +376,7 @@ impl<D: OutboxDeps> Outbox<D> {
     }
 
     /// The user's Retry: a failed row is queued again under the **same**
-    /// client id, with a fresh deadline; a queued one is attempted now. A
-    /// row the engine never attempts has its write made again
-    /// ([`OutboxDeps::reissue`]); it fails at once when that cannot be.
+    /// client id, with a fresh deadline; a queued one is attempted now.
     /// This is the one move down the lattice, and only the user makes it.
     ///
     /// # Errors
@@ -413,19 +405,6 @@ impl<D: OutboxDeps> Outbox<D> {
         if row.state != SendState::Queued {
             self.deps
                 .publish(StateChange::of(&row, SendState::Queued, None));
-        }
-        if row.kind.policy() == OutboxRetry::SettledExternally {
-            if let Err(reason) = self.deps.reissue(&row).await {
-                let queued = OutboxRow {
-                    state: SendState::Queued,
-                    attempts: 0,
-                    next_at: update.next_at,
-                    deadline,
-                    wedge_reason: None,
-                    ..row
-                };
-                self.fail(&queued, reason).await?;
-            }
         }
         self.wake.notify_one();
         Ok(true)

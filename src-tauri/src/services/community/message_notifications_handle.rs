@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use rekindle_node::host::adapters::channel::ingest::{Ingested, ReceivedPost};
+use rekindle_node::host::adapters::channel::ingest::{Ingested, ReceivedAt, ReceivedPost};
 use rekindle_records::retry;
 
 use crate::state::AppState;
@@ -73,8 +73,10 @@ pub async fn handle_message_notification(
         .ingest(ReceivedPost {
             community_id: pending.community_id.clone(),
             channel_id: pending.channel_id.clone(),
-            record_key: fetched.record_key.clone(),
-            subkey_index: pending.subkey_index,
+            at: ReceivedAt::Slot {
+                record_key: fetched.record_key.clone(),
+                subkey_index: pending.subkey_index,
+            },
             sequence: pending.sequence,
             message: message.clone(),
             forwarded_from_author: fetched.forwarded_from_author.clone(),

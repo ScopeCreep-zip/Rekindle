@@ -28,11 +28,11 @@ pub mod mentions;
 pub mod notifications;
 pub mod outbox_chain;
 pub mod outbox_seal;
+pub mod outbox_send;
 pub mod pipeline;
 pub mod polls;
 pub mod reactions;
 pub mod receive;
-pub mod reissue;
 pub mod send;
 pub mod stage;
 mod text_keys;
@@ -64,8 +64,8 @@ pub use notifications::{
     NotificationDecision, NotificationLevel, NotificationThrottle,
 };
 pub use pipeline::{
-    enforce_slowmode_with_bypass, forward_channel_message, on_write_settled, send_channel_message,
-    ChannelSendResult, ForwardChannelMessageParams,
+    enforce_slowmode_with_bypass, forward_channel_message, send_channel_message, ChannelSendResult,
+    ForwardChannelMessageParams,
 };
 pub use polls::{
     get_poll_results, persist_poll_close, persist_poll_create, persist_poll_vote,

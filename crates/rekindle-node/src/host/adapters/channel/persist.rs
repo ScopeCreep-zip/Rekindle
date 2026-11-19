@@ -126,14 +126,17 @@ impl HostChannel {
             .map_err(|e| outbox(&e))
     }
 
-    pub(super) async fn settle_posts_impl(
+    /// The slot write of `record_key`/`subkey` settled: its attachment
+    /// posts (written to the slot until E3.3 slice 7) settle `sent` when it
+    /// `landed`, else `failed`. Returns them.
+    pub(crate) async fn settle_slot_posts(
         &self,
         record_key: &str,
         subkey: u32,
         landed: bool,
     ) -> Vec<ChannelPost> {
         let settled = match self.channel_posts() {
-            Ok(posts) => posts.settle(record_key, subkey, landed).await,
+            Ok(posts) => posts.settle_slot(record_key, subkey, landed).await,
             Err(error) => {
                 tracing::warn!(%error, "channel posts not settled");
                 return Vec::new();
@@ -170,19 +173,11 @@ impl HostChannel {
         })
     }
 
-    /// Release (`release`) or park the post `message`; `false` when its
-    /// row was not in the state to move.
-    pub(super) async fn move_waiting_post_impl(
-        &self,
-        message: &str,
-        park_until: Option<i64>,
-    ) -> bool {
+    /// Release the waiting post `message` to its stream; `false` when its
+    /// row was not waiting.
+    pub(super) async fn release_waiting_post_impl(&self, message: &str) -> bool {
         let moved = match self.channel_posts() {
-            Ok(posts) => match park_until {
-                None => posts.release(message).await,
-                Some(deadline) => posts.park(message, deadline).await,
-            }
-            .map_err(|e| outbox(&e)),
+            Ok(posts) => posts.release(message).await.map_err(|e| outbox(&e)),
             Err(error) => Err(error),
         };
         moved.unwrap_or_else(|error| {
