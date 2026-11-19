@@ -14,7 +14,6 @@ use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
 use rekindle_codec::community::channel_record::{
     ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
-    ChannelReaction,
 };
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
@@ -173,25 +172,6 @@ impl ChannelMessagingDeps for HostChannel {
         delivery(written, "channel write")
     }
 
-    async fn write_member_reaction_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        reaction: &ChannelReaction,
-    ) -> Result<(), ChannelError> {
-        let w = self.writer(context)?;
-        let written = record::write_member_reaction(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            reaction,
-        )
-        .await;
-        delivery(written, "reaction write").map(drop)
-    }
-
     async fn write_channel_poll_create_smpl(
         &self,
         context: &ChannelWriteContext,
@@ -292,6 +272,14 @@ impl ChannelMessagingDeps for HostChannel {
         record_key: &str,
     ) -> Result<Vec<ChannelEntryItem>, ChannelError> {
         self.read_entries_impl(community_id, record_key).await
+    }
+
+    async fn read_outbox_entries(
+        &self,
+        community_id: &str,
+        stream_id: &str,
+    ) -> Vec<rekindle_channel::deps::OutboxItem> {
+        self.read_author_outboxes(community_id, stream_id).await
     }
 
     async fn read_all_channel_messages(

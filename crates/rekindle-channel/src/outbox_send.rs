@@ -54,8 +54,9 @@ struct StoredBody {
     reply_to: Option<String>,
 }
 
-/// The body `item` seals: an edit's new body, nothing for a delete or a
-/// possession entry, else our stored post's (its row must be ours).
+/// The body `item` seals: an edit's new body, nothing for a delete, a
+/// possession entry or a reaction, else our stored post's (its row must
+/// be ours).
 async fn stored_body<D: ChannelMessagingDeps>(
     deps: &D,
     item: &DrainPost,
@@ -64,7 +65,7 @@ async fn stored_body<D: ChannelMessagingDeps>(
     let post = &item.post;
     // An edit or delete names its target; a post is its own row.
     let (target, body) = match &post.entry {
-        PostEntry::Cached { .. } => {
+        PostEntry::Cached { .. } | PostEntry::Reaction { .. } => {
             return Ok(StoredBody {
                 text: String::new(),
                 reply_to: None,
@@ -170,6 +171,17 @@ async fn pending_of<D: ChannelMessagingDeps>(
             author_pseudonym: author_hex,
             lamport_ts: item.stream_seq,
         }),
+        // A reaction op (rule R1), ordered by its stream seq; no body.
+        PostEntry::Reaction {
+            target,
+            emoji,
+            added,
+        } => ChannelRecordEntry::Reaction(crate::reactions::build_reaction(
+            target.clone(),
+            emoji.clone(),
+            *added,
+            item.stream_seq,
+        )),
         // A delete carries no body; the entry still names its channel by
         // the tag of the key it was drained under.
         PostEntry::Delete {

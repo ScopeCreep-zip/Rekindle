@@ -8,6 +8,7 @@
 //! the highest head its departures recorded of the outbox (what the reader
 //! keeps, `outbox_read.rs` "Standing").
 
+use rekindle_channel::deps::OutboxItem;
 use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_codec::member_record::{decode_outbox_entry, ChainPosition};
@@ -25,7 +26,7 @@ impl HostChannel {
         &self,
         community_id: &str,
         channel_id: &str,
-    ) -> Vec<ChannelRecordEntry> {
+    ) -> Vec<OutboxItem> {
         let (Some(state), Ok(port)) = (self.governance_state(community_id), self.records()) else {
             return Vec::new();
         };
@@ -64,7 +65,7 @@ impl HostChannel {
         channel_id: &str,
         author: &PseudonymKey,
         entry: &rekindle_records::chain::ChainEntry,
-    ) -> Option<ChannelRecordEntry> {
+    ) -> Option<OutboxItem> {
         let at = ChainPosition {
             anchor: community_id,
             chain_seq: entry.seq,
@@ -77,7 +78,12 @@ impl HostChannel {
         }
         match &decoded.entry {
             ChannelRecordEntry::Message(m) if m.sender_pseudonym != hex::encode(author.0) => None,
-            _ => Some(decoded.entry),
+            _ => Some(OutboxItem {
+                author: author.clone(),
+                stream_seq: decoded.stream_seq,
+                committed_at: decoded.committed_at,
+                entry: decoded.entry,
+            }),
         }
     }
 }

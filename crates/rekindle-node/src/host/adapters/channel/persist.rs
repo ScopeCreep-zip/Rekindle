@@ -129,10 +129,14 @@ impl HostChannel {
     }
 
     pub(super) async fn queue_post_impl(&self, post: &ChannelPost) -> Result<(), ChannelError> {
-        self.channel_posts()?
-            .queue(post)
-            .await
-            .map_err(|e| outbox(&e))
+        // An op on other rows has no `messages` row to echo it.
+        let posts = self.channel_posts()?;
+        let queued = if post.entry.has_row() {
+            posts.queue(post).await
+        } else {
+            posts.queue_change(post).await
+        };
+        queued.map_err(|e| outbox(&e))
     }
 
     pub(super) async fn queue_waiting_post_impl(

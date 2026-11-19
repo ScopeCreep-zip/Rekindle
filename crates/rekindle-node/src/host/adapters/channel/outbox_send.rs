@@ -14,7 +14,6 @@ use rekindle_channel::outbox_chain::OutboxWriter;
 use rekindle_channel::outbox_send::{drain_posts, DrainOutcome, DrainPost};
 use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_outbox::{AttemptOutcome, OutboxRow};
-use rekindle_types::message::PostEntry;
 
 use super::HostChannel;
 use crate::host::adapters::governance::removal_posts::REMOVED_NOT_DELIVERED;
@@ -97,12 +96,10 @@ impl HostChannel {
         post: &rekindle_types::message::ChannelPost,
         outcome: &DrainOutcome,
     ) -> AttemptOutcome {
-        // An edit, a delete or a possession entry has no row of its own to
-        // mark: its row id is not a message.
-        let change = matches!(
-            post.entry,
-            PostEntry::Edit { .. } | PostEntry::Delete { .. } | PostEntry::Cached { .. }
-        );
+        // An op on other rows (an edit, a delete, a possession entry, a
+        // reaction, a poll op, a hand raise) has no row of its own to mark:
+        // its row id is not a message.
+        let change = !post.entry.has_row();
         match outcome {
             DrainOutcome::Sent(seq) => {
                 tracing::info!(message = %post.message, chain_seq = seq, "channel post on our outbox");

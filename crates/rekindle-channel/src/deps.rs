@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use rekindle_codec::community::channel_record::{
     ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote,
-    ChannelReaction, ChannelRecordEntry,
+    ChannelRecordEntry,
 };
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
@@ -103,6 +103,20 @@ pub struct ChannelEntryItem {
     pub slot_digest: [u8; 32],
     /// The author whose signature the slot value carries (plan E3.3 E1).
     pub author: rekindle_types::id::PseudonymKey,
+    pub entry: ChannelRecordEntry,
+}
+
+/// One entry of a channel's (or thread's) outbox stream (plan E3.3), read
+/// from its author's channel outbox (`M`/4), verified under the author at
+/// its chain seq and linked to the stream by its tag.
+#[derive(Debug, Clone)]
+pub struct OutboxItem {
+    pub author: rekindle_types::id::PseudonymKey,
+    /// The per-(author, stream) seq, frozen at creation: an author's ops
+    /// are ordered by it (rules E1, R1).
+    pub stream_seq: u64,
+    /// The author's clock at commit, ms (signed with the entry).
+    pub committed_at: u64,
     pub entry: ChannelRecordEntry,
 }
 
@@ -286,12 +300,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         channel_msg: &ChannelMessage,
     ) -> Result<DhtWrite, ChannelError>;
 
-    async fn write_member_reaction_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        reaction: &ChannelReaction,
-    ) -> Result<(), ChannelError>;
-
     async fn write_channel_poll_create_smpl(
         &self,
         context: &ChannelWriteContext,
@@ -346,6 +354,11 @@ pub trait ChannelMessagingDeps: Send + Sync {
         record_key: &str,
     ) -> Result<Vec<ChannelEntryItem>, ChannelError>;
 
+    /// Every entry of the stream `stream_id` (a channel of `community_id`)
+    /// across its authors' channel outboxes, author by author in chain
+    /// order (plan E3.3). An outbox not readable now is skipped.
+    async fn read_outbox_entries(&self, community_id: &str, stream_id: &str) -> Vec<OutboxItem>;
+
     /// The messages of [`read_all_channel_entries`](Self::read_all_channel_entries).
     async fn read_all_channel_messages(
         &self,
@@ -371,8 +384,11 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     // ---------- The outbox's channel_post stream (plan E2.5) ----------
 
-    /// Store `post`'s outbox row (the post is persisted `queued`); from
-    /// then on only the outbox moves the post's delivery state.
+    /// Store `post`'s outbox row (a post with a row of its own is persisted
+    /// `queued`; an op on other rows, [`PostEntry::has_row`] false, has no
+    /// echo); from then on only the outbox moves the post's delivery state.
+    ///
+    /// [`PostEntry::has_row`]: rekindle_types::message::PostEntry::has_row
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), ChannelError>;
 
     /// `message`'s write could not be made: its row settles `failed`.

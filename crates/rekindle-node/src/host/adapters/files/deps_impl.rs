@@ -14,7 +14,6 @@ use rekindle_files::{ChannelPost, FilesDeps, FilesError, FilesEvent};
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::message::PostEntry;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 use uuid::Uuid;
 
@@ -131,12 +130,9 @@ impl FilesDeps for HostFiles {
     }
 
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), FilesError> {
-        // A possession entry has no `messages` row to echo it.
-        let queued = match post.entry {
-            PostEntry::Cached { .. } => self.channel.queue_change_impl(post).await,
-            _ => self.channel.queue_post(post).await,
-        };
-        queued.map_err(|e| FilesError::Db(e.to_string()))
+        // A possession entry has no `messages` row to echo it
+        // (`PostEntry::has_row`).
+        (self.channel.queue_post(post).await).map_err(|e| FilesError::Db(e.to_string()))
     }
 
     async fn channel_entries(
@@ -144,9 +140,12 @@ impl FilesDeps for HostFiles {
         community_id: &str,
         channel_id: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError> {
-        let mut entries = (self.channel)
+        let mut entries: Vec<ChannelRecordEntry> = (self.channel)
             .read_author_outboxes(community_id, channel_id)
-            .await;
+            .await
+            .into_iter()
+            .map(|item| item.entry)
+            .collect();
         let channel_log_key = self.channel_log_key(community_id, channel_id)?;
         let pool = self.records()?;
         // One borrow, one inspect, and a read of only the subkeys that hold

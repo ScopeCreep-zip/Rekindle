@@ -62,6 +62,27 @@ pub enum PostEntry {
         deleted_at: u64,
         seq: u64,
     },
+    /// Our reaction `emoji` added to or removed from `target` (rule R1: a
+    /// reaction op is (target, emoji, add|remove); readers keep our latest
+    /// by its stream seq). No body.
+    Reaction {
+        target: String,
+        emoji: String,
+        added: bool,
+    },
+}
+
+impl PostEntry {
+    /// Whether the entry is a post with a `messages` row of its own (a
+    /// message, forward or attachment message), rather than an op on
+    /// other rows whose row id names no message.
+    #[must_use]
+    pub fn has_row(&self) -> bool {
+        matches!(
+            self,
+            Self::Message | Self::Forward { .. } | Self::Attachment { .. }
+        )
+    }
 }
 
 impl ChannelPost {
