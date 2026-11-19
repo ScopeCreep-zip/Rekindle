@@ -44,7 +44,7 @@ impl DaemonPresenceAdapter {
     /// Fan a presence-orchestrator envelope out over the community mesh.
     ///
     /// Queued for the gossip worker rather than translated here. This
-    /// used to match `PresenceUpdate` and `Control(SyncRequest)` by name
+    /// used to match `PresenceUpdate` and a sync request by name
     /// and error on anything else — one of three such partial
     /// translations on this track, each into transport's postcard
     /// `GossipPayload`, which no desktop peer could read. See

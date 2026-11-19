@@ -2,8 +2,7 @@
 //! both modes, moved from the desktop's `sync_service`. Every tick (three
 //! at [`FIRST_TICK`], so peers found on the mesh soon after login hear us,
 //! then every [`TICK`]) it re-announces our presence and route to each
-//! community's gossip mesh and asks the mesh for each channel's messages
-//! since our newest. Its first tick with a route also asks for every
+//! community's gossip mesh. Its first tick with a route also asks for every
 //! community key we hold behind ([`HostGovernance::recover_behind_meks`]);
 //! every later tick asks again for a key still behind, at the next cascade
 //! index ([`HostGovernance::repair_behind_meks`], plan E3.2 S7m item 1c).
@@ -11,13 +10,13 @@
 //! It reads no record (D4): a channel or governance record's change arrives
 //! by its watch, so the desktop's per-tick inspect of every channel record
 //! is gone, not moved. The ticks are tokio time (paused under netsim).
-//! History catch-up from the channel records themselves is the login
-//! network stage's (C2a), not this loop's.
+//! Channel history is each author's outbox, read from our cursors by the
+//! outbox catch-up (plan E3.3); no peer is asked for it.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_types::presence::SessionStatus;
 use tokio_util::sync::CancellationToken;
@@ -78,7 +77,7 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
         }
         let route = host.our_route_blob_impl();
         // While our status hides presence the whole phase is silent: a
-        // member that quit sends no presence, no SyncRequest and no key
+        // member that quit sends no presence and no key
         // request, and an Invisible one must not be told apart from it.
         // The first tick after un-hiding runs the normal catch-up.
         if route.is_empty() || rekindle_presence::hides_presence(host.ctx.own_presence.status()) {
@@ -94,7 +93,7 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
             if stop.is_cancelled() {
                 return;
             }
-            host.sync_community(&community_id, &route).await;
+            host.sync_community(&community_id, &route);
         }
     }
 }
@@ -144,64 +143,22 @@ impl HostGovernance {
         targets
     }
 
-    /// One community's phase: our presence and route, then a `SyncRequest`
-    /// per channel since our newest message in it. Nothing at all while
+    /// One community's phase: our presence and route. Nothing at all while
     /// our status hides presence ([`rekindle_presence::hides_presence`]).
-    pub(crate) async fn sync_community(&self, community_id: &str, route: &[u8]) {
+    pub(crate) fn sync_community(&self, community_id: &str, route: &[u8]) {
         let status = self.ctx.own_presence.status();
         if rekindle_presence::hides_presence(status) {
             return;
         }
-        let (pseudonym, channels) = {
-            let map = self.ctx.communities.map().read();
-            let Some(c) = map.get(community_id) else {
-                return;
-            };
-            let Some(pseudonym) = c.my_pseudonym_key.clone() else {
-                return;
-            };
-            let mut channels: Vec<String> = c.channel_log_keys.keys().cloned().collect();
-            channels.sort_unstable();
-            (pseudonym, channels)
+        let Some(pseudonym) = (self.ctx.communities.map().read())
+            .get(community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+        else {
+            return;
         };
         let presence = presence_announce(status, pseudonym, route);
         if let Err(e) = self.send_to_mesh(community_id, &presence) {
             tracing::debug!(community = %community_id, error = %e, "presence re-announce not sent");
-            return;
-        }
-        for channel_id in channels {
-            let Some(since) = self.last_channel_timestamp(community_id, &channel_id).await else {
-                continue;
-            };
-            let request = CommunityEnvelope::Control(ControlPayload::SyncRequest {
-                channel_id: channel_id.clone(),
-                since_timestamp: since,
-            });
-            if self.send_to_mesh(community_id, &request).is_err() {
-                return;
-            }
-            let now = self.ctx.clock.now_secs();
-            if let Some(c) = self.ctx.communities.map().write().get_mut(community_id) {
-                c.pending_syncs.insert(channel_id, (now, 1));
-            }
-        }
-    }
-
-    /// Our newest message's timestamp in the channel (0 for none); `None`
-    /// when it cannot be read, so no request claims a wrong watermark.
-    async fn last_channel_timestamp(&self, community_id: &str, channel_id: &str) -> Option<u64> {
-        let owner = self.ctx.require_owner().ok()?;
-        let db = self.ctx.db.current().ok()?;
-        let channel = channel_id.to_string();
-        match db
-            .call(move |c| rekindle_db::repo::messages::last_channel_timestamp(c, &owner, &channel))
-            .await
-        {
-            Ok(ts) => Some(ts.cast_unsigned()),
-            Err(e) => {
-                tracing::warn!(community = %community_id, channel = %channel_id, error = %e, "channel watermark unreadable");
-                None
-            }
         }
     }
 }

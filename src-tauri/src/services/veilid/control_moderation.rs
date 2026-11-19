@@ -4,10 +4,6 @@ use std::sync::Arc;
 // `crate::services::voice_signaling_adapter::handle_voice_signaling`.
 use crate::state::AppState;
 
-use super::control_sync::{
-    check_gossip_moderation_permission, handle_sync_request, handle_sync_response,
-};
-
 pub(crate) fn handle_gossip_control_payloads(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -18,30 +14,6 @@ pub(crate) fn handle_gossip_control_payloads(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        ControlPayload::SyncRequest {
-            channel_id,
-            since_timestamp,
-        } => {
-            handle_sync_request(
-                state,
-                community_id,
-                sender_pseudonym,
-                &channel_id,
-                since_timestamp,
-            );
-        }
-        ControlPayload::SyncResponse {
-            channel_id,
-            messages,
-        } => {
-            {
-                let mut communities = state.communities.write();
-                if let Some(cs) = communities.get_mut(community_id) {
-                    cs.pending_syncs.remove(&channel_id);
-                }
-            }
-            handle_sync_response(app_handle, state, community_id, &channel_id, &messages);
-        }
         payload if rekindle_voice::signaling::is_voice_signaling(&payload) => {
             // Voice signaling adapter handles the spawn-and-forget
             // dispatch internally — the gossip dispatcher stays sync.
@@ -187,4 +159,38 @@ fn remove_member_from_local_state(
             pseudonym: target_pseudonym,
         },
     );
+}
+
+/// Whether `sender_pseudonym` holds the permission a gossip moderation
+/// payload needs (a `Kick` needs `KICK_MEMBERS`); other payloads pass.
+fn check_gossip_moderation_permission(
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: &rekindle_codec::community::envelope::ControlPayload,
+) -> bool {
+    use rekindle_codec::community::envelope::ControlPayload;
+    use rekindle_types::permissions;
+
+    let required: u64 = match payload {
+        ControlPayload::Kick { .. } => permissions::KICK_MEMBERS,
+        _ => return true,
+    };
+
+    let Some(perms) =
+        crate::state_helpers::permissions_for(state, community_id, sender_pseudonym, None)
+    else {
+        return false;
+    };
+    if rekindle_governance::permissions::has_capability(perms, required) {
+        true
+    } else {
+        tracing::warn!(
+            community = %community_id,
+            sender = %sender_pseudonym,
+            required = format!("{required:#x}"),
+            "gossip moderation: sender lacks required permission — ignoring"
+        );
+        false
+    }
 }

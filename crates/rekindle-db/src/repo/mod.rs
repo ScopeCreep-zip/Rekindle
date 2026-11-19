@@ -11,7 +11,6 @@
 pub mod audit;
 pub mod blocked;
 pub mod chain_entries;
-pub mod channel_bundle;
 pub mod channel_pins;
 pub mod channels;
 pub mod communities;

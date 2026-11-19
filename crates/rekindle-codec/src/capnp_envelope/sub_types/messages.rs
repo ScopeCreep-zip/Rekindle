@@ -5,7 +5,6 @@ use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community::envelope::PresenceGameInfo;
 use crate::error::CodecError;
 use rekindle_types::game_server::GameServerInfo;
-use rekindle_types::message::SyncedMessage;
 use rekindle_types::thread::ThreadInfo;
 
 // ── PresenceGameInfo (envelope.PresenceUpdate.game_info) ─────────────
@@ -126,40 +125,3 @@ pub(crate) fn read_game_server_info(
 }
 
 // ── SyncedMessage ────────────────────────────────────────────────────
-
-pub(crate) fn write_synced_message(
-    mut b: crate::community_message_capnp::synced_message::Builder<'_>,
-    m: &SyncedMessage,
-) {
-    b.set_sender_key(&m.sender_key);
-    b.set_body(&m.body);
-    b.set_timestamp(m.timestamp);
-    b.set_has_mek_generation(m.mek_generation.is_some());
-    if let Some(g) = m.mek_generation {
-        b.set_mek_generation(g);
-    }
-    b.set_has_lamport_ts(m.lamport_ts.is_some());
-    if let Some(l) = m.lamport_ts {
-        b.set_lamport_ts(l);
-    }
-}
-
-pub(crate) fn read_synced_message(
-    r: crate::community_message_capnp::synced_message::Reader<'_>,
-) -> Result<SyncedMessage, CodecError> {
-    Ok(SyncedMessage {
-        sender_key: text_to_string(r.get_sender_key().map_err(|e| capnp_err(&e))?)?,
-        body: text_to_string(r.get_body().map_err(|e| capnp_err(&e))?)?,
-        timestamp: r.get_timestamp(),
-        mek_generation: if r.get_has_mek_generation() {
-            Some(r.get_mek_generation())
-        } else {
-            None
-        },
-        lamport_ts: if r.get_has_lamport_ts() {
-            Some(r.get_lamport_ts())
-        } else {
-            None
-        },
-    })
-}

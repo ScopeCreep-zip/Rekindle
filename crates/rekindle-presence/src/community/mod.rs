@@ -4,7 +4,7 @@
 //! owns one orchestrator + its tests:
 //!
 //! - `sync` — initial-sync handshake: presence broadcast →
-//!   per-channel SyncRequest → SMPL channel-log catch-up.
+//!   SMPL channel-log catch-up.
 //! - `registry` — registry write helpers: `write_our_presence`
 //!   (build + W11.2 encrypt + W26 sign + DHT write) and
 //!   `persist_discovered_registry_members` (diff + emit + batch
@@ -30,7 +30,7 @@ pub use overlay_rebuild::{
 pub use policy::{apply_sharing_policy, coarsen_to_bucket, filter_incoming};
 pub use poll::{
     gossip_degree, presence_poll_tick, presence_poll_tick_public, steady_poll_duration,
-    MAX_SYNC_ATTEMPTS, STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS,
+    STALE_HEARTBEAT_SECS,
 };
 pub use profile_diff::{compute_profile_diff, MemberProfileSnapshot, ProfileDiffOutcome};
 pub use registry::{

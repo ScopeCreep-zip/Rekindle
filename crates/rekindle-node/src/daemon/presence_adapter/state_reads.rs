@@ -34,16 +34,6 @@ impl DaemonPresenceAdapter {
         "online".to_string()
     }
 
-    pub(super) fn channel_ids_impl(&self, community_id: &str) -> Vec<String> {
-        self.ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.community(community_id))
-            .map(|m| m.channel_record_keys.keys().cloned().collect())
-            .unwrap_or_default()
-    }
-
     pub(super) fn channel_log_keys_impl(&self, community_id: &str) -> Vec<(String, String)> {
         self.ctx
             .session

@@ -203,24 +203,6 @@ pub fn control_into_event_rest(
             SubscriptionEvent::System(SystemEvent::BootstrapReceived { community: c() })
         }
 
-        // ── Sync ────────────────────────────────────────────
-        ControlPayload::SyncRequest {
-            channel_id,
-            since_timestamp,
-        } => SubscriptionEvent::System(SystemEvent::SyncRequested {
-            community: c(),
-            channel: channel_id,
-            since_timestamp,
-        }),
-        ControlPayload::SyncResponse {
-            channel_id,
-            messages,
-        } => SubscriptionEvent::System(SystemEvent::SyncReceived {
-            community: c(),
-            channel: channel_id,
-            message_count: messages.len(),
-        }),
-
         // ── System ──────────────────────────────────────────
         ControlPayload::SystemMessage { body, timestamp } => {
             SubscriptionEvent::System(SystemEvent::Announcement {

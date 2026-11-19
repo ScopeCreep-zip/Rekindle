@@ -54,20 +54,6 @@ pub enum SystemEvent {
     /// A bootstrap response was received (new joiner receiving initial state).
     /// Triggered by: the inviter's `ControlPayload::BootstrapResponseV2`.
     BootstrapReceived { community: String },
-    /// A sync request was received for a channel.
-    /// Triggered by: gossip `ControlPayload::SyncRequest`.
-    SyncRequested {
-        community: String,
-        channel: String,
-        since_timestamp: u64,
-    },
-    /// A sync response was received with historical messages.
-    /// Triggered by: gossip `ControlPayload::SyncResponse`.
-    SyncReceived {
-        community: String,
-        channel: String,
-        message_count: usize,
-    },
     /// Phase 4 — local audit chain failed integrity check. The on-disk
     /// `audit_entries` table was tampered with, truncated, or corrupted
     /// at or after the given cursor. Triggered by: `audit_verify` Tauri

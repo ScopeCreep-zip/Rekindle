@@ -209,7 +209,6 @@ impl InboundHandler for DaemonHandler {
                     governance.as_ref(),
                 )
             }
-            InboundCall::Sync(_) => CallResponse::Ack,
             InboundCall::BootstrapRequest {
                 joiner_pseudonym,
                 anchor,

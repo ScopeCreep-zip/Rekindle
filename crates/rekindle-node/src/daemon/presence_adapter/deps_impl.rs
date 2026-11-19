@@ -66,10 +66,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.identity_display_name_impl()
     }
 
-    fn channel_ids_for_community(&self, community_id: &str) -> Vec<String> {
-        self.channel_ids_impl(community_id)
-    }
-
     fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
         self.channel_log_keys_impl(community_id)
     }
@@ -325,10 +321,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         Vec::new()
     }
 
-    async fn last_channel_message_timestamp(&self, _community_id: &str, _channel_id: &str) -> i64 {
-        0
-    }
-
     async fn read_channel_message_items(
         &self,
         record_key: &str,
@@ -350,29 +342,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
     fn mark_initial_sync_done(&self, community_id: &str) {
         self.ctx.communities.mark_channel_synced(community_id, "");
     }
-
-    fn mark_pending_sync(&self, _community_id: &str, _channel_id: &str, _attempt: u32) {}
-
-    fn stale_pending_syncs(
-        &self,
-        _community_id: &str,
-        _now_secs: u64,
-        _stale_window_secs: u64,
-        _max_attempts: u32,
-    ) -> Vec<(String, u32)> {
-        Vec::new()
-    }
-
-    fn update_pending_sync(
-        &self,
-        _community_id: &str,
-        _channel_id: &str,
-        _now_secs: u64,
-        _attempt: u32,
-    ) {
-    }
-
-    fn prune_pending_syncs(&self, _community_id: &str, _max_attempts: u32) {}
 
     // ---------- Capability gaps: no profile store, no voice engine ----------
 

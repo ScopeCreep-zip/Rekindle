@@ -313,23 +313,6 @@ pub fn conversation_of(
     .optional()
 }
 
-/// The newest message's timestamp in a channel, 0 when it has none.
-///
-/// # Errors
-/// The read failed.
-pub fn last_channel_timestamp(
-    conn: &Connection,
-    owner_key: &str,
-    channel_id: &str,
-) -> rusqlite::Result<i64> {
-    conn.query_row(
-        "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
-         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel'",
-        rusqlite::params![owner_key, channel_id],
-        |r| r.get(0),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

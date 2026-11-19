@@ -71,22 +71,6 @@ pub struct CommunityLeaveNotification {
 // ownership in particular could not mean anything, since
 // `GovernanceState.creator` is fixed at genesis.
 
-// ── Legacy types (sync/bootstrap) ───────────────────────────────────────
-
-/// Sync request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncRequest {
-    pub channel_id: String,
-    pub since_timestamp: u64,
-}
-
-/// Sync response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncResponse {
-    pub channel_id: String,
-    pub messages: Vec<Vec<u8>>,
-}
-
 // ── Inbound call dispatch ───────────────────────────────────────────────
 
 /// Inbound RPC request dispatched to the handler.
@@ -97,8 +81,6 @@ pub struct SyncResponse {
 pub enum InboundCall {
     /// Member leaving (best-effort notification for cleanup + rekey).
     CommunityLeave(CommunityLeaveNotification),
-    /// History sync request from archiver.
-    Sync(SyncRequest),
     /// A wrapped MEK delivered by the deterministic rotator after a
     /// member departed (`communities-channels.md`, "Distribution
     /// paths": *delivers the wrapped MEK to each member via `app_call`*).
@@ -176,15 +158,7 @@ pub fn deserialize_inbound_call(type_id: TypeId, bytes: &[u8]) -> Result<Inbound
                 })?;
             Ok(InboundCall::CommunityLeave(req))
         }
-        TypeId::SyncRequest => {
-            let req: SyncRequest =
-                postcard::from_bytes(bytes).map_err(|e| TransportError::DeserializationFailed {
-                    type_id: type_id as u8,
-                    reason: e.to_string(),
-                })?;
-            Ok(InboundCall::Sync(req))
-        }
-        _ => Err(TransportError::UnknownType {
+        TypeId::GossipBroadcast => Err(TransportError::UnknownType {
             type_id: type_id as u8,
         }),
     }

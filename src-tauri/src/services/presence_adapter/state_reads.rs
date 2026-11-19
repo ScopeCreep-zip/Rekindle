@@ -101,15 +101,6 @@ pub(super) fn my_pseudonym_for_community(state: &Arc<AppState>, community_id: &s
     crate::state_helpers::my_pseudonym_key(state, community_id).unwrap_or_default()
 }
 
-pub(super) fn channel_ids_for_community(state: &Arc<AppState>, community_id: &str) -> Vec<String> {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .map(|c| c.channels.iter().map(|ch| ch.id.clone()).collect())
-        .unwrap_or_default()
-}
-
 pub(super) fn channel_log_keys_for_community(
     state: &Arc<AppState>,
     community_id: &str,
@@ -125,19 +116,6 @@ pub(super) fn channel_log_keys_for_community(
                 .collect()
         })
         .unwrap_or_default()
-}
-
-pub(super) fn mark_pending_sync(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    attempt: u32,
-) {
-    let now = rekindle_utils::timestamp_secs();
-    if let Some(c) = state.communities.write().get_mut(community_id) {
-        c.pending_syncs
-            .insert(channel_id.to_string(), (now, attempt));
-    }
 }
 
 pub(super) fn mark_initial_sync_done(state: &Arc<AppState>, community_id: &str) {

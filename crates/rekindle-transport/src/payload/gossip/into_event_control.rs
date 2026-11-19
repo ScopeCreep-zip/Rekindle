@@ -151,8 +151,6 @@ pub fn control_into_event(
         | ControlPayload::VoiceRoster { .. }
         | ControlPayload::BootstrapRequest { .. }
         | ControlPayload::BootstrapResponseV2 { .. }
-        | ControlPayload::SyncRequest { .. }
-        | ControlPayload::SyncResponse { .. }
         | ControlPayload::SystemMessage { .. }
         | ControlPayload::RaidAlert { .. }
         | ControlPayload::ChannelLockdown { .. }

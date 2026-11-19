@@ -260,9 +260,7 @@ impl SubscriptionEvent {
                 | SystemEvent::AutoModAlert { community, .. }
                 | SystemEvent::ChannelLockdown { community, .. }
                 | SystemEvent::BootstrapRequested { community, .. }
-                | SystemEvent::BootstrapReceived { community }
-                | SystemEvent::SyncRequested { community, .. }
-                | SystemEvent::SyncReceived { community, .. } => Some(community),
+                | SystemEvent::BootstrapReceived { community } => Some(community),
                 // Audit chain breakage is a local-device event, not community-scoped.
                 SystemEvent::AuditChainBroken { .. }
                 | SystemEvent::SkinChanged { .. }

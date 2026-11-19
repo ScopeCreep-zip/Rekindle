@@ -21,7 +21,6 @@ mod auto_expand;
 pub mod community_deps;
 mod gossip_overlay;
 mod member_state;
-mod pending_sync;
 mod persist;
 mod scan;
 mod state_reads;

@@ -60,10 +60,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
         crate::services::community::current_presence_status(&self.state, community_id).to_string()
     }
 
-    fn channel_ids_for_community(&self, community_id: &str) -> Vec<String> {
-        super::state_reads::channel_ids_for_community(&self.state, community_id)
-    }
-
     fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
         super::state_reads::channel_log_keys_for_community(&self.state, community_id)
     }
@@ -94,30 +90,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
                 "send_to_mesh from community-presence deps failed",
             );
         }
-    }
-
-    async fn last_channel_message_timestamp(&self, _community_id: &str, channel_id: &str) -> i64 {
-        let owner_key = state_helpers::current_owner_key(&self.state).unwrap_or_default();
-        let ch = channel_id.to_string();
-        crate::db_helpers::db_call(&self.pool, move |conn| {
-            conn.query_row(
-                "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
-                 WHERE owner_key=? AND conversation_id=? AND conversation_type='channel'",
-                rusqlite::params![owner_key, ch],
-                |r| r.get(0),
-            )
-        })
-        .await
-        .unwrap_or_else(|e| {
-            // 0 asks the peer for the channel's whole history: a full
-            // re-sync is the safe answer when our high-water mark is unknown.
-            tracing::warn!(channel = %channel_id, error = %e, "last channel timestamp unreadable");
-            0
-        })
-    }
-
-    fn mark_pending_sync(&self, community_id: &str, channel_id: &str, attempt: u32) {
-        super::state_reads::mark_pending_sync(&self.state, community_id, channel_id, attempt);
     }
 
     async fn read_channel_message_items(
@@ -527,42 +499,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
                 rekindle_voice::signaling::reconcile_from_presence(&deps, &cid, views).await;
             },
         );
-    }
-
-    fn stale_pending_syncs(
-        &self,
-        community_id: &str,
-        now_secs: u64,
-        stale_window_secs: u64,
-        max_attempts: u32,
-    ) -> Vec<(String, u32)> {
-        super::pending_sync::stale_pending_syncs(
-            &self.state,
-            community_id,
-            now_secs,
-            stale_window_secs,
-            max_attempts,
-        )
-    }
-
-    fn update_pending_sync(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        now_secs: u64,
-        attempt: u32,
-    ) {
-        super::pending_sync::update_pending_sync(
-            &self.state,
-            community_id,
-            channel_id,
-            now_secs,
-            attempt,
-        );
-    }
-
-    fn prune_pending_syncs(&self, community_id: &str, max_attempts: u32) {
-        super::pending_sync::prune_pending_syncs(&self.state, community_id, max_attempts);
     }
 
     fn maybe_auto_expand_segment(&self, community_id: &str) {

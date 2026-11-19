@@ -55,9 +55,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// status without breaking the trait signature.
     fn current_presence_status_str(&self, community_id: &str) -> String;
 
-    /// List of every joined channel in the community.
-    fn channel_ids_for_community(&self, community_id: &str) -> Vec<String>;
-
     /// `(channel_id, smpl_record_key)` pairs for every channel that
     /// has an SMPL log record allocated.
     fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)>;
@@ -76,16 +73,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         community_id: &str,
         envelope: rekindle_codec::community::envelope::CommunityEnvelope,
     );
-
-    /// Highest timestamp persisted locally for the given channel —
-    /// the orchestrator uses this as the `since_timestamp` on
-    /// `SyncRequest` envelopes.
-    async fn last_channel_message_timestamp(&self, community_id: &str, channel_id: &str) -> i64;
-
-    /// Record that a `SyncRequest` was just fired for the channel
-    /// (so the retry sweep in `presence_poll_tick` can detect stale
-    /// outstanding requests).
-    fn mark_pending_sync(&self, community_id: &str, channel_id: &str, attempt: u32);
 
     /// Read the `member_slots` of an SMPL channel record that hold a
     /// value: each message with the subkey it was written to. The record
@@ -379,30 +366,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// members, expire ghosts). Fire-and-forget — the add/remove
     /// DECISIONS live in `rekindle-voice`; the adapter only bridges.
     fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<VoicePresenceRow>);
-
-    /// Pending-sync entries the orchestrator should retry (older
-    /// than `stale_window_secs` with attempt count below
-    /// `max_attempts`).
-    fn stale_pending_syncs(
-        &self,
-        community_id: &str,
-        now_secs: u64,
-        stale_window_secs: u64,
-        max_attempts: u32,
-    ) -> Vec<(String, u32)>;
-
-    /// Update the pending-sync timestamp + attempt count for a
-    /// channel. Pre-port wrote `pending_syncs.insert(channel, (ts, attempt))`.
-    fn update_pending_sync(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        now_secs: u64,
-        attempt: u32,
-    );
-
-    /// Drop pending-sync entries that have hit their attempt cap.
-    fn prune_pending_syncs(&self, community_id: &str, max_attempts: u32);
 
     /// Architecture §15 A5/P4.3 — admin-side trigger for Plate
     /// Gate segment expansion. Spawns a background task; returns

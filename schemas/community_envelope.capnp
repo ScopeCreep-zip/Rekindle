@@ -21,7 +21,6 @@ using import "community_event.capnp".EventInfo;
 using import "community_thread.capnp".ThreadInfo;
 using import "community_game_server.capnp".GameServerInfo;
 using import "governance_op.capnp".OpRef;
-using import "community_message.capnp".SyncedMessage;
 using import "community_governance.capnp".GovernanceEntry;
 
 # ── Outer wrapper ─────────────────────────────────────────────────────
@@ -347,16 +346,6 @@ struct BootstrapResponseV2Payload @0xea0047000000a000 {
     frontier             @1 :List(OpRef);
 }
 
-struct SyncRequestPayload @0xea002c000000a000 {
-    channelId            @0 :Text;
-    sinceTimestamp       @1 :UInt64;
-}
-
-struct SyncResponsePayload @0xea002d000000a000 {
-    channelId            @0 :Text;
-    messages             @1 :List(SyncedMessage);
-}
-
 struct VoiceJoinPayload @0xea002e000000a000 {
     channelId            @0 :Text;
     routeBlob            @1 :Data;
@@ -680,8 +669,8 @@ struct ControlPayload @0xeaffffff00000001 {
         obsolete41               @41 :Void;
         bootstrapRequest         @42 :BootstrapRequestPayload;
         obsolete43               @43 :Void;
-        syncRequest              @44 :SyncRequestPayload;
-        syncResponse             @45 :SyncResponsePayload;
+        obsolete44               @44 :Void;
+        obsolete45               @45 :Void;
         voiceJoin                @46 :VoiceJoinPayload;
         voiceLeave               @47 :VoiceLeavePayload;
         voiceModeSwitch          @48 :VoiceModeSwitchPayload;

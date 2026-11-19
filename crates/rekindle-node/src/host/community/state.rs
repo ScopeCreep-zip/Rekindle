@@ -176,11 +176,6 @@ pub struct CommunityState {
     #[serde(skip)]
     pub channel_sequences: HashMap<String, u64>,
 
-    /// Pending sync requests: channel_id → (request_timestamp, attempt_count).
-    /// Cleared when SyncResponse arrives. Retried in presence_poll_tick if stale.
-    #[serde(skip)]
-    pub pending_syncs: HashMap<String, (u64, u32)>,
-
     /// Record keys with an active Veilid watch in this session.
     /// Watches are an optimization; inspect polling still runs for all records.
     #[serde(skip)]
@@ -532,7 +527,7 @@ pub struct GossipOverlay {
     /// Superset of `peers`. Updated on each presence poll.
     pub online_members: HashMap<String, OnlineMember>,
     /// True until the first successful sync after coming online.
-    /// Used to trigger a `SyncRequest` to online peers for catch-up.
+    /// Triggers the initial presence broadcast and slot-record catch-up.
     pub needs_initial_sync: bool,
     /// A1/P4.1 — broadcasts queued because `peers` was empty at send time.
     /// `send_to_mesh_raw` enqueues here instead of dropping; the next

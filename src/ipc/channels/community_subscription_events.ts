@@ -98,8 +98,6 @@ export type SystemEvent =
   | { channelLockdown: { community: string; locked: boolean } }
   | { bootstrapRequested: Record<string, unknown> }
   | { bootstrapReceived: Record<string, unknown> }
-  | { syncRequested: Record<string, unknown> }
-  | { syncReceived: { community: string; channel: string; messageCount: number } }
   | { auditChainBroken: { cursor: number } }
   | { skinChanged: { skin: SkinApplied } };
 

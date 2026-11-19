@@ -27,7 +27,6 @@ pub mod relay;
 pub mod shell_session; // Plan E1.1 — the GUI's ShellHooks: its unported unlock stages.
 pub mod sync_communities;
 pub mod sync_runtime; // Phase 23.C — sync-handler runtime orchestration lifted from commands/sync.rs.
-pub mod sync_service;
 pub mod veilid;
 pub mod video_adapter; // Phase 16 — VideoDeps impl + send/receive facades.
 pub mod voice_adapter; // Phase 14 — VoiceSessionDeps impl + voice free-fn facades.

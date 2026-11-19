@@ -1,7 +1,6 @@
 //! `control` bootstrap / sync variant encode/decode helpers.
 
 use super::super::len_u32;
-use super::super::sub_types::{read_synced_message, write_synced_message};
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community::envelope::ControlPayload;
 use crate::community_envelope_capnp as cap;
@@ -56,39 +55,6 @@ fn check_bounds(frontier: usize) -> Result<(), CodecError> {
     Ok(())
 }
 
-pub(super) fn write_sync_request(
-    mut p: cap::sync_request_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::SyncRequest {
-        channel_id,
-        since_timestamp,
-    } = payload
-    else {
-        unreachable!("write_sync_request: variant mismatch")
-    };
-    p.set_channel_id(channel_id);
-    p.set_since_timestamp(*since_timestamp);
-}
-
-pub(super) fn write_sync_response(
-    mut p: cap::sync_response_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::SyncResponse {
-        channel_id,
-        messages,
-    } = payload
-    else {
-        unreachable!("write_sync_response: variant mismatch")
-    };
-    p.set_channel_id(channel_id);
-    let mut list = p.reborrow().init_messages(len_u32(messages.len()));
-    for (i, m) in messages.iter().enumerate() {
-        write_synced_message(list.reborrow().get(len_u32(i)), m);
-    }
-}
-
 pub(super) fn read_bootstrap_request(
     p: cap::bootstrap_request_payload::Reader<'_>,
 ) -> Result<ControlPayload, CodecError> {
@@ -112,29 +78,5 @@ pub(super) fn read_bootstrap_response_v2(
     Ok(ControlPayload::BootstrapResponseV2 {
         anchor: text_to_string(p.get_anchor().map_err(|e| capnp_err(&e))?)?,
         frontier: heads.iter().map(read_op_ref).collect::<Result<_, _>>()?,
-    })
-}
-
-pub(super) fn read_sync_request(
-    p: cap::sync_request_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::SyncRequest {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        since_timestamp: p.get_since_timestamp(),
-    })
-}
-
-pub(super) fn read_sync_response(
-    p: cap::sync_response_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    let messages: Result<Vec<_>, CodecError> = p
-        .get_messages()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .map(read_synced_message)
-        .collect();
-    Ok(ControlPayload::SyncResponse {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        messages: messages?,
     })
 }

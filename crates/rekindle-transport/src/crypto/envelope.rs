@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn reframed_type_id_rejected() {
         let s = signed(b"payload");
-        assert!(verify_signed_payload(&s, to_bob(TypeId::SyncRequest), NOW_MS).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
     }
 
     /// A signature over the v2 field layout (`seq` and a correlation-id

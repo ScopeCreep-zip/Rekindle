@@ -208,7 +208,7 @@ export const COMMUNITY_ROWS: Row[] = [
       const input = await shown(b, ".community-main .message-input-editing");
       await input.clearValue();
       await input.addValue(EDITED);
-      await recordPage(b, ["edit_channel_message", "get_channel_messages"], ['"edited"', "syncReceived", "channelMessage"]);
+      await recordPage(b, ["edit_channel_message", "get_channel_messages"], ['"edited"', "channelMessage"]);
       const typed = await input.getValue();
       await b.keys("Enter");
       const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });

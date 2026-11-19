@@ -221,18 +221,6 @@ pub enum ControlPayload {
         frontier: Vec<rekindle_types::governance::OpRef>,
     },
 
-    // ── Sync protocol ──
-    /// Request channel history from an archiver node.
-    SyncRequest {
-        channel_id: String,
-        since_timestamp: u64,
-    },
-    /// Response with channel messages from an archiver's local SQLite.
-    SyncResponse {
-        channel_id: String,
-        messages: Vec<rekindle_types::message::SyncedMessage>,
-    },
-
     // ── Voice channel signaling ──
     /// Broadcast: member joined a voice channel (handshake leg 1 —
     /// "reach out").

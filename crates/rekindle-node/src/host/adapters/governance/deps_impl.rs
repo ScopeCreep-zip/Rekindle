@@ -244,7 +244,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
     // ---------- Background lifecycle ----------
 
     fn spawn_history_catchup(&self, community_id: &str) {
-        self.spawn_history_catchup_impl(community_id);
+        self.spawn_outbox_catchup(community_id);
     }
 
     /// Open the community's chunk cache in the Host's store (plan E3.1 E3c).

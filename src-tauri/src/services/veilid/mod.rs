@@ -13,7 +13,6 @@ mod control_events;
 pub(crate) mod control_ingress;
 mod control_membership;
 mod control_moderation;
-mod control_sync;
 mod dht_watch;
 mod inbound_unported;
 pub(crate) mod ingress_queue;

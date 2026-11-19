@@ -68,11 +68,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         st.calls_status_str.push(community_id.to_string());
         st.status.clone()
     }
-    fn channel_ids_for_community(&self, community_id: &str) -> Vec<String> {
-        let mut st = self.state.lock();
-        st.calls_channel_ids.push(community_id.to_string());
-        st.channels.clone()
-    }
     fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
         let mut st = self.state.lock();
         st.calls_channel_logs.push(community_id.to_string());
@@ -88,19 +83,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .lock()
             .sent_envelopes
             .push((community_id.to_string(), envelope));
-    }
-    async fn last_channel_message_timestamp(&self, community_id: &str, channel_id: &str) -> i64 {
-        let mut st = self.state.lock();
-        st.calls_last_ts
-            .push((community_id.to_string(), channel_id.to_string()));
-        st.last_ts.get(channel_id).copied().unwrap_or(0)
-    }
-    fn mark_pending_sync(&self, community_id: &str, channel_id: &str, attempt: u32) {
-        self.state.lock().pending_syncs.push((
-            community_id.to_string(),
-            channel_id.to_string(),
-            attempt,
-        ));
     }
     async fn read_channel_message_items(
         &self,
@@ -401,42 +383,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .lock()
             .calls_reconcile_voice_roster
             .push((community_id.to_string(), rows));
-    }
-    fn stale_pending_syncs(
-        &self,
-        community_id: &str,
-        now_secs: u64,
-        stale_window_secs: u64,
-        max_attempts: u32,
-    ) -> Vec<(String, u32)> {
-        let mut st = self.state.lock();
-        st.calls_stale_syncs.push((
-            community_id.to_string(),
-            now_secs,
-            stale_window_secs,
-            max_attempts,
-        ));
-        st.stale_syncs.clone()
-    }
-    fn update_pending_sync(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        now_secs: u64,
-        attempt: u32,
-    ) {
-        self.state.lock().calls_update_pending.push((
-            community_id.to_string(),
-            channel_id.to_string(),
-            now_secs,
-            attempt,
-        ));
-    }
-    fn prune_pending_syncs(&self, community_id: &str, max_attempts: u32) {
-        self.state
-            .lock()
-            .calls_prune_pending
-            .push((community_id.to_string(), max_attempts));
     }
     fn maybe_auto_expand_segment(&self, community_id: &str) {
         self.state

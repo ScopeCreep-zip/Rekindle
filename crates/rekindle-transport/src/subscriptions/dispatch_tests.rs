@@ -251,7 +251,7 @@ async fn a_gossip_call_is_refused_before_any_decode() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
     let mut framed = vec![rekindle_codec::ingress::GOSSIP_TAG];
-    framed.extend(crate::frame::encode(crate::frame::TypeId::SyncRequest, b"x").unwrap());
+    framed.extend(crate::frame::encode(crate::frame::TypeId::CommunityLeave, b"x").unwrap());
     for (n, datagram) in [vec![rekindle_codec::ingress::GOSSIP_TAG, 0xFF], framed]
         .into_iter()
         .enumerate()

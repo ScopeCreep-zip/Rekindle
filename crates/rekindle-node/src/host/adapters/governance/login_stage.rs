@@ -143,5 +143,5 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
     if stop.is_cancelled() {
         return;
     }
-    governance.spawn_history_catchup_impl(community_id);
+    governance.spawn_outbox_catchup(community_id);
 }

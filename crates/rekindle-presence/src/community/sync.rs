@@ -1,20 +1,20 @@
 //! Phase 21 REDO — initial-sync handshake orchestrator.
 //!
 //! Pre-port lived in `src-tauri/services/community/presence/sync.rs`.
-//! On first peer-attach: broadcast `PresenceUpdate` to mesh, fire one
-//! `SyncRequest` per channel, then catch up missing messages by
-//! reading each channel's SMPL log record directly. Pure
+//! On first peer-attach: broadcast `PresenceUpdate` to mesh, then catch
+//! up the slot-record entries (reactions, polls, hand raises, thread
+//! replies) by reading each channel's SMPL log record directly; posts
+//! are each author's outbox, caught up by the Host (plan E3.3). Pure
 //! orchestration parameterised over [`CommunityPresenceDeps`].
 
 use std::sync::Arc;
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use crate::deps::CommunityPresenceDeps;
 
-/// On first successful peer-attachment, broadcast our presence row +
-/// a per-channel `SyncRequest` + catch up missing messages by reading
-/// the SMPL channel-log records directly.
+/// On first successful peer-attachment, broadcast our presence row and
+/// catch up by reading the SMPL channel-log records directly.
 ///
 /// `d` is the gossip fan-out degree decided by `presence_poll_tick`
 /// — when `d == 0` we skip the PresenceUpdate broadcast (no online
@@ -43,19 +43,6 @@ pub async fn run_initial_sync<D: CommunityPresenceDeps>(
             );
             return;
         }
-    }
-
-    let channel_ids = deps.channel_ids_for_community(community_id);
-    for channel_id in &channel_ids {
-        let last_ts = deps
-            .last_channel_message_timestamp(community_id, channel_id)
-            .await;
-        let sync_req = CommunityEnvelope::Control(ControlPayload::SyncRequest {
-            channel_id: channel_id.clone(),
-            since_timestamp: last_ts.cast_unsigned(),
-        });
-        deps.send_to_mesh(community_id, sync_req);
-        deps.mark_pending_sync(community_id, channel_id, 1);
     }
 
     let channel_entries = deps.channel_log_keys_for_community(community_id);
@@ -110,17 +97,11 @@ mod tests {
     #[tokio::test]
     async fn no_peers_skips_presence_broadcast_but_still_marks_done() {
         let deps = Arc::new(MockCommunityDeps::new(MockState {
-            channels: vec!["ch1".into()],
             ..Default::default()
         }));
         run_initial_sync(Arc::clone(&deps), "c1", 0).await;
         let st = deps.state.lock();
-        assert_eq!(st.sent_envelopes.len(), 1);
-        assert!(matches!(
-            st.sent_envelopes[0].1,
-            CommunityEnvelope::Control(ControlPayload::SyncRequest { .. })
-        ));
-        assert_eq!(st.pending_syncs, vec![("c1".into(), "ch1".into(), 1)]);
+        assert!(st.sent_envelopes.is_empty());
         assert_eq!(st.initial_done, vec!["c1".to_string()]);
     }
 
@@ -129,18 +110,16 @@ mod tests {
         let deps = Arc::new(MockCommunityDeps::new(MockState {
             my_pk: "me".into(),
             our_route: None,
-            channels: vec!["ch1".into()],
             ..Default::default()
         }));
         run_initial_sync(Arc::clone(&deps), "c1", 3).await;
         let st = deps.state.lock();
         assert!(st.sent_envelopes.is_empty());
-        assert!(st.pending_syncs.is_empty());
         assert!(st.initial_done.is_empty());
     }
 
     #[tokio::test]
-    async fn full_path_sends_presence_then_per_channel_sync_then_catchup() {
+    async fn full_path_sends_presence_then_catches_up() {
         let mut read = HashMap::new();
         read.insert(
             "rec1".to_string(),
@@ -166,7 +145,6 @@ mod tests {
             my_pk: "me".into(),
             our_route: Some(vec![1, 2, 3]),
             status: "online".into(),
-            channels: vec!["ch1".into(), "ch2".into()],
             channel_logs: vec![("ch1".into(), "rec1".into())],
             member_slots: vec![0, 3, 7],
             read_results: read,
@@ -174,12 +152,11 @@ mod tests {
         }));
         run_initial_sync(Arc::clone(&deps), "c1", 3).await;
         let st = deps.state.lock();
-        assert_eq!(st.sent_envelopes.len(), 3);
+        assert_eq!(st.sent_envelopes.len(), 1);
         assert!(matches!(
             st.sent_envelopes[0].1,
             CommunityEnvelope::PresenceUpdate { .. }
         ));
-        assert_eq!(st.pending_syncs.len(), 2);
         assert_eq!(st.catchups, vec![("c1".into(), "ch1".into(), 1)]);
         // The catch-up reads the writer index, not a count.
         assert_eq!(st.calls_read_all, vec![("rec1".into(), vec![0, 3, 7])]);
@@ -192,14 +169,13 @@ mod tests {
             my_pk: "me".into(),
             our_route: Some(vec![1]),
             status: "online".into(),
-            channels: vec!["ch1".into()],
             channel_logs: Vec::new(),
             member_slots: vec![0, 3, 7],
             ..Default::default()
         }));
         run_initial_sync(Arc::clone(&deps), "c1", 3).await;
         let st = deps.state.lock();
-        assert_eq!(st.sent_envelopes.len(), 2);
+        assert_eq!(st.sent_envelopes.len(), 1);
         assert!(st.catchups.is_empty());
         assert_eq!(st.initial_done, vec!["c1".to_string()]);
     }

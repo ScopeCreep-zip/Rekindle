@@ -28,8 +28,6 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::ChannelLockdown { .. } => "channelLockdown",
         SystemEvent::BootstrapRequested { .. } => "bootstrapRequested",
         SystemEvent::BootstrapReceived { .. } => "bootstrapReceived",
-        SystemEvent::SyncRequested { .. } => "syncRequested",
-        SystemEvent::SyncReceived { .. } => "syncReceived",
         SystemEvent::AuditChainBroken { .. } => "auditChainBroken",
         SystemEvent::SkinChanged { .. } => "skinChanged",
         SystemEvent::SkinTrialChanged { .. } => "skinTrialChanged",
@@ -104,22 +102,6 @@ fn sync() -> Vec<Sample> {
             "bootstrapReceived",
             SystemEvent::BootstrapReceived {
                 community: community(),
-            },
-        ),
-        ev(
-            "syncRequested",
-            SystemEvent::SyncRequested {
-                community: community(),
-                channel: channel(),
-                since_timestamp: 1_759_999_000_000,
-            },
-        ),
-        ev(
-            "syncReceived",
-            SystemEvent::SyncReceived {
-                community: community(),
-                channel: channel(),
-                message_count: 12,
             },
         ),
         ev(

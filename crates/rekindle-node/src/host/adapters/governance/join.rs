@@ -144,7 +144,7 @@ impl HostGovernance {
         // from our cursors, as an unlock's stage does (plan E3.3 "Cursor
         // and authors"). The ring and the hints carry only what is written
         // from now on, and a departed author is on neither.
-        self.spawn_history_catchup_impl(&id);
+        self.spawn_outbox_catchup(&id);
         tracing::info!(community = %id, "joined community");
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
         // gossiped and queued, and the outbox lands it (S6b).

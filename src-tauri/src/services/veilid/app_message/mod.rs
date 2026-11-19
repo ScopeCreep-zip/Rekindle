@@ -8,9 +8,7 @@ use crate::state::{AppState, OnlineMember};
 use crate::state_helpers;
 
 use rekindle_codec::capnp_envelope::{decode_signed_envelope, try_decode_community_envelope};
-use rekindle_codec::community::envelope::{
-    verify_envelope, CommunityEnvelope, ControlPayload, SignedEnvelope,
-};
+use rekindle_codec::community::envelope::{verify_envelope, CommunityEnvelope, SignedEnvelope};
 use rekindle_codec::ingress::{classify, gossip_datagram, Ingress};
 
 // Fully synchronous: the voice fast path is a `try_send` and
@@ -191,8 +189,7 @@ async fn handle_gossip_envelope(
     // payloads are excluded from gossip forwarding even if a
     // non-compliant sender ships them with ttl > 0, so honest nodes
     // never amplify channel media beyond the roster it was sent to.
-    let is_private = is_private_control_payload(&signed.envelope_bytes);
-    if signed.ttl > 0 && !is_private && video_channel.is_none() {
+    if signed.ttl > 0 && video_channel.is_none() {
         gossip_forward(state, community_id, &signed);
     }
 
@@ -277,16 +274,6 @@ fn local_in_channel(state: &Arc<AppState>, community_id: &str, channel_id: &str)
     ve.as_ref().is_some_and(|handle| {
         handle.community_id.as_deref() == Some(community_id) && handle.channel_id == channel_id
     })
-}
-
-pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
-    if let Ok(Some(CommunityEnvelope::Control(ref payload))) =
-        try_decode_community_envelope(envelope_bytes)
-    {
-        matches!(payload, ControlPayload::SyncResponse { .. })
-    } else {
-        false
-    }
 }
 
 fn gossip_forward(state: &Arc<AppState>, community_id: &str, signed: &SignedEnvelope) {

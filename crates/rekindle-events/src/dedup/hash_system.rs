@@ -127,30 +127,6 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(b"boot_recv|");
             h.update(community.as_bytes());
         }
-        SystemEvent::SyncRequested {
-            community,
-            channel,
-            since_timestamp,
-        } => {
-            h.update(b"sync_req|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
-            h.update(&since_timestamp.to_le_bytes());
-        }
-        SystemEvent::SyncReceived {
-            community,
-            channel,
-            message_count,
-        } => {
-            h.update(b"sync_recv|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
-            h.update(&(*message_count as u64).to_le_bytes());
-        }
         SystemEvent::AuditChainBroken { cursor } => {
             h.update(b"audit_broken|");
             h.update(&cursor.to_le_bytes());

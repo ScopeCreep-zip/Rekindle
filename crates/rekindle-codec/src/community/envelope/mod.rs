@@ -106,7 +106,6 @@ impl CommunityEnvelope {
             ControlPayload::MekTransfer(_)
                 | ControlPayload::MekTransferAck(_)
                 // Answers to one peer's question.
-                | ControlPayload::SyncResponse { .. }
                 | ControlPayload::BootstrapResponseV2 { .. }
                 | ControlPayload::BootstrapPartial { .. }
                 | ControlPayload::CheckpointStateRequest { .. }

@@ -369,7 +369,7 @@ impl App {
             SubscriptionEvent::System(
                 SystemEvent::BootstrapRequested { .. }
                 | SystemEvent::BootstrapReceived { .. }
-                | SystemEvent::SyncRequested { .. },
+,
             ) => None,
 
             // ── Friend rows: re-read the list the Host projects ──────────

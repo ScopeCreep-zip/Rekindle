@@ -13,7 +13,7 @@ use tracing::{debug, info};
 use super::node::TransportNode;
 use crate::error::{Result, TransportError};
 use crate::frame::TypeId;
-use crate::payload::rpc::{CallResponse, CommunityLeaveNotification, SyncRequest, SyncResponse};
+use crate::payload::rpc::{CallResponse, CommunityLeaveNotification};
 use rekindle_records::port::PeerTarget;
 
 // ── Community leave ────────────────────────────────────────────────────
@@ -75,57 +75,3 @@ pub async fn community_leave(
 // ── Governance operations ──────────────────────────────────────────────
 
 // ── Sync ───────────────────────────────────────────────────────────────
-
-/// Send a sync request to an archiver node, signed to its identity key
-/// `recipient`.
-pub async fn sync_request(
-    node: &TransportNode,
-    target: &PeerTarget,
-    recipient: &[u8; 32],
-    channel_id: &str,
-    since_timestamp: u64,
-    signing_key: &[u8; 32],
-    sender_hex: &str,
-    now_ms: u64,
-) -> Result<SyncResponse> {
-    debug!(
-        channel = channel_id,
-        since = since_timestamp,
-        "rpc: sync_request"
-    );
-    let request = SyncRequest {
-        channel_id: channel_id.into(),
-        since_timestamp,
-    };
-    let payload =
-        postcard::to_stdvec(&request).map_err(|e| TransportError::SerializationFailed {
-            reason: e.to_string(),
-        })?;
-
-    let response_bytes = node
-        .caller()
-        .call(
-            target,
-            recipient,
-            TypeId::SyncRequest,
-            signing_key,
-            sender_hex,
-            &payload,
-            now_ms,
-        )
-        .await?;
-
-    let response: SyncResponse = postcard::from_bytes(&response_bytes).map_err(|e| {
-        TransportError::DeserializationFailed {
-            type_id: TypeId::SyncResponse as u8,
-            reason: e.to_string(),
-        }
-    })?;
-
-    info!(
-        channel = channel_id,
-        messages = response.messages.len(),
-        "sync response received"
-    );
-    Ok(response)
-}

@@ -1,27 +1,7 @@
-//! Architecture §15 — channel-message snapshots carried inside
-//! `SyncResponse.messages`. Wire
-//! shapes preserved exactly from the pre-migration JSON form so the
-//! envelope swap is wire-compatible; the Cap'n Proto migration replaces
-//! these with typed schemas.
+//! Our community channel posts: the payloads of their outbox
+//! `channel_post` rows (plan E3.3).
 
 use serde::{Deserialize, Serialize};
-
-/// Architecture §15 — sync-response message entry. It is pulled from SQLite, where the
-/// historical message rows carry the columns this struct mirrors.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct SyncedMessage {
-    /// Hex-encoded sender community pseudonym.
-    pub sender_key: String,
-    /// Stored message body (architecture §15 line 2210 — already
-    /// MEK-encrypted at write time).
-    pub body: String,
-    pub timestamp: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mek_generation: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lamport_ts: Option<i64>,
-}
 
 /// Our community channel post (plan E3.3): the payload of its outbox
 /// `channel_post` row. A message or forward is an entry of our member
@@ -90,39 +70,6 @@ impl ChannelPost {
     #[must_use]
     pub fn scope(&self) -> String {
         format!("{}:{}", self.community, self.channel)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn synced_message_roundtrip() {
-        let m = SyncedMessage {
-            sender_key: "abcd".into(),
-            body: "hello".into(),
-            timestamp: 100,
-            mek_generation: Some(1),
-            lamport_ts: Some(42),
-        };
-        let json = serde_json::to_string(&m).unwrap();
-        let back: SyncedMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(m, back);
-    }
-
-    #[test]
-    fn synced_message_omits_optional_when_absent() {
-        let m = SyncedMessage {
-            sender_key: "abcd".into(),
-            body: "hello".into(),
-            timestamp: 100,
-            mek_generation: None,
-            lamport_ts: None,
-        };
-        let json = serde_json::to_string(&m).unwrap();
-        assert!(!json.contains("mek_generation"));
-        assert!(!json.contains("lamport_ts"));
     }
 }
 

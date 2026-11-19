@@ -1767,24 +1767,6 @@
       }
     }
   },
-  "system.syncReceived": {
-    "system": {
-      "syncReceived": {
-        "channel": "ch_cccccccccccccccccccccccccccccccc",
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "messageCount": 12
-      }
-    }
-  },
-  "system.syncRequested": {
-    "system": {
-      "syncRequested": {
-        "channel": "ch_cccccccccccccccccccccccccccccccc",
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "sinceTimestamp": 1759999000000
-      }
-    }
-  },
   "typing.started.channel": {
     "typing": {
       "started": {

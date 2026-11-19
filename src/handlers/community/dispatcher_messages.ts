@@ -318,25 +318,6 @@ export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): voi
     return;
   }
 
-  if ("syncReceived" in s) {
-    // Sync complete — refresh channel messages from backend
-    const { community, channel } = s.syncReceived;
-    if (
-      communityState.activeCommunity === community &&
-      communityState.activeChannel === channel
-    ) {
-      commands
-        .getChannelMessages(channel, 100)
-        .then((msgs) => {
-          setCommunityState("channelMessages", channel, transformMessages(msgs));
-        })
-        .catch((e) => {
-          console.error("Failed to refresh messages after sync:", e);
-        });
-    }
-    return;
-  }
-
   if ("raidDetected" in s) {
     // Architecture §20.6 — this peer's sliding window tripped the
     // policy threshold; surface a moderator banner via the toast

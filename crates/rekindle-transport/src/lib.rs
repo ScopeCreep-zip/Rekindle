@@ -97,5 +97,4 @@ pub use broadcast::BroadcastManager;
 // Payload types
 pub use payload::rpc::{
     CallResponse, ChannelEntrySummary, CommunityLeaveNotification, InboundCall, MekTransferPayload,
-    SyncRequest, SyncResponse,
 };

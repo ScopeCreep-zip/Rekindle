@@ -19,8 +19,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-
 use crate::community::sync::run_initial_sync;
 use crate::community::util::random_peer_sample;
 use crate::deps::CommunityPresenceDeps;
@@ -30,11 +28,6 @@ use crate::deps::CommunityPresenceDeps;
 /// during the segment scan and as eviction candidates from the
 /// gossip overlay.
 pub const STALE_HEARTBEAT_SECS: u64 = 180;
-/// Stale-sync retry trigger. SyncRequests still in `pending_syncs`
-/// older than this are re-fired up to `MAX_SYNC_ATTEMPTS` times.
-pub const STALE_SYNC_RETRY_SECS: u64 = 60;
-/// Cap on SyncRequest retries before the entry is pruned.
-pub const MAX_SYNC_ATTEMPTS: u32 = 3;
 
 /// Compute the gossip fan-out degree for an online population.
 /// Mirrors src-tauri's `state::gossip_degree` and architecture §3.
@@ -270,33 +263,6 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
         "presence_poll_tick: gossip overlay updated",
     );
 
-    // Retry stale SyncRequests (architecture §14.2 Mutual Aid).
-    // Each retry bumps the attempt count; entries with attempt ≥3
-    // are pruned.
-    if online_count > 0 {
-        let stale = deps.stale_pending_syncs(
-            community_id,
-            now_secs,
-            STALE_SYNC_RETRY_SECS,
-            MAX_SYNC_ATTEMPTS,
-        );
-        for (channel_id, attempt) in &stale {
-            tracing::info!(
-                community = %community_id,
-                channel = %channel_id,
-                attempt = attempt + 1,
-                "retrying stale SyncRequest",
-            );
-            let sync_envelope = CommunityEnvelope::Control(ControlPayload::SyncRequest {
-                channel_id: channel_id.clone(),
-                since_timestamp: 0,
-            });
-            deps.send_to_mesh(community_id, sync_envelope);
-            deps.update_pending_sync(community_id, channel_id, now_secs, attempt + 1);
-        }
-        deps.prune_pending_syncs(community_id, MAX_SYNC_ATTEMPTS);
-    }
-
     // Initial sync handshake (architecture §14.2). Runs after the
     // rebuild lock releases so its internal send_to_mesh calls
     // don't deadlock.
@@ -496,48 +462,6 @@ mod tests {
         let st = deps.state.lock();
         assert_eq!(st.calls_send_raw.len(), 1);
         assert_eq!(st.calls_send_raw[0].0, "c1");
-    }
-
-    #[tokio::test]
-    async fn stale_pending_syncs_are_retried_with_attempt_bump() {
-        // The orchestrator only fires the stale-sync retry block
-        // when `online_members.len() > 0`. Inject one online peer
-        // via the mock's `extend_online_with_recent_gossip` hook —
-        // that runs after the per-segment scan and before the
-        // gossip-degree calculation, so the orchestrator sees
-        // `online_count = 1`.
-        let mut inject = HashMap::new();
-        inject.insert("peer1".to_string(), online_member(&[9, 9, 9]));
-        let state = MockState {
-            stale_syncs: vec![("ch1".to_string(), 1)],
-            inject_online: inject,
-            ..MockState::default()
-        };
-        let deps = make_deps_with(state);
-        let _ = presence_poll_tick(Arc::clone(&deps), "c1").await;
-        let st = deps.state.lock();
-        // stale_pending_syncs was called once.
-        assert_eq!(st.calls_stale_syncs.len(), 1);
-        // A new SyncRequest envelope was sent for the stale entry.
-        assert!(st.sent_envelopes.iter().any(|(_, env)| matches!(
-            env,
-            CommunityEnvelope::Control(ControlPayload::SyncRequest { .. })
-        )));
-        // update_pending_sync fired with attempt = original + 1 = 2.
-        assert_eq!(
-            st.calls_update_pending,
-            vec![(
-                "c1".to_string(),
-                "ch1".to_string(),
-                st.calls_update_pending[0].2,
-                2
-            )]
-        );
-        // prune_pending_syncs was called with MAX_SYNC_ATTEMPTS.
-        assert_eq!(
-            st.calls_prune_pending,
-            vec![("c1".to_string(), MAX_SYNC_ATTEMPTS)]
-        );
     }
 
     #[tokio::test]

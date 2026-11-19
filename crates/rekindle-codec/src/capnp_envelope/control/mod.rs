@@ -24,8 +24,8 @@ mod moderation;
 mod voice;
 
 use bootstrap_sync::{
-    read_bootstrap_request, read_bootstrap_response_v2, read_sync_request, read_sync_response,
-    write_bootstrap_request, write_bootstrap_response_v2, write_sync_request, write_sync_response,
+    read_bootstrap_request, read_bootstrap_response_v2, write_bootstrap_request,
+    write_bootstrap_response_v2,
 };
 use events::{
     read_event_created, read_event_deleted, read_event_reminder, read_event_rsvp_changed,
@@ -150,8 +150,6 @@ pub fn encode_control_payload(
         CP::BootstrapResponseV2 { .. } => {
             write_bootstrap_response_v2(b.reborrow().init_bootstrap_response_v2(), payload)?;
         }
-        CP::SyncRequest { .. } => write_sync_request(b.reborrow().init_sync_request(), payload),
-        CP::SyncResponse { .. } => write_sync_response(b.reborrow().init_sync_response(), payload),
         CP::VoiceJoin { .. } => write_voice_join(b.reborrow().init_voice_join(), payload),
         CP::VoiceJoinAck { .. } => {
             write_voice_join_ack(b.reborrow().init_voice_join_ack(), payload);
@@ -260,8 +258,6 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::SystemMessage(p) => read_system_message(p.map_err(|e| capnp_err(&e))?),
         Which::BootstrapRequest(p) => read_bootstrap_request(p.map_err(|e| capnp_err(&e))?),
         Which::BootstrapResponseV2(p) => read_bootstrap_response_v2(p.map_err(|e| capnp_err(&e))?),
-        Which::SyncRequest(p) => read_sync_request(p.map_err(|e| capnp_err(&e))?),
-        Which::SyncResponse(p) => read_sync_response(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceJoin(p) => read_voice_join(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceJoinAck(p) => read_voice_join_ack(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceJoinConfirmed(p) => read_voice_join_confirmed(p.map_err(|e| capnp_err(&e))?),
@@ -329,6 +325,8 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         | Which::Obsolete40(())
         | Which::Obsolete41(())
         | Which::Obsolete43(())
+        | Which::Obsolete44(())
+        | Which::Obsolete45(())
         | Which::Obsolete61(())
         | Which::Obsolete63(()) => Err(CodecError::UnknownVariant(
             "obsolete control payload".to_string(),

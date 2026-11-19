@@ -179,13 +179,6 @@ fn directed_payloads_are_not_forwarded() {
     ));
     assert!(transfer.is_directed());
 
-    // An answer to one peer's question is directed too.
-    assert!(CommunityEnvelope::Control(ControlPayload::SyncResponse {
-        channel_id: "general".into(),
-        messages: Vec::new(),
-    })
-    .is_directed());
-
     // A channel message notification is exactly what *must* be
     // forwarded — the epidemic wave is how it reaches members outside
     // the sender's fan-out.

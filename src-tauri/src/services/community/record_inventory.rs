@@ -150,7 +150,6 @@ mod tests {
             slot_seed: None,
             known_members: HashSet::new(),
             channel_sequences: HashMap::new(),
-            pending_syncs: HashMap::new(),
             watched_records: HashSet::new(),
             record_sequences: HashMap::new(),
             peer_sequences: HashMap::new(),

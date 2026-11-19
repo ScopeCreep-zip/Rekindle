@@ -135,9 +135,7 @@ impl SubscriptionEvent {
                 | SystemEvent::AutoModAlert { community, .. }
                 | SystemEvent::ChannelLockdown { community, .. }
                 | SystemEvent::BootstrapRequested { community, .. }
-                | SystemEvent::BootstrapReceived { community }
-                | SystemEvent::SyncRequested { community, .. }
-                | SystemEvent::SyncReceived { community, .. } => {
+                | SystemEvent::BootstrapReceived { community } => {
                     EventScope::Community(community.clone())
                 }
                 SystemEvent::AuditChainBroken { .. }

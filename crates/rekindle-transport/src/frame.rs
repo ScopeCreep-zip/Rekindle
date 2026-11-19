@@ -45,12 +45,9 @@ pub enum TypeId {
     // ── Community RPC (app_call, Ed25519 signed) ────────────────
     /// Member leave notification (best-effort, triggers rekey).
     CommunityLeave = 0x21,
-
-    // ── Sync RPC (app_call, Ed25519 signed) ─────────────────────
-    /// History sync request to archiver node.
-    SyncRequest = 0x23,
-    /// History sync response from archiver.
-    SyncResponse = 0x24,
+    // 0x23 and 0x24 (the history `SyncRequest`/`SyncResponse` RPC) are
+    // retired (plan E3.3 slice 8): channel history is each author's
+    // outbox. An inbound frame with either byte is an unknown type.
 }
 
 impl TypeId {
@@ -59,8 +56,6 @@ impl TypeId {
         match b {
             0x10 => Some(Self::GossipBroadcast),
             0x21 => Some(Self::CommunityLeave),
-            0x23 => Some(Self::SyncRequest),
-            0x24 => Some(Self::SyncResponse),
             _ => None,
         }
     }
@@ -77,10 +72,7 @@ impl TypeId {
 
     /// Whether this type is an RPC (app_call) payload.
     pub fn is_rpc(self) -> bool {
-        matches!(
-            self,
-            Self::CommunityLeave | Self::SyncRequest | Self::SyncResponse
-        )
+        matches!(self, Self::CommunityLeave)
     }
 }
 
@@ -150,15 +142,15 @@ mod tests {
     #[test]
     fn roundtrip_encode_decode() {
         let payload = b"hello, rekindle";
-        let frame = encode(TypeId::SyncRequest, payload).unwrap();
+        let frame = encode(TypeId::CommunityLeave, payload).unwrap();
         let (tid, decoded) = decode(&frame).unwrap();
-        assert_eq!(tid, TypeId::SyncRequest);
+        assert_eq!(tid, TypeId::CommunityLeave);
         assert_eq!(decoded, payload);
     }
 
     #[test]
     fn rejects_unknown_version() {
-        let mut frame = encode(TypeId::SyncRequest, b"test").unwrap();
+        let mut frame = encode(TypeId::CommunityLeave, b"test").unwrap();
         frame[0] = 0xFF;
         assert!(matches!(
             decode(&frame),
@@ -168,7 +160,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_type() {
-        let mut frame = encode(TypeId::SyncRequest, b"test").unwrap();
+        let mut frame = encode(TypeId::CommunityLeave, b"test").unwrap();
         frame[1] = 0xFE;
         assert!(matches!(
             decode(&frame),
@@ -188,7 +180,7 @@ mod tests {
     fn rejects_payload_too_large() {
         let big = vec![0u8; MAX_PAYLOAD_SIZE + 1];
         assert!(matches!(
-            encode(TypeId::SyncRequest, &big),
+            encode(TypeId::CommunityLeave, &big),
             Err(TransportError::PayloadTooLarge { .. })
         ));
     }
@@ -214,8 +206,8 @@ mod tests {
     fn all_type_ids_have_stable_byte_values() {
         assert_eq!(TypeId::GossipBroadcast as u8, 0x10);
         assert_eq!(TypeId::CommunityLeave as u8, 0x21);
-        assert_eq!(TypeId::SyncRequest as u8, 0x23);
-        assert_eq!(TypeId::SyncResponse as u8, 0x24);
+        assert_eq!(TypeId::from_byte(0x23), None);
+        assert_eq!(TypeId::from_byte(0x24), None);
     }
 
     #[test]

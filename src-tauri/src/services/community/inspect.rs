@@ -112,8 +112,6 @@ pub(crate) async fn inspect_record(
         "inspect surfaced changes the watch path missed"
     );
 
-    let pool = state.db.current()?;
-
     changed_subkeys.sort_unstable();
     changed_subkeys.dedup();
 
@@ -124,7 +122,6 @@ pub(crate) async fn inspect_record(
             .map_err(|e| format!("get_dht_value failed during inspect sync: {e}"))?;
         if !crate::services::sync_communities::handle_community_record_change(
             state,
-            &pool,
             record_key,
             &[],
         )
