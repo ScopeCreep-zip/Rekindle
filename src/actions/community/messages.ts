@@ -185,9 +185,9 @@ export async function handleForwardChannelMessage(
 
 /**
  * Bulk-delete a set of channel messages as a moderator. The backend writes
- * one `GovernanceEntry::AdminDelete` per id (capped at 100), gossips
- * `MessageDeleted` for each, purges the local SQLite row, and emits a local
- * `MessageDeleted` event so the UI updates immediately. Per
+ * one `GovernanceEntry::AdminDelete` per id (capped at 100) naming each
+ * post's author (plan E3.3 M1), which every reader applies as a tombstone
+ * "removed by" us (M4), and emits the `Deleted` event for our own row. Per
  * `feedback_no_fallback.md` we do NOT optimistically remove from the store —
  * the backend's local emit is the single source of truth.
  */
