@@ -22,14 +22,14 @@ use crate::error::VaultError;
 const MAGIC: &[u8; 4] = b"RKVH";
 const HEADER_VERSION: u8 = 2;
 /// The header's size on disk.
+pub const VAULT_HEADER_LEN: usize = 128;
+
 #[cfg(test)]
 thread_local! {
     /// The Argon2id derivations this thread ran (the duress timing-parity
     /// test, `crate::duress`).
     pub(crate) static STRETCHES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
-
-pub const VAULT_HEADER_LEN: usize = 128;
 
 /// Argon2id parameters for a new vault: RFC 9106 §4's second recommended
 /// option (64 MiB, 3 passes, 4 lanes), with a 64-byte master output.
