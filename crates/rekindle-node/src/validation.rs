@@ -208,6 +208,28 @@ fn new_identity(display_name: Option<&str>, passphrase: &str) -> Checked {
     Ok(())
 }
 
+/// A quick-wipe arming (plan E7.1): a duress passphrase, and a panic
+/// shortcut shaped as `app_settings.panic_shortcut`'s CHECK allows
+/// (`Modifier+Key`, letters, digits and `+`, 3 to 64 characters).
+fn quick_wipe_arm(duress_passphrase: &str, shortcut: Option<&str>) -> Checked {
+    if duress_passphrase.is_empty() {
+        return Err(IpcResponse::error(400, "invalid duress passphrase: empty"));
+    }
+    if let Some(s) = shortcut {
+        let shaped = (3..=64).contains(&s.len())
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
+            && s.split('+').count() >= 2
+            && s.split('+').all(|part| !part.is_empty());
+        if !shaped {
+            return Err(IpcResponse::error(
+                400,
+                "invalid panic shortcut: Modifier+Key, letters and digits",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// An identity archive (base64) within the bus's frame.
 fn identity_archive(archive: &str) -> Checked {
     if archive.is_empty() || archive.len() > MAX_ARCHIVE_LEN {
@@ -310,6 +332,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::NetworkPeers
         | IpcRequest::PolicyReload
         | IpcRequest::IdentityWipe
+        | IpcRequest::QuickWipeDisarm
+        | IpcRequest::QuickWipeTrigger
         | IpcRequest::IntentCancel { .. }
         // The bus server owns subscriptions; dispatch refuses them.
         | IpcRequest::Subscribe { .. }
@@ -325,6 +349,10 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
             passphrase,
         } => new_identity(display_name.as_deref(), passphrase),
         IpcRequest::IdentityImport { archive, .. } => identity_archive(archive),
+        IpcRequest::QuickWipeArm {
+            duress_passphrase,
+            shortcut,
+        } => quick_wipe_arm(duress_passphrase, shortcut.as_deref()),
         IpcRequest::IntentCommit { proof: given, .. } => proof(given),
 
         IpcRequest::FriendAddFromCode { .. }

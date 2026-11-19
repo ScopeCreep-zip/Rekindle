@@ -51,6 +51,10 @@ pub enum IdentityError {
     Exists,
     #[error("wrong passphrase")]
     WrongPassphrase,
+    /// The armed duress passphrase (plan E7.1): the caller wipes the root
+    /// and answers nothing further.
+    #[error("duress passphrase")]
+    Duress,
     #[error("too many wrong passphrases; try again in {retry_after_ms} ms")]
     Locked { retry_after_ms: u64 },
     #[error("display name: {0}")]
@@ -80,6 +84,7 @@ pub fn list(root: &DataRoot) -> Result<Vec<IdentityEntry>, IdentityError> {
 fn map_open(e: rekindle_vault::VaultError) -> IdentityError {
     match e {
         rekindle_vault::VaultError::WrongPassphrase => IdentityError::WrongPassphrase,
+        rekindle_vault::VaultError::Duress => IdentityError::Duress,
         rekindle_vault::VaultError::NotFound | rekindle_vault::VaultError::HeaderMissing => {
             IdentityError::NotFound
         }
@@ -95,7 +100,10 @@ struct Opened {
     cleared_failures: u32,
 }
 
-/// Open `public_key`'s vault, counting a wrong passphrase.
+/// Open `public_key`'s vault, counting a wrong passphrase. The vault's
+/// duress check runs before the lockout test (plan E7.1), so a locked-out
+/// user can still trigger the wipe; a locked-out attempt counts nothing
+/// and opens nothing.
 fn open_vault(
     root: &DataRoot,
     attempts: &AttemptLimiter<String>,
@@ -104,10 +112,14 @@ fn open_vault(
     now_ms: u64,
 ) -> Result<Opened, IdentityError> {
     let key = public_key.to_string();
+    let opened = VaultStore::open(&root.identity_vault(public_key), passphrase);
+    if let Err(rekindle_vault::VaultError::Duress) = opened {
+        return Err(IdentityError::Duress);
+    }
     if let Err(retry_after_ms) = attempts.check(&key, now_ms) {
         return Err(IdentityError::Locked { retry_after_ms });
     }
-    match VaultStore::open(&root.identity_vault(public_key), passphrase) {
+    match opened {
         Ok((vault, app_db_key)) => Ok(Opened {
             vault,
             app_db_key,

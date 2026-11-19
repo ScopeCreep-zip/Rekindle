@@ -351,3 +351,43 @@ async fn remove_needs_no_passphrase_and_a_missing_identity_is_not_found() {
     assert!(!f.root.identity_files(&pk).exists());
     assert!(matches!(remove(&f.root, &pk), Err(IdentityError::NotFound)));
 }
+
+/// Plan E7.1: the duress check runs before the lockout test, so a
+/// locked-out user can still trigger the wipe, at unlock and at every
+/// Protected proof (`passphrase_matches`).
+#[tokio::test]
+async fn the_duress_passphrase_is_heard_even_when_locked_out() {
+    let f = Fixture::new();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        None,
+        "right",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    let pk = made.public_key.clone();
+    drop(made);
+    lock(&f.stores()).await;
+    rekindle_vault::duress::arm(&f.root.identity_vault(&pk), "duress").unwrap();
+    for _ in 0..5 {
+        assert!(matches!(
+            unlock(&f.root, &f.stores(), &pk, "wrong", 10).await,
+            Err(IdentityError::WrongPassphrase)
+        ));
+    }
+    assert!(matches!(
+        unlock(&f.root, &f.stores(), &pk, "right", 20).await,
+        Err(IdentityError::Locked { .. })
+    ));
+    assert!(matches!(
+        unlock(&f.root, &f.stores(), &pk, "duress", 30).await,
+        Err(IdentityError::Duress)
+    ));
+    assert!(matches!(
+        passphrase_matches(&f.root, &pk, "duress"),
+        Err(IdentityError::Duress)
+    ));
+}

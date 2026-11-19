@@ -410,3 +410,62 @@ mod tests {
         assert!(stored.share_current_game, "the bulk save leaves it");
     }
 }
+
+/// The quick wipe's panic shortcut (plan E7.1), `None` while the shortcut
+/// is unarmed.
+///
+/// # Errors
+/// The read failed.
+pub fn panic_shortcut(conn: &Connection, owner_key: &str) -> rusqlite::Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT panic_shortcut FROM app_settings WHERE owner_key = ?1",
+            params![owner_key],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// Set or clear the panic shortcut (`ArmQuickWipe` / `DisarmQuickWipe`,
+/// plan E7.1); the row's other settings stay.
+///
+/// # Errors
+/// The write failed (the CHECK refuses a malformed accelerator).
+pub fn set_panic_shortcut(
+    conn: &Connection,
+    owner_key: &str,
+    shortcut: Option<&str>,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (owner_key, panic_shortcut) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET panic_shortcut = excluded.panic_shortcut",
+        params![owner_key, shortcut],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod panic_shortcut_tests {
+    use super::{panic_shortcut, set_panic_shortcut};
+    use crate::repo::fixture::{self, OWNER};
+
+    #[test]
+    fn the_panic_shortcut_round_trips_and_refuses_a_malformed_accelerator() {
+        let conn = fixture::conn();
+        assert_eq!(panic_shortcut(&conn, OWNER).unwrap(), None);
+        set_panic_shortcut(&conn, OWNER, Some("CommandOrControl+Shift+F12")).unwrap();
+        assert_eq!(
+            panic_shortcut(&conn, OWNER).unwrap().as_deref(),
+            Some("CommandOrControl+Shift+F12")
+        );
+        for bad in ["F12", "Ctrl+", "Ctrl+Shift+F12; DROP", "+X"] {
+            assert!(
+                set_panic_shortcut(&conn, OWNER, Some(bad)).is_err(),
+                "{bad}"
+            );
+        }
+        set_panic_shortcut(&conn, OWNER, None).unwrap();
+        assert_eq!(panic_shortcut(&conn, OWNER).unwrap(), None);
+    }
+}

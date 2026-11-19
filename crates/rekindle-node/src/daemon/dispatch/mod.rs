@@ -46,6 +46,7 @@ mod own_favourite_servers;
 mod own_game;
 mod own_game_invite;
 mod pins;
+mod quick_wipe;
 mod rich_messaging;
 mod router;
 pub(crate) mod shell;
@@ -346,4 +347,11 @@ impl DaemonContext {
     pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
         self.journal.publish(event);
     }
+}
+
+/// The duress passphrase's wipe, for the host's intent gate (plan E7.1).
+pub(crate) async fn quick_wipe_on_duress(
+    ctx: &DaemonContext,
+) -> rekindle_ipc::protocol::IpcResponse {
+    quick_wipe::on_duress(ctx).await
 }

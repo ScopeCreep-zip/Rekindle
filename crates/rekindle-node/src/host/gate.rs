@@ -194,11 +194,14 @@ async fn commit(
     // the gate then counts a failure on the shared limiter.
     let needs_passphrase =
         effective_class(kind, &fresh.escalations).proof() == ProofRequired::Passphrase;
+    // The duress check runs before the lockout test (plan E7.1).
     let passphrase_ok = match (&proof, needs_passphrase) {
-        (IntentProof::Passphrase(passphrase), true)
-            if ctx.identity_attempts.check(&owner.identity, now_ms).is_ok() =>
-        {
-            passphrase_opens(ctx, &held, &owner.identity, passphrase).await
+        (IntentProof::Passphrase(passphrase), true) => {
+            match passphrase_opens(ctx, &held, &owner.identity, passphrase).await {
+                Proof::Duress => return crate::daemon::dispatch::quick_wipe_on_duress(ctx).await,
+                Proof::Opens => ctx.identity_attempts.check(&owner.identity, now_ms).is_ok(),
+                Proof::Wrong => false,
+            }
         }
         _ => false,
     };
@@ -257,15 +260,24 @@ fn provisional_owner(ctx: &DaemonContext, caller: &Caller) -> IntentOwner {
     }
 }
 
+/// What a Protected proof's passphrase is.
+enum Proof {
+    Opens,
+    Wrong,
+    /// The armed duress passphrase of a candidate vault (plan E7.1).
+    Duress,
+}
+
 /// Whether `passphrase` opens the vault the action is for: the identity it
 /// names or the unlocked one; for a wipe while locked, any identity on the
 /// root (every identity it deletes is protected by its own passphrase).
+/// Every candidate is checked, so a duress match is never skipped.
 async fn passphrase_opens(
     ctx: &DaemonContext,
     request: &IpcRequest,
     identity: &str,
     passphrase: &str,
-) -> bool {
+) -> Proof {
     let root = ctx.root.clone();
     let candidates: Vec<String> =
         if identity.is_empty() && matches!(request, IpcRequest::IdentityWipe) {
@@ -273,7 +285,7 @@ async fn passphrase_opens(
                 Ok(entries) => entries.into_iter().map(|e| e.public_key).collect(),
                 Err(e) => {
                     tracing::warn!(error = %e, "identity registry unreadable for a wipe proof");
-                    return false;
+                    return Proof::Wrong;
                 }
             }
         } else {
@@ -281,12 +293,18 @@ async fn passphrase_opens(
         };
     let passphrase = zeroize::Zeroizing::new(passphrase.to_string());
     let checked = rekindle_lifecycle::run_blocking(move || {
-        candidates.iter().any(|candidate| {
-            super::identity::passphrase_matches(&root, candidate, &passphrase).unwrap_or(false)
-        })
+        let mut proof = Proof::Wrong;
+        for candidate in &candidates {
+            match super::identity::passphrase_matches(&root, candidate, &passphrase) {
+                Err(super::identity::IdentityError::Duress) => return Proof::Duress,
+                Ok(true) => proof = Proof::Opens,
+                Ok(false) | Err(_) => {}
+            }
+        }
+        proof
     })
     .await;
-    checked.unwrap_or(false)
+    checked.unwrap_or(Proof::Wrong)
 }
 
 /// An action that ran: answered with its reversibility and, when it is

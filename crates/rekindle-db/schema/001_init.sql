@@ -533,6 +533,15 @@ CREATE TABLE IF NOT EXISTS app_settings (
         CHECK(skin_id GLOB 'builtin:*' OR skin_id GLOB 'pkg:*'),
     sound_bank TEXT NOT NULL DEFAULT 'builtin:defaults'
         CHECK(sound_bank GLOB 'builtin:*' OR sound_bank GLOB 'pkg:*'),
+    -- The quick wipe's panic shortcut (plan E7.1, roadmap 8.2): an
+    -- accelerator such as `CommandOrControl+Shift+F12`, written only by
+    -- the Protected `ArmQuickWipe` and cleared by `DisarmQuickWipe`. NULL
+    -- means the shortcut is unarmed: `QuickWipeTrigger` answers 409.
+    panic_shortcut TEXT DEFAULT NULL
+        CHECK(panic_shortcut IS NULL OR (
+            length(panic_shortcut) BETWEEN 3 AND 64
+            AND panic_shortcut GLOB '*?+?*'
+            AND panic_shortcut NOT GLOB '*[^A-Za-z0-9+]*')),
     PRIMARY KEY (owner_key)
 );
 

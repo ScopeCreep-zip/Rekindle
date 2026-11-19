@@ -66,9 +66,16 @@ pub(crate) async fn select(
                 s.notifies = Notifies::Members(friend_count(ctx).await?);
             }
         }
-        IpcRequest::IdentityWipe => {
+        IpcRequest::IdentityWipe | IpcRequest::QuickWipeTrigger => {
             s.subject = Subject::Named {
                 name: "every identity on this device".into(),
+            };
+        }
+        // The review names exactly what a trigger destroys and that it
+        // cannot be undone (plan E7.1).
+        IpcRequest::QuickWipeArm { .. } => {
+            s.subject = Subject::Named {
+                name: crate::host::wipe::ARM_REVIEW.into(),
             };
         }
         IpcRequest::IdentityCreate { display_name, .. } => {
@@ -157,7 +164,9 @@ pub(crate) async fn select(
             // The old picture is not kept: another one replaces it.
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetAvatar);
         }
-        IpcRequest::AuditExport { .. } => s.subject = unlocked_identity(ctx),
+        IpcRequest::AuditExport { .. } | IpcRequest::QuickWipeDisarm => {
+            s.subject = unlocked_identity(ctx);
+        }
         IpcRequest::SkinImport { .. } => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RemoveSkin);

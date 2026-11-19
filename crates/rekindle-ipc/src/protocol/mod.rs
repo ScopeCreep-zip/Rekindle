@@ -87,6 +87,18 @@ pub enum IpcRequest {
     IdentityDelete { identity: String },
     /// Factory reset: delete every identity and Veilid storage. Protected.
     IdentityWipe,
+    /// Arm the quick wipe (plan E7.1, Protected `ArmQuickWipe`): the
+    /// duress passphrase goes into the vault header, the optional panic
+    /// shortcut into `app_settings.panic_shortcut`.
+    QuickWipeArm {
+        duress_passphrase: Passphrase,
+        shortcut: Option<String>,
+    },
+    /// Disarm the quick wipe (Protected `DisarmQuickWipe`).
+    QuickWipeDisarm,
+    /// The panic shortcut's wipe (Routine `TriggerQuickWipe`, no review);
+    /// 409 while no shortcut is armed. Window-only in shell mode.
+    QuickWipeTrigger,
     /// Our safety number with `peer` and whether we verified their key
     /// (`dto::friends::SafetyNumberView`, plan E2.3).
     IdentitySafetyNumber { peer: String },

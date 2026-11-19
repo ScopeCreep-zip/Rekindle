@@ -42,7 +42,7 @@ pub(crate) async fn handle_unlock(
     .await
     {
         Ok(unlocked) => crate::host::unlock::run(ctx, caller, unlocked, false).await,
-        Err(e) => super::identity::identity_error(&e),
+        Err(e) => super::identity::identity_failure(ctx, &e).await,
     }
 }
 
@@ -226,7 +226,7 @@ async fn attach_client(
     .await;
     match verified {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => return super::identity::identity_error(&e),
+        Ok(Err(e)) => return super::identity::identity_failure(ctx, &e).await,
         Err(e) => return IpcResponse::error(500, format!("passphrase check: {e}")),
     }
     // Only a bus caller has a key to register; the passphrase was checked

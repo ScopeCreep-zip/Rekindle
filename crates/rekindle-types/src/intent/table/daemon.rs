@@ -17,6 +17,9 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("IdentityRotate", Some(IntentKind::RotateIdentity)),
     ("IdentityDelete", Some(IntentKind::DeleteIdentity)),
     ("IdentityWipe", Some(IntentKind::WipeAllData)),
+    ("QuickWipeArm", Some(IntentKind::ArmQuickWipe)),
+    ("QuickWipeDisarm", Some(IntentKind::DisarmQuickWipe)),
+    ("QuickWipeTrigger", Some(IntentKind::TriggerQuickWipe)),
     ("IdentitySafetyNumber", None),
     ("IdentityMarkVerified", Some(IntentKind::MarkVerified)),
     (

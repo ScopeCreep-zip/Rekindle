@@ -248,8 +248,12 @@ pub enum IntentKind {
     // TrustChanging: Key trust (plan E2.3, safety numbers)
     MarkVerified,
     ClearVerification,
-    // Protected: Not yet built
+    // The quick wipe (plan E7.1): arming and disarming are Protected; the
+    // panic shortcut's trigger is one Routine act with no review (r9 §7.8,
+    // F12), refused by its handler while unarmed.
     ArmQuickWipe,
+    DisarmQuickWipe,
+    TriggerQuickWipe,
     // Skins (plan E7.7.2)
     /// Import a skin package into the identity's library: TrustChanging,
     /// as it brings third-party pictures and sounds into every window.
@@ -365,7 +369,8 @@ impl IntentKind {
             | Self::UpdateChannel
             | Self::SetGamePresence
             | Self::ClearGamePresence
-            | Self::SetLoginSkin => IntentClass::Routine,
+            | Self::SetLoginSkin
+            | Self::TriggerQuickWipe => IntentClass::Routine,
             Self::BlockUser
             | Self::DeclineDmInvite
             | Self::DeclineSessionReset
@@ -459,7 +464,8 @@ impl IntentKind {
             | Self::RegisterAgent
             | Self::ExportKeys
             | Self::ViewRecoveryMaterial
-            | Self::ArmQuickWipe => IntentClass::Protected,
+            | Self::ArmQuickWipe
+            | Self::DisarmQuickWipe => IntentClass::Protected,
         }
     }
 }

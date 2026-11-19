@@ -5,7 +5,10 @@ use crate::host::gate::Acknowledged;
 use crate::host::shell_hooks::EndReason;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
-use super::{admin, friends, identity, keys, lifecycle, own, status, voice, Caller, DaemonContext};
+use super::{
+    admin, friends, identity, keys, lifecycle, own, quick_wipe, status, voice, Caller,
+    DaemonContext,
+};
 
 mod community;
 
@@ -61,7 +64,7 @@ async fn route(
         IpcRequest::IdentityList => identity::handle_list(ctx),
         IpcRequest::IdentityShow => identity::handle_show(ctx),
         IpcRequest::IdentityExport { passphrase } => {
-            identity::handle_export(ctx, state, &passphrase)
+            identity::handle_export(ctx, state, &passphrase).await
         }
         IpcRequest::IdentityImport {
             archive,
@@ -75,6 +78,13 @@ async fn route(
             identity::handle_delete(ctx, state, &identity).await
         }
         IpcRequest::IdentityWipe => identity::handle_wipe(ctx, state).await,
+        // Protected: the gate checked the passphrase (plan E7.1).
+        IpcRequest::QuickWipeArm {
+            duress_passphrase,
+            shortcut,
+        } => quick_wipe::handle_arm(ctx, state, &duress_passphrase, shortcut).await,
+        IpcRequest::QuickWipeDisarm => quick_wipe::handle_disarm(ctx, state).await,
+        IpcRequest::QuickWipeTrigger => quick_wipe::handle_trigger(ctx, state).await,
         // The gate answers these in `HostApi::call`; they never route.
         IpcRequest::IntentCommit { .. }
         | IpcRequest::IntentCancel { .. }

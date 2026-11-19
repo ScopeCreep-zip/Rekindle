@@ -30,6 +30,7 @@ pub(crate) fn refusal(
         | IpcRequest::IdentityCreate { .. }
         | IpcRequest::IdentityRotate { .. }
         | IpcRequest::IdentityWipe
+        | IpcRequest::QuickWipeTrigger
         | IpcRequest::Shutdown => true,
         _ => false,
     };

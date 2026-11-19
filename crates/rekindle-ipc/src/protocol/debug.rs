@@ -64,6 +64,13 @@ impl std::fmt::Debug for IpcRequest {
                 .field("identity", identity)
                 .finish(),
             Self::IdentityWipe => f.write_str("IdentityWipe"),
+            Self::QuickWipeArm { shortcut, .. } => f
+                .debug_struct("QuickWipeArm")
+                .field("duress_passphrase", &REDACTED)
+                .field("shortcut", shortcut)
+                .finish(),
+            Self::QuickWipeDisarm => f.write_str("QuickWipeDisarm"),
+            Self::QuickWipeTrigger => f.write_str("QuickWipeTrigger"),
             // `IntentProof`'s own `Debug` redacts a passphrase.
             Self::IntentCommit { intent_id, proof } => f
                 .debug_struct("IntentCommit")

@@ -16,6 +16,13 @@
 
 use std::path::{Path, PathBuf};
 
+/// What arming the quick wipe reviews (plan E7.1): exactly what a trigger
+/// destroys, and that it cannot be undone.
+pub const ARM_REVIEW: &str = "the quick wipe. A trigger (the duress passphrase at any \
+passphrase prompt, or the panic shortcut) deletes every identity on this device with its \
+messages, keys and files, the settings, logs and skins, Rekindle's network storage and the \
+window data, and closes Rekindle. It cannot be undone.";
+
 use rekindle_db::paths::DataRoot;
 
 /// A path the wipe could not remove.

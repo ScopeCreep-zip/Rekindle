@@ -115,7 +115,7 @@ fn held(key: &str) -> Option<String> {
 
 /// Handle IdentityExport — the unlocked identity's archive (base64), after
 /// its passphrase (a wrong one counts).
-pub(crate) fn handle_export(
+pub(crate) async fn handle_export(
     ctx: &DaemonContext,
     state: DaemonState,
     passphrase: &str,
@@ -138,7 +138,7 @@ pub(crate) fn handle_export(
             "public_key": owner,
             "archive": base64::engine::general_purpose::STANDARD.encode(archive),
         })),
-        Err(e) => identity_error(&e),
+        Err(e) => identity_failure(ctx, &e).await,
     }
 }
 
@@ -165,7 +165,7 @@ pub(crate) async fn handle_import(
             "imported": entry.public_key,
             "display_name": entry.display_name,
         })),
-        Err(e) => identity_error(&e),
+        Err(e) => identity_failure(ctx, &e).await,
     }
 }
 
@@ -196,7 +196,7 @@ pub(crate) async fn handle_rotate(
         passphrase,
         ctx.clock.now_ms(),
     ) {
-        return identity_error(&e);
+        return identity_failure(ctx, &e).await;
     }
 
     // The journal first (audit 2026-10-20 R-2): once a friend hears of the
@@ -296,13 +296,21 @@ pub(crate) async fn handle_delete(
 /// whole data root (`host::wipe`), then exit; what the node holds goes once
 /// it has stopped, and the daemon restarts empty.
 pub(crate) async fn handle_wipe(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    match wipe_now(ctx, state).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "wiped": true, "restarting": true })),
+        Err(refused) => refused,
+    }
+}
+
+/// The wipe itself, for `IdentityWipe`, the panic shortcut and the duress
+/// passphrase (plan E7.1): release the unlock, sweep the root, request
+/// `DataWiped`.
+pub(crate) async fn wipe_now(ctx: &DaemonContext, state: DaemonState) -> Result<(), IpcResponse> {
     if !state.can_write() && state != DaemonState::Locked {
-        return state_error(state, "wipe");
+        return Err(state_error(state, "wipe"));
     }
     if state.can_write() {
-        if let Err(refused) = release_unlock(ctx, EndReason::Deleted).await {
-            return refused;
-        }
+        release_unlock(ctx, EndReason::Deleted).await?;
     }
     // The whole wipe set but what the node still holds (Veilid's storage,
     // the node lock), which `host::wipe::finish` takes once it has stopped.
@@ -312,13 +320,21 @@ pub(crate) async fn handle_wipe(ctx: &DaemonContext, state: DaemonState) -> IpcR
             crate::host::wipe::sweep_root(&ctx.root, &bus_dir).map_err(|e| e.to_string())
         });
     if let Err(e) = swept {
-        return IpcResponse::error(500, e);
+        return Err(IpcResponse::error(500, e));
     }
-    if let Err(refused) = transition(ctx, DaemonState::ShuttingDown) {
-        return refused;
-    }
+    transition(ctx, DaemonState::ShuttingDown)?;
     ctx.shutdown.request(ExitReason::DataWiped);
-    IpcResponse::ok(&serde_json::json!({ "wiped": true, "restarting": true }))
+    Ok(())
+}
+
+/// An identity failure from a passphrase prompt: the duress passphrase
+/// wipes the root and answers nothing further (plan E7.1); anything else
+/// is [`identity_error`].
+pub(crate) async fn identity_failure(ctx: &DaemonContext, e: &IdentityError) -> IpcResponse {
+    if matches!(e, IdentityError::Duress) {
+        return super::quick_wipe::on_duress(ctx).await;
+    }
+    identity_error(e)
 }
 
 /// Operational → Locking → Locked, releasing everything the unlock created.

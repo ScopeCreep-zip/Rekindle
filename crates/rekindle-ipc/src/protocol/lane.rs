@@ -59,6 +59,9 @@ impl IpcRequest {
             Self::IdentityRotate { .. } => ("IdentityRotate", Exclusive, Admin),
             Self::IdentityDelete { .. } => ("IdentityDelete", Exclusive, Open),
             Self::IdentityWipe => ("IdentityWipe", Exclusive, Open),
+            Self::QuickWipeArm { .. } => ("QuickWipeArm", Write, Admin),
+            Self::QuickWipeDisarm => ("QuickWipeDisarm", Write, Admin),
+            Self::QuickWipeTrigger => ("QuickWipeTrigger", Exclusive, Authenticated),
             Self::IdentitySafetyNumber { .. } => ("IdentitySafetyNumber", Query, Authenticated),
             Self::IdentityMarkVerified { .. } => ("IdentityMarkVerified", Write, Authenticated),
             Self::IdentityClearVerification { .. } => {
@@ -203,6 +206,7 @@ mod tests {
                 passphrase: rekindle_types::passphrase::Passphrase::default(),
             },
             IpcRequest::IdentityWipe,
+            IpcRequest::QuickWipeTrigger,
         ] {
             assert_eq!(request.lane(), Lane::Exclusive, "{}", request.name());
         }

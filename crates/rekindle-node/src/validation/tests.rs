@@ -560,3 +560,22 @@ fn game_server_requests_take_a_label_an_address_and_an_id() {
         })
     )));
 }
+
+/// Plan E7.1: a quick-wipe arming carries a duress passphrase and a panic
+/// shortcut shaped as `app_settings.panic_shortcut`'s CHECK allows.
+#[test]
+fn a_quick_wipe_arming_is_shaped() {
+    let arm = |pass: &str, shortcut: Option<&str>| IpcRequest::QuickWipeArm {
+        duress_passphrase: pass.into(),
+        shortcut: shortcut.map(str::to_string),
+    };
+    assert_eq!(status_of(&arm("duress", None)), None);
+    assert_eq!(
+        status_of(&arm("duress", Some("CommandOrControl+Shift+F12"))),
+        None
+    );
+    assert_eq!(status_of(&arm("", None)), Some(400));
+    for bad in ["F12", "Ctrl+", "+X", "Ctrl+Shift+F12; rm", &"A+".repeat(40)] {
+        assert_eq!(status_of(&arm("duress", Some(bad))), Some(400), "{bad}");
+    }
+}

@@ -169,6 +169,9 @@ impl IpcRequest {
             | Self::IdentityRotate { .. }
             | Self::IdentityDelete { .. }
             | Self::IdentityWipe
+            | Self::QuickWipeArm { .. }
+            | Self::QuickWipeDisarm
+            | Self::QuickWipeTrigger
             // Which keys the user trusts is the user's own decision.
             | Self::IdentityMarkVerified { .. }
             | Self::IdentityClearVerification { .. }

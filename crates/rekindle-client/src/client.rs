@@ -224,6 +224,9 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::IdentityImport { .. }
         | IpcRequest::IdentityDelete { .. }
         | IpcRequest::IdentityWipe
+        | IpcRequest::QuickWipeArm { .. }
+        | IpcRequest::QuickWipeDisarm
+        | IpcRequest::QuickWipeTrigger
         | IpcRequest::IntentCommit { .. }
         | IpcRequest::Logout
         | IpcRequest::FriendAddFromCode { .. }
