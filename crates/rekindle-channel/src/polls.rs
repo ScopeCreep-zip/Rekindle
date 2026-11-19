@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use rekindle_types::domains;
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::message::{ChannelPost, PostEntry};
 
 use crate::deps::ChannelMessagingDeps;
@@ -46,15 +48,18 @@ pub fn validate_poll_create(question: &str, answers: &[String]) -> Result<(), Ch
     Ok(())
 }
 
-/// A fresh poll identifier.
-///
-/// Kept as a named wrapper rather than inlining the call: `poll_id` is a
-/// domain concept and callers read better for it. The bytes come from
-/// the one generator, so this cannot drift from how channel, category
-/// and role ids are minted.
+/// The id of the poll `creator` made with `nonce` (plan E3.3, rule E1): a
+/// poll is bound to its creator, so a create by another member, however
+/// it is dated, names another poll and can't take this one over.
 #[must_use]
-pub fn random_poll_id() -> [u8; 16] {
-    rekindle_utils::random::id_bytes_16()
+pub fn poll_id_of(creator: &PseudonymKey, nonce: &[u8; 16]) -> [u8; 16] {
+    let mut input = [0u8; 48];
+    input[..32].copy_from_slice(&creator.0);
+    input[32..].copy_from_slice(nonce);
+    let digest = blake3::derive_key(domains::CHANNEL_POLL_ID, &input);
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&digest[..16]);
+    id
 }
 
 pub fn parse_poll_id(poll_id_hex: &str) -> Result<[u8; 16], ChannelError> {
@@ -114,9 +119,14 @@ pub async fn persist_poll_create<D: ChannelMessagingDeps>(
 ) -> Result<String, ChannelError> {
     validate_poll_create(question, &answers)?;
     require_channel(deps, community_id, channel_id)?;
-    let poll_id = random_poll_id();
+    let me = (deps.my_pseudonym_hex(community_id))
+        .and_then(|key| hex::decode(key).ok()?.try_into().ok())
+        .map(PseudonymKey)
+        .ok_or_else(|| ChannelError::Adapter("no pseudonym in this community".to_string()))?;
+    let nonce = rekindle_utils::random::id_bytes_16();
+    let poll_id = poll_id_of(&me, &nonce);
     let entry = PostEntry::PollCreate {
-        poll_id,
+        nonce,
         target: message_id.to_string(),
         question: question.trim().to_string(),
         answers: answers
@@ -312,8 +322,10 @@ mod tests {
     }
 
     #[test]
-    fn random_poll_id_returns_16_bytes() {
-        let id = random_poll_id();
-        assert_eq!(id.len(), 16);
+    fn a_poll_id_is_bound_to_its_creator() {
+        let nonce = [9u8; 16];
+        let ann = poll_id_of(&PseudonymKey([1; 32]), &nonce);
+        assert_eq!(ann, poll_id_of(&PseudonymKey([1; 32]), &nonce));
+        assert_ne!(ann, poll_id_of(&PseudonymKey([2; 32]), &nonce));
     }
 }

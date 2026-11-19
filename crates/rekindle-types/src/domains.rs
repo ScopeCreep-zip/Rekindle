@@ -128,6 +128,10 @@ labels! {
     /// AEAD AAD prefix: a channel body, `domain ‖ anchor ‖ channel_id ‖
     /// author ‖ stream_seq_le64` (plan E3.3).
     CHANNEL_BODY_AAD = "rekindle-channel-body-aad-v1";
+    /// BLAKE3 derive-key context: a channel poll's id, over `creator
+    /// pseudonym ‖ nonce` (plan E3.3, rule E1): a poll is bound to its
+    /// creator, so no other member's create can name it.
+    CHANNEL_POLL_ID = "rekindle-channel-poll-id-v1";
     /// BLAKE3 domain of the watch ring order (plan E3.2 S7, §4.5):
     /// `r(p) = blake3(domain ‖ communityId ‖ p)`.
     WATCH_RING = "rekindle-watch-ring-v1";

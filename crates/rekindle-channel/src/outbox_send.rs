@@ -211,14 +211,14 @@ async fn pending_of<D: ChannelMessagingDeps>(
         )),
         // Poll ops, ordered by their stream seq; no body.
         PostEntry::PollCreate {
-            poll_id,
+            nonce,
             target,
             question,
             answers,
             multi_select,
             expires_at,
         } => ChannelRecordEntry::PollCreate(ChannelPollCreate {
-            poll_id: *poll_id,
+            nonce: *nonce,
             message_id: target.clone(),
             question: question.clone(),
             answers: answers.clone(),

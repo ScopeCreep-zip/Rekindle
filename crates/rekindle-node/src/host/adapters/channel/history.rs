@@ -90,7 +90,7 @@ impl HostChannel {
                 view.reactions = reactions.get(id).cloned();
             }
             if view.poll.is_none() {
-                view.poll = polls.get(id).cloned();
+                view.poll = (polls.get(&(id.to_owned(), view.sender_id.clone()))).cloned();
             }
         }
         history::merge_message_lists(&mut messages, incoming, limit);

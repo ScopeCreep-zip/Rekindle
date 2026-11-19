@@ -10,9 +10,7 @@ mod poll_states;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rekindle_codec::community::channel_record::ChannelRecordEntry;
-use rekindle_types::dto::channel_message::{
-    ChannelMessageView, MessageAttachment, MessagePoll, ReactionGroup,
-};
+use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment, ReactionGroup};
 use rekindle_types::message::SendState;
 
 use crate::deps::ChannelMessagingDeps;
@@ -20,7 +18,7 @@ use crate::error::ChannelError;
 use crate::send::SlotBodyPosition;
 
 pub use materialize::{build_reaction_groups, MAX_REACTIONS_PER_MESSAGE, MAX_REACTION_KEY_LEN};
-pub use poll_states::{build_poll_states, poll_tallies, PollTally};
+pub use poll_states::{build_poll_states, poll_tallies, PollTally, PollsByMessage};
 
 /// One message of the channel record, as read: its view, and what the host
 /// stores it with.
@@ -68,7 +66,7 @@ pub struct ChannelRecordRead {
     pub messages: Vec<RecordMessage>,
     pub changes: Vec<RecordChange>,
     pub reactions: HashMap<String, Vec<ReactionGroup>>,
-    pub polls: HashMap<String, MessagePoll>,
+    pub polls: PollsByMessage,
 }
 
 /// The latest `limit` messages of `channel_id`'s record (only those older
@@ -165,7 +163,11 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                     server_message_id: message.message_id.clone(),
                     reactions: id.and_then(|id| reactions.get(id).cloned()),
                     pinned: None,
-                    poll: id.and_then(|id| polls.get(id).cloned()),
+                    poll: id.and_then(|id| {
+                        polls
+                            .get(&(id.clone(), message.sender_pseudonym.clone()))
+                            .cloned()
+                    }),
                     forwarded_from_author: None,
                     attachment: message.attachment.as_ref().map(|offer| MessageAttachment {
                         attachment_id: hex::encode(offer.attachment_id),

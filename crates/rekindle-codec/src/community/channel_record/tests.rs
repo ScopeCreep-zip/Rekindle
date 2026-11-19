@@ -64,7 +64,7 @@ fn decode_signed_mixed_entry_page() {
             lamport: 10,
         }),
         ChannelRecordEntry::PollCreate(ChannelPollCreate {
-            poll_id: [4u8; 16],
+            nonce: [4u8; 16],
             message_id: "msg-1".into(),
             question: "Ready?".into(),
             answers: vec!["Yes".into(), "No".into()],

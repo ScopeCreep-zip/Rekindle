@@ -80,8 +80,10 @@ pub struct ChannelReaction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPollCreate {
-    /// Stable poll ID.
-    pub poll_id: [u8; 16],
+    /// The creator's nonce: the poll's id is derived from the creator's
+    /// pseudonym and it (`rekindle_channel::poll_id_of`), so a create by
+    /// any other member names another poll.
+    pub nonce: [u8; 16],
     /// Message the poll is attached to.
     pub message_id: String,
     pub question: String,

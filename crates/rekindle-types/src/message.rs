@@ -70,9 +70,10 @@ pub enum PostEntry {
         emoji: String,
         added: bool,
     },
-    /// Our poll `poll_id` attached to `target`, our message.
+    /// Our poll attached to `target`, our message; its id is derived from
+    /// our pseudonym and `nonce` (plan E3.3, rule E1).
     PollCreate {
-        poll_id: [u8; 16],
+        nonce: [u8; 16],
         target: String,
         question: String,
         answers: Vec<String>,
