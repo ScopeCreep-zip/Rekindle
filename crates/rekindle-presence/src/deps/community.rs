@@ -55,16 +55,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// status without breaking the trait signature.
     fn current_presence_status_str(&self, community_id: &str) -> String;
 
-    /// `(channel_id, smpl_record_key)` pairs for every channel that
-    /// has an SMPL log record allocated.
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)>;
-
-    /// The community's writer index: the slot of every member the
-    /// presence scan placed in our segment, and our own. A channel
-    /// catch-up reads only these slots, never the whole range (plan
-    /// C7.12); slots are where members joined, not `0..member count`.
-    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32>;
-
     /// Fire-and-forget gossip broadcast of a community envelope.
     /// Mirrors `services::community::send_to_mesh` semantics: the
     /// transport pipeline is spawned + errors logged inside.
@@ -72,36 +62,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         &self,
         community_id: &str,
         envelope: rekindle_codec::community::envelope::CommunityEnvelope,
-    );
-
-    /// Read the `member_slots` of an SMPL channel record that hold a
-    /// value: each message with the subkey it was written to. The record
-    /// key and subkey are the body's AAD position, so a reader that drops
-    /// them cannot open the body.
-    async fn read_channel_message_items(
-        &self,
-        record_key: &str,
-        member_slots: &[u32],
-    ) -> Result<
-        Vec<(
-            u32,
-            rekindle_codec::community::channel_record::ChannelMessage,
-        )>,
-        PresenceError,
-    >;
-
-    /// Persist a batch of newly-fetched channel messages, read from
-    /// `record_key`, into the local message log (skips rows already
-    /// stored by message_id). The host opens each body at its position.
-    fn persist_channel_catchup(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        record_key: &str,
-        messages: Vec<(
-            u32,
-            rekindle_codec::community::channel_record::ChannelMessage,
-        )>,
     );
 
     /// Flip `gossip.needs_initial_sync` to false after the initial

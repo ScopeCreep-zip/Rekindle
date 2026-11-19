@@ -1,23 +1,15 @@
-//! A channel's history on both modes (plan E3.1 E2c, from the desktop's
-//! `messaging_runtime` and `channel_materialize`): our stored rows merged
-//! with the channel record's messages, of which those we did not hold and
-//! could open pass the D26 gate before they are stored or shown.
-
-use std::collections::HashMap;
+//! A channel's history on both modes (plan E3.1 E2c): our stored rows (the
+//! outbox reader stores each post after the D26 gate, plan E3.3) with the
+//! reactions and polls their authors' outboxes name.
 
 use rekindle_channel::error::ChannelError;
-use rekindle_channel::history::{self, RecordMessage};
-use rekindle_channel::ingest::{BatchWindows, GateReason, SlotPosition, Verdict};
+use rekindle_channel::history;
 use rekindle_channel::ChannelMessagingDeps;
-use rekindle_db::repo::messages::channel::{
-    self as rows, ChannelMessageInsert, StoredChannelMessage,
-};
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+use rekindle_db::repo::messages::channel::{self as rows, StoredChannelMessage};
 use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment};
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
 
-use super::ingest::GatedPost;
 use super::HostChannel;
 
 fn stored(e: impl std::fmt::Display) -> ChannelError {
@@ -26,8 +18,8 @@ fn stored(e: impl std::fmt::Display) -> ChannelError {
 
 impl HostChannel {
     /// The latest `limit` messages of `channel_id` in `community_id`, only
-    /// those older than `before` when given: our rows and the record's,
-    /// merged, oldest first. A community we were removed from answers our
+    /// those older than `before` when given: our rows (the outbox reader
+    /// stores every post through the D26 gate), oldest first. A community we were removed from answers our
     /// rows only.
     ///
     /// # Errors
@@ -45,29 +37,12 @@ impl HostChannel {
         let me = self.my_pseudonym_impl(community_id).unwrap_or_default();
         let removed = self.ctx().communities.own_removal(community_id).is_some();
         // A community we were removed from is read-only history (plan E3.2
-        // S9): our rows as they were when we opened them. The record is not
-        // read again, so its keys leaving memory never marks a kept row
-        // undecryptable (A/B R3-2), and nothing posted after the removal is
-        // opened, even under a key we still hold.
-        let mut attached = (HashMap::new(), HashMap::new());
-        let incoming = if removed {
-            Vec::new()
+        // S9): our rows as they were when we opened them, with nothing read
+        // from the authors' outboxes again.
+        let attached = if removed {
+            history::ChannelAttachments::default()
         } else {
-            let record =
-                history::read_channel_record(self, community_id, channel_id, before, limit).await?;
-            let incoming =
-                (self.store_record_messages(&owner, community_id, channel_id, record.messages))
-                    .await?;
-            // The authors' edits and deletes (plan E3.3), applied to our rows
-            // before they are read, so the history shows them.
-            self.apply_record_changes(community_id, channel_id, &record.changes)
-                .await;
-            let deleted = deleted_by_author(&record.changes);
-            attached = (record.reactions, record.polls);
-            (incoming.into_iter())
-                .map(|message| message.view)
-                .filter(|view| !deleted_view(&deleted, view))
-                .collect()
+            history::read_attachments(self, community_id, channel_id).await
         };
         let (key, channel) = (owner.clone(), channel_id.to_string());
         let before_row = before.map(|b| i64::try_from(b).unwrap_or(i64::MAX));
@@ -79,9 +54,9 @@ impl HostChannel {
             .into_iter()
             .map(|row| stored_view(row, &owner, &me))
             .collect();
-        // A post on its author's outbox (plan E3.3) is no message of the
-        // record, but the reactions and polls the record holds name it.
-        let (reactions, polls) = attached;
+        // Each post's reactions and polls ride their authors' outboxes
+        // (plan E3.3); a poll shows only on its creator's own message.
+        let history::ChannelAttachments { reactions, polls } = attached;
         for view in &mut messages {
             let Some(id) = view.server_message_id.as_deref() else {
                 continue;
@@ -93,279 +68,9 @@ impl HostChannel {
                 view.poll = (polls.get(&(id.to_owned(), view.sender_id.clone()))).cloned();
             }
         }
-        history::merge_message_lists(&mut messages, incoming, limit);
+        messages.sort_by_key(|message| message.timestamp);
         Ok(messages)
     }
-
-    /// Apply `changes`, grouped by the slot value each was read from.
-    async fn apply_record_changes(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        changes: &[history::RecordChange],
-    ) {
-        for change in changes {
-            let source = super::changes::ChangeSource {
-                community_id,
-                channel_id,
-                record_key: &change.record_key,
-                subkey_index: change.subkey_index,
-                outbox_seq: None,
-                author: &change.author,
-            };
-            self.apply_changes(source, std::slice::from_ref(&change.entry))
-                .await;
-        }
-    }
-
-    /// Gate (D26) and store each record message we do not hold yet, and
-    /// answer the record's messages as they may be shown. A post the gate
-    /// drops is neither stored nor shown; one it hides is stored and shown
-    /// blurred; one we hold carries its stored row's verdict. A message we
-    /// could not open is not stored (its row would keep an empty body after
-    /// its key arrives); it passes the author checks and then shows only as
-    /// undecryptable, so a removed member's post never shows (R2-4). Posts
-    /// are judged in the record's channel order.
-    ///
-    /// # Errors
-    /// No identity is unlocked, the community's governance state is not
-    /// loaded, or the store failed.
-    pub(crate) async fn store_record_messages(
-        &self,
-        owner: &str,
-        community_id: &str,
-        channel_id: &str,
-        record: Vec<RecordMessage>,
-    ) -> Result<Vec<RecordMessage>, ChannelError> {
-        let (_, db) = self.owner_and_db()?;
-        let (key, channel) = (owner.to_string(), channel_id.to_string());
-        let ids: Vec<Option<String>> = (record.iter())
-            .map(|m| m.view.server_message_id.clone())
-            .collect();
-        let held = db
-            .call(move |conn| {
-                (ids.iter())
-                    .map(|id| match id {
-                        Some(id) => rows::held(conn, &key, &channel, id),
-                        None => Ok(None),
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .await
-            .map_err(stored)?;
-        let judged = held.iter().any(Option::is_none);
-        let inputs = if judged {
-            Some(self.gate_inputs(owner, &db, community_id).await?)
-        } else {
-            None
-        };
-        let (mut shown, mut fresh, mut reports) = (Vec::new(), Vec::new(), Vec::new());
-        // The posts this page admits or hides are stored after the loop,
-        // so a later post of the page is judged against them here.
-        let mut batch = BatchWindows::default();
-        for (mut message, held) in record.into_iter().zip(held) {
-            match held {
-                Some(rows::HeldMessage::Shown { blurred }) => {
-                    message.view.automod_blurred = blurred;
-                    shown.push(message);
-                    continue;
-                }
-                // Its author deleted it (plan E3.3 E3): never shown again.
-                Some(rows::HeldMessage::Deleted) => continue,
-                None => {}
-            }
-            let Some(inputs) = inputs.as_ref() else {
-                shown.push(message);
-                continue;
-            };
-            let timestamp_ms = u64::try_from(message.view.timestamp).unwrap_or(0);
-            let sender = message.view.sender_id.as_str();
-            if message.view.decryption_failed {
-                // Not opened, so neither stored nor judged on its body; a
-                // refused author's post is not shown either (R2-4).
-                let author = GatedPost {
-                    community_id,
-                    channel_id,
-                    sender_pseudonym: sender,
-                    body: "",
-                    timestamp_ms,
-                    held_before_secs: None,
-                    backfill: true,
-                    slot: Some(SlotPosition {
-                        record_key: &message.record_key,
-                        seq: message.slot_seq,
-                        digest: message.slot_digest,
-                    }),
-                };
-                match self.author_refused(inputs, &author) {
-                    Some(reason) => {
-                        tracing::debug!(
-                            community_id,
-                            channel_id,
-                            ?reason,
-                            "backfilled post dropped"
-                        );
-                    }
-                    None => shown.push(message),
-                }
-                continue;
-            }
-            let stored = self
-                .stored_before_secs(
-                    owner,
-                    &db,
-                    channel_id,
-                    sender,
-                    timestamp_ms,
-                    message.view.server_message_id.as_deref(),
-                )
-                .await?;
-            let at_secs = timestamp_ms / 1000;
-            let verdict = self.verdict(
-                inputs,
-                &GatedPost {
-                    community_id,
-                    channel_id,
-                    sender_pseudonym: sender,
-                    body: &message.view.body,
-                    timestamp_ms,
-                    held_before_secs: batch.held_before(sender, at_secs, stored),
-                    backfill: true,
-                    slot: Some(SlotPosition {
-                        record_key: &message.record_key,
-                        seq: message.slot_seq,
-                        digest: message.slot_digest,
-                    }),
-                },
-            );
-            batch.record(sender, at_secs, &verdict);
-            let report = match verdict {
-                Verdict::Drop(reason) => {
-                    tracing::debug!(community_id, channel_id, ?reason, "backfilled post dropped");
-                    continue;
-                }
-                Verdict::Hide(_) => {
-                    message.view.automod_blurred = true;
-                    None
-                }
-                Verdict::Report(GateReason::AutoMod { rule }) => Some(rule),
-                Verdict::Report(reason) => Some(format!("{reason:?}")),
-                Verdict::Admit => None,
-            };
-            if let Some(id) = message.view.server_message_id.clone() {
-                if let Some(reason) = report {
-                    reports.push((id, reason));
-                }
-                fresh.push(message.clone());
-            }
-            shown.push(message);
-        }
-        self.insert_record_messages(owner, channel_id, fresh)
-            .await?;
-        // Delete wins (plan E3.3 M4): a post a moderator removed is stored
-        // removed, and the record's copy is never shown.
-        self.gov.apply_admin_deletes(community_id).await;
-        if let Some(state) = self.gov.governance_state(community_id) {
-            shown.retain(|m| {
-                !(m.view.server_message_id.as_deref()).is_some_and(|id| {
-                    crate::host::adapters::governance::channel_messages::removed_by(
-                        &state,
-                        channel_id,
-                        id,
-                        &m.view.sender_id,
-                    )
-                    .is_some()
-                })
-            });
-        }
-        for (message_id, reason) in reports {
-            self.report_to_moderators(community_id, channel_id, &message_id, &reason)
-                .await;
-        }
-        Ok(shown)
-    }
-
-    /// Store the gated record messages `fresh`, each with its verdict's
-    /// blur; one stored meanwhile is skipped.
-    async fn insert_record_messages(
-        &self,
-        owner: &str,
-        channel_id: &str,
-        fresh: Vec<RecordMessage>,
-    ) -> Result<(), ChannelError> {
-        let (_, db) = self.owner_and_db()?;
-        let (owner, channel) = (owner.to_string(), channel_id.to_string());
-        let attachments = fresh
-            .iter()
-            .map(|m| {
-                (m.attachment.as_ref())
-                    .map(|offer| {
-                        serde_json::to_string(&rekindle_files::AttachmentRecordJson::from_offer(
-                            offer, None,
-                        ))
-                    })
-                    .transpose()
-                    .map_err(|e| ChannelError::Adapter(format!("attachment record: {e}")))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        db.call(move |conn| {
-            for (message, attachment_json) in fresh.iter().zip(&attachments) {
-                let Some(message_id) = message.view.server_message_id.as_deref() else {
-                    continue;
-                };
-                if rows::row_id_by_message_id(conn, &owner, &channel, message_id)?.is_some() {
-                    continue;
-                }
-                rows::insert(
-                    conn,
-                    &ChannelMessageInsert {
-                        reply_to: message.reply_to.as_deref(),
-                        owner_key: &owner,
-                        channel_id: &channel,
-                        sender_key: &message.view.sender_id,
-                        body: &message.view.body,
-                        timestamp: message.view.timestamp,
-                        is_read: true,
-                        mek_generation: Some(
-                            i64::try_from(message.mek_generation).unwrap_or(i64::MAX),
-                        ),
-                        message_id,
-                        lamport_ts: message.lamport_ts,
-                        automod_blurred: message.view.automod_blurred,
-                        forwarded_from_author: None,
-                        flags: 0,
-                        attachment_json: attachment_json.as_deref(),
-                        send_state: SendState::Delivered,
-                        mentions_me: message.mentions_me,
-                    },
-                )?;
-            }
-            Ok(())
-        })
-        .await
-        .map_err(stored)
-    }
-}
-
-/// The messages the record's changes delete, each by its author
-/// (lowercased): `(author, message id)`.
-fn deleted_by_author(changes: &[history::RecordChange]) -> Vec<(String, String)> {
-    (changes.iter())
-        .filter_map(|change| match &change.entry {
-            rekindle_codec::community::channel_record::ChannelRecordEntry::Delete(d) => {
-                Some((hex::encode(change.author.0), d.message_id.clone()))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-/// Whether `view` is a message its own author deleted.
-fn deleted_view(deleted: &[(String, String)], view: &ChannelMessageView) -> bool {
-    (view.server_message_id.as_deref()).is_some_and(|id| {
-        (deleted.iter())
-            .any(|(author, message)| message == id && author.eq_ignore_ascii_case(&view.sender_id))
-    })
 }
 
 /// One stored row as a frontend renders it; `own_key` and `pseudonym` mark

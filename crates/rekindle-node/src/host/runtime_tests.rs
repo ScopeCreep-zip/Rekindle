@@ -21,8 +21,6 @@ mod channel_change_tests;
 mod channel_gap_tests;
 #[path = "channel_held_tests.rs"]
 mod channel_held_tests;
-#[path = "channel_history_tests.rs"]
-mod channel_history_tests;
 #[path = "channel_ingest_tests.rs"]
 mod channel_ingest_tests;
 #[path = "channel_send_tests.rs"]

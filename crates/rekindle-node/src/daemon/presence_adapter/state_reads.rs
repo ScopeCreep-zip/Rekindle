@@ -34,54 +34,6 @@ impl DaemonPresenceAdapter {
         "online".to_string()
     }
 
-    pub(super) fn channel_log_keys_impl(&self, community_id: &str) -> Vec<(String, String)> {
-        self.ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.community(community_id))
-            .map(|m| {
-                m.channel_record_keys
-                    .iter()
-                    .map(|(channel, key)| (channel.clone(), key.clone()))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Members the last poll observed.
-    ///
-    /// This is the read that replaces `read_member_index` — one local
-    /// map lookup against a roster whose every row was signature-checked
-    /// when it was scanned, rather than a DHT read of a shared structure
-    /// any member could have written.
-    /// The writer index for our segment's channel records: every member
-    /// the roster placed in our segment, and our own slot (plan C7.12).
-    pub(super) fn member_slots_impl(&self, community_id: &str) -> Vec<u32> {
-        let Some((segment, own_slot)) = self
-            .ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.community(community_id))
-            .map(|m| (m.segment_index.unwrap_or(0), m.slot_index))
-        else {
-            return Vec::new();
-        };
-        let mut slots: Vec<u32> = self
-            .ctx
-            .communities
-            .members(community_id)
-            .into_values()
-            .filter(|member| member.segment_index == segment)
-            .map(|member| member.subkey_index)
-            .collect();
-        slots.push(own_slot);
-        slots.sort_unstable();
-        slots.dedup();
-        slots
-    }
-
     pub(super) fn presence_credentials_impl(
         &self,
         community_id: &str,

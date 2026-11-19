@@ -25,7 +25,6 @@ use crate::host::adapters::governance::HostGovernance;
 mod blocks;
 pub(crate) mod changes;
 pub mod deps_impl;
-mod dht;
 mod events;
 pub(crate) mod held_changes;
 pub(crate) mod history;

@@ -9,7 +9,6 @@
 //! - `send` — app message / app call senders
 //! - `deadline` — our bound on every outbound app call (finding 78)
 //! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
-//! - `dht/` — channel messages over the record port
 //!
 //! ## Application-level broadcast
 //! - `dht_writes` — leased-record and own-profile operations for TransportNode callers
@@ -18,7 +17,6 @@
 
 // Node and infrastructure
 pub mod deadline;
-pub mod dht;
 pub mod node;
 pub mod peer_registry;
 pub mod send;

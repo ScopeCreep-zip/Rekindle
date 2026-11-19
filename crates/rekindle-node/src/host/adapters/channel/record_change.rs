@@ -1,7 +1,6 @@
 //! Channel posts read from a channel record rather than notified (A/B
 //! finding R2-4, D26): a watched change of a channel record's subkey (the
-//! Veilid watch, plan E3.1's third delivery path) and a desktop catch-up
-//! read. Every post goes through [`HostChannel::ingest_as`], so the gate's
+//! Veilid watch, plan E3.1's third delivery path). Every post goes through [`HostChannel::ingest_as`], so the gate's
 //! author checks run before anything is opened, stored or published; a
 //! removed member's write to its still-writable slot is dropped like its
 //! gossip copy. The author's edits and deletes in a changed value are
@@ -102,19 +101,6 @@ impl HostChannel {
             self.apply_changes(source, &entries).await;
         }
         true
-    }
-
-    /// Ingest the posts a catch-up read of `record_key` returned (the
-    /// desktop's presence catch-up), as history: the gate's backfill rule
-    /// keeps a departed author's posts dated before its departure.
-    pub async fn ingest_catchup(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        record_key: &str,
-        messages: Vec<(u32, ChannelMessage)>,
-    ) {
-        (self.ingest_read(community_id, channel_id, record_key, messages, 0, true)).await;
     }
 
     async fn ingest_read(

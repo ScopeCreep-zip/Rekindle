@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
@@ -73,20 +73,6 @@ pub struct ChannelMessageRow {
     pub body: String,
     /// The message id of the stored parent this row replies to.
     pub reply_to: Option<String>,
-}
-
-/// One entry from a thread record DHT scan, paired with the subkey
-/// it lived in (so the AAD can be reconstructed for decrypt).
-#[derive(Debug, Clone)]
-pub struct ChannelEntryItem {
-    pub subkey_index: u32,
-    /// The seq of the slot value it was read from.
-    pub seq: u32,
-    /// The digest of that slot value's page (plan E3.2 S9).
-    pub slot_digest: [u8; 32],
-    /// The author whose signature the slot value carries (plan E3.3 E1).
-    pub author: rekindle_types::id::PseudonymKey,
-    pub entry: ChannelRecordEntry,
 }
 
 /// One entry of a channel's (or thread's) outbox stream (plan E3.3), read
@@ -265,27 +251,10 @@ pub trait ChannelMessagingDeps: Send + Sync {
     /// End a borrow of the host's record pool.
     async fn release_record(&self, lease: LeaseId);
 
-    /// Every entry of `record_key`, a channel or thread record of
-    /// `community_id`, read through the host's writer index: only the
-    /// slots of members it knows are read, and only changed ones from the
-    /// network (plan C7.12).
-    async fn read_all_channel_entries(
-        &self,
-        community_id: &str,
-        record_key: &str,
-    ) -> Result<Vec<ChannelEntryItem>, ChannelError>;
-
     /// Every entry of the stream `stream_id` (a channel of `community_id`)
     /// across its authors' channel outboxes, author by author in chain
     /// order (plan E3.3). An outbox not readable now is skipped.
     async fn read_outbox_entries(&self, community_id: &str, stream_id: &str) -> Vec<OutboxItem>;
-
-    /// The messages of [`read_all_channel_entries`](Self::read_all_channel_entries).
-    async fn read_all_channel_messages(
-        &self,
-        community_id: &str,
-        record_key: &str,
-    ) -> Result<Vec<ChannelMessage>, ChannelError>;
 
     /// Hand records the community keeps for its session to the host,
     /// which holds and watches them (the governance runtime's hook of the

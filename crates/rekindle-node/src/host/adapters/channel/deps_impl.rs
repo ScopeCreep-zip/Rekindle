@@ -6,13 +6,12 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use rekindle_channel::deps::{
-    ChannelEntryItem, ChannelInfoSnapshot, ChannelMessageRow, ChannelMessagingDeps, ChannelPost,
-    ChannelSendOutcome, MemberMentionView, PseudonymCredentials, RoleSnapshot,
-    SentChannelMessageEcho, ThreadInfoSnapshot, ThreadStateSnapshot,
+    ChannelInfoSnapshot, ChannelMessageRow, ChannelMessagingDeps, ChannelPost, ChannelSendOutcome,
+    MemberMentionView, PseudonymCredentials, RoleSnapshot, SentChannelMessageEcho,
+    ThreadInfoSnapshot, ThreadStateSnapshot,
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
-use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
@@ -141,28 +140,12 @@ impl ChannelMessagingDeps for HostChannel {
         self.gov.release_record(lease).await;
     }
 
-    async fn read_all_channel_entries(
-        &self,
-        community_id: &str,
-        record_key: &str,
-    ) -> Result<Vec<ChannelEntryItem>, ChannelError> {
-        self.read_entries_impl(community_id, record_key).await
-    }
-
     async fn read_outbox_entries(
         &self,
         community_id: &str,
         stream_id: &str,
     ) -> Vec<rekindle_channel::deps::OutboxItem> {
         self.read_author_outboxes(community_id, stream_id).await
-    }
-
-    async fn read_all_channel_messages(
-        &self,
-        community_id: &str,
-        record_key: &str,
-    ) -> Result<Vec<ChannelMessage>, ChannelError> {
-        self.read_messages_impl(community_id, record_key).await
     }
 
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases) {

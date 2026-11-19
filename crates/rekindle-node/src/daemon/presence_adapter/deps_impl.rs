@@ -1,16 +1,14 @@
 //! `CommunityPresenceDeps` impl — delegation plus the recorded gaps.
 //!
 //! Methods that return empty do so for a checked reason, named at each
-//! one — not as a placeholder. Two that look like they should be empty
-//! are not: `read_all_channel_messages` is a DHT read the daemon can
-//! perform perfectly well, and `active_voice_channel` is blocked by
-//! missing local state rather than a missing subsystem.
+//! one — not as a placeholder. One that looks like it should be empty is
+//! not: `active_voice_channel` is blocked by missing local state rather
+//! than a missing subsystem.
 
 use rekindle_records::port::OpenIntent;
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_presence::community::{
     GossipOverlayPlan, GossipOverlaySnapshot, MemberProfileSnapshot,
@@ -64,14 +62,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
 
     fn identity_display_name(&self) -> String {
         self.identity_display_name_impl()
-    }
-
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
-        self.channel_log_keys_impl(community_id)
-    }
-
-    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32> {
-        self.member_slots_impl(community_id)
     }
 
     fn presence_credentials(&self, community_id: &str) -> Option<PresenceCredentials> {
@@ -309,24 +299,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         // fetch from members that do. This closes when the daemon moves
         // to SMPL channel segments (2.6c).
         Vec::new()
-    }
-
-    async fn read_channel_message_items(
-        &self,
-        record_key: &str,
-        member_slots: &[u32],
-    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
-        self.read_channel_record_impl(record_key, member_slots)
-            .await
-    }
-
-    fn persist_channel_catchup(
-        &self,
-        _community_id: &str,
-        _channel_id: &str,
-        _record_key: &str,
-        _messages: Vec<(u32, ChannelMessage)>,
-    ) {
     }
 
     fn mark_initial_sync_done(&self, community_id: &str) {

@@ -22,7 +22,6 @@ pub mod stage;
 pub mod video;
 pub mod video_session;
 pub mod watch;
-pub(crate) mod writers;
 
 // Re-export public API (callers use services::community::function_name)
 pub use bootstrap::answer_bootstrap_request;

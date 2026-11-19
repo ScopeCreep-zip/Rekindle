@@ -2,9 +2,6 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::community::channel_record::ChannelMessage;
-use rekindle_presence::deps::PresenceError;
-
 use super::DaemonPresenceAdapter;
 
 impl DaemonPresenceAdapter {
@@ -33,35 +30,6 @@ impl DaemonPresenceAdapter {
             rekindle_crypto::group::pseudonym::sign_with_pseudonym(&pseudonym, signing_bytes)
                 .to_vec(),
         )
-    }
-
-    /// Read every message in one channel record.
-    ///
-    /// The same `rekindle-protocol` call the desktop makes — this is a
-    /// DHT read, not a local-store read, so the daemon having no message
-    /// database is irrelevant to it.
-    ///
-    /// It expects an **SMPL channel segment record**: one record per
-    /// `(channel, segment)` with a subkey per member. That is now what
-    /// both tracks write. While the daemon still allocated a DFLT
-    /// `DhtLog` per member per channel this read returned nothing for
-    /// any key minted here, which is why it looked like a stub.
-    pub(super) async fn read_channel_record_impl(
-        &self,
-        record_key: &str,
-        member_slots: &[u32],
-    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
-        let node = self.transport().ok_or(PresenceError::NotAttached)?;
-        let pool = node
-            .require_records()
-            .map_err(|_| PresenceError::NotAttached)?;
-        rekindle_transport::broadcast::dht::channel_smpl::read_message_items(
-            pool.as_ref(),
-            record_key,
-            member_slots,
-        )
-        .await
-        .map_err(|e| PresenceError::Dht(e.to_string()))
     }
 
     /// Run one presence poll tick for a community.

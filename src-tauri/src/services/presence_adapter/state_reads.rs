@@ -101,23 +101,6 @@ pub(super) fn my_pseudonym_for_community(state: &Arc<AppState>, community_id: &s
     crate::state_helpers::my_pseudonym_key(state, community_id).unwrap_or_default()
 }
 
-pub(super) fn channel_log_keys_for_community(
-    state: &Arc<AppState>,
-    community_id: &str,
-) -> Vec<(String, String)> {
-    state
-        .communities
-        .read()
-        .get(community_id)
-        .map(|c| {
-            c.channel_log_keys
-                .iter()
-                .map(|(ch_id, rec)| (ch_id.clone(), rec.clone()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 pub(super) fn mark_initial_sync_done(state: &Arc<AppState>, community_id: &str) {
     if let Some(c) = state.communities.write().get_mut(community_id) {
         if let Some(ref mut g) = c.gossip {

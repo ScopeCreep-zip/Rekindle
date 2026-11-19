@@ -2,8 +2,7 @@
 //! presence adapter.
 //!
 //! Lifted out of `community_deps.rs` so the trait impl file stays
-//! focused on the per-method dispatch. Two operations (caught-up channel
-//! posts go through the Host's gated ingest, `ingest_catchup`):
+//! focused on the per-method dispatch. Two operations:
 //!
 //! - `compute_history_ranges` — `MIN/MAX(lamport_ts) GROUP BY
 //!   conversation_id` to advertise the Shared Locker history.

@@ -9,13 +9,11 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_presence::{
     CommunityPresenceDeps, DiscoveredMemberRow, GossipOverlayPlan, GossipOverlaySnapshot,
     OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor, SelfPresenceSnapshot,
 };
-use rekindle_protocol::dht::community::channel_record;
 
 use crate::services::presence_adapter::PresenceAdapter;
 use crate::state_helpers;
@@ -60,26 +58,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
         crate::services::community::current_presence_status(&self.state, community_id).to_string()
     }
 
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
-        super::state_reads::channel_log_keys_for_community(&self.state, community_id)
-    }
-
-    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32> {
-        match crate::services::community::writers::writer_slot_list(
-            &self.state,
-            &self.pool,
-            community_id,
-        )
-        .await
-        {
-            Ok(slots) => slots,
-            Err(error) => {
-                tracing::debug!(community = %community_id, %error, "writer index unavailable");
-                Vec::new()
-            }
-        }
-    }
-
     fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
         if let Err(error) =
             crate::services::community::send_to_mesh(&self.state, community_id, &envelope)
@@ -90,52 +68,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
                 "send_to_mesh from community-presence deps failed",
             );
         }
-    }
-
-    async fn read_channel_message_items(
-        &self,
-        record_key: &str,
-        member_slots: &[u32],
-    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
-        let pool =
-            state_helpers::record_pool(&self.state).map_err(|_| PresenceError::NotAttached)?;
-        let items =
-            channel_record::read_all_channel_entries(pool.as_ref(), record_key, member_slots)
-                .await
-                .map_err(|e| PresenceError::Dht(e.to_string()))?;
-        Ok(items
-            .into_iter()
-            .filter_map(|item| match item.entry {
-                ChannelRecordEntry::Message(message) => Some((item.subkey_index, message)),
-                _ => None,
-            })
-            .collect())
-    }
-
-    fn persist_channel_catchup(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        record_key: &str,
-        messages: Vec<(u32, ChannelMessage)>,
-    ) {
-        // The Host's ingest, so each post passes the D26 gate (its author
-        // checks first) before it is stored (A/B finding R2-4).
-        let state = std::sync::Arc::clone(&self.state);
-        let (community, channel, record) = (
-            community_id.to_owned(),
-            channel_id.to_owned(),
-            record_key.to_owned(),
-        );
-        crate::state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
-            "channel catch-up ingest",
-            async move {
-                let host = state.host.get().await;
-                (host.channel())
-                    .ingest_catchup(&community, &channel, &record, messages)
-                    .await;
-            },
-        );
     }
 
     fn mark_initial_sync_done(&self, community_id: &str) {

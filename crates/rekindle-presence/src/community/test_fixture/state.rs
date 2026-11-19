@@ -4,7 +4,6 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::community::GossipOverlaySnapshot;
@@ -16,9 +15,6 @@ pub struct MockState {
     pub my_pk: String,
     pub our_route: Option<Vec<u8>>,
     pub status: String,
-    pub channel_logs: Vec<(String, String)>,
-    pub member_slots: Vec<u32>,
-    pub read_results: HashMap<String, Result<Vec<(u32, ChannelMessage)>, String>>,
     // ---- Programmable behaviour ----
     pub registry_open_result: Option<String>,
     pub presence_credentials: Option<PresenceCredentials>,
@@ -37,13 +33,9 @@ pub struct MockState {
     pub inject_online: HashMap<String, OnlineMember>,
     // ---- Call-recording side ----
     pub sent_envelopes: Vec<(String, CommunityEnvelope)>,
-    pub catchups: Vec<(String, String, usize)>,
     pub initial_done: Vec<String>,
     pub calls_my_pseudonym: Vec<String>,
     pub calls_status_str: Vec<String>,
-    pub calls_channel_logs: Vec<String>,
-    pub calls_member_slots: Vec<String>,
-    pub calls_read_all: Vec<(String, Vec<u32>)>,
     pub calls_self_snapshot: Vec<String>,
     pub calls_encrypt_history: Vec<(String, usize)>,
     pub calls_compute_history: Vec<String>,

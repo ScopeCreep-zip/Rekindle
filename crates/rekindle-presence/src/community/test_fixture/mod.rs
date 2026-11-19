@@ -14,7 +14,6 @@ use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::community::{GossipOverlayPlan, GossipOverlaySnapshot};
@@ -68,48 +67,11 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         st.calls_status_str.push(community_id.to_string());
         st.status.clone()
     }
-    fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)> {
-        let mut st = self.state.lock();
-        st.calls_channel_logs.push(community_id.to_string());
-        st.channel_logs.clone()
-    }
-    async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32> {
-        let mut st = self.state.lock();
-        st.calls_member_slots.push(community_id.to_string());
-        st.member_slots.clone()
-    }
     fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
         self.state
             .lock()
             .sent_envelopes
             .push((community_id.to_string(), envelope));
-    }
-    async fn read_channel_message_items(
-        &self,
-        record_key: &str,
-        member_slots: &[u32],
-    ) -> Result<Vec<(u32, ChannelMessage)>, PresenceError> {
-        let mut st = self.state.lock();
-        st.calls_read_all
-            .push((record_key.to_string(), member_slots.to_vec()));
-        st.read_results
-            .get(record_key)
-            .cloned()
-            .unwrap_or_else(|| Ok(Vec::new()))
-            .map_err(PresenceError::Dht)
-    }
-    fn persist_channel_catchup(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        _record_key: &str,
-        messages: Vec<(u32, ChannelMessage)>,
-    ) {
-        self.state.lock().catchups.push((
-            community_id.to_string(),
-            channel_id.to_string(),
-            messages.len(),
-        ));
     }
     fn mark_initial_sync_done(&self, community_id: &str) {
         self.state
