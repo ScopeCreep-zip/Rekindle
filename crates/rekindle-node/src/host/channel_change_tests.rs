@@ -98,8 +98,11 @@ pub(super) fn edit(body: &str, seq: u64) -> ChannelRecordEntry {
 }
 
 pub(super) async fn apply(host: &Host, author: &PseudonymKey, entries: &[ChannelRecordEntry]) {
-    // Each entry is read at its own stream seq, where its body was sealed.
-    for entry in entries {
+    // An outbox reader reads entries in stream order, each at its own
+    // stream seq, where its body was sealed.
+    let mut ordered: Vec<&ChannelRecordEntry> = entries.iter().collect();
+    ordered.sort_by_key(|entry| entry.lamport());
+    for entry in ordered {
         let source = ChangeSource {
             community_id: "c1",
             channel_id: EDIT_CHANNEL,

@@ -392,7 +392,7 @@ fn the_state_root_covers_every_governance_state_field() {
     let base = canonical_state(&GovernanceState::default());
     let mut seen = HashSet::from([base]);
     let all = mutations();
-    assert_eq!(all.len(), 37, "one mutation per GovernanceState field");
+    assert_eq!(all.len(), 36, "one mutation per GovernanceState field");
     for (field, mutate) in all {
         let mut state = GovernanceState::default();
         mutate(&mut state);
@@ -407,7 +407,7 @@ fn the_state_root_covers_every_governance_state_field() {
 #[test]
 fn an_invite_use_changes_the_state_encoding() {
     let mut state = GovernanceState::default();
-    (mutations().swap_remove(33).1)(&mut state);
+    (mutations().swap_remove(32).1)(&mut state);
     let before = canonical_state(&state);
     if let Some(invite) = state.invites.values_mut().next() {
         invite.uses = 1;
