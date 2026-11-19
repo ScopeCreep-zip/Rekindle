@@ -13,7 +13,7 @@ impl SubscriptionManager {
     /// Set up a community's gossip mesh.
     ///
     /// Called for each community during resume and on community join.
-    pub async fn setup_community(&self, membership: &CommunityMembership) {
+    pub fn setup_community(&self, membership: &CommunityMembership) {
         info!(community = %membership.community_name, governance = %membership.anchor, "sub: setup_community");
         // The mesh first: it holds the community's message Lamport clock, so
         // a send works at once.

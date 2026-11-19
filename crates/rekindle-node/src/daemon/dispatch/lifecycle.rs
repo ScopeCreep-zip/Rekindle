@@ -71,7 +71,7 @@ pub(crate) async fn daemon_overlays(
         Arc::clone(&ctx.clock),
     );
     for membership in session.communities.values() {
-        sub_mgr.setup_community(membership).await;
+        sub_mgr.setup_community(membership);
     }
     // Typing indicators expire and the dedup cache sheds by TTL only if the
     // maintenance loop sweeps them.

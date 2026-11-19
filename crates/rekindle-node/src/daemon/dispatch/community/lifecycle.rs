@@ -66,7 +66,7 @@ pub(crate) async fn activate_community(
     crate::daemon::keepalive::start(ctx, &community_id);
     let subscriptions = ctx.subscriptions.read().clone();
     if let Some(subscriptions) = subscriptions {
-        subscriptions.setup_community(membership).await;
+        subscriptions.setup_community(membership);
     }
     if let Some(broadcast) = ctx.broadcast_mgr.read().as_ref() {
         broadcast.register_mesh(&community_id);
