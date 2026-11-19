@@ -15,7 +15,22 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let away = MenuItem::with_id(app, "status-away", "Away", true, None::<&str>)?;
     let busy = MenuItem::with_id(app, "status-busy", "Busy", true, None::<&str>)?;
     let offline = MenuItem::with_id(app, "status-offline", "Appear Offline", true, None::<&str>)?;
-    let status_menu = Submenu::with_items(app, "Status", true, &[&online, &away, &busy, &offline])?;
+    let status_sep = PredefinedMenuItem::separator(app)?;
+    // Plan E7.2: Xfire's tray set a custom status too; it opens the status
+    // message editor (Settings → Profile).
+    let custom = MenuItem::with_id(
+        app,
+        "status-message",
+        "Set custom status\u{2026}",
+        true,
+        None::<&str>,
+    )?;
+    let status_menu = Submenu::with_items(
+        app,
+        "Status",
+        true,
+        &[&online, &away, &busy, &offline, &status_sep, &custom],
+    )?;
 
     let sep = PredefinedMenuItem::separator(app)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
@@ -30,18 +45,13 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("Rekindle")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "quit" => quit_rekindle(app),
-            "settings" => {
-                let _ = windows::open_settings(app, None);
+        .on_menu_event(|app, event| match TrayAction::of(event.id.as_ref()) {
+            Some(TrayAction::Quit) => quit_rekindle(app),
+            Some(TrayAction::OpenSettings(tab)) => {
+                let _ = windows::open_settings(app, tab);
             }
-            "status-online" => set_status_from_tray(app, SessionStatus::Online),
-            "status-away" => set_status_from_tray(app, SessionStatus::Away),
-            "status-busy" => set_status_from_tray(app, SessionStatus::Busy),
-            // Appear Offline: invisible, which peers cannot tell from
-            // offline (only a lock or logout writes offline).
-            "status-offline" => set_status_from_tray(app, SessionStatus::Invisible),
-            _ => {}
+            Some(TrayAction::SetStatus(status)) => set_status_from_tray(app, status),
+            None => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -55,6 +65,34 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     Ok(())
+}
+
+/// What a tray menu item does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrayAction {
+    Quit,
+    /// Open Settings, on a tab or where it was.
+    OpenSettings(Option<windows::SettingsTab>),
+    SetStatus(SessionStatus),
+}
+
+impl TrayAction {
+    /// The action of the menu item with `id`.
+    fn of(id: &str) -> Option<Self> {
+        Some(match id {
+            "quit" => Self::Quit,
+            "settings" => Self::OpenSettings(None),
+            // "Set custom status…": the status message editor.
+            "status-message" => Self::OpenSettings(Some(windows::SettingsTab::Profile)),
+            "status-online" => Self::SetStatus(SessionStatus::Online),
+            "status-away" => Self::SetStatus(SessionStatus::Away),
+            "status-busy" => Self::SetStatus(SessionStatus::Busy),
+            // Appear Offline: invisible, which peers cannot tell from
+            // offline (only a lock or logout writes offline).
+            "status-offline" => Self::SetStatus(SessionStatus::Invisible),
+            _ => return None,
+        })
+    }
 }
 
 /// Quit Rekindle: the tray's Quit and the menu bar's (`quit_app`). A
@@ -78,4 +116,28 @@ fn set_status_from_tray(app: &tauri::AppHandle, status: SessionStatus) {
             Err(e) => tracing::warn!(error = %e, "status from tray refused"),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_custom_status_opens_the_status_message_editor() {
+        assert_eq!(
+            TrayAction::of("status-message"),
+            Some(TrayAction::OpenSettings(Some(
+                windows::SettingsTab::Profile
+            )))
+        );
+        assert_eq!(
+            TrayAction::of("settings"),
+            Some(TrayAction::OpenSettings(None))
+        );
+        assert_eq!(
+            TrayAction::of("status-offline"),
+            Some(TrayAction::SetStatus(SessionStatus::Invisible))
+        );
+        assert_eq!(TrayAction::of("unknown"), None);
+    }
 }
