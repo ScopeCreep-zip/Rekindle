@@ -149,14 +149,6 @@ impl GroupDmListView {
             .collect();
         (format!(" {title} "), lines)
     }
-
-    fn border(&self, id: FocusId) -> Style {
-        if self.focus.is_focused(id) {
-            Style::new().add_modifier(Modifier::BOLD)
-        } else {
-            Style::new()
-        }
-    }
 }
 
 impl View for GroupDmListView {
@@ -168,7 +160,7 @@ impl View for GroupDmListView {
             .block(
                 Block::bordered()
                     .title(" Groups ")
-                    .border_style(self.border(FocusId::DmList)),
+                    .border_style(super::focus_border(&self.focus, FocusId::DmList)),
             )
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
         frame.render_stateful_widget(list, left, &mut self.list_state);
@@ -176,7 +168,7 @@ impl View for GroupDmListView {
         let messages = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
             Block::bordered()
                 .title(title)
-                .border_style(self.border(FocusId::MessageList)),
+                .border_style(super::focus_border(&self.focus, FocusId::MessageList)),
         );
         let [messages_area, input_area] =
             Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).areas(right);

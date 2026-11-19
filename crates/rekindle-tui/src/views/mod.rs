@@ -18,6 +18,16 @@ pub mod voice_session;
 
 use anyhow::Result;
 
+/// A panel's border: bold while its slot has focus.
+pub fn focus_border(focus: &FocusRing, id: crate::focus::FocusId) -> ratatui::style::Style {
+    let style = ratatui::style::Style::new();
+    if focus.is_focused(id) {
+        style.add_modifier(ratatui::style::Modifier::BOLD)
+    } else {
+        style
+    }
+}
+
 /// Route a mouse click to the focus slot whose rect contains it.
 ///
 /// Focuses that slot and, when it is the input box, returns the action

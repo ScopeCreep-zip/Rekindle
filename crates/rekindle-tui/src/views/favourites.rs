@@ -105,14 +105,6 @@ impl FavouritesView {
             label,
         })
     }
-
-    fn border(&self, id: FocusId) -> Style {
-        if self.focus.is_focused(id) {
-            Style::new().add_modifier(Modifier::BOLD)
-        } else {
-            Style::new()
-        }
-    }
 }
 
 /// A server's row: its game and address, then its label and whether an
@@ -146,7 +138,7 @@ impl View for FavouritesView {
             .block(
                 Block::bordered()
                     .title(title)
-                    .border_style(self.border(FocusId::DmList)),
+                    .border_style(super::focus_border(&self.focus, FocusId::DmList)),
             )
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED));
         frame.render_stateful_widget(list, list_area, &mut self.list_state);
