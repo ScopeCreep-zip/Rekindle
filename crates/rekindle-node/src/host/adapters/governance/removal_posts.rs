@@ -67,20 +67,6 @@ impl HostGovernance {
         let heads = gov.departed_heads.get(&me).cloned().unwrap_or_default();
         let mut posts = Vec::new();
         for (channel, record_key) in own_channel_records(&membership, &gov) {
-            if let Some(outbox) = self.ctx.outbox.channel_posts() {
-                match outbox
-                    .fail_slot(&record_key, slot, REMOVED_NOT_DELIVERED)
-                    .await
-                {
-                    Ok(unlanded) => posts.extend(unlanded.into_iter().map(|post| OwnPost {
-                        channel: post.channel,
-                        message: post.message,
-                    })),
-                    Err(error) => {
-                        tracing::warn!(community = %community_id, %error, "unlanded posts not failed at our removal");
-                    }
-                }
-            }
             let Some(page) = self.own_page(&record_key, slot, &me).await else {
                 continue;
             };

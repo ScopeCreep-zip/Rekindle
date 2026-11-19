@@ -26,8 +26,8 @@ pub struct SyncedMessage {
 /// Our community channel post (plan E3.3): the payload of its outbox
 /// `channel_post` row. A message or forward is an entry of our member
 /// record's channel outbox (`M`/4), sealed when the stream's sender drains
-/// it; an attachment message is still written to the channel record's slot
-/// and settled by that write until it moves onto the outbox (E3.3 slice 7).
+/// it; an attachment message too, its offer carried on the row (E3.3
+/// slice 7).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChannelPost {
     pub community: String,
@@ -51,8 +51,13 @@ pub enum PostEntry {
         original_message: String,
         original_author: String,
     },
-    /// An attachment message on the channel record's slot.
-    SlotAttachment { record_key: String, subkey: u32 },
+    /// An attachment message on our outbox (plan E3.3 slice 7): a message
+    /// entry carrying `offer` (its FEK wrapped at upload) and `flags`
+    /// (a voice message's), its body read from our row.
+    Attachment {
+        offer: crate::attachment::AttachmentOffer,
+        flags: u32,
+    },
     /// An edit of our post `target` on our outbox (plan E3.3): its new
     /// body, sealed when the stream drains it at the entry's stream seq,
     /// and our seq `seq` that orders our edits (rule E1).
@@ -71,20 +76,11 @@ pub enum PostEntry {
 }
 
 impl ChannelPost {
-    /// The row's stream scope: one `channel_post` stream per channel for
-    /// outbox entries (`<community>:<channel>`, in queue order), the slot
-    /// for an attachment message.
+    /// The row's stream scope: one `channel_post` stream per channel
+    /// (`<community>:<channel>`, in queue order).
     #[must_use]
     pub fn scope(&self) -> String {
-        match &self.entry {
-            PostEntry::SlotAttachment { record_key, subkey } => format!("{record_key}:{subkey}"),
-            PostEntry::Message
-            | PostEntry::Forward { .. }
-            | PostEntry::Edit { .. }
-            | PostEntry::Delete { .. } => {
-                format!("{}:{}", self.community, self.channel)
-            }
-        }
+        format!("{}:{}", self.community, self.channel)
     }
 }
 

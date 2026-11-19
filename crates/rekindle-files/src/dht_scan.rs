@@ -2,14 +2,11 @@
 //!
 //! Architecture §28.9 — the AttachmentOffer for a file lives embedded
 //! in a `ChannelEntry::Message`; possession of chunks is advertised
-//! via `ChannelEntry::AttachmentCached`. After the caller scans the
-//! channel SMPL record (subkeys 0..255) and decodes entries, the pure
-//! helpers here turn those entries into the data the download
-//! orchestrator needs: the offer + per-peer chunk bitmaps.
-//!
-//! No DHT calls live here — the src-tauri caller (or, eventually, the
-//! `FilesDeps::scan_channel_subkeys` trait method) owns the
-//! veilid-core RecordKey + RoutingContext.
+//! via `ChannelEntry::AttachmentCached`. Given the channel's entries
+//! (`FilesDeps::channel_entries`: the members' outbox entries of the
+//! channel, then its record's slots), the pure helpers here turn them into
+//! the data the download orchestrator needs: the offer + per-peer chunk
+//! bitmaps. No DHT calls live here.
 
 use std::collections::HashMap;
 

@@ -156,16 +156,11 @@ async fn queued_post(
     })
     .await
     .unwrap();
-    // An attachment post, written to the channel record's slot until E3.3
-    // slice 7.
     rekindle_types::message::ChannelPost {
         community: "c1".into(),
         channel: "ch1".into(),
         message: id.into(),
-        entry: rekindle_types::message::PostEntry::SlotAttachment {
-            record_key: "rk".into(),
-            subkey: 4,
-        },
+        entry: rekindle_types::message::PostEntry::Message,
     }
 }
 
@@ -174,29 +169,6 @@ async fn post_state(outbox: &Arc<Outbox<HostOutbox>>, id: &'static str) -> Optio
     (db.call(move |c| rekindle_db::repo::messages::send_state(c, OWNER, id))
         .await)
         .unwrap()
-}
-
-#[tokio::test]
-async fn a_post_queued_offline_settles_from_the_pools_settle() {
-    let dir = tempfile::tempdir().unwrap();
-    let outbox = Arc::new(Outbox::new(
-        host(dir.path(), Arc::new(Senders::default())).await,
-    ));
-    let posts = super::ChannelPosts(Arc::clone(&outbox));
-    let first = queued_post(&outbox, "m1").await;
-    posts.queue(&first).await.unwrap();
-    // The pool's slot write is the send: with no sender a pass leaves the
-    // row queued.
-    outbox.pump().await.unwrap();
-    assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Queued));
-    let settled = posts.settle_slot("rk", 4, true).await.unwrap();
-    assert_eq!(settled, [first]);
-    assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Sent));
-    let second = queued_post(&outbox, "m2").await;
-    posts.queue(&second).await.unwrap();
-    assert_eq!(posts.settle_slot("rk", 4, false).await.unwrap(), [second]);
-    assert_eq!(post_state(&outbox, "m2").await, Some(SendState::Failed));
-    assert_eq!(outbox.unsettled().await.unwrap(), 0);
 }
 
 /// A post of `community` composed before its key (plan E3.2 S7l, F9-1):
@@ -228,11 +200,11 @@ async fn waiting_post(
 
 const LATER: i64 = i64::MAX / 2;
 
-/// A waiting post is not in the slot's stream: the slot's write settles
-/// only the attachment posts written to it; the waiting ones are listed first-composed
-/// first and released once each.
+/// A waiting post is not settled with its channel's stream: failing the
+/// stream settles only the posts queued on it; the waiting ones are listed
+/// first-composed first and released once each.
 #[tokio::test]
-async fn a_waiting_post_is_not_settled_by_its_slots_write_and_is_released_once() {
+async fn a_waiting_post_is_not_settled_with_its_channels_stream_and_is_released_once() {
     let dir = tempfile::tempdir().unwrap();
     let outbox = Arc::new(Outbox::new(
         host(dir.path(), Arc::new(Senders::default())).await,
@@ -243,7 +215,10 @@ async fn a_waiting_post_is_not_settled_by_its_slots_write_and_is_released_once()
     let first = waiting_post(&outbox, "c1", "m2", LATER).await;
     let second = waiting_post(&outbox, "c1", "m3", LATER).await;
     outbox.pump().await.unwrap();
-    assert_eq!(posts.settle_slot("rk", 4, true).await.unwrap(), [written]);
+    assert_eq!(
+        (posts.fail_channel("c1", "ch1", "removed").await).unwrap(),
+        [written]
+    );
     assert_eq!(
         post_state(&outbox, "m2").await,
         Some(SendState::AwaitingKey)

@@ -8,12 +8,9 @@ use rekindle_records::port::OpenIntent;
 use std::path::Path;
 
 use async_trait::async_trait;
-use rekindle_channel::deps::{ChannelMessagingDeps, ChannelWriteContext};
-use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
-};
-use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_files::{ChannelPost, ChannelWrite, FilesDeps, FilesError, FilesEvent};
+use rekindle_channel::deps::ChannelMessagingDeps;
+use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelRecordEntry};
+use rekindle_files::{ChannelPost, FilesDeps, FilesError, FilesEvent};
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_protocol::dht::community::channel_record::{self as record, AppendOutcome};
 use rekindle_types::attachment::AttachmentOffer;
@@ -37,23 +34,6 @@ impl HostFiles {
     ) -> Result<rekindle_governance_runtime::deps::CommunityMembership, FilesError> {
         (self.gov.community_membership(community_id))
             .ok_or_else(|| FilesError::NotFound(format!("community {community_id}")))
-    }
-
-    /// Our slot of `channel_log_key`, for a write of it.
-    fn write_context(
-        community_id: &str,
-        channel_log_key: &str,
-        slot_index: u32,
-        slot_keypair: &str,
-    ) -> ChannelWriteContext {
-        ChannelWriteContext {
-            community_id: community_id.to_string(),
-            channel_id: String::new(),
-            channel_key: channel_log_key.to_string(),
-            slot_keypair_str: slot_keypair.to_string(),
-            slot_index,
-            segment_index: 0,
-        }
     }
 }
 
@@ -120,29 +100,11 @@ impl FilesDeps for HostFiles {
         .map_err(|e| FilesError::Slowmode(e.to_string()))
     }
 
-    fn resolve_outbound_mentions(
-        &self,
-        community_id: &str,
-        sender_pseudonym: &str,
-        body: &str,
-    ) -> (Vec<String>, Vec<String>, u32) {
-        rekindle_channel::mentions::resolve_outbound_mentions(
-            &self.channel,
-            community_id,
-            sender_pseudonym,
-            body,
-        )
-    }
-
     fn increment_lamport(
         &self,
         community_id: &str,
     ) -> Result<u64, rekindle_types::lamport::LamportError> {
         self.channel.increment_lamport(community_id)
-    }
-
-    fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64 {
-        self.channel.next_channel_sequence(community_id, channel_id)
     }
 
     fn peer_route_blob(&self, community_id: &str, target_pseudonym: &str) -> Option<Vec<u8>> {
@@ -188,37 +150,8 @@ impl FilesDeps for HostFiles {
         expressions
     }
 
-    async fn write_channel_message_to_smpl(
-        &self,
-        community_id: &str,
-        channel_log_key: &str,
-        slot_index: u32,
-        slot_keypair: &str,
-        message: &ChannelMessage,
-    ) -> Result<ChannelWrite, FilesError> {
-        let context = Self::write_context(community_id, channel_log_key, slot_index, slot_keypair);
-        let written = self
-            .channel
-            .write_channel_message_smpl(&context, message)
-            .await;
-        match written.map_err(transport)? {
-            rekindle_channel::deps::DhtWrite::Stored => Ok(ChannelWrite::Stored),
-            rekindle_channel::deps::DhtWrite::Held => Ok(ChannelWrite::Held),
-        }
-    }
-
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), FilesError> {
         (self.channel.queue_post(post).await).map_err(|e| FilesError::Db(e.to_string()))
-    }
-
-    async fn settle_posts(&self, record_key: &str, subkey: u32) {
-        self.channel
-            .settle_slot_posts(record_key, subkey, true)
-            .await;
-    }
-
-    async fn fail_post(&self, message_id: &str) {
-        self.channel.fail_post(message_id).await;
     }
 
     async fn write_attachment_cached_to_smpl(
@@ -249,25 +182,35 @@ impl FilesDeps for HostFiles {
         }
     }
 
-    async fn scan_channel_subkeys(
+    async fn channel_entries(
         &self,
-        channel_log_key: &str,
+        community_id: &str,
+        channel_id: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError> {
+        let mut entries = (self.channel)
+            .read_author_outboxes(community_id, channel_id)
+            .await;
+        let channel_log_key = self.channel_log_key(community_id, channel_id)?;
         let pool = self.records()?;
         // One borrow, one inspect, and a read of only the subkeys that hold
         // a value (plan C9.1e).
-        let lease = (pool.acquire(channel_log_key, None, OpenIntent::Check).await)
+        let lease = (pool
+            .acquire(&channel_log_key, None, OpenIntent::Check)
+            .await)
             .map_err(|e| transport(format!("open channel record: {e}")))?;
         let subkeys: Vec<u32> = (0..CHANNEL_SLOTS).collect();
         let values = pool.read_changed(lease, &subkeys).await;
         pool.release(lease).await;
         let values = values.map_err(|e| transport(format!("read channel record: {e}")))?;
-        Ok((values.into_iter())
-            .filter_map(|(_, value)| {
-                rekindle_codec::community::channel_record::decode_channel_entries(&value.data).ok()
-            })
-            .flatten()
-            .collect())
+        entries.extend(
+            (values.into_iter())
+                .filter_map(|(_, value)| {
+                    rekindle_codec::community::channel_record::decode_channel_entries(&value.data)
+                        .ok()
+                })
+                .flatten(),
+        );
+        Ok(entries)
     }
 
     async fn app_call_peer(
@@ -316,14 +259,6 @@ impl FilesDeps for HostFiles {
     ) -> Result<(), FilesError> {
         self.store_local_path(owner_key, channel_id, attachment_id_hex, save_path)
             .await
-    }
-
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        envelope: &CommunityEnvelope,
-    ) -> Result<(), FilesError> {
-        (self.gov.send_to_mesh(community_id, envelope)).map_err(transport)
     }
 
     async fn write_attachment_pinned(

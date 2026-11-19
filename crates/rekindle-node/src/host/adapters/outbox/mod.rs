@@ -30,7 +30,7 @@ use rekindle_types::message::SendState;
 use rekindle_utils::{Clock, RandomSource};
 use tokio::sync::broadcast;
 
-pub use channel_post::{post_of_row, ChannelPosts, SUPERSEDED};
+pub use channel_post::{post_of_row, ChannelPosts};
 pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
 pub use governance_op::{GovernanceOps, Published};

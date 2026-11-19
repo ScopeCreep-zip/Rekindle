@@ -1,77 +1,54 @@
-//! An attachment message is a channel post (plan E2.5): its `messages`
-//! row is written `queued`, then it is a row of the outbox `channel_post`
-//! stream of the record slot its write targets, settled by that write: a
-//! stored page `sent`, a held one by the record pool's settle (the
-//! desktop's delivery settle, as any post), one that cannot be made
-//! `failed`. No send state is written outside the outbox.
+//! An attachment message is a channel post (plan E3.3 slice 7): its
+//! `messages` row is written `queued`, then it is a row of its channel's
+//! outbox `channel_post` stream carrying the offer. The stream's sender
+//! seals the carrying `ChannelMessage` at its `{anchor, channel, author,
+//! streamSeq}` when it drains the row onto our channel outbox (`M`/4), and
+//! settles the row from that append; the user's Retry queues the same row
+//! again. No send state is written outside the outbox.
 
-use rekindle_codec::community::channel_record::ChannelMessage;
-
-use crate::deps::{ChannelPost, ChannelWrite, FilesDeps};
-use crate::error::FilesError;
+use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::message::PostEntry;
 
-/// Where an attachment message is written.
-pub(crate) struct PostTarget<'a> {
-    pub community_id: &'a str,
-    pub channel_id: &'a str,
-    pub record_key: &'a str,
-    pub slot_index: u32,
-    pub slot_keypair: &'a str,
-    /// The slot's subkey (owner subkeys + `slot_index`).
-    pub subkey: u32,
-}
+use crate::deps::{ChannelPost, FilesDeps};
+use crate::error::FilesError;
 
-/// Queue `message`'s row and make its write; the write's outcome settles
-/// the row.
+/// Queue the attachment message `message_id` (its row already stored) on
+/// `channel_id`'s stream with `offer` and `flags`.
 ///
 /// # Errors
-/// The row could not be stored, or the write could not be made (its row
-/// fails).
-pub(crate) async fn write_post<D: FilesDeps>(
+/// The row could not be queued.
+pub(crate) async fn queue_attachment_post<D: FilesDeps>(
     deps: &D,
-    target: &PostTarget<'_>,
-    message: &ChannelMessage,
+    community_id: &str,
+    channel_id: &str,
     message_id: &str,
-) -> Result<ChannelWrite, FilesError> {
+    offer: &AttachmentOffer,
+    flags: u32,
+) -> Result<(), FilesError> {
     let post = ChannelPost {
-        community: target.community_id.to_owned(),
-        channel: target.channel_id.to_owned(),
+        community: community_id.to_owned(),
+        channel: channel_id.to_owned(),
         message: message_id.to_owned(),
-        entry: PostEntry::SlotAttachment {
-            record_key: target.record_key.to_owned(),
-            subkey: target.subkey,
+        entry: PostEntry::Attachment {
+            offer: offer.clone(),
+            flags,
         },
     };
-    deps.queue_post(&post).await?;
-    let written = deps
-        .write_channel_message_to_smpl(
-            target.community_id,
-            target.record_key,
-            target.slot_index,
-            target.slot_keypair,
-            message,
-        )
-        .await;
-    match written {
-        Ok(ChannelWrite::Stored) => deps.settle_posts(target.record_key, target.subkey).await,
-        Ok(ChannelWrite::Held) => {}
-        Err(_) => deps.fail_post(message_id).await,
-    }
-    written
+    deps.queue_post(&post).await
 }
 
 #[cfg(test)]
 mod tests {
     use rekindle_types::message::PostEntry;
 
-    use crate::deps::ChannelWrite;
     use crate::test_mock::MockDeps;
     use crate::upload::{upload_bytes_as_attachment, UploadRequest};
 
-    async fn upload(deps: &MockDeps) {
-        upload_bytes_as_attachment(
-            deps,
+    #[tokio::test]
+    async fn an_upload_queues_its_message_on_the_channels_outbox_stream() {
+        let deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(7, [4; 32]);
+        let id = upload_bytes_as_attachment(
+            &deps,
             UploadRequest {
                 community_id: "c1".into(),
                 channel_id: "11111111111111111111111111111111".into(),
@@ -79,37 +56,20 @@ mod tests {
                 filename: "a.txt".into(),
                 mime_type: "text/plain".into(),
                 body_plaintext: Vec::new(),
-                flags: 0,
+                flags: rekindle_types::channel::flags::VOICE_MESSAGE,
                 local_path: None,
             },
         )
         .await
         .expect("the upload");
-    }
-
-    #[tokio::test]
-    async fn a_held_upload_stays_queued_until_the_pool_settles_it() {
-        let mut deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(7, [4; 32]);
-        deps.channel_write = ChannelWrite::Held;
-        upload(&deps).await;
         let calls = deps.calls.lock();
-        assert_eq!(calls.posts_queued.len(), 1, "a channel_post row");
-        assert!(matches!(
-            &calls.posts_queued[0].entry,
-            PostEntry::SlotAttachment { record_key, .. } if *record_key == deps.channel_log_key
-        ));
-        assert!(calls.posts_settled.is_empty(), "left to the pool's settle");
-        assert!(calls.posts_failed.is_empty());
-    }
-
-    #[tokio::test]
-    async fn a_stored_upload_settles_its_row_sent() {
-        let deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(7, [4; 32]);
-        upload(&deps).await;
-        let calls = deps.calls.lock();
-        let PostEntry::SlotAttachment { record_key, subkey } = &calls.posts_queued[0].entry else {
-            panic!("an attachment post is written to its slot");
+        assert_eq!(calls.posts_queued.len(), 1, "one channel_post row");
+        let post = &calls.posts_queued[0];
+        assert_eq!(post.scope(), "c1:11111111111111111111111111111111");
+        let PostEntry::Attachment { offer, flags } = &post.entry else {
+            panic!("an attachment post carries its offer");
         };
-        assert_eq!(calls.posts_settled, [(record_key.clone(), *subkey)]);
+        assert_eq!(hex::encode(offer.attachment_id), id);
+        assert_eq!(*flags, rekindle_types::channel::flags::VOICE_MESSAGE);
     }
 }

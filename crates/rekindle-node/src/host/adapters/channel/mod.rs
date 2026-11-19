@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use rekindle_channel::error::ChannelError;
-use rekindle_channel::{ChannelMessagingDeps as _, ChannelSendResult};
+use rekindle_channel::ChannelSendResult;
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_lifecycle::{ScopeClosed, SessionScope};
 use rekindle_records::port::RecordPort;
@@ -31,6 +31,7 @@ pub(crate) mod held_changes;
 pub(crate) mod history;
 pub mod ingest;
 pub(crate) mod not_delivered;
+mod outbox_entries;
 mod outbox_read;
 pub(crate) mod outbox_send;
 mod persist;
@@ -173,48 +174,6 @@ pub(crate) fn removed_refusal(error: &ChannelError, what: &str) -> Option<IpcRes
     })
 }
 
-/// Follow the session's record pool for settled writes (plan C7.13): an
-/// attachment post's slot write (on the channel record until E3.3 slice 7)
-/// that missed consensus is held and re-pushed by the pool, and when its
-/// slot settles the posts waiting on it are delivered, or failed when the
-/// network superseded our page. Runs on the unlock scope.
-///
-/// # Errors
-/// [`ScopeClosed`] when the unlock already ended.
-pub(crate) fn start_settle(
-    ctx: &DaemonContext,
-    scope: &Arc<SessionScope>,
-    pool: &Arc<dyn RecordPort>,
-) -> Result<(), ScopeClosed> {
-    let channel = HostChannel::new(ctx);
-    start_key_deadline(ctx, scope)?;
-    let mut settled = pool.settled();
-    scope.spawn_with_token("channel delivery settle", |stop| async move {
-        loop {
-            let event = match stop.run_until_cancelled(settled.recv()).await {
-                None | Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return,
-                Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(missed))) => {
-                    // Their slots settle again on their next write.
-                    tracing::warn!(missed, "channel delivery settle lagged");
-                    continue;
-                }
-                Some(Ok(event)) => event,
-            };
-            let settled = channel
-                .settle_slot_posts(&event.record_key, event.subkey, event.landed)
-                .await;
-            for post in settled {
-                tracing::info!(message = %post.message, landed = event.landed, "attachment post settled");
-                if event.landed {
-                    channel.emit_delivery_succeeded(&post.community, &post.channel, &post.message);
-                } else {
-                    channel.emit_delivery_failed(&post.community, &post.channel, &post.message);
-                }
-            }
-        }
-    })
-}
-
 /// What a post that waited past its deadline for its channel's key shows
 /// (plan E3.2 S7l, F9-1); Retry and Delete stay on it.
 pub(crate) fn key_did_not_arrive_text() -> String {
@@ -225,7 +184,13 @@ pub(crate) fn key_did_not_arrive_text() -> String {
 /// channel's key (the outbox engine fails it with
 /// [`rekindle_outbox::KEY_DID_NOT_ARRIVE`]), with the reason they show.
 /// Runs on the unlock scope.
-fn start_key_deadline(ctx: &DaemonContext, scope: &Arc<SessionScope>) -> Result<(), ScopeClosed> {
+///
+/// # Errors
+/// [`ScopeClosed`] when the unlock already ended.
+pub(crate) fn start_key_deadline(
+    ctx: &DaemonContext,
+    scope: &Arc<SessionScope>,
+) -> Result<(), ScopeClosed> {
     let Some(posts) = ctx.outbox.channel_posts() else {
         return Ok(());
     };

@@ -14,9 +14,8 @@
 //! ([`ChannelPosts::discard_community`]); a lock keeps it. A released or
 //! retried post whose key is absent again is deferred by the sender.
 //!
-//! An attachment message is still written to the channel record's slot
-//! until E3.3 slice 7: its row is in the slot's stream and settles with the
-//! slot write ([`ChannelPosts::settle_slot`]); the sender defers it.
+//! An attachment message is a post of the same stream (slice 7), its offer
+//! on the row.
 
 use std::sync::Arc;
 
@@ -28,13 +27,6 @@ use rekindle_types::message::ChannelPost;
 
 use super::{storage, HostOutbox, OutboxSlot};
 use crate::host::runtime::Host;
-
-/// The reason a post whose page the network superseded fails with.
-pub const SUPERSEDED: &str = "superseded";
-
-fn slot_scope(record_key: &str, subkey: u32) -> String {
-    format!("{record_key}:{subkey}")
-}
 
 /// The unlocked identity's `channel_post` stream.
 pub struct ChannelPosts(pub(super) Arc<Outbox<HostOutbox>>);
@@ -226,55 +218,6 @@ impl ChannelPosts {
             .await?
             .as_ref()
             .and_then(post_of))
-    }
-
-    /// The slot write of `record_key`/`subkey` settled: every attachment
-    /// post waiting on it is `sent` when it `landed`, else `failed`
-    /// ([`SUPERSEDED`]). Returns the posts settled.
-    ///
-    /// # Errors
-    /// The storage failed.
-    pub async fn settle_slot(
-        &self,
-        record_key: &str,
-        subkey: u32,
-        landed: bool,
-    ) -> Result<Vec<ChannelPost>, OutboxError> {
-        let outcome = if landed {
-            Ok(())
-        } else {
-            Err(SUPERSEDED.to_owned())
-        };
-        let rows = (self.0)
-            .settle_stream(
-                StreamKind::ChannelPost,
-                &slot_scope(record_key, subkey),
-                outcome,
-            )
-            .await?;
-        Ok(rows.iter().filter_map(post_of).collect())
-    }
-
-    /// Every post still on the write of `record_key`/`subkey` will not
-    /// reach its readers (our removal, plan E3.2 S9): each settles
-    /// `failed` with `reason`. Returns them.
-    ///
-    /// # Errors
-    /// The storage failed.
-    pub async fn fail_slot(
-        &self,
-        record_key: &str,
-        subkey: u32,
-        reason: &str,
-    ) -> Result<Vec<ChannelPost>, OutboxError> {
-        let rows = (self.0)
-            .settle_stream(
-                StreamKind::ChannelPost,
-                &slot_scope(record_key, subkey),
-                Err(reason.to_owned()),
-            )
-            .await?;
-        Ok(rows.iter().filter_map(post_of).collect())
     }
 
     /// Every post of ours still unsettled in `community`'s `channel` will

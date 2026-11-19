@@ -135,28 +135,6 @@ impl HostChannel {
             .map_err(|e| outbox(&e))
     }
 
-    /// The slot write of `record_key`/`subkey` settled: its attachment
-    /// posts (written to the slot until E3.3 slice 7) settle `sent` when it
-    /// `landed`, else `failed`. Returns them.
-    pub(crate) async fn settle_slot_posts(
-        &self,
-        record_key: &str,
-        subkey: u32,
-        landed: bool,
-    ) -> Vec<ChannelPost> {
-        let settled = match self.channel_posts() {
-            Ok(posts) => posts.settle_slot(record_key, subkey, landed).await,
-            Err(error) => {
-                tracing::warn!(%error, "channel posts not settled");
-                return Vec::new();
-            }
-        };
-        settled.unwrap_or_else(|error| {
-            tracing::warn!(%error, "settling the channel posts failed");
-            Vec::new()
-        })
-    }
-
     pub(super) async fn queue_waiting_post_impl(
         &self,
         post: &ChannelPost,

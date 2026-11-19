@@ -17,10 +17,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
-};
-use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelRecordEntry};
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;
@@ -28,17 +25,6 @@ use crate::error::FilesError;
 use crate::pinned::PinnedSet;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
 pub use rekindle_types::message::ChannelPost;
-
-/// What an attachment message's channel write did (plan E2.5): the record
-/// pool's outcome, so the message's outbox row is settled by it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChannelWrite {
-    /// Our page is stored at consensus.
-    Stored,
-    /// The pool holds the page and re-pushes it; its settle settles the
-    /// message.
-    Held,
-}
 
 /// Events emitted to the UI as Lost Cargo flows complete.
 #[derive(Debug, Clone)]
@@ -149,14 +135,6 @@ pub trait FilesDeps: FileCacheDeps {
         now_ms: i64,
     ) -> Result<(), FilesError>;
 
-    /// Returns (mentioned_pseudonyms, mentioned_roles, mention_flags).
-    fn resolve_outbound_mentions(
-        &self,
-        community_id: &str,
-        sender_pseudonym: &str,
-        body: &str,
-    ) -> (Vec<String>, Vec<String>, u32);
-
     // ── Lamport + sequence ─────────────────────────────────────────
 
     /// Next message-clock value (attachment messages).
@@ -164,8 +142,6 @@ pub trait FilesDeps: FileCacheDeps {
         &self,
         community_id: &str,
     ) -> Result<u64, rekindle_types::lamport::LamportError>;
-
-    fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
 
     // ── Online-peer routing (gossip overlay) ───────────────────────
 
@@ -187,26 +163,9 @@ pub trait FilesDeps: FileCacheDeps {
 
     // ── DHT operations (async, veilid-core abstracted away) ────────
 
-    /// Write a ChannelMessage entry to the channel SMPL record.
-    /// Adapter handles slot_keypair string → KeyPair parsing,
-    /// pseudonym credentials lookup, RecordKey construction.
-    async fn write_channel_message_to_smpl(
-        &self,
-        community_id: &str,
-        channel_log_key: &str,
-        slot_index: u32,
-        slot_keypair: &str,
-        message: &ChannelMessage,
-    ) -> Result<ChannelWrite, FilesError>;
-
     /// Store `post`'s outbox `channel_post` row, its echo the attachment
-    /// message already written `queued` (plan E2.5).
+    /// message already written `queued` (plan E3.3 slice 7).
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), FilesError>;
-    /// Our page of `record_key`/`subkey` was stored: every post waiting on
-    /// it settles `sent`.
-    async fn settle_posts(&self, record_key: &str, subkey: u32);
-    /// `message_id`'s write could not be made: its row settles `failed`.
-    async fn fail_post(&self, message_id: &str);
 
     async fn write_attachment_cached_to_smpl(
         &self,
@@ -217,14 +176,16 @@ pub trait FilesDeps: FileCacheDeps {
         cached: &ChannelAttachmentCached,
     ) -> Result<(), FilesError>;
 
-    /// Scan all 255 member subkeys of a channel SMPL record and
-    /// return the decoded entries in arrival order. Used by
-    /// `fetch_attachment_offer` (looks for Message entries with
-    /// matching attachment_id) and `discover_sources` (looks for
-    /// AttachmentCached entries).
-    async fn scan_channel_subkeys(
+    /// The entries of `channel_id` (plan E3.3 "Files move onto MSR"):
+    /// every member's channel outbox entries of it, verified and linked by
+    /// tag (`read_author_outboxes(channel)`), then the channel record's
+    /// slot entries (older history and `AttachmentCached` until slice 8).
+    /// Used by `fetch_offer` (a Message carrying the attachment) and
+    /// `discover_sources` (`AttachmentCached` entries).
+    async fn channel_entries(
         &self,
-        channel_log_key: &str,
+        community_id: &str,
+        channel_id: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError>;
 
     /// Make an app_call to a peer over their imported private route,
@@ -254,14 +215,6 @@ pub trait FilesDeps: FileCacheDeps {
         channel_id: &str,
         attachment_id_hex: &str,
         save_path: &Path,
-    ) -> Result<(), FilesError>;
-
-    // ── Gossip ─────────────────────────────────────────────────────
-
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        envelope: &CommunityEnvelope,
     ) -> Result<(), FilesError>;
 
     // ── Pin governance ─────────────────────────────────────────────

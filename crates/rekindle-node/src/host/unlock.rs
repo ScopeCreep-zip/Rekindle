@@ -97,9 +97,10 @@ pub(crate) async fn run(
         transport.want_sending_route();
         match transport.start_records() {
             Ok(pool) => {
-                // The channel posts' settle and Retry (plan E3.1 E2b).
-                if let Err(e) = super::adapters::channel::start_settle(ctx, &scope, &pool) {
-                    tracing::warn!(error = %e, "channel delivery settle not started");
+                // The channel posts' key deadline (plan E3.2 S7l); their
+                // sends and Retry are the outbox's (plan E3.3).
+                if let Err(e) = super::adapters::channel::start_key_deadline(ctx, &scope) {
+                    tracing::warn!(error = %e, "channel post key deadline not started");
                 }
                 let list = super::adapters::outbox::dht_write::HostListWriter(
                     super::adapters::friends::HostFriends::of(ctx),

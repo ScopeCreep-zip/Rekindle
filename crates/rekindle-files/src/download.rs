@@ -282,8 +282,8 @@ fn inverse(bm: &AttachmentBitmap) -> AttachmentBitmap {
     out
 }
 
-/// Fetch the offer for an attachment from the channel SMPL record by
-/// scanning all 255 member subkeys for a Message entry carrying it.
+/// Fetch the offer for an attachment from the channel's entries: a
+/// Message entry carrying it.
 async fn fetch_offer<D: FilesDeps>(
     deps: &D,
     community_id: &str,
@@ -291,8 +291,7 @@ async fn fetch_offer<D: FilesDeps>(
     attachment_id_hex: &str,
 ) -> Result<AttachmentOffer, FilesError> {
     let target_attachment_id = parse_attachment_id_hex(attachment_id_hex)?;
-    let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
-    let entries = deps.scan_channel_subkeys(&channel_log_key).await?;
+    let entries = deps.channel_entries(community_id, channel_id).await?;
     fetch_offer_in_entries(&entries, target_attachment_id).ok_or_else(|| {
         FilesError::NotFound(format!(
             "attachment {attachment_id_hex} not found in channel {channel_id}"
@@ -301,7 +300,7 @@ async fn fetch_offer<D: FilesDeps>(
 }
 
 /// Discover peers advertising chunks of an attachment via
-/// `AttachmentCached` entries across all 255 member subkeys.
+/// the channel's `AttachmentCached` entries.
 async fn discover_sources<D: FilesDeps>(
     deps: &D,
     community_id: &str,
@@ -309,8 +308,7 @@ async fn discover_sources<D: FilesDeps>(
     attachment_id: [u8; 16],
     chunk_count: u32,
 ) -> Result<Vec<DiscoveredSource>, FilesError> {
-    let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
-    let entries = deps.scan_channel_subkeys(&channel_log_key).await?;
+    let entries = deps.channel_entries(community_id, channel_id).await?;
     Ok(discover_sources_in_entries(
         &entries,
         attachment_id,

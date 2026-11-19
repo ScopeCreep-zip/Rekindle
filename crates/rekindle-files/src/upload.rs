@@ -1,11 +1,12 @@
 //! Phase 15 — Lost Cargo upload orchestration.
 //!
 //! Architecture §28.9 — chunk the bytes, FEK-encrypt each chunk, write
-//! chunks to the local cache, build an `AttachmentOffer`, embed it in
-//! a `ChannelMessage` written to the channel SMPL record, then
-//! advertise full possession via an `AttachmentCached` entry and
-//! gossip a `MessageNotification`. Returns the new `attachment_id`
-//! (hex-encoded 16-byte UUID).
+//! chunks to the local cache, build an `AttachmentOffer`, queue the
+//! `ChannelMessage` carrying it on our channel outbox stream (plan E3.3
+//! slice 7: the stream seals it at its outbox position and the author's
+//! `HeadAdvanced` tells readers), then advertise full possession via an
+//! `AttachmentCached` entry. Returns the new `attachment_id` (hex-encoded
+//! 16-byte UUID).
 //!
 //! Parameterised over `FilesDeps` so the crate never touches
 //! `AppState` / `tauri::AppHandle` / `veilid-core` directly. The
@@ -13,10 +14,7 @@
 
 use std::path::Path;
 
-use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT,
-};
-use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::channel_record::ChannelAttachmentCached;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::permissions;
 use uuid::Uuid;
@@ -184,8 +182,8 @@ pub async fn upload_file<D: FilesDeps>(
 }
 
 /// Core upload helper: chunk + FEK-encrypt + cache `bytes`, build the
-/// `AttachmentOffer`, write the carrying `ChannelMessage`, announce
-/// possession via `AttachmentCached`, gossip notify. Returns the new
+/// `AttachmentOffer`, queue the carrying `ChannelMessage` on our outbox
+/// stream, announce possession via `AttachmentCached`. Returns the new
 /// attachment_id (hex). Used by both regular file uploads
 /// ([`upload_file`]) and voice messages ([`send_voice_message_bytes`]).
 pub async fn upload_bytes_as_attachment<D: FilesDeps>(
@@ -267,48 +265,11 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     };
     validate_offer(&offer).map_err(|e| FilesError::OfferInvalid(format!("self-check: {e}")))?;
 
-    // Carrying ChannelMessage. The body holds whatever the caller asked
-    // (empty for plain uploads; JSON metadata for voice messages).
+    // The carrying message is sealed when our channel_post stream drains
+    // it onto our outbox (plan E3.3 slice 7); its row is the echo.
     let timestamp_ms = timestamp_now(deps);
     let message_id = format!("msg_{}", random_uuid(deps).simple());
     let lamport_ts = deps.increment_lamport(community_id)?;
-    let sequence = deps.next_channel_sequence(community_id, channel_id);
-    // The carrying message's body uses the channel-body codec every
-    // reader opens with: bound to the record, our subkey and the Lamport.
-    let body_ciphertext = rekindle_secrets::channel_body::encrypt_channel_body(
-        ctx.text_key.as_bytes(),
-        rekindle_secrets::channel_body::SlotBodyPosition {
-            channel_record_key: &ctx.channel_key,
-            subkey_index: u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + ctx.slot_index,
-            lamport_ts,
-        },
-        body_plaintext,
-    )
-    .map_err(|e| FilesError::Encrypt(format!("channel body: {e}")))?;
-
-    // Architecture §28.5 — caption mentions go into the cleartext
-    // envelope. Voice messages and file uploads can still ping people
-    // via the body text. The MENTION_EVERYONE/MENTION_HERE flag bits
-    // are OR'd into whatever flags the caller already passed (e.g.
-    // VOICE_MESSAGE).
-    let body_text = String::from_utf8_lossy(body_plaintext);
-    let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
-        deps.resolve_outbound_mentions(community_id, &ctx.sender_pseudonym, &body_text);
-
-    let channel_msg = ChannelMessage {
-        sequence,
-        sender_pseudonym: ctx.sender_pseudonym.clone(),
-        ciphertext: body_ciphertext,
-        mek_generation,
-        timestamp: u64::try_from(timestamp_ms).unwrap_or_default(),
-        reply_to: None,
-        lamport_ts,
-        message_id: Some(message_id.clone()),
-        attachment: Some(offer.clone()),
-        flags: flags | mention_flags,
-        mentioned_pseudonyms,
-        mentioned_roles,
-    };
 
     // Persist a SQLite row.
     let owner_key = deps.owner_key()?;
@@ -336,17 +297,8 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     })
     .await?;
 
-    // SMPL write — embed offer in a Message entry; its outbox row settles
-    // from the write (plan E2.5).
-    let target = crate::post::PostTarget {
-        community_id,
-        channel_id,
-        record_key: &ctx.channel_key,
-        slot_index: ctx.slot_index,
-        slot_keypair: &ctx.slot_keypair,
-        subkey: u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + ctx.slot_index,
-    };
-    crate::post::write_post(deps, &target, &channel_msg, &message_id).await?;
+    crate::post::queue_attachment_post(deps, community_id, channel_id, &message_id, &offer, flags)
+        .await?;
 
     // Architecture §28.7 — record this send for the slowmode window so
     // the next call to enforce_slowmode (from any send path) sees the
@@ -370,19 +322,6 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
         &cached,
     )
     .await?;
-
-    // Gossip a MessageNotification so peers fast-fetch the SMPL write.
-    let notification = CommunityEnvelope::MessageNotification {
-        channel_id: channel_id.to_string(),
-        message_id: message_id.clone(),
-        author_pseudonym: ctx.sender_pseudonym.clone(),
-        subkey_index: u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + ctx.slot_index,
-        lamport_ts,
-        sequence,
-        content_hash: blake3::hash(&channel_msg.ciphertext).to_hex().to_string(),
-        timestamp: channel_msg.timestamp,
-    };
-    deps.send_to_mesh(community_id, &notification)?;
 
     Ok(hex::encode(attachment_id))
 }
@@ -460,7 +399,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn happy_path_writes_message_attachment_cached_and_persists_row() {
+    async fn happy_path_queues_message_attachment_cached_and_persists_row() {
         let deps = MockDeps::new("c1", "11111111111111111111111111111111").with_mek(7, [42u8; 32]);
         let bytes = b"hello world payload".to_vec();
         let result = upload_bytes_as_attachment(
@@ -482,7 +421,7 @@ mod tests {
         assert_eq!(attachment_id_hex.len(), 32, "16-byte UUID hex");
 
         let calls = deps.calls.lock();
-        assert_eq!(calls.channel_messages_written.len(), 1, "one SMPL message");
+        assert_eq!(calls.posts_queued.len(), 1, "one channel_post row");
         assert_eq!(
             calls.attachment_cacheds_written.len(),
             1,

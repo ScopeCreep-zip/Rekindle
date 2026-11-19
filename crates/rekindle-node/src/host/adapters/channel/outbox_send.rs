@@ -44,11 +44,6 @@ impl HostChannel {
         let mut posts = Vec::with_capacity(rows.len());
         for row in rows {
             match post_of_row(row) {
-                // An attachment post settles with its slot write (until
-                // E3.3 slice 7); the stream's rows are all the slot's.
-                Ok(post) if matches!(post.entry, PostEntry::SlotAttachment { .. }) => {
-                    return vec![AttemptOutcome::Deferred];
-                }
                 Ok(post) => posts.push(DrainPost {
                     post,
                     stream_seq: u64::try_from(row.stream_seq).unwrap_or_default(),

@@ -2,6 +2,7 @@
 //! the network. Each runs on a single-threaded, paused runtime.
 
 mod answered_request;
+mod attachment_outbox;
 mod attachment_round_trip;
 mod audit;
 mod auto_away;

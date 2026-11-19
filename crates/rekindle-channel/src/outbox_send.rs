@@ -9,7 +9,8 @@
 //! and the stream retries it. The batch is appended in queue order as
 //! sealed pages ([`OutboxWriter::append`]). An edit or delete of our post
 //! is an entry of the same stream (plan E3.3): an edit's new body is
-//! sealed at the edit's own position, a delete has none.
+//! sealed at the edit's own position, a delete has none. An attachment
+//! message is a message entry carrying the offer its row holds (slice 7).
 
 use rekindle_codec::community::channel_record::{
     ChannelDelete, ChannelEdit, ChannelForward, ChannelRecordEntry,
@@ -79,10 +80,10 @@ async fn pending_of<D: ChannelMessagingDeps>(
     let sealed = seal_at(deps, community_id, at, body.as_bytes())?;
     let timestamp_ms = i64::try_from(committed_at).unwrap_or(i64::MAX);
     let entry = match &post.entry {
-        PostEntry::Message => {
+        PostEntry::Message | PostEntry::Attachment { .. } => {
             let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
                 resolve_outbound_mentions(deps, community_id, &author_hex, &stored.body);
-            ChannelRecordEntry::Message(build_channel_message(BuildChannelMessageParams {
+            let mut message = build_channel_message(BuildChannelMessageParams {
                 sequence: item.stream_seq,
                 sender_pseudonym: author_hex,
                 ciphertext: sealed.ciphertext,
@@ -94,7 +95,12 @@ async fn pending_of<D: ChannelMessagingDeps>(
                 mention_flag_bits: mention_flags,
                 mentioned_pseudonyms,
                 mentioned_roles,
-            }))
+            });
+            if let PostEntry::Attachment { offer, flags } = &post.entry {
+                message.attachment = Some(offer.clone());
+                message.flags |= flags;
+            }
+            ChannelRecordEntry::Message(message)
         }
         PostEntry::Forward {
             original_channel,
@@ -135,11 +141,6 @@ async fn pending_of<D: ChannelMessagingDeps>(
             deleted_at: *deleted_at,
             lamport_ts: *seq,
         }),
-        PostEntry::SlotAttachment { .. } => {
-            return Err(DrainOutcome::Deferred(
-                "an attachment post settles with its slot write".into(),
-            ))
-        }
     };
     let pending = PendingEntry {
         channel_tag: sealed.channel_tag,

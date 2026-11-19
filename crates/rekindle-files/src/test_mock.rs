@@ -15,10 +15,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_codec::community::channel_record::{
-    ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
-};
-use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelRecordEntry};
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -32,7 +29,6 @@ use rekindle_types::attachment::AttachmentOffer;
 /// Records of mutations + emissions for test assertions.
 #[derive(Default)]
 pub struct MockCalls {
-    pub channel_messages_written: Vec<ChannelMessage>,
     pub attachment_cacheds_written: Vec<ChannelAttachmentCached>,
     pub channel_messages_persisted: Vec<String>, // message_id
     pub slowmode_persists: Vec<(String, String, i64)>, // community, channel, now_ms
@@ -41,8 +37,6 @@ pub struct MockCalls {
     pub events: Vec<FilesEvent>,
     pub app_calls: Vec<Vec<u8>>, // routed payloads
     pub posts_queued: Vec<crate::deps::ChannelPost>,
-    pub posts_settled: Vec<(String, u32)>,
-    pub posts_failed: Vec<String>,
 }
 
 /// Programmable app_call reply queue — pop FIFO.
@@ -69,7 +63,7 @@ pub struct MockDeps {
     /// Online member route blobs (pseudonym -> blob).
     pub peers: HashMap<String, Vec<u8>>,
 
-    /// Pre-loaded entries the scan_channel_subkeys call returns.
+    /// Pre-loaded entries the channel_entries call returns.
     pub channel_entries: Mutex<Vec<ChannelRecordEntry>>,
 
     /// Governance: pinned attachments + expressions.
@@ -83,8 +77,6 @@ pub struct MockDeps {
     /// Holds the TempDir alive (drop with the mock).
     pub _tempdir: TempDir,
 
-    /// What the channel write reports.
-    pub channel_write: crate::deps::ChannelWrite,
     /// Recorded mutations.
     pub calls: Mutex<MockCalls>,
     /// Programmable app_call_peer replies.
@@ -122,7 +114,6 @@ impl MockDeps {
             cache: Mutex::new(cache),
             pinned: PinnedSet::new(),
             _tempdir: temp,
-            channel_write: crate::deps::ChannelWrite::Stored,
             calls: Mutex::new(MockCalls::default()),
             replies: Mutex::new(MockReplies::default()),
         }
@@ -238,21 +229,8 @@ impl FilesDeps for MockDeps {
         }
     }
 
-    fn resolve_outbound_mentions(
-        &self,
-        _c: &str,
-        _sender: &str,
-        _body: &str,
-    ) -> (Vec<String>, Vec<String>, u32) {
-        (Vec::new(), Vec::new(), 0)
-    }
-
     fn increment_lamport(&self, _c: &str) -> Result<u64, rekindle_types::lamport::LamportError> {
         Ok(1)
-    }
-
-    fn next_channel_sequence(&self, _c: &str, _ch: &str) -> u64 {
-        1
     }
 
     fn peer_route_blob(&self, _c: &str, target: &str) -> Option<Vec<u8>> {
@@ -274,32 +252,9 @@ impl FilesDeps for MockDeps {
         self.expressions.clone()
     }
 
-    async fn write_channel_message_to_smpl(
-        &self,
-        _c: &str,
-        _key: &str,
-        _idx: u32,
-        _keypair: &str,
-        message: &ChannelMessage,
-    ) -> Result<crate::deps::ChannelWrite, FilesError> {
-        self.calls
-            .lock()
-            .channel_messages_written
-            .push(message.clone());
-        Ok(self.channel_write)
-    }
-
     async fn queue_post(&self, post: &crate::deps::ChannelPost) -> Result<(), FilesError> {
         self.calls.lock().posts_queued.push(post.clone());
         Ok(())
-    }
-
-    async fn settle_posts(&self, record_key: &str, subkey: u32) {
-        (self.calls.lock().posts_settled).push((record_key.to_owned(), subkey));
-    }
-
-    async fn fail_post(&self, message_id: &str) {
-        self.calls.lock().posts_failed.push(message_id.to_owned());
     }
 
     async fn write_attachment_cached_to_smpl(
@@ -317,9 +272,10 @@ impl FilesDeps for MockDeps {
         Ok(())
     }
 
-    async fn scan_channel_subkeys(
+    async fn channel_entries(
         &self,
-        _key: &str,
+        _c: &str,
+        _channel: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError> {
         Ok(self.channel_entries.lock().clone())
     }
@@ -368,10 +324,6 @@ impl FilesDeps for MockDeps {
             channel_id.to_string(),
             attachment_id_hex.to_string(),
         ));
-        Ok(())
-    }
-
-    fn send_to_mesh(&self, _c: &str, _envelope: &CommunityEnvelope) -> Result<(), FilesError> {
         Ok(())
     }
 
