@@ -6,6 +6,7 @@
 
 mod add;
 mod answer;
+pub mod bio;
 mod blocked;
 pub mod code;
 mod edit;

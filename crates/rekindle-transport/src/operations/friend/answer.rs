@@ -87,6 +87,7 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     crate::operations::prekeys::open_or_fail(host, public_key, DmTypeId::FriendAccept).await;
     super::presence_key::send(host, public_key).await;
     super::game_totals::send(host, public_key).await;
+    super::bio::send(host, public_key).await;
     if let Some(profile_key) = &profile_key {
         host.watch_friend(public_key, profile_key).await;
     }

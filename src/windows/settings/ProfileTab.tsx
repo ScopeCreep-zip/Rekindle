@@ -9,9 +9,16 @@ import GameIcon from "../../components/game/GameIcon";
 import { formatDuration } from "../../utils/formatting";
 import { formatRelativeTime } from "../../utils/time";
 
+/// The Host's cap (`rekindle_types::presence::limits::MAX_BIO_LEN`,
+/// Discord's About Me); the Host refuses a longer one.
+const MAX_BIO_LEN = 190;
+
 const ProfileTab: Component = () => {
   const [nameInput, setNameInput] = createSignal("");
   const [statusMsgInput, setStatusMsgInput] = createSignal("");
+  const [bioInput, setBioInput] = createSignal("");
+  // Characters as the Host counts them (Unicode scalar values).
+  const bioLength = () => [...bioInput()].length;
 
   // Seed the name input from the hydrated identity. `displayName` only
   // changes on explicit save (or initial hydrate), so this never clobbers
@@ -21,6 +28,20 @@ const ProfileTab: Component = () => {
   // Our time in each detected game and when we last played it (plan E7.2),
   // from the Host's `game_sessions`.
   const [gameTotals] = createResource(() => commands.getGameTotals());
+
+  // Our bio (plan E7.2), from `identity.bio`; it reaches friends only as a
+  // sealed message, never the profile record.
+  const [storedBio] = createResource(() => commands.getBio());
+  createEffect(() => setBioInput(storedBio() ?? ""));
+
+  async function handleSaveBio(): Promise<void> {
+    if (bioLength() > MAX_BIO_LEN) return;
+    try {
+      setBioInput((await commands.setBio(bioInput())) ?? "");
+    } catch (e) {
+      console.error("Failed to set bio:", e);
+    }
+  }
 
   function handleSaveName(): void {
     const name = nameInput().trim();
@@ -100,6 +121,26 @@ const ProfileTab: Component = () => {
             onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") handleSaveStatusMessage(); }}
           />
           <button class="form-btn-primary" onClick={handleSaveStatusMessage}>Save</button>
+        </div>
+      </FormField>
+      <div class="settings-section-title">Bio</div>
+      <FormField>
+        <textarea
+          class="form-textarea"
+          aria-label="Bio"
+          aria-describedby="bio-count"
+          rows={3}
+          placeholder="Tell your friends about yourself"
+          value={bioInput()}
+          onInput={(e: InputEvent) => setBioInput((e.target as HTMLTextAreaElement).value)}
+        />
+        <div class="form-field-row">
+          <span id="bio-count" class="bio-count" classList={{ "bio-count-over": bioLength() > MAX_BIO_LEN }}>
+            {bioLength()} of {MAX_BIO_LEN} characters
+          </span>
+          <button class="form-btn-primary" disabled={bioLength() > MAX_BIO_LEN} onClick={handleSaveBio}>
+            Save
+          </button>
         </div>
       </FormField>
       <div class="settings-section-title">Game Time</div>

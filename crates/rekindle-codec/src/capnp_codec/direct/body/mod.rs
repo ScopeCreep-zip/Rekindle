@@ -27,8 +27,8 @@ pub use friend::{
     RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StreamRecord,
 };
 #[cfg(test)]
-pub(crate) use game::sample as game_totals_sample;
-pub use game::{GameTotal, GameTotals, MAX_GAME_TOTALS};
+pub(crate) use game::{bio_sample as profile_bio_sample, sample as game_totals_sample};
+pub use game::{GameTotal, GameTotals, ProfileBio, MAX_GAME_TOTALS};
 pub use group::{
     GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite, GroupDmLeave, GroupId,
 };
@@ -136,6 +136,7 @@ direct_bodies! {
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,
         StatusRequest(StatusRequest) = status_request,
         StatusResponse(StatusResponse) = status_response,
+        ProfileBio(ProfileBio) = profile_bio,
         GameTotals(GameTotals) = game_totals,
         CallInvite(CallInvite) = call_invite,
         CallRinging(CallRinging) = call_ringing,

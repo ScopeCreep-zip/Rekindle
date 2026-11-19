@@ -36,6 +36,33 @@ pub async fn set_nickname(
     .await
 }
 
+/// Our bio (`IpcRequest::ProfileBioGet`, plan E7.2); `None` when we have
+/// none.
+#[tauri::command]
+pub async fn get_bio(state: State<'_, SharedState>) -> Result<Done<Option<String>>, CommandError> {
+    host_call::call(&state, IpcRequest::ProfileBioGet).await
+}
+
+/// A friend's bio as they last sent it (`IpcRequest::FriendBioGet`, plan
+/// E7.2); `None` when they sent none.
+#[tauri::command]
+pub async fn get_friend_bio(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<Option<String>>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendBioGet { public_key }).await
+}
+
+/// Change our bio (`IpcRequest::ProfileSetBio`, plan E7.2): blank removes
+/// it; the Host sends it to every accepted friend. The bio as stored.
+#[tauri::command]
+pub async fn set_bio(
+    bio: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<Option<String>>, CommandError> {
+    host_call::call(&state, IpcRequest::ProfileSetBio { bio }).await
+}
+
 /// Change our avatar (`IpcRequest::ProfileSetAvatar`): `kind` is the file
 /// picker's MIME type; the Host decodes the picture as that kind only and
 /// makes it a 128 px WebP.

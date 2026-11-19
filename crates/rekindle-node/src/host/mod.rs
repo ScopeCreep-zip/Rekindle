@@ -7,6 +7,8 @@ pub mod adapters;
 pub mod api;
 pub mod audit;
 pub(crate) mod audit_alert;
+#[cfg(test)]
+mod bio_tests;
 pub mod bus_key;
 pub mod community;
 #[cfg(test)]

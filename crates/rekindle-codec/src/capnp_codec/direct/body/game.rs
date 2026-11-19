@@ -1,7 +1,35 @@
-//! The Xfire surface's bodies (plan E7.2): game totals shared with friends.
+//! The Xfire surface's bodies (plan E7.2): our bio and game totals, shared
+//! with friends.
 
 use crate::capnp_codec::{capnp_err, CodecError};
-use crate::direct_capnp::game_totals;
+use crate::direct_capnp::{game_totals, profile_bio};
+
+/// 0x0171 ProfileBio: our bio, `None` clearing it. The decoder holds it to
+/// `rekindle_types::presence::limits::bio` (190 characters, no control
+/// characters); blank reads as `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileBio {
+    pub bio: Option<String>,
+}
+
+impl ProfileBio {
+    pub(super) fn write(&self, mut b: profile_bio::Builder<'_>) {
+        b.set_bio(self.bio.as_deref().unwrap_or(""));
+    }
+
+    pub(super) fn read(r: profile_bio::Reader<'_>) -> Result<Self, CodecError> {
+        let text = r
+            .get_bio()
+            .map_err(|e| capnp_err(&e))?
+            .to_str()
+            .map_err(|e| CodecError::Deserialization(format!("ProfileBio: {e}")))?;
+        let bio = rekindle_types::presence::limits::bio(text)
+            .map_err(|e| CodecError::Deserialization(format!("ProfileBio: {e}")))?;
+        Ok(Self {
+            bio: bio.map(str::to_string),
+        })
+    }
+}
 
 /// The most games one `GameTotals` names.
 pub const MAX_GAME_TOTALS: usize = 512;
@@ -59,6 +87,14 @@ impl GameTotals {
     }
 }
 
+/// A bio sample for the every-body round trip.
+#[cfg(test)]
+pub(crate) fn bio_sample() -> ProfileBio {
+    ProfileBio {
+        bio: Some("Quake 3 since '99".into()),
+    }
+}
+
 /// A two-game sample for the every-body round trip.
 #[cfg(test)]
 pub(crate) fn sample() -> GameTotals {
@@ -82,6 +118,24 @@ pub(crate) fn sample() -> GameTotals {
 mod tests {
     use super::*;
     use crate::capnp_codec::direct::{DirectBody, DmTypeId};
+
+    /// Plan E7.2: a `ProfileBio` past 190 characters or with a control
+    /// character is refused on decode; a blank one reads as no bio.
+    #[test]
+    fn bad_bios_are_refused_and_blank_is_none() {
+        for bad in ["x".repeat(191), "a\u{1b}b".to_string()] {
+            let bytes = DirectBody::ProfileBio(ProfileBio { bio: Some(bad) }).encode();
+            assert!(DirectBody::decode(DmTypeId::ProfileBio, &bytes).is_err());
+        }
+        let bytes = DirectBody::ProfileBio(ProfileBio {
+            bio: Some(" ".into()),
+        })
+        .encode();
+        assert_eq!(
+            DirectBody::decode(DmTypeId::ProfileBio, &bytes).unwrap(),
+            DirectBody::ProfileBio(ProfileBio { bio: None })
+        );
+    }
 
     /// Plan E7.2: a `GameTotals` naming game 0, a game twice, or more games
     /// than the cap is refused on decode.

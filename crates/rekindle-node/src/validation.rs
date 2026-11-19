@@ -229,6 +229,9 @@ fn own(request: &IpcRequest) -> Checked {
             }
             text(message, MAX_STATUS_LEN, "status message")
         }
+        IpcRequest::ProfileSetBio { bio } => rekindle_types::presence::limits::bio(bio)
+            .map(drop)
+            .map_err(|e| reject("bio", &e)),
         IpcRequest::ProfileSetNickname { display_name } => {
             rekindle_types::presence::limits::display_name(display_name)
                 .map(drop)
@@ -270,6 +273,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendGroupDelete { group_id: _ }
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
+        | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
         | IpcRequest::AuditExport { since: _ }
@@ -333,6 +337,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmMessages { .. } => group_dm::check(request),
         IpcRequest::AvatarGet { public_key: key }
         | IpcRequest::FriendGameTotalsGet { public_key: key }
+        | IpcRequest::FriendBioGet { public_key: key }
         | IpcRequest::IdentitySafetyNumber { peer: key }
         | IpcRequest::IdentityMarkVerified { peer: key }
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
@@ -342,6 +347,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::ProfileSetBio { .. }
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::ProfileSetAvatar { .. }

@@ -6,6 +6,9 @@ use crate::intent::IntentKind;
 pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_status", Some(IntentKind::SetStatus)),
     ("set_nickname", Some(IntentKind::SetNickname)),
+    ("get_bio", None),
+    ("get_friend_bio", None),
+    ("set_bio", Some(IntentKind::SetBio)),
     ("set_avatar", Some(IntentKind::SetAvatar)),
     ("get_avatar", None),
     ("get_skin", None),

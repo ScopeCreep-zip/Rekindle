@@ -96,6 +96,7 @@ impl IpcRequest {
             Self::IdentityShow
             | Self::PresenceGet
             | Self::GameTotalsGet
+            | Self::ProfileBioGet
             | Self::AvatarGet { .. } => {
                 Some(C::IdentityRead)
             }
@@ -107,6 +108,7 @@ impl IpcRequest {
             | Self::FriendBlockedList
             | Self::FriendCode
             | Self::FriendGameTotalsGet { .. }
+            | Self::FriendBioGet { .. }
             | Self::IdentitySafetyNumber { .. } => Some(C::FriendsRead),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
@@ -177,6 +179,7 @@ impl IpcRequest {
             // Our name, our picture, the audit log and the system browser
             // are the user's own, never an agent's.
             | Self::ProfileSetNickname { .. }
+            | Self::ProfileSetBio { .. }
             // Whether we tell friends what we read is the user's own.
             | Self::SetReadReceiptsEnabled { .. }
             // So is whether friends see our game time.

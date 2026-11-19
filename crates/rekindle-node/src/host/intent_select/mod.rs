@@ -127,6 +127,11 @@ pub(crate) async fn select(
             s.reversibility =
                 Reversibility::ReversibleByInverse(IntentKind::SetReadReceiptsEnabled);
         }
+        IpcRequest::ProfileSetBio { .. } => {
+            s.subject = unlocked_identity(ctx);
+            // Friends already received it: setting another one reverses it.
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetBio);
+        }
         IpcRequest::SetShareGameTotals { .. } => {
             s.subject = unlocked_identity(ctx);
             // What friends already received stays with them (plan E7.2).
@@ -200,6 +205,8 @@ pub(crate) async fn select(
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
         | IpcRequest::FriendGameTotalsGet { .. }
+        | IpcRequest::ProfileBioGet
+        | IpcRequest::FriendBioGet { .. }
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }

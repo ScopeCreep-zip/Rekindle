@@ -242,6 +242,12 @@ pub fn mark_removing(
         set_state(conn, owner_key, public_key, FriendshipState::Removing)?;
         super::nickname::clear(conn, owner_key, public_key)?;
         super::clear_presence_key(conn, owner_key, public_key)?;
+        // What they shared ends with the friendship (plan E7.2).
+        crate::repo::bio::set_friend(conn, owner_key, public_key, None)?;
+        conn.execute(
+            "DELETE FROM friend_game_totals WHERE owner_key = ?1 AND friend_key = ?2",
+            params![owner_key, public_key],
+        )?;
         pending_requests::delete(conn, owner_key, public_key)?;
         let failed = fail_to_peer(conn, owner_key, public_key, Ended::Both)?;
         outbox::append(conn, unfriended, None)?;

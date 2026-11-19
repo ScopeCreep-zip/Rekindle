@@ -139,6 +139,9 @@ impl std::fmt::Debug for IpcRequest {
             | Self::PresenceGet
             | Self::GameTotalsGet
             | Self::FriendGameTotalsGet { .. }
+            | Self::ProfileBioGet
+            | Self::FriendBioGet { .. }
+            | Self::ProfileSetBio { .. }
             | Self::ProfileSetNickname { .. }
             | Self::SetReadReceiptsEnabled { .. }
             | Self::SetShareGameTotals { .. }
@@ -191,6 +194,15 @@ impl IpcRequest {
                 .field("public_key", public_key)
                 .finish(),
             Self::Undo { id } => f.debug_struct("Undo").field("id", id).finish(),
+            Self::ProfileBioGet => write!(f, "ProfileBioGet"),
+            Self::FriendBioGet { public_key } => f
+                .debug_struct("FriendBioGet")
+                .field("public_key", public_key)
+                .finish(),
+            Self::ProfileSetBio { bio } => f
+                .debug_struct("ProfileSetBio")
+                .field("bio_len", &bio.chars().count())
+                .finish(),
             Self::ProfileSetNickname { display_name } => f
                 .debug_struct("ProfileSetNickname")
                 .field("display_name_len", &display_name.len())

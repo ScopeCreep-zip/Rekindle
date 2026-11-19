@@ -24,6 +24,11 @@ export const systemCommands = {
   // `invisible`; offline is set only by logging out.
   setStatus: (status: SessionStatus) => hostInvoke<OwnPresenceView>("set_status", { status }),
   setNickname: (nickname: string) => hostInvoke<string>("set_nickname", { nickname }),
+  /// Our bio and a friend's (plan E7.2); `null` when there is none. Setting
+  /// a blank one removes it; the Host sends it to every accepted friend.
+  getBio: () => hostInvoke<string | null>("get_bio"),
+  getFriendBio: (publicKey: string) => hostInvoke<string | null>("get_friend_bio", { publicKey }),
+  setBio: (bio: string) => hostInvoke<string | null>("set_bio", { bio }),
   /// `kind` declares the picture's format; the Host decodes it as that
   /// kind only (`ImageKind`).
   setAvatar: (avatarData: number[], kind: ImageKind) =>

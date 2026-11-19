@@ -146,6 +146,9 @@ async fn route(
         | IpcRequest::GameTotalsGet
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::ProfileBioGet
+        | IpcRequest::FriendBioGet { .. }
+        | IpcRequest::ProfileSetBio { .. }
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::ProfileSetAvatar { .. }

@@ -288,6 +288,15 @@ pub enum IpcRequest {
     /// `friend_game_totals`, `Vec<dto::presence::GameTotalView>`, empty
     /// when they share none).
     FriendGameTotalsGet { public_key: String },
+    /// Our bio (plan E7.2: `identity.bio`, `Option<String>`).
+    ProfileBioGet,
+    /// A friend's bio as their last `ProfileBio` stated it (plan E7.2:
+    /// `friends.bio`, `Option<String>`).
+    FriendBioGet { public_key: String },
+    /// Change our bio (plan E7.2): blank removes it; 190 characters at most.
+    /// It goes to every accepted friend as a ratchet-sealed `ProfileBio`,
+    /// never in the profile record. The bio as stored comes back.
+    ProfileSetBio { bio: String },
     /// Change the name we show: the identity's database, the registry and
     /// profile subkey 0.
     ProfileSetNickname { display_name: String },

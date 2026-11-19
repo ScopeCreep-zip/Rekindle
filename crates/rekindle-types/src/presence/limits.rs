@@ -51,6 +51,19 @@ pub fn peer_display_name(s: &str) -> Result<&str, KeyFormatError> {
     key_format::text(s, MAX_DISPLAY_NAME_LEN)
 }
 
+/// Our bio, or a friend's in its `ProfileBio` (plan E7.2): blank is no bio
+/// (`None`); otherwise it is [`key_format::text`] within [`MAX_BIO_LEN`],
+/// kept as written and shown as untrusted text.
+///
+/// # Errors
+/// Over 190 characters, or a control character.
+pub fn bio(s: &str) -> Result<Option<&str>, KeyFormatError> {
+    if s.trim().is_empty() {
+        return Ok(None);
+    }
+    key_format::text(s, MAX_BIO_LEN).map(Some)
+}
+
 /// Validate the self-authored profile fields a presence row carries.
 ///
 /// # Errors
@@ -101,6 +114,17 @@ fn identifier(label: &str, s: &str, max: usize) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    /// Plan E7.2: blank is no bio; 190 characters pass, 191 or a control
+    /// character do not.
+    #[test]
+    fn a_bio_is_blank_or_bounded_text() {
+        assert_eq!(super::bio("  ").unwrap(), None);
+        assert_eq!(super::bio("gg").unwrap(), Some("gg"));
+        assert!(super::bio(&"🔥".repeat(super::MAX_BIO_LEN)).is_ok());
+        assert!(super::bio(&"x".repeat(super::MAX_BIO_LEN + 1)).is_err());
+        assert!(super::bio("a\u{7}b").is_err());
+    }
+
     use super::*;
 
     #[test]

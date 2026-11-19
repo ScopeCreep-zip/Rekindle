@@ -9,6 +9,7 @@
 //! `rusqlite::Connection`). The SQL lives here and nowhere else.
 
 pub mod audit;
+pub mod bio;
 pub mod blocked;
 pub mod chain_entries;
 pub mod channel_pins;

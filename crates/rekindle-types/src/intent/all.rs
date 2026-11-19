@@ -25,6 +25,7 @@ impl IntentKind {
         Self::UnpinMessage,
         Self::VotePoll,
         Self::SetAvatar,
+        Self::SetBio,
         Self::SetNickname,
         Self::SetStatus,
         Self::SetStatusMessage,

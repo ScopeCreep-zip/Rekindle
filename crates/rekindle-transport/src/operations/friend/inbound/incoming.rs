@@ -268,6 +268,7 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
     }
     crate::operations::friend::presence_key::send(host, a.sender_hex).await;
     crate::operations::friend::game_totals::send(host, a.sender_hex).await;
+    crate::operations::friend::bio::send(host, a.sender_hex).await;
     let display_name = state::friend(host, a.sender_hex)
         .map_or_else(|| a.sender_hex.to_string(), |f| f.display_name);
     crate::operations::friend::list_record::queued(host, "their accept");

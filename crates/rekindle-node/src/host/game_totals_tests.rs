@@ -20,7 +20,7 @@ use super::Host;
 
 /// `request` through the shell's gate, its review acknowledged; the
 /// answer and the review's class.
-async fn run(host: &Host, request: IpcRequest) -> (IpcResponse, Option<IntentClass>) {
+pub(super) async fn run(host: &Host, request: IpcRequest) -> (IpcResponse, Option<IntentClass>) {
     match host.call(Caller::shell(), request).await {
         IpcResponse::IntentRequired(review) => {
             let commit = IpcRequest::IntentCommit {
@@ -35,7 +35,7 @@ async fn run(host: &Host, request: IpcRequest) -> (IpcResponse, Option<IntentCla
 
 /// `peer` and `owner` each the other's accepted friend, with the session
 /// `peer` opened by a first message to `owner`.
-async fn open_session(host: &Host, owner: [u8; 32], other: &Host, peer: [u8; 32]) {
+pub(super) async fn open_session(host: &Host, owner: [u8; 32], other: &Host, peer: [u8; 32]) {
     accepted(host, owner, peer).await;
     accepted(other, peer, owner).await;
     let bundle = own_bundle(host, owner).await;
@@ -135,7 +135,7 @@ async fn nothing_is_sent_while_sharing_is_off() {
 }
 
 /// The datagram a handshake row carries (`Framed::Wire`).
-fn datagram(row: &rekindle_db::repo::outbox::Row) -> Vec<u8> {
+pub(super) fn datagram(row: &rekindle_db::repo::outbox::Row) -> Vec<u8> {
     #[derive(serde::Deserialize)]
     struct Wire {
         #[serde(with = "rekindle_types::base64_bytes")]

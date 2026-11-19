@@ -1,6 +1,6 @@
-//! Our own presence, profile, game, audit log, links, read-receipt and
-//! game-totals sharing settings, and a friend's shared game totals (plan
-//! E1.1, E2.5, E7.2): one implementation on both hosts, over
+//! Our own presence, profile (bio included), game, audit log, links,
+//! read-receipt and game-totals sharing settings, and a friend's bio and
+//! shared game totals (plan E1.1, E2.5, E7.2): one implementation on both hosts, over
 //! `host::{own_presence, own_profile, audit_alert}`.
 
 use rekindle_ipc::protocol::IpcResponse;
@@ -32,6 +32,11 @@ pub(crate) async fn route(
         IpcRequest::ProfileSetNickname { display_name } => {
             handle_nickname(ctx, state, &display_name).await
         }
+        IpcRequest::ProfileBioGet => handle_bio_get(ctx, state, None).await,
+        IpcRequest::FriendBioGet { public_key } => {
+            handle_bio_get(ctx, state, Some(public_key)).await
+        }
+        IpcRequest::ProfileSetBio { bio } => handle_set_bio(ctx, state, &bio).await,
         IpcRequest::SetReadReceiptsEnabled { enabled } => {
             handle_read_receipts(ctx, state, enabled).await
         }
@@ -252,6 +257,61 @@ async fn handle_nickname(
         Ok(()) => IpcResponse::ok(&name),
         Err(e) => IpcResponse::error(500, e),
     }
+}
+
+/// `ProfileBioGet` (`friend` `None`) or `FriendBioGet` (plan E7.2): our
+/// bio, or the one `friend` last sent us; `None` when there is none.
+async fn handle_bio_get(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    friend: Option<String>,
+) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let (db, owner) = match (ctx.require_db(), ctx.require_owner()) {
+        (Ok(db), Ok(owner)) => (db, owner),
+        (Err(e), _) | (_, Err(e)) => return e,
+    };
+    let read = db
+        .call(move |conn| match friend {
+            None => rekindle_db::repo::bio::own(conn, &owner),
+            Some(peer) => rekindle_db::repo::bio::friend(conn, &owner, &peer),
+        })
+        .await;
+    match read {
+        Ok(bio) => IpcResponse::ok(&bio),
+        Err(e) => IpcResponse::error(500, format!("bio not read: {e}")),
+    }
+}
+
+/// `ProfileSetBio`, once its review was committed (plan E7.2): stored in
+/// `identity.bio` (blank removes it) and sent to every accepted friend as a
+/// ratchet-sealed `ProfileBio`. The bio as stored.
+async fn handle_set_bio(ctx: &DaemonContext, state: DaemonState, bio: &str) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let (db, owner) = match (ctx.require_db(), ctx.require_owner()) {
+        (Ok(db), Ok(owner)) => (db, owner),
+        (Err(e), _) | (_, Err(e)) => return e,
+    };
+    let bio = match rekindle_types::presence::limits::bio(bio) {
+        Ok(bio) => bio.map(str::to_string),
+        Err(e) => return IpcResponse::error(400, format!("invalid bio: {e}")),
+    };
+    let stored = bio.clone();
+    let saved = db
+        .call(move |conn| rekindle_db::repo::bio::set_own(conn, &owner, stored.as_deref()))
+        .await;
+    if let Err(e) = saved {
+        return IpcResponse::error(500, format!("bio not saved: {e}"));
+    }
+    let friends = crate::host::adapters::friends::HostFriends::of(ctx);
+    let reached =
+        rekindle_transport::operations::friend::bio::send_to_friends(&friends, bio.clone()).await;
+    tracing::debug!(reached, "bio sent to friends");
+    IpcResponse::ok(&bio)
 }
 
 /// `SetReadReceiptsEnabled`, once its review was committed: the

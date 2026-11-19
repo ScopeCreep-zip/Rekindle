@@ -28,6 +28,8 @@ const ProfileWindow: Component = () => {
   const safety = useSafetyNumber(publicKey);
   // What the friend last shared (plan E7.2); empty when they share none.
   const [gameTotals] = createResource(() => commands.getFriendGameTotals(publicKey));
+  // Their bio as they last sent it (plan E7.2), shown as plain text.
+  const [bio] = createResource(() => commands.getFriendBio(publicKey));
   let unlistenPresence: Promise<import("@tauri-apps/api/event").UnlistenFn> | undefined;
 
   onMount(() => {
@@ -100,6 +102,12 @@ const ProfileWindow: Component = () => {
                 {formatElapsed(friend()!.gameInfo!.startedAt!)}
               </div>
             </Show>
+          </div>
+        </Show>
+        <Show when={bio()}>
+          <div class="profile-section">
+            <div class="profile-section-label">Bio</div>
+            <p class="profile-bio">{bio()}</p>
           </div>
         </Show>
         <Show when={(gameTotals() ?? []).length > 0}>

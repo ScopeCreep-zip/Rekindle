@@ -254,6 +254,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // status
         commands::status::set_status,
         commands::status::set_nickname,
+        commands::status::get_bio,
+        commands::status::get_friend_bio,
+        commands::status::set_bio,
         commands::status::set_avatar,
         commands::status::get_avatar,
         // skin (plan E7.7.2)

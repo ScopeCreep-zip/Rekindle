@@ -29,7 +29,12 @@ CREATE TABLE IF NOT EXISTS identity (
     -- (`rekindle_secrets::friend_token::mint`); rotating it refuses requests
     -- sent with the old code.
     friend_request_token TEXT NOT NULL CHECK(length(friend_request_token) = 26
-        AND friend_request_token NOT GLOB '*[^a-z2-7]*')
+        AND friend_request_token NOT GLOB '*[^a-z2-7]*'),
+    -- Our bio (plan E7.2), sent to each accepted friend as a ratchet-sealed
+    -- `ProfileBio` (0x0171), never in the profile record (its key travels in
+    -- every invite and friend code). NULL: none. 190 characters at most
+    -- (Discord's About Me).
+    bio TEXT CHECK(bio IS NULL OR (length(bio) BETWEEN 1 AND 190))
 );
 
 CREATE TABLE IF NOT EXISTS friend_groups (
@@ -74,6 +79,10 @@ CREATE TABLE IF NOT EXISTS friends (
     -- read; a new participant record is a new chain and resets it.
     dm_chain_head INTEGER NOT NULL DEFAULT 0,
     peer_participant_record_key TEXT,
+    -- Plan E7.2: the bio their last `ProfileBio` (0x0171) stated, kept only
+    -- from an accepted friend; cleared when we remove them, gone with the row
+    -- when they remove or block us or we block them.
+    bio TEXT CHECK(bio IS NULL OR (length(bio) BETWEEN 1 AND 190)),
     CHECK((presence_epoch IS NULL) = (presence_key IS NULL)),
     PRIMARY KEY (owner_key, public_key)
 );

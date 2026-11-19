@@ -34,6 +34,7 @@ pub enum IntentKind {
     VotePoll,
     // Routine: Own presence and profile
     SetAvatar,
+    SetBio,
     SetNickname,
     SetStatus,
     SetStatusMessage,
@@ -285,6 +286,7 @@ impl IntentKind {
             | Self::UnpinMessage
             | Self::VotePoll
             | Self::SetAvatar
+            | Self::SetBio
             | Self::SetNickname
             | Self::SetStatus
             | Self::SetStatusMessage

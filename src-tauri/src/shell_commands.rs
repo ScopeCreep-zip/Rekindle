@@ -81,6 +81,9 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         HostCall::Request("PresenceSetMessage"),
     ),
     ("set_nickname", HostCall::Request("ProfileSetNickname")),
+    ("get_bio", HostCall::Request("ProfileBioGet")),
+    ("get_friend_bio", HostCall::Request("FriendBioGet")),
+    ("set_bio", HostCall::Request("ProfileSetBio")),
     (
         "set_read_receipts_enabled",
         HostCall::Request("SetReadReceiptsEnabled"),

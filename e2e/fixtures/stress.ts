@@ -293,6 +293,9 @@ export const EMPTY: Stress = { friends: 0, members: 0, messages: 0, communities:
  * named answer an empty list, the rest `null`, as a window with no data
  * would see them.
  */
+/// The longest bio the Host keeps (190 characters, plan E7.2).
+export const FULL_BIO = ("W".repeat(60) + "\n" + "gg wp ".repeat(30)).slice(0, 190);
+
 export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcome = false): string {
   const j = JSON.stringify;
   const call = {
@@ -381,6 +384,11 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
       return null;
     case "get_game_totals":
       return ${j(gameTotals(s.friends ? 30 : 0))};
+    case "get_bio":
+    case "get_friend_bio":
+      // A full 190-character bio (plan E7.2) with an unbroken 60-letter
+      // word and a line break, or none.
+      return ${j(s.friends ? FULL_BIO : null)};
     case "get_welcome_screen":
       // The Host's empty default (none set), or a set screen with the
       // longest description and featured channels.

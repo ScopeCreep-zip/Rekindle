@@ -299,6 +299,13 @@ struct StatusRequest {
   targetPubkey @0 :Text;
 }
 
+# 0x0171 (E7.2), inside the ratchet: our bio, on change and to a newly
+# accepted friend; empty clears it. 190 characters at most, refused on
+# decode past that. Never in the profile record (see GameTotals).
+struct ProfileBio {
+  bio @0 :Text;
+}
+
 # 0x0172 (E7.2), inside the ratchet: our time in each game, sent only
 # while we share game totals, on change and to a newly accepted friend.
 # It replaces every total the friend held from us. Never in the profile
