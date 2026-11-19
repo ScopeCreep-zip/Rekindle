@@ -86,8 +86,18 @@ const HANDLER = `
   }
 `;
 
-async function openAppearance(page: Page): Promise<void> {
-  await page.clock.install({ time: STARTED });
+/**
+ * `paused` stops the page clock at the trial's start, so a countdown is
+ * read at known instants (only `clock.runFor` moves it) instead of racing
+ * the wall clock under load.
+ */
+async function openAppearance(page: Page, opts: { paused?: boolean } = {}): Promise<void> {
+  if (opts.paused) {
+    await page.clock.install({ time: STARTED - 60_000 });
+    await page.clock.pauseAt(STARTED);
+  } else {
+    await page.clock.install({ time: STARTED });
+  }
   await preloadMocks(page, "settings", HANDLER);
   await page.goto("/settings?tab=appearance");
   await expect(page.getByRole("radio", { name: TRIAL.name })).toBeVisible({ timeout: 10_000 });
@@ -155,14 +165,16 @@ test.describe("Settings → Appearance", () => {
   });
 
   test("a library skin asks to be kept and goes back after 15 s", async ({ page }) => {
-    await openAppearance(page);
+    await openAppearance(page, { paused: true });
     await chooseLibrarySkin(page);
     const prompt = page.locator(".skin-trial");
     await expect(prompt).toContainText("Keep this skin?");
     await expect(prompt).toContainText(`${TRIAL.name} goes back to the previous skin in 15 s`);
     await page.clock.runFor(5_000);
     await expect(prompt).toContainText("in 10 s");
-    await page.clock.runFor(10_500);
+    await page.clock.runFor(9_000);
+    await expect(prompt).toContainText("in 1 s");
+    await page.clock.runFor(1_000);
     await expect(prompt).toHaveCount(0);
     await expect(page.getByRole("radio", { name: "Symbiosis" })).toBeChecked();
     const calls = await page.evaluate(() =>
