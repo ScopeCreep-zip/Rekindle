@@ -139,6 +139,12 @@ impl HostGovernance {
             }
         }
         self.audit_joined(&id, &outcome.invite.community_name);
+        // A join is the community's first load: catch up every member's
+        // channel outbox (and each departed author's with a recorded head)
+        // from our cursors, as an unlock's stage does (plan E3.3 "Cursor
+        // and authors"). The ring and the hints carry only what is written
+        // from now on, and a departed author is on neither.
+        self.spawn_history_catchup_impl(&id);
         tracing::info!(community = %id, "joined community");
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
         // gossiped and queued, and the outbox lands it (S6b).

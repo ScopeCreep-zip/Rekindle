@@ -121,6 +121,9 @@ impl HostGovernance {
         // The posts composed before this key are released to their writes
         // (plan E3.2 S7l, F9-1).
         crate::host::adapters::channel::release_waiting_posts(self, community_id);
+        // The outbox entries a joiner held back for want of a key are read
+        // now (`channel/outbox_read.rs`).
+        self.spawn_outbox_catchup(community_id);
     }
 
     /// A key a rotator delivered (`MekTransfer`), installed as every other

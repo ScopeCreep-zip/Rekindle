@@ -9,7 +9,9 @@
 //! post goes through the one ingest path (D26), its body opened at
 //! `{anchor, channel, author, streamSeq}`. An entry we cannot verify or
 //! link, or whose body no key we hold opens, still advances the cursor:
-//! the chain covers ciphertext.
+//! the chain covers ciphertext. The one exception is a joiner before its
+//! first community key: no entry's tag maps yet, so the cursor stays and
+//! the key's install catches every outbox up again.
 //!
 //! The cursor's writer is the author at its member record: a member that
 //! left and re-joined writes a fresh record whose chain starts at 1 again.
@@ -24,7 +26,7 @@
 //!
 //! Triggers: the author's or a relayer's `HeadAdvanced` for subkey 4 and a
 //! ring change of subkey 4 diff that author; a catch-up (a community's
-//! load) diffs every member. Older history stays on the channel records
+//! load: an unlock, a join, a community key installed) diffs every member. Older history stays on the channel records
 //! until E3.3 slice 8.
 
 use async_trait::async_trait;
@@ -280,6 +282,17 @@ impl HostChannel {
         stream_of_tag(&*keys, community_id, streams, generation, tag).map(str::to_owned)
     }
 
+    /// Whether we hold no community-scope key of `community_id` yet (a
+    /// joiner before its first key arrives).
+    fn awaits_first_key(&self, community_id: &str) -> bool {
+        self.keys()
+            .current_epoch(
+                community_id,
+                rekindle_types::channel_keys::KeyScope::Community,
+            )
+            .is_none()
+    }
+
     /// Apply one chain entry of `author`'s outbox: verified, linked to its
     /// channel by tag, its post ingested. `Err` only when the store failed
     /// (the cursor stays and the next trigger reads it again).
@@ -303,6 +316,17 @@ impl HostChannel {
         let Some(channel_id) =
             self.channel_of_tag(community_id, decoded.generation, &decoded.channel_tag)
         else {
+            // A joiner holds no community key until its first `MekTransfer`
+            // (D11, D16): no tag maps yet, so the cursor stays on this entry
+            // and the catch-up the key's install starts reads it again.
+            // Once a key is held, an entry no key maps is of a channel we do
+            // not read or from before our keys, and the chain covers it.
+            if self.awaits_first_key(community_id) {
+                return Err(rekindle_channel::ChannelError::MekMissing {
+                    community: community_id.to_owned(),
+                    channel: String::new(),
+                });
+            }
             tracing::debug!(
                 community_id,
                 seq = entry.seq,

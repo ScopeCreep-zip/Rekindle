@@ -23,10 +23,9 @@ const CATCHUP_SETTLE: std::time::Duration = std::time::Duration::from_secs(15);
 type PeerAds = (String, Vec<u8>, Vec<HistoryAd>);
 
 impl HostGovernance {
-    /// Schedule `community_id`'s history catch-up on its scope: every
-    /// member's channel outbox from our cursors (plan E3.3) at once, and the
-    /// older slot-record history after the settle (until E3.3 slice 8).
-    pub(super) fn spawn_history_catchup_impl(&self, community_id: &str) {
+    /// Catch up every member's channel outbox in `community_id` from our
+    /// cursors, on the community's scope (plan E3.3 "Cursor and authors").
+    pub(super) fn spawn_outbox_catchup(&self, community_id: &str) {
         let channel = crate::host::adapters::channel::HostChannel::new(&self.ctx);
         let community = community_id.to_string();
         self.ctx.community_scope(community_id).spawn_or_drop(
@@ -35,6 +34,13 @@ impl HostGovernance {
                 channel.catch_up_outboxes(&community).await;
             },
         );
+    }
+
+    /// Schedule `community_id`'s history catch-up on its scope: every
+    /// member's channel outbox from our cursors (plan E3.3) at once, and the
+    /// older slot-record history after the settle (until E3.3 slice 8).
+    pub(super) fn spawn_history_catchup_impl(&self, community_id: &str) {
+        self.spawn_outbox_catchup(community_id);
         let host = self.clone();
         let id = community_id.to_string();
         self.ctx
