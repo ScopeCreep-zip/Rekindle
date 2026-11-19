@@ -238,7 +238,8 @@ Dropped
     ingame/c_ingame_x.gif
     strings.ini
 
-Contrast changes (minimal Oklab-lightness walk) (5 made)
+Contrast changes (minimal Oklab-lightness walk) (6 made)
+  text.base: #00540c -> #00520a (1.4.3 text.base on accent.fill 30.0% over bg.dark: 4.40:1 -> passes, required 4.50:1)
   status.online: #00872c -> #007011 (S3 status.online on accent.fill 30.0% over bg.dark: 2.22:1 -> passes, required 3.00:1)
   status.away: #8f7000 -> #7a5b00 (S3 status.away on accent.fill 30.0% over bg.dark: 2.23:1 -> passes, required 3.00:1)
   status.busy: #da3034 -> #c1081e (S3 status.busy on accent.fill 30.0% over bg.dark: 2.24:1 -> passes, required 3.00:1)

@@ -78,12 +78,14 @@ test("errors are alerts, other toasts status messages, and both regions exist fr
   const alert = page.locator(".toast-container [role=alert]");
   await expect(status).toHaveCount(1);
   await expect(alert).toHaveCount(1);
-  await page.evaluate(async () => {
-    const t = await import("/src/stores/toast.store.ts");
+  // The module is the dev server's URL, resolved in the page, so it is passed
+  // in as data; its type is the source module's.
+  await page.evaluate(async (url) => {
+    const t: typeof import("../src/stores/toast.store") = await import(url);
     t.addToast("Saved", "success");
     t.addToast("Not sent", "error");
     t.addToast("Done.", "info", { label: "Undo", run: () => undefined });
-  });
+  }, "/src/stores/toast.store.ts");
   await expect(status.locator(".toast-item")).toHaveText(["Saved", "Done.Undo"]);
   await expect(alert.locator(".toast-item")).toHaveText(["Not sent"]);
   // SC 2.2.1: a toast with an action outlives the 4 s timer the others have.

@@ -1,7 +1,8 @@
 //! The composited pairs step 6 measures beyond the registry's own
 //! constraints: labels on `color-mix(in srgb, <fill> <share>, transparent)`
 //! tints (d3 §6.3 D4), the danger fill as a graphic (D5) and the status
-//! colours on the StatusDot cutout and the rows a dot is drawn on (S2, S3).
+//! colours on the StatusDot cutout and the rows a dot is drawn on (S2, S3),
+//! and the body text on the selected list rows (1.4.3).
 //! Each row cites the rule it was read from (`src/styles/theme/*.css`) and
 //! the grounds `src/styles/regions.toml` declares for it.
 
@@ -82,6 +83,24 @@ pub const STATUS_ROWS: &[Ground] = &[
     },
 ];
 
+/// The selected list rows the body text is drawn on: `.buddy-item-selected`
+/// and `.community-item-selected`, accent 30 % (00-rules.css:388-389,
+/// 02-form-primitives.css:79-81), and `.channel-item-selected`, accent 25 %
+/// (02-form-primitives.css:125-127); `regions.toml` declares both for
+/// `.buddy-name`, `.community-item` and `.channel-item-selected`.
+pub const SELECTED_ROWS: &[Ground] = &[
+    Ground::Tint {
+        token: "accent.fill",
+        share: TintShare::Fixed(300),
+        over: &DARK,
+    },
+    Ground::Tint {
+        token: "accent.fill",
+        share: TintShare::Fixed(250),
+        over: &DARK,
+    },
+];
+
 /// The five presence colours, in StatusDot order.
 pub const STATUSES: [&str; 5] = [
     "status.online",
@@ -130,6 +149,15 @@ pub const PAIRS: &[Pair] = &[
         rule: "D4",
         fg: "text.on-fill",
         on: &[tint("status.online", "tint.fill", &DARK)],
+        floor: Floor::Text,
+    },
+    // The body text (`--color-xfire-text`) of the selected list rows
+    // (`.community-item`, 02-form-primitives.css:65-73; `.buddy-name`
+    // inherits it; `.channel-item-selected`, 02-form-primitives.css:125-127).
+    Pair {
+        rule: "1.4.3",
+        fg: "text.base",
+        on: SELECTED_ROWS,
         floor: Floor::Text,
     },
     // D5: the danger fill as an icon or a boundary on the grounds.

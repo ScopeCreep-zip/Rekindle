@@ -330,3 +330,28 @@ fn status_colours_stay_apart_and_visible() {
         "{got:?}"
     );
 }
+
+#[test]
+fn body_text_is_read_on_the_selected_row() {
+    // Combat as Xfire shipped it (`builtin/combat.NOTICE`): Friend #00540c
+    // as the body text, Select #000000 as the accent, on the light base's
+    // white window. The selected row is accent 30 % over it, #b3b3b3, where
+    // the text measures 4.40:1 (axe `color-contrast`, `.community-name`).
+    let got = check(
+        Base::Light,
+        &[
+            ("text.base", colour("#00540c", 255)),
+            ("accent.fill", colour("#000000", 255)),
+        ],
+    );
+    assert!(
+        got.contains(&SkinRule::Contrast {
+            rule: "1.4.3".into(),
+            token: "text.base".into(),
+            ground: "accent.fill 30.0% over bg.dark".into(),
+            measured_x100: 440,
+            required_x100: 450,
+        }),
+        "{got:?}"
+    );
+}
