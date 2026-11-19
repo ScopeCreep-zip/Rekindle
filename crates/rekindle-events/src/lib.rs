@@ -22,6 +22,7 @@ pub mod journal;
 pub mod notify_policy;
 pub mod state;
 pub mod state_effects;
+pub mod strength;
 pub mod typing;
 
 pub use dedup::EventDedup;

@@ -1196,6 +1196,13 @@
       }
     }
   },
+  "network.strength": {
+    "network": {
+      "strength": {
+        "bars": 3
+      }
+    }
+  },
   "network.valueChanged": {
     "network": {
       "valueChanged": {

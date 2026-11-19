@@ -74,6 +74,7 @@ export type NetworkEvent =
         canWrite: boolean;
       };
     }
+  | { strength: { bars: number } }
   | { localRoutesDied: { count: number } }
   | { remoteRoutesDied: { peerKeys: string[] } }
   | { valueChanged: { recordKey: string; changedSubkeys: number[] } };

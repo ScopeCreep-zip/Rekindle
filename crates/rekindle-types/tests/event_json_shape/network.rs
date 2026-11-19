@@ -6,6 +6,7 @@ use crate::{pk, rk, text, Sample};
 
 pub const NAMES: &[&str] = &[
     "attachmentChanged",
+    "strength",
     "localRoutesDied",
     "remoteRoutesDied",
     "valueChanged",
@@ -22,6 +23,7 @@ pub const NESTED: &[&str] = &[
 pub fn variant_name(e: &NetworkEvent) -> &'static str {
     match e {
         NetworkEvent::AttachmentChanged { .. } => "attachmentChanged",
+        NetworkEvent::Strength { .. } => "strength",
         NetworkEvent::LocalRoutesDied { .. } => "localRoutesDied",
         NetworkEvent::RemoteRoutesDied { .. } => "remoteRoutesDied",
         NetworkEvent::ValueChanged { .. } => "valueChanged",
@@ -41,7 +43,8 @@ fn route_name(route: RouteAvailability) -> &'static str {
 pub fn nested_names(e: &NetworkEvent) -> Vec<&'static str> {
     match e {
         NetworkEvent::AttachmentChanged { media_route, .. } => vec![route_name(*media_route)],
-        NetworkEvent::LocalRoutesDied { .. }
+        NetworkEvent::Strength { .. }
+        | NetworkEvent::LocalRoutesDied { .. }
         | NetworkEvent::RemoteRoutesDied { .. }
         | NetworkEvent::ValueChanged { .. } => vec![],
     }
@@ -104,6 +107,7 @@ pub fn samples() -> Vec<Sample> {
             false,
             RouteAvailability::Failed,
         ),
+        ev("strength", NetworkEvent::Strength { bars: 3 }),
         ev(
             "localRoutesDied",
             NetworkEvent::LocalRoutesDied { count: 2 },

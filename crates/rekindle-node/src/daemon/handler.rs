@@ -49,6 +49,8 @@ pub struct DaemonHandler {
     /// (plan E2.1).
     pub(crate) host:
         Arc<std::sync::OnceLock<std::sync::Weak<crate::daemon::dispatch::DaemonContext>>>,
+    /// The network indicator's smoothed bars (plan E7.2, live finding L8).
+    strength: Arc<parking_lot::Mutex<rekindle_events::strength::StrengthWindow>>,
 }
 
 impl DaemonHandler {
@@ -71,6 +73,36 @@ impl DaemonHandler {
             gossip_tx,
             clock,
             host,
+            strength: Arc::default(),
+        }
+    }
+
+    /// Veilid's attachment changed to `state`: sample the indicator's
+    /// window and publish `NetworkEvent::Strength` when the shown bars
+    /// change; a fall is re-read once its hold ends (plan E7.2, L8).
+    fn sample_strength(&self, state: &str) {
+        let bars = rekindle_types::notification::AttachmentState::from_veilid_string(state).bars();
+        let (changed, holding) = {
+            let mut window = self.strength.lock();
+            (window.sample(self.clock.now_ms(), bars), window.holding())
+        };
+        if let Some(bars) = changed {
+            publish_strength(&self.subscriptions, bars);
+        }
+        if holding {
+            let strength = Arc::clone(&self.strength);
+            let subscriptions = Arc::clone(&self.subscriptions);
+            let clock = Arc::clone(&self.clock);
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    rekindle_events::strength::HOLD_MS,
+                ))
+                .await;
+                let changed = strength.lock().settle(clock.now_ms());
+                if let Some(bars) = changed {
+                    publish_strength(&subscriptions, bars);
+                }
+            });
         }
     }
 
@@ -380,6 +412,9 @@ impl InboundHandler for DaemonHandler {
         {
             host.network_changed(*public_internet_ready);
         }
+        if let TransportEvent::AttachmentChanged { state, .. } = &event {
+            self.sample_strength(state);
+        }
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
             match event {
                 TransportEvent::AttachmentChanged {
@@ -429,5 +464,14 @@ impl InboundHandler for DaemonHandler {
                 }
             }
         }
+    }
+}
+
+/// Publish the indicator's bars to every subscriber (plan E7.2).
+fn publish_strength(subscriptions: &RwLock<Option<SubscriptionManager>>, bars: u8) {
+    if let Some(manager) = subscriptions.read().as_ref() {
+        manager.on_attachment_change(
+            rekindle_types::subscription_events::NetworkEvent::Strength { bars },
+        );
     }
 }

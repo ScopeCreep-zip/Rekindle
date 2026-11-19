@@ -49,6 +49,11 @@ pub enum NetworkEvent {
         /// GenesisCert (ADR 0011), so a create cannot be held for later.
         can_write: bool,
     },
+    /// The network indicator's bars, 0 to 5 (plan E7.2, live finding L8):
+    /// Veilid's attachment strength (`AttachmentState::bars`) smoothed by
+    /// the Host, so a short dip does not flicker the indicator and every
+    /// frontend shows the same bars. Sent when the shown value changes.
+    Strength { bars: u8 },
     /// Our own allocated private routes died and need reallocation.
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_routes).
     LocalRoutesDied { count: usize },

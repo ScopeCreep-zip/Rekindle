@@ -29,6 +29,10 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
                 u8::from(*can_write),
             ]);
         }
+        NetworkEvent::Strength { bars } => {
+            h.update(b"strength|");
+            h.update(&[*bars]);
+        }
         NetworkEvent::LocalRoutesDied { count } => {
             h.update(b"local_routes|");
             h.update(&(*count as u64).to_le_bytes());
