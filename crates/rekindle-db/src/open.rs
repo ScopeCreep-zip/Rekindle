@@ -243,7 +243,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// older builds no longer verify.
 /// 143 (plan E7.2 slices 7-11): `identity.bio` and `friends.bio`,
 /// `identity.share_current_game`, `hidden_games` and `favourite_servers`.
-pub const SCHEMA_VERSION: i64 = 143;
+pub const SCHEMA_VERSION: i64 = 144;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
