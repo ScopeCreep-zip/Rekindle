@@ -33,25 +33,19 @@ fn default_auto_archive_text_is_one_day() {
 }
 
 #[test]
-fn is_thread_archived_manual_overrides_activity() {
-    // archived_lamport=10, last_lamport=5 → manually archived
-    assert!(is_thread_archived(Some(10), 5, 0, 86_400, 0));
-}
-
-#[test]
-fn is_thread_archived_activity_after_archive_revives() {
-    // archived_lamport=5, last_lamport=10 → revived
-    assert!(!is_thread_archived(Some(5), 10, 0, 86_400, 0));
+fn is_thread_archived_manual_stands_until_unarchived() {
+    // A manual archive stands whatever the activity.
+    assert!(is_thread_archived(Some(10), 5, 86_400, 6));
 }
 
 #[test]
 fn is_thread_archived_auto_archives_after_window() {
     // last_activity=1000s, window=86400s, now=88400s → auto-archived
-    assert!(is_thread_archived(None, 5, 1_000, 86_400, 88_500));
+    assert!(is_thread_archived(None, 1_000, 86_400, 88_500));
 }
 
 #[test]
 fn is_thread_archived_never_archived_when_no_activity_no_archive() {
     // last_activity=0 (no messages yet) + no archived_lamport → live
-    assert!(!is_thread_archived(None, 0, 0, 86_400, 1_000_000));
+    assert!(!is_thread_archived(None, 0, 86_400, 1_000_000));
 }

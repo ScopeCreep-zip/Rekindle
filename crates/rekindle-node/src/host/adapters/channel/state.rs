@@ -137,11 +137,6 @@ impl HostChannel {
         })
     }
 
-    pub(super) fn slot_seed_impl(&self, community_id: &str) -> Option<[u8; 32]> {
-        let seed = self.gov.community_membership(community_id)?.slot_seed_hex?;
-        hex::decode(seed).ok()?.try_into().ok()
-    }
-
     pub(super) fn member_profile_impl(
         &self,
         community_id: &str,

@@ -11,7 +11,6 @@ use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEnt
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_protocol::dht::community::channel_record::{self, AppendOutcome};
 use rekindle_protocol::ProtocolError;
-use rekindle_records::lease::LeaseId;
 use rekindle_records::port::RecordPort;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;
@@ -49,17 +48,6 @@ impl HostChannel {
         slots.sort_unstable();
         slots.dedup();
         slots
-    }
-
-    pub(super) async fn create_thread_record_impl(
-        &self,
-        slot_seed: &[u8; 32],
-    ) -> Result<(LeaseId, String), ChannelError> {
-        let pool = self.records()?;
-        let (lease, record_key, _) = channel_record::create_smpl_channel_record(&*pool, slot_seed)
-            .await
-            .map_err(|e| ChannelError::Adapter(format!("create thread record: {e}")))?;
-        Ok((lease, record_key))
     }
 
     pub(super) async fn read_entries_impl(

@@ -89,6 +89,14 @@ pub enum PostEntry {
     /// Our hand raised or lowered on a voice stage (our latest by stream
     /// seq stands).
     HandRaise { raised: bool },
+    /// Our reply in the thread this post's `channel` names (plan E3.3: a
+    /// thread is a stream whose tag is derived from its id), sealed when
+    /// the stream drains it under the text key of `parent_channel`.
+    ThreadReply {
+        parent_channel: String,
+        body: String,
+        sent_at_ms: u64,
+    },
 }
 
 impl PostEntry {

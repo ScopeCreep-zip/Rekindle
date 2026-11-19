@@ -77,6 +77,12 @@ async fn stored_body<D: ChannelMessagingDeps>(
                 reply_to: None,
             })
         }
+        PostEntry::ThreadReply { body, .. } => {
+            return Ok(StoredBody {
+                text: body.clone(),
+                reply_to: None,
+            })
+        }
         PostEntry::Edit { target, body, .. } => (target.as_str(), Some(body.as_str())),
         PostEntry::Delete { target, .. } => (target.as_str(), Some("")),
         _ => (post.message.as_str(), None),
@@ -112,10 +118,21 @@ async fn pending_of<D: ChannelMessagingDeps>(
         author: &author,
         stream_seq: item.stream_seq,
     };
-    let sealed = seal_at(deps, community_id, at, body.text.as_bytes())?;
+    // A thread's stream is sealed under its parent channel's text scope.
+    let scope_channel = match &post.entry {
+        PostEntry::ThreadReply { parent_channel, .. } => parent_channel.as_str(),
+        _ => channel_id,
+    };
+    let sealed = seal_at(deps, community_id, scope_channel, at, body.text.as_bytes())?;
     let timestamp_ms = i64::try_from(committed_at).unwrap_or(i64::MAX);
     let entry = match &post.entry {
-        PostEntry::Message | PostEntry::Attachment { .. } => {
+        PostEntry::Message | PostEntry::Attachment { .. } | PostEntry::ThreadReply { .. } => {
+            let timestamp_ms = match &post.entry {
+                PostEntry::ThreadReply { sent_at_ms, .. } => {
+                    i64::try_from(*sent_at_ms).unwrap_or(i64::MAX)
+                }
+                _ => timestamp_ms,
+            };
             let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
                 resolve_outbound_mentions(deps, community_id, &author_hex, &body.text);
             let mut message = build_channel_message(BuildChannelMessageParams {
@@ -252,16 +269,18 @@ async fn pending_of<D: ChannelMessagingDeps>(
     Ok(pending)
 }
 
-/// Seal `body` at `at` under its channel's current text key; a channel
-/// whose key we do not hold yet defers the entry.
+/// Seal `body` at `at` under the current text key of `scope_channel` (the
+/// entry's channel, or a thread's parent); a channel whose key we do not
+/// hold yet defers the entry.
 fn seal_at<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
+    scope_channel: &str,
     at: BodyPosition<'_>,
     body: &[u8],
 ) -> Result<SealedEntryBody, DrainOutcome> {
-    let channel = ChannelId::from_hex(at.channel_id)
-        .ok_or_else(|| DrainOutcome::Failed(format!("{} is not a channel", at.channel_id)))?;
+    let channel = ChannelId::from_hex(scope_channel)
+        .ok_or_else(|| DrainOutcome::Failed(format!("{scope_channel} is not a channel")))?;
     let scope: KeyScope = deps.keys().scope_for_text(community_id, channel);
     match seal_entry_body(&*deps.keys(), community_id, scope, at, body) {
         Ok(sealed) => Ok(sealed),

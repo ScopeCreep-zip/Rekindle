@@ -8,7 +8,7 @@ use rekindle_types::id::ChannelId;
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
-use crate::send::{decrypt_channel_body, encrypt_channel_body, At};
+use crate::send::{decrypt_channel_body, At};
 
 fn text_scope<D: ChannelMessagingDeps + ?Sized>(
     deps: &D,
@@ -32,29 +32,6 @@ pub(crate) fn holds_text_key<D: ChannelMessagingDeps + ?Sized>(
 ) -> Result<bool, ChannelError> {
     let scope = text_scope(deps, community_id, channel_id)?;
     Ok(channel_keys::current_key(&*deps.keys(), community_id, scope).is_some())
-}
-
-/// Seal `body` at `at` under the current text key of `channel_id` (the
-/// parent channel, for a thread). Returns the ciphertext and the
-/// generation that sealed it — the generation the message must carry.
-pub(crate) fn seal_text<'a, D: ChannelMessagingDeps + ?Sized>(
-    deps: &D,
-    community_id: &str,
-    channel_id: &str,
-    at: impl Into<At<'a>>,
-    body: &[u8],
-) -> Result<(Vec<u8>, u64), ChannelError> {
-    let scope = text_scope(deps, community_id, channel_id)?;
-    let (epoch, key) =
-        channel_keys::current_key(&*deps.keys(), community_id, scope).ok_or_else(|| {
-            ChannelError::MekMissing {
-                community: community_id.into(),
-                channel: channel_id.into(),
-            }
-        })?;
-    let ciphertext = encrypt_channel_body(&key, at, body)
-        .map_err(|e| ChannelError::Encrypt(format!("channel body: {e}")))?;
-    Ok((ciphertext, epoch.0))
 }
 
 /// Open a text body sealed at `at` under exactly `generation` of

@@ -268,7 +268,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     );
     fn thread_state(&self, community_id: &str, thread_id: &str) -> Option<ThreadStateSnapshot>;
 
-    fn slot_seed_bytes(&self, community_id: &str) -> Option<[u8; 32]>;
     fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberMentionView;
 
     /// All known member profiles for a community, keyed by pseudonym
@@ -296,13 +295,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         context: &ChannelWriteContext,
         channel_msg: &ChannelMessage,
     ) -> Result<DhtWrite, ChannelError>;
-
-    /// Create a lazy thread SMPL record, held under its creator lease.
-    /// Returns the lease and the record key.
-    async fn create_smpl_thread_record(
-        &self,
-        slot_seed_bytes: &[u8; 32],
-    ) -> Result<(LeaseId, String), ChannelError>;
 
     /// End a borrow of the host's record pool.
     async fn release_record(&self, lease: LeaseId);

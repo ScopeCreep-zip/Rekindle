@@ -27,12 +27,15 @@ pub fn default_auto_archive_seconds(thread_type: &str) -> u64 {
 #[must_use]
 pub fn is_thread_archived(
     archived_lamport: Option<u64>,
-    last_lamport: u64,
     last_activity_secs: u64,
     auto_archive_seconds: u64,
     now_secs: u64,
 ) -> bool {
-    let manually_archived = archived_lamport.is_some_and(|archived| last_lamport <= archived);
+    // A manual archive is a governance op and stands until the thread's
+    // unarchive op (plan E3.3): replies ride their authors' outboxes,
+    // which share no order with governance ops, so a reply cannot revive
+    // it.
+    let manually_archived = archived_lamport.is_some();
     let auto_archived = last_activity_secs > 0
         && last_activity_secs.saturating_add(auto_archive_seconds) < now_secs;
     manually_archived || auto_archived
@@ -52,8 +55,8 @@ pub struct ThreadMessageView {
     pub is_own: bool,
     pub server_message_id: Option<String>,
     pub mek_generation: u64,
-    pub subkey_index: u32,
-    pub lamport_ts: u64,
+    /// Its author's stream seq in the thread (the body's position).
+    pub stream_seq: u64,
 }
 
 #[cfg(test)]

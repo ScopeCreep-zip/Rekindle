@@ -108,10 +108,6 @@ impl ChannelMessagingDeps for HostChannel {
         self.thread_state_impl(community_id, thread_id)
     }
 
-    fn slot_seed_bytes(&self, community_id: &str) -> Option<[u8; 32]> {
-        self.slot_seed_impl(community_id)
-    }
-
     fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberMentionView {
         self.member_profile_impl(community_id, pseudonym_hex)
     }
@@ -168,13 +164,6 @@ impl ChannelMessagingDeps for HostChannel {
         )
         .await;
         delivery(written, "channel write")
-    }
-
-    async fn create_smpl_thread_record(
-        &self,
-        slot_seed_bytes: &[u8; 32],
-    ) -> Result<(LeaseId, String), ChannelError> {
-        self.create_thread_record_impl(slot_seed_bytes).await
     }
 
     async fn release_record(&self, lease: LeaseId) {
