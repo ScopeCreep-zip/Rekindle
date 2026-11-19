@@ -18,8 +18,8 @@ pub use codec::{
 };
 pub use types::{
     ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelHandRaise,
-    ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelReaction,
-    ChannelRecordEntry, ChannelRecordItem, ChannelSubkeyPayload,
+    ChannelMessage, ChannelPollClose, ChannelPollCounted, ChannelPollCreate, ChannelPollVote,
+    ChannelReaction, ChannelRecordEntry, ChannelRecordItem, ChannelSubkeyPayload,
 };
 
 #[cfg(test)]

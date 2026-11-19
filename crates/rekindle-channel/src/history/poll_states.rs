@@ -2,9 +2,13 @@
 //! ops on their authors' channel outboxes, aggregated by every reader. A
 //! poll belongs to the author of its first create (by commit time, ties by
 //! author); only that author's later creates replace it and only its close
-//! closes it. Each voter counts once, its latest vote by stream seq, and a
-//! vote committed after the close is not counted (commit times are signed
-//! with each entry; an author can only misdate its own ops).
+//! closes it. Before the close each voter counts once, its latest vote by
+//! stream seq. The close names the vote it counted for each voter (voter,
+//! stream seq), and from then on readers count exactly those votes: no
+//! cross-author clock exists (rule E1), so a vote's place against the close
+//! is the closer's view of the voter's stream, as a departure head names a
+//! departed author's chain position, never the voter's own signed commit
+//! time, which the voter could backdate.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -27,6 +31,8 @@ pub struct PollTally {
     pub closed_at: Option<u64>,
     /// Each voter's counted answers.
     pub votes: BTreeMap<String, Vec<u8>>,
+    /// Each counted voter's stream seq of the vote counted.
+    pub vote_seqs: BTreeMap<String, u64>,
     /// (commit time, stream seq) of the create kept.
     order: (u64, u64),
 }
@@ -59,22 +65,32 @@ pub fn poll_tallies(entries: &[OutboxItem]) -> BTreeMap<[u8; 16], PollTally> {
                     expires_at: create.expires_at,
                     closed_at: None,
                     votes: BTreeMap::new(),
+                    vote_seqs: BTreeMap::new(),
                     order: (item.committed_at, item.stream_seq),
                 },
             );
         }
     }
+    // The author's first close by stream seq closes the poll.
+    let mut closes: HashMap<[u8; 16], (u64, u64, HashMap<String, u64>)> = HashMap::new();
     for item in entries {
-        if let ChannelRecordEntry::PollClose(close) = &item.entry {
-            if let Some(poll) = polls.get_mut(&close.poll_id) {
-                if poll.author == hex::encode(item.author.0) {
-                    poll.closed_at = Some(
-                        poll.closed_at
-                            .map_or(item.committed_at, |at| at.min(item.committed_at)),
-                    );
-                }
-            }
+        let ChannelRecordEntry::PollClose(close) = &item.entry else {
+            continue;
+        };
+        let Some(poll) = polls.get(&close.poll_id) else {
+            continue;
+        };
+        if poll.author != hex::encode(item.author.0)
+            || closes
+                .get(&close.poll_id)
+                .is_some_and(|(seq, _, _)| *seq <= item.stream_seq)
+        {
+            continue;
         }
+        let counted = (close.counted.iter())
+            .map(|c| (c.voter.clone(), c.stream_seq))
+            .collect();
+        closes.insert(close.poll_id, (item.stream_seq, item.committed_at, counted));
     }
     let mut latest: HashMap<([u8; 16], String), (u64, Vec<u8>)> = HashMap::new();
     for item in entries {
@@ -84,10 +100,14 @@ pub fn poll_tallies(entries: &[OutboxItem]) -> BTreeMap<[u8; 16], PollTally> {
         let Some(poll) = polls.get(&vote.poll_id) else {
             continue;
         };
-        if poll.closed_at.is_some_and(|at| item.committed_at > at) {
-            continue;
+        let voter = hex::encode(item.author.0);
+        // Once closed, only the vote the close names for this voter counts.
+        if let Some((_, _, counted)) = closes.get(&vote.poll_id) {
+            if counted.get(&voter) != Some(&item.stream_seq) {
+                continue;
+            }
         }
-        let key = (vote.poll_id, hex::encode(item.author.0));
+        let key = (vote.poll_id, voter);
         if latest
             .get(&key)
             .is_none_or(|(seq, _)| item.stream_seq > *seq)
@@ -100,8 +120,14 @@ pub fn poll_tallies(entries: &[OutboxItem]) -> BTreeMap<[u8; 16], PollTally> {
             latest.insert(key, (item.stream_seq, answers));
         }
     }
-    for ((poll_id, voter), (_, answers)) in latest {
+    for (poll_id, (_, closed_at, _)) in closes {
         if let Some(poll) = polls.get_mut(&poll_id) {
+            poll.closed_at = Some(closed_at);
+        }
+    }
+    for ((poll_id, voter), (seq, answers)) in latest {
+        if let Some(poll) = polls.get_mut(&poll_id) {
+            poll.vote_seqs.insert(voter.clone(), seq);
             poll.votes.insert(voter, answers);
         }
     }
@@ -182,7 +208,8 @@ mod tests {
     use super::build_poll_states;
     use crate::deps::OutboxItem;
     use rekindle_codec::community::channel_record::{
-        ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
+        ChannelPollClose, ChannelPollCounted, ChannelPollCreate, ChannelPollVote,
+        ChannelRecordEntry,
     };
     use rekindle_types::id::PseudonymKey;
 
@@ -210,9 +237,17 @@ mod tests {
         )
     }
 
-    /// Each voter's latest vote by stream seq counts; a vote committed after
-    /// the author's close does not, and a close by another member closes
-    /// nothing.
+    fn counted(voter: u8, stream_seq: u64) -> ChannelPollCounted {
+        ChannelPollCounted {
+            voter: hex::encode([voter; 32]),
+            stream_seq,
+        }
+    }
+
+    /// The author's close counts exactly the votes it names; a vote it does
+    /// not name does not count, however its voter dated it (members 4 and
+    /// 5, and member 2's later vote, backdated before the close), and a
+    /// close by another member closes nothing.
     #[test]
     fn the_latest_vote_before_the_authors_close_counts() {
         let entries = vec![
@@ -239,6 +274,7 @@ mod tests {
                 ChannelRecordEntry::PollClose(ChannelPollClose {
                     poll_id: POLL,
                     lamport: 1,
+                    counted: Vec::new(),
                 }),
             ),
             vote(3, 2, 360, 0),
@@ -249,9 +285,12 @@ mod tests {
                 ChannelRecordEntry::PollClose(ChannelPollClose {
                     poll_id: POLL,
                     lamport: 2,
+                    counted: vec![counted(2, 2), counted(3, 2)],
                 }),
             ),
             vote(4, 1, 500, 0),
+            vote(5, 1, 150, 0),
+            vote(2, 3, 390, 0),
         ];
         let voter = hex::encode([2u8; 32]);
         let polls = build_poll_states(&entries, &voter);
@@ -259,7 +298,7 @@ mod tests {
         assert!(poll.closed);
         assert_eq!(poll.selected_answers, vec![1]);
         assert_eq!(poll.answers[1].voters, vec![voter]);
-        // Member 3's vote lands before the author's close; member 4's after.
+        // Only the votes the close names count.
         assert_eq!(poll.answers[0].voters, vec![hex::encode([3u8; 32])]);
     }
 }

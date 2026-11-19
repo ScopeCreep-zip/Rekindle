@@ -15,7 +15,7 @@
 
 use rekindle_codec::community::channel_record::{
     ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelHandRaise,
-    ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
+    ChannelPollClose, ChannelPollCounted, ChannelPollCreate, ChannelPollVote, ChannelRecordEntry,
 };
 use rekindle_types::attachment::AttachmentBitmap;
 use rekindle_types::channel_keys::KeyScope;
@@ -230,10 +230,18 @@ async fn pending_of<D: ChannelMessagingDeps>(
             selected_answers: selected_answers.clone(),
             lamport: item.stream_seq,
         }),
-        PostEntry::PollClose { poll_id } => ChannelRecordEntry::PollClose(ChannelPollClose {
-            poll_id: *poll_id,
-            lamport: item.stream_seq,
-        }),
+        PostEntry::PollClose { poll_id, counted } => {
+            ChannelRecordEntry::PollClose(ChannelPollClose {
+                poll_id: *poll_id,
+                lamport: item.stream_seq,
+                counted: (counted.iter())
+                    .map(|(voter, stream_seq)| ChannelPollCounted {
+                        voter: voter.clone(),
+                        stream_seq: *stream_seq,
+                    })
+                    .collect(),
+            })
+        }
         PostEntry::HandRaise { raised } => ChannelRecordEntry::HandRaise(ChannelHandRaise {
             raised: *raised,
             lamport: item.stream_seq,

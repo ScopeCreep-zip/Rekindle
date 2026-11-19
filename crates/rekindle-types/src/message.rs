@@ -84,8 +84,13 @@ pub enum PostEntry {
         poll_id: [u8; 16],
         selected_answers: Vec<u8>,
     },
-    /// Our close of our poll `poll_id`.
-    PollClose { poll_id: [u8; 16] },
+    /// Our close of our poll `poll_id`, naming the votes it counts: each
+    /// voter's pseudonym hex and the stream seq of the vote counted, as our
+    /// reader held them when we closed (plan E3.3, rule E1).
+    PollClose {
+        poll_id: [u8; 16],
+        counted: Vec<(String, u64)>,
+    },
     /// Our hand raised or lowered on a voice stage (our latest by stream
     /// seq stands).
     HandRaise { raised: bool },

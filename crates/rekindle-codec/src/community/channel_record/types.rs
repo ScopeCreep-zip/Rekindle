@@ -98,7 +98,11 @@ pub struct ChannelPollVote {
     pub lamport: u64,
 }
 
-/// A durable poll close entry written to a channel record subkey.
+/// A poll close entry on its author's channel outbox (plan E3.3). The
+/// close names, for each voter its author counted, the stream seq of that
+/// voter's vote, so readers count exactly those votes: a vote's validity
+/// against the close is the closer's view of each voter's stream, never a
+/// commit time (rule E1: no trusted clock; the departure-head pattern).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPollClose {
@@ -106,6 +110,17 @@ pub struct ChannelPollClose {
     pub poll_id: [u8; 16],
     /// Lamport logical timestamp for close ordering.
     pub lamport: u64,
+    /// The votes the close counts, one per voter.
+    pub counted: Vec<ChannelPollCounted>,
+}
+
+/// One voter's vote a poll close counts: the voter's pseudonym hex and the
+/// stream seq of the vote counted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelPollCounted {
+    pub voter: String,
+    pub stream_seq: u64,
 }
 
 /// A durable hand-raise entry written to a channel record subkey.

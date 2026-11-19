@@ -21,6 +21,9 @@ pub struct PollSnapshot {
     pub closed: bool,
     /// Each voter's counted answers, by pseudonym hex.
     pub latest_votes: HashMap<String, Vec<u8>>,
+    /// Each counted voter's stream seq of the vote counted: what our close
+    /// names (plan E3.3, rule E1).
+    pub counted: Vec<(String, u64)>,
 }
 
 /// Validate poll-create inputs. Pure — no deps.
@@ -159,8 +162,8 @@ pub async fn persist_poll_close<D: ChannelMessagingDeps>(
 ) -> Result<(), ChannelError> {
     require_channel(deps, community_id, channel_id)?;
     let poll_id = parse_poll_id(poll_id_hex)?;
+    let snapshot = load_poll_snapshot(deps, community_id, channel_id, poll_id).await?;
     if !allow_moderator_override {
-        let snapshot = load_poll_snapshot(deps, community_id, channel_id, poll_id).await?;
         let me = deps.my_pseudonym_hex(community_id).unwrap_or_default();
         if snapshot.author != me {
             return Err(ChannelError::PermissionDenied(
@@ -168,11 +171,16 @@ pub async fn persist_poll_close<D: ChannelMessagingDeps>(
             ));
         }
     }
+    // The close names the votes our reader counts now; readers count
+    // exactly those.
     queue_poll_op(
         deps,
         community_id,
         channel_id,
-        PostEntry::PollClose { poll_id },
+        PostEntry::PollClose {
+            poll_id,
+            counted: snapshot.counted,
+        },
     )
     .await
 }
@@ -240,6 +248,7 @@ async fn load_poll_snapshot<D: ChannelMessagingDeps>(
         expired: poll.expires_at.is_some_and(|ts| ts <= deps.now_secs()),
         closed: poll.closed_at.is_some(),
         latest_votes: poll.votes.into_iter().collect(),
+        counted: poll.vote_seqs.into_iter().collect(),
         author: poll.author,
     })
 }
