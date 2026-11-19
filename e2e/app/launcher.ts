@@ -31,50 +31,85 @@ export interface AppCapability {
   window: string;
 }
 
-type WorkerCaps = WebdriverIO.Capabilities & {
-  [APP_CAPABILITY]?: AppCapability;
+/** Connection options the runner reads from a capability (standalone) or an instance (multiremote). */
+interface Connection {
   hostname?: string;
   port?: number;
   protocol?: string;
   path?: string;
   headers?: Record<string, string>;
-};
+}
+
+type AppCaps = WebdriverIO.Capabilities & { [APP_CAPABILITY]?: AppCapability };
+
+/** One multiremote instance: its connection options beside its capabilities (@wdio/runner deep-merges it over the config). */
+type Instance = Connection & { capabilities: AppCaps };
+
+/**
+ * The capabilities a session sends, and the connection it uses, for an app
+ * asked for by `caps`. The driver reads only `wdio:tauriServiceOptions`;
+ * `browserName` is what it reports for both engines (WKWebView and
+ * WebKitGTK: `parse_user_agent`, server/handlers/session.rs), so the
+ * runner's own lines name the engine.
+ */
+function connect(where: string, caps: AppCaps, conn: Connection, app: App): void {
+  const wanted = caps[APP_CAPABILITY];
+  if (!wanted) throw new Error(`${where}: capability "${APP_CAPABILITY}" is missing`);
+  delete caps[APP_CAPABILITY];
+  caps.browserName = "webkit";
+  caps["wdio:enforceWebDriverClassic"] = true;
+  (caps as Record<string, unknown>)["wdio:tauriServiceOptions"] = { windowLabel: wanted.window };
+  conn.hostname = "127.0.0.1";
+  conn.port = app.port;
+  conn.protocol = "http";
+  conn.path = "/";
+  conn.headers = { Authorization: `Bearer ${app.token}` };
+}
 
 export class RekindleAppLauncher implements Services.ServiceInstance {
-  readonly #apps = new Map<string, App>();
+  readonly #apps = new Map<string, App[]>();
 
   /** Builds the debug app with the driver once per run (`REKINDLE_APP_NO_BUILD=1` runs the last build). */
   onPrepare(): void {
     if (process.env.REKINDLE_APP_NO_BUILD !== "1") build();
   }
 
-  async onWorkerStart(cid: string, caps: Capabilities.RequestedStandaloneCapabilities): Promise<void> {
+  /**
+   * Standalone capabilities get one app; multiremote capabilities
+   * (`{ alice: { capabilities }, bob: { capabilities } }`,
+   * webdriver.io/docs/multiremote) get one app per instance, each on its own
+   * data root, port and token, so each user is its own Host and Veilid node.
+   */
+  async onWorkerStart(cid: string, workerCaps: WebdriverIO.Capabilities): Promise<void> {
+    // `Services.HookFunctions` types the argument as standalone; the runner
+    // passes the worker's copy of either shape (@wdio/cli `startInstance`).
+    const caps = workerCaps as Capabilities.RequestedStandaloneCapabilities | Capabilities.RequestedMultiRemoteCapabilities;
     if ("alwaysMatch" in caps || "firstMatch" in caps) {
       throw new Error(`worker ${cid}: give "${APP_CAPABILITY}" as plain capabilities, not alwaysMatch/firstMatch`);
     }
-    const worker = caps as WorkerCaps;
-    const wanted = worker[APP_CAPABILITY];
-    if (!wanted) throw new Error(`worker ${cid}: capability "${APP_CAPABILITY}" is missing`);
-    const app = await launch(`wdio-${cid}`);
-    this.#apps.set(cid, app);
-    delete worker[APP_CAPABILITY];
-    worker.hostname = "127.0.0.1";
-    worker.port = app.port;
-    worker.protocol = "http";
-    worker.path = "/";
-    worker.headers = { Authorization: `Bearer ${app.token}` };
-    worker["wdio:enforceWebDriverClassic"] = true;
-    (worker as Record<string, unknown>)["wdio:tauriServiceOptions"] = { windowLabel: wanted.window };
+    const apps: App[] = [];
+    this.#apps.set(cid, apps);
+    if (APP_CAPABILITY in caps) {
+      const app = await launch(`wdio-${cid}`);
+      apps.push(app);
+      connect(`worker ${cid}`, caps as AppCaps, caps as Connection, app);
+      return;
+    }
+    for (const [name, instance] of Object.entries(caps as Record<string, Instance>)) {
+      const app = await launch(`wdio-${cid}-${name}`);
+      apps.push(app);
+      connect(`worker ${cid} instance ${name}`, instance.capabilities, instance, app);
+    }
   }
 
   async onWorkerEnd(cid: string): Promise<void> {
-    const app = this.#apps.get(cid);
+    const apps = this.#apps.get(cid) ?? [];
     this.#apps.delete(cid);
-    await app?.stop();
+    await Promise.all(apps.map((app) => app.stop()));
   }
 
   async onComplete(): Promise<void> {
-    await Promise.all([...this.#apps.values()].map((app) => app.stop()));
+    await Promise.all([...this.#apps.values()].flat().map((app) => app.stop()));
     this.#apps.clear();
   }
 }

@@ -26,7 +26,7 @@
     "test:e2e:ui": "E2E=true playwright test --project=e2e --ui",
     "test:all": "playwright test --project=mock && E2E=true playwright test --project=e2e",
     "walk": "node e2e/walk/node-check.mjs && node e2e/walk/walk.ts",
-    "test:app": "wdio run e2e/app/wdio.conf.ts"
+    "test:app": "wdio run e2e/app/wdio.conf.ts && REKINDLE_APP_NO_BUILD=1 wdio run e2e/app/wdio.peers.conf.ts"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",
