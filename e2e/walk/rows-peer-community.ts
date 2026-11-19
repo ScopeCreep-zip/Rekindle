@@ -198,6 +198,7 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
   {
     id: "M82",
     title: "Member menu > Manage roles (assign walk-role)",
+    needs: ["CS28"],
     async run({ b, s, shot }) {
       await subItem(b, "Manage Roles", "walk-role", s.communityName);
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });

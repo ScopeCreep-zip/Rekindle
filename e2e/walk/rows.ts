@@ -31,6 +31,12 @@ export interface RowContext {
 export interface Row {
   id: string;
   title: string;
+  /**
+   * Rows this one needs to have run first that a `--rows=` list may leave
+   * out (walk.ts adds them, in walk order): M82 assigns the role CS28
+   * creates, so `--rows=...,M82` without CS28 found no walk-role (walkfix4).
+   */
+  needs?: string[];
   run(ctx: RowContext): Promise<string | void>;
 }
 

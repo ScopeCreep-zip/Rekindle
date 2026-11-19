@@ -58,10 +58,14 @@ async function walk(app: App): Promise<Result[]> {
   const ROW_TIMEOUT_MS = 300_000;
   const SHOT_TIMEOUT_MS = 15_000;
   try {
-    // `--rows=L3,L5,M45` walks only those rows, in walk order (a row's
-    // prerequisites are the caller's to list).
+    // `--rows=L3,L5,M45` walks only those rows, in walk order, with the
+    // rows each declares it `needs` (rows.ts `Row.needs`); other
+    // prerequisites are the caller's to list.
     const only = process.argv.find((a) => a.startsWith("--rows="))?.slice("--rows=".length).split(",");
-    const rows = (await allRows()).filter((r) => !only || only.includes(r.id));
+    const all = await allRows();
+    const wanted = new Set(only ?? all.map((r) => r.id));
+    for (const r of [...all].reverse()) if (wanted.has(r.id)) for (const n of r.needs ?? []) wanted.add(n);
+    const rows = all.filter((r) => wanted.has(r.id));
     for (const row of rows) {
       const started = Date.now();
       let shotPath: string | null = null;
