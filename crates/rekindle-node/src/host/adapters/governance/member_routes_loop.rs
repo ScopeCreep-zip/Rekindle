@@ -112,7 +112,7 @@ impl HostGovernance {
             state,
             now_ms: self.ctx.clock.now_ms(),
         };
-        write_own_beat(&*port, &keys.own(community_id), &beat, &*self.ctx.rng).await
+        write_own_beat(&*port, &keys.own(community_id), &beat).await
     }
 
     /// Our member record in `community_id` and the keys that write and sign

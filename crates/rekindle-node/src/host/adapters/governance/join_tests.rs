@@ -84,8 +84,7 @@ async fn the_card_lands_before_op_zero_and_the_beat_after() {
             .is_none());
         append_op_once(port, &key, &writer, op).await.map(drop)
     };
-    let rng = rekindle_utils::random::OsRandom;
-    publish_own_record(port, &own, &profile(), &[9; 32], &rng, publish_ops)
+    publish_own_record(port, &own, &profile(), &[9; 32], publish_ops)
         .await
         .unwrap();
     let member = MemberRecordRef {

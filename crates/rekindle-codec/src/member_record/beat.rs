@@ -1,8 +1,8 @@
 //! `M`/1, the presence beat (exactly 512 B): `seq`, the [`BeatState`],
 //! the voice channel the member is in, the beat number (the writer's
 //! 5-minute period), the community-key-sealed `SessionExtras` with its
-//! generation, and random padding that brings the packed beat to exactly
-//! [`PRESENCE_BEAT_BYTES`], all signed by the pseudonym under
+//! generation, and secure random padding that brings the packed beat to
+//! exactly [`PRESENCE_BEAT_BYTES`], all signed by the pseudonym under
 //! `rekindle-presence-beat-v2` (plan E3.4 S1, Q2).
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -10,7 +10,7 @@ use rekindle_secrets::keys::MediaEncryptionKey;
 use rekindle_secrets::member_record::{open_member_record_field, seal_member_record_field};
 use rekindle_types::domains;
 use rekindle_types::presence::{SessionExtras, SessionLocation, SessionStatus};
-use rekindle_utils::random::RandomSource;
+use rekindle_utils::random::{OsRandom, RandomSource};
 
 use super::{beat_padding, check_len, opt_text, put_lp, sign, verify, RecordScope};
 use crate::capnp_codec::{bounds, capnp_err, not_in_schema, pack, unpack_bounded};
@@ -247,7 +247,13 @@ impl PresenceBeat {
     }
 
     /// Sign and encode the beat for the record `at`, padded to exactly
-    /// [`PRESENCE_BEAT_BYTES`] with bytes from `rng`.
+    /// [`PRESENCE_BEAT_BYTES`] with bytes from the OS's secure random.
+    ///
+    /// The padding is wire bytes that carry no meaning, like an AEAD nonce,
+    /// so it never draws from a host's injected `RandomSource` (plan C9.2:
+    /// a nonce never comes from a test seam; the netsim trace records
+    /// semantic events, never wire bytes). Drawing it there would also
+    /// shift every later id and key a seeded run draws.
     ///
     /// The padding's packed cost is chosen from the size the beat packed to
     /// with the last padding tried; the signature over each new padding
@@ -260,7 +266,6 @@ impl PresenceBeat {
         &self,
         at: RecordScope<'_>,
         pseudonym: &SigningKey,
-        rng: &dyn RandomSource,
     ) -> Result<Vec<u8>, CodecError> {
         check_len(
             "voice channel",
@@ -272,7 +277,7 @@ impl PresenceBeat {
         }
         let mut cost = beat_padding::MIN_COST;
         for _ in 0..beat_padding::MAX_ATTEMPTS {
-            let out = self.pack_with(at, pseudonym, &beat_padding::padding(cost, rng));
+            let out = self.pack_with(at, pseudonym, &beat_padding::padding(cost, &OsRandom));
             if out.len() == PRESENCE_BEAT_BYTES {
                 return Ok(out);
             }

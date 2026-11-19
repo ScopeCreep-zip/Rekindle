@@ -91,9 +91,7 @@ async fn member_beating(
         now_ms: beat_ms,
         route: Vec::new(),
     };
-    write_beat(pool, &own, &profile, &rekindle_utils::random::OsRandom)
-        .await
-        .unwrap();
+    write_beat(pool, &own, &profile).await.unwrap();
     BootstrapPeer {
         pseudonym: PseudonymKey(pseudonym.verifying_key().to_bytes()),
         record,

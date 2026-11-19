@@ -398,17 +398,9 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         }
         Ok(())
     };
-    let rng = deps.rng();
-    crate::member_card::publish_own_record(
-        &*port,
-        &own,
-        &profile,
-        &hpke_secret,
-        &*rng,
-        publish_ops,
-    )
-    .await
-    .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: {e}")))?;
+    crate::member_card::publish_own_record(&*port, &own, &profile, &hpke_secret, publish_ops)
+        .await
+        .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: {e}")))?;
 
     deps.ensure_files_cache_open(&anchor_key);
     deps.persist_discovered_registry_members(

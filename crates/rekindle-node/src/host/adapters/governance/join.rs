@@ -281,7 +281,6 @@ impl HostGovernance {
             &own,
             &profile,
             &outcome.member.hpke_secret,
-            &*self.ctx.rng,
             publish_ops,
         )
         .await?;

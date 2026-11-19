@@ -11,8 +11,6 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::presence::SessionStatus;
 
-use rekindle_utils::random::OsRandom;
-
 use super::{beat_is_live, write_beat, write_card, OwnProfile, OwnRecord, BEAT_LIVENESS_MS};
 
 #[tokio::test]
@@ -42,7 +40,7 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
     write_card(&*pool, &own, &profile, &[3; 32])
         .await
         .expect("a card that settled on ours is stored");
-    write_beat(&*pool, &own, &profile, &OsRandom)
+    write_beat(&*pool, &own, &profile)
         .await
         .expect("a beat that settled on ours is stored");
     dht.contest(Contest::None);
@@ -245,11 +243,9 @@ async fn an_invisible_member_publishes_its_record_without_a_beat() {
             now_ms: 1_000,
             route: Vec::new(),
         };
-        super::publish_own_record(&*pool, &own, &profile, &[3; 32], &OsRandom, async {
-            Ok(())
-        })
-        .await
-        .expect("published");
+        super::publish_own_record(&*pool, &own, &profile, &[3; 32], async { Ok(()) })
+            .await
+            .expect("published");
         assert!(dht.value(&record, member_record::CARD).is_some());
         assert_eq!(
             dht.value(&record, member_record::BEAT).is_some(),

@@ -171,7 +171,7 @@ pub async fn write_card(
 }
 
 /// Write our first beat (`M`/1), without extras: `profile.beat_seq` and
-/// the beat number of `profile.now_ms`, padded with bytes from `rng`.
+/// the beat number of `profile.now_ms`.
 ///
 /// # Errors
 /// The beat does not encode, or the write did not land.
@@ -179,14 +179,13 @@ pub async fn write_beat(
     port: &dyn RecordPort,
     own: &OwnRecord<'_>,
     profile: &OwnProfile,
-    rng: &dyn RandomSource,
 ) -> Result<(), String> {
     let beat = OwnBeat {
         seq: profile.beat_seq,
         state: profile.status.into(),
         now_ms: profile.now_ms,
     };
-    write_own_beat(port, own, &beat, rng).await
+    write_own_beat(port, own, &beat).await
 }
 
 /// One beat of ours, as the beat engine writes it (plan E3.4 S2).
@@ -198,7 +197,7 @@ pub struct OwnBeat {
     pub now_ms: u64,
 }
 
-/// Write `beat` to our `M`/1, without extras, padded with bytes from `rng`.
+/// Write `beat` to our `M`/1, without extras (padded by its encoder).
 ///
 /// # Errors
 /// The beat does not encode, or the write did not land.
@@ -206,7 +205,6 @@ pub async fn write_own_beat(
     port: &dyn RecordPort,
     own: &OwnRecord<'_>,
     beat: &OwnBeat,
-    rng: &dyn RandomSource,
 ) -> Result<(), String> {
     let beat = PresenceBeat {
         seq: beat.seq,
@@ -216,7 +214,7 @@ pub async fn write_own_beat(
         extras: None,
     };
     let bytes = beat
-        .encode(own.scope(), own.pseudonym, rng)
+        .encode(own.scope(), own.pseudonym)
         .map_err(|e| format!("presence beat: {e}"))?;
     write_subkey(port, own, member_record::BEAT, bytes).await
 }
@@ -235,7 +233,6 @@ pub async fn publish_own_record<F>(
     own: &OwnRecord<'_>,
     profile: &OwnProfile,
     hpke_secret: &[u8; 32],
-    rng: &dyn RandomSource,
     publish_ops: F,
 ) -> Result<(), String>
 where
@@ -249,7 +246,7 @@ where
     if profile.status == SessionStatus::Invisible {
         return Ok(());
     }
-    write_beat(port, own, profile, rng).await
+    write_beat(port, own, profile).await
 }
 
 /// A member's record as their `MemberJoined` names it.

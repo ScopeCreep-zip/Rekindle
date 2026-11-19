@@ -144,7 +144,7 @@ fn beat_round_trips_at_exactly_512_bytes_at_the_maximum_field_sizes() {
             Some(s(MAX_CHANNEL_ID)),
         )
     };
-    let bytes = beat.encode(AT, &me, &OsRandom).unwrap();
+    let bytes = beat.encode(AT, &me).unwrap();
     assert_eq!(bytes.len(), PRESENCE_BEAT_BYTES);
     let decoded = decode_presence_beat(&bytes, AT, &pk(&me)).unwrap();
     assert_eq!(decoded, beat);
@@ -184,7 +184,7 @@ fn every_beat_packs_to_exactly_512_bytes_whatever_its_field_lengths() {
                     beat_number: number,
                     ..beat(extras.clone(), voice.clone())
                 };
-                let bytes = b.encode(AT, &me, &OsRandom).unwrap();
+                let bytes = b.encode(AT, &me).unwrap();
                 sizes.insert(bytes.len());
                 assert_eq!(decode_presence_beat(&bytes, AT, &pk(&me)).unwrap(), b);
             }
@@ -198,7 +198,7 @@ fn every_beat_packs_to_exactly_512_bytes_whatever_its_field_lengths() {
 #[test]
 fn a_beat_of_the_wrong_size_or_signature_is_refused() {
     let me = key(1);
-    let bytes = beat(None, None).encode(AT, &me, &OsRandom).unwrap();
+    let bytes = beat(None, None).encode(AT, &me).unwrap();
     let mut short = bytes.clone();
     short.pop();
     assert!(decode_presence_beat(&short, AT, &pk(&me)).is_err());
@@ -219,8 +219,7 @@ fn an_invisible_beat_is_written_offline_and_departed_round_trips() {
         state: SessionStatus::Invisible.into(),
         ..beat(None, None)
     };
-    let decoded =
-        decode_presence_beat(&invisible.encode(AT, &me, &OsRandom).unwrap(), AT, &pk(&me)).unwrap();
+    let decoded = decode_presence_beat(&invisible.encode(AT, &me).unwrap(), AT, &pk(&me)).unwrap();
     assert_eq!(decoded.state, BeatState::Offline);
     assert!(!decoded.state.is_present());
     assert_eq!(decoded.extras, None);
@@ -228,8 +227,7 @@ fn an_invisible_beat_is_written_offline_and_departed_round_trips() {
         state: BeatState::Departed,
         ..beat(None, None)
     };
-    let decoded =
-        decode_presence_beat(&departed.encode(AT, &me, &OsRandom).unwrap(), AT, &pk(&me)).unwrap();
+    let decoded = decode_presence_beat(&departed.encode(AT, &me).unwrap(), AT, &pk(&me)).unwrap();
     assert_eq!(decoded.state, BeatState::Departed);
     assert!(!decoded.state.is_present());
     let mut over = max_extras();
