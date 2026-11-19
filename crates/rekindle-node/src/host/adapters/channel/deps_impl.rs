@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use rekindle_channel::deps::{
     ChannelEntryItem, ChannelInfoSnapshot, ChannelMessageRow, ChannelMessagingDeps, ChannelPost,
-    ChannelSendOutcome, ChannelWriteContext, DhtWrite, MemberMentionView, PseudonymCredentials,
-    RoleSnapshot, SentChannelMessageEcho, ThreadInfoSnapshot, ThreadStateSnapshot,
+    ChannelSendOutcome, MemberMentionView, PseudonymCredentials, RoleSnapshot,
+    SentChannelMessageEcho, ThreadInfoSnapshot, ThreadStateSnapshot,
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
@@ -16,13 +16,11 @@ use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
-use rekindle_protocol::dht::community::channel_record as record;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-use super::dht::delivery;
 use super::HostChannel;
 
 /// The thread counter's key among the per-channel sequences.
@@ -67,14 +65,6 @@ impl ChannelMessagingDeps for HostChannel {
 
     fn channel_info(&self, community_id: &str, channel_id: &str) -> Option<ChannelInfoSnapshot> {
         self.channel_info_impl(community_id, channel_id)
-    }
-
-    fn channel_write_context(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<ChannelWriteContext, ChannelError> {
-        self.channel_write_context_impl(community_id, channel_id)
     }
 
     fn channel_record_key(&self, community_id: &str, channel_id: &str) -> Option<String> {
@@ -146,25 +136,6 @@ impl ChannelMessagingDeps for HostChannel {
     }
 
     // ---------- DHT ----------
-
-    async fn write_channel_message_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        channel_msg: &ChannelMessage,
-    ) -> Result<DhtWrite, ChannelError> {
-        let w = self.writer(context)?;
-        let written = record::write_member_message(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            channel_msg,
-        )
-        .await;
-        delivery(written, "channel write")
-    }
 
     async fn release_record(&self, lease: LeaseId) {
         self.gov.release_record(lease).await;

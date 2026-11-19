@@ -1,39 +1,15 @@
-//! Channel record writes and reads over the session's record pool. Every
-//! entry is signed with our community pseudonym and written to our slot
-//! with the writer keypair derived from the slot seed
-//! (`rekindle_protocol::dht::community::channel_record`).
+//! Channel record reads over the session's record pool (older slot
+//! history; nothing writes the channel record since E3.3 slice 8c).
 
-use std::sync::Arc;
-
-use rekindle_channel::deps::{ChannelEntryItem, ChannelWriteContext, DhtWrite};
+use rekindle_channel::deps::ChannelEntryItem;
 use rekindle_channel::error::ChannelError;
 use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
-use rekindle_protocol::dht::community::channel_record::{self, AppendOutcome};
-use rekindle_protocol::ProtocolError;
-use rekindle_records::port::RecordPort;
-use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::id::PseudonymKey;
+use rekindle_protocol::dht::community::channel_record;
 
 use super::HostChannel;
 
-/// What a write of our slot needs: the pool and our authorship.
-pub(super) struct Writer {
-    pub pool: Arc<dyn RecordPort>,
-    pub author: PseudonymKey,
-    pub signing_key: SigningKey,
-}
-
 impl HostChannel {
-    pub(super) fn writer(&self, context: &ChannelWriteContext) -> Result<Writer, ChannelError> {
-        let credentials = self.pseudonym_credentials_impl(&context.community_id)?;
-        Ok(Writer {
-            pool: self.records()?,
-            author: credentials.pseudonym,
-            signing_key: credentials.signing_key,
-        })
-    }
-
     /// The community's writer index: the slots of every member the roster
     /// placed, and ours (plan C7.12), ascending.
     fn writer_slots(&self, community_id: &str) -> Vec<u32> {
@@ -85,19 +61,5 @@ impl HostChannel {
                 _ => None,
             })
             .collect())
-    }
-}
-
-/// An append's outcome as the channel crate sees it (plan C7.13): a miss
-/// is held by the record pool, and so is a write a lock cut short (the
-/// pool persists it), so neither is a failure.
-pub fn delivery(
-    written: Result<AppendOutcome, ProtocolError>,
-    what: &str,
-) -> Result<DhtWrite, ChannelError> {
-    match written {
-        Ok(AppendOutcome::Stored) => Ok(DhtWrite::Stored),
-        Ok(AppendOutcome::Held) | Err(ProtocolError::PoolClosed) => Ok(DhtWrite::Held),
-        Err(e) => Err(ChannelError::Adapter(format!("{what}: {e}"))),
     }
 }

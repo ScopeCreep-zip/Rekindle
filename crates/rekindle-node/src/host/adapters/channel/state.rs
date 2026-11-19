@@ -5,12 +5,11 @@
 use std::collections::HashMap;
 
 use rekindle_channel::deps::{
-    ChannelInfoSnapshot, ChannelWriteContext, MemberMentionView, PseudonymCredentials,
-    RoleSnapshot, ThreadStateSnapshot,
+    ChannelInfoSnapshot, MemberMentionView, PseudonymCredentials, RoleSnapshot, ThreadStateSnapshot,
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
-use rekindle_types::id::{ChannelId, PseudonymKey, ThreadId};
+use rekindle_types::id::{PseudonymKey, ThreadId};
 use rekindle_types::lamport::{LamportClock, LamportError};
 
 use super::HostChannel;
@@ -60,44 +59,6 @@ impl HostChannel {
             slowmode_seconds: channel.slowmode_seconds,
             last_send_at_ms: community.channel_last_send_at.get(channel_id).copied(),
             is_forum: matches!(channel.channel_type, ChannelType::Forum),
-        })
-    }
-
-    /// Where our write of `channel_id` lands: the channel record of our
-    /// segment (segment 0's from `ChannelCreated`, a later one's from
-    /// `ChannelSegmentLinked`), our slot and its derived writer keypair.
-    pub(super) fn channel_write_context_impl(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<ChannelWriteContext, ChannelError> {
-        let membership = (self.gov.community_membership(community_id))
-            .ok_or_else(|| ChannelError::CommunityNotFound(community_id.into()))?;
-        let segment_index = membership.my_segment_index.unwrap_or(0);
-        let channel_key = if segment_index == 0 {
-            membership.channel_log_keys.get(channel_id).cloned()
-        } else {
-            let channel = ChannelId::from_hex(channel_id)
-                .ok_or_else(|| ChannelError::ChannelNotFound(channel_id.into()))?;
-            self.gov.governance_state(community_id).and_then(|gov| {
-                (gov.channel_segment_records.get(&(channel, segment_index)))
-                    .map(|record| record.record_key.clone())
-            })
-        }
-        .ok_or_else(|| {
-            ChannelError::Adapter(format!(
-                "no channel record for segment {segment_index} of channel {channel_id}"
-            ))
-        })?;
-        Ok(ChannelWriteContext {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.to_string(),
-            channel_key,
-            slot_keypair_str: (membership.slot_keypair)
-                .ok_or_else(|| ChannelError::Adapter("slot keypair missing".into()))?,
-            slot_index: (membership.my_subkey_index)
-                .ok_or_else(|| ChannelError::Adapter("community subkey index missing".into()))?,
-            segment_index,
         })
     }
 

@@ -45,8 +45,6 @@ mod state;
 mod thread_receive;
 mod thread_refusal;
 
-pub use dht::delivery;
-
 /// The Host, as the channel pipeline sees it.
 #[derive(Clone)]
 pub struct HostChannel {

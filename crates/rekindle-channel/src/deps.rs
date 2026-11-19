@@ -58,20 +58,6 @@ pub struct ChannelSendOutcome {
     pub send_state: rekindle_types::message::SendState,
 }
 
-/// Where a channel-record write targets: SMPL record key + slot info.
-/// Mirrors `src-tauri/services/community/channel_messages::ChannelWriteContext`.
-#[derive(Debug, Clone)]
-pub struct ChannelWriteContext {
-    pub community_id: String,
-    pub channel_id: String,
-    /// SMPL record key for the channel record this writer targets.
-    pub channel_key: String,
-    /// String-encoded Veilid KeyPair the adapter parses back.
-    pub slot_keypair_str: String,
-    pub slot_index: u32,
-    pub segment_index: u32,
-}
-
 /// Pseudonym + signing key for the local user in a community.
 pub struct PseudonymCredentials {
     pub pseudonym: PseudonymKey,
@@ -189,16 +175,6 @@ pub struct ExpressionView {
     pub available_to_peers: bool,
 }
 
-/// What a channel record write did (plan C7.13).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DhtWrite {
-    /// Stored at consensus.
-    Stored,
-    /// Missed consensus; the host's record pool holds the write, re-pushes
-    /// it until it lands, and reports the settle.
-    Held,
-}
-
 /// A sent post: the payload of its outbox `channel_post` row.
 pub use rekindle_types::message::ChannelPost;
 
@@ -238,12 +214,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     // ---------- Community / channel state (read) ----------
 
     fn channel_info(&self, community_id: &str, channel_id: &str) -> Option<ChannelInfoSnapshot>;
-
-    fn channel_write_context(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<ChannelWriteContext, ChannelError>;
 
     fn channel_record_key(&self, community_id: &str, channel_id: &str) -> Option<String>;
 
@@ -289,12 +259,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     // ---------- DHT ----------
-
-    async fn write_channel_message_smpl(
-        &self,
-        context: &ChannelWriteContext,
-        channel_msg: &ChannelMessage,
-    ) -> Result<DhtWrite, ChannelError>;
 
     /// End a borrow of the host's record pool.
     async fn release_record(&self, lease: LeaseId);
