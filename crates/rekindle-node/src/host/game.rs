@@ -140,22 +140,40 @@ impl GameDetectorPublisher for Publisher {
 }
 
 /// Run the detector until `stop`, stamping each game on the Host's
-/// clock, then record the session still open in `sessions`.
+/// clock, then record the session still open in `sessions`. It scans at
+/// the identity's `game_scan_interval_secs`, the one interval setting
+/// (plan E7.2: the runtime's own 30 s constant drifted from it).
 pub(crate) async fn run(presence: OwnPresence, sessions: SessionLog, stop: CancellationToken) {
+    let interval = sessions.scan_interval().await;
     let detector = GameDetector::new(
         GameDatabase::bundled(),
-        rekindle_game_detect::DEFAULT_POLL_INTERVAL,
+        interval,
         std::sync::Arc::clone(&sessions.clock),
     );
     let publisher = std::sync::Arc::new(Publisher { presence, sessions });
-    rekindle_game_detect::run_runtime(
-        detector,
-        std::sync::Arc::clone(&publisher),
-        stop,
-        rekindle_game_detect::DEFAULT_POLL_INTERVAL,
-    )
-    .await;
+    rekindle_game_detect::run_runtime(detector, std::sync::Arc::clone(&publisher), stop, interval)
+        .await;
     publisher.sessions.finish().await;
+}
+
+impl SessionLog {
+    /// The identity's scan interval; its stored default when unreadable.
+    async fn scan_interval(&self) -> std::time::Duration {
+        let owner = self.owner.clone();
+        let secs = match self.db.current() {
+            Ok(db) => db
+                .call(move |conn| rekindle_db::repo::preferences::load(conn, &owner))
+                .await
+                .map(|prefs| prefs.game_scan_interval_secs)
+                .map_err(|e| tracing::warn!(error = %e, "game detection: preferences unreadable"))
+                .ok(),
+            Err(_) => None,
+        }
+        .unwrap_or_else(|| {
+            rekindle_types::preferences::Preferences::default().game_scan_interval_secs
+        });
+        std::time::Duration::from_secs(u64::from(secs))
+    }
 }
 
 /// `game_sessions` totals as the profile shows them: named and given

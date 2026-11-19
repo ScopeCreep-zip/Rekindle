@@ -8,5 +8,5 @@ pub mod scanner;
 
 pub use database::GameDatabase;
 pub use error::GameDetectError;
-pub use runtime::{run as run_runtime, GameDetectorPublisher, DEFAULT_POLL_INTERVAL};
+pub use runtime::{run as run_runtime, GameDetectorPublisher};
 pub use scanner::{DetectedGame, GameDetector};

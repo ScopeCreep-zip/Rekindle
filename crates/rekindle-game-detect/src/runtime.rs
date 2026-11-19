@@ -1,4 +1,5 @@
-//! 30-second game-detection poll runtime with shutdown + change-only
+//! Game-detection poll runtime (at the identity's
+//! `game_scan_interval_secs`, the caller's `poll_interval`) with shutdown + change-only
 //! publish semantics.
 //!
 //! Owns the `GameDetector` + `last_game` change-detection state;
@@ -18,10 +19,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::scanner::{DetectedGame, GameDetector};
-
-/// Default poll cadence (30 s) — matches the original `game_service.rs`
-/// pre-consolidation behavior.
-pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Publisher implemented by the Tauri shell. Called once per detected
 /// game-state change. Bundles UI emit + DHT publish + community

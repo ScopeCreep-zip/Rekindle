@@ -90,6 +90,17 @@ pub fn list_processes_with_paths() -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+/// Whether a process of this name names its game only in its arguments,
+/// so the scanner reads its command line before matching: a Wine/Proton
+/// loader on Linux (see [`alternate_lookup_names`]); nothing elsewhere.
+/// Every other process's argv is never read.
+pub(crate) fn game_named_in_args(process_name: &str) -> bool {
+    cfg!(target_os = "linux") && {
+        let name = process_name.to_ascii_lowercase();
+        name.contains("wine") || name.contains("proton")
+    }
+}
+
 /// Extra names to try against the game database when the raw process
 /// name does not match, derived from platform conventions.
 ///
