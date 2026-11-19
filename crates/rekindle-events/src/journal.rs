@@ -11,6 +11,15 @@
 //! overlap nor leave a gap. Every queue is bounded: a subscriber that falls
 //! more than the live capacity behind is sent `InvalidSession` and its
 //! stream ends, so it reloads instead of silently missing events.
+//!
+//! Some events are the session's state, not only news: a security alert an
+//! unlock raises (keys not in locked memory, the panic shortcut not
+//! registered, a broken audit chain) holds for as long as the session does,
+//! and it is raised before any frontend has connected. Those are published
+//! *standing* ([`SessionJournal::publish_standing`]): journaled and sent like
+//! any event, and also kept for the epoch, so a subscriber that connects
+//! later ([`SessionJournal::connect`], [`SessionJournal::standing`]) is
+//! handed them first, as a snapshot, then the live stream.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -33,6 +42,25 @@ struct Ring {
     /// The sequence number the next event gets.
     next: u64,
     events: VecDeque<Sequenced>,
+    /// This session's standing events, oldest first, with their cursors.
+    standing: Vec<Sequenced>,
+}
+
+impl Ring {
+    /// Give `event` the next cursor and keep it for replay.
+    fn append(&mut self, event: SubscriptionEvent, capacity: usize) -> Sequenced {
+        let cursor = Cursor {
+            epoch: self.epoch,
+            seq: self.next,
+        };
+        self.next += 1;
+        if self.events.len() >= capacity {
+            self.events.pop_front();
+        }
+        let sequenced = Sequenced { cursor, event };
+        self.events.push_back(sequenced.clone());
+        sequenced
+    }
 }
 
 /// The host's journal. One per host; its epoch changes with each unlock.
@@ -71,6 +99,7 @@ impl SessionJournal {
                 epoch: new_epoch(rng.as_ref()),
                 next: 1,
                 events: VecDeque::with_capacity(capacity.min(1024)),
+                standing: Vec::new(),
             }),
             live: broadcast::channel(live_capacity).0,
             capacity,
@@ -90,32 +119,66 @@ impl SessionJournal {
         let _ = self.live.send(StreamFrame::HostStopping { reason });
     }
 
-    /// Begin a new epoch (unlock and lock): empty the ring and tell every
-    /// live subscriber its cursor is no longer valid.
+    /// Begin a new session (unlock and lock): a new epoch, the ring and the
+    /// standing events emptied, and every live subscriber told its cursor is
+    /// no longer valid.
     pub fn begin(&self) {
         let mut ring = self.ring.write();
-        ring.epoch = new_epoch(self.rng.as_ref());
-        ring.next = 1;
-        ring.events.clear();
+        ring.standing.clear();
+        Self::new_epoch_in(&mut ring, self.rng.as_ref());
         // No subscriber is not an error.
         let _ = self.live.send(StreamFrame::InvalidSession);
+    }
+
+    /// Events were lost before the journal saw them (the transport's
+    /// broadcast lagged): a new epoch within the same session. The ring is
+    /// emptied but the standing events stay, given cursors in the new epoch,
+    /// so every subscriber that reloads is handed them again.
+    pub fn resync(&self) {
+        let mut ring = self.ring.write();
+        let standing = std::mem::take(&mut ring.standing);
+        Self::new_epoch_in(&mut ring, self.rng.as_ref());
+        for kept in standing {
+            let sequenced = ring.append(kept.event, self.capacity);
+            ring.standing.push(sequenced);
+        }
+        // No subscriber is not an error.
+        let _ = self.live.send(StreamFrame::InvalidSession);
+    }
+
+    fn new_epoch_in(ring: &mut Ring, rng: &dyn RandomSource) {
+        ring.epoch = new_epoch(rng);
+        ring.next = 1;
+        ring.events.clear();
     }
 
     /// Journal `event` and send it to the live subscribers.
     pub fn publish(&self, event: SubscriptionEvent) -> Cursor {
         let mut ring = self.ring.write();
-        let cursor = Cursor {
-            epoch: ring.epoch,
-            seq: ring.next,
-        };
-        ring.next += 1;
-        if ring.events.len() >= self.capacity {
-            ring.events.pop_front();
-        }
-        let sequenced = Sequenced { cursor, event };
-        ring.events.push_back(sequenced.clone());
+        let sequenced = ring.append(event, self.capacity);
+        let cursor = sequenced.cursor;
         let _ = self.live.send(StreamFrame::Event(sequenced));
         cursor
+    }
+
+    /// Journal `event` as one of the session's standing events: sent live
+    /// like [`Self::publish`], and kept until the session ends so a
+    /// subscriber that connects later is handed it ([`Self::connect`],
+    /// [`Self::standing`]).
+    pub fn publish_standing(&self, event: SubscriptionEvent) -> Cursor {
+        let mut ring = self.ring.write();
+        let sequenced = ring.append(event, self.capacity);
+        let cursor = sequenced.cursor;
+        ring.standing.push(sequenced.clone());
+        let _ = self.live.send(StreamFrame::Event(sequenced));
+        cursor
+    }
+
+    /// This session's standing events with their cursors, oldest first: the
+    /// snapshot a window that just opened is handed before its live events.
+    #[must_use]
+    pub fn standing(&self) -> Vec<Sequenced> {
+        self.ring.read().standing.clone()
     }
 
     /// The current position: the cursor of the last event published in this
@@ -141,6 +204,38 @@ impl SessionJournal {
         EventStream {
             source: Source::Journal {
                 first: first.into(),
+                live: Some(live),
+            },
+        }
+    }
+
+    /// A frontend connection's stream, the session's standing events first:
+    /// with no cursor (a frontend that just connected, or reloaded after
+    /// `InvalidSession`) all of them, then live; from a cursor this epoch
+    /// still serves (a frontend process started again with the cursor it
+    /// kept, which holds nothing it was shown) the standing events at or
+    /// before it, then [`Self::replay`]'s frames, then live. Every frame
+    /// comes in cursor order. Taken under the journal's lock, so the snapshot
+    /// and the live stream neither overlap nor leave a gap.
+    #[must_use]
+    pub fn connect(&self, from: Option<Cursor>) -> EventStream {
+        let ring = self.ring.read();
+        let live = self.live.subscribe();
+        let replay = from.map(|from| replay_from(&ring, from));
+        let served = replay
+            .as_ref()
+            .is_none_or(|frames| !matches!(frames.as_slice(), [StreamFrame::InvalidSession]));
+        let mut first: VecDeque<StreamFrame> = ring
+            .standing
+            .iter()
+            .filter(|s| served && from.is_none_or(|from| s.cursor.seq <= from.seq))
+            .cloned()
+            .map(StreamFrame::Event)
+            .collect();
+        first.extend(replay.unwrap_or_default());
+        EventStream {
+            source: Source::Journal {
+                first,
                 live: Some(live),
             },
         }
@@ -332,6 +427,77 @@ mod tests {
             Some(StreamFrame::InvalidSession)
         ));
         assert!(live.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_standing_event_raised_before_anyone_connected_reaches_a_later_connection() {
+        let journal = SessionJournal::new(16, 16, Arc::new(rekindle_utils::random::OsRandom));
+        journal.begin();
+        journal.publish(ev("news"));
+        let alert = journal.publish_standing(ev("alert"));
+        journal.publish(ev("more news"));
+        let mut late = journal.connect(None);
+        journal.publish(ev("live"));
+        let first = late.next().await.unwrap();
+        assert!(
+            matches!(&first, StreamFrame::Event(s) if s.cursor == alert),
+            "the standing event comes first: {first:?}"
+        );
+        assert_eq!(seq_of(&late.next().await.unwrap()), Some(4));
+        assert_eq!(journal.standing().len(), 1);
+        // A plain live subscription stays live only.
+        let mut live = journal.subscribe(None);
+        journal.publish(ev("after"));
+        assert_eq!(seq_of(&live.next().await.unwrap()), Some(5));
+    }
+
+    #[tokio::test]
+    async fn a_new_session_drops_the_standing_events_and_a_resync_keeps_them() {
+        let journal = SessionJournal::new(16, 16, Arc::new(rekindle_utils::random::OsRandom));
+        journal.publish_standing(ev("alert"));
+        journal.publish(ev("news"));
+        journal.resync();
+        let kept = journal.standing();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(
+            kept[0].cursor,
+            journal.head(),
+            "re-sequenced in the new epoch"
+        );
+        assert!(matches!(
+            journal.connect(None).next().await,
+            Some(StreamFrame::Event(s)) if s.cursor == kept[0].cursor
+        ));
+        journal.begin();
+        assert!(journal.standing().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_frontend_started_again_with_its_cursor_is_shown_the_standing_events_again() {
+        let journal = SessionJournal::new(16, 16, Arc::new(rekindle_utils::random::OsRandom));
+        let alert = journal.publish_standing(ev("alert"));
+        let kept = journal.publish(ev("news"));
+        journal.publish(ev("missed"));
+        let mut resumed = journal.connect(Some(kept));
+        assert!(matches!(
+            resumed.next().await,
+            Some(StreamFrame::Event(s)) if s.cursor == alert
+        ));
+        assert_eq!(seq_of(&resumed.next().await.unwrap()), Some(3));
+        assert!(matches!(
+            resumed.next().await,
+            Some(StreamFrame::Resumed(Cursor { seq: 3, .. }))
+        ));
+        // A cursor the epoch cannot serve gets only `InvalidSession`.
+        let foreign = Cursor {
+            epoch: kept.epoch ^ 1,
+            seq: 1,
+        };
+        let mut invalid = journal.connect(Some(foreign));
+        assert!(matches!(
+            invalid.next().await,
+            Some(StreamFrame::InvalidSession)
+        ));
     }
 
     #[test]

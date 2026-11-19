@@ -347,6 +347,13 @@ impl DaemonContext {
     pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
         self.journal.publish(event);
     }
+
+    /// Publish `event` as one of the session's standing events (a security
+    /// alert): every subscriber that connects later is handed it too, until
+    /// the identity locks.
+    pub fn publish_standing(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
+        self.journal.publish_standing(event);
+    }
 }
 
 /// The duress passphrase's wipe, for the host's intent gate (plan E7.1).

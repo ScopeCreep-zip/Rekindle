@@ -164,3 +164,36 @@ async fn an_unauthenticated_client_cannot_subscribe() {
         IpcResponse::Error { code: 403, .. }
     ));
 }
+
+/// A security alert the host raised standing before any client connected
+/// (an unlock's memory-lock notice) is the first frame a client that
+/// subscribes later with no cursor receives, then live events (plan E7.1).
+#[tokio::test]
+async fn a_standing_alert_raised_before_a_client_subscribed_reaches_it() {
+    let journal = Arc::new(SessionJournal::with_rng(Arc::new(
+        rekindle_utils::random::OsRandom,
+    )));
+    journal.begin();
+    let alert = journal.publish_standing(changed("alert"));
+    journal.publish(changed("news"));
+    let mut f = fixture(journal, SecurityLevel::Authenticated).await;
+    let mut frames = f.client.take_event_receiver().unwrap();
+    assert!(matches!(
+        subscribe(&f.client, None).await,
+        IpcResponse::Ok { .. }
+    ));
+    let live = f.journal.publish(changed("live"));
+    let first = tokio::time::timeout(WAIT, frames.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(&first, StreamFrame::Event(s) if s.cursor == alert),
+        "the standing alert first: {first:?}"
+    );
+    let next = tokio::time::timeout(WAIT, frames.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(seq(&next), Some(live.seq));
+}

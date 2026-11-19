@@ -496,6 +496,25 @@ pub fn replay_for(
         .collect()
 }
 
+/// The session's standing events addressed to `label`, with their cursors
+/// (plan E7.1): what a window that just opened is handed before its live
+/// events, so a security alert raised at unlock, before the window
+/// subscribed, still reaches it.
+#[must_use]
+pub fn standing_for(host: &rekindle_node::host::Host, label: &str) -> Vec<OutboundEnvelope> {
+    host.standing()
+        .into_iter()
+        .filter_map(|sequenced| {
+            let event = WebviewEvent::Subscription(sequenced.event);
+            event
+                .audience()
+                .includes(label)
+                .then(|| event.envelope(Some(sequenced.cursor)))
+                .flatten()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "event_dispatch_tests.rs"]
 mod tests;

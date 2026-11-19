@@ -106,13 +106,15 @@ async fn register_panic_shortcut(
                 )
             }
         };
-    crate::event_dispatch::emit_notification(
-        app,
-        rekindle_types::subscription_events::NotificationEvent::SystemAlert {
-            title: alert.0.into(),
-            subject: None,
-            body: alert.1,
-        },
+    // Standing: raised at login, before the buddy list has subscribed.
+    state.host.get().await.publish_standing(
+        rekindle_types::subscription_events::SubscriptionEvent::Notification(
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title: alert.0.into(),
+                subject: None,
+                body: alert.1,
+            },
+        ),
     );
     Ok(())
 }

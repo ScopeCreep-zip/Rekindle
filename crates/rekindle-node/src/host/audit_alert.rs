@@ -45,11 +45,13 @@ pub(crate) async fn verify(ctx: &DaemonContext, db: &Db, owner: &str) -> Verifie
     verified
 }
 
+/// Both standing: the chain stays broken for the session, and the check runs
+/// at unlock, before any frontend has connected.
 fn raise(ctx: &DaemonContext, cursor: u64, body: String) {
-    ctx.publish_event(SubscriptionEvent::System(SystemEvent::AuditChainBroken {
+    ctx.publish_standing(SubscriptionEvent::System(SystemEvent::AuditChainBroken {
         cursor,
     }));
-    ctx.publish_event(SubscriptionEvent::Notification(
+    ctx.publish_standing(SubscriptionEvent::Notification(
         NotificationEvent::SystemAlert {
             title: "Audit chain broken".into(),
             subject: None,

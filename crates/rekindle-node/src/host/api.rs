@@ -8,6 +8,25 @@ use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
 use rekindle_types::subscription_events::Cursor;
 
+impl super::Host {
+    /// Journal `event` as one of the session's standing events (plan E7.1:
+    /// a security alert the shell raises at login): every window that opens
+    /// later is handed it ([`Self::standing`]).
+    pub fn publish_standing(
+        &self,
+        event: rekindle_types::subscription_events::SubscriptionEvent,
+    ) -> Cursor {
+        self.ctx.journal.publish_standing(event)
+    }
+
+    /// The session's standing events with their cursors: the snapshot a GUI
+    /// window that just opened is handed before its live events.
+    #[must_use]
+    pub fn standing(&self) -> Vec<rekindle_types::subscription_events::Sequenced> {
+        self.ctx.journal.standing()
+    }
+}
+
 #[async_trait::async_trait]
 impl HostApi for super::Host {
     async fn call(&self, caller: Caller, req: IpcRequest) -> IpcResponse {

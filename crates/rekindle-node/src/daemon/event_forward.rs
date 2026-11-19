@@ -88,7 +88,8 @@ pub async fn follow<F, Fut>(
 
 /// Journal every event the transport's subscription manager emits, across
 /// lock cycles. A lag means events were lost before the journal saw them:
-/// a new epoch makes every subscriber reload (plan D3.2).
+/// a new epoch makes every subscriber reload (plan D3.2); the session's
+/// standing events survive it.
 pub(crate) async fn run_forwarder(ctx: std::sync::Arc<crate::daemon::dispatch::DaemonContext>) {
     let source = ctx.event_watch_tx.subscribe();
     let journal = std::sync::Arc::clone(&ctx.journal);
@@ -99,7 +100,7 @@ pub(crate) async fn run_forwarder(ctx: std::sync::Arc<crate::daemon::dispatch::D
             ctx.journal.publish(event);
             std::future::ready(())
         },
-        |_| journal.begin(),
+        |_| journal.resync(),
     )
     .await;
 }

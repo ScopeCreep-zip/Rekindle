@@ -37,5 +37,7 @@ rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
 
 [dev-dependencies]
 # The reducer tests serve a bus on a temporary socket (app/events_tests.rs).
+# The journal a test serves its bus from (app/events_tests.rs).
+rekindle-events = { path = "../rekindle-events" }
 tempfile = "3"
 uuid = { version = "1", features = [ "v7" ] }

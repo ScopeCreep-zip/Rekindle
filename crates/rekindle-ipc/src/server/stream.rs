@@ -32,7 +32,9 @@ pub(super) fn start(
     let Some(journal) = state.journal.get() else {
         return;
     };
-    let stream = journal.subscribe(from);
+    // A connection with no cursor is handed the session's standing events
+    // first (a security alert an unlock raised before it connected).
+    let stream = journal.connect(from);
     let task = state
         .tasks
         .spawn(run(Arc::clone(state), conn_id, tx, stream));
