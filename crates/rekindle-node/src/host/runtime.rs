@@ -374,8 +374,7 @@ impl Host {
             let teardowns = super::unlock::run_panic_teardowns(Arc::clone(&ctx), unlock_panics_rx);
             workers.spawn(teardowns.in_current_span());
         }
-        // Every subscriber hears the stop as soon as it is asked for, from
-        // whichever handler asked (the shell's GUI included).
+        // Subscribers hear a stop when asked, by any handler (shell too).
         let stopping = Arc::clone(&ctx);
         workers.spawn(async move {
             stopping.shutdown.requested().await;
@@ -480,10 +479,8 @@ impl Host {
         watchdog::notify_stopping();
         tracing::info!("host stopping");
         self.ctx.shutdown.request(ExitReason::Requested);
-        // Before the bus drains (the first request wins the reason).
-        self.ctx
-            .journal
-            .close(self.ctx.shutdown.reason().stop_reason());
+        let stop = self.ctx.shutdown.reason().stop_reason();
+        self.ctx.journal.close(stop); // before the bus drains
         if let Some(bus) = &self.bus {
             // The subscriber stops reading, answers what is in flight and
             // flushes its connection; only then is the bus drained, so a
@@ -518,9 +515,7 @@ impl Host {
         }
 
         let reason = self.ctx.shutdown.reason();
-        // Only now: the transport held Veilid's storage and the node lock
-        // until it stopped. The shell's node is the GUI's, so the shell
-        // finishes the wipe after it stops it (`graceful_shutdown`).
+        // Only now the node let go; the shell finishes in `graceful_shutdown`.
         if reason == ExitReason::DataWiped && self.mode == HostMode::Daemon {
             super::wipe::finish(self.claimed.root())?;
             tracing::info!("data root wiped");
