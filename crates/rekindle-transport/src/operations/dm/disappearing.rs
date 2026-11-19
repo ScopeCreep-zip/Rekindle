@@ -8,7 +8,7 @@
 //! is due and publishes `MessagesExpired`.
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DisappearingTimer};
-use rekindle_db::repo::disappearing;
+use rekindle_db::repo::disappearing::{self, TimerChange, TimerChanged};
 use rekindle_types::disappearing::valid;
 use rekindle_types::dto::dm::DisappearingTimerView;
 use rekindle_types::message::ConversationType;
@@ -97,15 +97,15 @@ pub async fn set(
             ));
         }
     };
-    let (o, id) = (owner.clone(), conversation.to_owned());
-    let held = state::db_call!(host, "store the disappearing timer", move |conn| {
-        disappearing::set_timer(conn, &o, &id, kind, seconds)
-    })
-    .await?;
-    if !held {
-        return Err(FriendError::NotFound(format!(
-            "no conversation {conversation}"
-        )));
+    match store_change(host, &owner, conversation, kind, seconds, &owner).await? {
+        TimerChanged::NotHeld => {
+            return Err(FriendError::NotFound(format!(
+                "no conversation {conversation}"
+            )));
+        }
+        // Signal sends no update for an unchanged timer.
+        TimerChanged::Unchanged => return Ok(()),
+        TimerChanged::Changed => {}
     }
     let body = DirectBody::DisappearingTimer(DisappearingTimer { seconds, group_id });
     let mut first_error = None;
@@ -126,27 +126,60 @@ pub async fn set(
             first_error.get_or_insert(e);
         }
     }
-    publish_change(host, conversation, kind, seconds, &owner);
     first_error.map_or(Ok(()), Err)
 }
 
-fn publish_change(
+/// Store `set_by`'s change of the timer on `conversation` and its notice
+/// row (one transaction), then, when it changed, publish the notice and
+/// wake the expiry task (our notice's timer runs from now).
+async fn store_change(
     host: &dyn FriendHost,
+    owner: &str,
     conversation: &str,
     kind: ConversationType,
     seconds: u32,
     set_by: &str,
-) {
-    let Some(context) = ConversationContext::of(conversation, kind) else {
-        return;
-    };
-    host.publish(SubscriptionEvent::ChannelMessage(
-        ChannelMessageEvent::DisappearingTimerChanged {
-            context,
-            seconds,
-            set_by: set_by.to_owned(),
-        },
-    ));
+) -> Result<TimerChanged, FriendError> {
+    let notice_id = client_id_text(&mint_client_id(host));
+    let now = host.clock().now_ms_i64();
+    let (o, id, by, nid) = (
+        owner.to_owned(),
+        conversation.to_owned(),
+        set_by.to_owned(),
+        notice_id.clone(),
+    );
+    let outcome = state::db_call!(host, "store the disappearing timer", move |conn| {
+        disappearing::change_timer(
+            conn,
+            &TimerChange {
+                owner_key: &o,
+                conversation: &id,
+                kind,
+                seconds,
+                set_by: &by,
+                now,
+                notice_id: &nid,
+            },
+        )
+    })
+    .await?;
+    if outcome == TimerChanged::Changed {
+        if let Some(context) = ConversationContext::of(conversation, kind) {
+            host.publish(SubscriptionEvent::ChannelMessage(
+                ChannelMessageEvent::DisappearingTimerChanged {
+                    context,
+                    seconds,
+                    set_by: set_by.to_owned(),
+                    client_id: notice_id,
+                    timestamp: now,
+                },
+            ));
+        }
+        if seconds > 0 && set_by == owner {
+            wake(host);
+        }
+    }
+    Ok(outcome)
 }
 
 /// Apply `sender`'s `DisappearingTimer`: a friend's sets our DM with them,
@@ -171,17 +204,8 @@ pub(crate) async fn on_timer(host: &dyn FriendHost, sender: &str, t: &Disappeari
     let Ok(owner) = state::owner(host) else {
         return false;
     };
-    let (seconds, id) = (t.seconds, conversation.clone());
-    match state::db_call!(host, "store the peer's disappearing timer", move |conn| {
-        disappearing::set_timer(conn, &owner, &id, kind, seconds)
-    })
-    .await
-    {
-        Ok(true) => {
-            publish_change(host, &conversation, kind, t.seconds, sender);
-            true
-        }
-        Ok(false) => true,
+    match store_change(host, &owner, &conversation, kind, t.seconds, sender).await {
+        Ok(_) => true,
         Err(e) => {
             tracing::warn!(error = %e, "peer's disappearing timer not stored");
             false

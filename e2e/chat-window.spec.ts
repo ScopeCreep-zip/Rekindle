@@ -126,7 +126,7 @@ const GROUP_HANDLER = `
       return window.__rows;
     case "group_dm_send":
       window.__rows.push({ id: 1, messageId: "${CLIENT}", senderId: "${ALICE}", body: args.body,
-        timestamp: Date.now(), isOwn: true, sendState: "queued", historyGapThrough: null, expireSeconds: 0, expireAt: null });
+        timestamp: Date.now(), isOwn: true, sendState: "queued", historyGapThrough: null, expireSeconds: 0, expireAt: null, timerNoticeSeconds: null });
       return "${CLIENT}";
   }
   ${HANDLER}

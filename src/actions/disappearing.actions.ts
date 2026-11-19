@@ -38,7 +38,9 @@ export async function handleSetDisappearingTimer(
 
 let noticeRows = 0;
 
-/** Apply a timer change to the control and return its timeline notice. */
+/** Apply a timer change to the control and return its timeline notice:
+ *  the live copy of the Host's stored notice row, named by its client id
+ *  so `messagesExpired` drops it; a reload reads the row itself. */
 export function applyTimerChanged(change: DisappearingTimerChanged, ownKey: string): Message {
   const id = conversationId(change.context);
   const held = disappearingState.timers[id];
@@ -49,8 +51,10 @@ export function applyTimerChanged(change: DisappearingTimerChanged, ownKey: stri
     id: -2_000_000_000 - noticeRows,
     senderId: change.setBy,
     body: "",
-    timestamp: Date.now(),
+    timestamp: change.timestamp,
     isOwn: change.setBy === ownKey,
+    serverMessageId: change.clientId,
+    expireSeconds: change.seconds,
     timerNotice: { seconds: change.seconds, setBy: change.setBy },
   };
 }
@@ -73,12 +77,4 @@ export function awaitsExpiry(messages: Message[]): boolean {
       (m.expireSeconds === undefined ||
         (!m.isOwn && m.expireSeconds > 0 && m.expireAt === undefined)),
   );
-}
-
-/** Reloaded rows with the window's timer notices kept in time order: a
- *  notice is the event's, not a stored row. */
-export function withNotices(loaded: Message[], held: Message[]): Message[] {
-  const notices = held.filter((m) => m.timerNotice !== undefined);
-  if (notices.length === 0) return loaded;
-  return [...loaded, ...notices].sort((a, b) => a.timestamp - b.timestamp);
 }

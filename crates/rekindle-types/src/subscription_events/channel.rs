@@ -223,6 +223,11 @@ pub enum ChannelMessageEvent {
         context: ConversationContext,
         seconds: u32,
         set_by: String,
+        /// The stored notice row's client id (`messages.timer_notice_seconds`),
+        /// which a later `MessagesExpired` names.
+        client_id: String,
+        /// When it was set (ms), the notice row's timestamp.
+        timestamp: i64,
     },
 
     /// Messages of a DM or group DM reached their `expire_at` and were

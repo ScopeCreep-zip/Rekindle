@@ -162,6 +162,8 @@ pub fn samples() -> Vec<Sample> {
                 context: ConversationContext::Dm { peer_key: pk('b') },
                 seconds: 3_600,
                 set_by: pk('a'),
+                client_id: "0190a0b0-0000-7000-8000-000000000002".into(),
+                timestamp: 1_760_000_003_000,
             },
         ),
         ev(

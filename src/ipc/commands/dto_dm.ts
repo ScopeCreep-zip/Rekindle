@@ -19,6 +19,9 @@ export interface DmMessage {
   /** When the Host deletes it (ms); null with no timer, or while a
    *  received one waits to be displayed. */
   expireAt: number | null;
+  /** A timer-change notice row (plan E7.1): `senderId` set the timer to
+   *  this many seconds (0 = off); null for a message. */
+  timerNoticeSeconds: number | null;
 }
 
 /** A conversation's disappearing-message timer as its control shows it

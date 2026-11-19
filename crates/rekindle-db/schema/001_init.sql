@@ -219,7 +219,15 @@ CREATE TABLE IF NOT EXISTS messages (
     -- (Signal's rule); NULL while it has not started.
     expire_seconds INTEGER NOT NULL DEFAULT 0 CHECK(expire_seconds >= 0),
     expire_at INTEGER CHECK(expire_at IS NULL OR expire_at >= 0),
+    -- Plan E7.1: a timer-change notice, a local timeline row (never sent):
+    -- `sender_key` set the conversation's timer to this many seconds (0 =
+    -- off). Body empty; it carries the timer it set as `expire_seconds`, so
+    -- it disappears like a message (Signal's EXPIRATION_UPDATE row). NULL
+    -- for a message.
+    timer_notice_seconds INTEGER
+        CHECK(timer_notice_seconds IS NULL OR timer_notice_seconds >= 0),
     CHECK(expire_at IS NULL OR expire_seconds > 0),
+    CHECK(timer_notice_seconds IS NULL OR (body = '' AND expire_seconds = timer_notice_seconds)),
     CHECK(deleted_at IS NULL OR (body = '' AND edited_at IS NULL)),
     CHECK(deleted_by IS NULL OR deleted_at IS NOT NULL)
 );

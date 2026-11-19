@@ -4,6 +4,7 @@
 //! shape (and per enum variant), every key camelCase, and the JSON equal to
 //! `tests/golden/dto.json` (`UPDATE_GOLDEN=1` after a deliberate change).
 
+mod dm;
 #[path = "../common/json.rs"]
 mod json;
 mod skin;
@@ -15,7 +16,6 @@ use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
     CommunityMemberView, MemberGroup, TargetModeration,
 };
-use rekindle_types::dto::dm::{DisappearingTimerView, DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
     SafetyNumberView,
@@ -33,7 +33,6 @@ use rekindle_types::intent::{
     IntentClass, IntentId, IntentKind, IntentReview, Notifies, ProofRequired, Reversibility,
     Subject, UndoOffer,
 };
-use rekindle_types::message::SendState;
 use rekindle_types::preferences::Preferences;
 use rekindle_types::presence::{IdleState, SessionStatus};
 use serde_json::{json, Map, Value};
@@ -260,6 +259,7 @@ fn samples() -> Map<String, Value> {
     friend_samples(&mut add);
     onboarding_samples(&mut add);
     skin::samples(&mut add);
+    dm::samples(&mut add);
     out
 }
 
@@ -443,47 +443,6 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             verified: false,
             verified_at: None,
             changed: true,
-        }),
-    );
-    add(
-        "dm.message",
-        to(DmMessage {
-            id: 9,
-            message_id: Some("0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e11".into()),
-            sender_id: pk('a'),
-            body: "gg".into(),
-            timestamp: 1_700_000_000_000,
-            is_own: true,
-            send_state: SendState::Delivered,
-            history_gap_through: None,
-            expire_seconds: 0,
-            expire_at: None,
-        }),
-    );
-    add(
-        "dm.historyGap",
-        to(DmMessage {
-            id: 10,
-            message_id: None,
-            sender_id: pk('b'),
-            body: String::new(),
-            timestamp: 1_700_000_000_000,
-            is_own: false,
-            send_state: SendState::Delivered,
-            history_gap_through: Some(4),
-            expire_seconds: 0,
-            expire_at: None,
-        }),
-    );
-    add("dm.disappearingTimer", to(DisappearingTimerView::of(3600)));
-    add(
-        "dm.inboxEntry",
-        to(DmInboxEntry {
-            peer_key: pk('b'),
-            sender_key: pk('b'),
-            body: "gg".into(),
-            timestamp: 1_700_000_000_000,
-            is_read: false,
         }),
     );
     let member = |digit, label: &str| GroupDmViewMember {

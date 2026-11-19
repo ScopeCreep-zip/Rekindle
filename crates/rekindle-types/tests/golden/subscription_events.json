@@ -199,13 +199,15 @@
   "channelMessage.disappearingTimerChanged": {
     "channelMessage": {
       "disappearingTimerChanged": {
+        "clientId": "0190a0b0-0000-7000-8000-000000000002",
         "context": {
           "dm": {
             "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
           }
         },
         "seconds": 3600,
-        "setBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "setBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "timestamp": 1760000003000
       }
     }
   },

@@ -143,6 +143,7 @@ async fn watch_dms(
             context,
             seconds,
             set_by,
+            ..
         }) if friend.is_none_or(|f| f == context.id()) => Some(format!(
             "* {} set disappearing messages to {}",
             rekindle_client::fmt::abbreviate_key(set_by),

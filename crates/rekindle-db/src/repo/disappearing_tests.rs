@@ -34,16 +34,96 @@ fn dm<'a>(sender: &'a str, id: &'a str, secs: u32, expire_at: Option<i64>) -> Ne
     }
 }
 
+fn change<'a>(
+    conversation: &'a str,
+    seconds: u32,
+    set_by: &'a str,
+    now: i64,
+    id: &'a str,
+) -> TimerChange<'a> {
+    TimerChange {
+        owner_key: OWNER,
+        conversation,
+        kind: ConversationType::Dm,
+        seconds,
+        set_by,
+        now,
+        notice_id: id,
+    }
+}
+
 #[test]
 fn the_timer_is_per_conversation() {
     let conn = seeded();
     assert_eq!(timer(&conn, OWNER, "bob", ConversationType::Dm).unwrap(), 0);
-    assert!(set_timer(&conn, OWNER, "bob", ConversationType::Dm, 30).unwrap());
+    assert_eq!(
+        change_timer(&conn, &change("bob", 30, OWNER, 0, "n1")).unwrap(),
+        TimerChanged::Changed
+    );
     assert_eq!(
         timer(&conn, OWNER, "bob", ConversationType::Dm).unwrap(),
         30
     );
-    assert!(!set_timer(&conn, OWNER, "carol", ConversationType::Dm, 30).unwrap());
+    assert_eq!(
+        change_timer(&conn, &change("carol", 30, OWNER, 0, "n2")).unwrap(),
+        TimerChanged::NotHeld
+    );
+}
+
+/// Plan E7.1 (gap from the UI slice): a timer change is a stored timeline
+/// row, so a reopened window shows past changes. An unchanged value
+/// stores none; the notice disappears on the timer it set (ours from now,
+/// a received one from display), and one turning the timer off stays.
+#[test]
+fn a_timer_change_is_a_stored_notice_that_disappears_on_its_own_timer() {
+    use crate::repo::messages::{dm_history, dm_inbox};
+    let conn = seeded();
+    insert_dm(&conn, &dm("bob", "hello", 0, None)).unwrap();
+    assert_eq!(
+        change_timer(&conn, &change("bob", 30, OWNER, 2_000, "ours")).unwrap(),
+        TimerChanged::Changed
+    );
+    assert_eq!(
+        change_timer(&conn, &change("bob", 30, "bob", 3_000, "dup")).unwrap(),
+        TimerChanged::Unchanged
+    );
+    change_timer(&conn, &change("bob", 60, "bob", 4_000, "theirs")).unwrap();
+    change_timer(&conn, &change("bob", 0, "bob", 5_000, "off")).unwrap();
+
+    let history = dm_history(&conn, OWNER, "bob", 10, None).unwrap();
+    let notices: Vec<_> = history
+        .iter()
+        .filter_map(|r| Some((r.message_id.clone()?, r.timer_notice_seconds?, r.expire_at)))
+        .collect();
+    assert_eq!(
+        notices,
+        [
+            ("ours".to_owned(), 30, Some(32_000)),
+            ("theirs".to_owned(), 60, None),
+            ("off".to_owned(), 0, None),
+        ]
+    );
+    // The inbox's latest message is never a notice.
+    let inbox = dm_inbox(&conn, OWNER, 10).unwrap();
+    assert_eq!(inbox[0].message_id.as_deref(), Some("hello"));
+
+    assert_eq!(start_on_display(&conn, OWNER, "bob", 10_000).unwrap(), 1);
+    assert_eq!(
+        delete_expired(&conn, OWNER, 32_000).unwrap()[0].client_ids,
+        ["ours"]
+    );
+    assert_eq!(
+        delete_expired(&conn, OWNER, 70_000).unwrap()[0].client_ids,
+        ["theirs"]
+    );
+    let left: Vec<String> = conn
+        .prepare("SELECT message_id FROM messages ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(left, ["hello", "off"]);
 }
 
 #[test]

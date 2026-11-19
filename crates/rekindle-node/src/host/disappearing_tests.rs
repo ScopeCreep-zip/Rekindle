@@ -168,3 +168,51 @@ async fn a_group_timer_starts_at_mark_read_not_at_history_load() {
         .unwrap();
     assert!(shown[0].expire_at.is_some(), "marked read: started");
 }
+
+/// Plan E7.1 (the UI slice's gap): a received timer change is stored as a
+/// timeline notice row, so a reopened window shows it; the event names
+/// that row; the same value again stores and publishes nothing (Signal's
+/// `DataMessageProcessor` ignores an unchanged timer).
+#[tokio::test]
+async fn a_received_timer_change_is_a_stored_notice_once() {
+    use rekindle_codec::capnp_codec::direct::DisappearingTimer;
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let mut events = host.ctx.journal.subscribe(None);
+    let bob = rekindle_crypto::Identity::generate().public_key_bytes();
+    befriend(&host, owner, bob).await;
+    let friends = HostFriends::of(&host.ctx);
+    let timer = DirectBody::DisappearingTimer(DisappearingTimer {
+        seconds: 300,
+        group_id: None,
+    });
+    pending(&host, owner, bob, 0, &timer).await;
+    pending(&host, owner, bob, 1, &timer).await;
+    replay_unprocessed(&friends).await;
+
+    let shown = dm::history(&friends, &hex::encode(bob), 50, None)
+        .await
+        .unwrap();
+    let notices: Vec<_> = shown
+        .iter()
+        .filter(|m| m.timer_notice_seconds.is_some())
+        .collect();
+    assert_eq!(notices.len(), 1, "one notice for one change: {shown:?}");
+    let notice = notices[0];
+    assert_eq!(notice.timer_notice_seconds, Some(300));
+    assert_eq!(notice.sender_id, hex::encode(bob));
+    assert_eq!((notice.expire_seconds, notice.expire_at), (300, None));
+
+    let id = notice.message_id.clone().expect("named");
+    let mut published = Vec::new();
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        let text = format!("{frame:?}");
+        if text.contains("DisappearingTimerChanged") {
+            published.push(text);
+        }
+    }
+    assert_eq!(published.len(), 1, "{published:?}");
+    assert!(published[0].contains(&id), "the event names the row");
+}

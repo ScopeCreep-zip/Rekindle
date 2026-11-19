@@ -54,6 +54,8 @@ pub struct DmRow {
     /// Its disappearing timer and deadline (plan E7.1).
     pub expire_seconds: u32,
     pub expire_at: Option<i64>,
+    /// A timer-change notice's new timer (plan E7.1); `None` for a message.
+    pub timer_notice_seconds: Option<u32>,
 }
 
 /// A direct message to store (plan E2.3): `message_id` is its client id,
@@ -170,12 +172,13 @@ pub(crate) fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
             .transpose()?,
         expire_seconds: row.get(9)?,
         expire_at: row.get(10)?,
+        timer_notice_seconds: row.get(11)?,
     })
 }
 
 pub(crate) const DM_COLS: &str =
     "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
-                       message_id, history_gap_through, expire_seconds, expire_at";
+                       message_id, history_gap_through, expire_seconds, expire_at, timer_notice_seconds";
 
 /// The order of a conversation's history, newest first: by the time each
 /// message was written (the sender's, which its frames carry), then by
@@ -232,7 +235,7 @@ pub fn own_dm(
     conn.query_row(
         "SELECT m.id, m.conversation_id, m.sender_key, m.body, m.timestamp, m.is_read, \
          m.send_state, m.message_id, m.history_gap_through, m.expire_seconds, m.expire_at, \
-         p.message_id FROM messages m \
+         m.timer_notice_seconds, p.message_id FROM messages m \
          LEFT JOIN messages p ON p.id = m.reply_to_id \
          WHERE m.owner_key = ?1 AND m.sender_key = ?1 AND m.message_id = ?2 \
          AND m.conversation_type = 'dm'",
@@ -240,7 +243,7 @@ pub fn own_dm(
         |row| {
             Ok(OwnDm {
                 row: dm_row(row)?,
-                reply_to: row.get(11)?,
+                reply_to: row.get(12)?,
             })
         },
     )
@@ -293,7 +296,7 @@ pub fn dm_inbox(conn: &Connection, owner_key: &str, limit: u32) -> rusqlite::Res
         "SELECT {DM_COLS} FROM messages m WHERE owner_key = ?1 AND conversation_type = 'dm' \
          AND id = (SELECT id FROM messages n WHERE n.owner_key = m.owner_key \
                    AND n.conversation_id = m.conversation_id AND n.conversation_type = 'dm' \
-                   AND n.history_gap_through IS NULL \
+                   AND n.history_gap_through IS NULL AND n.timer_notice_seconds IS NULL \
                    ORDER BY n.timestamp DESC, n.sender_key DESC, n.stream_seq DESC, n.id DESC \
                    LIMIT 1) \
          ORDER BY timestamp DESC LIMIT ?2"

@@ -133,15 +133,13 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(state.as_str().as_bytes());
         }
         ChannelMessageEvent::DisappearingTimerChanged {
-            context,
-            seconds,
-            set_by,
+            context, client_id, ..
         } => {
+            // One stored notice row per change (plan E7.1): its id names it.
             h.update(b"dm_timer|");
             h.update(context.id().as_bytes());
             h.update(b"|");
-            h.update(&seconds.to_le_bytes());
-            h.update(set_by.as_bytes());
+            h.update(client_id.as_bytes());
         }
         ChannelMessageEvent::MessagesExpired {
             context,

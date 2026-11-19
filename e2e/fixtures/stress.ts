@@ -169,6 +169,7 @@ export function dmHistory(n: number) {
     historyGapThrough: null,
     expireSeconds: 0,
     expireAt: null,
+    timerNoticeSeconds: null,
   }));
 }
 

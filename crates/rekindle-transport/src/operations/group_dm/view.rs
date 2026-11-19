@@ -113,6 +113,7 @@ pub async fn messages(
             history_gap_through: row.history_gap_through,
             expire_seconds: row.expire_seconds,
             expire_at: row.expire_at,
+            timer_notice_seconds: row.timer_notice_seconds,
         })
         .collect())
 }

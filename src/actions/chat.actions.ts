@@ -4,7 +4,7 @@ import { authState } from "../stores/auth.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
 import { transformDmMessage } from "../utils/transformers";
-import { awaitsExpiry, withNotices } from "./disappearing.actions";
+import { awaitsExpiry } from "./disappearing.actions";
 
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
@@ -115,7 +115,7 @@ export async function handleLoadHistory(
     if (mapped.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
         peerId,
-        messages: withNotices(mapped, existing?.messages ?? []),
+        messages: mapped,
         isTyping: existing?.isTyping ?? false,
         lastRead: existing?.lastRead ?? 0,
       });

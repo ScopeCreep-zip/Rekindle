@@ -27,6 +27,10 @@ pub struct DmMessage {
     /// is deleted (ms), `None` while a received one waits to be displayed.
     pub expire_seconds: u32,
     pub expire_at: Option<i64>,
+    /// A timer-change notice (plan E7.1): `sender_id` set the timer to
+    /// this many seconds (0 = off); shown as a timeline line, never a
+    /// bubble. `None` for a message.
+    pub timer_notice_seconds: Option<u32>,
 }
 
 /// A DM's or group DM's disappearing-message timer as its chat window's

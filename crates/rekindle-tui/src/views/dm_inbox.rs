@@ -202,6 +202,8 @@ impl DmInboxView {
                 context: ConversationContext::Dm { peer_key },
                 seconds,
                 set_by,
+                client_id,
+                timestamp,
             } => {
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
                     let who = if set_by == peer_key {
@@ -209,14 +211,14 @@ impl DmInboxView {
                     } else {
                         "You".to_string()
                     };
-                    let now = rekindle_utils::timestamp_ms_i64().cast_unsigned();
                     thread.messages.push(DmMessageDisplay {
                         sender_key: set_by.clone(),
                         sender_name: who.clone(),
                         body: notice_text(&who, *seconds),
-                        timestamp: now,
+                        timestamp: timestamp.cast_unsigned(),
                         is_self: set_by != peer_key,
-                        client_id: None,
+                        // The stored notice's id: its expiry removes it.
+                        client_id: Some(client_id.clone()),
                         notice: true,
                     });
                 }

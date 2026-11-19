@@ -194,6 +194,7 @@
     "messageId": null,
     "sendState": "delivered",
     "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timerNoticeSeconds": null,
     "timestamp": 1700000000000
   },
   "dm.inboxEntry": {
@@ -213,6 +214,20 @@
     "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e11",
     "sendState": "delivered",
     "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timerNoticeSeconds": null,
+    "timestamp": 1700000000000
+  },
+  "dm.timerNotice": {
+    "body": "",
+    "expireAt": null,
+    "expireSeconds": 3600,
+    "historyGapThrough": null,
+    "id": 11,
+    "isOwn": false,
+    "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e12",
+    "sendState": "delivered",
+    "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timerNoticeSeconds": 3600,
     "timestamp": 1700000000000
   },
   "friends.blockedUser": {

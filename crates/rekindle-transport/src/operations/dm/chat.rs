@@ -189,6 +189,7 @@ pub async fn send_dm(
         history_gap_through: None,
         expire_seconds: row.expire_seconds,
         expire_at: row.expire_at,
+        timer_notice_seconds: None,
     })
 }
 
@@ -292,6 +293,7 @@ pub async fn history(
             history_gap_through: row.history_gap_through,
             expire_seconds: row.expire_seconds,
             expire_at: row.expire_at,
+            timer_notice_seconds: row.timer_notice_seconds,
         })
         .collect())
 }

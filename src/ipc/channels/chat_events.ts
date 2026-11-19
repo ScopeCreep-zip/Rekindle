@@ -63,6 +63,10 @@ export interface DisappearingTimerChanged {
   context: ConversationContext;
   seconds: number;
   setBy: string;
+  /** The stored notice row's client id, which `messagesExpired` names. */
+  clientId: string;
+  /** When it was set (ms), the row's timestamp. */
+  timestamp: number;
 }
 
 /** The Host deleted these messages at their `expireAt`. */

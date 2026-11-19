@@ -3,7 +3,7 @@ import { commands, type GroupDmView } from "../ipc/commands";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { transformDmMessage } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
-import { awaitsExpiry, withNotices } from "./disappearing.actions";
+import { awaitsExpiry } from "./disappearing.actions";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.
@@ -57,13 +57,13 @@ export async function handleLoadGroupMessages(groupId: string, limit: number): P
   if (await loadGroupRows(groupId, limit)) handleGroupDisplayed(groupId);
 }
 
-/** Read the stored rows, keeping the window's timer notices. */
+/** Read the stored rows (timer notices are stored rows too, plan E7.1). */
 async function loadGroupRows(groupId: string, limit: number): Promise<boolean> {
   try {
     const rows = await commands.groupDmMessages(groupId, limit);
     const held = groupDmState.conversations[groupId];
     setGroupDmState("conversations", groupId, {
-      messages: withNotices(rows.map(transformDmMessage), held?.messages ?? []),
+      messages: rows.map(transformDmMessage),
       typing: held?.typing ?? {},
     });
     return true;

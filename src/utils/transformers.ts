@@ -95,6 +95,10 @@ export function transformDmMessage(m: DmMessage): Message {
     historyGapThrough: m.historyGapThrough ?? undefined,
     expireSeconds: m.expireSeconds,
     expireAt: m.expireAt ?? undefined,
+    timerNotice:
+      m.timerNoticeSeconds === null
+        ? undefined
+        : { seconds: m.timerNoticeSeconds, setBy: m.senderId },
   };
 }
 

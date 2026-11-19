@@ -30,26 +30,86 @@ pub fn timer(
         .unwrap_or(0))
 }
 
-/// Set the timer on a conversation; whether a row was there to set.
+/// A timer change to apply ([`change_timer`]): `set_by` (`owner_key` for
+/// our own change) set the timer on
+/// `conversation` to `seconds` at `now` (ms); `notice_id` is the client id
+/// minted for the notice row.
+#[derive(Debug, Clone, Copy)]
+pub struct TimerChange<'a> {
+    pub owner_key: &'a str,
+    pub conversation: &'a str,
+    pub kind: ConversationType,
+    pub seconds: u32,
+    pub set_by: &'a str,
+    pub now: i64,
+    pub notice_id: &'a str,
+}
+
+/// What [`change_timer`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimerChanged {
+    /// No friend or group row holds the conversation; nothing written.
+    NotHeld,
+    /// The timer already was that value; nothing written (Signal ignores
+    /// an unchanged `expireTimer`, `DataMessageProcessor`).
+    Unchanged,
+    /// The timer changed and its notice row was stored.
+    Changed,
+}
+
+/// Set the timer on a conversation and, when it changed, store the
+/// timeline notice (`messages.timer_notice_seconds`) in the same
+/// transaction. The notice carries the timer it set, as Signal's
+/// `EXPIRATION_UPDATE` row does: ours expires at `now` + timer, a received
+/// one from its first display ([`start_on_display`]); a notice turning the
+/// timer off stays.
 ///
 /// # Errors
-/// The write failed.
-pub fn set_timer(
-    conn: &Connection,
-    owner_key: &str,
-    conversation: &str,
-    kind: ConversationType,
-    seconds: u32,
-) -> rusqlite::Result<bool> {
-    let sql = match kind {
-        ConversationType::GroupDm => {
-            "UPDATE group_dms SET disappearing_seconds = ?3 WHERE owner_key = ?1 AND group_id = ?2"
-        }
-        _ => {
-            "UPDATE friends SET disappearing_seconds = ?3 WHERE owner_key = ?1 AND public_key = ?2"
+/// The transaction failed; nothing was written.
+pub fn change_timer(conn: &Connection, c: &TimerChange<'_>) -> rusqlite::Result<TimerChanged> {
+    let tx = conn.unchecked_transaction()?;
+    let (read, write) = match c.kind {
+        ConversationType::GroupDm => (
+            "SELECT disappearing_seconds FROM group_dms WHERE owner_key = ?1 AND group_id = ?2",
+            "UPDATE group_dms SET disappearing_seconds = ?3 WHERE owner_key = ?1 AND group_id = ?2",
+        ),
+        _ => (
+            "SELECT disappearing_seconds FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            "UPDATE friends SET disappearing_seconds = ?3 WHERE owner_key = ?1 AND public_key = ?2",
+        ),
+    };
+    let owner = c.owner_key;
+    let held: Option<u32> = tx
+        .query_row(read, params![owner, c.conversation], |row| row.get(0))
+        .optional()?;
+    let outcome = match held {
+        None => TimerChanged::NotHeld,
+        Some(s) if s == c.seconds => TimerChanged::Unchanged,
+        Some(_) => {
+            tx.execute(write, params![owner, c.conversation, c.seconds])?;
+            let ours = c.set_by == owner;
+            let expire_at = (ours && c.seconds > 0).then(|| c.now + i64::from(c.seconds) * 1000);
+            tx.execute(
+                "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, \
+                 body, timestamp, is_read, send_state, message_id, expire_seconds, expire_at, \
+                 timer_notice_seconds) \
+                 VALUES (?1, ?2, ?3, ?4, '', ?5, 1, 'delivered', ?6, ?7, ?8, ?7)",
+                params![
+                    owner,
+                    c.conversation,
+                    c.kind.as_str(),
+                    c.set_by,
+                    c.now,
+                    c.notice_id,
+                    c.seconds,
+                    expire_at
+                ],
+            )?;
+            TimerChanged::Changed
         }
     };
-    Ok(conn.execute(sql, params![owner_key, conversation, seconds])? > 0)
+    tx.commit()?;
+    Ok(outcome)
 }
 
 /// Start the timers of the received messages in `conversation` that have

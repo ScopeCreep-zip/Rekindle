@@ -74,6 +74,7 @@ function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unkn
     historyGapThrough: null,
     expireSeconds: 0,
     expireAt: null,
+    timerNoticeSeconds: null,
   });
   // The live copy's timer is unknown until its row is read.
   row.expireSeconds = undefined;
