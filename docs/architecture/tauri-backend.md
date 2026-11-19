@@ -35,6 +35,12 @@ The `run()` function:
    window-close (buddy list hides to tray; closing login while no buddy
    list is visible exits the app) and `RunEvent::Exit` (delegates to
    `shutdown::handle_exit`).
+6. SIGTERM and SIGINT (Ctrl-C on Windows) take the same path: `setup()`
+   first installs the daemon's `rekindle_node::host::signals::StopSignals`
+   (`stop_signals.rs`), and the first signal calls `AppHandle::exit(0)`,
+   so `RunEvent::Exit` runs `handle_exit` once. A desktop logout stops
+   each app's systemd scope with SIGTERM (SIGKILL after 90 s), so a
+   logout is a clean quit; later signals during the shutdown are logged.
 
 `AppState` is the central state container, shared as `SharedState =
 Arc<AppState>`. Fields use `Arc<RwLock<T>>` for read-heavy access and

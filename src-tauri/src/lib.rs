@@ -27,6 +27,7 @@ mod shutdown;
 mod skin_scheme;
 pub mod state;
 pub mod state_helpers;
+mod stop_signals;
 #[cfg(test)]
 pub mod test_support;
 mod tray;

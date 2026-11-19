@@ -72,7 +72,7 @@ pub(crate) mod unlocked;
 
 #[cfg(test)]
 pub(crate) mod fixture;
-mod signals;
+pub mod signals;
 mod wake;
 pub mod watchdog;
 pub mod wipe;

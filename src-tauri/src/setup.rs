@@ -24,6 +24,11 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // Store app handle in AppState so background services can emit events
     *state.app_handle.write() = Some(app.handle().clone());
 
+    // SIGTERM (a session's logout stops each app's scope with it) and
+    // SIGINT quit through the graceful path, `RunEvent::Exit`. First, so a
+    // locked app, or one whose startup failed below, quits cleanly too.
+    crate::stop_signals::install(app.handle())?;
+
     // The data root every host shares (plan C5): the same folders Tauri's
     // `app_{data,config}_dir` name, created owner-only. The host claims it
     // (plan D3.1): its node lock makes the desktop and `rekindled` refuse to
