@@ -38,16 +38,13 @@ impl DaemonGossipAdapter {
     /// has no peers until its first poll.
     pub(super) fn enqueue_pending_mesh_impl(&self, community_id: &str, signed: SignedEnvelope) {
         let mut map = self.ctx.communities.map().write();
-        let Some(community) = map.get_mut(community_id) else {
+        let Some(gossip) = map.get_mut(community_id).and_then(|c| c.gossip.as_mut()) else {
             tracing::debug!(
                 community = %community_id,
-                "gossip: broadcast for a community we do not hold; not held"
+                "gossip: no peers online and no overlay; broadcast not held"
             );
             return;
         };
-        let gossip = community
-            .gossip
-            .get_or_insert_with(crate::host::community::GossipOverlay::default);
         if gossip.pending_mesh_broadcasts.len() >= rekindle_gossip::MAX_PENDING_MESH {
             gossip.pending_mesh_broadcasts.pop_front();
         }
