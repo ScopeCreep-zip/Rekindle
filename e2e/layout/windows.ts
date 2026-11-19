@@ -31,7 +31,10 @@ export interface WindowCase {
   welcome?: boolean;
 }
 
-const frame = (page: Page) => expect(page.locator(".app-frame").first()).toBeVisible();
+// A window's first paint on a cold dev server under load can exceed the 5 s
+// default; this waits for the frame to exist, it asserts nothing about layout.
+const frame = (page: Page) =>
+  expect(page.locator(".app-frame").first()).toBeVisible({ timeout: 20_000 });
 
 export const WINDOWS: WindowCase[] = [
   {
