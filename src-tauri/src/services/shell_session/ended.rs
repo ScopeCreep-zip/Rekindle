@@ -47,6 +47,8 @@ pub(super) async fn ended(state: &SharedState, app: Option<&tauri::AppHandle>, r
         return;
     };
     services::veilid::emit_network_status(app, state);
+    // No session, no status: the tray shows the app mark again (plan E7.2).
+    crate::tray::show_status(app, None);
     match reason {
         EndReason::Logout | EndReason::Deleted => show_login(app, signed_out.as_deref()),
         EndReason::TaskPanicked(task) => {

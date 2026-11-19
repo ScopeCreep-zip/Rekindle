@@ -39,9 +39,9 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let menu = Menu::with_items(app, &[&status_menu, &sep, &settings, &sep2, &quit])?;
 
-    TrayIconBuilder::new()
-        .icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)
-        .icon_as_template(true)
+    TrayIconBuilder::with_id(TRAY_ID)
+        .icon(Image::from_bytes(TrayIcon::LoggedOut.bytes())?)
+        .icon_as_template(TrayIcon::LoggedOut.is_template())
         .tooltip("Rekindle")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -65,6 +65,72 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     Ok(())
+}
+
+/// The tray icon's id, by which a status change finds it.
+const TRAY_ID: &str = "rekindle";
+
+/// The icon the tray shows (plan E7.2 "Tray"): the app mark while no one is
+/// logged in, else one of four pre-rendered icons carrying the status dot
+/// (`icons/tray/`, the status colours of `ui-skin.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrayIcon {
+    LoggedOut,
+    Online,
+    Away,
+    Busy,
+    Offline,
+}
+
+impl TrayIcon {
+    /// The icon for our status; Invisible shows as offline, as peers see it.
+    fn of(status: Option<SessionStatus>) -> Self {
+        match status {
+            None => Self::LoggedOut,
+            Some(SessionStatus::Online) => Self::Online,
+            Some(SessionStatus::Away) => Self::Away,
+            Some(SessionStatus::Busy) => Self::Busy,
+            Some(SessionStatus::Offline | SessionStatus::Invisible) => Self::Offline,
+        }
+    }
+
+    fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::LoggedOut => include_bytes!("../icons/icon.png"),
+            Self::Online => include_bytes!("../icons/tray/online.png"),
+            Self::Away => include_bytes!("../icons/tray/away.png"),
+            Self::Busy => include_bytes!("../icons/tray/busy.png"),
+            Self::Offline => include_bytes!("../icons/tray/offline.png"),
+        }
+    }
+
+    /// macOS draws a template icon monochrome, which would erase the dot's
+    /// colour: only the plain app mark is a template.
+    fn is_template(self) -> bool {
+        self == Self::LoggedOut
+    }
+}
+
+/// Show our status in the tray icon: `None` once the session has ended. Called
+/// on the Host's `SelfChanged` (`event_dispatch.rs`) and at the session's end.
+pub fn show_status(app: &tauri::AppHandle, status: Option<SessionStatus>) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    let icon = TrayIcon::of(status);
+    let image = match Image::from_bytes(icon.bytes()) {
+        Ok(image) => image,
+        Err(e) => {
+            tracing::warn!(error = %e, "tray icon did not decode");
+            return;
+        }
+    };
+    if let Err(e) = tray.set_icon(Some(image)) {
+        tracing::warn!(error = %e, "tray icon not set");
+    }
+    if let Err(e) = tray.set_icon_as_template(icon.is_template()) {
+        tracing::warn!(error = %e, "tray icon template flag not set");
+    }
 }
 
 /// What a tray menu item does.
@@ -139,5 +205,38 @@ mod tests {
             Some(TrayAction::SetStatus(SessionStatus::Invisible))
         );
         assert_eq!(TrayAction::of("unknown"), None);
+    }
+
+    #[test]
+    fn the_tray_icon_carries_the_status_dot_and_only_the_app_mark_is_a_template() {
+        assert_eq!(TrayIcon::of(None), TrayIcon::LoggedOut);
+        assert_eq!(TrayIcon::of(Some(SessionStatus::Online)), TrayIcon::Online);
+        assert_eq!(TrayIcon::of(Some(SessionStatus::Away)), TrayIcon::Away);
+        assert_eq!(TrayIcon::of(Some(SessionStatus::Busy)), TrayIcon::Busy);
+        assert_eq!(
+            TrayIcon::of(Some(SessionStatus::Invisible)),
+            TrayIcon::Offline
+        );
+        assert_eq!(
+            TrayIcon::of(Some(SessionStatus::Offline)),
+            TrayIcon::Offline
+        );
+        let icons = [
+            TrayIcon::Online,
+            TrayIcon::Away,
+            TrayIcon::Busy,
+            TrayIcon::Offline,
+        ];
+        for icon in icons {
+            assert!(!icon.is_template(), "{icon:?} would lose its dot colour");
+            assert!(Image::from_bytes(icon.bytes()).is_ok(), "{icon:?} decodes");
+        }
+        assert!(TrayIcon::LoggedOut.is_template());
+        // Four distinct pictures, one per status.
+        for (i, a) in icons.iter().enumerate() {
+            for b in &icons[i + 1..] {
+                assert_ne!(a.bytes(), b.bytes());
+            }
+        }
     }
 }

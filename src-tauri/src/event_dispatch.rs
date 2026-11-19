@@ -354,6 +354,13 @@ pub fn spawn_host_stream(
                             crate::services::community_presence_runtime::fan_out_own_presence(
                                 &state, snapshot,
                             );
+                            if let Some(status) = snapshot
+                                .status
+                                .as_deref()
+                                .and_then(|s| serde_json::from_value(s.into()).ok())
+                            {
+                                crate::tray::show_status(&app, Some(status));
+                            }
                         }
                         crate::os_notify::notify(&app, &state, &sequenced.event);
                         crate::windows::follow_event(&app, &state, &sequenced.event);

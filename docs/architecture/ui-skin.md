@@ -238,8 +238,16 @@ sounds.
 `src-tauri/src/tray.rs` builds the system tray menu. The tray is the
 app's primary "always-available" affordance — left-click toggles the
 buddy list, right-click opens the status menu (Online / Away / Busy /
-Offline + custom status). The tray icon shows the current presence via
-a status dot rendered into the icon at runtime.
+Offline + "Set custom status…", which opens the status message editor in
+Settings → Profile). The tray icon shows the current presence with a status
+dot: four pre-rendered icons in `src-tauri/icons/tray/` (`online`, `away`,
+`busy`, `offline`; the app mark with a dot in `--color-xfire-online`,
+`--color-xfire-away`, `--color-xfire-busy` or `--color-xfire-offline` on a
+dark ring), swapped by `tray::show_status` on the Host's `SelfChanged`.
+Invisible shows the offline icon, as peers see it. With no one logged in the
+tray shows the plain app mark. The status icons are set without the template
+flag: macOS draws a template icon monochrome, which would erase the dot's
+colour; only the plain app mark is a template.
 
 This means the buddy list can be hidden without losing access to the
 status controls, matching Xfire's behaviour where the tray was the
