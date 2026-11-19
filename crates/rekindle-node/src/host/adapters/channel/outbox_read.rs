@@ -58,6 +58,8 @@ struct OutboxSink<'a> {
     channel: &'a HostChannel,
     community_id: &'a str,
     author: [u8; 32],
+    /// The author's member record.
+    member_record: &'a str,
     /// Read by a catch-up rather than a live trigger.
     backfill: bool,
     /// Whether the author is a member, or which departure head keeps its
@@ -85,7 +87,9 @@ impl StreamSink for OutboxSink<'_> {
         let read = OutboxRead {
             community_id: self.community_id,
             author: &self.author,
+            member_record: self.member_record,
             backfill: self.backfill,
+            departed: matches!(self.standing, Standing::Departed(_)),
             departure_head,
         };
         self.channel
@@ -138,7 +142,11 @@ enum Standing {
 struct OutboxRead<'a> {
     community_id: &'a str,
     author: &'a [u8; 32],
+    /// The author's member record (the chain's record).
+    member_record: &'a str,
     backfill: bool,
+    /// Whether the author has departed.
+    departed: bool,
     departure_head: Option<OutboxHead>,
 }
 
@@ -169,6 +177,7 @@ impl HostChannel {
             channel: self,
             community_id,
             author: author.0,
+            member_record,
             backfill,
             standing,
         };
@@ -321,6 +330,11 @@ impl HostChannel {
                 },
                 Some(f.original_author),
             ),
+            change @ (ChannelRecordEntry::Edit(_) | ChannelRecordEntry::Delete(_)) => {
+                self.apply_outbox_change(read, entry, &channel_id, decoded.stream_seq, &change)
+                    .await;
+                return Ok(());
+            }
             other => {
                 tracing::debug!(community_id, seq = entry.seq, kind = ?std::mem::discriminant(&other), "channel outbox entry kind not read yet");
                 return Ok(());
@@ -356,5 +370,38 @@ impl HostChannel {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Apply an edit or delete read at chain seq `entry.seq` of the
+    /// author's outbox to the post it names (rules E1–E3, the edit's body
+    /// through D26). A departed author's change is kept only at or below
+    /// its departure's head, as its posts are.
+    async fn apply_outbox_change(
+        &self,
+        read: &OutboxRead<'_>,
+        entry: &ChainEntry,
+        channel_id: &str,
+        stream_seq: u64,
+        change: &ChannelRecordEntry,
+    ) {
+        if read.departed && read.departure_head.is_none() {
+            tracing::debug!(
+                community_id = read.community_id,
+                seq = entry.seq,
+                "a departed author's change past its departure's head is refused"
+            );
+            return;
+        }
+        let author = PseudonymKey(*read.author);
+        let source = super::changes::ChangeSource {
+            community_id: read.community_id,
+            channel_id,
+            record_key: read.member_record,
+            subkey_index: OUTBOX,
+            outbox_seq: Some(stream_seq),
+            author: &author,
+        };
+        self.apply_changes(source, std::slice::from_ref(change))
+            .await;
     }
 }

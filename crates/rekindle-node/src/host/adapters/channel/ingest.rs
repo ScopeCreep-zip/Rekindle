@@ -113,6 +113,7 @@ impl HostChannel {
                         channel_id,
                         record_key: &record_key,
                         subkey_index,
+                        outbox_seq: None,
                         author: &page.author.clone(),
                     };
                     return self.ingest_page(source, sequence, message_id, page).await;

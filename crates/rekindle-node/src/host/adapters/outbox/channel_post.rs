@@ -80,6 +80,39 @@ impl ChannelPosts {
         Ok(())
     }
 
+    /// Store our edit or delete `post`'s row with no echo (plan E3.3: the
+    /// change is already stored on its target's row).
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn queue_change(&self, post: &ChannelPost) -> Result<(), OutboxError> {
+        let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
+        let row = self.0.new_row(Entry {
+            kind: StreamKind::ChannelPost,
+            scope: post.scope(),
+            client_id: post.message.clone(),
+            payload,
+            deadline: Deadline::Horizon,
+        });
+        let (db, owner) = self.0.deps().db()?;
+        db.call(move |conn| {
+            let new = repo::NewRow {
+                owner_key: &owner,
+                stream: &row.stream,
+                client_id: &row.client_id,
+                kind: row.kind.as_str(),
+                payload: &row.payload,
+                next_at: row.next_at,
+                deadline: row.deadline,
+            };
+            repo::enqueue_with_echo(conn, &new, None)
+        })
+        .await
+        .map_err(|e| storage(&e))?;
+        self.0.wake();
+        Ok(())
+    }
+
     /// Store `post`'s row waiting for its channel's key until `deadline`
     /// (ms), its echo the post already written `awaiting_key`.
     ///

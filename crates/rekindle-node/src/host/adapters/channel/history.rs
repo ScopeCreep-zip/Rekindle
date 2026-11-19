@@ -110,6 +110,7 @@ impl HostChannel {
                 channel_id,
                 record_key: &change.record_key,
                 subkey_index: change.subkey_index,
+                outbox_seq: None,
                 author: &change.author,
             };
             self.apply_changes(source, std::slice::from_ref(&change.entry))

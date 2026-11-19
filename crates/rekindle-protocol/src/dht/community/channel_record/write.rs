@@ -245,42 +245,6 @@ pub async fn write_member_forward(
     .await
 }
 
-/// Write the author's edit or delete of its own message (plan E3.3: an
-/// entry in the author's record, rules E1–E3) to its subkey; any other
-/// entry kind is refused.
-///
-/// # Errors
-/// `entry` is not an edit or a delete, or as [`append_entry`].
-pub async fn write_member_change(
-    pool: &dyn RecordPort,
-    channel_key: &str,
-    member_index: u32,
-    writer: &str,
-    author_pseudonym: rekindle_types::id::PseudonymKey,
-    pseudonym_signing_key: &ed25519_dalek::SigningKey,
-    entry: ChannelRecordEntry,
-) -> Result<AppendOutcome, ProtocolError> {
-    if !matches!(
-        entry,
-        ChannelRecordEntry::Edit(_) | ChannelRecordEntry::Delete(_)
-    ) {
-        return Err(ProtocolError::NotStored {
-            subkey: u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + member_index,
-            outcome: "not an edit or a delete".into(),
-        });
-    }
-    write_member_entry(
-        pool,
-        channel_key,
-        member_index,
-        writer,
-        author_pseudonym,
-        pseudonym_signing_key,
-        entry,
-    )
-    .await
-}
-
 async fn write_member_entry(
     pool: &dyn RecordPort,
     channel_key: &str,

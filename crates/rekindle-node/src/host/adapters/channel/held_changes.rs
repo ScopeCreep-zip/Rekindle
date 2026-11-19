@@ -22,6 +22,7 @@ pub(crate) struct HeldChange {
     channel_id: String,
     record_key: String,
     subkey_index: u32,
+    outbox_seq: Option<u64>,
     author: PseudonymKey,
     entry: ChannelRecordEntry,
 }
@@ -55,6 +56,7 @@ impl HostChannel {
             channel_id: source.channel_id.to_owned(),
             record_key: source.record_key.to_owned(),
             subkey_index: source.subkey_index,
+            outbox_seq: source.outbox_seq,
             author: source.author.clone(),
             entry: entry.clone(),
         };
@@ -88,6 +90,7 @@ impl HostChannel {
                 channel_id: &change.channel_id,
                 record_key: &change.record_key,
                 subkey_index: change.subkey_index,
+                outbox_seq: change.outbox_seq,
                 author: &change.author,
             };
             self.apply_changes(source, std::slice::from_ref(&change.entry))

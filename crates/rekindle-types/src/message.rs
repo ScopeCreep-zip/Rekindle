@@ -32,7 +32,8 @@ pub struct SyncedMessage {
 pub struct ChannelPost {
     pub community: String,
     pub channel: String,
-    /// The post's client id, its row's.
+    /// The post's client id, its row's (for an edit or delete, the
+    /// change's own row id; its target is in [`PostEntry`]).
     pub message: String,
     pub entry: PostEntry,
 }
@@ -52,6 +53,21 @@ pub enum PostEntry {
     },
     /// An attachment message on the channel record's slot.
     SlotAttachment { record_key: String, subkey: u32 },
+    /// An edit of our post `target` on our outbox (plan E3.3): its new
+    /// body, sealed when the stream drains it at the entry's stream seq,
+    /// and our seq `seq` that orders our edits (rule E1).
+    Edit {
+        target: String,
+        body: String,
+        edited_at: u64,
+        seq: u64,
+    },
+    /// A delete of our post `target` on our outbox (rule E3, a tombstone).
+    Delete {
+        target: String,
+        deleted_at: u64,
+        seq: u64,
+    },
 }
 
 impl ChannelPost {
@@ -62,7 +78,10 @@ impl ChannelPost {
     pub fn scope(&self) -> String {
         match &self.entry {
             PostEntry::SlotAttachment { record_key, subkey } => format!("{record_key}:{subkey}"),
-            PostEntry::Message | PostEntry::Forward { .. } => {
+            PostEntry::Message
+            | PostEntry::Forward { .. }
+            | PostEntry::Edit { .. }
+            | PostEntry::Delete { .. } => {
                 format!("{}:{}", self.community, self.channel)
             }
         }

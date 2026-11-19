@@ -96,6 +96,7 @@ impl HostChannel {
                 channel_id: &channel,
                 record_key,
                 subkey_index: subkey,
+                outbox_seq: None,
                 author: &author,
             };
             self.apply_changes(source, &entries).await;

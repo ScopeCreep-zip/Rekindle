@@ -7,9 +7,13 @@
 //! derived from the same key. A post whose channel key we do not hold yet
 //! waits (the awaiting-key behaviour, plan E3.2 S7l): the drain stops at it
 //! and the stream retries it. The batch is appended in queue order as
-//! sealed pages ([`OutboxWriter::append`]).
+//! sealed pages ([`OutboxWriter::append`]). An edit or delete of our post
+//! is an entry of the same stream (plan E3.3): an edit's new body is
+//! sealed at the edit's own position, a delete has none.
 
-use rekindle_codec::community::channel_record::{ChannelForward, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::{
+    ChannelDelete, ChannelEdit, ChannelForward, ChannelRecordEntry,
+};
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::ChannelId;
 use rekindle_types::message::{ChannelPost, PostEntry};
@@ -18,7 +22,7 @@ use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
 use crate::mentions::resolve_outbound_mentions;
 use crate::outbox_chain::{seal_batch, OutboxCommit, OutboxWriter, PendingEntry};
-use crate::outbox_seal::seal_entry_body;
+use crate::outbox_seal::{seal_entry_body, SealedEntryBody};
 use crate::send::{build_channel_message, BodyPosition, BuildChannelMessageParams};
 
 /// One queued post of the stream and its frozen per-stream seq.
@@ -50,20 +54,20 @@ async fn pending_of<D: ChannelMessagingDeps>(
 ) -> Result<PendingEntry, DrainOutcome> {
     let post = &item.post;
     let (community_id, channel_id) = (post.community.as_str(), post.channel.as_str());
-    let channel = ChannelId::from_hex(channel_id)
-        .ok_or_else(|| DrainOutcome::Failed(format!("{channel_id} is not a channel")))?;
-    let scope: KeyScope = deps.keys().scope_for_text(community_id, channel);
     let author = writer.author.verifying_key().to_bytes();
     let author_hex = hex::encode(author);
+    // An edit or delete names its target; a post is its own row.
+    let (target, body) = match &post.entry {
+        PostEntry::Edit { target, body, .. } => (target.as_str(), Some(body.as_str())),
+        PostEntry::Delete { target, .. } => (target.as_str(), Some("")),
+        _ => (post.message.as_str(), None),
+    };
     let stored = deps
-        .find_channel_message_by_id(channel_id, &post.message)
+        .find_channel_message_by_id(channel_id, target)
         .await
-        .ok_or_else(|| DrainOutcome::Failed(format!("post {} not in history", post.message)))?;
+        .ok_or_else(|| DrainOutcome::Failed(format!("post {target} not in history")))?;
     if stored.sender_key != author_hex {
-        return Err(DrainOutcome::Failed(format!(
-            "post {} is not ours",
-            post.message
-        )));
+        return Err(DrainOutcome::Failed(format!("post {target} is not ours")));
     }
     let at = BodyPosition {
         anchor: writer.anchor,
@@ -71,21 +75,8 @@ async fn pending_of<D: ChannelMessagingDeps>(
         author: &author,
         stream_seq: item.stream_seq,
     };
-    let sealed = match seal_entry_body(
-        &*deps.keys(),
-        community_id,
-        scope,
-        at,
-        stored.body.as_bytes(),
-    ) {
-        Ok(sealed) => sealed,
-        Err(ChannelError::MekMissing { .. }) => {
-            return Err(DrainOutcome::Deferred(
-                "the channel's key is not held yet".into(),
-            ))
-        }
-        Err(error) => return Err(DrainOutcome::Deferred(error.to_string())),
-    };
+    let body = body.unwrap_or(stored.body.as_str());
+    let sealed = seal_at(deps, community_id, at, body.as_bytes())?;
     let timestamp_ms = i64::try_from(committed_at).unwrap_or(i64::MAX);
     let entry = match &post.entry {
         PostEntry::Message => {
@@ -121,6 +112,29 @@ async fn pending_of<D: ChannelMessagingDeps>(
             lamport_ts: item.stream_seq,
             message_id: Some(post.message.clone()),
         }),
+        PostEntry::Edit {
+            target,
+            edited_at,
+            seq,
+            ..
+        } => ChannelRecordEntry::Edit(ChannelEdit {
+            message_id: target.clone(),
+            ciphertext: sealed.ciphertext,
+            mek_generation: sealed.generation,
+            edited_at: *edited_at,
+            lamport_ts: *seq,
+        }),
+        // A delete carries no body; the entry still names its channel by
+        // the tag of the key it was drained under.
+        PostEntry::Delete {
+            target,
+            deleted_at,
+            seq,
+        } => ChannelRecordEntry::Delete(ChannelDelete {
+            message_id: target.clone(),
+            deleted_at: *deleted_at,
+            lamport_ts: *seq,
+        }),
         PostEntry::SlotAttachment { .. } => {
             return Err(DrainOutcome::Deferred(
                 "an attachment post settles with its slot write".into(),
@@ -144,6 +158,26 @@ async fn pending_of<D: ChannelMessagingDeps>(
         return Err(DrainOutcome::Failed(error.to_string()));
     }
     Ok(pending)
+}
+
+/// Seal `body` at `at` under its channel's current text key; a channel
+/// whose key we do not hold yet defers the entry.
+fn seal_at<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    at: BodyPosition<'_>,
+    body: &[u8],
+) -> Result<SealedEntryBody, DrainOutcome> {
+    let channel = ChannelId::from_hex(at.channel_id)
+        .ok_or_else(|| DrainOutcome::Failed(format!("{} is not a channel", at.channel_id)))?;
+    let scope: KeyScope = deps.keys().scope_for_text(community_id, channel);
+    match seal_entry_body(&*deps.keys(), community_id, scope, at, body) {
+        Ok(sealed) => Ok(sealed),
+        Err(ChannelError::MekMissing { .. }) => Err(DrainOutcome::Deferred(
+            "the channel's key is not held yet".into(),
+        )),
+        Err(error) => Err(DrainOutcome::Deferred(error.to_string())),
+    }
 }
 
 /// Drain `posts` (one channel's stream, in queue order) onto our outbox

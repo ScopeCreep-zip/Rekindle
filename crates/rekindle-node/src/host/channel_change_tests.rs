@@ -104,6 +104,7 @@ pub(super) async fn apply(host: &Host, author: &PseudonymKey, entries: &[Channel
         channel_id: EDIT_CHANNEL,
         record_key: RECORD,
         subkey_index: SUBKEY,
+        outbox_seq: None,
         author,
     };
     HostChannel::new(&host.ctx)

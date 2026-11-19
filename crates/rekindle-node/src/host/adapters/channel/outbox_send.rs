@@ -102,10 +102,18 @@ impl HostChannel {
         post: &rekindle_types::message::ChannelPost,
         outcome: &DrainOutcome,
     ) -> AttemptOutcome {
+        // An edit or delete has no row of its own to mark: its row id is
+        // not a message.
+        let change = matches!(
+            post.entry,
+            PostEntry::Edit { .. } | PostEntry::Delete { .. }
+        );
         match outcome {
             DrainOutcome::Sent(seq) => {
                 tracing::info!(message = %post.message, chain_seq = seq, "channel post on our outbox");
-                self.emit_delivery_succeeded(&post.community, &post.channel, &post.message);
+                if !change {
+                    self.emit_delivery_succeeded(&post.community, &post.channel, &post.message);
+                }
                 AttemptOutcome::Sent
             }
             DrainOutcome::Deferred(reason) => {
@@ -114,7 +122,9 @@ impl HostChannel {
             }
             DrainOutcome::Failed(reason) => {
                 tracing::warn!(message = %post.message, %reason, "channel post cannot be written");
-                self.emit_delivery_failed(&post.community, &post.channel, &post.message);
+                if !change {
+                    self.emit_delivery_failed(&post.community, &post.channel, &post.message);
+                }
                 AttemptOutcome::Superseded(reason.clone())
             }
         }

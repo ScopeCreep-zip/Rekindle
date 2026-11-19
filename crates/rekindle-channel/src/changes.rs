@@ -14,7 +14,6 @@
 //! the author's slot and the edit's seq), never the message's.
 
 use crate::deps::ChannelMessagingDeps;
-use crate::error::ChannelError;
 use crate::send::SlotBodyPosition;
 
 /// A reader caps a message at this many edits (E2).
@@ -83,21 +82,6 @@ pub fn judge_change(
         ChangeKind::Edit { .. } if target.edit_count >= MAX_EDITS => Err(ChangeRefusal::EditLimit),
         ChangeKind::Edit { .. } | ChangeKind::Delete => Ok(()),
     }
-}
-
-/// Seal an edit's `body` at its own position `at` under the channel's
-/// current text key; the ciphertext and the generation it names.
-///
-/// # Errors
-/// No current text key, or the seal failed.
-pub fn seal_edit<D: ChannelMessagingDeps + ?Sized>(
-    deps: &D,
-    community_id: &str,
-    channel_id: &str,
-    at: SlotBodyPosition<'_>,
-    body: &str,
-) -> Result<(Vec<u8>, u64), ChannelError> {
-    crate::text_keys::seal_text(deps, community_id, channel_id, at, body.as_bytes())
 }
 
 /// Open an edit's body sealed at `at` under exactly `generation`; `None`

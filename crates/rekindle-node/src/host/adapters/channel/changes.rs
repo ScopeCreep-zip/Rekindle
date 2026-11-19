@@ -1,24 +1,26 @@
 //! Edits and deletes of channel messages on both modes (plan E3.3): an
 //! author's change is an entry in its own record (the edit or delete kind of
 //! `ChannelRecordEntry`), never a side message. The author stores it on its
-//! own row and writes it to its slot; a reader applies it from every path
-//! that reads the author's record (the gossip hint's slot read, the watched
-//! change, the history read). Both judge it by `rekindle_channel::changes`
+//! own row and queues it on its channel outbox (`M`/4); a reader applies it
+//! from the outbox read, and from the slot paths for history written there
+//! before (the gossip hint's slot read, the watched change, the history
+//! read, until E3.3 slice 8). Both judge it by `rekindle_channel::changes`
 //! (E1–E3) and store it in the message's row, so it survives a reload.
 
 use rekindle_channel::changes::{self, ChangeKind, ChangeRefusal, ChangeTarget};
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::Verdict;
-use rekindle_channel::send::{channel_message_subkey, SlotBodyPosition};
+use rekindle_channel::outbox_seal::open_entry_body;
+use rekindle_channel::send::{BodyPosition, SlotBodyPosition};
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_codec::community::channel_record::{
     decode_channel_page, ChannelDelete, ChannelEdit, ChannelMessage, ChannelRecordEntry,
 };
-use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_db::repo::messages::channel_changes::{self as change_rows, StoredEdit};
-use rekindle_protocol::dht::community::channel_record as record;
 use rekindle_records::port::RecordPort;
+use rekindle_types::dht_layout::member_record::OUTBOX;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::message::{ChannelPost, PostEntry};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use super::ingest::{GateInputs, GatedPost, Ingested, ReceivedAt, ReceivedPost};
@@ -51,19 +53,22 @@ pub(crate) struct ChangeSource<'a> {
     pub channel_id: &'a str,
     pub record_key: &'a str,
     pub subkey_index: u32,
+    /// The entry's stream seq when it was read from the author's outbox
+    /// (`record_key`/`subkey_index` are then its member record and `M`/4).
+    pub outbox_seq: Option<u64>,
     pub author: &'a PseudonymKey,
 }
 
 impl HostChannel {
     /// Apply our `change` to our message `message_id` of `channel_id`: judged
-    /// by E1–E3 first, written to our slot as an entry, then stored on our
-    /// row and published to our own frontends (the mesh never echoes to its
-    /// sender). One gossip hint names the message, so readers read our slot
-    /// at once.
+    /// by E1–E3 first, queued on the channel's `channel_post` stream as an
+    /// entry of our outbox (`M`/4, plan E3.3; its body sealed when the
+    /// stream drains it), then stored on our row and published to our own
+    /// frontends. The drain's own subkey-4 hint tells readers to read it.
     ///
     /// # Errors
-    /// We were removed, a rule refuses the change, no key seals the edit,
-    /// the write could not be made, or the store failed.
+    /// We were removed, a rule refuses the change, we hold no outbox in the
+    /// community, or the queue or the store failed.
     pub(crate) async fn change_own_message(
         &self,
         community_id: &str,
@@ -84,78 +89,60 @@ impl HostChannel {
             MessageChange::Delete => ChangeKind::Delete,
         };
         changes::judge_change(target.as_ref(), &me, kind).map_err(ChannelError::ChangeRefused)?;
-        let context = self.channel_write_context(community_id, channel_id)?;
-        let subkey_index = channel_message_subkey(context.slot_index);
+        let own = (self.gov.own_outbox(community_id)).map_err(ChannelError::Adapter)?;
         let now = self.now_secs();
-        let (entry, body, digest) = match change {
-            MessageChange::Edit { body } => {
-                let at = SlotBodyPosition {
-                    channel_record_key: &context.channel_key,
-                    subkey_index,
-                    lamport_ts: seq,
-                };
-                let (ciphertext, mek_generation) =
-                    changes::seal_edit(self, community_id, channel_id, at, &body)?;
-                let digest = blake3::hash(&ciphertext).to_hex().to_string();
-                let edit = ChannelEdit {
-                    message_id: message_id.to_owned(),
-                    ciphertext,
-                    mek_generation,
+        let target = message_id.to_owned();
+        let (entry, queued, body, row) = match change {
+            MessageChange::Edit { body } => (
+                ChannelRecordEntry::Edit(ChannelEdit {
+                    message_id: target.clone(),
+                    ciphertext: Vec::new(),
+                    mek_generation: 0,
                     edited_at: now,
                     lamport_ts: seq,
-                };
-                (ChannelRecordEntry::Edit(edit), body, digest)
-            }
-            MessageChange::Delete => {
-                let delete = ChannelDelete {
-                    message_id: message_id.to_owned(),
+                }),
+                PostEntry::Edit {
+                    target: target.clone(),
+                    body: body.clone(),
+                    edited_at: now,
+                    seq,
+                },
+                body,
+                format!("edit:{target}:{seq}"),
+            ),
+            MessageChange::Delete => (
+                ChannelRecordEntry::Delete(ChannelDelete {
+                    message_id: target.clone(),
                     deleted_at: now,
                     lamport_ts: seq,
-                };
-                let digest = blake3::hash(format!("delete:{message_id}:{seq}").as_bytes());
-                (
-                    ChannelRecordEntry::Delete(delete),
-                    String::new(),
-                    digest.to_hex().to_string(),
-                )
-            }
+                }),
+                PostEntry::Delete {
+                    target: target.clone(),
+                    deleted_at: now,
+                    seq,
+                },
+                String::new(),
+                format!("delete:{target}:{seq}"),
+            ),
         };
-        let w = self.writer(&context)?;
-        let written = record::write_member_change(
-            &*w.pool,
-            &context.channel_key,
-            context.slot_index,
-            &context.slot_keypair_str,
-            w.author,
-            &w.signing_key,
-            entry.clone(),
-        )
-        .await;
-        super::delivery(written, "message change write")?;
+        let post = ChannelPost {
+            community: community_id.to_owned(),
+            channel: channel_id.to_owned(),
+            message: row,
+            entry: queued,
+        };
+        self.queue_change_impl(&post).await?;
         let author = PseudonymKey::from_hex_lossy(&me);
         let source = ChangeSource {
             community_id,
             channel_id,
-            record_key: &context.channel_key,
-            subkey_index,
+            record_key: &own.member_record,
+            subkey_index: OUTBOX,
+            outbox_seq: None,
             author: &author,
         };
         self.store_change(&db, &owner, source, &entry, &body, false)
-            .await?;
-        let hint = CommunityEnvelope::MessageNotification {
-            channel_id: channel_id.to_owned(),
-            message_id: message_id.to_owned(),
-            author_pseudonym: me,
-            subkey_index,
-            lamport_ts: seq,
-            sequence: 0,
-            content_hash: digest,
-            timestamp: now.saturating_mul(1000),
-        };
-        if let Err(error) = self.send_to_mesh(community_id, &hint) {
-            tracing::debug!(%error, "message change hint not sent");
-        }
-        Ok(())
+            .await
     }
 
     /// Ingest the post a gossip hint named from `page` (when the page still
@@ -250,20 +237,9 @@ impl HostChannel {
         }
         let (body, blurred) = match entry {
             ChannelRecordEntry::Edit(edit) => {
-                let at = SlotBodyPosition {
-                    channel_record_key: source.record_key,
-                    subkey_index: source.subkey_index,
-                    lamport_ts: edit.lamport_ts,
-                };
-                let body = changes::open_edit(
-                    self,
-                    source.community_id,
-                    source.channel_id,
-                    edit.mek_generation,
-                    at,
-                    &edit.ciphertext,
-                )
-                .ok_or_else(|| ChannelError::Decrypt("edit body".into()))?;
+                let body = self
+                    .open_change_body(source, edit)
+                    .ok_or_else(|| ChannelError::Decrypt("edit body".into()))?;
                 // The new body passes the gate as a post would: a refused
                 // author's edit, or one automod blocks, is not stored.
                 let gated = GatedPost {
@@ -289,6 +265,44 @@ impl HostChannel {
         };
         self.store_change(db, owner, source, entry, &body, blurred)
             .await
+    }
+
+    /// An edit's new body, opened at its own position: its outbox entry's
+    /// `{anchor, channel, author, streamSeq}`, or its slot's.
+    fn open_change_body(&self, source: ChangeSource<'_>, edit: &ChannelEdit) -> Option<String> {
+        let Some(stream_seq) = source.outbox_seq else {
+            let at = SlotBodyPosition {
+                channel_record_key: source.record_key,
+                subkey_index: source.subkey_index,
+                lamport_ts: edit.lamport_ts,
+            };
+            return changes::open_edit(
+                self,
+                source.community_id,
+                source.channel_id,
+                edit.mek_generation,
+                at,
+                &edit.ciphertext,
+            );
+        };
+        let channel = rekindle_types::id::ChannelId::from_hex(source.channel_id)?;
+        let scope = self.keys().scope_for_text(source.community_id, channel);
+        let at = BodyPosition {
+            anchor: source.community_id,
+            channel_id: source.channel_id,
+            author: &source.author.0,
+            stream_seq,
+        };
+        let keys = self.keys();
+        open_entry_body(
+            &*keys,
+            source.community_id,
+            scope,
+            edit.mek_generation,
+            at,
+            &edit.ciphertext,
+        )
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
     }
 
     /// Store `entry` (its rules re-checked in SQL) and publish the change

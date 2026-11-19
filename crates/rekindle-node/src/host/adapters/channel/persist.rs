@@ -119,6 +119,15 @@ impl HostChannel {
             .ok_or_else(|| ChannelError::Adapter("no unlocked outbox".into()))
     }
 
+    /// Queue our edit or delete `post` on its channel's stream (no echo:
+    /// the change is stored on its target's row).
+    pub(super) async fn queue_change_impl(&self, post: &ChannelPost) -> Result<(), ChannelError> {
+        self.channel_posts()?
+            .queue_change(post)
+            .await
+            .map_err(|e| outbox(&e))
+    }
+
     pub(super) async fn queue_post_impl(&self, post: &ChannelPost) -> Result<(), ChannelError> {
         self.channel_posts()?
             .queue(post)
