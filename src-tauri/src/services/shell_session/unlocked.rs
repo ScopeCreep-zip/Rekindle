@@ -86,7 +86,8 @@ async fn register_panic_shortcut(
         .call(move |conn| rekindle_db::repo::preferences::panic_shortcut(conn, &owner))
         .await
         .map_err(|e| format!("the panic shortcut is unreadable: {e}"))?;
-    if let Err(reason) = crate::shortcuts::begin_panic_session(app, state, scope, stored.as_deref()) {
+    if let Err(reason) = crate::shortcuts::begin_panic_session(app, state, scope, stored.as_deref())
+    {
         tracing::error!(%reason, "the panic shortcut is not registered");
         crate::event_dispatch::emit_notification(
             app,

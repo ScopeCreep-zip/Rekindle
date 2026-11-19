@@ -91,5 +91,8 @@ fn an_interrupted_sweep_has_already_destroyed_the_vault_headers() {
     let swept = super::sweep_root(&root, &bus);
     std::fs::set_permissions(&stuck, std::fs::Permissions::from_mode(0o700)).expect("chmod");
     assert!(swept.is_err(), "config/ was not removable");
-    assert!(!header.exists(), "the vault header went before anything else");
+    assert!(
+        !header.exists(),
+        "the vault header went before anything else"
+    );
 }

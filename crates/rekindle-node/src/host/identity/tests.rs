@@ -437,12 +437,11 @@ async fn a_rotation_keeps_the_armed_duress_passphrase_and_panic_shortcut() {
         Err(IdentityError::Duress)
     ));
     let owner = new_key.clone();
-    let shortcut = f
-        .db
-        .current()
-        .unwrap()
-        .call(move |conn| rekindle_db::repo::preferences::panic_shortcut(conn, &owner))
-        .await
-        .unwrap();
+    let shortcut =
+        f.db.current()
+            .unwrap()
+            .call(move |conn| rekindle_db::repo::preferences::panic_shortcut(conn, &owner))
+            .await
+            .unwrap();
     assert_eq!(shortcut.as_deref(), Some("CommandOrControl+Shift+F12"));
 }

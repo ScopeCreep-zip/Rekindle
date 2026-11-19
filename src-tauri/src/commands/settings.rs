@@ -144,10 +144,8 @@ pub async fn quick_wipe_disarm(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<Done<QuickWipeState>, CommandError> {
-    let done: Done<QuickWipeState> =
-        host_call::call(&state, IpcRequest::QuickWipeDisarm).await?;
-    crate::shortcuts::set_panic_chord(&app, state.inner(), None)
-        .map_err(CommandError::internal)?;
+    let done: Done<QuickWipeState> = host_call::call(&state, IpcRequest::QuickWipeDisarm).await?;
+    crate::shortcuts::set_panic_chord(&app, state.inner(), None).map_err(CommandError::internal)?;
     Ok(done)
 }
 
