@@ -107,6 +107,8 @@ impl HostGovernance {
         rekindle_governance_runtime::moderation::leave(self, &id)
             .await
             .map_err(|e| format!("community leave op: {e}"))?;
+        // Then our `Departed` beat, which ends the community's beats.
+        crate::host::adapters::presence::depart(&self.ctx, &id).await;
         let signing_key = self
             .ctx
             .signing_key

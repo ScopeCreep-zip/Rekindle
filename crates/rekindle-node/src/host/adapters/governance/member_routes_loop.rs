@@ -12,7 +12,8 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_governance_runtime::member_card::OwnRecord;
+use rekindle_codec::member_record::BeatState;
+use rekindle_governance_runtime::member_card::{write_own_beat, OwnBeat, OwnRecord};
 use rekindle_governance_runtime::member_routes::write_routes;
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_records::port::{RouteClass, RouteState};
@@ -77,6 +78,46 @@ impl HostGovernance {
     /// # Errors
     /// We hold no member record or keys there, or the write failed.
     async fn publish_own_routes(&self, community_id: &str, blob: &[u8]) -> Result<(), String> {
+        let keys = self.own_record_keys(community_id)?;
+        let port = self.record_port().map_err(|e| e.to_string())?;
+        write_routes(
+            &*port,
+            &keys.own(community_id),
+            blob,
+            self.ctx.clock.now_ms(),
+        )
+        .await
+    }
+
+    /// Write our beat saying `state` to our `M`/1 in `community_id`, under
+    /// the next `communities.beat_seq` (plan E3.4 S2, the beat engine's
+    /// sink, `host::adapters::presence`).
+    ///
+    /// # Errors
+    /// We hold no member record or keys there, the seq was not persisted,
+    /// or the write failed.
+    pub(crate) async fn write_own_beat(
+        &self,
+        community_id: &str,
+        state: BeatState,
+    ) -> Result<(), String> {
+        let keys = self.own_record_keys(community_id)?;
+        let port = self.record_port().map_err(|e| e.to_string())?;
+        let seq = self
+            .next_beat_seq(community_id)
+            .await
+            .map_err(|e| format!("beat seq: {e}"))?;
+        let beat = OwnBeat {
+            seq,
+            state,
+            now_ms: self.ctx.clock.now_ms(),
+        };
+        write_own_beat(&*port, &keys.own(community_id), &beat, &*self.ctx.rng).await
+    }
+
+    /// Our member record in `community_id` and the keys that write and sign
+    /// it.
+    fn own_record_keys(&self, community_id: &str) -> Result<OwnRecordKeys, String> {
         let record = self
             .own_member_record(community_id)
             .ok_or("no member record of ours")?;
@@ -86,13 +127,28 @@ impl HostGovernance {
             .ok_or("no identity is unlocked")?;
         let pseudonym =
             rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id);
-        let port = self.record_port().map_err(|e| e.to_string())?;
-        let own = OwnRecord {
+        Ok(OwnRecordKeys {
+            record,
+            writer,
+            pseudonym,
+        })
+    }
+}
+
+/// What [`OwnRecord`] borrows.
+struct OwnRecordKeys {
+    record: String,
+    writer: zeroize::Zeroizing<String>,
+    pseudonym: rekindle_secrets::ed25519_dalek::SigningKey,
+}
+
+impl OwnRecordKeys {
+    fn own<'a>(&'a self, community_id: &'a str) -> OwnRecord<'a> {
+        OwnRecord {
             community_id,
-            record: &record,
-            writer: &writer,
-            pseudonym: &pseudonym,
-        };
-        write_routes(&*port, &own, blob, self.ctx.clock.now_ms()).await
+            record: &self.record,
+            writer: self.writer.as_str(),
+            pseudonym: &self.pseudonym,
+        }
     }
 }

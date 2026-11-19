@@ -156,8 +156,9 @@ fn a_beat_is_live_for_15_minutes_from_the_later_of_its_number_and_its_arrival() 
         arrived + BEAT_LIVENESS_MS
     ));
     assert!(!beat_is_live(number, None, arrived));
-    // The writer's clock runs ahead: the number's time is the later one.
-    let early = written - 4 * BEAT_PERIOD_MS;
+    // The writer's clock runs ahead by a period: the number's time is the
+    // later one.
+    let early = written - BEAT_PERIOD_MS;
     assert!(beat_is_live(
         number,
         Some(early),
@@ -171,4 +172,89 @@ fn a_beat_is_live_for_15_minutes_from_the_later_of_its_number_and_its_arrival() 
     // No overflow at the extremes.
     assert!(beat_is_live(u64::MAX, None, u64::MAX - 1));
     assert!(!beat_is_live(0, Some(0), BEAT_LIVENESS_MS));
+}
+
+/// Plan E3.4 Q4 as amended 2026-11-19: a beat number more than one period
+/// ahead of our clock at its arrival counts from the arrival, so a future
+/// number cannot keep its member live; read cold, the number alone counts.
+#[test]
+fn a_beat_number_far_ahead_counts_from_its_arrival() {
+    use rekindle_codec::member_record::BEAT_PERIOD_MS;
+
+    let arrived = 5_871_000 * BEAT_PERIOD_MS;
+    let hour_ahead = (arrived + 60 * 60 * 1000) / BEAT_PERIOD_MS;
+    assert!(beat_is_live(
+        hour_ahead,
+        Some(arrived),
+        arrived + BEAT_LIVENESS_MS - 1
+    ));
+    assert!(!beat_is_live(
+        hour_ahead,
+        Some(arrived),
+        arrived + 16 * 60 * 1000
+    ));
+    assert!(!beat_is_live(
+        hour_ahead,
+        Some(arrived),
+        arrived + 55 * 60 * 1000
+    ));
+    // Just over one period ahead is too far; exactly one period is not.
+    let over = (arrived + BEAT_PERIOD_MS) / BEAT_PERIOD_MS + 1;
+    assert!(!beat_is_live(
+        over,
+        Some(arrived),
+        arrived + BEAT_LIVENESS_MS
+    ));
+    let one = (arrived + BEAT_PERIOD_MS) / BEAT_PERIOD_MS;
+    assert!(beat_is_live(one, Some(arrived), arrived + BEAT_LIVENESS_MS));
+    assert!(!beat_is_live(
+        one,
+        Some(arrived),
+        arrived + BEAT_PERIOD_MS + BEAT_LIVENESS_MS
+    ));
+    // Cold, the number alone counts.
+    assert!(beat_is_live(hour_ahead, None, arrived + 16 * 60 * 1000));
+}
+
+/// Plan E3.4 S2 ("Constant rate"): an Invisible member's record gets its
+/// card, routes and ops, and no beat; a visible one gets its beat.
+#[tokio::test]
+async fn an_invisible_member_publishes_its_record_without_a_beat() {
+    for (status, beat) in [
+        (SessionStatus::Invisible, false),
+        (SessionStatus::Away, true),
+    ] {
+        let dht = Arc::new(MemDht::default());
+        let pool = pool_on(Arc::clone(&dht));
+        let (lease, record, writer) =
+            RecordPort::create(&*pool, &rekindle_records::schema::member_record(), None)
+                .await
+                .unwrap();
+        pool.release(lease).await;
+        let pseudonym = SigningKey::from_bytes(&[6; 32]);
+        let own = OwnRecord {
+            community_id: "community",
+            record: &record,
+            writer: &writer,
+            pseudonym: &pseudonym,
+        };
+        let profile = OwnProfile {
+            display_name: String::new(),
+            status,
+            beat_seq: 1,
+            now_ms: 1_000,
+            route: Vec::new(),
+        };
+        super::publish_own_record(&*pool, &own, &profile, &[3; 32], &OsRandom, async {
+            Ok(())
+        })
+        .await
+        .expect("published");
+        assert!(dht.value(&record, member_record::CARD).is_some());
+        assert_eq!(
+            dht.value(&record, member_record::BEAT).is_some(),
+            beat,
+            "{status:?}"
+        );
+    }
 }

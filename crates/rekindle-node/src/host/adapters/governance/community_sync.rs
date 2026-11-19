@@ -32,7 +32,7 @@ const FIRST_TICKS: u32 = 3;
 const TICK: Duration = Duration::from_secs(30);
 
 /// Start the community sync, the anti-entropy loop, the member routes
-/// writer and the invite expiry timer in `scope` (the unlock's).
+/// writer, the beat engine and the invite expiry timer in `scope` (the unlock's).
 ///
 /// # Errors
 /// The scope is closed (the unlock is ending).
@@ -56,6 +56,7 @@ pub(crate) fn start(
     scope.spawn_with_token("member routes", move |stop| {
         super::member_routes_loop::run(routes, stop)
     })?;
+    crate::host::adapters::presence::start(ctx, scope)?;
     scope.spawn_with_token("community invite expiry", move |stop| {
         super::invite_expiry::run(expiry, stop)
     })?;
@@ -128,7 +129,7 @@ impl HostGovernance {
     /// not removed from (a removed member sends nothing, plan E3.2 S9), in
     /// id order (the store's map has no order; the phase's sends must not
     /// depend on it).
-    pub(super) fn sync_targets(&self) -> Vec<String> {
+    pub(crate) fn sync_targets(&self) -> Vec<String> {
         let mut targets: Vec<String> = self
             .ctx
             .communities

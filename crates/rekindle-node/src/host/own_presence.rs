@@ -103,6 +103,8 @@ pub(crate) struct OwnPresence {
     transport: Option<std::sync::Weak<TransportNode>>,
     journal: Arc<rekindle_events::SessionJournal>,
     clock: Arc<dyn rekindle_utils::Clock>,
+    /// The community beat engine (`host::adapters::presence`, plan E3.4 S2).
+    pub(crate) beats: crate::host::adapters::presence::BeatSlot,
 }
 
 impl OwnPresence {
@@ -121,6 +123,7 @@ impl OwnPresence {
             transport,
             journal,
             clock,
+            beats: crate::host::adapters::presence::BeatSlot::default(),
         }
     }
 
@@ -184,6 +187,9 @@ impl OwnPresence {
             flipped
         };
         self.changed();
+        if let Some(beats) = self.beats.read().as_ref() {
+            beats.status_changed();
+        }
         if flipped {
             if let Err(e) = self.write_details(false).await {
                 tracing::warn!(error = %e, "presence details not rewritten for the status; retrying");
@@ -443,8 +449,9 @@ impl OwnPresence {
         };
         let status =
             rekindle_presence::publish_status(Arc::new(self.clone()), SessionStatus::Offline);
+        let beats = crate::host::adapters::presence::quit(&self.beats);
         match tokio::time::timeout(OFFLINE_WRITE_WAIT, async {
-            tokio::join!(status, details).0
+            tokio::join!(status, details, beats).0
         })
         .await
         {

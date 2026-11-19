@@ -21,8 +21,8 @@ use rekindle_records::port::OpenIntent;
 use std::future::Future;
 
 use rekindle_codec::member_record::{
-    beat::decode_presence_beat, beat_number_at, card::decode_member_card, MemberCard, PresenceBeat,
-    RecordScope, SignedMemberCard, BEAT_PERIOD_MS,
+    beat::decode_presence_beat, beat_number_at, card::decode_member_card, BeatState, MemberCard,
+    PresenceBeat, RecordScope, SignedMemberCard, BEAT_PERIOD_MS,
 };
 use rekindle_records::port::{RecordPort, SetOutcome};
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -48,12 +48,22 @@ pub const BEAT_LIVENESS_MS: u64 = 3 * BEAT_PERIOD_MS;
 /// bootstrap read), has no arrival (`None`): only its beat number counts,
 /// since the read's own time says nothing of the beat's age.
 ///
+/// A beat number more than one period ([`BEAT_PERIOD_MS`]) ahead of our
+/// clock when the beat arrived counts from its arrival instead (plan E3.4
+/// Q4 as amended 2026-11-19): a writer's honest clock puts the number at
+/// most a period past ours, and a number further ahead would otherwise
+/// keep its member live long after the beats stop.
+///
 /// The state is not judged here: an `Offline` or `Departed` beat is never
 /// live ([`BeatState::is_present`](rekindle_codec::member_record::BeatState::is_present)).
 #[must_use]
 pub fn beat_is_live(beat_number: u64, arrived_at_ms: Option<u64>, now_ms: u64) -> bool {
     let written = beat_number.saturating_mul(BEAT_PERIOD_MS);
-    let from = arrived_at_ms.map_or(written, |arrived| arrived.max(written));
+    let from = match arrived_at_ms {
+        Some(arrived) if written > arrived.saturating_add(BEAT_PERIOD_MS) => arrived,
+        Some(arrived) => arrived.max(written),
+        None => written,
+    };
     now_ms < from.saturating_add(BEAT_LIVENESS_MS)
 }
 
@@ -171,11 +181,38 @@ pub async fn write_beat(
     profile: &OwnProfile,
     rng: &dyn RandomSource,
 ) -> Result<(), String> {
-    let beat = PresenceBeat {
+    let beat = OwnBeat {
         seq: profile.beat_seq,
         state: profile.status.into(),
+        now_ms: profile.now_ms,
+    };
+    write_own_beat(port, own, &beat, rng).await
+}
+
+/// One beat of ours, as the beat engine writes it (plan E3.4 S2).
+pub struct OwnBeat {
+    /// The next of `communities.beat_seq`, persisted before the write.
+    pub seq: u64,
+    pub state: BeatState,
+    /// Now, on the host's clock (ms): the beat number's time.
+    pub now_ms: u64,
+}
+
+/// Write `beat` to our `M`/1, without extras, padded with bytes from `rng`.
+///
+/// # Errors
+/// The beat does not encode, or the write did not land.
+pub async fn write_own_beat(
+    port: &dyn RecordPort,
+    own: &OwnRecord<'_>,
+    beat: &OwnBeat,
+    rng: &dyn RandomSource,
+) -> Result<(), String> {
+    let beat = PresenceBeat {
+        seq: beat.seq,
+        state: beat.state,
         voice_channel: None,
-        beat_number: beat_number_at(profile.now_ms),
+        beat_number: beat_number_at(beat.now_ms),
         extras: None,
     };
     let bytes = beat
@@ -187,7 +224,9 @@ pub async fn write_beat(
 /// Publish our member record in §4.4's order: the card (`M`/0, so the
 /// record is openable) and our routes (`M`/6, so the record is reachable
 /// once an op names it), then `publish_ops`, which appends our ops to `M`/2
-/// and writes `M`/3, then the beat (`M`/1).
+/// and writes `M`/3, then the beat (`M`/1). An Invisible member writes no
+/// beat at all (plan E3.4 "Constant rate"): its record shows nothing of its
+/// presence until it picks a visible status.
 ///
 /// # Errors
 /// A step failed; nothing after it is written.
@@ -207,6 +246,9 @@ where
         crate::member_routes::write_routes(port, own, &profile.route, profile.now_ms).await?;
     }
     publish_ops.await?;
+    if profile.status == SessionStatus::Invisible {
+        return Ok(());
+    }
     write_beat(port, own, profile, rng).await
 }
 

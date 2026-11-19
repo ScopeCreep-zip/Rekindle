@@ -3,6 +3,8 @@
 //! Decomposed per Invariant 1 (≤500 LoC per file). Each submodule
 //! owns one orchestrator + its tests:
 //!
+//! - `beat` — the beat engine (plan E3.4 S2): our `M`/1 beat on its
+//!   randomised schedule and on explicit actions.
 //! - `sync` — initial-sync handshake: presence broadcast →
 //!   SMPL channel-log catch-up.
 //! - `registry` — registry write helpers: `write_our_presence`
@@ -12,6 +14,7 @@
 //! - `time` — internal `now_secs()` helper hoisted so the larger
 //!   modules stay focused on orchestration.
 
+pub mod beat;
 pub mod overlay_rebuild;
 pub mod policy;
 pub mod poll;
@@ -24,6 +27,7 @@ pub mod sync;
 pub(crate) mod test_fixture;
 pub mod util;
 
+pub use beat::{beat_delay, scheduled_state, BeatEngine, BeatSink, BEAT_DELAY_MAX, BEAT_DELAY_MIN};
 pub use overlay_rebuild::{
     compute_rebuild_plan, GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome,
 };

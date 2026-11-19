@@ -27,6 +27,7 @@ tokio-util = "0.7"
 tracing = { workspace = true }
 
 [dev-dependencies]
+rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 parking_lot = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = [ "rt", "macros", "sync", "time", "test-util" ] }

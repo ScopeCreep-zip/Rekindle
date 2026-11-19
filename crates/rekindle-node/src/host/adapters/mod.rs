@@ -9,3 +9,4 @@ pub mod governance;
 pub mod group_dm;
 pub mod mek;
 pub mod outbox;
+pub mod presence;
