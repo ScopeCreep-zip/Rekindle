@@ -271,7 +271,6 @@ pub(crate) async fn handle_create(
         "id": created.channel_id_hex,
         "name": name,
         "kind": kind,
-        "record_key": created.record_key,
     }))
 }
 

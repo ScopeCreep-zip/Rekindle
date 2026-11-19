@@ -201,7 +201,6 @@ pub struct GovernanceState {
 pub struct ChannelState {
     pub name: String,
     pub channel_type: String,
-    pub record_key: String,
     pub category_id: Option<CategoryId>,
     pub position: u32,
     pub topic: Option<String>,
@@ -302,7 +301,6 @@ pub struct ThreadState {
     pub parent_channel_id: ChannelId,
     pub name: String,
     pub thread_type: String,
-    pub record_key: Option<String>,
     pub invited: Vec<PseudonymKey>,
     pub forum_tag: Option<String>,
     pub auto_archive_seconds: u64,

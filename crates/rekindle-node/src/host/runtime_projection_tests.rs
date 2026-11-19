@@ -38,7 +38,6 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
     let channel = |name: &str, position| ChannelState {
         name: name.into(),
         channel_type: "text".into(),
-        record_key: format!("VLD0:{name}"),
         category_id: None,
         position,
         topic: None,

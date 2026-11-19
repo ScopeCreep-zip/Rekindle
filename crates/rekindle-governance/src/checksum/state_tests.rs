@@ -29,7 +29,6 @@ fn channel() -> ChannelState {
     ChannelState {
         name: "c".into(),
         channel_type: "text".into(),
-        record_key: "VLD0:c".into(),
         category_id: None,
         position: 0,
         topic: None,
@@ -60,7 +59,6 @@ fn thread() -> ThreadState {
         parent_channel_id: ChannelId([1; 16]),
         name: "t".into(),
         thread_type: "public".into(),
-        record_key: None,
         invited: Vec::new(),
         forum_tag: None,
         auto_archive_seconds: 0,

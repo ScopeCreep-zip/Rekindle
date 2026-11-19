@@ -223,7 +223,6 @@ decanon_struct!(RoleState {
 decanon_struct!(ChannelState {
     name,
     channel_type,
-    record_key,
     category_id,
     position,
     topic,
@@ -274,7 +273,6 @@ decanon_struct!(ThreadState {
     parent_channel_id,
     name,
     thread_type,
-    record_key,
     invited,
     forum_tag,
     auto_archive_seconds,

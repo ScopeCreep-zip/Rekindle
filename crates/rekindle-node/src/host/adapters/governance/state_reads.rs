@@ -82,7 +82,7 @@ impl HostGovernance {
             // `o_cnt: 0` it grants no write, so it is not carried here.
             dht_owner_keypair: None,
             governance_clock: membership.lamport_counter,
-            channel_log_keys: self.channel_record_keys_impl(community_id, membership),
+            channel_log_keys: membership.channel_record_keys.clone(),
             channel_ids: self.channel_ids_impl(community_id, membership),
             mek_generation: membership.mek_generation,
         })
@@ -92,37 +92,15 @@ impl HostGovernance {
         self.ctx.communities.governance_state(community_id)
     }
 
-    /// Channel-id → segment-0 record key, from merged governance.
-    ///
-    /// `ChannelCreated.record_key` is the canonical location: it is CRDT
-    /// state every peer merged, so a joiner has it the moment the merge
-    /// lands. The store's channel keys are a cache that only the creator's own
-    /// `insert_community` seeds, which is why a joined community used to
-    /// have an empty map and no way to send.
-    ///
-    /// Store entries are folded in underneath rather than ignored —
-    /// they cover the window before the first merge completes.
-    fn channel_record_keys_impl(
-        &self,
-        community_id: &str,
-        membership: &SessionMembership,
-    ) -> std::collections::HashMap<String, String> {
-        let mut out = membership.channel_record_keys.clone();
-        if let Some(state) = self.ctx.communities.governance_state(community_id) {
-            for (channel_id, channel) in &state.channels {
-                if channel.record_key.is_empty() {
-                    continue;
-                }
-                out.insert(hex::encode(channel_id.0), channel.record_key.clone());
-            }
-        }
-        out
-    }
-
     fn channel_ids_impl(&self, community_id: &str, membership: &SessionMembership) -> Vec<String> {
-        self.channel_record_keys_impl(community_id, membership)
-            .into_keys()
-            .collect()
+        // The merged channels (plan E3.3: a channel is its `ChannelCreated`
+        // op, with no record).
+        match self.ctx.communities.governance_state(community_id) {
+            Some(state) => (state.channels.keys())
+                .map(|id| hex::encode(id.0))
+                .collect(),
+            None => membership.channel_record_keys.keys().cloned().collect(),
+        }
     }
 
     /// Snapshot the gossip overlay's online members.
@@ -219,9 +197,7 @@ impl HostGovernance {
         let Some(membership) = guard.as_ref().and_then(|s| s.communities.get(community_id)) else {
             return Vec::new();
         };
-        self.channel_record_keys_impl(community_id, membership)
-            .into_iter()
-            .collect()
+        membership.channel_record_keys.clone().into_iter().collect()
     }
 
     pub(super) fn governance_overflow_keys_impl(&self, community_id: &str) -> Vec<String> {

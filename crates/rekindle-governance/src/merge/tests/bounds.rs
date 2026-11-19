@@ -44,7 +44,6 @@ fn channel(lamport: u64) -> Stamped {
             channel_id: channel_id(7),
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: "k".into(),
             category_id: None,
             position: 0,
             parent_voice_channel_id: None,

@@ -46,7 +46,6 @@ mod tests {
             parent_channel_id: ChannelId([5; 16]),
             name: "side".into(),
             thread_type: "public".into(),
-            record_key: None,
             invited: Vec::new(),
             forum_tag: None,
             auto_archive_seconds: 3600,

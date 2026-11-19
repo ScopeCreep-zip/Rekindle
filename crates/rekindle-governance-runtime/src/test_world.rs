@@ -76,7 +76,7 @@ impl World {
             state: GovernanceState::default(),
             clock: 1,
         };
-        let genesis = genesis_entries("c", &creator.author(), ChannelId([2; 16]), "VLD0:ch");
+        let genesis = genesis_entries("c", &creator.author(), ChannelId([2; 16]));
         for body in genesis {
             world.author(creator, body, Deps::Frontier);
         }

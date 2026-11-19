@@ -28,7 +28,6 @@ fn governance(slowmode_seconds: Option<u32>) -> GovernanceState {
         ChannelState {
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: String::new(),
             category_id: None,
             position: 0,
             topic: None,

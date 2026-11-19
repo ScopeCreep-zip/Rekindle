@@ -37,7 +37,6 @@ struct OwnedChannel {
     topic: String,
     slowmode_seconds: u32,
     nsfw: bool,
-    record_key: String,
     parent_voice_channel_id: Option<String>,
 }
 
@@ -59,7 +58,6 @@ impl OwnedChannel {
             topic: channel.topic.clone().unwrap_or_default(),
             slowmode_seconds: channel.slowmode_seconds.unwrap_or(0),
             nsfw: channel.nsfw.unwrap_or(false),
-            record_key: channel.record_key.clone(),
             parent_voice_channel_id: channel.parent_voice_channel_id.map(|c| hex::encode(c.0)),
         })
     }
@@ -73,58 +71,38 @@ impl OwnedChannel {
             topic: &self.topic,
             slowmode_seconds: self.slowmode_seconds,
             nsfw: self.nsfw,
-            message_record_key: Some(&self.record_key),
+            message_record_key: None,
             mek_generation,
             parent_voice_channel_id: self.parent_voice_channel_id.as_deref(),
         }
     }
 }
 
-/// Record the channels merged governance gives a record key: insert-only,
-/// in the projection and the database (a key already known is the same
-/// key, and a channel whose `ChannelCreated` has not merged yet must not
-/// be dropped). Returns whether the projection changed.
+/// Store the channels merged governance names: insert-only (a channel
+/// whose `ChannelCreated` has not merged yet must not be dropped). A
+/// channel has no record (plan E3.3).
 pub fn record_channels(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
-    communities: &CommunityStore,
     community_id: &str,
     state: &GovernanceState,
-) -> bool {
-    let channels: Vec<OwnedChannel> = state
-        .channels
-        .iter()
-        .filter(|(_, channel)| !channel.record_key.is_empty())
+) {
+    let channels: Vec<OwnedChannel> = (state.channels.iter())
         .filter_map(|(id, channel)| OwnedChannel::from_state(hex::encode(id.0), channel))
         .collect();
     if channels.is_empty() {
-        return false;
+        return;
     }
-    let (changed, mek_generation) = {
-        let mut guard = session.write();
-        let Some(membership) = guard
-            .as_mut()
-            .and_then(|s| s.communities.get_mut(community_id))
-        else {
-            return false;
+    let mek_generation = {
+        let guard = session.read();
+        let Some(membership) = guard.as_ref().and_then(|s| s.communities.get(community_id)) else {
+            return;
         };
-        let mut changed = false;
-        for channel in &channels {
-            if !membership.channel_record_keys.contains_key(&channel.id) {
-                membership
-                    .channel_record_keys
-                    .insert(channel.id.clone(), channel.record_key.clone());
-                changed = true;
-            }
-        }
-        for channel in &channels {
-            communities.note_channel_record_key(community_id, &channel.id, &channel.record_key);
-        }
-        (changed, membership.mek_generation)
+        membership.mek_generation
     };
     if let Some((owner, db)) = owner_and_db(session, db) {
         let community = community_id.to_string();
-        db.fire("channel record keys", move |conn| {
+        db.fire("merged channels", move |conn| {
             for channel in &channels {
                 repo::channels::insert_if_absent(
                     conn,
@@ -132,18 +110,10 @@ pub fn record_channels(
                     &community,
                     &channel.row(mek_generation),
                 )?;
-                repo::channels::set_record_key_if_absent(
-                    conn,
-                    &owner,
-                    &community,
-                    &channel.id,
-                    &channel.record_key,
-                )?;
             }
             Ok(())
         });
     }
-    changed
 }
 
 /// Adopt the slot index the registry knows for us.

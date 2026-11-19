@@ -95,7 +95,8 @@ struct ChannelCreatedEntry @0xb6d4eb16e9bf1c2e {
     name             @1 :Text;
     # `text` / `voice` / `announcement` / `forum` / `stage` / `media`.
     channelType      @2 :Text;
-    recordKey        @3 :Text;
+    # Obsolete (plan E3.3): a channel has no record; posts ride `M`/4.
+    obsoleteRecordKey @3 :Text;
     hasCategoryId    @4 :Bool;
     categoryId       @5 :Uuid16;
     position         @6 :UInt32;
@@ -412,8 +413,9 @@ struct ThreadCreatedEntry @0xc6d4eb16e9bf1c2e {
     parentChannelId      @1 :Uuid16;
     name                 @2 :Text;
     threadType           @3 :Text;
-    hasRecordKey         @4 :Bool;
-    recordKey            @5 :Text;
+    # Obsolete (plan E3.3, T1): a thread has no record.
+    obsoleteHasRecordKey @4 :Bool;
+    obsoleteRecordKey    @5 :Text;
     invited              @6 :List(PseudonymKey);
     hasForumTag          @7 :Bool;
     forumTag             @8 :Text;

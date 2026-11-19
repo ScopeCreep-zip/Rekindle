@@ -15,15 +15,12 @@ pub(super) fn governance_entry_to_audit_row(
     let timestamp = lamport;
     match entry {
         GovernanceEntry::ChannelCreated {
-            channel_id,
-            name,
-            record_key,
-            ..
+            channel_id, name, ..
         } => CommunityAuditEntry {
             action: "channel_created".into(),
             actor_pseudonym,
             target: Some(hex::encode(channel_id.0)),
-            details: Some(format!("{name} ({record_key})")),
+            details: Some(name.clone()),
             timestamp,
         },
         GovernanceEntry::ChannelArchived { channel_id, .. } => CommunityAuditEntry {

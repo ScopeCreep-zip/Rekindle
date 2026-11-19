@@ -103,7 +103,6 @@ fn admin_entries() -> Vec<Stamped> {
                 channel_id: channel_id(),
                 name: "general".into(),
                 channel_type: "text".into(),
-                record_key: "VLD0:CH-SEGMENT-0".into(),
                 category_id: None,
                 position: 0,
                 parent_voice_channel_id: None,

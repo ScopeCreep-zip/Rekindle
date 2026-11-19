@@ -27,13 +27,12 @@ pub struct GovernanceProjected {
     pub new_watch_targets: bool,
 }
 
-/// Every record the community's state names to watch: channel logs,
-/// segment governance and registry records, channel-segment records.
+/// Every record the community's state names to watch: segment governance
+/// and registry records, channel-segment records (a channel has no record
+/// of its own, plan E3.3).
 fn watch_targets(cs: &CommunityState) -> HashSet<String> {
-    cs.channel_log_keys
-        .values()
-        .cloned()
-        .chain(cs.governance_state.iter().flat_map(|g| {
+    (cs.governance_state.iter())
+        .flat_map(|g| {
             g.segments
                 .iter()
                 .flat_map(|s| [s.anchor.clone(), s.registry_key.clone()])
@@ -42,7 +41,7 @@ fn watch_targets(cs: &CommunityState) -> HashSet<String> {
                         .values()
                         .map(|r| r.record_key.clone()),
                 )
-        }))
+        })
         .collect()
 }
 
@@ -66,21 +65,14 @@ fn channel_type(wire: &str) -> ChannelType {
 fn project_channels(cs: &mut CommunityState, gov: &GovernanceState) {
     let existing: HashMap<String, ChannelInfo> =
         cs.channels.drain(..).map(|c| (c.id.clone(), c)).collect();
-    let mut log_keys = HashMap::new();
     let mut channels: Vec<(u32, ChannelInfo)> = gov
         .channels
         .iter()
         .map(|(id, ch)| {
             let id = hex::encode(id.0);
-            let record_key = (!ch.record_key.is_empty()).then(|| ch.record_key.clone());
-            if let Some(key) = &record_key {
-                log_keys.insert(id.clone(), key.clone());
-            }
             let local = existing.get(&id);
             let info = ChannelInfo {
-                message_record_key: local
-                    .and_then(|c| c.message_record_key.clone())
-                    .or(record_key),
+                message_record_key: local.and_then(|c| c.message_record_key.clone()),
                 name: ch.name.clone(),
                 channel_type: channel_type(&ch.channel_type),
                 category_id: ch.category_id.map(|c| hex::encode(c.0)),
@@ -102,7 +94,6 @@ fn project_channels(cs: &mut CommunityState, gov: &GovernanceState) {
         .collect();
     channels.sort_by(|(a_pos, a), (b_pos, b)| a_pos.cmp(b_pos).then_with(|| a.name.cmp(&b.name)));
     cs.channels = channels.into_iter().map(|(_, c)| c).collect();
-    cs.channel_log_keys = log_keys;
 }
 
 fn project_roles_and_categories(cs: &mut CommunityState, gov: &GovernanceState) {
@@ -253,7 +244,7 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
                 topic: ch.topic.clone().unwrap_or_default(),
                 slowmode_seconds: i64::from(ch.slowmode_seconds.unwrap_or(0)),
                 nsfw: ch.nsfw.unwrap_or(false),
-                record_key: (!ch.record_key.is_empty()).then(|| ch.record_key.clone()),
+                record_key: None,
                 mek_generation,
             }
         })

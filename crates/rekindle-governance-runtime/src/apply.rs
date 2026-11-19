@@ -301,7 +301,6 @@ mod tests {
             channel_id: ChannelId([0u8; 16]),
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: String::new(),
             category_id: None,
             position: 0,
             parent_voice_channel_id: None,

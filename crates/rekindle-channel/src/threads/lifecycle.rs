@@ -34,7 +34,6 @@ pub async fn create_thread<D: ChannelMessagingDeps>(
             parent_channel_id: ChannelId(hex_to_id_16(channel_id)),
             name: name.to_string(),
             thread_type,
-            record_key: None,
             invited: Vec::new(),
             forum_tag: forum_tag_for_entry,
             auto_archive_seconds,

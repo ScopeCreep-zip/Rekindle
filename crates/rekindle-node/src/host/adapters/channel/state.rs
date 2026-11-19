@@ -88,7 +88,6 @@ impl HostChannel {
             parent_channel_id_hex: hex::encode(thread.parent_channel_id.0),
             name: thread.name.clone(),
             thread_type: thread.thread_type.clone(),
-            record_key: thread.record_key.clone(),
             invited: thread.invited.clone(),
             forum_tag: thread.forum_tag.clone(),
             auto_archive_seconds: thread.auto_archive_seconds,

@@ -20,7 +20,6 @@ fn with_channel() -> GovernanceState {
         ChannelState {
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: String::new(),
             category_id: None,
             position: 0,
             topic: None,

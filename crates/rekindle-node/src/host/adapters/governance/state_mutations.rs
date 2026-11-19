@@ -34,15 +34,10 @@ pub(crate) fn raises_key_generation(
 
 impl HostGovernance {
     pub(super) fn set_governance_state_impl(&self, community_id: &str, state: GovernanceState) {
-        // Record each channel's record key before the state lands.
-        // `ChannelCreated.record_key` is the canonical location, but the
-        // session copy is what `setup_community_watches` and the leave path
-        // read — and only the *creator's* `insert_community` ever seeded
-        // it, so a joined community had no channel watches at all.
+        // Store each merged channel's row before the state lands.
         crate::host::session::record_channels(
             &self.ctx.session,
             &self.ctx.db,
-            &self.ctx.communities,
             community_id,
             &state,
         );
@@ -227,12 +222,9 @@ impl HostGovernance {
             id: &community.id,
             anchor: &community.id,
             registry_key: &community.registry_key,
-            channel_id_hex: &community.channel_id_hex,
-            channel_record_key: &community.channel_record_key,
             slot_keypair: &community.slot_keypair,
             my_pseudonym_hex: &community.my_pseudonym_hex,
         });
-        // The genesis channel's record key, from the genesis state.
         self.set_governance_state_impl(&community.id, community.governance_state);
         self.insert_community_mek_impl(&community.id, &community.mek);
     }

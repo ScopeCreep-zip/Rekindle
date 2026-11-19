@@ -48,7 +48,6 @@ fn base() -> GovernanceState {
         ChannelState {
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: "rk".into(),
             category_id: None,
             position: 0,
             topic: None,

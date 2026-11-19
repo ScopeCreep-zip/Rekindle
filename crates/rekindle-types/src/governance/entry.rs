@@ -38,14 +38,13 @@ pub enum AdmissionMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GovernanceEntry {
-    /// Create a new channel. Creates an associated SMPL channel record.
+    /// Create a new channel. It has no record of its own: its posts ride
+    /// their authors' `M`/4 outboxes under its channel tag (plan E3.3).
     ChannelCreated {
         channel_id: ChannelId,
         name: String,
         /// "text", "voice", "announcement", "forum", "stage", "media"
         channel_type: String,
-        /// DHT key of the channel's SMPL record (same universal schema)
-        record_key: String,
         category_id: Option<CategoryId>,
         position: u32,
         /// Architecture §10.8 — text-in-voice. When set, this channel
@@ -273,15 +272,14 @@ pub enum GovernanceEntry {
         deny: u64,
     },
 
-    /// Create a thread (lazy SMPL record creation).
+    /// Create a thread. Its replies ride their authors' channel outboxes
+    /// under the thread's derived tag (plan E3.3, T1).
     ThreadCreated {
         thread_id: ThreadId,
         parent_channel_id: ChannelId,
         name: String,
         /// "public" | "private" | "announcement" | "forum_post"
         thread_type: String,
-        /// DHT key — created lazily on first message, None initially.
-        record_key: Option<String>,
         /// Explicit invitees for private threads.
         invited: Vec<PseudonymKey>,
         /// Tag selected from the parent forum channel, when applicable.

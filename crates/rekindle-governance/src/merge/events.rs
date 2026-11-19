@@ -17,17 +17,11 @@ pub(super) fn apply_events(
             parent_channel_id,
             name,
             thread_type,
-            record_key,
             invited,
             forum_tag,
             auto_archive_seconds,
         } => {
             let should_replace = state.threads.get(thread_id).is_none_or(|existing| {
-                let existing_has_record = existing.record_key.is_some();
-                let next_has_record = record_key.is_some();
-                if existing_has_record != next_has_record {
-                    return next_has_record;
-                }
                 if stamp != existing.created {
                     return stamp > existing.created;
                 }
@@ -51,7 +45,6 @@ pub(super) fn apply_events(
                         parent_channel_id: *parent_channel_id,
                         name: name.clone(),
                         thread_type: thread_type.clone(),
-                        record_key: record_key.clone(),
                         invited: invited.clone(),
                         forum_tag: forum_tag.clone(),
                         auto_archive_seconds: *auto_archive_seconds,

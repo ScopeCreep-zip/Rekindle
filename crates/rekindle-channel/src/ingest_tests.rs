@@ -38,7 +38,6 @@ fn state() -> GovernanceState {
         ChannelState {
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: String::new(),
             category_id: None,
             position: 0,
             topic: None,
@@ -237,7 +236,6 @@ fn thread_by(creator: &PseudonymKey) -> rekindle_governance::state::ThreadState 
         parent_channel_id: ChannelId([1; 16]),
         name: "side".into(),
         thread_type: "public".into(),
-        record_key: None,
         invited: Vec::new(),
         forum_tag: None,
         auto_archive_seconds: 3600,

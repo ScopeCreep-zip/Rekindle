@@ -11,7 +11,6 @@ fn governance_entry_serde_roundtrip() {
         channel_id: ChannelId([1u8; 16]),
         name: "general".into(),
         channel_type: "text".into(),
-        record_key: "VLD0:abc123".into(),
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,

@@ -17,7 +17,6 @@ pub(super) fn write_channel_created(
         channel_id,
         name,
         channel_type,
-        record_key,
         category_id,
         position,
         parent_voice_channel_id,
@@ -28,7 +27,6 @@ pub(super) fn write_channel_created(
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
     p.set_name(name);
     p.set_channel_type(channel_type);
-    p.set_record_key(record_key);
     p.set_has_category_id(category_id.is_some());
     if let Some(c) = category_id {
         uuid16_to_capnp(p.reborrow().init_category_id(), &c.0);
@@ -195,7 +193,6 @@ pub(super) fn read_channel_created(
         channel_id: channel_id_from_capnp(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         name: text_to_string(p.get_name().map_err(|e| capnp_err(&e))?)?,
         channel_type: text_to_string(p.get_channel_type().map_err(|e| capnp_err(&e))?)?,
-        record_key: text_to_string(p.get_record_key().map_err(|e| capnp_err(&e))?)?,
         category_id: if p.get_has_category_id() {
             Some(category_id_from_capnp(
                 p.get_category_id().map_err(|e| capnp_err(&e))?,

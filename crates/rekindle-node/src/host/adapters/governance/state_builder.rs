@@ -15,8 +15,6 @@ pub(super) struct CreatedCommunity<'a> {
     pub id: &'a str,
     pub anchor: &'a str,
     pub registry_key: &'a str,
-    pub channel_id_hex: &'a str,
-    pub channel_record_key: &'a str,
     pub slot_keypair: &'a str,
     pub my_pseudonym_hex: &'a str,
 }
@@ -31,15 +29,8 @@ impl HostGovernance {
                 return;
             };
             c.slot_keypair = Some(created.slot_keypair.to_string());
-            c.channel_log_keys.insert(
-                created.channel_id_hex.to_string(),
-                created.channel_record_key.to_string(),
-            );
             c.open_community_records.anchor = Some(created.anchor.to_string());
             c.open_community_records.registry_key = Some(created.registry_key.to_string());
-            c.open_community_records
-                .channel_keys
-                .push(created.channel_record_key.to_string());
             c.known_members.insert(created.my_pseudonym_hex.to_string());
             c.gossip.get_or_insert_with(GossipOverlay::default);
             c.onboarding_complete = true;

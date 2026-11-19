@@ -90,7 +90,7 @@ fn estimate_bytes(state: &GovernanceState) -> usize {
     total +=
         state.channels.capacity() * std::mem::size_of::<rekindle_governance::state::ChannelState>();
     for channel in state.channels.values() {
-        total += channel.name.capacity() + channel.record_key.capacity();
+        total += channel.name.capacity();
     }
     total += state.expressions.capacity()
         * std::mem::size_of::<rekindle_governance::state::ExpressionState>();

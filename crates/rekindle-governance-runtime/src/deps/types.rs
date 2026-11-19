@@ -118,7 +118,6 @@ pub struct CommunityInsert {
     pub id: String,
     pub name: String,
     pub channel_id_hex: String,
-    pub channel_record_key: String,
     pub registry_key: String,
     pub registry_owner_keypair: Option<String>,
     pub slot_seed_hex: String,

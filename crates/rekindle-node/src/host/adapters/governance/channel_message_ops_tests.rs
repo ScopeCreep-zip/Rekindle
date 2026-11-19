@@ -117,7 +117,6 @@ fn merged_delete(author: u8) -> GovernanceState {
         channel_id: MODERATED_CHANNEL,
         name: "general".into(),
         channel_type: "text".into(),
-        record_key: "VLD0:c".into(),
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,

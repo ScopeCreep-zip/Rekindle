@@ -3,8 +3,9 @@
 //! once, then released and zeroized) and by the creator pseudonym; the
 //! creator's member record `M(p)` (DFLT(8)) is owned by a random `K_M(p)`
 //! kept in the vault; the genesis ops are the creator's ops #0…n. The
-//! registry and the `#general` channel record are still created until
-//! E3.4/E3.3 delete them. The community id is `A`'s record key.
+//! registry is still created until E3.4 deletes it; `#general` has no
+//! record (its posts ride `M`/4, plan E3.3). The community id is `A`'s
+//! record key.
 
 use rekindle_codec::governance_op::genesis;
 use rekindle_crypto::keypair_text;
@@ -60,7 +61,6 @@ pub(crate) fn genesis_entries(
     name: &str,
     my_pseudo: &PseudonymKey,
     channel_id: ChannelId,
-    channel_record_key: &str,
 ) -> [GovernanceEntry; GENESIS_OPS] {
     [
         GovernanceEntry::CommunityMeta {
@@ -99,7 +99,6 @@ pub(crate) fn genesis_entries(
             channel_id,
             name: "general".into(),
             channel_type: "text".into(),
-            record_key: channel_record_key.to_string(),
             category_id: None,
             position: 0,
             parent_voice_channel_id: None,
@@ -112,12 +111,11 @@ struct OriginRecords {
     anchor: DhtRecordInfo,
     member: DhtRecordInfo,
     registry: DhtRecordInfo,
-    channel: DhtRecordInfo,
 }
 
 /// Create a new community (plan E3.2, ADR 0011): the anchor `A` with its
 /// `GenesisCert`, the creator's member record `M(p)`, the genesis ops, and
-/// (until E3.4/E3.3 delete them) the registry and the `#general` record.
+/// (until E3.4 deletes it) the registry.
 /// Returns `A`'s record key, the community id.
 pub async fn create_community<D: GovernanceRuntimeDeps>(
     deps: &D,
@@ -134,9 +132,9 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         })?;
         member_pubkeys.push(sk.verifying_key().to_bytes());
     }
-    // A, M(p), the registry, #general; a failure releases what exists.
-    let mut created: Vec<DhtRecordInfo> = Vec::with_capacity(4);
-    for which in 0..4 {
+    // A, M(p), the registry; a failure releases what exists.
+    let mut created: Vec<DhtRecordInfo> = Vec::with_capacity(3);
+    for which in 0..3 {
         let result = match which {
             0 => deps.create_record(&schema::community_anchor()).await,
             1 => deps.create_record(&schema::member_record()).await,
@@ -154,9 +152,7 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     }
     let leases: Vec<LeaseId> = created.iter().map(|r| r.lease).collect();
     let mut it = created.into_iter();
-    let (Some(anchor), Some(member), Some(registry), Some(channel)) =
-        (it.next(), it.next(), it.next(), it.next())
-    else {
+    let (Some(anchor), Some(member), Some(registry)) = (it.next(), it.next(), it.next()) else {
         return Err(GovernanceRuntimeError::Adapter(
             "origin: a record is missing".into(),
         ));
@@ -165,7 +161,6 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         anchor,
         member,
         registry,
-        channel,
     };
     match seed_community(deps, name, admission, &slot_seed, records).await {
         Ok(anchor) => Ok(anchor),
@@ -244,11 +239,9 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         anchor,
         member,
         registry: reg_record,
-        channel: ch_record,
     } = records;
     let anchor_key = anchor.record_key.clone();
     let reg_key = reg_record.record_key.clone();
-    let ch_key = ch_record.record_key.clone();
 
     // The creator pseudonym from the master secret and the anchor.
     let master_secret = deps
@@ -284,7 +277,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     let channel_id = random_channel_id(deps.rng().as_ref());
     let mut set = op_log::VerifiedSet::default();
     let mut genesis_ops = Vec::new();
-    for body in genesis_entries(name, &my_pseudo, channel_id, &ch_key) {
+    for body in genesis_entries(name, &my_pseudo, channel_id) {
         let (op, encoded) = op_log::build_op(
             &anchor_key,
             &cert,
@@ -354,7 +347,6 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         id: anchor_key.clone(),
         name: name.to_string(),
         channel_id_hex: hex::encode(channel_id.0),
-        channel_record_key: ch_key.clone(),
         registry_key: reg_key.clone(),
         registry_owner_keypair: reg_record.owner_keypair,
         slot_seed_hex: hex::encode(slot_seed.0),
@@ -416,14 +408,10 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         }],
     );
 
-    // Nothing else writes the channel record until a first message.
-    crate::records::publish_created(deps, ch_record.lease, &slot_seed.0, 0).await?;
-
     deps.community_records_ready(
         &anchor_key,
         CommunityLeases {
             registry: Some(reg_record.lease),
-            channels: std::collections::HashMap::from([(channel_id, ch_record.lease)]),
             ..CommunityLeases::default()
         },
     )
@@ -465,7 +453,6 @@ mod genesis_tests {
             "c",
             &rekindle_types::id::PseudonymKey([1u8; 32]),
             rekindle_types::id::ChannelId([2u8; 16]),
-            "rec",
         );
         let kinds: Vec<&str> = entries
             .iter()

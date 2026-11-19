@@ -44,7 +44,6 @@ fn arb_entry() -> impl Strategy<Value = Stamped> {
                     channel_id: ch,
                     name: "ch".into(),
                     channel_type: "text".into(),
-                    record_key: "k".into(),
                     category_id: None,
                     position: 0,
                     parent_voice_channel_id: None,
@@ -217,7 +216,6 @@ fn bounded_base() -> Vec<Stamped> {
                 channel_id: ChannelId([7; 16]),
                 name: "ch".into(),
                 channel_type: "text".into(),
-                record_key: "k".into(),
                 category_id: None,
                 position: 0,
                 parent_voice_channel_id: None,
@@ -319,7 +317,6 @@ proptest! {
             parent_channel_id,
             name: "ops".into(),
             thread_type: "public".into(),
-            record_key: None,
             invited: Vec::new(),
             forum_tag: None,
             auto_archive_seconds: 86_400,
@@ -329,7 +326,6 @@ proptest! {
             parent_channel_id,
             name: "ops".into(),
             thread_type: "public".into(),
-            record_key: Some("VLD0:thread".into()),
             invited: Vec::new(),
             forum_tag: None,
             auto_archive_seconds: 86_400,
@@ -363,7 +359,6 @@ proptest! {
             .threads
             .get(&thread_id)
             .expect("thread must be materialized");
-        prop_assert_eq!(thread.record_key.as_deref(), Some("VLD0:thread"));
 
         let expected_archived =
             (create_lamport.saturating_add(archive_delta) > thread.created.lamport)

@@ -10,7 +10,6 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, stamp: OpStamp, state: &mu
             channel_id,
             name,
             channel_type,
-            record_key,
             category_id,
             position,
             parent_voice_channel_id,
@@ -20,7 +19,6 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, stamp: OpStamp, state: &mu
                 ChannelState {
                     name: name.clone(),
                     channel_type: channel_type.clone(),
-                    record_key: record_key.clone(),
                     category_id: *category_id,
                     position: *position,
                     topic: None,

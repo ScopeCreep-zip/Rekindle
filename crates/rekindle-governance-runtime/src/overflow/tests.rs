@@ -6,7 +6,6 @@ fn channel_entry(name: &str) -> GovernanceEntry {
         channel_id: ChannelId([0u8; 16]),
         name: name.to_string(),
         channel_type: "text".into(),
-        record_key: String::new(),
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,

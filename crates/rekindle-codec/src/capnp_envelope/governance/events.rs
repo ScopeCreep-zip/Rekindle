@@ -25,7 +25,6 @@ pub(super) fn write_thread_created(
         parent_channel_id,
         name,
         thread_type,
-        record_key,
         invited,
         forum_tag,
         auto_archive_seconds,
@@ -33,17 +32,12 @@ pub(super) fn write_thread_created(
     else {
         unreachable!("write_thread_created: variant mismatch")
     };
-    let record_key = record_key.as_deref();
     let forum_tag = forum_tag.as_deref();
     let auto_archive_seconds = *auto_archive_seconds;
     uuid16_to_capnp(p.reborrow().init_thread_id(), &thread_id.0);
     uuid16_to_capnp(p.reborrow().init_parent_channel_id(), &parent_channel_id.0);
     p.set_name(name);
     p.set_thread_type(thread_type);
-    p.set_has_record_key(record_key.is_some());
-    if let Some(k) = record_key {
-        p.set_record_key(k);
-    }
     let mut inv_list = p.reborrow().init_invited(len_u32(invited.len()));
     for (i, k) in invited.iter().enumerate() {
         pseudonym_key_to_capnp(inv_list.reborrow().get(len_u32(i)), k);
@@ -171,13 +165,6 @@ pub(super) fn read_thread_created(
         )?,
         name: text_to_string(p.get_name().map_err(|e| capnp_err(&e))?)?,
         thread_type: text_to_string(p.get_thread_type().map_err(|e| capnp_err(&e))?)?,
-        record_key: if p.get_has_record_key() {
-            Some(text_to_string(
-                p.get_record_key().map_err(|e| capnp_err(&e))?,
-            )?)
-        } else {
-            None
-        },
         invited: invited?,
         forum_tag: if p.get_has_forum_tag() {
             Some(text_to_string(

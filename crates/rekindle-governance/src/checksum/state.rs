@@ -108,7 +108,6 @@ impl Canon for ChannelState {
         let Self {
             name,
             channel_type,
-            record_key,
             category_id,
             position,
             topic,
@@ -118,7 +117,7 @@ impl Canon for ChannelState {
             parent_voice_channel_id,
             created,
         } = self;
-        put!(out; name, channel_type, record_key, category_id, position, topic, forum_tags);
+        put!(out; name, channel_type, category_id, position, topic, forum_tags);
         put!(out; slowmode_seconds, nsfw, parent_voice_channel_id, created);
     }
 }
@@ -214,7 +213,6 @@ impl Canon for ThreadState {
             parent_channel_id,
             name,
             thread_type,
-            record_key,
             invited,
             forum_tag,
             auto_archive_seconds,
@@ -223,7 +221,7 @@ impl Canon for ThreadState {
             archived,
             unarchived,
         } = self;
-        put!(out; parent_channel_id, name, thread_type, record_key, invited, forum_tag);
+        put!(out; parent_channel_id, name, thread_type, invited, forum_tag);
         put!(out; auto_archive_seconds, creator, created, archived, unarchived);
     }
 }

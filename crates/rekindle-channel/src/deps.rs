@@ -96,7 +96,6 @@ pub struct ThreadStateSnapshot {
     pub parent_channel_id_hex: String,
     pub name: String,
     pub thread_type: String,
-    pub record_key: Option<String>,
     pub invited: Vec<PseudonymKey>,
     pub forum_tag: Option<String>,
     pub auto_archive_seconds: u64,
