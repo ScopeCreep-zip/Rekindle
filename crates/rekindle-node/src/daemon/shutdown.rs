@@ -73,6 +73,19 @@ impl ExitReason {
     }
 }
 
+/// Tell every subscriber the host is stopping (`StreamFrame::HostStopping`,
+/// plan E7.1); the journal sends it once, so a second call is a no-op.
+pub fn announce(ctx: &crate::daemon::dispatch::DaemonContext) {
+    ctx.journal.close(ctx.shutdown.reason().stop_reason());
+}
+
+/// [`announce`] as soon as a stop is requested, by whichever handler asked
+/// (the shell's GUI included), not only when `Host::shutdown` runs.
+pub async fn announce_when_requested(ctx: std::sync::Arc<crate::daemon::dispatch::DaemonContext>) {
+    ctx.shutdown.requested().await;
+    announce(&ctx);
+}
+
 /// The daemon-wide shutdown signal.
 #[derive(Debug, Default)]
 pub struct Shutdown {

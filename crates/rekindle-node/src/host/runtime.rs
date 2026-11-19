@@ -374,14 +374,9 @@ impl Host {
             let teardowns = super::unlock::run_panic_teardowns(Arc::clone(&ctx), unlock_panics_rx);
             workers.spawn(teardowns.in_current_span());
         }
-        // Subscribers hear a stop when asked, by any handler (shell too).
-        let stopping = Arc::clone(&ctx);
-        workers.spawn(async move {
-            stopping.shutdown.requested().await;
-            stopping
-                .journal
-                .close(stopping.shutdown.reason().stop_reason());
-        });
+        workers.spawn(crate::daemon::shutdown::announce_when_requested(
+            Arc::clone(&ctx),
+        ));
 
         let bus = if serve_bus {
             Some(super::serve::serve(&ctx).await?)
@@ -479,8 +474,7 @@ impl Host {
         watchdog::notify_stopping();
         tracing::info!("host stopping");
         self.ctx.shutdown.request(ExitReason::Requested);
-        let stop = self.ctx.shutdown.reason().stop_reason();
-        self.ctx.journal.close(stop); // before the bus drains
+        crate::daemon::shutdown::announce(&self.ctx); // before the bus drains
         if let Some(bus) = &self.bus {
             // The subscriber stops reading, answers what is in flight and
             // flushes its connection; only then is the bus drained, so a
