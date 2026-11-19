@@ -137,8 +137,22 @@ messages, encrypted under the channel's current MEK.
 - Universally supported, standardised in
   [NIST SP 800-38D](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf).
 - AEAD with associated data — we bind ciphertext to its context via
-  AAD: `channel_record_key ‖ subkey_index_le32 ‖ lamport_ts_le64`.
-  Replays across channels or out-of-position fail decryption.
+  AAD (plan E3.3, `rekindle_secrets::keys::ChannelAad`):
+  `rekindle-channel-body-aad-v1 ‖ u32be(len) anchor ‖ u32be(len)
+  channel_id ‖ author ‖ stream_seq_le64`, where `stream_seq` is the
+  author's per-stream counter, frozen when the entry is queued. A body
+  moved to another community, channel, author or stream position fails
+  decryption. Bodies on the channel SMPL records written before the
+  outbox keep the slot AAD `channel_record_key ‖ subkey_index_le32 ‖
+  lamport_ts_le64` (`SlotChannelAad`), deleted with the slot model.
+- An outbox entry carries its channel only as a tag,
+  `HKDF-SHA256(text key of the entry's generation, rekindle-channel-tag-v1
+  ‖ channel_id)[..16]` (`channel_body::channel_tag`), so only a holder of
+  that generation can link the entry to its channel. The entry is signed
+  by the author's pseudonym (Ed25519) under `rekindle-outbox-entry-v1`
+  over `anchor ‖ chain seq ‖` its fields, and each entry's `prev` is
+  BLAKE3 of the author's previous entry, a hash-linked feed over
+  ciphertext.
 - Mature, audited implementations.
 
 Voice frames also use AES-256-GCM, through SFrame (RFC 9605 suite

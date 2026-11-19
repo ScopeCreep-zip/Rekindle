@@ -18,7 +18,23 @@ channel messaging, voice, DMs).
 |---|---|---|---|
 | Anchor `A` | DFLT(1) | none: the creation key is discarded after one write | subkey 0 `GenesisCert` (`dht_layout::community_anchor::GENESIS_CERT`) |
 | Member record `M` | DFLT(8) | `K_M(p)`, a key only that member holds (`VaultKey::MemberRecordOwner`) | 0 card, 1 presence beat, 2 op-log head, 3 frontier, 4 outbox, 5 history ad, 6 routes (`dht_layout::member_record`) |
-| Sealed page | DFLT(1) | discarded after one write | an op-log page (`dht_layout::sealed_page`) |
+| Sealed page | DFLT(1) | discarded after one write | an op-log or channel-outbox page (`dht_layout::sealed_page`) |
+
+`M`/4 holds the head of the member's channel outbox chain, the same N2
+chain format as the op log on `M`/2 (`rekindle_records::chain`, never
+retired). Each entry is an `OutboxEntry` (`schemas/member_record.capnp`,
+`rekindle-codec` `member_record::outbox_entry`): `prev` (BLAKE3 of the
+author's previous entry), the channel tag, `streamSeq`, the key
+generation, the commit time, the kind and its entry, signed by the
+author's pseudonym under `rekindle-outbox-entry-v1` over the anchor and
+the entry's chain seq. The writer (`rekindle-channel` `outbox_chain`)
+signs a drain at the seqs after the chain's tip, appends it page by page
+with `append_exact`, skips entries a retried drain already committed (by
+tag and `streamSeq`), and refuses an entry no sealed page holds alone
+(`ChannelError::EntryTooLarge`). Bodies are sealed by `outbox_seal` at the
+entry's position (see `security/crypto-primitives.md` §3). Posts still go
+to the channel SMPL records until the `channel_post` stream's sender and
+the `M`/4 readers land (plan E3.3 slices 5–6).
 
 The community id is the anchor's record key. The `GenesisCert`
 (`rekindle-codec/src/governance_op/genesis.rs`) names the creator's
