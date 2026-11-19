@@ -27,5 +27,7 @@
     "types": ["@playwright/test", "node"],
     "noEmit": true
   },
-  "include": ["e2e/**/*.ts"]
+  "include": ["e2e/**/*.ts"],
+  // The real-app suite has its own config (e2e/app/tsconfig.json).
+  "exclude": ["e2e/app/**"]
 }

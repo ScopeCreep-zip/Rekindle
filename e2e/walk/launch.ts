@@ -14,7 +14,27 @@ import { remote, type Browser } from "webdriverio";
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 export const OUT_DIR = path.join(REPO_ROOT, "e2e", "walk", "out");
-const BINARY = path.join(REPO_ROOT, "target", "debug", process.platform === "win32" ? "rekindle-desktop.exe" : "rekindle-desktop");
+let binary: string | undefined;
+
+/**
+ * The debug app in cargo's target directory as cargo resolves it
+ * (`CARGO_TARGET_DIR`, then `build.target-dir`, then `<workspace>/target`;
+ * `cargo metadata`'s `target_directory`). `build()` and `tauri build`
+ * inherit the same environment, so a run launches the binary its build
+ * wrote, also when a gate builds in its own target directory.
+ */
+function appBinary(): string {
+  if (binary) return binary;
+  const meta = spawnSync("cargo", ["metadata", "--format-version", "1", "--no-deps"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (meta.status !== 0) throw new Error(`cargo metadata failed (exit ${meta.status ?? meta.signal}): ${meta.stderr}`);
+  const dir = (JSON.parse(meta.stdout) as { target_directory: string }).target_directory;
+  binary = path.join(dir, "debug", process.platform === "win32" ? "rekindle-desktop.exe" : "rekindle-desktop");
+  return binary;
+}
 const STATUS_TIMEOUT_MS = 180_000;
 
 export interface App {
@@ -112,7 +132,8 @@ let signalsHooked = false;
  * upward from 5150 (veilid-core start_protocols.rs:89-95), so they coexist.
  */
 export async function launch(name = "app"): Promise<App> {
-  if (!existsSync(BINARY)) throw new Error(`${BINARY} is missing; run without --no-build`);
+  const exe = appBinary();
+  if (!existsSync(exe)) throw new Error(`${exe} is missing; build it first (pnpm walk without --no-build, or pnpm test:app without REKINDLE_APP_NO_BUILD)`);
   mkdirSync(OUT_DIR, { recursive: true });
   const dataRoot = mkdtempSync(path.join(tmpdir(), "rekindle-walk-"));
   console.log(`[walk] ${name} data root: ${dataRoot}`);
@@ -120,7 +141,7 @@ export async function launch(name = "app"): Promise<App> {
   const token = base32Lower(randomBytes(32));
   const logName = `${name}.log`;
   const log = createWriteStream(path.join(OUT_DIR, logName));
-  const child = spawn(BINARY, [], {
+  const child = spawn(exe, [], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,

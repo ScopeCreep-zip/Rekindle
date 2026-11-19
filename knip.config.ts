@@ -23,6 +23,8 @@ const config: KnipConfig = {
     "vite.config.ts",
     "playwright.config.ts",
     "e2e/**/*.spec.ts",
+    // Plan E7.14: WebdriverIO loads the real-app specs by the config's glob.
+    "e2e/app/specs/**/*.e2e.ts",
   ],
   project: [
     "src/**/*.{ts,tsx}",
@@ -45,7 +47,14 @@ const config: KnipConfig = {
     "@tailwindcss/vite",
     // Vite-plugin-solid is referenced from vite.config.ts only.
     "vite-plugin-solid",
+    // WebdriverIO loads `runner: "local"` as @wdio/local-runner by name;
+    // knip's webdriver-io plugin maps every runner but "local".
+    "@wdio/local-runner",
   ],
+  // Plan E7.14: knip's WebdriverIO plugin reads the real-app suite's
+  // config, so the framework and reporters it names by short name
+  // (@wdio/mocha-framework, @wdio/spec-reporter) count as used.
+  "webdriver-io": { config: ["e2e/app/wdio.conf.ts"] },
   // SolidJS components register reactivity on import; treat default
   // exports of *.tsx files as in-use even if no static import reaches them.
   includeEntryExports: true,

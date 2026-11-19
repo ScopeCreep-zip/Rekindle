@@ -1,0 +1,12 @@
+// Plan E7.14: type-checks the real-app suite (WebdriverIO runner, mocha,
+// expect-webdriverio) and the walk helpers it imports. Kept apart from
+// tsconfig.e2e.json, whose Playwright types it must not mix with until S8
+// retires them. Run via `pnpm typecheck`.
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@wdio/globals/types", "@wdio/mocha-framework", "expect-webdriverio"],
+    "noEmit": true
+  },
+  "include": ["./**/*.ts", "../walk/**/*.ts"]
+}
