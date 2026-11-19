@@ -113,7 +113,7 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     let state = deps
         .governance_state(anchor)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
-    if !state.members.contains_key(author) || state.bans.contains(author) {
+    if !holds_joined(&state, author) {
         return Err(adapter(
             "bootstrap: the joiner is not a member of the merged state",
         ));
@@ -177,9 +177,7 @@ async fn admitted_deps<D: GovernanceRuntimeDeps>(
         let outcome = rekindle_governance::merge::merge_outcome(&cert, &set.ops);
         let state = &outcome.state;
         let admitted = outcome.applied.contains(&op.hash)
-            && (state.members.contains_key(&op.author)
-                || state.pending_members.contains_key(&op.author))
-            && !state.bans.contains(&op.author);
+            && (holds_joined(state, &op.author) || state.pending_members.contains_key(&op.author));
         return if admitted {
             Ok(fetched)
         } else {
@@ -188,6 +186,22 @@ async fn admitted_deps<D: GovernanceRuntimeDeps>(
             ))
         };
     }
+}
+
+/// Whether the merged `state` holds `author`'s `MemberJoined` as admitted:
+/// a current member, or one a later `MemberRemoved` removed (a kick is an
+/// op after the join, not a verdict on it: ADR 0011, D15). The kicked
+/// joiner learns its removal from the frontier walk, as every member learns
+/// an op; a refusal is kept for a `MemberJoined` no merge admits (an
+/// expired or forged invite, a banned author), which the joiner withdraws
+/// (`withdraw_refused_join`). Refusing a kicked joiner withdrew a join the
+/// removal had already ended, and that leave raced its re-join.
+fn holds_joined(
+    state: &rekindle_governance::state::GovernanceState,
+    author: &rekindle_types::id::PseudonymKey,
+) -> bool {
+    !state.bans.contains(author)
+        && (state.members.contains_key(author) || state.removed.contains_key(author))
 }
 
 /// Whether `op` is the joiner's `MemberJoined`: its op #0, or a re-join,

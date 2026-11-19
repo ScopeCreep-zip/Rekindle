@@ -41,14 +41,47 @@ impl HostGovernance {
     }
 
     /// The inviter answered a retried exchange and refused our
-    /// `MemberJoined`: withdraw the join as the join itself does when it is
-    /// refused at once (our `MemberLeft`, the community forgotten), never a
-    /// membership no member admits.
+    /// `MemberJoined` `refused_hash`: withdraw the join as the join itself
+    /// does when it is refused at once (our `MemberLeft`, the community
+    /// forgotten), never a membership no member admits.
+    ///
+    /// Under the community's join lock, as a join runs: a re-join waits for
+    /// the withdrawal, and a withdrawal after a re-join finds its
+    /// `MemberJoined` superseded and leaves nothing (the leave forgot the
+    /// re-joined community under the re-join's feet).
     pub(crate) async fn withdraw_refused_join(
         &self,
         community: &str,
+        refused_hash: &[u8; 32],
         refused: &GovernanceRuntimeError,
     ) {
+        let lock = self.ctx.community_joins.of(community);
+        let _joining = lock.lock().await;
+        if !self.holds_community(community) {
+            return;
+        }
+        let mine = (self.ctx.communities.map().read())
+            .get(community)
+            .and_then(|c| {
+                c.my_pseudonym_key
+                    .as_deref()
+                    .and_then(super::ops::pseudonym_of)
+            });
+        let Some(mine) = mine else {
+            return;
+        };
+        if self
+            .latest_own_joined(community, &mine)
+            .await
+            .map(|op| op.hash().0)
+            != Some(*refused_hash)
+        {
+            tracing::info!(
+                community,
+                "refused join superseded by a later one: not withdrawn"
+            );
+            return;
+        }
         let membership = (self.ctx.communities.map().read())
             .get(community)
             .map(super::loader::membership);

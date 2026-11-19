@@ -66,7 +66,9 @@ impl StreamSender for BootstrapSender {
                 AttemptOutcome::Receipted
             }
             Exchange::Refused(refused) => {
-                governance.withdraw_refused_join(community, &refused).await;
+                governance
+                    .withdraw_refused_join(community, &hash, &refused)
+                    .await;
                 AttemptOutcome::Superseded(refused.to_string())
             }
             Exchange::Unanswered(reason) => {

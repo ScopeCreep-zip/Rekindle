@@ -17,7 +17,7 @@ pub(crate) struct JoinLocks(
 );
 
 impl JoinLocks {
-    fn of(&self, community: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    pub(super) fn of(&self, community: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
         std::sync::Arc::clone(self.0.lock().entry(community.to_owned()).or_default())
     }
 }
@@ -198,22 +198,7 @@ impl HostGovernance {
         id: &str,
         mine: &rekindle_types::id::PseudonymKey,
     ) -> bool {
-        let Ok(held) = self.governance_ops_impl(id).await else {
-            return false;
-        };
-        let set = rekindle_governance_runtime::op_log::verify_held_with(self, id, &held);
-        let Some(op) = set
-            .ops
-            .iter()
-            .filter(|op| {
-                op.author() == mine
-                    && matches!(
-                        op.body(),
-                        rekindle_types::governance::GovernanceEntry::MemberJoined { .. }
-                    )
-            })
-            .max_by_key(|op| op.lamport())
-        else {
+        let Some(op) = self.latest_own_joined(id, mine).await else {
             return false;
         };
         let Some(ops) = self.ctx.outbox.governance_ops() else {
@@ -222,6 +207,26 @@ impl HostGovernance {
         ops.is_queued(&hex::encode(op.hash().0))
             .await
             .unwrap_or(false)
+    }
+
+    /// Our latest held `MemberJoined` of `id` (`mine` is our pseudonym).
+    pub(super) async fn latest_own_joined(
+        &self,
+        id: &str,
+        mine: &rekindle_types::id::PseudonymKey,
+    ) -> Option<rekindle_governance::op::VerifiedOp> {
+        let held = self.governance_ops_impl(id).await.ok()?;
+        let set = rekindle_governance_runtime::op_log::verify_held_with(self, id, &held);
+        set.ops
+            .into_iter()
+            .filter(|op| {
+                op.author() == mine
+                    && matches!(
+                        op.body(),
+                        rekindle_types::governance::GovernanceEntry::MemberJoined { .. }
+                    )
+            })
+            .max_by_key(rekindle_governance::op::VerifiedOp::lamport)
     }
 
     /// Our `M` in §4.4's order: the card (`M`/0), our `MemberJoined` on
