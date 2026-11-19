@@ -29,6 +29,11 @@ import {
  * press it (D0; Apple HIG "Don't assign the primary role to a button that
  * performs a destructive action"). Its verb-and-object label is the
  * non-colour cue.
+ *
+ * The review has its own z-layer (`.intent-overlay*` on `--z-review*`), so
+ * it draws above a form modal that is still open under it. Kobalte's stacks
+ * keep the rest right: the newest focus scope takes focus and pauses the
+ * form's trap, and Esc reaches only the top-most layer, the review.
  */
 const IntentDialog: Component = () => {
   const [acknowledged, setAcknowledged] = createSignal(false);
@@ -108,8 +113,8 @@ const IntentDialog: Component = () => {
       modal={true}
     >
       <Dialog.Portal>
-        <Dialog.Overlay class="modal-overlay" />
-        <div class="modal-overlay-positioner">
+        <Dialog.Overlay class="modal-overlay intent-overlay" />
+        <div class="modal-overlay-positioner intent-overlay-positioner">
           <Show when={review()}>
             {(r) => (
               <Dialog.Content

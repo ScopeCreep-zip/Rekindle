@@ -118,6 +118,16 @@
     pointer-events: none;
   }
 
+  /* The U1 review's own layer (`--z-review*`, `global.css`): above every
+   * other modal, so it never draws behind the form that raised it. */
+  .modal-overlay.intent-overlay {
+    z-index: var(--z-review-backdrop);
+  }
+
+  .modal-overlay-positioner.intent-overlay-positioner {
+    z-index: var(--z-review);
+  }
+
   .modal-container {
     pointer-events: auto;
     background: var(--color-xfire-bg-panel);

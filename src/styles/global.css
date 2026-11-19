@@ -250,6 +250,14 @@
   --z-modal-backdrop: 500;
   --z-modal: 510;              /* modal content sits above its own backdrop */
   --z-toast: 600;              /* future toast layer; above modals */
+  /* The U1 review (ADR 0019, `IntentDialog`) is the safety step: it is drawn
+   * above every modal, popover, menu and toast, whatever the portal order
+   * (a review once drew behind the form that raised it). Only the skip link
+   * is higher, and it cannot take focus while the review traps it.
+   * `cargo xtask check-overlay-layers` keeps these the highest overlay
+   * layers and lets only `.intent-overlay*` read them. */
+  --z-review-backdrop: 9000;
+  --z-review: 9010;            /* the review's content above its backdrop */
   --z-skip-link: 9999;         /* must beat everything for a11y */
 }
 

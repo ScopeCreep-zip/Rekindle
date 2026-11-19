@@ -31,6 +31,7 @@
 //!                                      different values in different crates.
 //!     cargo xtask check-theme-literals Colours under src/styles are tokens.
 //!     cargo xtask check-sec-surfaces   Security surfaces are unskinnable.
+//!     cargo xtask check-overlay-layers The U1 review is the top overlay layer.
 //!     cargo xtask check-destructive-controls
 //!                                      Destructive controls carry a
 //!                                      non-colour cue (rule D0).
@@ -131,6 +132,7 @@ mod literals;
 mod motion;
 mod no_emitter;
 mod no_managed_db;
+mod overlay_layers;
 mod pair_model;
 mod platform_floor;
 mod role_ids;
@@ -246,6 +248,8 @@ enum Command {
     CheckIconGlyphs,
     /// Verify every transition reads a motion token and motion honours reduced motion.
     CheckMotion,
+    /// Verify the U1 review's z-layer is above every other overlay layer.
+    CheckOverlayLayers,
     /// Verify the macOS, WebKitGTK and Vite floors agree with the plan's E7.10 floor.
     CheckPlatformFloor,
     /// Verify every release bundle declares, stages and ships the skin helper.
@@ -395,6 +399,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 ),
                 ("motion", Box::new(|| motion::check_motion(&root))),
                 (
+                    "overlay-layers",
+                    Box::new(|| overlay_layers::check_overlay_layers(&root)),
+                ),
+                (
                     "icon-glyphs",
                     Box::new(|| icon_glyphs::check_icon_glyphs(&root)),
                 ),
@@ -483,6 +491,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         ),
         Command::ImportXfireData { from } => import_xfire_data::import_xfire_data(&root, from),
         Command::CheckMotion => motion::check_motion(&root),
+        Command::CheckOverlayLayers => overlay_layers::check_overlay_layers(&root),
         Command::CheckIconGlyphs => icon_glyphs::check_icon_glyphs(&root),
         Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
         Command::CheckSidecars => sidecars::check_sidecars(&root),
