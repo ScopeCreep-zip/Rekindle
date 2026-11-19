@@ -167,6 +167,10 @@ pub const HEAD_ADVANCED_BOUND: Bound = Bound {
     max_words: 64,
 };
 
+/// `OutboxEntry` (`member_record.capnp`, plan E3.3): one entry alone in a
+/// sealed page, so at most one subkey.
+pub const OUTBOX_ENTRY_BOUND: Bound = Bound::packed(member_record::MAX_SUBKEY_VALUE_LEN);
+
 /// `CheckpointStateRequest` (`community_governance.capnp`): its 512-byte
 /// cap, and 64 words.
 pub const CHECKPOINT_STATE_REQUEST_BOUND: Bound = Bound {

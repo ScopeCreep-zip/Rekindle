@@ -43,6 +43,10 @@ pub enum ChannelError {
     #[error("message body exceeds max size ({size} > {max})")]
     BodyTooLarge { size: usize, max: usize },
 
+    /// An outbox entry no sealed page holds alone (plan E3.3).
+    #[error("channel entry exceeds max size ({size} > {max})")]
+    EntryTooLarge { size: usize, max: usize },
+
     #[error("invalid invite/thread/expression id: {0}")]
     InvalidId(String),
 

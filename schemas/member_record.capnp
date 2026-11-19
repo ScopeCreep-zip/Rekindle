@@ -125,3 +125,41 @@ struct HeadAdvanced {
   seq @3 :UInt64;
   sig @4 :Data;
 }
+
+# ── Subkey 4: the channel outbox (plan E3.3) ─────────────────────────
+
+# `M`/4 holds the head of the member's channel outbox chain (the N2 chain,
+# `PagePointer` to the newest sealed page, as `M`/2 holds the op log);
+# each chain entry is one `OutboxEntry`. Its chain position is the N2 seq,
+# so no index is stored. `prev` is BLAKE3 of the previous entry's bytes in
+# the author's chain (empty for the first), so a reader checks continuity
+# over ciphertext. `channelTag` is `HKDF(text key of generation,
+# rekindle-channel-tag-v1 ‖ channelId)[..16]`; `streamSeq` is the
+# per-(author, tag) counter frozen at creation, the body AAD position and
+# the dedup key. `sealed` is the kind's entry (a JSON `ChannelRecordEntry`)
+# whose body is sealed at `rekindle-channel-body-aad-v1 ‖ anchor ‖
+# channel_id ‖ author ‖ stream_seq_le64`. `sig` is the author pseudonym's
+# over `rekindle-outbox-entry-v1 ‖ anchor ‖ chain seq ‖` every field above.
+struct OutboxEntry {
+  prev @0 :Data;
+  channelTag @1 :Data;         # 16 bytes
+  streamSeq @2 :UInt64;
+  generation @3 :UInt64;
+  committedAt @4 :UInt64;      # ms, the author's clock at commit
+  kind @5 :OutboxEntryKind;
+  sealed @6 :Data;
+  sig @7 :Data;
+}
+
+enum OutboxEntryKind {
+  message @0;
+  forward @1;
+  attachmentCached @2;
+  reaction @3;
+  pollCreate @4;
+  pollVote @5;
+  pollClose @6;
+  handRaise @7;
+  edit @8;
+  delete @9;
+}

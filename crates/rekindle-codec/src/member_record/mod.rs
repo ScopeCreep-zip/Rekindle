@@ -15,6 +15,7 @@ pub mod beat;
 pub mod card;
 pub mod head_advanced;
 pub mod history_ad;
+pub mod outbox_entry;
 pub mod routes;
 #[cfg(test)]
 mod tests;
@@ -22,6 +23,7 @@ mod tests;
 pub use beat::{PresenceBeat, SealedExtras, PRESENCE_BEAT_MAX_BYTES};
 pub use card::{MemberCard, SignedMemberCard, MEMBER_CARD_MAX_BYTES};
 pub use history_ad::{HISTORY_AD_MAX_BYTES, HISTORY_AD_MAX_RANGES};
+pub use outbox_entry::{decode_outbox_entry, entry_hash, ChainPosition, OutboxEntry};
 pub use routes::{MemberRoutes, MEMBER_ROUTES_MAX_BYTES};
 
 use rekindle_secrets::ed25519_dalek::SigningKey;

@@ -26,6 +26,7 @@ pub mod history;
 pub mod ingest;
 pub mod mentions;
 pub mod notifications;
+pub mod outbox_chain;
 pub mod pipeline;
 pub mod polls;
 pub mod reactions;
