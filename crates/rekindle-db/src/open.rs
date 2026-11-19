@@ -243,7 +243,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// older builds no longer verify.
 /// 143 (plan E7.2 slices 7-11): `identity.bio` and `friends.bio`,
 /// `identity.share_current_game`, `hidden_games` and `favourite_servers`.
-pub const SCHEMA_VERSION: i64 = 145;
+/// 146 (plan E7.1 disappearing messages, E3.4 S1): `friends`/`group_dms.disappearing_seconds`,
+/// `messages.expire_seconds`/`expire_at`/`timer_notice_seconds`, the send log's and
+/// unprocessed rows' `client_id`, `communities.beat_seq`.
+pub const SCHEMA_VERSION: i64 = 146;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
