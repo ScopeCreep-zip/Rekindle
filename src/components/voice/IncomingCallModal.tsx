@@ -1,5 +1,6 @@
 import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { callsState } from "../../stores/calls.store";
 import {
   handleAcceptIncomingCall,
@@ -51,7 +52,7 @@ const IncomingCallModal: Component = () => {
           <Dialog.Portal>
             <Dialog.Overlay class="modal-overlay" />
             <div class="modal-overlay-positioner">
-              <Dialog.Content class="modal-container modal-container-sm incoming-call-modal">
+              <Dialog.Content class="modal-container modal-container-sm incoming-call-modal" {...returnFocusToOpener()}>
                 <div class="incoming-call-modal-header">
                   <Dialog.Title class="incoming-call-title">
                     Incoming {entry().kind} call

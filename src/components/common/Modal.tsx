@@ -1,5 +1,6 @@
 import { Component, JSX, Show } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { ICON_CLOSE } from "../../icons";
 
 interface ModalProps {
@@ -43,6 +44,7 @@ const Modal: Component<ModalProps> = (props) => {
         <div class="modal-overlay-positioner">
           <Dialog.Content
             class={`modal-container modal-container-${props.size ?? "md"}`}
+            {...returnFocusToOpener()}
             onEscapeKeyDown={suppressIfLocked}
             onPointerDownOutside={suppressIfLocked}
             onInteractOutside={suppressIfLocked}

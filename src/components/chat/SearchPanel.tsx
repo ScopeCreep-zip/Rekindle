@@ -1,4 +1,6 @@
-import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { Dialog } from "@kobalte/core/dialog";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import {
   commands,
   type SearchHit,
@@ -56,8 +58,6 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
   const [searching, setSearching] = createSignal(false);
   const [queryMs, setQueryMs] = createSignal<number | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-
-  onMount(() => queryRef?.focus());
 
   const community = createMemo(() => {
     if (!props.communityId) return undefined;
@@ -119,11 +119,6 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
   }
 
   function onKeyDown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      props.onClose();
-      return;
-    }
     if (e.key === "Enter") {
       e.preventDefault();
       void runSearch();
@@ -131,16 +126,22 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
   }
 
   return (
-    <div class="search-panel-overlay" onClick={props.onClose}>
-      <div class="search-panel" onClick={(e) => e.stopPropagation()}>
+    // Wiring guide §13c: a modal dialog traps focus, Esc and an outside
+    // click close it, and focus goes back to the control that opened it.
+    <Dialog open={true} onOpenChange={(open) => !open && props.onClose()} modal={true}>
+      <Dialog.Portal>
+      <div class="search-panel-overlay">
+      <Dialog.Content
+        class="search-panel"
+        {...returnFocusToOpener((e) => { e.preventDefault(); queryRef?.focus(); })}
+      >
         <div class="search-panel-header">
-          <h3>Search messages</h3>
-          <button
+          <Dialog.Title as="h3">Search messages</Dialog.Title>
+          <Dialog.CloseButton
             class="search-panel-close"
-            onClick={props.onClose}
             title="Close (Esc)"
             aria-label="Close search panel"
-          >×</button>
+          >×</Dialog.CloseButton>
         </div>
 
         <div class="search-panel-input-row">
@@ -288,8 +289,10 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
             {hits().length} result{hits().length === 1 ? "" : "s"} · {queryMs()} ms
           </div>
         </Show>
+      </Dialog.Content>
       </div>
-    </div>
+      </Dialog.Portal>
+    </Dialog>
   );
 };
 

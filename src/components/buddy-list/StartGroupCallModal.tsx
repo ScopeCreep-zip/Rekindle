@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { friendsState } from "../../stores/friends.store";
 import { handleStartGroupCall } from "../../actions/calls.actions";
 
@@ -58,7 +59,7 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
       <Dialog.Portal>
         <Dialog.Overlay class="modal-overlay" />
         <div class="modal-overlay-positioner">
-          <Dialog.Content class="modal-container modal-container-md">
+          <Dialog.Content class="modal-container modal-container-md" {...returnFocusToOpener()}>
             <div class="modal-header">
               <Dialog.Title class="modal-title">Start Group Call</Dialog.Title>
             </div>

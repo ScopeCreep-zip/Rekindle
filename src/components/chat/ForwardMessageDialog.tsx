@@ -1,6 +1,8 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { handleForwardChannelMessage } from "../../actions/community.actions";
+import { Dialog } from "@kobalte/core/dialog";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { ICON_CLOSE } from "../../icons";
 
 interface ForwardMessageDialogProps {
@@ -45,19 +47,27 @@ const ForwardMessageDialog: Component<ForwardMessageDialogProps> = (props) => {
     if (ok) props.onClose();
   }
 
+  // Wiring guide §13c: a modal dialog traps focus, Esc and an outside
+  // click close it (not while the forward is in flight), and focus goes
+  // back to the control that opened it.
+  function handleOpenChange(open: boolean): void {
+    if (!open && !submitting()) props.onClose();
+  }
+
   return (
-    <div class="forward-dialog-overlay" onClick={() => !submitting() && props.onClose()}>
-      <div class="forward-dialog" onClick={(e) => e.stopPropagation()}>
+    <Dialog open={true} onOpenChange={handleOpenChange} modal={true}>
+      <Dialog.Portal>
+      <div class="forward-dialog-overlay">
+      <Dialog.Content class="forward-dialog" {...returnFocusToOpener()}>
         <div class="forward-dialog-header">
-          <span class="forward-dialog-title">Forward message</span>
-          <button
+          <Dialog.Title class="forward-dialog-title">Forward message</Dialog.Title>
+          <Dialog.CloseButton
             class="forward-dialog-close"
-            onClick={props.onClose}
             disabled={submitting()}
             aria-label="Close forward dialog"
           >
             <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
-          </button>
+          </Dialog.CloseButton>
         </div>
         <form class="forward-dialog-body" onSubmit={(e) => void handleSubmit(e)}>
           <label class="forward-dialog-label">
@@ -109,8 +119,10 @@ const ForwardMessageDialog: Component<ForwardMessageDialogProps> = (props) => {
             </button>
           </div>
         </form>
+      </Dialog.Content>
       </div>
-    </div>
+      </Dialog.Portal>
+    </Dialog>
   );
 };
 

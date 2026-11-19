@@ -1,5 +1,6 @@
 import { Component, createEffect, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { cancelReview, commitReview, intentState } from "../../stores/intent.store";
 import {
   commitLabel, escalationText, factText, kindPhrase, notifiesText, reversibilityText,
@@ -113,6 +114,7 @@ const IntentDialog: Component = () => {
             {(r) => (
               <Dialog.Content
                 class="modal-container modal-container-sm intent-dialog"
+                {...returnFocusToOpener()}
                 onEscapeKeyDown={holdOpen}
                 onPointerDownOutside={holdOpen}
                 onInteractOutside={holdOpen}
