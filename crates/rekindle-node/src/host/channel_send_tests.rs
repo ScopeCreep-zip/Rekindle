@@ -130,7 +130,6 @@ async fn a_reply_is_stored_against_its_parent_row() {
         sender_pseudonym_hex: owner.clone(),
         ciphertext: vec![1],
         mek_generation: Some(1),
-        lamport_ts: 1,
         timestamp_ms: 1,
         reply_to: reply_to.map(str::to_string),
         send_state: rekindle_types::message::SendState::Queued,

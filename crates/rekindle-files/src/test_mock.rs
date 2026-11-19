@@ -47,7 +47,6 @@ pub struct MockReplies {
 pub struct MockDeps {
     pub owner_key: String,
     pub my_pseudonym: String,
-    pub channel_log_key: String,
     pub forum_channel: bool,
     pub permission_pass: bool,
     pub slowmode_pass: bool,
@@ -96,7 +95,6 @@ impl MockDeps {
         Self {
             owner_key: "owner-pub-key".to_string(),
             my_pseudonym: "me-pseudonym".to_string(),
-            channel_log_key: "channel-log-key-hex".to_string(),
             forum_channel: false,
             permission_pass: true,
             slowmode_pass: true,
@@ -192,10 +190,6 @@ impl FilesDeps for MockDeps {
         Ok(self.my_pseudonym.clone())
     }
 
-    fn channel_log_key(&self, _c: &str, _ch: &str) -> Result<String, FilesError> {
-        Ok(self.channel_log_key.clone())
-    }
-
     fn channel_is_forum(&self, _c: &str, _ch: &str) -> bool {
         self.forum_channel
     }
@@ -214,10 +208,6 @@ impl FilesDeps for MockDeps {
         } else {
             Err(FilesError::Slowmode("mock slowmode".into()))
         }
-    }
-
-    fn increment_lamport(&self, _c: &str) -> Result<u64, rekindle_types::lamport::LamportError> {
-        Ok(1)
     }
 
     fn peer_route_blob(&self, _c: &str, target: &str) -> Option<Vec<u8>> {

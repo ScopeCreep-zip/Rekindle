@@ -47,7 +47,8 @@ impl HostChannel {
                         .mek_generation
                         .map(|g| i64::try_from(g).unwrap_or(i64::MAX)),
                     message_id: &outcome.message_id,
-                    lamport_ts: outcome.lamport_ts,
+                    // Placed at its stream seq when queued (D22).
+                    lamport_ts: 0,
                     automod_blurred: false,
                     forwarded_from_author: forwarded.as_deref(),
                     flags: 0,
@@ -121,7 +122,8 @@ impl HostChannel {
 
     /// Queue our edit or delete `post` on its channel's stream (no echo:
     /// the change is stored on its target's row).
-    pub(crate) async fn queue_change_impl(&self, post: &ChannelPost) -> Result<(), ChannelError> {
+    /// Queue our change `post`; its stream seq.
+    pub(crate) async fn queue_change_impl(&self, post: &ChannelPost) -> Result<u64, ChannelError> {
         self.channel_posts()?
             .queue_change(post)
             .await
@@ -134,7 +136,7 @@ impl HostChannel {
         let queued = if post.entry.has_row() {
             posts.queue(post).await
         } else {
-            posts.queue_change(post).await
+            posts.queue_change(post).await.map(drop)
         };
         queued.map_err(|e| outbox(&e))
     }

@@ -73,11 +73,12 @@ impl ChannelPosts {
     }
 
     /// Store our edit or delete `post`'s row with no echo (plan E3.3: the
-    /// change is already stored on its target's row).
+    /// change is stored on its target's row once queued). Returns its
+    /// stream seq, the change's place (D22, rule E1).
     ///
     /// # Errors
     /// The storage failed.
-    pub async fn queue_change(&self, post: &ChannelPost) -> Result<(), OutboxError> {
+    pub async fn queue_change(&self, post: &ChannelPost) -> Result<u64, OutboxError> {
         let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
         let row = self.0.new_row(Entry {
             kind: StreamKind::ChannelPost,
@@ -87,22 +88,23 @@ impl ChannelPosts {
             deadline: Deadline::Horizon,
         });
         let (db, owner) = self.0.deps().db()?;
-        db.call(move |conn| {
-            let new = repo::NewRow {
-                owner_key: &owner,
-                stream: &row.stream,
-                client_id: &row.client_id,
-                kind: row.kind.as_str(),
-                payload: &row.payload,
-                next_at: row.next_at,
-                deadline: row.deadline,
-            };
-            repo::enqueue_with_echo(conn, &new, None)
-        })
-        .await
-        .map_err(|e| storage(&e))?;
+        let seq = db
+            .call(move |conn| {
+                let new = repo::NewRow {
+                    owner_key: &owner,
+                    stream: &row.stream,
+                    client_id: &row.client_id,
+                    kind: row.kind.as_str(),
+                    payload: &row.payload,
+                    next_at: row.next_at,
+                    deadline: row.deadline,
+                };
+                repo::enqueue_with_echo(conn, &new, None)
+            })
+            .await
+            .map_err(|e| storage(&e))?;
         self.0.wake();
-        Ok(())
+        u64::try_from(seq).map_err(|e| storage(&e))
     }
 
     /// Store `post`'s row waiting for its channel's key until `deadline`

@@ -174,17 +174,16 @@ async fn pending_of<D: ChannelMessagingDeps>(
             lamport_ts: item.stream_seq,
             message_id: Some(post.message.clone()),
         }),
+        // An edit is ordered by its stream seq (rule E1, judged stale on
+        // the reader side).
         PostEntry::Edit {
-            target,
-            edited_at,
-            seq,
-            ..
+            target, edited_at, ..
         } => ChannelRecordEntry::Edit(ChannelEdit {
             message_id: target.clone(),
             ciphertext: sealed.ciphertext,
             mek_generation: sealed.generation,
             edited_at: *edited_at,
-            lamport_ts: *seq,
+            lamport_ts: item.stream_seq,
         }),
         // Our possession of a downloaded file: a full bitmap, ordered by
         // its stream seq; no body, the tag still names its channel.
@@ -254,14 +253,10 @@ async fn pending_of<D: ChannelMessagingDeps>(
         }),
         // A delete carries no body; the entry still names its channel by
         // the tag of the key it was drained under.
-        PostEntry::Delete {
-            target,
-            deleted_at,
-            seq,
-        } => ChannelRecordEntry::Delete(ChannelDelete {
+        PostEntry::Delete { target, deleted_at } => ChannelRecordEntry::Delete(ChannelDelete {
             message_id: target.clone(),
             deleted_at: *deleted_at,
-            lamport_ts: *seq,
+            lamport_ts: item.stream_seq,
         }),
     };
     let pending = PendingEntry {

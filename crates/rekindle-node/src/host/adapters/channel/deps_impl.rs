@@ -66,10 +66,6 @@ impl ChannelMessagingDeps for HostChannel {
         self.channel_info_impl(community_id, channel_id)
     }
 
-    fn channel_record_key(&self, community_id: &str, channel_id: &str) -> Option<String> {
-        self.channel_record_key_impl(community_id, channel_id)
-    }
-
     fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
         self.gov.keys()
     }
@@ -125,13 +121,6 @@ impl ChannelMessagingDeps for HostChannel {
 
     fn mark_last_send_at(&self, community_id: &str, channel_id: &str, now_ms: i64) {
         self.mark_last_send_at_impl(community_id, channel_id, now_ms);
-    }
-
-    fn increment_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        self.increment_lamport_impl(community_id)
     }
 
     // ---------- DHT ----------

@@ -133,8 +133,10 @@ fn written_at(conn: &Connection, owner_key: &str, dm: &NewDm<'_>) -> rusqlite::R
 
 /// Store `row` at the end of its stream with our channel post
 /// `message_id`, already written `queued`, as its echo (a post's
-/// `messages.send_state` only this row moves from then on). Returns the
-/// row's `stream_seq`.
+/// `messages.send_state` only this row moves from then on), the echo
+/// taking the row's seq as its `stream_seq` and `lamport_ts` (D22: our
+/// post's place is its per-stream seq, as a direct message's,
+/// [`append`]). Returns the row's `stream_seq`.
 ///
 /// # Errors
 /// The write failed, or no queued post is `message_id`; nothing is stored.
@@ -151,9 +153,21 @@ pub fn enqueue_for_message(
         |r| r.get(0),
     )?;
     let seq = next_seq(&tx, row)?;
+    place_echo(&tx, echo_id, seq)?;
     insert_row(&tx, row, seq, Some(echo_id))?;
     tx.commit()?;
     Ok(seq)
+}
+
+/// Our channel post `echo_id` is at `seq` of its stream: its `stream_seq`,
+/// and its `lamport_ts`, which orders it as its readers order it (they
+/// store the entry's stream seq there).
+fn place_echo(conn: &Connection, echo_id: i64, seq: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE messages SET stream_seq = ?2, lamport_ts = ?2 WHERE id = ?1",
+        params![echo_id, seq],
+    )?;
+    Ok(())
 }
 
 fn next_seq(conn: &Connection, row: &NewRow<'_>) -> rusqlite::Result<i64> {

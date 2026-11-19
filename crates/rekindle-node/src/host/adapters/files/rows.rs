@@ -29,7 +29,7 @@ impl HostFiles {
             row.attachment_json.to_string(),
             row.body.to_string(),
         );
-        let (timestamp, lamport_ts, flags) = (row.timestamp_ms, row.lamport_ts, row.flags);
+        let (timestamp, flags) = (row.timestamp_ms, row.flags);
         (self.db()?)
             .call(move |conn| {
                 channel::insert(
@@ -44,7 +44,8 @@ impl HostFiles {
                         is_read: true,
                         mek_generation: Some(mek_generation),
                         message_id: &mid,
-                        lamport_ts,
+                        // Placed at its stream seq when queued (D22).
+                        lamport_ts: 0,
                         automod_blurred: false,
                         forwarded_from_author: None,
                         flags,

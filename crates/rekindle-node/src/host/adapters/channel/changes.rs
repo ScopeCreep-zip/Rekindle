@@ -72,46 +72,32 @@ impl HostChannel {
         let target = self
             .change_target(&db, &owner, channel_id, message_id)
             .await?;
-        let seq = self.increment_lamport(community_id)?;
-        let kind = match change {
-            MessageChange::Edit { .. } => ChangeKind::Edit { seq },
-            MessageChange::Delete => ChangeKind::Delete,
-        };
-        changes::judge_change(target.as_ref(), &me, kind).map_err(ChannelError::ChangeRefused)?;
+        let edit = matches!(change, MessageChange::Edit { .. });
+        changes::judge_own_change(target.as_ref(), &me, edit)
+            .map_err(ChannelError::ChangeRefused)?;
         let own = (self.gov.own_outbox(community_id)).map_err(ChannelError::Adapter)?;
         let now = self.now_secs();
         let target = message_id.to_owned();
-        let (entry, queued, body, row) = match change {
+        let nonce = hex::encode(rekindle_utils::random::id_bytes_16_from(
+            &*rekindle_governance_runtime::deps::GovernanceRuntimeDeps::rng(&self.gov),
+        ));
+        let (queued, body, row) = match &change {
             MessageChange::Edit { body } => (
-                ChannelRecordEntry::Edit(ChannelEdit {
-                    message_id: target.clone(),
-                    ciphertext: Vec::new(),
-                    mek_generation: 0,
-                    edited_at: now,
-                    lamport_ts: seq,
-                }),
                 PostEntry::Edit {
                     target: target.clone(),
                     body: body.clone(),
                     edited_at: now,
-                    seq,
                 },
-                body,
-                format!("edit:{target}:{seq}"),
+                body.clone(),
+                format!("edit:{target}:{nonce}"),
             ),
             MessageChange::Delete => (
-                ChannelRecordEntry::Delete(ChannelDelete {
-                    message_id: target.clone(),
-                    deleted_at: now,
-                    lamport_ts: seq,
-                }),
                 PostEntry::Delete {
                     target: target.clone(),
                     deleted_at: now,
-                    seq,
                 },
                 String::new(),
-                format!("delete:{target}:{seq}"),
+                format!("delete:{target}:{nonce}"),
             ),
         };
         let post = ChannelPost {
@@ -120,14 +106,29 @@ impl HostChannel {
             message: row,
             entry: queued,
         };
-        self.queue_change_impl(&post).await?;
+        // The change's place, and so its seq (E1), is its stream seq (D22).
+        let seq = self.queue_change_impl(&post).await?;
+        let entry = match change {
+            MessageChange::Edit { .. } => ChannelRecordEntry::Edit(ChannelEdit {
+                message_id: target,
+                ciphertext: Vec::new(),
+                mek_generation: 0,
+                edited_at: now,
+                lamport_ts: seq,
+            }),
+            MessageChange::Delete => ChannelRecordEntry::Delete(ChannelDelete {
+                message_id: target,
+                deleted_at: now,
+                lamport_ts: seq,
+            }),
+        };
         let author = PseudonymKey::from_hex_lossy(&me);
         let source = ChangeSource {
             community_id,
             channel_id,
             record_key: &own.member_record,
             subkey_index: OUTBOX,
-            outbox_seq: None,
+            outbox_seq: Some(seq),
             author: &author,
         };
         self.store_change(&db, &owner, source, &entry, &body, false)

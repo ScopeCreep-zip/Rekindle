@@ -49,7 +49,6 @@ pub struct ChannelSendOutcome {
     /// E3.2 S7l): it is sealed at its release.
     pub ciphertext: Vec<u8>,
     pub mek_generation: Option<u64>,
-    pub lamport_ts: u64,
     pub timestamp_ms: i64,
     /// The message id of the message this one replies to, when it does.
     pub reply_to: Option<String>,
@@ -202,8 +201,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     fn channel_info(&self, community_id: &str, channel_id: &str) -> Option<ChannelInfoSnapshot>;
 
-    fn channel_record_key(&self, community_id: &str, channel_id: &str) -> Option<String>;
-
     /// Community and channel keys (plan D6). Channel text, threads and
     /// attachments are under `scope_for_text`.
     fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
@@ -239,11 +236,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
     fn next_thread_sequence(&self, community_id: &str) -> u64;
     fn mark_last_send_at(&self, community_id: &str, channel_id: &str, now_ms: i64);
-    /// Next message-clock value (channel messages, polls, stage, reactions).
-    fn increment_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     // ---------- DHT ----------
 

@@ -258,7 +258,6 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     // it onto our outbox (plan E3.3 slice 7); its row is the echo.
     let timestamp_ms = timestamp_now(deps);
     let message_id = format!("msg_{}", random_uuid(deps).simple());
-    let lamport_ts = deps.increment_lamport(community_id)?;
 
     // Persist a SQLite row.
     let owner_key = deps.owner_key()?;
@@ -279,7 +278,6 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
         message_id: &message_id,
         timestamp_ms,
         mek_generation,
-        lamport_ts,
         attachment_json: &attachment_json,
         flags,
         body: &body_for_db,

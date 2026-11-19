@@ -4,7 +4,7 @@
 //! in a `ChannelEntry::Message`; possession of chunks is advertised
 //! via `ChannelEntry::AttachmentCached`. Given the channel's entries
 //! (`FilesDeps::channel_entries`: the members' outbox entries of the
-//! channel, then its record's slots), the pure helpers here turn them into
+//! channel), the pure helpers here turn them into
 //! the data the download orchestrator needs: the offer + per-peer chunk
 //! bitmaps. No DHT calls live here.
 

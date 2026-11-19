@@ -82,14 +82,12 @@ pub async fn queue_awaiting_key<D: ChannelMessagingDeps>(
         timestamp_ms,
     } = composed;
     let message_id = random_message_id("msg_");
-    // Orders the local row only; the release takes the wire's own.
-    let lamport_ts = deps.increment_lamport(community_id)?;
+    // The row's place is its stream seq, given when it is queued (D22).
     let outcome = ChannelSendOutcome {
         message_id: message_id.clone(),
         sender_pseudonym_hex: sender_key.clone(),
         ciphertext: Vec::new(),
         mek_generation: None,
-        lamport_ts,
         timestamp_ms,
         reply_to,
         send_state: SendState::AwaitingKey,

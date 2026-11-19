@@ -10,7 +10,6 @@ use rekindle_channel::deps::{
 use rekindle_channel::error::ChannelError;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_types::id::{PseudonymKey, ThreadId};
-use rekindle_types::lamport::{LamportClock, LamportError};
 
 use super::HostChannel;
 use crate::host::community::state::ChannelType;
@@ -60,19 +59,6 @@ impl HostChannel {
             last_send_at_ms: community.channel_last_send_at.get(channel_id).copied(),
             is_forum: matches!(channel.channel_type, ChannelType::Forum),
         })
-    }
-
-    pub(super) fn channel_record_key_impl(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<String> {
-        (self
-            .gov
-            .community_membership(community_id)?
-            .channel_log_keys)
-            .get(channel_id)
-            .cloned()
     }
 
     pub(super) fn thread_state_impl(
@@ -197,24 +183,5 @@ impl HostChannel {
                 .channel_last_send_at
                 .insert(channel_id.to_string(), now);
         }
-    }
-
-    /// Tick the community's message clock, the clock inbound gossip merges
-    /// into, so a send orders after everything we have received. The GUI's
-    /// gossip merges into the store's `message_clock`; `rekindled`'s into
-    /// its subscription mesh. One clock when the gossip mesh moves to the
-    /// Host (E3.4).
-    pub(super) fn increment_lamport_impl(&self, community_id: &str) -> Result<u64, LamportError> {
-        if self.ctx().shell.is_some() {
-            let mut map = self.ctx().communities.map().write();
-            let community = (map.get_mut(community_id)).ok_or(LamportError::UnknownCommunity)?;
-            let next = LamportClock::new(community.message_clock).increment()?;
-            community.message_clock = next;
-            return Ok(next);
-        }
-        let subscriptions = self.ctx().subscriptions.read();
-        (subscriptions.as_ref())
-            .ok_or(LamportError::UnknownCommunity)?
-            .next_message_lamport(community_id)
     }
 }

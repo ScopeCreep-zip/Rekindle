@@ -4,7 +4,6 @@
 //! adapter. Delegation only: the channel half is [`HostChannel`]'s, the
 //! governance half [`HostGovernance`]'s, the rows `rows`'.
 
-use rekindle_records::port::OpenIntent;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -22,9 +21,6 @@ use super::HostFiles;
 fn transport(e: impl std::fmt::Display) -> FilesError {
     FilesError::Transport(e.to_string())
 }
-
-/// The channel subkeys a member slot can hold.
-const CHANNEL_SLOTS: u32 = 255;
 
 #[async_trait]
 impl FilesDeps for HostFiles {
@@ -45,12 +41,6 @@ impl FilesDeps for HostFiles {
     fn my_pseudonym(&self, community_id: &str) -> Result<String, FilesError> {
         (self.channel.my_pseudonym_hex(community_id))
             .ok_or_else(|| FilesError::NotFound(format!("pseudonym for {community_id}")))
-    }
-
-    fn channel_log_key(&self, community_id: &str, channel_id: &str) -> Result<String, FilesError> {
-        (self.channel.channel_record_key(community_id, channel_id)).ok_or_else(|| {
-            FilesError::NotFound(format!("channel_log_key {community_id}/{channel_id}"))
-        })
     }
 
     fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool {
@@ -77,13 +67,6 @@ impl FilesDeps for HostFiles {
             now_ms,
         )
         .map_err(|e| FilesError::Slowmode(e.to_string()))
-    }
-
-    fn increment_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        self.channel.increment_lamport(community_id)
     }
 
     fn peer_route_blob(&self, community_id: &str, target_pseudonym: &str) -> Option<Vec<u8>> {
@@ -140,33 +123,14 @@ impl FilesDeps for HostFiles {
         community_id: &str,
         channel_id: &str,
     ) -> Result<Vec<ChannelRecordEntry>, FilesError> {
-        let mut entries: Vec<ChannelRecordEntry> = (self.channel)
+        // A channel has no record (plan E3.3 slice 8): its entries are
+        // the members' channel outbox entries, linked by tag.
+        Ok((self.channel)
             .read_author_outboxes(community_id, channel_id)
             .await
             .into_iter()
             .map(|item| item.entry)
-            .collect();
-        let channel_log_key = self.channel_log_key(community_id, channel_id)?;
-        let pool = self.records()?;
-        // One borrow, one inspect, and a read of only the subkeys that hold
-        // a value (plan C9.1e).
-        let lease = (pool
-            .acquire(&channel_log_key, None, OpenIntent::Check)
-            .await)
-            .map_err(|e| transport(format!("open channel record: {e}")))?;
-        let subkeys: Vec<u32> = (0..CHANNEL_SLOTS).collect();
-        let values = pool.read_changed(lease, &subkeys).await;
-        pool.release(lease).await;
-        let values = values.map_err(|e| transport(format!("read channel record: {e}")))?;
-        entries.extend(
-            (values.into_iter())
-                .filter_map(|(_, value)| {
-                    rekindle_codec::community::channel_record::decode_channel_entries(&value.data)
-                        .ok()
-                })
-                .flatten(),
-        );
-        Ok(entries)
+            .collect())
     }
 
     async fn app_call_peer(

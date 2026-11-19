@@ -49,19 +49,14 @@ pub enum PostEntry {
     },
     /// An edit of our post `target` on our outbox (plan E3.3): its new
     /// body, sealed when the stream drains it at the entry's stream seq,
-    /// and our seq `seq` that orders our edits (rule E1).
+    /// which also orders our edits (rule E1).
     Edit {
         target: String,
         body: String,
         edited_at: u64,
-        seq: u64,
     },
     /// A delete of our post `target` on our outbox (rule E3, a tombstone).
-    Delete {
-        target: String,
-        deleted_at: u64,
-        seq: u64,
-    },
+    Delete { target: String, deleted_at: u64 },
     /// Our reaction `emoji` added to or removed from `target` (rule R1: a
     /// reaction op is (target, emoji, add|remove); readers keep our latest
     /// by its stream seq). No body.

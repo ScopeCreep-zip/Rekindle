@@ -535,9 +535,19 @@ mod tests {
             next_at: 0,
             deadline: i64::MAX,
         };
-        super::super::outbox::enqueue_for_message(&conn, &row, "m1").unwrap();
+        let seq = super::super::outbox::enqueue_for_message(&conn, &row, "m1").unwrap();
         let rows = super::super::outbox::stream_rows(&conn, OWNER, "channel_post:rk:4").unwrap();
         assert_eq!(rows.len(), 1);
+        // The echo is at the row's per-stream seq (D22), as its readers
+        // store the entry.
+        let placed: (Option<i64>, i64) = conn
+            .query_row(
+                "SELECT stream_seq, lamport_ts FROM messages WHERE message_id = 'm1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(placed, (Some(seq), seq));
         super::super::outbox::settle(&conn, OWNER, "m1", SendState::Sent).unwrap();
         assert!(
             super::super::outbox::stream_rows(&conn, OWNER, "channel_post:rk:4")

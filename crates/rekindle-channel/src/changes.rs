@@ -70,6 +70,38 @@ pub fn judge_change(
     author: &str,
     kind: ChangeKind,
 ) -> Result<(), ChangeRefusal> {
+    let target = judge_target(target, author)?;
+    match kind {
+        ChangeKind::Edit { seq } if seq <= target.edit_seq => Err(ChangeRefusal::Stale),
+        ChangeKind::Edit { .. } if target.edit_count >= MAX_EDITS => Err(ChangeRefusal::EditLimit),
+        ChangeKind::Edit { .. } | ChangeKind::Delete => Ok(()),
+    }
+}
+
+/// Judge our own change of `target` (an edit when `edit`) under E1–E3
+/// before it is queued: never stale, since its place is the next seq of
+/// our channel's stream (D22), above every entry we wrote there; a reader
+/// judges the seq ([`judge_change`]).
+///
+/// # Errors
+/// The rule that refuses it.
+pub fn judge_own_change(
+    target: Option<&ChangeTarget>,
+    author: &str,
+    edit: bool,
+) -> Result<(), ChangeRefusal> {
+    let target = judge_target(target, author)?;
+    if edit && target.edit_count >= MAX_EDITS {
+        return Err(ChangeRefusal::EditLimit);
+    }
+    Ok(())
+}
+
+/// `target`, when it exists, is `author`'s and not deleted.
+fn judge_target<'a>(
+    target: Option<&'a ChangeTarget>,
+    author: &str,
+) -> Result<&'a ChangeTarget, ChangeRefusal> {
     let target = target.ok_or(ChangeRefusal::NoTarget)?;
     if !target.sender_key.eq_ignore_ascii_case(author) {
         return Err(ChangeRefusal::NotAuthor);
@@ -77,11 +109,7 @@ pub fn judge_change(
     if target.deleted {
         return Err(ChangeRefusal::Deleted);
     }
-    match kind {
-        ChangeKind::Edit { seq } if seq <= target.edit_seq => Err(ChangeRefusal::Stale),
-        ChangeKind::Edit { .. } if target.edit_count >= MAX_EDITS => Err(ChangeRefusal::EditLimit),
-        ChangeKind::Edit { .. } | ChangeKind::Delete => Ok(()),
-    }
+    Ok(target)
 }
 
 /// Open an edit's body sealed at `at` under exactly `generation`; `None`
@@ -149,6 +177,31 @@ mod tests {
                 ChangeKind::Edit { seq: 9 }
             ),
             Err(ChangeRefusal::EditLimit)
+        );
+    }
+
+    #[test]
+    fn our_own_change_is_judged_without_a_seq() {
+        // Our edit's place is our stream's next seq: no seq refuses it.
+        assert_eq!(
+            judge_own_change(Some(&target(u64::MAX, 1, false)), "aabb", true),
+            Ok(())
+        );
+        assert_eq!(
+            judge_own_change(Some(&target(7, MAX_EDITS, false)), "aabb", true),
+            Err(ChangeRefusal::EditLimit)
+        );
+        assert_eq!(
+            judge_own_change(Some(&target(7, MAX_EDITS, false)), "aabb", false),
+            Ok(())
+        );
+        assert_eq!(
+            judge_own_change(Some(&target(0, 0, true)), "aabb", false),
+            Err(ChangeRefusal::Deleted)
+        );
+        assert_eq!(
+            judge_own_change(Some(&target(0, 0, false)), "ccdd", true),
+            Err(ChangeRefusal::NotAuthor)
         );
     }
 

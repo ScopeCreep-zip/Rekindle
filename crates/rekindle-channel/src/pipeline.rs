@@ -102,14 +102,12 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         return crate::awaiting_key::queue_awaiting_key(deps, composed).await;
     }
     let message_id = random_message_id("msg_");
-    // Orders the local row only; the entry's position is its stream seq.
-    let lamport_ts = deps.increment_lamport(community_id)?;
+    // The row's place is its stream seq, given when it is queued (D22).
     let outcome = ChannelSendOutcome {
         message_id: message_id.clone(),
         sender_pseudonym_hex: sender_key.clone(),
         ciphertext: Vec::new(),
         mek_generation: None,
-        lamport_ts,
         timestamp_ms,
         reply_to,
         send_state: SendState::Queued,
@@ -224,13 +222,11 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         .or_else(|| deps.owner_key())
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(dest_community_id.into()))?;
     let new_message_id = random_message_id("msg_");
-    let lamport_ts = deps.increment_lamport(dest_community_id)?;
     let outcome = ChannelSendOutcome {
         message_id: new_message_id.clone(),
         sender_pseudonym_hex: forwarder_pseudonym.clone(),
         ciphertext: Vec::new(),
         mek_generation: None,
-        lamport_ts,
         timestamp_ms,
         reply_to: None,
         send_state: SendState::Queued,

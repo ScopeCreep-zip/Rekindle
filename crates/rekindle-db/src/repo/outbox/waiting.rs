@@ -8,11 +8,11 @@
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection};
 
-use super::{insert_row, next_seq, project, NewRow};
+use super::{insert_row, next_seq, place_echo, project, NewRow};
 
 /// Store `row` at the end of its stream, `awaiting_key`, with our channel
-/// post `message_id`, already written `awaiting_key`, as its echo. Returns
-/// the row's `stream_seq`.
+/// post `message_id`, already written `awaiting_key`, as its echo at the
+/// row's seq (`place_echo`). Returns the row's `stream_seq`.
 ///
 /// # Errors
 /// The write failed, or no waiting post is `message_id`; nothing is stored.
@@ -29,6 +29,7 @@ pub fn enqueue_waiting_for_message(
         |r| r.get(0),
     )?;
     let seq = next_seq(&tx, row)?;
+    place_echo(&tx, echo_id, seq)?;
     insert_row(&tx, row, seq, Some(echo_id))?;
     tx.execute(
         "UPDATE outbox SET state = 'awaiting_key' WHERE owner_key = ?1 AND client_id = ?2",

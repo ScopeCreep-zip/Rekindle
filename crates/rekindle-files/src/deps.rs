@@ -54,7 +54,6 @@ pub struct InsertChannelMessage<'a> {
     pub message_id: &'a str,
     pub timestamp_ms: i64,
     pub mek_generation: u64,
-    pub lamport_ts: u64,
     pub attachment_json: &'a str,
     pub flags: u32,
     pub body: &'a str,
@@ -116,8 +115,6 @@ pub trait FilesDeps: FileCacheDeps {
 
     // ── Channel + community state ──────────────────────────────────
 
-    fn channel_log_key(&self, community_id: &str, channel_id: &str) -> Result<String, FilesError>;
-
     fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool;
 
     // ── Permissions + slowmode + mentions ──────────────────────────
@@ -130,14 +127,6 @@ pub trait FilesDeps: FileCacheDeps {
         channel_id: &str,
         now_ms: i64,
     ) -> Result<(), FilesError>;
-
-    // ── Lamport + sequence ─────────────────────────────────────────
-
-    /// Next message-clock value (attachment messages).
-    fn increment_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     // ── Online-peer routing (gossip overlay) ───────────────────────
 
@@ -166,8 +155,8 @@ pub trait FilesDeps: FileCacheDeps {
 
     /// The entries of `channel_id` (plan E3.3 "Files move onto MSR"):
     /// every member's channel outbox entries of it, verified and linked by
-    /// tag (`read_author_outboxes(channel)`), then the channel record's
-    /// slot entries (older history, until slice 8). Used by `fetch_offer`
+    /// tag (`read_author_outboxes(channel)`); a channel has no record of
+    /// its own (plan E3.3 slice 8). Used by `fetch_offer`
     /// (a Message carrying the attachment) and `discover_sources` (its
     /// author, and the `AttachmentCached` entries of the outboxes).
     async fn channel_entries(

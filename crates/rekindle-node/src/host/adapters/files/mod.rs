@@ -73,14 +73,6 @@ impl HostFiles {
         }
     }
 
-    /// The record pool of the running transport.
-    fn records(&self) -> Result<Arc<dyn rekindle_records::port::RecordPort>, FilesError> {
-        let transport = (self.gov.context().transport.read().clone())
-            .ok_or_else(|| FilesError::Transport("transport not started".into()))?;
-        (transport.require_records())
-            .map_err(|e| FilesError::Transport(format!("record pool: {e}")))
-    }
-
     /// The unlocked identity's database.
     fn db(&self) -> Result<rekindle_db::Db, FilesError> {
         (self.gov.context().db.current()).map_err(|e| FilesError::Db(e.to_string()))
