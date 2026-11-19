@@ -241,7 +241,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// `code_hash` is the public half of its join key and a `MemberJoined`
 /// invite proof is that key's signature, so stored invites and joins of
 /// older builds no longer verify.
-pub const SCHEMA_VERSION: i64 = 138;
+pub const SCHEMA_VERSION: i64 = 139;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
