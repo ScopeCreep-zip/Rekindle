@@ -3,9 +3,12 @@
 use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
 use std::sync::Arc;
 
+use rekindle_lifecycle::SessionScope;
+
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{
-    Code, Error as ShortcutError, GlobalShortcutExt, Modifiers, ShortcutState,
+    Code, Error as ShortcutError, GlobalShortcut, GlobalShortcutExt, Modifiers, Shortcut,
+    ShortcutState,
 };
 
 use crate::state::SharedState;
@@ -58,6 +61,7 @@ pub fn register(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std
         }
         Err(e) => return Err(e.into()),
     }
+    app.manage(PanicChord::default());
     let shortcuts = app.global_shortcut();
     for chord in CHORDS {
         settle_registration(chord, shortcuts.register(chord))?;
@@ -81,6 +85,127 @@ fn settle_registration(
         }
         Err(e) => Err(e),
     }
+}
+
+/// The panic shortcut registered for the unlocked identity (plan E7.1,
+/// quick wipe) and the unlock's scope its trigger runs on, kept so the
+/// lock unregisters exactly it. Managed by [`register`].
+#[derive(Default)]
+pub struct PanicChord(parking_lot::Mutex<PanicHeld>);
+
+#[derive(Default)]
+struct PanicHeld {
+    shortcut: Option<Shortcut>,
+    scope: Option<Arc<SessionScope>>,
+}
+
+/// The stored `app_settings.panic_shortcut` as a chord. The Host checked
+/// the accelerator when it was armed; one the plugin cannot parse is an
+/// error, never a silently unarmed shortcut.
+///
+/// # Errors
+/// The plugin's parser refuses the accelerator.
+pub fn parse_panic_chord(stored: Option<&str>) -> Result<Option<Shortcut>, String> {
+    stored
+        .map(|chord| {
+            chord
+                .parse::<Shortcut>()
+                .map_err(|e| format!("the panic shortcut `{chord}` is not a chord: {e}"))
+        })
+        .transpose()
+}
+
+/// The unlock began: its scope runs the panic shortcut's trigger, and the
+/// stored `chord` is registered (see [`set_panic_chord`]).
+///
+/// # Errors
+/// As [`set_panic_chord`].
+pub fn begin_panic_session(
+    app: &tauri::AppHandle,
+    state: &SharedState,
+    scope: &Arc<SessionScope>,
+    chord: Option<&str>,
+) -> Result<(), String> {
+    if let Some(held) = app.try_state::<PanicChord>() {
+        held.0.lock().scope = Some(Arc::clone(scope));
+    }
+    set_panic_chord(app, state, chord)
+}
+
+/// The unlock ended: the panic shortcut is unregistered and its scope
+/// forgotten.
+pub fn end_panic_session(app: &tauri::AppHandle, state: &SharedState) {
+    if let Err(e) = set_panic_chord(app, state, None) {
+        tracing::warn!(error = %e, "the panic shortcut was not unregistered");
+    }
+    if let Some(held) = app.try_state::<PanicChord>() {
+        held.0.lock().scope = None;
+    }
+}
+
+/// Make `chord` the panic shortcut (plan E7.1): the previous one is
+/// unregistered, and `chord`, when there is one, registered to send
+/// `QuickWipeTrigger` to the Host on the unlock's scope. `None` (the lock,
+/// or a disarm) leaves none. A chord the OS refuses is an error: a user
+/// who armed it must not believe it works.
+///
+/// # Errors
+/// The chord does not parse, no identity is unlocked, the OS refused it,
+/// or global shortcuts are unavailable on this system.
+pub fn set_panic_chord(
+    app: &tauri::AppHandle,
+    state: &SharedState,
+    chord: Option<&str>,
+) -> Result<(), String> {
+    let next = parse_panic_chord(chord)?;
+    let (Some(held), Some(shortcuts)) = (
+        app.try_state::<PanicChord>(),
+        app.try_state::<GlobalShortcut<tauri::Wry>>(),
+    ) else {
+        return match next {
+            Some(_) => Err("global shortcuts are unavailable on this system".into()),
+            None => Ok(()),
+        };
+    };
+    let mut held = held.0.lock();
+    if let Some(previous) = held.shortcut.take() {
+        if let Err(e) = shortcuts.unregister(previous) {
+            tracing::warn!(error = %e, "the previous panic shortcut stays registered");
+        }
+    }
+    let Some(shortcut) = next else {
+        return Ok(());
+    };
+    let Some(scope) = held.scope.clone() else {
+        return Err("no identity is unlocked".into());
+    };
+    let trigger_state = Arc::clone(state);
+    shortcuts
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                trigger_quick_wipe(&scope, Arc::clone(&trigger_state));
+            }
+        })
+        .map_err(|e| format!("the panic shortcut could not be registered: {e}"))?;
+    held.shortcut = Some(shortcut);
+    Ok(())
+}
+
+/// The panic shortcut was pressed: the Host wipes (`QuickWipeTrigger`,
+/// Routine, no review; plan E7.1). The Host refuses it with 409 while no
+/// shortcut is armed, and stops itself after the wipe; the GUI follows its
+/// `HostStopping { DataWiped }`.
+fn trigger_quick_wipe(scope: &Arc<SessionScope>, state: SharedState) {
+    scope.spawn_or_drop("panic shortcut", async move {
+        let sent = crate::host_call::call::<serde_json::Value>(
+            &state,
+            rekindle_ipc::protocol::IpcRequest::QuickWipeTrigger,
+        )
+        .await;
+        if let Err(e) = sent {
+            tracing::error!(error = %e, "the quick wipe was refused");
+        }
+    });
 }
 
 /// Toggle the buddy list window visibility (Ctrl+Shift+X / Cmd+Shift+X).
@@ -137,6 +262,21 @@ mod tests {
         ));
         assert!(settle_registration("ctrl+shift+x", refused).is_ok());
         assert!(settle_registration("ctrl+shift+x", Ok(())).is_ok());
+    }
+
+    /// A stored panic shortcut becomes the chord the plugin registers; a
+    /// malformed one is an error, never a quietly unarmed shortcut.
+    #[test]
+    fn the_panic_chord_parses_or_is_refused() {
+        let chord = parse_panic_chord(Some("CommandOrControl+Shift+F12"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            chord,
+            "CommandOrControl+Shift+F12".parse::<Shortcut>().unwrap()
+        );
+        assert!(parse_panic_chord(None).unwrap().is_none());
+        assert!(parse_panic_chord(Some("Shift+NotAKey")).is_err());
     }
 
     #[test]

@@ -391,3 +391,58 @@ async fn the_duress_passphrase_is_heard_even_when_locked_out() {
         Err(IdentityError::Duress)
     ));
 }
+
+/// Plan E7.1 (quick wipe): a rotation keeps an armed quick wipe. The
+/// rotated vault's header is the old one's bytes (salt, parameters and
+/// duress pair), and the duress tag binds only to those, so the duress
+/// passphrase still wipes under the new key; the panic shortcut moves with
+/// every other `owner_key` row of `app_settings`.
+#[tokio::test]
+async fn a_rotation_keeps_the_armed_duress_passphrase_and_panic_shortcut() {
+    let f = Fixture::new();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        Some("Turner"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    let old = made.public_key.clone();
+    drop(made);
+    rekindle_vault::duress::arm(&f.root.identity_vault(&old), "duress").unwrap();
+    let owner = old.clone();
+    f.db.current()
+        .unwrap()
+        .call(move |conn| {
+            rekindle_db::repo::preferences::set_panic_shortcut(
+                conn,
+                &owner,
+                Some("CommandOrControl+Shift+F12"),
+            )
+        })
+        .await
+        .unwrap();
+    let next = rekindle_crypto::Identity::generate();
+    journal_rotation(&f.stores(), &journal(*next.secret_key_bytes())).unwrap();
+    lock(&f.stores()).await;
+
+    let unlocked = unlock(&f.root, &f.stores(), &old, "pass", 2).await.unwrap();
+    let new_key = unlocked.public_key.clone();
+    assert_eq!(new_key, next.public_key_hex());
+    assert!(matches!(
+        passphrase_matches(&f.root, &new_key, "duress"),
+        Err(IdentityError::Duress)
+    ));
+    let owner = new_key.clone();
+    let shortcut = f
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::preferences::panic_shortcut(conn, &owner))
+        .await
+        .unwrap();
+    assert_eq!(shortcut.as_deref(), Some("CommandOrControl+Shift+F12"));
+}

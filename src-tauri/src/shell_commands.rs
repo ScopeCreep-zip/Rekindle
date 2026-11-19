@@ -97,6 +97,8 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "set_share_current_game",
         HostCall::Request("SetShareCurrentGame"),
     ),
+    ("quick_wipe_arm", HostCall::Request("QuickWipeArm")),
+    ("quick_wipe_disarm", HostCall::Request("QuickWipeDisarm")),
     ("get_hidden_games", HostCall::Request("HiddenGamesGet")),
     ("hide_game", HostCall::Request("GameHide")),
     ("unhide_game", HostCall::Request("GameUnhide")),

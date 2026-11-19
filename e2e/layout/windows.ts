@@ -142,6 +142,18 @@ export const WINDOWS: WindowCase[] = [
     panes: [".settings-content"],
   },
   {
+    // Settings → Privacy (plan E7.1): the quick wipe's fields and buttons
+    // beside the switches and the hidden-games list.
+    name: "settings-privacy",
+    label: "settings",
+    path: "/settings?tab=privacy",
+    def: { width: 500, height: 550 },
+    min: { width: 420, height: 450 },
+    ready: frame,
+    spacing: [".xfire-titlebar", ".form-tabs"],
+    panes: [".settings-content"],
+  },
+  {
     // Settings → Appearance (plan E7.7.2): the skin list, a trial's
     // "Keep this skin?" prompt over stress data, and import.
     name: "settings-appearance",

@@ -6,6 +6,7 @@ import { authState } from "../../stores/auth.store";
 import { commands } from "../../ipc/commands";
 import { handleUnblockUser } from "../../actions/buddy.actions";
 import HiddenGamesSection from "../../components/settings/HiddenGamesSection";
+import QuickWipeSection from "../../components/settings/QuickWipeSection";
 
 const PrivacyTab: Component = () => {
   const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
@@ -148,6 +149,7 @@ const PrivacyTab: Component = () => {
         <button class="form-btn-secondary" disabled>Import Identity</button>
       </div>
       <div class="settings-hint">Identity export/import requires Stronghold integration.</div>
+      <QuickWipeSection />
       <div class="settings-section-title">Blocked Users</div>
       <Show when={error()}>
         <div class="form-error">{error()}</div>

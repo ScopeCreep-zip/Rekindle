@@ -168,6 +168,12 @@ export interface MissedCallRow {
 /** `Preferences.notificationContent`: sender and message, sender only, or nothing. */
 export type NotificationContent = "nameAndMessage" | "nameOnly" | "nothing";
 
+/// What arming or disarming the quick wipe answers (`QuickWipeState`).
+export interface QuickWipeState {
+  armed: boolean;
+  shortcut: string | null;
+}
+
 export interface Preferences {
   notificationsEnabled: boolean;
   notificationSound: boolean;

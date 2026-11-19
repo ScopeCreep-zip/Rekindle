@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  FavouriteServerView, HiddenGameView, NetworkStatus, Preferences, SettingsTab,
+  FavouriteServerView, HiddenGameView, NetworkStatus, Preferences, QuickWipeState, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
@@ -97,6 +97,10 @@ export const systemCommands = {
     hostInvoke<Preferences>("set_game_detection", { enabled }),
   setShareCurrentGame: (enabled: boolean) =>
     hostInvoke<Preferences>("set_share_current_game", { enabled }),
+  // The quick wipe (plan E7.1): Protected intents the Host reviews.
+  quickWipeArm: (duressPassphrase: string, shortcut: string | null) =>
+    hostInvoke<QuickWipeState>("quick_wipe_arm", { duressPassphrase, shortcut }),
+  quickWipeDisarm: () => hostInvoke<QuickWipeState>("quick_wipe_disarm"),
   setPreferences: (prefs: Preferences) =>
     invoke<void>("set_preferences", { prefs }),
   checkForUpdates: () => invoke<boolean>("check_for_updates"),

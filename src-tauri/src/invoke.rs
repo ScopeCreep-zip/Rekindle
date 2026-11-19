@@ -402,6 +402,8 @@ macro_rules! settings_commands {
         commands::settings::set_share_game_totals,
         commands::settings::set_game_detection,
         commands::settings::set_share_current_game,
+        commands::settings::quick_wipe_arm,
+        commands::settings::quick_wipe_disarm,
         commands::settings::check_for_updates,
     ] $($rest)*) };
 }

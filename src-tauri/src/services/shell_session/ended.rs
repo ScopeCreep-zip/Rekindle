@@ -46,6 +46,8 @@ pub(super) async fn ended(state: &SharedState, app: Option<&tauri::AppHandle>, r
     let Some(app) = app else {
         return;
     };
+    // The panic shortcut is the unlocked identity's (plan E7.1).
+    crate::shortcuts::end_panic_session(app, state);
     services::veilid::emit_network_status(app, state);
     // No session, no status: the tray shows the app mark again (plan E7.2).
     crate::tray::show_status(app, None);

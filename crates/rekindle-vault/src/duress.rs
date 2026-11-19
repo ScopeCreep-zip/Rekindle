@@ -104,4 +104,28 @@ mod tests {
         assert_eq!(on_disk.len(), header::VAULT_HEADER_LEN);
         assert!(VaultStore::open(&path, "real").is_ok());
     }
+
+    /// Timing parity (plan E7.1; research cross-check 2026-11-19 §6): the
+    /// duress passphrase, the real one and a wrong one each run the same
+    /// two Argon2id derivations, armed or not, so the KDF time (the cost
+    /// that dominates an open) does not tell them apart.
+    #[test]
+    fn every_open_runs_both_derivations_armed_or_not() {
+        let stretches = |path: &std::path::Path, pass: &str| {
+            header::STRETCHES.with(|n| n.set(0));
+            let _ = VaultStore::open(path, pass);
+            header::STRETCHES.with(std::cell::Cell::get)
+        };
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = vault(&dir);
+        let unarmed = [stretches(&path, "real"), stretches(&path, "other")];
+        arm(&path, "duress").unwrap();
+        let armed = [
+            stretches(&path, "duress"),
+            stretches(&path, "real"),
+            stretches(&path, "other"),
+        ];
+        assert_eq!(unarmed, [2, 2]);
+        assert_eq!(armed, [2, 2, 2]);
+    }
 }

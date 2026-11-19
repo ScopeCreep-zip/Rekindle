@@ -70,3 +70,26 @@ fn a_symlink_is_removed_not_followed() {
     super::sweep_root(&root, &bus).expect("sweep");
     assert!(outside.join("keep").exists(), "the link's target survives");
 }
+
+/// Keys first (research cross-check 2026-11-19 §5, NIST SP 800-88
+/// cryptographic erase): a sweep that stops at the first path it cannot
+/// remove has already destroyed every vault header, so no passphrase opens
+/// what is left.
+#[cfg(unix)]
+#[test]
+fn an_interrupted_sweep_has_already_destroyed_the_vault_headers() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (root, bus) = populated(dir.path());
+    let header = rekindle_vault::header::header_path(&root.identity_vault("pk"));
+    std::fs::write(&header, [7u8; 128]).expect("header");
+    // `config/` cannot be removed: its subdirectory refuses deletions.
+    let stuck = root.config.join("stuck");
+    std::fs::create_dir_all(&stuck).expect("stuck");
+    std::fs::write(stuck.join("f"), b"x").expect("f");
+    std::fs::set_permissions(&stuck, std::fs::Permissions::from_mode(0o500)).expect("chmod");
+    let swept = super::sweep_root(&root, &bus);
+    std::fs::set_permissions(&stuck, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+    assert!(swept.is_err(), "config/ was not removable");
+    assert!(!header.exists(), "the vault header went before anything else");
+}

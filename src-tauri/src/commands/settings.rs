@@ -1,5 +1,6 @@
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::passphrase::Passphrase;
 use rekindle_types::preferences::Preferences;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -89,6 +90,65 @@ pub async fn set_share_current_game(
     state: State<'_, SharedState>,
 ) -> Result<Done<Preferences>, CommandError> {
     host_call::call(&state, IpcRequest::SetShareCurrentGame { enabled }).await
+}
+
+/// What arming or disarming the quick wipe answers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickWipeState {
+    pub armed: bool,
+    #[serde(default)]
+    pub shortcut: Option<String>,
+}
+
+/// Arm the quick wipe (`IpcRequest::QuickWipeArm`, plan E7.1: Protected,
+/// the Host reviews it with exactly what a trigger destroys and asks for
+/// the identity's passphrase). The panic shortcut is parsed before the
+/// Host sees it and registered once the Host armed it; one the OS refuses
+/// is an error, so the user never believes an inert shortcut is armed.
+#[tauri::command]
+pub async fn quick_wipe_arm(
+    duress_passphrase: Passphrase,
+    shortcut: Option<String>,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<Done<QuickWipeState>, CommandError> {
+    crate::shortcuts::parse_panic_chord(shortcut.as_deref()).map_err(|message| {
+        CommandError::Failed {
+            code: 400,
+            message,
+            remediation: None,
+        }
+    })?;
+    let done: Done<QuickWipeState> = host_call::call(
+        &state,
+        IpcRequest::QuickWipeArm {
+            duress_passphrase,
+            shortcut,
+        },
+    )
+    .await?;
+    crate::shortcuts::set_panic_chord(&app, state.inner(), done.value.shortcut.as_deref())
+        .map_err(|reason| {
+            CommandError::internal(format!(
+                "the duress passphrase is armed, but {reason}; choose another shortcut"
+            ))
+        })?;
+    Ok(done)
+}
+
+/// Disarm the quick wipe (`IpcRequest::QuickWipeDisarm`, Protected): the
+/// duress passphrase forgotten and the panic shortcut unregistered.
+#[tauri::command]
+pub async fn quick_wipe_disarm(
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<Done<QuickWipeState>, CommandError> {
+    let done: Done<QuickWipeState> =
+        host_call::call(&state, IpcRequest::QuickWipeDisarm).await?;
+    crate::shortcuts::set_panic_chord(&app, state.inner(), None)
+        .map_err(CommandError::internal)?;
+    Ok(done)
 }
 
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {

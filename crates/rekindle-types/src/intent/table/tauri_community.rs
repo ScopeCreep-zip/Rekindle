@@ -134,6 +134,8 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
         Some(IntentKind::SetReadReceiptsEnabled),
     ),
     ("set_share_game_totals", Some(IntentKind::ShareGameTotals)),
+    ("quick_wipe_arm", Some(IntentKind::ArmQuickWipe)),
+    ("quick_wipe_disarm", Some(IntentKind::DisarmQuickWipe)),
     ("run_background_sync", None),
     ("list_automod_rules", None),
     ("set_automod_rule", Some(IntentKind::SetAutomodRule)),

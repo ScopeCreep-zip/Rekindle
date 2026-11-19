@@ -20,8 +20,15 @@ use rand::RngCore;
 use crate::error::VaultError;
 
 const MAGIC: &[u8; 4] = b"RKVH";
-const VERSION: u8 = 2;
+const HEADER_VERSION: u8 = 2;
 /// The header's size on disk.
+#[cfg(test)]
+thread_local! {
+    /// The Argon2id derivations this thread ran (the duress timing-parity
+    /// test, `crate::duress`).
+    pub(crate) static STRETCHES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 pub const VAULT_HEADER_LEN: usize = 128;
 
 /// Argon2id parameters for a new vault: RFC 9106 §4's second recommended
@@ -102,6 +109,8 @@ impl VaultHeader {
             self.params()?,
         );
         let mut out = zeroize::Zeroizing::new(vec![0u8; self.output_len as usize]);
+        #[cfg(test)]
+        STRETCHES.with(|n| n.set(n.get() + 1));
         argon
             .hash_password_into(passphrase.as_bytes(), salt, &mut out)
             .map_err(|e| VaultError::Kdf(e.to_string()))?;
@@ -112,7 +121,7 @@ impl VaultHeader {
     pub fn encode(&self) -> [u8; VAULT_HEADER_LEN] {
         let mut out = [0u8; VAULT_HEADER_LEN];
         out[..4].copy_from_slice(MAGIC);
-        out[4] = VERSION;
+        out[4] = HEADER_VERSION;
         out[8..12].copy_from_slice(&self.m_cost_kib.to_le_bytes());
         out[12..16].copy_from_slice(&self.t_cost.to_le_bytes());
         out[16..20].copy_from_slice(&self.p_cost.to_le_bytes());
@@ -128,7 +137,7 @@ impl VaultHeader {
     /// # Errors
     /// Wrong length, magic or version.
     pub fn decode(bytes: &[u8]) -> Result<Self, VaultError> {
-        if bytes.len() != VAULT_HEADER_LEN || &bytes[..4] != MAGIC || bytes[4] != VERSION {
+        if bytes.len() != VAULT_HEADER_LEN || &bytes[..4] != MAGIC || bytes[4] != HEADER_VERSION {
             return Err(VaultError::Schema("not a Rekindle vault header".into()));
         }
         let u32_at = |i: usize| {

@@ -44,6 +44,9 @@ pub(super) async fn run(
     // E3.1 C2c) until E3.5 makes the Host's MEK cache the one.
     services::preferences::load(state, &pool, owner).await?;
     services::community::hydrate_peer_reliability(state, &pool).await;
+    if let Some(app) = app {
+        register_panic_shortcut(state, app, &pool, owner, scope).await?;
+    }
 
     // The network stages need a window to report to and a node.
     let staged = match app {
@@ -62,6 +65,42 @@ pub(super) async fn run(
         });
     }
     staged
+}
+
+/// The quick wipe's panic shortcut (plan E7.1), registered while the
+/// identity is unlocked (`ended` unregisters it). A stored chord the OS
+/// refuses is told to the user at once: they armed it and must not believe
+/// it works.
+///
+/// # Errors
+/// The identity's database cannot be read.
+async fn register_panic_shortcut(
+    state: &SharedState,
+    app: &tauri::AppHandle,
+    pool: &rekindle_db::Db,
+    owner: &str,
+    scope: &Arc<SessionScope>,
+) -> Result<(), String> {
+    let owner = owner.to_string();
+    let stored = pool
+        .call(move |conn| rekindle_db::repo::preferences::panic_shortcut(conn, &owner))
+        .await
+        .map_err(|e| format!("the panic shortcut is unreadable: {e}"))?;
+    if let Err(reason) = crate::shortcuts::begin_panic_session(app, state, scope, stored.as_deref()) {
+        tracing::error!(%reason, "the panic shortcut is not registered");
+        crate::event_dispatch::emit_notification(
+            app,
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title: "Panic shortcut not active".into(),
+                subject: None,
+                body: format!(
+                    "{reason}. The duress passphrase still works; choose another shortcut in \
+                     Settings → Privacy."
+                ),
+            },
+        );
+    }
+    Ok(())
 }
 
 /// The unported network stages, each a task of `scope`.

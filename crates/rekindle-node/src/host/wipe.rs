@@ -46,11 +46,69 @@ const HELD_IN_DATA: &[&str] = &["state", rekindle_db::lock::LOCK_FILE];
 /// # Errors
 /// A path that exists could not be removed.
 pub fn sweep_root(root: &DataRoot, bus_dir: &Path) -> Result<(), WipeError> {
+    destroy_keys(root)?;
     remove(&root.config)?;
     remove(&root.logs)?;
     remove_all_but(&root.state, HELD_IN_STATE)?;
     remove_all_but(&root.data, HELD_IN_DATA)?;
     remove(&bus_dir.join("bus.pub"))
+}
+
+/// The keys go first (research cross-check 2026-11-19 §5; NIST SP 800-88
+/// Rev. 1 §2.6 "cryptographic erase"): every vault header in `state/`
+/// (`{pk}.vault.hdr`, its Argon2id salt and parameters, plan E7.1) is
+/// overwritten with zeros, synced and removed before any other file, so a
+/// wipe interrupted after this point leaves vaults no passphrase opens,
+/// and with them the database keys they hold. The unlocked identity's
+/// in-memory keys were released (zeroized) before the sweep
+/// (`handle_wipe` → `release_unlock`).
+///
+/// # Errors
+/// A header that exists could not be overwritten or removed.
+fn destroy_keys(root: &DataRoot) -> Result<(), WipeError> {
+    let entries = match std::fs::read_dir(&root.state) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(WipeError {
+                path: root.state.clone(),
+                source,
+            })
+        }
+    };
+    for entry in entries {
+        let path = entry
+            .map_err(|source| WipeError {
+                path: root.state.clone(),
+                source,
+            })?
+            .path();
+        if path.extension().is_some_and(|ext| ext == "hdr") {
+            shred(&path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Overwrite a header file with zeros, sync it, then remove it.
+fn shred(path: &Path) -> Result<(), WipeError> {
+    use std::io::Write as _;
+    let fail = |source| WipeError {
+        path: path.to_path_buf(),
+        source,
+    };
+    let len = std::fs::symlink_metadata(path).map_err(fail)?.len();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .map_err(fail)?;
+    let len = usize::try_from(len)
+        .map_err(|e| fail(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+    let zeros = vec![0u8; len];
+    file.write_all(&zeros).map_err(fail)?;
+    file.sync_all().map_err(fail)?;
+    drop(file);
+    remove(path)
 }
 
 /// Remove what the node held, once it has stopped: all of `DataRoot.data`
