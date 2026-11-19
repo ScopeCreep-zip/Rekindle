@@ -12,8 +12,12 @@
 use async_trait::async_trait;
 use rekindle_channel::outbox_chain::OutboxWriter;
 use rekindle_channel::outbox_send::{drain_posts, DrainOutcome, DrainPost};
+use rekindle_channel::poll_id_of;
 use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_outbox::{AttemptOutcome, OutboxRow};
+use rekindle_secrets::ed25519_dalek::SigningKey;
+use rekindle_types::id::PseudonymKey;
+use rekindle_types::message::PollRef;
 
 use super::HostChannel;
 use crate::host::adapters::governance::removal_posts::REMOVED_NOT_DELIVERED;
@@ -83,7 +87,7 @@ impl HostChannel {
         let drained = drain_posts(self, &writer, &posts, now).await;
         let landed = drained.iter().any(|d| matches!(d, DrainOutcome::Sent(_)));
         let outcomes = (posts.iter().zip(&drained))
-            .map(|(item, outcome)| self.outcome_of(&item.post, outcome))
+            .map(|(item, outcome)| self.outcome_of(&item.post, &own.author, outcome))
             .collect();
         if landed {
             self.gov.hint_own_outbox(&community, &own).await;
@@ -94,6 +98,7 @@ impl HostChannel {
     fn outcome_of(
         &self,
         post: &rekindle_types::message::ChannelPost,
+        author: &SigningKey,
         outcome: &DrainOutcome,
     ) -> AttemptOutcome {
         // An op on other rows (an edit, a delete, a possession entry, a
@@ -106,8 +111,16 @@ impl HostChannel {
                 if !change {
                     self.emit_delivery_succeeded(&post.community, &post.channel, &post.message);
                 }
-                if let Some(poll_id) = post.entry.poll_id() {
-                    self.poll_changed(&post.community, &post.channel, poll_id);
+                // The drained post is ours: a create's poll is derived from
+                // our pseudonym in this community and its nonce.
+                let poll_id = post.entry.poll_ref().map(|poll| match poll {
+                    PollRef::Id(id) => *id,
+                    PollRef::Created { nonce } => {
+                        poll_id_of(&PseudonymKey(author.verifying_key().to_bytes()), nonce)
+                    }
+                });
+                if let Some(poll_id) = poll_id {
+                    self.poll_changed(&post.community, &post.channel, &poll_id);
                 }
                 AttemptOutcome::Sent
             }

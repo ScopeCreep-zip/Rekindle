@@ -454,8 +454,14 @@ impl HostChannel {
             // when they are shown (`read_author_outboxes`; rules R1-R3, no
             // shared aggregate), so nothing is applied here.
             // A poll op changes what the poll's readers show: told.
-            ChannelRecordEntry::PollCreate(ChannelPollCreate { poll_id, .. })
-            | ChannelRecordEntry::PollVote(ChannelPollVote { poll_id, .. })
+            // A create names its creator's nonce: the poll is derived from
+            // it and this outbox's author (the creator, D23).
+            ChannelRecordEntry::PollCreate(ChannelPollCreate { nonce, .. }) => {
+                let poll_id = rekindle_channel::poll_id_of(&PseudonymKey(*author), &nonce);
+                self.poll_changed(community_id, &channel_id, &poll_id);
+                return Ok(());
+            }
+            ChannelRecordEntry::PollVote(ChannelPollVote { poll_id, .. })
             | ChannelRecordEntry::PollClose(ChannelPollClose { poll_id, .. }) => {
                 self.poll_changed(community_id, &channel_id, &poll_id);
                 return Ok(());

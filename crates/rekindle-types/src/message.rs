@@ -120,16 +120,29 @@ impl PostEntry {
         )
     }
 
-    /// The poll a poll op (create, vote, close) is of.
+    /// The poll a poll op (create, vote, close) is of: a vote or close
+    /// names its id; a create names only its nonce, and the id is derived
+    /// from it and the creator's pseudonym (`rekindle_channel::poll_id_of`).
     #[must_use]
-    pub fn poll_id(&self) -> Option<&[u8; 16]> {
+    pub fn poll_ref(&self) -> Option<PollRef<'_>> {
         match self {
-            Self::PollCreate { poll_id, .. }
-            | Self::PollVote { poll_id, .. }
-            | Self::PollClose { poll_id, .. } => Some(poll_id),
+            Self::PollCreate { nonce, .. } => Some(PollRef::Created { nonce }),
+            Self::PollVote { poll_id, .. } | Self::PollClose { poll_id, .. } => {
+                Some(PollRef::Id(poll_id))
+            }
             _ => None,
         }
     }
+}
+
+/// How a poll op names its poll ([`PostEntry::poll_ref`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PollRef<'a> {
+    /// A vote or close: the poll's id.
+    Id(&'a [u8; 16]),
+    /// A create: the creator's nonce, which with the creator's pseudonym
+    /// derives the poll's id.
+    Created { nonce: &'a [u8; 16] },
 }
 
 impl ChannelPost {
