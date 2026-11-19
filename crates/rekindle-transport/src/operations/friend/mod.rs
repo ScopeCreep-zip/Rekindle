@@ -10,6 +10,7 @@ mod blocked;
 pub mod code;
 mod edit;
 mod error;
+pub mod game_totals;
 mod host;
 pub mod identity_rotation;
 pub(crate) mod inbound;

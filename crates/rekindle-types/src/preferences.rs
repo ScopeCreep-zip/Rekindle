@@ -53,6 +53,9 @@ pub struct Preferences {
     /// by default, never sent while Invisible. Changed only by the
     /// trust-changing `SetReadReceiptsEnabled`.
     pub read_receipts_enabled: bool,
+    /// Send our game totals to friends (plan E7.2): opt-in, off by
+    /// default. Changed only by the trust-changing `SetShareGameTotals`.
+    pub share_game_totals: bool,
     /// What an OS notification shows (prod research batch 7, Signal's
     /// "Show: name and message / name only / no name or message").
     pub notification_content: NotificationContent,
@@ -121,6 +124,7 @@ impl Default for Preferences {
             ringtone_volume: 0.4,
             in_call_dnd_auto_enable: true,
             read_receipts_enabled: false,
+            share_game_totals: false,
             notification_content: NotificationContent::NameOnly,
         }
     }

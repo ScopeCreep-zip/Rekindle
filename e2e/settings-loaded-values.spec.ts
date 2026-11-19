@@ -19,6 +19,7 @@ const PREFS = `{
   gameDetectionEnabled: true,
   gameScanIntervalSecs: 30,
   readReceiptsEnabled: true,
+  shareGameTotals: true,
 }`;
 
 const HANDLER = `

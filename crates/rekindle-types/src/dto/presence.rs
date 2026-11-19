@@ -43,3 +43,16 @@ pub struct OwnGame {
     /// the game database (plan E7.2).
     pub icon_key: Option<String>,
 }
+
+/// One game's time, summed over sessions (plan E7.2): a row of
+/// `game_sessions` totals, of a friend's `friend_game_totals`, and an entry
+/// of the `GameTotals` DmFrame (0x0172).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameTotal {
+    /// The game database id (never 0).
+    pub game_id: u32,
+    /// Seconds played, over every session.
+    pub total_secs: u64,
+    /// When the last session ended, Unix ms.
+    pub last_played: i64,
+}

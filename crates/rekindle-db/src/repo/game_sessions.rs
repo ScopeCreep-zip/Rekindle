@@ -4,15 +4,7 @@
 
 use rusqlite::{params, Connection};
 
-/// One game's time, summed over its sessions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GameTotal {
-    pub game_id: u32,
-    /// Seconds played, over every session.
-    pub total_secs: u64,
-    /// When the last session ended, Unix ms.
-    pub last_played: i64,
-}
+pub use rekindle_types::dto::presence::GameTotal;
 
 /// Record a session of `game_id` from `started_at` to `ended_at` (Unix ms).
 ///

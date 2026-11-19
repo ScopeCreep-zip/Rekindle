@@ -13,6 +13,7 @@
 mod calls;
 mod content;
 mod friend;
+mod game;
 mod group;
 mod relay;
 
@@ -25,6 +26,9 @@ pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StreamRecord,
 };
+#[cfg(test)]
+pub(crate) use game::sample as game_totals_sample;
+pub use game::{GameTotal, GameTotals, MAX_GAME_TOTALS};
 pub use group::{
     GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite, GroupDmLeave, GroupId,
 };
@@ -132,6 +136,7 @@ direct_bodies! {
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,
         StatusRequest(StatusRequest) = status_request,
         StatusResponse(StatusResponse) = status_response,
+        GameTotals(GameTotals) = game_totals,
         CallInvite(CallInvite) = call_invite,
         CallRinging(CallRinging) = call_ringing,
         CallAccept(CallAccept) = call_accept,

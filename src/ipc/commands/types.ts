@@ -195,6 +195,9 @@ export interface Preferences {
   /** DM read receipts (plan E2.5): reciprocal, off by default. Changed only
    *  by `setReadReceiptsEnabled`, never by `setPreferences`. */
   readReceiptsEnabled: boolean;
+  /** Send our game totals to friends (plan E7.2): opt-in, off by default;
+   *  set only by `setShareGameTotals`, never by `setPreferences`. */
+  shareGameTotals: boolean;
 }
 
 export type ExclusionGroupEdit =

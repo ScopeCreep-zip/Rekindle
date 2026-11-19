@@ -171,6 +171,7 @@ export const LOGIN_SUCCESS_HANDLER = `
         gameDetectionEnabled: true,
         gameScanIntervalSecs: 30,
         readReceiptsEnabled: false,
+        shareGameTotals: false,
       };
     default:
       return null;

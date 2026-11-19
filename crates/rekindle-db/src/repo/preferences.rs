@@ -18,7 +18,8 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
              video_device_id, video_device_label, input_volume, output_volume, \
              noise_suppression, echo_cancellation, auto_away_minutes, \
              auto_volunteer_relay_for_new_friends, ringtone_enabled, ringtone_volume, \
-             in_call_dnd_auto_enable, read_receipts_enabled, notification_content \
+             in_call_dnd_auto_enable, read_receipts_enabled, notification_content, \
+             share_game_totals \
              FROM app_settings WHERE owner_key = ?1",
             params![owner_key],
             |row| {
@@ -52,6 +53,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
                             )
                         })?
                     },
+                    share_game_totals: row.get(20)?,
                     input_channels: BTreeMap::new(),
                 })
             },
@@ -171,6 +173,24 @@ pub fn set_read_receipts_enabled(
     Ok(())
 }
 
+/// Turn sharing game totals with friends on or off (`SetShareGameTotals`,
+/// plan E7.2); the row's other settings stay.
+///
+/// # Errors
+/// The write failed.
+pub fn set_share_game_totals(
+    conn: &Connection,
+    owner_key: &str,
+    enabled: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (owner_key, share_game_totals) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET share_game_totals = excluded.share_game_totals",
+        params![owner_key, enabled],
+    )?;
+    Ok(())
+}
+
 /// The identity's skin and sound bank (plan E7.7.2), each a
 /// `builtin:<id>` or `pkg:<hash>` id. Device-bound: never synced.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -281,6 +301,17 @@ mod tests {
         assert!(stored.read_receipts_enabled, "the bulk save leaves it");
         set_read_receipts_enabled(&conn, OWNER, false).unwrap();
         assert!(!load(&conn, OWNER).unwrap().read_receipts_enabled);
+        // Sharing game totals: off by default, its own write only.
+        assert!(!load(&conn, OWNER).unwrap().share_game_totals);
+        set_share_game_totals(&conn, OWNER, true).unwrap();
+        let mut prefs = load(&conn, OWNER).unwrap();
+        assert!(prefs.share_game_totals);
+        prefs.share_game_totals = false;
+        save(&mut conn, OWNER, &prefs).unwrap();
+        assert!(
+            load(&conn, OWNER).unwrap().share_game_totals,
+            "the bulk save leaves it"
+        );
     }
 
     #[test]

@@ -502,6 +502,12 @@ CREATE TABLE IF NOT EXISTS app_settings (
     -- bulk preference save; it never goes on the wire.
     read_receipts_enabled INTEGER NOT NULL DEFAULT 0
         CHECK(read_receipts_enabled IN (0, 1)),
+    -- Game totals shared with friends (plan E7.2): opt-in, off by default.
+    -- Set only by the trust-changing `SetShareGameTotals`, never by the
+    -- bulk preference save; the totals go as ratchet-sealed DmFrame
+    -- `GameTotals` (0x0172), never in the profile record.
+    share_game_totals INTEGER NOT NULL DEFAULT 0
+        CHECK(share_game_totals IN (0, 1)),
     -- The identity's skin and sound bank (plan E7.7.2): a built-in
     -- (`rekindle_skin::builtin`) or a `skin_packages` row (`pkg:<hash>`),
     -- which the Host checks before writing. Device-bound, not synced.
@@ -841,6 +847,20 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     CHECK(ended_at >= started_at)
 );
 CREATE INDEX IF NOT EXISTS idx_game_sessions_game ON game_sessions(owner_key, game_id);
+
+-- A friend's game totals (plan E7.2; `rekindle_db::repo::friend_game_totals`),
+-- as their last `GameTotals` DmFrame stated them; a new frame replaces
+-- them all. Unfriend and block remove the friend row, and these with it.
+CREATE TABLE IF NOT EXISTS friend_game_totals (
+    owner_key TEXT NOT NULL,
+    friend_key TEXT NOT NULL,
+    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    total_secs INTEGER NOT NULL CHECK(total_secs >= 0),
+    last_played INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, friend_key, game_id),
+    FOREIGN KEY (owner_key, friend_key) REFERENCES friends(owner_key, public_key)
+        ON DELETE CASCADE
+);
 
 -- Read markers (plan E3.1, D25; `rekindle_db::repo::read_markers`): per
 -- channel or DM, the device-independent position read up to — a channel

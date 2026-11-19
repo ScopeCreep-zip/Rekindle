@@ -299,6 +299,20 @@ struct StatusRequest {
   targetPubkey @0 :Text;
 }
 
+# 0x0172 (E7.2), inside the ratchet: our time in each game, sent only
+# while we share game totals, on change and to a newly accepted friend.
+# It replaces every total the friend held from us. Never in the profile
+# record, whose key travels in every invite and friend code.
+struct GameTotals {
+  totals @0 :List(GameTotal);
+}
+
+struct GameTotal {
+  gameId @0 :UInt32;
+  totalSecs @1 :UInt64;
+  lastPlayed @2 :Int64;                 # Unix ms the last session ended
+}
+
 # 0x0141.
 struct StatusResponse {
   targetPubkey @0 :Text;

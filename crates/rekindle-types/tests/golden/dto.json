@@ -395,6 +395,7 @@
     "readReceiptsEnabled": true,
     "ringtoneEnabled": true,
     "ringtoneVolume": 0.4000000059604645,
+    "shareGameTotals": false,
     "startMinimized": false,
     "videoDeviceId": null,
     "videoDeviceLabel": null

@@ -169,6 +169,7 @@ fn samples() -> Vec<DirectBody> {
             last_seen: 1_700_000_000,
             route_blob: vec![7; 20],
         }),
+        DirectBody::GameTotals(body::game_totals_sample()),
         DirectBody::CallInvite(CallInvite {
             call_id: "0a".repeat(16),
             offer_kind: 1,
