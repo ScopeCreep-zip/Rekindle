@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.2 "Buddy list": each group splits into "Online" and "Offline"
 // sections (Xfire's list); an empty section is not shown. A friend's game
@@ -43,7 +44,7 @@ test("a group lists its online friends, then its offline ones, each under its he
     friend("c".repeat(64), "Cy", "away", "xfire/8507"),
     friend("d".repeat(64), "Di", "online", "slug/no-such-icon"),
   ]));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   const online = page.getByRole("group", { name: "Online" });
   const offline = page.getByRole("group", { name: "Offline" });
   await expect(online.locator(".buddy-subgroup-header")).toHaveText("Online (2)");
@@ -59,7 +60,7 @@ test("a group lists its online friends, then its offline ones, each under its he
 
 test("an empty section is not shown", async ({ page }) => {
   await preloadMocks(page, "buddy-list", handler([friend("b".repeat(64), "Bob", "online")]));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await expect(page.getByRole("group", { name: "Online" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Offline" })).toHaveCount(0);
 });

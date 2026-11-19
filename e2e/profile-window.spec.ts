@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
 import { PEER, friends, safetyNumber, stressHandler, FULL } from "./fixtures/stress";
+import { openWindow } from "./fixtures/paint";
 
 // The profile window over a safety-number reply (plan E2.3): a valid one
 // draws the number and its QR code; a malformed one (no `qrRows`) costs only
@@ -12,7 +13,7 @@ async function openProfile(page: import("@playwright/test").Page, reply: unknown
   const base = stressHandler(FULL);
   const handler = `if (cmd === "get_safety_number") return ${JSON.stringify(reply)};\n${base}`;
   await preloadMocks(page, `profile-${PEER.slice(0, 16)}`, handler);
-  await page.goto(`/profile?key=${PEER}`);
+  await openWindow(page, `/profile?key=${PEER}`);
 }
 
 test("a valid safety number draws its digits and QR code", async ({ page }) => {

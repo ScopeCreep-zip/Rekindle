@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.2 "Game-time tracking, persisted": Settings → Profile shows the
 // Host's totals per game (`get_game_totals` → `GameTotalsGet`), with the
@@ -26,7 +27,7 @@ test.afterEach(async ({ page }) => {
 
 test("Settings → Profile lists each game's total, last played and icon", async ({ page }) => {
   await preloadMocks(page, "settings", HANDLER);
-  await page.goto("/settings?tab=profile");
+  await openWindow(page, "/settings?tab=profile");
   const rows = page.getByRole("list", { name: "Game time" }).getByRole("listitem");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText("Counter-Strike 2");
@@ -41,6 +42,6 @@ test("Settings → Profile lists each game's total, last played and icon", async
 
 test("Settings → Profile says so when no game was played", async ({ page }) => {
   await preloadMocks(page, "settings", HANDLER.replace(/case "get_game_totals":[\s\S]*?\];/, 'case "get_game_totals": return [];'));
-  await page.goto("/settings?tab=profile");
+  await openWindow(page, "/settings?tab=profile");
   await expect(page.getByText("No games played yet")).toBeVisible();
 });

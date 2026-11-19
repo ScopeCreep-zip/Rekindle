@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.7.2: Settings → Appearance lists the Host's skins and sends the
 // user's choices; choosing a library skin puts it on trial, and the tab
@@ -99,7 +100,7 @@ async function openAppearance(page: Page, opts: { paused?: boolean } = {}): Prom
     await page.clock.install({ time: STARTED });
   }
   await preloadMocks(page, "settings", HANDLER);
-  await page.goto("/settings?tab=appearance");
+  await openWindow(page, "/settings?tab=appearance");
   await expect(page.getByRole("radio", { name: TRIAL.name })).toBeVisible({ timeout: 10_000 });
   await page.waitForFunction(() => (window as any).__eventChannelId !== undefined);
 }

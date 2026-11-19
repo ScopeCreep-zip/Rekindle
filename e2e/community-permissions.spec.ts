@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // The community window reads what we may do from the backend's permission
 // flags (plan E3.2 S9): `myPermissions` and, for the open channel,
@@ -87,7 +88,7 @@ function handler(channelPerms: string): string {
 
 async function open(page: Page, channelPerms: string): Promise<void> {
   await preloadMocks(page, "community", handler(channelPerms));
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.getByText("general", { exact: true }).first().click();
 }

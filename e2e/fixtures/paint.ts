@@ -19,3 +19,14 @@ export function firstPaint(page: Page) {
   info.setTimeout(info.timeout + FIRST_PAINT_MS);
   return expect(page.locator(".app-frame").first()).toBeVisible({ timeout: FIRST_PAINT_MS });
 }
+
+/**
+ * Open a routed window and wait for its first paint (plan E7.12). Every
+ * routed window, the login window included, renders `.app-frame` as its root,
+ * so one wait fits them all; the specs' own assertions then run on a painted
+ * window with their usual timeouts.
+ */
+export async function openWindow(page: Page, path: string) {
+  await page.goto(path);
+  await firstPaint(page);
+}

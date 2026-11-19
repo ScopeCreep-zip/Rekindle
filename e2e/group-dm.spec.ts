@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Group DMs in the buddy list (plan E2.6): "New group" goes through the
 // Host's review and lists the created group; an invite arrives as the
@@ -99,7 +100,7 @@ async function deliver(page: Page, sample: string): Promise<void> {
 
 test.beforeEach(async ({ page }) => {
   await preloadMocks(page, "buddy-list", HANDLER);
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.getByText("Bob", { exact: true })).toBeVisible();
 });

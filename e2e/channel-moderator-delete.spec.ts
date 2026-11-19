@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // A moderator's delete (plan E3.3 M4, E4): the window shows the Host's
 // `Deleted` event naming the moderator as "Removed by <name>", and the
@@ -76,7 +77,7 @@ const HANDLER = `
 
 async function open(page: Page): Promise<void> {
   await preloadMocks(page, "community", HANDLER);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.getByText("general", { exact: true }).first().click();
   await expect(page.getByText("spam from dee", { exact: true })).toBeVisible();

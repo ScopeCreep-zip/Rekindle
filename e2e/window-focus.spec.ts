@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks, clearMocks, LOGIN_SUCCESS_HANDLER } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.7.2: every window marks `:root` with `data-window-inactive` while
 // it lacks focus, so the generated region rules show a skin's
@@ -12,7 +13,7 @@ test.describe("Window focus", () => {
 
   test("the root follows the window's focus", async ({ page }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
     const root = page.locator("html");

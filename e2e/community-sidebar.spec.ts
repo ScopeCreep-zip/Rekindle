@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.13 walk finding W6: the sidebar's links are the only way to the
 // events panel and the game-server list (with its Add form). They were drawn
@@ -38,16 +39,16 @@ const handler = (welcome: string): string => `
   }
 `;
 
-async function openWindow(page: Page, welcome: string): Promise<void> {
+async function openCommunity(page: Page, welcome: string): Promise<void> {
   await preloadMocks(page, "community", handler(welcome));
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   // The window selects the community (closing both panels) once hydrated;
   // the channel header is drawn only after that selection.
   await expect(page.locator(".community-channel-header-name")).toHaveText("general");
 }
 
 test.describe("a well-formed welcome screen", () => {
-  test.beforeEach(async ({ page }) => openWindow(page, `{ description: "", channels: [] }`));
+  test.beforeEach(async ({ page }) => openCommunity(page, `{ description: "", channels: [] }`));
 
   test("with no events, All events opens the events panel from an open channel", async ({ page }) => {
     // Walk W6b: with the mock's [] welcome screen the panel ran without being
@@ -76,7 +77,7 @@ test("a malformed welcome-screen answer is refused at the boundary; the events p
   // handleLoadWelcomeScreen (actions/community/profile.ts) checks the
   // WelcomeScreen shape: [] stores no screen instead of throwing inside
   // WelcomeScreen.tsx's render, which cost the main pane its insert effect.
-  await openWindow(page, "[]");
+  await openCommunity(page, "[]");
   await page.locator(".sidebar-events-section .sidebar-section-more", { hasText: "All events" }).click();
   await expect(page.locator(".community-main .event-list")).toContainText("Community Events");
   await expect(page.locator(".welcome-screen")).toHaveCount(0);

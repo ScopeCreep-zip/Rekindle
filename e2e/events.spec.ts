@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow, firstPaint } from "./fixtures/paint";
 
 // Live events reach the real handlers in the shape Rust emits (plan C7.26).
 //
@@ -70,7 +71,7 @@ async function deliver(page: Page, sample: string, channel: string): Promise<voi
 test.beforeEach(async ({ page }) => {
   nextIndex = 0;
   await preloadMocks(page, "buddy-list", BUDDY_LIST_HANDLER);
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.getByText("Bob", { exact: true })).toBeVisible();
 });
@@ -101,6 +102,7 @@ test("the network bars follow the pushed Strength event, with no poll", async ({
   // strength and pushes it; the window reads the state once and never polls.
   await page.clock.install();
   await page.reload();
+  await firstPaint(page);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   nextIndex = 0;
   await expect(page.locator(".network-bar-on")).toHaveCount(0);

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // The open thread (plan E7.13, walk row M76): who started it, and what a
 // reply shows.
@@ -58,7 +59,7 @@ const HANDLER = `
 
 async function openThread(page: Page, handler = HANDLER): Promise<void> {
   await preloadMocks(page, "community", handler);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.getByText("general", { exact: true }).first().click();
   await page.locator('button[title="Threads"]').click();
@@ -185,7 +186,7 @@ test("an archived thread's starter badge says archived", async ({ page }) => {
                 isOwn: false, serverMessageId: "msg_1", sendState: "sent" }];
     case "get_welcome_screen":`,
   ));
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.getByText("general", { exact: true }).first().click();
   // The channel's threads load with its Threads list (as M51 created it).

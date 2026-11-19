@@ -6,6 +6,7 @@ import {
   LOGIN_FAIL_HANDLER,
   LOGIN_NO_IDENTITY_HANDLER,
 } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Mocks are installed before the page loads (`preloadMocks`): the login
 // window reads identities and the lifecycle state while it mounts.
@@ -66,7 +67,7 @@ test.describe("Account Picker", () => {
 
   test("shows picker with existing identity", async ({ page }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -89,7 +90,7 @@ test.describe("Account Picker", () => {
 
   test("a focused delete button is visible, not only on hover", async ({ page }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
     await page.waitForSelector(".account-bubble", { timeout: 10_000 });
 
     const del = page.locator(".account-bubble-delete");
@@ -108,7 +109,7 @@ test.describe("Account Picker", () => {
     page,
   }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
     await page.waitForSelector(".account-bubble", { timeout: 10_000 });
 
     await page.locator(".account-bubble-delete").click();
@@ -146,7 +147,7 @@ test.describe("Account Picker", () => {
 
   test("cancelling the review leaves the identity", async ({ page }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
     await page.waitForSelector(".account-bubble", { timeout: 10_000 });
 
     await page.locator(".account-bubble-delete").click();
@@ -165,7 +166,7 @@ test.describe("Account Picker", () => {
     page,
   }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -190,7 +191,7 @@ test.describe("Account Picker", () => {
     page,
   }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -219,7 +220,7 @@ test.describe("Account Picker", () => {
 
   test("back button returns to picker from login mode", async ({ page }) => {
     await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -248,7 +249,7 @@ test.describe("Login Flow", () => {
     page,
   }) => {
     await preloadMocks(page, "login", TRACKED_LOGIN_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -282,7 +283,7 @@ test.describe("Login Flow", () => {
 
   test("failed login shows error message", async ({ page }) => {
     await preloadMocks(page, "login", LOGIN_FAIL_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -306,7 +307,7 @@ test.describe("Login Flow", () => {
 
   test("empty passphrase does not submit", async ({ page }) => {
     await preloadMocks(page, "login", EMPTY_PASSPHRASE_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -328,7 +329,7 @@ test.describe("Login Flow", () => {
 
   test("loading state disables button during login", async ({ page }) => {
     await preloadMocks(page, "login", SLOW_LOGIN_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -355,7 +356,7 @@ test.describe("Create Identity Flow", () => {
     page,
   }) => {
     await preloadMocks(page, "login", LOGIN_NO_IDENTITY_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -376,7 +377,7 @@ test.describe("Create Identity Flow", () => {
     page,
   }) => {
     await preloadMocks(page, "login", CREATE_FRESH_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
@@ -416,7 +417,7 @@ test.describe("Create Identity Flow", () => {
     page,
   }) => {
     await preloadMocks(page, "login", CREATE_FROM_PICKER_HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
 
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 

@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.7.2 "Apply": every window asks the Host for the skin it shows
 // (`get_skin`), sets `:root[data-skin-base]` from its active variant and
@@ -49,7 +50,7 @@ test.describe("Skin apply", () => {
 
   test("the login window applies the skin and follows SkinChanged", async ({ page }) => {
     await preloadMocks(page, "login", HANDLER);
-    await page.goto("/login");
+    await openWindow(page, "/login");
     await page.waitForSelector(".login-title", { timeout: 10_000 });
 
     const root = page.locator("html");

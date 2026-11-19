@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
 import { FULL, PEER, stressHandler } from "./fixtures/stress";
 import { violations } from "./a11y/axe";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.3, wiring guide §13f: a "Keyboard shortcuts" help dialog lists
 // the shortcuts the app has, opens with Mod+/ in any window and from the
@@ -29,7 +30,7 @@ function globalChords(mac: boolean): string[] {
 
 test("the action bar opens the shortcuts, which list the global chords; Esc returns focus", async ({ page }) => {
   await preloadMocks(page, "buddy-list", stressHandler(FULL));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   const opener = page.getByRole("button", { name: "Keyboard shortcuts" });
   await opener.focus();
   await page.keyboard.press("Enter");
@@ -52,7 +53,7 @@ test("the action bar opens the shortcuts, which list the global chords; Esc retu
 
 test("Mod+/ opens the shortcuts in a chat window", async ({ page }) => {
   await preloadMocks(page, `chat-${PEER.slice(0, 16)}`, stressHandler(FULL));
-  await page.goto(`/chat?peer=${PEER}`);
+  await openWindow(page, `/chat?peer=${PEER}`);
   const input = page.getByRole("combobox", { name: /^Message / });
   await input.focus();
   await page.keyboard.press("ControlOrMeta+/");

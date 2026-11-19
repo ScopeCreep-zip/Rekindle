@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Walk 18 (d): a created channel is listed once. The Host merges our own
 // ChannelCreated and publishes `channelsChanged` (the whole list, the new
@@ -48,7 +49,7 @@ const HANDLER = `
 
 test("a channel the Host announced before the create answered is listed once", async ({ page }) => {
   await preloadMocks(page, "community", HANDLER);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.locator('[title="Create Channel"]').click();
   await page.locator('input[placeholder="Channel name..."]').fill("walk-voice");

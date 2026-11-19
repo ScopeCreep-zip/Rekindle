@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // The one chat window (plan E2.3): `?peer=` is the 1:1 mode, `?group=` the
 // group mode, and typing is decided in the backend — the window reports
@@ -75,7 +76,7 @@ test.beforeEach(() => {
 
 test("the 1:1 mode renders the typing the backend emits", async ({ page }) => {
   await preloadMocks(page, `chat-${BOB.slice(0, 16)}`, HANDLER);
-  await page.goto(`/chat?peer=${BOB}`);
+  await openWindow(page, `/chat?peer=${BOB}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.locator(".chat-call-btn").first()).toBeVisible();
 
@@ -87,7 +88,7 @@ test("the 1:1 mode renders the typing the backend emits", async ({ page }) => {
 
 test("the 1:1 mode reports its draft and keeps no typing timer", async ({ page }) => {
   await preloadMocks(page, `chat-${BOB.slice(0, 16)}`, HANDLER);
-  await page.goto(`/chat?peer=${BOB}`);
+  await openWindow(page, `/chat?peer=${BOB}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
 
   const input = page.locator("textarea.message-input-field");
@@ -104,7 +105,7 @@ test("the 1:1 mode reports its draft and keeps no typing timer", async ({ page }
 // is not in our list cannot be sent to, and the mode has no calls.
 test("the group mode shows the group's members and history, and no call controls", async ({ page }) => {
   await preloadMocks(page, `chat-g${GROUP}`, HANDLER);
-  await page.goto(`/chat?group=${GROUP}`);
+  await openWindow(page, `/chat?group=${GROUP}`);
   await expect(page.getByText("Chat — Group DM")).toBeVisible();
   await expect(page.getByText("You can send once you are in this group.")).toBeVisible();
   await expect(page.locator(".chat-call-btn")).toHaveCount(0);
@@ -133,7 +134,7 @@ const GROUP_HANDLER = `
 
 test("a group message is sent queued, then sent as the Host reports it", async ({ page }) => {
   await preloadMocks(page, `chat-g${GROUP}`, GROUP_HANDLER);
-  await page.goto(`/chat?group=${GROUP}`);
+  await openWindow(page, `/chat?group=${GROUP}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.getByText("Chat — raid night")).toBeVisible();
   const input = page.locator("textarea.message-input-field");

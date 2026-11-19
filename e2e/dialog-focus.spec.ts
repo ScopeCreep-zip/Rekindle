@@ -1,6 +1,7 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
 import { COMMUNITY, FULL, stressHandler } from "./fixtures/stress";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.3, wiring guide §13c and §13f: every modal dialog keeps Tab and
 // Shift+Tab inside itself, Esc closes it, and focus goes back to the
@@ -31,7 +32,7 @@ async function expectFocusTrapped(page: Page, dialog: Locator): Promise<void> {
 
 async function openCommunity(page: Page): Promise<void> {
   await preloadMocks(page, "community", COMMUNITY_HANDLER);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.getByText("channel-0-", { exact: false }).first().click();
   await expect(page.getByText("message 1 with some ordinary words")).toBeVisible();
 }
@@ -67,7 +68,7 @@ test("the forward dialog traps focus, Esc closes it, focus returns to Forward", 
 
 test("a shared Modal (Add Friend) traps focus, Esc closes it, focus returns", async ({ page }) => {
   await preloadMocks(page, "buddy-list", stressHandler(FULL));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   const opener = page.getByRole("button", { name: "Add Friend" });
   await opener.focus();
   await page.keyboard.press("Enter");

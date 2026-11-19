@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.3 (built with E7.2's slice 2): toast live regions, and the buddy,
 // channel and member lists as roving-tabindex lists (wiring guide §13f).
@@ -67,7 +68,7 @@ function calls(page: Page, cmd: string): Promise<unknown[]> {
 
 async function openBuddies(page: Page): Promise<void> {
   await preloadMocks(page, "buddy-list", BUDDIES);
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await expect(page.locator(".buddy-list .buddy-item")).toHaveCount(3, { timeout: 10_000 });
 }
 
@@ -128,7 +129,7 @@ test("Shift+F10 and the Menu key open a buddy's context menu", async ({ page }) 
 
 test("the channel list is a roving list: arrows move, Enter opens", async ({ page }) => {
   await preloadMocks(page, "community", CHANNELS);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   const rows = page.locator(".channel-item");
   await expect(rows).toHaveCount(2, { timeout: 10_000 });
   await expect(page.locator('.channel-item[tabindex="0"]')).toHaveCount(1);

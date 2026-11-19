@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.7.5: the skin editor, a Settings sub-window, renders the Host's
 // report and sends the author's edits. This mock plays the Host: `validate_skin_draft` fails
@@ -77,7 +78,7 @@ const HANDLER = `
 
 async function startDraft(page: Page): Promise<void> {
   await preloadMocks(page, "skin-editor", HANDLER);
-  await page.goto("/skin-editor");
+  await openWindow(page, "/skin-editor");
   await expect(page.getByRole("region", { name: "Skin editor" })).toBeVisible();
 }
 
@@ -98,7 +99,7 @@ test.describe("Skin editor", () => {
 
   test("Settings opens the editor as its own window, never in place", async ({ page }) => {
     await preloadMocks(page, "settings", HANDLER);
-    await page.goto("/settings?tab=appearance");
+    await openWindow(page, "/settings?tab=appearance");
     await page.getByRole("button", { name: "Edit a skin…" }).click();
     await expect
       .poll(() =>

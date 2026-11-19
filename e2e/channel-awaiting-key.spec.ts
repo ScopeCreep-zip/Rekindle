@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
 import { COMMUNITY, FULL, stressHandler } from "./fixtures/stress";
+import { openWindow } from "./fixtures/paint";
 
 // A post sent before the community key arrived is queued by the Host, not
 // refused (plan E3.2 S7l, F9-1): the send answers `awaiting_key` and the
@@ -11,7 +12,7 @@ test("a post sent before the community key shows it is waiting for the key", asy
     `if (cmd === "send_channel_message") return { messageId: "msg_waiting", status: "awaiting_key" };\n` +
     stressHandler(FULL);
   await preloadMocks(page, "community", handler);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.getByText("channel-0-", { exact: false }).first().click();
   const input = page.getByPlaceholder("Type a message...");
   await input.fill("posted before the key");

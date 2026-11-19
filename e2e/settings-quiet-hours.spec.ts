@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.13 walk row ST22: the quiet-hours controls are loaded by
 // get_quiet_hours when the Notifications tab mounts. A user's edit made
@@ -51,7 +52,7 @@ test.afterEach(async ({ page }) => {
 
 test("the quiet-hours controls stay disabled until the stored hours load, then edit them", async ({ page }) => {
   await preloadMocks(page, "settings", HANDLER);
-  await page.goto("/settings?tab=notifications");
+  await openWindow(page, "/settings?tab=notifications");
   const box = page.locator("label.settings-option", { hasText: "Enable quiet hours" }).locator("input[type=checkbox]");
   const start = page.locator('input.form-input[type="number"]').first();
   await expect(box).toBeVisible();
@@ -81,7 +82,7 @@ const STORED_ON = `${LATER}
 
 test("the quiet-hours controls show no value until the stored hours load", async ({ page }) => {
   await preloadMocks(page, "settings", STORED_ON);
-  await page.goto("/settings?tab=notifications");
+  await openWindow(page, "/settings?tab=notifications");
   const box = page.locator("label.settings-option", { hasText: "Enable quiet hours" }).locator("input[type=checkbox]");
   const hours = page.locator('input.form-input[type="number"]');
   const zone = page.locator("div.form-field", { hasText: "Timezone" }).locator("select.form-select");

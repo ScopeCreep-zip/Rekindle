@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.13 walk rows ST21 and ST28: a Settings box shows only a value it
 // has read. "Generate previews" started ticked before its stored value (off)
@@ -67,7 +68,7 @@ function option(page: import("@playwright/test").Page, text: string) {
 
 test("Generate previews is unticked and disabled until its stored value (off) loads", async ({ page }) => {
   await preloadMocks(page, "settings", HANDLER);
-  await page.goto("/settings?tab=notifications");
+  await openWindow(page, "/settings?tab=notifications");
   const box = option(page, "Generate previews");
   await expect(box).toBeVisible();
   // One reading before the answer: an expect() retries until it holds, so it
@@ -80,7 +81,7 @@ test("Generate previews is unticked and disabled until its stored value (off) lo
 
 test("Read receipts is unticked and disabled until its stored value (on) loads", async ({ page }) => {
   await preloadMocks(page, "settings", HANDLER);
-  await page.goto("/settings?tab=privacy");
+  await openWindow(page, "/settings?tab=privacy");
   const box = option(page, "Read receipts");
   await expect(box).toBeVisible();
   // One reading before the answer: an expect() retries until it holds, so it

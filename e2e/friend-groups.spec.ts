@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Renaming a friend group renames that group by its id (the Host's
 // `FriendGroupRename { group_id }`). The header once asked
@@ -39,7 +40,7 @@ const HANDLER = `
 
 test("renaming a group renames it by its id and never creates one", async ({ page }) => {
   await preloadMocks(page, "buddy-list", HANDLER);
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
 
   const raid = page.locator(".buddy-group-header", { hasText: "Raid" });
   await expect(raid).toBeVisible({ timeout: 10_000 });

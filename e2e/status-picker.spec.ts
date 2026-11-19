@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Choosing a status closes the picker, by pointer and by keyboard (walk
 // B63). Kobalte's radio items keep their menu open unless `closeOnSelect`
@@ -26,7 +27,7 @@ const HANDLER = `
 
 async function open(page: Page): Promise<void> {
   await preloadMocks(page, "buddy-list", HANDLER);
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await expect(page.locator(".status-picker")).toBeVisible({ timeout: 10_000 });
 }
 
@@ -72,7 +73,7 @@ test("a refused status change shows the Host's reason", async ({ page }) => {
     "return { status: args.status };",
     `throw { type: "failed", data: { code: 409, message: "cannot perform query operation in state 'locking'", remediation: "wait for the daemon to reach operational state" } };`,
   ));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await expect(page.locator(".status-picker")).toBeVisible({ timeout: 10_000 });
   await page.locator(".status-picker").click();
   await page.locator(".status-picker-dropdown .context-menu-item", { hasText: "Away" }).click();

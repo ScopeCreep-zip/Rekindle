@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // The community member list renders the groups the Host decided
 // (`CommunityMemberView.group`; the rules are tested in rekindle-types
@@ -68,7 +69,7 @@ const HANDLER = `
 
 test("member list renders the Host's groups in the Host's order", async ({ page }) => {
   await preloadMocks(page, "community", HANDLER);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   const list = page.locator(".member-list");
   await expect(list.locator(".member-list-header")).toHaveText("Members — 7");
   await expect(list.locator(".member-group-header")).toHaveText([
@@ -115,7 +116,7 @@ const LATE_HANDLER = HANDLER.replace(
 
 async function openLate(page: Page): Promise<void> {
   await preloadMocks(page, "community", LATE_HANDLER);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.locator(".member-list .member-name")).toHaveText(["AdminOnline"]);
 }
@@ -174,7 +175,7 @@ test("the owner's menu on a member with a role offers every moderation item", as
   expect(OWNER_HANDLER).toContain('"outranks":true');
   expect(OWNER_HANDLER).toContain('myPermissions: "1125899906842624"');
   await preloadMocks(page, "community", OWNER_HANDLER);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.locator(".member-list .member-name", { hasText: "AdminBusy" }).click({ button: "right" });
   const menu = page.getByRole("menu");
   for (const item of ["Manage Roles", "Timeout", "Kick Member", "Ban Member"]) {

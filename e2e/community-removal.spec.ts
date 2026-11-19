@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Our own removal renders in the community window from the backend's
 // fields (plan E3.2 S9, A/B R5-2): the stored `removed` state at load, so it
@@ -52,7 +53,7 @@ function handler(removed: string): string {
 
 async function open(page: Page, removed: string): Promise<void> {
   await preloadMocks(page, "community", handler(removed));
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.getByText("general", { exact: true }).first().click();
 }

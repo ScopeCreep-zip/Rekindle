@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // An edit of a channel message shows in the window from the Host's `Edited`
 // event (plan E7.13, walk row M45), whose sample is the golden JSON
@@ -51,7 +52,7 @@ const HANDLER = `
 
 async function open(page: Page): Promise<void> {
   await preloadMocks(page, "community", HANDLER);
-  await page.goto(`/community?id=${COMMUNITY}`);
+  await openWindow(page, `/community?id=${COMMUNITY}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.getByText("general", { exact: true }).first().click();
   await expect(page.getByText("hello channel", { exact: true })).toBeVisible();

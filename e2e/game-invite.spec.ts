@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks, clearMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.2 "Rich presence and join game": a friend's `GameInvite` shows in
 // their chat window and Join is `launch_game_to_server` (LaunchGameToServer,
@@ -70,7 +71,7 @@ test.afterEach(async ({ page }) => {
 
 test("a friend's invite shows host:port and Join launches the game", async ({ page }) => {
   await preloadMocks(page, `chat-${BOB.slice(0, 16)}`, HANDLER);
-  await page.goto(`/chat?peer=${BOB}`);
+  await openWindow(page, `/chat?peer=${BOB}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   const payload = GOLDEN["friend.gameInvite"];
   expect(payload).toBeDefined();
@@ -89,7 +90,7 @@ test("a friend's invite shows host:port and Join launches the game", async ({ pa
 
 test("the invite button offers only invitable favourites", async ({ page }) => {
   await preloadMocks(page, `chat-${BOB.slice(0, 16)}`, HANDLER);
-  await page.goto(`/chat?peer=${BOB}`);
+  await openWindow(page, `/chat?peer=${BOB}`);
   await page.getByRole("button", { name: "Invite Bob to a game server" }).click();
   const offered = page.getByRole("list", { name: "Invite Bob to a server" }).getByRole("listitem");
   await expect(offered).toHaveCount(1);
@@ -103,7 +104,7 @@ test("the invite button offers only invitable favourites", async ({ page }) => {
 
 test("Settings → Application adds a favourite server", async ({ page }) => {
   await preloadMocks(page, "settings", HANDLER);
-  await page.goto("/settings?tab=application");
+  await openWindow(page, "/settings?tab=application");
   await expect(page.getByText("Scrims (Counter-Strike 2, 203.0.113.7:27015)")).toBeVisible();
   await page.getByRole("combobox", { name: "Game" }).selectOption("4181");
   await page.getByRole("textbox", { name: "Server address (host:port)" }).fill("192.0.2.9:27016");

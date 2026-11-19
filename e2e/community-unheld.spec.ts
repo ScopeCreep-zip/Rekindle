@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Community events for a community the window does not hold yet, and the
 // backend's false-snapshot notice (plan E7.13 walk 13, E3.2 S7c.8). Payloads
@@ -65,7 +66,7 @@ async function open(page: Page, community: string, joinedSecond = false): Promis
       (window as any).__joinedSecond = true;
     });
   }
-  await page.goto(`/community?id=${community}`);
+  await openWindow(page, `/community?id=${community}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.getByText("general", { exact: true }).first().click();
 }

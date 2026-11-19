@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Plan E7.3, wiring guide §13b (WCAG 2.2 SC 4.1.3): the chat window
 // announces a message the peer sends while it is open, politely and
@@ -84,7 +85,7 @@ test.beforeEach(() => {
 
 test("the 1:1 chat announces the peer's new message, not history or our own", async ({ page }) => {
   await preloadMocks(page, `chat-${BOB.slice(0, 16)}`, HANDLER);
-  await page.goto(`/chat?peer=${BOB}`);
+  await openWindow(page, `/chat?peer=${BOB}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.locator(".chat-message", { hasText: "stored line" })).toBeVisible();
 
@@ -109,7 +110,7 @@ test("the 1:1 chat announces the peer's new message, not history or our own", as
 
 test("the group chat announces a member's new message", async ({ page }) => {
   await preloadMocks(page, `chat-${GROUP.slice(0, 16)}`, HANDLER);
-  await page.goto(`/chat?group=${GROUP}`);
+  await openWindow(page, `/chat?group=${GROUP}`);
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.locator(".chat-message", { hasText: "stored line" })).toBeVisible();
 

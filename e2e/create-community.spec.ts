@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
+import { openWindow } from "./fixtures/paint";
 
 // Walk 15, B60: a create committed before the node attached was refused
 // (409 "cannot perform write operation in state 'detached'"); the form
@@ -49,7 +50,7 @@ const handler = (network: string) => `
 
 test("a refused create keeps the form open with the Host's reason", async ({ page }) => {
   await preloadMocks(page, "buddy-list", handler(CONNECTED));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await page.locator('.buddy-tab[title^="Communities"]').click();
   await page.locator('[aria-label="Create Community"]').click();
@@ -81,7 +82,7 @@ async function sendNetwork(page: Page, index: number, status: Record<string, unk
 // public internet ready, and says why while it waits.
 test("Create waits for the network and says why", async ({ page }) => {
   await preloadMocks(page, "buddy-list", handler(ATTACHING));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.locator(".network-indicator span")).toHaveText("Connecting...");
   await page.locator('.buddy-tab[title^="Communities"]').click();
@@ -118,7 +119,7 @@ const NO_ROUTE = `{ attachmentState: "attached_good", isAttached: true, publicIn
 
 test("Create needs the DHT and the Host's writes, not a route", async ({ page }) => {
   await preloadMocks(page, "buddy-list", handler(NO_ROUTE));
-  await page.goto("/buddy-list");
+  await openWindow(page, "/buddy-list");
   await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
   await expect(page.locator(".network-indicator span")).toHaveText("No Route");
   await page.locator('.buddy-tab[title^="Communities"]').click();
