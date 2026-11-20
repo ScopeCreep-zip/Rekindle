@@ -144,6 +144,7 @@ mod role_ids;
 mod sec_styles;
 mod sec_surfaces;
 mod sidecars;
+mod skin_silhouette;
 mod sqlite;
 mod supply_chain;
 mod theme_literals;
@@ -229,6 +230,8 @@ enum Command {
     GenSkinRegistry,
     /// Write the skin validator's pair model from the sheets and `src/styles/regions.toml`.
     GenContrastPairs,
+    /// Print the silhouette a built-in skin cuts a window to (the shaper's own computation), as JSON rects in device pixels.
+    SkinSilhouette(skin_silhouette::Args),
     /// Import a legacy skin tree as the built-in pack `crates/rekindle-skin/builtin/<id>.rkskin`.
     ImportSkin {
         #[arg(long, value_enum)]
@@ -488,6 +491,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckSkinRegistry => gen_skin_registry::check_skin_registry(&root),
         Command::GenSkinRegistry => gen_skin_registry::gen_skin_registry(&root),
         Command::GenContrastPairs => contrast_pairs::gen_contrast_pairs(&root),
+        Command::SkinSilhouette(args) => skin_silhouette::skin_silhouette(args),
         Command::ImportSkin {
             format,
             from,

@@ -290,9 +290,12 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
             // Use glib main context to spawn the async future
             let ctx = MainContext::default();
             ctx.spawn_local(async move {
-                // Take snapshot of visible content
+                // Take snapshot of visible content. TRANSPARENT_BACKGROUND keeps
+                // the page's own alpha (WebKitGTK otherwise paints its default
+                // background under it), as WKWebView's snapshot does on macOS:
+                // a shaped window's outline is its alpha (plan E7.14 on SK0).
                 let result = webview
-                    .snapshot_future(SnapshotRegion::Visible, SnapshotOptions::NONE)
+                    .snapshot_future(SnapshotRegion::Visible, SnapshotOptions::TRANSPARENT_BACKGROUND)
                     .await;
 
                 let response: Result<String, String> = match result {
