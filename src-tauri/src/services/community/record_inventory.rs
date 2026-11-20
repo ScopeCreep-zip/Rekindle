@@ -132,6 +132,7 @@ mod tests {
             outbox_streams: std::sync::Arc::default(),
             snapshot_requests: rekindle_transport::gossip::RateLimiter::default(),
             anchor: Some("gov-key".to_string()),
+            my_member_record: None,
             governance_state: gov,
             own_removal: None,
             removal_gate: std::sync::Arc::default(),
