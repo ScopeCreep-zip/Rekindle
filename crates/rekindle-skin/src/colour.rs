@@ -35,7 +35,16 @@ pub fn over(top: [u8; 4], under: [u8; 3]) -> [u8; 3] {
 
 /// The sRGB transfer function, one channel to linear light (WCAG 2.2).
 pub(crate) fn linear(c: u8) -> f64 {
-    let c = f64::from(c) / 255.0;
+    linear_unit(unit(c))
+}
+
+/// One 8-bit channel as a gamma-encoded value in 0..=1.
+fn unit(c: u8) -> f64 {
+    f64::from(c) / 255.0
+}
+
+/// The sRGB transfer function on a gamma-encoded channel in 0..=1.
+fn linear_unit(c: f64) -> f64 {
     if c <= 0.04045 {
         c / 12.92
     } else {
@@ -46,13 +55,27 @@ pub(crate) fn linear(c: u8) -> f64 {
 /// WCAG relative luminance.
 #[must_use]
 pub fn luminance(rgb: [u8; 3]) -> f64 {
-    0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+    luminance_unit(rgb.map(unit))
+}
+
+/// WCAG relative luminance of gamma-encoded channels in 0..=1 (the pair
+/// model's composited colours, [`crate::access::model`]).
+#[must_use]
+pub fn luminance_unit(rgb: [f64; 3]) -> f64 {
+    0.2126 * linear_unit(rgb[0]) + 0.7152 * linear_unit(rgb[1]) + 0.0722 * linear_unit(rgb[2])
 }
 
 /// The WCAG contrast ratio of two opaque colours.
 #[must_use]
 pub fn contrast(a: [u8; 3], b: [u8; 3]) -> f64 {
-    let (la, lb) = (luminance(a), luminance(b));
+    contrast_unit(a.map(unit), b.map(unit))
+}
+
+/// The WCAG contrast ratio of two opaque colours given as gamma-encoded
+/// channels in 0..=1.
+#[must_use]
+pub fn contrast_unit(a: [f64; 3], b: [f64; 3]) -> f64 {
+    let (la, lb) = (luminance_unit(a), luminance_unit(b));
     (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
 }
 

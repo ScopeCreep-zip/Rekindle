@@ -154,7 +154,7 @@ fn genex(colours: &[[u8; 3]; 22]) -> Vec<u8> {
 }
 
 fn skin(window_text: [u8; 3]) -> Vec<u8> {
-    skin_on(window_text, [0x20, 0x20, 0x20])
+    skin_on(window_text, [0x10, 0x10, 0x10])
 }
 
 /// A skin with `window_text` on the window background `window_bg`.
@@ -198,8 +198,9 @@ fn skin_zip(window_text: [u8; 3], window_bg: [u8; 3], descriptor: bool) -> Vec<u
 
 #[test]
 fn a_minimal_wsz_imports_and_validates() {
-    let Outcome::Passed(i) = import(&skin([0xe7; 3]), "w").unwrap() else {
-        panic!("#e7e7e7 window text on #202020 passes")
+    let i = match import(&skin([0xe7; 3]), "w").unwrap() {
+        Outcome::Passed(i) => i,
+        Outcome::Draft(d) => panic!("#e7e7e7 window text on #101010 passes: {:?}", d.failures),
     };
     let c = validate::run(&i.canonical.bytes).unwrap();
     assert_eq!(c.bytes, i.canonical.bytes);
@@ -208,7 +209,7 @@ fn a_minimal_wsz_imports_and_validates() {
     assert!(r.frame.is_some() && r.title.is_some());
     assert_eq!(
         r.tokens.get("bg.panel"),
-        Some(&walk::color([0x20, 0x20, 0x20]))
+        Some(&walk::color([0x10, 0x10, 0x10]))
     );
     assert_eq!(r.tokens.get("text.base"), Some(&walk::color([0, 0xff, 0])));
     assert_eq!(
@@ -226,7 +227,7 @@ fn a_minimal_wsz_imports_and_validates() {
 #[test]
 fn a_failing_wsz_is_a_draft_naming_the_pair() {
     let Outcome::Draft(d) = import(&skin([0x50, 0x50, 0x70]), "w").unwrap() else {
-        panic!("#505070 on #202020 fails")
+        panic!("#505070 on #101010 fails")
     };
     assert!(validate::run(&d.package).is_err());
     assert!(d.failures.iter().any(|c| c.original == [0x50, 0x50, 0x70]));
@@ -283,8 +284,8 @@ fn an_unsettled_refusal_is_a_draft_with_no_suggestion() {
 
 #[test]
 fn a_wsz_with_data_descriptors_imports_and_an_rkskin_with_them_is_refused() {
-    let plain = skin_zip([0xe7; 3], [0x20; 3], false);
-    let dd = skin_zip([0xe7; 3], [0x20; 3], true);
+    let plain = skin_zip([0xe7; 3], [0x10; 3], false);
+    let dd = skin_zip([0xe7; 3], [0x10; 3], true);
     assert_ne!(plain, dd);
     assert_eq!(
         archive::unpack(&dd).unwrap().0,

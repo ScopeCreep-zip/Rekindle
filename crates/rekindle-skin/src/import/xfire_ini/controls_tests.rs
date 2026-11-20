@@ -17,7 +17,7 @@ fn png(side: u32) -> Vec<u8> {
 }
 
 const THEME: &str = "[default]\r\n\
-ColorGroup.BuddyViewBG=RGBA(22,22,22,0)\r\n\
+ColorGroup.BuddyViewBG=RGBA(16,16,16,0)\r\n\
 ColorGroup.BuddyViewFriendText=RGBA(183,184,184,0)\r\n\
 ColorGroup.BorderCG=RGBA(10,0,0,0)\r\n\
 Graphics.BTNCLOSE=buttons\\close.png\r\n";
@@ -91,8 +91,9 @@ fn middle_sides_title_buttons_and_the_scrollbar_import() {
     assert!(r.controls[1].images.contains_key(&RegionState::Disabled));
     assert!(!r.unread.iter().any(|f| f == "buttons/close-hover.png"));
     assert!(r.unread.iter().any(|f| f == "buttons/logo.png"));
-    let Outcome::Passed(a) = import(&t, FOLDER, "fan", None).unwrap() else {
-        panic!("a draft");
+    let a = match import(&t, FOLDER, "fan", None).unwrap() {
+        Outcome::Passed(a) => a,
+        Outcome::Draft(d) => panic!("a draft: {:?}", d.failures),
     };
     assert_eq!(
         validate::run(&a.canonical.bytes).unwrap().bytes,
@@ -174,8 +175,9 @@ fn combat_surfaces_import_from_the_skin_and_its_chat_files() {
         send.images.keys().copied().collect::<Vec<_>>(),
         [RegionState::Normal, RegionState::Hover, RegionState::Down]
     );
-    let Outcome::Passed(a) = import(&t, FOLDER, "fan", None).unwrap() else {
-        panic!("a draft");
+    let a = match import(&t, FOLDER, "fan", None).unwrap() {
+        Outcome::Passed(a) => a,
+        Outcome::Draft(d) => panic!("a draft: {:?}", d.failures),
     };
     assert_eq!(
         validate::run(&a.canonical.bytes).unwrap().bytes,

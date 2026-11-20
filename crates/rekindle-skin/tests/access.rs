@@ -250,24 +250,29 @@ fn defaults_pass_on_every_base() {
 fn a_tint_is_measured_composited_over_its_ground() {
     // d3 §7.2: white on #ef4444 at 60 % over #1e1e1e is #9b3535, 7.11:1,
     // which passes; the solid hover fill is 3.76:1, which fails.
+    // The registry's own constraints, then every model row (S4b) that draws
+    // white on the solid fill: each names the fill, none is exempt.
     let got = check(Base::Dark, &[("danger.fill", colour("#ef4444", 255))]);
+    let failing = |rule: &str, token: &str| SkinRule::Contrast {
+        rule: rule.into(),
+        token: token.into(),
+        ground: "danger.fill".into(),
+        measured_x100: 376,
+        required_x100: 450,
+    };
     assert_eq!(
         got,
         vec![
-            SkinRule::Contrast {
-                rule: "1.4.3".into(),
-                token: "danger.fg".into(),
-                ground: "danger.fill".into(),
-                measured_x100: 376,
-                required_x100: 450,
-            },
-            SkinRule::Contrast {
-                rule: "1.4.3".into(),
-                token: "text.on-fill".into(),
-                ground: "danger.fill".into(),
-                measured_x100: 376,
-                required_x100: 450,
-            }
+            failing("1.4.3", "danger.fg"),
+            failing("1.4.3", "text.on-fill"),
+            failing("1.4.3 .add-friend-cancel-btn hovered", "danger.fg"),
+            failing("1.4.3 .buddy-unread-badge", "danger.fg"),
+            failing("1.4.3 .call-control-btn-hangup", "danger.fg"),
+            failing("1.4.3 .form-btn-danger hovered", "danger.fg"),
+            failing("1.4.3 .invite-cancel-btn hovered", "danger.fg"),
+            failing("1.4.3 .notification-badge", "danger.fg"),
+            failing("1.4.3 .pending-btn-reject hovered", "danger.fg"),
+            failing("1.4.3 .toast-item", "text.on-fill"),
         ]
     );
     // A 20 % tint over a light status bar puts white text on a light

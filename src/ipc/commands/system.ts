@@ -5,8 +5,9 @@ import type {
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
   AuditEntryView, AuditVerified, GameTotalView, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
-  RegionFit, SkinApplied, SkinDraft, SkinDraftReport, SkinEntry, SkinLibrary,
+  SkinApplied, SkinEntry, SkinLibrary,
 } from "./dto";
+import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
 /// serialized as its MIME type).

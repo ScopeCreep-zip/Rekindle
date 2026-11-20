@@ -60,7 +60,7 @@ fn skin_ini() -> String {
 }
 
 const THEME: &str = "[default]\r\n;Sounds.OnlineSound=x.wav\r\n\
-ColorGroup.BuddyViewBG=RGBA(22,22,22,0)\r\n\
+ColorGroup.BuddyViewBG=RGBA(16,16,16,0)\r\n\
 ColorGroup.BuddyViewFriendText=RGBA(183,184,184,0)\r\n\
 ColorGroup.MenuHoverCG=RGBA(30,30,30,0)\r\n\
 ColorGroup.MenuDownCG=RGBA(-30,-30,-30,0)\r\n\
@@ -115,7 +115,7 @@ fn imports_validates_and_is_byte_identical() {
     assert!(a.notice.contains("VentCG RGBA(0,0,0,0) -> dropped"));
     assert!(a
         .notice
-        .contains("BuddyViewBG RGBA(22,22,22,0) -> token bg.primary"));
+        .contains("BuddyViewBG RGBA(16,16,16,0) -> token bg.primary"));
     assert!(a.notice.contains("triggers: 4"));
     assert!(a.notice.contains("    Fix chatskin.ini\n"));
     assert!(a.notice.contains("    Thumbs.db\n"));
@@ -151,7 +151,7 @@ fn non_zero_alpha_is_refused() {
     t.insert(
         "FixThemes.ini".into(),
         THEME
-            .replace("RGBA(22,22,22,0)", "RGBA(22,22,22,9)")
+            .replace("RGBA(16,16,16,0)", "RGBA(16,16,16,9)")
             .into_bytes(),
     );
     assert!(matches!(

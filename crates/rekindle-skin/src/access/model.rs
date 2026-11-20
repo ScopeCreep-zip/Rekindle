@@ -143,24 +143,9 @@ pub fn text_colour(
     tint_over(tokens, var_name(tokens, expr)?, under, pct)
 }
 
-/// WCAG 2.x relative luminance.
-#[must_use]
-pub fn luminance(rgb: Rgb) -> f64 {
-    let linear = |c: f64| {
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
-}
-
-#[must_use]
-pub fn contrast(a: Rgb, b: Rgb) -> f64 {
-    let (la, lb) = (luminance(a), luminance(b));
-    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
-}
+/// WCAG 2.x relative luminance and contrast ratio: the crate's one
+/// implementation, on gamma-encoded channels in 0..=1.
+pub use crate::colour::{contrast_unit as contrast, luminance_unit as luminance};
 
 /// The prefix of the registry's tint-share tokens.
 pub const TINT_SHARE: &str = "--tint-";

@@ -53,7 +53,7 @@ fn tree(colours: &str) -> Tree {
     t
 }
 
-const PASSING: &str = r#"<Color Name="ListBGCG">RGBA(22,22,22,0)</Color>
+const PASSING: &str = r#"<Color Name="ListBGCG">RGBA(16,16,16,0)</Color>
 <Color Name="ListFriendTextCG">RGBA(183,184,184,0)</Color>
 <Color Name="XIGCaretCG">RGBA(255,255,255,0)</Color>
 <Color Name="SideCG">RGBA(30,-30,0,0)</Color>"#;
@@ -64,7 +64,7 @@ fn imports_validates_and_is_byte_identical() {
     let a = import(&t, "fixture", None).unwrap();
     let b = import(&t, "fixture", None).unwrap();
     assert_eq!(a, b);
-    assert!(a.changes.is_empty());
+    assert!(a.changes.is_empty(), "{:?}", a.changes);
     let again = validate::run(&a.canonical.bytes).unwrap();
     assert_eq!(again.bytes, a.canonical.bytes);
     assert!(a
@@ -75,7 +75,7 @@ fn imports_validates_and_is_byte_identical() {
 
 #[test]
 fn non_zero_alpha_is_refused() {
-    let t = tree(&PASSING.replace("RGBA(22,22,22,0)", "RGBA(22,22,22,1)"));
+    let t = tree(&PASSING.replace("RGBA(16,16,16,0)", "RGBA(16,16,16,1)"));
     assert!(matches!(
         import(&t, "fixture", None),
         Err(ImportError::NonZeroAlpha { alpha: 1, .. })

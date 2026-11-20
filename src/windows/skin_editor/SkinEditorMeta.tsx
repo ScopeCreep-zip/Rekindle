@@ -1,5 +1,5 @@
 import { Component, For, Show } from "solid-js";
-import type { SkinDraft, SkinDraftReport } from "../../ipc/commands/dto";
+import type { SkinDraft, SkinDraftReport } from "../../ipc/commands/dto_skin_draft";
 
 /**
  * The skin's name, description, author and licence, and the credits it

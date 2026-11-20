@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import { commands } from "../../ipc/commands";
-import type { RegionFit, SkinDraft, SkinDraftReport } from "../../ipc/commands/dto";
+import type { RegionFit, SkinDraft, SkinDraftReport } from "../../ipc/commands/dto_skin_draft";
 import { isCommandError } from "../../ipc/commands/dto";
 
 type FitKind = RegionFit["type"];

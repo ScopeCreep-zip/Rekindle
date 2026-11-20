@@ -7,7 +7,7 @@ import type {
   SkinDraftReport,
   SkinPairCheck,
   TokenValue,
-} from "../../ipc/commands/dto";
+} from "../../ipc/commands/dto_skin_draft";
 import { isCommandError } from "../../ipc/commands/dto";
 
 /** `#rrggbb` of an sRGB triple. */
