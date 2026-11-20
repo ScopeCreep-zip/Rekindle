@@ -58,7 +58,7 @@ mod invites;
 mod join;
 mod join_bootstrap;
 pub(crate) use join::JoinLocks;
-pub(crate) use join_bootstrap::Exchange;
+pub(crate) use join_bootstrap::{Exchange, JoinFailure};
 mod lifecycle;
 pub(crate) mod loader;
 pub(crate) mod login_stage;

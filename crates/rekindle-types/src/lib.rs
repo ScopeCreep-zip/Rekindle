@@ -32,6 +32,7 @@ pub mod id;
 pub mod image_kind;
 pub mod intent;
 pub mod invite;
+pub mod join_refusal;
 pub mod key_format;
 pub mod lamport;
 pub mod link_preview;

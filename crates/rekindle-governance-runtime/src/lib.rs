@@ -76,7 +76,7 @@ mod test_world;
 
 pub use apply::{write_checkpoint_queued, write_entry, write_entry_queued, write_invite_created};
 pub use bootstrap::{
-    answer_bootstrap_request, request_bootstrap, BootstrapAnswer, BootstrapJoiner,
+    answer_bootstrap_request, encode_refusal, request_bootstrap, BootstrapAnswer, BootstrapJoiner,
 };
 pub use deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,

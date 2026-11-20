@@ -341,6 +341,15 @@ struct BootstrapResponseV2Payload @0xea0047000000a000 {
     frontier             @1 :List(OpRef);
 }
 
+# An inviter's refusal of a bootstrapRequest (plan E3.2 join step 5): its
+# merge does not admit the joiner's MemberJoined. `reason` is
+# `rekindle_types::join_refusal::JoinRefusal`'s wire byte: 1 used up,
+# 2 revoked or expired, 3 unknown invite, 4 not admitted.
+struct BootstrapRefusedPayload @0xa44e477a6ce48f2e {
+    anchor               @0 :Text;
+    reason               @1 :UInt8;
+}
+
 struct VoiceJoinPayload @0xea002e000000a000 {
     channelId            @0 :Text;
     routeBlob            @1 :Data;
@@ -719,5 +728,8 @@ struct ControlPayload @0xeaffffff00000001 {
         # not backfilled; the joiner asks another member (Synapse's
         # UNABLE_DUE_TO_PARTIAL_STATE), never a refusal.
         bootstrapPartial         @81 :Text;
+        # The inviter refused the joiner's MemberJoined, and why (plan E3.2
+        # join step 5): the joiner withdraws its join and tells the user.
+        bootstrapRefused         @82 :BootstrapRefusedPayload;
     }
 }

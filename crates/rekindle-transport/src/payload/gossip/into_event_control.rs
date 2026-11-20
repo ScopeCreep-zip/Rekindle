@@ -212,6 +212,7 @@ pub fn control_into_event(
         | ControlPayload::CheckpointHintResponse { .. }
         // A partial responder's bootstrap answer, read by the joiner's call.
         | ControlPayload::BootstrapPartial { .. }
+        | ControlPayload::BootstrapRefused { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

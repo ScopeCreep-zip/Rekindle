@@ -117,7 +117,11 @@ pub enum GovernanceRuntimeError {
     /// does not hold our `MemberJoined` (plan E3.2). Distinct from an
     /// inviter that is not reachable, where the join stands from the DHT.
     #[error("the inviter refused the join: {0}")]
-    BootstrapRefused(String),
+    BootstrapRefused(rekindle_types::join_refusal::JoinRefusal),
+    /// Our merge does not admit a joiner's `MemberJoined`, and why: the
+    /// answer to its `BootstrapRequest` is `bootstrapRefused`.
+    #[error("the merge does not admit the joiner: {0}")]
+    JoinNotAdmitted(rekindle_types::join_refusal::JoinRefusal),
 
     /// The inviter answered `bootstrapPartial` and none of the members
     /// asked after it (this many) answered a frontier: each was partial,

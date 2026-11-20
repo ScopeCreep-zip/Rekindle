@@ -292,6 +292,12 @@ pub enum ControlPayload {
     /// A partial responder's answer to a `BootstrapRequest` for `anchor`
     /// (plan E3.2 S7c.8): ask another member, not a refusal.
     BootstrapPartial { anchor: String },
+    /// The inviter's refusal of a `BootstrapRequest` for `anchor`, and why
+    /// (plan E3.2 join step 5): the joiner withdraws its join.
+    BootstrapRefused {
+        anchor: String,
+        reason: rekindle_types::join_refusal::JoinRefusal,
+    },
     /// Reply to a [`Self::VoiceMediaKey`] call: `recipient` opened and
     /// installed `sender`'s key at `key_index` (plan C7.22).
     VoiceMediaKeyAck {

@@ -114,8 +114,8 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
         .governance_state(anchor)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
     if !holds_joined(&state, author) {
-        return Err(adapter(
-            "bootstrap: the joiner is not a member of the merged state",
+        return Err(GovernanceRuntimeError::JoinNotAdmitted(
+            rekindle_types::join_refusal::JoinRefusal::NotAdmitted,
         ));
     }
     let cert = deps
@@ -181,9 +181,9 @@ async fn admitted_deps<D: GovernanceRuntimeDeps>(
         return if admitted {
             Ok(fetched)
         } else {
-            Err(adapter(
-                "bootstrap: the merge does not admit the joiner's MemberJoined; not stored",
-            ))
+            let reason = (outcome.join_refusals.get(&op.hash).copied())
+                .unwrap_or(rekindle_types::join_refusal::JoinRefusal::NotAdmitted);
+            Err(GovernanceRuntimeError::JoinNotAdmitted(reason))
         };
     }
 }
@@ -230,6 +230,21 @@ fn is_joiners_member_joined(
         && op.author == op_ref.author
         && op.seq == op_ref.author_seq
         && (op.seq == 0 || (state.members.get(&op.author)).is_none_or(|m| m.joined.hash == op.hash))
+}
+
+/// Our `bootstrapRefused` answer for `anchor`: the merge does not admit
+/// the joiner's `MemberJoined`, for `reason` (plan E3.2 join step 5).
+///
+/// # Errors
+/// The encode failed.
+pub fn encode_refusal(
+    anchor: &str,
+    reason: rekindle_types::join_refusal::JoinRefusal,
+) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    encode_response(ControlPayload::BootstrapRefused {
+        anchor: anchor.to_owned(),
+        reason,
+    })
 }
 
 fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntimeError> {

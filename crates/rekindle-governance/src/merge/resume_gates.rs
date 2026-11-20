@@ -4,6 +4,7 @@
 //! from the snapshot: strong-removal masks, the admission decisions among
 //! the cut's power ops, record holders, invite codes and `uses`.
 
+use rekindle_types::join_refusal::JoinRefusal;
 use std::collections::{BTreeMap, HashMap};
 
 use rekindle_types::governance::{AdmissionMode, GovernanceEntry, OpHash};
@@ -18,6 +19,8 @@ pub(super) struct Gated {
     pub masked_by: Vec<Option<OpHash>>,
     /// The joins counted on each invite, the snapshot's `uses` included.
     pub uses: BTreeMap<[u8; 16], u32>,
+    /// Per op index, why `invite_gate` refused a `MemberJoined`.
+    pub invite_refusals: BTreeMap<usize, JoinRefusal>,
 }
 
 pub(super) fn invalidated(
@@ -31,11 +34,13 @@ pub(super) fn invalidated(
     backdated_join_gate(ctx, set, &mut invalid)?;
     record_gate(ctx, set, round, &mut invalid)?;
     checkpoint_gate(ctx, set, round, &mut invalid)?;
-    let uses = invite_gate(ctx, set, round, &mut invalid)?;
+    let mut invite_refusals = BTreeMap::new();
+    let uses = invite_gate(ctx, set, round, &mut invalid, &mut invite_refusals)?;
     Ok(Gated {
         invalid,
         masked_by,
         uses,
+        invite_refusals,
     })
 }
 
@@ -319,6 +324,7 @@ fn invite_gate(
     set: &RestSet<'_>,
     round: &RestRound,
     invalid: &mut [bool],
+    refusals: &mut BTreeMap<usize, JoinRefusal>,
 ) -> Result<BTreeMap<[u8; 16], u32>, NotOnTop> {
     let state = &ctx.snap.state;
     let mut uses: BTreeMap<[u8; 16], u32> = (state.invites.iter())
@@ -366,6 +372,7 @@ fn invite_gate(
         };
         let Some((invite_id, max_uses, expires_at, revoked_in_cut)) = invite else {
             invalid[o] = true;
+            refusals.insert(o, JoinRefusal::InviteUnknown);
             continue;
         };
         let revoked = revoked_in_cut
@@ -378,8 +385,12 @@ fn invite_gate(
         if beside.is_some() && in_cut.is_some() && !revoked && !expired && *used >= max_uses {
             return Err(NotOnTop::BesideTheCut(op.hash()));
         }
-        if revoked || expired || *used >= max_uses {
+        if revoked || expired {
             invalid[o] = true;
+            refusals.insert(o, JoinRefusal::InviteNoLongerValid);
+        } else if *used >= max_uses {
+            invalid[o] = true;
+            refusals.insert(o, JoinRefusal::InviteUsedUp);
         } else if !invalid[o] {
             *used += 1;
         }

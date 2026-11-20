@@ -272,6 +272,16 @@ impl InboundHandler for DaemonHandler {
                     Ok(rekindle_governance_runtime::BootstrapAnswer::Partial(bytes)) => {
                         CallResponse::Ok(bytes)
                     }
+                    // The merge does not admit the join: the typed
+                    // refusal, so the joiner can say why (plan E3.2).
+                    Err(rekindle_governance_runtime::GovernanceRuntimeError::JoinNotAdmitted(
+                        reason,
+                    )) => match rekindle_governance_runtime::encode_refusal(&anchor, reason) {
+                        Ok(bytes) => CallResponse::Ok(bytes),
+                        Err(e) => CallResponse::Rejected {
+                            reason: e.to_string(),
+                        },
+                    },
                     Err(e) => CallResponse::Rejected {
                         reason: e.to_string(),
                     },

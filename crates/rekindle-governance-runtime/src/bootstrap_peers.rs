@@ -95,8 +95,10 @@ pub enum BootstrapReply {
 /// Read a responder's reply for `anchor`.
 ///
 /// # Errors
-/// [`GovernanceRuntimeError::BootstrapRefused`]: the reply is neither a
-/// `bootstrapResponseV2` nor a `bootstrapPartial` for `anchor` (a NAK).
+/// [`GovernanceRuntimeError::BootstrapRefused`]: the reply is the
+/// responder's `bootstrapRefused` for `anchor` (with its reason), or is
+/// none of the three for `anchor` (a bare NAK, whose reason is unnamed:
+/// `NotAdmitted`).
 pub fn read_reply(reply: &[u8], anchor: &str) -> Result<BootstrapReply, GovernanceRuntimeError> {
     match rekindle_codec::capnp_envelope::try_decode_community_envelope(reply) {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapResponseV2 {
@@ -106,8 +108,12 @@ pub fn read_reply(reply: &[u8], anchor: &str) -> Result<BootstrapReply, Governan
         Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapPartial {
             anchor: answered,
         }))) if answered == anchor => Ok(BootstrapReply::Partial),
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRefused {
+            anchor: answered,
+            reason,
+        }))) if answered == anchor => Err(GovernanceRuntimeError::BootstrapRefused(reason)),
         _ => Err(GovernanceRuntimeError::BootstrapRefused(
-            "the reply is not a bootstrapResponseV2 for this community".into(),
+            rekindle_types::join_refusal::JoinRefusal::NotAdmitted,
         )),
     }
 }

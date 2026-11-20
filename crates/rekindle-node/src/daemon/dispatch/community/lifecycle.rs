@@ -102,7 +102,18 @@ pub(crate) async fn handle_join(
     // The join's stages are a large future: boxed off the dispatch path.
     let joined = match Box::pin(adapter(ctx).join(&link)).await {
         Ok(joined) => joined,
-        Err(e) => return IpcResponse::error(500, e),
+        // The inviter's typed refusal (plan E3.2 join step 5, ADR 0019):
+        // its code and what the user is told, rendered as is.
+        Err(crate::host::adapters::governance::JoinFailure::Refused(reason)) => {
+            return IpcResponse::Error {
+                code: reason.code(),
+                message: reason.message().to_owned(),
+                remediation: Some(reason.remediation().to_owned()),
+            };
+        }
+        Err(crate::host::adapters::governance::JoinFailure::Failed(e)) => {
+            return IpcResponse::error(500, e);
+        }
     };
     // The shell starts its own community services when the runtime hands
     // the records over (`ShellHooks::community_records_ready`).

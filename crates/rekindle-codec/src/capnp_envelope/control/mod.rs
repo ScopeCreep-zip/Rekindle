@@ -167,6 +167,11 @@ pub fn encode_control_payload(
         CP::CheckpointHintRequest { request } => b.set_checkpoint_hint_request(request),
         CP::CheckpointHintResponse { response } => b.set_checkpoint_hint_response(response),
         CP::BootstrapPartial { anchor } => b.set_bootstrap_partial(anchor),
+        CP::BootstrapRefused { anchor, reason } => {
+            let mut r = b.reborrow().init_bootstrap_refused();
+            r.set_anchor(anchor);
+            r.set_reason(reason.to_wire());
+        }
         CP::VoiceMediaKeyAck { .. } => {
             write_voice_media_key_ack(b.reborrow().init_voice_media_key_ack(), payload);
         }
@@ -281,6 +286,13 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::BootstrapPartial(anchor) => Ok(ControlPayload::BootstrapPartial {
             anchor: text_to_string(anchor.map_err(|e| capnp_err(&e))?)?,
         }),
+        Which::BootstrapRefused(r) => {
+            let r = r.map_err(|e| capnp_err(&e))?;
+            Ok(ControlPayload::BootstrapRefused {
+                anchor: text_to_string(r.get_anchor().map_err(|e| capnp_err(&e))?)?,
+                reason: rekindle_types::join_refusal::JoinRefusal::from_wire(r.get_reason()),
+            })
+        }
         Which::GovernanceOp(op) => Ok(ControlPayload::GovernanceOp {
             op: op.map_err(|e| capnp_err(&e))?.to_vec(),
         }),

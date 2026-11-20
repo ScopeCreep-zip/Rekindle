@@ -32,10 +32,11 @@
 //! meta, roles, the owner assignment and `#general`), so a `MemberLeft`
 //! still removes it like any member.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::join_refusal::JoinRefusal;
 
 use crate::checkpoint::{self, EndorsementFault, Hints};
 
@@ -69,6 +70,9 @@ pub struct MergeOutcome {
     /// The checkpoint hints the applied `Checkpoint` ops carry (plan E3.2
     /// S7c.4); the ones that count for nothing are quarantined above.
     pub hints: Hints,
+    /// Why each refused `MemberJoined` the invite gate refused was refused
+    /// (plan E3.2 join step 5: the inviter answers it to the joiner).
+    pub join_refusals: BTreeMap<OpHash, JoinRefusal>,
 }
 
 /// Why an op is quarantined rather than applied.
@@ -111,7 +115,11 @@ pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
 #[must_use]
 pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     let set = resolve::prepare(ops);
-    let (round, masked_by) = resolve_stable(cert, &set);
+    let (round, masked_by, invite_refusals) = resolve_stable(cert, &set);
+    let join_refusals = (invite_refusals.into_iter())
+        .filter(|&(i, _)| !round.applied[i] && masked_by[i].is_none())
+        .map(|(i, r)| (set.ops[i].hash(), r))
+        .collect();
     let mut applied: Vec<OpHash> = round.order.iter().map(|&i| set.ops[i].hash()).collect();
     let refused = (0..set.ops.len())
         .filter(|&i| !round.applied[i] && masked_by[i].is_none())
@@ -149,13 +157,17 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
         pending: set.pending,
         equivocators: set.equivocators,
         hints,
+        join_refusals,
     }
 }
 
 /// Resolution rerun until the invalidated set is stable; the settled
 /// round's invites carry the joins `invite_gate` counted on them. Returns
-/// the round and, per op, the removal that masks it.
-fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> (Round, Vec<Option<usize>>) {
+/// the round, per op the removal that masks it, and why the invite gate
+/// refused each join it refused.
+type Settled = (Round, Vec<Option<usize>>, BTreeMap<usize, JoinRefusal>);
+
+fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> Settled {
     let mut invalid = vec![false; set.ops.len()];
     let mut round = resolve_round(cert, set, &invalid);
     let mut passes = 0;
@@ -166,7 +178,7 @@ fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> (Round, Vec<O
             for (id, invite) in &mut round.state.invites {
                 invite.uses = gated.uses.get(id).copied().unwrap_or(0);
             }
-            return (round, gated.masked_by);
+            return (round, gated.masked_by, gated.invite_refusals);
         }
         invalid = gated.invalid;
         round = resolve_round(cert, set, &invalid);

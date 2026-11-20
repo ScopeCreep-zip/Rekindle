@@ -67,9 +67,9 @@ async fn a_single_use_invite_lists_one_of_two_racing_joiners() {
     for (i, outcome) in [(2, &a), (3, &b)] {
         match outcome {
             Ok(_) => joined.push(community.pseudonym(i).await),
-            Err(Refused { message, .. }) => {
+            Err(Refused { code, message, .. }) => {
                 assert!(
-                    message.contains("the inviter refused the join"),
+                    *code == 409 && message == "This invite has already been used.",
                     "node {i}'s join is refused by the inviter, not lost: {message}"
                 );
                 assert!(

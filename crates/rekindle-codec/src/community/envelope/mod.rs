@@ -83,6 +83,7 @@ impl CommunityEnvelope {
                 // Answers to one peer's question.
                 | ControlPayload::BootstrapResponseV2 { .. }
                 | ControlPayload::BootstrapPartial { .. }
+                | ControlPayload::BootstrapRefused { .. }
                 | ControlPayload::CheckpointStateRequest { .. }
                 | ControlPayload::CheckpointStateResponse { .. }
                 | ControlPayload::CheckpointHintRequest { .. }

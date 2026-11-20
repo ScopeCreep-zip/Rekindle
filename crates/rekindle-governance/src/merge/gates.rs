@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::join_refusal::JoinRefusal;
 
 use super::resolve::OpSet;
 use super::Round;
@@ -25,6 +26,8 @@ pub(super) struct Gated {
     pub masked_by: Vec<Option<usize>>,
     /// The joins `invite_gate` counted on each invite.
     pub uses: InviteUses,
+    /// Per op index, why `invite_gate` refused a `MemberJoined`.
+    pub invite_refusals: BTreeMap<usize, JoinRefusal>,
 }
 
 /// The ops the next round leaves out, from what `round` applied.
@@ -36,11 +39,13 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
     backdated_join_gate(set, &mut invalid);
     record_gate(cert, set, round, &mut invalid);
     checkpoint_gate(set, round, &mut invalid);
-    let uses = invite_gate(set, round, &mut invalid);
+    let mut invite_refusals = BTreeMap::new();
+    let uses = invite_gate(set, round, &mut invalid, &mut invite_refusals);
     Gated {
         invalid,
         masked_by,
         uses,
+        invite_refusals,
     }
 }
 
@@ -195,8 +200,14 @@ fn rejoined(set: &OpSet<'_>, round: &Round, r: usize, o: usize) -> bool {
 /// that commitment in its causal past (not revoked there, not expired at
 /// its `issued_at`), and fewer than `max_uses` earlier joins on it
 /// (`max_uses` is in `1..=MAX_USES_PER_INVITE`; there are no unlimited
-/// invites). Returns the joins it counted on each invite.
-fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) -> InviteUses {
+/// invites). Returns the joins it counted on each invite; `refusals`
+/// gets why each join it refused was refused.
+fn invite_gate(
+    set: &OpSet<'_>,
+    round: &Round,
+    invalid: &mut [bool],
+    refusals: &mut BTreeMap<usize, JoinRefusal>,
+) -> InviteUses {
     let mut uses = InviteUses::new();
     for (o, op) in set.ops.iter().enumerate() {
         let GovernanceEntry::MemberJoined {
@@ -220,6 +231,7 @@ fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) -> InviteUs
             });
         let Some((invite_id, max_uses, expires_at)) = invite else {
             invalid[o] = true;
+            refusals.insert(o, JoinRefusal::InviteUnknown);
             continue;
         };
         let revoked = (0..o).any(|v| {
@@ -229,8 +241,12 @@ fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) -> InviteUs
         });
         let expired = expires_at.is_some_and(|exp| op.op().issued_at > exp);
         let used = uses.entry(invite_id).or_insert(0);
-        if revoked || expired || *used >= max_uses {
+        if revoked || expired {
             invalid[o] = true;
+            refusals.insert(o, JoinRefusal::InviteNoLongerValid);
+        } else if *used >= max_uses {
+            invalid[o] = true;
+            refusals.insert(o, JoinRefusal::InviteUsedUp);
         } else if !invalid[o] {
             *used += 1;
         }

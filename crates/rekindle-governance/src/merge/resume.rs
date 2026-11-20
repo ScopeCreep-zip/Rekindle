@@ -188,6 +188,10 @@ pub fn merge_from(
             ))
         })
         .collect();
+    let join_refusals = (gated.invite_refusals.iter())
+        .filter(|&(&i, _)| !round.applied[i] && gated.masked_by[i].is_none())
+        .map(|(&i, &r)| (set.ops[i].hash(), r))
+        .collect();
     Ok(MergeOutcome {
         state: round.state,
         applied,
@@ -196,6 +200,7 @@ pub fn merge_from(
         pending: set.pending,
         equivocators: set.equivocators,
         hints: Hints::default(),
+        join_refusals,
     })
 }
 

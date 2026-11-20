@@ -15,17 +15,32 @@ use rekindle_governance_runtime::op_log::HeldOp;
 use rekindle_governance_runtime::{BootstrapJoiner, GovernanceRuntimeError};
 use rekindle_types::governance::OpRef;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::join_refusal::JoinRefusal;
 
 use super::HostGovernance;
+
+/// Why a join did not run (ADR 0019's outcome rule): the inviter's typed
+/// refusal, which the frontends render as told, or a failure.
+#[derive(Debug)]
+pub(crate) enum JoinFailure {
+    Refused(JoinRefusal),
+    Failed(String),
+}
+
+impl From<String> for JoinFailure {
+    fn from(e: String) -> Self {
+        Self::Failed(e)
+    }
+}
 
 /// How one bootstrap exchange ended.
 pub(crate) enum Exchange {
     /// A member answered our `MemberJoined` with its frontier; the ops our
     /// walk from it found are stored and the community rebuilt.
     Merged,
-    /// The inviter answered and refused it: every member's merge holds it
-    /// invalid.
-    Refused(GovernanceRuntimeError),
+    /// The inviter answered and refused it, and why: every member's merge
+    /// holds it invalid.
+    Refused(JoinRefusal),
     /// Nobody answered (the inviter is away, holds no route, or was partial
     /// and no member answered): the join stands from the DHT and the
     /// exchange is tried again.
@@ -53,7 +68,7 @@ impl HostGovernance {
         &self,
         community: &str,
         refused_hash: &[u8; 32],
-        refused: &GovernanceRuntimeError,
+        refused: &JoinRefusal,
     ) {
         let lock = self.ctx.community_joins.of(community);
         let _joining = lock.lock().await;
@@ -175,7 +190,9 @@ impl HostGovernance {
         .await
         {
             Ok(walked) => walked,
-            Err(e @ GovernanceRuntimeError::BootstrapRefused(_)) => return Exchange::Refused(e),
+            Err(GovernanceRuntimeError::BootstrapRefused(reason)) => {
+                return Exchange::Refused(reason);
+            }
             Err(e) => return Exchange::Unanswered(e.to_string()),
         };
         for op in &walked {

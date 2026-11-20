@@ -28,7 +28,10 @@ impl HostGovernance {
     /// # Errors
     /// The join stages failed (an expired, banned or full invite, the DHT),
     /// or storing the membership failed.
-    pub(crate) async fn join(&self, link: &InviteLink) -> Result<CommunityJoined, String> {
+    pub(crate) async fn join(
+        &self,
+        link: &InviteLink,
+    ) -> Result<CommunityJoined, super::join_bootstrap::JoinFailure> {
         let id = link.anchor.as_str().to_owned();
         // Idempotent (RV4 review M1, RV7 M3): a join answered `Pending`,
         // repeated or concurrent (the lock holds the second until the first
@@ -129,7 +132,7 @@ impl HostGovernance {
                 self.leave(&recorded).await.map_err(|e| {
                     format!("community join refused ({refused}), withdrawal failed: {e}")
                 })?;
-                return Err(format!("community join failed: {refused}"));
+                return Err(super::join_bootstrap::JoinFailure::Refused(refused));
             }
             super::join_bootstrap::Exchange::Unanswered(reason) => {
                 tracing::info!(community = %id, %reason, "bootstrap exchange not answered: queued");
