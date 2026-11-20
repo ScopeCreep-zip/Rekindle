@@ -248,6 +248,7 @@
       "serverInfo": null
     },
     "group": "Raid team",
+    "groupDmBlock": "Their profile is not known yet",
     "groupId": 7,
     "groupLabel": "Raid team",
     "handshakeError": null,
@@ -264,6 +265,7 @@
     "friendshipState": "pendingOut",
     "gameInfo": null,
     "group": null,
+    "groupDmBlock": "Waiting for them to accept your friend request",
     "groupId": null,
     "groupLabel": "Friends",
     "handshakeError": "their accept carried no session data",
