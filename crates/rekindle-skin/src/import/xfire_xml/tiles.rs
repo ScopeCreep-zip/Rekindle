@@ -4,21 +4,28 @@
 //! xfire-online/ia_XFireSkins/`): the chat window's layout file (the
 //! `<Include>` under `Skin.xml`'s `<ChatSkin>`) lays tiles, each naming a
 //! component, and the frame is read from those tiles' components in one
-//! of three shapes, the first that is complete winning:
+//! of four shapes, the first that is complete winning. The shapes that name
+//! the window's own frame tiles come first: a nine-piece set found on any
+//! laid tile can be a panel inside the window (Space Cowboy's `ListViewBG`
+//! at 26,181 is the buddy list's ground, not the window frame).
 //!
-//! 1. [`Shape::Nine`]: one component whose normal set has all nine piece
+//! 1. [`Shape::Named`]: tiles named for the nine positions (`TopLeft`,
+//!    `Top`, `TopRight`, `LeftEdge`, `Middle`, `RightEdge`, `BottomLeft`,
+//!    `Bottom`, `BottomRight`), each component's normal set holding the
+//!    one image of that piece (Onyx, Space Cowboy).
+//! 2. [`Shape::Sides`]: tiles `TopRow` and `BottomRow` whose sets hold
+//!    `left`/`middle`/`right`, and `LeftSide`/`RightSide` (and an optional
+//!    `Background` centre) of one image each (Symbiosis's
+//!    `MainWindow.xml` "Window Frame" block).
+//! 3. [`Shape::Nine`]: one component whose normal set has all nine piece
 //!    types, Symbiosis's rule on the chat window's own components
 //!    (StealthX's `MainBackground`).
-//! 2. [`Shape::Rows`]: the first set with `topleft`/`top`/`topright`, the
+//! 4. [`Shape::Rows`]: the first set with `topleft`/`top`/`topright`, the
 //!    first with `bottomleft`/`bottom`/`bottomright`, and the first
 //!    vertically resizing tile (`ResizeY="100"`, the only tiles Xfire
 //!    stretches down the window) whose set has `left` and `right`
 //!    (its `middle`, if any, the centre): Classic v3's rule with the
 //!    components found through the layout (xSLIMFIRE).
-//! 3. [`Shape::Named`]: tiles named for the nine positions (`TopLeft`,
-//!    `Top`, `TopRight`, `LeftEdge`, `Middle`, `RightEdge`, `BottomLeft`,
-//!    `Bottom`, `BottomRight`), each component's normal set holding the
-//!    one image of that piece (Onyx, Space Cowboy).
 //!
 //! A shape without a centre piece has a transparent middle, as the INI era
 //! and Classic v3 do. Names and types match ASCII-case-insensitively.
@@ -38,6 +45,7 @@ pub enum Shape {
     Nine,
     Rows,
     Named,
+    Sides,
 }
 
 impl Shape {
@@ -50,6 +58,7 @@ impl Shape {
                 "the top and bottom rows' typed pieces and a vertically resizing tile's sides"
             }
             Self::Named => "the tiles named TopLeft … BottomRight, one piece each",
+            Self::Sides => "the tiles TopRow, LeftSide, RightSide and BottomRow",
         }
     }
 }
@@ -128,25 +137,50 @@ fn rows(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
     ])
 }
 
-fn named(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
-    let one = |names: &[&str]| {
-        laid.iter()
-            .find(|l| {
-                l.tile
-                    .attr_ci("Name")
-                    .is_some_and(|n| names.iter().any(|m| eq(m, n)))
-            })
-            .and_then(|l| {
-                let mut images = l.set.children_named("Image");
-                let first = images.next()?;
-                images.next().is_none().then(|| {
-                    (
-                        first.text.clone(),
-                        l.set.attr_ci("Color").map(str::to_owned),
-                    )
-                })
-            })
+fn tile_named<'a>(laid: &'a [Laid<'a>], names: &[&str]) -> Option<&'a Laid<'a>> {
+    laid.iter().find(|l| {
+        l.tile
+            .attr_ci("Name")
+            .is_some_and(|n| names.iter().any(|m| eq(m, n)))
+    })
+}
+
+/// The one image of `l`'s set; `None` when it holds more or none.
+fn single(l: &Laid<'_>) -> Option<Piece> {
+    let mut images = l.set.children_named("Image");
+    let first = images.next()?;
+    images.next().is_none().then(|| {
+        (
+            first.text.clone(),
+            l.set.attr_ci("Color").map(str::to_owned),
+        )
+    })
+}
+
+fn sides(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
+    let row = |name: &str| {
+        let l = tile_named(laid, &[name])?;
+        let [a, b, c] = ["left", "middle", "right"].map(|t| typed(l.set, t));
+        Some([a?, b?, c?])
     };
+    let side = |name: &str| single(tile_named(laid, &[name])?);
+    let [top_left, top, top_right] = row("TopRow")?.map(Some);
+    let [bottom_left, bottom, bottom_right] = row("BottomRow")?.map(Some);
+    Some([
+        top_left,
+        top,
+        top_right,
+        Some(side("LeftSide")?),
+        side("Background"),
+        Some(side("RightSide")?),
+        bottom_left,
+        bottom,
+        bottom_right,
+    ])
+}
+
+fn named(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
+    let one = |names: &[&str]| single(tile_named(laid, names)?);
     let pieces = NAMED.map(one);
     pieces
         .iter()
@@ -203,10 +237,11 @@ pub fn pieces(
     let nine = laid
         .iter()
         .find_map(|l| nine_piece_in([l.set]).map(|p| p.map(Some)));
-    let found = nine
-        .map(|p| (p, Shape::Nine))
-        .or_else(|| rows(&laid).map(|p| (p, Shape::Rows)))
-        .or_else(|| named(&laid).map(|p| (p, Shape::Named)));
+    let found = named(&laid)
+        .map(|p| (p, Shape::Named))
+        .or_else(|| sides(&laid).map(|p| (p, Shape::Sides)))
+        .or_else(|| nine.map(|p| (p, Shape::Nine)))
+        .or_else(|| rows(&laid).map(|p| (p, Shape::Rows)));
     let Some((set, shape)) = found else {
         return Ok(None);
     };

@@ -261,9 +261,9 @@ pub enum TileAxis {
     Repeat { start: u16, end: u16 },
 }
 
-/// One frame tile: an image of the package placed by its anchors, and its
-/// 1-bit mask (opaque where alpha ≥ 128), hex, rows of `ceil(width / 8)`
-/// bytes, most significant bit first.
+/// One frame tile: an image of the package placed by its anchors. Its
+/// 1-bit mask (opaque where alpha ≥ 128) is derived from the image itself
+/// wherever the layout is checked or shaped, so the shape has one source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FrameTile {
@@ -276,7 +276,6 @@ pub struct FrameTile {
     /// the frame rectangle.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub overhang: bool,
-    pub mask: String,
 }
 
 /// A window's frame layout (plan SK0 S1): the window is the frame
@@ -399,8 +398,8 @@ pub enum SkinRule {
     UnsupportedFormat { major: u32 },
     #[error("{field}: expected {expected}")]
     BadValue { field: String, expected: String },
-    #[error("{window} window: a transparent pixel at ({x}, {y}) is enclosed by the frame")]
-    ShapeHole { window: String, x: u32, y: u32 },
+    #[error("{window} window: a transparent pixel at ({x}, {y}) is inside the content rectangle")]
+    ShapeContentTransparent { window: String, x: u32, y: u32 },
     #[error("{window} window: tile {tile} reaches into the content rectangle")]
     ShapeIntrudes { window: String, tile: u64 },
     #[error("{window} window: the silhouette is {count} rectangles, the limit is {max}")]

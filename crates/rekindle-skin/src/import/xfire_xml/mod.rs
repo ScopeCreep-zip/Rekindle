@@ -33,6 +33,7 @@ pub mod controls;
 mod notice;
 pub mod refs;
 mod sources;
+mod stack;
 pub mod surfaces;
 pub mod tiles;
 use sources::{component_files, count_dropped};
@@ -355,6 +356,8 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
                 SkinWindow::Main,
                 shape::from_nine(SkinWindow::Main, &pieces)?,
             );
+        } else if let Some(stacked) = stack::layout(SkinWindow::Main, &main, &components, decode)? {
+            windows.insert(SkinWindow::Main, stacked);
         }
     }
     if let Some(pieces) = &chat {

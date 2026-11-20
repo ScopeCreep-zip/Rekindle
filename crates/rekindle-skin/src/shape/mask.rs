@@ -1,8 +1,15 @@
 //! A tile's 1-bit mask: opaque where the pixel's alpha is at least
 //! [`ALPHA_OPAQUE`] (a GIF's transparent index decodes to alpha 0, every
 //! other index to 255; a PNG's partial alpha is cut at half, research §7.3).
+//! A mask is never stored: [`of_layout`] derives every tile's from the
+//! package's image at check and serve time (one source for the shape).
+
+use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
+use rekindle_types::dto::skin::{SkinError, SkinRule, WindowLayout};
+
+use crate::images::decode_png;
 
 /// The alpha from which a pixel is part of the window.
 pub const ALPHA_OPAQUE: u8 = 128;
@@ -37,41 +44,6 @@ impl Mask {
             height,
             bits,
         }
-    }
-
-    /// The hex text the package stores.
-    #[must_use]
-    pub fn to_hex(&self) -> String {
-        use std::fmt::Write;
-        self.bits.iter().fold(String::new(), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
-            s
-        })
-    }
-
-    /// Parses `hex` as a `width × height` mask; `None` when its length or
-    /// digits are wrong (lower-case only: one spelling per mask).
-    #[must_use]
-    pub fn from_hex(hex: &str, width: u32, height: u32) -> Option<Self> {
-        let len = stride(width).checked_mul(height as usize)?;
-        if hex.len() != len.checked_mul(2)? {
-            return None;
-        }
-        let digit = |c: u8| match c {
-            b'0'..=b'9' => Some(c - b'0'),
-            b'a'..=b'f' => Some(c - b'a' + 10),
-            _ => None,
-        };
-        let bits = hex
-            .as_bytes()
-            .chunks_exact(2)
-            .map(|p| Some(digit(p[0])? << 4 | digit(p[1])?))
-            .collect::<Option<Vec<u8>>>()?;
-        Some(Self {
-            width,
-            height,
-            bits,
-        })
     }
 
     /// Whether pixel (`x`, `y`) is opaque.
@@ -110,4 +82,44 @@ impl Mask {
     pub fn height(&self) -> u32 {
         self.height
     }
+}
+
+/// Each tile's mask, decoded from its image in `images` (the package's
+/// canonical images); `field` names the layout in errors.
+///
+/// # Errors
+/// A tile whose image is missing, does not decode, or is not the tile's
+/// declared size.
+pub fn of_layout(
+    field: &str,
+    layout: &WindowLayout,
+    images: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<Mask>, SkinError> {
+    layout
+        .tiles
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let field = format!("{field}.tiles.{i}");
+            let bytes = images.get(&t.image).ok_or_else(|| {
+                SkinError::new(
+                    t.image.as_str(),
+                    SkinRule::MissingEntry {
+                        field: field.clone(),
+                    },
+                )
+            })?;
+            let img = decode_png(bytes).map_err(|rule| SkinError::new(t.image.as_str(), rule))?;
+            if img.dimensions() != (u32::from(t.width), u32::from(t.height)) {
+                return Err(SkinError::new(
+                    field.as_str(),
+                    SkinRule::BadValue {
+                        field: field.clone(),
+                        expected: "the image's width and height".to_owned(),
+                    },
+                ));
+            }
+            Ok(Mask::of(&img))
+        })
+        .collect()
 }

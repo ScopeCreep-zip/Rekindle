@@ -3,22 +3,25 @@
 //! A shaped window shows, and passes clicks to, whatever lies behind its
 //! transparent pixels, so a hostile skin could frame another app's button
 //! as Rekindle's (UI redressing; threat model). The rules:
-//! 1. each tile's mask is its image's alpha (≥ [`super::ALPHA_OPAQUE`]):
-//!    the shape is what is drawn, no more and no less;
-//! 2. no frame tile reaches into the content rectangle, which is always
-//!    opaque (security surfaces live there, `@layer sec`);
-//! 3. no hole: every transparent pixel connects to the window's border, so
-//!    only the outer frame band and overhangs are cut;
+//! 1. each tile's mask is its image's alpha (≥ [`super::ALPHA_OPAQUE`]),
+//!    derived from the image, never declared: the shape is what is drawn;
+//! 2. no frame tile reaches into the content rectangle (security surfaces
+//!    live there, `@layer sec`);
+//! 3. the content rectangle is fully opaque: an overhang tile may lie over
+//!    it only with opaque pixels, so nothing behind the window ever shows
+//!    through the content. Transparent pixels in the frame band, enclosed
+//!    or not, are allowed (Xfire's 1-bit regions had them; lead decision
+//!    (a), plan SK0 S1);
 //! 4. at most [`MAX_RECTS`] rectangles at the largest window, so a skin
-//!    cannot make region building or the macOS hit test expensive.
+//!    cannot make region building or the macOS hit test expensive (this is
+//!    what bounds the frame band's transparency).
 
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule, SkinWindow, WindowLayout};
 
 use super::silhouette::{boxes, placed};
-use super::{silhouette, Mask, ShapeError, SCALE_ONE};
-use crate::images::decode_png;
+use super::{of_layout, silhouette, Mask, ShapeError, SCALE_ONE};
 
 /// The most rectangles a silhouette may take. The packs' real counts at
 /// [`MAX_WINDOW_WIDTH`] × [`MAX_WINDOW_HEIGHT`] are at most a few hundred
@@ -47,33 +50,6 @@ fn bad(field: &str, expected: &str) -> SkinError {
     )
 }
 
-fn masks_match(
-    window: SkinWindow,
-    layout: &WindowLayout,
-    images: &BTreeMap<String, Vec<u8>>,
-) -> Result<(), SkinError> {
-    for (i, t) in layout.tiles.iter().enumerate() {
-        let field = format!("windows.{}.tiles.{i}", name(window));
-        let bytes = images.get(&t.image).ok_or_else(|| {
-            SkinError::new(
-                t.image.as_str(),
-                SkinRule::MissingEntry {
-                    field: field.clone(),
-                },
-            )
-        })?;
-        let img = decode_png(bytes).map_err(|rule| SkinError::new(t.image.as_str(), rule))?;
-        if img.dimensions() != (u32::from(t.width), u32::from(t.height)) {
-            return Err(bad(&field, "the image's width and height"));
-        }
-        let mask = Mask::from_hex(&t.mask, img.width(), img.height());
-        if mask.as_ref() != Some(&Mask::of(&img)) {
-            return Err(bad(&field, "the image's 1-bit alpha mask"));
-        }
-    }
-    Ok(())
-}
-
 fn shape_err(window: SkinWindow, e: &ShapeError) -> SkinError {
     let w = name(window);
     match *e {
@@ -89,20 +65,23 @@ fn shape_err(window: SkinWindow, e: &ShapeError) -> SkinError {
     }
 }
 
-/// Rule 2 and 3 at `width × height`.
+/// Rules 2 to 4 at `width × height`.
 fn closed(
     window: SkinWindow,
     layout: &WindowLayout,
+    masks: &[Mask],
     width: u32,
     height: u32,
 ) -> Result<(), SkinError> {
     let w = name(window);
     let (_, c) = boxes(layout, width, height);
     for (i, (x, y, tw, th)) in placed(layout, width, height) {
-        if layout.tiles[i].overhang {
+        let (x0, x1) = (x.max(c.0), (x + tw).min(c.0 + c.2));
+        let (y0, y1) = (y.max(c.1), (y + th).min(c.1 + c.3));
+        if x0 >= x1 || y0 >= y1 {
             continue;
         }
-        if x < c.0 + c.2 && c.0 < x + tw && y < c.1 + c.3 && c.1 < y + th && c.2 > 0 && c.3 > 0 {
+        if !layout.tiles[i].overhang {
             return Err(SkinError::new(
                 format!("windows.{w}.tiles.{i}").as_str(),
                 SkinRule::ShapeIntrudes {
@@ -111,52 +90,27 @@ fn closed(
                 },
             ));
         }
-    }
-    let rects = silhouette(layout, width, height, SCALE_ONE).map_err(|e| shape_err(window, &e))?;
-    let (ww, hh) = (width as usize, height as usize);
-    let mut opaque = vec![false; ww * hh];
-    for r in rects {
-        for y in r.y..r.y + r.height {
-            let row = y as usize * ww;
-            opaque[row + r.x as usize..row + (r.x + r.width) as usize].fill(true);
-        }
-    }
-    // Flood the transparent pixels from the border; any left is a hole.
-    let mut seen = opaque.clone();
-    let mut stack: Vec<usize> = (0..ww * hh)
-        .filter(|&i| {
-            let (x, y) = (i % ww, i / ww);
-            (x == 0 || y == 0 || x + 1 == ww || y + 1 == hh) && !opaque[i]
-        })
-        .collect();
-    for &i in &stack {
-        seen[i] = true;
-    }
-    while let Some(i) = stack.pop() {
-        let (x, y) = (i % ww, i / ww);
-        let near = [
-            (x > 0).then(|| i - 1),
-            (x + 1 < ww).then(|| i + 1),
-            (y > 0).then(|| i - ww),
-            (y + 1 < hh).then(|| i + ww),
-        ];
-        for n in near.into_iter().flatten() {
-            if !seen[n] {
-                seen[n] = true;
-                stack.push(n);
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let (mx, my) = (px - x, py - y);
+                let opaque = u32::try_from(mx)
+                    .ok()
+                    .zip(u32::try_from(my).ok())
+                    .is_some_and(|(mx, my)| masks[i].get(mx, my));
+                if !opaque {
+                    return Err(SkinError::new(
+                        format!("windows.{w}.tiles.{i}").as_str(),
+                        SkinRule::ShapeContentTransparent {
+                            window: w,
+                            x: u32::try_from(px).unwrap_or(u32::MAX),
+                            y: u32::try_from(py).unwrap_or(u32::MAX),
+                        },
+                    ));
+                }
             }
         }
     }
-    if let Some(i) = seen.iter().position(|s| !s) {
-        return Err(SkinError::new(
-            format!("windows.{w}").as_str(),
-            SkinRule::ShapeHole {
-                window: w,
-                x: u32::try_from(i % ww).unwrap_or(u32::MAX),
-                y: u32::try_from(i / ww).unwrap_or(u32::MAX),
-            },
-        ));
-    }
+    silhouette(layout, masks, width, height, SCALE_ONE).map_err(|e| shape_err(window, &e))?;
     Ok(())
 }
 
@@ -167,7 +121,7 @@ fn closed(
 /// The first rule a layout breaks.
 pub fn check(manifest: &SkinManifest, images: &BTreeMap<String, Vec<u8>>) -> Result<(), SkinError> {
     for (&window, layout) in &manifest.windows {
-        masks_match(window, layout, images)?;
+        let masks = of_layout(&format!("windows.{}", name(window)), layout, images)?;
         let o = layout.outsets;
         let base_w = u32::from(layout.min_width) + u32::from(o.left) + u32::from(o.right);
         let base_h = u32::from(layout.min_height) + u32::from(o.top) + u32::from(o.bottom);
@@ -180,15 +134,22 @@ pub fn check(manifest: &SkinManifest, images: &BTreeMap<String, Vec<u8>>) -> Res
                 .unwrap_or(0)
         };
         // The smallest frame, and one with every repeat laid twice over.
-        closed(window, layout, base_w, base_h)?;
+        closed(window, layout, &masks, base_w, base_h)?;
         closed(
             window,
             layout,
+            &masks,
             base_w + 2 * span(|t| t.width) + 1,
             base_h + 2 * span(|t| t.height) + 1,
         )?;
-        silhouette(layout, MAX_WINDOW_WIDTH, MAX_WINDOW_HEIGHT, SCALE_ONE)
-            .map_err(|e| shape_err(window, &e))?;
+        silhouette(
+            layout,
+            &masks,
+            MAX_WINDOW_WIDTH,
+            MAX_WINDOW_HEIGHT,
+            SCALE_ONE,
+        )
+        .map_err(|e| shape_err(window, &e))?;
     }
     Ok(())
 }

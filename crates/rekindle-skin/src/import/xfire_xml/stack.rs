@@ -1,0 +1,185 @@
+//! A window frame laid as a stack of full-width rows (plan SK0 S1): Total
+//! Chaos's `mainwindow.xml` lays `MainTitleBar`, `AdBar`, `MenuBar`,
+//! `Content` and `BottomBar` under the root, each `ResizeX="100"` and
+//! `Y="<previous>.BOTTOM"`, each component's normal set typed `left`,
+//! `middle`, `right` (and the title's `center`, the T.C plaque). The row
+//! that resizes down (`ResizeY="100"`) is the content row: its sides
+//! repeat down the window and its middle is the content ground. A row's
+//! left and right lie at its ends, its middle repeats between them at its
+//! source size, and its centre piece is laid centred on the whole window
+//! as an overhang (it sits over the title row's repeat, Xfire's
+//! `JustX="CENTER"`). The rows' `OutdentLeft="1"` moves the whole stack
+//! one pixel, so the frame rectangle is the rows' box and the outsets
+//! are zero. Read only when no nine-piece shape is complete
+//! ([`super::tiles::pieces`]).
+
+use std::collections::BTreeMap;
+
+use rekindle_image::RgbaImage;
+use rekindle_types::dto::skin::{Insets, SkinWindow, TileAxis, WindowLayout};
+
+use super::super::tree::Node;
+use super::super::ImportError;
+use super::descendants;
+use crate::shape::{self, u16_of};
+
+/// A window layout and the tile images it names.
+type Built = (WindowLayout, BTreeMap<String, Vec<u8>>);
+
+/// One row's pieces: left, middle, right, centre.
+type Row = [Option<RgbaImage>; 4];
+
+const TYPES: [&str; 4] = ["left", "middle", "right", "center"];
+const NAMES: [&str; 4] = ["left", "middle", "right", "centre"];
+
+fn eq(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b)
+}
+
+/// `window`'s layout from the rows `layout` stacks, or `None` when it is
+/// not such a stack; `piece(bitmap, shift colour)` decodes a piece.
+///
+/// # Errors
+/// What `piece` returns, or a piece that does not encode.
+pub fn layout(
+    window: SkinWindow,
+    layout: &Node,
+    components: &[Node],
+    piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
+) -> Result<Option<Built>, ImportError> {
+    let by_name: BTreeMap<String, &Node> = components
+        .iter()
+        .flat_map(|n| descendants(n, "Component"))
+        .filter_map(|c| Some((c.attr_ci("Name")?.to_ascii_lowercase(), c)))
+        .collect();
+    let mut rows: Vec<(bool, Row)> = Vec::new();
+    for tile in layout.children_named("Tile") {
+        if tile.attr_ci("ResizeX") != Some("100") {
+            continue;
+        }
+        let Some(c) = tile
+            .attr_ci("Component")
+            .and_then(|n| by_name.get(&n.to_ascii_lowercase()))
+        else {
+            continue;
+        };
+        let Some(set) = c
+            .children_named("Images")
+            .find(|i| i.attr_ci("State").is_none_or(|s| eq(s, "Normal")))
+        else {
+            continue;
+        };
+        let shift = set.attr_ci("Color");
+        let mut row: Row = [None, None, None, None];
+        for (slot, ty) in row.iter_mut().zip(TYPES) {
+            if let Some(img) = set
+                .children_named("Image")
+                .find(|i| i.attr_ci("Type").is_some_and(|t| eq(t, ty)))
+            {
+                *slot = Some(piece(&img.text, shift)?);
+            }
+        }
+        if row[0].is_some() && row[1].is_some() && row[2].is_some() {
+            rows.push((tile.attr_ci("ResizeY") == Some("100"), row));
+        }
+    }
+    let Some(content_row) = rows.iter().position(|(resizes, _)| *resizes) else {
+        return Ok(None);
+    };
+    if rows.len() < 2 || rows.iter().filter(|(r, _)| *r).count() != 1 {
+        return Ok(None);
+    }
+    build(window, &rows, content_row).map(Some)
+}
+
+fn height(row: &Row) -> u32 {
+    row[1].as_ref().map_or(0, RgbaImage::height)
+}
+
+fn width(img: Option<&RgbaImage>) -> u32 {
+    img.map_or(0, RgbaImage::width)
+}
+
+fn build(
+    window: SkinWindow,
+    rows: &[(bool, Row)],
+    content_row: usize,
+) -> Result<Built, ImportError> {
+    let file = shape::tile_path(window, "frame");
+    let top: u32 = rows[..content_row].iter().map(|(_, r)| height(r)).sum();
+    let bottom: u32 = rows[content_row + 1..].iter().map(|(_, r)| height(r)).sum();
+    let mut tiles = Vec::new();
+    let mut files = BTreeMap::new();
+    let (mut above, mut below) = (0u32, bottom);
+    for (i, (_, row)) in rows.iter().enumerate() {
+        let (lw, rw) = (width(row[0].as_ref()), width(row[2].as_ref()));
+        let y = match i.cmp(&content_row) {
+            std::cmp::Ordering::Less => {
+                let y = TileAxis::Start {
+                    offset: u16_of(&file, above)?,
+                };
+                above += height(row);
+                y
+            }
+            std::cmp::Ordering::Equal => TileAxis::Repeat {
+                start: u16_of(&file, top)?,
+                end: u16_of(&file, bottom)?,
+            },
+            std::cmp::Ordering::Greater => {
+                below -= height(row);
+                TileAxis::End {
+                    offset: u16_of(&file, below)?,
+                }
+            }
+        };
+        let middle = TileAxis::Repeat {
+            start: u16_of(&file, lw)?,
+            end: u16_of(&file, rw)?,
+        };
+        let xs = [
+            TileAxis::Start { offset: 0 },
+            middle,
+            TileAxis::End { offset: 0 },
+            TileAxis::Centre,
+        ];
+        for (k, (img, x)) in row.iter().zip(xs).enumerate() {
+            // The content row's middle is the content ground.
+            let Some(img) = img.as_ref().filter(|_| !(i == content_row && k == 1)) else {
+                continue;
+            };
+            let name = format!("row{i}-{}", NAMES[k]);
+            if let Some((t, png)) = shape::tile(window, &name, img, (x, y), k == 3)? {
+                files.insert(t.image.clone(), png);
+                tiles.push(t);
+            }
+        }
+    }
+    let content_sides = &rows[content_row].1;
+    let content = Insets {
+        top: u16_of(&file, top)?,
+        right: u16_of(&file, width(content_sides[2].as_ref()))?,
+        bottom: u16_of(&file, bottom)?,
+        left: u16_of(&file, width(content_sides[0].as_ref()))?,
+    };
+    let min_width = rows
+        .iter()
+        .map(|(_, r)| (width(r[0].as_ref()) + width(r[2].as_ref())).max(width(r[3].as_ref())))
+        .max()
+        .unwrap_or(0);
+    let zero = Insets {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+    };
+    Ok((
+        WindowLayout {
+            outsets: zero,
+            content,
+            min_width: u16_of(&file, min_width)?,
+            min_height: u16_of(&file, top + bottom)?,
+            tiles,
+        },
+        files,
+    ))
+}

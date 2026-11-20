@@ -80,16 +80,18 @@ pub(super) fn placed(layout: &WindowLayout, width: u32, height: u32) -> Vec<(usi
     out
 }
 
-fn masks(layout: &WindowLayout) -> Result<Vec<Mask>, ShapeError> {
-    layout
-        .tiles
-        .iter()
-        .enumerate()
-        .map(|(tile, t)| {
-            Mask::from_hex(&t.mask, u32::from(t.width), u32::from(t.height))
-                .ok_or(ShapeError::Mask { tile })
-        })
-        .collect()
+fn fits(layout: &WindowLayout, masks: &[Mask]) -> Result<(), ShapeError> {
+    if masks.len() != layout.tiles.len() {
+        return Err(ShapeError::Mask {
+            tile: masks.len().min(layout.tiles.len()),
+        });
+    }
+    for (tile, (t, m)) in layout.tiles.iter().zip(masks).enumerate() {
+        if (m.width(), m.height()) != (u32::from(t.width), u32::from(t.height)) {
+            return Err(ShapeError::Mask { tile });
+        }
+    }
+    Ok(())
 }
 
 /// Sorted, merged `[start, end)` runs.
@@ -110,21 +112,22 @@ fn device(v: i64, scale: u32) -> u32 {
 }
 
 /// The opaque region of a `width × height` (logical px) window laid by
-/// `layout`, as rectangles in device pixels at `scale` (per mille, see
+/// `layout` with `masks` (one per tile, [`super::of_layout`]), as rectangles in device pixels at `scale` (per mille, see
 /// [`SCALE_ONE`]): the content rectangle, whole, and every tile's opaque
 /// pixels where the pack lays it, clipped to the window. Equal consecutive
 /// scanlines merge into one rectangle; the rectangles are disjoint and
 /// sorted top to bottom, left to right, so the result is deterministic.
 ///
 /// # Errors
-/// A mask that does not decode, or more than [`MAX_RECTS`] rectangles.
+/// A mask that is not its tile's size, or more than [`MAX_RECTS`] rectangles.
 pub fn silhouette(
     layout: &WindowLayout,
+    masks: &[Mask],
     width: u32,
     height: u32,
     scale: u32,
 ) -> Result<Vec<Rect>, ShapeError> {
-    let masks = masks(layout)?;
+    fits(layout, masks)?;
     let runs_of: Vec<Vec<Vec<(u32, u32)>>> = masks
         .iter()
         .map(|m| (0..m.height()).map(|y| m.runs(y)).collect())

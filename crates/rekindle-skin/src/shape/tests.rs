@@ -3,10 +3,10 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::{Rgba, RgbaImage};
-use rekindle_types::dto::skin::{SkinManifest, SkinRule, SkinWindow, WindowLayout};
+use rekindle_types::dto::skin::{SkinManifest, SkinRule, SkinWindow, TileAxis, WindowLayout};
 
 use super::*;
-use crate::{builtin, manifest, package};
+use crate::{builtin, images, manifest, package};
 
 const ON: Rgba<u8> = Rgba([10, 20, 30, 255]);
 const OFF: Rgba<u8> = Rgba([0, 0, 0, 0]);
@@ -52,9 +52,14 @@ fn r(x: u32, y: u32, width: u32, height: u32) -> Rect {
     }
 }
 
+fn masks(layout: &WindowLayout, files: &BTreeMap<String, Vec<u8>>) -> Vec<Mask> {
+    of_layout("windows.main", layout, files).unwrap()
+}
+
 #[test]
 fn corners_cut_and_middles_repeat() {
     let (layout, files) = from_nine(SkinWindow::Main, &nine()).unwrap();
+    let m = masks(&layout, &files);
     assert_eq!(layout.tiles.len(), 8, "the centre is the content ground");
     assert_eq!(files.len(), 8);
     let want = vec![
@@ -64,26 +69,28 @@ fn corners_cut_and_middles_repeat() {
         r(1, 8, 8, 1),
         r(2, 9, 6, 1),
     ];
-    assert_eq!(silhouette(&layout, 10, 10, SCALE_ONE).unwrap(), want);
+    assert_eq!(silhouette(&layout, &m, 10, 10, SCALE_ONE).unwrap(), want);
     let doubled: Vec<Rect> = want
         .iter()
         .map(|q| r(q.x * 2, q.y * 2, q.width * 2, q.height * 2))
         .collect();
-    assert_eq!(silhouette(&layout, 10, 10, 2 * SCALE_ONE).unwrap(), doubled);
+    assert_eq!(
+        silhouette(&layout, &m, 10, 10, 2 * SCALE_ONE).unwrap(),
+        doubled
+    );
     // Determinism: the same layout gives the same rectangles.
     assert_eq!(
-        silhouette(&layout, 37, 23, 1250).unwrap(),
-        silhouette(&layout, 37, 23, 1250).unwrap()
+        silhouette(&layout, &m, 37, 23, 1250).unwrap(),
+        silhouette(&layout, &m, 37, 23, 1250).unwrap()
     );
 }
 
 #[test]
-fn mask_round_trips_and_refuses_bad_text() {
+fn a_mask_is_the_images_alpha() {
     let img = corner(9, 4, (false, false));
     let m = Mask::of(&img);
-    assert_eq!(Mask::from_hex(&m.to_hex(), 9, 9), Some(m.clone()));
-    assert_eq!(Mask::from_hex(&m.to_hex().to_uppercase(), 9, 9), None);
-    assert_eq!(Mask::from_hex("00", 9, 9), None);
+    assert!(!m.get(0, 0) && !m.get(3, 0) && m.get(4, 0) && m.get(8, 8));
+    assert_eq!(m.runs(1), vec![(3, 9)]);
 }
 
 fn base() -> SkinManifest {
@@ -92,8 +99,15 @@ fn base() -> SkinManifest {
 }
 
 fn checked(pieces: &[RgbaImage; 9], edit: impl Fn(&mut WindowLayout)) -> Result<(), SkinRule> {
-    let (mut layout, files) = from_nine(SkinWindow::Chat, pieces).unwrap();
-    edit(&mut layout);
+    checked_with(pieces, |l, _| edit(l))
+}
+
+fn checked_with(
+    pieces: &[RgbaImage; 9],
+    edit: impl Fn(&mut WindowLayout, &mut BTreeMap<String, Vec<u8>>),
+) -> Result<(), SkinRule> {
+    let (mut layout, mut files) = from_nine(SkinWindow::Chat, pieces).unwrap();
+    edit(&mut layout, &mut files);
     let mut m = base();
     m.windows = BTreeMap::from([(SkinWindow::Chat, layout)]);
     check(&m, &files).map_err(|e| e.rule)
@@ -105,13 +119,52 @@ fn a_well_formed_frame_passes() {
 }
 
 #[test]
-fn a_hole_inside_the_frame_is_refused() {
+fn an_enclosed_gap_in_the_frame_band_is_allowed() {
+    // Lead decision (a): transparency in the frame band, enclosed or not,
+    // is Xfire's (gaps under short top pieces in Alloy and Combat).
     let mut p = nine();
     p[0].put_pixel(2, 2, OFF);
-    assert!(matches!(
-        checked(&p, |_| {}),
-        Err(SkinRule::ShapeHole { x: 2, y: 2, .. })
-    ));
+    assert_eq!(checked(&p, |_| {}), Ok(()));
+}
+
+#[test]
+fn a_transparent_pixel_inside_the_content_rectangle_is_refused() {
+    // An overhang laid centred on the window, over the content rectangle,
+    // with one transparent pixel there.
+    let mut plaque = solid(4, 4);
+    plaque.put_pixel(1, 1, OFF);
+    let got = checked_with(&nine(), |l, files| {
+        let (t, png) = tile(
+            SkinWindow::Chat,
+            "plaque",
+            &plaque,
+            (TileAxis::Centre, TileAxis::Centre),
+            true,
+        )
+        .unwrap()
+        .unwrap();
+        files.insert(t.image.clone(), png);
+        l.tiles.push(t);
+    });
+    assert!(
+        matches!(got, Err(SkinRule::ShapeContentTransparent { .. })),
+        "{got:?}"
+    );
+    // The same overhang, opaque, is allowed over the content.
+    let got = checked_with(&nine(), |l, files| {
+        let (t, png) = tile(
+            SkinWindow::Chat,
+            "plaque",
+            &solid(4, 4),
+            (TileAxis::Centre, TileAxis::Centre),
+            true,
+        )
+        .unwrap()
+        .unwrap();
+        files.insert(t.image.clone(), png);
+        l.tiles.push(t);
+    });
+    assert_eq!(got, Ok(()));
 }
 
 #[test]
@@ -126,8 +179,8 @@ fn a_tile_over_the_content_area_is_refused() {
 }
 
 #[test]
-fn a_mask_that_is_not_the_image_is_refused() {
-    let got = checked(&nine(), |l| l.tiles[0].mask = "ff".repeat(4));
+fn a_tile_that_is_not_its_images_size_is_refused() {
+    let got = checked(&nine(), |l| l.tiles[0].width += 1);
     assert!(matches!(got, Err(SkinRule::BadValue { .. })), "{got:?}");
 }
 
@@ -143,31 +196,29 @@ fn a_side_that_varies_every_row_hits_the_cap() {
     );
 }
 
-/// The built-in's main window at the reference screenshot's size
-/// (`scratchpad/skinref/<skin>/buddy-list-1.png`): its rectangle count
-/// and the top-left corner's first rows.
+/// The built-in's main window at `size` (the reference screenshot's main
+/// window, `scratchpad/skinref/<skin>/buddy-list-1.png`): its rectangle
+/// count and its first rows (the top corners' cut).
 fn golden(id: &str, size: (u32, u32)) -> (usize, Vec<Rect>) {
     let (_, b) = builtin::find(id).unwrap();
-    let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
+    let package = package::read(b.bytes).unwrap();
+    let m = manifest::parse(&package).unwrap();
+    let files = images::validate(&package, &m).unwrap();
     let layout = m
         .windows
         .get(&SkinWindow::Main)
         .expect("a main window layout");
-    let rects = silhouette(layout, size.0, size.1, SCALE_ONE).unwrap();
-    let n = rects.len();
-    eprintln!(
-        "{id}: {n} rects, {:?}",
-        rects.iter().take(6).collect::<Vec<_>>()
-    );
-    (n, rects.into_iter().take(3).collect())
+    let rects = silhouette(layout, &masks(layout, &files), size.0, size.1, SCALE_ONE).unwrap();
+    (rects.len(), rects.into_iter().take(3).collect())
 }
 
 #[test]
 fn builtin_silhouettes_match_their_goldens() {
     let got: Vec<_> = [
         ("builtin:xfire-classic", (605, 412)),
-        ("builtin:spacecowboy", (598, 549)),
-        ("builtin:symbiosis", (583, 555)),
+        ("builtin:spacecowboy", (365, 549)),
+        ("builtin:symbiosis", (386, 555)),
+        ("builtin:total-chaos", (471, 553)),
     ]
     .into_iter()
     .map(|(id, size)| (id, golden(id, size)))
@@ -180,23 +231,21 @@ fn builtin_silhouettes_match_their_goldens() {
                 vec![r(69, 0, 467, 1), r(62, 1, 481, 1), r(56, 2, 493, 1)],
             ),
         ),
+        // Open (SK0 S1): the Named main-* pieces are read now, but only a
+        // 1 px line of them is opaque, so the silhouette is the content
+        // rectangle; the reference shows cut corners and overhang art.
+        ("builtin:spacecowboy", (1, vec![r(15, 33, 331, 464)])),
+        // Open (SK0 S1): the Sides shape does not match yet; still a
+        // rectangle against the reference's rounded frame.
+        ("builtin:symbiosis", (1, vec![r(0, 0, 386, 555)])),
+        // The T.C plaque (72 px opaque top, centred) over the title row.
         (
-            // Space Cowboy and Symbiosis: their main pieces decode fully
-            // opaque here, so the outline is the rectangle (an open finding:
-            // the references show cut corners).
-            "builtin:spacecowboy",
-            (1, vec![r(0, 0, 598, 549)]),
+            "builtin:total-chaos",
+            (
+                87,
+                vec![r(199, 0, 72, 2), r(168, 2, 134, 1), r(167, 3, 136, 1)],
+            ),
         ),
-        ("builtin:symbiosis", (1, vec![r(0, 0, 583, 555)])),
     ];
     assert_eq!(got, want);
-}
-
-#[test]
-fn total_chaos_has_no_main_layout_yet() {
-    // Its `MainTitleBar` (left/repeat/right) and centred T.C plaque match
-    // none of the nine-piece shapes; the overhang import is SK0 S1's rest.
-    let (_, b) = builtin::find("builtin:total-chaos").unwrap();
-    let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
-    assert!(!m.windows.contains_key(&SkinWindow::Main));
 }

@@ -41,11 +41,46 @@ pub fn tile_path(window: SkinWindow, piece: &str) -> String {
     format!("assets/frame/{w}/{piece}.png")
 }
 
-fn u16_of(file: &str, v: u32) -> Result<u16, ImportError> {
+pub(crate) fn u16_of(file: &str, v: u32) -> Result<u16, ImportError> {
     u16::try_from(v).map_err(|_| ImportError::Image {
         file: file.to_owned(),
         detail: "a frame piece is too large".to_owned(),
     })
+}
+
+/// The frame tile of `img` as `window`'s `piece`, placed by `axes`, and
+/// its PNG; `None` when the image has no opaque pixel (nothing to lay).
+///
+/// # Errors
+/// An image too large for a tile, or one that does not encode.
+pub fn tile(
+    window: SkinWindow,
+    piece: &str,
+    img: &RgbaImage,
+    axes: (TileAxis, TileAxis),
+    overhang: bool,
+) -> Result<Option<(FrameTile, Vec<u8>)>, ImportError> {
+    let mask = Mask::of(img);
+    if (0..img.height()).all(|r| mask.runs(r).is_empty()) {
+        return Ok(None);
+    }
+    let path = tile_path(window, piece);
+    let png =
+        encode_png(&DynamicImage::ImageRgba8(img.clone())).map_err(|e| ImportError::Image {
+            file: path.clone(),
+            detail: e.to_string(),
+        })?;
+    Ok(Some((
+        FrameTile {
+            width: u16_of(&path, img.width())?,
+            height: u16_of(&path, img.height())?,
+            image: path,
+            x: axes.0,
+            y: axes.1,
+            overhang,
+        },
+        png,
+    )))
 }
 
 /// `window`'s layout from `pieces`, and the tile images it names.
@@ -81,28 +116,13 @@ pub fn from_nine(
     let mut tiles = Vec::new();
     let mut files = BTreeMap::new();
     for (i, (x, y)) in axes.into_iter().enumerate() {
-        let img = &pieces[i];
-        let mask = Mask::of(img);
-        let visible = (0..img.height()).any(|r| !mask.runs(r).is_empty());
-        if i == 4 || !visible {
+        if i == 4 {
             continue;
         }
-        let path = tile_path(window, PIECES[i]);
-        let png =
-            encode_png(&DynamicImage::ImageRgba8(img.clone())).map_err(|e| ImportError::Image {
-                file: path.clone(),
-                detail: e.to_string(),
-            })?;
-        files.insert(path.clone(), png);
-        tiles.push(FrameTile {
-            image: path,
-            width: u16_of(&file, img.width())?,
-            height: u16_of(&file, img.height())?,
-            x,
-            y,
-            overhang: false,
-            mask: mask.to_hex(),
-        });
+        if let Some((t, png)) = tile(window, PIECES[i], &pieces[i], (x, y), false)? {
+            files.insert(t.image.clone(), png);
+            tiles.push(t);
+        }
     }
     let band = |a: usize, b: usize, c: usize, f: &dyn Fn(usize) -> u32| f(a).max(f(b)).max(f(c));
     let content = Insets {

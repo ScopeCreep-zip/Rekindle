@@ -79,7 +79,7 @@ Colour roles by reference (13)
   [GroupInfoView] text.color_hyperlink=InfoViewHyperlink -> link kept: an earlier reference set it
 
 Regions
-  window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 245x215 px, nine-slice 20/30/20/30
+  window.frame: the nine-piece frame of the chat window layout chatwindow.xml: the tiles named TopLeft … BottomRight, one piece each, 344x319 px, nine-slice 31/24/57/20
   buddylist.tab: the component TabNormalButton, 73x20 px, NineSlice(Insets { top: 0, right: 11, bottom: 0, left: 11 }); states normal, down, selected
   buddylist.group-header: the component BuddyView, 13x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 4 }); states normal
   community.category-header: the component BuddyView, 13x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 4 }); states normal
