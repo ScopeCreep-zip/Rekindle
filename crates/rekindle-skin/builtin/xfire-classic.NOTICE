@@ -85,6 +85,20 @@ Colours (68 defined)
   XIGFocusedRectColor RGBA(0,128,255,0) -> dropped: in-game overlay (E7.5 research)
   SpeakerOn RGBA(0,128,0,0) -> dropped: voice indicator: no region slot
   MicOn RGBA(128,0,0,0) -> dropped: voice indicator: no region slot
+Colour roles by reference (13)
+  [BuddyView] text.color_selected=BuddyViewSelected -> accent.fill kept: its role-named colour wins
+  [BuddyView] text.color_selected=BuddyViewSelected -> token accent.text
+  [StatusEdit] text.background=StatusBackgroundCG -> bg.status kept: its role-named colour wins
+  [StatusEdit] text.color=StatusCG -> text.status kept: its role-named colour wins
+  [BuddyView] color=BuddyViewBG -> bg.primary kept: its role-named colour wins
+  [ChatArea] color=ChatViewCG -> bg.panel kept: its role-named colour wins
+  [GroupChatArea] color=ChatViewCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] color=ChatViewCG -> token bg.input
+  [GroupChatEdit] color=ChatViewCG -> bg.input kept: an earlier reference set it
+  [InfoInfoView] color=InfoViewBG -> bg.secondary kept: its role-named colour wins
+  [InfoInfoView] text.color_hyperlink=InfoViewHyperlink -> link kept: its role-named colour wins
+  [GroupChatInfoView] color=InfoViewBG -> bg.secondary kept: its role-named colour wins
+  [GroupChatInfoView] text.color_hyperlink=InfoViewHyperlink -> link kept: its role-named colour wins
 
 Regions
   window.frame: the nine-piece frame of xfirecomponents.xml (ChatTitleBar, the outer edges' middles, ChatBaseBoard; transparent middle), 248x184 px, nine-slice 47/74/37/74
@@ -320,5 +334,8 @@ Dropped
   triggers: 216
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (1 made)
+Contrast changes (minimal Oklab-lightness walk) (4 made)
+  accent.text: #1e498c -> #4b79c0 (1.4.3 accent.text on bg.dark: 2.25:1 -> 4.52:1, required 4.50:1)
+  accent.text: #4b79c0 -> #4d7cc3 (1.4.3 accent.text on bg.primary: 4.33:1 -> 4.51:1, required 4.50:1)
+  accent.text: #4d7cc3 -> #5c8cd5 (1.4.3 accent.text on bg.tertiary: 3.63:1 -> 4.50:1, required 4.50:1)
   text.clan: #4678e1 -> #5488f2 (1.4.3 text.clan on bg.tertiary: 3.67:1 -> 4.51:1, required 4.50:1)

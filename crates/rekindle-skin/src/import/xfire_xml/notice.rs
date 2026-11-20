@@ -43,6 +43,10 @@ pub fn render(
             c.target.describe()
         );
     }
+    let _ = writeln!(s, "Colour roles by reference ({})", read.refs.len());
+    for a in &read.refs {
+        let _ = writeln!(s, "  {}", a.describe());
+    }
     if let Some((img, i)) = &read.frame {
         let _ = writeln!(
             s,

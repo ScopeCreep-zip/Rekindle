@@ -31,6 +31,7 @@ pub mod bitmap;
 pub mod colours;
 pub mod controls;
 mod notice;
+pub mod refs;
 pub mod surfaces;
 pub mod tiles;
 pub mod v3;
@@ -93,6 +94,8 @@ pub struct Read {
     pub tally: controls::StateTally,
     /// Which layout the tree is.
     pub layout: Layout,
+    /// The colour roles the components name ([`refs`]).
+    pub refs: Vec<refs::Applied>,
 }
 
 /// The two XML-era layouts.
@@ -366,8 +369,9 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
             file: themes_file.clone(),
             detail: "no <Theme>".to_owned(),
         })?;
-    let (colours, tokens) = read_colours(theme, layout)?;
+    let (colours, mut tokens) = read_colours(theme, layout)?;
     let components = component_files(tree, &included)?;
+    let refs = refs::apply(&refs::xml_refs(&components), &colours, &mut tokens);
     let (frame, frame_source) = read_frame(tree, (&skin, theme), &colours, layout, &components)?;
     let (controls, tally) = controls::read(tree, theme, &colours, &components)?;
     let info_xml = match lookup(tree, "Info.xml") {
@@ -409,6 +413,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         controls,
         tally,
         layout,
+        refs,
     })
 }
 

@@ -22,6 +22,18 @@ Colours (7 defined)
   FriedsOfFriendsTextColor RGBA(80,82,83,0) -> dropped: not an Xfire colour name
   FriendsOfflineTextColor RGBA(80,82,83,0) -> dropped: not an Xfire colour name
   ListSelectBackColor RGBA(37,43,47,0) -> dropped: not an Xfire colour name
+Colour roles by reference (11)
+  [BuddyView] color=MainListBackColor -> token bg.primary
+  [StatusEdit] text.background=MainStatusBackColor -> token bg.status
+  [StatusEdit] text.color=MainTextColor -> token text.status
+  [InfoViewTile] color=MainListBackColor -> token bg.secondary
+  [InfoViewTile] text.color_hyperlink=MainTextColor -> token link
+  [ChatArea] color=MainStatusBackColor -> token bg.panel
+  [ChatEdit] color=MainStatusBackColor -> token bg.input
+  [GroupChatArea] color=MainStatusBackColor -> bg.panel kept: an earlier reference set it
+  [GroupChatEdit] color=MainStatusBackColor -> bg.input kept: an earlier reference set it
+  [GroupChatInfoView] color=MainListBackColor -> bg.secondary kept: an earlier reference set it
+  [GroupChatInfoView] text.color_hyperlink=MainTextColor -> link kept: an earlier reference set it
 
 Regions
   window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 97x128 px, nine-slice 35/27/35/27
@@ -150,4 +162,11 @@ Dropped
   triggers: 130
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (0 made)
+Contrast changes (minimal Oklab-lightness walk) (7 made)
+  control-border: #6b6b6b -> #6e6e6e (1.4.11 control-border on bg.panel: 2.89:1 -> 3.02:1, required 3.00:1)
+  danger.text: #ff5955 -> #ff625c (1.4.3 .chat-call-btn-active hovered danger.text on status.busy 20% over bg.panel 80% over bg.dark: 4.30:1 -> passes, required 4.50:1)
+  accent.text: #3491d8 -> #3c98df (1.4.3 .chat-mention accent.text on accent.fill 9% over bg.panel: 4.15:1 -> passes, required 4.50:1)
+  text.secondary: #a0a0a0 -> #a1a1a1 (1.4.3 .forum-tag-chip-remove text.secondary on accent.fill 25% over bg.input: 4.49:1 -> passes, required 4.50:1)
+  status.offline-text: #909090 -> #969696 (1.4.3 .invite-status-badge status.offline-text on status.offline 12% over bg.panel: 4.18:1 -> passes, required 4.50:1)
+  text.timestamp: #a1a1a1 -> #a5a5a5 (1.4.3 .notification-time text.timestamp on bg.panel: 4.35:1 -> 6.26:1, required 4.50:1)
+  status.away-text: #ffcc00 -> #ffd41e (1.4.3 .timeout-indicator status.away-text on status.away 34% over bg.panel: 4.27:1 -> passes, required 4.50:1)

@@ -63,6 +63,20 @@ Colours (49 defined)
   ButtonHoverCG RGBA(32,32,32,0) -> dropped: not an Xfire colour name
   ButtonDownCG RGBA(42,42,42,0) -> dropped: not an Xfire colour name
   ButtonCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+Colour roles by reference (13)
+  [BuddyView] text.color_selectedtext=SelectedText -> accent.fill kept: D1-D3: this hue as a fill would read as danger
+  [BuddyView] text.color_selectedtext=SelectedText -> token accent.text
+  [BuddyView] colorgroup=ListviewCG -> token bg.primary
+  [StatusEdit] text.background=StatusBG -> token bg.status
+  [StatusEdit] text.color=StatusText -> token text.status
+  [InfoView] color=InfoviewCG -> token bg.secondary
+  [InfoView] text.color_hyperlink=InfoViewHyperlink -> token link
+  [ChatArea] color=ChatBGCG -> token bg.panel
+  [ChatEdit] color=ChatBGCG -> token bg.input
+  [GroupChatArea] colorgroup=ChatBGCG -> bg.panel kept: an earlier reference set it
+  [GroupChatEdit] color=ChatBGCG -> bg.input kept: an earlier reference set it
+  [GroupInfoView] color=InfoviewCG -> bg.secondary kept: an earlier reference set it
+  [GroupInfoView] text.color_hyperlink=InfoViewHyperlink -> link kept: an earlier reference set it
 
 Regions
   window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 245x215 px, nine-slice 20/30/20/30
@@ -195,4 +209,10 @@ Dropped
   triggers: 171
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (0 made)
+Contrast changes (minimal Oklab-lightness walk) (6 made)
+  accent.text: #b90000 -> #df3b2d (1.4.3 accent.text on bg.dark: 2.88:1 -> 4.52:1, required 4.50:1)
+  accent.text: #df3b2d -> #f55241 (1.4.3 accent.text on bg.tertiary: 3.50:1 -> 4.50:1, required 4.50:1)
+  text.status: #767676 -> #797979 (1.4.3 text.status on bg.dark: 4.35:1 -> 4.54:1, required 4.50:1)
+  text.status: #797979 -> #8c8c8c (1.4.3 text.status on bg.tertiary: 3.52:1 -> 4.55:1, required 4.50:1)
+  link: #eb0000 -> #f0100a (1.4.3 link on bg.dark: 4.27:1 -> 4.50:1, required 4.50:1)
+  link: #f0100a -> #ff4636 (1.4.3 link on bg.tertiary: 3.49:1 -> 4.51:1, required 4.50:1)

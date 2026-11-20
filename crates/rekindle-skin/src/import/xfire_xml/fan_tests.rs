@@ -175,3 +175,69 @@ fn an_incomplete_layout_has_no_frame() {
     assert!(r.frame.is_none());
     assert_eq!(r.controls.len(), 5);
 }
+
+/// Plan E7.7.7 (the Linux survey's item (b)): Onyx's colours are its own
+/// labels (`LBGCG`, `ChatBGCG`, `Selected`), never in the name table; the
+/// components that name them give the role. Its selection ground is
+/// near-black, so the selection text's green is the accent.
+#[test]
+fn the_components_naming_a_colour_give_its_role_and_the_accent() {
+    let components = r#"<Component Name="BuddyView" Class="BuddyView" Color="LBGCG">
+<Text Font="Arial" color_selected="Selected" color_selectedtext="SelectedText" /></Component>
+<Component Name="ChatArea" Class="ChatView" Color="ChatBGCG" />
+<Component Name="ChatEdit" Class="Edit" Color="EditBG" />
+<Component Name="InfoView" Class="InfoView" Color="DialogCG"><Text color_hyperlink="Hyper" /></Component>
+<Component Name="StatusEdit" Class="Edit"><Text Background="StatusBG" color="StatusText" /></Component>"#;
+    let colours = [
+        ("LBGCG", [1, 2, 3]),
+        ("ChatBGCG", [4, 5, 6]),
+        ("EditBG", [7, 8, 9]),
+        ("DialogCG", [10, 11, 12]),
+        ("Selected", [25, 25, 25]),
+        ("SelectedText", [114, 255, 0]),
+        ("Hyper", [2, 100, 180]),
+        ("StatusBG", [13, 14, 15]),
+        ("StatusText", [204, 204, 204]),
+    ];
+    let mut theme = String::new();
+    for (n, [r, g, b]) in colours {
+        let _ = write!(theme, "<Color Name=\"{n}\">RGBA({r},{g},{b},0)</Color>");
+    }
+    let mut t = fan_tree(components, "");
+    t.insert(
+        "themes.xml".into(),
+        format!("<Themes><Theme Name=\"default\"><Colors>{theme}</Colors></Theme></Themes>")
+            .into_bytes(),
+    );
+    let r = read(&t).unwrap();
+    for (token, rgb) in [
+        ("bg.primary", [1, 2, 3]),
+        ("bg.panel", [4, 5, 6]),
+        ("bg.input", [7, 8, 9]),
+        ("bg.secondary", [10, 11, 12]),
+        ("accent.fill", [114, 255, 0]),
+        ("accent.text", [114, 255, 0]),
+        ("link", [2, 100, 180]),
+        ("bg.status", [13, 14, 15]),
+        ("text.status", [204, 204, 204]),
+    ] {
+        assert_eq!(r.tokens[token], walk::color(rgb), "{token}");
+    }
+    // A chromatic selection ground is itself the accent fill.
+    let blue = t["themes.xml"].clone();
+    let blue = String::from_utf8(blue).unwrap().replace("RGBA(25,25,25,0)", "RGBA(20,90,160,0)");
+    t.insert("themes.xml".into(), blue.into_bytes());
+    let r = read(&t).unwrap();
+    assert_eq!(r.tokens["accent.fill"], walk::color([20, 90, 160]));
+    assert_eq!(r.tokens["accent.text"], walk::color([20, 90, 160]));
+    // Space Cowboy's red: a red fill would read as danger (D3), so the
+    // fill keeps the base and the hue stays on the accent text.
+    let red = String::from_utf8(t["themes.xml"].clone())
+        .unwrap()
+        .replace("RGBA(20,90,160,0)", "RGBA(25,25,25,0)")
+        .replace("RGBA(114,255,0,0)", "RGBA(185,0,0,0)");
+    t.insert("themes.xml".into(), red.into_bytes());
+    let r = read(&t).unwrap();
+    assert!(!r.tokens.contains_key("accent.fill"));
+    assert_eq!(r.tokens["accent.text"], walk::color([185, 0, 0]));
+}

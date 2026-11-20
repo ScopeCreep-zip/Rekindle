@@ -71,6 +71,20 @@ Colours (57 defined)
   UserNameCG RGBA(121,121,121,0) -> not mapped: no registry role self.name yet
   VentCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
   VoiceTalkingShift RGBA(0,0,0,0) -> dropped: not an Xfire colour name
+Colour roles by reference (13)
+  [BuddyView] text.color_selectedtext=BuddyViewSelectedText -> token accent.fill
+  [BuddyView] text.color_selectedtext=BuddyViewSelectedText -> token accent.text
+  [StatusEdit] text.background=StatusBackgroundCG -> bg.status kept: its role-named colour wins
+  [StatusEdit] text.color=StatusCG -> token text.status
+  [BuddyView] color=BuddyViewBG -> token bg.primary
+  [ChatArea] color=ChatViewCG -> token bg.panel
+  [ChatEdit] color=ChatViewCG -> token bg.input
+  [GroupChatArea] color=ChatViewCG -> bg.panel kept: an earlier reference set it
+  [GroupChatEdit] color=ChatViewCG -> bg.input kept: an earlier reference set it
+  [InfoInfoView] color=InfoViewBG -> token bg.secondary
+  [InfoInfoView] text.color_hyperlink=InfoViewHyperlink -> token link
+  [GroupChatInfoView] color=InfoViewBG -> bg.secondary kept: an earlier reference set it
+  [GroupChatInfoView] text.color_hyperlink=InfoViewHyperlink -> link kept: an earlier reference set it
 
 Regions
   window.frame: the nine-piece frame of the chat window layout xSLIMFIREchatwindow.xml: the top and bottom rows' typed pieces and a vertically resizing tile's sides, 252x495 px, nine-slice 165/125/165/125
@@ -198,4 +212,13 @@ Dropped
   triggers: 123
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (0 made)
+Contrast changes (minimal Oklab-lightness walk) (9 made)
+  accent.text: #0264b4 -> #277bcc (1.4.3 accent.text on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
+  accent.text: #277bcc -> #2c80d1 (1.4.3 accent.text on bg.primary: 4.23:1 -> 4.52:1, required 4.50:1)
+  accent.text: #2c80d1 -> #3c8fe1 (1.4.3 accent.text on bg.tertiary: 3.73:1 -> 4.53:1, required 4.50:1)
+  text.status: #6a6a6a -> #797979 (1.4.3 text.status on bg.dark: 3.66:1 -> 4.54:1, required 4.50:1)
+  text.status: #797979 -> #7d7d7d (1.4.3 text.status on bg.primary: 4.26:1 -> 4.51:1, required 4.50:1)
+  text.status: #7d7d7d -> #8c8c8c (1.4.3 text.status on bg.tertiary: 3.72:1 -> 4.55:1, required 4.50:1)
+  link: #0264b4 -> #277bcc (1.4.3 link on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
+  link: #277bcc -> #2c80d1 (1.4.3 link on bg.primary: 4.23:1 -> 4.52:1, required 4.50:1)
+  link: #2c80d1 -> #3c8fe1 (1.4.3 link on bg.tertiary: 3.73:1 -> 4.53:1, required 4.50:1)
