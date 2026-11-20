@@ -19,6 +19,7 @@ use crate::state::{AppState, ChannelType};
 use crate::state_helpers;
 
 mod events;
+pub(crate) use events::ROSTER_STATE;
 mod media_keys;
 pub use media_keys::{install_carrier as install_media_key_carrier, HostMediaKeyOutbox};
 use rekindle_db::Db;

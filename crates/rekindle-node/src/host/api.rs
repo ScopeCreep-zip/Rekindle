@@ -19,6 +19,22 @@ impl super::Host {
         self.ctx.journal.publish_standing(event)
     }
 
+    /// Journal `event` as the current value of the session state `key`
+    /// (plan C7.29: the voice roster): a window that opens later is handed
+    /// the latest value, then the live changes.
+    pub fn publish_state(
+        &self,
+        key: &str,
+        event: rekindle_types::subscription_events::SubscriptionEvent,
+    ) -> Cursor {
+        self.ctx.journal.publish_state(key, event)
+    }
+
+    /// The session state `key` ended: no later window is handed it.
+    pub fn clear_state(&self, key: &str) {
+        self.ctx.journal.clear_state(key);
+    }
+
     /// The session's standing events with their cursors: the snapshot a GUI
     /// window that just opened is handed before its live events.
     #[must_use]

@@ -433,6 +433,16 @@ impl VoiceSessionDeps for VoiceAdapter {
         }
         *ve = None;
         drop(ve);
+        // The call ended: a window that opens from now on is not shown it.
+        if let Some(host) = self.state.host.current() {
+            for key in [
+                super::event_mapping::SESSION_STATE,
+                super::event_mapping::SELF_STATE,
+                crate::services::voice_signaling_adapter::ROSTER_STATE,
+            ] {
+                host.clear_state(key);
+            }
+        }
         // Native camera session dies with the voice session — its frames
         // have nowhere to go without the roster's routes.
         crate::services::native_video::stop(&self.state);

@@ -212,10 +212,10 @@ pub async fn reconcile_from_presence(
         return;
     }
 
-    let (removed, remote_count) = {
+    let (removed, members) = {
         let mut t = transport.lock().await;
         let removed: Vec<bool> = plan.remove.iter().map(|gone| t.remove_peer(gone)).collect();
-        (removed, t.peer_count())
+        (removed, t.roster_participants())
     };
     for (gone, was_present) in plan.remove.iter().zip(&removed) {
         tracing::info!(
@@ -236,7 +236,7 @@ pub async fn reconcile_from_presence(
                 pseudonym_key: gone.clone(),
                 present: false,
                 display_name: None,
-                remote_count,
+                roster: members.clone(),
             });
             // Plan C7.20 — an expired peer is a departure: rotate.
             let is_stage = deps

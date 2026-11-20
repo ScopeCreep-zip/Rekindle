@@ -101,10 +101,15 @@ async fn voice_leave_apply(
         .stage_channel_info(community_id, channel_id)
         .is_some_and(|s| s.is_stage);
 
-    let (removed, peer_count, current_mode) = {
+    let (removed, peer_count, current_mode, members) = {
         let mut t = transport.lock().await;
         let removed = t.remove_peer(&sender_key);
-        (removed, t.peer_count(), t.mode().clone())
+        (
+            removed,
+            t.peer_count(),
+            t.mode().clone(),
+            t.roster_participants(),
+        )
     };
     if removed {
         deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
@@ -113,7 +118,7 @@ async fn voice_leave_apply(
             pseudonym_key: sender_key.clone(),
             present: false,
             display_name: None,
-            remote_count: peer_count,
+            roster: members,
         });
         // Plans C7.20, C7.29 — it must not read what follows.
         crate::signaling::media_keys::on_peer_removed(

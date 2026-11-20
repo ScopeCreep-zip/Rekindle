@@ -71,15 +71,17 @@ pub enum CommunityVoiceEvent {
     /// receipt, leave, or presence reconcile. Authoritative for
     /// session membership: media arrival must never gate roster state
     /// (a VAD-silent peer sends no packets but is fully present).
-    /// `remote_count` is the roster size captured at mutation time so
-    /// consumers don't re-lock the transport.
+    /// `roster` is the whole remote roster captured at mutation time
+    /// (plan C7.29): consumers publish it as the call's current state, so
+    /// a window that subscribes late is handed it, and never re-lock the
+    /// transport.
     VoiceRosterChanged {
         community_id: String,
         channel_id: String,
         pseudonym_key: String,
         present: bool,
         display_name: Option<String>,
-        remote_count: usize,
+        roster: Vec<VoiceRosterParticipant>,
     },
     /// Local three-way join handshake progressed (announced → seen →
     /// connected). `peer`/`display_name` identify the member whose

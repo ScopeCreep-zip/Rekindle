@@ -14,6 +14,7 @@ use rekindle_types::subscription_events::{
 };
 
 use crate::state::AppState;
+use tauri::Manager;
 
 /// Last-known halves of the merged `ConnectionQuality` UI event. The
 /// send loop reports `quality` and the receive loop reports jitter
@@ -157,6 +158,11 @@ pub(super) fn map(event: VoiceSessionEvent, scope: &VoiceScope) -> VoiceEvent {
     }
 }
 
+/// The session-state keys of the call we are in and of our own entry in
+/// it, in the host's journal (plan C7.29).
+pub(crate) const SESSION_STATE: &str = "voice.session";
+pub(crate) const SELF_STATE: &str = "voice.self";
+
 /// Fan-out for `VoiceSessionDeps::emit_local_joined`: 4 sequential
 /// `voice-event` emits (LocalJoined + UserJoined + ConnectionQuality
 /// + UserSpeaking) matching the pre-Phase-14 `emit_join_events` body.
@@ -183,18 +189,40 @@ pub(super) fn emit_local_joined_impl(
         },
     };
 
+    // The call we are in and our own place in it are session state (plan
+    // C7.29): a window that subscribes after the join is handed them, then
+    // the roster, then the live changes.
+    let session_state = [
+        (
+            SESSION_STATE,
+            VoiceEvent::LocalJoined {
+                scope: scope.clone(),
+            },
+        ),
+        (
+            SELF_STATE,
+            VoiceEvent::Joined {
+                scope: scope.clone(),
+                pseudonym: public_key.to_string(),
+                display_name: Some(display_name.to_string()),
+                // This is us joining our own call; nobody needs a route to
+                // reach us from this event.
+                route_blob: None,
+            },
+        ),
+    ];
+    match app
+        .try_state::<crate::state::SharedState>()
+        .and_then(|state| state.host.current())
+    {
+        Some(host) => {
+            for (key, event) in session_state {
+                host.publish_state(key, SubscriptionEvent::Voice(event));
+            }
+        }
+        None => tracing::warn!("voice join not published: the host has not started"),
+    }
     for event in [
-        VoiceEvent::LocalJoined {
-            scope: scope.clone(),
-        },
-        VoiceEvent::Joined {
-            scope: scope.clone(),
-            pseudonym: public_key.to_string(),
-            display_name: Some(display_name.to_string()),
-            // This is us joining our own call; nobody needs a route to
-            // reach us from this event.
-            route_blob: None,
-        },
         VoiceEvent::ConnectionQuality {
             scope: scope.clone(),
             quality: "good".to_string(),

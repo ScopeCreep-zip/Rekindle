@@ -45,10 +45,10 @@ pub(in crate::signaling) fn handle_voice_join_ack(
     let acker = sender_pseudonym.to_string();
     deps.scope().spawn_or_drop("voice join ack", async move {
         if !route_blob.is_empty() {
-            let (newly_added, remote_count) = {
+            let (newly_added, members) = {
                 let mut t = transport.lock().await;
                 let newly = t.add_peer(&acker, &route_blob, display_name.as_deref());
-                (newly, t.peer_count())
+                (newly, t.roster_participants())
             };
             if newly_added {
                 deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
@@ -57,7 +57,7 @@ pub(in crate::signaling) fn handle_voice_join_ack(
                     pseudonym_key: acker.clone(),
                     present: true,
                     display_name: display_name.clone(),
-                    remote_count,
+                    roster: members.clone(),
                 });
                 // Plan C7.20 — the acker added us and sent its key; it
                 // gets ours.

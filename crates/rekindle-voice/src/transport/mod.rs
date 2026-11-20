@@ -354,6 +354,21 @@ impl VoiceTransport {
             .collect()
     }
 
+    /// Every remote roster member with the name a handshake carried,
+    /// ordered by key: the roster as signaling knows it (plan C7.29).
+    pub fn roster_participants(&self) -> Vec<crate::signaling::deps::VoiceRosterParticipant> {
+        let mut members: Vec<_> = self
+            .peers
+            .iter()
+            .map(|(k, v)| crate::signaling::deps::VoiceRosterParticipant {
+                pseudonym_key: k.clone(),
+                display_name: v.display_name.clone(),
+            })
+            .collect();
+        members.sort_by(|a, b| a.pseudonym_key.cmp(&b.pseudonym_key));
+        members
+    }
+
     /// Remove a peer from the voice mesh. Returns `true` when the
     /// peer was actually present — callers emit the roster-changed
     /// signaling event on that edge.

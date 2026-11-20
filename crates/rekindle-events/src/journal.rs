@@ -43,7 +43,16 @@ struct Ring {
     next: u64,
     events: VecDeque<Sequenced>,
     /// This session's standing events, oldest first, with their cursors.
-    standing: Vec<Sequenced>,
+    standing: Vec<Standing>,
+}
+
+/// One standing event. A keyed one is a piece of the session's current
+/// state ([`SessionJournal::publish_state`]): publishing under its key again
+/// replaces it, so the snapshot holds the latest value, never a history.
+#[derive(Clone)]
+struct Standing {
+    key: Option<String>,
+    sequenced: Sequenced,
 }
 
 impl Ring {
@@ -139,8 +148,11 @@ impl SessionJournal {
         let standing = std::mem::take(&mut ring.standing);
         Self::new_epoch_in(&mut ring, self.rng.as_ref());
         for kept in standing {
-            let sequenced = ring.append(kept.event, self.capacity);
-            ring.standing.push(sequenced);
+            let sequenced = ring.append(kept.sequenced.event, self.capacity);
+            ring.standing.push(Standing {
+                key: kept.key,
+                sequenced,
+            });
         }
         // No subscriber is not an error.
         let _ = self.live.send(StreamFrame::InvalidSession);
@@ -169,16 +181,49 @@ impl SessionJournal {
         let mut ring = self.ring.write();
         let sequenced = ring.append(event, self.capacity);
         let cursor = sequenced.cursor;
-        ring.standing.push(sequenced.clone());
+        ring.standing.push(Standing {
+            key: None,
+            sequenced: sequenced.clone(),
+        });
         let _ = self.live.send(StreamFrame::Event(sequenced));
         cursor
+    }
+
+    /// Journal `event` as the current value of the session state `key` (a
+    /// voice roster, the call we are in): sent live like [`Self::publish`],
+    /// and kept as a standing event in place of the value `key` held before,
+    /// so a subscriber that connects later is handed the state as it is now
+    /// and then the live changes.
+    pub fn publish_state(&self, key: &str, event: SubscriptionEvent) -> Cursor {
+        let mut ring = self.ring.write();
+        ring.standing.retain(|s| s.key.as_deref() != Some(key));
+        let sequenced = ring.append(event, self.capacity);
+        let cursor = sequenced.cursor;
+        ring.standing.push(Standing {
+            key: Some(key.to_owned()),
+            sequenced: sequenced.clone(),
+        });
+        let _ = self.live.send(StreamFrame::Event(sequenced));
+        cursor
+    }
+
+    /// The state `key` ended (the call was left): later subscribers are not
+    /// handed its last value.
+    pub fn clear_state(&self, key: &str) {
+        let mut ring = self.ring.write();
+        ring.standing.retain(|s| s.key.as_deref() != Some(key));
     }
 
     /// This session's standing events with their cursors, oldest first: the
     /// snapshot a window that just opened is handed before its live events.
     #[must_use]
     pub fn standing(&self) -> Vec<Sequenced> {
-        self.ring.read().standing.clone()
+        self.ring
+            .read()
+            .standing
+            .iter()
+            .map(|s| s.sequenced.clone())
+            .collect()
     }
 
     /// The current position: the cursor of the last event published in this
@@ -228,9 +273,8 @@ impl SessionJournal {
         let mut first: VecDeque<StreamFrame> = ring
             .standing
             .iter()
-            .filter(|s| served && from.is_none_or(|from| s.cursor.seq <= from.seq))
-            .cloned()
-            .map(StreamFrame::Event)
+            .filter(|s| served && from.is_none_or(|from| s.sequenced.cursor.seq <= from.seq))
+            .map(|s| StreamFrame::Event(s.sequenced.clone()))
             .collect();
         first.extend(replay.unwrap_or_default());
         EventStream {
@@ -449,6 +493,29 @@ mod tests {
         let mut live = journal.subscribe(None);
         journal.publish(ev("after"));
         assert_eq!(seq_of(&live.next().await.unwrap()), Some(5));
+    }
+
+    #[tokio::test]
+    async fn a_state_published_before_a_connection_is_its_snapshot_then_changes_arrive_live() {
+        let journal = SessionJournal::new(16, 16, Arc::new(rekindle_utils::random::OsRandom));
+        journal.begin();
+        journal.publish_state("roster", ev("roster: a"));
+        let current = journal.publish_state("roster", ev("roster: a, b"));
+        let mut late = journal.connect(None);
+        let later = journal.publish_state("roster", ev("roster: a, b, c"));
+        let first = late.next().await.unwrap();
+        assert!(
+            matches!(&first, StreamFrame::Event(s) if s.cursor == current),
+            "the snapshot is the state as it is now, not its history: {first:?}"
+        );
+        let next = late.next().await.unwrap();
+        assert!(
+            matches!(&next, StreamFrame::Event(s) if s.cursor == later),
+            "a later change arrives live: {next:?}"
+        );
+        assert_eq!(journal.standing().len(), 1);
+        journal.clear_state("roster");
+        assert!(journal.standing().is_empty());
     }
 
     #[tokio::test]

@@ -122,7 +122,7 @@ pub(in crate::signaling) fn handle_voice_roster(
     let my_pk = deps.my_pseudonym(community_id).unwrap_or_default();
     deps.scope()
         .spawn_or_drop("voice roster apply", async move {
-            let (added, remote_count) = {
+            let (added, members) = {
                 let mut t = transport.lock().await;
                 let mut added: Vec<(String, Option<String>)> = Vec::new();
                 for entry in &participants {
@@ -137,7 +137,7 @@ pub(in crate::signaling) fn handle_voice_roster(
                         added.push((entry.pseudonym_key.clone(), entry.display_name.clone()));
                     }
                 }
-                (added, t.peer_count())
+                (added, t.roster_participants())
             };
             for (pseudonym_key, display_name) in added {
                 // Plan C7.20 — every roster add hands the peer our key,
@@ -156,7 +156,7 @@ pub(in crate::signaling) fn handle_voice_roster(
                     pseudonym_key,
                     present: true,
                     display_name,
-                    remote_count,
+                    roster: members.clone(),
                 });
             }
             // We (the joiner) just learned the channel roster — directed

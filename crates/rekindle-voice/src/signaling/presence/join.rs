@@ -117,10 +117,10 @@ async fn voice_join_apply(
         .stage_channel_info(community_id, channel_id)
         .is_some_and(|s| s.is_stage);
 
-    let (newly_added, remote_count) = {
+    let (newly_added, members) = {
         let mut t = transport.lock().await;
         let newly = t.add_peer(&sender_key, &blob, joiner_name.as_deref());
-        (newly, t.peer_count())
+        (newly, t.roster_participants())
     };
     if newly_added {
         deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
@@ -129,7 +129,7 @@ async fn voice_join_apply(
             pseudonym_key: sender_key.clone(),
             present: true,
             display_name: joiner_name.clone(),
-            remote_count,
+            roster: members.clone(),
         });
         // Plan C7.20 — a genuine membership change (this peer was not on
         // the roster) gets it our media key, ratcheted past what it
