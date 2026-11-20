@@ -7,6 +7,7 @@ import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
 import { rovingList } from "../../utils/roving_list";
 import MemberProfilePopup from "./MemberProfilePopup";
+import { useMembersOnScreen } from "../../hooks/useMembersOnScreen";
 import {
   ICON_SHIELD,
   ICON_TIMEOUT,
@@ -63,6 +64,7 @@ const MemberList: Component<MemberListProps> = (props) => {
   const [searchQuery, setSearchQuery] = createSignal("");
   const [openProfileFor, setOpenProfileFor] = createSignal<string | null>(null);
   const [blocked, setBlocked] = createSignal<Set<string>>(new Set());
+  const onScreen = useMembersOnScreen(() => props.communityId);
 
   createEffect(() => {
     const communityId = props.communityId;
@@ -308,7 +310,7 @@ const MemberList: Component<MemberListProps> = (props) => {
           setOpenProfileFor(open ? member.pseudonymKey : null)
         }
       >
-        <Popover.Trigger as="div" class="member-item">
+        <Popover.Trigger as="div" class="member-item" data-pseudonym={member.pseudonymKey}>
           <StatusDot status={memberStatus(member)} />
           <div class="member-name-info">
             <span class="member-name">{member.displayName}</span>
@@ -352,7 +354,13 @@ const MemberList: Component<MemberListProps> = (props) => {
   }
 
   return (
-    <div class="member-list" ref={rovingList(".member-item")}>
+    <div
+      class="member-list"
+      ref={(list) => {
+        rovingList(".member-item")(list);
+        onScreen(list);
+      }}
+    >
       <div class="member-list-header">
         Members — {props.members.length}
       </div>

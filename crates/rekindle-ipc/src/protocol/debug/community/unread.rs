@@ -19,6 +19,11 @@ impl std::fmt::Debug for UnreadRequest {
                 .debug_struct("UnreadCounts")
                 .field("community", community)
                 .finish(),
+            Self::MembersOnScreen { community, members } => f
+                .debug_struct("MembersOnScreen")
+                .field("community", community)
+                .field("members", &members.len())
+                .finish(),
         }
     }
 }

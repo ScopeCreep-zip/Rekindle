@@ -64,7 +64,9 @@ use crate::state::signing_key::SigningKeyHandle;
 use rekindle_ipc::registry::ClearanceRegistry;
 
 pub(crate) use context::{runtime_refused, state_error, transition};
-pub(crate) use lifecycle::{daemon_overlays, daemon_teardown, request_presence_polls};
+pub(crate) use lifecycle::{
+    daemon_overlays, daemon_release_communities, daemon_teardown, request_presence_polls,
+};
 pub use router::dispatch;
 
 use crate::host::policy::PolicyConfig;

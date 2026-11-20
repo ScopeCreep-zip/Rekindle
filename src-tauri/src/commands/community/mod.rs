@@ -251,10 +251,11 @@ pub use threads::{
     send_thread_message, unarchive_thread,
 };
 pub use unread::{
-    __cmd__get_unread_counts, __cmd__mark_channel_read, __tauri_command_name_get_unread_counts,
-    __tauri_command_name_mark_channel_read,
+    __cmd__get_unread_counts, __cmd__mark_channel_read, __cmd__set_members_on_screen,
+    __tauri_command_name_get_unread_counts, __tauri_command_name_mark_channel_read,
+    __tauri_command_name_set_members_on_screen,
 };
-pub use unread::{get_unread_counts, mark_channel_read};
+pub use unread::{get_unread_counts, mark_channel_read, set_members_on_screen};
 pub use video::{
     __cmd__default_media_capabilities, __cmd__derive_video_stream_id,
     __cmd__force_native_keyframes, __cmd__list_native_video_devices, __cmd__native_video_active,

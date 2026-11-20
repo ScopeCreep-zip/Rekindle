@@ -158,6 +158,11 @@ pub(crate) async fn daemon_teardown(ctx: &DaemonContext) {
     if let Some(subscriptions) = subscriptions {
         subscriptions.shutdown().await;
     }
+}
+
+/// The daemon's communities and gossip, released after the teardown's own
+/// writes (the quit's beats and their hints need both, plan E3.4).
+pub(crate) fn daemon_release_communities(ctx: &DaemonContext) {
     ctx.communities.clear();
     drop(ctx.broadcast_mgr.write().take());
     ctx.event_watch_tx.send_replace(None);

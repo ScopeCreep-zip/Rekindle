@@ -12,7 +12,9 @@
 //!
 //! The read side is the beat view ([`view`], plan E3.4 S3): the members'
 //! beats the ring and hints deliver, expired locally by the 15-minute rule
-//! in a task of the same scope.
+//! in a task of the same scope, and the members a frontend shows outside
+//! the ring, inspected once per beat period in another (plan E3.4 Q1,
+//! `governance::on_screen`).
 
 pub(crate) mod view;
 
@@ -56,7 +58,12 @@ impl BeatSink for HostBeats {
 
     async fn write_beat(&self, community: &str, state: BeatState) -> Result<(), String> {
         let host = self.host().ok_or("the host is gone")?;
-        host.write_own_beat(community, state).await
+        host.write_own_beat(community, state).await.map(drop)
+    }
+
+    async fn write_quit_beat(&self, community: &str) -> Result<(), String> {
+        let host = self.host().ok_or("the host is gone")?;
+        host.write_quit_beat(community).await
     }
 }
 
@@ -79,7 +86,30 @@ pub(crate) fn start(
     let expiry = ctx.this.clone();
     scope.spawn_with_token("presence expiry", move |stop| {
         view::run_expiry(expiry, stop)
+    })?;
+    let on_screen = ctx.this.clone();
+    scope.spawn_with_token("presence on screen", move |stop| {
+        run_on_screen(on_screen, stop)
     })
+}
+
+/// Inspect the members on screen outside the ring once per beat period
+/// until `stop` (the unlock's scope). A member new on screen is read at
+/// once by its report (`HostGovernance::set_members_on_screen`).
+async fn run_on_screen(ctx: Weak<DaemonContext>, stop: tokio_util::sync::CancellationToken) {
+    let period =
+        std::time::Duration::from_millis(rekindle_presence::community::ON_SCREEN_INSPECT_MS);
+    loop {
+        tokio::select! {
+            biased;
+            () = stop.cancelled() => return,
+            () = tokio::time::sleep(period) => {}
+        }
+        let Some(ctx) = ctx.upgrade() else {
+            return;
+        };
+        HostGovernance::new(ctx).inspect_on_screen().await;
+    }
 }
 
 /// Write our `Departed` beat in `community`, which we are leaving.

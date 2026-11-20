@@ -390,7 +390,10 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
     }
     if let Some(transport) = transport {
         // Offline, once the unlock's tasks (its STATUS publisher among
-        // them) stopped: the teardown's own write on the drained pool.
+        // them) stopped: the teardown's own write on the drained pool,
+        // while the communities and their gossip overlays are still held
+        // (the quit's beat is written to our member record in each and
+        // hinted to its members, plan E3.4).
         transport.admit_records_teardown();
         ctx.own_presence.publish_offline().await;
         let unsent = transport.take_unsent();
@@ -404,6 +407,9 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
         if reason != EndReason::Exit {
             transport.want_routes();
         }
+    }
+    if ctx.mode == HostMode::Daemon {
+        crate::daemon::dispatch::daemon_release_communities(ctx);
     }
     super::unlocked::release(ctx).await;
     if let Some(shell) = shell {

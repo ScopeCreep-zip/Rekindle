@@ -263,6 +263,7 @@ macro_rules! community_commands {
         commands::community::remove_game_server,
         commands::community::get_game_servers,
         commands::community::mark_channel_read,
+        commands::community::set_members_on_screen,
         commands::community::get_unread_counts,
     ] $($rest)*) };
 }

@@ -104,19 +104,39 @@ pub(crate) async fn write_subkey(
     subkey: u32,
     bytes: Vec<u8>,
 ) -> Result<(), String> {
+    write_subkey_seq(port, own, subkey, bytes).await.map(drop)
+}
+
+/// [`write_subkey`], answering the subkey's DHT seq the write left in our
+/// local copy (what a `HeadAdvanced` hint names).
+async fn write_subkey_seq(
+    port: &dyn RecordPort,
+    own: &OwnRecord<'_>,
+    subkey: u32,
+    bytes: Vec<u8>,
+) -> Result<u64, String> {
     let lease = port
         .acquire(own.record, Some(own.writer), OpenIntent::Hold)
         .await
         .map_err(|e| format!("open member record: {e}"))?;
     let written = port.set(lease, subkey, bytes, Some(own.writer)).await;
-    port.release(lease).await;
-    match written.map_err(|e| format!("write member record subkey {subkey}: {e}"))? {
+    let stored = match written.map_err(|e| format!("write member record subkey {subkey}: {e}")) {
         // An identical rewrite (`Unchanged`) is ours on the network too.
-        SetOutcome::Landed | SetOutcome::Unchanged => Ok(()),
-        other => Err(format!(
+        Ok(SetOutcome::Landed | SetOutcome::Unchanged) => port
+            .get(lease, subkey, false)
+            .await
+            .map_err(|e| format!("read back member record subkey {subkey}: {e}"))
+            .and_then(|v| {
+                v.map(|v| u64::from(v.seq))
+                    .ok_or_else(|| format!("member record subkey {subkey} not in the local copy"))
+            }),
+        Ok(other) => Err(format!(
             "member record subkey {subkey} not stored: {other:?}"
         )),
-    }
+        Err(e) => Err(e),
+    };
+    port.release(lease).await;
+    stored
 }
 
 /// Write our card (`M`/0).
@@ -150,7 +170,7 @@ pub async fn write_beat(
         state: profile.status.into(),
         now_ms: profile.now_ms,
     };
-    write_own_beat(port, own, &beat).await
+    write_own_beat(port, own, &beat).await.map(drop)
 }
 
 /// One beat of ours, as the beat engine writes it (plan E3.4 S2).
@@ -162,7 +182,8 @@ pub struct OwnBeat {
     pub now_ms: u64,
 }
 
-/// Write `beat` to our `M`/1, without extras (padded by its encoder).
+/// Write `beat` to our `M`/1, without extras (padded by its encoder); the
+/// subkey's DHT seq it left.
 ///
 /// # Errors
 /// The beat does not encode, or the write did not land.
@@ -170,7 +191,7 @@ pub async fn write_own_beat(
     port: &dyn RecordPort,
     own: &OwnRecord<'_>,
     beat: &OwnBeat,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let beat = PresenceBeat {
         seq: beat.seq,
         state: beat.state,
@@ -181,7 +202,7 @@ pub async fn write_own_beat(
     let bytes = beat
         .encode(own.scope(), own.pseudonym)
         .map_err(|e| format!("presence beat: {e}"))?;
-    write_subkey(port, own, member_record::BEAT, bytes).await
+    write_subkey_seq(port, own, member_record::BEAT, bytes).await
 }
 
 /// Publish our member record in §4.4's order: the card (`M`/0, so the

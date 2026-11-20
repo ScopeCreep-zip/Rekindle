@@ -70,6 +70,12 @@ pub trait BeatSink: Send + Sync {
     /// # Errors
     /// The beat was not written.
     async fn write_beat(&self, community: &str, state: BeatState) -> Result<(), String>;
+    /// Write our quit's `Offline` beat in `community` and tell its members
+    /// at once (a `HeadAdvanced` hint, plan E3.4 "Constant rate").
+    ///
+    /// # Errors
+    /// The beat was not written.
+    async fn write_quit_beat(&self, community: &str) -> Result<(), String>;
 }
 
 #[derive(Default)]
@@ -130,7 +136,9 @@ impl BeatEngine {
         }
         let communities: Vec<String> = schedule.due.keys().cloned().collect();
         for community in communities {
-            self.write(&community, BeatState::Offline).await;
+            if let Err(error) = self.sink.write_quit_beat(&community).await {
+                tracing::warn!(%error, "quit beat not written");
+            }
         }
     }
 

@@ -91,7 +91,7 @@ impl HostGovernance {
 
     /// Write our beat saying `state` to our `M`/1 in `community_id`, under
     /// the next `communities.beat_seq` (plan E3.4 S2, the beat engine's
-    /// sink, `host::adapters::presence`).
+    /// sink, `host::adapters::presence`); the subkey's DHT seq it left.
     ///
     /// # Errors
     /// We hold no member record or keys there, the seq was not persisted,
@@ -100,7 +100,7 @@ impl HostGovernance {
         &self,
         community_id: &str,
         state: BeatState,
-    ) -> Result<(), String> {
+    ) -> Result<u64, String> {
         let keys = self.own_record_keys(community_id)?;
         let port = self.record_port().map_err(|e| e.to_string())?;
         let seq = self
@@ -113,6 +113,36 @@ impl HostGovernance {
             now_ms: self.ctx.clock.now_ms(),
         };
         write_own_beat(&*port, &keys.own(community_id), &beat).await
+    }
+
+    /// Our quit (plan E3.4 "Constant rate": an explicit `offline` beat
+    /// plus a `HeadAdvanced` hint): write our `Offline` beat in
+    /// `community_id`, then gossip the hint for it ourselves, so every
+    /// member reads it within one gossip round instead of after a ring
+    /// watcher's watch notification and relay. Awaited until the fan-out
+    /// holds its peers, since the teardown removes the overlay next.
+    ///
+    /// # Errors
+    /// The beat was not written (no hint is sent).
+    pub(crate) async fn write_quit_beat(&self, community_id: &str) -> Result<(), String> {
+        let seq = self
+            .write_own_beat(community_id, BeatState::Offline)
+            .await?;
+        let keys = self.own_record_keys(community_id)?;
+        let hint = rekindle_codec::member_record::head_advanced::HeadAdvanced {
+            author: keys.pseudonym.verifying_key().to_bytes(),
+            member_record: keys.record.clone(),
+            subkey: rekindle_types::dht_layout::member_record::BEAT,
+            seq,
+        };
+        let hint = hint
+            .encode(community_id, &keys.pseudonym)
+            .map_err(|e| format!("quit hint: {e}"))?;
+        let envelope = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+            rekindle_codec::community::envelope::ControlPayload::HeadAdvanced { hint },
+        );
+        self.send_before_teardown(community_id, &envelope).await;
+        Ok(())
     }
 
     /// Our member record in `community_id` and the keys that write and sign

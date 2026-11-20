@@ -99,6 +99,11 @@ pub struct CommunityState {
     /// `HeadAdvanced` (plan E3.2 S7, §4.5).
     #[serde(skip)]
     pub beat_view: rekindle_presence::community::BeatView,
+    /// The members a frontend shows (plan E3.4 Q1, at most 50), whose
+    /// beats outside the ring are inspected once per beat period
+    /// (`host::adapters::governance::on_screen`).
+    #[serde(skip)]
+    pub on_screen: rekindle_presence::community::OnScreen,
     /// The newest `HeadAdvanced` seq read from the DHT per (member record,
     /// subkey).
     #[serde(skip)]

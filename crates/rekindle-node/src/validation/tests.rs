@@ -579,3 +579,21 @@ fn a_quick_wipe_arming_is_shaped() {
         assert_eq!(status_of(&arm("duress", Some(bad))), Some(400), "{bad}");
     }
 }
+
+/// Plan E3.4 Q1: a frontend reports at most 50 members on screen, each a
+/// pseudonym; a longer report is refused, never cut.
+#[test]
+fn members_on_screen_are_capped_at_fifty_pseudonyms() {
+    use rekindle_ipc::protocol::UnreadRequest;
+    let report = |members: Vec<String>| {
+        IpcRequest::Community(CommunityRequest::Unread(UnreadRequest::MembersOnScreen {
+            community: "c".into(),
+            members,
+        }))
+    };
+    let keys = |n: usize| (0..n).map(|i| format!("{i:064x}")).collect::<Vec<_>>();
+    assert!(!rejected(&report(keys(50))));
+    assert!(!rejected(&report(Vec::new())));
+    assert!(rejected(&report(keys(51))));
+    assert!(rejected(&report(vec!["not hex".into()])));
+}

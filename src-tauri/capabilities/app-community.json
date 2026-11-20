@@ -79,6 +79,7 @@
     "allow-list-event-attendees",
     "allow-list-community-blocks",
     "allow-mark-channel-read",
+    "allow-set-members-on-screen",
     "allow-mark-onboarding-complete",
     "allow-move-channel",
     "allow-native-video-capture-available",

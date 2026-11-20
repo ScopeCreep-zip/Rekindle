@@ -226,9 +226,9 @@ pub(super) async fn route_unread(
 ) -> IpcResponse {
     match request {
         // ── Unread (plan E3.1 G1) ────────────────────────────────
-        request @ (UnreadRequest::ChannelMarkRead { .. } | UnreadRequest::UnreadCounts { .. }) => {
-            unread::handle(ctx, state, request).await
-        }
+        request @ (UnreadRequest::ChannelMarkRead { .. }
+        | UnreadRequest::UnreadCounts { .. }
+        | UnreadRequest::MembersOnScreen { .. }) => unread::handle(ctx, state, request).await,
     }
 }
 

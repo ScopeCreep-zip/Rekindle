@@ -59,6 +59,10 @@ impl BeatSink for Sink {
         self.writes.lock().push((at, community.to_owned(), state));
         Ok(())
     }
+
+    async fn write_quit_beat(&self, community: &str) -> Result<(), String> {
+        self.write_beat(community, BeatState::Offline).await
+    }
 }
 
 fn start(

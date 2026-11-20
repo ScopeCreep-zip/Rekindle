@@ -46,6 +46,19 @@ fn unread_fields(request: &UnreadRequest) -> Checked {
             text(up_to, MAX_UNREAD_ID_LEN, "message id")
         }
         UnreadRequest::UnreadCounts { community: key } => community(key),
+        UnreadRequest::MembersOnScreen {
+            community: key,
+            members,
+        } => {
+            community(key)?;
+            if members.len() > rekindle_presence::community::MEMBERS_ON_SCREEN_MAX {
+                return Err(IpcResponse::error(
+                    400,
+                    "more members on screen than the Host inspects",
+                ));
+            }
+            members.iter().try_for_each(|m| pseudonym(m, "member"))
+        }
     }
 }
 
@@ -320,9 +333,9 @@ pub(super) fn check_messages(request: &ChannelMessageRequest) -> Checked {
 /// `check` for the read marker requests.
 pub(super) fn check_unread(request: &UnreadRequest) -> Checked {
     match request {
-        request @ (UnreadRequest::ChannelMarkRead { .. } | UnreadRequest::UnreadCounts { .. }) => {
-            unread_fields(request)
-        }
+        request @ (UnreadRequest::ChannelMarkRead { .. }
+        | UnreadRequest::UnreadCounts { .. }
+        | UnreadRequest::MembersOnScreen { .. }) => unread_fields(request),
     }
 }
 

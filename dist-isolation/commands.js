@@ -262,6 +262,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "set_input_channels",
   "set_link_previews_enabled",
   "set_login_skin",
+  "set_members_on_screen",
   "set_mute",
   "set_nickname",
   "set_notification_sound",

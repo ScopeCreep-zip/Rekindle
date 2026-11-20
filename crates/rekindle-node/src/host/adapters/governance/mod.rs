@@ -69,6 +69,7 @@ mod member_events;
 mod membership;
 mod membership_roster;
 mod membership_route;
+mod on_screen;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_map;
 mod ops;

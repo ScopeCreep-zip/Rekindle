@@ -130,3 +130,42 @@ async fn a_beat_number_an_hour_ahead_counts_from_its_arrival() {
     );
     community.sim.fault(Fault::Heal);
 }
+
+/// Plan E3.4 "Constant rate": a quit writes an explicit `Offline` beat and
+/// gossips its `HeadAdvanced` hint, so every member shows the quitter
+/// offline within one gossip round (a hop and the beat's read), not 15
+/// minutes later.
+const GOSSIP_ROUND: Duration = Duration::from_secs(3);
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_quit_is_seen_within_one_gossip_round() {
+    let community = Community::of(3, 4312).await;
+    let creator = community.pseudonym(0).await;
+    for reader in [1, 2] {
+        assert!(
+            shows(
+                &community,
+                reader,
+                &creator,
+                BeatState::Online,
+                Duration::from_secs(600)
+            )
+            .await,
+            "node {reader} shows the creator online"
+        );
+    }
+    community.nodes[0].ok(IpcRequest::Lock).await;
+    for reader in [1, 2] {
+        assert!(
+            shows(
+                &community,
+                reader,
+                &creator,
+                BeatState::Offline,
+                GOSSIP_ROUND
+            )
+            .await,
+            "node {reader} shows the quit creator offline within {GOSSIP_ROUND:?}"
+        );
+    }
+}

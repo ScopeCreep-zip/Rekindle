@@ -193,6 +193,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("remove_game_server", HostCall::Request("GameServerRemove")),
     ("get_game_servers", HostCall::Request("GameServerList")),
     ("mark_channel_read", HostCall::Request("ChannelMarkRead")),
+    (
+        "set_members_on_screen",
+        HostCall::Request("MembersOnScreen"),
+    ),
     ("get_unread_counts", HostCall::Request("UnreadCounts")),
     ("get_audit_log", HostCall::Request("AuditLog")),
     (

@@ -46,6 +46,7 @@ pub(crate) const TAURI_LIVE_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("remove_game_server", Some(IntentKind::RemoveGameServer)),
     ("get_game_servers", None),
     ("mark_channel_read", None),
+    ("set_members_on_screen", None),
     ("get_unread_counts", None),
     ("join_voice_channel", Some(IntentKind::JoinVoiceChannel)),
     ("leave_voice", Some(IntentKind::LeaveVoice)),

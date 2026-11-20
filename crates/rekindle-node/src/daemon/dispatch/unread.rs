@@ -44,5 +44,13 @@ pub(crate) async fn handle(
                 Err(e) => runtime_refused(&e, "unread counts"),
             }
         }
+        UnreadRequest::MembersOnScreen { community, members } => {
+            let membership = match ctx.resolve_community(&community) {
+                Ok(m) => m,
+                Err(e) => return e,
+            };
+            adapter(ctx).set_members_on_screen(&membership.anchor, members);
+            IpcResponse::ok(&())
+        }
     }
 }

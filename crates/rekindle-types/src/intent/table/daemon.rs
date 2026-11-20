@@ -214,6 +214,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("RoleUpdate", Some(IntentKind::EditRole)),
     ("RoleDelete", Some(IntentKind::DeleteRole)),
     ("ChannelMarkRead", None),
+    ("MembersOnScreen", None),
     ("UnreadCounts", None),
     ("GameServerList", None),
     ("AuditLog", None),

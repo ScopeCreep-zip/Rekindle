@@ -140,7 +140,7 @@ impl HostGovernance {
         )
         .await
         .map_err(|e| format!("community leave failed: {e}"))?;
-        self.send_departure(&id, &left.departure_notice).await;
+        self.send_before_teardown(&id, &left.departure_notice).await;
         // A follow-up a rebuild scheduled after the loops stopped started
         // on a fresh community scope: stop it before the ring is released.
         let late_tasks = self.ctx.community_scopes.lock().remove(&id);
@@ -175,17 +175,17 @@ impl HostGovernance {
         Ok(())
     }
 
-    /// Gossip our departure while the community's overlay still holds its
-    /// peers: the daemon's worker is awaited until the fan-out has them,
+    /// Gossip our departure (or our quit's hint) while the community's
+    /// overlay still holds its peers: the daemon's worker is awaited until the fan-out has them,
     /// since the teardown that follows removes the overlay.
-    async fn send_departure(
+    pub(super) async fn send_before_teardown(
         &self,
         community: &str,
         notice: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) {
         if let Some(shell) = &self.ctx.shell {
             if let Err(e) = shell.send_to_mesh(community, notice) {
-                tracing::warn!(community, error = %e, "departure not gossiped");
+                tracing::warn!(community, error = %e, "gossip before teardown not sent");
             }
             return;
         }
