@@ -395,6 +395,8 @@
 .invite-cancel-btn	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false
 .invite-copy-btn	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
 .invite-copy-btn	text hovered	var(--color-xfire-accent-fg)	--color-xfire-accent 80% over --color-xfire-fill-shade	1.0	false
+.invite-fingerprint	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.invite-fingerprint code	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .invite-status-badge	text	var(--color-xfire-offline-text)	--color-xfire-offline 12% over --color-xfire-bg-panel	1.0	false
 .invite-status-badge.responded	text	var(--color-xfire-success)	--color-xfire-success 30% over --color-xfire-bg-panel	1.0	false
 .invite-time	text	var(--color-xfire-offline-text)	--color-xfire-bg-panel	1.0	false
@@ -661,6 +663,7 @@
 .settings-role-position	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .settings-section-title	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .settings-section-title	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.settings-subheading	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .settings-subsection-title	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .settings-value	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .settings-value-mono	text	var(--color-xfire-text-status)	--color-xfire-bg-panel	1.0	false
