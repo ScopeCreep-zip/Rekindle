@@ -67,6 +67,8 @@ mod skin_serve;
 #[cfg(unix)]
 #[path = "skin_trial_tests.rs"]
 mod skin_trial;
+#[path = "withdrawal_tests.rs"]
+mod withdrawal;
 
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     offline_host_with(dir, None).await

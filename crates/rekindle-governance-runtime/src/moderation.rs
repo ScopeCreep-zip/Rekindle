@@ -104,13 +104,7 @@ pub async fn leave<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
 ) -> Result<Departure, GovernanceRuntimeError> {
-    let me = deps
-        .community_membership(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_owned()))?
-        .my_pseudonym_hex
-        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_owned()))?;
-    let heads = deps.departed_slot_heads(community_id, &me).await?;
-    apply::write_departure(deps, community_id, GovernanceEntry::MemberLeft { heads }).await
+    apply::write_departure(deps, community_id).await
 }
 
 /// What our [`leave`] did.

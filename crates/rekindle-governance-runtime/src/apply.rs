@@ -151,21 +151,39 @@ enum Written {
     NotAdmitted(String),
 }
 
-/// Our `MemberLeft` (`entry`), unless the merged state never admitted our
-/// join: then nothing is authored and [`Departure::Withdrawn`] answers,
-/// decided in the same locked state read the op would be built on (plan
+/// Our `MemberLeft`, unless the merged state never admitted our join:
+/// then nothing is authored and [`Departure::Withdrawn`] answers (plan
 /// SU1, the withdrawal decision; ADR 0011: membership is the merged
 /// state's alone).
+///
+/// Admission is decided first, in a locked state read, before our slot
+/// heads are read from the DHT: a withdrawn join has no heads to record,
+/// so the read would be wasted. A join admitted there is decided again in
+/// the locked state the op is built on ([`write_with`]), so a leave never
+/// authors on a state that does not admit us.
+///
+/// [`Departure::Withdrawn`]: crate::moderation::Departure::Withdrawn
 pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    entry: GovernanceEntry,
 ) -> Result<crate::moderation::Departure, GovernanceRuntimeError> {
     use crate::moderation::Departure;
+    let me = {
+        let lock = deps.rebuild_lock(community_id);
+        let _installing = lock.lock().await;
+        let gov_state = deps.governance_state(community_id).ok_or_else(|| {
+            GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string())
+        })?;
+        op_log::own_member(deps, community_id, &gov_state)?
+    };
+    if me.record.is_none() {
+        return Ok(Departure::Withdrawn);
+    }
+    let heads = deps.departed_slot_heads(community_id, &me.hex).await?;
     let written = write_with(
         deps,
         community_id,
-        entry,
+        GovernanceEntry::MemberLeft { heads },
         OpLanding::FirstAttempt,
         op_log::Deps::Frontier,
         NotAdmitted::Withdraw,
