@@ -52,6 +52,9 @@ impl DmOutbox for Rows {
     }
     fn echo_failed(&self, _: Vec<Row>, _: &str) {}
     fn wake(&self) {}
+    async fn bring_forward(&self, _: &str) -> Result<usize, FriendError> {
+        Err(unused())
+    }
     async fn acknowledge_client(&self, _: &str) -> Result<bool, FriendError> {
         Err(unused())
     }

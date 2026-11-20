@@ -124,3 +124,22 @@ pub async fn fetch_from_mailbox(host: &dyn FriendHost, peer: &str) -> Option<Vec
         }
     }
 }
+
+/// `peer` is reachable again (a new route on their watched profile, or
+/// their accept opened our session): our rows to them that wait out a
+/// backoff are attempted now, not at their next due time (live finding
+/// L-FR2; the event drives it, no poll, D4). On the session scope, for a
+/// caller inside an apply or a watch callback.
+pub fn reachable_again(host: &dyn FriendHost, peer: &str, why: &'static str) {
+    let Ok(outbox) = host.outbox() else {
+        return;
+    };
+    let peer = peer.to_string();
+    host.scope()
+        .spawn_or_drop("bring a peer's rows forward", async move {
+            match outbox.bring_forward(&peer).await {
+                Ok(moved) => tracing::debug!(moved, why, "waiting rows brought forward"),
+                Err(e) => tracing::warn!(error = %e, why, "waiting rows not brought forward"),
+            }
+        });
+}

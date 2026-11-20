@@ -449,6 +449,18 @@ impl DmOutbox for DmStream {
         self.0.wake();
     }
 
+    async fn bring_forward(&self, peer: &str) -> Result<usize, FriendError> {
+        let mut moved = 0;
+        for kind in [StreamKind::FriendHandshake, StreamKind::Dm] {
+            moved += self
+                .0
+                .bring_forward(kind, peer)
+                .await
+                .map_err(|e| failed(&e))?;
+        }
+        Ok(moved)
+    }
+
     async fn acknowledge_client(&self, client_id: &str) -> Result<bool, FriendError> {
         let acked = self
             .0

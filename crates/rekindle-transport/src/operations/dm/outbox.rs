@@ -92,6 +92,10 @@ pub trait DmOutbox: Send + Sync {
     /// A row was committed outside the engine (the friend list's, with
     /// the change that queued it): attempt the due rows now.
     fn wake(&self);
+    /// Our backing-off `friend_handshake` and `dm` rows to `peer` are due now (L-FR2).
+    /// # Errors
+    /// The storage failed.
+    async fn bring_forward(&self, peer: &str) -> Result<usize, FriendError>;
     /// The peer acknowledged row `client_id` by a frame naming no stream
     /// seq (`UnfriendedAck`); `false` when no row waits.
     ///

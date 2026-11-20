@@ -17,6 +17,7 @@ use crate::stream::StreamKind;
 
 mod attempts;
 mod discard;
+mod forward;
 mod landed;
 
 /// The wait before the next pass after the storage failed.

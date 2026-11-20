@@ -278,6 +278,8 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
     }));
     // What they wrote before this accept reached us (plan E2.5i R2-2).
     crate::operations::direct::held::release_soon(host, a.sender_hex);
+    // What we wrote before it, deferred for want of a session, goes now.
+    crate::operations::dm::route::reachable_again(host, a.sender_hex, "their accept");
     true
 }
 

@@ -210,10 +210,23 @@ impl FriendPresenceDeps for HostFriends {
     }
 
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>) {
-        if let Some(node) = self.ctx().transport.read().as_ref() {
-            node.peers().write().cache_route(friend_key, blob);
-        }
+        let changed = self.ctx().transport.read().as_ref().is_some_and(|node| {
+            let peers = node.peers();
+            let mut registry = peers.write();
+            let changed = registry.get_route(friend_key) != Some(blob.as_slice());
+            registry.cache_route(friend_key, blob);
+            changed
+        });
         self.peer_heard(friend_key);
+        // Their watched profile names a route we did not hold: our rows to
+        // them waiting out a backoff go over it now (live finding L-FR2).
+        if changed {
+            rekindle_transport::operations::dm::route::reachable_again(
+                self,
+                friend_key,
+                "their profile route changed",
+            );
+        }
     }
 
     async fn acquire_friend_record(&self, dht_record_key: &str) -> Result<LeaseId, PresenceError> {
