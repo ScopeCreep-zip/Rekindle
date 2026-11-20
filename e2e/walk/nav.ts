@@ -3,7 +3,7 @@
 // menu bar, the Settings window and modals.
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, WAIT_MS, byText, gone, present, press, resolveIntent, shown, switchTo, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, WAIT_MS, byText, gone, present, press, resolveIntent, shown, switchTo, typeInto, waitUntil } from "./helpers.ts";
 
 export const LOGIN = "login";
 export const BUDDY = "buddy-list";
@@ -201,4 +201,24 @@ export async function openAddFriend(b: Browser): Promise<void> {
     await (await shown(b, '[aria-label="Add Friend"]')).click();
     await shown(b, ".form-tabs-equal");
   }
+}
+
+/** Submit an invite in the open Join Community modal (JoinCommunityModal.tsx). */
+export async function submitJoin(b: Browser, link: string, passphrase: string): Promise<void> {
+  await typeInto(await shown(b, 'input[placeholder="rekindle://invite/..."]'), link);
+  await (await b.$('.modal-container button[type="submit"]')).click();
+  await resolveIntent(b, { passphrase, appearMs: 3000 });
+  // A refused join keeps the modal open with the Host's reason in
+  // `.form-error` (SimpleInputModal.tsx:47-49, lifecycle.ts:60-68): report it.
+  let refused = "";
+  await waitUntil(
+    async () => {
+      const err = await b.$(".modal-container .form-error");
+      if ((await err.isExisting()) && (await err.isDisplayed())) refused = await err.getText();
+      return refused !== "" || !(await present(b, 'input[placeholder="rekindle://invite/..."]'));
+    },
+    NET_WAIT_MS,
+    'input[placeholder="rekindle://invite/..."] still displayed after the join, with no error',
+  );
+  if (refused) throw new Error(`join refused: ${refused}`);
 }

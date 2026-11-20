@@ -8,7 +8,7 @@
 
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, present, press, resolveIntent, shown, typeInto, waitUntil } from "./helpers.ts";
-import { inBuddy } from "./nav.ts";
+import { inBuddy, submitJoin } from "./nav.ts";
 import { closeCommunityModal, contextMenu, inCommunity, menuHasItems, openCommunitySettings } from "./rows-community.ts";
 import { needPeer } from "./rows-peer.ts";
 import type { Row } from "./rows.ts";
@@ -32,26 +32,6 @@ async function createInvite(b: Browser, passphrase: string): Promise<string> {
   if (!link.startsWith("rekindle://invite/")) throw new Error(`the new invite shows no link: "${link.slice(0, 40)}"`);
   await closeCommunityModal(b);
   return link;
-}
-
-/** Submit an invite in the open Join Community modal (JoinCommunityModal.tsx). */
-async function submitJoin(b: Browser, link: string, passphrase: string): Promise<void> {
-  await typeInto(await shown(b, 'input[placeholder="rekindle://invite/..."]'), link);
-  await (await b.$('.modal-container button[type="submit"]')).click();
-  await resolveIntent(b, { passphrase, appearMs: 3000 });
-  // A refused join keeps the modal open with the Host's reason in
-  // `.form-error` (SimpleInputModal.tsx:47-49, lifecycle.ts:60-68): report it.
-  let refused = "";
-  await waitUntil(
-    async () => {
-      const err = await b.$(".modal-container .form-error");
-      if ((await err.isExisting()) && (await err.isDisplayed())) refused = await err.getText();
-      return refused !== "" || !(await present(b, 'input[placeholder="rekindle://invite/..."]'));
-    },
-    NET_WAIT_MS,
-    'input[placeholder="rekindle://invite/..."] still displayed after the join, with no error',
-  );
-  if (refused) throw new Error(`join refused: ${refused}`);
 }
 
 /** The peer joins the walk's community from its buddy list (B61's steps). */

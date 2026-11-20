@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, doubleClick, gone, present, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, inBuddy, openAddFriend } from "../walk/nav.ts";
+import { BUDDY, LOGIN, inBuddy, openAddFriend, submitJoin } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
 export interface User {
@@ -237,4 +237,40 @@ export async function createInvite(b: Browser, user: User, uses: number): Promis
   await (await shown(b, ".modal-container .modal-close-btn")).click();
   await gone(b, ".modal-container");
   return link;
+}
+
+/**
+ * `user` joins by `link` from the buddy list's Communities tab (Join
+ * Community, JoinCommunityModal.tsx; a refusal fails with the Host's
+ * reason, `submitJoin`), and community `name` is listed.
+ */
+export async function joinCommunity(b: Browser, user: User, link: string, name: string): Promise<void> {
+  await whenConnected(b);
+  await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
+  await (await shown(b, '[aria-label="Join Community"]')).click();
+  await submitJoin(b, link, user.passphrase);
+  await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS);
+}
+
+/**
+ * From now on, record every `console.warn` and `console.error` the window
+ * `b` is on writes (they still print), so a spec can assert one never
+ * happened; `consoleSeen` reads them. Lasts until the page reloads.
+ */
+export async function watchConsole(b: Browser): Promise<void> {
+  await b.execute(`if (!window.__rekindleConsole) {
+  window.__rekindleConsole = [];
+  for (const level of ["warn", "error"]) {
+    const original = console[level].bind(console);
+    console[level] = (...args) => {
+      window.__rekindleConsole.push(level + ": " + args.map((a) => (a instanceof Error ? a.message : typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+      original(...args);
+    };
+  }
+}`);
+}
+
+/** What `watchConsole` recorded in the window `b` is on. */
+export async function consoleSeen(b: Browser): Promise<string[]> {
+  return (await b.execute("return window.__rekindleConsole || null;")) as string[];
 }
