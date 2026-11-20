@@ -469,14 +469,24 @@ pub(crate) async fn run(
 }
 
 /// The latency stream of a set of `value` at `key`/`subkey`: its RPCs'
-/// durations come from the seed and the write alone, never from what the
-/// node's other calls drew before it. Tokio wakes tasks due at one instant
+/// durations come from the seed and the write's seed-determined identity
+/// (record key, subkey, seq, writer) alone, never from what the node's
+/// other calls drew before it. Tokio wakes tasks due at one instant
 /// in an order the seed does not fix (`select!` polls its branches from an
 /// unseeded generator), so one stream shared by every call of a node would
 /// hand a set different durations, and its replicas' answers a different
 /// order, from run to run on the same seed: which value a contested set
 /// settles on is decided by that order (0.5.8 `set_value.rs:94-109`,
 /// `value_tally.rs:37-45`).
+///
+/// The value's bytes stay out: the application seals what it stores with an
+/// `OsRng` nonce (`rekindle-secrets` `mek.rs:83`, `group_dm.rs:107`), so the
+/// same seed writes other bytes each run, and wire bytes never steer the
+/// trace (`network.rs` delivery). The rest still names one set: rivals at a
+/// seq come from other nodes or writers (the node is in the stream's seed),
+/// and one node's sets of a subkey run one at a time under its slot
+/// (`write.rs`), so a second set at the same seq continues the stream in
+/// that order.
 fn set_stream(key: &str, subkey: u32, value: &rekindle_records::port::RecordValue) -> u64 {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"rekindle-netsim set stream");
@@ -484,7 +494,6 @@ fn set_stream(key: &str, subkey: u32, value: &rekindle_records::port::RecordValu
     hasher.update(&subkey.to_le_bytes());
     hasher.update(&value.seq.to_le_bytes());
     hasher.update(value.writer.as_bytes());
-    hasher.update(&value.data);
     let mut first = [0u8; 8];
     first.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
     u64::from_le_bytes(first)
