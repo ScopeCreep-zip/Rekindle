@@ -22,16 +22,12 @@ use rekindle_types::dto::skin::{FrameTile, SkinWindow, TileAxis, WindowLayout};
 
 use super::super::tree::Node;
 use super::super::ImportError;
+use super::decor::num;
 use super::tiles::normal_set;
 use crate::shape::{self, SCALE_ONE};
 
 fn eq(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
-}
-
-fn num(tile: &Node, attr: &str) -> Option<u16> {
-    tile.attr_ci(attr)
-        .map_or(Some(0), |v| v.trim().parse().ok())
 }
 
 /// `tile`'s (`X`, y axis, `IndentRight`, `Z`) when it is a row: stretched

@@ -36,7 +36,7 @@ fn eq(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
 }
 
-fn num(tile: &Node, attr: &str) -> Option<u16> {
+pub(super) fn num(tile: &Node, attr: &str) -> Option<u16> {
     tile.attr_ci(attr)
         .map_or(Some(0), |v| v.trim().parse().ok())
 }
