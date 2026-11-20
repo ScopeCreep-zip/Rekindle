@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-idle"
 version = "0.1.0"
+publish = false
 edition = "2021"
 license = "MIT"
 description = "Cross-platform OS idle-time detection for Rekindle (auto-away)"

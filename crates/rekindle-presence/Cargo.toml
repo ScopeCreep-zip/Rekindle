@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-presence"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Phase 21 — presence primitives (status enum + idle decisions + presence-poll bucket timing). Pure decision/timing logic; AppState orchestration stays in src-tauri."
 license = "MIT"

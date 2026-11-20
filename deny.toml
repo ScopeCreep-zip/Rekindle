@@ -67,6 +67,25 @@ ignore = [
     # still bundles SQLite 3.53.4 (sqlcipher-src 419.0.6), and veilid-core's
     # pinned tree requires rusqlite 0.39 -> libsqlite3-sys 0.37.
     { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache disclosure needs a crafted db+wal pair in the owner-only data root (write access to the data root: A6 gains nothing; A7-with-write residual risk tracked in plan SC1); no patched SQLCipher bundle exists and veilid-core pins rusqlite 0.39 (review by 2027-02-20)" },
+    # ── Unmaintained (plan SC1, 2026-11-20). Fixed at the cause in this
+    # slice: `backoff` (unused dependency of rekindle-transport, removed;
+    # also drops its `instant` path), `bincode` (rekindle-voice's receiver
+    # report now uses postcard, our wire codec), `atty` (clap 3 came only
+    # from nnnoiseless's default `bin` CLI feature, now off). Each entry
+    # below has no maintained drop-in today; the reason names who pulls it.
+    { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill: via heapless 0.7 <- postcard 1 (our wire codec, pinned to it); on our targets it re-exports core atomics; goes with postcard's heapless bump (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0150", reason = "audiopus_sys: libopus build crate under opus 0.3 (rekindle-voice, rekindle-files); libopus itself is maintained; advisory is the CMake 4 build break, not a defect in code; replacing the Opus binding is its own media-engine slice (ADR 0015) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono: our direct use (quiet hours, CLI/TUI/xtask timestamps) moves to a maintained time crate in its own slice with chrono-tz; no safe upgrade exists (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz: quiet-hours IANA zones in src-tauri; replaced together with chrono in its own slice; no safe upgrade exists (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0559", reason = "chrono-tz-build: build-time only, under chrono-tz 0.9; goes with it (review by 2027-02-20)" },
+    { id = "RUSTSEC-2024-0384", reason = "instant: via parking_lot 0.11 <- reed-solomon-erasure 6 (rekindle-video FEC, latest release); on native targets it is std::time::Instant (review by 2027-02-20)" },
+    { id = "RUSTSEC-2024-0436", reason = "paste: build-time proc-macro under veilid-core's pinned tree (netlink, macro_rules_attribute; ADR 0017 forbids bumping it here) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils: via futures-util 0.3 (the whole async stack); a one-macro crate with no open defect; goes when futures-util drops it (review by 2027-02-20)" },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: build-time proc-macro under glib-macros/gtk3-macros 0.18, pinned by tauri/wry's GTK 3 stack (Linux only) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2: build-time proc-macro under hax-lib-macros <- libcrux-ml-kem 0.0.12 (pinned for RUSTSEC-2026-0212, KAT-tested) (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: folded into zbus upstream; zbus 5 is ours (os_notify, portal_shortcuts) and notify-rust's/tauri plugins'; all move together on the next zbus release they take (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: folded into zbus upstream; moves with zbus 5 as above (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: build-time, folded into zbus upstream; moves with zbus 5 as above (review by 2027-02-20)" },
 ]
 
 # ─── Licenses ───────────────────────────────────────────────────────────
@@ -134,16 +153,43 @@ license-files = [ { path = "LICENSE", hash = 0xbd0eed23 } ]
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace path dependencies carry no version (plan SC1, 2026-11-20):
+# every workspace crate is `publish = false` (Rekindle ships binaries,
+# docs/contributor/release-process.md, never crates), so a path dep is
+# always the in-tree copy; a version on it would only restate the
+# workspace. Registry and git dependencies still need versions/revs.
+allow-wildcard-paths = true
 highlight = "all"
 deny = [
-    # OpenSSL bindings are forbidden — we use Rustls / RustCrypto / ring.
-    # Tauri pulls in `openssl` indirectly on some platforms; if the
-    # check fires for that reason, file an upstream issue rather than
-    # whitelisting here.
-    { name = "openssl-sys", reason = "Use Rustls / RustCrypto / ring instead." },
+    # OpenSSL bindings are forbidden — we use Rustls / RustCrypto / ring
+    # (docs/security/supply-chain-policy.md §2). Tauri pulls in `openssl`
+    # indirectly on some platforms; if the check fires for that reason,
+    # file an upstream issue rather than whitelisting here.
+    #
+    # One recorded exception (plan SC1, 2026-11-20): `libsqlite3-sys` may
+    # link it, because SQLCipher is C and its page cipher needs a C crypto
+    # provider (OpenSSL, LibTomCrypt, NSS or Apple CommonCrypto); no Rust
+    # crypto crate can serve it. Our `rusqlite/bundled-sqlcipher-vendored-
+    # openssl` (rekindle-db, rekindle-vault; one libsqlite3 per process,
+    # SQLCipher winning feature unification, CLAUDE.md DB note, ADR 0017's
+    # veilid-core tree needing rusqlite 0.39) builds OpenSSL statically
+    # from the pinned `openssl-src` and SQLCipher is its only caller: no
+    # Rust code reaches it, and it serves only the at-rest page cipher
+    # (crypto-primitives.md: AES-256-CBC + HMAC-SHA512 via SQLCipher).
+    # Any other crate linking `openssl-sys` still fails here. Next slice:
+    # Apple targets take SQLCipher's CommonCrypto provider (`bundled-
+    # sqlcipher` alone selects `SQLCIPHER_CRYPTO_CC`, libsqlite3-sys 0.37
+    # build.rs), proved by opening a committed database written by the
+    # OpenSSL build; Linux and Windows keep the vendored OpenSSL.
+    { crate = "openssl-sys", wrappers = ["libsqlite3-sys"], reason = "Use Rustls / RustCrypto / ring instead; only SQLCipher (libsqlite3-sys) may link it, as its C page-cipher provider." },
 
-    # Old-style ed25519 / x25519 wrappers — only the dalek implementations are vetted.
-    { name = "ed25519", reason = "Use ed25519-dalek directly." },
+    # The `ed25519` crate is RustCrypto's signature-type/trait crate. It
+    # lets any Ed25519 backend plug in behind one type; only the dalek
+    # implementation is vetted (crypto-primitives.md §1), so no crate but
+    # `ed25519-dalek` may depend on it. Both copies in the tree are
+    # dalek's own (ours via ed25519-dalek 2.2, veilid-core-optimized's via
+    # ed25519-dalek 3.0, plan SC1).
+    { crate = "ed25519", wrappers = ["ed25519-dalek"], reason = "Only the vetted ed25519-dalek may use the ed25519 signature crate; depend on ed25519-dalek directly." },
 
     # ─── Tier-2 sole crypto boundary (PENDING enforcement) ──────────────
     #

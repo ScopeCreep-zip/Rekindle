@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-channel"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Phase 19 — community channel messaging (send / receive / threads / reactions / expressions / mentions) layered on top of rekindle-mek-rotation + rekindle-gossip"
 license = "MIT"

@@ -28,7 +28,7 @@ Before starting, make sure:
 ```sh
 # Rust
 cargo audit
-cargo deny check
+cargo deny check   # also run by `cargo xtask check` (check-supply-chain)
 
 # JavaScript
 pnpm audit --prod --audit-level high

@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-client"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Shared client for Rekindle frontends: the daemon connection, on-demand start, config and display helpers"
 license = "MIT"

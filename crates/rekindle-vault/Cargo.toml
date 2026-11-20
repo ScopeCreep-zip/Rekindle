@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-vault"
 version = "0.1.0"
+publish = false
 edition = "2021"
 license = "MIT"
 description = "Double-encrypted SQLCipher vault for Rekindle (SQLCipher page-level AES-256-CBC + per-entry AES-256-GCM)"

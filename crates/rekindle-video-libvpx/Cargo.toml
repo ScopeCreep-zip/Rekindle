@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-video-libvpx"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Cross-platform libvpx (VP8/VP9) realtime encoder implementing rekindle-video's VideoEncoder trait — feature-gated, default OFF"
 license = "MIT"

@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-media-bwe"
 version = "0.1.0"
+publish = false
 edition = "2021"
 license = "MIT"
 description = "GoogCC send-side bandwidth estimation and leaky-bucket pacer, copied from str0m 0.24.1 (see NOTICE)"

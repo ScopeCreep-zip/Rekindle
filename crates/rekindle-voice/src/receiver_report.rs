@@ -143,7 +143,7 @@ impl VoiceReceiverReport {
 
     /// Serialize to wire bytes, `b'R'`-tagged for the dispatch loop.
     pub fn to_wire(&self) -> Result<Vec<u8>, VoiceError> {
-        let payload = bincode::serialize(self)
+        let payload = postcard::to_allocvec(self)
             .map_err(|e| VoiceError::Transport(format!("receiver report encode: {e}")))?;
         let mut data = Vec::with_capacity(1 + payload.len());
         data.push(RECEIVER_REPORT_TAG);
@@ -156,7 +156,7 @@ impl VoiceReceiverReport {
     /// Expects data **without** the `b'R'` tag — the dispatch loop
     /// strips it, mirroring [`crate::transport::VoiceTransport::receive`].
     pub fn from_wire(data: &[u8]) -> Result<Self, VoiceError> {
-        let report: Self = bincode::deserialize(data)
+        let report: Self = postcard::from_bytes(data)
             .map_err(|e| VoiceError::Transport(format!("receiver report decode: {e}")))?;
         let sig_arr: [u8; 64] = report
             .signature

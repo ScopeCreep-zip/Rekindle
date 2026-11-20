@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-media-stats"
 version = "0.1.0"
+publish = false
 edition = "2021"
 license = "MIT"
 description = "Realtime media quality measurement — RFC 3550 jitter, RFC 3611 burst/gap, ITU-T G.107 MOS"

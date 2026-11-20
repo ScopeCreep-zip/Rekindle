@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-dm"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Group DMs — signed rosters, sender-owned keys, admission of roster members (plan E2.6)"
 license = "MIT"

@@ -5,6 +5,8 @@
 //!
 //!     cargo xtask check                Run the full guardrail bundle.
 //!     cargo xtask check-boundaries     Crate-import tier boundaries.
+//!     cargo xtask check-supply-chain   `cargo deny check` (advisories, bans,
+//!                                      licenses, sources; deny.toml).
 //!     cargo xtask check-file-sizes     600-line ceiling, unconditional.
 //!     cargo xtask check-allow-reasons  Every `#[allow(...)]` has reason="…".
 //!     cargo xtask check-domain-literals
@@ -140,6 +142,7 @@ mod sec_styles;
 mod sec_surfaces;
 mod sidecars;
 mod sqlite;
+mod supply_chain;
 mod theme_literals;
 mod veilid_boundary;
 mod veilid_dht_calls;
@@ -165,6 +168,8 @@ enum Command {
     Check,
     /// Verify crate-import tier boundaries (rekindle-secrets sole crypto, etc).
     CheckBoundaries,
+    /// Run `cargo deny check` over advisories, bans, licenses and sources.
+    CheckSupplyChain,
     /// Verify no frontend crate links the backend (veilid, transport, node…).
     CheckFrontendBoundaries,
     /// Verify the unconditional 600-line file-size ceiling.
@@ -424,6 +429,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "workspace-lints",
                     Box::new(|| duplication::check_workspace_lints(&root)),
                 ),
+                (
+                    "supply-chain",
+                    Box::new(|| supply_chain::check_supply_chain(&root)),
+                ),
             ] {
                 println!("\n── xtask: {label}");
                 if let Err(e) = runner() {
@@ -439,6 +448,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
             Ok(())
         }
         Command::CheckBoundaries => boundaries::check_boundaries(&root),
+        Command::CheckSupplyChain => supply_chain::check_supply_chain(&root),
         Command::CheckFrontendBoundaries => frontend_boundaries::check_frontend_boundaries(&root),
         Command::CheckFileSizes => file_sizes::check_file_sizes(&root),
         Command::CheckAllowReasons => allow_reasons::check_allow_reasons(&root),

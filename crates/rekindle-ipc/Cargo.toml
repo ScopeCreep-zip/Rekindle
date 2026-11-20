@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-ipc"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Rekindle IPC bus — wire protocol, Noise IK, framing, client, server, event router (Tier 3; no Veilid, no storage)"
 license = "MIT"

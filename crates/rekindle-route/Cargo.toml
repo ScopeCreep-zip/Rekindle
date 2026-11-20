@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-route"
 version = "0.1.0"
+publish = false
 edition = "2021"
 license = "MIT"
 description = "Route lifecycle and cache primitives for Rekindle v2.0"

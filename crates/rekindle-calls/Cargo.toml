@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-calls"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Direct calls — X25519 ECDH call_key derivation, ring timer, missed-call state (architecture §10.10 Tier 7)"
 license = "MIT"

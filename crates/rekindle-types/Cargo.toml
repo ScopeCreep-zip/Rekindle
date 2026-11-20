@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-types"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Shared type definitions for Rekindle community system"
 license = "MIT"

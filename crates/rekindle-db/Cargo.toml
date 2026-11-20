@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-db"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Rekindle's SQLite schema, data root, node lock and shared repositories (Tier 3)"
 license = "MIT"

@@ -62,6 +62,7 @@ Three automated systems run continuously:
 |--------|---------|-------|----------|
 | **Dependabot** | Weekly (Monday 09:00 UTC) | Cargo + npm + GitHub Actions | [`/.github/dependabot.yml`](../../.github/dependabot.yml) |
 | **`cargo-audit` + `cargo-deny`** | Daily (04:13 UTC scheduled) + every PR + every push | Rust workspace | [`/.github/workflows/audit.yml`](../../.github/workflows/audit.yml) |
+| **`cargo deny check`** (advisories, bans, licenses, sources) | Every local gate run | Rust workspace | `cargo xtask check` (`check-supply-chain`, plan SC1) |
 | **Dependency-review (PR-time)** | Every PR | Cargo + npm dep diff | [`/.github/workflows/dependency-review.yml`](../../.github/workflows/dependency-review.yml) |
 | **CISA KEV cross-reference** | Weekly (Wed 06:00 UTC) | Cargo workspace | [`/.github/workflows/kev-check.yml`](../../.github/workflows/kev-check.yml) |
 | **`pnpm audit`** | Daily (within audit.yml) | npm prod deps, `--audit-level high` | same |

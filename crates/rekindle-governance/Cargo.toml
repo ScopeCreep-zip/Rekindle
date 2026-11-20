@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-governance"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Pure CRDT merge engine for Rekindle v2.0 flat governance — NO I/O, NO async"
 license = "MIT"

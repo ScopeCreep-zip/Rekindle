@@ -1,6 +1,7 @@
 [package]
 name = "rekindle-transport"
 version = "0.1.0"
+publish = false
 edition = "2021"
 description = "Unified network transport layer for Rekindle, over the Veilid-free record, route and message ports"
 license = "MIT"
@@ -48,7 +49,6 @@ rekindle-db = { path = "../rekindle-db" }
 
 # Async
 async-trait = "0.1"
-backoff = "0.4"
 futures = { workspace = true }
 tokio = { workspace = true }
 tokio-util = "0.7"
