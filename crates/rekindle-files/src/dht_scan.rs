@@ -53,7 +53,22 @@ pub fn discover_sources_in_entries(
     attachment_id: [u8; 16],
     chunk_count: u32,
 ) -> Vec<DiscoveredSource> {
-    let mut latest: HashMap<String, (u64, AttachmentBitmap)> = HashMap::new();
+    // Each author's newest possession, kept in the order its author first
+    // appears in `entries` (the arrival order the orchestrator walks), so
+    // one channel state gives one source order on every run.
+    let mut latest: Vec<(String, u64, AttachmentBitmap)> = Vec::new();
+    let mut slot_of: HashMap<String, usize> = HashMap::new();
+    let mut keep = |author: &str, lamport: u64, bitmap: AttachmentBitmap| match slot_of.get(author)
+    {
+        Some(&slot) if lamport >= latest[slot].1 => {
+            latest[slot] = (author.to_owned(), lamport, bitmap);
+        }
+        Some(_) => {}
+        None => {
+            slot_of.insert(author.to_owned(), latest.len());
+            latest.push((author.to_owned(), lamport, bitmap));
+        }
+    };
     for entry in entries {
         let cached = match entry {
             ChannelRecordEntry::Message(msg)
@@ -61,8 +76,11 @@ pub fn discover_sources_in_entries(
                     offer.attachment_id == attachment_id && offer.chunk_count == chunk_count
                 }) =>
             {
-                let full = AttachmentBitmap::full(chunk_count);
-                latest.insert(msg.sender_pseudonym.clone(), (u64::MAX, full));
+                keep(
+                    &msg.sender_pseudonym,
+                    u64::MAX,
+                    AttachmentBitmap::full(chunk_count),
+                );
                 continue;
             }
             ChannelRecordEntry::AttachmentCached(cached) => cached,
@@ -78,14 +96,11 @@ pub fn discover_sources_in_entries(
         else {
             continue;
         };
-        let prev = latest.get(&cached.author_pseudonym).map_or(0, |(l, _)| *l);
-        if cached.lamport_ts >= prev {
-            latest.insert(cached.author_pseudonym.clone(), (cached.lamport_ts, bitmap));
-        }
+        keep(&cached.author_pseudonym, cached.lamport_ts, bitmap);
     }
     latest
         .into_iter()
-        .map(|(pseudonym, (_, bitmap))| DiscoveredSource { pseudonym, bitmap })
+        .map(|(pseudonym, _, bitmap)| DiscoveredSource { pseudonym, bitmap })
         .collect()
 }
 
@@ -286,5 +301,21 @@ mod tests {
         assert_eq!(sources[0].pseudonym, "sender");
         assert!(sources[0].bitmap.is_complete());
         assert!(discover_sources_in_entries(&entries, aid, 4).is_empty());
+    }
+
+    /// Sources come back in the order their authors first appear in the
+    /// entries (arrival order), never in a hash order that changes from one
+    /// process to the next: the netsim's one seed must give one trace.
+    #[test]
+    fn sources_keep_the_arrival_order_of_their_authors() {
+        let aid = [9u8; 16];
+        let authors = ["hal", "bea", "zed", "ann", "cal", "eve", "dan", "gus"];
+        let mut entries: Vec<_> = (authors.iter())
+            .map(|a| cached_entry(aid, 3, a, 1))
+            .collect();
+        entries.push(cached_entry(aid, 3, "bea", 2));
+        let sources = discover_sources_in_entries(&entries, aid, 3);
+        let order: Vec<&str> = sources.iter().map(|s| s.pseudonym.as_str()).collect();
+        assert_eq!(order, authors);
     }
 }
