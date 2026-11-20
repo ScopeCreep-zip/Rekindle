@@ -223,3 +223,33 @@ fn registry_defaults_pass_their_constraints_on_every_base() {
         }
     }
 }
+
+/// Plan E7.7.7: window, menu and panel edges (`border`) follow a skin that
+/// sets only its accent, and keep the default when no skin is applied.
+#[test]
+fn a_skins_accent_tints_the_edges() {
+    let border = |skin: &std::collections::BTreeMap<String, TokenValue>| {
+        resolve(ENTRIES, Base::Dark, skin)
+            .into_iter()
+            .find(|(e, _)| e.id == "border")
+            .map(|(_, v)| v)
+            .expect("border is a registry token")
+    };
+    let plain = border(&std::collections::BTreeMap::new());
+    assert_eq!(
+        plain,
+        TokenValue::Color {
+            r: 0x2a,
+            g: 0x2a,
+            b: 0x2a,
+            a: 255
+        }
+    );
+    let skinned = border(&ok(
+        &json!({ "accent": { "fill": { "$type": "color", "$value": "#ff0000" } } }),
+    ));
+    let TokenValue::Color { r, g, b, .. } = skinned else {
+        panic!("border is a colour: {skinned:?}");
+    };
+    assert!(r > g && r > b, "the edge leans to the accent: {r} {g} {b}");
+}

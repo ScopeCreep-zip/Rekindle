@@ -661,7 +661,7 @@
 'buddylist.menubar' = { elements = [".buddy-list-window .menu-bar"], labels = [".buddy-list-window .menu-bar-item"] }
 'buddylist.infobar' = { elements = [".buddy-list-window .identity-bar"], labels = [".buddy-list-window .identity-bar-name", ".buddy-list-window .identity-bar-key", ".buddy-list-window .identity-bar-game", ".buddy-list-window .identity-bar-status-msg"] }
 'buddylist.tab' = { elements = [".buddy-tab"] }
-'buddylist.group-header' = { elements = [".buddy-group-header"], labels = [".buddy-group-header > span"] }
+'buddylist.group-header' = { elements = [".buddy-group-header", ".buddy-list-window .pending-header"], labels = [".buddy-group-header > span", ".buddy-list-window .pending-header > span"] }
 'buddylist.row-selected' = { elements = [".buddy-list-window .buddy-item-selected"], labels = [".buddy-list-window .buddy-item-selected .buddy-item-content"] }
 'buddylist.actionbar' = { elements = [".buddy-list-window .action-bar"], labels = [".buddy-list-window .action-bar-icon-btn", ".buddy-list-window .logout-icon-btn"] }
 'buddylist.action-button' = { elements = [".buddy-list-window .action-bar-icon-btn"] }

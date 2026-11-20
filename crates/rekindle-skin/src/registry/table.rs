@@ -198,12 +198,24 @@ pub const ENTRIES: &[TokenEntry] = &[
         c4("#252525", "#ffffff", "#000000", "#ffffff"),
         NONE,
     ),
-    row(
-        "border",
-        "--color-xfire-border",
-        c4("#2a2a2a", "#d4d4d4", "#ffffff", "#000000"),
-        NONE,
-    ),
+    // Window, menu and panel edges (`ui-skin.md` palette). A skin that
+    // sets its accent or its window ground tints them toward the accent, as
+    // Xfire's skinned frames are (plan E7.7.7: no skin drew a frame edge).
+    // Non-text and no text ground, so no contrast floor (WCAG 1.4.11 asks
+    // 3:1 of a control's boundary: inputs use `control-border`).
+    TokenEntry {
+        derivation: Some(Derivation::Mix {
+            a: "accent.fill",
+            b: "bg.primary",
+            a_weight: 350,
+        }),
+        ..row(
+            "border",
+            "--color-xfire-border",
+            c4("#2a2a2a", "#d4d4d4", "#ffffff", "#000000"),
+            NONE,
+        )
+    },
     row(
         "control-border",
         "--color-xfire-control-border",

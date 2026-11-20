@@ -137,6 +137,14 @@
     width: 100%;
   }
 
+  /* Native checkboxes and radios take the skin's accent (plan E7.7.7: they
+   * drew the platform's own blue under every skin). The engine picks the
+   * check mark's colour against it. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-xfire-accent);
+  }
+
   .form-row,
   .profile-game-name,
   .stage-panel-request-actions {

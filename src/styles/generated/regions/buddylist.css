@@ -55,15 +55,18 @@
   .buddy-tab:active {
     border-image: var(--skin-region-buddylist-tab--down, var(--skin-region-buddylist-tab));
   }
-  .buddy-group-header {
+  .buddy-group-header,
+  .buddy-list-window .pending-header {
     border-image: var(--skin-region-buddylist-group-header);
     image-rendering: pixelated;
   }
-  .buddy-group-header > span {
+  .buddy-group-header > span,
+  .buddy-list-window .pending-header > span {
     background-image: linear-gradient(var(--skin-region-buddylist-group-header-backing), var(--skin-region-buddylist-group-header-backing));
     background-clip: content-box;
   }
-  .buddy-group-header:hover {
+  .buddy-group-header:hover,
+  .buddy-list-window .pending-header:hover {
     border-image: var(--skin-region-buddylist-group-header--hover, var(--skin-region-buddylist-group-header));
   }
   .buddy-list-window .buddy-item-selected {

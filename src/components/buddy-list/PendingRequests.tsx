@@ -31,7 +31,7 @@ const PendingRequests: Component = () => {
     <Show when={friendsState.pendingRequests.length > 0}>
       <div class="pending-section">
         <div class="pending-header">
-          Pending Requests ({friendsState.pendingRequests.length})
+          <span>Pending Requests ({friendsState.pendingRequests.length})</span>
         </div>
         <Show when={error()}>
           <div class="form-error">{error()}</div>

@@ -28,7 +28,7 @@ const GroupDmList: Component = () => {
   return (
     <Show when={all().length > 0}>
       <section class="group-dm-section" aria-label="Group chats">
-        <div class="pending-header">Group Chats</div>
+        <div class="pending-header"><span>Group Chats</span></div>
         <Show when={error()}>
           <div class="form-error" role="alert">{error()}</div>
         </Show>

@@ -114,7 +114,9 @@
   /* Window frame */
   .app-frame {
     background: var(--color-xfire-bg-dark);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    /* The edge is the palette's `border` (`ui-skin.md`), which a skin's
+     * accent tints (plan E7.7.7), not the offline status colour. */
+    border: 1px solid var(--color-xfire-border);
     border-radius: 0.25rem;
     height: 100vh;
     display: flex;
