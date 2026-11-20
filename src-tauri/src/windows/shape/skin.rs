@@ -12,12 +12,12 @@ use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_library::SkinFrames;
 use tauri::{AppHandle, Manager, PhysicalSize};
 
-use super::{Rect, Silhouette};
+use super::{ShapeRect, Silhouette};
 use crate::state::SharedState;
 use crate::window_labels::WindowKind;
 
 /// The shown skin's frames, decoded: each window kind's layout and masks.
-pub type Frames = BTreeMap<SkinWindow, (WindowLayout, Vec<Mask>)>;
+pub type SkinFrameMap = BTreeMap<SkinWindow, (WindowLayout, Vec<Mask>)>;
 
 /// The skin frame a window kind wears: the buddy list the main frame, a
 /// conversation the chat frame; every other window keeps its rectangle.
@@ -40,7 +40,7 @@ pub const fn frame_of(kind: WindowKind) -> Option<SkinWindow> {
 ///
 /// # Errors
 /// A tile mask is malformed.
-pub fn decode(frames: SkinFrames) -> Result<Frames, String> {
+pub fn decode(frames: SkinFrames) -> Result<SkinFrameMap, String> {
     frames
         .windows
         .into_iter()
@@ -63,7 +63,7 @@ pub fn decode(frames: SkinFrames) -> Result<Frames, String> {
 /// # Errors
 /// A zero or unrepresentable size, or a layout the shaper refuses.
 pub fn compute(
-    frames: &Frames,
+    frames: &SkinFrameMap,
     frame: Option<SkinWindow>,
     size: PhysicalSize<u32>,
     scale: f64,
@@ -81,10 +81,10 @@ pub fn compute(
     };
     let (w, h) = (logical(size.width)?, logical(size.height)?);
     let rects = silhouette(layout, masks, w, h, per_mille).map_err(|e| format!("{e:?}"))?;
-    let rects: Vec<Rect> = rects
+    let rects: Vec<ShapeRect> = rects
         .into_iter()
-        .map(|r| -> Result<Rect, String> {
-            Ok(Rect {
+        .map(|r| -> Result<ShapeRect, String> {
+            Ok(ShapeRect {
                 x: i32::try_from(r.x).map_err(|e| e.to_string())?,
                 y: i32::try_from(r.y).map_err(|e| e.to_string())?,
                 w: r.width,
@@ -131,9 +131,13 @@ pub fn refresh(app: &AppHandle) {
             Ok(frames) => frames,
             Err(e) => {
                 tracing::warn!(error = %e, "skin frames unavailable; windows stay whole");
-                Frames::new()
+                SkinFrameMap::new()
             }
         };
         super::set_frames(&app, frames);
     });
 }
+
+#[cfg(test)]
+#[path = "skin_tests.rs"]
+mod tests;

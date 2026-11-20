@@ -4,7 +4,8 @@
 //! package is served `no-store`, a built-in `immutable`; an unknown
 //! address or a path outside the scheme's shape is refused; choosing a
 //! skin announces it to every window; role tag colours follow the shown
-//! skin, an imported one too (plan E7.2 slice 4).
+//! skin, an imported one too (plan E7.2 slice 4); `SkinFrames` answers the
+//! shown skin's validated layouts (plan SK0 S3).
 
 use std::collections::BTreeMap;
 
@@ -17,7 +18,7 @@ use rekindle_skin::serve;
 use rekindle_skin::{builtin, draft, validate};
 use rekindle_types::dto::skin::{OriginalLicence, SkinBase, SkinContrast, SkinCredits};
 use rekindle_types::dto::skin_draft::SkinDraft;
-use rekindle_types::dto::skin_library::{SkinApplied, SkinEntry, SkinServed};
+use rekindle_types::dto::skin_library::{SkinApplied, SkinEntry, SkinFrames, SkinServed};
 use rekindle_types::id::RoleId;
 use rekindle_types::subscription_events::{
     GovernanceEvent, StreamFrame, SubscriptionEvent, SystemEvent,
@@ -139,6 +140,57 @@ async fn a_library_skin_is_announced_and_served_no_store() {
         .call(Caller::shell(), file(format!("/{a}/tokens.css")))
         .await;
     assert_eq!(status_of(&answer), Some(404));
+}
+
+#[tokio::test]
+async fn skin_frames_are_the_shown_skins_validated_layouts() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    // No helper: no validated package, so no frames.
+    let refused = host.call(Caller::shell(), IpcRequest::SkinFrames).await;
+    assert!(matches!(refused, IpcResponse::Error { .. }), "{refused:?}");
+    let canonical = validate::run(builtin::PACKS[0].bytes).unwrap();
+    host.ctx
+        .skin_helper
+        .set(stand_in(&dir, &Ok(canonical.clone())))
+        .unwrap();
+    let shown: SkinFrames = data(host.call(Caller::shell(), IpcRequest::SkinFrames).await);
+    assert_eq!(shown.id, builtin::DEFAULT);
+    assert!(
+        !shown.windows.is_empty(),
+        "the default skin frames its windows"
+    );
+    assert_eq!(shown.windows, serve::frames(&canonical.bytes).unwrap());
+}
+
+#[tokio::test]
+async fn a_shown_skin_without_layouts_has_no_frames() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    let library = draft::package(&grey_skin(), &draft::Assets::default()).unwrap();
+    host.ctx
+        .skin_helper
+        .set(stand_in(&dir, &Ok(library.clone())))
+        .unwrap();
+    let (answer, _) = run(
+        &host,
+        IpcRequest::SkinImport {
+            bytes: library.bytes.clone(),
+        },
+    )
+    .await;
+    let entry: SkinEntry = data(answer);
+    run(
+        &host,
+        IpcRequest::SkinSelect {
+            id: entry.id.clone(),
+        },
+    )
+    .await;
+    let shown: SkinFrames = data(host.call(Caller::shell(), IpcRequest::SkinFrames).await);
+    assert_eq!(shown.id, entry.id);
+    assert!(shown.windows.is_empty(), "{:?}", shown.windows);
 }
 
 /// An imported dark skin whose role-tag grounds are #404040: no built-in

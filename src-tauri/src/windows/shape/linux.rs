@@ -93,19 +93,19 @@ pub(super) fn clear(window: &WebviewWindow) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::geometry::Rect;
+    use super::super::geometry::ShapeRect;
     use super::*;
 
     #[test]
     fn region_keeps_the_silhouette_and_drops_the_cut_away_corner() {
         let s = Silhouette::new(&[
-            Rect {
+            ShapeRect {
                 x: 20,
                 y: 0,
                 w: 10,
                 h: 10,
             },
-            Rect {
+            ShapeRect {
                 x: 0,
                 y: 10,
                 w: 50,

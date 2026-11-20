@@ -51,6 +51,7 @@ fn refuse(what: &str) -> IpcResponse {
 pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
     match request {
         IpcRequest::SkinList
+        | IpcRequest::SkinFrames
         | IpcRequest::SkinGet { id: None }
         | IpcRequest::SkinDraftStart { id: None } => Ok(()),
         IpcRequest::SkinGet { id: Some(id) } | IpcRequest::SkinDraftStart { id: Some(id) } => {

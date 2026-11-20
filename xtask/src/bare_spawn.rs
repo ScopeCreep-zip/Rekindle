@@ -57,6 +57,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          only the cursor and the window's silhouette, and stops on the window's Destroyed event",
     ),
     (
+        "src-tauri/src/windows/shape/skin.rs",
+        "refresh",
+        "one SkinFrames answer for the window shaper (plan SK0 S3), before unlock too: owned by \
+         the windows, not a session; it holds only the shown skin's validated frames and ends \
+         when the Host answers",
+    ),
+    (
         "src-tauri/src/setup.rs",
         "*",
         "app-lifetime boot: node start, dispatch loop, deep links",

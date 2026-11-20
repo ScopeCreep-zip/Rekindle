@@ -3,7 +3,7 @@
 //! hit, as Xfire's 1-bit window regions were (research
 //! `scratchpad/shaped/research.md` §1, §7).
 //!
-//! The silhouette is a list of device-pixel rectangles ([`Rect`]), computed
+//! The silhouette is a list of device-pixel rectangles ([`ShapeRect`]), computed
 //! in Rust from the window's size and scale by `rekindle_skin::shape::
 //! silhouette` over the layout of the window's frame in the shown skin's
 //! validated package (the Host's `SkinFrames`, [`skin`]); a window with no
@@ -42,7 +42,7 @@ use parking_lot::Mutex;
 use rekindle_types::dto::skin::SkinWindow;
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
 
-pub use geometry::{Rect, Silhouette};
+pub use geometry::{ShapeRect, Silhouette};
 pub use skin::{frame_of, refresh};
 
 /// One shaped window: the skin frame it wears and the silhouette applied.
@@ -60,7 +60,7 @@ struct Shaped {
 struct ShapeRegistry {
     windows: Mutex<HashMap<String, Arc<Shaped>>>,
     /// The shown skin's frames (empty until the Host answers).
-    frames: Mutex<Arc<skin::Frames>>,
+    frames: Mutex<Arc<skin::SkinFrameMap>>,
     /// The first fetch of the frames has been asked for.
     requested: AtomicBool,
 }
@@ -105,7 +105,7 @@ fn ensure(window: &WebviewWindow, frame: Option<SkinWindow>) -> Arc<Shaped> {
 /// # Errors
 /// The rectangles are empty or over the cap ([`Silhouette::new`]), or the
 /// platform refused the shape.
-pub fn apply_shape(window: &WebviewWindow, rects: &[Rect]) -> Result<(), String> {
+pub fn apply_shape(window: &WebviewWindow, rects: &[ShapeRect]) -> Result<(), String> {
     let silhouette = Silhouette::new(rects)?;
     let shaped = ensure(window, None);
     *shaped.current.lock() = Some(silhouette.clone());
@@ -250,7 +250,7 @@ fn forget(window: &WebviewWindow) {
 
 /// Keep the shown skin's `frames` and recompute every shaped window from
 /// them.
-fn set_frames(app: &AppHandle, frames: skin::Frames) {
+fn set_frames(app: &AppHandle, frames: skin::SkinFrameMap) {
     *registry(app).frames.lock() = Arc::new(frames);
     reshape_all(app);
 }

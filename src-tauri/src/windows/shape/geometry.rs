@@ -12,14 +12,14 @@ pub const MAX_RECTS: usize = 4096;
 /// relative to the window's top-left corner. `w` and `h` are exclusive
 /// extents: the rectangle covers `x..x + w` by `y..y + h`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rect {
+pub struct ShapeRect {
     pub x: i32,
     pub y: i32,
     pub w: u32,
     pub h: u32,
 }
 
-impl Rect {
+impl ShapeRect {
     /// The right edge, exclusive, saturating at `i32::MAX`.
     fn right(self) -> i32 {
         self.x
@@ -42,21 +42,21 @@ impl Rect {
 /// click-through everywhere (research §6.3), so it is refused rather than
 /// applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Silhouette(Vec<Rect>);
+pub struct Silhouette(Vec<ShapeRect>);
 
 impl Silhouette {
     /// Validate `rects`, dropping empty ones.
     ///
     /// # Errors
     /// No non-empty rectangle is left, or more than [`MAX_RECTS`] are given.
-    pub fn new(rects: &[Rect]) -> Result<Self, String> {
+    pub fn new(rects: &[ShapeRect]) -> Result<Self, String> {
         if rects.len() > MAX_RECTS {
             return Err(format!(
                 "a silhouette of {} rectangles exceeds the cap of {MAX_RECTS}",
                 rects.len()
             ));
         }
-        let kept: Vec<Rect> = rects.iter().copied().filter(|r| !r.is_empty()).collect();
+        let kept: Vec<ShapeRect> = rects.iter().copied().filter(|r| !r.is_empty()).collect();
         if kept.is_empty() {
             return Err("a silhouette needs at least one non-empty rectangle".to_owned());
         }
@@ -69,7 +69,7 @@ impl Silhouette {
     /// # Errors
     /// The window has no area yet.
     pub fn full(width: u32, height: u32) -> Result<Self, String> {
-        Self::new(&[Rect {
+        Self::new(&[ShapeRect {
             x: 0,
             y: 0,
             w: width,
@@ -77,7 +77,7 @@ impl Silhouette {
         }])
     }
 
-    pub fn rects(&self) -> &[Rect] {
+    pub fn rects(&self) -> &[ShapeRect] {
         &self.0
     }
 

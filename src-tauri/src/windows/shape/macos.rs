@@ -136,20 +136,20 @@ pub(super) fn start(
 
 #[cfg(test)]
 mod tests {
-    use super::super::geometry::Rect;
+    use super::super::geometry::ShapeRect;
     use super::*;
 
     #[test]
     fn ignores_only_over_holes_inside_the_window() {
         // A rounded-corner stand-in: the top-left 8×8 is cut away.
         let s = Silhouette::new(&[
-            Rect {
+            ShapeRect {
                 x: 8,
                 y: 0,
                 w: 92,
                 h: 8,
             },
-            Rect {
+            ShapeRect {
                 x: 0,
                 y: 8,
                 w: 100,

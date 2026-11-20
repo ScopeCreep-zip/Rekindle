@@ -1,7 +1,7 @@
 use super::*;
 
-const fn rect(x: i32, y: i32, w: u32, h: u32) -> Rect {
-    Rect { x, y, w, h }
+const fn rect(x: i32, y: i32, w: u32, h: u32) -> ShapeRect {
+    ShapeRect { x, y, w, h }
 }
 
 #[test]
