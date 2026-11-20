@@ -18,7 +18,7 @@ use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, start, SimNode};
-use crate::pair::{befriend, key, retired, unretired, LIMIT};
+use crate::pair::{befriend, key, retired, unretired_chain, LIMIT};
 
 /// The group as `node` lists it (a pending invite included).
 async fn view(node: &SimNode, group_id: &str) -> Option<GroupDmView> {
@@ -60,6 +60,17 @@ async fn send(node: &SimNode, group_id: &str, body: &str) {
         body: body.to_string(),
     })
     .await;
+}
+
+/// `node`'s own group chain for `group_id`: the record whose owner keypair
+/// its vault holds under the group's id.
+fn own_chain(node: &SimNode, group_id: &str) -> Option<String> {
+    let stores = node.host.identity_stores();
+    let guard = stores.vault.lock();
+    let vault = guard.as_ref().expect("an unlocked vault");
+    rekindle_vault::typed::owner_keys::load_participant_owner(vault, group_id)
+        .expect("the vault read")
+        .map(|entry| entry.record_key)
 }
 
 /// `node`'s epoch in the group.
@@ -242,32 +253,14 @@ async fn retired_stretch_at(seed: u64) -> [u8; 32] {
     let gid = three_members(&sim, &mut nodes).await;
     let ann = key(&nodes[0]);
     let bea_events = nodes[1].events().await;
-    // E2.5's design sends a message twice, by the direct frame and by the
-    // chain, and either may reach Cid first; an entry his hint diff reads
-    // before his watch on Ann's chain is held is reported by no change, so
-    // reading a message says nothing of whether a watched change of her
-    // chain reached him. As `pair::talk_until_watched` (db0c8cd1), Ann talks
-    // until one has (at most four rounds), so the snapshot below names her
-    // chain whichever path came first.
-    let mut watched = false;
-    for round in 0..4 {
-        let body = format!("watched {round}");
-        send(&nodes[0], &gid, &body).await;
-        assert!(eventually(&sim, LIMIT, || reads(&nodes[2], &gid, &body)).await);
-        if eventually(&sim, Duration::from_secs(15), || async {
-            unretired(&sim, 2).iter().any(|k| sim.creator(k) == Some(0))
-        })
-        .await
-        {
-            watched = true;
-            break;
-        }
-    }
-    assert!(
-        watched,
-        "no watched change of Ann's group chain reached Cid in four rounds, so the chain \
-         the retire is checked on is unnamed"
-    );
+    // The chain the retire is checked on is Ann's own, named from her vault
+    // (her group chain's owner keypair is saved under the group's id before
+    // the key leaves her, `host/adapters/group_dm/chain.rs`), not from a
+    // watched change reaching Cid: an entry his hint diff reads first is
+    // reported by no change (0.5.8 reports a change only past the watcher's
+    // local seq), so whichever path came first must not decide it.
+    let keys = vec![own_chain(&nodes[0], &gid).expect("Ann's group chain is saved")];
+    assert_eq!(sim.creator(&keys[0]), Some(0), "Ann created her group chain");
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: true,
@@ -295,7 +288,10 @@ async fn retired_stretch_at(seed: u64) -> [u8; 32] {
         .await,
         "Ann's entry is noted on her chain"
     );
-    let keys = unretired(&sim, 2);
+    assert!(
+        unretired_chain(&sim, &keys[0]),
+        "Ann's group chain carries no retire mark yet"
+    );
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,

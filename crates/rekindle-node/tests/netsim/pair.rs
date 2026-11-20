@@ -139,7 +139,9 @@ pub fn unretired(sim: &rekindle_netsim::Netsim, reader: usize) -> Vec<String> {
 /// by his hint diff and reported by no change. On Veilid 0.5.8 a set lands
 /// in 0.33-1.42 s, as fast as or faster than the hint (app message
 /// 0.2-0.9 s), so which round's entry is the first one watched is a race;
-/// each round's change comes at the replica's next watch tick.
+/// each round's change comes at the replica's next watch tick. Four rounds
+/// without one fail here: an empty list would leave the caller's retire
+/// check with nothing to check.
 pub async fn talk_until_watched(sim: &Netsim, a: &SimNode, b: &SimNode) -> Vec<String> {
     for round in 0..4 {
         talk(sim, a, b, &format!("watched {round}")).await;
@@ -149,10 +151,19 @@ pub async fn talk_until_watched(sim: &Netsim, a: &SimNode, b: &SimNode) -> Vec<S
         })
         .await
         {
-            break;
+            return unretired(sim, b.index);
         }
     }
-    unretired(sim, b.index)
+    panic!(
+        "no watched change of node {}'s chain reached node {} in four rounds",
+        a.index, b.index
+    );
+}
+
+/// Whether `key` holds a chain `HEAD` on the network with no retire mark
+/// yet.
+pub fn unretired_chain(sim: &rekindle_netsim::Netsim, key: &str) -> bool {
+    chain_mark(sim, key) == Some(0)
 }
 
 /// Whether one of `keys` now carries a retire mark: the writer's chain is
