@@ -247,7 +247,10 @@ async fn commit(
 /// member's accept lost or late as an `app_message` left the others
 /// without its key and chain, so its posts were never read): it is the one
 /// frame naming the member's key and chain, and the group stream's hints
-/// are only worth sending once it is held.
+/// are only worth sending once it is held. The creator's `GroupDmInvite`
+/// is receipted for the same reason (Linux run 2: one lost invite left the
+/// invitee outside the group with nothing re-sending it): it is the one
+/// frame carrying the signed roster and the creator's key and chain.
 #[must_use]
 pub fn receipted(kind: DmTypeId) -> bool {
     matches!(
@@ -257,6 +260,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::SessionResetAccept
             | DmTypeId::FriendsKey
             | DmTypeId::UnfriendedAck
+            | DmTypeId::GroupDmInvite
             | DmTypeId::GroupDmAccept
     )
 }
@@ -418,6 +422,7 @@ mod tests {
         assert!(!receipted(DmTypeId::Unfriended));
         assert!(receipted(DmTypeId::FriendsKey));
         assert!(receipted(DmTypeId::GroupDmAccept));
+        assert!(receipted(DmTypeId::GroupDmInvite));
         assert!(receipted(DmTypeId::UnfriendedAck));
     }
 

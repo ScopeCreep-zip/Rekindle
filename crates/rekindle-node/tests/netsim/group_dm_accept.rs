@@ -132,3 +132,55 @@ async fn a_post_that_arrives_before_the_posters_accept_is_shown_once_it_lands() 
         "Cat reads Bea once her accept lands"
     );
 }
+
+/// Linux run 2: the creator's `GroupDmInvite` went once per invitee as an
+/// unreceipted `app_message`, so a lost one was never sent again. Nothing
+/// Ann sends arrives for 30 s after she creates the group; both invitees
+/// still come to hold the invite, and Bea becomes a member.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_lost_invite_is_sent_again_until_received() {
+    let (sim, mut nodes) = start(3, 98).await;
+    for (node, name) in nodes.iter_mut().zip(["Ann", "Bea", "Cat"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[1], &nodes[0]).await;
+    befriend(&sim, &nodes[2], &nodes[0]).await;
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
+    let gid: String = serde_json::from_value(
+        nodes[0]
+            .ok(IpcRequest::GroupDmCreate {
+                name: "raid night".to_string(),
+                members: vec![key(&nodes[1]), key(&nodes[2])],
+            })
+            .await,
+    )
+    .expect("the group is created");
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 0,
+    });
+    for node in &nodes[1..] {
+        assert!(
+            eventually(&sim, LIMIT * 2, || async {
+                view(node, &gid).await.is_some_and(|v| v.pending)
+            })
+            .await,
+            "node {} holds the invite",
+            node.index
+        );
+    }
+    nodes[1]
+        .ok(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        })
+        .await;
+    send(&nodes[1], &gid, "from Bea").await;
+    assert!(
+        eventually(&sim, LIMIT * 2, || reads(&nodes[0], &gid, "from Bea")).await,
+        "Ann reads Bea's post"
+    );
+}
