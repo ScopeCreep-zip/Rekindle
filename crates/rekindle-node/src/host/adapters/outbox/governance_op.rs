@@ -189,7 +189,26 @@ pub struct GovernanceOps {
     waiters: Arc<OpWaiters>,
 }
 
+/// The reason the rows of a community whose join our merged state never
+/// admitted settle with: the community is withdrawn locally, so no op of
+/// ours goes on for it (plan SU1, the withdrawal decision).
+pub const WITHDRAWN: &str = "withdrawn";
+
 impl GovernanceOps {
+    /// Our join to `community` was never admitted: discard its stream's
+    /// unsent rows (our queued `MemberJoined` among them); how many.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn discard_community(
+        &self,
+        community: &str,
+    ) -> Result<usize, rekindle_outbox::OutboxError> {
+        self.outbox
+            .discard_streams(StreamKind::GovernanceOp, community, WITHDRAWN)
+            .await
+    }
+
     /// Queue `op` (encoded) for `record`'s op log in `community` and wait
     /// for its first attempt for at most `within` (plan E3.2 S6b, RV4 review
     /// M2). [`Published::Queued`]: the row stays and the outbox lands it; its

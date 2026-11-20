@@ -123,8 +123,9 @@ impl HostGovernance {
         // (D11): the inviter pushes it by `MekTransfer` once it merged our
         // `MemberJoined` (D16).
         // An inviter that answers and refuses holds our `MemberJoined`
-        // invalid, as every member's merge will: the join is withdrawn (our
-        // `MemberLeft`, the community forgotten) and fails, never a
+        // invalid, as every member's merge will: the join is withdrawn
+        // locally (the community forgotten, no `MemberLeft`: nothing of
+        // ours is on the DAG to undo, plan SU1) and fails, never a
         // membership with no key.
         // An inviter that does not answer (away, no route) leaves the join
         // standing from the DHT; the exchange is then a `bootstrap` outbox

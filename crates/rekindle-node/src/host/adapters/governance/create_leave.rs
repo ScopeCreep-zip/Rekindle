@@ -102,6 +102,14 @@ impl HostGovernance {
 
     /// Leave `membership`'s community.
     ///
+    /// A joiner whose own `MemberJoined` our merged state never admitted
+    /// (it lost a single-use race, or the inviter refused it) withdraws
+    /// locally only (plan SU1, the withdrawal decision): there is nothing
+    /// on the DAG to undo and the join can never become valid (ADR 0011:
+    /// membership is the merged state's alone), so it authors no
+    /// `MemberLeft`, no `Departed` beat and no departure notice, and drops
+    /// the community's tasks, keys, leases, rows and queued ops.
+    ///
     /// # Errors
     /// The transport is down, no identity is unlocked, or forgetting the
     /// community failed.
@@ -111,6 +119,16 @@ impl HostGovernance {
     ) -> Result<(), String> {
         let id = membership.anchor.clone();
         let transport = self.transport().map_err(|e| e.to_string())?;
+        if !self.own_join_admitted(&id) {
+            tracing::warn!(
+                community = %id,
+                "our join is not admitted by our merged state: withdrawn locally, nothing authored"
+            );
+            self.stop_community_tasks(&id).await;
+            self.ctx.mek_cache.write().remove_community(&id);
+            self.discard_governance_ops(&id);
+            return self.forget_community(&transport, &id).await;
+        }
         // The `MemberLeft` op goes on our member record first, while the
         // community's state and our pseudonym are still here (plan E3.2).
         rekindle_governance_runtime::moderation::leave(self, &id)
@@ -125,21 +143,7 @@ impl HostGovernance {
             .as_ref()
             .map(|k| zeroize::Zeroizing::new(*k.as_bytes()))
             .ok_or("no identity is unlocked")?;
-        // The loops stop first, so none writes to a record this leave
-        // clears or closes.
-        let daemon_tasks = self.ctx.community_scopes.lock().remove(&id);
-        let store_tasks = self
-            .ctx
-            .communities
-            .map()
-            .read()
-            .get(&id)
-            .and_then(|c| c.tasks.clone());
-        for tasks in [daemon_tasks, store_tasks].into_iter().flatten() {
-            if let Err(stuck) = tasks.shutdown(COMMUNITY_STOP_DEADLINE).await {
-                tracing::warn!(community = %id, %stuck, "community tasks did not stop in time");
-            }
-        }
+        self.stop_community_tasks(&id).await;
         let left = rekindle_transport::operations::community::leave_community(
             &transport,
             membership,
@@ -150,36 +154,98 @@ impl HostGovernance {
         .await
         .map_err(|e| format!("community leave failed: {e}"))?;
         self.send_before_teardown(&id, &left.departure_notice).await;
+        self.forget_community(&transport, &id).await
+    }
+
+    /// Whether our own join is in our merged state: the cert names us (the
+    /// creator) or the merge admitted our `MemberJoined`, kept after we
+    /// leave or are removed (`op_log::author_record`).
+    fn own_join_admitted(&self, community: &str) -> bool {
+        let map = self.ctx.communities.map().read();
+        let Some(c) = map.get(community) else {
+            return false;
+        };
+        let mine = c
+            .my_pseudonym_key
+            .as_deref()
+            .and_then(super::ops::pseudonym_of);
+        let (Some(cert), Some(mine)) = (c.genesis_cert.as_ref(), mine) else {
+            return false;
+        };
+        let state = c.governance_state.clone().unwrap_or_default();
+        rekindle_governance_runtime::op_log::author_record(cert, &state, &mine).is_some()
+    }
+
+    /// Stop the community's loops, so none writes to a record the leave
+    /// clears or closes.
+    async fn stop_community_tasks(&self, id: &str) {
+        let daemon_tasks = self.ctx.community_scopes.lock().remove(id);
+        let store_tasks = self
+            .ctx
+            .communities
+            .map()
+            .read()
+            .get(id)
+            .and_then(|c| c.tasks.clone());
+        for tasks in [daemon_tasks, store_tasks].into_iter().flatten() {
+            if let Err(stuck) = tasks.shutdown(COMMUNITY_STOP_DEADLINE).await {
+                tracing::warn!(community = %id, %stuck, "community tasks did not stop in time");
+            }
+        }
+    }
+
+    /// Our withdrawn join's queued ops (its `MemberJoined`) go with it.
+    fn discard_governance_ops(&self, community: &str) {
+        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        let Some(ops) = self.ctx.outbox.governance_ops() else {
+            return;
+        };
+        let community = community.to_owned();
+        self.scope()
+            .spawn_or_drop("governance ops discarded", async move {
+                if let Err(error) = ops.discard_community(&community).await {
+                    tracing::warn!(community = %community, %error, "governance ops not discarded");
+                }
+            });
+    }
+
+    /// Forget the community locally: its watch ring, leases, keys, queued
+    /// rows, store entry and stored membership.
+    async fn forget_community(
+        &self,
+        transport: &rekindle_transport::TransportNode,
+        id: &str,
+    ) -> Result<(), String> {
         // A follow-up a rebuild scheduled after the loops stopped started
         // on a fresh community scope: stop it before the ring is released.
-        let late_tasks = self.ctx.community_scopes.lock().remove(&id);
+        let late_tasks = self.ctx.community_scopes.lock().remove(id);
         if let Some(tasks) = late_tasks {
             if let Err(stuck) = tasks.shutdown(COMMUNITY_STOP_DEADLINE).await {
                 tracing::warn!(community = %id, %stuck, "community tasks did not stop in time");
             }
         }
-        self.release_watch_ring(&id).await;
-        let (leases, ring_leases) = self.ctx.communities.take_leases(&id);
+        self.release_watch_ring(id).await;
+        let (leases, ring_leases) = self.ctx.communities.take_leases(id);
         if let Some(subs) = self.ctx.subscriptions.read().as_ref() {
-            subs.teardown_community(&id);
+            subs.teardown_community(id);
         }
         for lease in leases.all().chain(ring_leases) {
-            rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
+            rekindle_transport::broadcast::dht_writes::release(transport, lease).await;
         }
-        self.forget_keys(&id);
-        self.discard_key_transfers(&id, None);
-        self.discard_bootstrap(&id);
-        crate::host::adapters::channel::discard_waiting_posts(self, &id);
-        self.ctx.communities.remove(&id);
+        self.forget_keys(id);
+        self.discard_key_transfers(id, None);
+        self.discard_bootstrap(id);
+        crate::host::adapters::channel::discard_waiting_posts(self, id);
+        self.ctx.communities.remove(id);
         crate::host::session::forget_membership(
             &self.ctx.session,
             &self.ctx.db,
             &self.ctx.vault,
-            &id,
+            id,
         )
         .await
         .map_err(|e| format!("community left but not forgotten: {e}"))?;
-        self.audit_left(&id);
+        self.audit_left(id);
         tracing::info!(community = %id, "left community");
         Ok(())
     }
