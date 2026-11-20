@@ -11,8 +11,9 @@ use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry, Op
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::join_refusal::JoinRefusal;
 
-use super::resolve::OpSet;
+use super::resolve::{Ancestry, OpSet};
 use super::Round;
+use crate::op::VerifiedOp;
 use crate::power::{removal_target, target_seq_frontier};
 
 /// Joins counted per invite id by `invite_gate`.
@@ -197,11 +198,12 @@ fn rejoined(set: &OpSet<'_>, round: &Round, r: usize, o: usize) -> bool {
 }
 
 /// A `MemberJoined` with an invite proof needs a live `InviteCreated` with
-/// that commitment in its causal past (not revoked there, not expired at
-/// its `issued_at`), and fewer than `max_uses` earlier joins on it
-/// (`max_uses` is in `1..=MAX_USES_PER_INVITE`; there are no unlimited
-/// invites). Returns the joins it counted on each invite; `refusals`
-/// gets why each join it refused was refused.
+/// that commitment in its causal past (not expired at its `issued_at`),
+/// to be in the causal past of every applied `InviteRevoked` of that
+/// invite ([`revoke_excluding`]), and fewer than `max_uses` earlier joins
+/// on it (`max_uses` is in `1..=MAX_USES_PER_INVITE`; there are no
+/// unlimited invites). Returns the joins it counted on each invite;
+/// `refusals` gets why each join it refused was refused.
 fn invite_gate(
     set: &OpSet<'_>,
     round: &Round,
@@ -234,16 +236,12 @@ fn invite_gate(
             refusals.insert(o, JoinRefusal::InviteUnknown);
             continue;
         };
-        let revoked = (0..o).any(|v| {
-            round.applied[v]
-                && set.past.contains(o, v)
-                && matches!(set.ops[v].body(), GovernanceEntry::InviteRevoked { invite_id: id } if *id == invite_id)
-        });
+        let revoke = revoke_excluding(&set.ops, &set.past, &round.applied, o, invite_id);
         let expired = expires_at.is_some_and(|exp| op.op().issued_at > exp);
         let used = uses.entry(invite_id).or_insert(0);
-        if revoked || expired {
+        if let Some(refusal) = revoke_refusal(revoke, expired, max_uses) {
             invalid[o] = true;
-            refusals.insert(o, JoinRefusal::InviteNoLongerValid);
+            refusals.insert(o, refusal);
         } else if *used >= max_uses {
             invalid[o] = true;
             refusals.insert(o, JoinRefusal::InviteUsedUp);
@@ -252,6 +250,59 @@ fn invite_gate(
         }
     }
     uses
+}
+
+/// The first applied `InviteRevoked` of `invite_id` that does not hold
+/// join `o` in its causal past, as the number of joins on that invite its
+/// past holds (plan SU1). The inviter that admits the join filling
+/// `max_uses` revokes the invite citing it (`bootstrap.rs`), so a join
+/// citing stale deps (ground to a lower hash to sort first) can never take
+/// a use from a join already admitted; a join concurrent with a manual
+/// revoke is refused with it (fail-closed: the revoker did not see it).
+pub(super) fn revoke_excluding(
+    ops: &[&VerifiedOp],
+    past: &Ancestry,
+    applied: &[bool],
+    o: usize,
+    invite_id: [u8; 16],
+) -> Option<u32> {
+    let GovernanceEntry::MemberJoined {
+        invite_proof: Some(proof),
+        ..
+    } = ops[o].body()
+    else {
+        return None;
+    };
+    let v = (0..ops.len()).find(|&v| {
+        applied[v]
+            && !past.contains(v, o)
+            && matches!(ops[v].body(), GovernanceEntry::InviteRevoked { invite_id: id } if *id == invite_id)
+    })?;
+    let joins = (0..v)
+        .filter(|&j| applied[j] && past.contains(v, j))
+        .filter(|&j| {
+            matches!(ops[j].body(), GovernanceEntry::MemberJoined { invite_proof: Some(p), .. }
+                if p.code_hash == proof.code_hash)
+        })
+        .count();
+    Some(u32::try_from(joins).unwrap_or(u32::MAX))
+}
+
+/// Why a join on an invite is refused for a revoke (`revoke`, the joins
+/// in that revoke's past, from [`revoke_excluding`]) or its expiry:
+/// `InviteUsedUp` when the revoke's past holds `max_uses` joins, else
+/// `InviteNoLongerValid` (one reason for a revoke and an expiry,
+/// `rekindle_types::join_refusal`).
+pub(super) fn revoke_refusal(
+    revoke: Option<u32>,
+    expired: bool,
+    max_uses: u32,
+) -> Option<JoinRefusal> {
+    match revoke {
+        Some(joins) if joins >= max_uses => Some(JoinRefusal::InviteUsedUp),
+        Some(_) => Some(JoinRefusal::InviteNoLongerValid),
+        None => expired.then_some(JoinRefusal::InviteNoLongerValid),
+    }
 }
 
 /// A `Checkpoint` past height 1 needs its `prevCheckpoint` applied, one

@@ -375,19 +375,24 @@ fn invite_gate(
             refusals.insert(o, JoinRefusal::InviteUnknown);
             continue;
         };
-        let revoked = revoked_in_cut
-            || (0..o).any(|v| {
-                applied_before(v)
-                    && matches!(set.ops[v].body(), GovernanceEntry::InviteRevoked { invite_id: id } if *id == invite_id)
-            });
+        let below_cut = live_uses(state, invite_id);
+        let revoke =
+            super::gates::revoke_excluding(&set.ops, &set.past, &round.applied, o, invite_id)
+                .map(|joins| joins.saturating_add(below_cut));
+        let revoked = revoked_in_cut || revoke.is_some();
         let expired = expires_at.is_some_and(|exp| op.op().issued_at > exp);
         let used = uses.entry(invite_id).or_insert(0);
         if beside.is_some() && in_cut.is_some() && !revoked && !expired && *used >= max_uses {
             return Err(NotOnTop::BesideTheCut(op.hash()));
         }
-        if revoked || expired {
+        let refusal = if revoked_in_cut {
+            Some(JoinRefusal::InviteNoLongerValid)
+        } else {
+            super::gates::revoke_refusal(revoke, expired, max_uses)
+        };
+        if let Some(refusal) = refusal {
             invalid[o] = true;
-            refusals.insert(o, JoinRefusal::InviteNoLongerValid);
+            refusals.insert(o, refusal);
         } else if *used >= max_uses {
             invalid[o] = true;
             refusals.insert(o, JoinRefusal::InviteUsedUp);
@@ -396,4 +401,11 @@ fn invite_gate(
         }
     }
     Ok(uses)
+}
+
+/// The joins the snapshot counted on `invite_id` below the cut (none for an
+/// invite the cut does not hold live): a revoke after the cut has the
+/// cut's joins in its past.
+fn live_uses(state: &crate::state::GovernanceState, invite_id: [u8; 16]) -> u32 {
+    state.invites.get(&invite_id).map_or(0, |i| i.uses)
 }

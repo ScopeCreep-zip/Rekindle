@@ -569,5 +569,7 @@ proptest! {
 
 #[path = "departure_tests.rs"]
 mod departure_tests;
+#[path = "invite_revoke_tests.rs"]
+mod invite_revoke_tests;
 #[path = "time_of_op_tests.rs"]
 mod time_of_op_tests;
