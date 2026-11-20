@@ -56,13 +56,17 @@ ignore = [
     # veilid-core 0.5.8's keyvaluedb-sqlite -> async-sqlite, ADR 0017).
     # SQLite < 3.54.0 can return uninitialized page-cache memory when it
     # opens a database with a sibling -wal of a different page size. We use
-    # WAL (rekindle-db/src/open.rs), but exploiting it needs write access to
-    # the owner-only data root, i.e. code running as the user, which the
-    # threat model's section 1 puts out of scope (the OS is the trust root).
+    # WAL (rekindle-db/src/open.rs), and exploiting it needs write access to
+    # the owner-only data root. An attacker running as the user (threat model
+    # A6, compromised device post-unlock) already reads RAM and keys, so this
+    # adds nothing for them; an attacker who writes the disk of a locked,
+    # seized device and returns it (A7 with write access) could plant the
+    # pair: that residual risk is recorded in the plan (SC1) and tracked
+    # until a bundled SQLCipher on SQLite >= 3.54.0 can be taken.
     # No fixed build exists for us: libsqlite3-sys 0.39's bundled-sqlcipher
     # still bundles SQLite 3.53.4 (sqlcipher-src 419.0.6), and veilid-core's
     # pinned tree requires rusqlite 0.39 -> libsqlite3-sys 0.37.
-    { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache disclosure needs a crafted db+wal pair in the owner-only data root (local same-user attacker, out of scope); no patched SQLCipher bundle exists and veilid-core pins rusqlite 0.39 (review by 2027-02-20)" },
+    { id = "RUSTSEC-2026-0459", reason = "SQLite page-cache disclosure needs a crafted db+wal pair in the owner-only data root (write access to the data root: A6 gains nothing; A7-with-write residual risk tracked in plan SC1); no patched SQLCipher bundle exists and veilid-core pins rusqlite 0.39 (review by 2027-02-20)" },
 ]
 
 # ─── Licenses ───────────────────────────────────────────────────────────
