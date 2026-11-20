@@ -246,7 +246,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 146 (plan E7.1 disappearing messages, E3.4 S1): `friends`/`group_dms.disappearing_seconds`,
 /// `messages.expire_seconds`/`expire_at`/`timer_notice_seconds`, the send log's and
 /// unprocessed rows' `client_id`, `communities.beat_seq`.
-pub const SCHEMA_VERSION: i64 = 146;
+/// 147 (plan E2.6, GC1): stored group rosters (`group_dms.roster` JSON) carry each
+/// member's `displayName`; rows of older builds lack it.
+pub const SCHEMA_VERSION: i64 = 147;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

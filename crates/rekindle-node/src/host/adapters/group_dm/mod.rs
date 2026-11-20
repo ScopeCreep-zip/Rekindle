@@ -71,11 +71,19 @@ impl HostGroupDm {
                 .find(|m| m.identity == identity && !m.display_name.trim().is_empty())
                 .map(|m| m.display_name.clone())
         };
-        let groups = self.groups().await.unwrap_or_default();
+        // A storage error is logged (no identifiers) and the member is shown
+        // as unnamed, never as a key: the label stays a label.
+        let groups = self.groups().await.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "group rosters unreadable for a member label");
+            Vec::new()
+        });
         if let Some(name) = groups.iter().find_map(|g| named(g.roster.members())) {
             return Some(name);
         }
-        let invites = self.invites().await.unwrap_or_default();
+        let invites = self.invites().await.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "group invites unreadable for a member label");
+            Vec::new()
+        });
         invites.iter().find_map(|p| named(&p.invite.roster))
     }
 }
