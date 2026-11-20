@@ -14,6 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_governance_runtime::watch_ring::{ring_successors, RING_K};
+use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::port::OpenIntent;
 use rekindle_transport::broadcast::dht_writes::{self, LeaseId};
 use rekindle_types::id::PseudonymKey;
@@ -139,7 +140,33 @@ impl HostGovernance {
         for lease in surplus {
             dht_writes::release(&node, lease).await;
         }
+        self.spawn_cold_beat_reads(community_id, wanted.difference(&current).cloned().collect());
         tracing::debug!(community_id, members, watched = ?wanted, "watch ring re-armed");
+    }
+
+    /// Read the beat of each record newly in the ring, cold (plan E3.4 S3:
+    /// the view holds a ring member's status before its next change; with
+    /// no arrival only the beat number counts, so an old beat shows its
+    /// member offline). Off the ring move lock.
+    fn spawn_cold_beat_reads(&self, community_id: &str, records: Vec<String>) {
+        if records.is_empty() {
+            return;
+        }
+        let host = self.clone();
+        let community = community_id.to_owned();
+        self.scope().spawn_or_drop("ring beat read", async move {
+            for record in records {
+                let lease = {
+                    let map = host.ctx.communities.map().read();
+                    map.get(&community)
+                        .and_then(|c| c.watch_ring.get(&record).copied())
+                };
+                if let Some(lease) = lease {
+                    host.read_member_beat(&community, &record, lease, None)
+                        .await;
+                }
+            }
+        });
     }
 
     /// Release `community_id`'s ring watches (leave).

@@ -19,9 +19,10 @@ use rekindle_types::presence::SessionStatus;
 
 use super::{bootstrap_peers_cap, candidates, find_frontier, BootstrapPeer, MAX_BOOTSTRAP_PEERS};
 use crate::error::GovernanceRuntimeError;
-use crate::member_card::{write_beat, OwnProfile, OwnRecord, BEAT_LIVENESS_MS};
+use crate::member_card::{write_beat, OwnProfile, OwnRecord};
 use crate::member_routes::write_routes;
 use rekindle_codec::member_record::BEAT_PERIOD_MS;
+use rekindle_presence::community::BEAT_LIVENESS_MS;
 
 const BOOTSTRAP_COMMUNITY: &str = "community";
 const INVITER_ROUTE: &[u8] = b"route-inviter";

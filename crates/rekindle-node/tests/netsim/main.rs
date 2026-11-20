@@ -8,6 +8,7 @@ mod audit;
 mod auto_away;
 mod backfill_gate;
 mod beat_engine;
+mod beat_expiry;
 mod behind_key_repair;
 mod bootstrap_nak;
 mod channel_delete_container_not_empty;

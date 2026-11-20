@@ -93,11 +93,12 @@ pub struct CommunityState {
     /// each held read-only and watched, by record key.
     #[serde(skip)]
     pub watch_ring: std::collections::BTreeMap<String, rekindle_records::lease::LeaseId>,
-    /// The last beat status seen on each ring record, so only status
-    /// transitions are relayed as `HeadAdvanced` (plan E3.2 S7).
+    /// What each member's beat shows (plan E3.4 S3): fed by the ring's
+    /// beat changes, `HeadAdvanced` hints and reads, expired locally by the
+    /// 15-minute rule. Its state transitions are what the ring relays as
+    /// `HeadAdvanced` (plan E3.2 S7, §4.5).
     #[serde(skip)]
-    pub ring_beat_status:
-        std::collections::BTreeMap<String, rekindle_codec::member_record::BeatState>,
+    pub beat_view: rekindle_presence::community::BeatView,
     /// The newest `HeadAdvanced` seq read from the DHT per (member record,
     /// subkey).
     #[serde(skip)]

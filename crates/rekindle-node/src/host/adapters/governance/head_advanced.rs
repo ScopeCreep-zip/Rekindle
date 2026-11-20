@@ -10,15 +10,17 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_codec::member_record::head_advanced::{
     decode_head_advanced, HeadAdvanced, RELAYED_SUBKEYS,
 };
-use rekindle_codec::member_record::{beat::decode_presence_beat, RecordScope};
+use rekindle_codec::member_record::{beat::decode_presence_beat, BeatState, RecordScope};
 use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+use rekindle_presence::community::Observed;
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX};
 use rekindle_types::id::PseudonymKey;
 
 use super::moderation::pseudonym;
 use super::HostGovernance;
+use crate::host::adapters::presence::view;
 
 impl HostGovernance {
     /// The author whose member record is `record`, from the merged member
@@ -39,6 +41,7 @@ impl HostGovernance {
         record: &str,
         subkeys: &[u32],
         seqs: &[Option<u64>],
+        beat_moved: bool,
     ) {
         let relayed: Vec<u32> = RELAYED_SUBKEYS
             .iter()
@@ -54,21 +57,10 @@ impl HostGovernance {
         ) else {
             return;
         };
-        let lease = {
-            let map = self.ctx.communities.map().read();
-            map.get(community_id)
-                .and_then(|c| c.watch_ring.get(record).copied())
-        };
-        let Some(lease) = lease else {
-            return;
-        };
         let relayer = derive_community_pseudonym(&secret, community_id);
         for subkey in relayed {
-            if subkey == BEAT
-                && !self
-                    .beat_status_changed(community_id, record, &author, lease)
-                    .await
-            {
+            // Beat refreshes are not relayed, only transitions (§4.5).
+            if subkey == BEAT && !beat_moved {
                 continue;
             }
             let Some(Some(seq)) = seqs.get(subkey as usize).copied() else {
@@ -90,33 +82,54 @@ impl HostGovernance {
         }
     }
 
-    /// Did `record`'s beat change status since the last we saw? Beat
-    /// refreshes are not relayed, only transitions (§4.5).
-    async fn beat_status_changed(
+    /// Read `record`'s beat (subkey 1) through `lease`, forced through the
+    /// hinted read: a ValueChange carries the value of its first subkey
+    /// only (veilid-core 0.5.8 `veilid_state.rs:334-336`), so a beat named
+    /// beside another subkey is not in the local copy. Its verified beat
+    /// goes into the beat view (plan E3.4 S3) as delivered at `arrived_at`
+    /// (now, for a change or hint; `None` for a cold read); the DHT seq read
+    /// and what the view says it changed.
+    pub(super) async fn read_member_beat(
         &self,
         community_id: &str,
         record: &str,
-        author: &PseudonymKey,
         lease: rekindle_records::lease::LeaseId,
-    ) -> bool {
-        let Ok(Some(bytes)) = self.get_dht_value(lease, BEAT, false).await else {
-            return false;
-        };
+        arrived_at: Option<u64>,
+    ) -> Option<(u64, Observed)> {
+        let author = self.author_of_record(community_id, record)?;
+        let (seq, bytes) = self.read_hinted_value(lease, BEAT).await.ok().flatten()?;
         let at = RecordScope {
             community_id,
             member_record: record,
         };
-        let Ok(beat) = decode_presence_beat(&bytes, at, &author.0) else {
+        let beat = decode_presence_beat(&bytes, at, &author.0).ok()?;
+        let observed = view::observe(&self.ctx, community_id, &author, &beat, arrived_at);
+        Some((seq, observed))
+    }
+
+    /// What `member`'s beat (pseudonym hex) shows of them in
+    /// `community_id` now: its state while present and live, `Offline`
+    /// otherwise or when no beat of theirs reached us (plan E3.4 S3).
+    #[must_use]
+    pub fn member_beat_shown(&self, community_id: &str, member: &str) -> BeatState {
+        view::shown(&self.ctx, community_id, member)
+    }
+
+    /// A ring change naming the beat (subkey 1): read it into the view;
+    /// whether its state moved (relayed as a hint).
+    pub(super) async fn ring_beat_moved(&self, community_id: &str, record: &str) -> bool {
+        let lease = {
+            let map = self.ctx.communities.map().read();
+            map.get(community_id)
+                .and_then(|c| c.watch_ring.get(record).copied())
+        };
+        let Some(lease) = lease else {
             return false;
         };
-        let mut map = self.ctx.communities.map().write();
-        let Some(community) = map.get_mut(community_id) else {
-            return false;
-        };
-        community
-            .ring_beat_status
-            .insert(record.to_owned(), beat.state)
-            != Some(beat.state)
+        let now = Some(self.ctx.clock.now_ms());
+        self.read_member_beat(community_id, record, lease, now)
+            .await
+            .is_some_and(|(_, observed)| observed.state_changed)
     }
 
     /// A gossiped hint, in §4.3's order: dropped unless its relayer is a
@@ -187,7 +200,8 @@ impl HostGovernance {
 
     /// Read the hinted subkey from the DHT (writer-signed, forced through
     /// the hinted read, VU3) and record the seq that read returned; act
-    /// only when it moved: a
+    /// only when it moved: a beat (1) goes into the beat view (plan E3.4
+    /// S3); a
     /// frontier (3), the writer's commit point, is caught up and the
     /// community rebuilt when the read stored a head we lacked
     /// ([`HostGovernance::refresh_member_record`], which shares the ring
@@ -205,12 +219,19 @@ impl HostGovernance {
             self.refresh_member_record(community_id, record).await;
             return;
         }
-        let read = self
-            .read_hinted_value(lease, hint.subkey)
-            .await
-            .ok()
-            .flatten()
-            .map(|(seq, _)| seq);
+        let read = if hint.subkey == BEAT {
+            // A status transition a ring watcher relayed: into the view.
+            let now = Some(self.ctx.clock.now_ms());
+            self.read_member_beat(community_id, record, lease, now)
+                .await
+                .map(|(seq, _)| seq)
+        } else {
+            self.read_hinted_value(lease, hint.subkey)
+                .await
+                .ok()
+                .flatten()
+                .map(|(seq, _)| seq)
+        };
         self.release_record(lease).await;
         let Some(read) = read else {
             return;

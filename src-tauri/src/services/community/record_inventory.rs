@@ -125,7 +125,7 @@ mod tests {
             my_segment_index: None,
             segments: Vec::new(),
             watch_ring: std::collections::BTreeMap::new(),
-            ring_beat_status: std::collections::BTreeMap::new(),
+            beat_view: rekindle_presence::community::BeatView::default(),
             head_hints: rekindle_node::host::community::state::HeadHints::default(),
             outbox_streams: std::sync::Arc::default(),
             snapshot_requests: rekindle_transport::gossip::RateLimiter::default(),

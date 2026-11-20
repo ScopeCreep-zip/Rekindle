@@ -22,7 +22,7 @@ use std::future::Future;
 
 use rekindle_codec::member_record::{
     beat::decode_presence_beat, beat_number_at, card::decode_member_card, BeatState, MemberCard,
-    PresenceBeat, RecordScope, SignedMemberCard, BEAT_PERIOD_MS,
+    PresenceBeat, RecordScope, SignedMemberCard,
 };
 use rekindle_records::port::{RecordPort, SetOutcome};
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -31,41 +31,6 @@ use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::SessionStatus;
 use rekindle_utils::random::RandomSource;
 use zeroize::Zeroizing;
-
-/// How long a beat shows its member live: 3 × the 5-minute mean beat
-/// period (plan E3.4 "Staleness"; Matrix Synapse's federation timeout is
-/// the same order).
-pub const BEAT_LIVENESS_MS: u64 = 3 * BEAT_PERIOD_MS;
-
-/// Whether a beat still shows its member live at `now_ms` on our clock
-/// (plan E3.4 Q4): for [`BEAT_LIVENESS_MS`] from the later of its beat
-/// number's time (the start of the writer's 5-minute period) and
-/// `arrived_at_ms`, when a watch or hint delivered it to us as a change. A
-/// writer whose clock runs behind ours is then still live for 15 minutes
-/// after its beat arrives.
-///
-/// A beat read cold, with nothing telling when it was written (a joiner's
-/// bootstrap read), has no arrival (`None`): only its beat number counts,
-/// since the read's own time says nothing of the beat's age.
-///
-/// A beat number more than one period ([`BEAT_PERIOD_MS`]) ahead of our
-/// clock when the beat arrived counts from its arrival instead (plan E3.4
-/// Q4 as amended 2026-11-19): a writer's honest clock puts the number at
-/// most a period past ours, and a number further ahead would otherwise
-/// keep its member live long after the beats stop.
-///
-/// The state is not judged here: an `Offline` or `Departed` beat is never
-/// live ([`BeatState::is_present`](rekindle_codec::member_record::BeatState::is_present)).
-#[must_use]
-pub fn beat_is_live(beat_number: u64, arrived_at_ms: Option<u64>, now_ms: u64) -> bool {
-    let written = beat_number.saturating_mul(BEAT_PERIOD_MS);
-    let from = match arrived_at_ms {
-        Some(arrived) if written > arrived.saturating_add(BEAT_PERIOD_MS) => arrived,
-        Some(arrived) => arrived.max(written),
-        None => written,
-    };
-    now_ms < from.saturating_add(BEAT_LIVENESS_MS)
-}
 
 /// The card reads a refresh keeps in flight: half of Veilid's
 /// `max_concurrent_operations` (16, veilid-core 0.5.8

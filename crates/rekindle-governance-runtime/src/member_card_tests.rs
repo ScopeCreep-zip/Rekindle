@@ -11,7 +11,9 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::presence::SessionStatus;
 
-use super::{beat_is_live, write_beat, write_card, OwnProfile, OwnRecord, BEAT_LIVENESS_MS};
+use rekindle_presence::community::{beat_is_live, BEAT_LIVENESS_MS};
+
+use super::{write_beat, write_card, OwnProfile, OwnRecord};
 
 #[tokio::test]
 async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {

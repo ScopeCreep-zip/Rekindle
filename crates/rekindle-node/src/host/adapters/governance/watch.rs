@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use rekindle_codec::member_record::head_advanced::RELAYED_SUBKEYS;
 use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontiers};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
-use rekindle_types::dht_layout::member_record::{FRONTIER, OUTBOX};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX};
 
 use super::HostGovernance;
 
@@ -22,9 +22,8 @@ use super::HostGovernance;
 /// (`anti_entropy::inspect_one`); a head change alone triggers nothing
 /// (it would read the frontier before it moved). The outbox (4) goes to
 /// the channel outbox reader (plan E3.3, `read_channel_outbox`) and the
-/// `HeadAdvanced` relay; the beat (1) only to the relay until E3.4's
-/// presence reader, so a change on it is only recorded, and neither ever
-/// rebuilds (register 2026-10-24, "S8 sequencing"). The card (0), the history ad
+/// `HeadAdvanced` relay; the beat (1) to the beat view (plan E3.4 S3,
+/// `ring_beat_moved`) and the relay, and neither ever rebuilds (register 2026-10-24, "S8 sequencing"). The card (0), the history ad
 /// (5) and the reserved subkeys have no ring consumer.
 pub(crate) fn rebuilds_on(subkeys: &[u32]) -> bool {
     subkeys.contains(&FRONTIER)
@@ -51,6 +50,7 @@ impl HostGovernance {
             return true;
         }
         let seqs = self.ring_record_seqs(&community, record).await;
+        let beat_moved = subkeys.contains(&BEAT) && self.ring_beat_moved(&community, record).await;
         if subkeys.contains(&OUTBOX) {
             self.read_channel_outbox(&community, record).await;
         }
@@ -63,7 +63,7 @@ impl HostGovernance {
             tracing::debug!(%community, record, ?subkeys, "ring member record changed, no frontier — recorded, not rebuilt");
         }
         if let Some(seqs) = seqs {
-            self.relay_head_advanced(&community, record, subkeys, &seqs)
+            self.relay_head_advanced(&community, record, subkeys, &seqs, beat_moved)
                 .await;
         }
         true

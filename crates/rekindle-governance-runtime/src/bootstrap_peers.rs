@@ -54,7 +54,8 @@ use rekindle_types::governance::OpRef;
 use rekindle_types::id::PseudonymKey;
 
 use crate::error::GovernanceRuntimeError;
-use crate::member_card::{beat_is_live, read_beat, MemberRecordRef};
+use crate::member_card::{read_beat, MemberRecordRef};
+use rekindle_presence::community::beat_is_live;
 
 /// How many live members besides the inviter a joiner asks (see the
 /// module docs).

@@ -15,6 +15,7 @@
 //!   modules stay focused on orchestration.
 
 pub mod beat;
+pub mod beat_view;
 pub mod overlay_rebuild;
 pub mod policy;
 pub mod poll;
@@ -28,6 +29,7 @@ pub(crate) mod test_fixture;
 pub mod util;
 
 pub use beat::{beat_delay, scheduled_state, BeatEngine, BeatSink, BEAT_DELAY_MAX, BEAT_DELAY_MIN};
+pub use beat_view::{beat_is_live, live_until, BeatView, Observed, BEAT_LIVENESS_MS};
 pub use overlay_rebuild::{
     compute_rebuild_plan, GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome,
 };

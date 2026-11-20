@@ -9,6 +9,12 @@
 //! The engine is installed in [`OwnPresence`](crate::host::own_presence)'s
 //! slot so a picked status reaches it at once, a leave writes its
 //! `Departed` beat, and the teardown writes the quit's `Offline` beat.
+//!
+//! The read side is the beat view ([`view`], plan E3.4 S3): the members'
+//! beats the ring and hints deliver, expired locally by the 15-minute rule
+//! in a task of the same scope.
+
+pub(crate) mod view;
 
 use std::sync::{Arc, Weak};
 
@@ -69,6 +75,10 @@ pub(crate) fn start(
     *ctx.own_presence.beats.write() = Some(Arc::clone(&engine));
     scope.spawn_with_token("presence beats", move |stop| async move {
         engine.run(stop).await;
+    })?;
+    let expiry = ctx.this.clone();
+    scope.spawn_with_token("presence expiry", move |stop| {
+        view::run_expiry(expiry, stop)
     })
 }
 
