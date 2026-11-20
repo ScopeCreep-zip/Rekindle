@@ -63,8 +63,7 @@ impl HostGovernance {
             tracing::debug!(%community, record, ?subkeys, "ring member record changed, no frontier — recorded, not rebuilt");
         }
         if let Some(seqs) = seqs {
-            self.relay_head_advanced(&community, record, subkeys, &seqs, beat_moved)
-                .await;
+            self.relay_head_advanced(&community, record, subkeys, &seqs, beat_moved);
         }
         true
     }

@@ -35,7 +35,7 @@ impl HostGovernance {
     }
 
     /// Relay a hint for each relayed subkey our watch saw `record` change.
-    pub(super) async fn relay_head_advanced(
+    pub(super) fn relay_head_advanced(
         &self,
         community_id: &str,
         record: &str,
