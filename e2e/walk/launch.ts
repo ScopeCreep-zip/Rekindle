@@ -168,7 +168,7 @@ let signalsHooked = false;
  * (setup.rs `host::claim`), and Veilid's empty listen address searches
  * upward from 5150 (veilid-core start_protocols.rs:89-95), so they coexist.
  */
-export async function launch(name = "app"): Promise<App> {
+export async function launch(name = "app", env: Record<string, string> = {}): Promise<App> {
   const exe = appBinary();
   if (!existsSync(exe)) throw new Error(`${exe} is missing; build it first (pnpm walk without --no-build, or pnpm test:app without REKINDLE_APP_NO_BUILD)`);
   mkdirSync(OUT_DIR, { recursive: true });
@@ -182,6 +182,7 @@ export async function launch(name = "app"): Promise<App> {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
+      ...env,
       REKINDLE_WDIO_DATA_ROOT: dataRoot,
       TAURI_WEBDRIVER_PORT: String(port),
       REKINDLE_WDIO_TOKEN: token,

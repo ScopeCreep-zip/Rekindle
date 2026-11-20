@@ -7,7 +7,7 @@
 import { base } from "./base.conf.ts";
 import { APP_CAPABILITY, type AppCapability } from "./launcher.ts";
 
-const user = { capabilities: { [APP_CAPABILITY]: { window: "login" } satisfies AppCapability } as WebdriverIO.Capabilities };
+const user = { capabilities: { [APP_CAPABILITY]: { window: "login", display: "native" } satisfies AppCapability } as WebdriverIO.Capabilities };
 
 export const config: WebdriverIO.MultiRemoteConfig = {
   ...base,

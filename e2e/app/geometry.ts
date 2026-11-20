@@ -73,6 +73,16 @@ export interface GeometryOptions {
    * 2026-11-19).
    */
   overlapAllow?: string[];
+  /**
+   * The window is on screen, where the user's real pointer may rest over it
+   * and set `:hover` (a window the driver cannot place off-screen: native
+   * Wayland, where a client cannot position itself). Hover reveals and
+   * restyles elements (a message's action bar over its timestamp, S4
+   * 2026-11-19), so the checks of what is rendered are left out: overlaps,
+   * text that neither fits nor ellipsizes, sideways clipping and illegible
+   * ellipses. The structure checks still run.
+   */
+  onScreen?: boolean;
 }
 
 /** Every check's findings, keyed by check; `{}` when the window passes. */
@@ -91,20 +101,22 @@ export async function checkGeometry(b: Browser, rootSelector: string, opts: Geom
   };
   record("window flex contract", await inPage(b, rootSelector, flexContract, null), FLEX_CONTRACT);
   record("horizontal overflow (px)", await inPage(b, rootSelector, horizontalOverflow, null), { document: 0, root: 0 });
-  record("overlapping elements", await inPage(b, rootSelector, overlaps, [...skip, ...(opts.overlapAllow ?? [])]), []);
-  record("text that neither fits nor ellipsizes", await inPage(b, rootSelector, textOverflows, skip), []);
-  record("text clipped sideways without an ellipsis", await inPage(b, rootSelector, textClipped, skip), []);
+  if (!opts.onScreen) record("overlapping elements", await inPage(b, rootSelector, overlaps, [...skip, ...(opts.overlapAllow ?? [])]), []);
+  if (!opts.onScreen) record("text that neither fits nor ellipsizes", await inPage(b, rootSelector, textOverflows, skip), []);
+  if (!opts.onScreen) record("text clipped sideways without an ellipsis", await inPage(b, rootSelector, textClipped, skip), []);
   record("content panes scrolling sideways", await inPage(b, rootSelector, panesScrollingSideways, opts.panes), []);
   record("badges outside their row", await inPage(b, rootSelector, badgesOutOfRow, null), []);
   record("missing values shown as text", await inPage(b, rootSelector, placeholderText, null), []);
   record("timestamps off their line", await inPage(b, rootSelector, timestampsOffLine, null), []);
   record("text fields squeezed", await inPage(b, rootSelector, fieldsSqueezed, MIN_FIELD_WIDTH), []);
   record("spacing off the grid", await inPage(b, rootSelector, spacingOffScale, opts.spacing), []);
-  record(
-    `ellipsized text showing fewer than ${MIN_ELLIPSIS_CHARS} letters or digits`,
-    await inPage(b, rootSelector, ellipsisIllegible, [OVERLAYS, MIN_ELLIPSIS_CHARS] as [string[], number]),
-    [],
-  );
+  if (!opts.onScreen) {
+    record(
+      `ellipsized text showing fewer than ${MIN_ELLIPSIS_CHARS} letters or digits`,
+      await inPage(b, rootSelector, ellipsisIllegible, [OVERLAYS, MIN_ELLIPSIS_CHARS] as [string[], number]),
+      [],
+    );
+  }
   record("titlebar title not bounded with an ellipsis", await inPage(b, rootSelector, titlebarTitleUnbounded, TITLE_SHARE), []);
   record("composer controls off one centre line", await inPage(b, rootSelector, composerMisaligned, CENTRE_TOLERANCE), []);
   record("focus indicators", await inPage(b, rootSelector, focusIndicators, skip), []);

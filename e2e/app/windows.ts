@@ -176,6 +176,16 @@ async function innerSize(b: Browser): Promise<Size> {
 const OFF_SCREEN = { x: -16_000, y: -16_000 };
 
 /**
+ * Added to a resize that never lands on a Wayland session: there a native
+ * client cannot resize or place its own window (xdg-shell), so a spec that
+ * sizes windows runs its app on X11 (`display: "x11"`, launcher.ts).
+ */
+const WAYLAND_HINT =
+  process.platform === "linux" && process.env.WAYLAND_DISPLAY
+    ? ' (a Wayland session: a native Wayland client cannot resize its own window, xdg-shell; give this spec\'s config `display: "x11"`)'
+    : "";
+
+/**
  * Give the current window the inner (CSS viewport) size `size`, off
  * screen. WebDriver's Set Window Rect sets the outer size, so the frame's
  * difference is read and added back; the resize lands asynchronously, so
@@ -199,7 +209,7 @@ export async function sizeWindow(b: Browser, size: Size): Promise<void> {
       return inner.width === size.width && inner.height === size.height;
     },
     WAIT_MS,
-    `window viewport stayed ${JSON.stringify(inner)}, wanted ${JSON.stringify(size)}`,
+    `window viewport stayed ${JSON.stringify(inner)}, wanted ${JSON.stringify(size)}${WAYLAND_HINT}`,
   );
   // Let layout and any ResizeObserver work land (E7.12 waited 300 ms after
   // its window's IPC settled; a window behind others renders no frames, so

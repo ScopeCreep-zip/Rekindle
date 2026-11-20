@@ -45,6 +45,26 @@ export const APP_CAPABILITY = "rekindle:app";
 export interface AppCapability {
   /** The window the session starts in (the driver's `wdio:tauriServiceOptions.windowLabel`). */
   window: string;
+  /**
+   * The display the app runs on, on Linux; elsewhere it changes nothing.
+   * `"native"`: the session's own (Wayland or X11). `"x11"`: X11, through
+   * XWayland on a Wayland session (`GDK_BACKEND=x11`), for specs that size
+   * windows. Wayland gives a client no way to resize or place its own
+   * window (xdg-shell: xdg_toplevel has no such request, its configure size
+   * is a hint, and resize needs a user action's serial), so `sizeWindow`
+   * cannot work there; a spec of how the web content lays out at a size
+   * asks nothing of the display protocol, and the windowing behaviour that
+   * is Wayland's own is checked natively (specs/native/, plan E7.14 and
+   * WL2, 2026-11-20).
+   */
+  display: "native" | "x11";
+}
+
+/** The environment `caps`' app launches with (`AppCapability.display`). */
+function displayEnv(where: string, caps: AppCaps): Record<string, string> {
+  const wanted = caps[APP_CAPABILITY];
+  if (!wanted) throw new Error(`${where}: capability "${APP_CAPABILITY}" is missing`);
+  return wanted.display === "x11" && process.platform === "linux" ? { GDK_BACKEND: "x11" } : {};
 }
 
 /** Connection options the runner reads from a capability (standalone) or an instance (multiremote). */
@@ -108,13 +128,13 @@ export class RekindleAppLauncher implements Services.ServiceInstance {
     const apps: App[] = [];
     this.#apps.set(cid, apps);
     if (APP_CAPABILITY in caps) {
-      const app = await launch(`wdio-${cid}`);
+      const app = await launch(`wdio-${cid}`, displayEnv(`worker ${cid}`, caps as AppCaps));
       apps.push(app);
       connect(`worker ${cid}`, caps as AppCaps, caps as Connection, app);
       return;
     }
     for (const [name, instance] of Object.entries(caps as Record<string, Instance>)) {
-      const app = await launch(`wdio-${cid}-${name}`);
+      const app = await launch(`wdio-${cid}-${name}`, displayEnv(`worker ${cid} instance ${name}`, instance.capabilities));
       apps.push(app);
       connect(`worker ${cid} instance ${name}`, instance.capabilities, instance, app);
     }
