@@ -31,7 +31,6 @@ const SHRINKING: &[(&str, &str)] = &[
         "crates/rekindle-analytics",
         "E5 moves its aggregate queries into rekindle-db",
     ),
-    ("crates/rekindle-e2e-server", "F1 makes it a bus bridge"),
     (
         "src-tauri",
         "the E phase moves each domain's SQL with the domain",

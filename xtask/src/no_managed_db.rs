@@ -5,7 +5,7 @@
 //! error; a database put in Tauri's managed state is always there, so any
 //! command or service that read it would keep writing after logout (and,
 //! from plan D1, into whichever identity's file it was handed at boot).
-//! This gate rejects, in `src-tauri` and `crates/rekindle-e2e-server`:
+//! This gate rejects, in `src-tauri`:
 //! - a `State<'_, Db>` (or `Db`) type;
 //! - `state::<Db>()` / `try_state::<Db>()`;
 //! - a `.manage(…)` call whose argument names a database (`pool`, `db`).
@@ -124,11 +124,7 @@ fn scan(rel: &str, src: &str) -> Vec<String> {
 
 pub(crate) fn check_no_managed_db(root: &Path) -> Result<()> {
     let mut hits = Vec::new();
-    for dir in [
-        "src-tauri/src",
-        "src-tauri/tests",
-        "crates/rekindle-e2e-server/src",
-    ] {
+    for dir in ["src-tauri/src", "src-tauri/tests"] {
         for path in walk_source_files(&root.join(dir), &["rs"])? {
             let rel = path
                 .strip_prefix(root)

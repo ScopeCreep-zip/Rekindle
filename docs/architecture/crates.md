@@ -72,7 +72,6 @@ crates/
 ├── rekindle-crypto/                (22) identity, Signal Protocol, DHT record keys
 ├── rekindle-game-detect/           (11) cross-platform game detection
 ├── rekindle-voice/                 (32) Opus codec, audio I/O, jitter, mixer
-├── rekindle-e2e-server/             (1) HTTP IPC bridge for Playwright E2E tests
 ├── rekindle-netsim/                 (7) seeded network simulator over the record/route/message ports (tests only)
 
 # ── Daemon / CLI track ────────────────────────────────────────────────

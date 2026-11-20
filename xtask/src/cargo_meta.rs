@@ -31,8 +31,6 @@ pub(crate) struct Target {
     pub(crate) kind: Vec<String>,
     pub(crate) name: String,
     pub(crate) src_path: PathBuf,
-    #[serde(default, rename = "required-features")]
-    pub(crate) required_features: Vec<String>,
 }
 
 #[derive(Deserialize)]

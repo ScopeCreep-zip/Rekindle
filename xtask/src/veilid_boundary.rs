@@ -11,8 +11,7 @@
 //!   `OwnRoutes`, node startup), placed by rule B22;
 //! - `rekindle-transport`: the daemon's adapter over it;
 //! - `rekindle-node`: the host;
-//! - `rekindle-desktop`, until F1 makes it a thin client, and
-//!   `rekindle-e2e-server`, whose binary embeds the desktop's command layer.
+//! - `rekindle-desktop`, until F1 makes it a thin client.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
@@ -25,7 +24,6 @@ const ALLOWED: &[&str] = &[
     "rekindle-transport",
     "rekindle-node",
     "rekindle-desktop",
-    "rekindle-e2e-server",
 ];
 
 const TARGET: &str = "veilid-core";

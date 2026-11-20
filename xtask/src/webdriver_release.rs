@@ -1,5 +1,5 @@
 //! `check-webdriver-release`: the WebDriver walk's driver stays out of every
-//! release build (plan E7.13 "Driver"), modelled on `e2e_release.rs`.
+//! release build (plan E7.13 "Driver").
 //!
 //! The vendored `tauri-plugin-wdio-webdriver` serves a loopback remote
 //! control of every window, `POST /wdio/eval` among it. A release build that
@@ -27,6 +27,29 @@ const CRATE_DIR: &str = "crates/vendor/tauri-plugin-wdio-webdriver";
 const HOST: &str = "rekindle-desktop";
 const FEATURE: &str = "webdriver-test";
 const EVAL_ROUTE: &[u8] = b"/wdio/eval";
+
+/// Whether `lib` has `#[cfg(not(debug_assertions))] compile_error!`.
+fn has_release_guard(lib: &str) -> bool {
+    let Ok(file) = syn::parse_file(lib) else {
+        return false;
+    };
+    file.items.iter().any(|item| {
+        let syn::Item::Macro(m) = item else {
+            return false;
+        };
+        let is_compile_error = m.mac.path.is_ident("compile_error");
+        let gated = m.attrs.iter().any(|a| {
+            a.path().is_ident("cfg")
+                && a.parse_args::<syn::Meta>().is_ok_and(|meta| {
+                    let syn::Meta::List(not) = meta else {
+                        return false;
+                    };
+                    not.path.is_ident("not") && not.tokens.to_string() == "debug_assertions"
+                })
+        });
+        is_compile_error && gated
+    })
+}
 
 /// Whether `lib` has `#[cfg(all(feature = "webdriver-test",
 /// not(debug_assertions)))] compile_error!`.
@@ -161,7 +184,7 @@ pub(crate) fn check_webdriver_release(root: &Path) -> Result<()> {
     let mut problems = Vec::new();
     let dir = root.join(CRATE_DIR);
     let lib = std::fs::read_to_string(dir.join("src/lib.rs")).unwrap_or_default();
-    if !crate::e2e_release::has_release_guard(&lib) {
+    if !has_release_guard(&lib) {
         problems.push(format!(
             "{CRATE_DIR}/src/lib.rs lacks #[cfg(not(debug_assertions))] compile_error!"
         ));

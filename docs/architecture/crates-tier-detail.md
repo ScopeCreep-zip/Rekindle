@@ -604,21 +604,6 @@ resolves its files in, on the `dirs` release Tauri uses. It lives here,
 not in `rekindle-db`, because the thin frontends must not link the
 backend (`check-frontend-boundaries`).
 
-### rekindle-e2e-server
-
-HTTP IPC bridge that exposes Tauri commands over loopback HTTP so
-Playwright tests can drive the real Rust backend without the Tauri
-webview. Used when `VITE_E2E=true`. Single binary `e2e_server`. It binds a
-random `127.0.0.1` port, mints a per-run token and writes both to an
-owner-only handshake file (`REKINDLE_E2E_HANDSHAKE`) the Playwright setup
-names, never to stdout; its guard
-(`src/lib.rs`) refuses a request with a foreign `Host` or `Origin` or
-without the token, and CORS answers only `REKINDLE_E2E_ORIGIN`. It is
-`publish = false`, not a default member, and refuses to compile in release;
-its binary also needs the `e2e-bridge` feature, which only the Playwright
-setup enables and no release graph does (`cargo xtask
-check-e2e-server-release`).
-
 ### rekindle-netsim
 
 A seeded, deterministic network simulator (plan C9.3), `publish = false`

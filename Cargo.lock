@@ -7391,27 +7391,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rekindle-e2e-server"
-version = "0.0.1"
-dependencies = [
- "axum",
- "rekindle-db",
- "rekindle-desktop",
- "rekindle-idle",
- "rekindle-ipc",
- "rekindle-node",
- "rekindle-secrets",
- "rekindle-types",
- "rekindle-utils",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "rekindle-events"
 version = "0.1.0"
 dependencies = [

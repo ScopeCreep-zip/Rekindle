@@ -16,8 +16,6 @@
 //!                                      traversal bound (plan F4).
 //!     cargo xtask check-key-erasure    Key-material rows are deleted only
 //!                                      through rekindle_db::erase (I14).
-//!     cargo xtask check-e2e-server-release
-//!                                      The E2E bridge never builds in release.
 //!     cargo xtask check-webdriver-release
 //!                                      The WebDriver driver never builds in release.
 //!     cargo xtask check-role-ids       Role ids are written only by the
@@ -56,11 +54,6 @@
 //!     cargo xtask stage-sidecar [--target <triple>]
 //!                                      Build and stage the skin helper as
 //!                                      Tauri's externalBin expects.
-//!     cargo xtask check-skin-fixtures  The e2e skin and role-tag fixtures
-//!                                      are current (plan E7.3).
-//!     cargo xtask gen-skin-fixtures    Write the built-in skins'
-//!                                      stylesheets and role-tag colours
-//!                                      for the e2e suites.
 //!     cargo xtask gen-skin-registry    Write the skin registry's generated
 //!                                      CSS, TS, TUI palettes and schema.
 //!     cargo xtask import-skin --format xfire-xml --from <dir> --builtin <id>
@@ -119,12 +112,10 @@ mod domain_literals;
 mod duplicate_bodies;
 mod duplicate_constants;
 mod duplication;
-mod e2e_release;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
 mod gen_isolation_commands;
-mod gen_skin_fixtures;
 mod gen_skin_registry;
 mod icon_glyphs;
 mod import_skin;
@@ -185,8 +176,6 @@ enum Command {
     CheckCapnpBounds,
     /// Verify key-material rows are deleted only through `rekindle_db::erase::delete`.
     CheckKeyErasure,
-    /// Verify the E2E bridge cannot be built into a release bundle.
-    CheckE2eServerRelease,
     /// Verify the WebDriver walk's driver cannot reach a release build.
     CheckWebdriverRelease,
     /// Verify role ids are written only by the governance projection (no caches).
@@ -223,10 +212,6 @@ enum Command {
     GenSkinRegistry,
     /// Write the skin validator's pair model from the sheets and `src/styles/regions.toml`.
     GenContrastPairs,
-    /// Verify the e2e skin and role-tag fixtures are current.
-    CheckSkinFixtures,
-    /// Write the built-in skins' stylesheets and role-tag colours for the e2e suites.
-    GenSkinFixtures,
     /// Import a legacy skin tree as the built-in pack `crates/rekindle-skin/builtin/<id>.rkskin`.
     ImportSkin {
         #[arg(long, value_enum)]
@@ -345,10 +330,6 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| key_erasure::check_key_erasure(&root)),
                 ),
                 (
-                    "e2e-server-release",
-                    Box::new(|| e2e_release::check_e2e_server_release(&root)),
-                ),
-                (
                     "webdriver-release",
                     Box::new(|| webdriver_release::check_webdriver_release(&root)),
                 ),
@@ -400,10 +381,6 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 (
                     "skin-registry",
                     Box::new(|| gen_skin_registry::check_skin_registry(&root)),
-                ),
-                (
-                    "skin-fixtures",
-                    Box::new(|| gen_skin_fixtures::check_skin_fixtures(&root)),
                 ),
                 ("motion", Box::new(|| motion::check_motion(&root))),
                 (
@@ -462,7 +439,6 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),
-        Command::CheckE2eServerRelease => e2e_release::check_e2e_server_release(&root),
         Command::CheckWebdriverRelease => webdriver_release::check_webdriver_release(&root),
         Command::CheckRoleIds => role_ids::check_role_ids(&root),
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
@@ -483,8 +459,6 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckSkinRegistry => gen_skin_registry::check_skin_registry(&root),
         Command::GenSkinRegistry => gen_skin_registry::gen_skin_registry(&root),
         Command::GenContrastPairs => contrast_pairs::gen_contrast_pairs(&root),
-        Command::CheckSkinFixtures => gen_skin_fixtures::check_skin_fixtures(&root),
-        Command::GenSkinFixtures => gen_skin_fixtures::gen_skin_fixtures(&root),
         Command::ImportSkin {
             format,
             from,

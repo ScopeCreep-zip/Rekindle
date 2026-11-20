@@ -3,9 +3,8 @@
 //! Upstream 1.5.1 binds `127.0.0.1` with no token, `Host` or `Origin` check
 //! anywhere in `src/server` and serves sessionless `POST /wdio/eval`, so any
 //! local process, or a web page reaching the port by DNS rebinding, could
-//! script every window. This guard follows the E2E bridge's rules
-//! (`crates/rekindle-e2e-server/src/lib.rs`, `RequestGuard::admit`) and wraps every
-//! route, the fallback included (`guarded`). A request is refused when it:
+//! script every window. This guard wraps every route, the fallback included
+//! (`guarded`), and refuses a request when it:
 //! - names a `Host` other than `127.0.0.1:<port>` (`FORBIDDEN`);
 //! - carries any `Origin`: the WebDriver client is a test process, which
 //!   sends none, while a browser always sends one on a cross-origin request

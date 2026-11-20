@@ -1,6 +1,15 @@
 use super::{
-    feature_problems, graph_problems, has_feature_release_guard, workspace_names_driver, CRATE,
+    feature_problems, graph_problems, has_feature_release_guard, has_release_guard,
+    workspace_names_driver, CRATE,
 };
+
+#[test]
+fn the_release_guard_is_recognised() {
+    let guarded = "#[cfg(not(debug_assertions))]\ncompile_error!(\"no\");";
+    assert!(has_release_guard(guarded));
+    assert!(!has_release_guard("compile_error!(\"always\");"));
+    assert!(!has_release_guard("#[cfg(test)]\ncompile_error!(\"no\");"));
+}
 
 #[test]
 fn the_feature_release_guard_is_recognised() {
