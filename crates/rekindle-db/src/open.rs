@@ -248,7 +248,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// unprocessed rows' `client_id`, `communities.beat_seq`.
 /// 147 (plan E2.6, GC1): stored group rosters (`group_dms.roster` JSON) carry each
 /// member's `displayName`; rows of older builds lack it.
-pub const SCHEMA_VERSION: i64 = 147;
+/// 148 (plan E3.2 LV1): `communities.my_member_record`, our own member record's key
+/// stored at join/create (never read back from our merged membership).
+pub const SCHEMA_VERSION: i64 = 148;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
