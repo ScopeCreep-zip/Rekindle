@@ -336,8 +336,17 @@ pub trait RecordPort: Send + Sync {
     /// The subkey cap of the leased record's values.
     fn subkey_cap(&self, lease: LeaseId) -> Result<usize, PortError>;
 
+    /// Mark the leased record as one that cannot change (plan KA1, ADR
+    /// 0011: the community anchor after its GenesisCert, a sealed DFLT(1)
+    /// page), so [`rehydrate`](Self::rehydrate) never inspects or fetches it.
+    ///
+    /// # Errors
+    /// The lease is not held.
+    fn mark_immutable(&self, lease: LeaseId) -> Result<(), PortError>;
+
     /// Re-open the leased record with its writer as [`OpenIntent::Hold`],
-    /// then fetch the subkeys the network holds newer. The re-open is the
+    /// then fetch the subkeys the network holds newer that no armed watch
+    /// of this node covers, and none of an immutable record (D4, plan KA1). The re-open is the
     /// only app-side trigger of Veilid's rehydration, and in 0.5.8 it
     /// queues one only when requested, the record was not created by this
     /// node this session, and the last rehydration finished at least

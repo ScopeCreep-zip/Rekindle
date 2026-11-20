@@ -9,6 +9,16 @@ use tokio::time::Instant;
 use super::{range, to_port, RecordPool};
 use rekindle_records::port::PortError;
 
+/// Whether an open record can still change (plan KA1). The Host marks a
+/// record [`Immutable`](Self::Immutable) where it opens one (ADR 0011: the
+/// anchor after its GenesisCert, a sealed DFLT(1) page); the keepalive
+/// re-opens it (`Hold`) and never inspects or fetches it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mutability {
+    Mutable,
+    Immutable,
+}
+
 /// First and longest delay before re-arming a dead watch.
 const REARM_MIN: Duration = Duration::from_secs(1);
 const REARM_MAX: Duration = Duration::from_secs(60);
@@ -78,17 +88,37 @@ impl RecordPool {
         self.watch(id, (0..opened.subkey_count).collect()).await
     }
 
+    /// Mark the leased record as one that cannot change (plan KA1, ADR
+    /// 0011: the community anchor after its GenesisCert, a sealed DFLT(1)
+    /// page). The mark lasts while the record is open in this pool.
+    ///
+    /// # Errors
+    /// The lease is not held.
+    pub fn mark_immutable(&self, id: LeaseId) -> Result<(), PortError> {
+        let table = self.table.lock();
+        let key = table.key(id).ok_or(PortError::LeaseNotHeld(id.0))?;
+        self.records
+            .lock()
+            .get_mut(key)
+            .ok_or(PortError::LeaseNotHeld(id.0))?
+            .mutability = Mutability::Immutable;
+        Ok(())
+    }
+
     /// The leased record's subkeys no armed watch of this node covers: all
     /// of them while the record is unwatched or Veilid has not accepted its
     /// watch, none when an armed watch covers every subkey. An armed watch
     /// delivers each change to its subkeys (0.5.8 `storage_manager/watch_value.rs:2080`
     /// `inbound_value_changed`), so nothing app-side inspects those (D4,
-    /// plan KA1 amending VU decision 7).
+    /// plan KA1 amending VU decision 7). An immutable record has none.
     ///
     /// # Errors
     /// The lease is not held.
     pub(crate) fn unwatched_subkeys(&self, id: LeaseId) -> Result<Vec<u32>, PortError> {
         let (key, opened) = self.lookup(id)?;
+        if opened.mutability == Mutability::Immutable {
+            return Ok(Vec::new());
+        }
         let watched = if self.unarmed.lock().contains(&key) {
             SubkeySet::default()
         } else {

@@ -117,6 +117,13 @@ impl HostGovernance {
         let Ok(node) = self.transport() else {
             return;
         };
+        // The anchor cannot change after its GenesisCert (ADR 0011): the
+        // keepalive re-opens it and never inspects it (plan KA1).
+        if let Some(anchor) = leases.anchor {
+            if let Err(e) = dht_writes::mark_immutable(&node, anchor) {
+                tracing::debug!(community = %community_id, error = %e, "anchor lease not held");
+            }
+        }
         let merged = self
             .ctx
             .communities

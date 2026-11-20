@@ -132,10 +132,15 @@ impl RecordPort for RecordPool {
         RecordPool::read_hinted(self, lease, subkeys).await
     }
 
+    fn mark_immutable(&self, lease: LeaseId) -> Result<(), PortError> {
+        RecordPool::mark_immutable(self, lease)
+    }
+
     async fn rehydrate(&self, lease: LeaseId) -> Result<(), PortError> {
         RecordPool::reopen_with_writer(self, lease).await?;
-        // A subkey an armed watch covers gets its changes from the watch; the
-        // keepalive inspects only the rest (D4, plan KA1).
+        // A subkey an armed watch covers gets its changes from the watch, and
+        // an immutable record has none; the keepalive inspects only the rest
+        // (D4, plan KA1).
         let unwatched = self.unwatched_subkeys(lease)?;
         if unwatched.is_empty() {
             return Ok(());

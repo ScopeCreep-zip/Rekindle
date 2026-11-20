@@ -18,7 +18,9 @@
 //! Plan KA1 (amends VU decision 7, D4): the inspect-and-fetch covers only
 //! the subkeys no armed watch of this node covers; a watched subkey's
 //! changes arrive through its watch, so the keepalive never inspects a
-//! watched record on a timer. The `Hold` re-open runs for every record.
+//! watched record on a timer, and never a record the Host marked immutable
+//! (`RecordPort::mark_immutable`: the anchor after its GenesisCert, a sealed
+//! DFLT(1) page, ADR 0011). The `Hold` re-open runs for every record.
 //!
 //! Wave 8 P8.1: a fixed cadence is itself a fingerprint, since an observer
 //! correlating Veilid DHT reads can attribute warming events to one peer.

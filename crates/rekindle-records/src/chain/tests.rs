@@ -262,6 +262,10 @@ impl RecordPort for MemPort {
         Err(unused())
     }
 
+    fn mark_immutable(&self, _: LeaseId) -> Result<(), PortError> {
+        Err(unused())
+    }
+
     async fn rehydrate(&self, _: LeaseId) -> Result<(), PortError> {
         Err(unused())
     }

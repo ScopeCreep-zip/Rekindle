@@ -132,6 +132,11 @@ pub async fn hold_unheld_records(
         };
         match acquired {
             Ok(lease) if anchor.as_deref() == Some(record_key.as_str()) => {
+                // The anchor cannot change after its GenesisCert (ADR 0011):
+                // the keepalive re-opens it and never inspects it (plan KA1).
+                if let Err(e) = pool.mark_immutable(lease) {
+                    tracing::debug!(community = %community_id, error = %e, "anchor lease not held");
+                }
                 leases.anchor = Some(lease);
             }
             Ok(lease) if is_registry => leases.registry = Some(lease),

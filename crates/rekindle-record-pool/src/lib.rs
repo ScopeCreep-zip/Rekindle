@@ -102,6 +102,8 @@ pub(crate) struct OpenRecord {
     pub(crate) subkey_count: u32,
     /// The descriptor's owner public key text ([`RecordDescriptor::owner_public`]).
     pub(crate) owner: String,
+    /// Whether the record can still change (plan KA1, `watch.rs`).
+    pub(crate) mutability: watch::Mutability,
 }
 
 /// Which calls the pool admits (plan C7.6g).
@@ -387,12 +389,18 @@ impl RecordPool {
     fn remember(&self, key: &str, descriptor: &RecordDescriptor) {
         let subkey_count = descriptor.subkey_count;
         let cap = max_subkey_bytes(SchemaShape { subkey_count });
-        self.records.lock().insert(
+        let mut records = self.records.lock();
+        // A re-open (writer upgrade, keepalive) keeps what the Host marked.
+        let mutability = records
+            .get(key)
+            .map_or(watch::Mutability::Mutable, |r| r.mutability);
+        records.insert(
             key.to_string(),
             OpenRecord {
                 key_cap: cap,
                 subkey_count,
                 owner: descriptor.owner_public.clone(),
+                mutability,
             },
         );
     }

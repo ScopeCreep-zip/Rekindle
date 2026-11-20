@@ -40,6 +40,15 @@ pub fn key_of(node: &TransportNode, lease: LeaseId) -> Option<String> {
     pool(node).ok()?.key_of(lease)
 }
 
+/// Mark a held lease's record as one that cannot change (plan KA1, ADR
+/// 0011), so the keepalive re-opens it and never inspects it.
+///
+/// # Errors
+/// No pool, or the lease is not held.
+pub fn mark_immutable(node: &TransportNode, lease: LeaseId) -> Result<()> {
+    Ok(pool(node)?.mark_immutable(lease)?)
+}
+
 /// Create the universal v2.0 community SMPL record (`o_cnt: 0`) from raw
 /// member public keys, held writable. Returns the creator lease, the
 /// record key and the owner keypair string.
