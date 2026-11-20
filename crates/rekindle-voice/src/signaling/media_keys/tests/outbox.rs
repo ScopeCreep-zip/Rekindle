@@ -12,6 +12,7 @@ async fn an_offline_recipient_gets_the_key_from_the_outbox_once_back() {
     let alice = Peer::new(&net, 1, false);
     let bob = Peer::new(&net, 2, false);
     alice.roster(&[&bob]).await;
+    bob.roster(&[&alice]).await;
     alice.drop_calls.store(3, Ordering::SeqCst);
 
     on_peer_added(
@@ -41,6 +42,7 @@ async fn a_queued_key_settles_unsent_when_the_recipient_leaves() {
     let alice = Peer::new(&net, 1, false);
     let bob = Peer::new(&net, 2, false);
     alice.roster(&[&bob]).await;
+    bob.roster(&[&alice]).await;
     alice.drop_calls.store(usize::MAX, Ordering::SeqCst);
 
     on_peer_added(
@@ -69,6 +71,7 @@ async fn a_key_rotated_before_delivery_is_never_sent() {
     let alice = Peer::new(&net, 1, false);
     let bob = Peer::new(&net, 2, false);
     alice.roster(&[&bob]).await;
+    bob.roster(&[&alice]).await;
     alice.drop_calls.store(usize::MAX, Ordering::SeqCst);
     on_peer_added(
         &alice.deps(),
@@ -104,6 +107,7 @@ async fn the_session_end_discards_its_queued_keys() {
     let alice = Peer::new(&net, 1, false);
     let bob = Peer::new(&net, 2, false);
     alice.roster(&[&bob]).await;
+    bob.roster(&[&alice]).await;
     alice.drop_calls.store(usize::MAX, Ordering::SeqCst);
     on_peer_added(
         &alice.deps(),

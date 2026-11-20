@@ -235,6 +235,7 @@ async fn community_call(
                 crate::services::voice_signaling_adapter::answer_media_key_call(
                     app_handle, state, &payload,
                 )
+                .await
             }
             Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
                 channel_id: _,

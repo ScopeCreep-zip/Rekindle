@@ -33,25 +33,31 @@ async fn misdirected_or_rebound_keys_are_refused() {
             *recipient = carol.id();
         }
     });
-    assert!(handle_voice_media_key(&carol.deps(), &to_carol).is_none());
+    assert!(handle_voice_media_key(&carol.deps(), &to_carol)
+        .await
+        .is_none());
     // Relabelled index: the signature no longer verifies.
     let rebound = relabel(&|p| {
         if let ControlPayload::VoiceMediaKey { key_index, .. } = p {
             *key_index = 6;
         }
     });
-    assert!(handle_voice_media_key(&bob.deps(), &rebound).is_none());
+    assert!(handle_voice_media_key(&bob.deps(), &rebound)
+        .await
+        .is_none());
     // Claimed to be from Carol: Alice's signature is not Carol's.
     let forged = relabel(&|p| {
         if let ControlPayload::VoiceMediaKey { sender, .. } = p {
             *sender = carol.id();
         }
     });
-    assert!(handle_voice_media_key(&bob.deps(), &forged).is_none());
+    assert!(handle_voice_media_key(&bob.deps(), &forged).await.is_none());
     assert!(bob.sender_keys().secret_at(&carol.id(), 5).is_err());
 
-    // The genuine one installs and is acknowledged for exactly that key.
-    let ack = handle_voice_media_key(&bob.deps(), &genuine).unwrap();
+    // From a sender on Bob's roster, the genuine one installs and is
+    // acknowledged for exactly that key.
+    bob.roster(&[&alice]).await;
+    let ack = handle_voice_media_key(&bob.deps(), &genuine).await.unwrap();
     assert!(acknowledges(
         &CommunityEnvelope::Control(genuine),
         Some(&CommunityEnvelope::Control(ack))
@@ -69,7 +75,9 @@ async fn a_recorded_key_does_not_open_after_the_session_ends() {
     let bob = Peer::new(&net, 2, false);
     let recorded = key_payload(&alice, &bob.id(), 5, sealed_to(&bob, &[4; 32]));
     bob.keys.end(COMMUNITY, CHANNEL);
-    assert!(handle_voice_media_key(&bob.deps(), &recorded).is_none());
+    assert!(handle_voice_media_key(&bob.deps(), &recorded)
+        .await
+        .is_none());
     assert_eq!(alice.held_by(&bob, 5), None);
 }
 
@@ -95,4 +103,29 @@ async fn nothing_is_sealed_before_the_recipient_announced_a_session_key() {
     .await;
     alice.settle().await;
     assert!(alice.take_calls().is_empty());
+}
+
+/// A key from a sender not on our roster for the channel session is
+/// neither installed nor acknowledged (ADR 0016); held, it is installed
+/// when the sender's join lands, and a removal drops it.
+#[tokio::test]
+async fn a_key_from_a_sender_off_the_roster_waits_for_its_join() {
+    let net = net();
+    let alice = Peer::new(&net, 1, false);
+    let bob = Peer::new(&net, 2, false);
+    let mallory = Peer::new(&net, 4, false);
+    let early = key_payload(&alice, &bob.id(), 5, sealed_to(&bob, &[4; 32]));
+    assert!(handle_voice_media_key(&bob.deps(), &early).await.is_none());
+    assert_eq!(alice.held_by(&bob, 5), None);
+
+    bob.roster(&[&alice]).await;
+    on_peer_added(&bob.deps(), COMMUNITY, CHANNEL, &bob.transport, &alice.id()).await;
+    assert_eq!(alice.held_by(&bob, 5), Some([4; 32]));
+
+    // Mallory never joins: its key is dropped when it is removed.
+    let stray = key_payload(&mallory, &bob.id(), 5, sealed_to(&bob, &[7; 32]));
+    assert!(handle_voice_media_key(&bob.deps(), &stray).await.is_none());
+    bob.sender_keys().forget(&mallory.id());
+    assert_eq!(bob.sender_keys().admit_held(&mallory.id()), 0);
+    assert_eq!(mallory.held_by(&bob, 5), None);
 }

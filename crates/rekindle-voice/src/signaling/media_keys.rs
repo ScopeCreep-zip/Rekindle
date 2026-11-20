@@ -233,6 +233,13 @@ pub(in crate::signaling) async fn on_peer_added(
     joiner: &str,
 ) {
     let keys = deps.channel_sender_keys(community_id, channel_id);
+    let admitted = keys.admit_held(joiner);
+    if admitted > 0 {
+        tracing::debug!(
+            admitted,
+            "installed media keys held until the sender's join"
+        );
+    }
     let join = keys.on_join(joiner, Instant::now());
     for key in join.joiner {
         spawn_delivery(deps, community_id, channel_id, joiner, key);
@@ -301,9 +308,15 @@ fn spawn_follow_up(
 }
 
 /// A `VoiceMediaKey` call: install the key if it is sealed to us by its
-/// sender, and return the acknowledgement to reply with.
-#[must_use]
-pub fn handle_voice_media_key(
+/// sender and the sender is on our roster for this channel session, and
+/// return the acknowledgement to reply with (ADR 0016: a sender's key is
+/// for the participants it holds on its roster, and we take keys only
+/// from ours). A key that opens but whose sender we have not added yet is
+/// held, unacknowledged: a sender adds us on our join and sends at once,
+/// which can beat its ack or the roster that adds it here; the join
+/// installs it ([`on_peer_added`]), and the sender's outbox retries until
+/// we acknowledge. A removal or the session's end drops it.
+pub async fn handle_voice_media_key(
     deps: &Arc<dyn VoiceSignalingDeps>,
     payload: &ControlPayload,
 ) -> Option<ControlPayload> {
@@ -336,6 +349,18 @@ pub fn handle_voice_media_key(
             "media key did not open: not sealed to our session key");
         return None;
     };
+    let on_roster = match deps.transport_handle() {
+        Some(transport) => transport.lock().await.peer_keys().contains(sender),
+        None => false,
+    };
+    if !on_roster {
+        let held = keys.hold(sender, *key_index, secret);
+        tracing::debug!(
+            held,
+            "media key from a sender not on our roster: not installed, not acknowledged"
+        );
+        return None;
+    }
     keys.install(sender, *key_index, secret);
     tracing::info!(community = %community_id, channel = %channel_id, sender, key_index,
         "installed a sender's media key");

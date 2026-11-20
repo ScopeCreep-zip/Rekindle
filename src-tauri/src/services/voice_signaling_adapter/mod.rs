@@ -88,7 +88,7 @@ pub fn member_departed(
 /// installed and answered with its `VoiceMediaKeyAck`; a
 /// `VoiceMediaKeyRequest` starts our deliveries and is answered with a
 /// bare acknowledgement. Returns the reply bytes.
-pub fn answer_media_key_call(
+pub async fn answer_media_key_call(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     payload: &rekindle_codec::community::envelope::ControlPayload,
@@ -102,6 +102,7 @@ pub fn answer_media_key_call(
     match payload {
         ControlPayload::VoiceMediaKey { .. } => {
             rekindle_voice::signaling::handle_voice_media_key(&deps, payload)
+                .await
                 .and_then(|ack| {
                     rekindle_codec::capnp_envelope::encode_community_envelope(
                         &CommunityEnvelope::Control(ack),

@@ -260,9 +260,9 @@ impl VoiceSignalingDeps for Peer {
         }
         let target = self.net.lock().get(route_blob)?.upgrade()?;
         match payload {
-            ControlPayload::VoiceMediaKey { .. } => {
-                handle_voice_media_key(&target.deps(), payload).map(CommunityEnvelope::Control)
-            }
+            ControlPayload::VoiceMediaKey { .. } => handle_voice_media_key(&target.deps(), payload)
+                .await
+                .map(CommunityEnvelope::Control),
             ControlPayload::VoiceMediaKeyRequest { .. } => {
                 handle_voice_media_key_request(&target.deps(), payload);
                 None
@@ -307,6 +307,7 @@ async fn joiner_receives_and_acknowledges_the_ratcheted_key() {
     let alice = Peer::new(&net, 1, false);
     let bob = Peer::new(&net, 2, false);
     alice.roster(&[&bob]).await;
+    bob.roster(&[&alice]).await;
     let before = alice.sender_keys().send_key(Instant::now());
 
     on_peer_added(
@@ -336,6 +337,7 @@ async fn departure_rotates_to_the_rest() {
     let bob = Peer::new(&net, 2, false);
     let carol = Peer::new(&net, 3, false);
     alice.roster(&[&carol]).await;
+    carol.roster(&[&alice]).await;
     let before = alice.sender_keys().send_key(Instant::now());
     alice
         .sender_keys()
@@ -369,6 +371,7 @@ async fn stage_departure_rotates_only_when_the_member_left_the_community() {
     let alice = Peer::new(&net, 1, true);
     let bob = Peer::new(&net, 2, true);
     alice.roster(&[&bob]).await;
+    bob.roster(&[&alice]).await;
     let deps = alice.deps();
     let remove = |departure| {
         on_peer_removed(
@@ -399,6 +402,7 @@ async fn a_leave_during_a_pending_rotation_rotates_again_after_it() {
     let alice = Peer::new(&net, 1, false);
     let carol = Peer::new(&net, 3, false);
     alice.roster(&[&carol]).await;
+    carol.roster(&[&alice]).await;
     for gone in ["bob", "dave"] {
         on_peer_removed(
             &alice.deps(),
@@ -456,6 +460,7 @@ async fn key_requests_are_answered_only_for_the_roster() {
     let bob = Peer::new(&net, 2, false);
     let mallory = Peer::new(&net, 4, false);
     alice.roster(&[&bob]).await;
+    bob.roster(&[&alice]).await;
     on_peer_added(
         &alice.deps(),
         COMMUNITY,
@@ -489,6 +494,8 @@ async fn community_departure_drops_the_member_and_rotates() {
     let bob = Peer::new(&net, 2, false);
     let carol = Peer::new(&net, 3, false);
     alice.roster(&[&bob, &carol]).await;
+    bob.roster(&[&alice]).await;
+    carol.roster(&[&alice]).await;
     let before = alice.sender_keys().send_key(Instant::now());
 
     crate::signaling::member_departed(&alice.deps(), COMMUNITY, &bob.id());

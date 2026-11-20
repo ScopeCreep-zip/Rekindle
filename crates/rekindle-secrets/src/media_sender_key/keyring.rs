@@ -55,6 +55,13 @@ pub const KEYS_PER_SENDER: usize = 5;
 pub const USE_DELAY: Duration = Duration::from_secs(5);
 /// How many steps past a held key a receiver derives.
 pub const MAX_RATCHET_AHEAD: u64 = 5;
+/// Keys held per sender that is not on our roster yet (plan C7.29, ADR
+/// 0016): a join hands the joiner at most the current step and a pending
+/// generation.
+pub const HELD_PER_SENDER: usize = 2;
+/// Senders whose keys are held at once: a signed key from a pseudonym that
+/// never joins cannot grow the session's memory past this.
+pub const HELD_SENDERS: usize = 16;
 /// The last ratchet step of a generation.
 const LAST_STEP: u64 = 0xff;
 
@@ -139,6 +146,10 @@ struct Inner {
     /// Each participant's verified session key and its pseudonym
     /// signature, which a roster relays.
     peer_sessions: HashMap<String, SignedSessionKey>,
+    /// Keys from senders not on our roster yet, installed when the join
+    /// lands ([`ChannelSenderKeys::admit_held`]) and dropped with the
+    /// session or the sender's removal.
+    held: HashMap<String, Vec<(u64, Zeroizing<[u8; 32]>)>>,
 }
 
 /// A participant's session key and its pseudonym's signature over it.
@@ -205,6 +216,7 @@ impl ChannelSenderKeys {
                 received: Received::default(),
                 session: SessionKey::fresh(),
                 peer_sessions: HashMap::new(),
+                held: HashMap::new(),
             }),
         }
     }
@@ -315,6 +327,38 @@ impl ChannelSenderKeys {
         inner.received.forget(participant);
         inner.admitted.remove(participant);
         inner.peer_sessions.remove(participant);
+        inner.held.remove(participant);
+    }
+
+    /// Hold a key from `sender`, which is not on our roster yet: a key
+    /// can arrive before the join or ack that adds its sender. Returns
+    /// `false` when the hold is full ([`HELD_SENDERS`]); per sender only
+    /// the newest [`HELD_PER_SENDER`] indices are kept.
+    pub fn hold(&self, sender: &str, index: u64, secret: Zeroizing<[u8; 32]>) -> bool {
+        let mut inner = self.inner.lock();
+        if !inner.held.contains_key(sender) && inner.held.len() >= HELD_SENDERS {
+            return false;
+        }
+        let keys = inner.held.entry(sender.to_string()).or_default();
+        keys.retain(|(i, _)| *i != index);
+        keys.push((index, secret));
+        keys.sort_by(|a, b| b.0.cmp(&a.0));
+        keys.truncate(HELD_PER_SENDER);
+        true
+    }
+
+    /// `participant` joined our roster: install the keys held for it.
+    /// Returns how many.
+    pub fn admit_held(&self, participant: &str) -> usize {
+        let mut inner = self.inner.lock();
+        let Some(keys) = inner.held.remove(participant) else {
+            return 0;
+        };
+        let count = keys.len();
+        for (index, secret) in keys {
+            inner.received.install(participant, index, secret);
+        }
+        count
     }
 
     /// Our session key's public half, announced in the join handshake.
