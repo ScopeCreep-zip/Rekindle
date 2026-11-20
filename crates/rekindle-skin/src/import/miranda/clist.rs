@@ -15,8 +15,12 @@ use super::ini::{Ini, KeyValue};
 use super::{fade, insets, load, number, Parsed, SkinColour, Slice, Tree};
 use crate::import::ImportError;
 
-/// Glyph objects that fill a region slot state.
-pub const GLYPHS: [(&str, &str, RegionState); 6] = [
+/// Glyph objects that fill a region slot state (plan E7.7.7 S4 part 3:
+/// the sample's group row `$$Group/Open` with its `/Hot` image (`:24-25`,
+/// selected by `@23`/`@25`, `:90-92`), the selected contact row (`:41`,
+/// `@50`), the bar buttons (`:75-77`, `@1610-1630`) and the scrollbar
+/// parts (`:46-49`, `@80-110`)).
+pub const GLYPHS: [(&str, &str, RegionState); 16] = [
     ("$$Window", "window.frame", RegionState::Normal),
     ("$$FrameTitleBar", "titlebar", RegionState::Normal),
     ("$$StatusBar", "statusbar", RegionState::Normal),
@@ -34,6 +38,44 @@ pub const GLYPHS: [(&str, &str, RegionState); 6] = [
         "$$Button/Minimize/Down",
         "titlebar.buttons",
         RegionState::Down,
+    ),
+    (
+        "$$Group/Open",
+        "buddylist.group-header",
+        RegionState::Normal,
+    ),
+    (
+        "$$Group/Open/Hot",
+        "buddylist.group-header",
+        RegionState::Hover,
+    ),
+    (
+        "$$Contact/Selected",
+        "buddylist.row-selected",
+        RegionState::Normal,
+    ),
+    (
+        "$$BarButton",
+        "buddylist.action-button",
+        RegionState::Normal,
+    ),
+    (
+        "$$BarButton/Hot",
+        "buddylist.action-button",
+        RegionState::Hover,
+    ),
+    (
+        "$$BarButton/Pressed",
+        "buddylist.action-button",
+        RegionState::Down,
+    ),
+    ("$$Scroll/Back", "scrollbar.track", RegionState::Normal),
+    ("$$Scroll/Thumb", "scrollbar.thumb", RegionState::Normal),
+    ("$$Scroll/BtnUp", "scrollbar.button-up", RegionState::Normal),
+    (
+        "$$Scroll/BtnDn",
+        "scrollbar.button-down",
+        RegionState::Normal,
     ),
 ];
 

@@ -50,6 +50,9 @@
     .buddy-group-header {
       border-image: var(--skin-region-buddylist-group-header--still, var(--skin-region-buddylist-group-header));
     }
+    .buddy-group-header:hover {
+      border-image: var(--skin-region-buddylist-group-header--hover--still, var(--skin-region-buddylist-group-header--hover, var(--skin-region-buddylist-group-header--still, var(--skin-region-buddylist-group-header))));
+    }
     .buddy-list-window .buddy-item-selected {
       border-image: var(--skin-region-buddylist-row-selected--still, var(--skin-region-buddylist-row-selected));
     }
@@ -370,6 +373,7 @@
     .buddy-tab[aria-selected="true"],
     .buddy-tab:active,
     .buddy-group-header,
+    .buddy-group-header:hover,
     .buddy-list-window .buddy-item-selected,
     .buddy-list-window .action-bar,
     .buddy-list-window .action-bar-icon-btn,

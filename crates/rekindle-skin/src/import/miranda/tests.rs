@@ -330,3 +330,74 @@ fn a_clist_modern_description_credits_its_author_and_url() {
     assert_eq!(credits.authors, vec!["Fixture".to_owned()]);
     assert_eq!(credits.url.as_deref(), Some("http://example.org/skin"));
 }
+
+const MSF_LIST: &str = "[ModernSkin]\r\n\
+$$Group/Open = sGlyph,Fragment,atlas.png,0,0,10,10,StretchBoth,3,2,3,2,255\r\n\
+$$Group/Open/Hot = sGlyph,Fragment,atlas.png,10,0,10,10,StretchBoth,3,2,3,2,255\r\n\
+$$Contact/Selected = sGlyph,Fragment,atlas.png,20,0,4,10,StretchBoth,1,3,1,3,250\r\n\
+$$BarButton = sGlyph,Fragment,atlas.png,0,10,7,10,StretchBoth,3,4,2,5,150\r\n\
+$$BarButton/Hot = sGlyph,Fragment,atlas.png,7,10,7,10,StretchBoth,3,4,2,5,200\r\n\
+$$BarButton/Pressed = sGlyph,Fragment,atlas.png,14,10,7,10,StretchBoth,3,4,2,5,255\r\n\
+$$Scroll/Back = sGlyph,Fragment,atlas.png,24,0,8,4,StretchBoth,2,0,2,0,255\r\n\
+$$Scroll/Thumb = sGlyph,Fragment,atlas.png,24,4,7,10,StretchBoth,3,4,2,5,150\r\n\
+$$Scroll/BtnUp = sGlyph,Fragment,atlas.png,32,0,8,8,StretchBoth,0,0,0,0,255\r\n\
+$$Scroll/BtnDn = sGlyph,Fragment,atlas.png,32,8,8,8,StretchBoth,0,0,0,0,255\r\n";
+
+#[test]
+fn clist_modern_fills_the_buddy_list_and_scrollbar_slots() {
+    let tree = msf_tree(MSF_LIST);
+    imported(import(&tree, "fixture").unwrap());
+    let rd = read(&tree).unwrap();
+    let states =
+        |slot: &str| -> Vec<RegionState> { rd.regions[slot].images.keys().copied().collect() };
+    use RegionState::{Down, Hover, Normal};
+    assert_eq!(states("buddylist.group-header"), [Normal, Hover]);
+    assert_eq!(states("buddylist.row-selected"), [Normal]);
+    assert_eq!(states("buddylist.action-button"), [Normal, Hover, Down]);
+    for slot in [
+        "scrollbar.track",
+        "scrollbar.thumb",
+        "scrollbar.button-up",
+        "scrollbar.button-down",
+    ] {
+        assert_eq!(states(slot), [Normal], "{slot}");
+    }
+    let m = manifest(&tree, "fixture", &rd, "hash", base_of(&rd.tokens).0);
+    let backing = |slot: &str| m.regions[slot].text_backing.clone();
+    assert_eq!(
+        backing("buddylist.group-header").as_deref(),
+        Some("bg.dark")
+    );
+    assert_eq!(
+        backing("buddylist.action-button").as_deref(),
+        Some("bg.dark")
+    );
+    assert_eq!(backing("scrollbar.thumb"), None);
+}
+
+#[test]
+fn tabsrmm_buttons_and_inactive_frame_fill_their_slots() {
+    let tsk = "[$Frame]\r\nImage=frame.png\r\nLeft=2\r\nTop=3\r\nRight=2\r\nBottom=2\r\nItem0=Frame\r\n\
+[$FrameOff]\r\nImage=frame.png\r\nLeft=2\r\nTop=3\r\nRight=2\r\nBottom=2\r\nItem0=FrameInactive\r\n\
+[$Button]\r\nImage=button.png\r\nLeft=3\r\nTop=3\r\nRight=3\r\nBottom=3\r\nItem0=Button\r\n\
+[$ButtonHot]\r\nImage=button.png\r\nLeft=3\r\nTop=3\r\nRight=3\r\nBottom=3\r\nItem0=Buttonmouseover\r\n\
+[$ButtonDown]\r\nImage=button.png\r\nLeft=3\r\nTop=3\r\nRight=3\r\nBottom=3\r\nItem0=Buttonpressed\r\n";
+    let mut tree = tsk_tree(tsk);
+    tree.insert("button.png".into(), png(24, 16));
+    let imp = imported(import(&tree, "fixture").unwrap());
+    let rd = read(&tree).unwrap();
+    use RegionState::{Down, Hover, Normal, WindowInactive};
+    let frame: Vec<_> = rd.regions["window.frame"].images.keys().copied().collect();
+    assert_eq!(frame, [Normal, WindowInactive]);
+    let button: Vec<_> = rd.regions["button.secondary"]
+        .images
+        .keys()
+        .copied()
+        .collect();
+    assert_eq!(button, [Normal, Hover, Down]);
+    assert!(
+        !imp.notice.contains("Item=Button: no region slot"),
+        "{}",
+        imp.notice
+    );
+}

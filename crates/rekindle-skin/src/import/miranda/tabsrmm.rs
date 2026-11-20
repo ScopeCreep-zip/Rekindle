@@ -29,10 +29,15 @@ pub const COLOURS: [(&str, &str, &str); 9] = [
 ];
 
 /// Items whose image fills a region slot state, in priority order (the
-/// window frame from `Frame`, else from `Container`).
-pub const REGIONS: [(&str, &str, RegionState); 6] = [
+/// window frame from `Frame`, else from `Container`). `Button`,
+/// `Buttonmouseover` and `Buttonpressed` are the window's push buttons
+/// (`tabsrmm.tsk:29-31`), Rekindle's `.form-btn-secondary`;
+/// `FrameInactive` is the frame of an unfocused window (plan E7.7.7 S4
+/// part 3).
+pub const REGIONS: [(&str, &str, RegionState); 10] = [
     ("Frame", "window.frame", RegionState::Normal),
     ("Container", "window.frame", RegionState::Normal),
+    ("FrameInactive", "window.frame", RegionState::WindowInactive),
     ("Statusbarpanel", "statusbar", RegionState::Normal),
     ("Titlebutton", "titlebar.buttons", RegionState::Normal),
     (
@@ -41,6 +46,9 @@ pub const REGIONS: [(&str, &str, RegionState); 6] = [
         RegionState::Hover,
     ),
     ("Titlebuttonpressed", "titlebar.buttons", RegionState::Down),
+    ("Button", "button.secondary", RegionState::Normal),
+    ("Buttonmouseover", "button.secondary", RegionState::Hover),
+    ("Buttonpressed", "button.secondary", RegionState::Down),
 ];
 
 /// The image-item keys read; `Perpixel` is the PNG's own alpha.

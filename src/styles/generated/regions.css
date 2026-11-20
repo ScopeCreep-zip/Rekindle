@@ -91,6 +91,9 @@
   .buddy-group-header > span {
     background-image: linear-gradient(var(--skin-region-buddylist-group-header-backing), var(--skin-region-buddylist-group-header-backing));
   }
+  .buddy-group-header:hover {
+    border-image: var(--skin-region-buddylist-group-header--hover, var(--skin-region-buddylist-group-header));
+  }
   .buddy-list-window .buddy-item-selected {
     border-image: var(--skin-region-buddylist-row-selected);
     image-rendering: pixelated;

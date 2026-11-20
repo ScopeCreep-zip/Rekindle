@@ -269,7 +269,9 @@ pub const SLOTS: [RegionSlot; 32] = [
         Extent::Range { min: 20, max: 32 },
         &[normal("text.dim")],
     )
-    .labelled(&[], ON_DARK),
+    // Clicking the header folds the group, so it shows a hover image
+    // (Clist_modern `$$Group/Open/Hot`); its text stays `text.dim`.
+    .labelled(&[Hover], ON_DARK),
     // `.buddy-item-selected` (`00-rules.css:392`): the row's content
     // (name, status line, game). Xfire paints it with a colour
     // (`ListColorSelectedCG`), so no Xfire image fills it.

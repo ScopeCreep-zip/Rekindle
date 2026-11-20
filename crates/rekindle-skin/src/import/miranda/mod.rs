@@ -19,8 +19,10 @@
 //!
 //! Colours with a registry role become tokens; every other colour is named
 //! in the `NOTICE` as unmapped. 9-slice images become the region slots
-//! that exist (`window.frame`, `titlebar`, `titlebar.buttons`,
-//! `statusbar`); every other image item is named. Each image is decoded
+//! that exist (`window.frame` with its window-inactive image, `titlebar`,
+//! `titlebar.buttons`, `statusbar`, the buddy list's group header,
+//! selected row and action buttons, the scrollbar parts and
+//! `button.secondary`); every other image item is named. Each image is decoded
 //! under the validator's image limits (PNG or GIF, and a Clist_modern
 //! `*.tga` atlas through the bounded [`tga`] decoder; JPEG is refused as
 //! step 4 refuses it; a refused TGA, an SVG or any other type is dropped
@@ -54,9 +56,16 @@ pub const MIRANDA_FORMAT: &str = "miranda";
 const TOKENS: &str = "tokens.json";
 
 /// The token painted under the text of each slot that carries text
-/// (`crate::regions::SLOTS`), as the Winamp importer's titlebar.
-pub const TEXT_BACKINGS: [(&str, &str); 2] =
-    [("titlebar", "titlebar.start"), ("statusbar", "bg.status")];
+/// (`crate::regions::SLOTS`), as the Winamp importer's titlebar; the
+/// E7.7.7 slots take the first ground their text is declared on.
+pub const TEXT_BACKINGS: [(&str, &str); 6] = [
+    ("titlebar", "titlebar.start"),
+    ("statusbar", "bg.status"),
+    ("buddylist.group-header", "bg.dark"),
+    ("buddylist.row-selected", "bg.dark"),
+    ("buddylist.action-button", "bg.dark"),
+    ("button.secondary", "bg.panel"),
+];
 
 /// Which Miranda NG engine the skin file belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
