@@ -2,6 +2,7 @@
 name = "rekindle-outbox"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "The one durable outbox (plan E2.5, D22): send intents, delivery states and retry for every Rekindle send"
 
 [lints]

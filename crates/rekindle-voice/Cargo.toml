@@ -2,6 +2,7 @@
 name = "rekindle-voice"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Voice chat engine with Opus codec for Rekindle"
 
 [lints]
