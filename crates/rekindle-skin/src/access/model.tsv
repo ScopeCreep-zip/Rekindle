@@ -167,6 +167,8 @@
 .channel-unread-badge	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
 .channel-voice-join-btn	text	var(--color-xfire-text-on-fill)	--color-xfire-online var(--tint-fill) over --color-xfire-bg-dark	1.0	false
 .channel-voice-join-btn	text hovered	var(--color-xfire-text-on-fill)	--color-xfire-success-fill	1.0	false
+.chat-awaiting-accept	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.chat-awaiting-accept	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .chat-call-btn	text	var(--color-xfire-online-text)	--color-xfire-bg-panel	1.0	false
 .chat-call-btn	text	var(--color-xfire-online-text)	--color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
 .chat-call-btn	text hovered	var(--color-xfire-online-text)	--color-xfire-online 20% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false

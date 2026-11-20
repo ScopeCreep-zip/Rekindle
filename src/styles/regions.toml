@@ -284,6 +284,7 @@
 '.buddy-unread-badge' = { on = ["--color-xfire-danger"] }
 '.chat-peer-status' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
 '.chat-peer-status-label' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.chat-awaiting-accept' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-sending' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-sent' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-queued' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
