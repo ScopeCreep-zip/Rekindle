@@ -44,6 +44,49 @@ export async function openSettings(b: Browser, tab: string): Promise<void> {
   );
 }
 
+/** One Settings tab as painted: its label, `aria-selected`, active class and underline colour. */
+interface TabPaint {
+  text: string;
+  selected: string | null;
+  active: boolean;
+  underline: string;
+}
+
+const TRANSPARENT = "rgba(0, 0, 0, 0)";
+
+/**
+ * Finding V4: after a click the Settings tab rail must mark exactly the
+ * clicked tab, in the accessibility tree (`role="tab"`, `aria-selected`,
+ * WCAG 4.1.2), in the class and in what is painted (its underline's
+ * computed colour); every other tab is unselected with no underline.
+ */
+export async function expectOnlySelectedTab(b: Browser, tab: string): Promise<void> {
+  let seen: TabPaint[] = [];
+  const ok = async (): Promise<boolean> => {
+    seen = await b.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".form-tabs .form-tab")).map((el) => ({
+        text: (el.textContent ?? "").trim(),
+        selected: el.getAttribute("aria-selected"),
+        active: el.classList.contains("form-tab-active"),
+        underline: getComputedStyle(el).borderBottomColor,
+      })),
+    );
+    return (
+      seen.length > 0 &&
+      seen.every((t) =>
+        t.text === tab
+          ? t.selected === "true" && t.active && t.underline !== TRANSPARENT
+          : t.selected === "false" && !t.active && t.underline === TRANSPARENT,
+      )
+    );
+  };
+  const deadline = Date.now() + WAIT_MS;
+  while (!(await ok())) {
+    if (Date.now() > deadline) throw new Error(`Settings tab ${tab} is not the only one selected: ${JSON.stringify(seen)}`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 export async function closeSettings(b: Browser): Promise<void> {
   await b.closeWindow();
   await inBuddy(b);

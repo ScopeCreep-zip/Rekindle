@@ -64,10 +64,19 @@ const SettingsWindow: Component = () => {
       {/* Architecture §32 a11y — keyboard skip link past tab rail. */}
       <a href="#main-content" class="skip-link">Skip to settings content</a>
       <Titlebar title="Settings" />
-      <div class="form-tabs">
+      {/* Finding V4: `activeTab` is the one selection; the rail exposes it as
+          a WAI-ARIA tablist (WCAG 4.1.2) and the active look keys off
+          `aria-selected`, so the painted tab, the read one and the content
+          cannot disagree. */}
+      <div class="form-tabs" role="tablist" aria-label="Settings sections">
         <For each={TAB_LABELS}>
           {(tab) => (
             <button
+              type="button"
+              role="tab"
+              id={`settings-tab-${tab.id}`}
+              aria-selected={activeTab() === tab.id}
+              aria-controls="main-content"
               class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
@@ -76,7 +85,7 @@ const SettingsWindow: Component = () => {
           )}
         </For>
       </div>
-      <div class="settings-content" id="main-content" tabindex="-1">
+      <div class="settings-content" id="main-content" tabindex="-1" role="tabpanel" aria-labelledby={`settings-tab-${activeTab()}`}>
         <Show when={activeTab() === "profile"}><ProfileTab /></Show>
         <Show when={activeTab() === "application"}><ApplicationTab /></Show>
         <Show when={activeTab() === "appearance"}><AppearanceTab /></Show>

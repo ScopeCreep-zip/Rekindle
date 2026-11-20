@@ -9,7 +9,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, shown, switchTo, waitForHandle } from "../../../walk/helpers.ts";
-import { LOGIN as LOGIN_LABEL, SETTINGS as SETTINGS_LABEL, openSettings } from "../../../walk/nav.ts";
+import { LOGIN as LOGIN_LABEL, SETTINGS as SETTINGS_LABEL, expectOnlySelectedTab, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 import {
   BUDDY_LIST,
@@ -56,6 +56,7 @@ describe("layout of the real windows", () => {
   for (const [tab, w] of [["Profile", SETTINGS_PROFILE], ["Privacy", SETTINGS_PRIVACY], ["Appearance", SETTINGS_APPEARANCE]] as const) {
     it(`settings, ${tab} tab`, async () => {
       await openSettings(browser, tab);
+      await expectOnlySelectedTab(browser, tab);
       if (tab === "Appearance") await byText(browser, ".skin-row", "");
       await switchTo(browser, SETTINGS_LABEL);
       await expect(await checkWindow(browser, w, { withData: true })).toEqual({});

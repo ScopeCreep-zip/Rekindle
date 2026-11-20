@@ -345,7 +345,10 @@
     border-bottom: 2px solid transparent;
     cursor: pointer;
     font-family: var(--font-family-xfire);
-    transition: color var(--motion-duration-fast), border-color var(--motion-duration-fast);
+    /* Finding V4: no transition on the selection. A transition that a
+       throttled (unfocused) window never advances left the old tab's
+       underline painted after the class had moved; selection is a state,
+       shown at once, like `.buddy-tab-active`. */
     white-space: nowrap;
     flex-shrink: 0;
   }
@@ -355,7 +358,8 @@
   }
 
   .form-tab-active,
-  .form-tab.active {
+  .form-tab.active,
+  .form-tab[aria-selected="true"] {
     color: var(--color-xfire-accent-text);
     border-bottom-color: var(--color-xfire-accent);
   }

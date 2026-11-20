@@ -96,6 +96,7 @@
 '.form-tab' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab:hover:not(.form-tab-active)' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab-active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-tab[aria-selected="true"]' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab.active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-subgroup-header' = { on = ["--color-xfire-bg-dark"] }
