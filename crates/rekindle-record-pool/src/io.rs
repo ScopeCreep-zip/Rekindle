@@ -23,6 +23,11 @@ pub fn set_failed(e: &DhtCallError) -> Result<SetOutcome, PortError> {
     }
 }
 
+/// How many times a set whose value settled contested is written above the
+/// contested seq before the pool reports what it stored: once is enough
+/// unless another holder of the writer key keeps writing at the new seq.
+const CONTESTED_ROUNDS: u32 = 2;
+
 impl RecordPool {
     /// Read a subkey; `force_refresh` asks the network rather than the local
     /// copy.
@@ -163,50 +168,79 @@ impl RecordPool {
                 .is_local_copy(&key, subkey, &data, signer.as_deref())
                 .await
                 .map_err(|e| to_port(&e))?;
-        let k = key.clone();
-        let sent = data.clone();
-        let result = self
-            .run("dht set", move |backend| async move {
-                backend.set(&k, subkey, data, writer.as_ref()).await
-            })
-            .await;
-        match result {
-            // Veilid 0.5.8 returns the value the set settled on whenever it
-            // differs from ours *or* some node holds a rival at its seq
-            // (`set_value.rs:753-760`). Ours settling is a stored write; the
-            // rival is only logged (plan VU decision 4).
-            Ok(Some(settled))
-                if signer.as_deref() == Some(settled.writer.as_str()) && settled.data == sent =>
-            {
-                tracing::debug!(
-                    key,
-                    subkey,
-                    seq = settled.seq,
-                    "dht set: our value settled; the subkey is contested"
-                );
-                let after = self
-                    .local_seq(&key, subkey)
-                    .await
-                    .map_err(|e| to_port(&e))?;
-                Ok(if after.is_some() && after != before {
-                    SetOutcome::Landed
-                } else {
-                    SetOutcome::Unchanged
+        let mut above: Option<u32> = None;
+        for round in 0..=CONTESTED_ROUNDS {
+            let (k, d, w) = (key.clone(), data.clone(), writer.clone());
+            let result = self
+                .run("dht set", move |backend| async move {
+                    match above {
+                        None => backend.set(&k, subkey, d, w.as_ref()).await,
+                        Some(min) => backend.set_above(&k, subkey, d, w.as_ref(), min).await,
+                    }
                 })
-            }
-            Ok(Some(rival)) => Ok(SetOutcome::Superseded(rival)),
-            // `None` is ours at consensus: below it Veilid answers
-            // `TryAgain` and stores nothing (0.5.8 `set_value.rs:731-738` →
-            // `local_record_store_interface.rs:60-62`), mapped by
-            // `set_failed`. An identical value kept its seq and re-sent the
-            // stored bytes (`set_value.rs:353-366`).
-            Ok(None) => Ok(if identical {
-                SetOutcome::Unchanged
-            } else {
-                SetOutcome::Landed
-            }),
-            Err(e) => set_failed(&e),
+                .await;
+            return match result {
+                // Veilid 0.5.8 returns the value the set settled on whenever it
+                // differs from ours *or* some node holds a rival at its seq
+                // (`set_value.rs:753-760`). Ours settling over a rival is not
+                // one value for every reader: a get at that seq settles a split
+                // by its own tally (`get_value.rs:49-88`), and a watcher holding
+                // the rival sees no newer seq. Ours is written again above it
+                // (`min_seqnum`, `set_value.rs:383-386`), so every reader moves
+                // to it: a restored backup's write over its own earlier one is
+                // a visible fork, never a silent one (D15, register S7d).
+                Ok(Some(settled))
+                    if signer.as_deref() == Some(settled.writer.as_str())
+                        && settled.data == data =>
+                {
+                    if round < CONTESTED_ROUNDS {
+                        tracing::debug!(
+                            key,
+                            subkey,
+                            seq = settled.seq,
+                            "dht set: our value settled; the subkey is contested, writing above it"
+                        );
+                        above = Some(settled.seq.saturating_add(1));
+                        continue;
+                    }
+                    tracing::warn!(
+                        key,
+                        subkey,
+                        seq = settled.seq,
+                        "dht set: our value is still contested after writing above it"
+                    );
+                    self.moved(&key, subkey, before).await
+                }
+                Ok(Some(rival)) => Ok(SetOutcome::Superseded(rival)),
+                // `None` is ours at consensus: below it Veilid answers
+                // `TryAgain` and stores nothing (0.5.8 `set_value.rs:731-738` →
+                // `local_record_store_interface.rs:60-62`), mapped by
+                // `set_failed`. An identical value kept its seq and re-sent the
+                // stored bytes (`set_value.rs:353-366`), unless written above.
+                Ok(None) => Ok(if identical && above.is_none() {
+                    SetOutcome::Unchanged
+                } else {
+                    SetOutcome::Landed
+                }),
+                Err(e) => set_failed(&e),
+            };
         }
+        self.moved(&key, subkey, before).await
+    }
+
+    /// `Landed` when the local seq moved past `before`, else `Unchanged`.
+    async fn moved(
+        &self,
+        key: &str,
+        subkey: u32,
+        before: Option<u32>,
+    ) -> Result<SetOutcome, PortError> {
+        let after = self.local_seq(key, subkey).await.map_err(|e| to_port(&e))?;
+        Ok(if after.is_some() && after != before {
+            SetOutcome::Landed
+        } else {
+            SetOutcome::Unchanged
+        })
     }
 
     /// Re-open the leased record with its sticky writer, as

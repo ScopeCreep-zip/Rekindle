@@ -29,6 +29,8 @@ pub enum Contest {
     #[default]
     None,
     /// Ours settled, and some node holds a rival at our seq: `Ok(Some(ours))`.
+    /// The rival sits at the seq of the first such write of each subkey; a
+    /// write at another seq is not contested by it.
     Ours,
     /// A rival at our seq won the tally: stored locally and returned.
     Rival { data: Vec<u8>, writer: String },
@@ -52,6 +54,8 @@ struct MemState {
     /// Network seqs an inspect claims with no value behind them (a poisoned
     /// 0.5.7 storage node, threat model D8), by `(key, subkey)`.
     claims: HashMap<(String, u32), u32>,
+    /// The seq a rival holds under [`Contest::Ours`], by `(key, subkey)`.
+    rivals: HashMap<(String, u32), u32>,
 }
 
 /// One node's in-memory record store. A writer's keypair text is also its
@@ -223,43 +227,18 @@ impl DhtBackend for MemDht {
         data: Vec<u8>,
         writer: Option<&WriterKey>,
     ) -> Result<Option<RecordValue>, DhtCallError> {
-        if *self.offline.lock() {
-            return Err(error(DhtErrorKind::TryAgain, "offline"));
-        }
-        let contest = self.contest.lock().clone();
-        let mut state = self.state.lock();
-        let record = state
-            .records
-            .get_mut(key)
-            .ok_or_else(|| error(DhtErrorKind::KeyNotFound, "record not open"))?;
-        if subkey >= record.subkeys {
-            return Err(error(DhtErrorKind::InvalidArgument, "subkey out of range"));
-        }
-        let signer = writer
-            .or(record.writer.as_ref())
-            .unwrap_or(&record.owner)
-            .public
-            .clone();
-        let seq = match record.values.get(&subkey) {
-            Some(v) if v.data == data && v.writer == signer => v.seq,
-            Some(v) => v.seq + 1,
-            None => 0,
-        };
-        let ours = RecordValue {
-            seq,
-            data,
-            writer: signer,
-        };
-        let (stored, returned) = match contest {
-            Contest::None => (ours, None),
-            Contest::Ours => (ours.clone(), Some(ours)),
-            Contest::Rival { data, writer } => {
-                let rival = RecordValue { seq, data, writer };
-                (rival.clone(), Some(rival))
-            }
-        };
-        record.values.insert(subkey, stored);
-        Ok(returned)
+        self.write(key, subkey, data, writer, 0)
+    }
+
+    async fn set_above(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&WriterKey>,
+        min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.write(key, subkey, data, writer, min_seq)
     }
 
     async fn inspect(
@@ -325,4 +304,62 @@ pub fn pool_on(backend: Arc<MemDht>) -> Arc<RecordPool> {
         ready,
         RecordCloser::new(),
     )
+}
+
+impl MemDht {
+    /// A set at a seq of at least `min_seq` (0 for a plain set).
+    fn write(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&WriterKey>,
+        min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        if *self.offline.lock() {
+            return Err(error(DhtErrorKind::TryAgain, "offline"));
+        }
+        let contest = self.contest.lock().clone();
+        let mut guard = self.state.lock();
+        let state = &mut *guard;
+        let record = state
+            .records
+            .get_mut(key)
+            .ok_or_else(|| error(DhtErrorKind::KeyNotFound, "record not open"))?;
+        if subkey >= record.subkeys {
+            return Err(error(DhtErrorKind::InvalidArgument, "subkey out of range"));
+        }
+        let signer = writer
+            .or(record.writer.as_ref())
+            .unwrap_or(&record.owner)
+            .public
+            .clone();
+        let seq = match record.values.get(&subkey) {
+            Some(v) if v.data == data && v.writer == signer => v.seq,
+            Some(v) => v.seq + 1,
+            None => 0,
+        }
+        // `min_seqnum` raises the seq after the increment, and re-encrypts
+        // an identical value it lifts (0.5.8 `set_value.rs:353-386`).
+        .max(min_seq);
+        let ours = RecordValue {
+            seq,
+            data,
+            writer: signer,
+        };
+        let (stored, returned) = match contest {
+            Contest::None => (ours, None),
+            Contest::Ours => {
+                let rival = *state.rivals.entry((key.to_string(), subkey)).or_insert(seq);
+                let contested = (rival == seq).then(|| ours.clone());
+                (ours, contested)
+            }
+            Contest::Rival { data, writer } => {
+                let rival = RecordValue { seq, data, writer };
+                (rival.clone(), Some(rival))
+            }
+        };
+        record.values.insert(subkey, stored);
+        Ok(returned)
+    }
 }

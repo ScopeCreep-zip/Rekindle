@@ -186,6 +186,20 @@ pub trait DhtBackend: Send + Sync {
         writer: Option<&WriterKey>,
     ) -> Result<Option<RecordValue>, DhtCallError>;
 
+    /// [`set`](Self::set) at a seq of at least `min_seq`: Veilid's
+    /// `SetDHTValueOptions::min_seqnum` (0.5.8 `set_value.rs:353-386`). The
+    /// same data and writer as the local copy are re-encrypted at `min_seq`
+    /// when it is above the local seq, not re-sent at the old seq. The pool
+    /// writes above a seq where its value settled contested with it.
+    async fn set_above(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&WriterKey>,
+        min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError>;
+
     /// Inspect `subkeys` (every subkey when `None`) in `scope`.
     async fn inspect(
         &self,

@@ -227,6 +227,34 @@ impl VeilidDht {
     }
 }
 
+impl VeilidDht {
+    /// A set, never offline, at a seq of at least `min_seq` when given.
+    async fn write(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&WriterKey>,
+        min_seq: Option<u32>,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        let writer = writer.map(keypair).transpose()?;
+        self.rc
+            .set_dht_value(
+                record_key(key)?,
+                subkey,
+                data,
+                Some(SetDHTValueOptions {
+                    writer,
+                    allow_offline: Some(AllowOffline(false)),
+                    min_seqnum: min_seq.map(ValueSeqNum::from),
+                }),
+            )
+            .await
+            .map(|v| v.as_ref().map(record_value))
+            .map_err(|e| dht_error(&e))
+    }
+}
+
 #[async_trait::async_trait]
 impl DhtBackend for VeilidDht {
     fn parse_writer(&self, text: &str) -> Result<WriterKey, DhtCallError> {
@@ -316,21 +344,18 @@ impl DhtBackend for VeilidDht {
         data: Vec<u8>,
         writer: Option<&WriterKey>,
     ) -> Result<Option<RecordValue>, DhtCallError> {
-        let writer = writer.map(keypair).transpose()?;
-        self.rc
-            .set_dht_value(
-                record_key(key)?,
-                subkey,
-                data,
-                Some(SetDHTValueOptions {
-                    writer,
-                    allow_offline: Some(AllowOffline(false)),
-                    min_seqnum: None,
-                }),
-            )
-            .await
-            .map(|v| v.as_ref().map(record_value))
-            .map_err(|e| dht_error(&e))
+        self.write(key, subkey, data, writer, None).await
+    }
+
+    async fn set_above(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&WriterKey>,
+        min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.write(key, subkey, data, writer, Some(min_seq)).await
     }
 
     async fn inspect(

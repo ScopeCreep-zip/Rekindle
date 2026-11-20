@@ -102,6 +102,17 @@ impl DhtBackend for TestDht {
         Ok(None)
     }
 
+    async fn set_above(
+        &self,
+        _key: &str,
+        _subkey: u32,
+        _data: Vec<u8>,
+        _writer: Option<&WriterKey>,
+        _min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        Ok(None)
+    }
+
     async fn inspect(
         &self,
         _key: &str,

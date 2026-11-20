@@ -2,6 +2,8 @@
 //! decision 4): Veilid 0.5.8 returns `Some(v)` when the value differs from
 //! ours *or* a node holds a rival at our seq (`set_value.rs:753-760`), so
 //! `Some(ours)` is a stored write and only another value supersedes it.
+//! A write that settled contested at its seq is written again above it
+//! first (D15, register S7d), so every reader moves to one value.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,6 +35,27 @@ async fn a_set_that_settles_on_ours_over_a_rival_is_landed_then_unchanged() {
         "the identical rewrite kept its seq"
     );
     assert!(!first.missed() && !again.missed());
+}
+
+/// D15, register S7d: ours settling over a rival at its seq (a restored
+/// backup writing over its own earlier value) is not one value for every
+/// reader (0.5.8 `get_value.rs:49-88`), so the pool writes it above that
+/// seq (`min_seqnum`, `set_value.rs:383-386`) and a watcher holding the
+/// rival sees a newer seq.
+#[tokio::test]
+async fn a_set_contested_at_its_seq_is_written_above_it() {
+    let dht = Arc::new(MemDht::default());
+    let pool = pool_on(Arc::clone(&dht));
+    let (lease, key) = created(&pool).await;
+    dht.contest(Contest::Ours);
+    let outcome = pool.set(lease, 0, b"bravo".to_vec(), None).await.unwrap();
+    assert_eq!(outcome, SetOutcome::Landed);
+    let stored = dht.value(&key, 0).expect("ours is stored");
+    assert_eq!(
+        (stored.seq, stored.data.as_slice()),
+        (1, b"bravo".as_slice()),
+        "written above the contested seq 0"
+    );
 }
 
 #[tokio::test]

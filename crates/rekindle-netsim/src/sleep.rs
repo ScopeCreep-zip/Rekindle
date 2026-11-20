@@ -113,6 +113,18 @@ impl<B: DhtBackend> DhtBackend for Sleepable<B> {
         self.run(self.inner.set(key, subkey, data, writer)).await
     }
 
+    async fn set_above(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&WriterKey>,
+        min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.run(self.inner.set_above(key, subkey, data, writer, min_seq))
+            .await
+    }
+
     async fn inspect(
         &self,
         key: &str,

@@ -50,6 +50,7 @@
 
 mod reads;
 pub(crate) mod transaction;
+mod write;
 
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -61,8 +62,8 @@ use rekindle_records::port::{
 use rekindle_utils::RandomSource;
 
 use super::{
-    admits, canonical_key_text, fanout, new_encryption_key, public_text, reachable,
-    record_key_text, rehydrate, replicas, size, stores, subkey_count, watches, writer_public,
+    admits, canonical_key_text, new_encryption_key, public_text, reachable, record_key_text,
+    rehydrate, replicas, size, stores, subkey_count, watches, writer_public,
 };
 use crate::clock::SimRandom;
 use crate::latency::{self, Slot, Span};
@@ -206,27 +207,6 @@ impl SimDht {
             ));
         }
         Ok(())
-    }
-
-    /// The value a write sends: the same data and writer resend the local
-    /// copy's bytes at its seq (0.5.8 `set_value.rs:353-366`), else a fresh
-    /// encryption at local seq + 1, or seq 0 with no local copy, raised to a
-    /// modified client's `min_seqnum` ([`crate::Fault::MinSeqnum`], [`replicas::encrypt`]).
-    fn ours(&self, key: &str, subkey: u32, data: Vec<u8>, public: &[u8; 32]) -> replicas::Cipher {
-        let writer = public_text(public);
-        let mut inner = self.net.inner.lock();
-        let min = inner.faults.min_seqnum(self.node, key);
-        match replicas::local(&inner, self.node, key, subkey) {
-            Some(l) if l.value.data == data && l.value.writer == writer => l,
-            local => replicas::encrypt(
-                &mut inner,
-                RecordValue {
-                    seq: (local.map_or(0, |l| l.value.seq.saturating_add(1))).max(min),
-                    data,
-                    writer,
-                },
-            ),
-        }
     }
 }
 
@@ -405,37 +385,18 @@ impl DhtBackend for SimDht {
         data: Vec<u8>,
         writer: Option<&WriterKey>,
     ) -> Result<Option<RecordValue>, DhtCallError> {
-        self.net.inner.lock().nodes[self.node].app_sets += 1;
-        let opened = self.opened(key)?;
-        let writer = writer
-            .map(|w| w.keypair.clone())
-            .or(opened)
-            .ok_or_else(|| error(DhtErrorKind::Generic, "value is not writable"))?;
-        let public =
-            writer_public(&writer).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
-        self.validate(key, subkey, &public, data.len())?;
-        // In flight until it returns (0.5.8 `inspect_record.rs:274-277,287-290`).
-        let _setting = super::Setting::new(&self.net, self.node, key, subkey);
-        if self.offline() {
-            return Err(try_again());
-        }
-        let _slot = self.net.latency.slot(self.node, key, &[subkey]).await;
-        if self.fault_try_again() {
-            tokio::time::sleep(self.net.latency.draw(self.node, latency::SET)).await;
-            return Err(try_again());
-        }
-        let accepting = {
-            let inner = self.net.inner.lock();
-            inner
-                .faults
-                .accepting(self.node, key, subkey, inner.records.get(key))
-        };
-        let ours = self.ours(key, subkey, data, &public);
-        let fanout = fanout::run(&self.net, self.node, (key, subkey), &ours, accepting).await;
-        if self.offline() {
-            return Err(try_again());
-        }
-        fanout::commit(&self.net, self.node, (key, subkey), &ours, &fanout)
+        self.write(key, subkey, data, writer, None).await
+    }
+
+    async fn set_above(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&WriterKey>,
+        min_seq: u32,
+    ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.write(key, subkey, data, writer, Some(min_seq)).await
     }
 
     async fn inspect(

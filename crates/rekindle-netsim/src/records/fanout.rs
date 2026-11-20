@@ -7,8 +7,9 @@
 //!   [`SET_COUNT`] counting the accepts, until a lane in flight passes the
 //!   slow threshold [`STRAGGLER_FLOOR`] (`set_value.rs:676`
 //!   `ThrottleAtConsensus`, `fanout_queue.rs:500-552`), sent in closeness order
-//!   over the replicas the node reaches; each arrives at its replica a drawn
-//!   [`latency::SET_RPC`] after it left, and **the replica stores it then**
+//!   over the replicas the node reaches; each arrives at its replica a
+//!   [`latency::SET_RPC`] drawn from the set's own stream ([`set_stream`])
+//!   after it left, and **the replica stores it then**
 //!   (readers and watchers see it from that moment), and its answer is read
 //!   then. An RPC whose replica the node no longer reaches at arrival, or
 //!   arriving while the node is offline, is lost: no answer comes, and its
@@ -361,6 +362,7 @@ pub(crate) async fn run(
         .take(accepting.unwrap_or(usize::MAX))
         .collect();
     let mut fanout = Fanout::new(&reach, ours);
+    let stream = set_stream(key, subkey, &ours.value);
     let mut lanes: Vec<Lane> = Vec::new();
     let mut last_accept = Instant::now();
     let mut slowest: Option<Duration> = None;
@@ -381,7 +383,7 @@ pub(crate) async fn run(
                     break;
                 };
                 let sent = Instant::now();
-                let at = sent + net.latency.draw(node, latency::SET_RPC);
+                let at = sent + net.latency.draw_stream(node, stream, latency::SET_RPC);
                 let answers = answering.contains(&r);
                 lanes.push(Lane {
                     sent,
@@ -464,6 +466,28 @@ pub(crate) async fn run(
         ));
     }
     fanout.finish()
+}
+
+/// The latency stream of a set of `value` at `key`/`subkey`: its RPCs'
+/// durations come from the seed and the write alone, never from what the
+/// node's other calls drew before it. Tokio wakes tasks due at one instant
+/// in an order the seed does not fix (`select!` polls its branches from an
+/// unseeded generator), so one stream shared by every call of a node would
+/// hand a set different durations, and its replicas' answers a different
+/// order, from run to run on the same seed: which value a contested set
+/// settles on is decided by that order (0.5.8 `set_value.rs:94-109`,
+/// `value_tally.rs:37-45`).
+fn set_stream(key: &str, subkey: u32, value: &rekindle_records::port::RecordValue) -> u64 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"rekindle-netsim set stream");
+    hasher.update(key.as_bytes());
+    hasher.update(&subkey.to_le_bytes());
+    hasher.update(&value.seq.to_le_bytes());
+    hasher.update(value.writer.as_bytes());
+    hasher.update(&value.data);
+    let mut first = [0u8; 8];
+    first.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
+    u64::from_le_bytes(first)
 }
 
 /// Whether an RPC from `node` arriving now at `key`'s replica `r` is
