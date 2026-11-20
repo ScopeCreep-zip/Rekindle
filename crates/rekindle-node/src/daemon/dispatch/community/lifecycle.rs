@@ -102,18 +102,7 @@ pub(crate) async fn handle_join(
     // The join's stages are a large future: boxed off the dispatch path.
     let joined = match Box::pin(adapter(ctx).join(&link)).await {
         Ok(joined) => joined,
-        // The inviter's typed refusal (plan E3.2 join step 5, ADR 0019):
-        // its code and what the user is told, rendered as is.
-        Err(crate::host::adapters::governance::JoinFailure::Refused(reason)) => {
-            return IpcResponse::Error {
-                code: reason.code(),
-                message: reason.message().to_owned(),
-                remediation: Some(reason.remediation().to_owned()),
-            };
-        }
-        Err(crate::host::adapters::governance::JoinFailure::Failed(e)) => {
-            return IpcResponse::error(500, e);
-        }
+        Err(failure) => return join_failure_response(failure),
     };
     // The shell starts its own community services when the runtime hands
     // the records over (`ShellHooks::community_records_ready`).
@@ -195,3 +184,21 @@ pub(crate) async fn handle_update_info(
         Err(e) => IpcResponse::error(500, e),
     }
 }
+
+/// The Host call's answer to a failed join. The inviter's typed refusal
+/// (plan E3.2 join step 5, ADR 0019) keeps its code and what the user is
+/// told, rendered as is; anything else is a 500.
+fn join_failure_response(failure: crate::host::adapters::governance::JoinFailure) -> IpcResponse {
+    match failure {
+        crate::host::adapters::governance::JoinFailure::Refused(reason) => IpcResponse::Error {
+            code: reason.code(),
+            message: reason.message().to_owned(),
+            remediation: Some(reason.remediation().to_owned()),
+        },
+        crate::host::adapters::governance::JoinFailure::Failed(e) => IpcResponse::error(500, e),
+    }
+}
+
+#[cfg(test)]
+#[path = "lifecycle_tests.rs"]
+mod tests;

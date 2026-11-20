@@ -302,3 +302,33 @@ async fn the_cap_bounds_the_attempts() {
     const { assert!(3 < MAX_BOOTSTRAP_PEERS) };
     assert!(started.elapsed() <= bootstrap_peers_cap() + Duration::from_secs(1));
 }
+
+/// Plan E3.2 join step 5: the inviter's `bootstrapRefused` for our anchor
+/// decodes to its reason; one for another anchor is a bare NAK, whose
+/// reason is unnamed (`NotAdmitted`).
+#[test]
+fn a_bootstrap_refused_reply_decodes_to_its_reason() {
+    use rekindle_types::join_refusal::JoinRefusal;
+    for reason in [
+        JoinRefusal::InviteUsedUp,
+        JoinRefusal::InviteNoLongerValid,
+        JoinRefusal::InviteUnknown,
+        JoinRefusal::NotAdmitted,
+    ] {
+        let reply = crate::encode_refusal("VLD0:anchor", reason).expect("encodes");
+        match super::read_reply(&reply, "VLD0:anchor") {
+            Err(GovernanceRuntimeError::BootstrapRefused(got)) => assert_eq!(got, reason),
+            other => panic!("{reason:?}: expected the refusal, got {other:?}"),
+        }
+        match super::read_reply(&reply, "VLD0:other") {
+            Err(GovernanceRuntimeError::BootstrapRefused(got)) => {
+                assert_eq!(
+                    got,
+                    JoinRefusal::NotAdmitted,
+                    "another anchor's refusal is a NAK"
+                );
+            }
+            other => panic!("expected a NAK, got {other:?}"),
+        }
+    }
+}
