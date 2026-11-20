@@ -204,3 +204,13 @@ fn the_window_renders_as_many_slots_as_a_layout_may_have() {
         "SkinFrame.tsx FRAME_TILES must equal MAX_FRAME_TILES"
     );
 }
+
+#[test]
+fn a_shaped_window_without_a_frame_keeps_square_corners() {
+    // The shaper cuts an unlaid buddy list or chat window to its whole
+    // rectangle (`serve::frames` lays nothing for it), so the page's
+    // `.app-frame` radius must not round the drawing inside that cut.
+    let css = include_str!("../../../../src/styles/theme/22-skin-frame.css");
+    let rule = ".app-frame[data-skin-window] {\n    border-radius: 0;\n  }";
+    assert!(css.contains(rule), "22-skin-frame.css must square a shaped window: {css}");
+}
