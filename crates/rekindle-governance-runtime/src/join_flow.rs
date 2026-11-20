@@ -18,15 +18,16 @@
 //! `M`/0, ours on `M`/2 with `M`/3 after it, then the beat `M`/1.
 
 use rekindle_crypto::keypair_text;
-use rekindle_governance::op::invite_proof_bytes;
+use rekindle_governance::op::{invite_proof_bytes, VerifiedOp};
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::port::OpenIntent;
 use rekindle_records::schema;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::dht_layout::member_record;
-use rekindle_types::governance::{Frontier, GenesisCert, GovernanceEntry, InviteProof};
+use rekindle_types::governance::{Frontier, GenesisCert, GovernanceEntry, InviteProof, OpHash};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::invite::InviteSecrets;
+use rekindle_types::join_refusal::JoinRefusal;
 use zeroize::Zeroizing;
 
 use crate::deps::GovernanceRuntimeDeps;
@@ -156,19 +157,52 @@ async fn resolve_inviter_route<D: GovernanceRuntimeDeps>(
 }
 
 /// Refuse an invite the merged state does not hold as live
-/// (`GovernanceState::live_invite`): unknown or revoked, expired, or used
-/// up (a join on it would be refused by every reader's `invite_gate`).
-fn check_invite(
+/// (`GovernanceState::live_invite`: a join on it would be refused by every
+/// reader's `invite_gate`), with the typed reason the inviter's merge would
+/// answer (`rekindle_types::join_refusal`): the reasons are derivable from
+/// the op DAG this join walked, so naming them discloses nothing new.
+///
+/// - every use taken by earlier joins: `InviteUsedUp`;
+/// - expired, or revoked (an applied `InviteCreated` for `code_hash` that
+///   the state no longer holds: `GovernanceState::invites` is
+///   `InviteCreated` minus `InviteRevoked`): `InviteNoLongerValid`, one
+///   reason for both, as the gate gives;
+/// - no applied `InviteCreated` matches: `InviteUnknown`.
+///
+/// After a resume from a hint, `ops` holds only the post-cut ops: an
+/// invite revoked below the cut is not live in the snapshot's state and no
+/// post-cut op names it, so it is `InviteUnknown`, as the inviter's
+/// resumed gate answers it (`merge::resume_gates`).
+pub(crate) fn check_invite(
     state: &GovernanceState,
+    walked: (&[VerifiedOp], &[OpHash]),
     code_hash: &str,
     now_secs: u64,
 ) -> Result<PseudonymKey, GovernanceRuntimeError> {
-    state
-        .live_invite(code_hash, now_secs)
-        .map(|invite| invite.creator_pseudonym.clone())
-        .ok_or_else(|| {
-            GovernanceRuntimeError::Adapter("invite is revoked, unknown, expired or used up".into())
-        })
+    if let Some(invite) = state.live_invite(code_hash, now_secs) {
+        return Ok(invite.creator_pseudonym.clone());
+    }
+    let held = (state.invites.iter())
+        .filter(|(_, i)| i.code_hash == code_hash)
+        .min_by_key(|(id, _)| **id)
+        .map(|(_, i)| i);
+    let reason = match held {
+        Some(invite) if invite.expires_at.is_some_and(|at| at <= now_secs) => {
+            JoinRefusal::InviteNoLongerValid
+        }
+        Some(_) => JoinRefusal::InviteUsedUp,
+        None if created_in(walked, code_hash) => JoinRefusal::InviteNoLongerValid,
+        None => JoinRefusal::InviteUnknown,
+    };
+    Err(GovernanceRuntimeError::InviteRefused(reason))
+}
+
+/// Whether an applied op of the walked set created the invite `code_hash`.
+fn created_in((ops, applied): (&[VerifiedOp], &[OpHash]), code_hash: &str) -> bool {
+    ops.iter().any(|op| {
+        matches!(op.body(), GovernanceEntry::InviteCreated { code_hash: c, .. } if c == code_hash)
+            && applied.contains(&op.hash())
+    })
 }
 
 /// Create our member record `M(p)`; its lease is released (the op-log
@@ -296,7 +330,8 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         ));
     }
     let now = deps.clock().now_secs();
-    let inviter = check_invite(&gov_state, &code_hash, now)?;
+    let applied = walked.merged.applied.as_slice();
+    let inviter = check_invite(&gov_state, (&walked.set.ops, applied), &code_hash, now)?;
     if inviter != inviter_pseudonym {
         return Err(GovernanceRuntimeError::Adapter(
             "the invite's secrets name another inviter than its InviteCreated".into(),
@@ -355,6 +390,10 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         initial_presence,
     })
 }
+
+#[cfg(test)]
+#[path = "join_flow_invite_tests.rs"]
+mod invite_tests;
 
 #[cfg(test)]
 mod tests {

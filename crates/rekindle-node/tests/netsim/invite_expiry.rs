@@ -12,7 +12,7 @@ use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
-use crate::harness::{eventually, Community};
+use crate::harness::{eventually, Community, Refused};
 
 const TTL: u64 = 120;
 
@@ -68,9 +68,11 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
     // its merged state still holds the invite and the joiner refuses it on
     // its own clock as expired. Once the revocation is on the frontier,
     // the walk reaches it and the join is refused as revoked. Either way
-    // the expired invite is never admitted.
-    let answers = std::cell::RefCell::new(Vec::<String>::new());
-    let revoked = eventually(&community.sim, Duration::from_secs(TTL), || async {
+    // the expired invite is never admitted, and the joiner is told the one
+    // typed reason, 410 `INVITE_NO_LONGER_VALID` (`join_flow::check_invite`;
+    // `rekindle_types::join_refusal`: a revocation is not told apart from
+    // the clock).
+    for phase in ["before the revocation lands", "after it is on the frontier"] {
         let joined = community.nodes[1]
             .call(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityJoin {
@@ -78,19 +80,11 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
                 },
             )))
             .await;
-        let answer = format!("{joined:?}");
         assert!(
-            joined.is_err() && (answer.contains("expired") || answer.contains("revoked")),
-            "an expired invite is never admitted: {answer}"
+            matches!(&joined, Err(Refused { code: 410, message, .. })
+                if message == "This invite is no longer valid."),
+            "an expired invite is never admitted ({phase}): {joined:?}"
         );
-        let done = answer.contains("revoked");
-        answers.borrow_mut().push(answer);
-        done
-    })
-    .await;
-    assert!(
-        revoked,
-        "an expired invite is then refused as revoked: {:?}",
-        answers.borrow()
-    );
+        tokio::time::sleep(rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD * 3).await;
+    }
 }

@@ -193,3 +193,56 @@ async fn a_used_up_single_use_invite_is_refused_with_its_reason() {
         );
     }
 }
+
+/// The joiner's own check refuses a used-up single-use invite with the same
+/// typed reason as the inviter (plan E3.2 join step 5;
+/// `rekindle_types::join_refusal`: the reasons are derivable from the DAG
+/// the join walked). The first join lands on the DHT, so the inviter's
+/// frontier the second joiner walks cites it and `join_flow.rs`
+/// `check_invite` refuses before any record is made: 409 "This invite has
+/// already been used.", never an untyped 500, and nothing is held.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_joiners_own_check_refuses_a_used_up_invite_with_its_reason() {
+    let mut community = Community::create(3, 4413).await;
+    let link = community.invite().await;
+    community.join_with(1, link.clone()).await;
+    assert!(
+        eventually(&community.sim, Duration::from_secs(600), || async {
+            member_count(&community, 0).await == 2 && member_count(&community, 1).await == 2
+        })
+        .await,
+        "both members merged the first join"
+    );
+    // The inviter's frontier citing the join is on the DHT.
+    tokio::time::sleep(rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD).await;
+    let second = community.nodes[2]
+        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityJoin { invite: link },
+        )))
+        .await;
+    match &second {
+        Err(Refused { code, message, .. }) => assert!(
+            *code == 409 && message == "This invite has already been used.",
+            "the used-up invite is refused for its reason: {code} {message}"
+        ),
+        Ok(answer) => panic!("a second redemption of a single-use invite joined: {answer}"),
+    }
+    let held = community.nodes[2]
+        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityInfo {
+                anchor: community.anchor.clone(),
+            },
+        )))
+        .await;
+    assert!(
+        held.is_err(),
+        "a join refused by its own check holds nothing"
+    );
+    for i in 0..2 {
+        assert_eq!(
+            member_count(&community, i).await,
+            2,
+            "node {i} counts no refused joiner"
+        );
+    }
+}

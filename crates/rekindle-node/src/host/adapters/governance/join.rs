@@ -4,6 +4,7 @@
 //! the projection, with our own member row, and the mesh hears
 //! the join. Nothing petitions anyone: admission is self-sovereign.
 
+use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dto::community::CommunityJoined;
 use rekindle_types::invite::InviteLink;
 
@@ -45,7 +46,14 @@ impl HostGovernance {
         }
         let outcome = rekindle_governance_runtime::join_flow::run_join_stages(self, link)
             .await
-            .map_err(|e| format!("community join failed: {e}"))?;
+            .map_err(|e| match e {
+                // Our own walk refused the invite: the inviter's typed
+                // reason, rendered as when the inviter refuses it.
+                GovernanceRuntimeError::InviteRefused(reason) => {
+                    super::join_bootstrap::JoinFailure::Refused(reason)
+                }
+                e => format!("community join failed: {e}").into(),
+            })?;
         let slot_seed = hex::decode(&outcome.invite.slot_seed)
             .ok()
             .and_then(|b| <[u8; 32]>::try_from(b).ok());

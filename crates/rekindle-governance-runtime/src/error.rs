@@ -122,6 +122,11 @@ pub enum GovernanceRuntimeError {
     /// answer to its `BootstrapRequest` is `bootstrapRefused`.
     #[error("the merge does not admit the joiner: {0}")]
     JoinNotAdmitted(rekindle_types::join_refusal::JoinRefusal),
+    /// Our own join's walk of the op DAG holds the invite not live, and
+    /// why (`join_flow::check_invite`): the reason the inviter's merge
+    /// would answer, so the join is refused the same either way.
+    #[error("the invite is not live: {0}")]
+    InviteRefused(rekindle_types::join_refusal::JoinRefusal),
 
     /// The inviter answered `bootstrapPartial` and none of the members
     /// asked after it (this many) answered a frontier: each was partial,
