@@ -177,6 +177,10 @@ function applyFriendEvent(friend: FriendEvent): void {
       setFriendsState("friends", peerKey, "handshakeError", reason);
       setFriendsState("friends", peerKey, "handshakeRetrying", false);
     }
+    // Our accept publishes `accepted` before its session opens (GC3), so
+    // the re-read that `accepted` started can predate this failure; a newer
+    // read (newest wins) carries the Host's row with the error.
+    handleRefreshFriends();
     return;
   }
   if ("identityPinMismatch" in friend) {
