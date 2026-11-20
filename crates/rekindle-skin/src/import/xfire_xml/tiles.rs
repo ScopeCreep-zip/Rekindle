@@ -90,7 +90,7 @@ fn eq(a: &str, b: &str) -> bool {
 }
 
 /// The component's first `<Images>` with no state or `State="Normal"`.
-fn normal_set(component: &Node) -> Option<&Node> {
+pub(super) fn normal_set(component: &Node) -> Option<&Node> {
     component
         .children_named("Images")
         .find(|i| i.attr_ci("State").is_none_or(|s| eq(s, "Normal")))

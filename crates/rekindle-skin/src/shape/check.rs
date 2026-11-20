@@ -6,7 +6,9 @@
 //! 1. each tile's mask is its image's alpha (≥ [`super::ALPHA_OPAQUE`]),
 //!    derived from the image, never declared: the shape is what is drawn;
 //! 2. no frame tile reaches into the content rectangle (security surfaces
-//!    live there, `@layer sec`);
+//!    live there, `@layer sec`); a decoration (a pack tile above the frame
+//!    band, `FrameTile::decoration`) may, because it draws beneath the
+//!    content's interactive layer and the content stays opaque under it;
 //! 3. the content rectangle is fully opaque: an overhang tile may lie over
 //!    it only with opaque pixels, so nothing behind the window ever shows
 //!    through the content. Transparent pixels in the frame band, enclosed
@@ -78,7 +80,9 @@ fn closed(
     for (i, (x, y, tw, th)) in placed(layout, width, height) {
         let (x0, x1) = (x.max(c.0), (x + tw).min(c.0 + c.2));
         let (y0, y1) = (y.max(c.1), (y + th).min(c.1 + c.3));
-        if x0 >= x1 || y0 >= y1 {
+        // A decoration draws beneath the content's interactive layer and
+        // the content stays opaque under it (lead decision, plan SK0 S1c).
+        if x0 >= x1 || y0 >= y1 || layout.tiles[i].decoration.is_some() {
             continue;
         }
         if !layout.tiles[i].overhang {

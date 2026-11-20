@@ -276,6 +276,11 @@ pub struct FrameTile {
     /// the frame rectangle.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub overhang: bool,
+    /// A pack tile above the frame band (its Xfire `Z`): it may lie over the content rectangle, draws
+    /// beneath the content's interactive layer, adds its opaque pixels outside the content to the
+    /// silhouette and never cuts the content. `None` for a frame piece.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decoration: Option<u8>,
 }
 
 /// A window's frame layout (plan SK0 S1): the window is the frame

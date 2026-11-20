@@ -217,8 +217,12 @@ fn builtin_silhouettes_match_their_goldens() {
     let got: Vec<_> = [
         ("builtin:xfire-classic", (605, 412)),
         ("builtin:spacecowboy", (365, 549)),
-        ("builtin:symbiosis", (386, 555)),
+        ("builtin:symbiosis", (399, 555)),
         ("builtin:total-chaos", (471, 553)),
+        ("builtin:stealthx", (380, 555)),
+        ("builtin:xslimfire", (330, 492)),
+        ("builtin:simple-x", (340, 430)),
+        ("builtin:xglow", (350, 378)),
     ]
     .into_iter()
     .map(|(id, size)| (id, golden(id, size)))
@@ -231,16 +235,19 @@ fn builtin_silhouettes_match_their_goldens() {
                 vec![r(69, 0, 467, 1), r(62, 1, 481, 1), r(56, 2, 493, 1)],
             ),
         ),
-        // The main-* pieces are #FF00FF (keyed) but for a 1 px black line,
-        // so the frame tiles cut to the content rectangle; the reference's
-        // logo and mechs are separate layout tiles (SCLogo, AGEAR, IGEAR)
-        // over the band, not read yet (SK0 S1 open).
-        ("builtin:spacecowboy", (1, vec![r(15, 33, 331, 464)])),
+        // The decorations SCLogo (0,1), AGEAR and IGEAR (bottom corners,
+        // Z=4) over the frame band: the logo's top at y 6, the mechs below.
+        (
+            "builtin:spacecowboy",
+            (293, vec![r(41, 6, 3, 1), r(40, 7, 5, 10), r(16, 17, 19, 1)]),
+        ),
         // The Sides shape (bottom row typed by position): rounded corners,
         // 7 px at the top, as the reference.
         (
             "builtin:symbiosis",
-            (13, vec![r(7, 0, 372, 1), r(5, 1, 376, 1), r(4, 2, 378, 1)]),
+            // The frame 386 px wide, the 13 px IndentRight outset beside it
+            // holding the Infoview tab (13×115, centred down the window).
+            (39, vec![r(7, 0, 372, 1), r(5, 1, 376, 1), r(4, 2, 378, 1)]),
         ),
         // The T.C plaque (72 px opaque top, centred) over the title row.
         (
@@ -250,6 +257,54 @@ fn builtin_silhouettes_match_their_goldens() {
                 vec![r(199, 0, 72, 2), r(168, 2, 134, 1), r(167, 3, 136, 1)],
             ),
         ),
+        // Rounded top corners, the frame band opaque, as the references.
+        (
+            "builtin:stealthx",
+            (11, vec![r(6, 0, 368, 1), r(4, 1, 372, 1), r(3, 2, 374, 1)]),
+        ),
+        (
+            "builtin:xslimfire",
+            (11, vec![r(6, 0, 318, 1), r(4, 1, 322, 1), r(3, 2, 324, 1)]),
+        ),
+        // Square corners: the window rectangle.
+        ("builtin:simple-x", (1, vec![r(0, 0, 340, 430)])),
+        (
+            "builtin:xglow",
+            (13, vec![r(5, 0, 340, 1), r(4, 1, 342, 1), r(3, 2, 344, 1)]),
+        ),
     ];
     assert_eq!(got, want);
+}
+
+#[test]
+fn a_decoration_adds_its_art_outside_the_content_and_never_cuts_it() {
+    // Space Cowboy's AGEAR (bottom left, Z=4) reaching into the content
+    // with transparent pixels, its opaque column in a 2 px left outset
+    // (Symbiosis's IndentRight strip, mirrored).
+    let gear = RgbaImage::from_fn(9, 9, |x, _| if x < 2 { ON } else { OFF });
+    let add = |l: &mut WindowLayout, files: &mut BTreeMap<String, Vec<u8>>| {
+        l.outsets.left = 2;
+        let start = TileAxis::Start { offset: 0 };
+        let end = TileAxis::End { offset: 0 };
+        let (mut t, png) = tile(SkinWindow::Chat, "gear", &gear, (start, end), true)
+            .unwrap()
+            .unwrap();
+        t.decoration = Some(4);
+        files.insert(t.image.clone(), png);
+        l.tiles.push(t);
+    };
+    assert_eq!(checked_with(&nine(), add), Ok(()));
+    let (mut layout, mut files) = from_nine(SkinWindow::Chat, &nine()).unwrap();
+    add(&mut layout, &mut files);
+    let rects = silhouette(&layout, &masks(&layout, &files), 22, 20, SCALE_ONE).unwrap();
+    let inside = |x: u32, y: u32| {
+        rects
+            .iter()
+            .any(|r| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+    };
+    // The gear's column in the outset, bottom 9 rows; nothing above it.
+    assert!((11..20).all(|y| inside(0, y) && inside(1, y)));
+    assert!(!inside(0, 10));
+    // The content rectangle (frame 2..22, insets 4) stays whole.
+    assert!((4..16).all(|y| (6..18).all(|x| inside(x, y))));
 }

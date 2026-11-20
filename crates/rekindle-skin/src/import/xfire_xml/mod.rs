@@ -30,6 +30,7 @@
 pub mod bitmap;
 pub mod colours;
 pub mod controls;
+mod decor;
 mod notice;
 pub mod refs;
 mod sources;
@@ -351,14 +352,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         title_rows::crop(&main, &mut controls, &tally.sources);
         let bitmaps = bitmaps(theme);
         let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, &colours, name, shift);
-        if let Some((pieces, _)) = tiles::pieces(&main, &components, decode)? {
-            windows.insert(
-                SkinWindow::Main,
-                shape::from_nine(SkinWindow::Main, &pieces)?,
-            );
-        } else if let Some(stacked) = stack::layout(SkinWindow::Main, &main, &components, decode)? {
-            windows.insert(SkinWindow::Main, stacked);
-        }
+        decor::main_window(&main, &components, decode, &mut windows)?;
     }
     if let Some(pieces) = &chat {
         windows.insert(
