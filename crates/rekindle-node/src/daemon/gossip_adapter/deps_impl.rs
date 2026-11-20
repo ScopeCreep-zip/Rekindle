@@ -73,17 +73,17 @@ impl GossipDeps for DaemonGossipAdapter {
 
     // ---------- Route resolution ----------
 
-    /// Re-read a peer's route blob from their registry presence row.
-    ///
-    /// The roster the presence poll materialised is the source: every
-    /// row behind it was W26-verified when it was scanned, so a route
-    /// taken from here is one the named pseudonym actually signed.
+    /// A send to the peer's route failed: the Host forgets its cached
+    /// route and re-reads the peer's `M`/6 once, pinned to its
+    /// `MemberJoined` owner and verified under its pseudonym (plan E3.4
+    /// S4).
     async fn resolve_peer_route_from_dht(
         &self,
         community_id: &str,
         peer_pseudonym: &str,
     ) -> Option<Vec<u8>> {
-        self.resolve_peer_route_impl(community_id, peer_pseudonym)
+        crate::host::adapters::governance::HostGovernance::new(std::sync::Arc::clone(&self.ctx))
+            .reread_member_route(community_id, peer_pseudonym)
             .await
     }
 

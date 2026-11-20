@@ -49,10 +49,7 @@ pub use registry::{
     PresenceWrite,
 };
 pub use routes::MemberRouteCache;
-pub use scan_row::{
-    explain_route_for_peer, parse_and_classify_row, route_for_peer, AcceptedRow, ClassifiedRow,
-    RouteRefusal, SUBKEYS_PER_SEGMENT,
-};
+pub use scan_row::{parse_and_classify_row, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT};
 pub use spawn::{
     start_presence_poll, RAPID_TICKS, RAPID_TICK_INTERVAL_SECS, STEADY_TICK_INTERVAL_SECS,
 };

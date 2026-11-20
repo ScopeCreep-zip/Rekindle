@@ -74,15 +74,18 @@ impl MekDistributeDeps for DaemonMekAdapter {
             .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
     }
 
-    fn online_recipients(
+    async fn online_recipients(
         &self,
         community_id: &str,
         exclude_pseudonym: Option<&str>,
     ) -> Vec<RotationRecipient> {
         // Every roster member with an `M`/6 route (plan E3.4 S4), not only
-        // those gossip presence shows online.
+        // those gossip presence shows online; a route not cached yet is
+        // read once first, so a cold cache leaves nobody out.
         let excluded = exclude_pseudonym.unwrap_or_default();
-        self.governance()
+        let governance = self.governance();
+        governance.fill_member_routes(community_id).await;
+        governance
             .routed_members(community_id)
             .into_iter()
             .filter(|(pseudonym, _)| pseudonym != excluded)

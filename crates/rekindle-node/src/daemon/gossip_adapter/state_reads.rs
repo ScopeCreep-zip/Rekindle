@@ -1,6 +1,6 @@
 //! Overlay and identity reads.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use rekindle_gossip::PeerInfo;
 
@@ -67,82 +67,5 @@ impl DaemonGossipAdapter {
             .online_members
             .get(peer_key)
             .map(|member| member.status.clone())
-    }
-}
-
-impl DaemonGossipAdapter {
-    /// A peer's current route blob, re-read from the registry.
-    ///
-    /// Reads the peer's **own** presence row rather than any aggregate:
-    /// the row is signed by the pseudonym it names, so a route taken
-    /// from it cannot have been planted by another slot-keypair holder.
-    /// `parse_and_classify_row` performs that W26 check, which is why
-    /// this goes through it rather than deserialising the JSON directly.
-    ///
-    /// `force_refresh` is on: the whole reason this is called is that
-    /// the cached blob failed, so a local copy would return the same
-    /// stale route.
-    pub(super) async fn resolve_peer_route_impl(
-        &self,
-        community_id: &str,
-        peer_pseudonym: &str,
-    ) -> Option<Vec<u8>> {
-        let node = self.transport()?;
-        let (registry_key, subkey) = {
-            let members = self.ctx.communities.members(community_id);
-            let record = members.get(peer_pseudonym)?;
-            let registry_key = self.segment_registry_key(community_id, record.segment_index)?;
-            (registry_key, record.subkey_index)
-        };
-
-        let raw = rekindle_transport::broadcast::dht_writes::read_once_str(
-            node.as_ref(),
-            &registry_key,
-            subkey,
-            true,
-        )
-        .await
-        .ok()
-        .flatten()?;
-
-        let banned: HashSet<String> = self
-            .ctx
-            .communities
-            .governance_state(community_id)
-            .map(|s| s.bans.iter().map(|p| hex::encode(p.0)).collect())
-            .unwrap_or_default();
-
-        match rekindle_presence::parse_and_classify_row(&raw, &banned, 0, 0) {
-            rekindle_presence::ClassifiedRow::Accepted(row)
-                if row.pseudonym_hex == peer_pseudonym && !row.presence.route_blob.is_empty() =>
-            {
-                Some(row.presence.route_blob)
-            }
-            // A row that names someone else is not this peer's route —
-            // the slot may have been reclaimed since the roster was
-            // built. Anything else failed verification or is banned.
-            _ => None,
-        }
-    }
-
-    /// The registry record key for one segment: segment 0 comes from
-    /// our membership, later segments from merged governance.
-    fn segment_registry_key(&self, community_id: &str, segment_index: u32) -> Option<String> {
-        if segment_index == 0 {
-            return self
-                .ctx
-                .session
-                .read()
-                .as_ref()
-                .and_then(|s| s.community(community_id))
-                .map(|m| m.registry_key.clone());
-        }
-        self.ctx
-            .communities
-            .governance_state(community_id)?
-            .segments
-            .iter()
-            .find(|s| s.segment_index == segment_index)
-            .map(|s| s.registry_key.clone())
     }
 }

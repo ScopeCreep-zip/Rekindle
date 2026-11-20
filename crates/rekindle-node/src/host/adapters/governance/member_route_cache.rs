@@ -144,8 +144,7 @@ impl HostGovernance {
             Err(RouteCallError::Failed(e)) => return Err(MemberCallError::Call(e)),
             Err(RouteCallError::Unusable) => {}
         }
-        self.forget_route(community, member);
-        let fresh = self.read_route_cold(community, member).await;
+        let fresh = self.reread_route(community, member).await;
         let Some(fresh) = fresh.filter(|b| *b != route) else {
             self.forget_route(community, member);
             tracing::warn!(
@@ -166,6 +165,44 @@ impl HostGovernance {
                 Err(MemberCallError::Unreachable)
             }
         }
+    }
+
+    /// A send to `member`'s cached route failed: forget it and read its
+    /// `M`/6 once, pinned (the one re-read a dropped hint costs).
+    async fn reread_route(&self, community: &str, member: &PseudonymKey) -> Option<Vec<u8>> {
+        self.forget_route(community, member);
+        self.read_route_cold(community, member).await
+    }
+
+    /// [`Self::reread_route`] by pseudonym hex, for the gossip mesh's
+    /// re-resolve after a failed send (both modes' `GossipDeps`): `None`
+    /// for a non-member or a record with no routes.
+    pub async fn reread_member_route(&self, community: &str, member_hex: &str) -> Option<Vec<u8>> {
+        let member = super::moderation::pseudonym(member_hex)?;
+        if !self.is_key_reader(community, &member) {
+            return None;
+        }
+        self.reread_route(community, &member).await
+    }
+
+    /// Read `M`/6 once, pinned, for every roster member of `community`
+    /// but us whose route is not cached yet (plan E3.4 S4: the rotator
+    /// fills its cache before a key is distributed, so a member outside
+    /// the watch ring is not left out by a cold cache).
+    pub async fn fill_member_routes(&self, community: &str) {
+        let cold: Vec<PseudonymKey> = {
+            let roster = self.roster_others(community);
+            let map = self.ctx.communities.map().read();
+            let Some(c) = map.get(community) else {
+                return;
+            };
+            roster
+                .into_iter()
+                .filter(|p| c.member_routes.get(p).is_none())
+                .collect()
+        };
+        let reads = cold.iter().map(|p| self.read_route_cold(community, p));
+        futures::future::join_all(reads).await;
     }
 
     /// Forget `member`'s cached route (the transport said it is unusable).

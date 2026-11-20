@@ -84,13 +84,13 @@ impl GossipDeps for GossipAdapter {
         community_id: &str,
         peer_pseudonym: &str,
     ) -> Option<Vec<u8>> {
-        crate::services::community::routes::resolve_member_route(
-            &self.state,
-            &self.pool,
-            community_id,
-            peer_pseudonym,
-        )
-        .await
+        // A send to the peer's route failed: the Host forgets its cached
+        // route and re-reads the peer's `M`/6 once, pinned and verified
+        // (plan E3.4 S4).
+        let governance = crate::state_helpers::host_governance(&self.state).ok()?;
+        governance
+            .reread_member_route(community_id, peer_pseudonym)
+            .await
     }
 
     fn resolve_gate(&self) -> &rekindle_gossip::ResolveGate {
@@ -106,7 +106,7 @@ impl GossipDeps for GossipAdapter {
 /// `services/community/gossip.rs` constructs this per call (cheap —
 /// just clones two Arcs) and hands it to the crate's orchestrators.
 pub fn build_adapter(state: &std::sync::Arc<crate::state::AppState>) -> Option<GossipAdapter> {
-    // GossipAdapter needs only state + pool; the handle is dropped.
-    let (_app_handle, pool) = state_helpers::app_context(state)?;
-    Some(GossipAdapter::new(std::sync::Arc::clone(state), pool))
+    // Only while the app is up and an identity's database is open.
+    state_helpers::app_context(state)?;
+    Some(GossipAdapter::new(std::sync::Arc::clone(state)))
 }

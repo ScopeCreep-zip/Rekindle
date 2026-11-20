@@ -279,27 +279,6 @@ pub fn set_my_onboarding_complete(
     Ok(())
 }
 
-/// The member's registry slot: `(subkey, segment)`, once discovered.
-///
-/// # Errors
-/// The query failed.
-pub fn slot(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    pseudonym_key: &str,
-) -> rusqlite::Result<Option<(u32, u32)>> {
-    Ok(conn
-        .query_row(
-            "SELECT subkey_index, segment_index FROM community_members \
-             WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
-            params![owner_key, community_id, pseudonym_key],
-            |row| Ok((row.get::<_, Option<u32>>(0)?, row.get::<_, u32>(1)?)),
-        )
-        .optional()?
-        .and_then(|(subkey, segment)| Some((subkey?, segment))))
-}
-
 /// The member's display name in the community.
 ///
 /// # Errors

@@ -51,11 +51,13 @@ fn discovered(pseudonym_key: &str, name: &str, subkey: u32) -> DiscoveredMemberR
 fn another_identitys_rows_are_never_read() {
     let conn = conn_with_community();
     upsert_discovered(&conn, OTHER, "c1", &discovered("bob", "Bob", 3), 1).unwrap();
-    assert_eq!(slot(&conn, OWNER, "c1", "bob").unwrap(), None);
     assert_eq!(display_name(&conn, OWNER, "c1", "bob").unwrap(), None);
     assert!(display_names(&conn, OWNER, "c1").unwrap().is_empty());
     assert!(roster(&conn, OWNER, "c1").unwrap().is_empty());
-    assert_eq!(slot(&conn, OTHER, "c1", "bob").unwrap(), Some((3, 0)));
+    assert_eq!(
+        display_name(&conn, OTHER, "c1", "bob").unwrap().as_deref(),
+        Some("Bob")
+    );
 }
 
 #[test]
@@ -63,7 +65,15 @@ fn a_rescan_updates_profile_fields_but_keeps_joined_at() {
     let conn = conn_with_community();
     upsert_discovered(&conn, OWNER, "c1", &discovered("bob", "Bob", 3), 1).unwrap();
     upsert_discovered(&conn, OWNER, "c1", &discovered("bob", "Robert", 4), 99).unwrap();
-    assert_eq!(slot(&conn, OWNER, "c1", "bob").unwrap(), Some((4, 0)));
+    let subkey: u32 = conn
+        .query_row(
+            "SELECT subkey_index FROM community_members \
+             WHERE owner_key = ?1 AND community_id = 'c1' AND pseudonym_key = 'bob'",
+            [OWNER],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(subkey, 4);
     assert_eq!(
         any_display_name(&conn, OWNER, "bob").unwrap().as_deref(),
         Some("Robert")

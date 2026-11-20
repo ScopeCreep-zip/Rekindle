@@ -54,7 +54,9 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
 ) -> Result<(), MekRotationError> {
     let departed = pseudonym_from_hex(departed_pseudonym)
         .ok_or_else(|| MekRotationError::InvalidInput("invalid departed pseudonym".to_string()))?;
-    let recipients = deps.online_recipients(community_id, Some(departed_pseudonym));
+    let recipients = deps
+        .online_recipients(community_id, Some(departed_pseudonym))
+        .await;
     // The rotator is elected only among members who may rotate (plan
     // D20) — every peer filters the same merged governance, so all agree
     // on the candidates. With none online, nobody rotates: the rotation
@@ -190,7 +192,7 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
         .with_provenance(me.0, rank);
 
     // Excluding nobody: everyone online is still a member.
-    let recipients = deps.online_recipients(community_id, None);
+    let recipients = deps.online_recipients(community_id, None).await;
     // As a departure rotation: an unreached member asks for the key.
     distribute_mek(deps, community_id, scope, &new_mek, &recipients).await?;
 

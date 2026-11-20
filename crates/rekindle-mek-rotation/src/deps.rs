@@ -112,9 +112,11 @@ pub trait MekDistributeDeps: Send + Sync {
     /// rule readers apply to the resulting `MEKGenerationBump`.
     fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool;
 
-    /// Snapshot of online recipients in the community. `exclude_pseudonym`
-    /// is the departed/triggering peer the rotation should skip.
-    fn online_recipients(
+    /// The recipients of a key in the community: every roster member with
+    /// a route, the adapter reading each route not yet known once before
+    /// answering (plan E3.4 S4). `exclude_pseudonym` is the
+    /// departed/triggering peer the rotation should skip.
+    async fn online_recipients(
         &self,
         community_id: &str,
         exclude_pseudonym: Option<&str>,

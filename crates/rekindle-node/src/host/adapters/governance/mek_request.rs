@@ -87,7 +87,7 @@ impl HostGovernance {
         if me == requester {
             return Ok(());
         }
-        let online = deps.online_recipients(community_id, None);
+        let online = deps.online_recipients(community_id, None).await;
         if !elected(&me, &requester, &online, request.cascade_index) {
             return Ok(());
         }

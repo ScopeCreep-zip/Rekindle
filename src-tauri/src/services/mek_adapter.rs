@@ -81,17 +81,19 @@ impl MekDistributeDeps for MekAdapter {
             .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
     }
 
-    fn online_recipients(
+    async fn online_recipients(
         &self,
         community_id: &str,
         exclude_pseudonym: Option<&str>,
     ) -> Vec<RotationRecipient> {
         // Every roster member with an `M`/6 route, from the Host (plan
-        // E3.4 S4; E3.5 moves the whole rotation into the Host).
+        // E3.4 S4; E3.5 moves the whole rotation into the Host); a route
+        // not cached yet is read once first.
         let Ok(governance) = state_helpers::host_governance(&self.state) else {
             return Vec::new();
         };
         let excluded = exclude_pseudonym.unwrap_or_default();
+        governance.fill_member_routes(community_id).await;
         governance
             .routed_members(community_id)
             .into_iter()
