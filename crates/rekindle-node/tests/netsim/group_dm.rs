@@ -260,7 +260,11 @@ async fn retired_stretch_at(seed: u64) -> [u8; 32] {
     // reported by no change (0.5.8 reports a change only past the watcher's
     // local seq), so whichever path came first must not decide it.
     let keys = vec![own_chain(&nodes[0], &gid).expect("Ann's group chain is saved")];
-    assert_eq!(sim.creator(&keys[0]), Some(0), "Ann created her group chain");
+    assert_eq!(
+        sim.creator(&keys[0]),
+        Some(0),
+        "Ann created her group chain"
+    );
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: true,
