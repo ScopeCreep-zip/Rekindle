@@ -95,7 +95,7 @@ async fn totals_rows(host: &Host, owner: [u8; 32]) -> Vec<rekindle_db::repo::out
         .collect()
 }
 
-fn accept() -> DirectBody {
+pub(super) fn accept() -> DirectBody {
     DirectBody::FriendAccept(FriendAccept {
         profile_dht_key: String::new(),
         route_blob: Vec::new(),

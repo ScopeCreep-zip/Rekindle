@@ -3,6 +3,8 @@
 //! ([`runtime::Host`]). Every frontend reaches it through
 //! [`rekindle_ipc::HostApi`] (implemented in [`api`]).
 
+#[cfg(test)]
+mod accept_forward_tests;
 pub mod adapters;
 pub mod api;
 pub mod audit;

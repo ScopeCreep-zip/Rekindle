@@ -345,10 +345,12 @@ pub(super) async fn call_datagram_answer(
                 return Err(FriendError::NotReady(e.to_string()));
             }
             // The peer may have a new route since we cached theirs (a
-            // restart, a silent death): the captured one is forgotten, so
-            // the next attempt starts from the route they publish (live
-            // finding L-FR2), and this one calls once more over the route
-            // their profile holds, as a send does, when it differs.
+            // restart, a silent death): call once more over the one their
+            // profile holds, as a send does (`refresh_and_send`), when it
+            // differs. Reading it caches it, so the captured route is
+            // replaced only by the one they publish; a peer with no profile
+            // we can read (a removal ack after the unfriend) keeps the
+            // captured one for the next attempt (L-FR2, finding 62).
             Err(e) => call_refreshed(host, to, datagram, cached.as_deref())
                 .await
                 .ok_or_else(|| FriendError::Failed(format!("app_call: {e}")))??,
@@ -377,17 +379,11 @@ async fn call_refreshed(
     datagram: Vec<u8>,
     stale: Option<&[u8]>,
 ) -> Option<Result<Vec<u8>, FriendError>> {
-    let node = host.node().ok()?;
-    if stale.is_some() {
-        route::invalidate(&node, to);
-    }
     let blob = route::fetch_from_profile(host, to).await?;
     if stale == Some(blob.as_slice()) {
-        // Their profile still names the route that just failed: it is not
-        // cached again, so no later attempt starts from it unread.
-        route::invalidate(&node, to);
         return None;
     }
+    let node = host.node().ok()?;
     let target = route::import(&node, to, &blob)?;
     Some(
         node.caller()

@@ -9,12 +9,13 @@
 //! route Ola publishes within one failed call, one backoff step, the
 //! profile read and one call.
 //!
-//! Passes with and without fix (a) (seed 73, `wt/lfr2`): the failed call's
-//! own refresh (`dm::send::call_refreshed`) already reads the published
-//! route in the same attempt. Fix (a) changes only the attempt after a
-//! refresh that still read the stale blob, and in the netsim the
-//! accepter's profile watch (fix (b)) re-caches the new route before that
-//! attempt; this scenario guards the stale-capture bound, not (a).
+//! The failed call's own refresh (`dm::send::call_refreshed`) reads the
+//! published route in the same attempt and caches it, replacing the
+//! captured one; the accepter's profile watch (fix (b)) re-caches it too.
+//! This scenario guards that bound. It passed with and without the earlier
+//! fix (a) (forget the captured route on a failed call; seed 73), which
+//! was removed: it left a removal ack, whose peer has no profile to read
+//! after the unfriend, with no route (`removal_ack`, finding 62).
 
 use std::time::Duration;
 
