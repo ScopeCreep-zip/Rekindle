@@ -32,6 +32,9 @@
 //!     cargo xtask check-theme-literals Colours under src/styles are tokens.
 //!     cargo xtask check-sec-surfaces   Security surfaces are unskinnable.
 //!     cargo xtask check-overlay-layers The U1 review is the top overlay layer.
+//!     cargo xtask check-background-throttling
+//!                                      Every window throttles in the
+//!                                      background, none suspends (A1.5).
 //!     cargo xtask check-destructive-controls
 //!                                      Destructive controls carry a
 //!                                      non-colour cue (rule D0).
@@ -103,6 +106,7 @@ use clap::{Parser, Subcommand};
 use ignore::WalkBuilder;
 
 mod allow_reasons;
+mod background_throttling;
 mod bare_spawn;
 mod boundaries;
 mod capnp_bounds;
@@ -250,6 +254,8 @@ enum Command {
     CheckMotion,
     /// Verify the U1 review's z-layer is above every other overlay layer.
     CheckOverlayLayers,
+    /// Verify every window throttles in the background and none is suspended.
+    CheckBackgroundThrottling,
     /// Verify the macOS, WebKitGTK and Vite floors agree with the plan's E7.10 floor.
     CheckPlatformFloor,
     /// Verify every release bundle declares, stages and ships the skin helper.
@@ -407,6 +413,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| icon_glyphs::check_icon_glyphs(&root)),
                 ),
                 (
+                    "background-throttling",
+                    Box::new(|| background_throttling::check_background_throttling(&root)),
+                ),
+                (
                     "platform-floor",
                     Box::new(|| platform_floor::check_platform_floor(&root)),
                 ),
@@ -492,6 +502,9 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::ImportXfireData { from } => import_xfire_data::import_xfire_data(&root, from),
         Command::CheckMotion => motion::check_motion(&root),
         Command::CheckOverlayLayers => overlay_layers::check_overlay_layers(&root),
+        Command::CheckBackgroundThrottling => {
+            background_throttling::check_background_throttling(&root)
+        }
         Command::CheckIconGlyphs => icon_glyphs::check_icon_glyphs(&root),
         Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
         Command::CheckSidecars => sidecars::check_sidecars(&root),

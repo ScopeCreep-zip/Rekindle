@@ -14,6 +14,7 @@ pub use rebind::follow_event;
 
 use rekindle_types::key_format::{self, PublicKeyHex};
 use serde::{Deserialize, Serialize};
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry};
 
@@ -76,7 +77,17 @@ const fn size(kind: WindowKind) -> Size {
 
 /// The builder every window starts from: frameless transparent chrome,
 /// the navigation guard, no new windows, the media-permission policy for
-/// `kind`, and the data root's webview store.
+/// `kind`, background throttling, and the data root's webview store.
+///
+/// Background throttling is `Throttle` (plan A1.5, finding E7.14 F5): a
+/// hidden or covered window limits its timers but keeps running, so the
+/// buddy list in the tray and a covered chat window still take events,
+/// countdowns and badges. Without a policy, macOS WKWebView's inactive
+/// scheduling suspends a hidden view's tasks entirely; Signal and Element
+/// Desktop keep Electron's throttle-not-suspend default. wry maps it to
+/// WKPreferences `inactiveSchedulingPolicy` (macOS 14+, the E7.10 floor);
+/// WebKitGTK and WebView2 ignore it. `cargo xtask
+/// check-background-throttling` holds every window to this builder.
 ///
 /// # Errors
 /// No data root is managed yet (`setup::run` manages it before the first
@@ -106,6 +117,7 @@ fn base_builder<'a>(
         .transparent(true)
         .shadow(true)
         .resizable(true)
+        .background_throttling(BackgroundThrottlingPolicy::Throttle)
         .on_navigation(move |url| navigation::is_app_origin(url, dev_origin.as_ref()))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_permission_request(move |_, permission| {
