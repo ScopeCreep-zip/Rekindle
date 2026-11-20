@@ -218,7 +218,8 @@ pnpm bundle
 # Rust unit tests (all workspace crates)
 cargo test --workspace
 
-# Real-app tests (WebdriverIO drives the built app, alone and with peers)
+# Real-app tests (WebdriverIO drives the built desktop app, alone and with
+# peers; needs a desktop session; see docs/contributor/testing.md)
 pnpm test:app
 
 # Real-app call tests that need a camera and microphone

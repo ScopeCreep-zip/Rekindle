@@ -1,32 +1,32 @@
 # Testing Guide
 
-Rekindle has four distinct test surfaces. Each catches different
-classes of bug; together they let us iterate confidently on a
-non-trivial protocol stack.
+Rekindle has three test surfaces. Each catches a different class of
+bug; together they let us iterate confidently on a non-trivial
+protocol stack.
 
 ## At a glance
 
 ```
-┌──────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────┐
 │  Rust unit + integration tests   (cargo test --workspace)  │
-│  ├── Pure-logic crates: deterministic, fast (<1s)         │
-│  ├── Tier 6 governance: property tests for CRDT merge     │
-│  └── Cross-cutting integration: real I/O, slower          │
-├──────────────────────────────────────────────────────────┤
-│  Playwright E2E (real backend)    (pnpm test:e2e)         │
-│  ├── Real SQLite + Vault + Veilid bootstrap               │
-│  ├── HTTP IPC via rekindle-e2e-server                     │
-│  └── Catches integration bugs the unit tests miss         │
-├──────────────────────────────────────────────────────────┤
-│  Playwright Mock IPC              (pnpm test:mock)        │
-│  ├── In-browser, no backend                               │
-│  ├── Fast UI regression tests                             │
-│  └── Catches frontend rendering bugs                      │
-├──────────────────────────────────────────────────────────┤
-│  Manual visual / interaction      (`pnpm tauri dev`)      │
-│  └── Frontend feature work, voice, multi-window flows     │
-└──────────────────────────────────────────────────────────┘
+│  ├── Pure-logic crates: deterministic, fast (<1s)          │
+│  ├── Tier 6 governance: property tests for CRDT merge      │
+│  └── Netsim scenarios: several real Hosts, seeded faults   │
+├────────────────────────────────────────────────────────────┤
+│  Real-app suite (WebdriverIO)     (pnpm test:app)          │
+│  ├── The real desktop app, its real webview and Host       │
+│  ├── One-user specs, then two-user (alice/bob) specs       │
+│  ├── Headless peers: rekindled + rekindle CLI (fleet.ts)   │
+│  └── Geometry checks in the real windows                   │
+│      (+ pnpm test:app:devices for camera/mic specs)        │
+├────────────────────────────────────────────────────────────┤
+│  Real-app row walk                (pnpm walk)              │
+│  └── The older walk; its rows move into specs (E7.14 S3)   │
+└────────────────────────────────────────────────────────────┘
 ```
+
+There is no mocked IPC layer and no HTTP bridge in front of the
+frontend: every UI test drives the app users run.
 
 ## Rust tests
 
@@ -124,70 +124,109 @@ opt-level = 3
 If you add a test that exercises vault unlock, expect it to be slow
 without this override.
 
-## Playwright E2E (real backend)
+## Real-app suite (`pnpm test:app`)
 
 ```bash
-pnpm test:e2e          # full suite
-pnpm test:e2e -- --headed   # see the browser
-pnpm test:e2e -- --debug    # step through
+pnpm test:app                           # build, then every spec
+REKINDLE_APP_NO_BUILD=1 pnpm test:app   # reuse the last build
+pnpm exec wdio run e2e/app/wdio.conf.ts --spec e2e/app/specs/solo/identity.e2e.ts
+pnpm test:app:devices                   # camera/mic specs (see below)
 ```
 
-E2E tests drive the real Rust backend over HTTP. The mechanism:
+WebdriverIO's test runner drives the real desktop app through a
+WebDriver server embedded in it. The mechanism:
 
-1. `pnpm test:e2e` sets `VITE_E2E=true`.
-2. Playwright's global setup (`e2e/fixtures/e2e-server-setup.ts`) starts
-   the `rekindle-e2e-server` HTTP IPC bridge, which binds a random loopback
-   port and mints a per-run token. It writes both to an owner-only (0600)
-   file in a private temp directory the setup created and named in
-   `REKINDLE_E2E_HANDSHAKE`, never to stdout, so the token stays out of CI
-   logs; the setup reads the file and removes the directory at teardown.
-   The `test` fixture (`e2e/fixtures/e2e-server.ts`) hands them to each page
-   as `window.__REKINDLE_E2E__`; every request carries the token.
-3. The frontend's `src/ipc/invoke.ts` detects `VITE_E2E` and routes
-   through HTTP instead of Tauri's IPC.
-4. Playwright opens the SolidJS app in a real browser and exercises
-   real flows.
+1. The app is built once per run as a debug build with the cargo
+   feature `webdriver-test` (`pnpm tauri build --debug --no-bundle
+   --features webdriver-test`, `e2e/walk/launch.ts`). The feature pulls in
+   the vendored `crates/vendor/tauri-plugin-wdio-webdriver`; a release
+   build with it is a compile error (`src-tauri/src/lib.rs`) and
+   `cargo xtask check-webdriver-release` keeps it out of release
+   defaults. `REKINDLE_APP_NO_BUILD=1` skips the build and runs the last
+   one; `CARGO_TARGET_DIR` is honoured when finding it.
+2. The launcher service (`e2e/app/launcher.ts`) starts one app per
+   worker (or per multiremote instance), each on its own temp data root,
+   loopback port and per-run bearer token. The token reaches the worker
+   over the fork's IPC channel, never argv or stdout.
+3. The driver's request guard
+   (`crates/vendor/tauri-plugin-wdio-webdriver/src/server/auth.rs`)
+   refuses any request whose `Host` is not `127.0.0.1:<port>`, that
+   carries an `Origin`, or that lacks the run's token (compared in
+   constant time).
+4. Specs run in the real webview (WKWebView on macOS, WebKitGTK on
+   Linux) against the real Host, vault, SQLCipher database and Veilid
+   network.
 
-This catches the class of bugs unit tests miss: state-management
-issues, real cryptographic round trips, Veilid network bootstrap,
-SQLite schema conflicts.
+`pnpm test:app` runs two configs in sequence:
 
-### Test fixtures
+| Config | Specs | What runs |
+|--------|-------|-----------|
+| `e2e/app/wdio.conf.ts` | `e2e/app/specs/solo/` | One user: identity, window layout, the friends list |
+| `e2e/app/wdio.peers.conf.ts` | `e2e/app/specs/peers/` | Multiremote `alice` and `bob`, two apps talking to each other |
 
-Test fixtures live at `e2e/fixtures/`. They include pre-baked
-identities, communities, and friend states so tests can start from
-known scenarios.
+Lists whose rows are other people use headless real peers
+(`e2e/app/fleet.ts`): each is a `rekindled` with its own HOME, driven by
+the `rekindle` CLI, started one at a time and removed at the end of the
+run. Shared journeys (create an identity, add a friend, create a
+community) live in `e2e/app/journeys.ts` and `e2e/app/social.ts`.
 
-## Playwright Mock IPC (no backend)
+Layout is checked in the real windows: `e2e/app/geometry.ts` runs the
+page-side checks of `e2e/app/geometry-page.ts` (overlap, overflow,
+clipping, spacing scale, target size, focus indicators, the flex
+contract) through WebDriver's execute and reports every finding of a
+window at once; `e2e/app/windows.ts` opens each window.
 
-```bash
-pnpm test:mock
-```
+### Devices (`pnpm test:app:devices`)
 
-Sets `VITE_PLAYWRIGHT=true`, which makes `src/ipc/invoke.ts` use a
-mock IPC layer that returns stubbed responses. Useful for:
+`e2e/app/wdio.devices.conf.ts` runs the specs in
+`e2e/app/specs/devices/` that need a camera or microphone (calls). It
+runs on Linux, and on macOS only from the owner's own terminal: macOS
+TCC grants device access to the launching app and refuses an app a
+Claude session launched. The suite never raises a permission prompt,
+and a refused device fails the spec loudly; it is never skipped.
 
-- Pure UI regression tests (snapshot rendering, interaction flows).
-- Component-level tests that don't need backend behaviour.
-- Quick iteration on the frontend without spinning up Veilid.
+### Not in CI
 
-`startEventStream()` (`src/ipc/channels/subscriptions.ts`) is a no-op
-under `VITE_E2E=true` (no Tauri event transport in the browser).
+The real-app suite needs a desktop session (a window server and a
+webview), so CI does not run it. The gate runs `pnpm test:app` on both
+target machines (macOS and Linux).
+
+### The row walk (`pnpm walk`)
+
+`e2e/walk/` is the older real-app walk: a list of rows driven against
+the same debug build and driver. It stays until plan step E7.14 S3
+ports its rows into specs.
+
+### Why not Playwright
+
+Playwright drives webviews over the Chrome DevTools Protocol, which
+only WebView2 (Windows) exposes; it cannot drive WKWebView (macOS) or
+WebKitGTK (Linux) (<https://playwright.dev/docs/webview2>). Its own
+WebKit build is not the engine users run, and a page in a browser
+needed either mocked IPC or an HTTP bridge in place of the real Tauri
+IPC. Plan E7.14 S8 removed the Playwright suites, the mocked IPC and
+the E2E bridge. Where their scenarios went: about 27 of the 45 deleted
+spec files are covered (wholly or in part) by real-app specs or walk
+rows; the rest are backlog rows of E7.14 S3 (flows, 19), S5
+(accessibility, keyboard, skins, 13) and S6 (CSP, isolation, XSS in the
+real app, 4). Nine mock-only boundary cases (a malformed answer no real
+Host sends) go to S3 to place, and two scenarios are not ported:
+window-focus (a test window does not get system focus) and
+forced-colors (never active in WebKit).
 
 ### When to use which
 
 | Scenario | Use |
 |----------|-----|
 | Backend logic | `cargo test --workspace` |
-| Backend + frontend wiring | `pnpm test:e2e` |
-| Frontend rendering / interaction | `pnpm test:mock` |
-| End-to-end feature flow | `pnpm test:e2e` |
-| New UI component | `pnpm test:mock` |
+| Several nodes, faults, ordering | `cargo test -p rekindle-node --test netsim` |
 | Cryptographic round trip | `cargo test --workspace` |
+| UI wiring, rendering, interaction | `pnpm test:app` |
+| Two users, end-to-end feature flow | `pnpm test:app` (peers config) |
+| Window layout | `pnpm test:app` (geometry checks) |
+| Calls, camera, microphone | `pnpm test:app:devices` |
 
-`pnpm test:all` runs both Playwright suites in sequence.
-
-## E2E vs production: the `_core` pattern
+## Testing without Tauri: the `_core` pattern
 
 To keep the Rust backend testable without Tauri, security-sensitive
 logic is split into `_core` functions that take plain inputs and
@@ -230,8 +269,8 @@ formatters before pushing. CI will reject any change that breaks
 ## Logs during tests
 
 Set `RUST_LOG=rekindle=debug` (or `=trace` for more) to see structured
-backend logging. Frontend logs go to the browser console; in headed
-Playwright runs you can see them via DevTools.
+backend logging. Frontend logs go to the webview console; open the
+webview inspector in a `pnpm tauri dev` window to see them.
 
 ## Test-driven contributions
 

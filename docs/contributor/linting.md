@@ -97,7 +97,7 @@ Two workflows orchestrate these in CI:
 
 | Workflow | Covers |
 |----------|--------|
-| [`../../.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | `cargo fmt`, `cargo clippy`, `cargo test`, pnpm install + Playwright mock-IPC suite, Tauri build smoke per OS |
+| [`../../.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | `cargo fmt`, `cargo clippy`, `cargo test`, Tauri build smoke per OS (the real-app UI suite needs a desktop session and runs outside CI) |
 | [`../../.github/workflows/lint.yml`](../../.github/workflows/lint.yml) | Everything else — frontend (Biome / stylelint / knip), TOML, Markdown + lychee, SQL, workflows (actionlint + zizmor), shell, Nix, typos, gitleaks, Cap'n Proto |
 | [`../../.github/workflows/audit.yml`](../../.github/workflows/audit.yml) | RustSec advisories + cargo-deny + pnpm audit (daily + per-PR) |
 | [`../../.github/workflows/dependency-review.yml`](../../.github/workflows/dependency-review.yml) | Per-PR dep diff |

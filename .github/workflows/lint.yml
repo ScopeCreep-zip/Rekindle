@@ -60,7 +60,7 @@ jobs:
 
       # Covers src/**, e2e/** and the node-side config files. e2e/ sat
       # outside every tsconfig until tsconfig.e2e.json existed, which is
-      # how a call-signature bug in e2e/security/xss.spec.ts survived.
+      # how a call-signature bug in a since-removed e2e spec survived.
       - name: TypeScript — typecheck (src + e2e + configs)
         run: pnpm typecheck
 
@@ -99,26 +99,11 @@ jobs:
           pnpm exec depcruise --config .dependency-cruiser.cjs
           --ignore-known .dependency-cruiser-known-violations.json src
 
-  # ──────────────────────────────────────────────────────────────────
-  # Security regression suite — deep-link payload handling and DOM-XSS
-  # canaries (e2e/security/*.spec.ts). @playwright/test is a real
-  # devDependency, so this runs for real rather than being guarded.
-  # CSP tests skip themselves here (Vite serves no CSP); the declared
-  # policy is covered by src-tauri/tests/csp_policy.rs in the Rust job.
-  # ──────────────────────────────────────────────────────────────────
-  security:
-    name: Security suite (playwright)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Deep-link / XSS regression tests
-        run: pnpm test:security
+  # No browser security suite: the CSP, isolation and XSS checks run in
+  # the real app (plan E7.14 S6, `pnpm test:app`), which needs a desktop
+  # session and so is run by the gate on both target machines, not here.
+  # The declared CSP is also covered by src-tauri/tests/csp_policy.rs in
+  # ci.yml's Rust job.
 
   # ──────────────────────────────────────────────────────────────────
   # xtask guardrails — tier boundaries, the unconditional 600-line

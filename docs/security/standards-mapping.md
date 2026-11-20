@@ -138,7 +138,7 @@ Other practices apply when targeting federal procurement.
 | PW.5 — Create source code by adhering to secure coding practices | **Met** | Clippy + workspace lints (`deny(warnings)`, `dbg_macro = deny`, `todo = deny`, `undocumented_unsafe_blocks = deny`). [`../contributor/style-guide.md`](../contributor/style-guide.md). |
 | PW.6 — Configure the compilation, interpreter, and build processes to improve executable security | **Met** | `RUSTFLAGS = "-D warnings"` in CI; `#![forbid(unsafe_code)]` in pure-logic crates. |
 | PW.7 — Review and/or analyze human-readable code | **Met** | PR template requires test results, security review questions, subsystem checklist. [`../../.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md). |
-| PW.8 — Test executable code | **Met** | `cargo test --workspace`, property tests for CRDT merge, Playwright E2E + mock IPC, full CI in `.github/workflows/ci.yml`. [`../contributor/testing.md`](../contributor/testing.md). |
+| PW.8 — Test executable code | **Met** | `cargo test --workspace`, property tests for CRDT merge, netsim scenarios, the real-app suite (`pnpm test:app`, run by the gate on macOS and Linux), full CI in `.github/workflows/ci.yml`. [`../contributor/testing.md`](../contributor/testing.md). |
 | PW.9 — Configure the software to have secure settings by default | **Met** | E2E on, no telemetry, no plaintext fallback, no auto-recovery of compromised sessions. |
 | RV.1 — Identify and confirm vulnerabilities on an ongoing basis | **Met** | `cargo-audit` daily + KEV check weekly + Dependabot weekly. |
 | RV.2 — Assess, prioritize, and remediate vulnerabilities | **Met** | [`incident-response.md`](incident-response.md) defines P0–P3 categories and SLAs. |

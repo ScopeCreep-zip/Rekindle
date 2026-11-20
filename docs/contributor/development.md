@@ -29,7 +29,6 @@ The `frontend` shell provides:
 | GTK / WebKitGTK | Tauri 2 Linux dependencies |
 | OpenSSL | TLS support |
 | Cap'n Proto compiler | Build-time schema generation |
-| Playwright | E2E testing with bundled browsers |
 | 13 linters | Code quality (hermetic configs) |
 | 8 formatters | Code formatting (hermetic configs) |
 
@@ -262,24 +261,23 @@ do not delete that file.
 Rust backend commands extract `_core` functions (e.g., `create_identity_core`,
 `login_core`) that can be tested without a Tauri `AppHandle`.
 
-### E2E Testing
+### Real-App Testing
 
-Rekindle supports two E2E testing strategies:
+The UI is tested in the real desktop app, never in a browser with mocked
+IPC (see [`testing.md`](testing.md)):
 
-**Real E2E (`pnpm test:e2e`):**
-- The `rekindle-e2e-server` crate exposes Tauri commands over HTTP at
-  `/invoke` on a random loopback port with a per-run token (started and
-  read by `e2e/fixtures/e2e-server-setup.ts` from an owner-only handshake
-  file, never stdout)
-- Playwright drives the real SolidJS UI in a browser
-- Uses real SQLite + Vault (`rekindle-vault`) + Ed25519 — no mocking
-- Frontend code path: `VITE_E2E=true` → `invoke()` sends HTTP POST
-- `startEventStream()` (`src/ipc/channels/subscriptions.ts`) is a no-op in this mode
-
-**Mock IPC (`pnpm test:mock`):**
-- `VITE_PLAYWRIGHT=true` → `mockIPC` from `@tauri-apps/api/mocks`
-- Tests frontend behavior with stubbed responses
-- Faster, no Rust compilation required
+- `pnpm test:app` builds a debug app with the cargo feature
+  `webdriver-test` and drives it with WebdriverIO through the app's
+  embedded, token-guarded WebDriver server
+  (`crates/vendor/tauri-plugin-wdio-webdriver`). It runs the one-user
+  specs (`e2e/app/wdio.conf.ts`, `e2e/app/specs/solo/`), then the
+  two-user alice/bob specs (`e2e/app/wdio.peers.conf.ts`,
+  `e2e/app/specs/peers/`). Each app gets its own temp data root, port
+  and token (`e2e/app/launcher.ts`).
+- `pnpm test:app:devices` runs the camera/microphone specs
+  (`e2e/app/specs/devices/`); on macOS run it from your own terminal.
+- `pnpm walk` runs the older real-app row walk (`e2e/walk/`).
+- The suite needs a desktop session, so CI does not run it.
 
 ### Linting
 
@@ -404,8 +402,8 @@ and [`../architecture/services-pattern.md`](../architecture/services-pattern.md)
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `VITE_E2E` | Enable E2E HTTP bridge mode | unset |
-| `VITE_PLAYWRIGHT` | Enable mock IPC mode | unset |
+| `REKINDLE_APP_NO_BUILD` | `1` makes `pnpm test:app` reuse the last debug build | unset |
+| `CARGO_TARGET_DIR` | Where cargo builds; the real-app suite looks for the app there | `target/` |
 | `RUST_LOG` | Tracing filter (default: `rekindle=info,warn`; Veilid logs under facility targets such as `rtab`, `stor`, `net`, `rpc`, never `veilid_core`) | unset |
 
 ## IDE Setup

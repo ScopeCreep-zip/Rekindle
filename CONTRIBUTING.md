@@ -19,10 +19,10 @@ and where to ask for help.
 | Enter the dev shell (Konductor / Nix flake) | `nix develop .#frontend` |
 | Install JS deps | `pnpm install` |
 | Run the desktop app in dev mode | `pnpm tauri dev` |
-| Run the test suites | `cargo test --workspace` and `pnpm test:all` |
+| Run the test suites | `cargo test --workspace` and `pnpm test:app` (needs a desktop session) |
 
 The `frontend` shell provides a hermetic toolchain: Rust 1.92+, Node.js 22,
-pnpm, GTK, WebKitGTK, OpenSSL, Playwright, and all linters/formatters. If
+pnpm, GTK, WebKitGTK, OpenSSL, and all linters/formatters. If
 you do not use Nix, the [contributor development guide](docs/contributor/development.md)
 lists the manual prerequisites.
 
@@ -143,7 +143,9 @@ Read it once before submitting an AI-assisted PR.
 2. **Match the existing style.** Don't reformat untouched code.
 3. **Run the full test suite locally.** `cargo test --workspace`,
    `cargo clippy --workspace -- -D warnings`, `cargo fmt --all -- --check`,
-   `pnpm test:all`. CI will re-run these.
+   `pnpm test:app`. CI re-runs the Rust and lint checks; `pnpm test:app`
+   drives the real desktop app and needs a desktop session, so CI does not
+   run it (see [`docs/contributor/testing.md`](docs/contributor/testing.md)).
 4. **Keep commits clean.** No merge commits; rebase on top of `main` (or
    the targeted feature branch) before requesting review. Squash WIP
    commits.

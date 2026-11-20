@@ -118,7 +118,7 @@ See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
 | Document | Description |
 |----------|-------------|
 | [`development.md`](contributor/development.md) | Dev environment, build commands, dependency overview |
-| [`testing.md`](contributor/testing.md) | Test strategy (unit / mock IPC / E2E / property tests) |
+| [`testing.md`](contributor/testing.md) | Test strategy (unit / property / netsim / real-app suite) |
 | [`style-guide.md`](contributor/style-guide.md) | Rust + TypeScript + Tailwind conventions |
 | [`release-process.md`](contributor/release-process.md) | Tagging, building, distributing, signing |
 
@@ -182,14 +182,13 @@ crates/                             22 workspace members — see architecture/cr
   rekindle-crypto/                  Identity, Signal Protocol session manager, dht keys
   rekindle-game-detect/             Cross-platform game detection
   rekindle-voice/                   Opus codec, audio I/O, jitter, mixer, transport
-  rekindle-e2e-server/              HTTP IPC bridge for E2E tests
 
   # Daemon/CLI track (alternate frontend, parallel to the Tauri desktop app)
   rekindle-transport/               Unified Veilid boundary (broadcast/subscriptions split)
   rekindle-node/                    Daemon: owns Veilid, serves a Noise-IK encrypted IPC bus
   rekindle-cli/                     CLI/TUI client of rekindle-node over the IPC bus
 schemas/                            Cap'n Proto schema definitions (8 files)
-e2e/                                Playwright E2E tests
+e2e/                                Real-app tests: WebdriverIO suite (app/), row walk (walk/)
 ```
 
 ## Two frontends, one protocol

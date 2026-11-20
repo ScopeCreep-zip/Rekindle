@@ -219,8 +219,9 @@ catches the tautology pattern by mutating the production code and
 seeing if any test fails. We don't run it in CI today; please apply
 manually before submitting test-heavy PRs.
 
-For E2E security tests, see
-[`../../e2e/security/README.md`](../../e2e/security/README.md).
+Runtime security tests (CSP, the isolation hook, XSS) run in the real
+app (`pnpm test:app`, plan E7.14 S6); see
+[`testing.md`](testing.md).
 
 ## 5. Pending enforcement being rolled out
 

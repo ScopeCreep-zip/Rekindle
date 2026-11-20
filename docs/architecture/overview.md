@@ -31,7 +31,7 @@ provides peer-to-peer transport and distributed storage.
 │  Tier 7   channel, dm, calls, files, video, link-       │
 │           preview                                       │
 │  Plus     protocol, transport, crypto, voice, sync,     │
-│           game-detect, utils, e2e-server, node, cli     │
+│           game-detect, utils, node, cli                 │
 │  (crates/)                                              │
 ├─────────────────────────────────────────────────────────┤
 │                    Veilid Network                       │
@@ -79,7 +79,7 @@ inventory is [`crates.md`](crates.md); per-crate detail is
 | 5 | `rekindle-gossip`, `rekindle-presence` | Transport-agnostic gossip primitives; presence orchestrators (a friend's presence arrives by watch, plan E2.5). |
 | 6 | `rekindle-governance`, `rekindle-governance-runtime` | Pure CRDT merge (no I/O, no async); async lifecycle layer for community origin / bootstrap / join / segments. |
 | 7 | `rekindle-channel`, `rekindle-dm`, `rekindle-calls`, `rekindle-files`, `rekindle-video`, `rekindle-link-preview` | Self-contained features built on lower tiers. |
-| — | `rekindle-protocol`, `rekindle-transport`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`, `rekindle-e2e-server` | Cross-cutting integration. `protocol` is the **desktop** Veilid boundary; `transport` is the **daemon** Veilid boundary. |
+| — | `rekindle-protocol`, `rekindle-transport`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils` | Cross-cutting integration. `protocol` is the **desktop** Veilid boundary; `transport` is the **daemon** Veilid boundary. |
 | — | `rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui` | Daemon process + the frontends' shared client, the CLI (`rekindle`) and the TUI (`rekindle-tui`). Communicate over the Noise-IK IPC bus. |
 
 Eleven of these crates are recent harvest extractions; see

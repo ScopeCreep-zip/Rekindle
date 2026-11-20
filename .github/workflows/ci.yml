@@ -1,9 +1,10 @@
 # Main CI — runs on every push to main and every PR.
 #
-# Three matrix jobs:
+# Two jobs:
 #   * fmt + clippy + test — Rust workspace
-#   * frontend lint + mock IPC tests — pnpm
 #   * cross-platform build smoke test — Tauri build per OS
+# The real-app UI suite (`pnpm test:app`) is not run here; see the note
+# above the build job.
 #
 # The release pipeline lives in release.yml and is triggered by tags.
 
@@ -64,30 +65,17 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      # The E2E bridge binary builds only with its feature (L5), so the
-      # workspace run above skips it.
-      - name: cargo clippy (E2E bridge)
-        run: cargo clippy -p rekindle-e2e-server --features e2e-bridge --all-targets -- -D warnings
-
       - name: cargo test
         run: cargo test --workspace --no-fail-fast
 
   # ────────────────────────────────────────────────────────────────
-  # Frontend: pnpm install + lint + mock IPC suite.
+  # No UI test job. The UI is tested only in the real desktop app
+  # (`pnpm test:app`, e2e/app/: WebdriverIO through the app's embedded,
+  # token-guarded WebDriver server), which needs a desktop session (a
+  # window server and a webview). The gate runs it on both target
+  # machines (macOS and Linux); see docs/contributor/testing.md.
+  # Frontend lint and typecheck run in lint.yml.
   # ────────────────────────────────────────────────────────────────
-  frontend:
-    name: Frontend (pnpm)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Mock IPC tests
-        run: pnpm test:mock
 
   # ────────────────────────────────────────────────────────────────
   # Cross-platform build smoke test. Verifies Tauri builds clean on

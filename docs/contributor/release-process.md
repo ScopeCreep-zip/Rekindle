@@ -31,7 +31,7 @@ Before tagging:
 - [ ] `cargo test --workspace` is green.
 - [ ] `cargo clippy --workspace -- -D warnings` is clean.
 - [ ] `cargo fmt --all -- --check` is clean.
-- [ ] `pnpm test:all` is green (E2E + mock-IPC suites).
+- [ ] `pnpm test:app` is green on macOS and Linux (the real-app suite: one-user and two-user specs).
 - [ ] `CHANGELOG.md`'s `[Unreleased]` section is moved into a new
       versioned heading.
 - [ ] `Cargo.toml` workspace `version` is bumped.

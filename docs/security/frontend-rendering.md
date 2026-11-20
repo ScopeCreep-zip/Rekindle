@@ -9,8 +9,8 @@ running JavaScript with full DOM access. Even a single missed
 sanitization on peer-controlled content turns into stored XSS, and
 from there into capability-bypass that lets the renderer call sensitive
 Rust commands. The threat-model entry is
-[`threat-model.md` §5b W1](threat-model.md). The runtime tests live
-under [`../../e2e/security/`](../../e2e/security/).
+[`threat-model.md` §5b W1](threat-model.md). The runtime tests run in
+the real app (`pnpm test:app`; the security specs are plan E7.14 S6).
 
 ## When this gate applies
 
@@ -112,21 +112,22 @@ ALLOWED_URI_REGEXP: /.*/
 The DOMPurify config above is the **canonical Rekindle sanitizer**.
 Copy it; do not invent a new one per feature.
 
-### Gate 3 — Playwright XSS suite extension
+### Gate 3 — real-app XSS suite extension
 
-For every new peer-controlled render path, add a test in
-[`../../e2e/security/xss.spec.ts`](../../e2e/security/xss.spec.ts)
-that:
+For every new peer-controlled render path, add a case to the real-app
+XSS spec (`e2e/app/specs/`, built by plan E7.14 S6) that:
 
-1. Mocks the IPC response that delivers the field with each of the
-   `XSS_PAYLOADS` corpus entries.
-2. Navigates to the page that renders the field.
-3. Asserts `window.__rekindleXssTriggered === false`.
+1. Has a headless fleet peer (`e2e/app/fleet.ts`) send the field with
+   each entry of the XSS payload corpus, so the payload arrives over the
+   real network and IPC, never a mocked answer.
+2. Opens the window that renders the field.
+3. Asserts no payload executed.
 4. Asserts the payload appears as text (escaped) or is filtered.
 
-The skipped tests at the bottom of `xss.spec.ts` are placeholders
-for the four highest-priority pending features. **Un-skip them
-when the corresponding feature ships.**
+The browser suite this gate used to name (`e2e/security/xss.spec.ts`)
+was removed in plan E7.14 S8; until S6 lands the gate has no spec to
+extend, and the four highest-priority pending features get their
+cases when S6 builds the spec.
 
 ### Gate 4 — URL handling for peer-supplied links
 
@@ -220,7 +221,7 @@ has a "Security / privacy review" section that flags these.
 
 - [`threat-model.md`](threat-model.md) §5b "Frontend WebView attack surface"
 - [`crypto-primitives.md`](crypto-primitives.md) §11 "What we do not use" (no frontend crypto)
-- [`../../e2e/security/`](../../e2e/security/) — runtime test suite
+- [`../contributor/testing.md`](../contributor/testing.md) — the real-app suite that hosts the runtime tests
 - [`../../.semgrep.yml`](../../.semgrep.yml) — SAST rules
 - [DOMPurify documentation](https://github.com/cure53/DOMPurify)
 - [OWASP XSS Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html)

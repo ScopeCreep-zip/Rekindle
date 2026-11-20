@@ -58,7 +58,7 @@ speak the same Veilid protocol and SMPL governance.
 | `src-tauri/` | Tauri 2 backend — commands, services, channels, app state, SQLite, `rekindle-vault` |
 | `crates/` | 38 Rust crates implementing the protocol, crypto, voice, game detection, daemon/CLI |
 | `schemas/` | Cap'n Proto schema definitions |
-| `e2e/` | Playwright E2E tests |
+| `e2e/` | Real-app tests: the WebdriverIO suite (`e2e/app/`, `pnpm test:app`) and the row walk (`e2e/walk/`) |
 | `docs/` | All technical documentation (start at [`docs/README.md`](docs/README.md)) |
 | `legacy/` | Reverse-engineering artifacts from the original Xfire installer (reference only — do not execute) |
 | `.claude/` | Internal design memos, plans, and Claude-specific automation (gitignored) |
@@ -94,7 +94,7 @@ side effects.
 | 5 | `rekindle-gossip` | Gossip mesh primitives (D-fanout, dedup, Lamport) |
 | 6 | `rekindle-governance` | Pure CRDT merge, reader-validates permissions |
 | 7 | `rekindle-dm`, `rekindle-calls`, `rekindle-files`, `rekindle-video`, `rekindle-link-preview` | Self-contained features |
-| Cross-cutting | `rekindle-protocol`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`, `rekindle-e2e-server` | Veilid plumbing, Signal sessions, audio pipeline, scanner, sync workers |
+| Cross-cutting | `rekindle-protocol`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils` | Veilid plumbing, Signal sessions, audio pipeline, scanner, sync workers |
 | Daemon/CLI track | `rekindle-transport`, `rekindle-node`, `rekindle-client`, `rekindle-cli`, `rekindle-tui` | Sole Veilid boundary + daemon + the shared client, CLI (`rekindle`) and TUI (`rekindle-tui`) |
 
 ## Protocol at a glance

@@ -37,7 +37,7 @@ If a section does not apply, write "n/a" instead of deleting it.
 
 <!-- Describe the testing you did. Examples:
      - "Added unit tests in rekindle-governance::merge."
-     - "Ran cargo test --workspace + pnpm test:e2e."
+     - "Ran cargo test --workspace + pnpm test:app."
      - "Verified by hand: opened two clients, created a community,
         confirmed both saw the new channel within 2 seconds."
 -->
@@ -77,7 +77,7 @@ If a section does not apply, write "n/a" instead of deleting it.
 - [ ] `cargo test --workspace` passes locally.
 - [ ] `cargo clippy --workspace -- -D warnings` is clean.
 - [ ] `cargo fmt --all -- --check` is clean.
-- [ ] `pnpm test:all` passes (if frontend or IPC was touched).
+- [ ] `pnpm test:app` passes (if frontend or IPC was touched).
 - [ ] `lefthook run pre-commit --all` is clean (covers the rest).
 - [ ] Relevant docs in `/docs` updated.
 - [ ] If this is a breaking schema change, `SCHEMA_VERSION` was bumped in `db.rs`.

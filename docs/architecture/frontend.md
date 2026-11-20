@@ -250,15 +250,16 @@ command or event class does not bloat a single file.
 | `voice_events.ts` | `voice-event` |
 | `subscriptions.ts` | `startEventStream()`, the window's one backend channel, demultiplexed into the `subscribe*` functions |
 
-`startEventStream()` is a no-op in E2E mode (`VITE_E2E=true`)
-because there is no Tauri event transport in the browser-driven
-Playwright runs.
+`startEventStream()` always opens the window's Tauri channel: the UI
+is only ever tested in the real app (`pnpm test:app`, see
+[`../contributor/testing.md`](../contributor/testing.md)), so there is no
+browser mode without an event transport.
 
 ### IPC adapters at the root
 
 | File | Purpose |
 |---|---|
-| `invoke.ts` | Conditional invoke (Tauri normally, HTTP to the E2E bridge, with its per-run token, under E2E) |
+| `invoke.ts` | Tauri `invoke` wrapper; `hostInvoke` for Host-call commands (`Done<T>`, intent review, undo offer) |
 | `hydrate.ts` | State hydration on login |
 | `avatar.ts` | Avatar bytes from `get_avatar` → `data:image/webp` URL |
 | `permissions.ts` | Permission bitmask helpers shared with the backend bitfield |
