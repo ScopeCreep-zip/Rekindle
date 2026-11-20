@@ -116,11 +116,13 @@ fn per_mille(scale: f64) -> Option<u32> {
 }
 
 /// Fetch the shown skin's frames from the Host, keep them, and reshape
-/// every window (on the first shaped window and on every skin change).
+/// every window (on the first shaped window and on every skin change); an
+/// answer a later change superseded is dropped.
 pub fn refresh(app: &AppHandle) {
     let Some(state) = app.try_state::<SharedState>().map(|s| Arc::clone(&s)) else {
         return;
     };
+    let generation = super::begin_fetch(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let answer = crate::host_call::call::<SkinFrames>(&state, IpcRequest::SkinFrames).await;
@@ -134,7 +136,7 @@ pub fn refresh(app: &AppHandle) {
                 SkinFrameMap::new()
             }
         };
-        super::set_frames(&app, frames);
+        super::set_frames(&app, generation, frames);
     });
 }
 

@@ -63,6 +63,9 @@ struct ShapeRegistry {
     frames: Mutex<Arc<skin::SkinFrameMap>>,
     /// The first fetch of the frames has been asked for.
     requested: AtomicBool,
+    /// The newest frames fetch begun ([`begin_fetch`]); an answer from an
+    /// older one is dropped, as the webview drops a superseded skin sheet.
+    fetch: std::sync::atomic::AtomicU64,
 }
 
 fn registry(app: &AppHandle) -> tauri::State<'_, ShapeRegistry> {
@@ -248,10 +251,23 @@ fn forget(window: &WebviewWindow) {
     drop(removed);
 }
 
-/// Keep the shown skin's `frames` and recompute every shaped window from
-/// them.
-fn set_frames(app: &AppHandle, frames: skin::SkinFrameMap) {
-    *registry(app).frames.lock() = Arc::new(frames);
+/// Begin a frames fetch: its generation, newer than every earlier one.
+fn begin_fetch(app: &AppHandle) -> u64 {
+    registry(app).fetch.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+/// Keep the shown skin's `frames` from fetch `generation` and recompute
+/// every shaped window from them, unless a newer fetch has begun since
+/// (two quick skin changes: the first answer may arrive last).
+fn set_frames(app: &AppHandle, generation: u64, frames: skin::SkinFrameMap) {
+    let registry = registry(app);
+    {
+        let mut held = registry.frames.lock();
+        if registry.fetch.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        *held = Arc::new(frames);
+    }
     reshape_all(app);
 }
 

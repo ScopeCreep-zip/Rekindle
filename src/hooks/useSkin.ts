@@ -30,18 +30,46 @@ export function useSkin(): void {
   });
 }
 
-/** Apply `skin` to this window. */
+/// The `<link>` of the newest apply still loading, if any: a newer apply
+/// drops it, so a slow sheet can never land over a later choice.
+let pending: HTMLLinkElement | null = null;
+
+/**
+ * Apply `skin` to this window. The new sheet loads in its own `<link>`
+ * beside the shown one: WebKit keeps a link's old `.sheet` until a changed
+ * `href` finishes loading, so swapping in place would show the previous
+ * skin while the link already names the new one. On `load` the new link
+ * takes the id, the old one is removed and `data-skin-base` follows, so the
+ * id, the sheet and the base always belong to the same skin. A link a
+ * newer apply superseded is dropped; on `error` the shown skin stays and
+ * the error is reported.
+ */
 export function applySkin(skin: SkinApplied): void {
-  const root = document.documentElement;
-  root.dataset.skinBase = skin.base;
-  let link = document.getElementById(LINK_ID) as HTMLLinkElement | null;
-  if (link === null) {
-    link = document.createElement("link");
-    link.id = LINK_ID;
-    link.rel = "stylesheet";
-    document.head.appendChild(link);
+  const shown = document.getElementById(LINK_ID) as HTMLLinkElement | null;
+  if (pending !== null) {
+    pending.remove();
+    pending = null;
   }
-  if (link.getAttribute("href") !== skin.tokensHref) {
-    link.href = skin.tokensHref;
+  if (shown?.getAttribute("href") === skin.tokensHref) {
+    document.documentElement.dataset.skinBase = skin.base;
+    return;
   }
+  const next = document.createElement("link");
+  next.rel = "stylesheet";
+  pending = next;
+  next.addEventListener("load", () => {
+    if (pending !== next) return;
+    pending = null;
+    document.getElementById(LINK_ID)?.remove();
+    next.id = LINK_ID;
+    document.documentElement.dataset.skinBase = skin.base;
+  });
+  next.addEventListener("error", () => {
+    if (pending !== next) return;
+    pending = null;
+    next.remove();
+    console.error(`skin sheet ${skin.tokensHref} failed to load — the shown skin stays`);
+  });
+  next.href = skin.tokensHref;
+  document.head.appendChild(next);
 }
