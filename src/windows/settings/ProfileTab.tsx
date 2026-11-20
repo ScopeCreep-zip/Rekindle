@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, createResource, For, Show } from "solid-js";
+import { Component, createSignal, createResource, For, Show } from "solid-js";
 import Avatar from "../../components/common/Avatar";
 import FormField from "../../components/common/FormField";
 import { authState, setAuthState } from "../../stores/auth.store";
@@ -10,22 +10,19 @@ import { fetchAvatarUrl } from "../../ipc/avatar";
 import GameIcon from "../../components/game/GameIcon";
 import { formatDuration } from "../../utils/formatting";
 import { formatRelativeTime } from "../../utils/time";
+import { useDraft } from "../../hooks/useDraft";
 
 /// The Host's cap (`rekindle_types::presence::limits::MAX_BIO_LEN`,
 /// Discord's About Me); the Host refuses a longer one.
 const MAX_BIO_LEN = 190;
 
 const ProfileTab: Component = () => {
-  const [nameInput, setNameInput] = createSignal("");
+  // The name shows the hydrated identity until the user edits it; the
+  // window's first `hydrateState` resolves after the tab mounts, so a
+  // store that fills in late must never overwrite what they typed (walk
+  // row ST3: the typed name was replaced by the old one before Enter).
+  const name = useDraft(() => authState.displayName ?? "");
   const [statusMsgInput, setStatusMsgInput] = createSignal("");
-  const [bioInput, setBioInput] = createSignal("");
-  // Characters as the Host counts them (Unicode scalar values).
-  const bioLength = () => [...bioInput()].length;
-
-  // Seed the name input from the hydrated identity. `displayName` only
-  // changes on explicit save (or initial hydrate), so this never clobbers
-  // an unsaved edit.
-  createEffect(() => setNameInput(authState.displayName ?? ""));
 
   // Our time in each detected game and when we last played it (plan E7.2),
   // from the Host's `game_sessions`.
@@ -33,27 +30,37 @@ const ProfileTab: Component = () => {
 
   // Our bio (plan E7.2), from `identity.bio`; it reaches friends only as a
   // sealed message, never the profile record.
-  const [storedBio] = createResource(() => commands.getBio());
-  createEffect(() => setBioInput(storedBio() ?? ""));
+  // The same rule as the name: `getBio` may answer after the user began.
+  const [storedBio, { mutate: setStoredBio }] = createResource(() => commands.getBio());
+  const bio = useDraft(() => storedBio() ?? "");
+  // Characters as the Host counts them (Unicode scalar values).
+  const bioLength = () => [...bio.value()].length;
 
   async function handleSaveBio(): Promise<void> {
     if (bioLength() > MAX_BIO_LEN) return;
     try {
-      setBioInput((await commands.setBio(bioInput())) ?? "");
+      setStoredBio(await commands.setBio(bio.value()));
+      bio.settle();
     } catch (e) {
       console.error("Failed to set bio:", e);
     }
   }
 
-  function handleSaveName(): void {
-    const name = nameInput().trim();
-    if (name && name !== authState.displayName) {
+  /// Save `typed`, the field's text as it is now (Enter passes the input's
+  /// own value). The Host reviews it (U1); until it commits, the field
+  /// keeps the edit, and a refused or cancelled change leaves it there.
+  function handleSaveName(typed: string): void {
+    const next = typed.trim();
+    if (next && next !== authState.displayName) {
       const oldName = authState.displayName;
-      setAuthState("displayName", name);
-      commands.setNickname(name).catch((e: unknown) => {
-        setAuthState("displayName", oldName);
-        addToast(`Name not changed: ${errorMessage(e)}`, "error");
-      });
+      setAuthState("displayName", next);
+      commands.setNickname(next).then(
+        () => name.settle(),
+        (e: unknown) => {
+          setAuthState("displayName", oldName);
+          addToast(`Name not changed: ${errorMessage(e)}`, "error");
+        },
+      );
     }
   }
 
@@ -105,11 +112,13 @@ const ProfileTab: Component = () => {
             class="form-input"
             type="text"
             aria-label="Display name"
-            value={nameInput()}
-            onInput={(e: InputEvent) => setNameInput((e.target as HTMLInputElement).value)}
-            onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") handleSaveName(); }}
+            value={name.value()}
+            onInput={(e: InputEvent) => name.edit((e.target as HTMLInputElement).value)}
+            onKeyDown={(e: KeyboardEvent) => {
+              if (e.key === "Enter") handleSaveName((e.currentTarget as HTMLInputElement).value);
+            }}
           />
-          <button class="form-btn-primary" onClick={handleSaveName}>Save</button>
+          <button class="form-btn-primary" onClick={() => handleSaveName(name.value())}>Save</button>
         </div>
       </FormField>
       <div class="settings-section-title">Status Message</div>
@@ -135,8 +144,8 @@ const ProfileTab: Component = () => {
           aria-describedby="bio-count"
           rows={3}
           placeholder="Tell your friends about yourself"
-          value={bioInput()}
-          onInput={(e: InputEvent) => setBioInput((e.target as HTMLTextAreaElement).value)}
+          value={bio.value()}
+          onInput={(e: InputEvent) => bio.edit((e.target as HTMLTextAreaElement).value)}
         />
         <div class="form-field-row">
           <span id="bio-count" class="bio-count" classList={{ "bio-count-over": bioLength() > MAX_BIO_LEN }}>
