@@ -25,6 +25,7 @@ use crate::generate::tui_colours;
 use crate::output::tokens_css;
 use crate::package::{self, Package};
 use crate::regions::css::skin_css;
+use crate::regions::labels::label_css;
 use crate::regions::still;
 use crate::regions::title::title_css;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
@@ -179,6 +180,7 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
     let images = files(&p);
     css.push_str(&skin_css(&m, &images, &base).ok_or_else(|| unreadable("regions"))?);
     css.push_str(&title_css(&m, &images, &resolved));
+    css.push_str(&label_css(&m, &images, &resolved));
     Ok(Stylesheet {
         base: v.base,
         css,

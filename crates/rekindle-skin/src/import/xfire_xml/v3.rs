@@ -10,10 +10,21 @@
 //! * Colours are mostly the attribute form `red= green= blue= alpha=`
 //!   ([`super::colours::parse_attrs`]), under `RGBA()`'s alpha rule; their
 //!   names are v3's own ([`NAMES`]).
-//! * Every component is in one file, [`SOURCE`]; the chat window's frame is
-//!   four of them ([`FRAME`]), read like the INI era's `[Top]`/`[Left]`/
-//!   `[Right]`/`[Bottom]`: each outer edge's `middle` is the side piece, its
-//!   `top`/`bottom` caps are not read, and the middle is transparent.
+//! * Every component is in one file, [`SOURCE`]; the window frame is the
+//!   chat window's two outer edges ([`FRAME`]), the rails as the pack
+//!   places them: `xfirechatwindow.xml` lays `ChatLeftOuterEdge` at X=0
+//!   and `ChatRightOuterEdge` at the right, each `ResizeX="0"` (its
+//!   `MinWidth="9"`, `leftborder-middle.gif` 9x100), between the title bar
+//!   and the base board, and the content (`ChatInnerBevel`) starts at
+//!   `ChatLeftOuterEdge.RIGHT`. The title bar (`main-left.gif` 70x47) and
+//!   the base board (`chat-bottom-left.gif` 74x37) are full-width rows of
+//!   their own (the `titlebar` region and the chat window's input row), not
+//!   corners of the rails: composed as one nine-slice their 70-74 px caps
+//!   set the side columns, and the 9 px rail tiled eight times across them
+//!   as stripes over the content. Each rail's `top`/`bottom` caps are not
+//!   read: the pack covers them with the grippers (`ChatGripperTopLeft`
+//!   Z=6 at `ChatTitleBar.BOTTOM-15`, `ChatGripperBottomLeft` Z=5 at
+//!   `ChatLeftOuterEdge.BOTTOM-17`), so the visible rail is its `middle`.
 
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::Insets;
@@ -26,20 +37,23 @@ use super::{bitmap, descendants};
 /// The file holding every v3 component.
 pub const SOURCE: &str = "xfirecomponents.xml";
 
-/// The chat window frame in [`bitmap::NINE`] order: (component, image
-/// type); `None` is the transparent middle (`xfirechatwindow.xml` lays
-/// these four tiles around the chat view).
+/// The window frame in [`bitmap::NINE`] order: (component, image type);
+/// `None` is empty: no top or bottom row (0 px tall) and a transparent
+/// middle, so the frame is the two 9 px rails (insets 0/9/0/9).
 pub const FRAME: [Option<(&str, &str)>; 9] = [
-    Some(("ChatTitleBar", "topleft")),
-    Some(("ChatTitleBar", "top")),
-    Some(("ChatTitleBar", "topright")),
+    None,
+    None,
+    None,
     Some(("ChatLeftOuterEdge", "middle")),
     None,
     Some(("ChatRightOuterEdge", "middle")),
-    Some(("ChatBaseBoard", "bottomleft")),
-    Some(("ChatBaseBoard", "bottom")),
-    Some(("ChatBaseBoard", "bottomright")),
+    None,
+    None,
+    None,
 ];
+
+/// The index of the frame's middle in [`bitmap::NINE`] order.
+const MIDDLE: usize = 4;
 
 const XIG: Target = Target::Dropped("in-game overlay (E7.5 research)");
 const SERVERS: Target = Target::Dropped("server browser colours");
@@ -157,7 +171,7 @@ fn image<'a>(
         })
 }
 
-/// The chat window frame of `components` ([`SOURCE`]), each piece decoded
+/// The window frame of `components` ([`SOURCE`]), each piece decoded
 /// by `piece(bitmap name, shift colour)`; `None` when a piece is not named.
 ///
 /// # Errors
@@ -167,9 +181,11 @@ pub fn frame(
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
 ) -> Result<Option<(RgbaImage, Insets)>, ImportError> {
     let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
-    for slot in FRAME {
+    for (at, slot) in FRAME.into_iter().enumerate() {
         let Some((component, kind)) = slot else {
-            pieces.push(RgbaImage::new(1, 1));
+            // The middle is one transparent pixel; an empty edge row is
+            // 0 px tall, so it sets no inset.
+            pieces.push(RgbaImage::new(1, u32::from(at == MIDDLE)));
             continue;
         };
         let Some((name, colour)) = image(components, component, kind) else {

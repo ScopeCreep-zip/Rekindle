@@ -101,7 +101,7 @@ Colour roles by reference (13)
   [GroupChatInfoView] text.color_hyperlink=InfoViewHyperlink -> link kept: its role-named colour wins
 
 Regions
-  window.frame: the nine-piece frame of xfirecomponents.xml (ChatTitleBar, the outer edges' middles, ChatBaseBoard; transparent middle), 248x184 px, nine-slice 47/74/37/74
+  window.frame: the nine-piece frame of xfirecomponents.xml (the chat window's outer edges' middles, 9 px rails; no top or bottom row; transparent middle), 19x100 px, nine-slice 0/9/0/9
   titlebar: the titlebar strip MainTitleBar, 240x47 px, NineSlice(Insets { top: 0, right: 70, bottom: 0, left: 70 }); states normal, windowInactive
   buddylist.infobar: the component UserNameField, 109x17 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 5 }); states normal
   community.sidebar-header: the component UserNameField, 109x17 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 5 }); states normal

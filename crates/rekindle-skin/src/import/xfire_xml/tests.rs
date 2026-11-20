@@ -321,18 +321,20 @@ fn classic_v3_layout_imports() {
     assert_eq!(r.tokens["bg.primary"], walk::color([22, 22, 22]));
     assert_eq!(r.tokens["text.base"], walk::color([183, 184, 184]));
     let (img, insets) = r.frame.unwrap();
+    // The frame is the two outer edges' middles as the pack places them
+    // (`xfirechatwindow.xml`): rails as wide as their own piece (4 px
+    // here), no top or bottom row, so the title bar's and base board's
+    // corner caps never widen the side columns.
     assert_eq!(
         (insets.top, insets.left, insets.bottom, insets.right),
-        (4, 4, 4, 4)
+        (0, 4, 0, 4)
     );
-    // The top row and the sides carry ChatMainCG (+30, -30, 0); the base
-    // board does not; each piece's #FF00FF pixel is keyed; the middle is
-    // transparent.
-    assert_eq!(img.get_pixel(5, 1).0, [70, 70, 160, 255]);
-    assert_eq!(img.get_pixel(1, 5).0, [70, 70, 160, 255]);
-    assert_eq!(img.get_pixel(5, img.height() - 2).0, [40, 100, 160, 255]);
-    assert_eq!(img.get_pixel(4, 0).0, [0, 0, 0, 0]);
-    assert_eq!(img.get_pixel(4, 4).0, [0, 0, 0, 0]);
+    assert_eq!((img.width(), img.height()), (9, 4));
+    // The rails carry ChatMainCG (+30, -30, 0); each piece's #FF00FF pixel
+    // is keyed; the middle is transparent.
+    assert_eq!(img.get_pixel(1, 1).0, [70, 70, 160, 255]);
+    assert_eq!(img.get_pixel(6, 1).0, [70, 70, 160, 255]);
+    assert_eq!(img.get_pixel(4, 1).0, [0, 0, 0, 0]);
     let a = import(&v3_tree(V3_COLOURS), "fixture", None).unwrap();
     assert_eq!(
         validate::run(&a.canonical.bytes).unwrap().bytes,
@@ -357,7 +359,10 @@ fn classic_v3_alpha_and_missing_pieces() {
     t.insert(
         "xfirecomponents.xml".into(),
         comps
-            .replace("Type=\"bottomright\"", "Type=\"corner\"")
+            .replace(
+                "<Image type=\"middle\">R</Image>",
+                "<Image type=\"corner\">R</Image>",
+            )
             .into_bytes(),
     );
     assert!(read(&t).unwrap().frame.is_none());

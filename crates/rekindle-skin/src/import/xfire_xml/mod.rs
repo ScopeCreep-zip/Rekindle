@@ -269,8 +269,8 @@ fn read_frame(
     let bitmaps = bitmaps(theme);
     let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, colours, name, shift);
     if layout == Layout::ClassicV3 {
-        let source = "xfirecomponents.xml (ChatTitleBar, the outer edges' middles, \
-                      ChatBaseBoard; transparent middle)";
+        let source = "xfirecomponents.xml (the chat window's outer edges' middles, \
+                      9 px rails; no top or bottom row; transparent middle)";
         return Ok((
             v3::frame(&xml(tree, v3::SOURCE)?, decode)?,
             source.to_owned(),
