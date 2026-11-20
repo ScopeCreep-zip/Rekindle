@@ -52,6 +52,39 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     deps: Arc<D>,
     community_id: &str,
 ) -> Result<(), String> {
+    run_tick(deps, community_id, Tick::Beat).await
+}
+
+/// A watched registry (or Plate Gate segment) changed: read the rows and
+/// merge them, as a tick does, but never write our own row (D4; the beat
+/// is the cadence's, 60 s, `spawn.rs`). A write here was the Linux storm
+/// of round 7 (finding IB1c): each member's row write fired the other's
+/// registry watch, whose tick wrote again, ~45 writes a minute on both
+/// sides once the joiner watched the registry too (IB1's hand-over).
+///
+/// # Errors
+/// As [`presence_poll_tick`].
+pub async fn presence_refresh<D: CommunityPresenceDeps>(
+    deps: Arc<D>,
+    community_id: &str,
+) -> Result<(), String> {
+    run_tick(deps, community_id, Tick::Refresh).await
+}
+
+/// What a tick does with our own row.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tick {
+    /// The cadence's beat: write our row, then scan.
+    Beat,
+    /// A watch's change: scan only.
+    Refresh,
+}
+
+async fn run_tick<D: CommunityPresenceDeps>(
+    deps: Arc<D>,
+    community_id: &str,
+    tick: Tick,
+) -> Result<(), String> {
     let Some(registry_key) = deps.ensure_registry_open(community_id).await? else {
         tracing::warn!(
             community = %community_id,
@@ -64,25 +97,27 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
         return Err("community not found".to_string());
     };
 
-    // Compute history ranges (Shared Locker §14.3) then write our
-    // own presence row to the registry.
-    let history_ranges = deps.compute_history_ranges(community_id).await;
-    if deps.scope().is_closed() {
-        return Ok(());
+    // A beat computes the history ranges (Shared Locker §14.3) then
+    // writes our own presence row to the registry; a refresh only reads.
+    if tick == Tick::Beat {
+        let history_ranges = deps.compute_history_ranges(community_id).await;
+        if deps.scope().is_closed() {
+            return Ok(());
+        }
+        crate::community::registry::write_our_presence(
+            deps.as_ref(),
+            crate::community::registry::PresenceWrite {
+                community_id,
+                registry_key: &registry_key,
+                my_pseudonym_hex: &creds.my_pseudonym_hex,
+                my_subkey_index: creds.my_subkey_index,
+                slot_keypair_str: creds.slot_keypair_str.as_deref(),
+                has_slot_seed: creds.slot_seed_hex.is_some(),
+                history_ranges,
+            },
+        )
+        .await;
     }
-    crate::community::registry::write_our_presence(
-        deps.as_ref(),
-        crate::community::registry::PresenceWrite {
-            community_id,
-            registry_key: &registry_key,
-            my_pseudonym_hex: &creds.my_pseudonym_hex,
-            my_subkey_index: creds.my_subkey_index,
-            slot_keypair_str: creds.slot_keypair_str.as_deref(),
-            has_slot_seed: creds.slot_seed_hex.is_some(),
-            history_ranges,
-        },
-    )
-    .await;
 
     // Per-segment Plate Gate scan (architecture §15.5). Each segment
     // is its own SMPL record carrying ≤255 LOCAL subkeys; we skip
@@ -430,6 +465,35 @@ mod tests {
         assert_eq!(st.calls_read_gossip.len(), 1);
         assert_eq!(st.calls_apply_gossip.len(), 1);
         assert_eq!(st.calls_auto_expand, vec!["c1".to_string()]);
+    }
+
+    /// A watch's change reads and merges the rows but writes nothing: a
+    /// write per change made two members' watches answer each other's
+    /// writes, ~45 a minute each (finding IB1c). Fails if the refresh
+    /// writes our row.
+    #[tokio::test]
+    async fn a_refresh_reads_the_rows_and_never_writes_ours() {
+        let deps = make_deps_with(MockState::default());
+        for _ in 0..45 {
+            presence_refresh(Arc::clone(&deps), "c1")
+                .await
+                .expect("a refresh");
+        }
+        {
+            let st = deps.state.lock();
+            assert!(st.calls_write_registry.is_empty(), "no row written");
+            assert!(st.calls_compute_history.is_empty(), "no history ad built");
+            assert_eq!(st.calls_scan_segment.len(), 45, "every change is read");
+            assert_eq!(st.calls_apply_member_state.len(), 45);
+        }
+        presence_poll_tick(Arc::clone(&deps), "c1")
+            .await
+            .expect("a beat");
+        assert_eq!(
+            deps.state.lock().calls_write_registry.len(),
+            1,
+            "the beat writes once"
+        );
     }
 
     #[tokio::test]

@@ -51,6 +51,23 @@ pub async fn presence_poll_tick_public(
     .unwrap_or(Ok(()))
 }
 
+/// A watched registry or segment changed: read and merge its rows without
+/// writing ours ([`rekindle_presence::presence_refresh`], D4; finding
+/// IB1c: a full tick here wrote on every peer write, and the peers'
+/// watches answered each other ~45 times a minute).
+pub async fn presence_refresh(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
+    let Some(adapter) = crate::services::presence_adapter::build_adapter(state) else {
+        return Err("adapter unavailable".to_string());
+    };
+    let stop = crate::state_helpers::community_scope(state, community_id).token();
+    stop.run_until_cancelled(rekindle_presence::presence_refresh(
+        Arc::new(adapter),
+        community_id,
+    ))
+    .await
+    .unwrap_or(Ok(()))
+}
+
 /// Kick a single presence-poll tick for a community NOW, in the
 /// background — don't wait for the next cadence tick.
 ///

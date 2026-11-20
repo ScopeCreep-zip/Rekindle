@@ -40,8 +40,8 @@ pub use overlay_rebuild::{
 };
 pub use policy::{apply_sharing_policy, coarsen_to_bucket, filter_incoming};
 pub use poll::{
-    gossip_degree, presence_poll_tick, presence_poll_tick_public, steady_poll_duration,
-    STALE_HEARTBEAT_SECS,
+    gossip_degree, presence_poll_tick, presence_poll_tick_public, presence_refresh,
+    steady_poll_duration, STALE_HEARTBEAT_SECS,
 };
 pub use profile_diff::{compute_profile_diff, MemberProfileSnapshot, ProfileDiffOutcome};
 pub use registry::{

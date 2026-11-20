@@ -10,7 +10,8 @@ use crate::state_helpers;
 
 /// Route a watched record's change: a governance record (or a Plate Gate
 /// segment's) to the Host's governance arm, which rebuilds that community
-/// alone (plan E3.1 C1); a registry to a presence tick (channel posts
+/// alone (plan E3.1 C1); a registry to a presence refresh, which reads the
+/// rows and writes nothing (channel posts
 /// ride their authors' `M`/4 outboxes, read by the ring's watch, plan
 /// E3.3). `Ok(false)` for a record no community holds; `NotLoggedIn` while locked.
 pub(crate) async fn handle_community_record_change(
@@ -40,10 +41,15 @@ pub(crate) async fn handle_community_record_change(
         })
     };
 
-    // A registry (or segment registry) change is a presence change.
+    // A registry (or segment registry) change is a presence change: read
+    // the rows, never write ours (the beat is the poll's; finding IB1c).
     let Some(community_id) = changed else {
         return Ok(false);
     };
-    let _ = crate::services::community::presence_poll_tick_public(state, &community_id).await;
+    if let Err(error) =
+        crate::services::community::presence::presence_refresh(state, &community_id).await
+    {
+        tracing::debug!(community = %community_id, %error, "presence refresh after a registry change failed");
+    }
     Ok(true)
 }
