@@ -22,7 +22,9 @@ pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 150 * 1000;
 pub const PROFILE_STATUS_SUBKEY: u32 = rekindle_types::dht_layout::profile::STATUS;
 
 /// Subkeys we subscribe to on a friend's profile DHT record: display
-/// name (live A/B finding 39) + status + game-info + route-blob.
+/// name (live A/B finding 39) + status + game-info + device list (a
+/// first contact waiting for their prekey record, live finding L-FR3) +
+/// route-blob.
 ///
 /// These were written as a bare `&[2, 4, 6]`. Naming them means a
 /// renumbering of the profile record moves this watch set with it —
@@ -32,6 +34,7 @@ pub const FRIEND_WATCH_SUBKEYS: &[u32] = &[
     rekindle_types::dht_layout::profile::DISPLAY_NAME,
     rekindle_types::dht_layout::profile::STATUS,
     rekindle_types::dht_layout::profile::GAME_INFO,
+    rekindle_types::dht_layout::profile::PREKEY_RECORDS,
     rekindle_types::dht_layout::profile::ROUTE_BLOB,
 ];
 
@@ -100,6 +103,7 @@ pub fn handle_value_change<D: FriendPresenceDeps>(
                     handle_game_change(deps, &friend_key, &value);
                 }
             }
+            5 => deps.prekeys_changed(&friend_key),
             6 => handle_route_change(deps, &friend_key, value),
             other => tracing::trace!(subkey = other, "unhandled presence subkey change"),
         }

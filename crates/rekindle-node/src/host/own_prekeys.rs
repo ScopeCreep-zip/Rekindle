@@ -2,8 +2,9 @@
 //! owned-record rule (`super::owned_record`: reopened with its vault
 //! entry, repaired after an interrupted write, or created), its session
 //! lease kept for the prekey maintenance and the refills; reconciled with
-//! our rows and topped up before the profile's subkey 5 names it, so a
-//! friend never reads an empty record (the stage then lets the
+//! our rows and topped up before the profile's subkey 5 names it, and
+//! named only once its head is on the network, so a
+//! friend never reads an empty record or one without its signed prekey (the stage then lets the
 //! maintenance start); and this device's id, minted once.
 
 use std::sync::Arc;
@@ -48,7 +49,14 @@ impl OwnRecords {
         };
         *self.prekey_lease.lock() = Some(held.lease);
         let key = held.key;
-        let later = self.fill_record().await;
+        let (later, head_out) = self.fill_record(pool, &key).await;
+        if !head_out {
+            // Never named without its signed prekey (live finding L-FR3).
+            tracing::warn!(
+                "own records: prekey head not on the network; the profile names no record"
+            );
+            return (Vec::new(), later, Some(writes));
+        }
         let list = device_list(&key, &device_id)
             .map_err(|e| tracing::error!(error = %e, "own records: no device list"))
             .unwrap_or_default();
@@ -59,10 +67,16 @@ impl OwnRecords {
     /// it does not), then a maintenance pass (a new identity's first set).
     /// The pass's first-contact part (`split_first_contact`) is written
     /// before the profile names the record; the rest is returned for
-    /// [`Self::publish_later`].
-    async fn fill_record(&self) -> Vec<Publish> {
+    /// [`Self::publish_later`], with whether the head is on the network
+    /// ([`head_landed`]): the profile names the record only then, so a
+    /// friend never reads a record without its signed prekey (live finding
+    /// L-FR3: a head whose first write missed consensus was held for
+    /// re-push while the device list already named the record).
+    async fn fill_record(&self, pool: &dyn RecordPort, key: &str) -> (Vec<Publish>, bool) {
         use rekindle_crypto::signal::prekey_record::split_first_contact;
         use rekindle_transport::operations::prekeys;
+        // Subscribed before any write, so the head's settle is never missed.
+        let mut settled = pool.settled();
         match prekeys::reconcile(&self.friends).await {
             Ok(0) => {}
             Ok(republished) => tracing::info!(republished, "prekey record reconciled"),
@@ -72,14 +86,23 @@ impl OwnRecords {
             Ok(values) => values,
             Err(e) => {
                 tracing::warn!(error = %e, "own records: prekey maintenance failed");
-                return Vec::new();
+                return (Vec::new(), head_landed(pool, key, &mut settled).await);
             }
         };
         let (values, later) = split_first_contact(values);
+        let mut written = true;
         if let Err(e) = prekeys::publish(&self.friends, values).await {
-            tracing::warn!(error = %e, "own records: prekeys not published");
+            // A write that failed outright is not held: the reconcile reads
+            // the record back and writes what it lacks once more.
+            tracing::warn!(error = %e, "own records: prekeys not published; reconciling");
+            written = prekeys::reconcile(&self.friends)
+                .await
+                .map_err(
+                    |e| tracing::warn!(error = %e, "own records: prekey record not reconciled"),
+                )
+                .is_ok();
         }
-        later
+        (later, written && head_landed(pool, key, &mut settled).await)
     }
 
     /// Write the pass's later slots in the unlock scope, in bounded
@@ -115,6 +138,36 @@ impl OwnRecords {
             .await
             .map_err(|e| tracing::error!(error = %e, "own records: device id not saved"))
             .ok()
+    }
+}
+
+/// Whether our record's head is on the network: not held for re-push, or
+/// held and then settled (`RecordPort::settled`, published on each re-push
+/// that lands or is superseded by a newer head of ours). A held write
+/// reaches the replicas only when a re-push lands (with `AllowOffline(false)`
+/// a set below consensus stores nothing, 0.5.8 `set_value.rs:731-738`,
+/// `local_record_store_interface.rs:60-62`), so a reader before that sees
+/// no head. `false` only when the pool closed (the session ended).
+async fn head_landed(
+    pool: &dyn RecordPort,
+    key: &str,
+    settled: &mut tokio::sync::broadcast::Receiver<rekindle_records::port::Settled>,
+) -> bool {
+    use rekindle_types::dht_layout::prekeys::HEAD;
+    use tokio::sync::broadcast::error::RecvError;
+    loop {
+        let held = pool
+            .held_writes()
+            .iter()
+            .any(|(record, subkey)| record == key && *subkey == HEAD);
+        if !held {
+            return true;
+        }
+        match settled.recv().await {
+            Ok(s) if s.record_key == key && s.subkey == HEAD => return true,
+            Ok(_) | Err(RecvError::Lagged(_)) => {}
+            Err(RecvError::Closed) => return false,
+        }
     }
 }
 

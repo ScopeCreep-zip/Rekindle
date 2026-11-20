@@ -78,6 +78,7 @@ pub(crate) async fn open_first_contact(
 pub(crate) async fn open_or_fail(host: &dyn FriendHost, peer: &str, kind: DmTypeId) -> bool {
     match open_first_contact(host, peer, kind).await {
         Ok(()) => true,
+        Err(FriendError::NotReady(why)) => wait_for_prekeys(host, peer, kind, &why).await,
         Err(e) => {
             tracing::warn!(peer = %peer, ?kind, error = %e, "first contact not sent");
             failed(host, peer, kind, e.to_string());
@@ -91,6 +92,31 @@ pub(crate) async fn open_or_fail(host: &dyn FriendHost, peer: &str, kind: DmType
 /// is no session-reset prompt for a first contact.
 /// A failure keeps whether B6's one resend was spent, so a later
 /// `PreKeyRejected` resends only if it was not.
+/// A first contact whose bundle is not readable yet (their record not
+/// named, not written or not reachable; live finding L-FR3) waits as a
+/// `friend_handshake` row, attempted with the outbox's backoff and brought
+/// forward when their profile names a new device list; the row opens the
+/// session once the bundle reads. Their row shows it retrying, never failed.
+async fn wait_for_prekeys(host: &dyn FriendHost, peer: &str, kind: DmTypeId, why: &str) -> bool {
+    tracing::info!(peer = %peer, ?kind, reason = %why, "first contact waits for their prekey record");
+    match dm::handshake::enqueue_first_contact(host, peer, kind).await {
+        Ok(_) => {
+            state::update(host, peer, |f| {
+                f.handshake_retrying = true;
+                f.handshake_error = None;
+            });
+            host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeRetrying {
+                peer_key: peer.to_string(),
+            }));
+            true
+        }
+        Err(e) => {
+            failed(host, peer, kind, e.to_string());
+            false
+        }
+    }
+}
+
 pub(crate) fn failed(host: &dyn FriendHost, peer: &str, kind: DmTypeId, reason: String) {
     {
         let mut contacts = host.stores().first_contacts.lock();
@@ -201,9 +227,16 @@ pub async fn retry(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
         peer_key: peer.to_string(),
     }));
     tracing::info!(peer = %peer, ?kind, "first contact retried by the user");
-    if let Err(e) = open_first_contact(host, peer, kind).await {
-        failed(host, peer, kind, e.to_string());
-        return Err(e);
+    match open_first_contact(host, peer, kind).await {
+        Ok(()) => {}
+        Err(FriendError::NotReady(why)) => {
+            wait_for_prekeys(host, peer, kind, &why).await;
+            return Ok(());
+        }
+        Err(e) => {
+            failed(host, peer, kind, e.to_string());
+            return Err(e);
+        }
     }
     if kind == DmTypeId::SessionResetAccept {
         // The reset the user accepted is answered now.

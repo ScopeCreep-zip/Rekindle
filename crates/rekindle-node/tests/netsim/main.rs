@@ -38,6 +38,7 @@ mod expressions;
 mod first_contact_reads;
 mod first_contact_receipt;
 mod first_contact_retry;
+mod first_contact_waits;
 mod first_login;
 mod forward_cross_audience;
 mod friend_list_record;

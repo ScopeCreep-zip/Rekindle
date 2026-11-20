@@ -132,6 +132,7 @@ mod tests {
                 .push((dht_key.to_string(), friend_key.to_string()));
         }
         fn cache_route_blob(&self, _: &str, _: Vec<u8>) {}
+        fn prekeys_changed(&self, _: &str) {}
         async fn acquire_friend_record(
             &self,
             dht_record_key: &str,

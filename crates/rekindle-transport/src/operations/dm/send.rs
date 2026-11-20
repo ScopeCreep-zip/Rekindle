@@ -39,6 +39,10 @@ pub enum Framed {
         body: Vec<u8>,
         nonce: Nonce,
     },
+    /// A first contact waiting for the peer's prekey record (live finding
+    /// L-FR3): the PreKeyInit is opened at an attempt from the bundle read
+    /// then, and committed as its own receipted row.
+    FirstContact { first_type_id: u16 },
     /// An invite's redemption (plan E2.5, D17): the sealed `FriendRequest`
     /// frame, written into the invite's request inbox as its one-time
     /// writer (`friend::inbox`). The writer's secret is stored in the row
@@ -467,8 +471,8 @@ pub(super) fn datagram_of(
             let datagram = frame::wire(&frame::sealed_frame(host, to, &body, *nonce)?)?;
             Ok((datagram, type_id))
         }
-        Framed::Inbox { .. } => Err(FriendError::Invalid(
-            "an inbox write is not sent over a route".into(),
+        Framed::Inbox { .. } | Framed::FirstContact { .. } => Err(FriendError::Invalid(
+            "an inbox write or a waiting first contact is not sent over a route".into(),
         )),
     }
 }

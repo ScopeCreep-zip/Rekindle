@@ -118,6 +118,10 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
 
     // === Route and watch state ===
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>);
+    /// Their profile names a new device list (subkey 5): a first contact
+    /// waiting for their prekey record is attempted now (live finding
+    /// L-FR3; the watch drives it, no poll, D4).
+    fn prekeys_changed(&self, friend_key: &str);
 
     // === DHT IO (async) ===
     //

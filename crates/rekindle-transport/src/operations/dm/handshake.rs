@@ -123,6 +123,45 @@ pub async fn enqueue_inbox(
     commit(host, to, client_id(host, DmTypeId::FriendRequest), payload).await
 }
 
+/// Commit a first contact of `kind` that waits for `to`'s prekey record
+/// (live finding L-FR3): attempted with the stream's backoff, and brought
+/// forward when their profile names a new device list
+/// (`route::reachable_again`). It returns once the row is stored.
+///
+/// # Errors
+/// The row could not be stored.
+pub async fn enqueue_first_contact(
+    host: &dyn FriendHost,
+    to: &str,
+    kind: DmTypeId,
+) -> Result<String, FriendError> {
+    let payload = encode(&Framed::FirstContact {
+        first_type_id: kind.as_u16(),
+    })?;
+    commit(host, to, client_id(host, kind), payload).await
+}
+
+/// One attempt of a waiting first contact: their bundle read now opens the
+/// session and commits the PreKeyInit as its own receipted row, which
+/// settles this one; a bundle still not readable is attempted again; any
+/// other failure is shown on their row with Retry.
+async fn attempt_first_contact(host: &dyn FriendHost, to: &str, first_type_id: u16) -> Attempt {
+    let Some(kind) = DmTypeId::from_u16(first_type_id) else {
+        return Attempt::Wedged(format!("typeId {first_type_id:#06x}"));
+    };
+    match crate::operations::prekeys::open_first_contact(host, to, kind).await {
+        Ok(()) => Attempt::Sent,
+        Err(e @ (FriendError::NotReady(_) | FriendError::Locked)) => {
+            tracing::debug!(to = %to, ?kind, reason = %e, "first contact still waits for their prekeys");
+            Attempt::Deferred
+        }
+        Err(e) => {
+            crate::operations::prekeys::failed(host, to, kind, e.to_string());
+            Attempt::Wedged(e.to_string())
+        }
+    }
+}
+
 /// The reason an inbox write fails with when the inbox already holds
 /// another requester's request.
 pub const INBOX_TAKEN: &str = "the invite was already used";
@@ -329,6 +368,9 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
     } = &framed
     {
         return attempt_inbox(host, record_key, writer, frame).await;
+    }
+    if let Framed::FirstContact { first_type_id } = &framed {
+        return attempt_first_contact(host, to, *first_type_id).await;
     }
     let (datagram, kind) = match send::datagram_of(host, to, &framed) {
         Ok(sent) => sent,

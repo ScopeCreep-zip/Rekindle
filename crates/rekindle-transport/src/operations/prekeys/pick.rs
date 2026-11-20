@@ -32,8 +32,9 @@ use crate::operations::friend::{state, FriendError, FriendHost};
 /// user (B3).
 ///
 /// # Errors
-/// They published no prekeys, the record could not be read, or it is not
-/// theirs.
+/// `NotReady` while the bundle is not readable yet (no device list, the
+/// record or its head not on the network or not reachable); otherwise
+/// the record is not theirs or does not decode.
 pub async fn pick_bundle(
     host: &dyn FriendHost,
     peer: &str,
@@ -45,21 +46,28 @@ pub async fn pick_bundle(
             "A secure session with {peer} cannot be opened yet: {why}"
         ))
     };
+    // Not readable yet (not named, not written, not reachable): the first
+    // contact waits for it (live finding L-FR3).
+    let waiting = |why: String| {
+        FriendError::NotReady(format!(
+            "A secure session with {peer} cannot be opened yet: {why}"
+        ))
+    };
     let pool = host.node()?.require_records()?;
     let list = record::read_device_list(pool.as_ref(), profile_key, true)
         .await
-        .map_err(|e| unusable(format!("their profile could not be read ({e})")))?
-        .ok_or_else(|| unusable("they have published no prekeys".to_string()))?;
+        .map_err(|e| waiting(format!("their profile could not be read ({e})")))?
+        .ok_or_else(|| waiting("they have published no prekeys".to_string()))?;
     let list = decode_prekey_record_list(&list)
         .map_err(|e| unusable(format!("their device list: {e}")))?;
     // One device until E5.3 fans out per listed device.
     let device = list
         .devices
         .first()
-        .ok_or_else(|| unusable("their device list is empty".to_string()))?;
+        .ok_or_else(|| waiting("their device list is empty".to_string()))?;
     let read = PeerRecord::open(pool.as_ref(), &device.record_key)
         .await
-        .map_err(|e| unusable(format!("their prekey record could not be read ({e})")))?;
+        .map_err(|e| waiting(format!("their prekey record could not be read ({e})")))?;
     let bundle = bundle_from(host, peer, &identity, &read).await;
     read.close().await;
     bundle
@@ -77,6 +85,13 @@ async fn bundle_from(
             "A secure session with {peer} cannot be opened yet: {why}"
         ))
     };
+    // Not readable yet (not named, not written, not reachable): the first
+    // contact waits for it (live finding L-FR3).
+    let waiting = |why: String| {
+        FriendError::NotReady(format!(
+            "A secure session with {peer} cannot be opened yet: {why}"
+        ))
+    };
     // The head and the first drawn slot are read together: one round trip
     // after the inspect.
     let mut untried = read.present_slots();
@@ -88,8 +103,8 @@ async fn bundle_from(
         }
     });
     let head = head
-        .map_err(|e| unusable(format!("their signed prekey could not be read ({e})")))?
-        .ok_or_else(|| unusable("their prekey record has no signed prekey yet".to_string()))
+        .map_err(|e| waiting(format!("their signed prekey could not be read ({e})")))?
+        .ok_or_else(|| waiting("their prekey record has no signed prekey yet".to_string()))
         .and_then(|bytes| {
             decode_prekey_head(&bytes).map_err(|e| unusable(format!("their signed prekey: {e}")))
         })?;
