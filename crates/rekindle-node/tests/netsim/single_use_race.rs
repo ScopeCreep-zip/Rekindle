@@ -4,13 +4,16 @@
 //! joiner the merge refused announces its join on gossip and writes its
 //! own record all the same; a member list that showed it would show a
 //! non-member as one (ADR 0011: membership is the merged state's alone).
+//! When the inviter has already stored the other join, its bootstrap
+//! answer refuses the loser at once (`bootstrap.rs` `admitted_deps`): the
+//! loser is told, withdraws, and holds no community.
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
 
-use crate::harness::{eventually, Community};
+use crate::harness::{eventually, Community, Refused};
 
 /// Node `i`'s merged member count.
 async fn member_count(community: &Community, i: usize) -> u64 {
@@ -58,7 +61,34 @@ async fn a_single_use_invite_lists_one_of_two_racing_joiners() {
     for i in 0..2 {
         admitted.insert(community.pseudonym(i).await);
     }
-    let (two, three) = (community.pseudonym(2).await, community.pseudonym(3).await);
+    // A joiner the inviter refused was told so and holds no community; a
+    // joiner told it joined has its pseudonym on the merged lists or not.
+    let mut joined = Vec::new();
+    for (i, outcome) in [(2, &a), (3, &b)] {
+        match outcome {
+            Ok(_) => joined.push(community.pseudonym(i).await),
+            Err(Refused { message, .. }) => {
+                assert!(
+                    message.contains("the inviter refused the join"),
+                    "node {i}'s join is refused by the inviter, not lost: {message}"
+                );
+                assert!(
+                    eventually(&community.sim, Duration::from_secs(60), || async {
+                        community.nodes[i]
+                            .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+                                LifecycleRequest::CommunityInfo {
+                                    anchor: community.anchor.clone(),
+                                },
+                            )))
+                            .await
+                            .is_err()
+                    })
+                    .await,
+                    "node {i}'s refused join is withdrawn"
+                );
+            }
+        }
+    }
     // Every member merges both joins and counts exactly one of them.
     let settled = eventually(&community.sim, Duration::from_secs(600), || async {
         member_count(&community, 0).await == 3 && member_count(&community, 1).await == 3
@@ -84,9 +114,11 @@ async fn a_single_use_invite_lists_one_of_two_racing_joiners() {
             3,
             "node {i} lists exactly the three admitted members: {shown:?}"
         );
-        assert!(
-            shown.contains(&two) != shown.contains(&three),
-            "node {i} lists exactly one racing joiner: {shown:?}"
+        let racing: Vec<_> = joined.iter().filter(|p| shown.contains(*p)).collect();
+        assert_eq!(
+            racing.len(),
+            1,
+            "node {i} lists exactly one racing joiner, one told it joined: {shown:?}"
         );
     }
     assert_eq!(
