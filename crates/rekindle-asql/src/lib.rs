@@ -7,7 +7,9 @@
 //! chain (`keyvaluedb-sqlite` 0.2.6 → `async-sqlite` 0.5.7 → `rusqlite 0.39`). The source below keeps upstream's battle-tested
 //! dedicated-thread + channel + close semantics; its two additions are
 //! [`Connection::call_detached`] and the call watch (below), neither of which
-//! changes how a call runs. Our
+//! changes how a call runs. One fix: a successful close disconnects the queue
+//! before it resolves, so every later call sees the closed connection
+//! (finding AQ1; upstream 0.7.0 resolved first). Our
 //! crates depend on it under the name `tokio_rusqlite` via a Cargo
 //! `package`-rename, so no call-sites change.
 //!
@@ -138,6 +140,7 @@ use tokio::sync::oneshot::{self};
 pub use rusqlite::{self, *};
 
 const BUG_TEXT: &str = "bug in tokio-rusqlite, please report";
+const CLOSED_TEXT: &str = "database connection should be open";
 
 /// Told of every call queued on a connection's background thread.
 pub trait CallWatch: Send + Sync {
@@ -407,7 +410,8 @@ impl Connection {
     /// it is a more user-friendly alternative to the [`Connection::call`] method.
     /// It should be safe if the connection is never explicitly closed (using the [`Connection::close`] call).
     ///
-    /// Calling this on a closed connection will cause a `panic`.
+    /// Calling this on a closed connection, or queuing it behind a `close`
+    /// that succeeds, will cause a `panic`.
     pub async fn call_unwrap<F, R>(&self, function: F) -> R
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
@@ -422,10 +426,12 @@ impl Connection {
                 let _ = sender.send(value);
                 drop(token);
             })))
-            .expect("database connection should be open");
+            .expect(CLOSED_TEXT);
         queued();
 
-        receiver.await.expect(BUG_TEXT)
+        // The reply sender is dropped unsent only when the call is discarded
+        // unrun: it was queued behind a `close` that succeeded.
+        receiver.await.expect(CLOSED_TEXT)
     }
 
     /// Close the database connection.
@@ -437,8 +443,11 @@ impl Connection {
     /// If successful, any following `close` operations performed
     /// on `Connection` copies will succeed immediately.
     ///
-    /// On the other hand, any calls to [`Connection::call`] will return a [`Error::ConnectionClosed`],
-    /// and any calls to [`Connection::call_unwrap`] will cause a `panic`.
+    /// On the other hand, any calls to [`Connection::call`] (or
+    /// [`Connection::call_detached`]) will return a [`Error::ConnectionClosed`],
+    /// and any calls to [`Connection::call_unwrap`] will cause a `panic`. This
+    /// holds from the moment `close` resolves, and for every call queued
+    /// behind the close while it ran.
     ///
     /// # Failure
     ///
@@ -531,9 +540,19 @@ fn event_loop(mut conn: rusqlite::Connection, receiver: Receiver<Message>) {
 
                 match result {
                     Ok(v) => {
+                        // Disconnect the queue BEFORE the closer learns of
+                        // the close (finding AQ1). Upstream sent first and
+                        // dropped the receiver only on return, so a call
+                        // made right after `close` resolved could still be
+                        // queued, then discarded unrun: `call_detached`
+                        // returned `Ok`, `call_unwrap` panicked with
+                        // `BUG_TEXT`. Dropping it here also discards every
+                        // call queued behind the close, each of which then
+                        // sees its reply sender dropped.
+                        drop(receiver);
                         s.send(Ok(v)).expect(BUG_TEXT);
                         drop(token);
-                        break;
+                        return;
                     }
                     Err((c, e)) => {
                         conn = c;
