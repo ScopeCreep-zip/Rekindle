@@ -89,8 +89,8 @@ Colour roles by reference (13)
 Regions
   window.frame: the nine-piece frame of the chat window layout xSLIMFIREchatwindow.xml: the top and bottom rows' typed pieces and a vertically resizing tile's sides, 252x495 px, nine-slice 165/125/165/125
   titlebar: the titlebar strip MainTitleBar, 266x106 px, NineSlice(Insets { top: 0, right: 131, bottom: 0, left: 131 }); states normal, windowInactive
-  titlebar.btn.close: the title button CloseBox, 9x5 px, Stretch; states normal, hover, down
-  titlebar.btn.minimize: the title button MinimizeBox, 9x5 px, Stretch; states normal, hover, down
+  titlebar.btn.close: the title button CloseBox, 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: the title button MinimizeBox, 24x24 px, Stretch; states normal, hover, down
   statusbar: the component StatusWrapper, 106x15 px, NineSlice(Insets { top: 0, right: 3, bottom: 0, left: 3 }); states normal
   statusbar.arrow: the component DownArrow, 44x17 px, Stretch; states normal, hover, down
   buddylist.action-button: the component AddButton, 48x27 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled

@@ -44,7 +44,7 @@ Regions
     Normal: 333x586 px
   buddylist.infobar: [CombatDragBar], 261x35 px, NineSlice(Insets { top: 0, right: 42, bottom: 0, left: 43 }); states normal
   community.sidebar-header: [CombatDragBar], 261x35 px, NineSlice(Insets { top: 0, right: 42, bottom: 0, left: 43 }); states normal
-  titlebar.btn.minimize: [Minimizebox], 12x12 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: [Minimizebox], 24x24 px, Stretch; states normal, hover, down
   buddylist.group-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
   community.category-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
   community.member-group-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal

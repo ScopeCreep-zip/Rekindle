@@ -99,9 +99,11 @@ fn middle_sides_title_buttons_and_the_scrollbar_import() {
         validate::run(&a.canonical.bytes).unwrap().bytes,
         a.canonical.bytes
     );
+    // The 10 x 10 button art is centred on the 24 x 24 button box, so it
+    // draws at 1:1 (plan E7.7.7, xSLIMFIRE's LED smeared by `stretch`).
     assert!(a
         .notice
-        .contains("titlebar.btn.close: [CloseBox], 10x10 px"));
+        .contains("titlebar.btn.close: [CloseBox], 24x24 px"));
     assert!(a
         .notice
         .contains("dropped [CloseBox (titlebar.btn.close)] Down: its size differs"));

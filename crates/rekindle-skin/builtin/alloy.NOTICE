@@ -85,9 +85,9 @@ Regions
   community.sidebar-header: [UserNameField], 4x17 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 1 }); states normal
   statusbar: [StatusWrapper], 22x17 px, NineSlice(Insets { top: 0, right: 19, bottom: 0, left: 2 }); states normal
   statusbar.arrow: [DownArrow], 18x17 px, Stretch; states normal, hover, down
-  titlebar.btn.close: [CloseBox], 18x18 px, Stretch; states normal, hover, down
-  titlebar.btn.minimize: [MinimizeBox], 18x18 px, Stretch; states normal, hover, down
-  titlebar.btn.maximize: [MaximizeBox], 18x18 px, Stretch; states normal, hover, down
+  titlebar.btn.close: [CloseBox], 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: [MinimizeBox], 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.maximize: [MaximizeBox], 24x24 px, Stretch; states normal, hover, down
   buddylist.group-header: [BuddyView], 4x17 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 1 }); states normal
   community.category-header: [BuddyView], 4x17 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 1 }); states normal
   community.member-group-header: [BuddyView], 4x17 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 1 }); states normal

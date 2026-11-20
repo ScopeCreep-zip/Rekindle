@@ -521,8 +521,11 @@ pub fn skin_css(
             decls,
             "    {}: {};",
             property(id, None),
-            value(&normal, region.fit)
+            strip::painted(id, &normal, &region.image, region.fit, images)?
         );
+        if strip::is_strip(id) {
+            let _ = writeln!(decls, "    {}: transparent;", strip::ground_property(id));
+        }
         if let Some(d) = still_decl(still_property(id, None), &region.image, region.fit) {
             decls.push_str(&d);
         }
@@ -561,7 +564,7 @@ pub fn skin_css(
                 decls,
                 "    {}: {};",
                 property(id, Some(*state)),
-                value(&h, region.fit)
+                strip::painted(id, &h, path, region.fit, images)?
             );
             if let Some(d) = still_decl(still_property(id, Some(*state)), path, region.fit) {
                 decls.push_str(&d);
@@ -579,6 +582,7 @@ pub fn skin_css(
 
 mod family;
 mod frame;
+mod strip;
 pub use family::{families, family, family_css};
 pub use frame::border_property;
 

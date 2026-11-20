@@ -130,7 +130,9 @@
     padding: 0 8px;
     gap: 6px;
     flex-shrink: 0;
-    background: linear-gradient(to right, var(--color-xfire-titlebar-start), var(--color-xfire-titlebar-end));
+    /* A skin's titlebar strip is the ground (`rekindle-skin`
+     * `regions/css/strip.rs`): its transparent corners show no gradient. */
+    background: var(--skin-region-titlebar-ground, linear-gradient(to right, var(--color-xfire-titlebar-start), var(--color-xfire-titlebar-end)));
   }
 
 

@@ -65,9 +65,9 @@ Regions
   community.member-group-header: the component BuddyView, 3x18 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   buddylist.actionbar: the component BottomBar, 359x66 px, NineSlice(Insets { top: 0, right: 161, bottom: 0, left: 161 }); states normal
   buddylist.action-button: the component AddButton, 43x30 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
-  titlebar.btn.minimize: the title button Minimize, 12x12 px, Stretch; states normal, hover, down
-  titlebar.btn.maximize: the title button Maximize, 12x12 px, Stretch; states normal, hover, down
-  titlebar.btn.close: the title button Close, 12x12 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: the title button Minimize, 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.maximize: the title button Maximize, 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.close: the title button Close, 24x24 px, Stretch; states normal, hover, down
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
   kept 32 of 135 images

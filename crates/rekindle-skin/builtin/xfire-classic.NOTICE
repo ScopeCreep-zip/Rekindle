@@ -105,7 +105,7 @@ Regions
   titlebar: the titlebar strip MainTitleBar, 240x47 px, NineSlice(Insets { top: 0, right: 70, bottom: 0, left: 70 }); states normal, windowInactive
   buddylist.infobar: the component UserNameField, 109x17 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 5 }); states normal
   community.sidebar-header: the component UserNameField, 109x17 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 5 }); states normal
-  titlebar.btn.close: the title button CloseBox, 18x17 px, Stretch; states normal, hover, down
+  titlebar.btn.close: the title button CloseBox, 24x24 px, Stretch; states normal, hover, down
   buddylist.action-button: the component AddButton, 40x24 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   statusbar: the component StatusWrapper, 149x26 px, NineSlice(Insets { top: 0, right: 24, bottom: 0, left: 25 }); states normal
   statusbar.arrow: the component DownArrow, 16x14 px, Stretch; states normal, hover, down
@@ -126,7 +126,7 @@ Regions
   scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 106x11 px, NineSlice(Insets { top: 0, right: 3, bottom: 0, left: 3 }); states normal
   buddylist.tab: the component TabNormalButton, 71x16 px, NineSlice(Insets { top: 0, right: 18, bottom: 0, left: 4 }); states normal, down, selected
   chat.send-button: the component SendButton, 40x24 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
-  titlebar.btn.minimize: the title button MinimizeBox, 18x17 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: the title button MinimizeBox, 24x24 px, Stretch; states normal, hover, down
   chat.call-button: the component InfoHostChatButton, 35x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.call-button-active: the component InfoLeaveChatButton, 35x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
   chat.group-header: the component GroupChatInfoView, 102x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal

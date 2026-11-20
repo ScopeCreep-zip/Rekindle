@@ -86,9 +86,9 @@ Regions
   buddylist.actionbar: the component BottomBar, 3x20 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   buddylist.action-button: the component AddButton, 47x20 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   statusbar: the component StatusWrapper, 24x18 px, NineSlice(Insets { top: 0, right: 16, bottom: 0, left: 4 }); states normal
-  titlebar.btn.minimize: the title button Minimize, 15x15 px, Stretch; states normal, hover, down
-  titlebar.btn.maximize: the title button Maximize, 15x15 px, Stretch; states normal, hover, down
-  titlebar.btn.close: the title button Close, 15x15 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: the title button Minimize, 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.maximize: the title button Maximize, 24x24 px, Stretch; states normal, hover, down
+  titlebar.btn.close: the title button Close, 24x24 px, Stretch; states normal, hover, down
   scrollbar.button-up: the scrollbar ScrollbarA, 10x29 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: the scrollbar ScrollbarA, 10x11 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: the scrollbar ScrollbarA, 11x10 px, Stretch; states normal, hover, down, disabled

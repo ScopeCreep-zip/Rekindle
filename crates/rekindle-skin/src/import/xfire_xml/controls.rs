@@ -501,6 +501,26 @@ fn keep(control: &mut Control, st: RegionState, img: RgbaImage, dropped: &mut Dr
     }
 }
 
+/// The app's title button box, CSS px (`00-rules.css` `.xfire-titlebar-btn`,
+/// 24 × 24 for SC 2.5.8).
+const TITLE_BUTTON: u32 = 24;
+
+/// A title button's art centred on a transparent square at least the
+/// button's box, so `stretch` draws it at 1:1 (or scaled evenly when it is
+/// larger) instead of pulling xSLIMFIRE's 9 × 5 LED into a 24 × 24 smear.
+fn centred(img: RgbaImage) -> RgbaImage {
+    let side = TITLE_BUTTON.max(img.width()).max(img.height());
+    if img.width() == side && img.height() == side {
+        return img;
+    }
+    let mut out = RgbaImage::new(side, side);
+    let (dx, dy) = ((side - img.width()) / 2, (side - img.height()) / 2);
+    for (x, y, p) in img.enumerate_pixels() {
+        out.put_pixel(x + dx, y + dy, *p);
+    }
+    out
+}
+
 fn button<S: StateImages>(region: &'static str, sets: &[S]) -> Result<Made, ImportError> {
     let mut control = Control {
         region,
@@ -522,6 +542,10 @@ fn button<S: StateImages>(region: &'static str, sets: &[S]) -> Result<Made, Impo
     }
     if !control.images.contains_key(&RegionState::Normal) {
         return Ok(Vec::new());
+    }
+    // After the size check, so a state of another size is still dropped.
+    for img in control.images.values_mut() {
+        *img = centred(std::mem::replace(img, RgbaImage::new(0, 0)));
     }
     Ok(vec![(control, dropped, kept)])
 }
