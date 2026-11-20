@@ -79,6 +79,13 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     let profile_key = friend.dht_record_key.clone();
     state::put(host, friend);
     state::echo_failed(host, public_key, ended, "superseded by a new friendship");
+    // The friendship is stored: every window shows them now (plan E2.6,
+    // GC3: the New Group picker missed a friend whose accept was still
+    // opening the session below, a DHT read that can take minutes).
+    host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
+        peer_key: public_key.to_string(),
+        display_name: Some(display_name.to_string()),
+    }));
 
     // Our accept opens the session from their record (the profile their
     // request named; plan E2.4, B2). A failure shows on their row with
@@ -95,10 +102,6 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         invites::mark_accepted(host, invite_id);
     }
     super::list_record::queued(host, "our accept");
-    host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
-        peer_key: public_key.to_string(),
-        display_name: Some(display_name.to_string()),
-    }));
     host.audit(
         rekindle_audit::AuditKind::FriendAdded,
         serde_json::json!({

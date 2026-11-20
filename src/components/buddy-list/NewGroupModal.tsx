@@ -18,8 +18,9 @@ const NewGroupModal: Component = () => {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  const friends = () =>
-    Object.values(friendsState.friends).filter((f) => f.friendshipState === "accepted");
+  // Every friend the Host lists; one it cannot add yet is shown disabled
+  // with the Host's reason, never left out (GC3).
+  const friends = () => Object.values(friendsState.friends);
   const count = () => picked().length;
   const ready = () =>
     !busy() && name().trim().length > 0 && count() >= MIN_PICKED && count() <= MAX_PICKED;
@@ -80,9 +81,18 @@ const NewGroupModal: Component = () => {
                         <input
                           type="checkbox"
                           checked={picked().includes(friend.publicKey)}
+                          disabled={friend.groupDmBlock !== null}
+                          aria-describedby={friend.groupDmBlock ? `ngb-${friend.publicKey}` : undefined}
                           onChange={() => toggle(friend.publicKey)}
                         />
                         <span class="buddy-name">{friend.displayName}</span>
+                        <Show when={friend.groupDmBlock}>
+                          {(reason) => (
+                            <span class="group-dm-picker-reason" id={`ngb-${friend.publicKey}`}>
+                              {reason()}
+                            </span>
+                          )}
+                        </Show>
                       </label>
                     )}
                   </For>

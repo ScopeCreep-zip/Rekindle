@@ -34,6 +34,8 @@ export interface Friend {
   /** Their keys are not signed by the identity we know: a trust alert on
    *  the row, and the chat refuses to send (plan E2.4, B3). */
   identityPinMismatch: boolean;
+  /** The Host's reason they cannot join a new group DM yet (GC3). */
+  groupDmBlock: string | null;
 }
 
 export interface PendingRequest {

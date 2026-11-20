@@ -265,9 +265,15 @@ export async function handleCancelRequest(publicKey: string): Promise<string | n
   }
 }
 
+// Only the newest read lands: two accepts in a row each re-read the list,
+// and an older answer arriving last dropped the second friend (GC3).
+let refreshSeq = 0;
+
 export async function handleRefreshFriends(): Promise<void> {
+  const seq = ++refreshSeq;
   try {
     const friends = await commands.getFriends();
+    if (seq !== refreshSeq) return;
     setFriendsState("friends", reconcile(transformFriendMap(friends)));
   } catch (e) {
     console.error("Failed to refresh friends:", e);

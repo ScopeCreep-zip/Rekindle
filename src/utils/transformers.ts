@@ -30,6 +30,7 @@ export function transformFriend(f: FriendInfo): Friend {
     handshakeRetrying: f.handshakeRetrying,
     unreachable: false,
     identityPinMismatch: f.identityPinMismatch,
+    groupDmBlock: f.groupDmBlock,
   };
 }
 
@@ -266,6 +267,8 @@ export function transformNewFriend(
     handshakeRetrying: false,
     unreachable: false,
     identityPinMismatch: false,
+    // Until the Host's list answers (the `added` arm re-reads it).
+    groupDmBlock: "Loading…",
   };
 }
 

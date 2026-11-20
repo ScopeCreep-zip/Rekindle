@@ -111,11 +111,20 @@ pub async fn create(
     let own = crate::operations::friend::published_identity(host).await?;
     let mut others = Vec::with_capacity(members.len());
     for key in members {
-        let (profile, display_name) = state::friend(host, key)
-            .and_then(|f| f.dht_record_key.map(|profile| (profile, f.display_name)))
-            .ok_or_else(|| {
-                FriendError::Invalid(format!("{} is not a friend", state::short_key(key)))
-            })?;
+        let friend = state::friend(host, key).ok_or_else(|| {
+            FriendError::Invalid(format!("{} is not a friend", state::short_key(key)))
+        })?;
+        // The picker's own check (plan E2.6, GC3): it shows this reason.
+        if let Some(reason) = rekindle_types::dto::friends::group_dm_block(&friend) {
+            return Err(FriendError::Invalid(format!(
+                "{}: {reason}",
+                friend.display_name
+            )));
+        }
+        let (profile, display_name) = friend
+            .dht_record_key
+            .map(|profile| (profile, friend.display_name))
+            .ok_or_else(|| FriendError::Invalid("no profile record".into()))?;
         others.push(GroupDmRosterMember {
             identity: key.clone(),
             profile_record_key: profile,

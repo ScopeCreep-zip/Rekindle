@@ -154,3 +154,63 @@ async fn a_cancel_whose_outbox_is_gone_after_the_commit_leaves_no_row() {
         .any(|row| row.stream == rekindle_db::repo::outbox::FRIEND_LIST_STREAM));
     assert_eq!(stored(&host, owner).await, 0);
 }
+
+/// GC3 (Linux live): right after two requests were accepted, the New
+/// Group picker listed one. The list right after the accepts names every
+/// friend with the Host's group-DM eligibility: an accepted friend whose
+/// profile we hold can be added; one whose request named no profile, and
+/// one still pending our request, are listed with the reason.
+#[tokio::test]
+async fn the_list_right_after_two_accepts_names_each_friend_with_its_group_dm_eligibility() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let o = hex::encode(owner);
+    let key = || hex::encode(Identity::generate().public_key_bytes());
+    let (bob, carol, dave) = (key(), key(), key());
+    let db = host.ctx.db.current().unwrap();
+    let (o2, b2, c2, d2) = (o.clone(), bob.clone(), carol.clone(), dave.clone());
+    db.call(move |conn| {
+        for (pk, name, profile) in [(&b2, "Bob", "VLD0:bobprofile"), (&c2, "Carol", "")] {
+            let request = rekindle_db::repo::pending_requests::Incoming {
+                public_key: pk,
+                display_name: name,
+                message: "hi",
+                received_at: 1,
+                profile_dht_key: profile,
+                route_blob: &[],
+                mailbox_dht_key: "",
+                invite_id: None,
+            };
+            rekindle_db::repo::pending_requests::upsert(conn, &o2, &request)?;
+        }
+        rekindle_db::repo::friends::insert_pending_out(conn, &o2, &d2, "Dave", 1).map(drop)
+    })
+    .await
+    .unwrap();
+    let loaded = super::session::load(&db, &host.ctx.vault, &o, host.ctx.rng.as_ref(), 0)
+        .await
+        .unwrap();
+    host.ctx.session.write().as_mut().unwrap().friends = loaded.friends;
+    let friends = HostFriends::of(&host.ctx);
+    friend::accept(&friends, &bob).await.unwrap();
+    friend::accept(&friends, &carol).await.unwrap();
+
+    let list = friend::friends(&friends);
+    let block = |pk: &str| {
+        list.iter()
+            .find(|f| f.public_key == pk)
+            .unwrap_or_else(|| panic!("{pk} missing from {list:?}"))
+            .group_dm_block
+            .clone()
+    };
+    assert_eq!(list.len(), 3, "{list:?}");
+    assert_eq!(block(&bob), None);
+    assert_eq!(
+        block(&carol).as_deref(),
+        Some("Their profile is not known yet")
+    );
+    assert_eq!(
+        block(&dave).as_deref(),
+        Some("Waiting for them to accept your friend request")
+    );
+}

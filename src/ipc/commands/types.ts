@@ -132,6 +132,9 @@ export interface FriendInfo {
   /** Their keys are not signed by the identity we know for them: a trust
    *  alert shown on their row until it is resolved (plan E2.4, B3). */
   identityPinMismatch: boolean;
+  /** Why the Host cannot put them in a new group DM yet; `null` when it
+   *  can (plan E2.6, GC3). */
+  groupDmBlock: string | null;
 }
 
 export interface GameStatus {

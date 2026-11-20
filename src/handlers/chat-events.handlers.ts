@@ -147,6 +147,8 @@ function applyFriendEvent(friend: FriendEvent): void {
       peerKey,
       transformNewFriend(peerKey, displayName, friendshipState, groupLabel),
     );
+    // The Host's view of the row (its group-DM eligibility, GC3).
+    handleRefreshFriends();
     return;
   }
 

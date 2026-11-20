@@ -43,6 +43,29 @@ pub struct Friend {
     /// Their keys are not signed by the identity we know for them: a trust
     /// alert, shown on their row until it is resolved (plan E2.4, B3).
     pub identity_pin_mismatch: bool,
+    /// Why they cannot be put in a new group DM yet; `None` when they can
+    /// (plan E2.6, GC3: the picker lists every friend and shows this one
+    /// disabled with the reason, never omits them).
+    pub group_dm_block: Option<String>,
+}
+
+/// Why `friend` cannot be put in a new group DM yet, or `None`. The
+/// roster names each member's profile record (plan E2.6) and the invite
+/// goes over our pairwise session, so a member is an accepted friend
+/// whose profile record we hold. The one check the picker and
+/// `group_dm::create` both apply.
+#[must_use]
+pub fn group_dm_block(friend: &crate::friend::FriendState) -> Option<String> {
+    match friend.friendship_state {
+        FriendshipState::PendingOut => {
+            Some("Waiting for them to accept your friend request".to_string())
+        }
+        FriendshipState::Removing => Some("Being removed from your friends".to_string()),
+        FriendshipState::Accepted if friend.dht_record_key.is_none() => {
+            Some("Their profile is not known yet".to_string())
+        }
+        FriendshipState::Accepted => None,
+    }
 }
 
 impl Friend {
@@ -69,6 +92,7 @@ impl Friend {
             handshake_error: friend.handshake_error.clone(),
             handshake_retrying: friend.handshake_retrying,
             identity_pin_mismatch: friend.identity_pin_mismatch,
+            group_dm_block: group_dm_block(friend),
         }
     }
 }
