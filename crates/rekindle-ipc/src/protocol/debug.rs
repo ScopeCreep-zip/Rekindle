@@ -181,6 +181,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::SkinKeep { .. }
             | Self::SkinGet { .. }
             | Self::SkinFile { .. }
+            | Self::SkinFrames
             | Self::SkinValidateDraft { .. }
             | Self::SkinDraftStart { .. }
             | Self::SkinExportDraft { .. }

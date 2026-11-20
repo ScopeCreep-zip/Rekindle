@@ -37,7 +37,10 @@ pub(crate) async fn route(
 ) -> IpcResponse {
     let reads = matches!(
         request,
-        IpcRequest::SkinList | IpcRequest::SkinGet { .. } | IpcRequest::SkinFile { .. }
+        IpcRequest::SkinList
+            | IpcRequest::SkinGet { .. }
+            | IpcRequest::SkinFile { .. }
+            | IpcRequest::SkinFrames
     );
     // A skin write is local: the identity's database and this device's
     // data root, with no record written to the network. So it needs only
@@ -51,6 +54,7 @@ pub(crate) async fn route(
         IpcRequest::SkinList => list(ctx).await.map(|l| IpcResponse::ok(&l)),
         IpcRequest::SkinGet { id } => serve::get(ctx, id).await.map(|a| IpcResponse::ok(&a)),
         IpcRequest::SkinFile { path } => serve::file(ctx, &path).await.map(|f| IpcResponse::ok(&f)),
+        IpcRequest::SkinFrames => serve::frames(ctx).await.map(|f| IpcResponse::ok(&f)),
         IpcRequest::SkinImport { bytes } => import(ctx, bytes).await.map(|e| IpcResponse::ok(&e)),
         IpcRequest::SkinRemove { id } => remove(ctx, id).await,
         IpcRequest::SkinSelect { id } => select(ctx, id).await,

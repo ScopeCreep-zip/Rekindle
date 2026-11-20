@@ -167,6 +167,7 @@ impl IpcRequest {
             // (plaintext by design, threat model Z16).
             Self::SkinGet { .. } => ("SkinGet", Query, Open),
             Self::SkinFile { .. } => ("SkinFile", Query, Open),
+            Self::SkinFrames => ("SkinFrames", Query, Open),
             Self::SkinValidateDraft { .. } => ("SkinValidateDraft", Query, Authenticated),
             Self::SkinDraftStart { .. } => ("SkinDraftStart", Query, Authenticated),
             Self::SkinExportDraft { .. } => ("SkinExportDraft", Write, Authenticated),

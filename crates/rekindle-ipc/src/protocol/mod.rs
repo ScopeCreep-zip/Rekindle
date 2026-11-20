@@ -451,6 +451,10 @@ pub enum IpcRequest {
     /// (`/{package}/{file}`, `rekindle_skin::serve`): a built-in, the
     /// device login copy, or (unlocked) a library package.
     SkinFile { path: String },
+    /// The shown skin's window frame layouts with each tile's 1-bit mask
+    /// (plan SK0 S3): the shell cuts its windows to their silhouettes
+    /// from these, computed in Rust, never from the webview.
+    SkinFrames,
     /// The skin editor (plan E7.7.5): the Host's report on a draft, every
     /// declared pair's ratio and pass/fail, the suggested passing colours
     /// and the draft's token stylesheet (a read; nothing is stored).

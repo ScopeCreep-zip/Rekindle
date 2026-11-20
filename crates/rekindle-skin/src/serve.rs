@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use rekindle_types::dto::skin::{
     SkinBase, SkinContrast, SkinError, SkinManifest, SkinRule, SkinVariant, TokenValue,
 };
-use rekindle_types::dto::skin_library::SkinPaletteColour;
+use rekindle_types::dto::skin_library::{SkinPaletteColour, SkinTileMask, SkinWindowFrame};
 
 use crate::generate::tui_colours;
 use crate::output::tokens_css;
@@ -29,7 +29,7 @@ use crate::regions::labels::label_css;
 use crate::regions::still;
 use crate::regions::title::title_css;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
-use crate::shape::frame_css;
+use crate::shape::{self, frame_css};
 use crate::{manifest, tokens};
 
 /// The stylesheet's file name.
@@ -190,6 +190,37 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
         regions: m.regions.keys().cloned().collect(),
         palette: tui_colours(&resolved),
     })
+}
+
+/// The window frames of the canonical package `bytes`: each window kind's
+/// layout with its tiles' masks decoded from the package's images (plan
+/// SK0 S3, what the shell cuts its windows by).
+///
+/// # Errors
+/// The package or its manifest does not read, or a tile's image does not
+/// decode at its declared size (never for a package the helper returned).
+pub fn frames(bytes: &[u8]) -> Result<Vec<SkinWindowFrame>, SkinError> {
+    let p = package::read(bytes)?;
+    let m = manifest::parse(&p)?;
+    let images = files(&p);
+    m.windows
+        .iter()
+        .map(|(window, layout)| {
+            let masks = shape::of_layout("windows", layout, &images)?
+                .into_iter()
+                .map(|mask| SkinTileMask {
+                    width: mask.width(),
+                    height: mask.height(),
+                    bits: mask.bits().to_vec(),
+                })
+                .collect();
+            Ok(SkinWindowFrame {
+                window: *window,
+                layout: layout.clone(),
+                masks,
+            })
+        })
+        .collect()
 }
 
 /// `file` of the canonical package `bytes` at `address`; `Ok(None)` for

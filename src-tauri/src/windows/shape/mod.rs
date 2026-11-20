@@ -4,10 +4,11 @@
 //! `scratchpad/shaped/research.md` §1, §7).
 //!
 //! The silhouette is a list of device-pixel rectangles ([`Rect`]), computed
-//! in Rust by a [`Provider`] from the window's size and scale. Until the
-//! skin's frame layout provides one (SK0 S1, `rekindle-skin::silhouette`),
-//! [`full_window`] gives the whole rectangle: today's shape, without the
-//! shadow. One function cuts a window, whatever the platform:
+//! in Rust from the window's size and scale by `rekindle_skin::shape::
+//! silhouette` over the layout of the window's frame in the shown skin's
+//! validated package (the Host's `SkinFrames`, [`skin`]); a window with no
+//! frame, or a skin with no layout for it, keeps its whole rectangle,
+//! without the shadow. One function cuts a window, whatever the platform:
 //! - Linux: GDK input shape (Wayland input region, X11 SHAPE input) plus
 //!   the X11 bounding shape ([`linux`]);
 //! - Windows: `SetWindowRgn` ([`win32_region`]);
@@ -20,41 +21,33 @@
 //!
 //! Recomputed on: creation ([`attach`]), `Resized` (which maximize,
 //! unmaximize and restore all raise; Tauri has no separate maximize event),
-//! `ScaleFactorChanged`, and a skin change ([`reshape_all`] from
-//! `rebind::follow_event` on `SystemEvent::SkinChanged`).
+//! `ScaleFactorChanged`, and a skin change ([`refresh`] from
+//! `rebind::follow_event` on `SystemEvent::SkinChanged`, which refetches
+//! the frames and reshapes every window).
 
 mod geometry;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+mod skin;
 #[cfg(windows)]
 mod win32_region;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use tauri::{AppHandle, Manager, PhysicalSize, WebviewWindow, WindowEvent};
+use rekindle_types::dto::skin::SkinWindow;
+use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
 
 pub use geometry::{Rect, Silhouette};
+pub use skin::{frame_of, refresh};
 
-/// Computes a window's silhouette for its inner size in device pixels and
-/// its scale factor.
-pub type Provider = fn(&WebviewWindow, PhysicalSize<u32>, f64) -> Result<Silhouette, String>;
-
-/// The silhouette while no skin layout gives one: the whole window.
-pub fn full_window(
-    _window: &WebviewWindow,
-    size: PhysicalSize<u32>,
-    _scale: f64,
-) -> Result<Silhouette, String> {
-    Silhouette::full(size.width, size.height)
-}
-
-/// One shaped window: how its silhouette is computed and the one applied.
+/// One shaped window: the skin frame it wears and the silhouette applied.
 struct Shaped {
-    provider: Mutex<Provider>,
+    frame: Mutex<Option<SkinWindow>>,
     current: Arc<Mutex<Option<Silhouette>>>,
     #[cfg(target_os = "macos")]
     ignoring: Arc<std::sync::atomic::AtomicBool>,
@@ -66,6 +59,10 @@ struct Shaped {
 #[derive(Default)]
 struct ShapeRegistry {
     windows: Mutex<HashMap<String, Arc<Shaped>>>,
+    /// The shown skin's frames (empty until the Host answers).
+    frames: Mutex<Arc<skin::Frames>>,
+    /// The first fetch of the frames has been asked for.
+    requested: AtomicBool,
 }
 
 fn registry(app: &AppHandle) -> tauri::State<'_, ShapeRegistry> {
@@ -76,7 +73,7 @@ fn registry(app: &AppHandle) -> tauri::State<'_, ShapeRegistry> {
 }
 
 /// The registry entry for `window`, made (with its macOS tracker) if new.
-fn ensure(window: &WebviewWindow, provider: Provider) -> Arc<Shaped> {
+fn ensure(window: &WebviewWindow, frame: Option<SkinWindow>) -> Arc<Shaped> {
     let app = window.app_handle();
     let registry = registry(app);
     let mut windows = registry.windows.lock();
@@ -84,7 +81,7 @@ fn ensure(window: &WebviewWindow, provider: Provider) -> Arc<Shaped> {
         return Arc::clone(shaped);
     }
     let shaped = Arc::new(Shaped {
-        provider: Mutex::new(provider),
+        frame: Mutex::new(frame),
         current: Arc::new(Mutex::new(None)),
         #[cfg(target_os = "macos")]
         ignoring: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -110,7 +107,7 @@ fn ensure(window: &WebviewWindow, provider: Provider) -> Arc<Shaped> {
 /// platform refused the shape.
 pub fn apply_shape(window: &WebviewWindow, rects: &[Rect]) -> Result<(), String> {
     let silhouette = Silhouette::new(rects)?;
-    let shaped = ensure(window, full_window);
+    let shaped = ensure(window, None);
     *shaped.current.lock() = Some(silhouette.clone());
     platform_apply(window, &silhouette)
 }
@@ -120,7 +117,7 @@ pub fn apply_shape(window: &WebviewWindow, rects: &[Rect]) -> Result<(), String>
 /// # Errors
 /// The platform refused to clear the shape.
 pub fn clear_shape(window: &WebviewWindow) -> Result<(), String> {
-    let shaped = ensure(window, full_window);
+    let shaped = ensure(window, None);
     *shaped.current.lock() = None;
     platform_clear(window)
 }
@@ -173,13 +170,13 @@ fn platform_clear(window: &WebviewWindow) -> Result<(), String> {
 /// later.
 #[cfg(target_os = "macos")]
 fn platform_apply(window: &WebviewWindow, silhouette: &Silhouette) -> Result<(), String> {
-    let shaped = ensure(window, full_window);
+    let shaped = ensure(window, None);
     macos::apply_now(window, silhouette, &shaped.ignoring)
 }
 
 #[cfg(target_os = "macos")]
 fn platform_clear(window: &WebviewWindow) -> Result<(), String> {
-    let shaped = ensure(window, full_window);
+    let shaped = ensure(window, None);
     macos::set(window, &shaped.ignoring, false)
 }
 
@@ -188,14 +185,15 @@ fn platform_clear(window: &WebviewWindow) -> Result<(), String> {
 /// provider error) leaves the window whole rather than keeping a stale
 /// shape cut for another size, which could cut into its content.
 pub fn reshape(window: &WebviewWindow) {
-    let shaped = ensure(window, full_window);
-    let provider = *shaped.provider.lock();
+    let shaped = ensure(window, None);
+    let frame = *shaped.frame.lock();
+    let frames = Arc::clone(&registry(window.app_handle()).frames.lock());
     let computed = window
         .inner_size()
         .map_err(|e| e.to_string())
         .and_then(|size| {
             let scale = window.scale_factor().map_err(|e| e.to_string())?;
-            provider(window, size, scale)
+            skin::compute(&frames, frame, size, scale)
         });
     let result = match computed {
         Ok(silhouette) => {
@@ -214,12 +212,19 @@ pub fn reshape(window: &WebviewWindow) {
     }
 }
 
-/// Shape a new window with `provider` and keep it shaped: resize (and so
-/// maximize/unmaximize) and scale changes recompute it; destruction drops
-/// it and stops its tracker.
-pub fn attach(window: &WebviewWindow, provider: Provider) {
-    let shaped = ensure(window, provider);
-    *shaped.provider.lock() = provider;
+/// Shape a new window wearing `frame` ([`frame_of`] its kind) and keep it
+/// shaped: resize (and so maximize/unmaximize) and scale changes recompute
+/// it; destruction drops it and stops its tracker. The first window asks
+/// the Host for the shown skin's frames ([`refresh`]).
+pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
+    let shaped = ensure(window, frame);
+    *shaped.frame.lock() = frame;
+    if !registry(window.app_handle())
+        .requested
+        .swap(true, Ordering::AcqRel)
+    {
+        refresh(window.app_handle());
+    }
     let target = window.clone();
     window.on_window_event(move |event| match event {
         WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => reshape(&target),
@@ -243,9 +248,15 @@ fn forget(window: &WebviewWindow) {
     drop(removed);
 }
 
-/// Recompute every shaped window (a skin change: the new skin's layout
-/// gives new silhouettes).
-pub fn reshape_all(app: &AppHandle) {
+/// Keep the shown skin's `frames` and recompute every shaped window from
+/// them.
+fn set_frames(app: &AppHandle, frames: skin::Frames) {
+    *registry(app).frames.lock() = Arc::new(frames);
+    reshape_all(app);
+}
+
+/// Recompute every shaped window from the frames held.
+fn reshape_all(app: &AppHandle) {
     let labels: Vec<String> = registry(app).windows.lock().keys().cloned().collect();
     for label in labels {
         if let Some(window) = app.get_webview_window(&label) {

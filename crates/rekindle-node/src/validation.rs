@@ -491,6 +491,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }
         | IpcRequest::SkinFile { .. }
+        | IpcRequest::SkinFrames
         | IpcRequest::SkinImport { .. }
         | IpcRequest::SkinRemove { .. }
         | IpcRequest::SkinSelect { .. }

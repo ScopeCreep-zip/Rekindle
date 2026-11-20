@@ -262,6 +262,7 @@ pub(crate) async fn select(
         | IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }
         | IpcRequest::SkinFile { .. }
+        | IpcRequest::SkinFrames
         | IpcRequest::SkinValidateDraft { .. }
         | IpcRequest::SkinDraftStart { .. }
         | IpcRequest::SkinExportDraft { .. }

@@ -93,3 +93,32 @@ pub struct SkinServed {
     #[serde(with = "crate::base64_bytes")]
     pub bytes: Vec<u8>,
 }
+
+/// One frame tile's 1-bit mask (plan SK0 S3): rows of `ceil(width / 8)`
+/// bytes, most significant bit first, a set bit an opaque pixel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinTileMask {
+    pub width: u32,
+    pub height: u32,
+    pub bits: Vec<u8>,
+}
+
+/// One window kind's frame layout and its tiles' masks, in tile order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinWindowFrame {
+    pub window: crate::dto::skin::SkinWindow,
+    pub layout: crate::dto::skin::WindowLayout,
+    pub masks: Vec<SkinTileMask>,
+}
+
+/// `SkinFrames`' answer: the shown skin's window frames; a window kind
+/// absent here keeps its whole rectangle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinFrames {
+    /// The skin the frames are of.
+    pub id: String,
+    pub windows: Vec<SkinWindowFrame>,
+}

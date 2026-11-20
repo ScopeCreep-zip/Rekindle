@@ -91,6 +91,20 @@ fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
     assert!(css.contains(strip), "{css}");
 }
 
+#[test]
+fn xfire_classic_pads_the_content_to_its_side_edges() {
+    // S1f: the content insets are the side edge pieces (7 and 6 px), the
+    // titlebar band (47 px) and the console row (63 px), not the corners.
+    let (m, files) = pack("builtin:xfire-classic");
+    let css = frame_css(&m, &files, BASE).unwrap();
+    assert!(
+        css.contains(
+            "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 47px 6px 63px 7px;\n"
+        ),
+        "{css}"
+    );
+}
+
 /// The px value of `prop` in `decls` at an axis of `len` px.
 fn eval(decls: &str, prop: &str, len: i64) -> Option<i64> {
     let at = decls

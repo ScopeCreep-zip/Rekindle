@@ -67,7 +67,7 @@ pub fn follow_event(app: &AppHandle, state: &SharedState, event: &SubscriptionEv
             peer_key_changed(app, state, peer_key, new_key);
         }
         SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => {
-            super::shape::reshape_all(app);
+            super::shape::refresh(app);
         }
         _ => {}
     }

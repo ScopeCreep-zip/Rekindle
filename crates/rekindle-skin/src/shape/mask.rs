@@ -73,6 +73,24 @@ impl Mask {
         out
     }
 
+    /// A mask from its packed rows ([`Self::bits`]); `None` when `bits`
+    /// is not `ceil(width / 8) * height` bytes.
+    #[must_use]
+    pub fn from_bits(width: u32, height: u32, bits: Vec<u8>) -> Option<Self> {
+        (bits.len() == stride(width).checked_mul(height as usize)?).then_some(Self {
+            width,
+            height,
+            bits,
+        })
+    }
+
+    /// The packed rows: `ceil(width / 8)` bytes each, most significant
+    /// bit first.
+    #[must_use]
+    pub fn bits(&self) -> &[u8] {
+        &self.bits
+    }
+
     #[must_use]
     pub fn width(&self) -> u32 {
         self.width

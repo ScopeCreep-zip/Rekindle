@@ -48,6 +48,7 @@ rekindle-route = { path = "../crates/rekindle-route" }
 rekindle-secrets = { path = "../crates/rekindle-secrets" }
 rekindle-sync = { path = "../crates/rekindle-sync" }
 rekindle-types = { path = "../crates/rekindle-types" }
+rekindle-skin = { path = "../crates/rekindle-skin" }
 rekindle-vault = { path = "../crates/rekindle-vault" }
 rekindle-video = { path = "../crates/rekindle-video" }
 

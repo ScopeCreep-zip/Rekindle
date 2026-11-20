@@ -12,7 +12,7 @@ use rekindle_db::repo::{preferences, skins};
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_skin::builtin;
 use rekindle_skin::serve::{self, Cache};
-use rekindle_types::dto::skin_library::{SkinApplied, SkinServed};
+use rekindle_types::dto::skin_library::{SkinApplied, SkinFrames, SkinServed};
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use super::ids::{self, DEV, PKG};
@@ -156,6 +156,18 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
         regions: applied.regions,
         palette: applied.palette,
     })
+}
+
+/// `SkinFrames`: the shown skin's window frames, each tile's mask decoded
+/// from the helper-validated package off the async workers (plan SK0 S3).
+pub(super) async fn frames(ctx: &DaemonContext) -> Answer<SkinFrames> {
+    let id = resolved(ctx).await?;
+    let held = package_of(ctx, &id).await?;
+    let windows = rekindle_lifecycle::run_blocking(move || serve::frames(&held.bytes))
+        .await
+        .map_err(|e| failed("skin frames task", e))?
+        .map_err(|e| failed("skin frames", e))?;
+    Ok(SkinFrames { id, windows })
 }
 
 /// `SkinFile`: one file of the package a `skin://` path names.
