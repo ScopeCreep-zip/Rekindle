@@ -463,6 +463,13 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// handle (set to `None`). Used by `shutdown_voice(FULL)`.
     fn stop_devices_and_clear_engine(&self);
 
+    /// The community channel session ended (`shutdown_voice(FULL)`, on
+    /// every path: the Leave button, a call's end, logout): its keyring
+    /// with the session key, its queued key deliveries and its
+    /// media-ready slot end with it (plans C7.20, C7.29), so a rejoin
+    /// is a new session that announces a new session key.
+    async fn end_channel_session(&self, community_id: &str, channel_id: &str);
+
     /// Stop cpal capture + playback WITHOUT clearing the engine
     /// handle. Used by device hot-swap before
     /// `set_voice_engine_devices(None, None)` + restart.

@@ -26,6 +26,14 @@ use crate::session_deps::{VoiceSessionDeps, VoiceShutdownOpts};
 pub const LOOP_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
 pub async fn shutdown_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, opts: &VoiceShutdownOpts) {
+    // A FULL shutdown ends the channel session. Read the slot BEFORE the
+    // teardown drops the engine handle that names it.
+    let ending = if opts.stop_devices {
+        let (channel_id, community_id) = deps.active_channel_info();
+        community_id.map(|community_id| (community_id, channel_id))
+    } else {
+        None
+    };
     let scopes = deps.take_loop_scopes(*opts);
     for scope in [scopes.loops, scopes.mcu, scopes.monitor]
         .into_iter()
@@ -45,4 +53,8 @@ pub async fn shutdown_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, opts: &
     // an orphaned Receiver that briefly steals packets at the next
     // session start.
     deps.clear_voice_channels();
+
+    if let Some((community_id, channel_id)) = ending {
+        deps.end_channel_session(&community_id, &channel_id).await;
+    }
 }

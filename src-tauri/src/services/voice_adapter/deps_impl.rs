@@ -432,6 +432,30 @@ impl VoiceSessionDeps for VoiceAdapter {
             handle.engine.stop_playback();
         }
         *ve = None;
+        drop(ve);
+        // Native camera session dies with the voice session — its frames
+        // have nowhere to go without the roster's routes.
+        crate::services::native_video::stop(&self.state);
+    }
+
+    async fn end_channel_session(&self, community_id: &str, channel_id: &str) {
+        // The media-ready gate flips not-ready for the session that ended.
+        crate::services::community::media_ready_runtime::clear_media_ready(
+            &self.state,
+            community_id,
+            channel_id,
+        );
+        // The channel session's keys end with it, and the keys still queued
+        // for it (plans C7.20, C7.29, E2.5); a rejoin draws new ones.
+        let outbox =
+            crate::services::voice_signaling_adapter::HostMediaKeyOutbox(Arc::clone(&self.state));
+        rekindle_voice::signaling::end_media_key_session(
+            &self.state.voice_sender_keys,
+            &outbox,
+            community_id,
+            channel_id,
+        )
+        .await;
     }
 
     fn stop_audio_devices(&self) {
