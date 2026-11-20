@@ -37,6 +37,7 @@
     "@wdio/mocha-framework": "10.2.0",
     "@wdio/spec-reporter": "10.2.0",
     "@wdio/types": "10.2.0",
+    "axe-core": "4.14.0",
     "dependency-cruiser": "^18.2.0",
     "expect-webdriverio": "8.1.0",
     "knip": "^6.39.0",

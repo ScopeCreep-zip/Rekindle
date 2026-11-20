@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, doubleClick, gone, present, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, inBuddy, openAddFriend, submitJoin } from "../walk/nav.ts";
+import { BUDDY, LOGIN, SETTINGS, inBuddy, openAddFriend, submitJoin } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
 export interface User {
@@ -295,4 +295,40 @@ export async function watchConsole(b: Browser): Promise<void> {
 /** What `watchConsole` recorded in the window `b` is on. */
 export async function consoleSeen(b: Browser): Promise<string[]> {
   return (await b.execute("return window.__rekindleConsole || null;")) as string[];
+}
+
+/**
+ * `user` chooses built-in skin `name` in Settings → Appearance (its radio,
+ * then the intent review), and the Settings window has linked its sheet;
+ * the sheet's address. Coming back to Appearance from another tab mounts
+ * it afresh, so its list is awaited first; the skin already in use is not
+ * clicked, so its sheet is awaited all the same.
+ */
+export async function applySkin(b: Browser, user: User, name: string): Promise<string> {
+  await switchTo(b, SETTINGS);
+  await (await byText(b, ".form-tab", "Appearance")).click();
+  await shown(b, ".skin-row-shown .skin-name", NET_WAIT_MS);
+  const inUse = async (): Promise<string> => (await (await b.$(".skin-row-shown .skin-name")).getText()).trim();
+  if ((await inUse()) !== name) {
+    let found = false;
+    for (const row of await b.$$(".skin-row")) {
+      if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
+      await (await row.$("input[type=radio]")).click();
+      await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+      found = true;
+      break;
+    }
+    if (!found) throw new Error(`Settings lists no skin named ${name}`);
+    await waitUntil(async () => (await inUse()) === name, NET_WAIT_MS, `${name} never shown as the skin in use`);
+  }
+  let href = "";
+  await waitUntil(
+    async () => {
+      href = (await b.execute('var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";')) as string;
+      return href.startsWith("skin://");
+    },
+    NET_WAIT_MS,
+    "Settings never linked the skin's sheet",
+  );
+  return href;
 }
