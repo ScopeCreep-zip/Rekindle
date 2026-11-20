@@ -203,6 +203,11 @@ pub const SLOTS: [RegionSlot; 36] = [
     .labelled(&[WindowInactive], &["titlebar.start", "titlebar.end"]),
     // Every titlebar button (Miranda's one `Titlebutton` set).
     slot("titlebar.buttons", CHROME, CHROME, &[]).states(BUTTON),
+    // One titlebar button each (Xfire `ButtonMinimize` …; Winamp
+    // TITLEBAR.BMP). The glyph is drawn over the image, never replaced.
+    slot("titlebar.btn.minimize", CHROME, CHROME, &[]).painted(BUTTON),
+    slot("titlebar.btn.maximize", CHROME, CHROME, &[]).painted(BUTTON),
+    slot("titlebar.btn.close", CHROME, CHROME, &[]).painted(BUTTON),
     // The buddy list's `.status-bar` (`01-form-primitives.css:82`, 11 px,
     // on `bg.status`): its labels are the status picker (`.buddy-name`,
     // `text.base`, beside a status dot) and the network indicator
@@ -415,11 +420,6 @@ pub const SLOTS: [RegionSlot; 36] = [
         &[normal("text.dim")],
     )
     .labelled(&[], ON_DARK),
-    // One titlebar button each (Xfire `ButtonMinimize` …; Winamp
-    // TITLEBAR.BMP). The glyph is drawn over the image, never replaced.
-    slot("titlebar.btn.minimize", CHROME, CHROME, &[]).painted(BUTTON),
-    slot("titlebar.btn.maximize", CHROME, CHROME, &[]).painted(BUTTON),
-    slot("titlebar.btn.close", CHROME, CHROME, &[]).painted(BUTTON),
     // `::-webkit-scrollbar-*` (`scrollbar.css`); Xfire `XfireScrollbar`,
     // Winamp GENEX.
     slot("scrollbar.track", Extent::Window, Extent::Window, &[]).painted(SCROLL),

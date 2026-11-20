@@ -246,7 +246,7 @@ const ORDER: [RegionState; 6] = [
 /// A map entry naming no painted slot, a painted slot the map lacks or
 /// maps to no element, or a state a pseudo-element cannot take.
 pub fn app_css(header: &str, map: &BTreeMap<String, RegionMap>) -> Result<String, String> {
-    let (components, _) = rules(map)?;
+    let (components, _) = rules(map, None)?;
     Ok(format!(
         "/* {header}\n *\n * Region slots (`rekindle-skin::regions`) on the elements\n * `src/styles/regions.toml` `[regions]` names; a skin sets the custom\n * properties in `@layer skin`. The user's settings are in\n * `regions-a11y.css`. */\n@layer components {{\n{components}}}\n"
     ))
@@ -260,14 +260,21 @@ pub fn app_css(header: &str, map: &BTreeMap<String, RegionMap>) -> Result<String
 /// # Errors
 /// What [`app_css`] returns.
 pub fn app_a11y_css(header: &str, map: &BTreeMap<String, RegionMap>) -> Result<String, String> {
-    let (_, a11y) = rules(map)?;
-    Ok(format!(
+    let (_, a11y) = rules(map, None)?;
+    Ok(a11y_sheet(header, &a11y))
+}
+
+fn a11y_sheet(header: &str, a11y: &str) -> String {
+    format!(
         "/* {header}\n *\n * The region rules of `regions.css` under the user's settings, in\n * `@layer a11y`, which `global.css` orders above `components` and\n * `utilities` and below `sec` only. */\n@layer a11y {{\n{a11y}}}\n"
-    ))
+    )
 }
 
 /// The bodies of the region rules' `@layer components` and `@layer a11y`.
-fn rules(map: &BTreeMap<String, RegionMap>) -> Result<(String, String), String> {
+fn rules(
+    map: &BTreeMap<String, RegionMap>,
+    only: Option<&str>,
+) -> Result<(String, String), String> {
     for id in map.keys() {
         if !slot_of(id).is_some_and(|s| s.css) {
             return Err(format!("[regions] `{id}`: not a painted region slot"));
@@ -282,7 +289,10 @@ fn rules(map: &BTreeMap<String, RegionMap>) -> Result<(String, String), String> 
     // Every rule again, reading the still under reduced motion.
     let mut motion = String::new();
     let mut out = String::new();
-    for slot in SLOTS.iter().filter(|s| s.css) {
+    for slot in SLOTS
+        .iter()
+        .filter(|s| s.css && only.is_none_or(|f| family(s.id) == f))
+    {
         let entry = map
             .get(slot.id)
             .filter(|e| !e.elements.is_empty())
@@ -562,6 +572,9 @@ pub fn skin_css(
     }
     Some(format!("@layer skin {{\n  :root {{\n{decls}  }}\n}}\n"))
 }
+
+mod family;
+pub use family::{families, family, family_css};
 
 #[cfg(test)]
 mod tests;

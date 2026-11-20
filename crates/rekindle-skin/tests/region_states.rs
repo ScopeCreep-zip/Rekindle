@@ -4,7 +4,9 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::{encode_png, DynamicImage, Rgba, RgbaImage};
-use rekindle_skin::regions::css::{app_a11y_css, app_css, skin_css, RegionMap};
+use rekindle_skin::regions::css::{
+    app_a11y_css, app_css, families, family_css, skin_css, RegionMap,
+};
 use rekindle_skin::registry::{resolve, Base, ENTRIES};
 use rekindle_skin::{images, manifest, package, regions};
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule};
@@ -389,7 +391,7 @@ fn the_app_css_backs_labels_sizes_the_arrow_and_marks_the_chosen_tab() {
     assert!(css.contains("  .buddylist-infobar {\n    border-image: var(--skin-region-buddylist-infobar);\n    image-rendering: pixelated;\n  }\n"), "{css}");
     let b = "var(--skin-region-buddylist-infobar-backing)";
     assert!(css.contains(&format!(
-        "  .buddylist-infobar-label {{\n    background-image: linear-gradient({b}, {b});\n  }}\n"
+        "  .buddylist-infobar-label {{\n    background-image: linear-gradient({b}, {b});\n    background-clip: content-box;\n  }}\n"
     )));
     assert!(
         !css.contains(".buddylist-infobar::before"),
@@ -453,7 +455,7 @@ fn the_app_css_paints_the_chat_buttons_and_backs_the_toolbar() {
     );
     let b = "var(--skin-region-chat-toolbar-backing)";
     assert!(css.contains(&format!(
-        "  .chat-toolbar-label {{\n    background-image: linear-gradient({b}, {b});\n  }}\n"
+        "  .chat-toolbar-label {{\n    background-image: linear-gradient({b}, {b});\n    background-clip: content-box;\n  }}\n"
     )));
     assert!(css.contains("  .chat-input-label {\n"));
     assert!(css.contains("  .chat-group-header-label {\n"));
@@ -480,11 +482,41 @@ fn the_app_css_paints_the_send_button_the_titlebar_and_the_ok_button() {
     );
     let b = "var(--skin-region-titlebar-backing)";
     assert!(css.contains(&format!(
-        "  .titlebar-label {{\n    background-image: linear-gradient({b}, {b});\n  }}\n"
+        "  .titlebar-label {{\n    background-image: linear-gradient({b}, {b});\n    background-clip: content-box;\n  }}\n"
     )));
     assert!(css.contains("  :where(:root[data-window-inactive]) .titlebar {\n    border-image: var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar));\n"), "{css}");
     assert!(
         !css.contains(".titlebar::before"),
         "a labelled bar has no ::before"
     );
+}
+
+/// Plan E7.7.7: the generated sheets are one per slot family; each holds
+/// its own slots' rules and no other's, and together, in slot order, they
+/// hold every rule of the whole sheet.
+#[test]
+fn the_family_sheets_split_the_rules_without_loss_or_overlap() {
+    let map = full_map();
+    let body = |sheet: &str| {
+        let start = sheet.find("@layer components {\n").unwrap() + "@layer components {\n".len();
+        sheet[start..sheet.len() - 2].to_owned()
+    };
+    let whole = body(&app_css("h", &map).unwrap());
+    let mut joined = String::new();
+    for f in families() {
+        let (components, a11y) = family_css("h", &map, f).unwrap();
+        let mine = format!("--skin-region-{f}");
+        assert!(components.contains(&mine), "{f}: {components}");
+        assert!(a11y.contains("@media (forced-colors: active)"), "{f}");
+        for other in families().into_iter().filter(|o| *o != f) {
+            let theirs = format!("var(--skin-region-{other}");
+            assert!(
+                !components.contains(&format!("{theirs})"))
+                    && !components.contains(&format!("{theirs}-")),
+                "{f} holds {other}"
+            );
+        }
+        joined.push_str(&body(&components));
+    }
+    assert_eq!(joined, whole);
 }

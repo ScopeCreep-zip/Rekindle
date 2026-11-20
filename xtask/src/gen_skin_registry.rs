@@ -15,7 +15,9 @@ use anyhow::{anyhow, Context, Result};
 use std::collections::BTreeMap;
 
 use rekindle_skin::generate::{json_schema, tokens_css, tokens_ts, tui_palette, HEADER};
-use rekindle_skin::regions::css::{app_a11y_css, app_css, RegionMap};
+use std::fmt::Write as _;
+
+use rekindle_skin::regions::css::{families, family_css, RegionMap};
 use rekindle_skin::registry::{constraint_failures, Base, ENTRIES};
 
 /// The generated stylesheet directory: its literals and repeats are the
@@ -65,23 +67,41 @@ fn region_elements() -> Result<BTreeMap<String, RegionMap>> {
     Ok(out)
 }
 
-/// `src/styles/generated/regions.css`, from the region map (the repo's,
-/// whatever root the files are written under).
-fn regions_css() -> Result<String> {
-    app_css(HEADER, &region_elements()?)
-        .map_err(|e| anyhow!("{}: {e}", crate::declared_grounds::MAP))
-}
-
-/// `src/styles/generated/regions-a11y.css`: the same rules under the
-/// user's settings, in `@layer a11y` (plan E7.7.2 "Apply").
-fn regions_a11y_css() -> Result<String> {
-    app_a11y_css(HEADER, &region_elements()?)
-        .map_err(|e| anyhow!("{}: {e}", crate::declared_grounds::MAP))
+/// The region sheets, from the region map (the repo's, whatever root the
+/// files are written under): one components and one a11y sheet per slot
+/// family under `src/styles/generated/regions/`, and the two index sheets
+/// `global.css` imports (`regions.css`, `regions-a11y.css`), which import
+/// them in slot order.
+fn region_sheets() -> Result<Vec<(String, String)>> {
+    let map = region_elements()?;
+    let mut out = Vec::new();
+    let mut index = format!("/* {HEADER}\n *\n * The region slots' sheets, one per family (`rekindle-skin::regions`). */\n");
+    let mut index_a11y = format!("/* {HEADER}\n *\n * The region slots' sheets under the user's settings, one per family. */\n");
+    for family in families() {
+        let (components, a11y) = family_css(HEADER, &map, family)
+            .map_err(|e| anyhow!("{}: {e}", crate::declared_grounds::MAP))?;
+        let _ = writeln!(index, "@import \"./regions/{family}.css\";");
+        let _ = writeln!(index_a11y, "@import \"./regions/{family}-a11y.css\";");
+        out.push((
+            format!("src/styles/generated/regions/{family}.css"),
+            components,
+        ));
+        out.push((
+            format!("src/styles/generated/regions/{family}-a11y.css"),
+            a11y,
+        ));
+    }
+    out.push(("src/styles/generated/regions.css".to_owned(), index));
+    out.push((
+        "src/styles/generated/regions-a11y.css".to_owned(),
+        index_a11y,
+    ));
+    Ok(out)
 }
 
 /// Every generated file, relative to the workspace root, with its content.
-fn artefacts() -> Result<[(&'static str, String); 7]> {
-    Ok([
+fn artefacts() -> Result<Vec<(String, String)>> {
+    let mut out: Vec<(String, String)> = [
         ("src/styles/generated/tokens.css", tokens_css()),
         ("src/styles/generated/tokens.ts", tokens_ts()),
         (
@@ -96,15 +116,18 @@ fn artefacts() -> Result<[(&'static str, String); 7]> {
             "crates/rekindle-skin/schema/tokens.schema.json",
             json_schema(),
         ),
-        ("src/styles/generated/regions.css", regions_css()?),
-        ("src/styles/generated/regions-a11y.css", regions_a11y_css()?),
-    ])
+    ]
+    .into_iter()
+    .map(|(rel, content)| (rel.to_owned(), content))
+    .collect();
+    out.extend(region_sheets()?);
+    Ok(out)
 }
 
 /// Writes every artefact under `root`.
 pub fn gen_skin_registry(root: &Path) -> Result<()> {
     for (rel, content) in artefacts()? {
-        let path = root.join(rel);
+        let path = root.join(&rel);
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }
@@ -123,7 +146,7 @@ fn problems(root: &Path) -> Vec<String> {
         Err(e) => return vec![format!("{e:#}")],
     };
     for (rel, content) in artefacts {
-        match std::fs::read_to_string(root.join(rel)) {
+        match std::fs::read_to_string(root.join(&rel)) {
             Ok(on_disk) if on_disk == content => {}
             Ok(_) => out.push(format!("{rel}: stale")),
             Err(e) => out.push(format!("{rel}: {e}")),
@@ -163,7 +186,7 @@ mod tests {
         check_skin_registry(&dir).unwrap();
 
         for (rel, _) in artefacts().unwrap() {
-            let path = dir.join(rel);
+            let path = dir.join(&rel);
             let mut text = std::fs::read_to_string(&path).unwrap();
             text.push_str("\n/* hand edit */\n");
             std::fs::write(&path, text).unwrap();
@@ -174,18 +197,18 @@ mod tests {
             check_skin_registry(&dir).unwrap();
         }
 
-        std::fs::remove_file(dir.join(artefacts().unwrap()[0].0)).unwrap();
+        std::fs::remove_file(dir.join(&artefacts().unwrap()[0].0)).unwrap();
         assert!(check_skin_registry(&dir).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn every_artefact_carries_the_do_not_edit_header() {
-        for (rel, content) in artefacts()
-            .unwrap()
-            .into_iter()
-            .filter(|(rel, _)| Path::new(rel).extension().is_none_or(|e| e != "json"))
-        {
+        for (rel, content) in artefacts().unwrap().into_iter().filter(|(rel, _)| {
+            Path::new(rel.as_str())
+                .extension()
+                .is_none_or(|e| e != "json")
+        }) {
             let head = content.lines().next().unwrap_or_default();
             assert!(
                 head.contains("cargo xtask gen-skin-registry") && head.contains("Do not edit"),
