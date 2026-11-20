@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, doubleClick, gone, resolveIntent, shown, switchTo, typeInto, waitForHandle } from "../walk/helpers.ts";
+import { NET_WAIT_MS, byText, doubleClick, gone, present, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, inBuddy, openAddFriend } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
@@ -103,4 +103,138 @@ export async function seesMessage(b: Browser, who: User, text: string): Promise<
   } catch (err) {
     throw new Error(`${who.displayName}'s chat window: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/** The buddy list's network indicator reads "Connected" (NetworkIndicator.tsx): a DHT write may land. */
+async function whenConnected(b: Browser): Promise<void> {
+  await inBuddy(b);
+  await waitUntil(
+    async () => (await (await b.$(".network-indicator span")).getText()).trim() === "Connected",
+    NET_WAIT_MS,
+    "the network indicator never said Connected",
+  );
+}
+
+/**
+ * After a submit: the U1 review (ADR 0019) appears, then is committed, or
+ * the form closes with none. The review can take seconds to appear on a
+ * busy node (layout run 3: the 7th community's review came after the 3 s
+ * the walk allowed and stayed uncommitted), so this waits for whichever
+ * comes first, up to the network bound.
+ */
+async function reviewThenGone(b: Browser, user: User, input: string): Promise<void> {
+  let review = false;
+  await waitUntil(
+    async () => (review = await (await b.$(".intent-dialog")).isDisplayed().catch(() => false)) || !(await present(b, input)),
+    NET_WAIT_MS,
+    `neither a review nor the form closing after submit (${input})`,
+  );
+  if (review) await resolveIntent(b, { passphrase: user.passphrase });
+  await gone(b, input, NET_WAIT_MS);
+}
+
+/** Submit the open modal's form (Create waits for "Connected", CreateCommunityModal.tsx) and resolve its review. */
+async function submitModal(b: Browser, user: User, input: string): Promise<void> {
+  const submit = await b.$('.modal-container button[type="submit"]');
+  await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "the form's submit stayed disabled" });
+  await submit.click();
+  await reviewThenGone(b, user, input);
+}
+
+/** `user` creates community `name` from the buddy list's Communities tab, and it is listed. */
+export async function createCommunity(b: Browser, user: User, name: string): Promise<void> {
+  await whenConnected(b);
+  // The Create Community button shows only on the Communities tab (BottomActionBar.tsx).
+  await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
+  await (await shown(b, '[aria-label="Create Community"]')).click();
+  await typeInto(await shown(b, 'input[placeholder="Community name..."]'), name);
+  await submitModal(b, user, 'input[placeholder="Community name..."]');
+  await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS);
+}
+
+/** Open community `name`'s window from the buddy list (double-click) and switch to it. */
+export async function openCommunity(b: Browser, name: string): Promise<void> {
+  await inBuddy(b);
+  await (await b.$('.buddy-tab[title^="Communities"]')).click();
+  const before = await b.getWindowHandles();
+  await doubleClick(b, await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS));
+  await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("community-") && !before.includes(h), NET_WAIT_MS));
+  await shown(b, ".community-sidebar", NET_WAIT_MS);
+}
+
+/** In the open community window, `user` creates a text channel `name`, and it is listed. */
+export async function createTextChannel(b: Browser, user: User, name: string): Promise<void> {
+  await (await shown(b, '[title="Create Channel"]')).click();
+  await typeInto(await shown(b, 'input[placeholder="Channel name..."]'), name);
+  await (await b.$('.modal-container button[type="submit"]')).click();
+  await reviewThenGone(b, user, 'input[placeholder="Channel name..."]');
+  await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS);
+}
+
+/** In the open community window, select channel `name`. */
+export async function selectChannel(b: Browser, name: string): Promise<void> {
+  await (await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS)).click();
+  await waitUntil(
+    async () => (await (await b.$(".community-channel-header-name")).getText()).startsWith(name.slice(0, 16)),
+    NET_WAIT_MS,
+    `the channel header did not name ${name.slice(0, 24)}`,
+  );
+}
+
+/** In the selected channel, `user` posts `text`, and it shows. */
+export async function postMessage(b: Browser, user: User, text: string): Promise<void> {
+  await typeAndSend(b, ".community-main .message-input-field", text);
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await byText(b, ".community-main .chat-message", text.slice(0, 40), NET_WAIT_MS);
+}
+
+/** `user` creates group `name` with the friends whose names start `members` (New Group, BottomActionBar). */
+export async function createGroup(b: Browser, user: User, name: string, members: string[]): Promise<void> {
+  await inBuddy(b);
+  await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  await (await shown(b, '[aria-label="New Group"]')).click();
+  await typeInto(await shown(b, "#new-group-name"), name);
+  for (const m of members) await (await byText(b, "label.group-dm-picker-option", m.slice(0, 24))).click();
+  await submitModal(b, user, "#new-group-name");
+}
+
+/** Open group `name`'s chat window from the buddy list (double-click its row) and switch to it. */
+export async function openGroup(b: Browser, name: string): Promise<void> {
+  await inBuddy(b);
+  await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  const before = await b.getWindowHandles();
+  await doubleClick(b, await byText(b, ".group-dm-row", name.slice(0, 24), NET_WAIT_MS));
+  await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("chat-g") && !before.includes(h), NET_WAIT_MS));
+  await shown(b, ".message-input-field", NET_WAIT_MS);
+}
+
+/** In the open community window, open Community Settings on `tab`. */
+async function communitySettings(b: Browser, tab: string): Promise<void> {
+  if (!(await present(b, ".modal-container .form-tabs"))) {
+    await (await shown(b, '[title="Community Settings"]')).click();
+    await shown(b, ".modal-container .form-tabs");
+  }
+  await (await byText(b, ".modal-container .form-tab", tab)).click();
+}
+
+/**
+ * In the open community window, `user` creates an invite good for `uses`
+ * joins (Settings, Invites; the field's default is one use, and unlimited
+ * invites are forbidden, rekindle-governance invite_quota.rs); its link.
+ */
+export async function createInvite(b: Browser, user: User, uses: number): Promise<string> {
+  await communitySettings(b, "Invites");
+  const before = (await b.$$(".invite-link-display")).length;
+  await (await shown(b, ".modal-container .settings-content .form-btn-primary")).click();
+  await typeInto(await shown(b, ".invite-create-form input[type=number]"), String(uses));
+  await (await byText(b, ".modal-container .form-btn-primary", "Create")).click();
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 3000 });
+  await waitUntil(async () => (await b.$$(".invite-link-display")).length > before, NET_WAIT_MS, "no new invite link shown");
+  // The link is the read-only input's value (InvitesTab.tsx).
+  const links = await b.$$(".invite-link-display input");
+  const link = (await links[links.length - 1].getValue()).trim();
+  if (!link.startsWith("rekindle://invite/")) throw new Error(`the new invite shows no link: "${link.slice(0, 40)}"`);
+  await (await shown(b, ".modal-container .modal-close-btn")).click();
+  await gone(b, ".modal-container");
+  return link;
 }

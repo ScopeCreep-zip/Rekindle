@@ -14,27 +14,48 @@ import { remote, type Browser } from "webdriverio";
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 export const OUT_DIR = path.join(REPO_ROOT, "e2e", "walk", "out");
+/**
+ * Arguments for a launched app. On macOS, `-NSAppSleepDisabled YES` puts
+ * `NSAppSleepDisabled` in Cocoa's argument domain (NSUserDefaults reads
+ * `-key value` pairs from argv), so App Nap never throttles a test app
+ * whose windows sit behind others on a desktop in use: layout run 4 lost
+ * two tests to WebKit script timeouts (`evaluateJavaScript` unanswered for
+ * the whole script timeout, macos.rs `evaluate_js`) after minutes occluded.
+ * The app parses no argv of its own (the deep-link plugin reads only
+ * `rekindle://` URLs).
+ */
+function appArgs(): string[] {
+  return process.platform === "darwin" ? ["-NSAppSleepDisabled", "YES"] : [];
+}
+
 let binary: string | undefined;
+let targetDirectory: string | undefined;
 
 /**
- * The debug app in cargo's target directory as cargo resolves it
- * (`CARGO_TARGET_DIR`, then `build.target-dir`, then `<workspace>/target`;
- * `cargo metadata`'s `target_directory`). `build()` and `tauri build`
- * inherit the same environment, so a run launches the binary its build
- * wrote, also when a gate builds in its own target directory.
+ * Cargo's target directory as cargo resolves it (`CARGO_TARGET_DIR`, then
+ * `build.target-dir`, then `<workspace>/target`; `cargo metadata`'s
+ * `target_directory`). `build()` and `tauri build` inherit the same
+ * environment, so a run launches the binaries its build wrote, also when a
+ * gate builds in its own target directory.
  */
-function appBinary(): string {
-  if (binary) return binary;
+export function cargoTargetDir(): string {
+  if (targetDirectory) return targetDirectory;
   const meta = spawnSync("cargo", ["metadata", "--format-version", "1", "--no-deps"], {
     cwd: REPO_ROOT,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
   if (meta.status !== 0) throw new Error(`cargo metadata failed (exit ${meta.status ?? meta.signal}): ${meta.stderr}`);
-  const dir = (JSON.parse(meta.stdout) as { target_directory: string }).target_directory;
-  binary = path.join(dir, "debug", process.platform === "win32" ? "rekindle-desktop.exe" : "rekindle-desktop");
+  targetDirectory = (JSON.parse(meta.stdout) as { target_directory: string }).target_directory;
+  return targetDirectory;
+}
+
+/** The debug app in cargo's target directory. */
+function appBinary(): string {
+  binary ??= path.join(cargoTargetDir(), "debug", process.platform === "win32" ? "rekindle-desktop.exe" : "rekindle-desktop");
   return binary;
 }
+
 const STATUS_TIMEOUT_MS = 180_000;
 
 export interface App {
@@ -95,6 +116,14 @@ export function build(): void {
     stdio: "inherit",
   });
   if (helper.status !== 0) throw new Error(`helper build failed (exit ${helper.status ?? helper.signal})`);
+  // Plan E7.14's peer fleet (e2e/app/fleet.ts): headless peers are
+  // `rekindled` driven by the `rekindle` CLI.
+  console.log("[walk] building: cargo build -p rekindle-node --bin rekindled -p rekindle-cli --bin rekindle");
+  const fleet = spawnSync("cargo", ["build", "-p", "rekindle-node", "--bin", "rekindled", "-p", "rekindle-cli", "--bin", "rekindle"], {
+    cwd: REPO_ROOT,
+    stdio: "inherit",
+  });
+  if (fleet.status !== 0) throw new Error(`fleet build failed (exit ${fleet.status ?? fleet.signal})`);
 }
 
 async function waitForStatus(app: App, logName: string): Promise<void> {
@@ -141,7 +170,7 @@ export async function launch(name = "app"): Promise<App> {
   const token = base32Lower(randomBytes(32));
   const logName = `${name}.log`;
   const log = createWriteStream(path.join(OUT_DIR, logName));
-  const child = spawn(exe, [], {
+  const child = spawn(exe, appArgs(), {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
