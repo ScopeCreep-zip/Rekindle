@@ -451,7 +451,8 @@ pub fn own_frontier(
 /// empty when every seq of ours holds one op.
 #[must_use]
 pub fn own_fork_proof(set: &VerifiedSet, held: &[HeldOp], me: &PseudonymKey) -> Vec<Vec<u8>> {
-    let mut by_seq: std::collections::BTreeMap<u64, BTreeSet<OpHash>> = Default::default();
+    let mut by_seq: std::collections::BTreeMap<u64, BTreeSet<OpHash>> =
+        std::collections::BTreeMap::default();
     for op in set.ops.iter().filter(|op| op.author() == me) {
         by_seq.entry(op.op().seq).or_default().insert(op.hash());
     }
