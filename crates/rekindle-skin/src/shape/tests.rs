@@ -134,6 +134,27 @@ fn the_content_sides_are_the_edge_pieces_not_the_corners() {
 }
 
 #[test]
+fn a_layout_past_the_windows_tile_slots_is_refused() {
+    // The window draws a tile per `SkinFrame` slot (plan SK0 S2).
+    let fill = |l: &mut WindowLayout| {
+        let first = l.tiles[0].clone();
+        l.tiles.resize(MAX_FRAME_TILES, first);
+    };
+    assert_eq!(checked(&nine(), fill), Ok(()));
+    let got = checked(&nine(), |l| {
+        fill(l);
+        l.tiles.push(l.tiles[0].clone());
+    });
+    assert_eq!(
+        got,
+        Err(SkinRule::BadValue {
+            field: "windows.chat.tiles".into(),
+            expected: "at most 32 tiles".into(),
+        })
+    );
+}
+
+#[test]
 fn an_enclosed_gap_in_the_frame_band_is_allowed() {
     // Lead decision (a): transparency in the frame band, enclosed or not,
     // is Xfire's (gaps under short top pieces in Alloy and Combat).

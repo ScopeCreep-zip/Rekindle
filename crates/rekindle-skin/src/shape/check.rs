@@ -16,14 +16,16 @@
 //!    (a), plan SK0 S1);
 //! 4. at most [`MAX_RECTS`] rectangles at the largest window, so a skin
 //!    cannot make region building or the macOS hit test expensive (this is
-//!    what bounds the frame band's transparency).
+//!    what bounds the frame band's transparency);
+//! 5. at most [`MAX_FRAME_TILES`] tiles, the slots the window draws them in
+//!    (plan SK0 S2).
 
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule, SkinWindow, WindowLayout};
 
 use super::silhouette::{boxes, placed};
-use super::{of_layout, silhouette, Mask, ShapeError, SCALE_ONE};
+use super::{of_layout, silhouette, Mask, ShapeError, MAX_FRAME_TILES, SCALE_ONE};
 
 /// The most rectangles a silhouette may take. The packs' real counts at
 /// [`MAX_WINDOW_WIDTH`] × [`MAX_WINDOW_HEIGHT`] are at most a few hundred
@@ -125,6 +127,13 @@ fn closed(
 /// The first rule a layout breaks.
 pub fn check(manifest: &SkinManifest, images: &BTreeMap<String, Vec<u8>>) -> Result<(), SkinError> {
     for (&window, layout) in &manifest.windows {
+        // Rule 5: no more tiles than the window draws (`SkinFrame`'s slots).
+        if layout.tiles.len() > MAX_FRAME_TILES {
+            return Err(bad(
+                &format!("windows.{}.tiles", name(window)),
+                "at most 32 tiles",
+            ));
+        }
         let masks = of_layout(&format!("windows.{}", name(window)), layout, images)?;
         let o = layout.outsets;
         let base_w = u32::from(layout.min_width) + u32::from(o.left) + u32::from(o.right);

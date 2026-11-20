@@ -10,12 +10,17 @@
  *                   never element styles
  *   components      every app rule (`src/styles/theme/*`, scrollbars, the
  *                   region slots `generated/regions.css` paints last)
+ *   shape           a skin's window frame (plan SK0 S2): the served
+ *                   `.app-frame[data-skin-window]` box and its tile slots,
+ *                   built from the validated layout (`rekindle-skin`
+ *                   `shape::css`); it replaces `.app-frame`'s box, so it
+ *                   sits after `components`
  *   utilities       Tailwind utilities
  *   a11y            user accessibility settings; beats any skin (the
  *                   region slots under reduced motion and forced colours:
  *                   `generated/regions-a11y.css`)
  *   sec             security surfaces; nothing overrides it */
-@layer theme, base, xfire-defaults, skin, components, utilities, a11y, sec;
+@layer theme, base, xfire-defaults, skin, components, shape, utilities, a11y, sec;
 @import "tailwindcss" source(none);
 /* The skin tokens: the dark defaults as `@theme`, the light base under
  * `@layer xfire-defaults`, and `--chrome-height`. One source of truth,
@@ -68,6 +73,7 @@
 @import "./theme/20-keyboard-shortcuts.css";
 @import "./theme/21-disappearing.css";
 @import "./theme/22-co-create.css";
+@import "./theme/22-skin-frame.css";
 @import "./theme/90-top-level.css";
 @import "./theme/91-top-level.css";
 @import "./animations.css";

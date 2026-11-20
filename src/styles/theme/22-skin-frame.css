@@ -1,0 +1,20 @@
+@layer components {
+  /* A skin's window frame (plan SK0 S2, `SkinFrame`). Hidden until the
+   * served `@layer shape` rules show it for a window the skin lays. Under
+   * the isolated `.app-frame` (also set there), z-index -1 paints the
+   * tiles above the content ground and beneath every in-flow child, so a
+   * decoration never covers the UI or a `@layer sec` surface. */
+  .skin-frame {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+  }
+
+  /* One tile: its box, image and repeat come from the served rule. */
+  .skin-frame > i {
+    display: none;
+    position: absolute;
+    image-rendering: pixelated;
+  }
+}

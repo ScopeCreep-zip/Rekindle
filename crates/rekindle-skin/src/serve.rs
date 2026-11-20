@@ -29,6 +29,7 @@ use crate::regions::labels::label_css;
 use crate::regions::still;
 use crate::regions::title::title_css;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
+use crate::shape::frame_css;
 use crate::{manifest, tokens};
 
 /// The stylesheet's file name.
@@ -166,7 +167,8 @@ fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
 
 /// The stylesheet of the canonical package `bytes` at `address`: the
 /// active variant's resolved tokens, then the region rules with images
-/// under `{origin}/{address}`.
+/// under `{origin}/{address}`, then the window frames
+/// ([`frame_css`], plan SK0 S2).
 ///
 /// # Errors
 /// The package, its manifest or its tokens do not read, or a region does
@@ -181,6 +183,7 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
     css.push_str(&skin_css(&m, &images, &base).ok_or_else(|| unreadable("regions"))?);
     css.push_str(&title_css(&m, &images, &resolved));
     css.push_str(&label_css(&m, &images, &resolved));
+    css.push_str(&frame_css(&m, &images, &base).ok_or_else(|| unreadable("frame"))?);
     Ok(Stylesheet {
         base: v.base,
         css,

@@ -46,6 +46,36 @@ This pattern repeats in every window: there is a single `Titlebar` at
 the top, a `<main class="window-main">` wrapper that takes the
 flex-1 slot, and a footer (status bar, message input, action bar).
 
+### The skin outline (plan SK0 S2)
+
+A skin that lays a window kind (`SkinManifest.windows`: `main` for the
+buddy list, `chat` for conversations) draws that window's outline from
+its frame tiles. The window root carries `data-skin-window="main|chat"`
+and renders `SkinFrame` (32 empty `<i>` slots, `aria-hidden`, each a
+drag region). The Host's served stylesheet appends `@layer shape`
+(`rekindle-skin` `shape::css::frame_css`; the layer sits after
+`components`, before `utilities, a11y, sec`):
+
+- `.app-frame[data-skin-window=K]` loses its border, radius and
+  border-image, is `isolation: isolate`, and is padded by the outsets
+  plus the content insets, its ground (`bg-dark`) painted on the
+  `content-box` only: the flex children lie in the content rectangle,
+  which alone is opaque.
+- slot *n* holds the *n*th tile in paint order (frame pieces as laid,
+  then decorations by Z), absolutely placed by its `TileAxis` in the
+  frame rectangle (or the window for an overhang): Start/End by offset
+  and width, Centre floored to a whole pixel, Repeat between its two
+  insets with `repeat-x`/`repeat-y`. Every image draws at its source
+  size from its box's top left, never stretched.
+- `.skin-frame` is `z-index: -1` inside the isolated root: above the
+  ground, beneath every in-flow child, so decorations never cover the
+  UI or a security surface.
+
+The drawn outline equals `shape::silhouette` at every size (the same
+placement arithmetic; a unit test checks every built-in), the region the
+platform shaper cuts (S3). A window or skin without a layout matches no
+rule and keeps the plain box.
+
 ## Window catalogue
 
 No window is declared statically (`tauri.conf.json` has

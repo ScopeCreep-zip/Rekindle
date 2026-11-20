@@ -1,6 +1,7 @@
 import { subscribeBackendIntents } from "../handlers/intent.handlers";
 import { Component, onMount, onCleanup, createSignal, Show } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
+import SkinFrame from "../components/common/SkinFrame";
 import Titlebar from "../components/titlebar/Titlebar";
 import MenuBar from "../components/buddy-list/MenuBar";
 import UserIdentityBar from "../components/buddy-list/UserIdentityBar";
@@ -126,7 +127,9 @@ const BuddyListWindow: Component = () => {
   });
 
   return (
-    <div class="app-frame buddy-list-window">
+    // `data-skin-window` names the skin's main frame layout (plan SK0 S2).
+    <div class="app-frame buddy-list-window" data-skin-window="main">
+      <SkinFrame />
       {/* Architecture §32 a11y — keyboard skip link past menu/identity rail. */}
       <a href="#main-content" class="skip-link">Skip to buddy list</a>
       <Titlebar title="Rekindle" hideOnClose />

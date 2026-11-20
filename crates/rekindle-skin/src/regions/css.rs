@@ -461,7 +461,7 @@ fn value(href: &str, fit: RegionFit) -> String {
 }
 
 /// The href of the canonical image `path`: `{base}/{blake3}.{png|gif}`.
-fn href(base: &str, path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<String> {
+pub(crate) fn href(base: &str, path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<String> {
     let bytes = images.get(path)?;
     let ext = match extension(path).as_deref() {
         Some("gif") => "gif",
