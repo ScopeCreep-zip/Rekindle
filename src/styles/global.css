@@ -77,7 +77,7 @@
 /* The spacing grid (plan E7.12): every gap, padding and margin between
  * controls is a whole multiple of this step, the scale the theme parts
  * were written on (2, 4, 6, 8, 10, 12, 16 px). The real-app layout specs
- * (`e2e/app/geometry-page.ts`) read it from here. */
+ * (`e2e/app/geometry-page.ts`, `spacingOffScale`) read it from here. */
 @theme static {
   --layout-grid: 2px;
 }

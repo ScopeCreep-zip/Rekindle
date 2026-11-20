@@ -1,5 +1,5 @@
 // Plan E7.14 S4: E7.12's geometry checks in the real window. The checks
-// themselves are page-side functions (geometry-page.ts); this runs each one
+// themselves are page-side functions (geometry-page.ts, geometry-page-text.ts); this runs each one
 // inside the window a session is on, through WebDriver's execute, and
 // returns every finding at once, so a failure names all of a window's
 // faults (Playwright's `expect.soft` did the same).
@@ -8,29 +8,31 @@ import { isDeepStrictEqual } from "node:util";
 import type { Browser } from "webdriverio";
 import {
   CENTRE_TOLERANCE,
-  FLEX_CONTRACT,
   MIN_ELLIPSIS_CHARS,
   MIN_FIELD_WIDTH,
   MIN_TARGET,
-  OVERLAYS,
   TITLE_SHARE,
   badgesOutOfRow,
   composerMisaligned,
   ellipsisIllegible,
   fieldsSqueezed,
+  panesScrollingSideways,
+  placeholderText,
+  textClipped,
+  timestampsOffLine,
+  titlebarTargetsSmall,
+  titlebarTitleUnbounded,
+} from "./geometry-page-text.ts";
+import {
+  FLEX_CONTRACT,
+  OVERLAYS,
   flexContract,
   focusIndicators,
   geometryLib,
   horizontalOverflow,
   overlaps,
-  panesScrollingSideways,
-  placeholderText,
   spacingOffScale,
-  textClipped,
   textOverflows,
-  timestampsOffLine,
-  titlebarTargetsSmall,
-  titlebarTitleUnbounded,
 } from "./geometry-page.ts";
 
 /**
