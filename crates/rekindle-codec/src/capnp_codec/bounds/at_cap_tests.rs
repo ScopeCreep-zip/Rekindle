@@ -84,6 +84,7 @@ fn largest_fitting(cap: usize, encode: impl Fn(usize) -> Vec<u8>) -> Vec<u8> {
 fn a_full_signed_envelope_decodes() {
     let bytes = largest_fitting(MAX_APP_MESSAGE_LEN, |n| {
         encode_signed_envelope(&SignedEnvelope {
+            message_id: [7u8; 16],
             community_id: hex(1, 32),
             sender_pseudonym: hex(2, 32),
             envelope_bytes: noise(3, n),

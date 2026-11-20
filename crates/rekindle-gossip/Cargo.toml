@@ -9,9 +9,7 @@ workspace = true
 
 [dependencies]
 async-trait = "0.1"
-blake2 = "0.10"
 blake3 = "1"
-hex = { workspace = true }
 parking_lot = { workspace = true }
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }

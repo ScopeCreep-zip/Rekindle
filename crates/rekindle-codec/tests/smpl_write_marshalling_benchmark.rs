@@ -41,7 +41,13 @@ fn signed_envelope_marshalling_p95_within_budget() {
             banner_hash: None,
         };
         let started = std::time::Instant::now();
-        let signed = build_signed_envelope(&secret, community_id, &payload).unwrap();
+        let signed = build_signed_envelope(
+            &secret,
+            community_id,
+            rekindle_utils::random::id_bytes_16(),
+            &payload,
+        )
+        .unwrap();
         let _bytes = serde_json::to_vec(&signed).unwrap();
         samples_micros.push(started.elapsed().as_micros());
     }

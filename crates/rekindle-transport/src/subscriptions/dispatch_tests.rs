@@ -136,14 +136,19 @@ impl AppMessagePort for Replies {
 
 /// A signed community envelope from a real pseudonym key.
 fn signed(ttl: u8) -> SignedEnvelope {
+    signed_as([7u8; 16], &format!("ch_{ttl}"), ttl)
+}
+
+/// The envelope for `channel`, sent as message `message_id`.
+fn signed_as(message_id: [u8; 16], channel: &str, ttl: u8) -> SignedEnvelope {
     let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
     let pseudonym = hex::encode(key.verifying_key().to_bytes());
     let inner = CommunityEnvelope::TypingIndicator {
-        channel_id: format!("ch_{ttl}"),
+        channel_id: channel.to_string(),
         pseudonym_key: pseudonym.clone(),
     };
     let bytes = encode_community_envelope(&inner).unwrap();
-    let mut signed = sign_envelope(&key, "gov-key", &pseudonym, &bytes);
+    let mut signed = sign_envelope(&key, "gov-key", &pseudonym, message_id, &bytes);
     signed.ttl = ttl;
     signed
 }
@@ -174,6 +179,39 @@ async fn a_gossip_datagram_is_delivered_and_forwarded() {
                 community: "gov-key".into(),
                 sender: envelope.sender_pseudonym,
             },
+        ]
+    );
+}
+
+/// Gossip dedups by message id, not content (lead decision 2026-11-19,
+/// libp2p pubsub origin-stamped ids): one message arriving twice (the
+/// sender's copy, then a relay's with a lower TTL) is delivered once,
+/// while a deliberate re-send of byte-identical content under a new id
+/// (the voice roster reconcile, a retry) is delivered again.
+#[tokio::test]
+async fn a_relayed_copy_is_suppressed_but_a_re_send_of_the_same_content_is_delivered() {
+    let handler = Arc::new(Recorder::default());
+    let mut dedup = DedupCache::new(64);
+    let first = signed_as([1u8; 16], "general", 5);
+    let mut relayed = first.clone();
+    relayed.ttl = 4;
+    let resent = signed_as([2u8; 16], "general", 5);
+    assert_eq!(first.envelope_bytes, resent.envelope_bytes);
+
+    for envelope in [&first, &relayed, &resent] {
+        dispatch_app_message(&handler, &mut dedup, &gossip_datagram(envelope)).await;
+    }
+    let gossip = Seen::Gossip {
+        community: "gov-key".into(),
+        sender: first.sender_pseudonym.clone(),
+    };
+    assert_eq!(
+        handler.seen(),
+        [
+            Seen::Forward { ttl: 4 },
+            gossip.clone(),
+            Seen::Forward { ttl: 4 },
+            gossip,
         ]
     );
 }

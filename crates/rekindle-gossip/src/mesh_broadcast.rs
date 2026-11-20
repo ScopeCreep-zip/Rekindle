@@ -13,9 +13,9 @@ use tracing::Instrument as _;
 
 use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{self, CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::dedup::message_dedup_key;
 use rekindle_codec::ingress::gossip_datagram;
 
-use crate::broadcast::extract_mesh_dedup_key;
 use crate::deps::{GossipDeps, GossipError, PeerInfo};
 use crate::mesh::fanout_degree;
 use crate::peer_select::sort_peers_by_reliability;
@@ -27,10 +27,15 @@ use crate::peer_select::sort_peers_by_reliability;
 /// tests + tracing can reference it.
 pub const MAX_PENDING_MESH: usize = 100;
 
-/// Sign one envelope as our community pseudonym, record it in the dedup
-/// cache, and advance the community's Lamport counter.
+/// Sign one envelope as our community pseudonym under a fresh message id,
+/// and record that id in the dedup cache (so a relayed copy coming back
+/// to us is suppressed).
 ///
-/// Every gossip send does exactly these four things before it differs.
+/// The id is new on every call: a deliberate re-send of identical
+/// content (the voice roster reconcile, a retry) is a new message that
+/// flood suppression must not drop; receivers are idempotent.
+///
+/// Every gossip send does exactly these things before it differs.
 /// `send_to_mesh` and `send_to_channel_peers` had them written out
 /// twice, identically — a shared *prefix* rather than a shared body,
 /// which is why `cargo xtask check-duplicate-bodies` cannot see it: the
@@ -58,15 +63,16 @@ pub(crate) fn sign_and_record<D: GossipDeps>(
     );
     let envelope_bytes = encode_community_envelope(envelope)
         .map_err(|e| GossipError::EncodeFailed(e.to_string()))?;
+    let message_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
     let signed = envelope::sign_envelope(
         &signing_key,
         community_id,
         &my_pseudonym_key,
+        message_id,
         &envelope_bytes,
     );
 
-    let dedup_key = extract_mesh_dedup_key(envelope, deps.clock().now_secs());
-    deps.check_and_insert_dedup(community_id, &my_pseudonym_key, &dedup_key);
+    deps.check_and_insert_dedup(community_id, &my_pseudonym_key, &message_dedup_key(&signed));
 
     Ok(signed)
 }
@@ -281,8 +287,8 @@ mod tests {
         fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
             Arc::clone(&self.scope)
         }
-        fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
-            Arc::new(rekindle_utils::SystemClock)
+        fn rng(&self) -> Arc<dyn rekindle_utils::RandomSource> {
+            Arc::new(rekindle_utils::OsRandom)
         }
         fn check_and_insert_dedup(&self, c: &str, s: &str, k: &str) {
             self.state
@@ -331,6 +337,7 @@ mod tests {
 
     fn fake_signed(payload: &[u8]) -> SignedEnvelope {
         SignedEnvelope {
+            message_id: [7u8; 16],
             community_id: "c1".to_string(),
             sender_pseudonym: "me".to_string(),
             envelope_bytes: payload.to_vec(),
@@ -508,6 +515,23 @@ mod tests {
             "live media is dropped, never deferred to the pending-mesh queue"
         );
         assert!(st.sent_payloads.is_empty());
+    }
+
+    /// Two sends of identical content are two messages: each signs a fresh
+    /// id and records it, so neither our cache nor a receiver's suppresses
+    /// the second (the roster reconcile's re-sent join).
+    #[test]
+    fn each_send_of_the_same_content_gets_a_fresh_message_id() {
+        let deps = Arc::new(MockDeps::new());
+        let envelope = CommunityEnvelope::TypingIndicator {
+            channel_id: "ch1".to_string(),
+            pseudonym_key: "me".to_string(),
+        };
+        let first = sign_and_record(&deps, "c1", &envelope).expect("signs");
+        let second = sign_and_record(&deps, "c1", &envelope).expect("signs");
+        assert_eq!(first.envelope_bytes, second.envelope_bytes);
+        assert_ne!(first.message_id, second.message_id);
+        assert_eq!(deps.state.lock().dedup_inserts.len(), 2);
     }
 
     #[test]

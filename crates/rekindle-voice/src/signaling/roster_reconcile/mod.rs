@@ -263,9 +263,11 @@ pub async fn reconcile_from_presence(
 
     // Lost-join repair: re-run the join handshake. A peer that missed our
     // `VoiceJoin` adds us from it and acks with its own route, which adds
-    // it here (`presence::ack`). Gossip dedups a `Control` envelope by its
-    // content, so peers that already applied this join drop the resend.
-    // Repeats every scan until the peer is in our roster.
+    // it here (`presence::ack`). Each resend is a new gossip message (a
+    // fresh message id), so flood suppression never drops it; a peer that
+    // already holds us treats it as a route upsert (`add_peer` reports no
+    // membership change, so nothing rotates). Repeats every scan until
+    // the peer is in our roster.
     if !plan.introduce.is_empty() {
         let join = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
             channel_id: channel_id.clone(),

@@ -67,6 +67,7 @@ mod tests {
 
     fn signed() -> SignedEnvelope {
         SignedEnvelope {
+            message_id: [7u8; 16],
             community_id: "c1".into(),
             sender_pseudonym: "ab".repeat(32),
             envelope_bytes: vec![1, 2, 3],

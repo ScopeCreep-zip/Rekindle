@@ -185,7 +185,7 @@ mod tests {
             .expect("encodes");
         let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
         let community = format!("VLD0:{}", "A".repeat(150));
-        let signed = sign_envelope(&key, &community, &"ab".repeat(32), &envelope);
+        let signed = sign_envelope(&key, &community, &"ab".repeat(32), [7u8; 16], &envelope);
         let wire = encode_signed_envelope(&signed);
         assert!(
             wire.len() <= MAX_APP_MESSAGE_LEN,

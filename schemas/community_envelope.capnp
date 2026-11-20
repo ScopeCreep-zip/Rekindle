@@ -26,8 +26,9 @@ using import "community_governance.capnp".GovernanceEntry;
 # ── Outer wrapper ─────────────────────────────────────────────────────
 
 # Architecture §29.2 — signed gossip envelope. The signature covers
-# `payload` bytes exactly; relays preserve those bytes intact even when
-# they don't understand the inner variant.
+# `"rekindle-gossip-envelope:v1:" ‖ messageId ‖ payload`; relays preserve
+# those bytes (and the id) intact even when they don't understand the
+# inner variant.
 struct SignedEnvelope @0xe0d4eb16e9bf1c2e {
     # DHT key of the community's governance record (string form).
     communityId      @0 :Text;
@@ -36,10 +37,13 @@ struct SignedEnvelope @0xe0d4eb16e9bf1c2e {
     # Cap'n Proto-encoded `CommunityEnvelope`. Treated as opaque bytes
     # for signature/dedup; decoded lazily after verification.
     payload          @2 :Data;
-    # 64-byte Ed25519 signature over `payload`.
+    # 64-byte Ed25519 signature over the domain tag, `messageId` and `payload`.
     signature        @3 :Data;
     # Hop TTL — starts at 5, decremented on each forward.
     ttl              @4 :UInt8;
+    # 16 random bytes chosen by the sender, unique per send: the dedup key.
+    # A relay forwards it unchanged; a deliberate re-send gets a new one.
+    messageId        @5 :Data;
 }
 
 # ── Outer union (four live arms) ─────────────────────────────────────────────────

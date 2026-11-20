@@ -39,6 +39,7 @@ fn sign(
         &signing_key,
         community_id,
         &hex::encode(pseudonym.0),
+        rekindle_utils::random::id_bytes_16_from(state.rng.as_ref()),
         &bytes,
     );
     // Point to point: a receiver must never gossip it on.

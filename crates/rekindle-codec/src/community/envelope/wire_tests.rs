@@ -129,6 +129,7 @@ fn signed_envelope_matches_the_codec_declaration() {
     use crate::envelope::SignedEnvelope as CodecSigned;
 
     let mine = SignedEnvelope {
+        message_id: [7u8; 16],
         community_id: "c1".into(),
         sender_pseudonym: "ab12".into(),
         envelope_bytes: vec![1, 2, 3],
@@ -136,6 +137,7 @@ fn signed_envelope_matches_the_codec_declaration() {
         ttl: 5,
     };
     let theirs = CodecSigned {
+        message_id: [7u8; 16],
         community_id: "c1".into(),
         sender_pseudonym: "ab12".into(),
         envelope_bytes: vec![1, 2, 3],
@@ -151,7 +153,7 @@ fn signed_envelope_matches_the_codec_declaration() {
     // Pin the shape: camelCase, and `ttl` present rather than skipped.
     assert_eq!(
         serde_json::to_string(&mine).unwrap(),
-        r#"{"communityId":"c1","senderPseudonym":"ab12","envelopeBytes":[1,2,3],"signature":[9,9,9,9],"ttl":5}"#
+        r#"{"communityId":"c1","senderPseudonym":"ab12","messageId":[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],"envelopeBytes":[1,2,3],"signature":[9,9,9,9],"ttl":5}"#
     );
 
     // Each must load the other's bytes — what a peer actually does.
@@ -166,7 +168,7 @@ fn signed_envelope_matches_the_codec_declaration() {
 fn signed_envelope_ttl_default_agrees() {
     use crate::envelope::SignedEnvelope as CodecSigned;
 
-    let json = r#"{"communityId":"c1","senderPseudonym":"ab","envelopeBytes":[],"signature":[]}"#;
+    let json = r#"{"communityId":"c1","senderPseudonym":"ab","messageId":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"envelopeBytes":[],"signature":[]}"#;
     let mine: SignedEnvelope = serde_json::from_str(json).unwrap();
     let theirs: CodecSigned = serde_json::from_str(json).unwrap();
     assert_eq!(mine.ttl, 5);

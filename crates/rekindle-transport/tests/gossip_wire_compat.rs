@@ -60,7 +60,7 @@ fn broadcast() -> CommunityEnvelope {
 fn a_broadcast_round_trips_through_the_shared_format() {
     let key = signing_key();
     let envelope_bytes = encode_community_envelope(&broadcast()).expect("encode inner");
-    let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), &envelope_bytes);
+    let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), [7u8; 16], &envelope_bytes);
     let wire = gossip_datagram(&signed);
 
     let received = receive(&wire);
@@ -87,7 +87,7 @@ fn a_broadcast_round_trips_through_the_shared_format() {
 fn a_tampered_payload_fails_verification() {
     let key = signing_key();
     let envelope_bytes = encode_community_envelope(&broadcast()).expect("encode");
-    let mut signed = sign_envelope(&key, "gov-key", &my_pseudonym(), &envelope_bytes);
+    let mut signed = sign_envelope(&key, "gov-key", &my_pseudonym(), [7u8; 16], &envelope_bytes);
 
     signed.envelope_bytes[4] ^= 0xff;
 
@@ -113,7 +113,7 @@ fn watch_relay_crosses_the_wire() {
     };
 
     let envelope_bytes = encode_community_envelope(&envelope).expect("encode");
-    let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), &envelope_bytes);
+    let signed = sign_envelope(&key, "gov-key", &my_pseudonym(), [7u8; 16], &envelope_bytes);
     let wire = gossip_datagram(&signed);
 
     let received = receive(&wire);

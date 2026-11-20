@@ -123,6 +123,7 @@ mod tests {
     fn gossip(is_video: bool, tag: u8) -> IngressItem {
         IngressItem::Gossip {
             signed: SignedEnvelope {
+                message_id: [7u8; 16],
                 community_id: format!("c{tag}"),
                 sender_pseudonym: "p".into(),
                 envelope_bytes: vec![tag],

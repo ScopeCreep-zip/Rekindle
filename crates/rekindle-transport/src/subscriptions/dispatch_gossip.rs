@@ -12,8 +12,9 @@
 //! enum, so a daemon and a desktop peer now exchange the same bytes.
 //!
 //! Accepting it unframed is safe because the envelope authenticates
-//! itself: an Ed25519 signature over `(community_id, sender_pseudonym,
-//! envelope_bytes)` made with the sender's community pseudonym. The
+//! itself: an Ed25519 signature over `(message_id, envelope_bytes)`
+//! (under the gossip domain tag) made with the sender's community
+//! pseudonym, whose public key is `sender_pseudonym`. The
 //! frame's signature would be redundant with a property the payload
 //! already carries.
 
@@ -75,8 +76,10 @@ pub(super) async fn dispatch_bare_gossip<H: InboundHandler>(
         return;
     }
 
-    let dedup_key =
-        rekindle_gossip::broadcast::extract_mesh_dedup_key(&inner, handler.clock().now_secs());
+    // Keyed by the signed message id (one message, every relayed copy),
+    // never by content: a deliberate re-send of identical bytes carries a
+    // new id and is delivered; receivers are idempotent.
+    let dedup_key = rekindle_codec::dedup::message_dedup_key(&signed);
     if dedup.check_and_insert(&signed.community_id, &signed.sender_pseudonym, &dedup_key) {
         trace!(dedup_key = %dedup_key, "gossip dedup: duplicate");
         return;

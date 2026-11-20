@@ -3,9 +3,22 @@
 //! Every gossip message is wrapped in a `SignedEnvelope` containing:
 //! - The community ID (governance record key)
 //! - The sender's pseudonym (hex-encoded Ed25519 public key)
+//! - A 128-bit message id, unique per send (the dedup key)
 //! - The serialized inner envelope bytes
-//! - An Ed25519 signature over those bytes
+//! - An Ed25519 signature over the id and those bytes
 //! - A TTL hop counter (default 5, decremented on each forward)
+//!
+//! The id names one *message*, not its content: the dedup cache keys by
+//! it, a relay forwards it unchanged (so one message's flood is
+//! suppressed), and a deliberate re-send of identical content (a roster
+//! reconcile, a retry) is a new message with a new id, so it is
+//! delivered. Receivers are idempotent. This is the libp2p pubsub
+//! spec's origin-stamped id (`from` + a per-origin unique `seqno`,
+//! covered by the signature); it warns that a content-hash id drops an
+//! identical re-send as a duplicate. The id is random from the host's
+//! `RandomSource` rather than a counter: a counter must survive restarts
+//! (or reuse ids peers still hold as seen) and reveals how many messages
+//! a pseudonym has sent.
 
 use rekindle_secrets::derive::{derive_community_pseudonym, sign_with_pseudonym};
 use rekindle_secrets::sign::verify_signature;
@@ -14,6 +27,27 @@ use serde::{Deserialize, Serialize};
 
 /// Default TTL for gossip messages — maximum 5 hops through the mesh.
 pub const DEFAULT_TTL: u8 = 5;
+
+/// Length of a gossip message id.
+pub const MESSAGE_ID_LEN: usize = 16;
+
+/// Domain tag prefixed to every gossip envelope signature, so a
+/// pseudonym's gossip signature can never be read as a signature over
+/// any other structure that key signs.
+const SIGNATURE_DOMAIN: &[u8] = b"rekindle-gossip-envelope:v1:";
+
+/// The exact bytes a gossip envelope's signature covers:
+/// `SIGNATURE_DOMAIN ‖ message_id ‖ envelope_bytes`. The id is fixed
+/// length, so the concatenation cannot alias.
+#[must_use]
+pub fn signing_input(message_id: &[u8; MESSAGE_ID_LEN], envelope_bytes: &[u8]) -> Vec<u8> {
+    let mut input =
+        Vec::with_capacity(SIGNATURE_DOMAIN.len() + MESSAGE_ID_LEN + envelope_bytes.len());
+    input.extend_from_slice(SIGNATURE_DOMAIN);
+    input.extend_from_slice(message_id);
+    input.extend_from_slice(envelope_bytes);
+    input
+}
 
 /// A signed gossip envelope ready for network transmission.
 ///
@@ -27,9 +61,12 @@ pub struct SignedEnvelope {
     pub community_id: String,
     /// Hex-encoded Ed25519 public key of the sender's community pseudonym.
     pub sender_pseudonym: String,
+    /// Unique per send, chosen by the sender, covered by the signature and
+    /// forwarded unchanged by relays: the dedup key.
+    pub message_id: [u8; MESSAGE_ID_LEN],
     /// Serialized inner payload (signed data).
     pub envelope_bytes: Vec<u8>,
-    /// Ed25519 signature over `envelope_bytes`.
+    /// Ed25519 signature over [`signing_input`]`(message_id, envelope_bytes)`.
     pub signature: Vec<u8>,
     /// Hop TTL — starts at DEFAULT_TTL, decremented on each gossip forward.
     /// When 0, process locally but don't forward.
@@ -49,20 +86,23 @@ fn default_ttl() -> u8 {
 /// # Arguments
 /// * `master_secret` — The user's master secret (for pseudonym derivation).
 /// * `community_id` — The governance record DHT key.
+/// * `message_id` — A fresh id for this send (see the module doc).
 /// * `payload` — Any serializable payload (GovernanceEntry, ChannelEntry, etc.)
 pub fn build_signed_envelope<T: Serialize>(
     master_secret: &[u8; 32],
     community_id: &str,
+    message_id: [u8; MESSAGE_ID_LEN],
     payload: &T,
 ) -> Result<SignedEnvelope, rekindle_types::error::CommunityError> {
     let signing_key = derive_community_pseudonym(master_secret, community_id);
     let sender_pseudonym = hex::encode(signing_key.verifying_key().to_bytes());
     let envelope_bytes = serde_json::to_vec(payload)?;
-    let signature = sign_with_pseudonym(&signing_key, &envelope_bytes);
+    let signature = sign_with_pseudonym(&signing_key, &signing_input(&message_id, &envelope_bytes));
 
     Ok(SignedEnvelope {
         community_id: community_id.to_string(),
         sender_pseudonym,
+        message_id,
         envelope_bytes,
         signature: signature.to_vec(),
         ttl: DEFAULT_TTL,
@@ -84,7 +124,11 @@ pub fn verify_signed_envelope(signed: &SignedEnvelope) -> Result<(), CryptoError
         .try_into()
         .map_err(|_| CryptoError::Verification("signature must be 64 bytes".into()))?;
 
-    verify_signature(&pub_array, &signed.envelope_bytes, &sig_array)
+    verify_signature(
+        &pub_array,
+        &signing_input(&signed.message_id, &signed.envelope_bytes),
+        &sig_array,
+    )
 }
 
 /// Deserialize the inner payload from a verified signed envelope.
@@ -123,7 +167,8 @@ mod tests {
             banner_hash: None,
         };
 
-        let signed = build_signed_envelope(&secret, community_id, &payload).unwrap();
+        let signed =
+            build_signed_envelope(&secret, community_id, [3u8; MESSAGE_ID_LEN], &payload).unwrap();
         assert!(verify_signed_envelope(&signed).is_ok());
     }
 
@@ -136,9 +181,27 @@ mod tests {
             cascade_skipped: vec![],
         };
 
-        let mut signed = build_signed_envelope(&secret, "c", &payload).unwrap();
+        let mut signed =
+            build_signed_envelope(&secret, "c", [3u8; MESSAGE_ID_LEN], &payload).unwrap();
         // Tamper with the payload
         signed.envelope_bytes[0] ^= 0xFF;
+        assert!(verify_signed_envelope(&signed).is_err());
+    }
+
+    /// The id is signed: a relay (or attacker) that re-stamps a seen
+    /// message with a fresh id, to slip it past every dedup cache, breaks
+    /// the signature.
+    #[test]
+    fn restamped_message_id_fails_verify() {
+        let payload = GovernanceEntry::MEKGenerationBump {
+            generation: 1,
+            trigger_departed: PseudonymKey([0; 32]),
+            cascade_skipped: vec![],
+        };
+        let mut signed =
+            build_signed_envelope(&[42u8; 32], "c", [3u8; MESSAGE_ID_LEN], &payload).unwrap();
+        assert!(verify_signed_envelope(&signed).is_ok());
+        signed.message_id[0] ^= 0xFF;
         assert!(verify_signed_envelope(&signed).is_err());
     }
 
@@ -151,7 +214,8 @@ mod tests {
             cascade_skipped: vec![],
         };
 
-        let mut signed = build_signed_envelope(&secret, "c", &payload).unwrap();
+        let mut signed =
+            build_signed_envelope(&secret, "c", [3u8; MESSAGE_ID_LEN], &payload).unwrap();
         // Replace sender with a different pseudonym
         let wrong_key = rekindle_secrets::derive::derive_community_pseudonym(&[99u8; 32], "c");
         signed.sender_pseudonym = hex::encode(wrong_key.verifying_key().to_bytes());
@@ -170,7 +234,7 @@ mod tests {
             parent_voice_channel_id: None,
         };
 
-        let signed = build_signed_envelope(&secret, "c", &payload).unwrap();
+        let signed = build_signed_envelope(&secret, "c", [3u8; MESSAGE_ID_LEN], &payload).unwrap();
         let deserialized: GovernanceEntry = deserialize_payload(&signed).unwrap();
         assert_eq!(payload, deserialized);
     }
@@ -183,13 +247,14 @@ mod tests {
             trigger_departed: PseudonymKey([0; 32]),
             cascade_skipped: vec![],
         };
-        let signed = build_signed_envelope(&secret, "c", &payload).unwrap();
+        let signed = build_signed_envelope(&secret, "c", [3u8; MESSAGE_ID_LEN], &payload).unwrap();
         assert_eq!(signed.ttl, DEFAULT_TTL);
 
         let fwd = forward_envelope(&signed).unwrap();
         assert_eq!(fwd.ttl, DEFAULT_TTL - 1);
-        // Signature unchanged
+        // Signature and message id unchanged: a relay forwards one message.
         assert_eq!(fwd.signature, signed.signature);
+        assert_eq!(fwd.message_id, signed.message_id);
     }
 
     #[test]
@@ -197,6 +262,7 @@ mod tests {
         let mut signed = build_signed_envelope(
             &[1u8; 32],
             "c",
+            [3u8; MESSAGE_ID_LEN],
             &GovernanceEntry::MEKGenerationBump {
                 generation: 1,
                 trigger_departed: PseudonymKey([0; 32]),

@@ -24,6 +24,7 @@ fn sign_and_verify_roundtrip() {
         &signing_key,
         "community_abc",
         &pseudonym_hex,
+        [7u8; 16],
         &envelope_bytes,
     );
 
@@ -42,6 +43,7 @@ fn verify_rejects_tampered_data() {
         &signing_key,
         "community_abc",
         &pseudonym_hex,
+        [7u8; 16],
         envelope_bytes,
     );
 
@@ -60,7 +62,13 @@ fn verify_rejects_wrong_key() {
     let wrong_hex = hex::encode(wrong_verifying.to_bytes());
 
     let envelope_bytes = b"test data";
-    let mut signed = sign_envelope(&signing_key, "community_abc", "placeholder", envelope_bytes);
+    let mut signed = sign_envelope(
+        &signing_key,
+        "community_abc",
+        "placeholder",
+        [7u8; 16],
+        envelope_bytes,
+    );
 
     // Replace sender pseudonym with wrong key
     signed.sender_pseudonym = wrong_hex;
@@ -204,7 +212,7 @@ fn envelope_media_capabilities_sign_and_verify() {
         supported_scalability_modes: vec![ScalabilityMode::Flat],
     });
     let bytes = encode_community_envelope(&envelope).unwrap();
-    let signed = sign_envelope(&signing_key, "community_xyz", &pseudo, &bytes);
+    let signed = sign_envelope(&signing_key, "community_xyz", &pseudo, [7u8; 16], &bytes);
     assert!(verify_envelope(&signed).is_ok());
 }
 
@@ -310,6 +318,7 @@ fn request_segment_expansion_capnp_roundtrip() {
 #[test]
 fn signed_envelope_capnp_roundtrip() {
     let signed = SignedEnvelope {
+        message_id: [7u8; 16],
         community_id: "comm_01".into(),
         sender_pseudonym: "abc123".into(),
         envelope_bytes: vec![1, 2, 3],

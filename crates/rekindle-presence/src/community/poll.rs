@@ -439,6 +439,7 @@ mod tests {
         // `inject_online` hook (rebuild only drains when peers
         // become non-empty).
         let pending = rekindle_codec::community::envelope::SignedEnvelope {
+            message_id: [7u8; 16],
             community_id: "c1".to_string(),
             sender_pseudonym: "me".to_string(),
             envelope_bytes: vec![1, 2, 3],

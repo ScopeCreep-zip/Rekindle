@@ -247,6 +247,7 @@ mod tests {
 
     fn signed(payload_len: usize) -> SignedEnvelope {
         SignedEnvelope {
+            message_id: [7u8; 16],
             community_id: "c".into(),
             sender_pseudonym: "p".into(),
             envelope_bytes: vec![0; payload_len],

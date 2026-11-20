@@ -11,7 +11,7 @@
 //! mode where signing is ~3-5× slower than release, so we run a
 //! smaller batch (300 envelopes) and amortise.
 
-use rekindle_codec::dedup::extract_dedup_key;
+use rekindle_codec::dedup::message_dedup_key;
 use rekindle_codec::envelope::build_signed_envelope;
 use rekindle_gossip::dedup::DedupCache;
 use rekindle_types::governance::GovernanceEntry;
@@ -35,8 +35,14 @@ fn gossip_pipeline_meets_100_per_second_target() {
             icon_hash: None,
             banner_hash: None,
         };
-        let signed = build_signed_envelope(&secret, community_id, &bumped).unwrap();
-        let dedup_key = extract_dedup_key(&signed);
+        let signed = build_signed_envelope(
+            &secret,
+            community_id,
+            rekindle_utils::random::id_bytes_16(),
+            &bumped,
+        )
+        .unwrap();
+        let dedup_key = message_dedup_key(&signed);
         cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key);
     }
     let elapsed = started.elapsed();

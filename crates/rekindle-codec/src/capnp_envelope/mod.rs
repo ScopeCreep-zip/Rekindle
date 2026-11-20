@@ -89,6 +89,7 @@ pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Vec<u8> {
     root.set_payload(&signed.envelope_bytes);
     root.set_signature(&signed.signature);
     root.set_ttl(signed.ttl);
+    root.set_message_id(&signed.message_id);
     pack(&builder)
 }
 
@@ -98,9 +99,18 @@ pub fn decode_signed_envelope(bytes: &[u8]) -> Result<SignedEnvelope, CodecError
     let root = reader
         .get_root::<crate::community_envelope_capnp::signed_envelope::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
+    // A missing or wrong-length id is refused, never defaulted: a
+    // defaulted id would make every such envelope one message to the
+    // dedup cache.
+    let message_id: [u8; crate::envelope::MESSAGE_ID_LEN] = root
+        .get_message_id()
+        .map_err(|e| capnp_err(&e))?
+        .try_into()
+        .map_err(|_| CodecError::Deserialization("gossip message id must be 16 bytes".into()))?;
     Ok(SignedEnvelope {
         community_id: text_to_string(root.get_community_id().map_err(|e| capnp_err(&e))?)?,
         sender_pseudonym: text_to_string(root.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
+        message_id,
         envelope_bytes: root.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
         signature: root.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
         ttl: root.get_ttl(),
@@ -224,6 +234,7 @@ mod tests {
     #[test]
     fn signed_envelope_roundtrip() {
         let signed = SignedEnvelope {
+            message_id: [7u8; 16],
             community_id: "VLD0:abc".into(),
             sender_pseudonym: "deadbeef".into(),
             envelope_bytes: vec![1, 2, 3, 4, 5],
@@ -237,6 +248,7 @@ mod tests {
         assert_eq!(signed.envelope_bytes, back.envelope_bytes);
         assert_eq!(signed.signature, back.signature);
         assert_eq!(signed.ttl, back.ttl);
+        assert_eq!(signed.message_id, back.message_id);
     }
 
     #[test]

@@ -10,7 +10,6 @@
 //! `GossipDeps` trait. The pre-port src-tauri module collapses to a
 //! thin facade.
 
-pub mod broadcast;
 pub mod channel_send;
 pub mod dedup;
 pub mod deps;
