@@ -63,6 +63,8 @@ export interface App {
   /** Never printed or written anywhere but the child's environment. */
   token: string;
   dataRoot: string;
+  /** The app's stdout and stderr, in OUT_DIR; a later launch of the same name overwrites it. */
+  log: string;
   child: ChildProcess;
   alive(): boolean;
   stop(): Promise<void>;
@@ -196,6 +198,7 @@ export async function launch(name = "app"): Promise<App> {
     port,
     token,
     dataRoot,
+    log: path.join(OUT_DIR, logName),
     child,
     alive: () => !exited,
     async stop() {
@@ -209,7 +212,8 @@ export async function launch(name = "app"): Promise<App> {
         ]);
         if (!gone && !exited) child.kill("SIGKILL");
       }
-      log.end();
+      // Flushed before stop() resolves, so a caller can copy the log whole.
+      await new Promise<void>((resolve) => log.end(resolve));
       running.delete(app);
       rmSync(dataRoot, { recursive: true, force: true });
     },

@@ -7,13 +7,11 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { browser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
+import { keepDir } from "./keep.ts";
 import { RekindleAppLauncher } from "./launcher.ts";
 
-/**
- * Failure evidence, one folder per run (e2e/app/out/keep/<run start>/), so
- * a later run or a cleared layout folder never overwrites it.
- */
-const KEEP_DIR = path.join(import.meta.dirname, "out", "keep", new Date().toISOString().replace(/[:.]/g, "-"));
+/** Failure evidence, in the run's folder beside its app logs (keep.ts). */
+const KEEP_DIR = keepDir();
 
 /** Every user's session: one standalone, or each multiremote instance by name. */
 function sessions(): [string, Browser][] {

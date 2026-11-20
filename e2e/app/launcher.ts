@@ -20,8 +20,24 @@
 // (@wdio/local-runner `childProcess.send`), so the token is not visible in
 // a process listing; it is never printed.
 
+import { copyFileSync, mkdirSync } from "node:fs";
+import path from "node:path";
 import type { Capabilities, Services } from "@wdio/types";
 import { build, launch, type App } from "../walk/launch.ts";
+import { keepDir } from "./keep.ts";
+
+/**
+ * Stop `app` and keep its log in the run's folder (keep.ts), passing or
+ * failing: the launcher reuses one log name per worker, so the next run
+ * would overwrite the evidence of a failure that shows up only in a log
+ * (finding C-COM1, 2026-11-19, lost its log that way).
+ */
+async function stopAndKeepLog(app: App): Promise<void> {
+  await app.stop();
+  const logs = path.join(keepDir(), "logs");
+  mkdirSync(logs, { recursive: true });
+  copyFileSync(app.log, path.join(logs, path.basename(app.log)));
+}
 
 /** The capability key a spec's config sets to ask for an app. */
 export const APP_CAPABILITY = "rekindle:app";
@@ -71,6 +87,8 @@ export class RekindleAppLauncher implements Services.ServiceInstance {
 
   /** Builds the debug app with the driver once per run (`REKINDLE_APP_NO_BUILD=1` runs the last build). */
   onPrepare(): void {
+    // Name the run's evidence folder before any worker forks (keep.ts).
+    keepDir();
     if (process.env.REKINDLE_APP_NO_BUILD !== "1") build();
   }
 
@@ -105,11 +123,11 @@ export class RekindleAppLauncher implements Services.ServiceInstance {
   async onWorkerEnd(cid: string): Promise<void> {
     const apps = this.#apps.get(cid) ?? [];
     this.#apps.delete(cid);
-    await Promise.all(apps.map((app) => app.stop()));
+    await Promise.all(apps.map(stopAndKeepLog));
   }
 
   async onComplete(): Promise<void> {
-    await Promise.all([...this.#apps.values()].flat().map((app) => app.stop()));
+    await Promise.all([...this.#apps.values()].flat().map(stopAndKeepLog));
     this.#apps.clear();
   }
 }
