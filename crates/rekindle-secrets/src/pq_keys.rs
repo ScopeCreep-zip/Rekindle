@@ -7,7 +7,7 @@
 //! (the wrapped `libcrux` type has no `Zeroize` impl of its own to
 //! derive against) and the shared secrets it produces via `Zeroizing`.
 //!
-//! ## ML-KEM-768 sizes (verified against `libcrux-ml-kem-0.0.9/src/`)
+//! ## ML-KEM-768 sizes (verified against `libcrux-ml-kem-0.0.12/src/`)
 //!
 //! - Public key: 1184 bytes (`CPA_PKE_PUBLIC_KEY_SIZE`)
 //! - Private key: 2400 bytes (`SECRET_KEY_SIZE`)
@@ -129,7 +129,7 @@ impl MlKemSecret {
     /// Extract the corresponding public key from the FIPS-203 secret-key
     /// layout. The ML-KEM-768 private key embeds the encapsulation key
     /// (public) at offset `CPA_PKE_SECRET_KEY_SIZE = 1152`, length
-    /// `CPA_PKE_PUBLIC_KEY_SIZE = 1184` — see `libcrux-ml-kem-0.0.9/src/
+    /// `CPA_PKE_PUBLIC_KEY_SIZE = 1184` — see `libcrux-ml-kem-0.0.12/src/
     /// constants.rs`. This lets us reconstruct a `PreKeyBundle`'s PQ
     /// public field from just the stored secret blob.
     #[must_use]
@@ -148,7 +148,7 @@ impl MlKemSecret {
 impl MlKemSecret {
     /// Zero the private key bytes in place, without consuming `self`.
     ///
-    /// `MlKem768PrivateKey` (libcrux-ml-kem 0.0.9's `MlKemPrivateKey<SIZE>`,
+    /// `MlKem768PrivateKey` (libcrux-ml-kem 0.0.12's `MlKemPrivateKey<SIZE>`,
     /// via its `impl_generic_struct!` macro) implements neither `Zeroize`
     /// nor `AsMut<[u8]>` — but the same macro DOES give it `Default`
     /// (all-zero) and `From<Self> for [u8; SIZE]` (by value). That pair is
@@ -188,7 +188,18 @@ impl MlKemPublic {
         // 203 §6.2), so it is wiped like one.
         let mut rnd = Zeroizing::new([0u8; libcrux_ml_kem::ENCAPS_SEED_SIZE]);
         rand::rngs::OsRng.fill_bytes(&mut *rnd);
-        let (ct, ss) = encapsulate(&self.inner, *rnd);
+        self.encapsulate_with_seed(&rnd)
+    }
+
+    /// FIPS 203's `ML-KEM.Encaps_internal(ek, m)` (§6.2) with the caller's
+    /// 32-byte `m`. Private: production draws `m` from `OsRng` in
+    /// [`Self::encapsulate`]; the known-answer tests (`pq_keys_kat.rs`)
+    /// pass NIST's `m` through the same path.
+    fn encapsulate_with_seed(
+        &self,
+        m: &Zeroizing<[u8; libcrux_ml_kem::ENCAPS_SEED_SIZE]>,
+    ) -> EncapsulationOutput {
+        let (ct, ss) = encapsulate(&self.inner, **m);
         EncapsulationOutput {
             ciphertext: ct.as_ref().to_vec(),
             shared_secret: Zeroizing::new(ss),
@@ -228,6 +239,10 @@ pub fn ml_kem_ciphertext_from_bytes(bytes: &[u8]) -> Option<MlKem768Ciphertext> 
     value.copy_from_slice(bytes);
     Some(MlKem768Ciphertext::from(value))
 }
+
+#[cfg(test)]
+#[path = "pq_keys_kat.rs"]
+mod kat;
 
 #[cfg(test)]
 mod tests {
