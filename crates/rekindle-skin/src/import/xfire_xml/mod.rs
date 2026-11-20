@@ -34,6 +34,7 @@ mod notice;
 pub mod refs;
 pub mod surfaces;
 pub mod tiles;
+mod title_rows;
 pub mod v3;
 
 use std::collections::BTreeMap;
@@ -248,11 +249,12 @@ type ReadFrame = (
     String,
 );
 
-/// The file `Skin.xml`'s `<ChatSkin>` includes: the chat window's layout.
-fn chat_layout(skin: &Node) -> Option<&str> {
+/// The file `Skin.xml`'s `section` (`<ChatSkin>`, `<MainSkin>`) includes:
+/// that window's layout.
+fn window_layout<'s>(skin: &'s Node, section: &str) -> Option<&'s str> {
     skin.children
         .iter()
-        .find(|n| n.name.eq_ignore_ascii_case("ChatSkin"))
+        .find(|n| n.name.eq_ignore_ascii_case(section))
         .and_then(|n| descendants(n, "Include").into_iter().next())
         .and_then(|i| i.attr_ci("File"))
 }
@@ -280,7 +282,7 @@ fn read_frame(
         None
     };
     let Some(set) = set else {
-        let Some(file) = chat_layout(skin).filter(|f| lookup(tree, f).is_ok()) else {
+        let Some(file) = window_layout(skin, "ChatSkin").filter(|f| lookup(tree, f).is_ok()) else {
             return Ok((None, String::new()));
         };
         return Ok(match tiles::frame(&xml(tree, file)?, components, decode)? {
@@ -373,7 +375,10 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     let components = component_files(tree, &included)?;
     let refs = refs::apply(&refs::xml_refs(&components), &colours, &mut tokens);
     let (frame, frame_source) = read_frame(tree, (&skin, theme), &colours, layout, &components)?;
-    let (controls, tally) = controls::read(tree, theme, &colours, &components)?;
+    let (mut controls, tally) = controls::read(tree, theme, &colours, &components)?;
+    if let Some(f) = window_layout(&skin, "MainSkin").filter(|f| lookup(tree, f).is_ok()) {
+        title_rows::crop(&xml(tree, f)?, &mut controls, &tally.sources);
+    }
     let info_xml = match lookup(tree, "Info.xml") {
         Ok((key, bytes)) => Some(tree::parse(key, bytes)?),
         Err(_) => None,

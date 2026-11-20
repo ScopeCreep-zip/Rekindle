@@ -5,8 +5,27 @@
   }
 
   /* Status picker */
+  /* The picker spans the status bar up to the network indicator and the
+   * skin's status arrow (slot `statusbar.arrow`) sits at its right end, as
+   * Xfire lays it (xSLIMFIRE `xSLIMFIREmainwindow.xml`: `DownArrow`
+   * `JustX="RIGHT"` at the `StatusWrapper`'s right end, the `StatusEdit`'s
+   * `IndentRight` keeping its text clear of the arrow). */
   .status-picker {
     position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .status-picker .buddy-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .status-picker-arrow {
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .status-picker-dropdown {
