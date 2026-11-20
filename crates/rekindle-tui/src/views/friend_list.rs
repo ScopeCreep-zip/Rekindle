@@ -490,6 +490,7 @@ mod tests {
             handshake_error: None,
             handshake_retrying: false,
             identity_pin_mismatch: false,
+            group_dm_block: None,
         }
     }
 
