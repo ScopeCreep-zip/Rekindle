@@ -56,30 +56,36 @@ const StatusDot: Component<StatusDotProps> = (props) => {
   const shape = (): DotShape => statusShapeMap[status()] ?? "ring";
   const label = (): string => `Status: ${statusLabels[status()] ?? "Offline"}`;
 
+  const ring = (): boolean => shape() === "ring";
+  const iconClass = (): string =>
+    `status-icon-${statusShapeMap[status()] ? status() : "offline"}`;
+
   return (
-    <span class={cls()} role="img" aria-label={label()}>
+    <span class={`${cls()} ${iconClass()}`} role="img" aria-label={label()}>
+      {/* A skin's status icon (plan E7.7.7 S4), clipped to this shape. */}
+      <span class={ring() ? "status-dot-fill status-dot-fill-ring" : "status-dot-fill status-dot-fill-disc"} />
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
         <Switch>
           <Match when={shape() === "filled"}>
-            <circle cx="6" cy="6" r="4.5" fill="currentColor" stroke="none" />
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" stroke="none" />
           </Match>
           <Match when={shape() === "ring"}>
             {/* Open ring — no fill, distinguishable in grayscale. */}
-            <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <circle cx="6" cy="6" r="4" fill="none" class="status-dot-ring" stroke-width="1.5" />
           </Match>
           <Match when={shape() === "crescent"}>
             {/* Filled circle with a crescent cutout (clock/moon glyph). */}
-            <circle cx="6" cy="6" r="4.5" fill="currentColor" />
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" />
             <circle cx="8" cy="5" r="3" class="status-dot-cutout" />
           </Match>
           <Match when={shape() === "bar"}>
             {/* Filled circle with a horizontal "do not enter" bar. */}
-            <circle cx="6" cy="6" r="4.5" fill="currentColor" />
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" />
             <rect x="2.5" y="5.25" width="7" height="1.5" class="status-dot-cutout" rx="0.5" />
           </Match>
           <Match when={shape() === "triangle"}>
             {/* Filled circle with a play-triangle glyph. */}
-            <circle cx="6" cy="6" r="4.5" fill="currentColor" />
+            <circle cx="6" cy="6" r="4.5" class="status-dot-paint" />
             <polygon points="4.5,3.5 4.5,8.5 9,6" class="status-dot-cutout" />
           </Match>
         </Switch>

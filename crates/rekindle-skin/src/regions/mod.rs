@@ -223,7 +223,7 @@ fn worst_contrast(
 }
 
 /// Every frame of a canonical image.
-fn frames(name: &str, bytes: &[u8]) -> Result<Vec<RgbaImage>, SkinError> {
+pub(crate) fn frames(name: &str, bytes: &[u8]) -> Result<Vec<RgbaImage>, SkinError> {
     let kind = match extension(name).as_deref() {
         Some("gif") => ImageKind::Gif,
         _ => ImageKind::Png,

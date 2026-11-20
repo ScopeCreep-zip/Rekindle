@@ -411,6 +411,12 @@ pub enum SkinRule {
     TooManySoundCues { count: u64, max: u64 },
     #[error("icons.{icon}: not an icon slot of the registry")]
     UnknownIcon { icon: String },
+    #[error("{icon}: the icon is {width} × {height}; a status icon is square, 12, 16, 24, 32 or 48 px a side")]
+    IconSize {
+        icon: String,
+        width: u32,
+        height: u32,
+    },
     #[error("sounds.{cue}: not a sound cue of the registry")]
     UnknownSoundCue { cue: String },
     #[error("longer than {max_seconds} s")]

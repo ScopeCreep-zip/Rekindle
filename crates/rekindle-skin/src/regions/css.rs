@@ -410,6 +410,15 @@ fn rules(map: &BTreeMap<String, RegionMap>) -> Result<(String, String), String> 
     Ok((out, a11y))
 }
 
+/// The custom property a status icon's image is served under
+/// (`status.online` → `--skin-icon-status-online`); `<property>-paint` is
+/// `transparent` beside it, so StatusDot's shape stops painting its token
+/// colour and shows the icon it clips (`src/styles/theme/00-rules.css`).
+#[must_use]
+pub fn icon_property(id: &str) -> String {
+    format!("--skin-icon-{}", id.replace('.', "-"))
+}
+
 /// A serving base the Host owns: ASCII letters, digits and `:/._-`.
 fn base_ok(base: &str) -> bool {
     !base.is_empty()
@@ -538,6 +547,12 @@ pub fn skin_css(
                 decls.push_str(&d);
             }
         }
+    }
+    for (id, path) in &manifest.icons {
+        let h = href(base, path, images)?;
+        let name = icon_property(id);
+        let _ = writeln!(decls, "    {name}: url(\"{h}\");");
+        let _ = writeln!(decls, "    {name}-paint: transparent;");
     }
     Some(format!("@layer skin {{\n  :root {{\n{decls}  }}\n}}\n"))
 }

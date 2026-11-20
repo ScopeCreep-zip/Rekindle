@@ -472,10 +472,71 @@
     height: 12px;
     flex-shrink: 0;
     line-height: 0;
+    position: relative;
   }
 
   .status-dot svg {
     display: block;
+    position: relative;
+  }
+
+  /* A skin's status icon (plan E7.7.1 "Icons", E7.7.7 S4) is the fill of
+   * the app-owned shape: clipped to the disc or the ring, under the SVG
+   * whose cutouts stay on top; with an icon the shape's own paint turns
+   * transparent. Without one, --status-icon is none and the shape paints
+   * the token colour (the token look). */
+  .status-icon-online {
+    --status-icon: var(--skin-icon-status-online, none);
+    --status-paint: var(--skin-icon-status-online-paint, currentColor);
+  }
+
+  .status-icon-away {
+    --status-icon: var(--skin-icon-status-away, none);
+    --status-paint: var(--skin-icon-status-away-paint, currentColor);
+  }
+
+  .status-icon-busy {
+    --status-icon: var(--skin-icon-status-busy, none);
+    --status-paint: var(--skin-icon-status-busy-paint, currentColor);
+  }
+
+  .status-icon-ingame {
+    --status-icon: var(--skin-icon-status-ingame, none);
+    --status-paint: var(--skin-icon-status-ingame-paint, currentColor);
+  }
+
+  .status-icon-offline {
+    --status-icon: var(--skin-icon-status-offline, none);
+    --status-paint: var(--skin-icon-status-offline-paint, currentColor);
+  }
+
+  .status-icon-invisible {
+    --status-icon: var(--skin-icon-status-invisible, none);
+    --status-paint: var(--skin-icon-status-invisible-paint, currentColor);
+  }
+
+  .status-dot-fill {
+    position: absolute;
+    inset: 0;
+    background-image: var(--status-icon);
+    background-size: 12px 12px;
+    pointer-events: none;
+  }
+
+  .status-dot-fill-disc {
+    clip-path: circle(4.5px at 6px 6px);
+  }
+
+  .status-dot-fill-ring {
+    clip-path: path(evenodd, "M1.25 6a4.75 4.75 0 1 0 9.5 0a4.75 4.75 0 1 0 -9.5 0Z M2.75 6a3.25 3.25 0 1 0 6.5 0a3.25 3.25 0 1 0 -6.5 0Z");
+  }
+
+  .status-dot-paint {
+    fill: var(--status-paint);
+  }
+
+  .status-dot-ring {
+    stroke: var(--status-paint);
   }
 
   .status-dot-online {

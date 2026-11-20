@@ -28,7 +28,8 @@ fn missing(tokens: &str) -> SkinError {
 /// 1. the outer size and the strict zip walk; 2. the manifest and its
 ///    text rules; 3. every variant's tokens; 4. the images; 5. the sounds;
 ///    6. accessibility, anti-spoofing and text over every region on each
-///    variant after the defaults merge; 7. the canonical output.
+///    variant after the defaults merge, and every status icon against the
+///    rules its status colour meets; 7. the canonical output.
 ///
 /// # Errors
 /// The first rule the package breaks, naming the entry.
@@ -48,6 +49,7 @@ pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
         let resolved = resolve(ENTRIES, base, skin);
         access::validate(&v.tokens, base, &resolved)?;
         regions::validate(&manifest, &images, &resolved)?;
+        access::icons::validate(&manifest, &images, base, &resolved)?;
     }
     output::package(&manifest, &parsed, &images, &sounds)
 }

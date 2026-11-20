@@ -20,6 +20,7 @@
 //! the pair and the measured and required values.
 
 pub mod apca;
+pub mod icons;
 pub mod model;
 pub mod pairs;
 pub mod science;
