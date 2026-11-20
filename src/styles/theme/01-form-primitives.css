@@ -34,11 +34,14 @@
   }
 
   /* One line: the sender's name gives way (ellipsis), the timestamp and
-     the markers after it never wrap or shrink. */
+     the markers after it never wrap or shrink. The row is always as tall
+     as the action bar it ends with (.message-actions), so showing the bar
+     on hover never moves the messages below it (plan MA1). */
   .chat-message-header {
     display: flex;
     align-items: baseline;
     min-width: 0;
+    min-height: 24px;
   }
 
   .chat-message-header > * {
@@ -49,6 +52,9 @@
   .chat-message-header > .chat-message-sender-other,
   .chat-message-header > .chat-message-sender-self {
     flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .chat-message-timestamp {

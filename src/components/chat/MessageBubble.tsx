@@ -225,81 +225,82 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             </button>
           </Show>
         </Show>
-      </div>
-
-      {/* Action toolbar (appears on hover) */}
-      <div class="message-actions">
-        <Show when={props.onReply}>
-          <button class="message-action-btn" title="Reply" aria-label="Reply" onClick={() => props.onReply?.(props.message)}>
-            <span class="nf-icon" aria-hidden="true">{ICON_REPLY}</span>
-          </button>
-        </Show>
-        <Show when={props.onReaction}>
-          {/* Plan §Failure 3 — Kobalte Popover with Popover.Portal so the
-           * picker escapes the chat-message-area's `overflow-y: auto`
-           * clip and the `.chat-message` stacking context. Mirrors the
-           * MemberList Popover.Portal pattern. */}
-          <Popover open={showEmojiPicker()} onOpenChange={setShowEmojiPicker}>
-            <Popover.Trigger
-              as="button"
+        {/* Action toolbar: the header row's last item, shown on hover or
+          * keyboard focus, so it takes its own space instead of covering the
+          * sender, timestamp and status (plan MA1). */}
+        <div class="message-actions">
+          <Show when={props.onReply}>
+            <button class="message-action-btn" title="Reply" aria-label="Reply" onClick={() => props.onReply?.(props.message)}>
+              <span class="nf-icon" aria-hidden="true">{ICON_REPLY}</span>
+            </button>
+          </Show>
+          <Show when={props.onReaction}>
+            {/* Plan §Failure 3 — Kobalte Popover with Popover.Portal so the
+             * picker escapes the chat-message-area's `overflow-y: auto`
+             * clip and the `.chat-message` stacking context. Mirrors the
+             * MemberList Popover.Portal pattern. */}
+            <Popover open={showEmojiPicker()} onOpenChange={setShowEmojiPicker}>
+              <Popover.Trigger
+                as="button"
+                class="message-action-btn"
+                title="React"
+                aria-label="Add reaction"
+              >
+                <span class="nf-icon" aria-hidden="true">{ICON_EMOTICON}</span>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content class="emoji-picker-popover">
+                  <EmojiPicker
+                    communityId={props.communityId}
+                    onSelect={(emoji) => props.onReaction?.(emoji)}
+                    mode="reaction"
+                    onClose={() => setShowEmojiPicker(false)}
+                  />
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover>
+          </Show>
+          <Show when={props.onPin && props.message.serverMessageId}>
+            <button
               class="message-action-btn"
-              title="React"
-              aria-label="Add reaction"
+              title={props.message.pinned ? "Unpin" : "Pin"}
+              aria-label={props.message.pinned ? "Unpin message" : "Pin message"}
+              onClick={() => props.onPin?.(props.message.serverMessageId!)}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_EMOTICON}</span>
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Content class="emoji-picker-popover">
-                <EmojiPicker
-                  communityId={props.communityId}
-                  onSelect={(emoji) => props.onReaction?.(emoji)}
-                  mode="reaction"
-                  onClose={() => setShowEmojiPicker(false)}
-                />
-              </Popover.Content>
-            </Popover.Portal>
-          </Popover>
-        </Show>
-        <Show when={props.onPin && props.message.serverMessageId}>
-          <button
-            class="message-action-btn"
-            title={props.message.pinned ? "Unpin" : "Pin"}
-            aria-label={props.message.pinned ? "Unpin message" : "Pin message"}
-            onClick={() => props.onPin?.(props.message.serverMessageId!)}
-          >
-            <span class="nf-icon" aria-hidden="true">{ICON_PIN}</span>
-          </button>
-        </Show>
-        <Show when={props.onCreateThread && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Create Thread" aria-label="Create thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
-            <span class="nf-icon" aria-hidden="true">{ICON_THREAD}</span>
-          </button>
-        </Show>
-        <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
-          <button class="message-action-btn" title="Create Poll" aria-label="Create poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
-            <span class="nf-icon" aria-hidden="true">{ICON_PLUS_BOX}</span>
-          </button>
-        </Show>
-        <Show when={props.onForward && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Forward" aria-label="Forward message" onClick={() => props.onForward?.(props.message.serverMessageId!)}>
-            <span class="nf-icon" aria-hidden="true">{ICON_FORWARD}</span>
-          </button>
-        </Show>
-        <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Edit" aria-label="Edit message" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
-            <span class="nf-icon" aria-hidden="true">{ICON_PENCIL}</span>
-          </button>
-        </Show>
-        <Show when={props.onDelete && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
-            <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
-          </button>
-        </Show>
-        <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Remove as moderator" aria-label="Remove message as moderator" onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}>
-            <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
-          </button>
-        </Show>
+              <span class="nf-icon" aria-hidden="true">{ICON_PIN}</span>
+            </button>
+          </Show>
+          <Show when={props.onCreateThread && props.message.serverMessageId}>
+            <button class="message-action-btn" title="Create Thread" aria-label="Create thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
+              <span class="nf-icon" aria-hidden="true">{ICON_THREAD}</span>
+            </button>
+          </Show>
+          <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
+            <button class="message-action-btn" title="Create Poll" aria-label="Create poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
+              <span class="nf-icon" aria-hidden="true">{ICON_PLUS_BOX}</span>
+            </button>
+          </Show>
+          <Show when={props.onForward && props.message.serverMessageId}>
+            <button class="message-action-btn" title="Forward" aria-label="Forward message" onClick={() => props.onForward?.(props.message.serverMessageId!)}>
+              <span class="nf-icon" aria-hidden="true">{ICON_FORWARD}</span>
+            </button>
+          </Show>
+          <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
+            <button class="message-action-btn" title="Edit" aria-label="Edit message" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
+              <span class="nf-icon" aria-hidden="true">{ICON_PENCIL}</span>
+            </button>
+          </Show>
+          <Show when={props.onDelete && props.message.serverMessageId}>
+            <button class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
+              <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+            </button>
+          </Show>
+          <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
+            <button class="message-action-btn" title="Remove as moderator" aria-label="Remove message as moderator" onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}>
+              <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+            </button>
+          </Show>
+        </div>
       </div>
 
       <Show
