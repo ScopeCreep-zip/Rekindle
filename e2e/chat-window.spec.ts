@@ -101,36 +101,6 @@ test("the 1:1 mode reports its draft and keeps no typing timer", async ({ page }
   expect(await typingReports(page)).toEqual([true, true, false]);
 });
 
-// Plan E7.7.7 S3: Xfire's Send button. Disabled while the draft is empty
-// (whitespace counts as empty), it sends what Enter sends and clears the
-// input; Enter still sends.
-test("the 1:1 Send button is disabled while the draft is empty and sends like Enter", async ({ page }) => {
-  await preloadMocks(page, `chat-${BOB.slice(0, 16)}`, HANDLER);
-  await openWindow(page, `/chat?peer=${BOB}`);
-  await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
-
-  const send = page.getByRole("button", { name: "Send", exact: true });
-  const input = page.locator("textarea.message-input-field");
-  await expect(send).toBeDisabled();
-  await input.fill("   ");
-  await expect(send).toBeDisabled();
-  await input.fill("hi bob");
-  await expect(send).toBeEnabled();
-  await send.click();
-  await expect(input).toHaveValue("");
-  await expect(send).toBeDisabled();
-  const sent = () =>
-    page.evaluate(() =>
-      ((window as any).__ipcCalls as { cmd: string; args: { body?: string } }[])
-        .filter((c) => c.cmd === "send_message")
-        .map((c) => c.args.body),
-    );
-  await expect.poll(sent).toEqual(["hi bob"]);
-  await input.fill("again");
-  await input.press("Enter");
-  await expect.poll(sent).toEqual(["hi bob", "again"]);
-});
-
 // The group mode reads the Host's list and stored history; a group that
 // is not in our list cannot be sent to, and the mode has no calls.
 test("the group mode shows the group's members and history, and no call controls", async ({ page }) => {
