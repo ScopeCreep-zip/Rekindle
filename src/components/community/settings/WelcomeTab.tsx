@@ -1,9 +1,10 @@
-import { Component, For, Show, createEffect, createSignal } from "solid-js";
+import { Component, For, createEffect, createSignal } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import { commands } from "../../../ipc/commands";
 import type { OnboardingConfig, WelcomeChannelEntry, WelcomeScreen } from "../../../ipc/commands/dto";
 import { handleLoadOnboardingConfig, handleLoadWelcomeScreen } from "../../../actions/community/profile";
 import { addToast } from "../../../stores/toast.store";
+import OnboardingQuestionsEditor from "./OnboardingQuestionsEditor";
 
 interface WelcomeTabProps {
   community: Community;
@@ -197,11 +198,12 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
           )}
         </For>
       </fieldset>
-      <Show when={flow().questions.length > 0 || flow().guideSteps.length > 0}>
-        <div class="settings-hint">
-          {flow().questions.length} question(s) and {flow().guideSteps.length} guide step(s) are kept as set.
-        </div>
-      </Show>
+      <OnboardingQuestionsEditor
+        flow={flow()}
+        setFlow={setFlow}
+        channels={channels()}
+        roles={props.community.roles}
+      />
       <div class="settings-list-actions">
         <button
           class="form-btn-primary"

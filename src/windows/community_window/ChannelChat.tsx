@@ -4,6 +4,7 @@ import MessageInput from "../../components/chat/MessageInput";
 import { communityState } from "../../stores/community.store";
 import { authState } from "../../stores/auth.store";
 import { removalText } from "../../utils/removal_text";
+import { hasPermission, servedPermissions, MANAGE_MESSAGES } from "../../utils/permissions";
 import {
   handleBulkDeleteChannelMessages,
   handleRetryChannelMessage,
@@ -15,6 +16,7 @@ import {
   handleClosePoll,
   handleEditChannelMessage,
   handleDeleteChannelMessage,
+  handleAdminDeleteChannelMessage,
 } from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
@@ -23,6 +25,9 @@ import type { CommunityVm } from "./useCommunityWindow";
 /// inside the voice CallStage's collapsible chat column.
 const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
   const vm = props.vm;
+  // The Host serves our permissions; it re-checks MANAGE_MESSAGES on the request.
+  const canManageMessages = () =>
+    hasPermission(servedPermissions(communityState.communities[vm.selectedCommunityId()]), MANAGE_MESSAGES);
   return (
     <>
       <MessageList
@@ -67,6 +72,9 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         onDelete={(messageId) => {
           void handleDeleteChannelMessage(vm.selectedChannelId(), messageId);
         }}
+        onAdminDelete={canManageMessages()
+          ? (messageId) => void handleAdminDeleteChannelMessage(vm.selectedCommunityId(), vm.selectedChannelId(), messageId)
+          : undefined}
         onVotePoll={(pollId, selectedAnswers) =>
           handleVotePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId, selectedAnswers)
         }

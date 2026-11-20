@@ -7,6 +7,7 @@ import {
   handleSetChannelTopic,
   handleSetChannelForumTags,
   handleReorderChannels,
+  handleMoveChannel,
   handleSetNotificationOverride,
   handleSetChannelNotificationSound,
 } from "../../../../actions/community.actions";
@@ -224,6 +225,28 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
           </button>
         </Show>
       </div>
+      {/* Category (plan E7.15): the Host's ChannelMove, reviewed by the intent gate. */}
+      <Show when={props.canManageChannels}>
+        <div class="channel-settings-inline">
+          <label class="channel-settings-inline-row">
+            <span class="form-field-label">Category</span>
+            <select
+              class="form-select"
+              value={props.channel.categoryId ?? ""}
+              onChange={(e) => void handleMoveChannel(
+                cid(),
+                props.channel.id,
+                e.currentTarget.value === "" ? null : e.currentTarget.value,
+              )}
+            >
+              <option value="">No category</option>
+              <For each={props.community.categories}>
+                {(cat) => <option value={cat.id}>{cat.name}</option>}
+              </For>
+            </select>
+          </label>
+        </div>
+      </Show>
       {/* Slowmode label / inline editor */}
       <Show when={props.canManageChannels}>
         <div class="channel-settings-inline">

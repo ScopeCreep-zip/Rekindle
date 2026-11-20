@@ -34,6 +34,7 @@ interface MessageListProps {
   onOpenThread?: (thread: Thread) => void;
   onEdit?: (messageId: string, currentBody: string) => void;
   onDelete?: (messageId: string) => void;
+  onAdminDelete?: (messageId: string) => void;
   onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
   onClosePoll?: (pollId: string) => void;
   onForward?: (messageId: string) => void;
@@ -223,6 +224,7 @@ const MessageList: Component<MessageListProps> = (props) => {
               onOpenThread={!selectionActive() && thread() ? () => props.onOpenThread?.(thread()!) : undefined}
               onEdit={selectionActive() ? undefined : props.onEdit}
               onDelete={selectionActive() ? undefined : props.onDelete}
+              onAdminDelete={selectionActive() ? undefined : props.onAdminDelete}
               onVotePoll={selectionActive() ? undefined : props.onVotePoll}
               onClosePoll={selectionActive() ? undefined : props.onClosePoll}
               onForward={selectionActive() ? undefined : props.onForward}

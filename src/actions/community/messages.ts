@@ -82,6 +82,22 @@ export async function handleDeleteChannelMessage(
   }
 }
 
+/** A moderator removes someone else's message (plan E7.15): the Host's
+ *  `ChannelMessageAdminDelete` checks `MANAGE_MESSAGES` and the intent gate
+ *  reviews it. */
+export async function handleAdminDeleteChannelMessage(
+  communityId: string,
+  channelId: string,
+  messageId: string,
+): Promise<void> {
+  try {
+    await commands.adminDeleteChannelMessage(communityId, channelId, messageId);
+  } catch (e) {
+    console.error("Failed to remove message:", e);
+    addToast(typeof e === "string" ? e : "Failed to remove message", "error");
+  }
+}
+
 export async function handleRetryChannelMessage(
   channelId: string,
   messageId: number,

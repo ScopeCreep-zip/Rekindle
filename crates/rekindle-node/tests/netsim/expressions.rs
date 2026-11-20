@@ -81,3 +81,58 @@ async fn expression_upload_seen() {
     .await;
     assert!(fetched, "the other member reads the emoji's bytes");
 }
+
+/// Emoji delete (plan E7.15 S2, the settings Emoji tab's request): the
+/// Host holds `ExpressionDelete` for review, runs it once confirmed, and
+/// neither member lists the emoji afterwards.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn expression_delete_is_reviewed_then_gone_on_both_members() {
+    let community = Community::of(2, 166).await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    let key = community.anchor.clone();
+
+    let id = community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::EmojiUpload {
+                community: key.clone(),
+                name: "doomed".into(),
+                bytes: PNG_1X1.to_vec(),
+                kind: ImageKind::Png,
+            },
+        )))
+        .await;
+    let id: String = serde_json::from_value(id).expect("an expression id");
+    let seen = eventually(&community.sim, LIMIT, || async {
+        expressions(&community.nodes[1], &key)
+            .await
+            .iter()
+            .any(|e| e.expression_id == id)
+    })
+    .await;
+    assert!(seen, "the other member lists the emoji first");
+
+    community.nodes[0]
+        .call_held(IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::ExpressionDelete {
+                community: key.clone(),
+                expression_id: id.clone(),
+            },
+        )))
+        .await
+        .expect("the delete runs once confirmed");
+    assert!(
+        !expressions(&community.nodes[0], &key)
+            .await
+            .iter()
+            .any(|e| e.expression_id == id),
+        "the deleter no longer lists the emoji"
+    );
+    let gone = eventually(&community.sim, LIMIT, || async {
+        !expressions(&community.nodes[1], &key)
+            .await
+            .iter()
+            .any(|e| e.expression_id == id)
+    })
+    .await;
+    assert!(gone, "the other member no longer lists the emoji");
+}

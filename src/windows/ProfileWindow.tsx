@@ -16,6 +16,7 @@ import SafetyNumberPanel from "../components/profile/SafetyNumberPanel";
 import VerifiedBadge from "../components/profile/VerifiedBadge";
 import { useSafetyNumber } from "../hooks/useSafetyNumber";
 import GameIcon from "../components/game/GameIcon";
+import FriendNicknameField from "../components/profile/FriendNicknameField";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -139,6 +140,9 @@ const ProfileWindow: Component = () => {
             </For>
           </Show>
         </div>
+        <Show when={friend()}>
+          {(f) => <FriendNicknameField publicKey={publicKey} nickname={f().nickname ?? null} />}
+        </Show>
         <Show when={friend()}>
           <div class="profile-actions">
             <button

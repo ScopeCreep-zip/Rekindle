@@ -35,6 +35,9 @@ interface MessageBubbleProps {
   onOpenThread?: () => void;
   onEdit?: (messageId: string, currentBody: string) => void;
   onDelete?: (messageId: string) => void;
+  /** A moderator's removal of someone else's message (the Host's
+   *  `ChannelMessageAdminDelete`, reviewed by the intent gate). */
+  onAdminDelete?: (messageId: string) => void;
   onCreatePoll?: (messageId: string) => void;
   onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
   onClosePoll?: (pollId: string) => void;
@@ -275,6 +278,11 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         </Show>
         <Show when={props.onDelete && props.message.serverMessageId}>
           <button class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
+            <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+          </button>
+        </Show>
+        <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
+          <button class="message-action-btn" title="Remove as moderator" aria-label="Remove message as moderator" onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}>
             <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
           </button>
         </Show>

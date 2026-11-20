@@ -14,6 +14,7 @@ import {
   CREATE_INSTANT_INVITE,
   VIEW_AUDIT_LOG,
   VIEW_INSIGHTS,
+  MANAGE_EXPRESSIONS,
 } from "../../ipc/permissions";
 import OverviewTab from "./settings/OverviewTab";
 import ChannelsTab from "./settings/ChannelsTab";
@@ -27,6 +28,7 @@ import AutoModTab from "./settings/AutoModTab";
 import AnalyticsTab from "./settings/AnalyticsTab";
 import PrivacyTab from "./settings/PrivacyTab";
 import WelcomeTab from "./settings/WelcomeTab";
+import ExpressionsTab from "./settings/ExpressionsTab";
 
 // Declared in ./settings/types.ts and re-exported here for existing
 // import sites. This file renders every tab and each tab's props name
@@ -40,7 +42,7 @@ interface CommunitySettingsModalProps {
   onClose: () => void;
 }
 
-type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics" | "privacy" | "welcome";
+type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics" | "privacy" | "welcome" | "expressions";
 
 const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
@@ -58,9 +60,11 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INSTANT_INVITE));
   const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
   const canViewInsights = createMemo(() => hasPermission(myPerms(), VIEW_INSIGHTS));
+  const canManageExpressions = createMemo(() => hasPermission(myPerms(), MANAGE_EXPRESSIONS));
 
   const isAdmin = createMemo(() =>
     canManageCommunity() || canManageChannels() || canManageRoles() || canKick() || canBan()
+      || canManageExpressions()
   );
 
   const tabs = createMemo((): { id: TabId; label: string }[] => {
@@ -84,6 +88,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
     if (canManageRoles()) base.push({ id: "roles", label: "Roles" });
     if (canBan()) base.push({ id: "bans", label: "Bans" });
     if (canManageCommunity()) base.push({ id: "welcome", label: "Welcome" });
+    if (canManageExpressions()) base.push({ id: "expressions", label: "Emoji" });
     if (canManageCommunity()) base.push({ id: "automod", label: "AutoMod" });
     if (canViewInsights()) base.push({ id: "analytics", label: "Analytics" });
     // Merge audit log into security for admins; show standalone if only audit log perm
@@ -156,6 +161,9 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         </Show>
         <Show when={activeTab() === "welcome"}>
           <WelcomeTab community={props.community} />
+        </Show>
+        <Show when={activeTab() === "expressions"}>
+          <ExpressionsTab community={props.community} />
         </Show>
         <Show when={activeTab() === "privacy"}>
           <PrivacyTab community={props.community} />

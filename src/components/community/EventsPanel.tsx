@@ -3,6 +3,7 @@ import { communityState } from "../../stores/community.store";
 import type { EventRsvp, ScheduledEvent } from "../../stores/community.store";
 import { formatEventCountdown } from "../../utils/time";
 import { hasPermission, servedPermissions, MANAGE_EVENTS } from "../../utils/permissions";
+import EventAttendees from "./EventAttendees";
 import { handleRsvpEvent, handleDeleteEvent, handleCancelEvent, handleLoadEvents } from "../../actions/community.actions";
 
 interface EventsPanelProps {
@@ -129,6 +130,7 @@ const EventCard: Component<{
           </span>
         </div>
       </Show>
+      <EventAttendees communityId={props.communityId} eventId={props.event.id} />
       <Show when={canManage()}>
         <div class="event-card-actions">
           <Show when={isInteractable() && props.onEditEvent}>
