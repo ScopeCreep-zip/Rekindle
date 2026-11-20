@@ -95,8 +95,14 @@ mod tests {
     fn a_newer_seq_replaces_and_an_older_or_equal_one_changes_nothing() {
         let mut cache = MemberRouteCache::default();
         assert!(cache.observe(&member(1), 3, b"A".to_vec()));
-        assert!(!cache.observe(&member(1), 3, b"B".to_vec()), "a repeated seq");
-        assert!(!cache.observe(&member(1), 2, b"B".to_vec()), "a lagging replica");
+        assert!(
+            !cache.observe(&member(1), 3, b"B".to_vec()),
+            "a repeated seq"
+        );
+        assert!(
+            !cache.observe(&member(1), 2, b"B".to_vec()),
+            "a lagging replica"
+        );
         assert_eq!(cache.get(&member(1)), Some(&b"A"[..]));
         assert!(cache.observe(&member(1), 4, b"B".to_vec()));
         assert_eq!(cache.get(&member(1)), Some(&b"B"[..]));
@@ -110,7 +116,10 @@ mod tests {
         cache.observe(&member(1), 5, b"A".to_vec());
         assert_eq!(cache.forget(&member(1)), Some(b"A".to_vec()));
         assert_eq!(cache.get(&member(1)), None);
-        assert!(cache.observe(&member(1), 5, b"A".to_vec()), "re-read after forget");
+        assert!(
+            cache.observe(&member(1), 5, b"A".to_vec()),
+            "re-read after forget"
+        );
     }
 
     #[test]

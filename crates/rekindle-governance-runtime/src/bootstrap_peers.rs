@@ -191,15 +191,17 @@ where
             continue;
         }
         let (member, record) = (&candidate.pseudonym, &candidate.record);
-        let route =
-            match crate::member_routes::read_member_route(port, anchor, record, member).await {
-                Ok(Some(route)) => route,
-                Ok(None) => continue,
-                Err(error) => {
-                    tracing::info!(community = anchor, %error, "a member's route was refused");
-                    continue;
-                }
-            };
+        let pin = crate::member_routes::RoutePin::Joined(&candidate.owner);
+        let route = match crate::member_routes::read_member_route(port, anchor, record, member, pin)
+            .await
+        {
+            Ok(Some(route)) => route,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::info!(community = anchor, %error, "a member's route was refused");
+                continue;
+            }
+        };
         asked.fetch_add(1, Ordering::Relaxed);
         let answer = match call(route, request.to_vec()).await {
             Ok(reply) => read_reply(&reply, anchor),

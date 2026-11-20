@@ -69,15 +69,17 @@ impl FilesDeps for HostFiles {
         .map_err(|e| FilesError::Slowmode(e.to_string()))
     }
 
+    /// The member's `M`/6 route from the Host's cache (plan E3.4 S4), on
+    /// both modes.
     fn peer_route_blob(&self, community_id: &str, target_pseudonym: &str) -> Option<Vec<u8>> {
-        (self.gov.online_members(community_id).into_iter())
-            .find(|m| m.pseudonym_hex == target_pseudonym)
-            .map(|m| m.route_blob)
+        self.gov.cached_member_route(community_id, target_pseudonym)
     }
 
+    /// The members with a cached route whose beat shows them present
+    /// (plan E3.4 S4).
     fn online_member_pseudonyms(&self, community_id: &str) -> Vec<String> {
-        let mut members: Vec<String> = (self.gov.online_members(community_id).into_iter())
-            .map(|m| m.pseudonym_hex)
+        let mut members: Vec<String> = (self.gov.reachable_members(community_id).into_iter())
+            .map(|(pseudonym, _)| pseudonym)
             .collect();
         members.sort_unstable();
         members

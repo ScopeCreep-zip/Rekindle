@@ -19,6 +19,7 @@ use rekindle_outbox::{
 use rekindle_types::channel_keys::KeyScope;
 
 use super::{HostOutbox, OutboxSlot, StreamSender};
+use crate::host::adapters::governance::member_route_cache::MemberCallError;
 use crate::host::adapters::governance::HostGovernance;
 
 /// The reason a row whose member departed settles with.
@@ -94,11 +95,22 @@ impl StreamSender for MekTransferSender {
             scope: sealed_key.scope,
             mek: &key,
         };
-        let route = self
+        // The joiner's current `M`/6 route (plan E3.4 S4: one re-read
+        // after `RouteUnusable`); the route its `BootstrapRequest` sent
+        // while its record holds none yet.
+        let call = match self
             .0
-            .member_route(community, member)
-            .unwrap_or_else(|| route.to_vec());
-        match self.0.call_member(&route, sealed.to_vec()).await {
+            .call_member_hex(community, member, sealed.to_vec())
+            .await
+        {
+            Err(MemberCallError::NoRoute) => self
+                .0
+                .call_member(route, sealed.to_vec())
+                .await
+                .map_err(MemberCallError::Call),
+            other => other,
+        };
+        match call {
             Ok(reply) if rekindle_mek_rotation::is_mek_transfer_ack(&expected, &reply) => {
                 tracing::info!(
                     community,

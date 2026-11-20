@@ -67,6 +67,7 @@ mod mek_recovery;
 mod mek_request;
 pub use mek_request::MekRequest;
 mod member_events;
+pub(crate) mod member_route_cache;
 mod membership;
 mod membership_roster;
 mod membership_route;

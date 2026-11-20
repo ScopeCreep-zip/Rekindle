@@ -86,28 +86,21 @@ impl MekDistributeDeps for MekAdapter {
         community_id: &str,
         exclude_pseudonym: Option<&str>,
     ) -> Vec<RotationRecipient> {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
+        // Every roster member with an `M`/6 route, from the Host (plan
+        // E3.4 S4; E3.5 moves the whole rotation into the Host).
+        let Ok(governance) = state_helpers::host_governance(&self.state) else {
             return Vec::new();
         };
         let excluded = exclude_pseudonym.unwrap_or_default();
-        community
-            .gossip
-            .as_ref()
-            .map(|gossip| {
-                gossip
-                    .online_members
-                    .iter()
-                    .filter(|(pseudonym, member)| {
-                        !member.route_blob.is_empty() && pseudonym.as_str() != excluded
-                    })
-                    .map(|(pseudonym, member)| RotationRecipient {
-                        pseudonym_hex: pseudonym.clone(),
-                        route_blob: member.route_blob.clone(),
-                    })
-                    .collect()
+        governance
+            .routed_members(community_id)
+            .into_iter()
+            .filter(|(pseudonym, _)| pseudonym != excluded)
+            .map(|(pseudonym_hex, route_blob)| RotationRecipient {
+                pseudonym_hex,
+                route_blob,
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     async fn broadcast_to_peer(

@@ -251,6 +251,17 @@ async fn read_pinned(
     member: &MemberRecordRef<'_>,
     subkey: u32,
 ) -> Result<Option<Vec<u8>>, String> {
+    Ok(read_pinned_value(port, member, subkey)
+        .await?
+        .map(|value| value.data))
+}
+
+/// [`read_pinned`] with the value's DHT seq.
+pub(crate) async fn read_pinned_value(
+    port: &dyn RecordPort,
+    member: &MemberRecordRef<'_>,
+    subkey: u32,
+) -> Result<Option<rekindle_records::port::RecordValue>, String> {
     let lease = port
         .acquire(member.record, None, OpenIntent::Check)
         .await
@@ -268,7 +279,7 @@ async fn read_pinned(
         Err(e) => Err(format!("member record owner: {e}")),
     };
     port.release(lease).await;
-    Ok(read?.map(|value| value.data))
+    read
 }
 
 fn scope<'a>(member: &MemberRecordRef<'a>) -> RecordScope<'a> {

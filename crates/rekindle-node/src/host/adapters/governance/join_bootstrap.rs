@@ -113,12 +113,21 @@ impl HostGovernance {
     ) -> Option<Vec<u8>> {
         use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
         let inviter = self.inviter_of(community, inviter_record)?;
+        let owner = self
+            .ctx
+            .communities
+            .governance_state(community)?
+            .members
+            .get(&inviter)?
+            .member_record_owner
+            .clone();
         let port = self.record_port().ok()?;
         let read = rekindle_governance_runtime::member_routes::read_member_route(
             &*port,
             community,
             inviter_record,
             &inviter,
+            rekindle_governance_runtime::member_routes::RoutePin::Joined(&owner),
         )
         .await;
         match read {

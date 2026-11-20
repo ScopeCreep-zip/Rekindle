@@ -152,16 +152,36 @@ impl HostGovernance {
         target_route_blob: &[u8],
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, GovernanceRuntimeError> {
-        let node = self.transport()?;
-        node.caller()
-            .call_community_envelope(
-                &node
-                    .import_route(target_route_blob)
-                    .map_err(|e| GovernanceRuntimeError::Adapter(format!("import route: {e}")))?,
-                payload,
-            )
+        self.call_route_typed(target_route_blob, payload)
             .await
             .map_err(|e| GovernanceRuntimeError::Adapter(format!("app_call: {e}")))
+    }
+
+    /// [`Self::app_call_peer_impl`] keeping the transport's verdict on the
+    /// route (plan E3.4 S4): a blob that does not import or a peer route the
+    /// transport reports `RouteUnusable` (C9.1a; the transport has already
+    /// invalidated its import, `broadcast/send.rs` `send_failure`) is
+    /// [`RouteCallError::Unusable`], so a member call re-reads `M`/6.
+    pub(super) async fn call_route_typed(
+        &self,
+        target_route_blob: &[u8],
+        payload: Vec<u8>,
+    ) -> Result<Vec<u8>, RouteCallError> {
+        let node = self
+            .transport()
+            .map_err(|e| RouteCallError::Failed(e.to_string()))?;
+        let target = node
+            .import_route(target_route_blob)
+            .map_err(|_| RouteCallError::Unusable)?;
+        node.caller()
+            .call_community_envelope(&target, payload)
+            .await
+            .map_err(|e| match e {
+                rekindle_transport::TransportError::RouteUnusable { .. } => {
+                    RouteCallError::Unusable
+                }
+                other => RouteCallError::Failed(other.to_string()),
+            })
     }
 
     // ---------- Hydration ----------
@@ -353,4 +373,15 @@ impl HostGovernance {
             );
         }
     }
+}
+
+/// How a call to a peer route failed.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum RouteCallError {
+    /// The blob did not import or the transport reported `RouteUnusable`.
+    #[error("the route is unusable")]
+    Unusable,
+    /// Any other failure.
+    #[error("{0}")]
+    Failed(String),
 }

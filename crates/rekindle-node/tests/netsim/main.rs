@@ -74,6 +74,7 @@ mod logout_unlock;
 mod logs;
 mod mek_transfer_retry;
 mod member_events;
+mod member_routes;
 mod mod_report;
 mod moderation;
 mod moderator_delete;

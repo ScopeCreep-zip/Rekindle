@@ -1,10 +1,11 @@
 //! The ring's `HeadAdvanced` hints (plan E3.2 S7, `evidence/slot-integrity.md`
 //! §4.3/§4.5), on both modes. A ring watcher that sees a member record it
 //! watches advance subkey 1 (the beat, on a status transition only), 2 (the
-//! op-log head), 3 (the frontier) or 4 (the outbox) gossips a hint its
-//! pseudonym signs; 6 is reserved until E3.4. A recipient drops a hint from
-//! a non-member, then reads the writer-signed value; a frontier that moved
-//! is the ring arm's frontier read and rebuild.
+//! op-log head), 3 (the frontier), 4 (the outbox) or 6 (the routes, plan
+//! E3.4 S4) gossips a hint its pseudonym signs. A recipient drops a hint
+//! from a non-member, then reads the writer-signed value; a frontier that
+//! moved is the ring arm's frontier read and rebuild, a route goes into the
+//! member route cache.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_codec::member_record::head_advanced::{
@@ -15,7 +16,7 @@ use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_presence::community::Observed;
 use rekindle_records::port::OpenIntent;
-use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX, ROUTES};
 use rekindle_types::id::PseudonymKey;
 
 use super::moderation::pseudonym;
@@ -25,7 +26,11 @@ use crate::host::adapters::presence::view;
 impl HostGovernance {
     /// The author whose member record is `record`, from the merged member
     /// set or, for the creator, the genesis cert.
-    fn author_of_record(&self, community_id: &str, record: &str) -> Option<PseudonymKey> {
+    pub(super) fn author_of_record(
+        &self,
+        community_id: &str,
+        record: &str,
+    ) -> Option<PseudonymKey> {
         let state = self.ctx.communities.governance_state(community_id)?;
         state
             .members
@@ -135,7 +140,7 @@ impl HostGovernance {
     /// A gossiped hint, in §4.3's order: dropped unless its relayer is a
     /// member, then unless `admit` (the relayer's gossip rate limit) takes
     /// it, then unless it verifies under the relayer, names a relayed
-    /// subkey (1, 2, 3 or 4) and a member's own record. `true` when it passed
+    /// subkey (1, 2, 3, 4 or 6) and a member's own record. `true` when it passed
     /// (the transport relays it); the record is then read off the relay
     /// path, and the seq recorded is the one read, never the hint's
     /// (register S7l).
@@ -201,7 +206,7 @@ impl HostGovernance {
     /// Read the hinted subkey from the DHT (writer-signed, forced through
     /// the hinted read, VU3) and record the seq that read returned; act
     /// only when it moved: a beat (1) goes into the beat view (plan E3.4
-    /// S3); a
+    /// S3), a route (6) into the member route cache (plan E3.4 S4); a
     /// frontier (3), the writer's commit point, is caught up and the
     /// community rebuilt when the read stored a head we lacked
     /// ([`HostGovernance::refresh_member_record`], which shares the ring
@@ -225,6 +230,8 @@ impl HostGovernance {
             self.read_member_beat(community_id, record, lease, now)
                 .await
                 .map(|(seq, _)| seq)
+        } else if hint.subkey == ROUTES {
+            self.read_member_routes(community_id, record, lease).await
         } else {
             self.read_hinted_value(lease, hint.subkey)
                 .await

@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use rekindle_codec::member_record::head_advanced::RELAYED_SUBKEYS;
 use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontiers};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
-use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX, ROUTES};
 
 use super::HostGovernance;
 
@@ -23,7 +23,8 @@ use super::HostGovernance;
 /// (it would read the frontier before it moved). The outbox (4) goes to
 /// the channel outbox reader (plan E3.3, `read_channel_outbox`) and the
 /// `HeadAdvanced` relay; the beat (1) to the beat view (plan E3.4 S3,
-/// `ring_beat_moved`) and the relay, and neither ever rebuilds (register 2026-10-24, "S8 sequencing"). The card (0), the history ad
+/// `ring_beat_moved`) and the relay; the routes (6) to the member route
+/// cache (plan E3.4 S4, `ring_route_moved`) and the relay; none of them ever rebuilds (register 2026-10-24, "S8 sequencing"). The card (0), the history ad
 /// (5) and the reserved subkeys have no ring consumer.
 pub(crate) fn rebuilds_on(subkeys: &[u32]) -> bool {
     subkeys.contains(&FRONTIER)
@@ -53,6 +54,9 @@ impl HostGovernance {
         let beat_moved = subkeys.contains(&BEAT) && self.ring_beat_moved(&community, record).await;
         if subkeys.contains(&OUTBOX) {
             self.read_channel_outbox(&community, record).await;
+        }
+        if subkeys.contains(&ROUTES) {
+            self.ring_route_moved(&community, record).await;
         }
         if rebuilds_on(subkeys) {
             // The change names the frontier: it is force-read (VU3's hint

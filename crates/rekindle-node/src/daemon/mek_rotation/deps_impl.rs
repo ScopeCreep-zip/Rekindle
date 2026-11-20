@@ -79,17 +79,16 @@ impl MekDistributeDeps for DaemonMekAdapter {
         community_id: &str,
         exclude_pseudonym: Option<&str>,
     ) -> Vec<RotationRecipient> {
+        // Every roster member with an `M`/6 route (plan E3.4 S4), not only
+        // those gossip presence shows online.
         let excluded = exclude_pseudonym.unwrap_or_default();
         self.governance()
-            .online_members(community_id)
+            .routed_members(community_id)
             .into_iter()
-            // A member with no route blob cannot be app_called, so
-            // keeping them would only add a guaranteed failure to the
-            // delivery loop.
-            .filter(|m| !m.route_blob.is_empty() && m.pseudonym_hex != excluded)
-            .map(|m| RotationRecipient {
-                pseudonym_hex: m.pseudonym_hex,
-                route_blob: m.route_blob,
+            .filter(|(pseudonym, _)| pseudonym != excluded)
+            .map(|(pseudonym_hex, route_blob)| RotationRecipient {
+                pseudonym_hex,
+                route_blob,
             })
             .collect()
     }

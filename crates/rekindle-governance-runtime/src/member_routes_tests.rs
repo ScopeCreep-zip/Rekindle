@@ -11,7 +11,7 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::SessionStatus;
 
-use super::{read_member_route, write_routes};
+use super::{read_member_route, write_routes, RoutePin};
 use crate::member_card::{publish_own_record, OwnProfile, OwnRecord};
 
 #[tokio::test]
@@ -42,12 +42,12 @@ async fn a_joiner_reads_the_inviters_route_after_it_was_replaced() {
     publish_own_record(&*pool, &own, &profile, &[3; 32], async { Ok(()) })
         .await
         .unwrap();
-    let read = read_member_route(&*pool, "community", &record, &inviter).await;
+    let read = read_member_route(&*pool, "community", &record, &inviter, RoutePin::Invite).await;
     assert_eq!(read.unwrap().as_deref(), Some(&b"route-A"[..]));
 
     // Route A dies; the route publisher writes route B.
     write_routes(&*pool, &own, b"route-B", 2_000).await.unwrap();
-    let read = read_member_route(&*pool, "community", &record, &inviter).await;
+    let read = read_member_route(&*pool, "community", &record, &inviter, RoutePin::Invite).await;
     assert_eq!(
         read.unwrap().as_deref(),
         Some(&b"route-B"[..]),
@@ -56,10 +56,51 @@ async fn a_joiner_reads_the_inviters_route_after_it_was_replaced() {
 
     // Signed by another pseudonym, or read for another community: refused.
     let other = PseudonymKey(SigningKey::from_bytes(&[6; 32]).verifying_key().to_bytes());
-    assert!(read_member_route(&*pool, "community", &record, &other)
-        .await
-        .is_err());
-    assert!(read_member_route(&*pool, "elsewhere", &record, &inviter)
-        .await
-        .is_err());
+    assert!(
+        read_member_route(&*pool, "community", &record, &other, RoutePin::Invite)
+            .await
+            .is_err()
+    );
+    assert!(
+        read_member_route(&*pool, "elsewhere", &record, &inviter, RoutePin::Invite)
+            .await
+            .is_err()
+    );
+}
+
+/// A member's route is read only from the record its `MemberJoined` pins
+/// (plan E3.4 S4): the right owner reads it, another owner is refused.
+#[tokio::test]
+async fn a_joined_read_refuses_a_record_of_another_owner() {
+    let dht = Arc::new(MemDht::default());
+    let pool = pool_on(Arc::clone(&dht));
+    let (lease, record, writer) =
+        RecordPort::create(&*pool, &rekindle_records::schema::member_record(), None)
+            .await
+            .unwrap();
+    let owner = pool.owner_of(lease).unwrap();
+    pool.release(lease).await;
+    let pseudonym = SigningKey::from_bytes(&[5; 32]);
+    let member = PseudonymKey(pseudonym.verifying_key().to_bytes());
+    let own = OwnRecord {
+        community_id: "community",
+        record: &record,
+        writer: &writer,
+        pseudonym: &pseudonym,
+    };
+    write_routes(&*pool, &own, b"route-A", 1_000).await.unwrap();
+    let read = read_member_route(
+        &*pool,
+        "community",
+        &record,
+        &member,
+        RoutePin::Joined(&owner),
+    );
+    assert_eq!(read.await.unwrap().as_deref(), Some(&b"route-A"[..]));
+    let wrong = RoutePin::Joined("VLD0:other-owner");
+    assert!(
+        read_member_route(&*pool, "community", &record, &member, wrong)
+            .await
+            .is_err()
+    );
 }

@@ -97,12 +97,10 @@ impl HostGovernance {
                 request.requester_pseudonym
             ));
         }
-        let Some(route_blob) = online
-            .into_iter()
-            .find(|r| r.pseudonym_hex == request.requester_pseudonym)
-            .map(|r| r.route_blob)
-        else {
-            return Err("requester not in online peer set".into());
+        // The requester's route from its `M`/6 (plan E3.4 S4), on both
+        // modes: cached, else a read pinned to its `MemberJoined`.
+        let Some(route_blob) = self.member_route(community_id, &requester).await else {
+            return Err("the requester's member record holds no route".into());
         };
         let mek = Self::requested_key(deps, community_id, scope, request.needed_generation)
             .await
@@ -207,14 +205,6 @@ impl HostGovernance {
     /// ([`Self::is_key_reader`]); `false` for a malformed pseudonym.
     pub(crate) fn member_reads_keys(&self, community_id: &str, member_hex: &str) -> bool {
         pseudonym(member_hex).is_some_and(|p| self.is_key_reader(community_id, &p))
-    }
-
-    /// The route `member_hex`'s presence in `community_id` carries now.
-    pub(crate) fn member_route(&self, community_id: &str, member_hex: &str) -> Option<Vec<u8>> {
-        self.online_members_impl(community_id)
-            .into_iter()
-            .find(|m| m.pseudonym_hex == member_hex && !m.route_blob.is_empty())
-            .map(|m| m.route_blob)
     }
 
     /// The key of `scope` at exactly `generation` we hold in memory: the

@@ -6,7 +6,7 @@
 //! does, under `domains::HEAD_ADVANCED`.
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX, ROUTES};
 use rekindle_types::domains;
 
 use super::{check_len, check_size, put_lp, sign, verify};
@@ -16,9 +16,12 @@ use crate::CodecError;
 
 /// The `M` subkeys a hint names: the beat (status transitions only), the
 /// op-log head, the frontier (the writer's commit point, written after the
-/// head, which a reader catches up from) and the outbox. Subkey 6
-/// (`MemberRoutes`) is reserved until E3.4.
-pub const RELAYED_SUBKEYS: [u32; 4] = [BEAT, GOV_HEAD, FRONTIER, OUTBOX];
+/// head, which a reader catches up from), the outbox and the routes
+/// (`MemberRoutes`, plan E3.4 S4), relayed on every change: a route changes
+/// only when Veilid replaces it, so unlike the beat it needs no transition
+/// filter. The card (0), the history ad (5) and the reserved subkeys are
+/// never hinted.
+pub const RELAYED_SUBKEYS: [u32; 5] = [BEAT, GOV_HEAD, FRONTIER, OUTBOX, ROUTES];
 
 /// Largest encoded hint.
 pub const HEAD_ADVANCED_MAX_BYTES: usize = 512;
@@ -158,14 +161,29 @@ mod tests {
         );
     }
 
+    /// The routes (6) are hinted (plan E3.4 S4): a member's new route
+    /// reaches the mesh by the ring's hint, not by gossip presence.
     #[test]
-    fn another_relayer_or_community_fails_and_subkey_6_is_reserved() {
+    fn a_routes_hint_round_trips() {
+        let relayer = SigningKey::from_bytes(&[3; 32]);
+        let bytes = hint(ROUTES).encode("c", &relayer).unwrap();
+        let public = relayer.verifying_key().to_bytes();
+        assert_eq!(
+            decode_head_advanced(&bytes, "c", &public).unwrap(),
+            hint(ROUTES)
+        );
+    }
+
+    #[test]
+    fn another_relayer_or_community_fails_and_unrelayed_subkeys_fail() {
         let relayer = SigningKey::from_bytes(&[3; 32]);
         let bytes = hint(OUTBOX).encode("c", &relayer).unwrap();
         let other = SigningKey::from_bytes(&[4; 32]).verifying_key().to_bytes();
         assert!(decode_head_advanced(&bytes, "c", &other).is_err());
         let public = relayer.verifying_key().to_bytes();
         assert!(decode_head_advanced(&bytes, "d", &public).is_err());
-        assert!(hint(6).encode("c", &relayer).is_err());
+        for subkey in [0, 5, 7] {
+            assert!(hint(subkey).encode("c", &relayer).is_err(), "{subkey}");
+        }
     }
 }

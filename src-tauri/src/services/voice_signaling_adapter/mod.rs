@@ -164,18 +164,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     fn online_voice_members(&self, community_id: &str) -> Vec<(String, Vec<u8>)> {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
-            return Vec::new();
-        };
-        let Some(gossip) = community.gossip.as_ref() else {
-            return Vec::new();
-        };
-        gossip
-            .online_members
-            .iter()
-            .map(|(pk, m)| (pk.clone(), m.route_blob.clone()))
-            .collect()
+        // Roster ∩ `M`/6 ∩ beat present, from the Host (plan E3.4 S4).
+        crate::state_helpers::host_governance(&self.state)
+            .map(|governance| governance.reachable_members(community_id))
+            .unwrap_or_default()
     }
 
     fn decode_channel_id(&self, channel_id: &str) -> Option<[u8; 16]> {

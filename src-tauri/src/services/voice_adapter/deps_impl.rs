@@ -88,20 +88,18 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn voice_peers(&self, community_id: &str, _channel_id: &str) -> Vec<VoicePeer> {
-        let communities = self.state.communities.read();
-        let Some(community) = communities.get(community_id) else {
+        // The members the Host reaches: roster ∩ `M`/6 ∩ beat present
+        // (plan E3.4 S4; E4.1 moves voice into the Host).
+        let Ok(governance) = crate::state_helpers::host_governance(&self.state) else {
             return Vec::new();
         };
-        let Some(gossip) = community.gossip.as_ref() else {
-            return Vec::new();
-        };
-        gossip
-            .online_members
-            .iter()
-            .map(|(pseudonym, member)| VoicePeer {
-                pseudonym: pseudonym.clone(),
+        governance
+            .reachable_members(community_id)
+            .into_iter()
+            .map(|(pseudonym, route_blob)| VoicePeer {
+                pseudonym,
                 display_name: String::new(),
-                route_blob: Some(member.route_blob.clone()),
+                route_blob: Some(route_blob),
             })
             .collect()
     }

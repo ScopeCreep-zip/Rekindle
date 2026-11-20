@@ -164,6 +164,10 @@ impl HostGovernance {
                 if let Some(lease) = lease {
                     host.read_member_beat(&community, &record, lease, None)
                         .await;
+                    // Its routes (`M`/6) into the member route cache (plan
+                    // E3.4 S4): a ring member's later changes arrive by
+                    // the watch.
+                    host.read_member_routes(&community, &record, lease).await;
                 }
             }
         });
