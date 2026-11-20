@@ -9,7 +9,7 @@
 //! by role (`ListBGCG`), which [`super::colours::NAMES`] reads; Onyx calls
 //! the same list ground `LBGCG`, StealthX `MainListBackColor`, Xglow
 //! `Base`. So after the name table, every reference whose component and
-//! attribute hold a role in [`ROLES`] sets that token, unless the name
+//! attribute hold a role in [`COMPONENT_ROLES`] sets that token, unless the name
 //! table already set it (a role-named colour wins) or an earlier reference
 //! did (file order).
 //!
@@ -35,11 +35,11 @@ use rekindle_types::dto::skin::TokenValue;
 
 use super::super::tree::Node;
 use super::super::walk;
+use super::colours::absolute;
+use super::{descendants, ColourRow};
 use crate::access;
 use crate::registry::{entry_in, Base, ENTRIES};
 use rekindle_types::dto::skin::{SkinBase, SkinContrast};
-use super::colours::absolute;
-use super::{descendants, ColourRow};
 
 /// A selection ground whose channels spread less than this is neutral.
 pub const NEUTRAL_SPREAD: i16 = 24;
@@ -49,7 +49,7 @@ const LISTS: &[&str] = &["BuddyView", "XfireView"];
 
 /// `(components, attribute, token)`; `color_selected`/`color_selectedtext`
 /// are the accent ([`accent`]). Attributes compare ASCII-case-insensitively.
-pub const ROLES: &[(&[&str], &str, &str)] = &[
+pub const COMPONENT_ROLES: &[(&[&str], &str, &str)] = &[
     (LISTS, "colorgroup", "bg.primary"),
     (LISTS, "color", "bg.primary"),
     (&["ChatArea", "GroupChatArea"], "colorgroup", "bg.panel"),
@@ -84,14 +84,14 @@ pub struct Ref {
 
 /// What one reference did, for the `NOTICE`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Applied {
+pub struct RefsApplied {
     pub reference: Ref,
     pub token: &'static str,
     /// `None`: set; else why the token kept its value.
     pub kept: Option<&'static str>,
 }
 
-impl Applied {
+impl RefsApplied {
     /// The `NOTICE` line.
     #[must_use]
     pub fn describe(&self) -> String {
@@ -123,7 +123,11 @@ pub fn xml_refs(components: &[Node]) -> Vec<Ref> {
         for (k, v) in &c.attrs {
             push(k.to_ascii_lowercase(), v);
         }
-        for t in c.children.iter().filter(|n| n.name.eq_ignore_ascii_case("Text")) {
+        for t in c
+            .children
+            .iter()
+            .filter(|n| n.name.eq_ignore_ascii_case("Text"))
+        {
             for (k, v) in &t.attrs {
                 push(format!("text.{}", k.to_ascii_lowercase()), v);
             }
@@ -137,7 +141,7 @@ fn is(list: &[&str], name: &str) -> bool {
 }
 
 fn role(r: &Ref) -> Option<&'static str> {
-    ROLES
+    COMPONENT_ROLES
         .iter()
         .find(|(cs, a, _)| is(cs, &r.component) && r.attr.eq_ignore_ascii_case(a))
         .map(|(_, _, t)| *t)
@@ -170,8 +174,11 @@ fn accent<'r>(refs: &'r [Ref], rows: &[ColourRow]) -> Vec<(&'static str, &'r Ref
 /// else the registry's (one value on every base).
 fn danger(tokens: &BTreeMap<String, TokenValue>) -> [u8; 3] {
     let registry = || {
-        entry_in(ENTRIES, "danger.fill")
-            .map(|e| e.defaults.on(Base::of(SkinBase::Dark, SkinContrast::Standard)).value())
+        entry_in(ENTRIES, "danger.fill").map(|e| {
+            e.defaults
+                .on(Base::of(SkinBase::Dark, SkinContrast::Standard))
+                .value()
+        })
     };
     match tokens.get("danger.fill").cloned().or_else(registry) {
         Some(TokenValue::Color { r, g, b, .. }) => [r, g, b],
@@ -179,14 +186,14 @@ fn danger(tokens: &BTreeMap<String, TokenValue>) -> [u8; 3] {
     }
 }
 
-/// Sets every role token [`ROLES`] and [`accent`] find in `refs` that
+/// Sets every role token [`COMPONENT_ROLES`] and [`accent`] find in `refs` that
 /// neither the name table (`tokens` as read) nor an earlier reference set;
 /// a referenced shift (a negative channel) sets nothing.
 pub fn apply(
     refs: &[Ref],
     rows: &[ColourRow],
     tokens: &mut BTreeMap<String, TokenValue>,
-) -> Vec<Applied> {
+) -> Vec<RefsApplied> {
     let named: Vec<String> = tokens.keys().cloned().collect();
     let mut out = Vec::new();
     let found = accent(refs, rows)
@@ -202,7 +209,7 @@ pub fn apply(
             Some("an earlier reference set it")
         } else if let Ok(rgb) = absolute(&row.name, "a referenced colour", row.value) {
             if token == "accent.fill" && !access::danger_failures(danger(tokens), rgb).is_empty() {
-                out.push(Applied {
+                out.push(RefsApplied {
                     reference: r.clone(),
                     token,
                     kept: Some("D1-D3: this hue as a fill would read as danger"),
@@ -214,7 +221,7 @@ pub fn apply(
         } else {
             Some("a signed image shift, not a colour")
         };
-        out.push(Applied {
+        out.push(RefsApplied {
             reference: r.clone(),
             token,
             kept,

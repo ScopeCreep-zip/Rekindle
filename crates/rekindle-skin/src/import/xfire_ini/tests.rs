@@ -434,5 +434,8 @@ fn the_sections_naming_a_colour_give_its_role_and_the_accent() {
     assert_eq!(r.tokens["bg.secondary"], walk::color([0, 0, 0]));
     // `BuddyViewBG` names the list ground's role itself: it wins over `Base`.
     assert_eq!(r.tokens["bg.primary"], walk::color([16, 16, 16]));
-    assert!(r.refs.iter().any(|a| a.token == "bg.primary" && a.kept.is_some()));
+    assert!(r
+        .refs
+        .iter()
+        .any(|a| a.token == "bg.primary" && a.kept.is_some()));
 }

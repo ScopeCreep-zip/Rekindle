@@ -95,7 +95,7 @@ pub struct Read {
     /// Which layout the tree is.
     pub layout: Layout,
     /// The colour roles the components name ([`refs`]).
-    pub refs: Vec<refs::Applied>,
+    pub refs: Vec<refs::RefsApplied>,
 }
 
 /// The two XML-era layouts.

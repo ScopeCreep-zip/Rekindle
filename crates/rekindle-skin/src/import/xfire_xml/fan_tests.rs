@@ -225,7 +225,9 @@ fn the_components_naming_a_colour_give_its_role_and_the_accent() {
     }
     // A chromatic selection ground is itself the accent fill.
     let blue = t["themes.xml"].clone();
-    let blue = String::from_utf8(blue).unwrap().replace("RGBA(25,25,25,0)", "RGBA(20,90,160,0)");
+    let blue = String::from_utf8(blue)
+        .unwrap()
+        .replace("RGBA(25,25,25,0)", "RGBA(20,90,160,0)");
     t.insert("themes.xml".into(), blue.into_bytes());
     let r = read(&t).unwrap();
     assert_eq!(r.tokens["accent.fill"], walk::color([20, 90, 160]));

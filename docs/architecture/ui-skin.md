@@ -155,10 +155,12 @@ the registry's pairs, the composited tints, the status dots on every row
 they sit on, and the body text on the selected list rows (accent 30 % and
 25 % over the window, `access/pairs.rs` `SELECTED_ROWS`, WCAG 1.4.3). A
 role tag's text colour is worked out by the Host
-(`crates/rekindle-skin/src/role_tag.rs`) against every built-in skin and
-the skin this device shows, so an imported skin is covered too; when the
-shown skin changes, the Host re-sends the roles whose colours change with
-it (`RolesChanged`). This block is an excerpt:
+(`crates/rekindle-skin/src/role_tag.rs`) against the base's token skin and
+the skin this device shows, a built-in or an imported one, never against
+skins the device does not show (they pushed every tag towards white once
+the packs' own grounds were imported, plan E7.7.7); when the shown skin
+changes, the Host re-sends the roles whose colours change with it
+(`RolesChanged`). This block is an excerpt:
 the full set, with the per-base values and the reserved `--sec-*` tokens,
 is `src/styles/global.css`. The grey
 hierarchy (`#0a → #14 → #1a → #1e → #25 → #2a`) gives subtle elevation

@@ -7,13 +7,22 @@
 //! `.role-tag-default`: `bg.dark`, `bg.panel`, `bg.primary`). A chosen
 //! colour need not read on those grounds, so the Host sends, per skin
 //! base, the colour the name is drawn in: the role's own where it reaches
-//! 4.5:1 on the tag over every such ground of every built-in skin on that
-//! base (the token skin and each pack's applied variant) and of the skin
-//! this device shows ([`SkinGrounds`], so an imported skin is covered
-//! too), else the smallest Oklab-lightness move of it that does
+//! 4.5:1 on the tag over every such ground of that base's token skin and
+//! of the skin this device shows ([`SkinGrounds`], a built-in or an
+//! imported one), else the smallest Oklab-lightness move of it that does
 //! ([`walk::lightness_walk`], the editor's walk), towards white on a dark
 //! base and black on a light one. The tint stays the role's own colour, so
 //! the tag still shows it.
+//!
+//! The colour is worked out per device: every window of a device shows the
+//! one skin the Host serves, and the Host re-sends the roles whose colours
+//! change when that skin changes (`rekindle-node` `host/skin/shown.rs`,
+//! from no skin too), so the grounds of skins the device does not show are
+//! not checked. Checking every built-in's (plan E7.2 slice 3, before the
+//! Host knew the shown skin) pushed every tag towards white once the packs'
+//! own grounds were imported (XGlow's buddy list is #494949, plan E7.7.7).
+//! The token skin stays in the set so a tag drawn before the first
+//! resolution reads on the default skin.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -21,7 +30,6 @@ use std::sync::OnceLock;
 use rekindle_types::dto::community::RoleTagColours;
 use rekindle_types::dto::skin::{SkinBase, SkinContrast, SkinError, TokenValue};
 
-use crate::builtin::PACKS;
 use crate::colour;
 use crate::import::walk;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
@@ -47,7 +55,7 @@ fn push_grounds(out: &mut Vec<[u8; 3]>, resolved: &[(&TokenEntry, TokenValue)]) 
     out.extend(GROUNDS.iter().filter_map(|id| rgb_of(resolved, id)));
 }
 
-/// Every role-tag ground of every built-in skin applied on `base`.
+/// The role-tag grounds of the token skin on `base`.
 fn collect(base: SkinBase) -> Vec<[u8; 3]> {
     let mut out = Vec::new();
     push_grounds(
@@ -58,16 +66,6 @@ fn collect(base: SkinBase) -> Vec<[u8; 3]> {
             &BTreeMap::new(),
         ),
     );
-    for pack in &PACKS {
-        // The embedded packs are canonical (`builtin::tests::
-        // every_pack_is_canonical_and_the_default_is_one`).
-        let p = package::read(pack.bytes).expect("a built-in pack reads");
-        let m = manifest::parse(&p).expect("a built-in manifest parses");
-        let (v, resolved) = serve::active_resolved(&p, &m).expect("a built-in variant resolves");
-        if v.base == base {
-            push_grounds(&mut out, &resolved);
-        }
-    }
     out
 }
 
@@ -97,7 +95,7 @@ impl SkinGrounds {
     }
 }
 
-/// The role-tag grounds of `base`, worked out once per process.
+/// The token skin's role-tag grounds on `base`, worked out once per process.
 #[must_use]
 pub fn grounds(base: SkinBase) -> &'static [[u8; 3]] {
     static DARK: OnceLock<Vec<[u8; 3]>> = OnceLock::new();
@@ -128,7 +126,7 @@ fn pack([r, g, b]: [u8; 3]) -> u32 {
 }
 
 /// The text colour of a tag of `colour` (`0xRRGGBB`) on `base`, over the
-/// built-in skins' grounds and the shown skin's (`shown`) when it is on
+/// token skin's grounds and the shown skin's (`shown`) when it is on
 /// `base`.
 #[must_use]
 pub fn readable(colour: u32, base: SkinBase, shown: Option<&SkinGrounds>) -> u32 {
@@ -168,10 +166,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_base_has_grounds_from_the_token_skin_and_the_packs() {
-        // The token skin alone gives three per base.
-        assert!(grounds(SkinBase::Dark).len() > GROUNDS.len());
-        assert!(grounds(SkinBase::Light).len() >= GROUNDS.len());
+    fn every_base_has_the_token_skin_grounds() {
+        assert_eq!(grounds(SkinBase::Dark).len(), GROUNDS.len());
+        assert_eq!(grounds(SkinBase::Light).len(), GROUNDS.len());
     }
 
     #[test]
@@ -182,10 +179,11 @@ mod tests {
 
     #[test]
     fn the_shown_skin_grounds_join_its_base_only() {
-        // An imported dark skin with a lighter ground (#404040; no built-in
-        // dark skin has one above #1e1e1e): #c0c0c0 reads on every built-in
-        // dark ground but is 3.5:1 on its tag over #404040, so it moves;
-        // the light base's colour is not touched by a dark skin.
+        // A shown dark skin with a lighter ground (#404040; the token
+        // skin's are #0a-#1e): #c0c0c0 reads on the token skin's grounds,
+        // and a pack the device does not show (XGlow's #494949 buddy list)
+        // does not move it, but it is 3.5:1 on its tag over #404040, so it
+        // moves; the light base's colour is not touched by a dark skin.
         let colour = 0x00c0_c0c0;
         assert_eq!(readable(colour, SkinBase::Dark, None), colour);
         let shown = SkinGrounds {

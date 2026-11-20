@@ -97,7 +97,7 @@ pub struct Read {
     pub controls: Vec<Control>,
     pub tally: StateTally,
     /// The colour roles the sections name ([`refs`]).
-    pub refs: Vec<refs::Applied>,
+    pub refs: Vec<refs::RefsApplied>,
 }
 
 /// The names `comments` credit: the text after the last ` by ` of each
