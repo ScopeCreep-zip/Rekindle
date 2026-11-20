@@ -82,9 +82,12 @@
     min-width: 0;
   }
 
+  /* A name shrinks no further than five characters' width (four letters and
+     the ellipsis, or a short name such as "You" with its comma), so every
+     member stays identifiable; the full list is the element's title. */
   .group-chat-member {
     flex: 0 1 auto;
-    min-width: 0;
+    min-width: 5ch;
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     max-width: 100%;
