@@ -1,7 +1,7 @@
 //! Calls made after, or queued behind, a successful `close` see the closed
 //! connection deterministically (finding AQ1). A separate test binary: these
-//! tests hold calls in flight on purpose, which the process-wide call watch
-//! installed by the unit tests would count.
+//! tests hold calls in flight on purpose, which a process-wide call watch
+//! would count (that watch's test, `call_watch.rs`, is its own binary too).
 
 use rekindle_asql::{Connection, Error};
 
