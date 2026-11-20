@@ -45,6 +45,7 @@ mod event_rsvps;
 mod member_routes_loop;
 pub(crate) use community_info::InfoEdit;
 pub(crate) use create_leave::ForgetError;
+pub(crate) use invites::invite_fingerprint;
 pub(crate) use views::removal_display;
 pub(crate) mod channel_admin;
 pub(crate) mod channel_message_ops;

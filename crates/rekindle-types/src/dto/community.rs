@@ -39,6 +39,9 @@ pub struct CommunityInviteView {
     pub created_at: Option<i64>,
     /// The invite link, for invites this identity minted.
     pub url: Option<String>,
+    /// The fingerprint the joiner's review shows for this invite, so the
+    /// two can be compared out of band like a safety number (plan E7.15).
+    pub fingerprint: String,
 }
 
 /// A community this identity just created (plan E3.1 D1b).

@@ -102,6 +102,66 @@
     min-width: 100px;
   }
 
+  /* The max-uses field and its visible label (E7.15) */
+  .invite-max-uses {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .invite-max-uses .form-field-label {
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  /* An invite's fingerprint, compared with the joiner's review (E7.15) */
+  .invite-fingerprint {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    overflow-wrap: anywhere;
+  }
+
+  .invite-fingerprint code {
+    font-family: monospace;
+    color: var(--color-xfire-text);
+    user-select: text;
+  }
+
+  /* ─── Welcome tab: welcome screen and onboarding (E7.15) ─── */
+
+  .settings-subheading {
+    margin: 12px 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-xfire-text);
+  }
+
+  .welcome-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 4px 0;
+    flex: 1;
+  }
+
+  .welcome-channel-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .welcome-emoji {
+    width: 48px;
+  }
+
+  .welcome-defaults {
+    margin: 6px 0;
+    padding: 4px 8px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+  }
+
   /* Created invite link display */
   .invite-link-display {
     display: flex;

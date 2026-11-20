@@ -8,6 +8,15 @@ use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
 use super::HostGovernance;
 
+/// The fingerprint of an invite to the community `anchor`: what the
+/// joiner's review names (`intent_select`'s `CommunityJoin`) and what the
+/// inviter's invite list shows beside each invite, one function so the two
+/// screens can be compared out of band like a safety number (plan E7.15).
+/// `None` when `anchor` is not a record key.
+pub(crate) fn invite_fingerprint(anchor: &str) -> Option<String> {
+    rekindle_crypto::identity::record_key_fingerprint(anchor)
+}
+
 /// The canonical link for an invite: all three parts the joiner needs.
 fn invite_url(anchor: &str, secrets_record_key: &str, code: &str) -> Result<String, String> {
     use rekindle_types::key_format;
@@ -87,10 +96,12 @@ impl HostGovernance {
 
     /// The live invites of `community`, by invite id: merged governance
     /// with no revocation and not expired, each with the use count the
-    /// merge gates (the joins that redeemed it), ours with their link.
+    /// merge gates (the joins that redeemed it), ours with their link,
+    /// and every one with the fingerprint the joiner's review shows.
     ///
     /// # Errors
-    /// Our stored invites could not be read.
+    /// Our stored invites could not be read, or `community` is not a
+    /// record key.
     pub(crate) async fn list_invites(
         &self,
         community: &str,
@@ -109,6 +120,8 @@ impl HostGovernance {
         let Some(gov) = self.ctx.communities.governance_state(community) else {
             return Ok(Vec::new());
         };
+        let fingerprint =
+            invite_fingerprint(community).ok_or("the community id is not a record key")?;
         let mut live: Vec<_> = gov
             .invites
             .iter()
@@ -129,6 +142,7 @@ impl HostGovernance {
                     created_at: own.map(|o| o.created_at),
                     url: own
                         .and_then(|o| invite_url(community, &inv.secrets_record_key, &o.code).ok()),
+                    fingerprint: fingerprint.clone(),
                 }
             })
             .collect())

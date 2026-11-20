@@ -1,6 +1,7 @@
 //! Plan E3.1 D3: an onboarding prompt grants a role on both members, a later
 //! unassignment wins, and a member without `MANAGE_COMMUNITY` cannot set
-//! the prompt.
+//! the prompt; a welcome screen set through the request the GUI's Welcome
+//! tab sends is what the member reads (plan E7.15).
 
 use std::time::Duration;
 
@@ -8,6 +9,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_ipc::protocol::{LifecycleRequest, MemberRequest, SettingsRequest};
 use rekindle_types::dto::onboarding::{
     OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto, OnboardingQuestionDto,
+    WelcomeScreenDto,
 };
 use rekindle_types::presence::OnboardingAnswer;
 
@@ -172,6 +174,43 @@ async fn onboarding_role_assignment() {
             })
             .await,
             "the later unassignment wins on node {i}"
+        );
+    }
+}
+
+/// The Welcome tab's save (`set_welcome_screen` → `WelcomeScreenSet`) and the
+/// joiner's read (`get_welcome_screen` → `WelcomeScreenGet`): the screen the
+/// creator sets is the one the member reads, and the creator reads it back.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn welcome_screen_round_trip() {
+    let community = Community::of(2, 84).await;
+    let key = community.anchor.clone();
+    let screen = WelcomeScreenDto {
+        description: "LAN party HQ".into(),
+        channels: Vec::new(),
+    };
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::WelcomeScreenSet {
+                community: key.clone(),
+                screen: screen.clone(),
+            },
+        )))
+        .await;
+    for i in [0, 1] {
+        assert!(
+            eventually(&community.sim, Duration::from_secs(60), || async {
+                let read = community.nodes[i]
+                    .ok(IpcRequest::Community(CommunityRequest::Settings(
+                        SettingsRequest::WelcomeScreenGet {
+                            community: key.clone(),
+                        },
+                    )))
+                    .await;
+                serde_json::from_value::<WelcomeScreenDto>(read).ok() == Some(screen.clone())
+            })
+            .await,
+            "node {i} reads the welcome screen that was set"
         );
     }
 }

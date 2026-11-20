@@ -307,6 +307,9 @@
 '.channel-create-category-btn' = { on = ["--color-xfire-bg-dark"] }
 '.channel-create-category-btn:hover' = { on = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"] }
 '.settings-list-date' = { on = ["--color-xfire-bg-panel"] }
+'.invite-fingerprint' = { on = ["--color-xfire-bg-panel"] }
+'.invite-fingerprint code' = { on = ["--color-xfire-bg-panel"] }
+'.settings-subheading' = { on = ["--color-xfire-bg-panel"] }
 '.audit-log-action' = { on = ["--color-xfire-bg-secondary"] }
 '.audit-log-meta' = { on = ["--color-xfire-bg-secondary"] }
 '.audit-log-actor' = { on = ["--color-xfire-bg-secondary"] }

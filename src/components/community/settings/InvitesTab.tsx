@@ -37,14 +37,14 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     }
   });
 
-  async function copyToClipboard(text: string, hash?: string): Promise<void> {
+  async function copyToClipboard(text: string, hash?: string, what = "Invite link"): Promise<void> {
     try {
       await navigator.clipboard.writeText(text);
       if (hash) {
         setCopiedHash(hash);
         setTimeout(() => setCopiedHash(null), 2000);
       }
-      addToast("Invite link copied!", "success");
+      addToast(`${what} copied!`, "success");
     } catch {
       addToast("Failed to copy — select and copy manually", "error");
     }
@@ -90,14 +90,17 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
           }
         >
           <div class="invite-create-form">
-            <input
-              class="form-input"
-              type="number"
-              min="1"
-              placeholder="1"
-              value={maxUses()}
-              onInput={(e) => setMaxUses(e.currentTarget.value)}
-            />
+            <label class="invite-max-uses">
+              <span class="form-field-label">Max uses</span>
+              <input
+                class="form-input"
+                type="number"
+                min="1"
+                placeholder="1"
+                value={maxUses()}
+                onInput={(e) => setMaxUses(e.currentTarget.value)}
+              />
+            </label>
             <select
               class="form-select"
               value={expiresIn()}
@@ -149,6 +152,9 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
       <Show when={invites().length > 0} fallback={
         <div class="settings-hint">No invites yet.</div>
       }>
+        <div class="settings-hint">
+          Ask the person joining to check this matches what their screen shows.
+        </div>
         <For each={invites()}>
           {(invite) => (
             <div class="settings-list-item">
@@ -161,6 +167,9 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                     return member?.displayName ?? (invite.createdBy.slice(0, 8) + "...");
                   })()}
                 </span>
+                <span class="invite-fingerprint">
+                  Fingerprint: <code>{invite.fingerprint}</code>
+                </span>
                 <span class="settings-list-date">
                   Uses: {invite.uses} / {invite.maxUses}
                   {" \u00B7 "}
@@ -171,6 +180,12 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 </span>
               </div>
               <div class="settings-list-actions">
+                <button
+                  class="form-btn-secondary"
+                  onClick={() => copyToClipboard(invite.fingerprint, undefined, "Fingerprint")}
+                >
+                  Copy Fingerprint
+                </button>
                 <Show when={invite.url}>
                   {(url) => (
                   <button

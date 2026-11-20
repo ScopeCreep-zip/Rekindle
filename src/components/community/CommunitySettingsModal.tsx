@@ -26,6 +26,7 @@ import AuditLogTab from "./settings/AuditLogTab";
 import AutoModTab from "./settings/AutoModTab";
 import AnalyticsTab from "./settings/AnalyticsTab";
 import PrivacyTab from "./settings/PrivacyTab";
+import WelcomeTab from "./settings/WelcomeTab";
 
 // Declared in ./settings/types.ts and re-exported here for existing
 // import sites. This file renders every tab and each tab's props name
@@ -39,7 +40,7 @@ interface CommunitySettingsModalProps {
   onClose: () => void;
 }
 
-type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics" | "privacy";
+type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics" | "privacy" | "welcome";
 
 const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
@@ -82,6 +83,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
     if (canCreateInvite() || canManageCommunity()) base.push({ id: "invites", label: "Invites" });
     if (canManageRoles()) base.push({ id: "roles", label: "Roles" });
     if (canBan()) base.push({ id: "bans", label: "Bans" });
+    if (canManageCommunity()) base.push({ id: "welcome", label: "Welcome" });
     if (canManageCommunity()) base.push({ id: "automod", label: "AutoMod" });
     if (canViewInsights()) base.push({ id: "analytics", label: "Analytics" });
     // Merge audit log into security for admins; show standalone if only audit log perm
@@ -151,6 +153,9 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         </Show>
         <Show when={activeTab() === "analytics"}>
           <AnalyticsTab community={props.community} />
+        </Show>
+        <Show when={activeTab() === "welcome"}>
+          <WelcomeTab community={props.community} />
         </Show>
         <Show when={activeTab() === "privacy"}>
           <PrivacyTab community={props.community} />

@@ -142,6 +142,7 @@
     "createdAt": 1700000000000,
     "createdBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "expiresAt": null,
+    "fingerprint": "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
     "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
     "maxUses": 5,
     "url": "rekindle://invite/VLD0:g/VLD0:s/0b0b",

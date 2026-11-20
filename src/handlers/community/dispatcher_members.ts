@@ -4,7 +4,6 @@ import type {
   CommunitySubscriptionEvent,
   GovernanceEvent,
 } from "../../ipc/channels/community_subscription_events";
-import type { InviteDto } from "../../ipc/commands/dto";
 import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
@@ -317,26 +316,14 @@ function applyGovernance(g: GovernanceEvent): void {
   }
 
   if ("inviteCreated" in g) {
-    const inv = g.inviteCreated;
-    const invite: InviteDto = {
-      inviteId: inv.inviteId,
-      codeHash: inv.codeHash,
-      createdBy: inv.createdBy,
-      maxUses: inv.maxUses,
-      uses: inv.uses,
-      expiresAt: inv.expiresAt,
-      createdAt: inv.createdAt,
-      url: null,
-    };
-    // Deduplicate: the optimistic insert from handleCreateCommunityInvite
-    // may already be present.
-    setCommunityState("communityInvites", inv.community, (prev) => {
-      const existing = prev ?? [];
-      if (existing.some((x) => x.codeHash === invite.codeHash)) return existing;
-      // Replace the "pending" optimistic entry if present
-      const filtered = existing.filter((x) => x.codeHash !== "pending");
-      return [invite, ...filtered];
-    });
+    // Re-read the Host's list, which carries each invite's fingerprint
+    // (plan E7.15), when this window shows the invites.
+    const community = g.inviteCreated.community;
+    if (communityState.communityInvites[community] !== undefined) {
+      void commands.listCommunityInvites(community)
+        .then((invites) => setCommunityState("communityInvites", community, invites))
+        .catch((e) => console.error("[Community] Failed to re-list invites:", e));
+    }
     return;
   }
 

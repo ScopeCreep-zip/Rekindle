@@ -1,6 +1,5 @@
 import { commands } from "../../ipc/commands";
 import { setCommunityState } from "../../stores/community.store";
-import { authState } from "../../stores/auth.store";
 import { addToast } from "../../stores/toast.store";
 import type { InviteCreated, InviteDto } from "../../ipc/commands/dto";
 
@@ -11,18 +10,9 @@ export async function handleCreateCommunityInvite(
 ): Promise<InviteCreated | null> {
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
-    // Optimistic store update — the raw code is only available to the creator
-    const newInvite: InviteDto = {
-      inviteId: result.inviteId,
-      codeHash: result.codeHash,
-      createdBy: authState.publicKey ?? "",
-      maxUses: maxUses ?? 1, // the shell mints an empty field single-use
-      uses: 0,
-      expiresAt: result.expiresAt,
-      createdAt: Date.now(),
-      url: result.url,
-    };
-    setCommunityState("communityInvites", communityId, (prev) => [newInvite, ...(prev ?? [])]);
+    // The Host's list is the one source of each invite's fields, its
+    // fingerprint among them (plan E7.15): never built here.
+    await handleListCommunityInvites(communityId);
     return result;
   } catch (err) {
     console.error("[Community] Failed to create invite:", err);

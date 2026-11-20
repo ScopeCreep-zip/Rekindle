@@ -52,6 +52,9 @@ export interface InviteDto {
   createdAt: number | null;
   /** The invite link, only for invites this identity minted. */
   url: string | null;
+  /** The fingerprint the joiner's review shows for this invite (the Host's
+   *  `invite_fingerprint`), compared out of band like a safety number. */
+  fingerprint: string;
 }
 
 // ── Friends (plan E2.1; `rekindle_types::dto::friends`; direct messages are `dto_dm.ts`) ──

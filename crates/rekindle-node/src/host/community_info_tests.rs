@@ -63,6 +63,55 @@ async fn a_revoke_names_a_live_invite() {
     host.shutdown().await.unwrap();
 }
 
+/// A community whose id is a record key, as every real one is, with the
+/// merged governance `gov`.
+const KEYED_ANCHOR: &str = "VLD0:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA";
+
+async fn seed_keyed_community(host: &crate::host::Host, owner: &str, gov: GovernanceState) {
+    host.ctx.communities.map().write().insert(
+        KEYED_ANCHOR.into(),
+        crate::host::community::CommunityState {
+            member_registry_key: Some("registry".into()),
+            governance_state: Some(gov),
+            ..crate::host::community::CommunityState::new(KEYED_ANCHOR)
+        },
+    );
+    let owner = owner.to_owned();
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            rekindle_db::repo::communities::insert_if_absent(
+                conn,
+                &owner,
+                &rekindle_db::repo::communities::NewCommunity {
+                    id: KEYED_ANCHOR,
+                    name: "C",
+                    joined_at: 1,
+                    dht_owner_keypair: None,
+                    my_pseudonym_key: "",
+                    mek_generation: 0,
+                    member_registry_key: Some("registry"),
+                    my_subkey_index: None,
+                },
+            )?;
+            rekindle_db::repo::community_invites::insert(
+                conn,
+                &owner,
+                KEYED_ANCHOR,
+                OWN_CODE,
+                "ours",
+                7,
+            )
+        })
+        .await
+        .unwrap();
+}
+
+/// Our stored code of the invite `ours`: 32 hex, so its link is built.
+const OWN_CODE: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c";
+
 /// The list is merged governance in invite-id order, each invite with the
 /// use count the merge gates (`InviteState.uses`, plan E3.2 S8: the invite
 /// gate counts the joins that redeemed it), and our link and mint time on
@@ -72,7 +121,6 @@ async fn the_invite_list_is_in_id_order_with_our_counts() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
-    seed_registry_community(&host, &owner).await;
     let mut gov = GovernanceState::default();
     let mut theirs = invite("theirs", 2);
     theirs.uses = 2;
@@ -80,28 +128,47 @@ async fn the_invite_list_is_in_id_order_with_our_counts() {
     ours.uses = 3;
     gov.invites.insert([2; 16], theirs);
     gov.invites.insert([1; 16], ours);
-    host.ctx
-        .communities
-        .map()
-        .write()
-        .get_mut("c1")
-        .unwrap()
-        .governance_state = Some(gov);
-    let o = owner.clone();
-    host.ctx
-        .db
-        .current()
-        .unwrap()
-        .call(move |conn| {
-            rekindle_db::repo::community_invites::insert(conn, &o, "c1", "CODE", "ours", 7)
-        })
-        .await
-        .unwrap();
-    let list = host.governance().list_invites("c1").await.unwrap();
+    seed_keyed_community(&host, &owner, gov).await;
+    let list = host.governance().list_invites(KEYED_ANCHOR).await.unwrap();
     let ids: Vec<_> = list.iter().map(|i| i.invite_id.clone()).collect();
     assert_eq!(ids, vec!["01".repeat(16), "02".repeat(16)]);
     assert_eq!((list[0].uses, list[0].created_at), (3, Some(7)));
     assert_eq!((list[1].uses, list[1].created_at), (2, None));
     assert_eq!(list[1].created_by, "02".repeat(32));
+    host.shutdown().await.unwrap();
+}
+
+/// The inviter's list shows, beside each live invite, the fingerprint the
+/// joiner's review names for that invite's link (plan E7.15), so the two
+/// screens can be compared out of band like a safety number.
+#[tokio::test]
+async fn the_invite_list_shows_the_fingerprint_the_joiners_review_names() {
+    use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse, LifecycleRequest};
+    use rekindle_ipc::{Caller, HostApi};
+    use rekindle_types::intent::Subject;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    let mut gov = GovernanceState::default();
+    let mut ours = invite("ours", 1);
+    ours.secrets_record_key = "VLD0:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA".into();
+    gov.invites.insert([1; 16], ours);
+    seed_keyed_community(&host, &owner, gov).await;
+    let list = host.governance().list_invites(KEYED_ANCHOR).await.unwrap();
+    let url = list[0].url.clone().expect("our invite carries its link");
+    let join = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityJoin { invite: url },
+    ));
+    let review = match host.call(Caller::shell(), join).await {
+        IpcResponse::IntentRequired(review) => review,
+        other => panic!("a join link is held for review, not {other:?}"),
+    };
+    assert_eq!(
+        review.subject,
+        Subject::Named {
+            name: list[0].fingerprint.clone()
+        }
+    );
     host.shutdown().await.unwrap();
 }
