@@ -17,12 +17,18 @@ pub(crate) fn check_file_sizes(root: &Path) -> Result<()> {
 
     // `css` is in here because a 7,926-line xfire-theme.css was the one
     // source file the ceiling could not see. It is now split under
-    // src/styles/theme/, and this keeps it that way.
+    // src/styles/theme/, and this keeps it that way. Likewise the test
+    // code: `e2e` (the real-app suite and walk, where geometry-page.ts
+    // reached 655 lines and walk/rows.ts 631) and all of `src-tauri` (its
+    // tests/, where capability_policy.rs reached 622, build.rs and
+    // build_support/), and the `contract` adapter tests.
     for (subdir, exts) in [
         ("src", &["ts", "tsx", "css"][..]),
-        ("src-tauri/src", &["rs"][..]),
+        ("src-tauri", &["rs"][..]),
         ("crates", &["rs"][..]),
         ("xtask", &["rs"][..]),
+        ("e2e", &["ts", "mjs"][..]),
+        ("contract", &["rs"][..]),
     ] {
         for path in walk_source_files(&root.join(subdir), exts)? {
             let lines = std::fs::read_to_string(&path)

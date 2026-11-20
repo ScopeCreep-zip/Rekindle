@@ -58,24 +58,6 @@ function settingsRow(id: string, item: string): Row {
   };
 }
 
-/**
- * After logout the login window opens on the last account's unlock screen
- * (`.lock-name`, "← Switch Account", LoginWindow.tsx:211-212), not on the
- * picker: wait for either, then go back to the picker.
- */
-async function toPicker(b: Browser): Promise<void> {
-  await switchTo(b, LOGIN, NET_WAIT_MS);
-  await waitUntil(
-    async () => (await present(b, ".account-bubble")) || (await present(b, ".lock-name")),
-    NET_WAIT_MS,
-    "login window showed neither the picker nor the unlock screen",
-  );
-  if (!(await present(b, ".account-bubble"))) {
-    await (await byText(b, "button.form-btn-secondary", "Switch Account")).click();
-    await shown(b, ".account-bubble");
-  }
-}
-
 /** Create `s`'s identity from the login window and land on the buddy list. */
 export async function createIdentity(b: Browser, s: WalkState): Promise<void> {
   await switchTo(b, LOGIN, NET_WAIT_MS);
@@ -460,172 +442,25 @@ const BASE_ROWS: Row[] = [
   settingsRow("B5", "Audio"),
   settingsRow("B6", "Privacy"),
   settingsRow("B7", "About"),
-  // Rows in rows-settings.ts, rows-community.ts and rows-peer.ts run here,
-  // while the identity is logged in (the getters keep the imports lazy).
-  {
-    id: "B1",
-    title: "Titlebar minimize / close (hides)",
-    async run({ b, shot }) {
-      await inBuddy(b);
-      const rect = await b.getWindowRect();
-      await (await b.$('[aria-label="Minimize window"]')).click();
-      await sleep(1000);
-      const minimized = await b.execute(() => document.visibilityState);
-      const keptMinimized = (await b.getWindowHandles()).includes(BUDDY);
-      await b.setWindowRect(rect.x, rect.y, rect.width, rect.height);
-      await sleep(500);
-      await (await b.$('[aria-label="Hide window"]')).click();
-      await sleep(1000);
-      const hidden = await b.execute(() => document.visibilityState);
-      const stillListed = (await b.getWindowHandles()).includes(BUDDY);
-      // Recovery: the same command the login window calls to show the list.
-      await b.execute(() => {
-        const internals = (window as unknown as { __TAURI_INTERNALS__?: { invoke(cmd: string): Promise<unknown> } }).__TAURI_INTERNALS__;
-        void internals?.invoke("show_buddy_list");
-      });
-      await sleep(1000);
-      await shot();
-      // Wayland reports no minimized state back to a client: xdg-shell's
-      // xdg_toplevel.set_minimized says "There is no way to know if the
-      // surface is currently minimized", so GDK never sets ICONIFIED, tao's
-      // is_minimized stays false (tao-0.37.1 platform_impl/linux/window.rs:
-      // 369-372) and WebKitGTK keeps the page "visible" (COSMIC walk of
-      // 9fd296f4). There the row proves what the platform shows: the
-      // minimize click keeps the window, which restores. X11 and macOS
-      // report the state, so the visibility check stays there.
-      const waylandMinimize = process.platform === "linux" && Boolean(process.env.WAYLAND_DISPLAY);
-      const minimizeShown = waylandMinimize ? keptMinimized : minimized === "hidden" && keptMinimized;
-      const note =
-        `after minimize visibilityState=${minimized}${waylandMinimize ? " (Wayland: no minimized state reported)" : ""}, handle kept=${keptMinimized}; ` +
-        `after hide visibilityState=${hidden}, handle kept=${stillListed}; restored via setWindowRect and show_buddy_list`;
-      if (!minimizeShown || hidden !== "hidden" || !stillListed) throw new Error(note);
-      return note;
-    },
-  },
-  {
-    id: "B64",
-    title: "Logout",
-    async run({ b, s }) {
-      await inBuddy(b);
-      await (await b.$('[aria-label="Logout"]')).click();
-      await resolveIntent(b, { passphrase: s.passphrase });
-      await switchTo(b, LOGIN, NET_WAIT_MS);
-      const name = await (await shown(b, ".lock-name", NET_WAIT_MS)).getText();
-      if (name.trim() !== s.displayName) throw new Error(`unlock screen shows ${name}`);
-      await toPicker(b);
-      return "logged out to the unlock screen, then Switch Account to the picker";
-    },
-  },
-  {
-    id: "L3b",
-    title: "Create account mode (from the picker)",
-    async run({ b }) {
-      await switchTo(b, LOGIN);
-      await (await shown(b, ".account-create-btn")).click();
-      await shown(b, 'input[placeholder="Display Name (optional)"]');
-    },
-  },
-  {
-    id: "L5b",
-    title: "Back (to the picker)",
-    async run({ b }) {
-      await (await byText(b, "button.form-btn-secondary", "Back")).click();
-      await shown(b, ".account-picker");
-      return "Back matched by text: no aria-label (LoginWindow.tsx:221)";
-    },
-  },
-  {
-    id: "L1",
-    title: "Select account bubble",
-    async run({ b, s }) {
-      await (await byText(b, ".account-bubble", s.displayName)).click();
-      const name = await (await shown(b, ".lock-name")).getText();
-      if (!name.includes(s.displayName)) throw new Error(`lock screen shows "${name}"`);
-    },
-  },
-  {
-    id: "L4",
-    title: "Login with passphrase",
-    async run({ b, s }) {
-      await typeInto(await shown(b, 'form.login-container input[type="password"]'), s.passphrase);
-      const submit = await b.$('form.login-container button[type="submit"]');
-      await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Unlock stayed disabled (Connecting…)" });
-      await submit.click();
-      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await inBuddy(b);
-    },
-  },
-  {
-    id: "L2",
-    title: "Delete account",
-    async run({ b, s }) {
-      const handles = await b.getWindowHandles();
-      if (handles.includes(BUDDY) && !(await (async () => {
-        await b.switchToWindow(LOGIN).catch(() => undefined);
-        return present(b, ".account-bubble");
-      })())) {
-        await b.switchToWindow(BUDDY);
-        await (await b.$('[aria-label="Logout"]')).click();
-        await resolveIntent(b, { passphrase: s.passphrase });
-      }
-      await toPicker(b);
-      // The delete button is opacity 0 until the bubble is hovered or holds
-      // focus (theme/01-form-primitives.css, `.account-bubble-delete`), so
-      // WebDriver never sees it displayed: wait for it to exist and press it
-      // in the page.
-      const del = await b.$(`[aria-label="Delete ${s.displayName}"]`);
-      await del.waitForExist({ timeout: NET_WAIT_MS });
-      await press(b, del);
-      const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: WAIT_MS });
-      await waitUntil(async () => !(await present(b, `[aria-label="Delete ${s.displayName}"]`)), NET_WAIT_MS, "account bubble still shown");
-      return `review ${outcome}`;
-    },
-  },
-  {
-    id: "B8",
-    title: "Menu > Quit (inventory W3)",
-    // Last: quitting ends the walk. L2 deleted the walk's identity, so make
-    // a fresh one to reach the buddy list's menu bar.
-    async run({ b, app, s, shot }) {
-      await createIdentity(b, s);
-      await shot();
-      const started = Date.now();
-      // Quit takes the WebDriver server down with the app, so the helper's
-      // follow-up call after the click can be refused: that is the exit this
-      // row asserts, not a failure. Any error while the process lives is.
-      const clicked = await menu(b, "Rekindle", "Quit").then(
-        () => null,
-        (e: unknown) => e,
-      );
-      // The process exits (`quit_app`, the tray's Quit), after the graceful
-      // shutdown; closing the window alone would leave it in the tray.
-      const deadline = started + NET_WAIT_MS;
-      while (app.alive() && Date.now() < deadline) await sleep(250);
-      if (app.alive()) {
-        if (clicked !== null) throw clicked;
-        const handles = await b.getWindowHandles().catch(() => [] as string[]);
-        throw new Error(`did not quit: process alive; windows=[${handles.join(", ")}]`);
-      }
-      return `process exited ${Date.now() - started} ms after Quit`;
-    },
-  },
 ];
 
-const SPLICE_AFTER = "B7";
-
-/** The walk's rows in order: rows.ts's own, with the per-window files after B7. */
+/**
+ * The walk's rows in order: rows.ts's own (through B7), then the per-window
+ * files while the identity is logged in, then rows-session.ts's, which end
+ * it. The imports stay lazy.
+ */
 export async function allRows(): Promise<Row[]> {
   const { SETTINGS_ROWS } = await import("./rows-settings.ts");
   const { COMMUNITY_ROWS } = await import("./rows-community.ts");
   const { PEER_ROWS } = await import("./rows-peer.ts");
   const { PEER_COMMUNITY_ROWS } = await import("./rows-peer-community.ts");
   const { VOICE_ROWS } = await import("./rows-voice.ts");
-  const at = BASE_ROWS.findIndex((r) => r.id === SPLICE_AFTER) + 1;
+  const { SESSION_ROWS } = await import("./rows-session.ts");
   // The voice rows need the peer in the walk's community (B61) and end
   // before the member-menu rows that restrict it: M83 times it out for five
   // minutes, which takes its voice permission (Linux walk at 832def39: M12,
   // M84, M85 failed "missing permission 0x100000000"), then M88 → M86 kick it.
   const voiceAt = PEER_COMMUNITY_ROWS.findIndex((r) => r.id === "M83");
   const peerCommunity = [...PEER_COMMUNITY_ROWS.slice(0, voiceAt), ...VOICE_ROWS, ...PEER_COMMUNITY_ROWS.slice(voiceAt)];
-  return [...BASE_ROWS.slice(0, at), ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...peerCommunity, ...BASE_ROWS.slice(at)];
+  return [...BASE_ROWS, ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...peerCommunity, ...SESSION_ROWS];
 }

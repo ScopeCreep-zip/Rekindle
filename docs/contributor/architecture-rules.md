@@ -102,12 +102,14 @@ Daemon / CLI track:
 | Any single Rust file | **600 lines** |
 
 The ceiling is unconditional — `cargo xtask check-file-sizes` (run in
-CI via `cargo xtask check`) fails on **any** file over 600 lines, with
+CI via `cargo xtask check`) fails on **any** Rust file over 600 lines in
+`crates/`, `src-tauri/` (its tests and build support included),
+`xtask/` and `contract/`, with
 no allowlist or escape hatch. Split along a module seam instead
 (directory split with `mod.rs` re-exports, tests to a sibling
 `tests.rs`, or newtype-payload conversion for large wire enums). A
 deliberate future exception would require editing the check in
-`xtask/src/main.rs` in a reviewed PR.
+`xtask/src/file_sizes.rs` in a reviewed PR.
 
 ---
 
@@ -164,7 +166,9 @@ deliberate future exception would require editing the check in
 | Any single `.ts` or `.tsx` file | **600 lines** |
 
 Same unconditional gate as the backend: `cargo xtask check-file-sizes`
-fails on any `src/**` TypeScript file over 600 lines, no allowlist.
+fails on any TypeScript file over 600 lines under `src/**` (and CSS
+there) or under `e2e/**` (the real-app suite and walk, `.mjs` too), no
+allowlist. Test code is held to the same ceiling as the code it tests.
 Split into sibling modules (ctx-object factories for hooks, extracted
 type/constant modules) rather than growing a file past the ceiling.
 
