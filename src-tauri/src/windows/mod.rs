@@ -6,6 +6,7 @@
 //! from `rekindle_types::key_format`, and titles are resolved in [`titles`].
 //! Nothing the webview passes in reaches a label, URL or title unchecked.
 
+mod first_show;
 mod navigation;
 mod rebind;
 mod reveal;
@@ -147,16 +148,18 @@ fn with_store<'a>(
     }
 }
 
-/// Build the window, then enable platform media capture if `kind` captures.
+/// Build the window hidden, enable platform media capture if `kind`
+/// captures, then show it ([`first_show`]: a window built visible opens
+/// taller than its inner size on GTK Wayland).
 fn finish(
     builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
     kind: WindowKind,
 ) -> Result<WebviewWindow, String> {
-    let window = builder.build().map_err(|e| e.to_string())?;
-    if kind.captures_media() {
-        crate::platform::enable_webview_media_capture(&window);
-    }
-    Ok(window)
+    first_show::open(builder, |window| {
+        if kind.captures_media() {
+            crate::platform::enable_webview_media_capture(window);
+        }
+    })
 }
 
 /// Show, restore and focus an existing window ([`reveal_window`]). Returns

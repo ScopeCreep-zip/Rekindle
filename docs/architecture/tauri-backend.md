@@ -235,7 +235,12 @@ Windows are created via helper functions in `src-tauri/src/windows.rs`:
 | `open_call_window()` | Call | Show existing or create new, label `call-{id}` |
 
 All windows use `decorations: false` and `transparent: true` for the
-frameless Xfire look with custom titlebars.
+frameless Xfire look with custom titlebars. Every window is built hidden
+and shown once built (`windows/first_show.rs`, plan WL2): tao 0.37.1 maps a
+window before it removes the decorations and sets the Wayland CSD titlebar,
+so a window built visible opens with GTK's titlebar height added (37 px on
+GTK Wayland); built hidden, GTK first realizes it undecorated and the
+content area is the declared inner size.
 
 The buddy list hides to tray on close (`api.prevent_close()`). Closing
 the login window while no buddy list is visible triggers `app.exit(0)`.
