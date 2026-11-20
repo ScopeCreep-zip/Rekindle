@@ -12,6 +12,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
+use rekindle_netsim::{Fault, Writes};
 
 use crate::harness::{eventually, Community, Refused};
 
@@ -126,4 +127,69 @@ async fn a_single_use_invite_lists_one_of_two_racing_joiners() {
         listed(&community, 1).await,
         "every member lists the same admitted joiner"
     );
+}
+
+/// The inviter refuses the second redemption of a single-use invite with
+/// its typed reason (plan E3.2 join step 5; `bootstrap.rs` `admitted_deps`
+/// → `merge/gates.rs` `invite_gate`: the one use is taken →
+/// `InviteUsedUp`; `daemon/handler.rs` answers `bootstrapRefused`). Every
+/// write of the inviter's member record lands below consensus
+/// (`Fault::WriteFails`, as a Veilid `set_value` can) from before the first
+/// join, so the frontier the second joiner walks is the one that published
+/// the invite: its own check (`join_flow.rs` `check_invite`) finds the
+/// invite live, and only the inviter, which merged the first join, can
+/// refuse it. The joiner is told 409 "This invite has already been used.",
+/// withdraws, holds no community, and no member counts it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_used_up_single_use_invite_is_refused_with_its_reason() {
+    let mut community = Community::create(3, 4412).await;
+    let link = community.invite().await;
+    community.sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Record(crate::invite_unpublished::creator_record(&community)),
+    });
+    community.join_with(1, link.clone()).await;
+    assert!(
+        eventually(&community.sim, Duration::from_secs(600), || async {
+            member_count(&community, 0).await == 2 && member_count(&community, 1).await == 2
+        })
+        .await,
+        "both members merged the first join"
+    );
+    // The second joiner walks the inviter's frontier as the DHT holds it.
+    let second = community.nodes[2]
+        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityJoin { invite: link },
+        )))
+        .await;
+    match &second {
+        Err(Refused { code, message, .. }) => assert!(
+            *code == 409 && message == "This invite has already been used.",
+            "the used-up invite is refused for its reason: {code} {message}"
+        ),
+        Ok(answer) => panic!("a second redemption of a single-use invite joined: {answer}"),
+    }
+    assert!(
+        eventually(&community.sim, Duration::from_secs(60), || async {
+            community.nodes[2]
+                .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityInfo {
+                        anchor: community.anchor.clone(),
+                    },
+                )))
+                .await
+                .is_err()
+        })
+        .await,
+        "the refused join is withdrawn"
+    );
+    community.sim.fault(Fault::Heal);
+    tokio::time::sleep(rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD * 3).await;
+    for i in 0..2 {
+        assert_eq!(
+            member_count(&community, i).await,
+            2,
+            "node {i} counts no refused joiner"
+        );
+    }
 }
