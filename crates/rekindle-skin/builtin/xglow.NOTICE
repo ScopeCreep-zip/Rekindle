@@ -23,6 +23,14 @@ Colour groups (10 defined)
   SkinTextDark RGBA(145,205,224,0) -> dropped: not an Xfire colour name
   SkinTextLight RGBA(209,240,246,0) -> dropped: not an Xfire colour name
   ChatBack RGBA(37,37,37,0) -> dropped: not an Xfire colour name
+Colour roles by reference (7)
+  [BuddyView] text.color_selectedtext=SkinTextLight -> token accent.fill
+  [BuddyView] text.color_selectedtext=SkinTextLight -> token accent.text
+  [BuddyView] colorgroup=Base -> token bg.primary
+  [Status] text.color=SkinText -> token text.status
+  [Status] text.background=Black -> token bg.status
+  [ChatArea] colorgroup=ChatBack -> token bg.panel
+  [ChatEdit] colorgroup=Black -> token bg.input
 
 Regions
   window.frame: [Top] [Left] [Right] [Bottom], nine-slice 133/124/245/125, transparent middle
@@ -258,4 +266,20 @@ Dropped
     scrollbar/Thumbs.db
     strings.ini
 
-Contrast changes (minimal Oklab-lightness walk) (0 made)
+Contrast changes (minimal Oklab-lightness walk) (16 made)
+  control-border: #6b6b6b -> #6e6e6e (1.4.11 control-border on bg.panel: 2.87:1 -> 3.00:1, required 3.00:1)
+  text.secondary: #a0a0a0 -> #b8b8b8 (1.4.3 text.secondary on bg.primary: 3.44:1 -> 4.53:1, required 4.50:1)
+  accent.fill: #d1f0f6 -> #5f7b81 (1.4.3 accent.fg on accent.fill: 1.19:1 -> 4.52:1, required 4.50:1)
+  danger.text: #ff5955 -> #ff9e93 (1.4.3 danger.text on bg.primary: 2.92:1 -> 4.52:1, required 4.50:1)
+  text.dim: #8fb9d7 -> #92bddb (1.4.3 text.dim on bg.primary: 4.32:1 -> 4.51:1, required 4.50:1)
+  text.clan: #1ba1fd -> #4bc3ff (1.4.3 text.clan on bg.primary: 3.24:1 -> 4.52:1, required 4.50:1)
+  status.ingame-text: #4fc3f7 -> #50c3f8 (1.4.3 status.ingame-text on bg.primary: 4.49:1 -> 4.50:1, required 4.50:1)
+  status.offline-text: #909090 -> #b8b8b8 (1.4.3 status.offline-text on bg.primary: 2.82:1 -> 4.53:1, required 4.50:1)
+  link: #5fa8d3 -> #76c0eb (1.4.3 link on bg.primary: 3.44:1 -> 4.50:1, required 4.50:1)
+  mention.role: #b59aff -> #c4aaff (1.4.3 mention.role on bg.primary: 3.87:1 -> 4.51:1, required 4.50:1)
+  mention.self: #ffaea1 -> #ffafa1 (1.4.3 .chat-mention-self mention.self on mention.self 28% over bg.panel: 4.49:1 -> passes, required 4.50:1)
+  text.dim: #92bddb -> #a2ceec (1.4.3 .role-tag-default text.dim on accent.fill 25% over bg.primary: 3.78:1 -> passes, required 4.50:1)
+  text.dim: #a2ceec -> #a6d3f1 (1.4.3 .search-panel-hit-scope text.dim on overlay 8% over bg.primary: 4.28:1 -> passes, required 4.50:1)
+  bg.primary: #494949 -> #373737 (1.4.3 .search-panel-hit-scope-thread thread-tag on thread-tag 25% over bg.primary: 3.69:1 -> passes, required 4.50:1)
+  status.offline: #7d7d7d -> #808080 (1.4.11 .status-dot-offline status.offline on bg.primary: 2.89:1 -> 3.01:1, required 3.00:1)
+  status.away-text: #ffcc00 -> #ffd520 (1.4.3 .timeout-indicator status.away-text on status.away 34% over bg.panel: 4.22:1 -> passes, required 4.50:1)

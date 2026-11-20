@@ -400,3 +400,39 @@ fn a_malformed_chat_skin_file_refuses() {
         "{err:?}"
     );
 }
+
+/// Plan E7.7.7 (the Linux survey's item (b)): Xglow names its list ground
+/// `Base` and its chat ground `ChatBack`, labels the name table does not
+/// hold; the sections that name them (`[BuddyView] ColorGroup=`, the chat
+/// skin's `[ChatArea] ColorGroup=`) give the role, and a neutral selection
+/// ground hands the accent to the selection text's hue.
+#[test]
+fn the_sections_naming_a_colour_give_its_role_and_the_accent() {
+    let mut t = tree();
+    let theme = THEME.replace(
+        "ColorGroup.VentCG",
+        "ColorGroup.Base=RGBA(73,73,73,0)\r\nColorGroup.ChatBack=RGBA(37,37,37,0)\r\n\
+         ColorGroup.Black=RGBA(0,0,0,0)\r\nColorGroup.Glow=RGBA(116,226,248,0)\r\n\
+         ColorGroup.VentCG",
+    );
+    t.insert("FixThemes.ini".into(), theme.into_bytes());
+    let skin = skin_ini()
+        + "[BuddyView]\r\nColorGroup=Base\r\nText.color_selected=Black\r\n\
+           Text.color_selectedtext=Glow\r\n[InfoView]\r\nColorGroup=Black\r\n\
+           Text.color_hyperlink=Glow\r\n";
+    t.insert("Fixture.ini".into(), skin.into_bytes());
+    t.insert(
+        "Fix chatskin.ini".into(),
+        b"[MainWindow]\r\nClass=MainWindow\r\n[ChatArea]\r\nColorGroup=ChatBack\r\n".to_vec(),
+    );
+    let r = read(&t, FOLDER).unwrap();
+    let glow = walk::color([116, 226, 248]);
+    assert_eq!(r.tokens["accent.fill"], glow);
+    assert_eq!(r.tokens["accent.text"], glow);
+    assert_eq!(r.tokens["link"], glow);
+    assert_eq!(r.tokens["bg.panel"], walk::color([37, 37, 37]));
+    assert_eq!(r.tokens["bg.secondary"], walk::color([0, 0, 0]));
+    // `BuddyViewBG` names the list ground's role itself: it wins over `Base`.
+    assert_eq!(r.tokens["bg.primary"], walk::color([16, 16, 16]));
+    assert!(r.refs.iter().any(|a| a.token == "bg.primary" && a.kept.is_some()));
+}

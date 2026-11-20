@@ -68,6 +68,14 @@ Colour groups (55 defined)
   StatusArrowCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
   FriendsFavoritesText RGBA(0,0,0,0) -> dropped: server browser
   AllServersText RGBA(0,0,0,0) -> dropped: server browser
+Colour roles by reference (7)
+  [StatusEdit] text.color=StatusCG -> text.status kept: its role-named colour wins
+  [StatusEdit] text.background=StatusBackgroundCG -> bg.status kept: its role-named colour wins
+  [BuddyView] colorgroup=BuddyViewBG -> bg.primary kept: its role-named colour wins
+  [ChatArea] colorgroup=ChatViewCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatViewCG -> token bg.input
+  [ChatArea] colorgroup=ChatViewCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatViewCG -> bg.input kept: an earlier reference set it
 
 Regions
   window.frame: [Top] [Middle] [Bottom], nine-slice 252/135/170/135, transparent middle

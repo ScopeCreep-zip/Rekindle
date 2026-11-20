@@ -53,6 +53,7 @@ use super::credit::{Authorship, XfireCredit};
 use super::credits;
 use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
 use super::xfire_xml::controls::StateTally;
+use super::xfire_xml::refs::{self, Ref};
 use super::xfire_xml::surfaces::Window;
 use super::xfire_xml::ColourRow;
 use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
@@ -95,6 +96,8 @@ pub struct Read {
     /// The painted control slots ([`controls`]) and what they kept.
     pub controls: Vec<Control>,
     pub tally: StateTally,
+    /// The colour roles the sections name ([`refs`]).
+    pub refs: Vec<refs::Applied>,
 }
 
 /// The names `comments` credit: the text after the last ` by ` of each
@@ -288,7 +291,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let (theme_key, theme) =
         parse_file(tree, &file_name(skin_key, "ColorGroupTheme", theme_name)?)?;
     let mut dropped = BTreeMap::new();
-    let (colours, tokens, aliases) =
+    let (colours, mut tokens, aliases) =
         read_theme(section(&theme, theme_key, "default")?, &mut dropped)?;
     let frame = read_frame(tree, &skin, &colours, &aliases)?;
     let images = controls::Images {
@@ -300,6 +303,8 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let (mut controls, mut tally, control_sections) = controls::read(&skin, &images)?;
     count_dropped(&skin, (frame.as_ref(), &control_sections), &mut dropped);
     let mut read_files = vec![version_key, skin_key, theme_key];
+    let mut found = Vec::new();
+    ini_refs(&skin, &mut found);
     for (key, window) in [
         ("ChatSkin", Window::Chat),
         ("GroupChatSkin", Window::GroupChat),
@@ -312,6 +317,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
             continue;
         }
         let (chat_key, chat) = parse_file(tree, &file)?;
+        ini_refs(&chat, &mut found);
         let sections = controls::read_file(&chat, &images, window, (&mut controls, &mut tally))?;
         if sections.is_empty() {
             continue;
@@ -319,6 +325,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         count_dropped(&chat, (None, &sections), &mut dropped);
         read_files.push(chat_key);
     }
+    let refs = refs::apply(&found, &colours, &mut tokens);
     let control_files = images.files.into_inner();
     let repeated = [
         (version_key, &version),
@@ -355,7 +362,26 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         authors: stated_authors(&version.comments),
         controls,
         tally,
+        refs,
     })
+}
+
+/// Every colour reference of `ini` in file order ([`refs`]): a section's
+/// `ColorGroup=` and its `Text.<attr>=` keys (`Graphics.ColorGroup` is an
+/// image shift, never a role).
+fn ini_refs(ini: &Ini, out: &mut Vec<Ref>) {
+    for s in &ini.sections {
+        for e in &s.entries {
+            let key = e.key.to_ascii_lowercase();
+            if key == "colorgroup" || key.starts_with("text.") {
+                out.push(Ref {
+                    component: s.name.clone(),
+                    attr: key,
+                    colour: e.value.clone(),
+                });
+            }
+        }
+    }
 }
 
 /// The package path of a frame state's image.

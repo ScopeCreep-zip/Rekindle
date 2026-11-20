@@ -43,6 +43,10 @@ pub fn render(
             c.target.describe()
         );
     }
+    let _ = writeln!(s, "Colour roles by reference ({})", read.refs.len());
+    for a in &read.refs {
+        let _ = writeln!(s, "  {}", a.describe());
+    }
     if let Some(f) = &read.frame {
         let i = f.insets;
         let mut sections: Vec<&str> = f.shape.iter().flatten().map(|(sec, _)| *sec).collect();

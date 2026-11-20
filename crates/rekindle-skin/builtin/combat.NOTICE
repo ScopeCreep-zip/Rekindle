@@ -33,6 +33,11 @@ Colour groups (15 defined)
   Label RGBA(255,255,255,0) -> registry-fixed accent.fg (a skin cannot set it)
   InfoViewHyperlink RGBA(0,84,12,0) -> not mapped: no registry role profile.link yet
   ProgressFill RGBA(128,128,128,0) -> not mapped: no registry role progress.fill yet
+Colour roles by reference (4)
+  [ChatArea] colorgroup=ChatBGCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatBGCG -> token bg.input
+  [ChatArea] colorgroup=ChatBGCG -> bg.panel kept: its role-named colour wins
+  [ChatEdit] colorgroup=ChatBGCG -> bg.input kept: an earlier reference set it
 
 Regions
   window.frame: [OuterFrame], nine-slice 214/78/113/79, transparent middle
