@@ -129,7 +129,7 @@ hex = "0.4"
 rand = "0.8"
 # Formally-verified ML-KEM-768 (HACL*/libcrux line, AVX2/Neon SIMD).
 # Exact pin — 0.0.x semver makes no stability promise; audit on bump.
-libcrux-ml-kem = "=0.0.12"
+libcrux-ml-kem = "=0.0.10"
 
 # Optimize Argon2 even in dev builds — rekindle-vault's KDF is the main
 # bottleneck on first login / unlock. Other crypto crates use aws-lc-rs or

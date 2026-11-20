@@ -7,7 +7,7 @@
 //! (the wrapped `libcrux` type has no `Zeroize` impl of its own to
 //! derive against) and the shared secrets it produces via `Zeroizing`.
 //!
-//! ## ML-KEM-768 sizes (verified against `libcrux-ml-kem-0.0.12/src/`)
+//! ## ML-KEM-768 sizes (verified against `libcrux-ml-kem-0.0.10/src/`)
 //!
 //! - Public key: 1184 bytes (`CPA_PKE_PUBLIC_KEY_SIZE`)
 //! - Private key: 2400 bytes (`SECRET_KEY_SIZE`)
@@ -129,7 +129,7 @@ impl MlKemSecret {
     /// Extract the corresponding public key from the FIPS-203 secret-key
     /// layout. The ML-KEM-768 private key embeds the encapsulation key
     /// (public) at offset `CPA_PKE_SECRET_KEY_SIZE = 1152`, length
-    /// `CPA_PKE_PUBLIC_KEY_SIZE = 1184` — see `libcrux-ml-kem-0.0.12/src/
+    /// `CPA_PKE_PUBLIC_KEY_SIZE = 1184` — see `libcrux-ml-kem-0.0.10/src/
     /// constants.rs`. This lets us reconstruct a `PreKeyBundle`'s PQ
     /// public field from just the stored secret blob.
     #[must_use]
@@ -148,7 +148,7 @@ impl MlKemSecret {
 impl MlKemSecret {
     /// Zero the private key bytes in place, without consuming `self`.
     ///
-    /// `MlKem768PrivateKey` (libcrux-ml-kem 0.0.12's `MlKemPrivateKey<SIZE>`,
+    /// `MlKem768PrivateKey` (libcrux-ml-kem 0.0.10's `MlKemPrivateKey<SIZE>`,
     /// via its `impl_generic_struct!` macro) implements neither `Zeroize`
     /// nor `AsMut<[u8]>` — but the same macro DOES give it `Default`
     /// (all-zero) and `From<Self> for [u8; SIZE]` (by value). That pair is
