@@ -11,6 +11,11 @@
 //! - **Cursor**: the [`StreamSink`] commits it only after the entry's effect
 //!   commits, so a crash between the two re-applies an entry the sink
 //!   recognises as a duplicate: nothing is lost or doubled.
+//! - **Held prefix** (live finding L-ACK1): an entry the sink could not
+//!   hold yet ([`Held::Pending`]: its content not received, decrypted and
+//!   stored) stops the pass with the cursor below it, so the cursor, which
+//!   a receipt reports (`DmAck.through`, D22), is always the contiguous
+//!   prefix of entries held; a head read past it never moves it.
 //! - **Gap**: when the writer's retire mark overtook the cursor, the sink
 //!   stores and shows a `HistoryGap` and the cursor moves past it. Loss is
 //!   never silent.
@@ -67,14 +72,33 @@ pub enum StreamError {
     Hole { cursor: u64, seq: u64 },
 }
 
+/// What [`StreamSink::apply`] did with an entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Held {
+    /// Its effect committed (or it was judged: a duplicate, a refusal, an
+    /// entry that can never open), and the cursor with it.
+    Stored,
+    /// Its content is not held yet (its first copy is still being applied,
+    /// our storage failed, or it waits on a friendship's accept): the
+    /// cursor stays below it and the pass stops; the next trigger reads it
+    /// again.
+    Pending,
+}
+
 /// Where a stream's entries go: the host's apply and cursor store.
 #[async_trait::async_trait]
 pub trait StreamSink: Send + Sync {
     /// The cursor of `writer` on `stream` (0: nothing passed).
     async fn cursor(&self, stream: &str, writer: &str) -> Result<u64, SinkError>;
     /// Apply `entry` (or recognise it as one already applied), then commit
-    /// the cursor to its seq.
-    async fn apply(&self, stream: &str, writer: &str, entry: &ChainEntry) -> Result<(), SinkError>;
+    /// the cursor to its seq ([`Held::Stored`]); or leave the cursor below
+    /// an entry whose content it does not hold yet ([`Held::Pending`]).
+    async fn apply(
+        &self,
+        stream: &str,
+        writer: &str,
+        entry: &ChainEntry,
+    ) -> Result<Held, SinkError>;
     /// The entries up to `through` are retired unread: store and show the
     /// gap, then commit the cursor to `through`.
     async fn history_gap(&self, stream: &str, writer: &str, through: u64) -> Result<(), SinkError>;
@@ -95,6 +119,9 @@ pub struct Diffed {
     /// ([`chain::read_log_reaching`]): the cursor stays below it and the
     /// diff does not report caught up.
     pub unreached: Option<u64>,
+    /// The entry the sink could not hold yet ([`Held::Pending`]): the
+    /// cursor stays below it and the diff does not report caught up.
+    pub pending: Option<u64>,
 }
 
 /// Which chain a diff reads.
@@ -220,6 +247,7 @@ impl StreamEngine {
                     total.applied += d.applied;
                     total.gap_through = d.gap_through.or(total.gap_through);
                     total.unreached = d.unreached;
+                    total.pending = d.pending;
                 }
                 Err(e) => {
                     self.release(&key, true);
@@ -230,7 +258,7 @@ impl StreamEngine {
                 break;
             }
         }
-        if total.unreached.is_none() {
+        if total.unreached.is_none() && total.pending.is_none() {
             sink.caught_up(stream, writer).await;
         }
         Ok(total)
@@ -252,17 +280,36 @@ impl StreamEngine {
             } => chain::read_log_reaching(port, record, head_subkey, cursor, at_least).await?,
         };
         let unreached = (read.last_seq < source.at_least()).then(|| source.at_least());
-        let mut done = Diffed::default();
+        let mut gap_through = None;
         if let Some(through) = read.retired_gap {
             sink.history_gap(stream, writer, through).await?;
             cursor = through;
-            done.gap_through = Some(through);
+            gap_through = Some(through);
         }
-        for entry in &read.entries {
+        let mut done = Self::apply_entries(sink, (stream, writer), cursor, &read.entries).await?;
+        done.gap_through = gap_through;
+        done.unreached = unreached;
+        Ok(done)
+    }
+
+    /// Apply `entries` (read after `cursor`) in order through the receive
+    /// rule, stopping at the first the sink could not hold
+    /// ([`Held::Pending`]): the cursor never passes an entry not held.
+    async fn apply_entries(
+        sink: &dyn StreamSink,
+        (stream, writer): (&str, &str),
+        mut cursor: u64,
+        entries: &[ChainEntry],
+    ) -> Result<Diffed, StreamError> {
+        let mut done = Diffed::default();
+        for entry in entries {
             match classify(cursor, entry.seq) {
                 Rule::Duplicate => {}
                 Rule::Apply => {
-                    sink.apply(stream, writer, entry).await?;
+                    if sink.apply(stream, writer, entry).await? == Held::Pending {
+                        done.pending = Some(entry.seq);
+                        break;
+                    }
                     cursor = entry.seq;
                     done.applied += 1;
                 }
@@ -274,7 +321,6 @@ impl StreamEngine {
                 }
             }
         }
-        done.unreached = unreached;
         Ok(done)
     }
 }

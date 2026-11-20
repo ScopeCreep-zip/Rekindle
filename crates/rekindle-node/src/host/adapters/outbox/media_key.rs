@@ -61,21 +61,26 @@ fn scope(session: &str, recipient: &str) -> String {
 }
 
 /// The unlocked identity's `media_key` streams.
-pub struct MediaKeyStreams(Arc<Outbox<HostOutbox>>);
+pub struct MediaKeyStreams(pub(super) Arc<Outbox<HostOutbox>>);
 
 impl MediaKeyStreams {
     /// Queue `sealed`, a key sealed to `recipient`, on the stream of
-    /// (`session`, `recipient`) as `client_id`.
+    /// (`session`, `recipient`) as `client_id`. The client id names one key
+    /// to one recipient (`{session}/{recipient}/{index}`), so a `client_id`
+    /// whose row is still kept, in whatever state, is left as it is (a
+    /// repeated join handshake or rejoin seals the same key again; live
+    /// finding L-ACK1 saw the UNIQUE error on that normal path); `false`
+    /// then, and the engine is woken only for a stored row.
     ///
     /// # Errors
-    /// The storage failed, or `client_id` is already queued.
+    /// The storage failed.
     pub async fn queue(
         &self,
         session: &str,
         recipient: &str,
         client_id: &str,
         sealed: Vec<u8>,
-    ) -> Result<(), OutboxError> {
+    ) -> Result<bool, OutboxError> {
         let entry = Entry {
             kind: StreamKind::MediaKey,
             scope: scope(session, recipient),
@@ -83,7 +88,11 @@ impl MediaKeyStreams {
             payload: sealed,
             deadline: Deadline::Horizon,
         };
-        self.0.enqueue(entry, None).await.map(drop)
+        let queued = self.0.deps().insert_once(self.0.new_row(entry)).await?;
+        if queued {
+            self.0.wake();
+        }
+        Ok(queued)
     }
 
     /// `session` ended: discard every key still queued for any of its

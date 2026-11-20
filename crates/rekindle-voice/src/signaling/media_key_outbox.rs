@@ -21,11 +21,11 @@ use crate::signaling::deps::VoiceSignalingDeps;
 #[async_trait]
 pub trait MediaKeyOutbox: Send + Sync {
     /// Queue `sealed` (an encoded, sealed `VoiceMediaKey` envelope) on the
-    /// stream of (`session`, `recipient`) as `client_id`.
+    /// stream of (`session`, `recipient`) as `client_id`; a `client_id`
+    /// already queued is left as it is (one key to one recipient).
     ///
     /// # Errors
-    /// Nothing was queued (no unlocked outbox, the storage failed, or
-    /// `client_id` is already queued).
+    /// Nothing was queued (no unlocked outbox, or the storage failed).
     async fn queue(
         &self,
         session: &str,

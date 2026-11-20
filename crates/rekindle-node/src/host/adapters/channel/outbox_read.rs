@@ -45,7 +45,7 @@ use rekindle_codec::community::channel_record::{
 };
 use rekindle_codec::member_record::{decode_outbox_entry, entry_hash, links_to, ChainPosition};
 use rekindle_records::chain::ChainEntry;
-use rekindle_sync::stream::{Diffed, SinkError, StreamSink};
+use rekindle_sync::stream::{Diffed, Held, SinkError, StreamSink};
 use rekindle_types::dht_layout::member_record::OUTBOX;
 use rekindle_types::id::PseudonymKey;
 
@@ -93,7 +93,12 @@ impl StreamSink for OutboxSink<'_> {
             .map_err(sink_error)
     }
 
-    async fn apply(&self, stream: &str, writer: &str, entry: &ChainEntry) -> Result<(), SinkError> {
+    async fn apply(
+        &self,
+        stream: &str,
+        writer: &str,
+        entry: &ChainEntry,
+    ) -> Result<Held, SinkError> {
         let departure_head = match &self.standing {
             Standing::Departed(Some(head)) if entry.seq <= u64::from(head.seq) => {
                 Some(head.clone())
@@ -114,7 +119,9 @@ impl StreamSink for OutboxSink<'_> {
             .await
             .map_err(sink_error)?;
         *self.last.lock() = Some((entry.seq, entry_hash(&entry.ciphertext)));
-        self.advance(stream, writer, entry.seq).await
+        self.advance(stream, writer, entry.seq)
+            .await
+            .map(|()| Held::Stored)
     }
 
     /// An outbox is never retired, so its read reports no gap.

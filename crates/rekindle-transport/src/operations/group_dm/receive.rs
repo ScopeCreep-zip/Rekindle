@@ -18,7 +18,7 @@ use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, GroupContent, Gr
 use rekindle_dm::group::group_id_hex;
 use rekindle_dm::DmError;
 use rekindle_records::chain::ChainEntry;
-use rekindle_sync::stream::{SinkError, StreamSink};
+use rekindle_sync::stream::{Held, SinkError, StreamSink};
 use rekindle_types::message::{ConversationType, SendState};
 use rekindle_types::subscription_events::{
     GroupDmEvent, GroupDmMember, SubscriptionEvent, TypingContext,
@@ -323,12 +323,20 @@ impl StreamSink for GroupSink<'_> {
     /// An entry that can never open (not a `GroupContent` of this group,
     /// an older epoch, a forged seal) is skipped; one at a newer epoch
     /// stops the diff until its key lands.
-    async fn apply(&self, stream: &str, writer: &str, entry: &ChainEntry) -> Result<(), SinkError> {
+    async fn apply(
+        &self,
+        stream: &str,
+        writer: &str,
+        entry: &ChainEntry,
+    ) -> Result<Held, SinkError> {
         let content = match DirectBody::decode(DmTypeId::GroupContent, &entry.ciphertext) {
             Ok(DirectBody::GroupContent(c)) if c.group_id == self.group_id => c,
             _ => {
                 tracing::info!(from = %writer, seq = entry.seq, "not this group's entry; skipped");
-                return self.advance(stream, writer, entry.seq).await;
+                return self
+                    .advance(stream, writer, entry.seq)
+                    .await
+                    .map(|()| Held::Stored);
             }
         };
         let deps = self.host.group_dm().map_err(sink_error)?;
@@ -341,7 +349,9 @@ impl StreamSink for GroupSink<'_> {
                 tracing::info!(from = %writer, seq = entry.seq, error = %e, "group entry refused");
             }
         }
-        self.advance(stream, writer, entry.seq).await
+        self.advance(stream, writer, entry.seq)
+            .await
+            .map(|()| Held::Stored)
     }
 
     /// The member retired entries before we read them (their chain

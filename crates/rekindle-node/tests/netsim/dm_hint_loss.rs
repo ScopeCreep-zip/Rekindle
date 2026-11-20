@@ -495,3 +495,47 @@ async fn two_messages_back_to_back_both_arrive_before_their_appends_land() {
         );
     }
 }
+
+/// Live finding L-ACK1: Ida's first message creates her record; with half
+/// the app messages lost, its hint can be lost while her `StreamRecord`
+/// arrives and Jon's diff reaches her chain. At every step, a message Ida
+/// shows delivered is already in Jon's history (D22: a `DmAck` covers
+/// only what Jon received, decrypted and stored), and every message ends
+/// delivered.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn delivered_is_shown_only_for_text_the_receiver_holds() {
+    let (sim, mut nodes) = start(2, 74).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    sim.fault(Fault::DropMessages { per_mille: 500 });
+    let bodies: Vec<String> = (1..=6).map(|i| format!("held {i}")).collect();
+    for body in &bodies {
+        send(&nodes[0], &jon, body).await;
+    }
+    let step = Duration::from_millis(250);
+    let mut waited = Duration::ZERO;
+    let mut all_delivered = false;
+    while waited < LIMIT * 4 && !all_delivered {
+        if waited == LIMIT {
+            sim.fault(Fault::DropMessages { per_mille: 0 });
+        }
+        let got = received(&nodes[1], &ida).await;
+        all_delivered = true;
+        for body in &bodies {
+            if delivered(&nodes[0], &jon, body).await {
+                assert!(
+                    got.contains(body),
+                    "{body:?} shown delivered before Jon held it"
+                );
+            } else {
+                all_delivered = false;
+            }
+        }
+        tokio::time::sleep(step).await;
+        waited += step;
+    }
+    assert!(all_delivered, "every message ends delivered");
+}

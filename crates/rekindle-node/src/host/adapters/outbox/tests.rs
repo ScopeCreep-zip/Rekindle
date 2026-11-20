@@ -296,3 +296,22 @@ async fn a_client_id_queued_once_is_not_queued_again() {
     let row = outbox.deps().row("MekTransfer:c:joiner:1").await.unwrap();
     assert_eq!(row.map(|r| r.payload), Some(b"sealed".to_vec()));
 }
+
+/// A media key queued again to the same recipient (a repeated join
+/// handshake seals the same key, live finding L-ACK1) is a no-op, never a
+/// UNIQUE error, and the row keeps its first payload.
+#[tokio::test]
+async fn a_media_key_queued_again_is_not_queued_twice() {
+    let dir = tempfile::tempdir().unwrap();
+    let outbox = Arc::new(Outbox::new(
+        host(dir.path(), Arc::new(Senders::default())).await,
+    ));
+    let keys = super::MediaKeyStreams(Arc::clone(&outbox));
+    let client_id = "c:ch/bob/1";
+    let first = keys.queue("c:ch", "bob", client_id, b"sealed".to_vec());
+    assert!(first.await.unwrap(), "the first queue stores the row");
+    let again = keys.queue("c:ch", "bob", client_id, b"resealed".to_vec());
+    assert!(!again.await.unwrap(), "the repeat is a no-op");
+    let row = outbox.deps().row(client_id).await.unwrap();
+    assert_eq!(row.map(|r| r.payload), Some(b"sealed".to_vec()));
+}

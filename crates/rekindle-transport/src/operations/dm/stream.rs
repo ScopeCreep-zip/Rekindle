@@ -17,7 +17,7 @@
 use rekindle_codec::capnp_codec::direct::{DirectBody, StreamRecord};
 use rekindle_records::chain::{self, ChainEntry};
 use rekindle_records::port::RecordPort;
-use rekindle_sync::stream::{SinkError, StreamSink, DM_STREAM};
+use rekindle_sync::stream::{Held, SinkError, StreamSink, DM_STREAM};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use crate::operations::direct;
@@ -385,7 +385,8 @@ async fn diff(host: &dyn FriendHost, peer: &str) {
         .await
     {
         Ok(d) => {
-            tracing::debug!(peer = %peer, applied = d.applied, coalesced = d.coalesced, "dm stream diffed");
+            tracing::debug!(peer = %peer, applied = d.applied, coalesced = d.coalesced,
+                pending = ?d.pending, "dm stream diffed");
             if d.applied > 0 || d.gap_through.is_some() {
                 super::ack::cursor_moved(host, peer);
             }
@@ -430,20 +431,29 @@ impl StreamSink for DmSink<'_> {
     /// `unprocessed` row commit before the apply (D24), a copy already
     /// opened is the ratchet's duplicate, and a resend already applied is
     /// the outbox's `received`; so the cursor, committed after, never
-    /// loses or doubles an entry.
+    /// loses or doubles an entry. An entry whose content we do not hold
+    /// yet leaves the cursor below it (live finding L-ACK1): the cursor is
+    /// our `DmAck`'s `through`, and D22's `delivered` must mean the text
+    /// is stored here.
     async fn apply(
         &self,
         _stream: &str,
         writer: &str,
         entry: &ChainEntry,
-    ) -> Result<(), SinkError> {
-        if let direct::Routed::Unported(opened) =
-            direct::receive_entry(self.host, writer, &entry.ciphertext).await
-        {
-            tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
-                "unported kind on the dm chain — dropped");
+    ) -> Result<Held, SinkError> {
+        match direct::receive_entry(self.host, writer, &entry.ciphertext).await {
+            direct::Entry::Held => {}
+            direct::Entry::Pending => {
+                tracing::debug!(from = %writer, seq = entry.seq,
+                    "dm chain entry not held yet — the cursor stays below it");
+                return Ok(Held::Pending);
+            }
+            direct::Entry::Unported(opened) => {
+                tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
+                    "unported kind on the dm chain — dropped");
+            }
         }
-        self.advance(writer, entry.seq).await
+        self.advance(writer, entry.seq).await.map(|()| Held::Stored)
     }
 
     async fn history_gap(

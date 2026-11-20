@@ -156,32 +156,54 @@ pub(crate) async fn on_first_contact_reply(
     }
 }
 
-/// Handle one entry of `writer`'s DM chain (a wired frame they appended):
-/// the receive path of [`receive`], for a frame by `writer` only.
-pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8]) -> Routed {
+/// What became of one entry of a writer's chain ([`receive_entry`]).
+pub enum Entry {
+    /// Its content is received, decrypted and stored, or it was judged (a
+    /// duplicate of one opened, a refusal, junk): the cursor may pass it.
+    Held,
+    /// Its content is not held yet: its first copy is still being applied,
+    /// our own step failed, its store failed (its `unprocessed` row kept
+    /// for the replay), or it waits on our friendship's accept. The cursor,
+    /// which a `DmAck` reports, stays below it (live finding L-ACK1).
+    Pending,
+    /// A kind whose owner step has not come, handed back.
+    Unported(Box<Opened>),
+}
+
+/// Receive one entry of `writer`'s chain (`datagram`, a wired frame) by
+/// the one 1:1 path: opened, judged and applied as a hint would be.
+pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8]) -> Entry {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::warn!(from = %writer, "dropping an untagged chain entry");
-        return Routed::Handled;
+        return Entry::Held;
     };
     let digest = dm::ack::digest(bytes);
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
+        Err(dropped @ (Dropped::InFlight | Dropped::Failed)) => {
+            by_message(host, dropped, &digest);
+            return Entry::Pending;
+        }
         Err(dropped) => {
             by_message(host, dropped, &digest);
-            return Routed::Handled;
+            return Entry::Held;
         }
     };
     if opened.held && opened.sender_hex == writer {
         held::keep(host, opened).await;
-        return Routed::Handled;
+        return Entry::Pending;
     }
     dm::ack::opened(host, &opened, digest);
     if opened.sender_hex != writer {
         tracing::warn!(from = %writer, by = %opened.sender_hex, "dropping a chain entry by another sender");
         frame::processed(host, &opened);
-        return Routed::Handled;
+        return Entry::Held;
     }
-    handlers::handle(host, opened).await
+    match handlers::apply(host, opened).await {
+        handlers::Applied::Done(true) | handlers::Applied::Refused => Entry::Held,
+        handlers::Applied::Done(false) => Entry::Pending,
+        handlers::Applied::Unported(opened) => Entry::Unported(opened),
+    }
 }
 
 /// Handle one inbound `app_call`. A relay offer is unported (the desktop

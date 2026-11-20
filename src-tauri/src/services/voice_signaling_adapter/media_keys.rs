@@ -36,6 +36,7 @@ impl MediaKeyOutbox for HostMediaKeyOutbox {
             .media_keys()?
             .queue(session, recipient, client_id, sealed)
             .await)
+            .map(drop)
             .map_err(|e| e.to_string())
     }
 
