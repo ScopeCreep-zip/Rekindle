@@ -12,6 +12,9 @@
     background-image: linear-gradient(var(--skin-region-titlebar-backing), var(--skin-region-titlebar-backing));
     background-clip: content-box;
   }
+  .xfire-titlebar-text {
+    background-image: linear-gradient(var(--skin-region-titlebar-title-backing, var(--skin-region-titlebar-backing)), var(--skin-region-titlebar-title-backing, var(--skin-region-titlebar-backing)));
+  }
   :where(:root[data-window-inactive]) .xfire-titlebar {
     border-image: var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar));
   }

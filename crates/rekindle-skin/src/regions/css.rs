@@ -358,6 +358,10 @@ fn rules(
                 entry.labels.join(",\n  "),
                 b = backing_property(slot.id)
             );
+            // A strip's first label is its title (plan E7.7.7).
+            if let Some(title) = entry.labels.first().filter(|_| strip::is_strip(slot.id)) {
+                out.push_str(&super::title::title_rule(slot.id, title));
+            }
             labels.extend(entry.labels.iter().cloned());
         }
         if text {

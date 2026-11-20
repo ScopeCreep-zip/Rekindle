@@ -26,6 +26,7 @@ use crate::output::tokens_css;
 use crate::package::{self, Package};
 use crate::regions::css::skin_css;
 use crate::regions::still;
+use crate::regions::title::title_css;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
 use crate::{manifest, tokens};
 
@@ -175,7 +176,9 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
     let (v, resolved) = active_resolved(&p, &m)?;
     let mut css = tokens_css(&resolved).ok_or_else(|| unreadable("tokens do not emit"))?;
     let base = format!("{}/{address}", origin());
-    css.push_str(&skin_css(&m, &files(&p), &base).ok_or_else(|| unreadable("regions"))?);
+    let images = files(&p);
+    css.push_str(&skin_css(&m, &images, &base).ok_or_else(|| unreadable("regions"))?);
+    css.push_str(&title_css(&m, &images, &resolved));
     Ok(Stylesheet {
         base: v.base,
         css,
