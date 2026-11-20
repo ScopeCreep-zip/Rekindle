@@ -135,3 +135,31 @@ fn a_cold_read_counts_from_the_beat_number() {
         Some(BeatState::Online)
     );
 }
+
+/// A member none of whose beats reached us may be present (unknown is not
+/// offline, plan E3.4 S5 mesh fix 1); one whose beat expired, or whose
+/// beat says Offline or Departed, may not; a live Online beat may.
+#[test]
+fn may_be_present_keeps_the_unknown_and_drops_the_gone() {
+    let mut view = BeatView::default();
+    assert!(view.may_be_present(MEMBER), "never seen");
+    view.observe(
+        MEMBER,
+        &beat(1, BeatState::Online, PERIOD_START),
+        Some(PERIOD_START),
+        PERIOD_START,
+    );
+    assert!(view.may_be_present(MEMBER), "a live beat");
+    view.expire(PERIOD_START + BEAT_LIVENESS_MS);
+    assert!(!view.may_be_present(MEMBER), "an expired beat");
+    for (seq, state) in [(2, BeatState::Offline), (3, BeatState::Departed)] {
+        let mut view = BeatView::default();
+        view.observe(
+            MEMBER,
+            &beat(seq, state, PERIOD_START),
+            Some(PERIOD_START),
+            PERIOD_START,
+        );
+        assert!(!view.may_be_present(MEMBER), "{state:?}");
+    }
+}
