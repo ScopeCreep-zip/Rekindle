@@ -163,6 +163,10 @@ pub(crate) struct NodeSlot {
     /// The sets the node's app asked for (`DhtPort::set`), for a scenario
     /// that a stall starts no burst of writes.
     pub app_sets: u64,
+    /// Of [`Self::app_sets`], those that asked for the local copy again at
+    /// its seq (a same-seq re-send, such as the pool's own-write
+    /// republish): an observation, never a behaviour.
+    pub app_resends: u64,
     /// How many app calls the node made: an observation, never a
     /// behaviour.
     pub app_calls: u64,
@@ -222,6 +226,7 @@ impl NodeSlot {
             app_inspects: HashMap::new(),
             app_gets: HashMap::new(),
             app_sets: 0,
+            app_resends: 0,
             app_calls: 0,
             pools: Vec::new(),
             state: "detached",

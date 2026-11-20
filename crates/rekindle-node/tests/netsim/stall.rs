@@ -50,9 +50,13 @@ fn attachment_edges(events: &crate::harness::Events) -> Vec<bool> {
 /// raised on an attached/detached edge only) and the record pool's held
 /// writes keep their backoff (`SharedState::set_attachment` wakes the ready
 /// watch only on a changed readiness), while a real detach is heard once
-/// each way.
+/// each way. A stall causes no new (seq-advancing) write; the pool's
+/// own-write republish (plan OW1) re-sends a stored value at its seq on its
+/// own schedule, so a re-send may fall in the window, but never one per
+/// stall.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_stall_is_no_edge_and_starts_no_write_burst() {
+    const STALLS: u64 = 3;
     let (sim, mut nodes) = start(1, 96).await;
     nodes[0].unlock_new_identity("Cy").await;
     // The unlock's own-record writes run on after it returns; the window
@@ -60,8 +64,9 @@ async fn a_stall_is_no_edge_and_starts_no_write_burst() {
     tokio::time::sleep(std::time::Duration::from_secs(120)).await;
     sim.quiesce().await;
     let events = nodes[0].events().await;
-    let sets = sim.app_sets(0);
-    for _ in 0..3 {
+    let new_sets = sim.app_new_sets(0);
+    let resends = sim.app_resends(0);
+    for _ in 0..STALLS {
         sim.fault(Fault::Stall { node: 0, ms: 3_000 });
         sim.quiesce().await;
     }
@@ -69,7 +74,12 @@ async fn a_stall_is_no_edge_and_starts_no_write_burst() {
         attachment_edges(&events).is_empty(),
         "a re-sent attachment is no network change"
     );
-    assert_eq!(sim.app_sets(0), sets, "no write burst per stall");
+    assert_eq!(sim.app_new_sets(0), new_sets, "a stall causes no new write");
+    let resent = sim.app_resends(0) - resends;
+    assert!(
+        resent < STALLS,
+        "re-sends keep their schedule, not one per stall: {resent} in {STALLS} stalls"
+    );
 
     for detached in [true, false] {
         sim.fault(Fault::Detach { node: 0, detached });

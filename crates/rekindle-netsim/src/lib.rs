@@ -471,6 +471,22 @@ impl Netsim {
         self.net.inner.lock().nodes[node].app_sets
     }
 
+    /// How many of node `node`'s sets asked for its local copy again at
+    /// its seq (same data, same writer): re-sends, not new writes.
+    #[must_use]
+    pub fn app_resends(&self, node: usize) -> u64 {
+        self.net.inner.lock().nodes[node].app_resends
+    }
+
+    /// How many of node `node`'s sets were new writes (a seq-advancing
+    /// value): [`Self::app_sets`] less [`Self::app_resends`].
+    #[must_use]
+    pub fn app_new_sets(&self, node: usize) -> u64 {
+        let inner = self.net.inner.lock();
+        let slot = &inner.nodes[node];
+        slot.app_sets - slot.app_resends
+    }
+
     /// How many app calls node `node` made, of any kind.
     #[must_use]
     pub fn app_calls(&self, node: usize) -> u64 {

@@ -26,6 +26,7 @@ impl SimDht {
             .ok_or_else(|| error(DhtErrorKind::Generic, "value is not writable"))?;
         let public =
             writer_public(&writer).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
+        self.note_resend(key, subkey, &data, &public, min_seq);
         self.validate(key, subkey, &public, data.len())?;
         // In flight until it returns (0.5.8 `inspect_record.rs:274-277,287-290`).
         let _setting = super::super::Setting::new(&self.net, self.node, key, subkey);
@@ -49,6 +50,34 @@ impl SimDht {
             return Err(try_again());
         }
         fanout::commit(&self.net, self.node, (key, subkey), &ours, &fanout)
+    }
+
+    /// Counts a set that asks for the local copy again (the first branch
+    /// of [`Self::ours`]: the same data from the same writer at no higher
+    /// seq, so Veilid re-sends it at its seq), as the call arrives: an
+    /// observation for [`crate::Netsim::app_resends`], never a behaviour
+    /// (no RNG draw, no trace entry). A set that fails before here counts
+    /// as seq-advancing.
+    fn note_resend(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: &[u8],
+        public: &[u8; 32],
+        min_seq: Option<u32>,
+    ) {
+        let writer = public_text(public);
+        let mut inner = self.net.inner.lock();
+        let min = inner
+            .faults
+            .min_seqnum(self.node, key)
+            .max(min_seq.unwrap_or(0));
+        let resend = replicas::local(&inner, self.node, key, subkey).is_some_and(|l| {
+            l.value.data == data && l.value.writer == writer && min <= l.value.seq
+        });
+        if resend {
+            inner.nodes[self.node].app_resends += 1;
+        }
     }
 
     /// The value a write sends (0.5.8 `set_value.rs:353-386`): the same data
