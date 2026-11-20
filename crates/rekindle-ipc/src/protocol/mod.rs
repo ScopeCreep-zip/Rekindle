@@ -454,8 +454,10 @@ pub enum IpcRequest {
     /// Verify the identity's tamper-evident log end to end
     /// (`dto::audit::AuditVerified`).
     AuditVerify,
-    /// The log's entries after `since` (`dto::audit::AuditEntryView`).
-    AuditExport { since: u64 },
+    /// Write the log's entries after `since` (`dto::audit::AuditEntryView`)
+    /// as JSON to the absolute `path` the frontend picked
+    /// (`dto::audit::AuditExported`). Protected: the user reviews it first.
+    AuditExport { since: u64, path: String },
 
     // ── Links (plan E1.1) ─────────────────────────────────────────
     /// Open an https link in the system browser: reviewed as

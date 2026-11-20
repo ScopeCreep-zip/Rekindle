@@ -4,7 +4,7 @@
 //! `host::{own_presence, own_profile, audit_alert}`.
 
 use rekindle_ipc::protocol::IpcResponse;
-use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
+use rekindle_types::dto::audit::{AuditEntryView, AuditExported, AuditVerified};
 use rekindle_types::game_server::ServerAddress;
 use rekindle_types::image_kind::ImageKind;
 use rekindle_types::presence::SessionStatus;
@@ -75,7 +75,9 @@ pub(crate) async fn route(
         }
         IpcRequest::GamePresenceClear => handle_game_clear(ctx, state).await,
         IpcRequest::AuditVerify => handle_audit_verify(ctx, state).await,
-        IpcRequest::AuditExport { since } => handle_audit_export(ctx, state, since).await,
+        IpcRequest::AuditExport { since, path } => {
+            handle_audit_export(ctx, state, since, &path).await
+        }
         IpcRequest::LinkOpen { url } => handle_link_open(&url),
         IpcRequest::GameInviteSend {
             public_key,
@@ -410,8 +412,14 @@ async fn handle_audit_verify(ctx: &DaemonContext, state: DaemonState) -> IpcResp
     IpcResponse::ok(&verified)
 }
 
-/// `AuditExport`: the entries after `since`, MACs as hex.
-async fn handle_audit_export(ctx: &DaemonContext, state: DaemonState, since: u64) -> IpcResponse {
+/// `AuditExport`, once its review was committed: the entries after
+/// `since`, MACs as hex, written to `path`; answers the path and count.
+async fn handle_audit_export(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    since: u64,
+    path: &str,
+) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
@@ -419,21 +427,26 @@ async fn handle_audit_export(ctx: &DaemonContext, state: DaemonState, since: u64
         (Ok(db), Ok(owner)) => (db, owner),
         (Err(e), _) | (_, Err(e)) => return e,
     };
-    match crate::host::audit::export(&db, &owner, since).await {
-        Ok(entries) => IpcResponse::ok(
-            &entries
-                .into_iter()
-                .map(|entry| AuditEntryView {
-                    cursor: entry.cursor,
-                    prev_mac: hex::encode(entry.prev_mac),
-                    mac: hex::encode(entry.mac),
-                    at_ms: entry.record.at_ms,
-                    actor_pub: entry.record.actor_pub,
-                    kind: format!("{:?}", entry.record.kind),
-                    payload: entry.record.payload,
-                })
-                .collect::<Vec<_>>(),
-        ),
+    let entries = match crate::host::audit::export(&db, &owner, since).await {
+        Ok(entries) => entries
+            .into_iter()
+            .map(|entry| AuditEntryView {
+                cursor: entry.cursor,
+                prev_mac: hex::encode(entry.prev_mac),
+                mac: hex::encode(entry.mac),
+                at_ms: entry.record.at_ms,
+                actor_pub: entry.record.actor_pub,
+                kind: format!("{:?}", entry.record.kind),
+                payload: entry.record.payload,
+            })
+            .collect::<Vec<_>>(),
+        Err(e) => return IpcResponse::error(500, e),
+    };
+    match crate::host::audit::write_export(path, &entries).await {
+        Ok(()) => IpcResponse::ok(&AuditExported {
+            path: path.to_owned(),
+            entries: entries.len() as u64,
+        }),
         Err(e) => IpcResponse::error(500, e),
     }
 }

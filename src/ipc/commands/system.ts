@@ -4,7 +4,7 @@ import type {
 } from "./types";
 import type { OnboardingConfig, OnboardingConfigEdit, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
-  AuditEntryView, AuditVerified, GameTotalView, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
+  AuditExported, AuditVerified, GameTotalView, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
   SkinApplied, SkinEntry, SkinLibrary,
 } from "./dto";
 import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
@@ -40,7 +40,9 @@ export const systemCommands = {
 
   // The audit log: Host calls.
   auditVerify: () => hostInvoke<AuditVerified>("audit_verify"),
-  auditExport: (since: number) => hostInvoke<AuditEntryView[]>("audit_export", { since }),
+  // The shell asks where to save; the Host writes the file (Protected).
+  // `null` when the user cancelled the save dialog.
+  auditExport: (since: number) => hostInvoke<AuditExported | null>("audit_export", { since }),
 
   // The skin this window shows (plan E7.7.2): a Host call; `null` asks
   // for the skin this device shows now.

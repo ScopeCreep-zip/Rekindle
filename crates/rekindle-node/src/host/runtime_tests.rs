@@ -13,6 +13,8 @@ use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};
 
 #[path = "attachment_limit_tests.rs"]
 mod attachment_limit;
+#[path = "audit_export_tests.rs"]
+mod audit_export;
 #[path = "automod_malformed_tests.rs"]
 mod automod_malformed;
 #[path = "channel_change_tests.rs"]

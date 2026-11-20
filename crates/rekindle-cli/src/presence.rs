@@ -139,7 +139,13 @@ pub async fn dispatch_audit(
 ) -> anyhow::Result<()> {
     let request = match cmd {
         AuditCmd::Verify => IpcRequest::AuditVerify,
-        AuditCmd::Export { since } => IpcRequest::AuditExport { since: *since },
+        AuditCmd::Export { since, path } => IpcRequest::AuditExport {
+            since: *since,
+            path: std::path::absolute(path)?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("the export path is not UTF-8"))?,
+        },
     };
     let value = helpers::send(client, request).await?;
     format::print_structured(&value, mode)

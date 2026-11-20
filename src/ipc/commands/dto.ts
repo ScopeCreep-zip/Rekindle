@@ -427,14 +427,10 @@ export type AuditVerified =
   | { state: "intact"; length: number }
   | { state: "broken"; length: number; at: number | null; detail: string };
 
-export interface AuditEntryView {
-  cursor: number;
-  prevMac: string;
-  mac: string;
-  atMs: number;
-  actorPub: string;
-  kind: string;
-  payload: unknown;
+/// What the Host wrote for `auditExport`: the file and its entry count.
+export interface AuditExported {
+  path: string;
+  entries: number;
 }
 
 /// One skin the user can choose (`rekindle_types::dto::skin_library::SkinEntry`).

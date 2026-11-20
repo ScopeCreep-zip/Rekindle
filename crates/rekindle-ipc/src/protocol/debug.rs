@@ -279,9 +279,11 @@ impl IpcRequest {
                 .field("public_key", public_key)
                 .finish(),
             Self::AuditVerify => write!(f, "AuditVerify"),
-            Self::AuditExport { since } => {
-                f.debug_struct("AuditExport").field("since", since).finish()
-            }
+            Self::AuditExport { since, path } => f
+                .debug_struct("AuditExport")
+                .field("since", since)
+                .field("path", path)
+                .finish(),
             Self::SkinList => write!(f, "SkinList"),
             Self::SkinImport { bytes } => f
                 .debug_struct("SkinImport")

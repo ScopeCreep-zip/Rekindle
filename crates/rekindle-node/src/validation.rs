@@ -288,6 +288,12 @@ fn own(request: &IpcRequest) -> Checked {
                 Ok(())
             }
         }
+        IpcRequest::AuditExport { since: _, path } => {
+            if path.is_empty() || !std::path::Path::new(path).is_absolute() {
+                return Err(IpcResponse::error(400, "expected an absolute export path"));
+            }
+            Ok(())
+        }
         IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
             .map(drop)
             .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),
@@ -325,7 +331,6 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
-        | IpcRequest::AuditExport { since: _ }
         | IpcRequest::GamePresenceClear
         | IpcRequest::VoiceLeave
         | IpcRequest::NetworkStatus
@@ -425,6 +430,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FavouriteServerAdd { .. }
         | IpcRequest::FavouriteServerRemove { .. }
         | IpcRequest::ProfileSetAvatar { .. }
+        | IpcRequest::AuditExport { .. }
         | IpcRequest::LinkOpen { .. } => own(request),
         IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }

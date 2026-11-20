@@ -112,14 +112,31 @@ pub async fn audit_verify(
     host_call::call(&state, IpcRequest::AuditVerify).await
 }
 
-/// The audit log's entries after `since` (`IpcRequest::AuditExport`, a
-/// Protected action the intent dialog proves).
+/// Ask where to save the audit log's entries after `since`, then have the
+/// Host write them there (`IpcRequest::AuditExport`, a Protected action
+/// the intent dialog proves): the path and entry count, or `None` if the
+/// user cancelled the save dialog.
 #[tauri::command]
 pub async fn audit_export(
+    window: tauri::WebviewWindow,
     state: State<'_, SharedState>,
     since: u64,
-) -> Result<Done<Vec<rekindle_types::dto::audit::AuditEntryView>>, CommandError> {
-    host_call::call(&state, IpcRequest::AuditExport { since }).await
+) -> Result<Done<Option<rekindle_types::dto::audit::AuditExported>>, CommandError> {
+    let Some(path) =
+        crate::services::community_files_runtime::save_path(&window, "rekindle-audit-log.json")
+            .await?
+    else {
+        return Ok(Done {
+            value: None,
+            undo: None,
+        });
+    };
+    let done: Done<rekindle_types::dto::audit::AuditExported> =
+        host_call::call(&state, IpcRequest::AuditExport { since, path }).await?;
+    Ok(Done {
+        value: Some(done.value),
+        undo: done.undo,
+    })
 }
 
 /// The Host's lifecycle state (`IpcRequest::Status`): the cold-start read

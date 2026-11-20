@@ -1,6 +1,7 @@
 //! The tamper-evident audit log as frontends read it (plan E1.1):
 //! `AuditVerify` and `AuditExport` answer these, mapped from
-//! `rekindle_audit::{Verified, AuditEntry}` with the MACs as hex.
+//! `rekindle_audit::{Verified, AuditEntry}` with the MACs as hex. The
+//! export writes its entries to a file and answers [`AuditExported`].
 
 use serde::{Deserialize, Serialize};
 
@@ -37,4 +38,13 @@ pub struct AuditEntryView {
     /// The action, by its `AuditKind` name.
     pub kind: String,
     pub payload: serde_json::Value,
+}
+
+/// What `AuditExport` wrote: the file (a JSON array of [`AuditEntryView`])
+/// and how many entries it holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditExported {
+    pub path: String,
+    pub entries: u64,
 }

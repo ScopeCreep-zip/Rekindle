@@ -14,6 +14,7 @@ mod behind_key_repair;
 mod bootstrap_nak;
 mod channel_delete_container_not_empty;
 mod channel_edit_both_ways;
+mod channel_move;
 mod channel_post_both_ways;
 mod code_route_silent_death;
 mod community_block_drops;

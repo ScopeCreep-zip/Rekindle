@@ -113,8 +113,11 @@ pub enum GameCmd {
 pub enum AuditCmd {
     /// Verify the log end to end.
     Verify,
-    /// Print the log's entries.
+    /// Write the log's entries to a file (a Protected action: the
+    /// daemon asks for the passphrase first).
     Export {
+        /// Output file path (written owner-only by the daemon).
+        path: std::path::PathBuf,
         /// Only the entries after this cursor.
         #[arg(long, default_value = "0")]
         since: u64,

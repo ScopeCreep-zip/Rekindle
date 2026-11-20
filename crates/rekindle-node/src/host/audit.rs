@@ -12,6 +12,7 @@
 use parking_lot::Mutex;
 use rekindle_audit::{AuditChain, AuditEntry, AuditKind, AuditRecord, Restored, Verified};
 use rekindle_db::Db;
+use rekindle_types::dto::audit::AuditEntryView;
 use rekindle_vault::typed::audit::{
     load_audit_tail, load_or_create_audit_mac_key, persist_audit_tail,
 };
@@ -124,6 +125,32 @@ pub async fn export(db: &Db, owner: &str, since: u64) -> Result<Vec<AuditEntry>,
     db.call(move |conn| rekindle_db::repo::audit::load_since(conn, &owner, since))
         .await
         .map_err(|e| format!("audit entries: {e}"))
+}
+
+/// Write `entries` to `path` as a JSON array, owner-only on Unix (the log
+/// names every security-relevant action). The path is the one the user
+/// picked in the frontend's save dialog, which already asked before
+/// replacing a file, so an existing file is replaced.
+///
+/// # Errors
+/// The entries could not be encoded or the file written.
+pub async fn write_export(path: &str, entries: &[AuditEntryView]) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    let bytes = serde_json::to_vec_pretty(entries).map_err(|e| format!("audit export: {e}"))?;
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(path)
+        .await
+        .map_err(|e| format!("cannot create {path}: {e}"))?;
+    file.write_all(&bytes)
+        .await
+        .map_err(|e| format!("cannot write {path}: {e}"))?;
+    file.sync_all()
+        .await
+        .map_err(|e| format!("cannot write {path}: {e}"))
 }
 
 /// Record the wrong passphrases an unlock cleared, as one entry.
