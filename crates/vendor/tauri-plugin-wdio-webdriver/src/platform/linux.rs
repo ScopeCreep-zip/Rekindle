@@ -295,7 +295,10 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
                 // background under it), as WKWebView's snapshot does on macOS:
                 // a shaped window's outline is its alpha (plan E7.14 on SK0).
                 let result = webview
-                    .snapshot_future(SnapshotRegion::Visible, SnapshotOptions::TRANSPARENT_BACKGROUND)
+                    .snapshot_future(
+                        SnapshotRegion::Visible,
+                        SnapshotOptions::TRANSPARENT_BACKGROUND,
+                    )
                     .await;
 
                 let response: Result<String, String> = match result {

@@ -212,5 +212,8 @@ fn a_shaped_window_without_a_frame_keeps_square_corners() {
     // `.app-frame` radius must not round the drawing inside that cut.
     let css = include_str!("../../../../src/styles/theme/22-skin-frame.css");
     let rule = ".app-frame[data-skin-window] {\n    border-radius: 0;\n  }";
-    assert!(css.contains(rule), "22-skin-frame.css must square a shaped window: {css}");
+    assert!(
+        css.contains(rule),
+        "22-skin-frame.css must square a shaped window: {css}"
+    );
 }
