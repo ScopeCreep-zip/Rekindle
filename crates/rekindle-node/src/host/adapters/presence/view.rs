@@ -56,6 +56,17 @@ pub(crate) fn shown(ctx: &DaemonContext, community: &str, member: &str) -> BeatS
         .map_or(BeatState::Offline, |c| c.beat_view.shown(member))
 }
 
+/// Whether `member` (pseudonym hex) may be present in `community`: no beat
+/// of theirs reached us yet, or it shows them present
+/// ([`rekindle_presence::community::BeatView::may_be_present`]).
+pub(crate) fn may_be_present(ctx: &DaemonContext, community: &str, member: &str) -> bool {
+    ctx.communities
+        .map()
+        .read()
+        .get(community)
+        .is_some_and(|c| c.beat_view.may_be_present(member))
+}
+
 /// Turn every member whose beat went stale offline, in every community;
 /// the earliest next expiry.
 fn expire_all(ctx: &DaemonContext) -> Option<u64> {

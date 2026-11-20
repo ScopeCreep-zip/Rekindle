@@ -132,6 +132,17 @@ impl BeatView {
             .map_or(BeatState::Offline, |e| e.shown)
     }
 
+    /// Whether `member` may be present: no beat of theirs has reached us
+    /// yet (their state is unknown, not offline), or their beat shows them
+    /// present. A gossip mesh keeps such a member (plan E3.4 S5): the
+    /// fast path must not wait for a joiner's first beat to arrive.
+    #[must_use]
+    pub fn may_be_present(&self, member: &str) -> bool {
+        self.members
+            .get(member)
+            .is_none_or(|e| e.shown.is_present())
+    }
+
     /// Turn every member whose beat went stale by `now_ms` offline; the
     /// members turned.
     pub fn expire(&mut self, now_ms: u64) -> Vec<String> {

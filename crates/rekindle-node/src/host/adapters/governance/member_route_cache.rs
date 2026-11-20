@@ -255,13 +255,18 @@ impl HostGovernance {
             .collect()
     }
 
-    /// [`Self::routed_members`] whose beat shows them present now (plan
-    /// E3.4 S5's mesh peers: roster ∩ `M`/6 ∩ beat live): the members a
-    /// voice session or a file fetch can reach.
+    /// [`Self::routed_members`] who may be present now (plan E3.4 S5's mesh
+    /// peers: roster ∩ `M`/6 ∩ not shown offline): a member whose beat shows
+    /// them present, or one whose beat has not reached us yet. A member only
+    /// an expired, `Offline` or `Departed` beat shows is left out; an unknown
+    /// one is not offline (a joiner's first beat can arrive after a post it
+    /// must hear). The members a voice session or a file fetch can reach.
     #[must_use]
     pub fn reachable_members(&self, community: &str) -> Vec<(String, Vec<u8>)> {
         let mut members = self.routed_members(community);
-        members.retain(|(p, _)| self.member_beat_shown(community, p).is_present());
+        members.retain(|(p, _)| {
+            crate::host::adapters::presence::view::may_be_present(&self.ctx, community, p)
+        });
         members
     }
 

@@ -2,8 +2,9 @@
 //! (ADR 0010): PATH 2 of the three-path model, the D-peer epidemic
 //! broadcast (TTL 5, dedup by the signed `message_id`).
 //!
-//! The mesh is the governance roster ∩ the members whose beat is live
-//! ([`HostGovernance::member_beat_shown`], plan E3.4 S3), each reached by
+//! The mesh is the governance roster ∩ the members who may be present (a
+//! beat showing them present, or none of theirs reached us yet: unknown is
+//! not offline; plan E3.4 S3's beat view), each reached by
 //! the route its `M`/6 published (the member route cache, plan E3.4 S4).
 //! It is built from what the ring and the hints already delivered, so
 //! nothing is polled for it (D4): the registry scan's overlay it replaces
