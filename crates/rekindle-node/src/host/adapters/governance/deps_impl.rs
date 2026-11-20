@@ -330,6 +330,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.ctx.communities.rebuild_lock(community_id)
     }
 
+    fn admission_lock(&self, community_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+        self.ctx.communities.admission_lock(community_id)
+    }
+
     fn rebuild_flight(
         &self,
         community_id: &str,

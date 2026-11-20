@@ -140,13 +140,15 @@ fn with_member_invite(admin_op: impl FnOnce(&Member) -> GovernanceEntry) -> (Wor
 }
 
 #[test]
-fn a_revocation_outside_the_inviters_past_leaves_a_join_concurrent() {
-    // Accepted (C5): the join sees only the inviter's chain and the base.
+fn a_revocation_outside_the_inviters_past_refuses_a_concurrent_join() {
+    // The join sees only the inviter's chain and the base (C5), so it is
+    // concurrent with the revoke, and a join outside its invite's revoke's
+    // past is refused (plan SU1, lead decision: fail-closed, accepted).
     let (mut world, inviter) =
         with_member_invite(|_| GovernanceEntry::InviteRevoked { invite_id: [2; 16] });
     let joiner = Member::new(20);
     world.join(&joiner, &inviter, "code2");
-    assert!(world.state.members.contains_key(&joiner.author()));
+    assert!(!world.state.members.contains_key(&joiner.author()));
 }
 
 #[test]

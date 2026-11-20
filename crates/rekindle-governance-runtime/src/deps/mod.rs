@@ -388,6 +388,12 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// one. Held from the op-set read to the install.
     fn rebuild_lock(&self, community_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>>;
 
+    /// The lock that serializes `community_id`'s bootstrap admissions (plan
+    /// SU1): from the merge that admits a join through its store and, when
+    /// it fills its invite's `max_uses`, the invite's revoke, so two
+    /// joiners never both take the last use. Never held by a rebuild.
+    fn admission_lock(&self, community_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>>;
+
     /// `community_id`'s rebuild generations, which coalesce the triggers
     /// that arrive while a rebuild runs into one more (plan E3.2 S7l).
     fn rebuild_flight(

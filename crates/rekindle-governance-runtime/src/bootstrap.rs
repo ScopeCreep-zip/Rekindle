@@ -106,9 +106,14 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
             "bootstrap: the op is not the joiner's MemberJoined (op #0, or a re-join after its departure)",
         ));
     }
+    // Check, store and (on the last use) revoke under one lock (plan SU1):
+    // two joiners on one invite are admitted one after the other.
+    let admission = deps.admission_lock(anchor);
+    let admitting = admission.lock().await;
     for dep in admitted_deps(deps, anchor, &op).await? {
         deps.store_governance_op(anchor, &dep).await?;
     }
+    let joined_op = op.clone();
     op_log::receive_op(deps, anchor, op.encoded).await?;
     let state = deps
         .governance_state(anchor)
@@ -118,6 +123,11 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
             rekindle_types::join_refusal::JoinRefusal::NotAdmitted,
         ));
     }
+    revoke_if_used_up(deps, anchor, &joined_op, &state).await?;
+    drop(admitting);
+    let state = deps
+        .governance_state(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
     let cert = deps
         .genesis_cert(anchor)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
@@ -186,6 +196,58 @@ async fn admitted_deps<D: GovernanceRuntimeDeps>(
             Err(GovernanceRuntimeError::JoinNotAdmitted(reason))
         };
     }
+}
+
+/// When the join we just admitted (`joined`) takes the last use of an
+/// invite we created, revoke that invite citing it (plan SU1): every
+/// reader then refuses a join outside the revoke's causal past
+/// (`merge::gates::revoke_excluding`), so a join citing stale deps and
+/// ground to a lower hash can never displace the one we admitted. The
+/// revoke is queued (we answer within the `app_call` window); our frontier
+/// holds the join, so the revoke cites it. An invite already revoked has
+/// left `state.invites`, so a repeated request revokes nothing.
+///
+/// # Errors
+/// The revoke could not be authored or stored.
+async fn revoke_if_used_up<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    joined: &HeldOp,
+    state: &rekindle_governance::state::GovernanceState,
+) -> Result<(), GovernanceRuntimeError> {
+    use rekindle_types::governance::GovernanceEntry;
+    let Ok(decoded) = rekindle_codec::governance_op::decode_op(&joined.encoded) else {
+        return Ok(());
+    };
+    let GovernanceEntry::MemberJoined {
+        invite_proof: Some(proof),
+        ..
+    } = decoded.op.body
+    else {
+        return Ok(());
+    };
+    let me = deps
+        .community_membership(anchor)
+        .and_then(|m| m.my_pseudonym_hex);
+    let used_up = (state.invites.iter())
+        .filter(|(_, i)| i.code_hash == proof.code_hash)
+        .min_by_key(|(id, _)| **id)
+        .filter(|(_, i)| i.uses >= i.max_uses)
+        .filter(|(_, i)| me.as_deref() == Some(hex::encode(i.creator_pseudonym.0).as_str()))
+        .map(|(id, _)| *id);
+    if let Some(invite_id) = used_up {
+        crate::apply::write_entry_queued(
+            deps,
+            anchor,
+            GovernanceEntry::InviteRevoked { invite_id },
+        )
+        .await?;
+        tracing::info!(
+            community = anchor,
+            "a used-up invite revoked at its last admission"
+        );
+    }
+    Ok(())
 }
 
 /// Whether the merged `state` holds `author`'s `MemberJoined` as admitted:

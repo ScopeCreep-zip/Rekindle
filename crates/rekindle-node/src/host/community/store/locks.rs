@@ -67,6 +67,13 @@ impl CommunityStore {
         community_lock(&self.frontier_writes, community_id)
     }
 
+    /// The lock that serializes `community_id`'s bootstrap admissions (plan
+    /// SU1).
+    #[must_use]
+    pub fn admission_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        community_lock(&self.admissions, community_id)
+    }
+
     /// Mark `community_id`'s post-rebuild follow-up dirty; `true` when no
     /// follow-up task runs, so the caller starts one.
     #[must_use]
@@ -107,6 +114,7 @@ impl CommunityStore {
         self.rebuild_flights.lock().remove(community_id);
         self.op_verify.lock().remove(community_id);
         self.frontier_writes.lock().remove(community_id);
+        self.admissions.lock().remove(community_id);
         self.follow_ups.lock().remove(community_id);
         self.member_cards
             .write()
@@ -121,6 +129,7 @@ impl CommunityStore {
         self.rebuild_flights.lock().clear();
         self.op_verify.lock().clear();
         self.frontier_writes.lock().clear();
+        self.admissions.lock().clear();
         self.follow_ups.lock().clear();
         self.member_cards.write().clear();
     }

@@ -166,7 +166,9 @@ async fn resolve_inviter_route<D: GovernanceRuntimeDeps>(
 /// - expired, or revoked (an applied `InviteCreated` for `code_hash` that
 ///   the state no longer holds: `GovernanceState::invites` is
 ///   `InviteCreated` minus `InviteRevoked`): `InviteNoLongerValid`, one
-///   reason for both, as the gate gives;
+///   reason for both, as the gate gives, except a revoke whose causal past
+///   holds `max_uses` joins (the inviter's revoke at the last use, plan
+///   SU1): `InviteUsedUp`;
 /// - no applied `InviteCreated` matches: `InviteUnknown`.
 ///
 /// After a resume from a hint, `ops` holds only the post-cut ops: an
@@ -191,10 +193,72 @@ pub(crate) fn check_invite(
             JoinRefusal::InviteNoLongerValid
         }
         Some(_) => JoinRefusal::InviteUsedUp,
-        None if created_in(walked, code_hash) => JoinRefusal::InviteNoLongerValid,
-        None => JoinRefusal::InviteUnknown,
+        None => revoked_reason(walked, code_hash).unwrap_or(JoinRefusal::InviteUnknown),
     };
     Err(GovernanceRuntimeError::InviteRefused(reason))
+}
+
+/// Why an invite `code_hash` created by an applied op of the walked set is
+/// no longer held (plan SU1): `InviteUsedUp` when an applied
+/// `InviteRevoked` of it holds `max_uses` applied joins on it in its causal
+/// past (the inviter revokes the invite at the join that fills it,
+/// `bootstrap::revoke_if_used_up`), else `InviteNoLongerValid` (revoked or
+/// expired, one reason); `None` when no applied op created it.
+fn revoked_reason(
+    (ops, applied): (&[VerifiedOp], &[OpHash]),
+    code_hash: &str,
+) -> Option<JoinRefusal> {
+    if !created_in((ops, applied), code_hash) {
+        return None;
+    }
+    let is_applied = |op: &&VerifiedOp| applied.contains(&op.hash());
+    let used_up = (ops.iter().filter(is_applied)).any(|revoke| {
+        let GovernanceEntry::InviteRevoked { invite_id } = revoke.body() else {
+            return false;
+        };
+        let Some(max_uses) = (ops.iter().filter(is_applied)).find_map(|c| match c.body() {
+            GovernanceEntry::InviteCreated {
+                invite_id: id,
+                code_hash: c,
+                max_uses,
+                ..
+            } if id == invite_id && c == code_hash => Some(*max_uses),
+            _ => None,
+        }) else {
+            return false;
+        };
+        let past = causal_past(ops, revoke);
+        let joins = (ops.iter().filter(is_applied))
+            .filter(|j| past.contains(&j.hash()))
+            .filter(|j| {
+                matches!(j.body(), GovernanceEntry::MemberJoined { invite_proof: Some(p), .. }
+                    if p.code_hash == code_hash)
+            })
+            .count();
+        u32::try_from(joins).is_ok_and(|joins| joins >= max_uses)
+    });
+    Some(if used_up {
+        JoinRefusal::InviteUsedUp
+    } else {
+        JoinRefusal::InviteNoLongerValid
+    })
+}
+
+/// The hashes of `op`'s causal past among `ops` (deps outside `ops`, below
+/// a resume's cut, end the walk).
+fn causal_past(ops: &[VerifiedOp], op: &VerifiedOp) -> std::collections::BTreeSet<OpHash> {
+    let index: std::collections::HashMap<OpHash, &VerifiedOp> =
+        ops.iter().map(|o| (o.hash(), o)).collect();
+    let mut past = std::collections::BTreeSet::new();
+    let mut todo: Vec<OpHash> = op.op().deps.iter().map(|r| r.op_hash).collect();
+    while let Some(hash) = todo.pop() {
+        if past.insert(hash) {
+            if let Some(dep) = index.get(&hash) {
+                todo.extend(dep.op().deps.iter().map(|r| r.op_hash));
+            }
+        }
+    }
+    past
 }
 
 /// Whether an applied op of the walked set created the invite `code_hash`.

@@ -86,3 +86,20 @@ fn an_invite_never_created_is_unknown() {
     let world = World::new(&creator);
     assert_eq!(check(&world, "nope", 10), Err(JoinRefusal::InviteUnknown));
 }
+
+/// Plan SU1: once the inviter revoked a single-use invite at the join
+/// that filled it, the joiner's own check still answers `InviteUsedUp`
+/// (the revoke's past holds the one use), not `InviteNoLongerValid`.
+#[test]
+fn an_invite_revoked_at_its_last_use_is_invite_used_up() {
+    let creator = Member::new(1);
+    let mut world = World::new(&creator);
+    world.author(&creator, limited(2, "once", 1, None), Deps::Frontier);
+    world.join(&Member::new(10), &creator, "once");
+    world.author(
+        &creator,
+        GovernanceEntry::InviteRevoked { invite_id: [2; 16] },
+        Deps::Frontier,
+    );
+    assert_eq!(check(&world, "once", 10), Err(JoinRefusal::InviteUsedUp));
+}

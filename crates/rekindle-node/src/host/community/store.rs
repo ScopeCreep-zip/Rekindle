@@ -66,6 +66,10 @@ pub struct CommunityStore {
     /// (S7l): `append_own_op` and the post-rebuild republish were two
     /// unsynchronized writers, so an older head set could land last.
     frontier_writes: CommunityLocks,
+    /// One lock per community serializing its bootstrap admissions (plan
+    /// SU1): the check, the store and the invite's used-up revoke of one
+    /// join never interleave with another's.
+    admissions: CommunityLocks,
     /// The post-rebuild follow-up per community (S7l): at most one runs,
     /// and the rebuilds that finish meanwhile only mark it dirty.
     follow_ups: Arc<parking_lot::Mutex<BTreeMap<String, FollowUp>>>,
@@ -86,6 +90,7 @@ impl CommunityStore {
             rebuild_flights: Arc::default(),
             op_verify: Arc::default(),
             frontier_writes: Arc::default(),
+            admissions: Arc::default(),
             follow_ups: Arc::default(),
             held_changes: Arc::default(),
         }
