@@ -520,6 +520,9 @@ async fn frame_row(
         .sent_at
         .and_then(|t| u64::try_from(t).ok())
         .unwrap_or_else(|| host.clock().now_ms());
+    super::stream::published_first(host, to, &body)
+        .await
+        .map_err(attempt_of)?;
     let chain_seq = match (&body, assign) {
         (DirectBody::StreamRecord(_), _) => 0,
         (_, true) => super::chain_seq::assign(host, to, row.stream_seq)

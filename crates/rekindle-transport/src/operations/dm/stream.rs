@@ -274,6 +274,44 @@ pub(super) async fn send_record(
         .map(|_| ())
 }
 
+/// A dm `StreamRecord` about to be framed: its record [`publish`]ed first.
+/// Any other body (a group's `StreamRecord` names a chain written at its
+/// creation) goes as it is.
+pub(super) async fn published_first(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<(), FriendError> {
+    match body {
+        DirectBody::StreamRecord(StreamRecord {
+            record_key,
+            group_id: None,
+        }) => publish(host, to, record_key).await,
+        _ => Ok(()),
+    }
+}
+
+/// Our record `record_key` to `to` is on the network before its
+/// `StreamRecord` leaves (`chain::publish_participant`): the outbox frames
+/// that row only after this succeeds and attempts it again while it fails,
+/// so a sent key always names a record the peer finds. A key we no longer
+/// write (replaced since the row was queued) is not ours to publish.
+///
+/// # Errors
+/// The record could not be read or its `HEAD` did not land.
+pub async fn publish(host: &dyn FriendHost, to: &str, record_key: &str) -> Result<(), FriendError> {
+    let Some(ours) = host.held_participant_writer(to).await? else {
+        return Ok(());
+    };
+    if ours.record_key != record_key {
+        return Ok(());
+    }
+    let port = records(host)?;
+    chain::publish_participant(port.as_ref(), record_key, &ours.writer)
+        .await
+        .map_err(|e| FriendError::NotReady(format!("participant record not on the network: {e}")))
+}
+
 /// A friend's `StreamRecord`: kept for an accepted friend only; a key that
 /// replaces one held restarts our cursor on them, and a new key is diffed.
 /// Whether it is done.

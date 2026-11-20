@@ -3,9 +3,11 @@
 //! our stream to that peer. Created on the first frame to them; the owner
 //! keypair is saved to the vault (`VaultKey::DmParticipantOwner`) before
 //! the record key is stored in `friends.participant_record_key`, so a
-//! stored key always has its writer, and its empty `HEAD` is on the network
-//! before then, so a stored (or sent) key always names a record a reader
-//! finds.
+//! stored key always has its writer. The record is made locally, so the
+//! first hints never wait on the network; its empty `HEAD` lands before its
+//! key is sent (the `StreamRecord` row waits on
+//! `rekindle_records::chain::publish_participant`), so a sent key always
+//! names a record a reader finds.
 
 use rekindle_transport::operations::dm::stream::ParticipantWriter;
 use rekindle_transport::operations::friend::{session_owner, FriendError, FriendHost};
@@ -70,11 +72,14 @@ pub(super) async fn writer(
         .node()?
         .require_records()
         .map_err(|e| FriendError::NotReady(format!("records: {e}")))?;
-    // The empty HEAD is written before the key is stored or leaves us, so
-    // the peer opening the record finds it (`chain::create_participant`).
-    let (record_key, keypair) = rekindle_records::chain::create_participant(pool.as_ref())
+    // Created locally (Veilid writes nothing at create, 0.5.8
+    // `storage_manager/create_record.rs`), so this works with our DHT
+    // offline; the empty HEAD lands before the key is sent (module doc).
+    let (lease, record_key, keypair) = pool
+        .create(&rekindle_records::schema::dm_participant(), None)
         .await
         .map_err(|e| FriendError::NotReady(format!("participant record: {e}")))?;
+    pool.release(lease).await;
     {
         let guard = host.ctx().vault.lock();
         let vault = guard.as_ref().ok_or(FriendError::Locked)?;
@@ -197,20 +202,42 @@ mod tests {
         assert!(!held.created);
     }
 
-    /// The record is on the network when its key is stored (and so before
-    /// it leaves us): its `HEAD` holds the empty head. Veilid creates a
-    /// record locally and writes nothing (0.5.8 `create_record.rs`), so a
-    /// peer opening a participant record nobody wrote got `KeyNotFound`
-    /// ("participant record not opened; retried").
+    /// The record is made without the network (our DHT offline), and is on
+    /// the network once published, before its key is sent: its `HEAD` holds
+    /// the empty head. Veilid creates a record locally and writes nothing
+    /// (0.5.8 `create_record.rs`), so a peer opening a participant record
+    /// nobody wrote got `KeyNotFound` ("participant record not opened;
+    /// retried").
     #[tokio::test]
-    async fn a_created_record_is_on_the_network_before_its_key_is_stored() {
+    async fn a_record_made_offline_is_on_the_network_before_its_key_is_sent() {
         use rekindle_types::dht_layout::dm_participant;
         let dir = tempfile::tempdir().unwrap();
         let peer = hex::encode(rekindle_crypto::Identity::generate().public_key_bytes());
         let (sim, host) = host_on_sim(&dir, &peer).await;
         let friends = HostFriends::of(&host.ctx);
+        sim.fault(rekindle_netsim::Fault::DhtOffline {
+            node: 0,
+            offline: true,
+        });
         let created = writer(&friends, &peer).await.unwrap();
         assert!(created.created);
+        assert!(
+            rekindle_transport::operations::dm::stream::publish(
+                &friends,
+                &peer,
+                &created.record_key
+            )
+            .await
+            .is_err(),
+            "the key is not sent while the record cannot land"
+        );
+        sim.fault(rekindle_netsim::Fault::DhtOffline {
+            node: 0,
+            offline: false,
+        });
+        rekindle_transport::operations::dm::stream::publish(&friends, &peer, &created.record_key)
+            .await
+            .expect("the record lands");
         let head = sim
             .network_get(&created.record_key, dm_participant::HEAD)
             .expect("the participant record is on the network");

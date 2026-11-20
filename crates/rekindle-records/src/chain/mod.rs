@@ -33,7 +33,7 @@ mod page;
 mod tests;
 
 use crate::port::OpenIntent;
-pub use create::create_participant;
+pub use create::{create_participant, publish_participant};
 pub use local::local_newest_entry;
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_codec::capnp_codec::chain::{ChainHead, ChainPage};
