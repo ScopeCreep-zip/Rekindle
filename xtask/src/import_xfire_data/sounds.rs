@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 use rekindle_skin::output::{self, Canonical};
 use rekindle_skin::{sounds, validate};
 use rekindle_types::dto::skin::{
@@ -72,13 +72,13 @@ fn elements(
     let mut inside = false;
     loop {
         match reader.read_event().map_err(|e| anyhow!("{file}: {e}"))? {
-            Event::Start(e) if e.name().as_ref() == element.as_bytes() => {
+            Event::Start(e) if e.name().as_ref() == element => {
                 let key = match attr {
                     Some(a) => e
                         .try_get_attribute(a)
                         .map_err(|x| anyhow!("{file}: {x}"))?
                         .with_context(|| format!("{file}: <{element}> without {a}"))?
-                        .unescape_value()
+                        .normalized_value(XmlVersion::Implicit1_0)
                         .map_err(|x| anyhow!("{file}: {x}"))?
                         .into_owned(),
                     None => String::new(),
@@ -88,12 +88,12 @@ fn elements(
                 ensure!(out.len() <= 256, "{file}: too many elements");
             }
             Event::Text(t) if inside => {
-                let s = t.decode().map_err(|e| anyhow!("{file}: {e}"))?;
+                let s = t.xml_content(XmlVersion::Implicit1_0);
                 if let Some(last) = out.last_mut() {
                     last.1.push_str(s.trim());
                 }
             }
-            Event::End(e) if e.name().as_ref() == element.as_bytes() => inside = false,
+            Event::End(e) if e.name().as_ref() == element => inside = false,
             Event::GeneralRef(_) => bail!("{file}: entity references are refused"),
             Event::Eof => break,
             _ => {}

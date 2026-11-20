@@ -20,7 +20,7 @@ crc32fast = "1.5"
 # PCM16 WAV writer for the re-encoded sound cues (Apache-2.0).
 hound = "3.5"
 # The Xfire XML-era importer's reader (MIT): no DTD, no entity resolution.
-quick-xml = "0.38"
+quick-xml = "0.42"
 # The Winamp importer inflates its legacy archive (MIT; already in the tree
 # through png). Deflate is inflated only there.
 miniz_oxide = "0.8"

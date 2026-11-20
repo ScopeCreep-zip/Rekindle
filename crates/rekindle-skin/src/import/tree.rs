@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use quick_xml::events::{BytesStart, Event};
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 
 use super::ImportError;
 
@@ -62,12 +62,14 @@ fn xml_err(file: &str, detail: impl std::fmt::Display) -> ImportError {
 }
 
 fn open(file: &str, e: &BytesStart<'_>) -> Result<Node, ImportError> {
-    let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+    let name = e.name().as_ref().to_owned();
     let mut attrs = BTreeMap::new();
     for a in e.attributes() {
         let a = a.map_err(|x| xml_err(file, x))?;
-        let key = String::from_utf8_lossy(a.key.as_ref()).into_owned();
-        let value = a.unescape_value().map_err(|x| xml_err(file, x))?;
+        let key = a.key.as_ref().to_owned();
+        let value = a
+            .normalized_value(XmlVersion::Implicit1_0)
+            .map_err(|x| xml_err(file, x))?;
         attrs.insert(key, value.into_owned());
     }
     Ok(Node {
@@ -110,13 +112,13 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Node, ImportError> {
                     .push(node);
             }
             Event::Text(t) => {
-                let s = t.decode().map_err(|e| xml_err(file, e))?;
+                let s = t.xml_content(XmlVersion::Implicit1_0);
                 if let Some(top) = stack.last_mut() {
                     top.text.push_str(s.trim());
                 }
             }
             Event::CData(t) => {
-                let s = t.decode().map_err(|e| xml_err(file, e))?;
+                let s = t.xml_content(XmlVersion::Implicit1_0);
                 if let Some(top) = stack.last_mut() {
                     top.text.push_str(s.trim());
                 }

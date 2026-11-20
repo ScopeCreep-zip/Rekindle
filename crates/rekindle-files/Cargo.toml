@@ -16,7 +16,7 @@ blake3 = "1"
 # with the binding the media engine (rekindle-voice) uses.
 opus = "0.3"
 hex = { workspace = true }
-lru = "0.12"
+lru = "0.19"
 parking_lot = { workspace = true }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-codec = { path = "../rekindle-codec" }

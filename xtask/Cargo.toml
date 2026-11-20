@@ -44,7 +44,7 @@ rekindle-skin = { path = "../crates/rekindle-skin" }
 # the packs inflated and CRC-checked (already in the tree through png);
 # provenance hashes; the icon PNG encoder; the bank's manifest types.
 pelite = { version = "0.10.0", default-features = false, features = ["std"] }
-quick-xml = "0.38"
+quick-xml = "0.42"
 miniz_oxide = "0.8"
 crc32fast = "1.5"
 blake3 = "1"
