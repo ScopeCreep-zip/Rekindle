@@ -81,6 +81,8 @@ Regions
   statusbar.arrow: the component DownArrow, 44x17 px, Stretch; states normal, hover, down
   buddylist.action-button: the component AddButton, 48x27 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   buddylist.group-header: the component BuddyView, 104x16 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
+  community.category-header: the component BuddyView, 104x16 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
+  community.member-group-header: the component BuddyView, 104x16 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
   scrollbar.button-up: the scrollbar DefaultScrollbar, 4x4 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: the scrollbar DefaultScrollbar, 4x4 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: the scrollbar DefaultScrollbar, 4x4 px, Stretch; states normal, hover, down, disabled
@@ -95,9 +97,9 @@ Regions
   chat.call-button-active: the component InfoLeaveChatButton, 38x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 44 of 155 images
+  kept 44 of 154 images
   Disabled sets: kept 5 of 25
-  Down sets: kept 8 of 42
+  Down sets: kept 8 of 41
   Hover sets: kept 8 of 45
   dropped XfireLogo Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped XfireLogo Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -134,7 +136,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped DownloadInfoButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownloadInfoButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped DownloadInfoButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped TabNormalButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ScrollbarA Hover: its slot is filled by an earlier component

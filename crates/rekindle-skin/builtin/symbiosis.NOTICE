@@ -84,6 +84,7 @@ Colours (63 defined)
 Regions
   window.frame: the nine-piece frame of Components/ChatWindow.xml, 126x126 px, nine-slice 13/13/13/13
   buddylist.infobar: the component InfoBar, 30x46 px, NineSlice(Insets { top: 0, right: 10, bottom: 0, left: 10 }); states normal
+  community.sidebar-header: the component InfoBar, 30x46 px, NineSlice(Insets { top: 0, right: 10, bottom: 0, left: 10 }); states normal
   scrollbar.button-up: the scrollbar XfireScrollbar, 16x14 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: the scrollbar XfireScrollbar, 16x14 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: the scrollbar XfireScrollbar, 14x16 px, Stretch; states normal, hover, down, disabled
@@ -99,6 +100,8 @@ Regions
   titlebar.btn.close: the title button ButtonClose, 18x16 px, Stretch; states normal, hover, down, disabled
   titlebar: the titlebar strip MainTopRow, 39x13 px, NineSlice(Insets { top: 0, right: 13, bottom: 0, left: 13 }); states normal
   buddylist.group-header: the component XfireView, 6x19 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
+  community.category-header: the component XfireView, 6x19 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
+  community.member-group-header: the component XfireView, 6x19 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
   statusbar: the component StatusBarContainer, 6x19 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
   statusbar.arrow: the component ButtonStatusChanger, 21x19 px, Stretch; states normal, hover, down
   buddylist.actionbar: the component FriendsButtonBar, 17x84 px, NineSlice(Insets { top: 0, right: 8, bottom: 0, left: 8 }); states normal
@@ -106,6 +109,7 @@ Regions
   buddylist.tab: the component ButtonFriendsTab, 57x48 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, selected
   chat.input: the component ChatEditContainer, 30x30 px, Stretch; states normal
   chat.toolbar: the component ChatButtonBar, 17x44 px, NineSlice(Insets { top: 0, right: 8, bottom: 0, left: 8 }); states normal
+  community.channel-header: the component ChatButtonBar, 17x44 px, NineSlice(Insets { top: 0, right: 8, bottom: 0, left: 8 }); states normal
   chat.send-button: the component ChatButtonSend, 51x50 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.call-button: the component ChatButtonCall, 75x41 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.call-button-active: the component ChatButtonLeaveCall, 75x41 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled

@@ -116,29 +116,51 @@
     .chat-window .chat-call-btn.chat-call-btn-active:disabled, .chat-window .chat-call-btn.chat-call-btn-active[aria-disabled="true"] {
       border-image: var(--skin-region-chat-call-button-active--disabled--still, var(--skin-region-chat-call-button-active--disabled, var(--skin-region-chat-call-button-active--still, var(--skin-region-chat-call-button-active))));
     }
-    .chat-window .message-input-shell {
+    .chat-window .message-input-shell,
+    .community-window .message-input-shell {
       border-image: var(--skin-region-chat-input--still, var(--skin-region-chat-input));
     }
-    .chat-window .message-input-send-btn {
+    .chat-window .message-input-send-btn,
+    .community-window .message-input-send-btn {
       border-image: var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button));
     }
-    :where(:root[data-window-inactive]) .chat-window .message-input-send-btn {
+    :where(:root[data-window-inactive]) .chat-window .message-input-send-btn,
+    :where(:root[data-window-inactive]) .community-window .message-input-send-btn {
       border-image: var(--skin-region-chat-send-button--windowinactive--still, var(--skin-region-chat-send-button--windowinactive, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
     }
-    .chat-window .message-input-send-btn:hover {
+    .chat-window .message-input-send-btn:hover,
+    .community-window .message-input-send-btn:hover {
       border-image: var(--skin-region-chat-send-button--hover--still, var(--skin-region-chat-send-button--hover, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
     }
-    .chat-window .message-input-send-btn:focus-visible {
+    .chat-window .message-input-send-btn:focus-visible,
+    .community-window .message-input-send-btn:focus-visible {
       border-image: var(--skin-region-chat-send-button--focused--still, var(--skin-region-chat-send-button--focused, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
     }
-    .chat-window .message-input-send-btn:active {
+    .chat-window .message-input-send-btn:active,
+    .community-window .message-input-send-btn:active {
       border-image: var(--skin-region-chat-send-button--down--still, var(--skin-region-chat-send-button--down, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
     }
-    .chat-window .message-input-send-btn:disabled, .chat-window .message-input-send-btn[aria-disabled="true"] {
+    .chat-window .message-input-send-btn:disabled, .chat-window .message-input-send-btn[aria-disabled="true"],
+    .community-window .message-input-send-btn:disabled, .community-window .message-input-send-btn[aria-disabled="true"] {
       border-image: var(--skin-region-chat-send-button--disabled--still, var(--skin-region-chat-send-button--disabled, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
     }
     .chat-window .group-chat-members {
       border-image: var(--skin-region-chat-group-header--still, var(--skin-region-chat-group-header));
+    }
+    .community-window .community-sidebar-header {
+      border-image: var(--skin-region-community-sidebar-header--still, var(--skin-region-community-sidebar-header));
+    }
+    .community-window .channel-list .category-header {
+      border-image: var(--skin-region-community-category-header--still, var(--skin-region-community-category-header));
+    }
+    .community-window .channel-list .category-header:hover {
+      border-image: var(--skin-region-community-category-header--hover--still, var(--skin-region-community-category-header--hover, var(--skin-region-community-category-header--still, var(--skin-region-community-category-header))));
+    }
+    .community-window .community-channel-header {
+      border-image: var(--skin-region-community-channel-header--still, var(--skin-region-community-channel-header));
+    }
+    .community-window .member-group-header {
+      border-image: var(--skin-region-community-member-group-header--still, var(--skin-region-community-member-group-header));
     }
     .xfire-titlebar-btn-minimize {
       border-image: var(--skin-region-titlebar-btn-minimize--still, var(--skin-region-titlebar-btn-minimize));
@@ -396,13 +418,25 @@
     .chat-window .chat-call-btn.chat-call-btn-active:active,
     .chat-window .chat-call-btn.chat-call-btn-active:disabled, .chat-window .chat-call-btn.chat-call-btn-active[aria-disabled="true"],
     .chat-window .message-input-shell,
+    .community-window .message-input-shell,
     .chat-window .message-input-send-btn,
+    .community-window .message-input-send-btn,
     :where(:root[data-window-inactive]) .chat-window .message-input-send-btn,
+    :where(:root[data-window-inactive]) .community-window .message-input-send-btn,
     .chat-window .message-input-send-btn:hover,
+    .community-window .message-input-send-btn:hover,
     .chat-window .message-input-send-btn:focus-visible,
+    .community-window .message-input-send-btn:focus-visible,
     .chat-window .message-input-send-btn:active,
+    .community-window .message-input-send-btn:active,
     .chat-window .message-input-send-btn:disabled, .chat-window .message-input-send-btn[aria-disabled="true"],
+    .community-window .message-input-send-btn:disabled, .community-window .message-input-send-btn[aria-disabled="true"],
     .chat-window .group-chat-members,
+    .community-window .community-sidebar-header,
+    .community-window .channel-list .category-header,
+    .community-window .channel-list .category-header:hover,
+    .community-window .community-channel-header,
+    .community-window .member-group-header,
     .xfire-titlebar-btn-minimize,
     :where(:root[data-window-inactive]) .xfire-titlebar-btn-minimize,
     .xfire-titlebar-btn-minimize:hover,
@@ -566,6 +600,7 @@
     .chat-window .chat-call-btn::before,
     .chat-window .chat-call-btn.chat-call-btn-active::before,
     .chat-window .message-input-send-btn::before,
+    .community-window .message-input-send-btn::before,
     .form-btn-secondary::before,
     .form-btn-primary::before {
       content: none;
@@ -589,7 +624,19 @@
     .chat-window .message-input-attach-btn,
     .chat-window .message-input-mic-btn,
     .chat-window .message-input-send-btn,
-    .chat-window .group-chat-member {
+    .community-window .message-input-attach-btn,
+    .community-window .message-input-mic-btn,
+    .community-window .message-input-send-btn,
+    .chat-window .group-chat-member,
+    .community-window .community-sidebar-title,
+    .community-window .community-sidebar-header .header-add-btn,
+    .community-window .channel-list .category-header > span,
+    .community-window .community-channel-header-icon,
+    .community-window .community-channel-header-name,
+    .community-window .channel-topic,
+    .community-window .channel-header-badge,
+    .community-window .community-channel-header .header-add-btn,
+    .community-window .member-group-name {
       background-image: none;
     }
   }

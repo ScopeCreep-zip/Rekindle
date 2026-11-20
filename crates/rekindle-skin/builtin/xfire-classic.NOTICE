@@ -90,14 +90,18 @@ Regions
   window.frame: the nine-piece frame of xfirecomponents.xml (ChatTitleBar, the outer edges' middles, ChatBaseBoard; transparent middle), 248x184 px, nine-slice 47/74/37/74
   titlebar: the titlebar strip MainTitleBar, 240x47 px, NineSlice(Insets { top: 0, right: 70, bottom: 0, left: 70 }); states normal, windowInactive
   buddylist.infobar: the component UserNameField, 109x17 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 5 }); states normal
+  community.sidebar-header: the component UserNameField, 109x17 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 5 }); states normal
   titlebar.btn.close: the title button CloseBox, 18x17 px, Stretch; states normal, hover, down
   buddylist.action-button: the component AddButton, 40x24 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   statusbar: the component StatusWrapper, 149x26 px, NineSlice(Insets { top: 0, right: 24, bottom: 0, left: 25 }); states normal
   statusbar.arrow: the component DownArrow, 16x14 px, Stretch; states normal, hover, down
   buddylist.actionbar: the component BottomBar, 142x21 px, NineSlice(Insets { top: 0, right: 21, bottom: 0, left: 21 }); states normal
   chat.toolbar: the component ChatBottomBar, 142x21 px, NineSlice(Insets { top: 0, right: 21, bottom: 0, left: 21 }); states normal
+  community.channel-header: the component ChatBottomBar, 142x21 px, NineSlice(Insets { top: 0, right: 21, bottom: 0, left: 21 }); states normal
   buddylist.menubar: the component MenuBar, 166x19 px, NineSlice(Insets { top: 0, right: 33, bottom: 0, left: 33 }); states normal
   buddylist.group-header: the component BuddyView, 102x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  community.category-header: the component BuddyView, 102x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  community.member-group-header: the component BuddyView, 102x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   scrollbar.button-up: the scrollbar DefaultScrollbar, 11x15 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: the scrollbar DefaultScrollbar, 11x15 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-left: the scrollbar DefaultScrollbar, 15x11 px, Stretch; states normal, hover, down, disabled

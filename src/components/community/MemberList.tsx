@@ -376,7 +376,9 @@ const MemberList: Component<MemberListProps> = (props) => {
       <For each={groupedMembers()}>
         {(group) => (
           <>
-            <div class="member-group-header">{group.name}</div>
+            <div class="member-group-header">
+              <span class="member-group-name">{group.name}</span>
+            </div>
             <For each={group.members}>
               {(member) => renderMember(member)}
             </For>

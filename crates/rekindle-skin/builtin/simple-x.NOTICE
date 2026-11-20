@@ -74,12 +74,15 @@ Regions
     Normal: 272x377 px
     WindowInactive not emitted: missing [Middle] Disabled.left, [Middle] Disabled.right, [Bottom] Disabled.bottomleft, [Bottom] Disabled.bottom, [Bottom] Disabled.bottomright
   buddylist.infobar: [UserNameField], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
+  community.sidebar-header: [UserNameField], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
   statusbar: [StatusWrapper], 13x22 px, NineSlice(Insets { top: 0, right: 6, bottom: 0, left: 6 }); states normal
   statusbar.arrow: [DownArrow], 22x22 px, Stretch; states normal, hover, down
   titlebar.btn.close: [CloseBox], 16x16 px, Stretch; states normal, hover, down
   titlebar.btn.minimize: [MinimizeBox], 16x16 px, Stretch; states normal, hover, down
   titlebar.btn.maximize: [MaximizeBox], 16x16 px, Stretch; states normal, hover, down
   buddylist.group-header: [BuddyView], 110x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal
+  community.category-header: [BuddyView], 110x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal
+  community.member-group-header: [BuddyView], 110x18 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal
   buddylist.action-button: [AddButton], 59x22 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   scrollbar.button-up: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
   scrollbar.button-down: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
@@ -92,7 +95,7 @@ Regions
   scrollbar.corner: [DefaultScrollbar], 10x10 px, Stretch; states normal
 
 Dropped
-  images with no region slot: 134
+  images with no region slot: 130
   other keys (classes, sizes, cursors, sounds): 203
   other skin files (chat, group chat, in-game): 4
   text styles: 77

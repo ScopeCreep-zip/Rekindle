@@ -13,7 +13,7 @@ const CommunityWindow: Component = () => {
   const vm = useCommunityWindow();
 
   return (
-    <div class="app-frame">
+    <div class="app-frame community-window">
       {/* Headless: keeps the community voice/video WebCodecs pipeline alive
           across channel navigation, publishing it to the main-pane CallStage. */}
       <CallPipelineHost communityId={vm.selectedCommunityId()} />

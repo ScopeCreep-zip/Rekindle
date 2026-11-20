@@ -30,7 +30,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
   return (
     <div class="community-sidebar">
       <div class="community-sidebar-header">
-        Communities
+        <span class="community-sidebar-title">Communities</span>
         <span class="header-btn-group">
           <button
             class="action-bar-btn header-add-btn"
@@ -56,7 +56,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
       />
       <Show when={vm.activeCommunity()}>
         <div class="community-sidebar-header">
-          Channels
+          <span class="community-sidebar-title">Channels</span>
           <span class="header-btn-group">
             <button
               class="action-bar-btn header-add-btn"

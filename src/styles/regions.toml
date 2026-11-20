@@ -670,11 +670,21 @@
 'chat.toolbar' = { elements = [".chat-window .chat-peer-status"], labels = [".chat-window .chat-peer-status-label", ".chat-window .chat-safety-btn", ".chat-window .chat-call-btn"] }
 'chat.call-button' = { elements = [".chat-window .chat-call-btn"] }
 'chat.call-button-active' = { elements = [".chat-window .chat-call-btn.chat-call-btn-active"] }
-'chat.input' = { elements = [".chat-window .message-input-shell"], labels = [".chat-window .message-input-attach-btn", ".chat-window .message-input-mic-btn", ".chat-window .message-input-send-btn"] }
-'chat.send-button' = { elements = [".chat-window .message-input-send-btn"] }
+'chat.input' = { elements = [".chat-window .message-input-shell", ".community-window .message-input-shell"], labels = [".chat-window .message-input-attach-btn", ".chat-window .message-input-mic-btn", ".chat-window .message-input-send-btn", ".community-window .message-input-attach-btn", ".community-window .message-input-mic-btn", ".community-window .message-input-send-btn"] }
+'chat.send-button' = { elements = [".chat-window .message-input-send-btn", ".community-window .message-input-send-btn"] }
 'chat.group-header' = { elements = [".chat-window .group-chat-members"], labels = [".chat-window .group-chat-member"] }
 # Plan E7.7.7 S3: every window's titlebar strip (its title and buttons are
 # its labels, so the title keeps a solid backing) and a dialog's confirming
 # button (Xfire's OK; Cancel is `button.secondary`).
 'titlebar' = { elements = [".xfire-titlebar"], labels = [".xfire-titlebar-text", ".xfire-titlebar-btn"] }
 'button.primary' = { elements = [".form-btn-primary"] }
+# Plan E7.7.7 S5: the community window's surfaces, scoped to its root
+# (`.community-window`, CommunityWindow.tsx). The category header is scoped
+# to the channel list (the emoji picker has its own `.category-header`).
+# Its message input and Send button are the chat window's slots (the same
+# MessageInput, the same Xfire images). A selected channel row is a colour
+# in every Xfire skin (`ListColorSelectedCG`), as the buddy list's.
+'community.sidebar-header' = { elements = [".community-window .community-sidebar-header"], labels = [".community-window .community-sidebar-title", ".community-window .community-sidebar-header .header-add-btn"] }
+'community.category-header' = { elements = [".community-window .channel-list .category-header"], labels = [".community-window .channel-list .category-header > span"] }
+'community.channel-header' = { elements = [".community-window .community-channel-header"], labels = [".community-window .community-channel-header-icon", ".community-window .community-channel-header-name", ".community-window .channel-topic", ".community-window .channel-header-badge", ".community-window .community-channel-header .header-add-btn"] }
+'community.member-group-header' = { elements = [".community-window .member-group-header"], labels = [".community-window .member-group-name"] }

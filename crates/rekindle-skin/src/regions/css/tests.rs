@@ -89,3 +89,21 @@ fn builtin_regions(name: &str) -> Vec<String> {
 fn symbiosis_fills_the_titlebar_from_its_top_row() {
     assert!(builtin_regions("symbiosis").contains(&"titlebar".to_owned()));
 }
+
+/// Plan E7.7.7 S5: the community window's headers take each family's art:
+/// Symbiosis and Classic v3 (XML) and Combat (INI).
+#[test]
+fn the_community_window_headers_are_skinned_in_every_family() {
+    for skin in ["symbiosis", "xfire-classic", "combat"] {
+        let r = builtin_regions(skin);
+        for slot in ["community.category-header", "community.member-group-header"] {
+            assert!(r.contains(&slot.to_owned()), "{skin}: {slot}");
+        }
+    }
+    for skin in ["symbiosis", "xfire-classic"] {
+        let r = builtin_regions(skin);
+        for slot in ["community.channel-header", "community.sidebar-header"] {
+            assert!(r.contains(&slot.to_owned()), "{skin}: {slot}");
+        }
+    }
+}

@@ -46,6 +46,9 @@ use rekindle_types::dto::skin::RegionState;
 
 use crate::limits::MAX_IMAGE_SIDE;
 
+mod build;
+use build::{normal, slot};
+
 /// One app window's sizes, CSS px: minimum and maximum inner size.
 #[derive(Debug, Clone, Copy)]
 pub struct WindowSize {
@@ -177,7 +180,7 @@ const SEND_LABEL_INSET: (u32, u32) = (10, 2);
 const CALL_LABEL_INSET: (u32, u32) = (4, 4);
 
 /// The region slots. Every slot appears in every window.
-pub const SLOTS: [RegionSlot; 32] = [
+pub const SLOTS: [RegionSlot; 36] = [
     // The whole window behind its content. DoiDD's frame has hover, down
     // and disabled (window-inactive) images.
     slot("window.frame", Extent::Window, Extent::Window, &[]).states(&[
@@ -370,6 +373,48 @@ pub const SLOTS: [RegionSlot; 32] = [
         &[normal("text.dim")],
     )
     .labelled(&[], ON_DARK),
+    // Plan E7.7.7 S5: the community window (`.community-window`,
+    // CommunityWindow.tsx), Xfire's chat-room window. Its sidebar headers
+    // (`.community-sidebar-header`, `02-form-primitives.css:46`, `text.dim`
+    // title, `accent.text` add buttons, on `bg.dark`): Xfire's info bar.
+    slot(
+        "community.sidebar-header",
+        Extent::Window,
+        Extent::Range { min: 24, max: 48 },
+        &[normal("text.dim"), normal("accent.text")],
+    )
+    .labelled(&[], ON_DARK),
+    // A channel category (`.category-header`, `text.dim`): folding it is a
+    // click, so it has a hover image as the buddy list's group header has.
+    // Xfire's list header (`XfireView` `Header*`).
+    slot(
+        "community.category-header",
+        Extent::Window,
+        Extent::Range { min: 20, max: 40 },
+        &[normal("text.dim")],
+    )
+    .labelled(&[Hover], ON_DARK),
+    // The channel header bar (`.community-channel-header`,
+    // `02-form-primitives.css:395`, `bg.dark`): icon, name, topic and
+    // badges `text.dim`, panel buttons `accent.text`. Xfire's chat button
+    // bar (`ChatButtonBar`).
+    slot(
+        "community.channel-header",
+        Extent::Window,
+        Extent::Range { min: 28, max: 56 },
+        &[normal("text.dim"), normal("accent.text")],
+    )
+    .labelled(&[], ON_DARK),
+    // A member list role header (`.member-group-header`,
+    // `00-primitives.css:172`, `text.dim` on `bg.dark`): Xfire's list
+    // header, as the category header.
+    slot(
+        "community.member-group-header",
+        Extent::Window,
+        Extent::Range { min: 20, max: 40 },
+        &[normal("text.dim")],
+    )
+    .labelled(&[], ON_DARK),
     // One titlebar button each (Xfire `ButtonMinimize` …; Winamp
     // TITLEBAR.BMP). The glyph is drawn over the image, never replaced.
     slot("titlebar.btn.minimize", CHROME, CHROME, &[]).painted(BUTTON),
@@ -429,86 +474,6 @@ pub const SLOTS: [RegionSlot; 32] = [
     .label_inset(PRIMARY_LABEL_INSET)
     .grounds(&["accent.fill"]),
 ];
-
-const fn normal(token: &'static str) -> RegionText {
-    RegionText {
-        token,
-        large: false,
-    }
-}
-
-const fn slot(
-    id: &'static str,
-    width: Extent,
-    height: Extent,
-    text: &'static [RegionText],
-) -> RegionSlot {
-    RegionSlot {
-        id,
-        width,
-        height,
-        text,
-        states: &[],
-        css: false,
-        label_inset: (0, 0),
-        grounds: &[],
-        labelled: false,
-        sized: false,
-    }
-}
-
-impl RegionSlot {
-    const fn states(self, states: &'static [RegionState]) -> Self {
-        Self { states, ..self }
-    }
-
-    const fn painted(self, states: &'static [RegionState]) -> Self {
-        Self {
-            states,
-            css: true,
-            ..self
-        }
-    }
-
-    const fn label_inset(self, label_inset: (u32, u32)) -> Self {
-        Self {
-            label_inset,
-            ..self
-        }
-    }
-
-    const fn grounds(self, grounds: &'static [&'static str]) -> Self {
-        Self { grounds, ..self }
-    }
-
-    /// Painted, its text on the children `regions.toml` names.
-    const fn labelled(
-        self,
-        states: &'static [RegionState],
-        grounds: &'static [&'static str],
-    ) -> Self {
-        Self {
-            states,
-            css: true,
-            grounds,
-            labelled: true,
-            ..self
-        }
-    }
-
-    const fn sized(self) -> Self {
-        Self {
-            sized: true,
-            ..self
-        }
-    }
-
-    /// Whether the slot has `state` (normal is the slot's image).
-    #[must_use]
-    pub fn has(&self, state: RegionState) -> bool {
-        self.states.contains(&state)
-    }
-}
 
 /// The slot `id`.
 #[must_use]

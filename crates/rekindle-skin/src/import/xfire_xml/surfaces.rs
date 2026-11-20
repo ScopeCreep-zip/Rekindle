@@ -27,7 +27,9 @@
 //!   incoming call rings in the call window, so the answer image has no
 //!   surface here.
 //! * The first component bearing a name fills its slot (document order,
-//!   as [`super::controls`] does).
+//!   as [`super::controls`] does). One component may fill several slots
+//!   (plan E7.7.7 S5: Xfire's list header is both the community window's
+//!   category and role headers).
 //! * A state image may differ in size from the normal one (plan E7.7.7 S3:
 //!   Classic v3's chosen tab, `TabNormalButton`'s Down, is 72 px to its
 //!   Normal's 71, its left end 4 px to 3): a nine-slice, `stretch` or
@@ -143,7 +145,7 @@ const HEADER: Pieces = Pieces::Row(["HeaderLeft", "HeaderMiddle", "HeaderRight"]
 /// (`xfirecomponents.xml`, plan E7.7.7 S2), then the INI era's (Combat's
 /// `combat.ini` and its chat skin files). A name two families share
 /// (`DownArrow`, `BuddyView`) is listed once.
-const SURFACES: [Surface; 29] = [
+const SURFACES: [Surface; 37] = [
     // Symbiosis, the buddy list (S1).
     surface("StatusBarContainer", "statusbar", TOP),
     surface("ButtonStatusChanger", "statusbar.arrow", Pieces::Button),
@@ -185,6 +187,17 @@ const SURFACES: [Surface; 29] = [
     ),
     surface("GroupChatInfoView", "chat.group-header", HEADER),
     surface("SendButton", "chat.send-button", Pieces::Button),
+    // The community window (plan E7.7.7 S5), Xfire's chat-room window:
+    // its list headers are the buddy list's, its channel header the chat
+    // window's button bar, its sidebar headers the info bar.
+    surface("XfireView", "community.category-header", HEADER),
+    surface("XfireView", "community.member-group-header", HEADER),
+    surface("ChatButtonBar", "community.channel-header", TOP),
+    surface("InfoBar", "community.sidebar-header", TOP),
+    surface("BuddyView", "community.category-header", HEADER),
+    surface("BuddyView", "community.member-group-header", HEADER),
+    surface("ChatBottomBar", "community.channel-header", LMR),
+    surface("UserNameField", "community.sidebar-header", LMR),
     // Its pieces are `topleft`/`top`/`topright` (matched without case).
     surface("MainTitleBar", "titlebar", TOP).titlebar(),
 ];
@@ -206,12 +219,16 @@ pub const NAMED_STATES: [(&str, RegionState); 4] = [
 
 /// The INI era's own names (Combat): its name bar, add button, the chat
 /// windows' menu bars and the chat window's Send button.
-const INI_SURFACES: [Surface; 5] = [
+const INI_SURFACES: [Surface; 7] = [
     surface("CombatDragBar", "buddylist.infobar", LMR),
     surface("AddFriendButton", "buddylist.action-button", Pieces::Button),
     surface("GCMenuBar", "chat.toolbar", LMR).in_window(Window::Chat),
     surface("GCMenuBar", "chat.group-header", LMR).in_window(Window::GroupChat),
     surface("ImButton", "chat.send-button", Pieces::Button).in_window(Window::Chat),
+    // The community window (S5): the name bar's art on its sidebar
+    // headers, the group chat's menu bar on its channel header.
+    surface("CombatDragBar", "community.sidebar-header", LMR),
+    surface("GCMenuBar", "community.channel-header", LMR).in_window(Window::GroupChat),
 ];
 
 /// Whether a piece type is one a surface reads (ASCII-case-insensitive),
@@ -276,15 +293,16 @@ pub fn fill<S: StateImages>(
     tally: &mut StateTally,
 ) -> Result<bool, ImportError> {
     let extra: &[Surface] = if ini { &INI_SURFACES } else { &[] };
-    let Some(found) = SURFACES
+    let mut named = false;
+    for found in SURFACES
         .iter()
         .chain(extra)
-        .find(|s| s.window == window && s.name.eq_ignore_ascii_case(name))
-        .copied()
-    else {
-        return Ok(false);
-    };
-    fill_surface(found, name, sets, controls, tally)
+        .filter(|s| s.window == window && s.name.eq_ignore_ascii_case(name))
+    {
+        named = true;
+        fill_surface(*found, name, sets, controls, tally)?;
+    }
+    Ok(named)
 }
 
 /// Fills `region` from the named button `name`'s `sets` (one set per

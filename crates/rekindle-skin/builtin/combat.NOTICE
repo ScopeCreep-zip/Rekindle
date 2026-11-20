@@ -38,8 +38,11 @@ Regions
   window.frame: [OuterFrame], nine-slice 214/78/113/79, transparent middle
     Normal: 333x586 px
   buddylist.infobar: [CombatDragBar], 261x35 px, NineSlice(Insets { top: 0, right: 42, bottom: 0, left: 43 }); states normal
+  community.sidebar-header: [CombatDragBar], 261x35 px, NineSlice(Insets { top: 0, right: 42, bottom: 0, left: 43 }); states normal
   titlebar.btn.minimize: [Minimizebox], 12x12 px, Stretch; states normal, hover, down
   buddylist.group-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
+  community.category-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
+  community.member-group-header: [BuddyView], 60x19 px, NineSlice(Insets { top: 0, right: 20, bottom: 0, left: 20 }); states normal
   statusbar.arrow: [DownArrow], 20x20 px, Stretch; states normal, hover, down
   buddylist.action-button: [AddFriendButton], 36x50 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
   scrollbar.button-up: [DefaultScrollbar], 11x29 px, Stretch; states normal, hover, down, disabled
@@ -54,7 +57,9 @@ Regions
   chat.send-button: [ImButton], 64x42 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.toolbar: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
   chat.group-header: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
+  community.channel-header: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
   dropped [CombatDragBar (buddylist.infobar)] Disabled: the slot has no such state
+  dropped [CombatDragBar (community.sidebar-header)] Disabled: the slot has no such state
 
 Dropped
   images with no region slot: 233

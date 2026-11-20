@@ -27,6 +27,8 @@ Regions
   window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 97x128 px, nine-slice 35/27/35/27
   buddylist.menubar: the component MenuBackground, 42x6 px, NineSlice(Insets { top: 0, right: 13, bottom: 0, left: 16 }); states normal
   buddylist.group-header: the component BuddyView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  community.category-header: the component BuddyView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  community.member-group-header: the component BuddyView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   titlebar.btn.minimize: the title button WndMin, 12x12 px, Stretch; states normal, hover, down
   titlebar.btn.maximize: the title button WndMax, 12x12 px, Stretch; states normal, hover, down
   titlebar.btn.close: the title button WndClose, 12x12 px, Stretch; states normal, hover, down
@@ -43,10 +45,10 @@ Regions
   chat.group-header: the component GroupChatInfoView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 33 of 128 images
+  kept 33 of 126 images
   Disabled sets: kept 2 of 23
-  Down sets: kept 5 of 42
-  Hover sets: kept 5 of 42
+  Down sets: kept 5 of 41
+  Hover sets: kept 5 of 41
   dropped AddFriendButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddFriendButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddFriendButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -77,8 +79,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ExecuteButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ExecuteButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ExecuteButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped TabNormalButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped TabNormalButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabServerButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabDownloadButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control

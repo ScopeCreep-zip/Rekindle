@@ -49,6 +49,8 @@ Regions
   scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 3x13 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   buddylist.menubar: the component MenuBar, 196x69 px, NineSlice(Insets { top: 0, right: 83, bottom: 0, left: 83 }); states normal
   buddylist.group-header: the component BuddyView, 3x18 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  community.category-header: the component BuddyView, 3x18 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  community.member-group-header: the component BuddyView, 3x18 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   buddylist.actionbar: the component BottomBar, 359x66 px, NineSlice(Insets { top: 0, right: 161, bottom: 0, left: 161 }); states normal
   buddylist.action-button: the component AddButton, 43x30 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
   titlebar.btn.minimize: the title button Minimize, 12x12 px, Stretch; states normal, hover, down
@@ -56,11 +58,10 @@ Regions
   titlebar.btn.close: the title button Close, 12x12 px, Stretch; states normal, hover, down
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 32 of 138 images
+  kept 32 of 135 images
   Disabled sets: kept 1 of 22
-  Down sets: kept 5 of 48
+  Down sets: kept 5 of 47
   Hover sets: kept 5 of 45
-  other sets: kept 0 of 2
   dropped FileMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped FileMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GCFileMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -124,15 +125,12 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped GroupChatCloseInfoView Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GroupChatCloseInfoView Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GroupChatCloseInfoView Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped DownArrow other: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped DownArrow other: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped Logo Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped Logo Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatMinimize Hover: its slot is filled by an earlier component
   dropped ChatMinimize Down: its slot is filled by an earlier component
   dropped ChatMaximize Hover: its slot is filled by an earlier component
   dropped ChatMaximize Down: its slot is filled by an earlier component
-  dropped TabNormalButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatImButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
