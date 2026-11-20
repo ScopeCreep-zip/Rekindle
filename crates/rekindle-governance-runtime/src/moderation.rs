@@ -94,18 +94,32 @@ pub async fn remove_member<D: GovernanceRuntimeDeps>(
 /// as we hold them: we wrote every value of our slot, so readers keep our
 /// posts from history by them, and a slot write after the leave (a
 /// restored backup of this profile) is kept by none (A/B R3-8).
+///
+/// A joiner whose own `MemberJoined` the merged state never admitted (it
+/// lost a single-use race, or the inviter refused it) authors nothing:
+/// there is nothing of ours on the DAG to undo (plan SU1, the withdrawal
+/// decision), and [`Departure::Withdrawn`] tells the caller to forget the
+/// community locally only.
 pub async fn leave<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-) -> Result<(), GovernanceRuntimeError> {
+) -> Result<Departure, GovernanceRuntimeError> {
     let me = deps
         .community_membership(community_id)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_owned()))?
         .my_pseudonym_hex
         .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_owned()))?;
     let heads = deps.departed_slot_heads(community_id, &me).await?;
-    apply::write_entry(deps, community_id, GovernanceEntry::MemberLeft { heads }).await?;
-    Ok(())
+    apply::write_departure(deps, community_id, GovernanceEntry::MemberLeft { heads }).await
+}
+
+/// What our [`leave`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Departure {
+    /// Our `MemberLeft` was authored on our member record.
+    Left,
+    /// Our join was never admitted: nothing was authored.
+    Withdrawn,
 }
 
 /// Lift a ban. Requires `BAN_MEMBERS`.

@@ -262,22 +262,11 @@ impl HostGovernance {
         encoded: Vec<u8>,
         landing: rekindle_governance_runtime::OpLanding,
     ) -> Result<rekindle_governance_runtime::OpOutcome, GovernanceRuntimeError> {
-        let (cert, state, mine) = {
-            let map = self.ctx.communities.map().read();
-            let community = map.get(community_id).ok_or_else(|| {
-                GovernanceRuntimeError::CommunityNotFound(community_id.to_owned())
-            })?;
-            (
-                community.genesis_cert.clone(),
-                community.governance_state.clone().unwrap_or_default(),
-                community.my_pseudonym_key.as_deref().and_then(pseudonym_of),
-            )
-        };
-        let cert = cert
-            .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
-        let mine = mine.ok_or_else(|| adapter("publish op", "no pseudonym"))?;
-        let record = op_log::author_record(&cert, &state, &mine)
-            .ok_or_else(|| GovernanceRuntimeError::MemberRecordMissing(hex::encode(mine.0)))?;
+        let state = self.governance_state_impl(community_id).unwrap_or_default();
+        let me = op_log::own_member(self, community_id, &state)?;
+        let record = me
+            .record
+            .ok_or(GovernanceRuntimeError::MemberRecordMissing(me.hex))?;
         let ops = self
             .ctx
             .outbox

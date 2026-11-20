@@ -119,7 +119,14 @@ impl HostGovernance {
     ) -> Result<(), String> {
         let id = membership.anchor.clone();
         let transport = self.transport().map_err(|e| e.to_string())?;
-        if !self.own_join_admitted(&id) {
+        // The `MemberLeft` op goes on our member record first, while the
+        // community's state and our pseudonym are still here (plan E3.2),
+        // unless our merged state never admitted our join (decided in the
+        // state the op would be built on, `apply::write_departure`).
+        let departure = rekindle_governance_runtime::moderation::leave(self, &id)
+            .await
+            .map_err(|e| format!("community leave op: {e}"))?;
+        if departure == rekindle_governance_runtime::moderation::Departure::Withdrawn {
             tracing::warn!(
                 community = %id,
                 "our join is not admitted by our merged state: withdrawn locally, nothing authored"
@@ -129,11 +136,6 @@ impl HostGovernance {
             self.discard_governance_ops(&id);
             return self.forget_community(&transport, &id).await;
         }
-        // The `MemberLeft` op goes on our member record first, while the
-        // community's state and our pseudonym are still here (plan E3.2).
-        rekindle_governance_runtime::moderation::leave(self, &id)
-            .await
-            .map_err(|e| format!("community leave op: {e}"))?;
         // Then our `Departed` beat, which ends the community's beats.
         crate::host::adapters::presence::depart(&self.ctx, &id).await;
         let signing_key = self
@@ -155,25 +157,6 @@ impl HostGovernance {
         .map_err(|e| format!("community leave failed: {e}"))?;
         self.send_before_teardown(&id, &left.departure_notice).await;
         self.forget_community(&transport, &id).await
-    }
-
-    /// Whether our own join is in our merged state: the cert names us (the
-    /// creator) or the merge admitted our `MemberJoined`, kept after we
-    /// leave or are removed (`op_log::author_record`).
-    fn own_join_admitted(&self, community: &str) -> bool {
-        let map = self.ctx.communities.map().read();
-        let Some(c) = map.get(community) else {
-            return false;
-        };
-        let mine = c
-            .my_pseudonym_key
-            .as_deref()
-            .and_then(super::ops::pseudonym_of);
-        let (Some(cert), Some(mine)) = (c.genesis_cert.as_ref(), mine) else {
-            return false;
-        };
-        let state = c.governance_state.clone().unwrap_or_default();
-        rekindle_governance_runtime::op_log::author_record(cert, &state, &mine).is_some()
     }
 
     /// Stop the community's loops, so none writes to a record the leave

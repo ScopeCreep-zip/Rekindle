@@ -132,6 +132,51 @@ pub async fn write_checkpoint_queued<D: GovernanceRuntimeDeps>(
     .await
 }
 
+/// When [`write_with`] answers that our own join is not in the merged
+/// state.
+#[derive(Clone, Copy)]
+enum NotAdmitted {
+    /// After the entry's validation, as any op's missing author record.
+    Refuse,
+    /// Before it: our leave of a join never admitted withdraws, whatever
+    /// the entry's validation would say.
+    Withdraw,
+}
+
+/// What [`write_with`] did.
+enum Written {
+    /// Our op was applied and published.
+    Op(OpOutcome),
+    /// Our join (pseudonym hex) was never admitted: nothing was authored.
+    NotAdmitted(String),
+}
+
+/// Our `MemberLeft` (`entry`), unless the merged state never admitted our
+/// join: then nothing is authored and [`Departure::Withdrawn`] answers,
+/// decided in the same locked state read the op would be built on (plan
+/// SU1, the withdrawal decision; ADR 0011: membership is the merged
+/// state's alone).
+pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: GovernanceEntry,
+) -> Result<crate::moderation::Departure, GovernanceRuntimeError> {
+    use crate::moderation::Departure;
+    let written = write_with(
+        deps,
+        community_id,
+        entry,
+        OpLanding::FirstAttempt,
+        op_log::Deps::Frontier,
+        NotAdmitted::Withdraw,
+    )
+    .await?;
+    Ok(match written {
+        Written::Op(_) => Departure::Left,
+        Written::NotAdmitted(_) => Departure::Withdrawn,
+    })
+}
+
 async fn write<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -139,6 +184,21 @@ async fn write<D: GovernanceRuntimeDeps>(
     landing: OpLanding,
     op_deps: op_log::Deps,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
+    let refuse = NotAdmitted::Refuse;
+    match write_with(deps, community_id, entry, landing, op_deps, refuse).await? {
+        Written::Op(outcome) => Ok(outcome),
+        Written::NotAdmitted(hex) => Err(GovernanceRuntimeError::MemberRecordMissing(hex)),
+    }
+}
+
+async fn write_with<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: GovernanceEntry,
+    landing: OpLanding,
+    op_deps: op_log::Deps,
+    not_admitted: NotAdmitted,
+) -> Result<Written, GovernanceRuntimeError> {
     refuse_out_of_bounds(&entry)?;
 
     // Serialized with the rebuild (`dht_hydration`) from the state and
@@ -152,22 +212,21 @@ async fn write<D: GovernanceRuntimeDeps>(
         .governance_state(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string()))?;
 
-    let membership = deps
-        .community_membership(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
-
-    let my_pseudo_hex = membership
-        .my_pseudonym_hex
-        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_string()))?;
-    let pseudo_bytes: [u8; 32] = hex::decode(&my_pseudo_hex)
-        .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
-        .try_into()
-        .map_err(|_| {
-            GovernanceRuntimeError::InvalidPseudonymHex("pseudonym must be 32 bytes".into())
-        })?;
-    let pseudo = PseudonymKey(pseudo_bytes);
+    // Our member record M(p), where our op log lives: the cert's for the
+    // creator, our `MemberJoined` for a joiner (S6), in the state this
+    // write builds on. A join the merge never admitted has none: its
+    // leave withdraws, authoring nothing (plan SU1); any other op is
+    // refused.
+    let me = op_log::own_member(deps, community_id, &gov_state)?;
+    if me.record.is_none() && matches!(not_admitted, NotAdmitted::Withdraw) {
+        return Ok(Written::NotAdmitted(me.hex));
+    }
+    let pseudo = me.pseudonym;
 
     refuse_invalid(&pseudo, &entry, &gov_state)?;
+    let Some(record) = me.record else {
+        return Ok(Written::NotAdmitted(me.hex));
+    };
 
     // The pinned GenesisCert names the creator; S5 writes it at origin
     // and S6 pins it at join (`GovernanceRuntimeDeps::genesis_cert`).
@@ -193,10 +252,6 @@ async fn write<D: GovernanceRuntimeDeps>(
         op_deps,
         deps.clock().now_secs(),
     )?;
-    // Our member record M(p), where our op log lives: the cert's for the
-    // creator, our `MemberJoined` for a joiner (S6).
-    let record = op_log::author_record(&cert, &gov_state, &pseudo)
-        .ok_or(GovernanceRuntimeError::MemberRecordMissing(my_pseudo_hex))?;
     deps.store_governance_op(
         community_id,
         &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
@@ -232,6 +287,7 @@ async fn write<D: GovernanceRuntimeDeps>(
     // says whether the caller needs it there before it returns.
     deps.publish_governance_op(community_id, encoded, landing)
         .await
+        .map(Written::Op)
 }
 
 /// Every reader drops an entry outside its value bounds (plan E3.0), so the

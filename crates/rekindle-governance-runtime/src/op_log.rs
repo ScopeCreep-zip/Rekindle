@@ -107,6 +107,54 @@ pub fn author_record(
     state.author_record(cert, author)
 }
 
+/// Who we are in a community and our member record in `state`.
+pub struct OwnMember {
+    /// Our pseudonym in the community.
+    pub pseudonym: PseudonymKey,
+    /// The same, hex, as the membership holds it.
+    pub hex: String,
+    /// Our member record in `state` ([`author_record`]): `None` when the
+    /// merge never admitted our `MemberJoined`.
+    pub record: Option<String>,
+}
+
+/// Our pseudonym (the membership's, the one every op of ours is signed
+/// as) and our member record in `state` under the pinned cert: the one
+/// answer to "who are we here, and are we admitted" (plan SU1). A caller
+/// that acts on the answer reads `state` under the rebuild lock, so no
+/// rebuild installs between the answer and the act.
+///
+/// # Errors
+/// No membership, pseudonym or pinned cert for the community, or a
+/// malformed pseudonym.
+pub fn own_member<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    state: &GovernanceState,
+) -> Result<OwnMember, GovernanceRuntimeError> {
+    let hex = deps
+        .community_membership(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?
+        .my_pseudonym_hex
+        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_string()))?;
+    let bytes: [u8; 32] = hex::decode(&hex)
+        .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
+        .try_into()
+        .map_err(|_| {
+            GovernanceRuntimeError::InvalidPseudonymHex("pseudonym must be 32 bytes".into())
+        })?;
+    let pseudonym = PseudonymKey(bytes);
+    let cert = deps
+        .genesis_cert(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_string()))?;
+    let record = author_record(&cert, state, &pseudonym);
+    Ok(OwnMember {
+        pseudonym,
+        hex,
+        record,
+    })
+}
+
 /// The frontier: the verified ops no other verified op cites, newest
 /// first by `(lamport, hash)`, at most [`MAX_FRONTIER_REFS`], always
 /// holding `must` (our previous op, which the chain rule requires among
