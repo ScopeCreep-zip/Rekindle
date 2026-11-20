@@ -114,11 +114,31 @@
     color: var(--color-xfire-text);
   }
 
+  /* The dialog footer (frontend wiring guide: Cancel and the primary
+     action side by side on one row, primary last, right-aligned). A modal
+     form's `.modal-footer` is this same footer (plan GC2: New Group's
+     Create sat full-width under Cancel because `.modal-footer` had no rule
+     and `.form-btn-primary` is a block of `width: 100%`). */
   .confirm-dialog-actions,
-  .consent-dialog-actions {
+  .consent-dialog-actions,
+  .modal-footer {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     gap: 8px;
+  }
+
+  .modal-footer {
+    margin-top: 12px;
+  }
+
+  /* In a footer the primary keeps its label's width, last in the row. */
+  .confirm-dialog-actions .form-btn-primary,
+  .consent-dialog-actions .form-btn-primary,
+  .modal-footer .form-btn-primary {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 8px 16px;
   }
 
   /* Tab bar */
