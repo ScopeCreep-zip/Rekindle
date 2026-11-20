@@ -173,6 +173,21 @@
 .chat-call-btn-active	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
 .chat-call-btn-active	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
 .chat-call-btn-active	text hovered	var(--color-xfire-danger-text)	--color-xfire-busy 20% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
+.chat-disappearing-amount	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
+.chat-disappearing-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.chat-disappearing-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
+.chat-disappearing-btn	text hovered	var(--color-xfire-text-dim)	--color-xfire-text-dim 15% over --color-xfire-bg-dark	1.0	false
+.chat-disappearing-btn	text hovered	var(--color-xfire-text-dim)	--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
+.chat-disappearing-btn-on	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.chat-disappearing-btn-on	text	var(--color-xfire-text)	--color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
+.chat-disappearing-btn-on	text hovered	var(--color-xfire-text)	--color-xfire-text-dim 15% over --color-xfire-bg-dark	1.0	false
+.chat-disappearing-btn-on	text hovered	var(--color-xfire-text)	--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
+.chat-disappearing-custom-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.chat-disappearing-help	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.chat-disappearing-preset	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.chat-disappearing-preset	text hovered	var(--color-xfire-text)	--color-xfire-overlay 5% over --color-xfire-bg-panel	1.0	false
+.chat-disappearing-set	text	var(--color-xfire-text-on-fill)	--color-xfire-accent	1.0	false
+.chat-disappearing-unit	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .chat-mention	text	var(--color-xfire-accent-text)	--color-xfire-accent 9% over --color-xfire-bg-dark	1.0	false
 .chat-mention	text	var(--color-xfire-accent-text)	--color-xfire-accent 9% over --color-xfire-bg-panel	1.0	false
 .chat-mention-everyone	text	var(--color-xfire-mention-everyone)	--color-xfire-mention-everyone 22% over --color-xfire-bg-dark	1.0	false
@@ -221,6 +236,7 @@
 .context-menu-item-danger	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
 .context-menu-item-danger	text hovered	var(--color-xfire-danger-text)	--color-xfire-busy 12% over --color-xfire-bg-panel	1.0	false
 .dm-history-gap	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.dm-timer-notice	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .edit-indicator	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .edit-indicator	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .edit-mode-cancel	text	var(--color-xfire-text-dim)	--color-xfire-accent 15% over --color-xfire-bg-dark	1.0	false
@@ -421,6 +437,8 @@
 .message-decrypt-failed-icon	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
 .message-discard-btn	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	false
 .message-discard-btn	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
+.message-expiry	text	var(--color-xfire-text-timestamp)	--color-xfire-bg-dark	1.0	false
+.message-expiry	text	var(--color-xfire-text-timestamp)	--color-xfire-bg-panel	1.0	false
 .message-forwarded-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .message-forwarded-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .message-forwarded-icon	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
