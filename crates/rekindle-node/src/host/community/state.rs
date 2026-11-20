@@ -104,6 +104,10 @@ pub struct CommunityState {
     /// (`host::adapters::governance::on_screen`).
     #[serde(skip)]
     pub on_screen: rekindle_presence::community::OnScreen,
+    /// Each member's verified `M`/6 route (plan E3.4 S4), the Host's one
+    /// member route source on both modes.
+    #[serde(skip)]
+    pub member_routes: rekindle_presence::community::MemberRouteCache,
     /// The newest `HeadAdvanced` seq read from the DHT per (member record,
     /// subkey).
     #[serde(skip)]

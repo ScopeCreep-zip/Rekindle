@@ -5,6 +5,8 @@
 //!
 //! - `beat` — the beat engine (plan E3.4 S2): our `M`/1 beat on its
 //!   randomised schedule and on explicit actions.
+//! - `routes` — the member route cache (plan E3.4 S4): each member's
+//!   verified `M`/6 route, replaced by a newer seq or a `RouteUnusable`.
 //! - `sync` — initial-sync handshake: presence broadcast →
 //!   SMPL channel-log catch-up.
 //! - `registry` — registry write helpers: `write_our_presence`
@@ -22,6 +24,7 @@ pub mod policy;
 pub mod poll;
 pub mod profile_diff;
 pub mod registry;
+pub mod routes;
 pub mod scan_row;
 pub mod spawn;
 pub mod sync;
@@ -45,6 +48,7 @@ pub use registry::{
     discovered_member_row, persist_discovered_registry_members, write_our_presence, DiscoveredRow,
     PresenceWrite,
 };
+pub use routes::MemberRouteCache;
 pub use scan_row::{
     explain_route_for_peer, parse_and_classify_row, route_for_peer, AcceptedRow, ClassifiedRow,
     RouteRefusal, SUBKEYS_PER_SEGMENT,

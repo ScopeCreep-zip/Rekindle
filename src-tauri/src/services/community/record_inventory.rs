@@ -127,6 +127,7 @@ mod tests {
             watch_ring: std::collections::BTreeMap::new(),
             beat_view: rekindle_presence::community::BeatView::default(),
             on_screen: rekindle_presence::community::OnScreen::default(),
+            member_routes: rekindle_presence::community::MemberRouteCache::default(),
             head_hints: rekindle_node::host::community::state::HeadHints::default(),
             outbox_streams: std::sync::Arc::default(),
             snapshot_requests: rekindle_transport::gossip::RateLimiter::default(),
