@@ -38,6 +38,25 @@ pub fn send_to_mesh(
         .map_err(|error| format!("send_to_mesh: {error}"))
 }
 
+/// [`send_to_mesh`], waiting for every peer's send instead of spawning the
+/// fan-out in the unlock scope, which a teardown has already closed (the
+/// quit's beat hint, plan E3.4; Linux W5b). The number of peers sent to.
+///
+/// # Errors
+/// No adapter (no database or app handle), or the envelope did not sign.
+pub async fn send_to_mesh_awaited(
+    state: &SharedState,
+    community_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<usize, String> {
+    let Some(adapter) = build_adapter(state) else {
+        return Err("app handle / db pool unavailable".to_string());
+    };
+    rekindle_gossip::send_to_mesh_awaited(Arc::new(adapter), community_id, envelope)
+        .await
+        .map_err(|error| format!("send_to_mesh: {error}"))
+}
+
 /// Architecture §10.6 — directed channel-scoped send for voice/video
 /// media and its per-stream control traffic. Resolves the recipient
 /// set from the active voice session's transport roster (the peers

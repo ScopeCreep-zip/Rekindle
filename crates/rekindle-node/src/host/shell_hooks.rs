@@ -85,6 +85,19 @@ pub trait ShellHooks: Send + Sync {
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<(), String>;
 
+    /// Fan an envelope out over the shell's gossip mesh now, waiting for
+    /// every peer's send: the sends at a session's end (the quit's beat
+    /// hint, a leave's notice), after the unlock scope a spawned fan-out
+    /// would run in has closed (Linux W5b). The number of peers sent to.
+    ///
+    /// # Errors
+    /// The envelope could not be signed.
+    async fn send_to_mesh_awaited(
+        &self,
+        community_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    ) -> Result<usize, String>;
+
     /// We left the community: drop the shell's own copies of its keys,
     /// until the MEK adapters move at E3.5.
     fn community_left(&self, community_id: &str);

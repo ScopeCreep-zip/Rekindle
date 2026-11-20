@@ -136,15 +136,24 @@ impl BeatEngine {
     pub async fn quit(&self) {
         let mut schedule = self.schedule.lock().await;
         if std::mem::replace(&mut schedule.hidden, true) {
+            tracing::info!("quit beats skipped: a hiding status already wrote Offline");
             return;
         }
         self.reconcile(&mut schedule);
         let communities: Vec<String> = schedule.due.keys().cloned().collect();
-        for community in communities {
-            if let Err(error) = self.sink.write_quit_beat(&community).await {
-                tracing::warn!(%error, "quit beat not written");
+        tracing::info!(communities = communities.len(), "quit beats starting");
+        let mut written = 0usize;
+        for community in &communities {
+            match self.sink.write_quit_beat(community).await {
+                Ok(()) => written += 1,
+                Err(error) => tracing::warn!(%error, "quit beat not written"),
             }
         }
+        tracing::info!(
+            written,
+            failed = communities.len() - written,
+            "quit beats finished"
+        );
     }
 
     /// Run until `stop`.

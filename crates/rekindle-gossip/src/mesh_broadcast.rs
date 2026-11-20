@@ -118,34 +118,73 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
         return;
     }
 
-    let scores = deps.peer_reliability_scores(community_id);
-    let scored = sort_peers_by_reliability(peers, &scores);
-    let degree = fanout_degree(scored.len());
-    let selected: Vec<PeerInfo> = scored.into_iter().take(degree).collect();
-
+    let selected = select_fanout(&*deps, community_id, peers);
     tracing::info!(
         community = %community_id,
         peer_count = selected.len(),
-        fanout_degree = degree,
         "send_to_mesh_raw: sending to gossip fan-out",
     );
-
     let cid_owner = community_id.to_string();
     deps.scope().spawn_or_drop("mesh fan-out", async move {
-        let mut set = tokio::task::JoinSet::new();
-        for peer in selected {
-            let deps_clone = Arc::clone(&deps);
-            let cid = cid_owner.clone();
-            let data = signed_bytes.clone();
-            set.spawn(
-                async move {
-                    send_to_one_peer(deps_clone, cid, peer, data).await;
-                }
-                .in_current_span(),
-            );
-        }
-        while set.join_next().await.is_some() {}
+        fan_out(deps, cid_owner, selected, signed_bytes).await;
     });
+}
+
+/// Sign `envelope` and send it to the fan-out now, awaiting every peer's
+/// send: the send at a session's end (the quit's beat hint, plan E3.4), when
+/// the session's scope is already closed and [`send_to_mesh`]'s spawned
+/// fan-out would be dropped. Nothing is queued without peers: no session
+/// follows to drain it. Returns the number of peers sent to.
+///
+/// # Errors
+/// The envelope could not be signed or encoded.
+pub async fn send_to_mesh_awaited<D: GossipDeps>(
+    deps: Arc<D>,
+    community_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<usize, GossipError> {
+    let signed = sign_and_record(&deps, community_id, envelope)?;
+    let peers = deps.current_peers(community_id).unwrap_or_default();
+    let selected = select_fanout(&*deps, community_id, peers);
+    let sent = selected.len();
+    fan_out(
+        deps,
+        community_id.to_owned(),
+        selected,
+        gossip_datagram(&signed),
+    )
+    .await;
+    Ok(sent)
+}
+
+/// The architecture §3 fan-out of `peers`, the most reliable first.
+fn select_fanout<D: GossipDeps>(
+    deps: &D,
+    community_id: &str,
+    peers: Vec<PeerInfo>,
+) -> Vec<PeerInfo> {
+    let scores = deps.peer_reliability_scores(community_id);
+    let scored = sort_peers_by_reliability(peers, &scores);
+    let degree = fanout_degree(scored.len());
+    scored.into_iter().take(degree).collect()
+}
+
+/// Send `data` to each of `selected`, one owned task per peer (M9.6), and
+/// wait for them all.
+async fn fan_out<D: GossipDeps>(
+    deps: Arc<D>,
+    community_id: String,
+    selected: Vec<PeerInfo>,
+    data: Vec<u8>,
+) {
+    let mut set = tokio::task::JoinSet::new();
+    for peer in selected {
+        let deps = Arc::clone(&deps);
+        let cid = community_id.clone();
+        let data = data.clone();
+        set.spawn(async move { send_to_one_peer(deps, cid, peer, data).await }.in_current_span());
+    }
+    while set.join_next().await.is_some() {}
 }
 
 /// One peer send + route re-resolve + retry. Records the peer's
@@ -391,6 +430,32 @@ mod tests {
         let st = deps.state.lock();
         assert_eq!(st.sent_payloads.len(), 1);
         assert_eq!(st.reliability, vec![("c1".into(), "alice".into(), true)]);
+    }
+
+    /// The awaited send reaches its peers with the session's scope closed
+    /// (the quit at a teardown, Linux W5b): the spawned fan-out is dropped.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_awaited_send_reaches_peers_after_the_scope_closed() {
+        let deps = Arc::new(MockDeps::new());
+        deps.scope
+            .shutdown(std::time::Duration::from_secs(1))
+            .await
+            .expect("stops");
+        deps.state.lock().peers = Some(vec![PeerInfo {
+            pseudonym_key: "alice".to_string(),
+            route_blob: vec![1, 2, 3],
+        }]);
+        let envelope =
+            CommunityEnvelope::Control(envelope::ControlPayload::HeadAdvanced { hint: vec![1] });
+        let sent = send_to_mesh_awaited(Arc::clone(&deps), "c1", &envelope)
+            .await
+            .expect("signed");
+        assert_eq!(sent, 1);
+        assert_eq!(
+            deps.state.lock().sent_payloads.len(),
+            1,
+            "sent before returning"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

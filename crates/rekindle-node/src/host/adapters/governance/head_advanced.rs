@@ -183,6 +183,7 @@ impl HostGovernance {
             tracing::debug!(community_id, "head hint names no member's record");
             return false;
         }
+        tracing::debug!(subkey = hint.subkey, "head hint received");
         let worth = self
             .ctx
             .communities
@@ -227,9 +228,18 @@ impl HostGovernance {
         let read = if hint.subkey == BEAT {
             // A status transition a ring watcher relayed: into the view.
             let now = Some(self.ctx.clock.now_ms());
-            self.read_member_beat(community_id, record, lease, now)
-                .await
-                .map(|(seq, _)| seq)
+            let read = self
+                .read_member_beat(community_id, record, lease, now)
+                .await;
+            match &read {
+                Some((seq, observed)) => tracing::debug!(
+                    seq,
+                    state_changed = observed.state_changed,
+                    "hinted beat read and applied"
+                ),
+                None => tracing::debug!("hinted beat not read"),
+            }
+            read.map(|(seq, _)| seq)
         } else if hint.subkey == ROUTES {
             self.read_member_routes(community_id, record, lease).await
         } else {

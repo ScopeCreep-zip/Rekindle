@@ -128,6 +128,7 @@ impl HostGovernance {
         let seq = self
             .write_own_beat(community_id, BeatState::Offline)
             .await?;
+        tracing::debug!(seq, "quit beat written; gossiping its hint");
         let keys = self.own_record_keys(community_id)?;
         let hint = rekindle_codec::member_record::head_advanced::HeadAdvanced {
             author: keys.pseudonym.verifying_key().to_bytes(),
