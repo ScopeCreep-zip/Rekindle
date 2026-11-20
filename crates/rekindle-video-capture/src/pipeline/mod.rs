@@ -131,8 +131,7 @@ impl NativeCaptureSession {
     /// applies rate-control properties to an initialized encoder live
     /// (`vpx_codec_enc_config_set` — de-facto stable 1.20→main).
     pub fn set_bitrate_kbps(&self, kbps: u32) {
-        let bps = i32::try_from(u64::from(kbps) * 1000).unwrap_or(i32::MAX);
-        self.encoder.set_property("target-bitrate", bps);
+        gst_util::set_target_bitrate(&self.encoder, kbps);
     }
 
     /// PLI-analog: force the next encoded frame to be a keyframe via
