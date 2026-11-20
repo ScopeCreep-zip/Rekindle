@@ -32,7 +32,7 @@ pub(super) async fn initiate(alice: &Party, bob: &Party, first: &[u8]) -> PreKey
     .unwrap()
 }
 
-async fn send(from: &Party, to: &Party, plaintext: &[u8]) -> RatchetMessage {
+pub(super) async fn send(from: &Party, to: &Party, plaintext: &[u8]) -> RatchetMessage {
     encrypt_and_record_outbound(&from.db, &from.local, &to.address(), plaintext, AD_EXTRA)
         .await
         .unwrap()
@@ -40,7 +40,7 @@ async fn send(from: &Party, to: &Party, plaintext: &[u8]) -> RatchetMessage {
         .clone()
 }
 
-async fn receive(
+pub(super) async fn receive(
     at: &Party,
     from: &Party,
     message: RatchetMessage,

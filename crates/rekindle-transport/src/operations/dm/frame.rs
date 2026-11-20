@@ -216,7 +216,8 @@ pub async fn ratchet_frame_at(
                 )));
             }
             let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
-            return initiate_frame(host, to, bundle, body, at).await;
+            let (frame, _) = open_frame(host, to, bundle, body, at).await?;
+            return Ok(frame);
         }
         Err(RatchetError::Crypto(CryptoError::NoSession(_)))
             if crate::operations::group_dm::opens_member_session(type_id) =>
@@ -225,8 +226,10 @@ pub async fn ratchet_frame_at(
             // session opens from the prekey record their roster profile
             // names, with this group frame as the init's first payload.
             let bundle = crate::operations::group_dm::member_bundle(host, to).await?;
-            let frame = initiate_frame(host, to, bundle, body, at).await?;
-            crate::operations::group_dm::first_contact::began(host, to, body);
+            let (frame, initiated) = open_frame(host, to, bundle, body, at).await?;
+            if initiated {
+                crate::operations::group_dm::first_contact::began(host, to, body);
+            }
             return Ok(frame);
         }
         Err(e) => return Err(ratchet_error(to, e)),
@@ -303,6 +306,45 @@ pub async fn initiate_frame(
         sender: local.owner(),
         body: FrameBody::PreKeyInit(init_body(init, first_type_id)),
     })
+}
+
+/// [`initiate_frame`] for a send that found no session: the bundle was
+/// fetched over the network, and a session the peer opened meanwhile (a
+/// crossing) is sent on instead of replaced
+/// ([`ratchet::open_and_record_outbound`], Sesame §3.3). Whether the frame
+/// initiates (it carries our PreKeyInit).
+///
+/// # Errors
+/// As [`initiate_frame`].
+async fn open_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    bundle: PreKeyBundle,
+    body: &DirectBody,
+    at: Position,
+) -> Result<(DmFrame, bool), FriendError> {
+    let type_id = body.type_id();
+    if !type_id.is_first_payload() {
+        return Err(FriendError::Invalid(format!(
+            "{type_id:?} cannot open a session"
+        )));
+    }
+    let local = host.local_party()?;
+    let outgoing = ratchet::open_and_record_outbound(
+        &host.db()?,
+        &local,
+        &peer_address(to)?,
+        bundle,
+        &content(body, ContentHint::Default, at, host.clock().now_ms()),
+        &ad_extra(type_id),
+    )
+    .await
+    .map_err(|e| ratchet_error(to, e))?;
+    let initiated = matches!(outgoing, Outgoing::PreKey(_));
+    if initiated {
+        crate::operations::prekeys::began_first_contact(host, to, type_id);
+    }
+    Ok((outgoing_frame(local.owner(), type_id, outgoing), initiated))
 }
 
 /// `body` (a sealed kind) as a pre-session frame to `to` under `nonce`.

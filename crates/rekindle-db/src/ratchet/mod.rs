@@ -32,14 +32,18 @@ use crate::repo::{identity_text, signal_identities};
 use crate::Db;
 use rekindle_crypto::signal::prekey_record::Publish;
 
+mod open;
 mod peek;
 mod tx;
+pub use open::open_and_record_outbound;
 pub use peek::{has_session, is_established, is_known_init};
 use tx::ended;
 pub(crate) use tx::in_transaction;
 
 #[cfg(test)]
 mod accept_tests;
+#[cfg(test)]
+mod glare_tests;
 #[cfg(test)]
 mod tests;
 
@@ -167,24 +171,38 @@ pub async fn initiate_and_record_outbound(
     let (local, peer) = (local.clone(), peer.clone());
     let (plaintext, ad_extra) = (first_plaintext.to_vec(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
-        let owner = local.owner();
-        let record = load(conn, &owner, &peer)?;
-        let (next, init) = record.initiate(
-            &local.identity,
-            &bundle,
-            &plaintext,
-            &ad_extra,
-            local.now_ms,
-            local.rng.as_ref(),
-        )?;
-        store(conn, &owner, &peer, &next, local.now_ms)?;
-        signal_identities::ensure(conn, &owner, &peer.identity)?;
-        if let Some(opk_id) = init.one_time_prekey_id {
-            prekeys::insert_slot_used(conn, &owner, &peer, opk_id, local.now_ms)?;
-        }
-        Ok(init)
+        let record = load(conn, &local.owner(), &peer)?;
+        initiate_in(conn, &local, &peer, &record, &bundle, &plaintext, &ad_extra)
     })
     .await
+}
+
+/// [`initiate_and_record_outbound`]'s step on `record`, in the caller's
+/// transaction.
+fn initiate_in(
+    conn: &Connection,
+    local: &LocalParty,
+    peer: &PeerAddress,
+    record: &SessionRecord,
+    bundle: &PreKeyBundle,
+    plaintext: &[u8],
+    ad_extra: &[u8],
+) -> Result<PreKeyInit, RatchetError> {
+    let owner = local.owner();
+    let (next, init) = record.initiate(
+        &local.identity,
+        bundle,
+        plaintext,
+        ad_extra,
+        local.now_ms,
+        local.rng.as_ref(),
+    )?;
+    store(conn, &owner, peer, &next, local.now_ms)?;
+    signal_identities::ensure(conn, &owner, &peer.identity)?;
+    if let Some(opk_id) = init.one_time_prekey_id {
+        prekeys::insert_slot_used(conn, &owner, peer, opk_id, local.now_ms)?;
+    }
+    Ok(init)
 }
 
 /// Encrypt under the active session with `peer`: a ratchet message, or,
@@ -349,9 +367,10 @@ pub enum Reinitiation {
 ///   [`CryptoError::DuplicateMessage`] (B4), dropped silently;
 /// - an init under another identity than `peer`'s is
 ///   [`CryptoError::IdentityAddressMismatch`];
-/// - a new session over an established one, unless `reinit` allows it, is
-///   [`RatchetError::EstablishedSession`] (ruling Q1: nothing re-initiates
-///   silently);
+/// - a new session over an established one, unless `reinit` allows it or
+///   it is the losing side of a crossing (kept archived, its first message
+///   delivered: Sesame §3), is [`RatchetError::EstablishedSession`] (ruling
+///   Q1: nothing re-initiates silently);
 /// - a consumed, unknown or archived prekey is
 ///   [`RatchetError::UnknownPrekey`] (B5);
 /// - a last-resort-only init seen before is
@@ -389,7 +408,11 @@ pub async fn accept_init(
                 refills: Vec::new(),
             });
         }
-        if reinit == Reinitiation::Refused && record.is_established() {
+        // Over an established session, only the losing side of a crossing
+        // is kept, archived (Sesame §3; `SessionRecord::loses_crossing`);
+        // any other init would replace it unasked (ruling Q1).
+        let crossing = reinit == Reinitiation::Refused && record.is_established();
+        if crossing && !record.loses_crossing(&init.base_key) {
             return Err(RatchetError::EstablishedSession);
         }
         // A reset's init answers our stored request, consumed in this
@@ -404,13 +427,12 @@ pub async fn accept_init(
             return Err(RatchetError::UnrequestedReset);
         }
         let secrets = prekeys::responder_secrets(conn, &owner, &init)?;
-        let (next, plaintext) = record.insert_from_init(
-            &init,
-            &secrets.keys(&local.identity),
-            &ad_extra,
-            local.now_ms,
-            local.rng.as_ref(),
-        )?;
+        let keys = secrets.keys(&local.identity);
+        let (next, plaintext) = if crossing {
+            record.archive_from_init(&init, &keys, &ad_extra, local.now_ms, local.rng.as_ref())
+        } else {
+            record.insert_from_init(&init, &keys, &ad_extra, local.now_ms, local.rng.as_ref())
+        }?;
         if prekeys::is_last_resort_only(&init) && prekeys::lr_init_seen(conn, &owner, &init)? {
             return Err(RatchetError::ReplayedLastResortInit);
         }

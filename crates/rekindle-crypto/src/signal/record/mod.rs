@@ -237,6 +237,64 @@ impl SessionRecord {
         now_ms: i64,
         rng: &dyn RandomSource,
     ) -> Result<(Self, Vec<u8>), CryptoError> {
+        let (session, plaintext) = self.candidate_from_init(init, keys, ad_extra, now_ms, rng)?;
+        let mut record = self.clone();
+        let placement = record.placement(&init.base_key);
+        record.commit_received(session, placement);
+        Ok((record, plaintext))
+    }
+
+    /// Whether a peer's initiation with `base_key`, arriving over our
+    /// established session, is the losing side of a crossing (glare): two
+    /// initiations crossed, the peer took ours as active by the higher
+    /// base key, answered on it, and that answer reached us before their
+    /// own init. Sesame (§3) keeps a received initiation alongside the
+    /// active session instead of refusing it, and the crossing tiebreak
+    /// ([`policy`]) settles both sides on the higher base key, so an
+    /// init whose base key is lower than our established session's is kept
+    /// archived ([`Self::archive_from_init`]); a higher one would replace
+    /// it and is a re-initiation (ruling Q1).
+    pub fn loses_crossing(&self, base_key: &[u8; 32]) -> bool {
+        self.is_established()
+            && self
+                .active
+                .as_ref()
+                .is_some_and(|active| base_key < active.state.base_key())
+    }
+
+    /// [`Self::insert_from_init`] for the losing side of a crossing
+    /// ([`Self::loses_crossing`]): the session is committed archived, its
+    /// first message delivered, and the established active session stays
+    /// active. Anything but a losing crossing init is refused.
+    pub fn archive_from_init(
+        &self,
+        init: &PreKeyInit,
+        keys: &ResponderKeys<'_>,
+        ad_extra: &[u8],
+        now_ms: i64,
+        rng: &dyn RandomSource,
+    ) -> Result<(Self, Vec<u8>), CryptoError> {
+        if !self.loses_crossing(&init.base_key) {
+            return Err(CryptoError::SessionError(
+                "the init is not the losing side of a crossing".into(),
+            ));
+        }
+        let (session, plaintext) = self.candidate_from_init(init, keys, ad_extra, now_ms, rng)?;
+        let mut record = self.clone();
+        record.commit_received(session, policy::Placement::Archived);
+        Ok((record, plaintext))
+    }
+
+    /// The session a peer's init builds from our secrets, and its first
+    /// message decrypted, with the record untouched.
+    fn candidate_from_init(
+        &self,
+        init: &PreKeyInit,
+        keys: &ResponderKeys<'_>,
+        ad_extra: &[u8],
+        now_ms: i64,
+        rng: &dyn RandomSource,
+    ) -> Result<(Session, Vec<u8>), CryptoError> {
         self.check_address(keys.identity, &init.identity_key)?;
         if self.has_base_key(&init.base_key) {
             return Err(CryptoError::DuplicateMessage);
@@ -254,16 +312,13 @@ impl SessionRecord {
         let mut state =
             SessionState::responder(&session_keys, ad, init.base_key, keys.signed_prekey);
         let plaintext = state.decrypt(&init.message, ad_extra, now_ms, rng)?;
-        let mut record = self.clone();
-        let placement = record.placement(&init.base_key);
-        record.commit_received(
+        Ok((
             Session {
                 state,
                 pending: None,
             },
-            placement,
-        );
-        Ok((record, plaintext))
+            plaintext,
+        ))
     }
 
     /// A PreKeyInit whose base key is a session's we hold (a retransmission,
