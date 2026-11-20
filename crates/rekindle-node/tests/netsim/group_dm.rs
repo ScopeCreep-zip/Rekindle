@@ -422,3 +422,71 @@ fn a_retired_group_stretch_has_one_trace_per_seed() {
         assert_eq!(run(), first, "one seed, one trace");
     }
 }
+
+/// Live finding (Linux, 3-member group): Bea accepts and posts at once,
+/// while none of her app messages leaves her (so her accept, and the
+/// best-effort hint of her post, go nowhere until the loss ends); Cat
+/// accepts and posts at once too. Every post is read by every member: a
+/// post never goes to members who do not yet hold the poster's key and
+/// chain, and content that arrives before the accept is read once it
+/// lands.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn posts_right_after_accepting_reach_every_member() {
+    let (sim, mut nodes) = start(3, 95).await;
+    for (node, name) in nodes.iter_mut().zip(["Ann", "Bea", "Cat"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[1], &nodes[0]).await;
+    befriend(&sim, &nodes[2], &nodes[0]).await;
+    let gid: String = serde_json::from_value(
+        nodes[0]
+            .ok(IpcRequest::GroupDmCreate {
+                name: "raid night".to_string(),
+                members: vec![key(&nodes[1]), key(&nodes[2])],
+            })
+            .await,
+    )
+    .expect("the group is created");
+    for node in &nodes[1..] {
+        assert!(
+            eventually(&sim, LIMIT, || async {
+                view(node, &gid).await.is_some_and(|v| v.pending)
+            })
+            .await,
+            "node {} holds the invite",
+            node.index
+        );
+    }
+    // Bea's accept is held up: nothing she sends arrives for 30 s.
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 1000,
+    });
+    nodes[1]
+        .ok(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        })
+        .await;
+    send(&nodes[1], &gid, "from Bea").await;
+    nodes[2]
+        .ok(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        })
+        .await;
+    send(&nodes[2], &gid, "from Cat").await;
+    send(&nodes[0], &gid, "from Ann").await;
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 0,
+    });
+    for body in ["from Ann", "from Bea", "from Cat"] {
+        for reader in &nodes {
+            assert!(
+                eventually(&sim, LIMIT * 2, || reads(reader, &gid, body)).await,
+                "node {} reads {body:?}",
+                reader.index
+            );
+        }
+    }
+}

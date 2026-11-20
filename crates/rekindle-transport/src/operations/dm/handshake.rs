@@ -242,6 +242,12 @@ async fn commit(
 /// this stream is a first contact ([`enqueue_frame`]'s callers), and the
 /// receiver answers a re-sent one it already opened with the same receipt
 /// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
+/// A group member's key (`GroupDmAccept`: an accept, the answer to a
+/// joiner, a rotation) is receipted too (plan E2.6, live finding: a
+/// member's accept lost or late as an `app_message` left the others
+/// without its key and chain, so its posts were never read): it is the one
+/// frame naming the member's key and chain, and the group stream's hints
+/// are only worth sending once it is held.
 #[must_use]
 pub fn receipted(kind: DmTypeId) -> bool {
     matches!(
@@ -251,6 +257,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::SessionResetAccept
             | DmTypeId::FriendsKey
             | DmTypeId::UnfriendedAck
+            | DmTypeId::GroupDmAccept
     )
 }
 
@@ -410,6 +417,7 @@ mod tests {
         assert!(receipted(DmTypeId::SessionResetAccept));
         assert!(!receipted(DmTypeId::Unfriended));
         assert!(receipted(DmTypeId::FriendsKey));
+        assert!(receipted(DmTypeId::GroupDmAccept));
         assert!(receipted(DmTypeId::UnfriendedAck));
     }
 
