@@ -48,7 +48,15 @@ impl HostBeats {
 #[async_trait]
 impl BeatSink for HostBeats {
     fn communities(&self) -> Vec<String> {
-        self.host().map(|h| h.sync_targets()).unwrap_or_default()
+        // A community our own pseudonym departed gets no beat (ADR 0011:
+        // the leaver's last writes are its op and frontier, never a beat).
+        self.host()
+            .map(|h| {
+                let mut targets = h.sync_targets();
+                targets.retain(|c| !h.own_departed(c));
+                targets
+            })
+            .unwrap_or_default()
     }
 
     fn status(&self) -> SessionStatus {

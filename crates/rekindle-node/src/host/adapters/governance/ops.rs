@@ -401,19 +401,7 @@ impl HostGovernance {
     /// since (a member that joined before `X` never learned `X`). Written
     /// only when the heads differ from the subkey's local value.
     pub(crate) async fn republish_own_frontier(&self, community_id: &str) {
-        let record = {
-            let map = self.ctx.communities.map().read();
-            map.get(community_id).and_then(|c| {
-                let me = c.my_pseudonym_key.as_deref()?;
-                let state = c.governance_state.as_ref()?;
-                state
-                    .members
-                    .iter()
-                    .find(|(p, _)| hex::encode(p.0) == me)
-                    .map(|(_, m)| m.member_record.clone())
-            })
-        };
-        let Some(record) = record else {
+        let Some(record) = self.own_member_record(community_id) else {
             return;
         };
         let written = match self.member_record_writer(community_id) {

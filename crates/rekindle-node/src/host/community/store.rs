@@ -420,6 +420,14 @@ impl CommunityStore {
         });
     }
 
+    /// Our own member record's key in `community_id`, as the join or create
+    /// recorded it (plan E3.2, ADR 0011).
+    pub fn set_my_member_record(&self, community_id: &str, record: &str) {
+        self.update(community_id, |c| {
+            c.my_member_record = Some(record.to_owned());
+        });
+    }
+
     /// Pin the community's `GenesisCert` (plan E3.2).
     pub fn set_genesis_cert(
         &self,

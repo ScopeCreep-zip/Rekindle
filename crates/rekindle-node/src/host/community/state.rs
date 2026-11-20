@@ -66,6 +66,13 @@ pub struct CommunityState {
     pub dht_owner_keypair: Option<String>,
     /// Our pseudonym pubkey hex for this community.
     pub my_pseudonym_key: Option<String>,
+    /// Our own member record's key in this community (plan E3.2, ADR
+    /// 0011), as the join or create stored it (`communities.
+    /// my_member_record`): never read back from the merged roster, which
+    /// drops us once our own `MemberLeft` merges, while the leave's own
+    /// frontier write and our outbox's head are still ours to land.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_member_record: Option<String>,
     /// Current MEK generation we have.
     pub mek_generation: u64,
     /// DHT member registry record key (SMPL, multi-writer).

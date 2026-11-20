@@ -60,17 +60,34 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
 }
 
 impl HostGovernance {
-    /// Our member record in `community_id`, as our `MemberJoined` names it.
-    pub(super) fn own_member_record(&self, community_id: &str) -> Option<String> {
+    /// Our member record in `community_id`, as the join or create recorded
+    /// it (`communities.my_member_record`, ADR 0011): never our merged
+    /// roster's entry, which our own `MemberLeft` removes while the leave's
+    /// frontier write and our outbox's head are still ours to land.
+    pub(crate) fn own_member_record(&self, community_id: &str) -> Option<String> {
+        self.ctx
+            .communities
+            .map()
+            .read()
+            .get(community_id)?
+            .my_member_record
+            .clone()
+    }
+
+    /// Whether our own pseudonym departed `community_id` in our merged
+    /// state (our `MemberLeft`, a kick or a ban): no beat is ours to write.
+    pub(crate) fn own_departed(&self, community_id: &str) -> bool {
         let map = self.ctx.communities.map().read();
-        let c = map.get(community_id)?;
-        let me = c.my_pseudonym_key.as_deref()?;
-        let state = c.governance_state.as_ref()?;
-        state
-            .members
-            .iter()
-            .find(|(p, _)| hex::encode(p.0) == me)
-            .map(|(_, m)| m.member_record.clone())
+        map.get(community_id).is_some_and(|c| {
+            let me = c
+                .my_pseudonym_key
+                .as_deref()
+                .and_then(super::ops::pseudonym_of);
+            match (me, c.governance_state.as_ref()) {
+                (Some(me), Some(state)) => state.is_departed(&me),
+                _ => false,
+            }
+        })
     }
 
     /// Write `blob` to our `M`/6 in `community_id`.

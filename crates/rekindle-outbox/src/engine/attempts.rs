@@ -108,6 +108,15 @@ impl<D: OutboxDeps> Outbox<D> {
         let sent_at = self.now();
         let mut jobs = Vec::new();
         for (row, outcome) in run.rows.iter().zip(outcomes) {
+            // Each attempt's outcome, by stream kind only (no identifier
+            // leaves through a log, B19): what a scenario's `RUST_LOG`
+            // shows of a row retried until it lands.
+            tracing::debug!(
+                stream = row.stream.split(':').next().unwrap_or_default(),
+                attempts = row.attempts,
+                outcome = outcome_label(&outcome),
+                "outbox attempt"
+            );
             if let AttemptOutcome::Appending(frame) = outcome {
                 self.hand_off(row).await?;
                 // Its append is still running past its deadline: the
@@ -197,5 +206,19 @@ impl<D: OutboxDeps> Outbox<D> {
             .filter(|row| !attempting.contains(&row.stream))
             .map(|row| row.deadline);
         Ok(wake.into_iter().chain(ends).min())
+    }
+}
+
+/// An attempt outcome's name for a log line, without its payload.
+fn outcome_label(outcome: &AttemptOutcome) -> &'static str {
+    match outcome {
+        AttemptOutcome::Appending(_) => "appending",
+        AttemptOutcome::Sent => "sent",
+        AttemptOutcome::Awaiting => "awaiting",
+        AttemptOutcome::Receipted => "receipted",
+        AttemptOutcome::Unanswered => "unanswered",
+        AttemptOutcome::Deferred => "deferred",
+        AttemptOutcome::Wedged(_) => "wedged",
+        AttemptOutcome::Superseded(_) => "superseded",
     }
 }

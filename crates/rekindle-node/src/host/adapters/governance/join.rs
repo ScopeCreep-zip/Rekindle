@@ -86,6 +86,7 @@ impl HostGovernance {
                 dht_owner_keypair: None,
                 registry_keypair: None,
                 member_record_owner: Some(outcome.member.owner_keypair.clone()),
+                member_record: Some(outcome.member.record_key.clone()),
                 member_hpke_secret: Some(outcome.member.hpke_secret.clone()),
                 genesis_cert: Some(outcome.cert_bytes.clone()),
                 joined_at,

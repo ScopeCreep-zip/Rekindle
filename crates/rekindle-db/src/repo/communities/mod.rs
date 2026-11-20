@@ -34,6 +34,8 @@ pub struct CommunityRow {
     /// The remover's display name as known when our removal was first
     /// merged (plan E3.2 S9, A/B R5-2); `None` while we are a member.
     pub removed_by_name: Option<String>,
+    /// Our own member record's key, as the join or create stored it.
+    pub my_member_record: Option<String>,
 }
 
 /// Every community of `owner_key`.
@@ -50,7 +52,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
             JOIN channels ch ON ch.owner_key = m.owner_key AND ch.id = m.conversation_id \
            WHERE m.owner_key = c.owner_key AND m.conversation_type = 'channel' \
              AND ch.community_id = c.id), \
-         c.removed_by_name \
+         c.removed_by_name, c.my_member_record \
          FROM communities c \
          LEFT JOIN community_members cm \
            ON cm.owner_key = c.owner_key \
@@ -77,6 +79,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
                 governance_clock: crate::row::get_u64(row, 13)?,
                 message_clock: crate::row::get_u64(row, 14)?,
                 removed_by_name: row.get(15)?,
+                my_member_record: row.get(16)?,
             })
         })?
         .collect();
@@ -210,6 +213,8 @@ pub enum Column {
     GenesisCert,
     /// The remover's display name, kept with our own removal (A/B R5-2).
     RemovedByName,
+    /// Our own member record's key (plan E3.2, ADR 0011).
+    MyMemberRecord,
 }
 
 impl Column {
@@ -227,6 +232,7 @@ impl Column {
             Self::MekGeneration => "mek_generation",
             Self::GenesisCert => "genesis_cert",
             Self::RemovedByName => "removed_by_name",
+            Self::MyMemberRecord => "my_member_record",
         }
     }
 }

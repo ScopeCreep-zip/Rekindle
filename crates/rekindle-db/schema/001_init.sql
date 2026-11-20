@@ -265,6 +265,10 @@ CREATE TABLE IF NOT EXISTS communities (
     dht_record_key TEXT,
     dht_owner_keypair TEXT,
     my_pseudonym_key TEXT,
+    -- Our own member record's key (plan E3.2, ADR 0011), stored at join or
+    -- create: never read back from the merged roster, which drops us once
+    -- our own `MemberLeft` merges while our last writes are still owed.
+    my_member_record TEXT,
     mek_generation INTEGER NOT NULL DEFAULT 0,
     manifest_key TEXT,
     member_registry_key TEXT,

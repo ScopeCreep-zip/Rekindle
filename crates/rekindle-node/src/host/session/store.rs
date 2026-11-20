@@ -224,6 +224,9 @@ pub struct NewMembership {
     /// Our member record's owner keypair `K_M(p)` (the vault's
     /// `MemberRecordOwner`, plan E3.2).
     pub member_record_owner: Option<zeroize::Zeroizing<String>>,
+    /// Our member record's key (`communities.my_member_record`, plan E3.2):
+    /// the record `member_record_owner` writes.
+    pub member_record: Option<String>,
     /// Our card's X25519 HPKE secret (the vault's `MemberHpkeSecret`).
     pub member_hpke_secret: Option<zeroize::Zeroizing<[u8; 32]>>,
     /// The pinned `GenesisCert` as the anchor holds it
@@ -252,6 +255,7 @@ pub fn record_membership(
         dht_owner_keypair,
         registry_keypair,
         member_record_owner,
+        member_record,
         member_hpke_secret,
         genesis_cert,
         joined_at,
@@ -313,6 +317,9 @@ pub fn record_membership(
     if let Some(decoded) = cert {
         communities.set_genesis_cert(&community, decoded.signed.cert);
     }
+    if let Some(record) = &member_record {
+        communities.set_my_member_record(&community, record);
+    }
     let row = membership.clone();
     db.fire("community membership", move |conn| {
         repo::communities::upsert_membership(
@@ -336,6 +343,15 @@ pub fn record_membership(
             repo::communities::Column::MySegmentIndex,
             row.segment_index.unwrap_or(0),
         )?;
+        if let Some(record) = &member_record {
+            repo::communities::set(
+                conn,
+                &owner,
+                &row.anchor,
+                repo::communities::Column::MyMemberRecord,
+                record,
+            )?;
+        }
         if let Some(cert) = &genesis_cert {
             repo::communities::set(
                 conn,
