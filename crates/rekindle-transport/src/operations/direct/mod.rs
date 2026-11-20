@@ -157,7 +157,7 @@ pub(crate) async fn on_first_contact_reply(
 }
 
 /// What became of one entry of a writer's chain ([`receive_entry`]).
-pub enum Entry {
+pub enum EntryFate {
     /// Its content is received, decrypted and stored, or it was judged (a
     /// duplicate of one opened, a refusal, junk): the cursor may pass it.
     Held,
@@ -172,37 +172,37 @@ pub enum Entry {
 
 /// Receive one entry of `writer`'s chain (`datagram`, a wired frame) by
 /// the one 1:1 path: opened, judged and applied as a hint would be.
-pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8]) -> Entry {
+pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8]) -> EntryFate {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::warn!(from = %writer, "dropping an untagged chain entry");
-        return Entry::Held;
+        return EntryFate::Held;
     };
     let digest = dm::ack::digest(bytes);
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
         Err(dropped @ (Dropped::InFlight | Dropped::Failed)) => {
             by_message(host, dropped, &digest);
-            return Entry::Pending;
+            return EntryFate::Pending;
         }
         Err(dropped) => {
             by_message(host, dropped, &digest);
-            return Entry::Held;
+            return EntryFate::Held;
         }
     };
     if opened.held && opened.sender_hex == writer {
         held::keep(host, opened).await;
-        return Entry::Pending;
+        return EntryFate::Pending;
     }
     dm::ack::opened(host, &opened, digest);
     if opened.sender_hex != writer {
         tracing::warn!(from = %writer, by = %opened.sender_hex, "dropping a chain entry by another sender");
         frame::processed(host, &opened);
-        return Entry::Held;
+        return EntryFate::Held;
     }
     match handlers::apply(host, opened).await {
-        handlers::Applied::Done(true) | handlers::Applied::Refused => Entry::Held,
-        handlers::Applied::Done(false) => Entry::Pending,
-        handlers::Applied::Unported(opened) => Entry::Unported(opened),
+        handlers::Applied::Done(true) | handlers::Applied::Refused => EntryFate::Held,
+        handlers::Applied::Done(false) => EntryFate::Pending,
+        handlers::Applied::Unported(opened) => EntryFate::Unported(opened),
     }
 }
 

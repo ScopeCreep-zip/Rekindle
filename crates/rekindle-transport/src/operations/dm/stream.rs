@@ -442,13 +442,13 @@ impl StreamSink for DmSink<'_> {
         entry: &ChainEntry,
     ) -> Result<Held, SinkError> {
         match direct::receive_entry(self.host, writer, &entry.ciphertext).await {
-            direct::Entry::Held => {}
-            direct::Entry::Pending => {
+            direct::EntryFate::Held => {}
+            direct::EntryFate::Pending => {
                 tracing::debug!(from = %writer, seq = entry.seq,
                     "dm chain entry not held yet — the cursor stays below it");
                 return Ok(Held::Pending);
             }
-            direct::Entry::Unported(opened) => {
+            direct::EntryFate::Unported(opened) => {
                 tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
                     "unported kind on the dm chain — dropped");
             }
