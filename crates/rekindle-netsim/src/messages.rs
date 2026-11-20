@@ -322,6 +322,9 @@ impl AppMessagePort for FakeMessages {
         // As `VeilidMessages`: import our own route for the call, call it
         // with itself as the safety route, and drop the import.
         let own = self.pinned(class)?;
+        if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
+            *slot.own_calls.entry(class).or_default() += 1;
+        }
         self.net.import_route(self.node, &own);
         let answer = self
             .call_over(&PeerTarget::new(own.clone()), profile, Some(&own), message)

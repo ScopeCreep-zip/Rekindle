@@ -16,7 +16,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rekindle_record_pool::RecordPool;
-use rekindle_records::port::{PortEvent, RecordSchema, RecordValue};
+use rekindle_records::port::{PortEvent, RecordSchema, RecordValue, RouteClass};
 use tokio::sync::{mpsc, oneshot, watch, Notify};
 
 use crate::busy::Busy;
@@ -170,6 +170,9 @@ pub(crate) struct NodeSlot {
     /// How many app calls the node made: an observation, never a
     /// behaviour.
     pub app_calls: u64,
+    /// Of those, the calls to our own route of each class (the liveness
+    /// self-tests, `call_own`): an observation, never a behaviour.
+    pub own_calls: HashMap<RouteClass, u64>,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// The attachment state last queued for the node ([`crate::attach`]).
@@ -228,6 +231,7 @@ impl NodeSlot {
             app_sets: 0,
             app_resends: 0,
             app_calls: 0,
+            own_calls: HashMap::new(),
             pools: Vec::new(),
             state: "detached",
             public_ready: false,

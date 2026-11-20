@@ -30,12 +30,22 @@ async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
         .any(|m| m.is_own && m.body == body && m.send_state == SendState::Delivered)
 }
 
-/// A's self-probes: calls from A to A (`0<-0 AppCall`).
-fn self_probes(sim: &rekindle_netsim::Netsim) -> usize {
-    sim.trace()
-        .of(0)
-        .filter(|e| e.starts_with("0<-0 AppCall"))
-        .count()
+/// Ada's self-tests of her General route, the one Bo's sends arrive over
+/// (plan RT1: her `Sending` route is self-tested too, on its own schedule,
+/// and is not the route this file's busy/idle rule is about).
+fn general_probes(sim: &rekindle_netsim::Netsim) -> u64 {
+    sim.own_calls(0, RouteClass::General)
+}
+
+/// Bo's app calls to others: every call but his own routes' self-tests
+/// (plan RT1: those now include his `Sending` route's, on their own
+/// schedule; a suspect round's probe of Ada's route is a call to her).
+fn calls_to_others(sim: &rekindle_netsim::Netsim) -> u64 {
+    let own: u64 = [RouteClass::General, RouteClass::Media, RouteClass::Sending]
+        .into_iter()
+        .map(|class| sim.own_calls(1, class))
+        .sum();
+    sim.app_calls(1) - own
 }
 
 async fn friends(seed: u64) -> (rekindle_netsim::Netsim, Vec<SimNode>) {
@@ -129,8 +139,9 @@ async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute
         per_mille: 1000,
     });
     // A suspect round re-reads Ada's route and, finding the record Bo
-    // holds, probes it with one app call; nothing else of Bo's calls here.
-    let calls = sim.app_calls(1);
+    // holds, probes it with one app call; nothing else of Bo's calls to
+    // others here (his own routes' self-tests are not counted).
+    let calls = calls_to_others(&sim);
     for i in 0..9 {
         send(&nodes[1], &ada, &format!("unanswered {i}")).await;
     }
@@ -139,19 +150,19 @@ async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute
     // wait (and inside the 55 s ack deadline of a route not yet proven).
     assert!(
         eventually(&sim, Duration::from_secs(60), || {
-            let now = sim.app_calls(1);
+            let now = calls_to_others(&sim);
             async move { now > calls }
         })
         .await,
         "eight unanswered sends began a suspect round"
     );
-    let first = sim.app_calls(1);
+    let first = calls_to_others(&sim);
     for i in 0..9 {
         send(&nodes[1], &ada, &format!("still unanswered {i}")).await;
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
     assert!(
-        sim.app_calls(1) <= first + 1,
+        calls_to_others(&sim) <= first + 1,
         "no more than one more suspect round in the next minute"
     );
 }
@@ -160,19 +171,19 @@ async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute
 async fn a_healthy_busy_route_is_never_probed_and_an_idle_one_is() {
     let (sim, nodes) = friends(124).await;
     let ada = key(&nodes[0]);
-    let probes = self_probes(&sim);
+    let probes = general_probes(&sim);
     for i in 0..30 {
         send(&nodes[1], &ada, &format!("busy {i}")).await;
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
-    assert_eq!(self_probes(&sim), probes, "a busy route is never probed");
+    assert_eq!(general_probes(&sim), probes, "a busy route is never probed");
     // Within its period of the last inbound (plan RH1r-c O1): a test that
     // falls due inside the 40 s idle gate is skipped and rescheduled one
     // period on, 40 s + U(0, 13.3 s), so the first idle test comes at most
     // 40 + 40 + 13.3 s after the last arrival, which was 10 s before here.
     assert!(
         eventually(&sim, Duration::from_secs(90), || {
-            let now = self_probes(&sim);
+            let now = general_probes(&sim);
             async move { now > probes }
         })
         .await,

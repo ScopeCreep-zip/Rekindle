@@ -493,6 +493,17 @@ impl Netsim {
         self.net.inner.lock().nodes[node].app_calls
     }
 
+    /// How many of those were node `node`'s calls to its own `class` route
+    /// (its liveness self-tests), counted as [`app_calls`](Self::app_calls).
+    #[must_use]
+    pub fn own_calls(&self, node: usize, class: rekindle_records::port::RouteClass) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .own_calls
+            .get(&class)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Each replica's value at `key`/`subkey`, in placement order.
     #[must_use]
     pub fn replica_values(&self, key: &str, subkey: u32) -> Vec<Option<RecordValue>> {
