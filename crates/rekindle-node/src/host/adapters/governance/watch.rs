@@ -39,6 +39,10 @@ impl HostGovernance {
     /// is dispatched by subkey ([`rebuilds_on`]): only a frontier change
     /// that names a head we lack rebuilds the community.
     pub async fn on_watched_change(&self, record: &str, subkeys: &[u32]) -> bool {
+        if let Some(community) = self.community_of_removal_record(record) {
+            self.on_removal_watch_change(&community, subkeys).await;
+            return true;
+        }
         let Some(community) = self.community_of_ring_record(record) else {
             // A registry (or segment registry) is presence: refreshed,
             // never written (plan E3.4 S5, finding IB1c).

@@ -221,8 +221,8 @@ impl CommunityStore {
         .unwrap_or_default()
     }
 
-    /// Take the community's leases, for release (leave): its own and its
-    /// watch ring's, so a ring move that finished after the leave's
+    /// Take the community's leases, for release (leave): its own, its
+    /// watch ring's and its removal watch's (plan RM2), so a ring move that finished after the leave's
     /// `release_watch_ring` leaks no lease.
     pub fn take_leases(&self, community_id: &str) -> (CommunityLeases, Vec<LeaseId>) {
         self.map
@@ -231,7 +231,10 @@ impl CommunityStore {
             .map(|c| {
                 (
                     std::mem::take(&mut c.leases),
-                    std::mem::take(&mut c.watch_ring).into_values().collect(),
+                    std::mem::take(&mut c.watch_ring)
+                        .into_values()
+                        .chain(std::mem::take(&mut c.removal_watch).into_values())
+                        .collect(),
                 )
             })
             .unwrap_or_default()

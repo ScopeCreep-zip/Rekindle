@@ -85,6 +85,7 @@ mod publication;
 mod registry;
 mod registry_watch;
 pub(crate) mod removal_posts;
+mod removal_watch;
 pub(crate) mod search;
 mod thread_events;
 mod timeout_events;

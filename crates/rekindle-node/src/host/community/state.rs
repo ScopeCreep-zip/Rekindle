@@ -100,6 +100,11 @@ pub struct CommunityState {
     /// each held read-only and watched, by record key.
     #[serde(skip)]
     pub watch_ring: std::collections::BTreeMap<String, rekindle_records::lease::LeaseId>,
+    /// The removal watch (plan RM2): after our removal's teardown, the
+    /// member records of those who may remove our remover, each held
+    /// read-only and watched on its frontier, by record key.
+    #[serde(skip)]
+    pub removal_watch: std::collections::BTreeMap<String, rekindle_records::lease::LeaseId>,
     /// What each member's beat shows (plan E3.4 S3): fed by the ring's
     /// beat changes, `HeadAdvanced` hints and reads, expired locally by the
     /// 15-minute rule. Its state transitions are what the ring relays as

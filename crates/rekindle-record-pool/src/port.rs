@@ -134,7 +134,15 @@ impl RecordPort for RecordPool {
 
     async fn rehydrate(&self, lease: LeaseId) -> Result<(), PortError> {
         RecordPool::reopen_with_writer(self, lease).await?;
-        for subkey in self.inspect_present(lease).await? {
+        // A subkey an armed watch covers gets its changes from the watch; the
+        // keepalive inspects only the rest (D4, plan KA1).
+        let unwatched = self.unwatched_subkeys(lease)?;
+        if unwatched.is_empty() {
+            return Ok(());
+        }
+        let report =
+            RecordPort::inspect(self, lease, Some(&unwatched), ReportScope::UpdateGet).await?;
+        for subkey in report.newer_on_network() {
             RecordPort::get(self, lease, subkey, true).await?;
         }
         Ok(())

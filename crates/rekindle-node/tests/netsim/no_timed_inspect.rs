@@ -1,6 +1,8 @@
-//! No app polling of a watched record (D4, plan E3.1 C1): over a two-minute
-//! idle nobody inspects a community's governance record; a change reaches
-//! its members through their watches alone.
+//! No app polling of a watched record (D4, plan E3.1 C1, KA1): over an idle
+//! longer than a full record-keepalive cycle (its start offset is under
+//! 300 s, so a warming falls inside the window whatever the seed) nobody
+//! inspects a community's governance record; a change reaches its members
+//! through their watches alone.
 
 use std::time::Duration;
 
@@ -13,7 +15,9 @@ async fn an_idle_community_is_never_inspected() {
     tokio::time::sleep(Duration::from_secs(60)).await;
     let key = community.anchor.as_str();
     let before: Vec<u64> = (0..2).map(|i| community.sim.app_inspects(i, key)).collect();
-    tokio::time::sleep(Duration::from_secs(120)).await;
+    // Past the keepalive's first warming (offset < 300 s) and to the end of
+    // its second window (300 s + up to 60 s jitter).
+    tokio::time::sleep(Duration::from_secs(420)).await;
     for (i, was) in before.into_iter().enumerate() {
         assert_eq!(
             community.sim.app_inspects(i, key),

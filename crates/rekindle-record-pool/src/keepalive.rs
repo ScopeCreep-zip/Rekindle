@@ -12,7 +12,13 @@
 //! than that window ([`BASE_INTERVAL`], 300 s) and no cycle is a no-op.
 //! Recorded limit: a record this node created this session is never
 //! rehydrated by a re-open in that session; its owner's own writes carry
-//! it, and the pool's inspect-and-fetch pass still runs.
+//! it, and the pool's inspect-and-fetch pass still runs on its unwatched
+//! subkeys.
+//!
+//! Plan KA1 (amends VU decision 7, D4): the inspect-and-fetch covers only
+//! the subkeys no armed watch of this node covers; a watched subkey's
+//! changes arrive through its watch, so the keepalive never inspects a
+//! watched record on a timer. The `Hold` re-open runs for every record.
 //!
 //! Wave 8 P8.1: a fixed cadence is itself a fingerprint, since an observer
 //! correlating Veilid DHT reads can attribute warming events to one peer.

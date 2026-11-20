@@ -78,6 +78,27 @@ impl RecordPool {
         self.watch(id, (0..opened.subkey_count).collect()).await
     }
 
+    /// The leased record's subkeys no armed watch of this node covers: all
+    /// of them while the record is unwatched or Veilid has not accepted its
+    /// watch, none when an armed watch covers every subkey. An armed watch
+    /// delivers each change to its subkeys (0.5.8 `storage_manager/watch_value.rs:2080`
+    /// `inbound_value_changed`), so nothing app-side inspects those (D4,
+    /// plan KA1 amending VU decision 7).
+    ///
+    /// # Errors
+    /// The lease is not held.
+    pub(crate) fn unwatched_subkeys(&self, id: LeaseId) -> Result<Vec<u32>, PortError> {
+        let (key, opened) = self.lookup(id)?;
+        let watched = if self.unarmed.lock().contains(&key) {
+            SubkeySet::default()
+        } else {
+            self.table.lock().watched(&key)
+        };
+        Ok((0..opened.subkey_count)
+            .filter(|subkey| !watched.contains(subkey))
+            .collect())
+    }
+
     pub(super) async fn apply_watch(&self, key: &str, plan: WatchPlan) -> Result<(), PortError> {
         let k = key.to_string();
         match plan {

@@ -18,7 +18,10 @@
 //! caches are dropped. A real removal is followed by the key rotation
 //! (ADR 0018), which is what keeps us from later content. Before the
 //! teardown every member's frontier is read and the state rebuilt, so a
-//! removal whose voiding op is already published is never torn down on.
+//! removal whose voiding op is already published is never torn down on,
+//! and after it the removal watch (`removal_watch.rs`, plan RM2) keeps the
+//! frontiers of the members who may remove the remover watched, so a
+//! voiding op written later still restores the community.
 
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
@@ -197,8 +200,11 @@ impl HostGovernance {
             if self.ctx.communities.own_removal(community_id).is_some() {
                 self.tear_down_removed(community_id).await;
                 *torn_down = true;
+                // The op voiding the removal may come later (plan RM2).
+                self.arm_removal_watch(community_id).await;
             }
         } else if !removed && *torn_down {
+            self.release_removal_watch(community_id).await;
             self.restore_unremoved(community_id).await;
             *torn_down = false;
         }
@@ -214,7 +220,7 @@ impl HostGovernance {
     /// state is a function of the op set, so it must be judged on the op
     /// set the members have published). A rebuild that no longer removes us
     /// clears the mark ([`Self::on_not_removed`]).
-    async fn catch_up_before_teardown(&self, community_id: &str) {
+    pub(super) async fn catch_up_before_teardown(&self, community_id: &str) {
         use rekindle_governance_runtime::{anti_entropy, dht_hydration};
         let mut seen = anti_entropy::SeenFrontiers::new();
         match anti_entropy::sweep(self, community_id, anti_entropy::Sweep::Full, &mut seen).await {

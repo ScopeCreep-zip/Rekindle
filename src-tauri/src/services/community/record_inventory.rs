@@ -125,6 +125,7 @@ mod tests {
             my_segment_index: None,
             segments: Vec::new(),
             watch_ring: std::collections::BTreeMap::new(),
+            removal_watch: std::collections::BTreeMap::new(),
             beat_view: rekindle_presence::community::BeatView::default(),
             on_screen: rekindle_presence::community::OnScreen::default(),
             member_routes: rekindle_presence::community::MemberRouteCache::default(),

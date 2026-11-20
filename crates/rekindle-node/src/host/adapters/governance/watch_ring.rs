@@ -23,7 +23,7 @@ use super::HostGovernance;
 use crate::host::community::state::CommunityState;
 
 /// Our pseudonym in `community`, when it is a well-formed key.
-fn my_pseudonym(community: &CommunityState) -> Option<PseudonymKey> {
+pub(super) fn my_pseudonym(community: &CommunityState) -> Option<PseudonymKey> {
     let bytes = hex::decode(community.my_pseudonym_key.as_deref()?).ok()?;
     Some(PseudonymKey(bytes.try_into().ok()?))
 }
