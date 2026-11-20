@@ -60,13 +60,6 @@
     gap: 8px;
   }
 
-  /* GC3: a friend the Host cannot add yet, with its reason. */
-  .group-dm-picker-reason {
-    margin-left: auto;
-    color: var(--color-xfire-text-dim);
-    font-size: 11px;
-  }
-
   .group-chat-header {
     display: flex;
     align-items: center;

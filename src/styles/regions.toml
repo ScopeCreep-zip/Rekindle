@@ -558,6 +558,7 @@
 '.chat-mention-self' = { on = ["--color-xfire-mention-self 28% over --color-xfire-bg-dark", "--color-xfire-mention-self 28% over --color-xfire-bg-panel"] }
 '.group-dm-count' = { on = ["--color-xfire-bg-dark"] }
 '.group-dm-picker-hint' = { on = ["--color-xfire-bg-panel"] }
+'.group-dm-picker-reason' = { on = ["--color-xfire-bg-panel"] }
 '.group-chat-member' = { on = ["--color-xfire-bg-dark"] }
 '.group-chat-leave' = { on = ["--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark"] }
 

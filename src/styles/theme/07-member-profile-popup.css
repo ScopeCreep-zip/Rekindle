@@ -307,7 +307,10 @@
   }
 
 
-  .event-rsvp-count {
+  /* GC3: the New Group picker's reason a friend cannot be added yet
+     (17-group-dm.css) shares this right-aligned dim count style. */
+  .event-rsvp-count,
+  .group-dm-picker-reason {
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     margin-left: auto;

@@ -382,6 +382,7 @@
 .group-create-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .group-dm-count	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .group-dm-picker-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.group-dm-picker-reason	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .identity-bar-edit	text	var(--color-xfire-text)	--color-xfire-bg-dark 50% over --color-xfire-bg-dark	1.0	false
 .identity-bar-game	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .identity-bar-key	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
