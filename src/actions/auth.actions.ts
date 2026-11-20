@@ -1,5 +1,5 @@
 import { commands } from "../ipc/commands";
-import { authState, setAuthState } from "../stores/auth.store";
+import { setAuthState } from "../stores/auth.store";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { errorMessage } from "../utils/error";
 
@@ -48,10 +48,6 @@ export async function handleCreateIdentity(
 
 export async function handleLogout(): Promise<void> {
   try {
-    // Capture the active key before clearing — the login screen uses it to
-    // pre-select this account so the user just re-enters their passphrase
-    // instead of clicking through the picker again.
-    const activeKey = authState.publicKey;
     await commands.logout();
     setAuthState({
       isLoggedIn: false,
@@ -60,13 +56,6 @@ export async function handleLogout(): Promise<void> {
       avatarUrl: null,
       status: "offline",
     });
-
-    // In E2E mode the Rust backend isn't managing windows, so we navigate
-    // to the login screen ourselves with the pre-select hint.
-    if (import.meta.env.VITE_E2E === "true") {
-      const param = activeKey ? `?account=${activeKey}` : "";
-      window.location.href = `/login${param}`;
-    }
   } catch (e) {
     console.error("Logout failed:", e);
   }

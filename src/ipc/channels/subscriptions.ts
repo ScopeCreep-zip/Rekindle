@@ -119,10 +119,8 @@ let stream: Promise<void> | null = null;
 /// reloading window is sent what it missed immediately. `reload` reloads
 /// the window's state from the backend; it runs when the host cannot serve
 /// the window's cursor (a new login or logout, or the window fell behind).
-/// Idempotent per webview; a no-op under E2E, which has no Tauri event
-/// transport.
+/// Idempotent per webview.
 export function startEventStream(reload?: () => void): Promise<void> {
-  if (import.meta.env.VITE_E2E === "true") return Promise.resolve();
   if (stream) return stream;
   const from = readCursor();
   let last = from;

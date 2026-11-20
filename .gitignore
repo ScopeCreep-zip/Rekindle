@@ -43,10 +43,6 @@ src-tauri/binaries/
 # ------------------------------------------------------------
 # Testing
 # ------------------------------------------------------------
-# Playwright
-/playwright-report/
-/test-results/
-/blob-report/
 # WebdriverIO whole-app walk output (plan E7.13)
 e2e/walk/out/
 e2e/app/out/

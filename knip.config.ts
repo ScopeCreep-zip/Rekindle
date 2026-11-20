@@ -10,8 +10,8 @@ import type { KnipConfig } from "knip";
 //
 // Notes for Rekindle:
 //   * Vite + SolidJS app: entry is src/main.tsx.
-//   * Playwright tests are a separate entry surface; their handlers
-//     don't show up from src/main.tsx.
+//   * The real-app WebdriverIO suite (e2e/app) is a separate entry
+//     surface; its specs don't show up from src/main.tsx.
 //   * `vite-plugin-solid` and `@tailwindcss/vite` are loaded via
 //     vite.config.ts (a project entry).
 //   * Tauri plugins are dynamically wired by Rust; their JS shims live
@@ -21,8 +21,6 @@ const config: KnipConfig = {
   entry: [
     "src/main.tsx",
     "vite.config.ts",
-    "playwright.config.ts",
-    "e2e/**/*.spec.ts",
     // Plan E7.14: WebdriverIO loads the real-app specs by the config's glob.
     "e2e/app/specs/**/*.e2e.ts",
   ],

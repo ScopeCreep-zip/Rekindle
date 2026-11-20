@@ -11,11 +11,6 @@
     "strict": true,
     "types": ["node"]
   },
-  "//": "Node-side config files. Kept out of the root project so `node` ambient types do not leak into src/**, where a Node `setTimeout` return type would mask browser/Node confusion. The root project covers src/** and e2e/**.",
-  "include": [
-    "vite.config.ts",
-    "playwright.base.config.ts",
-    "playwright.config.ts",
-    "playwright.security.config.ts"
-  ]
+  "//": "Node-side config files. Kept out of the root project so `node` ambient types do not leak into src/**, where a Node `setTimeout` return type would mask browser/Node confusion. The root project covers src/**; e2e/app/tsconfig.json covers e2e/app and e2e/walk.",
+  "include": ["vite.config.ts"]
 }

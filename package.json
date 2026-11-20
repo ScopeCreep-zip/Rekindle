@@ -8,7 +8,7 @@
     "node": "^22.18.0 || >=23.6.0"
   },
   "scripts": {
-    "dev": "lsof -ti:1430 | xargs kill -9 2>/dev/null; vite",
+    "dev": "vite",
     "dev:mac": "./scripts/mac-dev-app.sh",
     "dev:linux": "./scripts/linux-dev.sh",
     "reset:veilid": "./scripts/reset-veilid-storage.sh",
@@ -16,15 +16,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "bundle": "tauri build --config src-tauri/tauri.release.conf.json",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json && tsc -p tsconfig.node.json && tsc -p e2e/app/tsconfig.json",
-    "test:mock": "playwright test --project=mock",
-    "test:layout": "playwright test --project=layout",
-    "test:a11y": "playwright test --project=a11y",
-    "test:security": "playwright test --config playwright.security.config.ts",
-    "test:e2e": "E2E=true playwright test --project=e2e",
-    "test:e2e:headed": "E2E=true playwright test --project=e2e --headed",
-    "test:e2e:ui": "E2E=true playwright test --project=e2e --ui",
-    "test:all": "playwright test --project=mock && E2E=true playwright test --project=e2e",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json && tsc -p e2e/app/tsconfig.json",
     "walk": "node e2e/walk/node-check.mjs && node e2e/walk/walk.ts",
     "test:app": "wdio run e2e/app/wdio.conf.ts; solo=$?; REKINDLE_APP_NO_BUILD=1 wdio run e2e/app/wdio.peers.conf.ts; peers=$?; echo \"test:app: solo exit $solo, peers exit $peers\"; [ $solo -eq 0 ] && [ $peers -eq 0 ]",
     "test:app:devices": "wdio run e2e/app/wdio.devices.conf.ts"
@@ -36,8 +28,6 @@
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.14.0",
-    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.12.1",
     "@types/node": "^26.5.0",

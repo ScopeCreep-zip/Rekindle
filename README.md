@@ -218,15 +218,15 @@ pnpm bundle
 # Rust unit tests (all workspace crates)
 cargo test --workspace
 
-# E2E tests (real Rust backend + Playwright)
-pnpm test:e2e
+# Real-app tests (WebdriverIO drives the built app, alone and with peers)
+pnpm test:app
 
-# Mock IPC tests (frontend only, stubbed responses)
-pnpm test:mock
+# Real-app call tests that need a camera and microphone
+pnpm test:app:devices
 
 # Lint
 cargo clippy --workspace -- -D warnings
-pnpm tsc --noEmit
+pnpm typecheck
 ```
 
 ## How It Works

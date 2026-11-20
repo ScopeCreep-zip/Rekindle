@@ -23,7 +23,6 @@ export default defineConfig({
       "@tauri-apps/api/core",
       "@tauri-apps/api/event",
       "@tauri-apps/api/window",
-      "@tauri-apps/api/mocks",
       "solid-js",
       "solid-js/web",
       "solid-js/store",
@@ -36,7 +35,7 @@ export default defineConfig({
     // coexists with other Tauri/Vite projects on this machine instead of
     // colliding on 1420 — a collision silently loaded the wrong app into
     // the Rekindle shell. Keep in sync with tauri.conf.json devUrl,
-    // package.json `dev`, the mac/linux dev scripts, and playwright.
+    // package.json `dev` and the mac/linux dev scripts.
     port: 1430,
     strictPort: true,
     host: host || false,

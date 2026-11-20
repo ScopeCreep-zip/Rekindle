@@ -161,30 +161,24 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   // Architecture §10.6 / Phase 11 Tier 1 — receiver pipeline. Reassembled
   // video frames flow over a dedicated per-stream `ipc::Channel`; community
   // control events (acks, keyframe/topology) still ride `community-event`.
-  // E2E mode skips Channel registration — channels can't serialize over the
-  // HTTP invoke bridge — leaving the rest of the panel inert there.
   onMount(() => {
-    const isE2E = import.meta.env.VITE_E2E === "true";
     // Idempotent WebCodecs probe (no-op if handleJoinVoice already ran
     // it). Guarantees the media stack is warm before this panel's
     // first `new VideoDecoder` — a cold WebCodecs call aborts the web
     // process on WebKitGTK 2.52.3 + GStreamer 1.24 (Ubuntu/Pop!_OS
     // 24.04); see handlers/video.handlers.ts.
-    if (!isE2E) {
-      probeAndReportLocalVideoCapabilities().catch((e) => {
-        console.error("WebCodecs capability probe failed:", e);
+    probeAndReportLocalVideoCapabilities().catch((e) => {
+      console.error("WebCodecs capability probe failed:", e);
+    });
+    commands
+      .nativeVideoCaptureAvailable()
+      .then((available) => {
+        setNativeCaptureAvailable(available);
+      })
+      .catch(() => {
+        // Probe failure = webview path; same as off-Linux.
       });
-      commands
-        .nativeVideoCaptureAvailable()
-        .then((available) => {
-          setNativeCaptureAvailable(available);
-        })
-        .catch(() => {
-          // Probe failure = webview path; same as off-Linux.
-        });
-    }
-    // One clock paces playout for all remotes. E2E has no decoders/frames,
-    // so the loop is harmless there (remotes() stays empty).
+    // One clock paces playout for all remotes.
     schedulePlayout();
     document.addEventListener("visibilitychange", onPlayoutVisibilityChange);
     if (props.mode === "community") {
@@ -251,23 +245,21 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           sender.forceKeyframeAll();
         }
       });
-      if (!isE2E) {
-        const ch = new Channel<CommunityVideoFrameMsg>();
-        ch.onmessage = (msg) => {
-          decode.ingestRemoteFrame(
-            msg.senderPseudonym,
-            msg.streamId,
-            msg.frameSeq,
-            msg.keyframe,
-            msg.codec,
-            msg.timestamp,
-            msg.payloadB64,
-          );
-        };
-        communityFrameChannel = ch;
-        void commands.registerCommunityVideoChannel(communityIdLocal, ch);
-      }
-    } else if (!isE2E) {
+      const ch = new Channel<CommunityVideoFrameMsg>();
+      ch.onmessage = (msg) => {
+        decode.ingestRemoteFrame(
+          msg.senderPseudonym,
+          msg.streamId,
+          msg.frameSeq,
+          msg.keyframe,
+          msg.codec,
+          msg.timestamp,
+          msg.payloadB64,
+        );
+      };
+      communityFrameChannel = ch;
+      void commands.registerCommunityVideoChannel(communityIdLocal, ch);
+    } else {
       const ch = new Channel<DmVideoFrameMsg>();
       ch.onmessage = (msg) => {
         decode.ingestRemoteFrame(

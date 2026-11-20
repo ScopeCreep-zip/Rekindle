@@ -1,8 +1,8 @@
 /**
  * The keyboard shortcuts the app has, as the help dialog lists them
  * (wiring guide §13f). Each row names where the handler lives, so a
- * changed key is changed here too; `e2e/keyboard-shortcuts.spec.ts` checks
- * the global chords against `src-tauri/src/shortcuts.rs`.
+ * changed key is changed here too, and the global chords match
+ * `src-tauri/src/shortcuts.rs`.
  *
  * `Mod` is Cmd on macOS and Ctrl elsewhere, as the handlers read it.
  */

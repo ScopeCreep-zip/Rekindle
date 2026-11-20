@@ -23,9 +23,7 @@
       "!**/src-tauri/gen/**",
       "!**/legacy/**",
       "!**/*.min.*",
-      "!**/coverage/**",
-      "!**/playwright-report/**",
-      "!**/test-results/**"
+      "!**/coverage/**"
     ]
   },
   "formatter": {
