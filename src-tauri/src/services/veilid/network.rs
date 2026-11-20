@@ -5,7 +5,19 @@ use tauri::AppHandle;
 use crate::state::AppState;
 use crate::state_helpers;
 
+use rekindle_transport::liveness::{Liveness, ProbeAnswer};
 use rekindle_transport::operations::direct::NAK;
+
+/// The adopted transport node's route liveness (plan RH1r-c), which this
+/// shell's update loop feeds until E5.7: our probes, arrivals over our
+/// routes and the network's return.
+pub(super) fn route_liveness(state: &Arc<AppState>) -> Option<Arc<Liveness>> {
+    state
+        .transport
+        .read()
+        .as_ref()
+        .map(|transport| Arc::clone(transport.liveness()))
+}
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
@@ -18,6 +30,25 @@ pub async fn handle_app_call(
     tracing::debug!(call_id = %call_id, "app_call received");
 
     let message = call.message().to_vec();
+    let liveness = route_liveness(state);
+    if let Some(live) = &liveness {
+        // A liveness probe (plan RH1r-c O1): ours echoes, another's is
+        // refused, as the daemon's dispatch answers it
+        // (`rekindle-transport` `subscriptions::dispatch`).
+        match live.answer_probe(&message) {
+            ProbeAnswer::NotProbe => {}
+            ProbeAnswer::Echo(echo) => {
+                reply_to_call(state, call_id, echo).await;
+                return;
+            }
+            ProbeAnswer::Refuse => {
+                reply_to_call(state, call_id, NAK.to_vec()).await;
+                return;
+            }
+        }
+        // Arrival over our route proves its inbound path (O1).
+        live.heard_over(call.route_id().map(ToString::to_string).as_deref());
+    }
 
     // A 1:1 call (the `'D'` tag) is routed first, by its tag: the Host's
     // direct dispatch; an unported kind (a relay offer) is answered by the
@@ -274,6 +305,14 @@ pub fn handle_attachment(
     // stage and reconnect heal, plan E3.1 C2a/C2c): this shell runs the
     // node's update loop until E5.7.
     if let Some(transport) = state.transport.read().as_ref() {
+        // The network came back: our routes are tested at once (O5), as
+        // the daemon's dispatch does on the same edge.
+        let shared = transport.shared();
+        if (attached && !shared.is_attached())
+            || (public_internet_ready && !shared.public_internet_ready())
+        {
+            transport.liveness().network_changed();
+        }
         transport.shared().set_attachment(
             rekindle_transport::AttachmentState::from_veilid_string(&attachment.state.to_string()),
             attached,

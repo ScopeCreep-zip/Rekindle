@@ -95,10 +95,14 @@ impl TransportNode {
     /// which deletes this mode when the GUI's Host starts its own node.
     pub fn adopt_outbound(config: TransportConfig, ports: PortSet, session: SharedSession) -> Self {
         info!(namespace = %config.namespace, "transport node (outbound-only) on the host's ports");
-        // No dispatch here answers our own probes, so this node never
-        // self-tests its routes (plan RH1r-c); its jitter is OS entropy.
+        // The host's dispatch answers our own probes and reports arrivals
+        // over our routes and the network's return to [`Self::liveness`]
+        // (src-tauri `services::veilid::network`), so this node self-tests
+        // its routes as a started one does (plan RH1r-c O1–O5; Linux finding
+        // L-FR1: an untested route stayed published, dead, for minutes);
+        // its jitter is OS entropy.
         let rng: Arc<dyn RandomSource> = Arc::new(rekindle_utils::OsRandom);
-        let mut node = Self::outbound(config, ports, SharedState::new(), rng, false).0;
+        let mut node = Self::outbound(config, ports, SharedState::new(), rng, true).0;
         node.spawn_route_publisher(None, session);
         node
     }

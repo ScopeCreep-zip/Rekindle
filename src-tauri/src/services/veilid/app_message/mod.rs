@@ -16,6 +16,10 @@ use rekindle_codec::ingress::{classify, gossip_datagram, Ingress};
 // an app_message again.
 pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     let message = msg.message().to_vec();
+    // Arrival over our route proves its inbound path (plan RH1r-c O1).
+    if let Some(live) = super::network::route_liveness(state) {
+        live.heard_over(msg.route_id().map(ToString::to_string).as_deref());
+    }
     // Trace, not info: this runs for every media packet (50+/s per peer)
     // on the serial dispatch loop the audio fast path shares (plan C7.23).
     tracing::trace!(msg_len = message.len(), "app_message received");
