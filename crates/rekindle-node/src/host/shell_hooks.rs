@@ -136,6 +136,12 @@ pub trait ShellHooks: Send + Sync {
     /// E3.4.
     fn spawn_presence_poll_tick(&self, community_id: &str);
 
+    /// A watched registry of the community changed: the Host decided on a
+    /// refresh (read and merge the rows, never write ours, plan E3.4 S5,
+    /// finding IB1c); the shell runs it over its own presence adapter until
+    /// the polls move into the Host (S8b).
+    async fn presence_refresh(&self, community_id: &str);
+
     /// Mark our onboarding of the community complete in the personal sync
     /// record, so paired devices stop showing the wizard. Ported with
     /// cross-device sync at E5.2.

@@ -98,6 +98,7 @@ mod pool_route_loss;
 mod post_before_key;
 mod prekey_collision;
 mod prekeys;
+mod presence_idle_writes;
 mod racing_join;
 mod read_marker_only_advances;
 mod refriend_after_removal;

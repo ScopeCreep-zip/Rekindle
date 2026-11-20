@@ -31,15 +31,18 @@ pub(crate) fn rebuilds_on(subkeys: &[u32]) -> bool {
 }
 
 impl HostGovernance {
-    /// Handle a watched record's change when it is a ring member record:
-    /// `true` when it was one, `false` for any other record. `subkeys` are
+    /// Handle a watched record's change when it is a ring member record or
+    /// a community's registry (`registry_watch`): `true` when it was one,
+    /// `false` for any other record. `subkeys` are
     /// the ones the change names; an empty list is a change we did not
     /// observe through our own watch, which is never relayed. The change
     /// is dispatched by subkey ([`rebuilds_on`]): only a frontier change
     /// that names a head we lack rebuilds the community.
     pub async fn on_watched_change(&self, record: &str, subkeys: &[u32]) -> bool {
         let Some(community) = self.community_of_ring_record(record) else {
-            return false;
+            // A registry (or segment registry) is presence: refreshed,
+            // never written (plan E3.4 S5, finding IB1c).
+            return self.on_registry_change(record).await;
         };
         // A community we were removed from is read-only history: a late
         // change opens nothing (plan E3.2 S9, R3-1).

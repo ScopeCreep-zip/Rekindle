@@ -113,6 +113,14 @@ impl ShellHooks for ShellSession {
         governance::spawn_presence_poll_tick(&self.state, community_id);
     }
 
+    async fn presence_refresh(&self, community_id: &str) {
+        if let Err(error) =
+            crate::services::community::presence::presence_refresh(&self.state, community_id).await
+        {
+            tracing::debug!(community = %community_id, %error, "presence refresh after a registry change failed");
+        }
+    }
+
     fn push_onboarding_complete_to_sync(&self, community_id: &str) {
         governance::push_onboarding_complete_to_sync(&self.state, community_id);
     }

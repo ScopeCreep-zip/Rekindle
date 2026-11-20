@@ -83,6 +83,7 @@ pub(crate) mod pins;
 pub mod projection;
 mod publication;
 mod registry;
+mod registry_watch;
 pub(crate) mod removal_posts;
 pub(crate) mod search;
 mod thread_events;
