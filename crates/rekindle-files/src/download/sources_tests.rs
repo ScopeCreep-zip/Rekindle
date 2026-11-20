@@ -13,7 +13,7 @@ use crate::chunker::{Chunker, CHUNK_SIZE_BYTES};
 use crate::error::FilesError;
 use crate::test_mock::MockDeps;
 
-const CHANNEL: &str = "11111111111111111111111111111111";
+const TEST_CHANNEL_ID: &str = "11111111111111111111111111111111";
 const MEK_BYTES: [u8; 32] = [0x42; 32];
 const FEK_BYTES: [u8; 32] = [0x17; 32];
 const AID: [u8; 16] = [0xA5; 16];
@@ -99,7 +99,7 @@ fn silent() -> Result<Vec<u8>, FilesError> {
 }
 
 fn deps(offer: &AttachmentOffer, replies: Vec<Result<Vec<u8>, FilesError>>) -> MockDeps {
-    let deps = MockDeps::new("c1", CHANNEL)
+    let deps = MockDeps::new("c1", TEST_CHANNEL_ID)
         .with_mek(0, MEK_BYTES)
         .with_peer("silent", vec![1])
         .with_peer("server", vec![2])
@@ -112,7 +112,7 @@ fn deps(offer: &AttachmentOffer, replies: Vec<Result<Vec<u8>, FilesError>>) -> M
 async fn a_silent_first_source_is_skipped_and_the_next_serves_the_file() {
     let (bytes, offer, served) = real_file();
     let deps = deps(&offer, vec![silent(), Ok(reply(&served, &[0, 1]))]);
-    let fetched = super::fetch_attachment_to_cache(&deps, "c1", CHANNEL, &hex::encode(AID))
+    let fetched = super::fetch_attachment_to_cache(&deps, "c1", TEST_CHANNEL_ID, &hex::encode(AID))
         .await
         .expect("the second source completes the download");
     let assembled = super::assemble_attachment(&deps, "c1", &fetched).unwrap();
@@ -130,7 +130,7 @@ async fn an_offline_first_source_is_skipped_and_the_next_serves_the_file() {
     let (bytes, offer, served) = real_file();
     let mut deps = deps(&offer, vec![Ok(reply(&served, &[0, 1]))]);
     deps.peers.remove("silent");
-    let fetched = super::fetch_attachment_to_cache(&deps, "c1", CHANNEL, &hex::encode(AID))
+    let fetched = super::fetch_attachment_to_cache(&deps, "c1", TEST_CHANNEL_ID, &hex::encode(AID))
         .await
         .expect("the online source completes the download");
     assert_eq!(
@@ -148,7 +148,7 @@ async fn chunks_verified_from_two_sources_assemble() {
         &offer,
         vec![Ok(reply(&served, &[0])), silent(), Ok(reply(&served, &[1]))],
     );
-    let fetched = super::fetch_attachment_to_cache(&deps, "c1", CHANNEL, &hex::encode(AID))
+    let fetched = super::fetch_attachment_to_cache(&deps, "c1", TEST_CHANNEL_ID, &hex::encode(AID))
         .await
         .expect("two sources complete the download");
     assert_eq!(
@@ -167,7 +167,7 @@ async fn a_tampered_chunk_is_dropped_and_another_source_supplies_it() {
         &offer,
         vec![Ok(reply(&served, &[0, 1])), Ok(reply(&good, &[1]))],
     );
-    let fetched = super::fetch_attachment_to_cache(&deps, "c1", CHANNEL, &hex::encode(AID))
+    let fetched = super::fetch_attachment_to_cache(&deps, "c1", TEST_CHANNEL_ID, &hex::encode(AID))
         .await
         .expect("the good copy of chunk 1 completes the download");
     assert_eq!(
@@ -180,7 +180,8 @@ async fn a_tampered_chunk_is_dropped_and_another_source_supplies_it() {
 async fn the_attempt_fails_cleanly_when_every_source_fails() {
     let (_, offer, _) = real_file();
     let deps = deps(&offer, vec![silent(), silent()]);
-    let Err(err) = super::fetch_attachment_to_cache(&deps, "c1", CHANNEL, &hex::encode(AID)).await
+    let Err(err) =
+        super::fetch_attachment_to_cache(&deps, "c1", TEST_CHANNEL_ID, &hex::encode(AID)).await
     else {
         panic!("the attempt must fail when every source fails");
     };
