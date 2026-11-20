@@ -100,17 +100,13 @@
     content: ",";
   }
 
+  /* The skin's secondary button (`.form-btn-secondary`, slot
+     `button.secondary`: its colours, edge and button art), compact to the
+     header (plan E7.7.7 e777n). */
   .group-chat-leave {
     margin-left: auto;
     padding: 2px 8px;
     font-size: 10px;
-    font-weight: 600;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
-    color: var(--color-xfire-text-on-fill);
-    font-family: var(--font-family-xfire);
   }
 
   .group-chat-compose {

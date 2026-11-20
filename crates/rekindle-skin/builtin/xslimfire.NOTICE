@@ -212,13 +212,12 @@ Dropped
   triggers: 123
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (9 made)
-  accent.text: #0264b4 -> #277bcc (1.4.3 accent.text on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
-  accent.text: #277bcc -> #2c80d1 (1.4.3 accent.text on bg.primary: 4.23:1 -> 4.52:1, required 4.50:1)
-  accent.text: #2c80d1 -> #3c8fe1 (1.4.3 accent.text on bg.tertiary: 3.73:1 -> 4.53:1, required 4.50:1)
-  text.status: #6a6a6a -> #797979 (1.4.3 text.status on bg.dark: 3.66:1 -> 4.54:1, required 4.50:1)
-  text.status: #797979 -> #7d7d7d (1.4.3 text.status on bg.primary: 4.26:1 -> 4.51:1, required 4.50:1)
-  text.status: #7d7d7d -> #8c8c8c (1.4.3 text.status on bg.tertiary: 3.72:1 -> 4.55:1, required 4.50:1)
-  link: #0264b4 -> #277bcc (1.4.3 link on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
-  link: #277bcc -> #2c80d1 (1.4.3 link on bg.primary: 4.23:1 -> 4.52:1, required 4.50:1)
-  link: #2c80d1 -> #3c8fe1 (1.4.3 link on bg.tertiary: 3.73:1 -> 4.53:1, required 4.50:1)
+Contrast changes (minimal Oklab-lightness walk) (8 made)
+  accent.text: #0264b4 -> #2d80d2 (1.4.3 accent.text on bg.dark: 3.08:1 -> 4.53:1, required 4.50:1)
+  text.status: #6a6a6a -> #7d7d7d (1.4.3 text.status on bg.dark: 3.43:1 -> 4.51:1, required 4.50:1)
+  link: #0264b4 -> #2d80d2 (1.4.3 link on bg.dark: 3.08:1 -> 4.53:1, required 4.50:1)
+  bg.primary: #131313 -> #0d0d0d (D4 text.on-fill on status.online 60.0% over bg.dark: 4.33:1 -> passes, required 4.50:1)
+  accent.text: #2d80d2 -> #3184d6 (1.4.3 .action-bar-btn hovered accent.text on accent.fill 15% over bg.dark: 4.30:1 -> passes, required 4.50:1)
+  accent.text: #3184d6 -> #388bdd (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.13:1 -> passes, required 4.50:1)
+  bg.primary: #0d0d0d -> #0d0d0c (1.4.3 .channel-voice-join-btn text.on-fill on status.online tint.fill over bg.dark: 4.49:1 -> passes, required 4.50:1)
+  danger.text: #ff5955 -> #ff5d58 (1.4.3 .raid-alert-banner danger.text on status.busy 30% over bg.dark: 4.40:1 -> passes, required 4.50:1)

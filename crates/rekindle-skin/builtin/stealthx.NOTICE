@@ -162,11 +162,14 @@ Dropped
   triggers: 130
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (7 made)
+Contrast changes (minimal Oklab-lightness walk) (10 made)
   control-border: #6b6b6b -> #6e6e6e (1.4.11 control-border on bg.panel: 2.89:1 -> 3.02:1, required 3.00:1)
-  danger.text: #ff5955 -> #ff625c (1.4.3 .chat-call-btn-active hovered danger.text on status.busy 20% over bg.panel 80% over bg.dark: 4.30:1 -> passes, required 4.50:1)
-  accent.text: #3491d8 -> #3c98df (1.4.3 .chat-mention accent.text on accent.fill 9% over bg.panel: 4.15:1 -> passes, required 4.50:1)
+  bg.primary: #151a1e -> #090d11 (D4 text.on-fill on status.online 60.0% over bg.dark: 4.22:1 -> passes, required 4.50:1)
+  accent.text: #3491d8 -> #3692d9 (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.44:1 -> passes, required 4.50:1)
+  status.offline-text: #909090 -> #929292 (1.4.3 .buddy-handshake-retrying status.offline-text on accent.fill 30% over bg.dark: 4.40:1 -> passes, required 4.50:1)
+  danger.text: #ff5955 -> #ff625c (1.4.3 .chat-call-btn-active hovered danger.text on status.busy 20% over bg.panel 80% over bg.dark: 4.28:1 -> passes, required 4.50:1)
+  accent.text: #3692d9 -> #3c98df (1.4.3 .chat-mention accent.text on accent.fill 9% over bg.panel: 4.21:1 -> passes, required 4.50:1)
   text.secondary: #a0a0a0 -> #a1a1a1 (1.4.3 .forum-tag-chip-remove text.secondary on accent.fill 25% over bg.input: 4.49:1 -> passes, required 4.50:1)
-  status.offline-text: #909090 -> #969696 (1.4.3 .invite-status-badge status.offline-text on status.offline 12% over bg.panel: 4.18:1 -> passes, required 4.50:1)
+  status.offline-text: #929292 -> #969696 (1.4.3 .invite-status-badge status.offline-text on status.offline 12% over bg.panel: 4.29:1 -> passes, required 4.50:1)
   text.timestamp: #a1a1a1 -> #a5a5a5 (1.4.3 .notification-time text.timestamp on bg.panel: 4.35:1 -> 6.26:1, required 4.50:1)
   status.away-text: #ffcc00 -> #ffd41e (1.4.3 .timeout-indicator status.away-text on status.away 34% over bg.panel: 4.27:1 -> passes, required 4.50:1)

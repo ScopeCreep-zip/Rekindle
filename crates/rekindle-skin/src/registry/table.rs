@@ -144,11 +144,19 @@ const GRAPHIC: &[Constraint] = &[Constraint {
 const NONE: &[Constraint] = &[];
 
 pub const ENTRIES: &[TokenEntry] = &[
-    row(
-        "bg.dark",
-        "--color-xfire-bg-dark",
-        c4("#0a0a0a", "#ffffff", "#000000", "#ffffff"),
-        NONE,
+    // The window ground (`ui-skin.md`: outer chrome; every window sits on
+    // it, `00-rules.css`). No importer writes it: each writes the pack's own
+    // window ground as `bg.primary` (Symbiosis, the pack the dark defaults
+    // come from, imports `bg.primary` #0a0a0a, this default), so a skin's
+    // windows follow its `bg.primary` (plan E7.7.7 e777n).
+    same_as(
+        row(
+            "bg.dark",
+            "--color-xfire-bg-dark",
+            c4("#0a0a0a", "#ffffff", "#000000", "#ffffff"),
+            NONE,
+        ),
+        "bg.primary",
     ),
     row(
         "bg.panel",
@@ -171,6 +179,8 @@ pub const ENTRIES: &[TokenEntry] = &[
         c4("#181818", "#ffffff", "#000000", "#ffffff"),
         NONE,
     ),
+    // The page ground under the windows, `bg.dark`'s twin: it follows the
+    // same skin ground (sources are never derived, `tests/tokens.rs`).
     same_as(
         row(
             "bg.base",
@@ -178,7 +188,7 @@ pub const ENTRIES: &[TokenEntry] = &[
             c4("#0a0a0a", "#ffffff", "#000000", "#ffffff"),
             NONE,
         ),
-        "bg.dark",
+        "bg.primary",
     ),
     row(
         "bg.primary",
@@ -192,12 +202,21 @@ pub const ENTRIES: &[TokenEntry] = &[
         c4("#1a1a1a", "#ffffff", "#000000", "#ffffff"),
         NONE,
     ),
-    row(
-        "bg.tertiary",
-        "--color-xfire-bg-tertiary",
-        c4("#252525", "#ffffff", "#000000", "#ffffff"),
-        NONE,
-    ),
+    // The raised ground over `bg.secondary` (hover rows, call controls,
+    // stage tiles): 5% toward white of it, which is the dark default
+    // (#1a1a1a → #252525) and keeps white on the light ones.
+    TokenEntry {
+        derivation: Some(Derivation::Lighten {
+            of: "bg.secondary",
+            by: 50,
+        }),
+        ..row(
+            "bg.tertiary",
+            "--color-xfire-bg-tertiary",
+            c4("#252525", "#ffffff", "#000000", "#ffffff"),
+            NONE,
+        )
+    },
     // Window, menu and panel edges (`ui-skin.md` palette). A skin that
     // sets its accent or its window ground tints them toward the accent, as
     // Xfire's skinned frames are (plan E7.7.7: no skin drew a frame edge).

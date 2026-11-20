@@ -211,10 +211,11 @@ Dropped
   triggers: 154
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (6 made)
+Contrast changes (minimal Oklab-lightness walk) (7 made)
   accent.text: #0264b4 -> #277bcc (1.4.3 accent.text on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
   accent.text: #277bcc -> #2d80d2 (1.4.3 accent.text on bg.primary: 4.20:1 -> 4.50:1, required 4.50:1)
-  accent.text: #2d80d2 -> #3d8ee2 (1.4.3 accent.text on bg.tertiary: 3.74:1 -> 4.50:1, required 4.50:1)
   link: #0264b4 -> #277bcc (1.4.3 link on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
   link: #277bcc -> #2d80d2 (1.4.3 link on bg.primary: 4.20:1 -> 4.50:1, required 4.50:1)
-  link: #2d80d2 -> #3d8ee2 (1.4.3 link on bg.tertiary: 3.74:1 -> 4.50:1, required 4.50:1)
+  accent.text: #2d80d2 -> #2f82d4 (1.4.3 .action-bar-btn hovered accent.text on accent.fill 15% over bg.dark: 4.41:1 -> passes, required 4.50:1)
+  accent.text: #2f82d4 -> #3689db (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.13:1 -> passes, required 4.50:1)
+  accent.text: #3689db -> #388bdd (1.4.3 .search-panel-chip-active accent.text on accent.fill 18% over bg.primary: 4.42:1 -> passes, required 4.50:1)

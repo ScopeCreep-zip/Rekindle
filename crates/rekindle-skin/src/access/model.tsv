@@ -383,7 +383,6 @@
 .group-call-tile-avatar	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
 .group-call-tile-name	text	var(--color-xfire-text-primary)	--color-xfire-bg-tertiary	1.0	false
 .group-call-tile-status	text	var(--color-xfire-text-secondary)	--color-xfire-bg-tertiary	1.0	false
-.group-chat-leave	text	var(--color-xfire-text-on-fill)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark	1.0	false
 .group-chat-member	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .group-create-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .group-dm-count	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false

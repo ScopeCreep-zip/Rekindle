@@ -91,10 +91,7 @@ fn middle_sides_title_buttons_and_the_scrollbar_import() {
     assert!(r.controls[1].images.contains_key(&RegionState::Disabled));
     assert!(!r.unread.iter().any(|f| f == "buttons/close-hover.png"));
     assert!(r.unread.iter().any(|f| f == "buttons/logo.png"));
-    let a = match import(&t, FOLDER, "fan", None).unwrap() {
-        Outcome::Passed(a) => a,
-        Outcome::Draft(d) => panic!("a draft: {:?}", d.failures),
-    };
+    let a = super::tests::settled(import(&t, FOLDER, "fan", None).unwrap());
     assert_eq!(
         validate::run(&a.canonical.bytes).unwrap().bytes,
         a.canonical.bytes
@@ -177,10 +174,7 @@ fn combat_surfaces_import_from_the_skin_and_its_chat_files() {
         send.images.keys().copied().collect::<Vec<_>>(),
         [RegionState::Normal, RegionState::Hover, RegionState::Down]
     );
-    let a = match import(&t, FOLDER, "fan", None).unwrap() {
-        Outcome::Passed(a) => a,
-        Outcome::Draft(d) => panic!("a draft: {:?}", d.failures),
-    };
+    let a = super::tests::settled(import(&t, FOLDER, "fan", None).unwrap());
     assert_eq!(
         validate::run(&a.canonical.bytes).unwrap().bytes,
         a.canonical.bytes

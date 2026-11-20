@@ -253,3 +253,34 @@ fn a_skins_accent_tints_the_edges() {
     };
     assert!(r > g && r > b, "the edge leans to the accent: {r} {g} {b}");
 }
+
+/// Plan E7.7.7 e777n: every window's ground (`bg.dark`, `00-rules.css`),
+/// the page ground (`bg.base`) and the raised ground (`bg.tertiary`) follow
+/// the grounds a skin sets, and keep their defaults when it sets none.
+#[test]
+fn a_skins_window_grounds_follow_it() {
+    let of = |skin: &std::collections::BTreeMap<String, TokenValue>, id: &str| {
+        resolve(ENTRIES, Base::Dark, skin)
+            .into_iter()
+            .find(|(e, _)| e.id == id)
+            .map(|(_, v)| v)
+            .expect("a registry token")
+    };
+    let rgb = |r, g, b| TokenValue::Color { r, g, b, a: 255 };
+    let plain = std::collections::BTreeMap::new();
+    assert_eq!(of(&plain, "bg.dark"), rgb(0x0a, 0x0a, 0x0a));
+    assert_eq!(of(&plain, "bg.base"), rgb(0x0a, 0x0a, 0x0a));
+    assert_eq!(of(&plain, "bg.tertiary"), rgb(0x25, 0x25, 0x25));
+    let skin = ok(&json!({ "bg": {
+        "primary": { "$type": "color", "$value": "#081020" },
+        "secondary": { "$type": "color", "$value": "#1a1a1a" }
+    } }));
+    assert_eq!(of(&skin, "bg.dark"), rgb(0x08, 0x10, 0x20));
+    assert_eq!(of(&skin, "bg.base"), rgb(0x08, 0x10, 0x20));
+    // 5% toward white of #1a1a1a is the dark default.
+    assert_eq!(of(&skin, "bg.tertiary"), rgb(0x25, 0x25, 0x25));
+    let navy = ok(&json!({ "bg": { "secondary": { "$type": "color", "$value": "#081020" } } }));
+    // 8 + 5% of 247 = 20.35, 16 + 5% of 239 = 27.95, 32 + 5% of 223 = 43.15:
+    // rounded to the nearest (`colour::mix`).
+    assert_eq!(of(&navy, "bg.tertiary"), rgb(0x14, 0x1c, 0x2b));
+}

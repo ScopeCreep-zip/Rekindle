@@ -334,8 +334,10 @@ Dropped
   triggers: 216
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (4 made)
-  accent.text: #1e498c -> #4b79c0 (1.4.3 accent.text on bg.dark: 2.25:1 -> 4.52:1, required 4.50:1)
-  accent.text: #4b79c0 -> #4d7cc3 (1.4.3 accent.text on bg.primary: 4.33:1 -> 4.51:1, required 4.50:1)
-  accent.text: #4d7cc3 -> #5c8cd5 (1.4.3 accent.text on bg.tertiary: 3.63:1 -> 4.50:1, required 4.50:1)
-  text.clan: #4678e1 -> #5488f2 (1.4.3 text.clan on bg.tertiary: 3.67:1 -> 4.51:1, required 4.50:1)
+Contrast changes (minimal Oklab-lightness walk) (6 made)
+  accent.text: #1e498c -> #4e7cc3 (1.4.3 accent.text on bg.dark: 2.15:1 -> 4.51:1, required 4.50:1)
+  accent.text: #4e7cc3 -> #5584cb (1.4.3 accent.text on bg.tertiary: 4.05:1 -> 4.50:1, required 4.50:1)
+  text.clan: #4678e1 -> #4d80e9 (1.4.3 text.clan on bg.tertiary: 4.09:1 -> 4.53:1, required 4.50:1)
+  bg.primary: #081020 -> #060d1d (D4 text.on-fill on status.online 60.0% over bg.dark: 4.44:1 -> passes, required 4.50:1)
+  accent.text: #5584cb -> #5585cc (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.47:1 -> passes, required 4.50:1)
+  bg.primary: #060d1d -> #060c1c (1.4.3 .channel-voice-join-btn text.on-fill on status.online tint.fill over bg.dark: 4.49:1 -> passes, required 4.50:1)

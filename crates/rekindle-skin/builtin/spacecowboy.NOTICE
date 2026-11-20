@@ -210,9 +210,9 @@ Dropped
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
 Contrast changes (minimal Oklab-lightness walk) (6 made)
-  accent.text: #b90000 -> #df3b2d (1.4.3 accent.text on bg.dark: 2.88:1 -> 4.52:1, required 4.50:1)
-  accent.text: #df3b2d -> #f55241 (1.4.3 accent.text on bg.tertiary: 3.50:1 -> 4.50:1, required 4.50:1)
-  text.status: #767676 -> #797979 (1.4.3 text.status on bg.dark: 4.35:1 -> 4.54:1, required 4.50:1)
-  text.status: #797979 -> #8c8c8c (1.4.3 text.status on bg.tertiary: 3.52:1 -> 4.55:1, required 4.50:1)
-  link: #eb0000 -> #f0100a (1.4.3 link on bg.dark: 4.27:1 -> 4.50:1, required 4.50:1)
-  link: #f0100a -> #ff4636 (1.4.3 link on bg.tertiary: 3.49:1 -> 4.51:1, required 4.50:1)
+  accent.text: #b90000 -> #da3529 (1.4.3 accent.text on bg.dark: 3.06:1 -> 4.52:1, required 4.50:1)
+  accent.text: #da3529 -> #e13c2f (1.4.3 accent.text on bg.tertiary: 4.18:1 -> 4.52:1, required 4.50:1)
+  text.status: #767676 -> #7a7a7a (1.4.3 text.status on bg.tertiary: 4.27:1 -> 4.52:1, required 4.50:1)
+  link: #eb0000 -> #f2150e (1.4.3 link on bg.tertiary: 4.19:1 -> 4.52:1, required 4.50:1)
+  accent.text: #e13c2f -> #e33f31 (1.4.3 .action-bar-btn hovered accent.text on accent.fill 15% over bg.dark: 4.39:1 -> passes, required 4.50:1)
+  accent.text: #e33f31 -> #ed4939 (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.03:1 -> passes, required 4.50:1)

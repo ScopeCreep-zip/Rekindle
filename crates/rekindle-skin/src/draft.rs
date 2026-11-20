@@ -228,7 +228,7 @@ fn suggestion(
     resolved: &BTreeMap<&str, [u8; 3]>,
     m: &Measured,
 ) -> Option<SkinSuggestion> {
-    let (token, _) = target_of(&m.fg, &m.ground)?;
+    let (token, _) = target_of(&m.fg, &m.ground, tokens)?;
     let original = *resolved.get(token.as_str())?;
     let (moved, other) = if token == m.fg {
         (m.fg_rgb, m.ground_rgb)

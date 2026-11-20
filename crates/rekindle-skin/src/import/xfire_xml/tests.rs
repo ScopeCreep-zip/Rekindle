@@ -64,7 +64,19 @@ fn imports_validates_and_is_byte_identical() {
     let a = import(&t, "fixture", None).unwrap();
     let b = import(&t, "fixture", None).unwrap();
     assert_eq!(a, b);
-    assert!(a.changes.is_empty(), "{:?}", a.changes);
+    // #101010 is every window's ground too (`bg.dark` follows `bg.primary`,
+    // plan E7.7.7 e777n): white on the online chip (`status.online` 60% over
+    // it) is 4.44:1, under D4's 4.5:1, and the walk records darkening the
+    // skin's `bg.primary` to #0d0d0d.
+    let c = a.changes.first().unwrap();
+    assert_eq!(
+        (c.token.as_str(), c.rule.as_str(), c.ground.as_str()),
+        ("bg.primary", "D4", "status.online 60.0% over bg.dark")
+    );
+    assert_eq!(
+        (c.original, c.new, c.before_x100, c.required_x100),
+        ([16, 16, 16], [13, 13, 13], 444, 450)
+    );
     let again = validate::run(&a.canonical.bytes).unwrap();
     assert_eq!(again.bytes, a.canonical.bytes);
     assert!(a

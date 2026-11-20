@@ -98,7 +98,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           <DisappearingTimerControl conversation={groupId} label={name()} />
         </Show>
         <button
-          class="group-chat-leave"
+          class="form-btn-secondary group-chat-leave"
           aria-label={`Leave ${name()}`}
           onClick={() => void leave()}
         >

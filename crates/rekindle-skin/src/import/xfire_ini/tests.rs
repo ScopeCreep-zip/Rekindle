@@ -97,18 +97,47 @@ fn tree() -> Tree {
     t
 }
 
-fn passed(o: Outcome) -> Imported {
-    match o {
-        Outcome::Passed(i) => i,
-        Outcome::Draft(d) => panic!("a draft: {:?}", d.failures),
-    }
+/// The fixture's list ground, #101010, is also every window's ground
+/// (`bg.dark` follows `bg.primary`, plan E7.7.7 e777n). White on the online
+/// chip (`status.online` 60% over it) measures 4.44:1 there, under D4's
+/// 4.5:1, so the walk settles it by darkening the skin's `bg.primary` to
+/// #0d0d0d. A settled change is a draft carrying the suggestion for the
+/// author to confirm (`import::conclude`), never a silent pass: this
+/// returns that suggestion after checking the repair and that the pack as
+/// written fails.
+pub(super) fn settled(o: Outcome) -> Imported {
+    let Outcome::Draft(d) = o else {
+        panic!("#101010 under the online chip passed as written");
+    };
+    assert!(d.unsettled.is_none(), "{:?}", d.unsettled);
+    let c = d.failures.first().unwrap();
+    assert_eq!(
+        (
+            c.token.as_str(),
+            c.rule.as_str(),
+            c.fg.as_str(),
+            c.ground.as_str()
+        ),
+        (
+            "bg.primary",
+            "D4",
+            "text.on-fill",
+            "status.online 60.0% over bg.dark"
+        )
+    );
+    assert_eq!(
+        (c.original, c.new, c.before_x100, c.required_x100),
+        ([16, 16, 16], [13, 13, 13], 444, 450)
+    );
+    assert!(validate::run(&d.package).is_err());
+    d.suggested.unwrap()
 }
 
 #[test]
 fn imports_validates_and_is_byte_identical() {
     let t = tree();
-    let a = passed(import(&t, FOLDER, "fixture", None).unwrap());
-    let b = passed(import(&t, FOLDER, "fixture", None).unwrap());
+    let a = settled(import(&t, FOLDER, "fixture", None).unwrap());
+    let b = settled(import(&t, FOLDER, "fixture", None).unwrap());
     assert_eq!(a, b);
     let again = validate::run(&a.canonical.bytes).unwrap();
     assert_eq!(again.bytes, a.canonical.bytes);
@@ -223,7 +252,7 @@ fn a_skin_revision_imports_and_is_recorded() {
         );
         let r = read(&t, FOLDER).unwrap();
         assert_eq!(r.info["Version (the skin's own revision)"], revision);
-        let i = passed(import(&t, FOLDER, "fixture", None).unwrap());
+        let i = settled(import(&t, FOLDER, "fixture", None).unwrap());
         assert!(
             i.notice
                 .contains(&format!("Version (the skin's own revision): {revision}")),
@@ -250,7 +279,7 @@ fn a_credit_reaches_the_manifest_and_the_notice() {
     let page = "https://archive.org/details/XFireSkins";
     let quote = "The Combat skin is an official skin created by Xfire.";
     let credit = crate::import::XfireCredit::new(page, quote).unwrap();
-    let i = passed(import(&tree(), FOLDER, "fixture", Some(&credit)).unwrap());
+    let i = settled(import(&tree(), FOLDER, "fixture", Some(&credit)).unwrap());
     let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
     let rekindle_types::dto::skin::SkinLicense::Text(licence) = m.license else {
         panic!("not a licence text");
@@ -262,7 +291,7 @@ fn a_credit_reaches_the_manifest_and_the_notice() {
             "{text}"
         );
     }
-    let third = passed(import(&tree(), FOLDER, "fixture", None).unwrap());
+    let third = settled(import(&tree(), FOLDER, "fixture", None).unwrap());
     assert!(third.notice.contains("third-party work"));
 }
 
@@ -297,7 +326,7 @@ fn an_outer_frame_section_is_the_window_frame() {
     assert_eq!((f.insets.top, f.insets.left), (3, 3));
     assert_eq!(f.images[&RegionState::Normal].get_pixel(4, 1).0, PIXEL.0);
     assert_eq!(f.images.len(), 1);
-    let i = passed(import(&t, FOLDER, "fixture", None).unwrap());
+    let i = settled(import(&t, FOLDER, "fixture", None).unwrap());
     assert!(
         i.notice
             .contains("window.frame: [OuterFrame], nine-slice 3/3/3/3"),
@@ -312,7 +341,7 @@ fn an_outer_frame_section_is_the_window_frame() {
 fn an_ini_skins_credits_come_from_the_credit_and_its_licence_file() {
     use rekindle_types::dto::skin::OriginalLicence;
     let credits = |t: &Tree, credit| {
-        let i = passed(import(t, FOLDER, "fixture", credit).unwrap());
+        let i = settled(import(t, FOLDER, "fixture", credit).unwrap());
         crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap())
             .unwrap()
             .credits
@@ -341,7 +370,7 @@ fn an_ini_skins_credits_come_from_the_credit_and_its_licence_file() {
 /// `Charger/Charger.ini` with `LongName=Dodge Charger` among them).
 #[test]
 fn the_folder_names_the_skin_file_and_long_name_is_shown() {
-    let i = passed(import(&tree(), FOLDER, "fixture", None).unwrap());
+    let i = settled(import(&tree(), FOLDER, "fixture", None).unwrap());
     let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
     assert_eq!(m.name, "The Fixture");
     assert!(
@@ -350,7 +379,7 @@ fn the_folder_names_the_skin_file_and_long_name_is_shown() {
         i.notice
     );
     // Case aside, as on Windows (`Xfireaqua/Xfireaqua.ini`).
-    passed(import(&tree(), "FIXTURE", "fixture", None).unwrap());
+    settled(import(&tree(), "FIXTURE", "fixture", None).unwrap());
     // A file named by `LongName` is not read in the folder's place.
     let mut t = tree();
     let skin = t.remove("Fixture.ini").unwrap();
@@ -383,7 +412,7 @@ fn version_ini_comments_credit_the_authors() {
         "version.ini".into(),
         b"[Version]\r\nVersion=1\r\nLongName=The Fixture\r\n;Designed by Ann\r\n".to_vec(),
     );
-    let i = passed(import(&t, FOLDER, "fixture", None).unwrap());
+    let i = settled(import(&t, FOLDER, "fixture", None).unwrap());
     let m = crate::manifest::parse(&crate::package::read(&i.canonical.bytes).unwrap()).unwrap();
     assert_eq!(m.credits.unwrap().authors, ["Ann"]);
 }

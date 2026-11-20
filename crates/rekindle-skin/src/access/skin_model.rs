@@ -154,8 +154,21 @@ mod tests {
             b: 22,
             a: 255,
         };
-        let tokens: BTreeMap<String, TokenValue> =
-            [("bg.primary".to_owned(), ground)].into_iter().collect();
+        // The window ground stays the default: it follows `bg.primary`
+        // unless the skin sets it (plan E7.7.7 e777n), and this test is
+        // about the chip's tint over `bg.primary` alone.
+        let window = TokenValue::Color {
+            r: 10,
+            g: 10,
+            b: 10,
+            a: 255,
+        };
+        let tokens: BTreeMap<String, TokenValue> = [
+            ("bg.primary".to_owned(), ground),
+            ("bg.dark".to_owned(), window),
+        ]
+        .into_iter()
+        .collect();
         let resolved = resolve(ENTRIES, base, &tokens);
         let all = failures(base, &resolved);
         assert!(!all.is_empty(), "the tint pair passes");

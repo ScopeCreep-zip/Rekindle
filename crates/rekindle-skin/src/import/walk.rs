@@ -195,22 +195,75 @@ pub enum WalkResult {
     Unsettled(Unsettled),
 }
 
-/// What the walk sets to fix `fg` on `ground`: the text token, else its
-/// ground, else `None` (both fixed, or one fixed and the other derived).
-pub(crate) fn target_of(fg: &str, ground: &str) -> Option<(String, String)> {
-    if settable(fg) {
-        Some((fg.to_owned(), ground.to_owned()))
-    } else if settable(ground) {
-        Some((ground.to_owned(), fg.to_owned()))
-    } else {
-        None
-    }
+/// The token the skin sets for `id`: `id` itself when the skin sets it or
+/// it derives from nothing, else (a derived token the skin omits, such as
+/// `bg.dark` following `bg.primary`) the first source of its derivation the
+/// skin sets, else `id` (which then takes its base default). `None` when
+/// the skin may not set `id`.
+fn owner(id: &str, tokens: &BTreeMap<String, TokenValue>) -> Option<String> {
+    let e = entry_in(ENTRIES, id).filter(|_| settable(id))?;
+    let source = e
+        .derivation
+        .filter(|_| !tokens.contains_key(id))
+        .and_then(|d| {
+            d.sources()
+                .into_iter()
+                .find(|s| tokens.contains_key(*s) && settable(s))
+        });
+    Some(source.unwrap_or(id).to_owned())
 }
 
-/// The opaque ground beneath a ground's tints: `bg.panel` of
-/// `accent.fill 30.0% over bg.panel`.
-fn ground_base(ground: &str) -> &str {
-    ground.rsplit(" over ").next().unwrap_or(ground)
+/// The colours a ground is made of, the opaque ground first, then its
+/// tints from the outermost: `status.online 60.0% over bg.dark` →
+/// `bg.dark`, `status.online`.
+fn ground_parts(ground: &str) -> Vec<&str> {
+    let mut parts: Vec<&str> = ground
+        .split(" over ")
+        .map(|p| p.split(' ').next().unwrap_or(p))
+        .collect();
+    parts.rotate_right(1);
+    parts
+}
+
+/// What the walk may move to fix `fg` on `ground`, in order, each with the
+/// colour it moves away from: the text token itself, then the opaque ground
+/// beneath a tint, then (when the text is a fixed role) the ground's
+/// tints. A derived colour the skin omits is moved through the colour it
+/// follows (plan E7.7.7 e777n: white on `status.online 60% over bg.dark`
+/// moves the skin's `bg.primary`).
+pub(crate) fn targets(
+    fg: &str,
+    ground: &str,
+    tokens: &BTreeMap<String, TokenValue>,
+) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut push = |target: Option<String>, other: &str| {
+        if let Some(t) = target.filter(|t| !out.iter().any(|(o, _)| o == t)) {
+            out.push((t, other.to_owned()));
+        }
+    };
+    let parts = ground_parts(ground);
+    if settable(fg) {
+        push(Some(fg.to_owned()), ground);
+        if parts.len() > 1 {
+            push(owner(parts[0], tokens), fg);
+        }
+    } else {
+        for part in parts {
+            push(owner(part, tokens), fg);
+        }
+    }
+    out
+}
+
+/// The first of [`targets`], or `None` when the pair has no colour the
+/// skin may set.
+pub(crate) fn target_of(
+    fg: &str,
+    ground: &str,
+    tokens: &BTreeMap<String, TokenValue>,
+) -> Option<(String, String)> {
+    targets(fg, ground, tokens).into_iter().next()
 }
 
 /// Builds with `build`, validates, and walks every failing pair until the
@@ -241,23 +294,16 @@ pub fn settle(
         if changes.len() >= MAX_CHANGES {
             return Ok((stop("the walk made its limit of changes"), changes));
         }
-        let Some((target, other)) = target_of(&fg, &ground) else {
+        let tries = targets(&fg, &ground, tokens);
+        if tries.is_empty() {
             return Ok((
                 stop("neither colour of the pair is a token the skin sets"),
                 changes,
             ));
-        };
+        }
         let same = |e: &SkinError| {
             pair_of(&e.rule).is_some_and(|(r, f, g, _, _)| r == rule && f == fg && g == ground)
         };
-        // The text token first (or the plain ground), then, for a tint, the
-        // opaque ground beneath it: a text drawn on a tint of its own colour
-        // (`.chat-mention-self`) cannot leave it by lightness alone.
-        let mut tries = vec![(target, other)];
-        let beneath = ground_base(&ground);
-        if beneath != ground && settable(beneath) && tries[0].0 != beneath {
-            tries.push((beneath.to_owned(), fg.clone()));
-        }
         let mut found = None;
         for (target, other) in tries {
             let Some(original) = colour_of(tokens, base, &target) else {

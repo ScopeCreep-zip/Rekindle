@@ -564,7 +564,6 @@
 '.group-dm-picker-hint' = { on = ["--color-xfire-bg-panel"] }
 '.group-dm-picker-reason' = { on = ["--color-xfire-bg-panel"] }
 '.group-chat-member' = { on = ["--color-xfire-bg-dark"] }
-'.group-chat-leave' = { on = ["--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark"] }
 
 # Disappearing messages (plan E7.1): the header button sits on the DM
 # header (`.chat-peer-status`) or the group header (`.group-chat-header`);
@@ -671,8 +670,8 @@
 # no mute control here (it is the call window's), so those have no slot.
 # The Send button (S3) is a label of the input shell too, so its text is
 # backed when only the shell is skinned. The group header's bitmap is the
-# member strip's: the Leave button keeps its own danger tint, which over
-# a bitmap would put its text on the image.
+# member strip's: the Leave button is the skin's `button.secondary` on the
+# header's own ground, never over the strip's image.
 'chat.toolbar' = { elements = [".chat-window .chat-peer-status"], labels = [".chat-window .chat-peer-status-label", ".chat-window .chat-safety-btn", ".chat-window .chat-call-btn"] }
 'chat.call-button' = { elements = [".chat-window .chat-call-btn"] }
 'chat.call-button-active' = { elements = [".chat-window .chat-call-btn.chat-call-btn-active"] }

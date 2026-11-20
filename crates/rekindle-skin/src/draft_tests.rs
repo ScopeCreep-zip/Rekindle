@@ -258,3 +258,44 @@ fn every_builtin_started_as_a_draft_passes_and_asks_only_for_its_author() {
             .unwrap_or_else(|e| panic!("builtin:{} {e}", pack.id));
     }
 }
+
+/// Plan E7.7.7 e777n: a fixed text on a tint over a derived ground (white
+/// on `status.online 60% over bg.dark`, where `bg.dark` follows the skin's
+/// `bg.primary`) is repaired by moving the colour the skin sets, never by
+/// lowering the floor. Xfire Classic v3's palette: every ground #081020.
+#[test]
+fn the_walk_repairs_a_pair_over_a_derived_ground_through_the_skins_colour() {
+    use crate::import::walk::{settle, WalkResult};
+    let navy = color([0x08, 0x10, 0x20]);
+    let mut tokens: BTreeMap<String, TokenValue> = [
+        "bg.primary",
+        "bg.secondary",
+        "bg.panel",
+        "bg.input",
+        "bg.status",
+    ]
+    .into_iter()
+    .map(|id| (id.to_owned(), navy.clone()))
+    .collect();
+    tokens.insert("accent.fill".to_owned(), color([0x1e, 0x49, 0x8c]));
+    tokens.insert("accent.text".to_owned(), color([0x5c, 0x8c, 0xd5]));
+    let build = |t: &BTreeMap<String, TokenValue>| {
+        package(&draft(t.clone()), &no_assets())
+            .map(|c| c.bytes)
+            .map_err(crate::import::ImportError::Refused)
+    };
+    let (result, changes) = settle(&mut tokens, Base::Dark, build).unwrap();
+    assert!(
+        matches!(result, WalkResult::Passed(_)),
+        "{result:?} after {changes:?}"
+    );
+    let over_dark = changes
+        .iter()
+        .find(|c| c.ground.ends_with("over bg.dark") && c.token == "bg.primary")
+        .unwrap_or_else(|| panic!("no pair over bg.dark walked bg.primary: {changes:?}"));
+    assert!(
+        !tokens.contains_key("bg.dark"),
+        "the walk set the derived ground"
+    );
+    assert!(over_dark.required_x100 >= 450, "{over_dark:?}");
+}
