@@ -65,7 +65,12 @@ impl ShellHooks for ShellSession {
         community_id: &str,
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<usize, String> {
-        crate::services::community::send_to_mesh_awaited(&self.state, community_id, envelope).await
+        crate::services::community::gossip::send_to_mesh_awaited(
+            &self.state,
+            community_id,
+            envelope,
+        )
+        .await
     }
 
     fn community_left(&self, community_id: &str) {

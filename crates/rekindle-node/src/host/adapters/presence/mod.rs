@@ -126,8 +126,9 @@ pub(crate) async fn depart(ctx: &DaemonContext, community: &str) {
 /// already wrote it), once the engine stopped; the slot is emptied.
 pub(crate) async fn quit(slot: &BeatSlot) {
     let engine = slot.write().take();
-    match engine {
-        Some(engine) => engine.quit().await,
-        None => tracing::info!("quit beats skipped: no beat engine ran this unlock"),
+    if let Some(engine) = engine {
+        engine.quit().await;
+    } else {
+        tracing::info!("quit beats skipped: no beat engine ran this unlock");
     }
 }

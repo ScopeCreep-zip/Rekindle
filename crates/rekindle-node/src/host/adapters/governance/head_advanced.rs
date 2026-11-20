@@ -231,13 +231,14 @@ impl HostGovernance {
             let read = self
                 .read_member_beat(community_id, record, lease, now)
                 .await;
-            match &read {
-                Some((seq, observed)) => tracing::debug!(
+            if let Some((seq, observed)) = &read {
+                tracing::debug!(
                     seq,
                     state_changed = observed.state_changed,
                     "hinted beat read and applied"
-                ),
-                None => tracing::debug!("hinted beat not read"),
+                );
+            } else {
+                tracing::debug!("hinted beat not read");
             }
             read.map(|(seq, _)| seq)
         } else if hint.subkey == ROUTES {
