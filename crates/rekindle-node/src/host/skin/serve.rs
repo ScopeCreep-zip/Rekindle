@@ -141,12 +141,18 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
             .map_err(|e| failed("skin grounds", format!("{e:?}")))?;
         super::shown::note(ctx, grounds);
     }
+    // The stylesheet measures the skin's art (its label grounds): CPU work
+    // kept off the Host's async workers, as every window asks at once.
+    let (address, applied_address) = (held.address.clone(), held.address.clone());
     let applied =
-        serve::stylesheet(&held.bytes, &held.address).map_err(|e| failed("skin stylesheet", e))?;
+        rekindle_lifecycle::run_blocking(move || serve::stylesheet(&held.bytes, &address))
+            .await
+            .map_err(|e| failed("skin stylesheet task", e))?
+            .map_err(|e| failed("skin stylesheet", e))?;
     Ok(SkinApplied {
         id,
         base: applied.base,
-        tokens_href: serve::tokens_href(&held.address),
+        tokens_href: serve::tokens_href(&applied_address),
         regions: applied.regions,
         palette: applied.palette,
     })
@@ -155,7 +161,7 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
 /// `SkinFile`: one file of the package a `skin://` path names.
 pub(super) async fn file(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> {
     let missing = || IpcResponse::error(404, "no such skin file");
-    let (address, file) = serve::parse_path(path).ok_or_else(missing)?;
+    let (address, _) = serve::parse_path(path).ok_or_else(missing)?;
     let mut held = None;
     for pack in &builtin::PACKS {
         let candidate = builtin_package(ctx, &format!("{}{}", builtin::PREFIX, pack.id)).await?;
@@ -171,9 +177,16 @@ pub(super) async fn file(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> 
         held = library_package(ctx, address).await?;
     }
     let held = held.ok_or_else(missing)?;
-    let body = serve::body(&held.bytes, &held.address, file)
-        .map_err(|e| failed("skin file", e))?
-        .ok_or_else(missing)?;
+    // A `tokens.css` body is the stylesheet: off the async workers too.
+    let path = path.to_owned();
+    let body = rekindle_lifecycle::run_blocking(move || {
+        let (_, file) = serve::parse_path(&path).ok_or(None)?;
+        serve::body(&held.bytes, &held.address, file).map_err(Some)
+    })
+    .await
+    .map_err(|e| failed("skin file task", e))?
+    .map_err(|e| e.map_or_else(missing, |e| failed("skin file", e)))?
+    .ok_or_else(missing)?;
     Ok(SkinServed {
         content_type: body.content_type.to_owned(),
         cache_control: held.cache.header().to_owned(),

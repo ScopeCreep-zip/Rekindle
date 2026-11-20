@@ -106,3 +106,35 @@ fn xslimfire_measures_its_title_on_the_cropped_strip() {
     assert!(!g.bare(), "{g:?}");
     assert_eq!(g.bare(), css.contains("-title-backing: transparent"));
 }
+
+#[test]
+fn the_piecewise_columns_are_the_per_column_walk() {
+    // Strips drawn wider and narrower than their source, caps that
+    // overlap at a narrow width, and the built-ins' shapes (xSLIMFIRE's
+    // 266 × 37 strip at a 28 px chrome scales its caps down).
+    let shapes = [
+        ((40, 56), (10, 10), 28),
+        ((266, 37), (120, 120), 28),
+        ((266, 37), (3, 200), 24),
+        ((9, 30), (2, 3), 60),
+        ((500, 20), (0, 0), 28),
+        ((100, 10), (40, 1), 40),
+    ];
+    for ((iw, ih), (left, right), chrome) in shapes {
+        for out in (1u32..700).chain([1024, 1999, 4096]) {
+            let span = out.saturating_sub(2 * PAD_X) / 2;
+            let xs = PAD_X..PAD_X + span;
+            let walked: BTreeSet<u32> = xs
+                .clone()
+                .map(|x| strip_col(x, out, (iw, ih), (left, right), chrome))
+                .collect();
+            let mut hit = vec![false; iw as usize];
+            mark_title_cols(&mut hit, xs, out, (iw, ih), (left, right), chrome);
+            let marked: BTreeSet<u32> = (0..iw).filter(|&c| hit[c as usize]).collect();
+            assert_eq!(
+                marked, walked,
+                "{iw}x{ih} caps {left}/{right} chrome {chrome} out {out}"
+            );
+        }
+    }
+}

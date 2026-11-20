@@ -90,6 +90,73 @@ fn strip_col(
     u32::try_from(src.min(iw64 - 1)).unwrap_or(iw - 1)
 }
 
+/// The smallest output column whose centre `(2x + 1) ih` reaches `t`
+/// (units of [`strip_col`]).
+fn first_col(t: u64, ih: u64) -> u64 {
+    t.saturating_sub(ih).div_ceil(2 * ih)
+}
+
+/// Marks in `hit` every source column [`strip_col`] gives for the output
+/// columns `xs` at width `out` — the same set as evaluating each column,
+/// in time bounded by the strip's width rather than the window's: within
+/// each piece (left cap, middle, right cap) the map is one linear floor,
+/// so a piece drawn at least as wide as its source hits every source
+/// column between its ends (a step of at most one), and only a piece
+/// drawn narrower than its source (fewer output columns than source
+/// columns) is walked column by column (plan E7.7.7; the per-column walk
+/// over every window width took seconds per stylesheet, past the Host's
+/// answer deadline, so the skin was never applied).
+fn mark_title_cols(
+    hit: &mut [bool],
+    xs: std::ops::Range<u32>,
+    out: u32,
+    (iw, ih): (u32, u32),
+    (left, right): (u32, u32),
+    chrome: u32,
+) {
+    let (ih64, ch) = (u64::from(ih), u64::from(chrome));
+    let w = 2 * u64::from(out) * ih64;
+    let (mut lw, mut rw) = (2 * u64::from(left) * ch, 2 * u64::from(right) * ch);
+    if lw + rw > w {
+        lw = lw * w / (lw + rw);
+        rw = w - lw;
+    }
+    let (a, b) = (first_col(lw, ih64), first_col(w - rw, ih64));
+    let middle = u64::from(iw - left - right);
+    // (output columns, source span × 2 ih / output span) per piece: a step
+    // of at most one source column when `src × 2 ih <= drawn`.
+    let pieces = [
+        (0..a, u64::from(left), lw),
+        (a..b, middle, w - lw - rw),
+        (b..u64::MAX, u64::from(right), rw),
+    ];
+    let (x0, x1) = (u64::from(xs.start), u64::from(xs.end));
+    for (range, src, drawn) in pieces {
+        let (lo, hi) = (range.start.max(x0), range.end.min(x1));
+        if lo >= hi {
+            continue;
+        }
+        let col = |x: u64| {
+            strip_col(
+                u32::try_from(x).unwrap_or(u32::MAX),
+                out,
+                (iw, ih),
+                (left, right),
+                chrome,
+            )
+        };
+        if src * 2 * ih64 <= drawn {
+            for c in col(lo)..=col(hi - 1) {
+                hit[c as usize] = true;
+            }
+        } else {
+            for x in lo..hi {
+                hit[col(x) as usize] = true;
+            }
+        }
+    }
+}
+
 /// The worst contrast of `text` over the pixels of `image` (a horizontal
 /// 3-slice strip) a title can cover at `chrome` px tall, every window
 /// width; `None` when `fit` is not such a strip.
@@ -109,15 +176,21 @@ pub fn strip_worst(
     if i.top != 0 || i.bottom != 0 || ih == 0 || chrome == 0 || left + right >= iw {
         return None;
     }
-    let mut cols = BTreeSet::new();
+    let mut hit = vec![false; iw as usize];
     for win in &WINDOWS {
         for out in win.min.0..=win.max.0.max(win.min.0) {
             let span = out.saturating_sub(2 * PAD_X) / 2;
-            cols.extend(
-                (PAD_X..PAD_X + span).map(|x| strip_col(x, out, (iw, ih), (left, right), chrome)),
+            mark_title_cols(
+                &mut hit,
+                PAD_X..PAD_X + span,
+                out,
+                (iw, ih),
+                (left, right),
+                chrome,
             );
         }
     }
+    let cols: Vec<u32> = (0..iw).filter(|&c| hit[c as usize]).collect();
     // The rows whose centre is inside the line box centred in the chrome.
     let (lo, hi) = (
         (2 * chrome).saturating_sub(LINE_HALF_PX),
@@ -130,7 +203,6 @@ pub fn strip_worst(
         })
         .map(|r| r.min(ih - 1))
         .collect();
-    let cols: Vec<u32> = cols.into_iter().collect();
     let rows: Vec<u32> = rows.into_iter().collect();
     Some(worst_contrast(image, &cols, &rows, tint, [0; 4], text))
 }
