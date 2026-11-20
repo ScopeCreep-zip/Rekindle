@@ -32,12 +32,29 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         &[&online, &away, &busy, &offline, &status_sep, &custom],
     )?;
 
+    // "Show Rekindle" first: on hosts whose tray items are menu-only
+    // (Ayatana/StatusNotifierItem on COSMIC and others), a click opens this
+    // menu and never reaches `on_tray_icon_event`, so the menu must reach the
+    // buddy list too (Linux finding T1).
+    let show = MenuItem::with_id(app, "show", "Show Rekindle", true, None::<&str>)?;
+    let show_sep = PredefinedMenuItem::separator(app)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Rekindle", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&status_menu, &sep, &settings, &sep2, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show,
+            &show_sep,
+            &status_menu,
+            &sep,
+            &settings,
+            &sep2,
+            &quit,
+        ],
+    )?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(Image::from_bytes(TrayIcon::LoggedOut.bytes())?)
@@ -47,6 +64,10 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match TrayAction::of(event.id.as_ref()) {
             Some(TrayAction::Quit) => quit_rekindle(app),
+            // The same path as the tray's left-click.
+            Some(TrayAction::Show) => {
+                let _ = windows::open_buddy_list(app);
+            }
             Some(TrayAction::OpenSettings(tab)) => {
                 let _ = windows::open_settings(app, tab);
             }
@@ -137,6 +158,8 @@ pub fn show_status(app: &tauri::AppHandle, status: Option<SessionStatus>) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TrayAction {
     Quit,
+    /// Reveal the buddy list (the left-click's action, for menu-only trays).
+    Show,
     /// Open Settings, on a tab or where it was.
     OpenSettings(Option<windows::SettingsTab>),
     SetStatus(SessionStatus),
@@ -147,6 +170,7 @@ impl TrayAction {
     fn of(id: &str) -> Option<Self> {
         Some(match id {
             "quit" => Self::Quit,
+            "show" => Self::Show,
             "settings" => Self::OpenSettings(None),
             // "Set custom status…": the status message editor.
             "status-message" => Self::OpenSettings(Some(windows::SettingsTab::Profile)),
@@ -204,6 +228,7 @@ mod tests {
             TrayAction::of("status-offline"),
             Some(TrayAction::SetStatus(SessionStatus::Invisible))
         );
+        assert_eq!(TrayAction::of("show"), Some(TrayAction::Show));
         assert_eq!(TrayAction::of("unknown"), None);
     }
 

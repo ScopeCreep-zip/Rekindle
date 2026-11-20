@@ -211,16 +211,15 @@ pub(super) fn emit_local_joined_impl(
             },
         ),
     ];
-    match app
+    if let Some(host) = app
         .try_state::<crate::state::SharedState>()
         .and_then(|state| state.host.current())
     {
-        Some(host) => {
-            for (key, event) in session_state {
-                host.publish_state(key, SubscriptionEvent::Voice(event));
-            }
+        for (key, event) in session_state {
+            host.publish_state(key, SubscriptionEvent::Voice(event));
         }
-        None => tracing::warn!("voice join not published: the host has not started"),
+    } else {
+        tracing::warn!("voice join not published: the host has not started");
     }
     for event in [
         VoiceEvent::ConnectionQuality {
