@@ -6,7 +6,7 @@ use veilid_core::VeilidUpdate;
 use crate::state::AppState;
 
 pub(crate) mod app_call_lane;
-mod app_message;
+pub(crate) mod app_message;
 mod control;
 mod control_event_records;
 mod control_events;

@@ -26,6 +26,7 @@ pub(in crate::signaling) fn handle_voice_leave(
     } else {
         None
     };
+    tracing::debug!(bound = transport.is_some(), "voice leave received");
     let Some(transport) = transport else {
         deps.emit_event(CommunityVoiceEvent::VoiceLeave {
             community_id: community_id.to_string(),

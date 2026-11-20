@@ -172,9 +172,18 @@ pub async fn send_to_channel_peers_now(
             route_blob,
         })
         .collect();
-    rekindle_gossip::send_to_channel_peers_now(Arc::new(adapter), community_id, envelope, peers)
-        .await
-        .map_err(|e| e.to_string())
+    let kind = crate::services::veilid::app_message::envelope_kind(envelope);
+    let peer_count = peers.len();
+    let sent = rekindle_gossip::send_to_channel_peers_now(
+        Arc::new(adapter),
+        community_id,
+        envelope,
+        peers,
+    )
+    .await;
+    let outcome = if sent.is_ok() { "sent" } else { "failed" };
+    tracing::debug!(kind, peer_count, outcome, "direct channel envelope");
+    sent.map_err(|e| e.to_string())
 }
 
 /// Fan out a pre-signed envelope. Used by the presence-poll drain

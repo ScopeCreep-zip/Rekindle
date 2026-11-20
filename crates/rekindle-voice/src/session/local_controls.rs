@@ -120,11 +120,17 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
 /// voice channel. The Leave button and the end of a session (quit,
 /// logout) share it, so a peer that quits leaves the roster at once
 /// instead of after 180 s of presence staleness (plan C7.27).
+///
+/// The channel session ends first (its keys, its queued key deliveries,
+/// plans C7.20, C7.29): no media key of the session is attempted once
+/// its leave is on the wire, so a peer never receives one after the
+/// leave that removed us. `shutdown_voice` ending it again is a no-op.
 pub async fn announce_leave<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
     let (channel_id, community_id) = deps.active_channel_info();
     let Some(cid) = community_id else {
         return;
     };
+    deps.end_channel_session(&cid, &channel_id).await;
     deps.log_voice_membership(&cid, &channel_id, false);
     let envelope = CommunityEnvelope::Control(ControlPayload::VoiceLeave {
         channel_id: channel_id.clone(),

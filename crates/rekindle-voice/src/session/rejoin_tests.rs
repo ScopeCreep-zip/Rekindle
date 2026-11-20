@@ -50,6 +50,8 @@ impl MediaKeyOutbox for NoQueuedKeys {
 struct Joiner {
     keys: ChannelSenderKeyStore,
     mesh: Mutex<Vec<CommunityEnvelope>>,
+    /// The leave path's steps, in order.
+    steps: Mutex<Vec<&'static str>>,
 }
 
 impl MediaKeySource for Joiner {
@@ -175,7 +177,14 @@ impl VoiceSessionDeps for Joiner {
     fn send_community_envelope(&self, _: &str, envelope: &CommunityEnvelope) {
         self.mesh.lock().push(envelope.clone());
     }
-    async fn send_channel_envelope_now(&self, _: &str, _: &str, _: &CommunityEnvelope) {}
+    async fn send_channel_envelope_now(&self, _: &str, _: &str, envelope: &CommunityEnvelope) {
+        if matches!(
+            envelope,
+            CommunityEnvelope::Control(ControlPayload::VoiceLeave { .. })
+        ) {
+            self.steps.lock().push("leave sent to the roster");
+        }
+    }
     fn log_voice_membership(&self, _: &str, _: &str, _: bool) {}
     fn our_media_route_blob(&self) -> Option<Vec<u8>> {
         // The same media route across the leave, as on the walk.
@@ -202,6 +211,7 @@ impl VoiceSessionDeps for Joiner {
     }
     fn stop_devices_and_clear_engine(&self) {}
     async fn end_channel_session(&self, community_id: &str, channel_id: &str) {
+        self.steps.lock().push("session ended");
         crate::signaling::end_media_key_session(
             &self.keys,
             &NoQueuedKeys,
@@ -280,4 +290,28 @@ async fn leave_then_rejoin_announces_a_join_the_peer_admits() {
         peer_admits(&mut peer, &rejoin),
         "the peer must not drop the rejoin as the first join's duplicate"
     );
+}
+
+/// Linux walk row M25: a leave 0.2 s after a rejoin. The rejoin's key
+/// deliveries were still queued, and one was handed to Veilid after the
+/// leave went out (delivered 0.5 s after it). The session's keys and its
+/// queued deliveries must end before the leave reaches the roster, so no
+/// key of the session is attempted after its leave.
+#[tokio::test]
+async fn leave_right_after_a_rejoin_ends_the_session_before_the_leave() {
+    let joiner = Arc::new(Joiner::default());
+    crate::session::reannounce_voice_route(&joiner);
+    crate::session::leave_voice(&joiner).await.expect("leaves");
+    crate::session::reannounce_voice_route(&joiner);
+    joiner.steps.lock().clear();
+
+    crate::session::leave_voice(&joiner).await.expect("leaves");
+
+    let steps = joiner.steps.lock().clone();
+    assert_eq!(
+        steps.first().copied(),
+        Some("session ended"),
+        "the session's key deliveries must end before its leave goes out: {steps:?}"
+    );
+    assert!(steps.contains(&"leave sent to the roster"), "{steps:?}");
 }

@@ -7297,7 +7297,6 @@ dependencies = [
  "argon2 0.5.3",
  "async-trait",
  "base64 0.22.1",
- "blake2 0.10.6",
  "blake3",
  "block2",
  "chrono",

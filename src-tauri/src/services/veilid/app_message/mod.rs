@@ -132,11 +132,12 @@ async fn handle_gossip_envelope(
         return;
     }
 
-    let dedup_key = extract_dedup_key(&signed);
+    let kind = encoded_envelope_kind(&signed.envelope_bytes);
+    let dedup_key = gossip_dedup_key(&signed);
     {
         let mut cache = state.dedup_cache.lock();
         if cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key) {
-            tracing::trace!(dedup_key = %dedup_key, "gossip dedup: dropping duplicate");
+            tracing::debug!(kind, outcome = "duplicate", "gossip received");
             return;
         }
     }
@@ -165,11 +166,8 @@ async fn handle_gossip_envelope(
             &signed.sender_pseudonym,
         )
     {
-        tracing::trace!(
-            community = %community_id,
-            sender = %signed.sender_pseudonym,
-            "gossip rate floor exceeded — dropping silently"
-        );
+        // Trace: a flood must not become a log storm (M10.4 above).
+        tracing::trace!(kind, outcome = "rate_limited", "gossip received");
         return;
     }
 
@@ -204,49 +202,56 @@ async fn handle_gossip_envelope(
             .and_then(|c| c.my_pseudonym_key.as_ref())
             .is_some_and(|pk| pk == &signed.sender_pseudonym)
     };
-    if !is_from_self {
+    if is_from_self {
+        tracing::debug!(kind, outcome = "own", "gossip received");
+    } else {
+        tracing::debug!(
+            kind,
+            outcome = "accepted",
+            ttl = signed.ttl,
+            "gossip received"
+        );
         handle_relayed_envelope(app_handle, state, signed).await;
     }
 }
 
-fn extract_dedup_key(signed: &SignedEnvelope) -> String {
-    // Forward-compat: `try_decode_community_envelope` returns `Ok(None)`
-    // for unknown union variants. Hash the opaque bytes in that case so
-    // dedup still suppresses replays without rejecting unknown messages.
-    if let Ok(Some(env)) = try_decode_community_envelope(&signed.envelope_bytes) {
-        match env {
-            CommunityEnvelope::TypingIndicator {
-                ref channel_id,
-                ref pseudonym_key,
-            } => {
-                let bucket = rekindle_utils::timestamp_secs() / 5;
-                format!("typing:{channel_id}:{pseudonym_key}:{bucket}")
-            }
-            CommunityEnvelope::PresenceUpdate {
-                ref pseudonym_key, ..
-            } => {
-                let bucket = rekindle_utils::timestamp_secs() / 30;
-                format!("presence:{pseudonym_key}:{bucket}")
-            }
-            CommunityEnvelope::Control(_) => envelope_hash(&signed.envelope_bytes),
-            CommunityEnvelope::WatchRelay {
-                ref record_key,
-                subkey,
-                ref content_hash,
-                ..
-            } => format!("watch:{record_key}:{subkey}:{content_hash}"),
-        }
-    } else {
-        envelope_hash(&signed.envelope_bytes)
+/// The receiver's dedup key: the sender's per-send `message_id` (gossip
+/// design, architecture §1171; the daemon's `dispatch_bare_gossip` keys
+/// the same way). Relayed copies of one send share it; a deliberate
+/// re-send of byte-identical content does not, so a `VoiceLeave` after
+/// a rejoin is never dropped as the first leave's duplicate.
+fn gossip_dedup_key(signed: &SignedEnvelope) -> String {
+    rekindle_codec::dedup::message_dedup_key(signed)
+}
+
+/// The encoded envelope's kind for the receive log.
+fn encoded_envelope_kind(envelope_bytes: &[u8]) -> &'static str {
+    match try_decode_community_envelope(envelope_bytes) {
+        Ok(Some(envelope)) => envelope_kind(&envelope),
+        Ok(None) => "unknown",
+        Err(_) => "undecodable",
     }
 }
 
-fn envelope_hash(envelope_bytes: &[u8]) -> String {
-    use blake2::{digest::consts::U16, Blake2b, Digest};
-
-    let mut h = Blake2b::<U16>::new();
-    h.update(envelope_bytes);
-    hex::encode(h.finalize())
+/// An envelope's kind for the send and receive logs: a variant name,
+/// never an id.
+pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
+    use rekindle_codec::community::envelope::ControlPayload as C;
+    match envelope {
+        CommunityEnvelope::TypingIndicator { .. } => "typing",
+        CommunityEnvelope::PresenceUpdate { .. } => "presence",
+        CommunityEnvelope::WatchRelay { .. } => "watch_relay",
+        CommunityEnvelope::Control(payload) => match payload {
+            C::VoiceJoin { .. } => "voice_join",
+            C::VoiceJoinAck { .. } => "voice_join_ack",
+            C::VoiceJoinConfirmed { .. } => "voice_join_confirmed",
+            C::VoiceLeave { .. } => "voice_leave",
+            C::VoiceRoster { .. } => "voice_roster",
+            C::VoiceModeSwitch { .. } => "voice_mode_switch",
+            C::VoiceMute { .. } | C::VoiceDeafen { .. } => "voice_mute_state",
+            _ => "control",
+        },
+    }
 }
 
 /// Phase F + §10.6 — if the decoded envelope carries a video control
@@ -510,3 +515,6 @@ async fn handle_relayed_envelope(
         }
     }
 }
+
+#[cfg(test)]
+mod dedup_tests;

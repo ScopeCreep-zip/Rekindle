@@ -108,7 +108,6 @@ tracing-subscriber = { workspace = true }
 # `tokio_rusqlite::` references compile unchanged.
 argon2 = "0.5"
 base64 = "0.22"
-blake2 = "0.10"
 blake3 = "1"
 hex = "0.4"
 image = { version = "0.25", default-features = false, features = [ "webp", "png", "jpeg", "gif" ] }
