@@ -634,6 +634,7 @@
 # A scrollbar button is the classic single button at each end: the
 # decrement before the thumb (`:start`), the increment after (`:end`).
 [regions]
+'window.frame' = { elements = [".app-frame"] }
 'titlebar.btn.minimize' = { elements = [".xfire-titlebar-btn-minimize"] }
 'titlebar.btn.maximize' = { elements = [".xfire-titlebar-btn-maximize"] }
 'titlebar.btn.close' = { elements = [".xfire-titlebar-btn-close"] }

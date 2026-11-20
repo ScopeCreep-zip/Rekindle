@@ -28,6 +28,7 @@ pub(super) const fn slot(
         grounds: &[],
         labelled: false,
         sized: false,
+        framed: false,
     }
 }
 
@@ -73,6 +74,14 @@ impl RegionSlot {
     pub(super) const fn sized(self) -> Self {
         Self {
             sized: true,
+            ..self
+        }
+    }
+
+    /// Its element's border box is the image's nine-slice insets.
+    pub(super) const fn framed(self) -> Self {
+        Self {
+            framed: true,
             ..self
         }
     }

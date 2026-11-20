@@ -130,6 +130,7 @@ fn the_still_is_served_by_its_address_like_every_other_image() {
 fn small_map() -> BTreeMap<String, RegionMap> {
     let mut map = BTreeMap::new();
     for (slot, el) in [
+        ("window.frame", ".frame"),
         ("titlebar.btn.minimize", ".min"),
         ("titlebar.btn.maximize", ".max"),
         ("titlebar.btn.close", ".close"),

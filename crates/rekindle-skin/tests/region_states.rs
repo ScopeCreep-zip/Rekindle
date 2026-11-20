@@ -162,6 +162,7 @@ fn map(entries: &[(&str, &[&str])]) -> BTreeMap<String, RegionMap> {
 /// Every painted slot on one test element each.
 fn full_map() -> BTreeMap<String, RegionMap> {
     map(&[
+        ("window.frame", &[".frame"]),
         ("titlebar.btn.minimize", &[".min"]),
         ("titlebar.btn.maximize", &[".max"]),
         ("titlebar.btn.close", &[".close"]),
@@ -227,8 +228,8 @@ fn the_app_css_maps_states_to_selectors() {
         .contains("scrollbar.corner"));
     let mut unknown = full.clone();
     unknown.insert(
-        "window.frame".to_owned(),
-        RegionMap::elements(&[".app-frame"]),
+        "titlebar.buttons".to_owned(),
+        RegionMap::elements(&[".xfire-titlebar-btn"]),
     );
     assert!(app_css("h", &unknown)
         .unwrap_err()
@@ -519,4 +520,20 @@ fn the_family_sheets_split_the_rules_without_loss_or_overlap() {
         joined.push_str(&body(&components));
     }
     assert_eq!(joined, whole);
+}
+
+/// Plan E7.7.7: a window's frame paints in a border box as wide as the
+/// frame image's nine-slice insets, so the content sits inside the skin's
+/// edge; without a skin the window keeps its 1 px border.
+#[test]
+fn the_window_frame_gets_a_border_box_from_its_slices() {
+    let css = app_css("h", &full_map()).unwrap();
+    assert!(css.contains("  .frame {\n    border-image: var(--skin-region-window-frame);\n    image-rendering: pixelated;\n    border-style: solid;\n    border-width: var(--skin-region-window-frame-border, 1px);\n  }\n"), "{css}");
+    let m = manifest_with("window.frame", &nine(), &[]);
+    let (manifest, canonical) = check(&m, (16, 16), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(
+        css.contains("    --skin-region-window-frame-border: 2px 3px 2px 3px;\n"),
+        "{css}"
+    );
 }

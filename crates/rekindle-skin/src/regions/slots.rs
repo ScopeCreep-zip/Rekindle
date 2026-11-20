@@ -117,6 +117,10 @@ pub struct RegionSlot {
     pub labelled: bool,
     /// The generator sizes its element to the image (0 without a skin).
     pub sized: bool,
+    /// The generator gives its element a border box as wide as the
+    /// image's nine-slice insets, so the frame paints in the border and the
+    /// content sits inside it (plan E7.7.7: a window's edge is the skin's).
+    pub framed: bool,
 }
 
 use RegionState::{Disabled, Down, Focused, Hover, Selected, WindowInactive};
@@ -183,11 +187,12 @@ const CALL_LABEL_INSET: (u32, u32) = (4, 4);
 pub const SLOTS: [RegionSlot; 36] = [
     // The whole window behind its content. DoiDD's frame has hover, down
     // and disabled (window-inactive) images.
-    slot("window.frame", Extent::Window, Extent::Window, &[]).states(&[
-        Hover,
-        Down,
-        WindowInactive,
-    ]),
+    // `.app-frame` (`00-rules.css:115`), every window's root: Symbiosis's
+    // nine frame components (`MainWindow.xml` frame1_*), Classic INI
+    // `[OuterFrame]`.
+    slot("window.frame", Extent::Window, Extent::Window, &[])
+        .painted(&[Hover, Down, WindowInactive])
+        .framed(),
     // `.xfire-titlebar` (`00-rules.css:98`), its title `.xfire-titlebar-text`
     // (`00-primitives.css:102`, 11 px semibold).
     // Its labels are the title and the titlebar buttons (their glyphs are

@@ -332,6 +332,7 @@ fn rules(
         } else {
             String::new()
         };
+        let frame = frame::rule(slot);
         let text = !slot.text.is_empty() && !slot.labelled;
         let stack = if text {
             "    position: relative;\n    isolation: isolate;\n"
@@ -340,7 +341,7 @@ fn rules(
         };
         let _ = write!(
             out,
-            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n{length}{size}{stack}  }}\n",
+            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n{length}{size}{frame}{stack}  }}\n",
             elements.join(",\n  ")
         );
         painted.push(elements.join(",\n    "));
@@ -530,6 +531,9 @@ pub fn skin_css(
             let _ = writeln!(decls, "    {}: {width}px;", size_property(id, "width"));
             let _ = writeln!(decls, "    {}: {height}px;", size_property(id, "height"));
         }
+        if slot.framed {
+            decls.push_str(&frame::border_decl(id, region.fit));
+        }
         if let Some(side) = button_side(id) {
             let (width, height) = dimensions(&region.image, images)?;
             let px = if side == "height" { height } else { width };
@@ -574,7 +578,9 @@ pub fn skin_css(
 }
 
 mod family;
+mod frame;
 pub use family::{families, family, family_css};
+pub use frame::border_property;
 
 #[cfg(test)]
 mod tests;
