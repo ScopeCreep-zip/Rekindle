@@ -56,6 +56,7 @@ use crate::package::MANIFEST;
 use crate::registry::{TokenEntry, TokenType};
 
 pub mod css;
+pub mod label_box;
 pub mod labels;
 mod slots;
 pub mod still;

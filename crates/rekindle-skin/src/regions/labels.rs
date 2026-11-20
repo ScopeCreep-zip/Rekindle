@@ -9,13 +9,16 @@
 //! slot's `textBacking` behind its content box so its text never depends
 //! on a bitmap it was not measured against (WCAG 2.2 F83). Here the slot's
 //! art is measured for the label's pairs (each `RegionText` of the slot,
-//! SC 1.4.3: 4.5:1, 3:1 for large text): every pixel of the image, of each
-//! state's image and of each frame, tinted as the region says, over a black
-//! and a white desktop for its transparent pixels. A label can sit over any
-//! part of a bar at any size (a nine-slice, stretch or tile only maps
-//! output pixels onto source pixels), so every source pixel is a pixel some
-//! label may cover: when the worst of them meets the floor the slot's
-//! backing is `transparent` for that skin, else it stays.
+//! SC 1.4.3: 4.5:1, 3:1 for large text): the pixels under where its
+//! labels render ([`super::label_box`]: each label's text line in its
+//! container's padding, at every box height the slot takes and every
+//! window width, after the image is scaled as `border-image` draws it), of
+//! the image, of each state's image and of each frame, tinted as the region
+//! says, over a black and a white desktop for its transparent pixels. Art
+//! outside the text rows (a bevel, an edge) is never under a label's text,
+//! so it never decides the backing. When the worst pixel under the labels
+//! meets the floor the slot's backing is `transparent` for that skin, else
+//! it stays.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -23,8 +26,9 @@ use std::fmt::Write as _;
 use rekindle_types::dto::skin::{SkinManifest, TokenValue};
 
 use super::css::backing_property;
+use super::label_box::label_worst;
 use super::title::{TitleGround, TITLE_REGION};
-use super::{frames, slot_of, worst_contrast, Tokens};
+use super::{frames, slot_of, Tokens};
 use crate::access::scaled;
 use crate::registry::TokenEntry;
 
@@ -38,6 +42,7 @@ pub fn label_grounds(
     resolved: &[(&TokenEntry, TokenValue)],
 ) -> BTreeMap<String, TitleGround> {
     let tokens = Tokens::new(resolved);
+    let chrome = tokens.dims.get("size.chrome-height").copied().unwrap_or(0);
     manifest
         .regions
         .iter()
@@ -55,9 +60,9 @@ pub fn label_grounds(
                 required = required.max(if t.large { 300 } else { 450 });
                 for path in std::iter::once(&region.image).chain(region.states.values()) {
                     for frame in frames(path, images.get(path)?).ok()? {
-                        let cols: Vec<u32> = (0..frame.width()).collect();
-                        let rows: Vec<u32> = (0..frame.height()).collect();
-                        worst = worst.min(worst_contrast(&frame, &cols, &rows, tint, [0; 4], text));
+                        let extents = (slot.width, slot.height);
+                        let w = label_worst(id, extents, chrome, &frame, region.fit, tint, text)?;
+                        worst = worst.min(w);
                     }
                 }
             }

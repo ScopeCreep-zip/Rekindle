@@ -69,22 +69,22 @@ fn each_builtin_drops_the_label_backings_its_art_carries() {
             format!("{b}: {}", parts.join(" "))
         })
         .collect();
-    // Worst pixel x100 per labelled slot (SC 1.4.3 floor 450): Xfire
-    // Classic's header art keeps every backing (its worst pixels, over a
-    // white desktop or its light bevels, are 1.00-2.00:1 under its label
-    // colours).
+    // Worst pixel x100 under each labelled slot's labels (SC 1.4.3 floor
+    // 450, 300 large): Xfire Classic's header art keeps every backing (its
+    // worst pixels under the label rows, over a white desktop or its light
+    // fill, are 1.00-4.06:1 under its label colours).
     let want = [
-        "symbiosis: buddylist.actionbar=208:kept buddylist.group-header=680:bare buddylist.infobar=128:kept buddylist.menubar=836:bare chat.group-header=680:bare chat.input=327:kept chat.toolbar=185:kept community.category-header=680:bare community.channel-header=208:kept community.member-group-header=680:bare community.sidebar-header=137:kept statusbar=588:bare",
-        "xfire-classic: buddylist.actionbar=100:kept buddylist.group-header=200:kept buddylist.infobar=124:kept buddylist.menubar=100:kept chat.group-header=200:kept chat.toolbar=100:kept community.category-header=200:kept community.channel-header=100:kept community.member-group-header=200:kept community.sidebar-header=124:kept statusbar=122:kept",
-        "combat: buddylist.group-header=200:kept buddylist.infobar=100:kept chat.group-header=102:kept chat.toolbar=100:kept community.category-header=200:kept community.channel-header=100:kept community.member-group-header=200:kept community.sidebar-header=100:kept",
-        "onyx: buddylist.actionbar=208:kept buddylist.group-header=350:kept buddylist.menubar=123:kept community.category-header=350:kept community.member-group-header=350:kept statusbar=123:kept",
-        "spacecowboy: buddylist.group-header=496:bare community.category-header=496:bare community.member-group-header=496:bare statusbar=123:kept",
-        "stealthx: buddylist.group-header=501:bare buddylist.menubar=466:bare chat.group-header=501:bare community.category-header=501:bare community.member-group-header=501:bare",
-        "total-chaos: buddylist.actionbar=100:kept buddylist.group-header=277:kept buddylist.menubar=100:kept community.category-header=277:kept community.member-group-header=277:kept",
-        "xslimfire: buddylist.group-header=773:bare chat.group-header=773:bare community.category-header=773:bare community.member-group-header=773:bare statusbar=447:kept",
-        "alloy: buddylist.group-header=234:kept buddylist.infobar=164:kept community.category-header=234:kept community.member-group-header=234:kept community.sidebar-header=183:kept statusbar=100:kept",
-        "simple-x: buddylist.group-header=200:kept buddylist.infobar=100:kept community.category-header=200:kept community.member-group-header=200:kept community.sidebar-header=100:kept statusbar=100:kept",
-        "xglow: buddylist.group-header=110:kept community.category-header=110:kept community.member-group-header=110:kept",
+        "symbiosis: buddylist.actionbar=306:kept buddylist.group-header=800:bare buddylist.infobar=132:kept buddylist.menubar=836:bare chat.group-header=680:bare chat.input=327:kept chat.toolbar=326:kept community.category-header=800:bare community.channel-header=301:kept community.member-group-header=800:bare community.sidebar-header=142:kept statusbar=600:bare",
+        "xfire-classic: buddylist.actionbar=100:kept buddylist.group-header=244:kept buddylist.infobar=124:kept buddylist.menubar=100:kept chat.group-header=200:kept chat.toolbar=100:kept community.category-header=306:kept community.channel-header=100:kept community.member-group-header=271:kept community.sidebar-header=124:kept statusbar=406:kept",
+        "combat: buddylist.group-header=1049:bare buddylist.infobar=100:kept chat.group-header=102:kept chat.toolbar=107:kept community.category-header=200:kept community.channel-header=151:kept community.member-group-header=1049:bare community.sidebar-header=102:kept",
+        "onyx: buddylist.actionbar=208:kept buddylist.group-header=350:kept buddylist.menubar=350:kept community.category-header=385:kept community.member-group-header=367:kept statusbar=123:kept",
+        "spacecowboy: buddylist.group-header=1008:bare community.category-header=1008:bare community.member-group-header=1008:bare statusbar=123:kept",
+        "stealthx: buddylist.group-header=742:bare buddylist.menubar=520:bare chat.group-header=501:bare community.category-header=742:bare community.member-group-header=742:bare",
+        "total-chaos: buddylist.actionbar=100:kept buddylist.group-header=807:bare buddylist.menubar=100:kept community.category-header=807:bare community.member-group-header=807:bare",
+        "xslimfire: buddylist.group-header=962:bare chat.group-header=773:bare community.category-header=962:bare community.member-group-header=962:bare statusbar=447:kept",
+        "alloy: buddylist.group-header=642:bare buddylist.infobar=451:bare community.category-header=642:bare community.member-group-header=642:bare community.sidebar-header=504:bare statusbar=100:kept",
+        "simple-x: buddylist.group-header=224:kept buddylist.infobar=100:kept community.category-header=271:kept community.member-group-header=244:kept community.sidebar-header=100:kept statusbar=1008:bare",
+        "xglow: buddylist.group-header=1052:bare community.category-header=1052:bare community.member-group-header=1052:bare",
     ];
     assert_eq!(got, want);
 }
