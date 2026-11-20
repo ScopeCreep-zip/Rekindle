@@ -137,13 +137,14 @@ Events are the Rust → Frontend push mechanism, emitted through
 frontend. All event enums use
 `#[serde(rename_all = "camelCase", tag = "type", content = "data")]`.
 
-### `chat-event` (`channels/chat_channel.rs`)
+### `chat-event` (`rekindle_types::subscription_events`)
 
-`MessageReceived`, `TypingIndicator`, `MessageAck`, `FriendRequest`,
-`FriendRequestAccepted`, `FriendRequestRejected`, `FriendAdded`,
-`FriendRemoved`, `FriendRequestDelivered`, `DirectMessageInvite`,
-`IncomingCall`, plus the call-state ack variants emitted by
-`rekindle-calls`.
+The shared `SubscriptionEvent` vocabulary only, externally tagged: DMs,
+typing and send states (`ChannelMessage`, `Typing` in a DM context),
+`Friend`, `Call`, `GroupDm` and DM/friend-request `UnreadChanged`
+(`event_dispatch::subscription_channel`). The desktop's legacy
+`{ type, data }` channel-message shape is gone; a community channel post
+arrives on `community-event` as `ChannelMessageEvent::New`.
 
 ### `presence-event` (`channels/presence_channel.rs`)
 

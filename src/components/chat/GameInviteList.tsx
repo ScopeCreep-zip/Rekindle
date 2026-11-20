@@ -1,6 +1,5 @@
 import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { subscribeChatEvents } from "../../ipc/channels";
-import { isLegacy } from "../../ipc/channels/chat_events";
 import { commands } from "../../ipc/commands";
 
 interface Invite {
@@ -19,7 +18,7 @@ const GameInviteList: Component<{ peerId: string; peerName: string }> = (props) 
 
   onMount(async () => {
     unlisten = await subscribeChatEvents((event) => {
-      if (isLegacy(event) || !("friend" in event)) return;
+      if (!("friend" in event)) return;
       const friend = event.friend;
       if (!("gameInvite" in friend) || friend.gameInvite.peerKey !== props.peerId) return;
       const { gameId, server } = friend.gameInvite;

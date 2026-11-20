@@ -2,7 +2,6 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents, subscribeGroupDmEvents } from "../ipc/channels";
 import {
   conversationId,
-  isLegacy,
   type ChannelMessageEvent,
   type GroupDmEvent,
   type GroupDmMember,
@@ -150,7 +149,6 @@ export function subscribeGroupChatEvents(
     }
   });
   const typing = subscribeChatEvents((event) => {
-    if (isLegacy(event)) return;
     if ("channelMessage" in event) {
       applyDisappearing(groupId, event.channelMessage, ownKey);
       return;

@@ -2,17 +2,14 @@ import { batch } from "solid-js";
 import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
-import { conversationId, isLegacy } from "../ipc/channels/chat_events";
+import { conversationId } from "../ipc/channels/chat_events";
 import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
 import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
-import { communityState, setCommunityState } from "../stores/community.store";
 import { chatState, setChatState } from "../stores/chat.store";
 import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "../actions/chat.actions";
 import { handleRefreshFriends } from "../actions/buddy.actions";
-import type { Message } from "../stores/chat.store";
 import { transformHistoryGap, transformNewFriend } from "../utils/transformers";
-import { refreshCommunityMembers } from "./community/members_refresh";
 
 // A DM we sent changed delivery state (`dmSendStatus`): the
 // message whose client id (`serverMessageId`) it names takes the state the
@@ -53,9 +50,6 @@ function applyHistoryGap(gap: DmHistoryGap): void {
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
-    // Legacy envelope: community channel messages only.
-    if (isLegacy(event)) return;
-
     // A DM's unread count is the Host's (`UnreadChanged`), rendered as is.
     if ("unreadChanged" in event) {
       const { context, count } = event.unreadChanged;
@@ -274,10 +268,6 @@ export function subscribeDmChatEvents(
   onIncoming: () => void,
 ): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
-    // DMs arrive on the daemon vocabulary; the legacy envelope is
-    // community channel messages only, which this window ignores.
-    if (isLegacy(event)) return;
-
     if ("channelMessage" in event && "directMessageReceived" in event.channelMessage) {
       const dm = event.channelMessage.directMessageReceived;
       if (dm.peerKey === getOwnKey()) return;
@@ -365,63 +355,6 @@ export function subscribeDmChatEvents(
       const inner = started ? t.started : t.stopped;
       if ("dm" in inner.context && inner.context.dm.peerKey === peerId) {
         handleTypingIndicator(peerId, started);
-      }
-    }
-  });
-}
-
-export function subscribeCommunityChannelChatEvents(
-  getMyPseudonymKey: () => string | null | undefined,
-): Promise<UnlistenFn> {
-  return subscribeChatEvents((event) => {
-    if (isLegacy(event)) {
-      const myPseudo = getMyPseudonymKey();
-      if (myPseudo && event.data.from === myPseudo) return;
-      const channelId = event.data.conversationId;
-      const message: Message = {
-        id: Date.now(),
-        senderId: event.data.from,
-        body: event.data.body,
-        decryptionFailed: event.data.decryptionFailed,
-        automodBlurred: event.data.automodBlurred,
-        timestamp: event.data.timestamp,
-        isOwn: false,
-        serverMessageId: event.data.serverMessageId,
-        replyToId: event.data.replyToId,
-      };
-
-      // If the backend resolved a display name, ensure it's in the community member list
-      // so the memberNames memo picks it up (fixes names showing as public keys).
-      if (event.data.senderDisplayName) {
-        for (const [communityId, community] of Object.entries(communityState.communities)) {
-          const hasChannel = community.channels.some((ch) => ch.id === channelId);
-          if (hasChannel) {
-            const existingIdx = community.members.findIndex(
-              (m) => m.pseudonymKey === event.data.from,
-            );
-            if (existingIdx < 0) {
-              // Member not yet in list: the Host's roster has them (with
-              // their status and group), so re-read it.
-              refreshCommunityMembers(communityId);
-            } else if (community.members[existingIdx].displayName !== event.data.senderDisplayName) {
-              // Update display name if changed
-              setCommunityState(
-                "communities", communityId, "members", existingIdx,
-                "displayName", event.data.senderDisplayName!,
-              );
-            }
-            break;
-          }
-        }
-      }
-      const existing = communityState.channelMessages[channelId];
-      if (existing) {
-        setCommunityState("channelMessages", channelId, (msgs) => [
-          ...msgs,
-          message,
-        ]);
-      } else {
-        setCommunityState("channelMessages", channelId, [message]);
       }
     }
   });

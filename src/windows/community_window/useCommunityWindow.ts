@@ -3,7 +3,6 @@ import { type UnlistenFn } from "@tauri-apps/api/event";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { authState } from "../../stores/auth.store";
 import { initVoiceEventListener } from "../../actions/voice.actions";
-import { subscribeCommunityChannelChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
 import {
   subscribeCommunityEventDispatcher,
@@ -292,7 +291,6 @@ export function useCommunityWindow() {
     unlisteners.push(subscribeCommunityPresenceEvents());
     unlisteners.push(subscribeCommunityEventDispatcher());
     unlisteners.push(subscribeCommunityVoiceEvents());
-    unlisteners.push(subscribeCommunityChannelChatEvents(() => activeCommunity()?.myPseudonymKey));
     void startEventStream(() => void hydrateState());
 
     // Architecture §23 — global Cmd/Ctrl-F opens the message search overlay.

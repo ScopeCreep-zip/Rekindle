@@ -20,8 +20,8 @@ emitter ──► event_dispatch::emit / emit_journaled ──► one mpsc queue
 
 - **`WebviewEvent`** (`src-tauri/src/event_dispatch.rs`) is every event a window can receive:
   the shared `SubscriptionEvent` vocabulary, lifecycle transitions, deep-link requests,
-  profile updates, settings-tab switches, and two legacy community shapes (`ChannelChat`,
-  `Community`) that step E6 deletes.
+  profile updates, settings-tab switches, and one legacy community shape
+  (`Community`) that step E6 deletes.
 - **`audience()`** is an exhaustive match, so a new event does not compile without a routing
   row. A `SubscriptionEvent` routes by its Tier 1 `EventScope`
   (`rekindle-types/src/subscription_events/scope.rs`):

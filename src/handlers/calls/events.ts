@@ -1,6 +1,5 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../../ipc/channels";
-import { isLegacy } from "../../ipc/channels/chat_events";
 import { callsState, setCallsState, type CallEntry } from "../../stores/calls.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
@@ -60,8 +59,6 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
   };
   const toast = (message: string): void => asOwner(() => addToast(message, "info"));
   return subscribeChatEvents((event) => {
-    if (isLegacy(event)) return;
-
     if ("channelMessage" in event) {
       const msg = event.channelMessage;
       if ("conversationFocusRequested" in msg) {

@@ -16,7 +16,7 @@
 //! host's stream to the windows, and a window that reloads asks the host
 //! for what followed its last cursor (`subscribe_events`). The shell-only
 //! variants (`Lifecycle`, `PairingLinkRefused`, `SettingsSwitchTab`)
-//! and the legacy `ChannelChat`/`Community` shapes are delivered live from
+//! and the legacy `Community` shape are delivered live from
 //! the local queue and never replayed; a reloading window reads that
 //! history through `hydrateState()`.
 
@@ -29,7 +29,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tokio::sync::mpsc;
 
-use crate::channels::{ChatEvent, CommunityEvent};
+use crate::channels::CommunityEvent;
 use crate::event_router::{Audience, OutboundEnvelope};
 use crate::state::{AppState, SharedState};
 use crate::window_labels::{self as labels, WindowKind};
@@ -50,13 +50,6 @@ pub enum WebviewEvent {
     PairingLinkRefused,
     /// Switch the open settings window to a tab.
     SettingsSwitchTab(SettingsTab),
-    /// A community channel message in the desktop's legacy shape, with the
-    /// community it belongs to when the emitter knows it. Plan step E
-    /// moves these emitters onto `ChannelMessageEvent::New`.
-    ChannelChat {
-        community_id: Option<String>,
-        event: ChatEvent,
-    },
     /// A community-window event in the desktop's legacy shape.
     Community(CommunityEvent),
 }
@@ -77,7 +70,6 @@ impl WebviewEvent {
             Self::Lifecycle { .. } => "lifecycle-event",
             Self::PairingLinkRefused => "pairing-link-refused",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
-            Self::ChannelChat { .. } => "chat-event",
             Self::Community(_) => "community-event",
         }
     }
@@ -91,7 +83,6 @@ impl WebviewEvent {
             }),
             Self::PairingLinkRefused => Ok(serde_json::Value::Null),
             Self::SettingsSwitchTab(tab) => serde_json::to_value(tab),
-            Self::ChannelChat { event, .. } => serde_json::to_value(event),
             Self::Community(e) => serde_json::to_value(e),
         }
     }
@@ -106,10 +97,8 @@ impl WebviewEvent {
             Self::SettingsSwitchTab(_) => Audience::labels([labels::SETTINGS.to_owned()]),
             // Community windows switch between communities in place, so a
             // community's events go to every one of them (each filters by
-            // its selection) and to the buddy list's community list. A
-            // channel message whose community the emitter does not know
-            // can only go there too.
-            Self::ChannelChat { .. } | Self::Community(_) => communities(),
+            // its selection) and to the buddy list's community list.
+            Self::Community(_) => communities(),
         }
     }
 

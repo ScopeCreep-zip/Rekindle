@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "../invoke";
-import { isLegacy, type ChatEvent, type GroupDmEvent } from "./chat_events";
+import type { ChatEvent, GroupDmEvent } from "./chat_events";
 import type {
   PresenceEvent,
   PresenceSubscriptionEvent,
@@ -172,7 +172,7 @@ export function subscribeGroupDmEvents(
   onEvent: (event: GroupDmEvent) => void,
 ): Promise<UnlistenFn> {
   return on<ChatEvent>("chat-event", (payload) => {
-    if (!isLegacy(payload) && "groupDm" in payload) onEvent(payload.groupDm);
+    if ("groupDm" in payload) onEvent(payload.groupDm);
   });
 }
 

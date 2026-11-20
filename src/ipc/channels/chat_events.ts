@@ -1,20 +1,7 @@
 /**
- * Events on the `chat-event` channel.
- *
- * This channel is mid-migration and carries **two** shapes:
- *
- * 1. {@link LegacyChatEvent} — the desktop's old `{ type, data }`
- *    envelope. Only `messageReceived` remains, for community **channel**
- *    messages. See `src-tauri/src/channels/chat_channel.rs` for why it
- *    survived: Tier 1 models a channel message as
- *    `ChannelMessageEvent::New`, which needs `community` and `sequence`
- *    that the desktop's five emitters do not have.
- *
- * 2. {@link ChatSubscriptionEvent} — the daemon vocabulary the CLI also
- *    consumes, externally tagged (`{ familyName: { variantName: {...} } }`).
- *    Calls, friend lifecycle, DMs, typing and acks all arrive this way.
- *
- * {@link isLegacy} discriminates the two.
+ * Events on the `chat-event` channel: the daemon vocabulary the CLI also
+ * consumes, externally tagged (`{ familyName: { variantName: {...} } }`).
+ * Calls, friend lifecycle, DMs, typing and acks all arrive this way.
  */
 
 import type { SendState } from "../commands/types";
@@ -244,25 +231,5 @@ export type ChatSubscriptionEvent =
   | { groupDm: GroupDmEvent }
   | { unreadChanged: UnreadChanged };
 
-/** The desktop's remaining `{ type, data }` event. */
-export type LegacyChatEvent = {
-  type: "messageReceived";
-  data: {
-    from: string;
-    body: string;
-    decryptionFailed?: boolean;
-    automodBlurred?: boolean;
-    timestamp: number;
-    conversationId: string;
-    serverMessageId?: string;
-    replyToId?: string;
-    senderDisplayName?: string;
-  };
-};
-
-export type ChatEvent = LegacyChatEvent | ChatSubscriptionEvent;
-
-/** Whether this is the old `{ type, data }` envelope. */
-export function isLegacy(event: ChatEvent): event is LegacyChatEvent {
-  return "type" in event;
-}
+/** Every event on the `chat-event` channel. */
+export type ChatEvent = ChatSubscriptionEvent;
