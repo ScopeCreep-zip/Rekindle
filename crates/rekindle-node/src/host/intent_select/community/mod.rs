@@ -230,12 +230,9 @@ fn leave_escalations(
         .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
     let me = pseudonym(&ctx.my_pseudonym(community_id))
         .ok_or_else(|| unavailable("our pseudonym", "not in the community"))?;
-    let members: Vec<_> = ctx
-        .communities
-        .known_members(community_id)
-        .iter()
-        .filter_map(|key| pseudonym(key))
-        .collect();
+    // The members the merge counts (finding I1), never the known members
+    // a gossip announce or a registry read added.
+    let members: Vec<_> = state.counted_members().cloned().collect();
     Ok(rekindle_governance::intent_facts::leave_escalations(
         &state,
         &me,
@@ -277,20 +274,18 @@ async fn channel_delete_escalations(
     )
 }
 
-/// The community's members, from the registry, and ourselves: the members
-/// a channel's read roster is drawn from.
+/// The community's members the merge counts, ourselves among them (finding
+/// I1): the members a channel's read roster is drawn from. A key a gossip
+/// announce or a registry read made known, and the merge never admitted,
+/// is no member here.
 pub(super) fn roster(
     ctx: &DaemonContext,
     community_id: &str,
 ) -> Vec<rekindle_types::id::PseudonymKey> {
-    let mut members: Vec<_> = ctx
-        .communities
-        .known_members(community_id)
-        .iter()
-        .filter_map(|key| pseudonym(key))
-        .collect();
-    members.extend(pseudonym(&ctx.my_pseudonym(community_id)));
-    members
+    ctx.communities
+        .governance_state(community_id)
+        .map(|state| state.counted_members().cloned().collect())
+        .unwrap_or_default()
 }
 
 pub(super) fn pseudonym(hex_key: &str) -> Option<rekindle_types::id::PseudonymKey> {

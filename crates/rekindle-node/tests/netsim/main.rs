@@ -110,6 +110,7 @@ mod route_link_failure;
 mod route_liveness;
 mod scenarios;
 mod sending_route;
+mod single_use_race;
 mod smoke;
 mod stale_route_call;
 mod stall;

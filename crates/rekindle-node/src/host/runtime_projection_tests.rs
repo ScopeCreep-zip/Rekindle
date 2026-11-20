@@ -157,3 +157,67 @@ async fn a_merged_join_is_on_the_member_list_its_joined_announces() {
     );
     host.shutdown().await.unwrap();
 }
+
+/// A roster row and a beat of a key the merge never admitted (a joiner
+/// past a single-use invite's `max_uses`, finding I1) never put it on the
+/// member list: the list is the merged, counted members alone, whatever a
+/// gossip announce, a registry read or a presence beat stored.
+#[tokio::test]
+async fn a_key_the_merge_never_admitted_is_never_on_the_member_list() {
+    use rekindle_governance::state::{GovernanceState, MemberState};
+    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_types::id::PseudonymKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let (bea, stranger) = (PseudonymKey([7; 32]), PseudonymKey([9; 32]));
+    let mut merged = GovernanceState::default();
+    merged.members.insert(
+        bea.clone(),
+        MemberState {
+            member_record: "record".into(),
+            member_record_owner: "owner".into(),
+            joined: rekindle_governance::op::OpStamp::MIN,
+        },
+    );
+    let governance = host.governance();
+    governance
+        .apply_governance_rebuild_result("c1", merged)
+        .await;
+    // What a refused joiner's gossip announce and member record store,
+    // and its presence beat.
+    for key in [bea.to_hex(), stranger.to_hex()] {
+        let owner = owner.clone();
+        host.ctx
+            .db
+            .current()
+            .unwrap()
+            .call(move |conn| {
+                rekindle_db::repo::members::insert_if_absent(conn, &owner, "c1", &key, "m", 1)
+            })
+            .await
+            .unwrap();
+    }
+    host.ctx.communities.note_online_member(
+        "c1",
+        &stranger.to_hex(),
+        crate::host::community::OnlineMember {
+            route_blob: vec![1],
+            status: "online".into(),
+            last_seen: 1,
+            ..crate::host::community::OnlineMember::default()
+        },
+    );
+
+    let listed: Vec<String> = governance
+        .community_members("c1")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|m| m.pseudonym_key)
+        .collect();
+    assert_eq!(listed, [bea.to_hex()], "only the admitted member is listed");
+    host.shutdown().await.unwrap();
+}

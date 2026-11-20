@@ -164,6 +164,15 @@ pub(crate) fn departed(gov: &GovernanceState) -> HashSet<String> {
         .collect()
 }
 
+/// The members merged governance counts, by hex pseudonym
+/// ([`GovernanceState::is_counted_member`]): the only keys a member list
+/// shows (finding I1). A roster row, a beat or a gossip announce of any
+/// other key (a joiner the invite's `max_uses` refused, a pending joiner,
+/// a departed member) is never listed.
+pub(crate) fn listed(gov: &GovernanceState) -> HashSet<String> {
+    gov.counted_members().map(|p| hex::encode(p.0)).collect()
+}
+
 /// A [`departed`] member stops receiving our gossip and leaves the known
 /// members at once (architecture §13).
 fn prune_departed(cs: &mut CommunityState, gov: &GovernanceState) {

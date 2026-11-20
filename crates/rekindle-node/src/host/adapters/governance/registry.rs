@@ -34,7 +34,15 @@ impl HostGovernance {
             .extend_known_members(community_id, candidates)
             .into_iter()
             .collect();
-        for row in rows.iter().filter(|r| new.contains(&r.pseudonym_key)) {
+        // A record of a key the merge does not count is no member to
+        // announce (finding I1); a member whose join merges later is
+        // announced by its `Joined`.
+        let governance = self.governance_state_impl(community_id).unwrap_or_default();
+        let listed = super::projection::listed(&governance);
+        for row in rows
+            .iter()
+            .filter(|r| new.contains(&r.pseudonym_key) && listed.contains(&r.pseudonym_key))
+        {
             self.ctx.publish_event(SubscriptionEvent::Membership(
                 MembershipEvent::MemberDiscovered {
                     community: community_id.to_string(),

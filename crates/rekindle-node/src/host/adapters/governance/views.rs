@@ -318,8 +318,12 @@ impl HostGovernance {
         // merge decides it on every reader (the roster row is deleted only
         // where the departure was seen first-hand), and a timeout ends at
         // its time.
+        // Only the members the merge counts are listed (finding I1): a row
+        // stored from a gossip announce, a registry read or a member record
+        // of a key the merge never admitted (a joiner past the invite's
+        // `max_uses`) never shows as a member.
         let governance = self.governance_state_impl(community).unwrap_or_default();
-        let departed = super::projection::departed(&governance);
+        let listed = super::projection::listed(&governance);
         // A member's roles are the merged role assignments (plan E3.2, D15),
         // as our own are (`projection::project_my_roles`), built once for
         // the list (review RV7 L4); no row caches them.
@@ -335,7 +339,7 @@ impl HostGovernance {
         };
         let members = rows
             .into_iter()
-            .filter(|row| !departed.contains(&row.pseudonym_key))
+            .filter(|row| listed.contains(&row.pseudonym_key))
             .map(|row| {
                 let is_me = overlay.me.as_deref() == Some(row.pseudonym_key.as_str());
                 let online = overlay.online.get(&row.pseudonym_key);
