@@ -9,7 +9,7 @@
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, present, press, resolveIntent, shown, typeInto, waitUntil } from "./helpers.ts";
 import { inBuddy } from "./nav.ts";
-import { closeCommunityModal, contextMenu, inCommunity, openCommunitySettings } from "./rows-community.ts";
+import { closeCommunityModal, contextMenu, inCommunity, menuHasItems, openCommunitySettings } from "./rows-community.ts";
 import { needPeer } from "./rows-peer.ts";
 import type { Row } from "./rows.ts";
 
@@ -94,6 +94,7 @@ async function subItem(b: Browser, trigger: string, item: string, community: str
     node.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.x + 5, clientY: r.y + 5 }));
   }, (await peerMember(b)) as unknown as HTMLElement);
   await shown(b, ".context-menu");
+  await menuHasItems(b);
   const found = await byText(b, ".context-menu .context-menu-item", trigger).catch(async (e: Error) => {
     const items = await b.execute(() =>
       Array.from(document.querySelectorAll(".context-menu .context-menu-item")).map((x) => x.textContent?.trim()).join(" | "),

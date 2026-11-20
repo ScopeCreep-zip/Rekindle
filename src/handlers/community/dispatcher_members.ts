@@ -7,7 +7,7 @@ import type {
 import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
@@ -156,7 +156,7 @@ function applyMembershipRow(m: MembershipEvent): void {
     commands
       .getCommunityMembers(community)
       .then((members) => {
-        setCommunityState("communities", community, "members", members.map(transformMember));
+        setCommunityMembers(community, members.map(transformMember));
       })
       .catch(() => {});
     return;
@@ -448,7 +448,7 @@ function applyGovernance(g: GovernanceEvent): void {
     commands
       .getCommunityMembers(community)
       .then((members) => {
-        setCommunityState("communities", community, "members", members.map(transformMember));
+        setCommunityMembers(community, members.map(transformMember));
       })
       .catch(() => {});
     void handleLoadExpressions(community);

@@ -42,7 +42,17 @@ export async function contextMenu(b: Browser, el: Awaited<ReturnType<Browser["$"
     );
   }, el as unknown as HTMLElement);
   await shown(b, ".context-menu");
+  await menuHasItems(b);
   await press(b, await byText(b, ".context-menu .context-menu-item", item));
+}
+
+/**
+ * An open context menu lists its items as it opens (plan MM1): a menu
+ * drawn with none is a failure to report, never one to wait out.
+ */
+export async function menuHasItems(b: Browser): Promise<void> {
+  const count = await b.execute(() => document.querySelectorAll(".context-menu .context-menu-item").length);
+  if (count === 0) throw new Error("the context menu opened with no items");
 }
 
 async function modalSubmit(b: Browser, input: string, value: string, passphrase: string): Promise<void> {

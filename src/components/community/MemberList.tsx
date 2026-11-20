@@ -135,38 +135,53 @@ const MemberList: Component<MemberListProps> = (props) => {
 
   // The groups are the Host's (`Member.group`, Discord's member list rules
   // decided once for every frontend): the list keeps the Host's order and
-  // starts a group wherever the group changes.
-  const groupedMembers = createMemo(() => {
-    const groups: { name: string; members: Member[] }[] = [];
-    let current: Member[] | null = null;
+  // starts a group wherever the group changes. The rows are one keyed list
+  // of the store's members (MM1): a group header is drawn before the first
+  // member of its group, so a re-read that moves or relabels a group never
+  // rebuilds the rows (and never closes a menu open on one).
+  const groupHeads = createMemo(() => {
+    const heads = new Map<string, string>();
+    let first: Member | null = null;
+    let label = "";
+    let count = 0;
     let currentKey = "";
+    const close = () => {
+      if (first) heads.set(first.pseudonymKey, `${label} — ${count}`);
+    };
     for (const m of filteredMembers()) {
       const key = groupKey(m.group);
-      if (current === null || key !== currentKey) {
-        current = [];
+      if (first === null || key !== currentKey) {
+        close();
+        first = m;
+        label = groupLabel(m.group);
+        count = 0;
         currentKey = key;
-        groups.push({ name: groupLabel(m.group), members: current });
       }
-      current.push(m);
+      count += 1;
     }
-    return groups.map((g) => ({ ...g, name: `${g.name} — ${g.members.length}` }));
+    close();
+    return heads;
   });
 
   function memberMenu(member: Member): JSX.Element {
     // Each action shows exactly when the Host would accept it: its
     // per-member verdicts (plan E3.2 S9), never a rank compared here.
-    const perms = myPerms();
-    const manage = member.outranks;
-    const may = member.canModerateTarget;
-    const voiceChannelId = memberVoiceChannelId(member);
-    const assignableRoles = props.roles
-      .filter((r) => r.id !== EVERYONE_ROLE_ID)
-      .sort((a, b) => b.position - a.position);
+    // Every read is an accessor (MM1): the row outlives the Host's
+    // re-reads, so the menu follows the verdicts, our permissions and the
+    // roles as they change instead of keeping the row's first values.
+    const perms = () => myPerms();
+    const manage = () => member.outranks;
+    const may = () => member.canModerateTarget;
+    const voiceChannelId = () => memberVoiceChannelId(member);
+    const assignableRoles = () =>
+      props.roles
+        .filter((r) => r.id !== EVERYONE_ROLE_ID)
+        .sort((a, b) => b.position - a.position);
 
     return (
       <ContextMenu.Portal>
         <ContextMenu.Content class="context-menu">
-          <Show when={manage && hasPermission(perms, MANAGE_ROLES) && assignableRoles.length > 0}>
+          <Show when={manage() && hasPermission(perms(), MANAGE_ROLES) && assignableRoles().length > 0}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
                 <span class="nf-icon context-menu-icon">{ICON_SHIELD}</span>
@@ -174,7 +189,7 @@ const MemberList: Component<MemberListProps> = (props) => {
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
                 <ContextMenu.SubContent class="context-menu">
-                  <For each={assignableRoles}>
+                  <For each={assignableRoles()}>
                     {(role) => {
                       const hasRole = () => member.roleIds.includes(role.id);
                       return (
@@ -198,7 +213,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Sub>
           </Show>
 
-          <Show when={may.timeout}>
+          <Show when={may().timeout}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
                 <span class="nf-icon context-menu-icon">{ICON_TIMEOUT}</span>
@@ -228,13 +243,13 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Sub>
           </Show>
 
-          <Show when={manage && voiceChannelId && hasPermission(perms, MUTE_MEMBERS)}>
+          <Show when={manage() && hasPermission(perms(), MUTE_MEMBERS) && voiceChannelId()}>
             <ContextMenu.Item
               class="context-menu-item"
               onSelect={() =>
                 handleServerMuteMember(
                   props.communityId,
-                  voiceChannelId!,
+                  voiceChannelId()!,
                   member.pseudonymKey,
                   true,
                 )
@@ -244,13 +259,13 @@ const MemberList: Component<MemberListProps> = (props) => {
               Server Mute
             </ContextMenu.Item>
           </Show>
-          <Show when={manage && voiceChannelId && hasPermission(perms, DEAFEN_MEMBERS)}>
+          <Show when={manage() && hasPermission(perms(), DEAFEN_MEMBERS) && voiceChannelId()}>
             <ContextMenu.Item
               class="context-menu-item"
               onSelect={() =>
                 handleServerDeafenMember(
                   props.communityId,
-                  voiceChannelId!,
+                  voiceChannelId()!,
                   member.pseudonymKey,
                   true,
                 )
@@ -261,7 +276,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={may.kick}>
+          <Show when={may().kick}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
@@ -273,7 +288,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={may.ban}>
+          <Show when={may().ban}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
@@ -298,12 +313,11 @@ const MemberList: Component<MemberListProps> = (props) => {
   }
 
   function renderMember(member: Member): JSX.Element {
-    const isSelf = member.pseudonymKey === props.myPseudonymKey;
-    const allowMenu = !isSelf;
+    const isSelf = () => member.pseudonymKey === props.myPseudonymKey;
     const roles = () => memberRoles(member);
     const isOpen = () => openProfileFor() === member.pseudonymKey;
 
-    const popover = (
+    const popover = () => (
       <Popover
         open={isOpen()}
         onOpenChange={(open) =>
@@ -343,13 +357,13 @@ const MemberList: Component<MemberListProps> = (props) => {
       </Popover>
     );
 
-    if (!allowMenu) return popover;
-
     return (
-      <ContextMenu>
-        <ContextMenu.Trigger as="div">{popover}</ContextMenu.Trigger>
-        {memberMenu(member)}
-      </ContextMenu>
+      <Show when={!isSelf()} fallback={popover()}>
+        <ContextMenu>
+          <ContextMenu.Trigger as="div">{popover()}</ContextMenu.Trigger>
+          {memberMenu(member)}
+        </ContextMenu>
+      </Show>
     );
   }
 
@@ -373,15 +387,17 @@ const MemberList: Component<MemberListProps> = (props) => {
           onInput={(e) => setSearchQuery(e.currentTarget.value)}
         />
       </div>
-      <For each={groupedMembers()}>
-        {(group) => (
+      <For each={filteredMembers()}>
+        {(member) => (
           <>
-            <div class="member-group-header">
-              <span class="member-group-name">{group.name}</span>
-            </div>
-            <For each={group.members}>
-              {(member) => renderMember(member)}
-            </For>
+            <Show when={groupHeads().get(member.pseudonymKey)}>
+              {(name) => (
+                <div class="member-group-header">
+                  <span class="member-group-name">{name()}</span>
+                </div>
+              )}
+            </Show>
+            {renderMember(member)}
           </>
         )}
       </For>

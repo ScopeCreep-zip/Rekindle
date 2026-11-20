@@ -1,6 +1,6 @@
 import { commands } from "../../ipc/commands";
 import { asImageKind } from "../../ipc/commands/system";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import {
@@ -45,7 +45,7 @@ export async function handleCreateCommunity(name: string): Promise<void> {
     // Fetch members so the creator appears in the member list
     try {
       const members = await commands.getCommunityMembers(id);
-      setCommunityState("communities", id, "members", members.map(transformMember));
+      setCommunityMembers(id, members.map(transformMember));
     } catch (e) {
       console.error("Failed to load community members after creation:", e);
     }
@@ -85,7 +85,7 @@ export async function loadJoinedCommunity(communityId: string): Promise<void> {
   // Fetch members for the newly joined community
   try {
     const members = await commands.getCommunityMembers(communityId);
-    setCommunityState("communities", communityId, "members", members.map(transformMember));
+    setCommunityMembers(communityId, members.map(transformMember));
   } catch (e) {
     console.error("Failed to load community members after join:", e);
   }
@@ -101,7 +101,7 @@ export function handleSelectCommunity(communityId: string): void {
   setCommunityState("activeCommunity", communityId);
   // Fetch members for the selected community
   commands.getCommunityMembers(communityId).then((members) => {
-    setCommunityState("communities", communityId, "members", members.map(transformMember));
+    setCommunityMembers(communityId, members.map(transformMember));
   }).catch((e) => {
     console.error("Failed to load community members:", e);
     addToast("Failed to load members", "error");

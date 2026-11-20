@@ -1,4 +1,4 @@
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { setCommunityMembers, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { transformMember } from "../../utils/transformers";
 
@@ -21,7 +21,7 @@ export function refreshCommunityMembers(community: string): void {
     .getCommunityMembers(community)
     .then((members) => {
       if (communityState.communities[community]) {
-        setCommunityState("communities", community, "members", members.map(transformMember));
+        setCommunityMembers(community, members.map(transformMember));
         const asked = askedFor.get(community);
         for (const m of members) asked?.delete(m.pseudonymKey);
       }

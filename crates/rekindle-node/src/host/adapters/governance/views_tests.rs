@@ -143,6 +143,27 @@ fn each_member_rows_flags_are_the_validators_verdicts() {
     assert_eq!(moderation_of(&gov, None, &pk(6)), Default::default());
 }
 
+/// A member just admitted (or just rejoined) holds no role assignment yet:
+/// its row's verdicts are still the validators', from the same merged
+/// governance that lists it, so the member menu has its actions as soon as
+/// the row is listed (plan MM1, M87): the creator and the admin may kick,
+/// ban and time it out and outrank it.
+#[test]
+fn a_just_admitted_members_row_carries_its_verdicts() {
+    use rekindle_types::id::PseudonymKey;
+    let gov = hierarchy();
+    let pk = |b: u8| PseudonymKey([b; 32]);
+    let fresh = pk(9);
+    assert!(!gov.role_assignments.contains_key(&fresh));
+    for me in [1u8, 5] {
+        let (flags, outranks) = moderation_of(&gov, Some(&pk(me)), &fresh);
+        assert!(
+            flags.kick && flags.ban && flags.timeout && outranks,
+            "{me} on a just-admitted member"
+        );
+    }
+}
+
 /// Two roles whose first four bytes match (what a `u32` id kept) stay two
 /// roles at every surface: a member holding one is never shown holding
 /// the other (plan E3.2 S9, the 16-byte `RoleId` item).

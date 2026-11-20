@@ -1,4 +1,4 @@
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { transformCommunityDetail, transformMember } from "../../utils/transformers";
 import {
@@ -27,7 +27,7 @@ function rereadCommunity(community: string): Promise<boolean> {
       if (!detail) return false;
       setCommunityState("communities", community, transformCommunityDetail(detail));
       const members = await commands.getCommunityMembers(community);
-      setCommunityState("communities", community, "members", members.map(transformMember));
+      setCommunityMembers(community, members.map(transformMember));
       void handleLoadExpressions(community);
       void handleLoadAutoModRules(community);
       void handleResolveCommunityImageDataUrls(community);

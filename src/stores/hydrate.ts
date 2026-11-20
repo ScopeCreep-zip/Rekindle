@@ -3,7 +3,7 @@ import { setAuthState } from "./auth.store";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { setFriendsState } from "./friends.store";
 import { reconcile } from "solid-js/store";
-import { setCommunityState } from "./community.store";
+import { setCommunityState, setCommunityMembers } from "./community.store";
 import { transformExpression, transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
 import {
   handleLoadAutoModRules,
@@ -59,7 +59,7 @@ export async function hydrateState(): Promise<void> {
     // Hydrate members for each community (fire-and-forget, parallel)
     for (const c of details) {
       commands.getCommunityMembers(c.id).then((members) => {
-        setCommunityState("communities", c.id, "members", members.map(transformMember));
+        setCommunityMembers(c.id, members.map(transformMember));
       }).catch((e) => {
         console.error(`Failed to hydrate members for ${c.id}:`, e);
       });

@@ -2,7 +2,7 @@ import type {
   OpPublicationState,
   OpQuarantineReason,
 } from "../ipc/channels/community_subscription_events";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
   GameInfo, InviteDto, MemberGroup, OnboardingConfig, TargetModeration, WelcomeScreen,
@@ -333,3 +333,15 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
 });
 
 export { communityState, setCommunityState };
+
+/**
+ * Write a re-read of `community`'s member list from the Host (MM1). The
+ * rows are reconciled by pseudonym key, so a member already listed keeps
+ * its store object and its row: a re-read updates the row in place instead
+ * of replacing it, and a context menu or profile open on that row stays
+ * open across the re-reads a join, a rejoin or a role change sets off.
+ */
+export function setCommunityMembers(community: string, members: Member[]): void {
+  setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
+}
+
