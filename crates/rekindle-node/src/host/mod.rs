@@ -26,6 +26,8 @@ mod expiry;
 mod friend_admission_tests;
 #[cfg(test)]
 mod friend_answer_tests;
+#[cfg(test)]
+mod friend_nickname_tests;
 mod friends;
 pub(crate) mod game;
 #[cfg(test)]
