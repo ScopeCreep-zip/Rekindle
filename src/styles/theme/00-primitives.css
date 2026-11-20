@@ -113,9 +113,11 @@
     white-space: nowrap;
   }
 
-  /* A sender's or group's name never pushes its row past the window. */
+  /* A sender's, group's or status name never pushes its row past the window
+     (the status name stops short of the status arrow, plan E7.7.7). */
   .buddy-group-name,
   .buddy-game-text,
+  .status-picker .buddy-name,
   .chat-message-sender-other,
   .chat-message-sender-self {
     min-width: 0;

@@ -16,13 +16,6 @@
     min-width: 0;
   }
 
-  .status-picker .buddy-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .status-picker-arrow {
     flex-shrink: 0;
     margin-left: auto;
