@@ -24,7 +24,7 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Capabilities, Services } from "@wdio/types";
 import { build, launch, type App } from "../walk/launch.ts";
-import { keepDir } from "./keep.ts";
+import { keepDir, pruneKept } from "./keep.ts";
 
 /**
  * Stop `app` and keep its log in the run's folder (keep.ts), passing or
@@ -107,7 +107,8 @@ export class RekindleAppLauncher implements Services.ServiceInstance {
 
   /** Builds the debug app with the driver once per run (`REKINDLE_APP_NO_BUILD=1` runs the last build). */
   onPrepare(): void {
-    // Name the run's evidence folder before any worker forks (keep.ts).
+    // Cap the earlier runs' evidence, then name this run's folder before any worker forks (keep.ts).
+    pruneKept();
     keepDir();
     if (process.env.REKINDLE_APP_NO_BUILD !== "1") build();
   }

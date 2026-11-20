@@ -62,7 +62,7 @@ export async function requestFriend(b: Browser, from: User, code: string, messag
   await (await byText(b, ".form-tab", "Public Key")).click();
   await typeInto(await shown(b, 'input[aria-label="Friend code"]'), code);
   await typeInto(await shown(b, 'input[aria-label="Message (optional)"]'), message);
-  await (await b.$('.modal-container form button[type="submit"]')).click();
+  await (await formSubmit(b, 'input[aria-label="Friend code"]')).click();
   await resolveIntent(b, { passphrase: from.passphrase });
   await closeAddFriend(b).catch(() => undefined);
 }
@@ -133,9 +133,32 @@ async function reviewThenGone(b: Browser, user: User, input: string): Promise<vo
   await gone(b, input, NET_WAIT_MS);
 }
 
+/**
+ * The submit of the dialog form holding `input`. Another dialog can be open
+ * over or under this one (the intent review is a `.modal-container` with
+ * its own submit), and webdriverio's `$` refuses a selector matching two
+ * (Linux, ddfc1e70b: StrictSelectorError in New Group).
+ */
+async function formSubmit(b: Browser, input: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
+  let submit: Awaited<ReturnType<Browser["$"]>> | undefined;
+  await waitUntil(
+    async () => {
+      for (const candidate of await b.$$('.modal-container button[type="submit"]')) {
+        const owns = await b.execute((btn: HTMLButtonElement, sel: string) => Boolean(btn.form?.querySelector(sel)), candidate as unknown as HTMLButtonElement, input);
+        if (owns) submit = candidate;
+      }
+      return submit !== undefined;
+    },
+    NET_WAIT_MS,
+    `no dialog submit whose form holds ${input}`,
+  );
+  if (!submit) throw new Error(`no dialog submit whose form holds ${input}`);
+  return submit;
+}
+
 /** Submit the open modal's form (Create waits for "Connected", CreateCommunityModal.tsx) and resolve its review. */
 async function submitModal(b: Browser, user: User, input: string): Promise<void> {
-  const submit = await b.$('.modal-container button[type="submit"]');
+  const submit = await formSubmit(b, input);
   await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "the form's submit stayed disabled" });
   await submit.click();
   await reviewThenGone(b, user, input);
@@ -166,8 +189,7 @@ export async function openCommunity(b: Browser, name: string): Promise<void> {
 export async function createTextChannel(b: Browser, user: User, name: string): Promise<void> {
   await (await shown(b, '[title="Create Channel"]')).click();
   await typeInto(await shown(b, 'input[placeholder="Channel name..."]'), name);
-  await (await b.$('.modal-container button[type="submit"]')).click();
-  await reviewThenGone(b, user, 'input[placeholder="Channel name..."]');
+  await submitModal(b, user, 'input[placeholder="Channel name..."]');
   await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS);
 }
 

@@ -5,16 +5,13 @@
 // (xdg-shell), so the opening size, and what the compositor grants on
 // maximize, are the only sizes there are until the user drags.
 //
-// Known failure WL2, held strictly: on GTK Wayland every undecorated window
-// opens taller than built, by the titlebar height GTK allocates before tao
-// turns decorations off and sets an empty CSD titlebar (tao issue #929;
-// tao 0.37.1 platform_impl/linux/window.rs:110 then 192-196). The Linux
-// COSMIC run measured the login window at 380×517 for 380×480. Until WL2
-// lands, a Wayland run asserts that exact defect: the width as built and
-// the same extra height on every window. A run where a window opens at its
-// built size fails, saying to drop the known failure, so this never passes
-// silently once the bug moves. Elsewhere (macOS, X11) each window must open
-// at its built size exactly.
+// It guards WL2: on GTK Wayland every undecorated window opened taller than
+// built, by the titlebar height GTK allocated before tao turned decorations
+// off and set an empty CSD titlebar (tao issue #929; tao 0.37.1
+// platform_impl/linux/window.rs:110 then 192-196; COSMIC measured the login
+// window at 380×517 for 380×480). WL2 is fixed (round 8): on native Wayland
+// at ddfc1e70b every window opens at its built size, so every display,
+// Wayland included, must give each window its built size exactly.
 //
 // On native Wayland each window is also maximized (xdg_toplevel
 // set_maximized: the compositor's size is binding) and checked there. Such
@@ -34,22 +31,11 @@ import { BUDDY_LIST, CHAT_DM, COMMUNITY, LOGIN, PROFILE, SETTINGS_PROFILE, SKIN_
 /** A Wayland session whose app runs as a Wayland client (this config's `display: "native"`). */
 const NATIVE_WAYLAND = process.platform === "linux" && Boolean(process.env.WAYLAND_DISPLAY) && process.env.GDK_BACKEND !== "x11";
 
-/** The extra height WL2 adds, as the first window measured it; every later window must match. */
-let wl2Extra: number | null = null;
-
-/** The window `browser` is in opened at `w`'s built size (WL2 aside); on native Wayland, maximized, it passes the structure checks. */
+/** The window `browser` is in opened at `w`'s built size; on native Wayland, maximized, it passes the structure checks. */
 async function opensAsBuilt(w: WindowCase): Promise<void> {
   const viewport = (await browser.execute(() => ({ width: window.innerWidth, height: window.innerHeight }))) as Size;
-  if (!NATIVE_WAYLAND) {
-    expect(viewport).toEqual(w.def);
-  } else {
-    if (viewport.width === w.def.width && viewport.height === w.def.height) {
-      throw new Error(`${w.name} opened at its built size ${w.def.width}×${w.def.height} on Wayland: WL2 is fixed here, so drop the known failure from open-size.e2e.ts`);
-    }
-    const extra = viewport.height - w.def.height;
-    expect({ width: viewport.width, tallerByTitlebar: extra > 0 }).toEqual({ width: w.def.width, tallerByTitlebar: true });
-    wl2Extra ??= extra;
-    expect({ window: w.name, extra }).toEqual({ window: w.name, extra: wl2Extra });
+  expect(viewport).toEqual(w.def);
+  if (NATIVE_WAYLAND) {
     await browser.maximizeWindow();
     const found = await checkGeometry(browser, ".app-frame", { spacing: w.spacing, panes: w.panes ?? [], overlapAllow: w.overlapAllow, onScreen: true });
     expect(found).toEqual({});
