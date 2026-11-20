@@ -7256,6 +7256,7 @@ dependencies = [
  "chrono-tz",
  "ed25519-dalek 2.2.0",
  "futures",
+ "gtk",
  "hex",
  "image",
  "indexmap 2.14.2",
@@ -7323,6 +7324,7 @@ dependencies = [
  "uuid",
  "veilid-core",
  "webkit2gtk",
+ "windows 0.62.2",
  "zbus",
  "zeroize",
 ]

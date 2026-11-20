@@ -4,7 +4,7 @@
 //! their label, route and event audience name the key the Host now uses.
 
 use rekindle_types::key_format;
-use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent, SystemEvent};
 use tauri::{AppHandle, Manager};
 
 use crate::state::SharedState;
@@ -58,12 +58,16 @@ fn peer_key_changed(app: &AppHandle, state: &SharedState, old: &str, new: &str) 
 /// The shell's own reactions to a Host event, before it reaches the
 /// windows: a review the backend began is answered on the buddy list, so
 /// it is brought forward (never recreated, which would drop the review);
-/// a friend's rotated identity rebinds their windows (plan audit R-5).
+/// a friend's rotated identity rebinds their windows (plan audit R-5); a
+/// skin change recomputes every window's silhouette (plan SK0 S3).
 pub fn follow_event(app: &AppHandle, state: &SharedState, event: &SubscriptionEvent) {
     match event {
         SubscriptionEvent::IntentPending(_) => super::surface_buddy_list(app),
         SubscriptionEvent::Friend(FriendEvent::KeyChanged { peer_key, new_key }) => {
             peer_key_changed(app, state, peer_key, new_key);
+        }
+        SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => {
+            super::shape::reshape_all(app);
         }
         _ => {}
     }

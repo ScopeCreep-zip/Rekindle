@@ -158,6 +158,17 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = [
 # which wry's permission handler reports only as `Other`. v2_4 gates
 # `set_enable_media_stream`.
 webkit2gtk = { version = "2.0.2", features = [ "v2_4" ] }
+# Shaped windows (plan SK0 S3, `windows/shape/linux.rs`): the GDK window's
+# input and X11 bounding shapes from a cairo region, through gtk's re-exported
+# gdk/cairo/glib. The same gtk 0.18 tauri compiles against, so
+# `WebviewWindow::gtk_window()` type-matches; already locked, no new crate.
+gtk = "0.18"
+
+[target.'cfg(windows)'.dependencies]
+# Shaped windows (plan SK0 S3, `windows/shape/win32_region.rs`): SetWindowRgn,
+# CreateRectRgn, CombineRgn. The same windows 0.62 tauri uses for
+# `WebviewWindow::hwnd()`'s HWND; already locked, no new crate.
+windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_Graphics_Gdi" ] }
 
 [dev-dependencies]
 proptest = "1"

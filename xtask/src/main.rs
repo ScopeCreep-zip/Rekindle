@@ -14,6 +14,8 @@
 //!                                      rekindle-types::domains.
 //!     cargo xtask check-no-emitter     src-tauri sends webview events only
 //!                                      through event_dispatch (ADR 0007).
+//!     cargo xtask check-no-shape-ipc  No IPC command takes a window region
+//!                                      or a cursor-ignore flag (SK0 S4).
 //!     cargo xtask check-log-scrub      Every tracing subscriber writes
 //!                                      through ScrubbingMakeWriter and
 //!                                      every binary installs the
@@ -134,6 +136,7 @@ mod log_scrub;
 mod motion;
 mod no_emitter;
 mod no_managed_db;
+mod no_shape_ipc;
 mod overlay_layers;
 mod pair_model;
 mod platform_floor;
@@ -182,6 +185,8 @@ enum Command {
     CheckDomainLiterals,
     /// Verify src-tauri never uses Tauri's `Emitter` (events go through the router).
     CheckNoEmitter,
+    /// Verify no IPC command takes a window region, shape or cursor-ignore flag (plan SK0 S4).
+    CheckNoShapeIpc,
     /// Verify every log sink and panic hook goes through `log_scrub` (rule B19).
     CheckLogScrub,
     /// Verify every Cap'n Proto read has a traversal bound (no unbounded network decode).
@@ -332,6 +337,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "no-emitter",
                     Box::new(|| no_emitter::check_no_emitter(&root)),
                 ),
+                (
+                    "no-shape-ipc",
+                    Box::new(|| no_shape_ipc::check_no_shape_ipc(&root)),
+                ),
                 ("log-scrub", Box::new(|| log_scrub::check_log_scrub(&root))),
                 ("role-ids", Box::new(|| role_ids::check_role_ids(&root))),
                 (
@@ -455,6 +464,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDuplicateConstants => duplicate_constants::check_duplicate_constants(&root),
         Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
+        Command::CheckNoShapeIpc => no_shape_ipc::check_no_shape_ipc(&root),
         Command::CheckLogScrub => log_scrub::check_log_scrub(&root),
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),

@@ -10,6 +10,7 @@ mod first_show;
 mod navigation;
 mod rebind;
 mod reveal;
+mod shape;
 mod titles;
 
 pub use rebind::follow_event;
@@ -82,6 +83,14 @@ const fn size(kind: WindowKind) -> Size {
 /// the navigation guard, no new windows, the media-permission policy for
 /// `kind`, background throttling, and the data root's webview store.
 ///
+/// No OS shadow (plan SK0 S2/S3, research §5): the window is cut to its
+/// skin's silhouette ([`shape`]), and a shadow is drawn around the window
+/// **rectangle**, not the silhouette. On Windows `shadow(true)` also adds a
+/// 1px white border and Windows 11's rounded corners (tauri 2.12.1
+/// `window/mod.rs:2124-2132`), which a region window cannot have anyway;
+/// Linux does not support it; on macOS AppKit's shape-derived shadow is
+/// unreliable over WKWebView's layer tree. Classic Xfire drew none.
+///
 /// Background throttling is `Throttle` (plan A1.5, finding E7.14 F5): a
 /// hidden or covered window limits its timers but keeps running, so the
 /// buddy list in the tray and a covered chat window still take events,
@@ -118,7 +127,7 @@ fn base_builder<'a>(
         .min_inner_size(min.0, min.1)
         .decorations(false)
         .transparent(true)
-        .shadow(true)
+        .shadow(false)
         .resizable(true)
         .background_throttling(BackgroundThrottlingPolicy::Throttle)
         .on_navigation(move |url| navigation::is_app_origin(url, dev_origin.as_ref()))
@@ -150,16 +159,19 @@ fn with_store<'a>(
 
 /// Build the window hidden, enable platform media capture if `kind`
 /// captures, then show it ([`first_show`]: a window built visible opens
-/// taller than its inner size on GTK Wayland).
+/// taller than its inner size on GTK Wayland), and shape it once shown
+/// ([`shape::attach`]; GTK realizes the GDK window on the show).
 fn finish(
     builder: WebviewWindowBuilder<'_, Wry, AppHandle>,
     kind: WindowKind,
 ) -> Result<WebviewWindow, String> {
-    first_show::open(builder, |window| {
+    let window = first_show::open(builder, |window| {
         if kind.captures_media() {
             crate::platform::enable_webview_media_capture(window);
         }
-    })
+    })?;
+    shape::attach(&window, shape::full_window);
+    Ok(window)
 }
 
 /// Show, restore and focus an existing window ([`reveal_window`]). Returns

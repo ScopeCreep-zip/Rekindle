@@ -51,6 +51,12 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          state and ends when the Host answers, which refuses library bytes once locked",
     ),
     (
+        "src-tauri/src/windows/shape/macos.rs",
+        "start",
+        "one window's cursor tracker (plan SK0 S3): owned by the window, not a session; it reads \
+         only the cursor and the window's silhouette, and stops on the window's Destroyed event",
+    ),
+    (
         "src-tauri/src/setup.rs",
         "*",
         "app-lifetime boot: node start, dispatch loop, deep links",
