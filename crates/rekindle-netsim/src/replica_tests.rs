@@ -191,8 +191,12 @@ async fn a_partition_splits_the_replicas() {
 /// RV4 L3: a set that only `k` replicas accept (`Fault::WritePartial`) is
 /// `Offline` (Veilid's `TryAgain`) with nothing stored locally (`AllowOffline(false)`,
 /// 0.5.8 `local_record_store_interface.rs:60-63`), the `k` closest replicas hold
-/// it, so another node's get already sees it, and once the fault lifts the
-/// same value re-sent lands on them unchanged (`set_value.rs:353-366,698-746`).
+/// it, so another node's get already sees it. Once the fault lifts, the same
+/// value re-sent has no local copy to resend, so it is a fresh encryption, a
+/// rival of the bytes the two replicas hold (`record_encryption.rs:43`,
+/// `value_tally.rs:53-57`): ours settles conflicted (`set_value.rs:753-760`)
+/// and the pool writes it once above that seq (`set_value.rs:383-386`), so
+/// every consensus replica ends on one value at one seq, the newest held.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_set_two_replicas_accept_is_below_consensus_yet_readable() {
     let (sim, nodes) = Netsim::nodes(3, 43);
@@ -253,13 +257,19 @@ async fn a_set_two_replicas_accept_is_below_consensus_yet_readable() {
         SetOutcome::Landed,
         "the retry meets its own value and lands"
     );
-    let held = sim
-        .replica_values(&key, 1)
-        .into_iter()
-        .flatten()
-        .filter(|v| v.data == b"op" && v.seq == 0)
-        .count();
-    assert!(held >= 5, "one value at one seq: {held}");
+    let values: Vec<_> = sim.replica_values(&key, 1).into_iter().flatten().collect();
+    let newest = values.iter().map(|v| v.seq).max();
+    assert_eq!(newest, Some(1), "written once above the contested seq 0");
+    let at_newest: Vec<_> = values.iter().filter(|v| Some(v.seq) == newest).collect();
+    assert!(
+        at_newest.iter().all(|v| v.data == b"op"),
+        "no rival at the newest seq"
+    );
+    assert!(
+        at_newest.len() >= 5,
+        "one value at one seq: {}",
+        at_newest.len()
+    );
 }
 
 /// A modified client's `min_seqnum` (plan E3.2 S9): a set raises the seq to
