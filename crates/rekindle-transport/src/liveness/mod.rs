@@ -2,8 +2,8 @@
 //! production research batch 12): the rules of
 //! [`rekindle_route::liveness`], driven over the ports.
 //!
-//! - **Owner** ([`owner`]): a round-trip self-test of our published inbound
-//!   routes through [`AppMessagePort::call_own`], Veilid's own loopback
+//! - **Owner** ([`owner`]): a round-trip self-test of our own routes
+//!   (General, Media in use, Sending) through [`AppMessagePort::call_own`], Veilid's own loopback
 //!   (O1, O6); a silence trigger (O2); on death, a replacement, tested and
 //!   then republished under the DHT's next seq, the old route kept until
 //!   then (O3, O4); an immediate test on a reconnect (O5).
@@ -30,9 +30,21 @@ use rekindle_utils::RandomSource;
 use tokio::sync::Notify;
 use tokio::time::Instant;
 
-/// The inbound classes we self-test: General always, Media while a call
-/// carries media over it.
-const TESTED: [RouteClass; 2] = [RouteClass::General, RouteClass::Media];
+/// The classes we self-test: General always, Media while a call carries
+/// media over it, and Sending always (plan RT1: on Linux both Sending deaths
+/// in 21 app-hours came 200/331 s after allocation, never tested). Sending
+/// is a private route we allocated like the others, never published: the
+/// safety route our 1:1 calls and statements are pinned to and their
+/// answers' reply route. Veilid's own loopback test of an allocated route is
+/// the same call for any of them, the route as its own safety route
+/// (veilid-core 0.5.8 `ping_validator.rs:597-612`, accepted as a loopback
+/// at `route_compile.rs:420-434` whatever its hop count), and Veilid tests an
+/// unpublished route on its own once only while it has never passed
+/// (`private_route_management.rs:116-123`), dropping its failures while
+/// Offline (`ping_validator.rs:666-690`). One 17-byte probe per 40-53.3 s
+/// per class when healthy; after a failure, retests 10-20 s apart, three
+/// failures and the route is replaced.
+const TESTED: [RouteClass; 3] = [RouteClass::General, RouteClass::Media, RouteClass::Sending];
 
 /// The answer to an inbound call that may be a liveness probe.
 #[derive(Debug, Clone, PartialEq, Eq)]

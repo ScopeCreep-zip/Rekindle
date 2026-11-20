@@ -1,4 +1,4 @@
-//! The owner side (plan RH1r-c O1–O5): self-test our inbound routes and
+//! The owner side (plan RH1r-c O1–O5, RT1): self-test our own routes and
 //! republish a replacement. Two tasks per node: [`run_self_tests`] and
 //! [`run_publisher`], the one writer of our personal route blob.
 
@@ -74,9 +74,9 @@ impl Liveness {
     }
 }
 
-/// Self-test our inbound routes until shutdown (O1, O2, O5); a dead one is
+/// Self-test our own routes until shutdown (O1, O2, O5); a dead one is
 /// replaced, and the replacement is tested before it is published (O3) or,
-/// for Media, before the old one is released (O4).
+/// for Media and Sending, before the old one is released (O4).
 pub(crate) async fn run_self_tests(live: Arc<Liveness>, mut offers: Offers) {
     let mut healing: HashSet<RouteClass> = HashSet::new();
     loop {
@@ -94,9 +94,9 @@ pub(crate) async fn run_self_tests(live: Arc<Liveness>, mut offers: Offers) {
             if !live.track(class, now) {
                 continue;
             }
-            if class == RouteClass::Media && healing.remove(&class) {
-                // The Media replacement is live: test it, then release the
-                // old one (no record names a Media route).
+            if class != RouteClass::General && healing.remove(&class) {
+                // The Media or Sending replacement is live: test it, then
+                // release the old one (no record names either route).
                 if live.self_test(class).await {
                     live.routes.release_retired_own(class);
                 } else {

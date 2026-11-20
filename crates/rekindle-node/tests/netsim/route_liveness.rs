@@ -180,3 +180,39 @@ async fn a_healthy_busy_route_is_never_probed_and_an_idle_one_is() {
     );
     assert!(eventually(&sim, LIMIT, || delivered(&nodes[1], &ada, "busy 29")).await);
 }
+
+/// Plan RT1 (Linux r7 probe: both Sending deaths came 200/331 s after
+/// allocation, never self-tested): Ada's `Sending` route, never published,
+/// stops carrying traffic with no word from Veilid. Her own self-test finds
+/// it (first test 40-53.3 s after it came up, retests 10-20 s apart, three
+/// failures) and allocates a replacement, which passes before the old one
+/// is released.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_silently_dead_sending_route_is_found_by_its_self_test_and_replaced() {
+    use rekindle_records::port::RouteState;
+    let (sim, nodes) = friends(125).await;
+    let sending = || {
+        nodes[0]
+            .routes
+            .own_state(RouteClass::Sending)
+            .borrow()
+            .clone()
+    };
+    let RouteState::Available { blob: before } = sending() else {
+        panic!("Ada's Sending route is live");
+    };
+    sim.fault(Fault::RouteSilentDeath {
+        node: 0,
+        class: RouteClass::Sending,
+    });
+    // 53.3 s to the first test, then two retests of at most 20 s, each
+    // probe waiting out its 15 s deadline: about 2 min 40 s.
+    assert!(
+        eventually(&sim, Duration::from_secs(200), || {
+            let replaced = matches!(sending(), RouteState::Available { blob } if blob != before);
+            async move { replaced }
+        })
+        .await,
+        "the dead Sending route was replaced by Ada's own self-test"
+    );
+}
