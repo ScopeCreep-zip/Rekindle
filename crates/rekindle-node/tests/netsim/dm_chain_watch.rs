@@ -118,28 +118,30 @@ async fn a_lost_hint_after_both_spoke_arrives_by_the_chain_watch() {
 }
 
 /// Ann spoke first; Bea's first message creates her chain, and the
-/// `StreamRecord` announcing it is lost with the hint. Designed (plan
-/// E2.5): the `StreamRecord` is a `dm` row settled only by Ann's `DmAck`,
-/// so Ann learns the chain at the outbox's first re-ask, drawn from
-/// `[DM_FIRST_REASK, 1.5 × DM_FIRST_REASK]`, and not sooner.
+/// `StreamRecord` announcing it is lost with the hint (live finding L-DM1).
+/// The `StreamRecord` goes as an `app_call` (`dm::outbox::record_call`):
+/// unanswered, it is sent again within a call timeout and a backoff step,
+/// so Ann reads p1 by Bea's chain once the loss ends, well before the first
+/// re-ask (`DM_FIRST_REASK`), which was its only recovery as an
+/// `app_message`.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_lost_first_hint_and_its_stream_record_arrive_at_the_first_reask() {
+async fn a_lost_first_hint_and_its_stream_record_arrive_well_before_the_first_reask() {
     let (sim, nodes) = friends(159).await;
     send(&nodes[0], &key(&nodes[1]), "m1").await;
     reads(&sim, &nodes[1], &nodes[0], "m1").await;
     tokio::time::sleep(Duration::from_secs(21)).await;
     let sent = send_with_lost_hint(&sim, &nodes, "p1").await;
+    let healed = sent.elapsed();
     let bea = key(&nodes[1]);
-    let before = DM_FIRST_REASK.saturating_sub(sent.elapsed());
+    let bound = Duration::from_millis(rekindle_types::message::CALL_TIMEOUT_MS)
+        + Duration::from_secs(1)
+        + MESSAGE.max * 2
+        + GET.max * 2
+        + SET.max;
+    assert!(healed + bound < DM_FIRST_REASK / 2);
     assert!(
-        !eventually(&sim, before, || holds_message(&nodes[0], &bea, "p1")).await,
-        "nothing announces Bea's chain before the first re-ask"
-    );
-    let window = DM_FIRST_REASK * 3 / 2 + MESSAGE.max * 2 + GET.max * 2;
-    let left = window.saturating_sub(sent.elapsed());
-    assert!(
-        eventually(&sim, left, || holds_message(&nodes[0], &bea, "p1")).await,
-        "Ann reads p1 by the first re-ask's window {window:?} (none by {:?})",
+        eventually(&sim, bound, || holds_message(&nodes[0], &bea, "p1")).await,
+        "Ann reads p1 within {bound:?} of the loss ending at {healed:?} (none by {:?})",
         sent.elapsed()
     );
 }

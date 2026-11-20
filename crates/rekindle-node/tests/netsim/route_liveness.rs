@@ -107,6 +107,14 @@ async fn a_reconnect_self_tests_at_once_and_replaces_a_dead_route() {
 async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute() {
     let (sim, nodes) = friends(123).await;
     let ada = key(&nodes[0]);
+    // Bo's chain is announced and its `StreamRecord` settled first: that
+    // record goes as an app call until Ada receipts it (L-DM1), so with it
+    // pending every call counted below would not be a probe.
+    talk(&sim, &nodes[1], &nodes[0], "first").await;
+    tokio::time::sleep(Duration::from_millis(
+        rekindle_types::message::DM_ACK_DELAY_MAX_MS + rekindle_types::message::CALL_TIMEOUT_MS,
+    ))
+    .await;
     sim.fault(Fault::RouteSilentDeath {
         node: 0,
         class: RouteClass::General,
