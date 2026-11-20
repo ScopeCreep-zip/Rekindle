@@ -249,6 +249,7 @@ async fn retired_stretch_at(seed: u64) -> [u8; 32] {
     // chain reached him. As `pair::talk_until_watched` (db0c8cd1), Ann talks
     // until one has (at most four rounds), so the snapshot below names her
     // chain whichever path came first.
+    let mut watched = false;
     for round in 0..4 {
         let body = format!("watched {round}");
         send(&nodes[0], &gid, &body).await;
@@ -258,9 +259,15 @@ async fn retired_stretch_at(seed: u64) -> [u8; 32] {
         })
         .await
         {
+            watched = true;
             break;
         }
     }
+    assert!(
+        watched,
+        "no watched change of Ann's group chain reached Cid in four rounds, so the chain \
+         the retire is checked on is unnamed"
+    );
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: true,
