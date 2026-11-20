@@ -89,10 +89,22 @@ fn controls(s: &mut String, read: &Read) {
             s,
             "  {}: {} {}, {w}x{h} px, {:?}; states {}",
             c.region,
-            if c.region.starts_with("titlebar") {
+            if c.region.starts_with("titlebar.btn") {
                 "the title button"
             } else if c.region.starts_with("scrollbar") {
                 "the scrollbar"
+            } else if super::surfaces::NAMED_BUTTONS
+                .iter()
+                .any(|(_, region)| *region == c.region)
+                && read
+                    .tally
+                    .sources
+                    .get(c.region)
+                    .is_some_and(|n| n.starts_with("button_"))
+            {
+                "the theme bitmaps"
+            } else if c.region == "titlebar" {
+                "the titlebar strip"
             } else {
                 "the component"
             },

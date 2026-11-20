@@ -137,7 +137,7 @@ const BUTTON_LENGTH: [(&str, &str); 4] = [
 ];
 
 /// The side along the scroll axis of the button `slot`, if it is one.
-fn button_side(slot: &str) -> Option<&'static str> {
+pub(super) fn button_side(slot: &str) -> Option<&'static str> {
     BUTTON_LENGTH
         .iter()
         .find(|(id, _)| *id == slot)

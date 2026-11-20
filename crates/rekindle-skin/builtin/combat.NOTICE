@@ -51,12 +51,13 @@ Regions
   scrollbar.track: [DefaultScrollbar], 11x405 px, NineSlice(Insets { top: 135, right: 0, bottom: 135, left: 0 }); states normal
   scrollbar.track-horizontal: [DefaultScrollbar], 405x11 px, NineSlice(Insets { top: 0, right: 135, bottom: 0, left: 135 }); states normal
   scrollbar.corner: [DefaultScrollbar], 11x11 px, Stretch; states normal
+  chat.send-button: [ImButton], 64x42 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.toolbar: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
   chat.group-header: [GCMenuBar], 234x20 px, NineSlice(Insets { top: 0, right: 27, bottom: 0, left: 31 }); states normal
   dropped [CombatDragBar (buddylist.infobar)] Disabled: the slot has no such state
 
 Dropped
-  images with no region slot: 237
+  images with no region slot: 233
   other keys (classes, sizes, cursors, sounds): 433
   other skin files (chat, group chat, in-game): 4
   text styles: 92
@@ -84,7 +85,7 @@ Dropped
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (140):
+  files not read (137):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
@@ -175,9 +176,6 @@ Dropped
     chat/c_chat_button_close_norm.gif
     chat/c_chat_button_minimize_down.gif
     chat/c_chat_button_minimize_hover.gif
-    chat/c_chat_button_send_down.gif
-    chat/c_chat_button_send_hover.gif
-    chat/c_chat_button_send_norm.gif
     chat/c_chat_divider.gif
     chat/c_chat_infoview_in_hover.gif
     chat/c_chat_infoview_in_norm.gif

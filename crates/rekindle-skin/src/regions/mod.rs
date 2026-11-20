@@ -372,8 +372,12 @@ pub fn validate(
     Ok(())
 }
 
-/// Every state image of `region` is one `slot` has and is the size of the
-/// normal image (so the region's nine-slice fits it the same way).
+/// Every state image of `region` is one `slot` has; a slot whose box is
+/// its image's (the status arrow, a scrollbar button's length) needs it at
+/// the normal image's size. Any other state image may differ in size (plan
+/// E7.7.7 S3, Classic v3's chosen tab): `border-image` slices each image
+/// by the region's insets and draws it into the element's box, and each
+/// frame is checked against those insets and measured on its own below.
 fn state_sizes(
     id: &str,
     slot: &RegionSlot,
@@ -396,6 +400,10 @@ fn state_sizes(
                     state: state.key().to_owned(),
                 },
             ));
+        }
+        let boxed = slot.sized || css::button_side(id).is_some();
+        if !boxed {
+            continue;
         }
         if let (Some((nw, nh)), Some((w, h))) = (normal, size(path)?) {
             if (w, h) != (nw, nh) {

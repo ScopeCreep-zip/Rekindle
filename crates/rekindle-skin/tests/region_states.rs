@@ -71,16 +71,35 @@ fn a_button_takes_hover_down_and_disabled_images() {
     check(&m, (18, 16), &states).unwrap();
 }
 
+/// Plan E7.7.7 S3: a nine-slice state image may be another size (Classic
+/// v3's chosen tab is a pixel wider than its normal tab); each is checked
+/// against the insets on its own.
+#[test]
+fn a_nine_slice_state_image_may_differ_in_size() {
+    let states = [("hover", (18, 16)), ("down", (19, 17))];
+    let m = manifest_with("titlebar.btn.close", &nine(), &states);
+    check(&m, (18, 16), &states).unwrap();
+    // Each still holds the insets: a down image narrower than them is not.
+    let narrow = [("down", (5, 16))];
+    let m = manifest_with("titlebar.btn.close", &nine(), &narrow);
+    assert!(matches!(
+        check(&m, (18, 16), &narrow).unwrap_err().rule,
+        SkinRule::NineSliceInsets { .. }
+    ));
+}
+
+/// A slot sized to its image (the status arrow) needs every state at the
+/// normal size: its box is the normal image's.
 #[test]
 fn a_state_image_of_another_size_is_refused() {
     let states = [("hover", (18, 16)), ("down", (19, 16))];
-    let m = manifest_with("titlebar.btn.close", &nine(), &states);
+    let m = manifest_with("statusbar.arrow", &json!({ "type": "stretch" }), &states);
     let err = check(&m, (18, 16), &states).expect_err("down is wider");
     assert_eq!(err.entry, "assets/down.png");
     assert_eq!(
         err.rule,
         SkinRule::RegionStateSize {
-            region: "titlebar.btn.close".to_owned(),
+            region: "statusbar.arrow".to_owned(),
             state: "down".to_owned(),
             width: 19,
             height: 16,
@@ -206,8 +225,8 @@ fn the_app_css_maps_states_to_selectors() {
         .contains("scrollbar.corner"));
     let mut unknown = full.clone();
     unknown.insert(
-        "titlebar".to_owned(),
-        RegionMap::elements(&[".xfire-titlebar"]),
+        "window.frame".to_owned(),
+        RegionMap::elements(&[".app-frame"]),
     );
     assert!(app_css("h", &unknown)
         .unwrap_err()
@@ -313,7 +332,8 @@ fn the_app_css_backs_a_text_slot_between_image_and_label() {
     // Under forced colors the backing is not generated.
     let a11y = app_a11y_css("h", &full_map()).unwrap();
     let forced = &a11y[a11y.find("  @media (forced-colors: active) {\n").unwrap()..];
-    assert!(forced.contains("    .btn2::before {\n      content: none;\n    }\n"));
+    let none = &forced[..forced.find("      content: none;\n").unwrap()];
+    assert!(none.contains("    .btn2::before"), "{forced}");
     // A text slot on a pseudo-element cannot take a `::before`.
     let mut pseudo = full_map();
     pseudo.insert(
@@ -440,5 +460,31 @@ fn the_app_css_paints_the_chat_buttons_and_backs_the_toolbar() {
     assert!(
         css.contains(".chat-call-button::before"),
         "a text button gets its backing"
+    );
+}
+
+/// Plan E7.7.7 S3: the Send button (its disabled state too) and the dialog
+/// confirm button are painted text buttons; the titlebar strip backs its
+/// title and buttons and swaps to its inactive image.
+#[test]
+fn the_app_css_paints_the_send_button_the_titlebar_and_the_ok_button() {
+    let css = app_css("h", &full_map()).unwrap();
+    assert!(css.contains("  .chat-send-button:disabled, .chat-send-button[aria-disabled=\"true\"] {\n    border-image: var(--skin-region-chat-send-button--disabled, var(--skin-region-chat-send-button));\n"), "{css}");
+    assert!(
+        css.contains(".chat-send-button::before"),
+        "Send's label is backed"
+    );
+    assert!(
+        css.contains(".button-primary::before"),
+        "OK's label is backed"
+    );
+    let b = "var(--skin-region-titlebar-backing)";
+    assert!(css.contains(&format!(
+        "  .titlebar-label {{\n    background-image: linear-gradient({b}, {b});\n  }}\n"
+    )));
+    assert!(css.contains("  :where(:root[data-window-inactive]) .titlebar {\n    border-image: var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar));\n"), "{css}");
+    assert!(
+        !css.contains(".titlebar::before"),
+        "a labelled bar has no ::before"
     );
 }

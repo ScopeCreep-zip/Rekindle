@@ -579,3 +579,6 @@ mod surfaces_tests;
 
 #[cfg(test)]
 mod chat_surfaces_tests;
+
+#[cfg(test)]
+mod dialog_surfaces_tests;

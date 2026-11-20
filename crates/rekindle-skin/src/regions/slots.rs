@@ -142,6 +142,10 @@ const SECONDARY_HEIGHT: Extent = Extent::Range { min: 16, max: 40 };
 /// `.settings-member-actions` (`07-member-profile-popup.css:58`; the others
 /// are 16/8 px at `00-rules.css:207` and 10/5 px at `90-top-level.css:31`).
 const SECONDARY_LABEL_INSET: (u32, u32) = (6, 2);
+/// `.form-btn-primary`'s least padding: 8 px each side and 4 px top and
+/// bottom (`10-thread-list-panel.css:344`; 8 px at `00-rules.css:214`,
+/// 6/12 px at `:305`).
+const PRIMARY_LABEL_INSET: (u32, u32) = (8, 4);
 /// A buddy-list tab's states: Xfire's tab buttons are `PushType="Sticky"`
 /// in one `GroupId` (Symbiosis `Components/MainWindow.xml:910`), so the
 /// chosen tab keeps its Down image: [`Selected`].
@@ -165,11 +169,15 @@ const ON_DARK: &[&str] = &["bg.dark"];
 /// The chat toolbar's ground (`.chat-peer-status`: `bg.panel` at 80% over
 /// the window's `bg.dark`); a skinned bar backs its labels with `bg.panel`.
 const ON_PANEL: &[&str] = &["bg.panel"];
+/// The Send button: a four-letter 11 px label (≈ 26 px) in 10 px padding
+/// and 1 px borders, up to the 2 px borders of `prefers-contrast: more`.
+const SEND_WIDTH: Extent = Extent::Range { min: 40, max: 96 };
+const SEND_LABEL_INSET: (u32, u32) = (10, 2);
 /// The chat window's call buttons hold one 14 px glyph in 24 px.
 const CALL_LABEL_INSET: (u32, u32) = (4, 4);
 
 /// The region slots. Every slot appears in every window.
-pub const SLOTS: [RegionSlot; 30] = [
+pub const SLOTS: [RegionSlot; 32] = [
     // The whole window behind its content. DoiDD's frame has hover, down
     // and disabled (window-inactive) images.
     slot("window.frame", Extent::Window, Extent::Window, &[]).states(&[
@@ -179,14 +187,17 @@ pub const SLOTS: [RegionSlot; 30] = [
     ]),
     // `.xfire-titlebar` (`00-rules.css:98`), its title `.xfire-titlebar-text`
     // (`00-primitives.css:102`, 11 px semibold).
+    // Its labels are the title and the titlebar buttons (their glyphs are
+    // `titlebar.text` at 60%): each backed in full, so the title keeps a
+    // solid ground over a skin's titlebar strip (Classic v3
+    // `MainTitleBar`, its Disabled set drawn while the window is inactive).
     slot(
         "titlebar",
         Extent::Window,
         CHROME,
         &[normal("titlebar.text")],
     )
-    .states(&[WindowInactive])
-    .grounds(&["titlebar.start", "titlebar.end"]),
+    .labelled(&[WindowInactive], &["titlebar.start", "titlebar.end"]),
     // Every titlebar button (Miranda's one `Titlebutton` set).
     slot("titlebar.buttons", CHROME, CHROME, &[]).states(BUTTON),
     // The buddy list's `.status-bar` (`01-form-primitives.css:82`, 11 px,
@@ -337,6 +348,19 @@ pub const SLOTS: [RegionSlot; 30] = [
         ],
     )
     .labelled(&[], ON_DARK),
+    // `.message-input-send-btn` (`13-bulk-message-delete-mod-selection-.css`,
+    // 11 px semibold `text.base`, `text.dim` disabled, 2/10 px padding) at
+    // the input's end, on its ground: Xfire's Send button (Symbiosis
+    // `ChatButtonSend`, Classic v3 `SendButton`, Combat `[ImButton]`).
+    slot(
+        "chat.send-button",
+        SEND_WIDTH,
+        ACTION_HEIGHT,
+        &[normal("text.base"), normal("text.dim")],
+    )
+    .painted(BUTTON)
+    .label_inset(SEND_LABEL_INSET)
+    .grounds(ON_DARK),
     slot(
         "chat.group-header",
         Extent::Window,
@@ -390,6 +414,18 @@ pub const SLOTS: [RegionSlot; 30] = [
     .painted(BUTTON)
     .label_inset(SECONDARY_LABEL_INSET)
     .grounds(&["bg.panel", "bg.dark", "bg.secondary"]),
+    // `.form-btn-primary` (`00-rules.css:212`, `accent.fg` 12 px
+    // semibold on `accent.fill`): a dialog's confirming button; Xfire's OK
+    // (Symbiosis `button_ok_*`).
+    slot(
+        "button.primary",
+        SECONDARY_WIDTH,
+        SECONDARY_HEIGHT,
+        &[normal("accent.fg")],
+    )
+    .painted(BUTTON)
+    .label_inset(PRIMARY_LABEL_INSET)
+    .grounds(&["accent.fill"]),
 ];
 
 const fn normal(token: &'static str) -> RegionText {

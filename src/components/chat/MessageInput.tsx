@@ -1,6 +1,6 @@
 import { Component, For, createSignal, createEffect, Show } from "solid-js";
 import { Popover } from "@kobalte/core/popover";
-import { handleDraftChanged, handleKeyDown } from "../../actions/chat.actions";
+import { canSend, handleDraftChanged, handleKeyDown, sendDraft } from "../../actions/chat.actions";
 import { handleUploadAttachment } from "../../actions/community.actions";
 import EmojiPicker from "./EmojiPicker";
 import ReplyPreview from "./ReplyPreview";
@@ -83,16 +83,26 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     if (props.onSend) {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        const text = getBody();
-        if (text.trim()) {
-          props.onSend(props.peerId, text, props.replyTo?.messageId);
-          clearInput();
-          props.onDismissReply?.();
-          slowmode.recordSent();
-        }
+        send();
       }
     } else {
       handleKeyDown(e, props.peerId, getBody, clearInput);
+    }
+  }
+
+  /** Send the draft as Enter does (the Send button's action). */
+  function send(): void {
+    if (slowmode.effectiveDisabled()) return;
+    if (!props.onSend) {
+      sendDraft(props.peerId, getBody, clearInput);
+      return;
+    }
+    const text = getBody();
+    if (canSend(text)) {
+      props.onSend(props.peerId, text, props.replyTo?.messageId);
+      clearInput();
+      props.onDismissReply?.();
+      slowmode.recordSent();
     }
   }
 
@@ -222,6 +232,21 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                 : undefined
             }
           />
+          {/* Xfire's chat window has a Send button (plan E7.7.7, CLAUDE.md
+           * "1:1 Xfire look"); Enter still sends. */}
+          <Show when={props.sendButton && !props.editMode}>
+            <button
+              class="message-input-send-btn"
+              type="button"
+              disabled={!canSend(body())}
+              onClick={() => {
+                send();
+                textareaRef?.focus();
+              }}
+            >
+              Send
+            </button>
+          </Show>
           {/* Architecture §28.5 — mention autocomplete popover.
            * Implements the ARIA combobox listbox pattern (2026-canon):
            * arrow keys move `mentionSelected`, Enter applies, Esc

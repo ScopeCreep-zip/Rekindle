@@ -5,6 +5,12 @@
  * `utilities` and below `sec` only. */
 @layer a11y {
   @media (prefers-reduced-motion: reduce) {
+    .xfire-titlebar {
+      border-image: var(--skin-region-titlebar--still, var(--skin-region-titlebar));
+    }
+    :where(:root[data-window-inactive]) .xfire-titlebar {
+      border-image: var(--skin-region-titlebar--windowinactive--still, var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar--still, var(--skin-region-titlebar))));
+    }
     .buddy-list-window > .status-bar {
       border-image: var(--skin-region-statusbar--still, var(--skin-region-statusbar));
     }
@@ -109,6 +115,24 @@
     }
     .chat-window .message-input-shell {
       border-image: var(--skin-region-chat-input--still, var(--skin-region-chat-input));
+    }
+    .chat-window .message-input-send-btn {
+      border-image: var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button));
+    }
+    :where(:root[data-window-inactive]) .chat-window .message-input-send-btn {
+      border-image: var(--skin-region-chat-send-button--windowinactive--still, var(--skin-region-chat-send-button--windowinactive, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
+    }
+    .chat-window .message-input-send-btn:hover {
+      border-image: var(--skin-region-chat-send-button--hover--still, var(--skin-region-chat-send-button--hover, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
+    }
+    .chat-window .message-input-send-btn:focus-visible {
+      border-image: var(--skin-region-chat-send-button--focused--still, var(--skin-region-chat-send-button--focused, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
+    }
+    .chat-window .message-input-send-btn:active {
+      border-image: var(--skin-region-chat-send-button--down--still, var(--skin-region-chat-send-button--down, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
+    }
+    .chat-window .message-input-send-btn:disabled, .chat-window .message-input-send-btn[aria-disabled="true"] {
+      border-image: var(--skin-region-chat-send-button--disabled--still, var(--skin-region-chat-send-button--disabled, var(--skin-region-chat-send-button--still, var(--skin-region-chat-send-button))));
     }
     .chat-window .group-chat-members {
       border-image: var(--skin-region-chat-group-header--still, var(--skin-region-chat-group-header));
@@ -311,8 +335,28 @@
     .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
       border-image: var(--skin-region-button-secondary--disabled--still, var(--skin-region-button-secondary--disabled, var(--skin-region-button-secondary--still, var(--skin-region-button-secondary))));
     }
+    .form-btn-primary {
+      border-image: var(--skin-region-button-primary--still, var(--skin-region-button-primary));
+    }
+    :where(:root[data-window-inactive]) .form-btn-primary {
+      border-image: var(--skin-region-button-primary--windowinactive--still, var(--skin-region-button-primary--windowinactive, var(--skin-region-button-primary--still, var(--skin-region-button-primary))));
+    }
+    .form-btn-primary:hover {
+      border-image: var(--skin-region-button-primary--hover--still, var(--skin-region-button-primary--hover, var(--skin-region-button-primary--still, var(--skin-region-button-primary))));
+    }
+    .form-btn-primary:focus-visible {
+      border-image: var(--skin-region-button-primary--focused--still, var(--skin-region-button-primary--focused, var(--skin-region-button-primary--still, var(--skin-region-button-primary))));
+    }
+    .form-btn-primary:active {
+      border-image: var(--skin-region-button-primary--down--still, var(--skin-region-button-primary--down, var(--skin-region-button-primary--still, var(--skin-region-button-primary))));
+    }
+    .form-btn-primary:disabled, .form-btn-primary[aria-disabled="true"] {
+      border-image: var(--skin-region-button-primary--disabled--still, var(--skin-region-button-primary--disabled, var(--skin-region-button-primary--still, var(--skin-region-button-primary))));
+    }
   }
   @media (forced-colors: active) {
+    .xfire-titlebar,
+    :where(:root[data-window-inactive]) .xfire-titlebar,
     .buddy-list-window > .status-bar,
     .status-picker-arrow,
     .status-picker-arrow:hover,
@@ -348,6 +392,12 @@
     .chat-window .chat-call-btn.chat-call-btn-active:active,
     .chat-window .chat-call-btn.chat-call-btn-active:disabled, .chat-window .chat-call-btn.chat-call-btn-active[aria-disabled="true"],
     .chat-window .message-input-shell,
+    .chat-window .message-input-send-btn,
+    :where(:root[data-window-inactive]) .chat-window .message-input-send-btn,
+    .chat-window .message-input-send-btn:hover,
+    .chat-window .message-input-send-btn:focus-visible,
+    .chat-window .message-input-send-btn:active,
+    .chat-window .message-input-send-btn:disabled, .chat-window .message-input-send-btn[aria-disabled="true"],
     .chat-window .group-chat-members,
     .xfire-titlebar-btn-minimize,
     :where(:root[data-window-inactive]) .xfire-titlebar-btn-minimize,
@@ -372,7 +422,13 @@
     .form-btn-secondary:hover,
     .form-btn-secondary:focus-visible,
     .form-btn-secondary:active,
-    .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
+    .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"],
+    .form-btn-primary,
+    :where(:root[data-window-inactive]) .form-btn-primary,
+    .form-btn-primary:hover,
+    .form-btn-primary:focus-visible,
+    .form-btn-primary:active,
+    .form-btn-primary:disabled, .form-btn-primary[aria-disabled="true"] {
       border-image: none;
     }
     ::-webkit-scrollbar-track:vertical {
@@ -505,9 +561,13 @@
     .buddy-list-window .action-bar-icon-btn::before,
     .chat-window .chat-call-btn::before,
     .chat-window .chat-call-btn.chat-call-btn-active::before,
-    .form-btn-secondary::before {
+    .chat-window .message-input-send-btn::before,
+    .form-btn-secondary::before,
+    .form-btn-primary::before {
       content: none;
     }
+    .xfire-titlebar-text,
+    .xfire-titlebar-btn,
     .buddy-list-window > .status-bar .status-picker,
     .buddy-list-window > .status-bar .network-indicator,
     .buddy-list-window .menu-bar-item,
@@ -522,6 +582,7 @@
     .chat-window .chat-call-btn,
     .chat-window .message-input-attach-btn,
     .chat-window .message-input-mic-btn,
+    .chat-window .message-input-send-btn,
     .chat-window .group-chat-member {
       background-image: none;
     }

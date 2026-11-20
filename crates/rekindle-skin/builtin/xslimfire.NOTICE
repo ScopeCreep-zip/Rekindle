@@ -74,6 +74,7 @@ Colours (57 defined)
 
 Regions
   window.frame: the nine-piece frame of the chat window layout xSLIMFIREchatwindow.xml: the top and bottom rows' typed pieces and a vertically resizing tile's sides, 252x495 px, nine-slice 165/125/165/125
+  titlebar: the titlebar strip MainTitleBar, 266x106 px, NineSlice(Insets { top: 0, right: 131, bottom: 0, left: 131 }); states normal, windowInactive
   titlebar.btn.close: the title button CloseBox, 9x5 px, Stretch; states normal, hover, down
   titlebar.btn.minimize: the title button MinimizeBox, 9x5 px, Stretch; states normal, hover, down
   statusbar: the component StatusWrapper, 106x15 px, NineSlice(Insets { top: 0, right: 3, bottom: 0, left: 3 }); states normal
@@ -88,16 +89,16 @@ Regions
   scrollbar.thumb-horizontal: the scrollbar DefaultScrollbar, 12x4 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 4 }); states normal, hover, down
   scrollbar.track: the scrollbar DefaultScrollbar, 4x12 px, NineSlice(Insets { top: 4, right: 0, bottom: 4, left: 0 }); states normal
   scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 12x4 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 4 }); states normal
+  chat.send-button: the component SendButton, 38x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.group-header: the component GroupChatInfoView, 104x16 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal
   chat.call-button: the component InfoHostChatButton, 38x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.call-button-active: the component InfoLeaveChatButton, 38x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 38 of 155 images
-  Disabled sets: kept 3 of 25
-  Down sets: kept 7 of 42
-  Hover sets: kept 7 of 45
-  dropped MainTitleBar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  kept 44 of 155 images
+  Disabled sets: kept 5 of 25
+  Down sets: kept 8 of 42
+  Hover sets: kept 8 of 45
   dropped XfireLogo Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped XfireLogo Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped FileMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -150,9 +151,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ActionsMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatHelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatHelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped SendButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped SendButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped SendButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatGripperBottomRight Hover: no element: the OS resizes the window
   dropped GCSystemMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GCSystemMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control

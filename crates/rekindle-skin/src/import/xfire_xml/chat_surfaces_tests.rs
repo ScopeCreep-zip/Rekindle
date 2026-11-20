@@ -11,7 +11,7 @@ use super::*;
 use crate::{manifest as parse_manifest, package, validate};
 
 /// The theme's `<Bitmap>`s of `images` (name, w, h), each a file of `t`.
-fn bitmaps(t: &mut Tree, images: &[(&str, u32, u32)]) -> String {
+pub(super) fn bitmaps(t: &mut Tree, images: &[(&str, u32, u32)]) -> String {
     let mut out = String::new();
     for (i, (name, w, h)) in images.iter().enumerate() {
         let _ = write!(out, "<Bitmap Name=\"{name}\">img/{name}.png</Bitmap>");
@@ -22,7 +22,7 @@ fn bitmaps(t: &mut Tree, images: &[(&str, u32, u32)]) -> String {
 }
 
 /// The manifest of `t` imported twice (deterministic) and validated.
-fn imported(t: &Tree) -> (SkinManifest, Imported) {
+pub(super) fn imported(t: &Tree) -> (SkinManifest, Imported) {
     let a = import(t, "fixture", None).unwrap();
     assert_eq!(a, import(t, "fixture", None).unwrap(), "deterministic");
     assert_eq!(
@@ -33,7 +33,7 @@ fn imported(t: &Tree) -> (SkinManifest, Imported) {
     (parse_manifest::parse(&pkg).unwrap(), a)
 }
 
-fn states(m: &SkinManifest, region: &str) -> Vec<RegionState> {
+pub(super) fn states(m: &SkinManifest, region: &str) -> Vec<RegionState> {
     m.regions[region].states.keys().copied().collect()
 }
 

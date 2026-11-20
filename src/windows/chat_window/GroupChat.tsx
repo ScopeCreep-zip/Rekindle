@@ -113,6 +113,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           label={`Message ${name()}`}
           peerId={groupId}
           onSend={(_, body) => void send(body)}
+          sendButton
           onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}
           disabled={!held()}
           disabledMessage="You can send once you are in this group."

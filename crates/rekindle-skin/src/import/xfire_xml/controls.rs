@@ -265,6 +265,60 @@ impl StateImages for XmlSet<'_> {
     }
 }
 
+/// A theme bitmap read by name as one state's `Middle` image (Symbiosis's
+/// dialog buttons, [`super::surfaces::NAMED_BUTTONS`]).
+struct NamedSet<'a> {
+    d: &'a Decoder<'a>,
+    bitmap: String,
+    state: RegionState,
+}
+
+impl StateImages for NamedSet<'_> {
+    fn state(&self) -> Option<RegionState> {
+        Some(self.state)
+    }
+
+    fn name(&self) -> &str {
+        set_name(self.state)
+    }
+
+    fn count(&self) -> usize {
+        1
+    }
+
+    fn piece(&self, ty: &str, _background: bool) -> Result<Option<RgbaImage>, ImportError> {
+        if !ty.eq_ignore_ascii_case("Middle") {
+            return Ok(None);
+        }
+        super::piece(
+            self.d.tree,
+            &self.d.bitmaps,
+            self.d.colours,
+            &self.bitmap,
+            None,
+        )
+        .map(Some)
+    }
+}
+
+/// The named dialog buttons the theme has bitmaps for.
+fn named_buttons(
+    d: &Decoder<'_>,
+    controls: &mut Vec<Control>,
+    tally: &mut StateTally,
+) -> Result<(), ImportError> {
+    for (name, region) in super::surfaces::NAMED_BUTTONS {
+        let sets: Vec<NamedSet<'_>> = super::surfaces::NAMED_STATES
+            .iter()
+            .map(|(suffix, state)| (format!("{name}_{suffix}"), *state))
+            .filter(|(bitmap, _)| d.bitmaps.keys().any(|k| k.eq_ignore_ascii_case(bitmap)))
+            .map(|(bitmap, state)| NamedSet { d, bitmap, state })
+            .collect();
+        super::surfaces::fill_named((name, region), &sets, controls, tally)?;
+    }
+    Ok(())
+}
+
 /// `pieces` of one axis as one image and its nine-slice, through
 /// [`bitmap::compose`] with empty cells off the axis.
 pub(super) fn three(
@@ -406,6 +460,7 @@ pub fn read(
                 .push((name.to_owned(), static_state(set.name()), why));
         }
     }
+    named_buttons(&d, &mut controls, &mut tally)?;
     Ok((controls, tally))
 }
 
@@ -418,7 +473,8 @@ pub(super) fn set_name(s: RegionState) -> &'static str {
     match s {
         RegionState::Hover => "Hover",
         RegionState::Down => "Down",
-        RegionState::Disabled => "Disabled",
+        // A titlebar's Disabled set, drawn while the window is inactive.
+        RegionState::Disabled | RegionState::WindowInactive => "Disabled",
         _ => "Normal",
     }
 }

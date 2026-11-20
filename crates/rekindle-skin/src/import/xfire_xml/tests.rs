@@ -174,7 +174,7 @@ fn tree_with_controls(disabled_w: u32) -> Tree {
         format!("<Images State=\"{s}\" Color=\"SideCG\"><Image Type=\"ScrollVertGripperTop\">vt_{x}</Image><Image Type=\"ScrollVertGripperMiddle\">vm_{x}</Image><Image Type=\"ScrollVertGripperBottom\">vb_{x}</Image><Image Type=\"ScrollVertGripperOverlay\">vm_{x}</Image><Image Type=\"ScrollUp\">up_{x}</Image></Images>")
     };
     let common = format!(
-        "<Components><Component Name=\"ButtonClose\" Class=\"PushButton\"><Images State=\"Normal\"><Image Type=\"Middle\">close_n</Image></Images><Images State=\"Hover\"><Image Type=\"Middle\">close_h</Image></Images><Images State=\"Down\"><Image Type=\"Middle\">close_d</Image></Images><Images State=\"Disabled\"><Image Type=\"Middle\">close_x</Image></Images></Component><Component Name=\"XfireScrollbar\" Class=\"Scrollbar\">{}{}</Component><Component Name=\"ChatButtonSend\" Class=\"PushButton\"><Images State=\"Normal\"><Image Type=\"Middle\">send_h</Image></Images><Images State=\"Hover\"><Image Type=\"Middle\">send_h</Image></Images></Component></Components>",
+        "<Components><Component Name=\"ButtonClose\" Class=\"PushButton\"><Images State=\"Normal\"><Image Type=\"Middle\">close_n</Image></Images><Images State=\"Hover\"><Image Type=\"Middle\">close_h</Image></Images><Images State=\"Down\"><Image Type=\"Middle\">close_d</Image></Images><Images State=\"Disabled\"><Image Type=\"Middle\">close_x</Image></Images></Component><Component Name=\"XfireScrollbar\" Class=\"Scrollbar\">{}{}</Component><Component Name=\"ChatButtonJoin\" Class=\"PushButton\"><Images State=\"Normal\"><Image Type=\"Middle\">send_h</Image></Images><Images State=\"Hover\"><Image Type=\"Middle\">send_h</Image></Images></Component></Components>",
         state("Normal", "n"),
         state("Hover", "h")
     );
@@ -221,12 +221,12 @@ fn title_buttons_and_the_scrollbar_keep_their_state_images() {
     );
     assert!(r.controls.iter().any(|c| c.region == "scrollbar.button-up"));
     // Kept: 3 button images + (3 gripper + 1 arrow) hover; the overlay and
-    // the baked-label send button and the frame's hover piece are not.
+    // the baked-label join button and the frame's hover piece are not.
     assert_eq!(r.tally.images, (7, 3 + 5 + 1 + 1));
     assert_eq!(r.tally.sets["Hover"], (2, 4));
     assert!(a
         .notice
-        .contains("dropped ChatButtonSend Hover: no region slot"));
+        .contains("dropped ChatButtonJoin Hover: no region slot"));
     assert!(a.notice.contains("titlebar.btn.close: the title button"));
 }
 

@@ -5,6 +5,17 @@
  * properties in `@layer skin`. The user's settings are in
  * `regions-a11y.css`. */
 @layer components {
+  .xfire-titlebar {
+    border-image: var(--skin-region-titlebar);
+    image-rendering: pixelated;
+  }
+  .xfire-titlebar-text,
+  .xfire-titlebar-btn {
+    background-image: linear-gradient(var(--skin-region-titlebar-backing), var(--skin-region-titlebar-backing));
+  }
+  :where(:root[data-window-inactive]) .xfire-titlebar {
+    border-image: var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar));
+  }
   .buddy-list-window > .status-bar {
     border-image: var(--skin-region-statusbar);
     image-rendering: pixelated;
@@ -208,8 +219,42 @@
     image-rendering: pixelated;
   }
   .chat-window .message-input-attach-btn,
-  .chat-window .message-input-mic-btn {
+  .chat-window .message-input-mic-btn,
+  .chat-window .message-input-send-btn {
     background-image: linear-gradient(var(--skin-region-chat-input-backing), var(--skin-region-chat-input-backing));
+  }
+  .chat-window .message-input-send-btn {
+    border-image: var(--skin-region-chat-send-button);
+    image-rendering: pixelated;
+    position: relative;
+    isolation: isolate;
+  }
+  .chat-window .message-input-send-btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background:
+      linear-gradient(var(--skin-region-chat-send-button-backing), var(--skin-region-chat-send-button-backing)) var(--skin-region-chat-send-button-slice-left, 0px) var(--skin-region-chat-send-button-slice-top, 0px) / calc(100% - var(--skin-region-chat-send-button-slice-left, 0px) - var(--skin-region-chat-send-button-slice-right, 0px)) calc(100% - var(--skin-region-chat-send-button-slice-top, 0px) - var(--skin-region-chat-send-button-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-chat-send-button-backing), var(--skin-region-chat-send-button-backing)) no-repeat content-box;
+    pointer-events: none;
+  }
+  :where(:root[data-window-inactive]) .chat-window .message-input-send-btn {
+    border-image: var(--skin-region-chat-send-button--windowinactive, var(--skin-region-chat-send-button));
+  }
+  .chat-window .message-input-send-btn:hover {
+    border-image: var(--skin-region-chat-send-button--hover, var(--skin-region-chat-send-button));
+  }
+  .chat-window .message-input-send-btn:focus-visible {
+    border-image: var(--skin-region-chat-send-button--focused, var(--skin-region-chat-send-button));
+  }
+  .chat-window .message-input-send-btn:active {
+    border-image: var(--skin-region-chat-send-button--down, var(--skin-region-chat-send-button));
+  }
+  .chat-window .message-input-send-btn:disabled, .chat-window .message-input-send-btn[aria-disabled="true"] {
+    border-image: var(--skin-region-chat-send-button--disabled, var(--skin-region-chat-send-button));
   }
   .chat-window .group-chat-members {
     border-image: var(--skin-region-chat-group-header);
@@ -446,5 +491,38 @@
   }
   .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
     border-image: var(--skin-region-button-secondary--disabled, var(--skin-region-button-secondary));
+  }
+  .form-btn-primary {
+    border-image: var(--skin-region-button-primary);
+    image-rendering: pixelated;
+    position: relative;
+    isolation: isolate;
+  }
+  .form-btn-primary::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background:
+      linear-gradient(var(--skin-region-button-primary-backing), var(--skin-region-button-primary-backing)) var(--skin-region-button-primary-slice-left, 0px) var(--skin-region-button-primary-slice-top, 0px) / calc(100% - var(--skin-region-button-primary-slice-left, 0px) - var(--skin-region-button-primary-slice-right, 0px)) calc(100% - var(--skin-region-button-primary-slice-top, 0px) - var(--skin-region-button-primary-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-button-primary-backing), var(--skin-region-button-primary-backing)) no-repeat content-box;
+    pointer-events: none;
+  }
+  :where(:root[data-window-inactive]) .form-btn-primary {
+    border-image: var(--skin-region-button-primary--windowinactive, var(--skin-region-button-primary));
+  }
+  .form-btn-primary:hover {
+    border-image: var(--skin-region-button-primary--hover, var(--skin-region-button-primary));
+  }
+  .form-btn-primary:focus-visible {
+    border-image: var(--skin-region-button-primary--focused, var(--skin-region-button-primary));
+  }
+  .form-btn-primary:active {
+    border-image: var(--skin-region-button-primary--down, var(--skin-region-button-primary));
+  }
+  .form-btn-primary:disabled, .form-btn-primary[aria-disabled="true"] {
+    border-image: var(--skin-region-button-primary--disabled, var(--skin-region-button-primary));
   }
 }

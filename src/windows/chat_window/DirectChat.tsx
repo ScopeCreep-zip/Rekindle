@@ -240,6 +240,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         label={`Message ${peerName()}`}
         peerId={peerId}
         disabled={pinMismatch()}
+        sendButton
         disabledMessage={identityPinMismatchText(peerName())}
       />
       </div>

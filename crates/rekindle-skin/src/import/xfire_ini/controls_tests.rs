@@ -136,13 +136,17 @@ fn combat_surfaces_import_from_the_skin_and_its_chat_files() {
              Graphics.left=s\\{p}l.png\r\nGraphics.middle=s\\{p}m.png\r\nGraphics.right=s\\{p}r.png\r\n"
         )
     };
-    t.insert("FanChat.ini".into(), bar("c").into_bytes());
+    // Plan E7.7.7 S3: the chat window's `[ImButton]` is its Send button.
+    let chat = bar("c")
+        + "[ImButton]\r\nClass=PushButton\r\nGraphics.middle=s\\send.png\r\n\
+           Hover.middle=s\\send.png\r\nBtnDown.middle=s\\send.png\r\n";
+    t.insert("FanChat.ini".into(), chat.into_bytes());
     t.insert("FanGroup.ini".into(), bar("g").into_bytes());
     for f in [
         "arrow", "arrow-h", "hl", "hm", "hr", "nl", "nm", "nr", "add",
     ]
     .into_iter()
-    .chain(["cl", "cm", "cr", "gl", "gm", "gr", "ml", "mm", "mr"])
+    .chain(["cl", "cm", "cr", "gl", "gm", "gr", "ml", "mm", "mr", "send"])
     {
         t.insert(format!("s/{f}.png"), png(10));
     }
@@ -165,6 +169,11 @@ fn combat_surfaces_import_from_the_skin_and_its_chat_files() {
         .iter()
         .any(|f| f == "FanChat.ini" || f == "FanGroup.ini"));
     assert!(region("chat.toolbar").is_some() && region("chat.group-header").is_some());
+    let send = region("chat.send-button").unwrap();
+    assert_eq!(
+        send.images.keys().copied().collect::<Vec<_>>(),
+        [RegionState::Normal, RegionState::Hover, RegionState::Down]
+    );
     let Outcome::Passed(a) = import(&t, FOLDER, "fan", None).unwrap() else {
         panic!("a draft");
     };

@@ -474,6 +474,8 @@
 '.message-input-mic-btn:hover' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-btn-active' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-timer' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-send-btn' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-send-btn:disabled' = { on = ["--color-xfire-bg-dark"] }
 '.voice-message-play-btn' = { on = ["--color-xfire-accent"] }
 '.voice-message-duration' = { on = ["--color-xfire-bg 88% over --color-xfire-bg-dark", "--color-xfire-bg 88% over --color-xfire-bg-panel"] }
 '.raid-alert-banner' = { on = ["--color-xfire-busy 30% over --color-xfire-bg-dark"] }
@@ -656,12 +658,19 @@
 # Plan E7.7.7 S2: the chat window's surfaces, scoped to its root
 # (`.chat-window`, ChatWindow.tsx). Xfire's chat window has no image for
 # the message list (its ground is a colour, `bg.panel`) and Rekindle has
-# no send button (Enter sends) nor a mute control here (it is the call
-# window's), so those have no slot. The group header's bitmap is the
+# no mute control here (it is the call window's), so those have no slot.
+# The Send button (S3) is a label of the input shell too, so its text is
+# backed when only the shell is skinned. The group header's bitmap is the
 # member strip's: the Leave button keeps its own danger tint, which over
 # a bitmap would put its text on the image.
 'chat.toolbar' = { elements = [".chat-window .chat-peer-status"], labels = [".chat-window .chat-peer-status-label", ".chat-window .chat-safety-btn", ".chat-window .chat-call-btn"] }
 'chat.call-button' = { elements = [".chat-window .chat-call-btn"] }
 'chat.call-button-active' = { elements = [".chat-window .chat-call-btn.chat-call-btn-active"] }
-'chat.input' = { elements = [".chat-window .message-input-shell"], labels = [".chat-window .message-input-attach-btn", ".chat-window .message-input-mic-btn"] }
+'chat.input' = { elements = [".chat-window .message-input-shell"], labels = [".chat-window .message-input-attach-btn", ".chat-window .message-input-mic-btn", ".chat-window .message-input-send-btn"] }
+'chat.send-button' = { elements = [".chat-window .message-input-send-btn"] }
 'chat.group-header' = { elements = [".chat-window .group-chat-members"], labels = [".chat-window .group-chat-member"] }
+# Plan E7.7.7 S3: every window's titlebar strip (its title and buttons are
+# its labels, so the title keeps a solid backing) and a dialog's confirming
+# button (Xfire's OK; Cancel is `button.secondary`).
+'titlebar' = { elements = [".xfire-titlebar"], labels = [".xfire-titlebar-text", ".xfire-titlebar-btn"] }
+'button.primary' = { elements = [".form-btn-primary"] }

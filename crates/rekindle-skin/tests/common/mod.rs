@@ -169,9 +169,10 @@ pub fn surface_entries() -> Vec<(String, rekindle_skin::regions::css::RegionMap)
         .iter()
         .filter(|s| {
             s.css
-                && ["buddylist.", "statusbar", "chat."]
+                && (["buddylist.", "statusbar", "chat."]
                     .iter()
                     .any(|p| s.id.starts_with(p))
+                    || ["titlebar", "button.primary"].contains(&s.id))
         })
         .map(|s| {
             let el = format!(".{}", s.id.replace('.', "-"));

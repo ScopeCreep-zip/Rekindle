@@ -35,6 +35,23 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
   }
 }
 
+/// Whether a draft can be sent: it holds more than whitespace. The Send
+/// button is disabled while this is false, and Enter sends nothing.
+export function canSend(body: string): boolean {
+  return body.trim().length > 0;
+}
+
+/// Send the 1:1 draft to `to` and clear the input, when it can be sent
+/// (Enter and the Send button both land here).
+export function sendDraft(to: string, getBody: () => string, clearInput: () => void): void {
+  const body = getBody();
+  if (canSend(body)) {
+    // The backend ends our typing when the message goes out.
+    handleSendMessage(to, body);
+    clearInput();
+  }
+}
+
 export function handleKeyDown(
   e: KeyboardEvent,
   to: string,
@@ -43,12 +60,7 @@ export function handleKeyDown(
 ): void {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    const body = getBody();
-    if (body.trim()) {
-      // The backend ends our typing when the message goes out.
-      handleSendMessage(to, body);
-      clearInput();
-    }
+    sendDraft(to, getBody, clearInput);
   }
 }
 

@@ -29,6 +29,9 @@ export interface MessageInputProps {
   onDraftChanged?: (body: string) => void;
   disabled?: boolean;
   disabledMessage?: string;
+  /** Shows Xfire's Send button beside the field (the 1:1 and group chat
+   *  windows); disabled while the draft is empty. */
+  sendButton?: boolean;
   slowmodeSeconds?: number;
   bypassSlowmode?: boolean;
 }

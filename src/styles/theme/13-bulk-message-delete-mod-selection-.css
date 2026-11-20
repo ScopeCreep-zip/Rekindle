@@ -116,6 +116,31 @@
     color: var(--color-xfire-danger-text);
   }
 
+  /* Xfire's Send button (plan E7.7.7): a text button at the field's end,
+   * on the input shell's ground; a skin paints it (`chat.send-button`). */
+  .message-input-send-btn {
+    align-self: center;
+    margin: 0 4px;
+    padding: 2px 10px;
+    background: transparent;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 0.25rem;
+    color: var(--color-xfire-text);
+    font-family: var(--font-family-xfire);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .message-input-send-btn:hover:not(:disabled) {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .message-input-send-btn:disabled {
+    color: var(--color-xfire-text-dim);
+    cursor: default;
+  }
+
   /* Architecture §32 a11y — opacity fade replaces the original
    * `transform: scale()` pulse. Scale-based pulses are vestibular-
    * disorder hostile (WCAG 2.3.3 + 2024 vestibular guidance); opacity

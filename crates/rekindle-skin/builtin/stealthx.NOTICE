@@ -39,13 +39,14 @@ Regions
   scrollbar.track: the scrollbar DefaultScrollbar, 19x42 px, NineSlice(Insets { top: 1, right: 0, bottom: 1, left: 0 }); states normal
   scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 42x19 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   scrollbar.corner: the scrollbar DefaultScrollbar, 19x19 px, Stretch; states normal
+  chat.send-button: the component SendButton, 110x21 px, NineSlice(Insets { top: 4, right: 4, bottom: 4, left: 4 }); states normal, hover, down, disabled
   chat.group-header: the component GroupChatInfoView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 30 of 128 images
-  Disabled sets: kept 1 of 23
-  Down sets: kept 4 of 42
-  Hover sets: kept 4 of 42
+  kept 33 of 128 images
+  Disabled sets: kept 2 of 23
+  Down sets: kept 5 of 42
+  Hover sets: kept 5 of 42
   dropped AddFriendButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddFriendButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddFriendButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -113,9 +114,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ActionsMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenuC Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenuC Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped SendButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped SendButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped SendButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GroupChatMenuButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped GroupChatMenuButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoViewButtonGC Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
