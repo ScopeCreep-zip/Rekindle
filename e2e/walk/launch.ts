@@ -6,7 +6,7 @@
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -67,7 +67,13 @@ export interface App {
   log: string;
   child: ChildProcess;
   alive(): boolean;
-  stop(): Promise<void>;
+  /**
+   * Stop the app and drop its data root. With `keep`, the root and the log
+   * are copied to `keep/data-root` and `keep/<log>` first, so a failure can
+   * be traced after the run (the app's own files: its database, vault and
+   * Veilid storage of a throwaway identity, never the token).
+   */
+  stop(keep?: string): Promise<void>;
 }
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -182,18 +188,27 @@ export async function launch(name = "app"): Promise<App> {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  child.stdout?.pipe(log);
-  child.stderr?.pipe(log);
+  // Neither stream ends the log (a pipe ends its destination when its source
+  // ends, and the log outlives the child's streams): stop() ends it.
+  child.stdout?.pipe(log, { end: false });
+  child.stderr?.pipe(log, { end: false });
   let exited = false;
+  let stopped = false;
   child.once("exit", () => {
     exited = true;
-    // A crash (a peer panicking at startup) ends the child with no stop()
-    // from the walk; its root holds nothing the walk reads (the log is in
-    // OUT_DIR), so it goes as soon as nothing writes to it.
-    rmSync(dataRoot, { recursive: true, force: true });
+  });
+  // `close` comes once the child's streams are drained, so the line lands
+  // after the app's own last lines. An exit nobody asked for (a crash, a
+  // panic) is written into the log; the root stays until stop() or the
+  // process exit, so a failed run can keep it (round 9's "Channel closed"
+  // mid-test was undiagnosable once the root was gone).
+  const closed = new Promise<void>((resolve) => {
+    child.once("close", (code, signal) => {
+      if (!stopped) log.write(`\n[walk] the app exited by itself: code ${code ?? "none"}, signal ${signal ?? "none"}\n`);
+      resolve();
+    });
   });
 
-  let stopped = false;
   const app: App = {
     port,
     token,
@@ -201,7 +216,7 @@ export async function launch(name = "app"): Promise<App> {
     log: path.join(OUT_DIR, logName),
     child,
     alive: () => !exited,
-    async stop() {
+    async stop(keep?: string) {
       if (stopped) return;
       stopped = true;
       if (!exited) {
@@ -212,9 +227,20 @@ export async function launch(name = "app"): Promise<App> {
         ]);
         if (!gone && !exited) child.kill("SIGKILL");
       }
+      // The child's last output is in before the log ends (a write after the
+      // end would be an unhandled error); a stream a helper process still
+      // holds open does not hold the stop longer than 5 s.
+      await Promise.race([closed, new Promise<void>((r) => setTimeout(r, 5000))]);
+      child.stdout?.unpipe(log);
+      child.stderr?.unpipe(log);
       // Flushed before stop() resolves, so a caller can copy the log whole.
       await new Promise<void>((resolve) => log.end(resolve));
       running.delete(app);
+      if (keep !== undefined) {
+        mkdirSync(keep, { recursive: true });
+        cpSync(dataRoot, path.join(keep, "data-root"), { recursive: true });
+        cpSync(path.join(OUT_DIR, logName), path.join(keep, logName));
+      }
       rmSync(dataRoot, { recursive: true, force: true });
     },
   };

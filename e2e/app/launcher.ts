@@ -32,8 +32,8 @@ import { keepDir } from "./keep.ts";
  * would overwrite the evidence of a failure that shows up only in a log
  * (finding C-COM1, 2026-11-19, lost its log that way).
  */
-async function stopAndKeepLog(app: App): Promise<void> {
-  await app.stop();
+async function stopAndKeepLog(app: App, failed?: string): Promise<void> {
+  await app.stop(failed === undefined ? undefined : path.join(failed, path.basename(app.log, ".log")));
   const logs = path.join(keepDir(), "logs");
   mkdirSync(logs, { recursive: true });
   copyFileSync(app.log, path.join(logs, path.basename(app.log)));
@@ -120,14 +120,28 @@ export class RekindleAppLauncher implements Services.ServiceInstance {
     }
   }
 
-  async onWorkerEnd(cid: string): Promise<void> {
+  /**
+   * A worker that failed (`exitCode` not 0, webdriver.io's onWorkerEnd)
+   * keeps each of its apps' data root and log in
+   * `e2e/app/out/failed/<spec>/<run>/<app>/` and says where, so a failure
+   * that only the app's own files explain (round 9's "Channel closed"
+   * mid-befriend) can still be traced; a passing worker's roots go.
+   */
+  async onWorkerEnd(cid: string, exitCode: number, specs: string[], _retries: number, signal?: NodeJS.Signals | null): Promise<void> {
     const apps = this.#apps.get(cid) ?? [];
     this.#apps.delete(cid);
-    await Promise.all(apps.map(stopAndKeepLog));
+    if (exitCode === 0) {
+      await Promise.all(apps.map((app) => stopAndKeepLog(app)));
+      return;
+    }
+    const spec = specs.map((s) => path.basename(s).replace(/\.e2e\.ts$/, "")).join("+") || cid;
+    const failed = path.join(import.meta.dirname, "out", "failed", spec, path.basename(keepDir()));
+    await Promise.all(apps.map((app) => stopAndKeepLog(app, failed)));
+    console.log(`[failed] worker ${cid} (${spec}) exited ${exitCode}${signal ? ` by ${signal}` : ""}: each app's data root and log are kept in ${failed}`);
   }
 
   async onComplete(): Promise<void> {
-    await Promise.all([...this.#apps.values()].flat().map(stopAndKeepLog));
+    await Promise.all([...this.#apps.values()].flat().map((app) => stopAndKeepLog(app)));
     this.#apps.clear();
   }
 }
