@@ -128,12 +128,17 @@ impl BeatEngine {
     }
 
     /// Our quit, once [`Self::run`] returned: one `Offline` beat in every
-    /// community, unless a hiding status already wrote it.
+    /// community we are a member of now, unless a hiding status already
+    /// wrote it. The membership is read again here, not taken from the
+    /// schedule alone: a community created or joined since the last
+    /// membership check (up to [`MEMBERSHIP_CHECK`]) has no schedule yet,
+    /// and its members would see the quit only at the beat's expiry.
     pub async fn quit(&self) {
         let mut schedule = self.schedule.lock().await;
         if std::mem::replace(&mut schedule.hidden, true) {
             return;
         }
+        self.reconcile(&mut schedule);
         let communities: Vec<String> = schedule.due.keys().cloned().collect();
         for community in communities {
             if let Err(error) = self.sink.write_quit_beat(&community).await {

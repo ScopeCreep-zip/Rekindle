@@ -493,6 +493,8 @@ impl Host {
         if self.ctx.session.read().is_some() || self.ctx.unlock_scope.read().is_some() {
             super::unlock::teardown(&self.ctx, super::shell_hooks::EndReason::Exit).await;
         }
+        // Only now: the teardown's quit hints went through the gossip worker.
+        self.ctx.shutdown.stop_workers();
         self.workers.close();
         if tokio::time::timeout(WORKER_STOP_DEADLINE, self.workers.wait())
             .await

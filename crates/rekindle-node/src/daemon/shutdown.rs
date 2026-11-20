@@ -91,6 +91,10 @@ pub async fn announce_when_requested(ctx: std::sync::Arc<crate::daemon::dispatch
 pub struct Shutdown {
     token: CancellationToken,
     reason: OnceLock<ExitReason>,
+    /// Cancelled by `Host::shutdown` once the exit's teardown ran: the
+    /// workers the teardown's own sends go through (the quit's
+    /// `HeadAdvanced` hint, plan E3.4) stop here, not at the request.
+    workers: CancellationToken,
 }
 
 impl Shutdown {
@@ -122,6 +126,25 @@ impl Shutdown {
         tokio::select! {
             biased;
             () = self.requested() => None,
+            value = work => Some(value),
+        }
+    }
+
+    /// Tell the workers that outlive the request to stop: the exit's
+    /// teardown is done.
+    pub fn stop_workers(&self) {
+        self.workers.cancel();
+    }
+
+    /// Run `work` until it finishes or the workers are told to stop
+    /// ([`Self::stop_workers`]); `None` means the stop won.
+    pub async fn run_until_workers_stop<T>(
+        &self,
+        work: impl std::future::Future<Output = T>,
+    ) -> Option<T> {
+        tokio::select! {
+            biased;
+            () = self.workers.cancelled() => None,
             value = work => Some(value),
         }
     }

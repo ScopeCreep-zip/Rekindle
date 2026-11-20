@@ -255,3 +255,29 @@ async fn the_quit_writes_offline_once() {
     engine.quit().await;
     assert_eq!(sink.writes().len(), 1);
 }
+
+/// The quit reads the membership again: a community joined since the last
+/// membership check (no schedule yet) gets its `Offline` beat, one left
+/// since gets none, and one departed gets no second beat (netsim
+/// `a_quit_is_seen_within_one_gossip_round`: the creator's community, made
+/// after the unlock, had no schedule and its quit wrote nothing).
+#[tokio::test(start_paused = true)]
+async fn the_quit_reaches_a_community_joined_since_the_last_check() {
+    let sink = Sink::new(&["a", "gone"]);
+    let (engine, stop, task) = start(&sink, 23);
+    settle().await;
+    engine.depart("a").await.expect("departed beat written");
+    {
+        let mut communities = sink.communities.lock();
+        communities.retain(|c| c != "gone");
+        communities.push("joined".to_owned());
+    }
+    stop.cancel();
+    task.await.expect("engine ran");
+    engine.quit().await;
+    let offline: Vec<String> = (sink.writes().into_iter())
+        .filter(|w| w.2 == BeatState::Offline)
+        .map(|w| w.1)
+        .collect();
+    assert_eq!(offline, vec!["joined".to_owned()]);
+}

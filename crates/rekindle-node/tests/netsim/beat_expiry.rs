@@ -137,9 +137,18 @@ async fn a_beat_number_an_hour_ahead_counts_from_its_arrival() {
 /// minutes later.
 const GOSSIP_ROUND: Duration = Duration::from_secs(3);
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_quit_is_seen_within_one_gossip_round() {
-    let community = Community::of(3, 4312).await;
+/// How the creator ends its session in a quit scenario.
+#[derive(Clone, Copy)]
+enum Quit {
+    /// A lock or logout over the bus.
+    Lock,
+    /// The Host's exit, as a stop signal (SIGTERM, SIGINT,
+    /// `systemctl stop`) or the shell's quit runs it.
+    Exit,
+}
+
+async fn quit_is_seen_within_one_gossip_round(seed: u64, quit: Quit) {
+    let community = Community::of(3, seed).await;
     let creator = community.pseudonym(0).await;
     for reader in [1, 2] {
         assert!(
@@ -154,7 +163,18 @@ async fn a_quit_is_seen_within_one_gossip_round() {
             "node {reader} shows the creator online"
         );
     }
-    community.nodes[0].ok(IpcRequest::Lock).await;
+    match quit {
+        Quit::Lock => {
+            community.nodes[0].ok(IpcRequest::Lock).await;
+        }
+        Quit::Exit => {
+            community.nodes[0]
+                .host
+                .shutdown()
+                .await
+                .expect("the host stops");
+        }
+    }
     for reader in [1, 2] {
         assert!(
             shows(
@@ -168,4 +188,17 @@ async fn a_quit_is_seen_within_one_gossip_round() {
             "node {reader} shows the quit creator offline within {GOSSIP_ROUND:?}"
         );
     }
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_quit_is_seen_within_one_gossip_round() {
+    quit_is_seen_within_one_gossip_round(4312, Quit::Lock).await;
+}
+
+/// The same quit through the Host's exit: the gossip worker carries the
+/// teardown's hint, so it stops after the teardown, not at the stop
+/// request (Linux W5b: every signal stop left its peers showing it online).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_exit_is_seen_within_one_gossip_round() {
+    quit_is_seen_within_one_gossip_round(4313, Quit::Exit).await;
 }

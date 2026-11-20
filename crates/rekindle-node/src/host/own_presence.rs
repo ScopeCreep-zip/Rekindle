@@ -428,6 +428,12 @@ impl OwnPresence {
                 .and_then(|t| t.records())
                 .is_none()
         {
+            // Never a silent skip: friends would read us online until the
+            // status expires.
+            tracing::warn!(
+                profile = self.profile_dht_info().is_some(),
+                "offline status not written: no profile record or no record pool"
+            );
             return;
         }
         let flipped = {

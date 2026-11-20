@@ -115,10 +115,7 @@ pub async fn send_awaited(tx: &GossipSender, community_id: &str, envelope: &Comm
         sent: Some(sent),
     });
     if queued.is_err() || taken.await.is_err() {
-        tracing::debug!(
-            community = %community_id,
-            "gossip: worker gone, dropping broadcast"
-        );
+        tracing::warn!("gossip: worker gone, an awaited broadcast was not sent");
     }
 }
 
@@ -128,7 +125,10 @@ pub fn forward(tx: &GossipSender, envelope: SignedEnvelope) {
     let _ = tx.send(GossipRequest::Forward(envelope));
 }
 
-/// Drain broadcast requests until the daemon shuts down.
+/// Drain broadcast requests until the host's exit is done: the worker
+/// stops after the exit's teardown, not at the stop request, so the
+/// teardown's own sends (the quit's `HeadAdvanced` hint, plan E3.4) go out
+/// on a signal stop as on a lock.
 ///
 /// One adapter for the worker's lifetime — see the module docs on
 /// `resolve_gate`. Each request is awaited to the point where the
@@ -136,7 +136,7 @@ pub fn forward(tx: &GossipSender, envelope: SignedEnvelope) {
 pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
     let adapter = Arc::new(DaemonGossipAdapter::new(Arc::clone(&ctx)));
     tracing::info!("gossip worker started");
-    while let Some(Some(request)) = ctx.shutdown.run_until(rx.recv()).await {
+    while let Some(Some(request)) = ctx.shutdown.run_until_workers_stop(rx.recv()).await {
         if let Some(community) = removed_from(&ctx, &request) {
             // Every sender checks the removal itself; this one is the
             // backstop for a send queued before the teardown.
@@ -172,8 +172,8 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
             }
         };
         // Gossip is PATH 2 with "Durability: None": a send cut off at
-        // shutdown costs latency, never content.
-        if ctx.shutdown.run_until(send).await.is_none() {
+        // the workers' stop costs latency, never content.
+        if ctx.shutdown.run_until_workers_stop(send).await.is_none() {
             break;
         }
     }
