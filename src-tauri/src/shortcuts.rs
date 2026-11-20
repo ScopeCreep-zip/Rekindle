@@ -378,8 +378,7 @@ fn toggle_buddy_list(app_handle: &tauri::AppHandle) {
             let _ = window.hide();
             tracing::debug!("buddy list hidden via global shortcut");
         } else {
-            let _ = window.show();
-            let _ = window.set_focus();
+            crate::windows::reveal_window(&window);
             tracing::debug!("buddy list shown via global shortcut");
         }
     }

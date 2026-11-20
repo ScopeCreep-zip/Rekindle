@@ -105,38 +105,72 @@ pub struct QuickWipeState {
 /// the Host reviews it with exactly what a trigger destroys and asks for
 /// the identity's passphrase). The panic shortcut is parsed, and refused
 /// when this desktop cannot deliver it (`panic_shortcut::route`: a Wayland
-/// session without the GlobalShortcuts portal), before the Host sees it.
-/// The shell registers it when the arming commits, on the Host's
-/// `QuickWipeChanged` (`shell_session::unlocked`), and alerts when the OS
-/// or the portal refuses it, so the user never believes an inert shortcut
-/// is armed.
+/// session without the GlobalShortcuts portal), before the Host sees it
+/// ([`arm_checked`]). The shell registers it when the arming commits, on the
+/// Host's `QuickWipeChanged` (`shell_session::unlocked`), and alerts when
+/// the OS or the portal refuses it, so the user never believes an inert
+/// shortcut is armed.
 #[tauri::command]
 pub async fn quick_wipe_arm(
     duress_passphrase: Passphrase,
     shortcut: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<QuickWipeState>, CommandError> {
-    let refused = |message: String| CommandError::Failed {
-        code: 400,
-        message,
-        remediation: None,
+    arm_checked(shortcut, crate::shortcuts::panic_route(), |shortcut| {
+        host_call::call(
+            &state,
+            IpcRequest::QuickWipeArm {
+                duress_passphrase,
+                shortcut,
+            },
+        )
+    })
+    .await
+}
+
+/// What a refused chord tells the user besides the reason: nothing was
+/// armed, the duress passphrase included, and how to arm it alone (plan
+/// E7.1; the Linux finding of a chord refused on COSMIC that left the
+/// duress passphrase silently unarmed).
+pub(crate) const NOTHING_ARMED: &str =
+    "Nothing was armed. Arm the duress passphrase without a shortcut to use it alone.";
+
+/// Check the chord, then arm through `arm`. A chord the plugin cannot parse,
+/// or one this desktop cannot deliver (`route`, awaited only when a chord is
+/// given), is refused with its reason verbatim and [`NOTHING_ARMED`], and
+/// `arm` never runs: nothing is half-armed. The refusal is logged without
+/// the chord or any identifier.
+async fn arm_checked<R, A, F>(
+    shortcut: Option<String>,
+    route: R,
+    arm: A,
+) -> Result<Done<QuickWipeState>, CommandError>
+where
+    R: std::future::Future<Output = rekindle_node::host::panic_shortcut::PanicRoute>,
+    A: FnOnce(Option<String>) -> F,
+    F: std::future::Future<Output = Result<Done<QuickWipeState>, CommandError>>,
+{
+    // The log names the kind of refusal only: never the chord, which is
+    // the user's panic trigger.
+    let refused = |kind: &str, message: String| {
+        tracing::warn!(
+            refusal = kind,
+            "quick wipe arming refused before the Host: nothing armed"
+        );
+        CommandError::Failed {
+            code: 400,
+            message,
+            remediation: Some(NOTHING_ARMED.to_owned()),
+        }
     };
-    crate::shortcuts::parse_panic_chord(shortcut.as_deref()).map_err(refused)?;
+    crate::shortcuts::parse_panic_chord(shortcut.as_deref())
+        .map_err(|reason| refused("unparsable chord", reason))?;
     if shortcut.is_some() {
-        if let rekindle_node::host::panic_shortcut::PanicRoute::Unavailable(reason) =
-            crate::shortcuts::panic_route().await
-        {
-            return Err(refused(reason.into()));
+        if let rekindle_node::host::panic_shortcut::PanicRoute::Unavailable(reason) = route.await {
+            return Err(refused("undeliverable chord", reason.to_owned()));
         }
     }
-    host_call::call(
-        &state,
-        IpcRequest::QuickWipeArm {
-            duress_passphrase,
-            shortcut,
-        },
-    )
-    .await
+    arm(shortcut).await
 }
 
 /// Disarm the quick wipe (`IpcRequest::QuickWipeDisarm`, Protected): the
@@ -180,4 +214,81 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
     }
 
     Ok(has_update)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rekindle_node::host::panic_shortcut::{PanicRoute, UNAVAILABLE};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    async fn arm_with(
+        shortcut: Option<&str>,
+        route: PanicRoute,
+    ) -> (Result<Done<QuickWipeState>, CommandError>, bool) {
+        let armed = AtomicBool::new(false);
+        let answer = arm_checked(shortcut.map(str::to_owned), async { route }, |shortcut| {
+            armed.store(true, Ordering::SeqCst);
+            async move {
+                Ok(Done {
+                    value: QuickWipeState {
+                        armed: true,
+                        shortcut,
+                    },
+                    undo: None,
+                })
+            }
+        })
+        .await;
+        (answer, armed.load(Ordering::SeqCst))
+    }
+
+    /// A chord this desktop cannot deliver (COSMIC without the portal) is
+    /// refused with the Host's reason verbatim and says nothing was armed;
+    /// the arming never reaches the Host, so the duress passphrase is not
+    /// half-armed.
+    #[tokio::test]
+    async fn an_undeliverable_chord_arms_nothing_and_says_why() {
+        let (answer, armed) = arm_with(
+            Some("CommandOrControl+Shift+F12"),
+            PanicRoute::Unavailable(UNAVAILABLE),
+        )
+        .await;
+        assert!(!armed, "the Host was asked to arm");
+        assert_eq!(
+            answer.expect_err("refused"),
+            CommandError::Failed {
+                code: 400,
+                message: UNAVAILABLE.to_owned(),
+                remediation: Some(NOTHING_ARMED.to_owned()),
+            }
+        );
+    }
+
+    /// A chord that is not one is refused the same way, and arms nothing.
+    #[tokio::test]
+    async fn an_unparsable_chord_arms_nothing() {
+        let (answer, armed) = arm_with(Some("not a chord"), PanicRoute::OsGrab).await;
+        assert!(!armed);
+        assert!(matches!(
+            answer,
+            Err(CommandError::Failed { remediation: Some(r), .. }) if r == NOTHING_ARMED
+        ));
+    }
+
+    /// The duress passphrase alone is armed whatever the desktop offers
+    /// (the explicit "without a shortcut" action), and a deliverable chord
+    /// goes to the Host with it.
+    #[tokio::test]
+    async fn without_a_chord_or_with_a_deliverable_one_the_host_arms() {
+        let (answer, armed) = arm_with(None, PanicRoute::Unavailable(UNAVAILABLE)).await;
+        assert!(armed && answer.is_ok());
+        let (answer, armed) =
+            arm_with(Some("CommandOrControl+Shift+F12"), PanicRoute::Portal).await;
+        assert!(armed);
+        assert_eq!(
+            answer.expect("armed").value.shortcut.as_deref(),
+            Some("CommandOrControl+Shift+F12")
+        );
+    }
 }

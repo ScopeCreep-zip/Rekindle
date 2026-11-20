@@ -14,28 +14,48 @@ const UNITS: { seconds: number; one: string; many: string; short: string }[] = [
  *  dialog offers the same five). */
 export const CUSTOM_UNITS = UNITS.map((u) => ({ seconds: u.seconds, label: u.many }));
 
-/** `seconds` in words: "Off", "30 seconds", "1 week", "90 minutes". */
+/** `seconds` as its two largest units, the smaller rounded up: the larger
+ *  unit's index, its count, and the next unit's count (0 when none). The
+ *  same rule as `rekindle_types::disappearing::parts`, whose tests are its
+ *  spec: a timer and a fresh message's countdown read the same ("1 day 6
+ *  hours" on the button and "1d 6h" on the bubble). */
+function parts(seconds: number): [number, number, number] {
+  const found = UNITS.findIndex((u) => seconds >= u.seconds);
+  const top = found < 0 ? UNITS.length - 1 : found;
+  if (top + 1 >= UNITS.length) return [top, seconds, 0];
+  const small = UNITS[top + 1].seconds;
+  const rounded = Math.ceil(seconds / small) * small;
+  if (top > 0 && rounded >= UNITS[top - 1].seconds) return parts(rounded);
+  const unit = UNITS[top].seconds;
+  return [top, Math.floor(rounded / unit), (rounded % unit) / small];
+}
+
+function words(index: number, count: number): string {
+  return `${count} ${count === 1 ? UNITS[index].one : UNITS[index].many}`;
+}
+
+function inWords(seconds: number): string {
+  const [top, hi, lo] = parts(seconds);
+  return lo === 0 ? words(top, hi) : `${words(top, hi)} ${words(top + 1, lo)}`;
+}
+
+/** `seconds` in words: "Off", "30 seconds", "1 week", "1 hour 30 minutes",
+ *  "1 day 6 hours". */
 export function durationText(seconds: number): string {
-  if (seconds <= 0) return "Off";
-  const unit = UNITS.find((u) => seconds % u.seconds === 0) ?? UNITS[UNITS.length - 1];
-  const n = seconds / unit.seconds;
-  return `${n} ${n === 1 ? unit.one : unit.many}`;
+  return seconds <= 0 ? "Off" : inWords(seconds);
 }
 
-/** What is left of `ms`, rounded up to its largest unit: "4w", "3d",
- *  "5h", "12m", "30s". */
+/** What is left of `ms`, in its two largest units, the smaller rounded up:
+ *  "4w", "1d 6h", "12m", "30s". */
 export function remainingShort(ms: number): string {
-  const seconds = Math.max(0, Math.ceil(ms / 1000));
-  const unit = UNITS.find((u) => seconds >= u.seconds) ?? UNITS[UNITS.length - 1];
-  return `${Math.ceil(seconds / unit.seconds)}${unit.short}`;
+  const [top, hi, lo] = parts(Math.max(0, Math.ceil(ms / 1000)));
+  const short = (index: number, count: number): string => `${count}${UNITS[index].short}`;
+  return lo === 0 ? short(top, hi) : `${short(top, hi)} ${short(top + 1, lo)}`;
 }
 
-/** The same, in words for a screen reader: "5 hours". */
+/** The same, in words for a screen reader: "1 day 6 hours". */
 export function remainingText(ms: number): string {
-  const seconds = Math.max(0, Math.ceil(ms / 1000));
-  const unit = UNITS.find((u) => seconds >= u.seconds) ?? UNITS[UNITS.length - 1];
-  const n = Math.ceil(seconds / unit.seconds);
-  return `${n} ${n === 1 ? unit.one : unit.many}`;
+  return inWords(Math.max(0, Math.ceil(ms / 1000)));
 }
 
 /** A timer change's timeline notice: who set it, to what. */

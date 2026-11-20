@@ -8,9 +8,11 @@
 
 mod navigation;
 mod rebind;
+mod reveal;
 mod titles;
 
 pub use rebind::follow_event;
+pub use reveal::reveal_window;
 
 use rekindle_types::key_format::{self, PublicKeyHex};
 use serde::{Deserialize, Serialize};
@@ -157,13 +159,13 @@ fn finish(
     Ok(window)
 }
 
-/// Show and focus an existing window. Returns false when `label` is not open.
+/// Show, restore and focus an existing window ([`reveal_window`]). Returns
+/// false when `label` is not open.
 fn raise(app: &AppHandle, label: &str) -> bool {
     let Some(window) = app.get_webview_window(label) else {
         return false;
     };
-    let _ = window.show();
-    let _ = window.set_focus();
+    reveal_window(&window);
     true
 }
 
@@ -192,13 +194,17 @@ pub fn open_login(app: &AppHandle, preselect: Option<&PublicKeyHex>) -> Result<(
     finish(builder, WindowKind::Login).map(drop)
 }
 
-/// Open the buddy list window (the main window after login).
+/// Open the buddy list window (the main window after login), or bring the
+/// open one back (the tray, the walk's recovery).
 ///
-/// An existing buddy list is destroyed first so the new one hydrates after
-/// the backend identity is set.
+/// An open buddy list belongs to this session (a session's end destroys
+/// every window but the login, `shell_session::ended::show_login`), so it is
+/// revealed in place, never rebuilt: destroying a tray-hidden window and
+/// building another under its label left it hidden on COSMIC. A new one
+/// hydrates after the backend identity is set.
 pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window(labels::BUDDY_LIST) {
-        let _ = window.destroy();
+    if raise(app, labels::BUDDY_LIST) {
+        return Ok(());
     }
     let builder = base_builder(
         app,
@@ -268,8 +274,7 @@ pub fn open_settings(app: &AppHandle, tab: Option<SettingsTab>) -> Result<(), St
                 crate::event_dispatch::WebviewEvent::SettingsSwitchTab(tab),
             );
         }
-        let _ = window.show();
-        let _ = window.set_focus();
+        reveal_window(&window);
         return Ok(());
     }
     let path = match tab {
@@ -318,18 +323,10 @@ pub fn surface_buddy_list(app: &AppHandle) {
         tracing::debug!("surface_buddy_list: buddy-list window not found");
         return;
     };
-    if let Err(e) = window.show() {
-        tracing::warn!(error = %e, "surface_buddy_list: show failed");
-    }
-    if let Err(e) = window.unminimize() {
-        tracing::trace!(error = %e, "surface_buddy_list: unminimize failed");
-    }
-    if let Err(e) = window.set_focus() {
-        tracing::warn!(error = %e, "surface_buddy_list: set_focus failed");
-    }
     if let Err(e) = window.request_user_attention(Some(tauri::UserAttentionType::Critical)) {
         tracing::trace!(error = %e, "surface_buddy_list: user_attention failed");
     }
+    reveal_window(&window);
 }
 
 /// Wave 12 W12.7 — pop the active call out into its own window. It mounts

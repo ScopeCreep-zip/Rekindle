@@ -62,12 +62,11 @@ fn single_instance<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         // plugin (firing `on_open_url`, see setup.rs) *before* this
         // callback runs. We only raise the existing window here — parsing
         // argv again would double-fire the deep link.
-        if let Some(w) = app.get_webview_window(window_labels::BUDDY_LIST) {
-            let _ = w.show();
-            let _ = w.set_focus();
-        } else if let Some(w) = app.get_webview_window(window_labels::LOGIN) {
-            let _ = w.show();
-            let _ = w.set_focus();
+        if let Some(w) = app
+            .get_webview_window(window_labels::BUDDY_LIST)
+            .or_else(|| app.get_webview_window(window_labels::LOGIN))
+        {
+            crate::windows::reveal_window(&w);
         }
     })
 }

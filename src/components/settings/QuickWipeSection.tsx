@@ -1,6 +1,7 @@
 import { Component, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { subscribeQuickWipe } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
+import { errorMessage } from "../../utils/error";
 
 /// The quick wipe (plan E7.1): arm a duress passphrase and an optional
 /// panic shortcut, or disarm both. The Host reviews each (Protected: the
@@ -15,6 +16,10 @@ const QuickWipeSection: Component = () => {
   const [shortcut, setShortcut] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<string | null>(null);
+  // The last arming carried a chord and was refused: nothing was armed, and
+  // arming the duress passphrase alone is offered as its own action, which
+  // goes through the Host's review like any arming.
+  const [offerAlone, setOfferAlone] = createSignal(false);
 
   const mismatch = (): boolean => confirm().length > 0 && confirm() !== duress();
   const canArm = (): boolean => duress().length > 0 && confirm() === duress();
@@ -28,28 +33,38 @@ const QuickWipeSection: Component = () => {
     onCleanup(() => void sub.then((unlisten) => unlisten()));
   });
 
-  async function arm(): Promise<void> {
+  async function arm(chord: string | null): Promise<void> {
     if (!canArm()) return;
     setError(null);
     setStatus(null);
+    setOfferAlone(false);
     try {
-      const chord = shortcut().trim();
-      await commands.quickWipeArm(duress(), chord.length > 0 ? chord : null);
+      await commands.quickWipeArm(duress(), chord);
       setDuress("");
       setConfirm("");
+      if (chord === null) setShortcut("");
     } catch (e) {
-      setError(`Quick wipe not armed: ${String(e)}`);
+      setError(`Quick wipe not armed: ${errorMessage(e)}`);
+      // A refusal, not a cancelled review: the chord was what failed.
+      const refused = typeof e === "object" && e !== null && (e as { type?: unknown }).type === "failed";
+      setOfferAlone(chord !== null && refused);
     }
+  }
+
+  function chordEntered(): string | null {
+    const chord = shortcut().trim();
+    return chord.length > 0 ? chord : null;
   }
 
   async function disarm(): Promise<void> {
     setError(null);
     setStatus(null);
+    setOfferAlone(false);
     try {
       await commands.quickWipeDisarm();
       setShortcut("");
     } catch (e) {
-      setError(`Quick wipe not disarmed: ${String(e)}`);
+      setError(`Quick wipe not disarmed: ${errorMessage(e)}`);
     }
   }
 
@@ -100,9 +115,14 @@ const QuickWipeSection: Component = () => {
         onInput={(e) => setShortcut(e.currentTarget.value)}
       />
       <div class="form-field-row">
-        <button class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm()}>
+        <button class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(chordEntered())}>
           Arm Quick Wipe
         </button>
+        <Show when={offerAlone()}>
+          <button class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(null)}>
+            Arm Without Shortcut
+          </button>
+        </Show>
         <button class="form-btn-secondary" onClick={() => void disarm()}>
           Disarm Quick Wipe
         </button>

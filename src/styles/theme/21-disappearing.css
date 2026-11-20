@@ -149,6 +149,7 @@
     gap: 2px;
     margin-left: 6px;
     font-size: 10px;
+    white-space: nowrap;
     color: var(--color-xfire-text-timestamp);
   }
 }
