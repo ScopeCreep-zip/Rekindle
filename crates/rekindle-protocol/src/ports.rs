@@ -151,6 +151,10 @@ impl RoutePort for VeilidRoutes {
         self.own.replace(class);
     }
 
+    fn self_tested_own(&self, class: RouteClass, ok: bool) {
+        self.own.self_tested(class, ok);
+    }
+
     fn release_retired_own(&self, class: RouteClass) {
         self.own.release_retired(class);
     }

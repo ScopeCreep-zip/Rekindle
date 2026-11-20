@@ -37,6 +37,7 @@ impl Liveness {
         self.outstanding.lock().remove(&nonce);
         let ok = matches!(&answer, Ok(Ok(reply)) if *reply == datagram);
         tracing::debug!(?class, ok, "own route self-test");
+        self.routes.self_tested_own(class, ok);
         ok
     }
 

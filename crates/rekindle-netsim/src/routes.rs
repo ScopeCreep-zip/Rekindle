@@ -197,6 +197,11 @@ impl RouteAllocator for FakeAllocator {
     fn release(&self, id: &String) {
         self.net.inner.lock().routes.remove(id);
     }
+
+    /// The simulated network does not model a route's hops.
+    fn hop_count(&self, _class: RouteClass) -> Option<usize> {
+        None
+    }
 }
 
 impl FakeAllocator {
@@ -377,6 +382,10 @@ impl RoutePort for FakeRoutes {
 
     fn replace_own_class(&self, class: RouteClass) {
         self.own.replace(class);
+    }
+
+    fn self_tested_own(&self, class: RouteClass, ok: bool) {
+        self.own.self_tested(class, ok);
     }
 
     fn release_retired_own(&self, class: RouteClass) {

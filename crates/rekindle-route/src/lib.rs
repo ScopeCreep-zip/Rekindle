@@ -5,3 +5,4 @@ pub mod liveness;
 pub mod own_routes;
 pub mod profile;
 pub mod relay;
+pub mod route_death;

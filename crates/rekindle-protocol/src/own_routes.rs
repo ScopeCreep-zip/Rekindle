@@ -122,6 +122,21 @@ impl RouteAllocator for VeilidRouteAllocator {
         }
     }
 
+    /// Sending carries its spec's hop count; General and Media the
+    /// configured default (`network.rpc.default_route_hop_count`, which
+    /// `new_private_route` and a 0-hop spec take, `api.rs:763-857`). `None`
+    /// once the API is shut down.
+    fn hop_count(&self, class: RouteClass) -> Option<usize> {
+        match class {
+            RouteClass::Sending => Some(sending_private_spec().hop_count),
+            RouteClass::General | RouteClass::Media => self
+                .api
+                .config()
+                .ok()
+                .map(|config| usize::from(config.network.rpc.default_route_hop_count)),
+        }
+    }
+
     fn release(&self, id: &Self::Id) {
         if let Err(e) = self.api.release_private_route(id.clone()) {
             tracing::debug!(route = %id, error = %e, "releasing own route failed");

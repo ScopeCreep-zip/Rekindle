@@ -119,6 +119,10 @@ pub trait RoutePort: Send + Sync {
     /// [`release_retired_own`](Self::release_retired_own) (O4).
     fn replace_own_class(&self, class: RouteClass);
 
+    /// A self-test of our live route of `class` came back `ok` (plan RH1r-c
+    /// O1): kept for that route's death log (r7 design §4.6).
+    fn self_tested_own(&self, class: RouteClass, ok: bool);
+
     /// Release the routes of `class` that a replacement retired, once the
     /// replacement is published (O4).
     fn release_retired_own(&self, class: RouteClass);

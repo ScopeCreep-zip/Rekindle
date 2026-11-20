@@ -32,6 +32,8 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{RouteClass, RouteState};
 use tokio::sync::watch;
 
+use crate::route_death::{DeathCause, RouteDeath, TestTally};
+
 /// Why an allocation did not produce a route.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AllocError {
@@ -52,6 +54,9 @@ pub trait RouteAllocator: Send + Sync + 'static {
     async fn allocate(&self, class: RouteClass) -> Result<(Self::Id, Vec<u8>), AllocError>;
     /// Release a live route we own.
     fn release(&self, id: &Self::Id);
+    /// The hop count a route of `class` is allocated with, when the
+    /// network can say (for the death log, [`RouteDeath`]).
+    fn hop_count(&self, class: RouteClass) -> Option<usize>;
 }
 
 /// First and longest wait between `TryAgain` retries.
@@ -72,6 +77,8 @@ struct Slot<Id> {
     /// A want or a death arrived while the task ran: run another pass.
     again: AtomicBool,
     current: Mutex<Option<Live<Id>>>,
+    /// The live route's self-tests, for its death log.
+    tally: Mutex<TestTally>,
     /// Routes [`OwnRoutes::replace`] took out of service that peers may
     /// still hold: kept allocated until [`OwnRoutes::release_retired`]
     /// (plan RH1r-c O4).
@@ -87,6 +94,7 @@ impl<Id> Slot<Id> {
             running: AtomicBool::new(false),
             again: AtomicBool::new(false),
             current: Mutex::new(None),
+            tally: Mutex::new(TestTally::default()),
             retiring: Mutex::new(Vec::new()),
             state: watch::channel(RouteState::Idle).0,
         }
@@ -216,11 +224,13 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 let mut current = slot.current.lock();
                 let hit = current.as_ref().is_some_and(|live| dead.contains(&live.id));
                 if hit {
-                    current.take();
+                    current.take()
+                } else {
+                    None
                 }
-                hit
             };
-            if died {
+            if let Some(old) = died {
+                self.death(class, DeathCause::VeilidReported, &old).log();
                 tracing::info!(?class, "own route died; allocating a replacement");
                 slot.state.send_replace(RouteState::Allocating);
                 self.start(class);
@@ -237,6 +247,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         let Some(old) = slot.current.lock().take() else {
             return;
         };
+        self.death(class, DeathCause::SelfTest, &old).log();
         tracing::info!(
             ?class,
             "own route failed its self-test; allocating a replacement"
@@ -244,6 +255,30 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         slot.retiring.lock().push(old);
         slot.state.send_replace(RouteState::Allocating);
         self.start(class);
+    }
+
+    /// A self-test of the class's live route came back `ok` (plan RH1r-c
+    /// O1): kept for the route's death log.
+    pub fn self_tested(&self, class: RouteClass, ok: bool) {
+        let slot = self.slot(class);
+        if slot.current.lock().is_some() {
+            slot.tally.lock().record(tokio::time::Instant::now(), ok);
+        }
+    }
+
+    /// The identifier-free record of `old`'s death (r7 design §4.6); the
+    /// class's self-test tally starts over for its replacement.
+    fn death(&self, class: RouteClass, cause: DeathCause, old: &Live<A::Id>) -> RouteDeath {
+        let tally = std::mem::take(&mut *self.slot(class).tally.lock());
+        RouteDeath::new(
+            class,
+            cause,
+            self.alloc.hop_count(class),
+            old.at,
+            tally,
+            *self.ready.borrow(),
+            tokio::time::Instant::now(),
+        )
     }
 
     /// Release the routes of `class` that [`Self::replace`] retired, once
@@ -383,6 +418,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                         self.alloc.release(&id);
                         return;
                     }
+                    *slot.tally.lock() = TestTally::default();
                     let replaced = slot.current.lock().replace(Live {
                         id,
                         blob: blob.clone(),

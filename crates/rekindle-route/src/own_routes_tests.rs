@@ -38,6 +38,9 @@ impl RouteAllocator for Arc<Fake> {
     fn release(&self, id: &u32) {
         self.released.lock().push(*id);
     }
+    fn hop_count(&self, _class: RouteClass) -> Option<usize> {
+        Some(3)
+    }
 }
 
 fn owner(fake: &Arc<Fake>, ready: bool) -> (Arc<OwnRoutes<Arc<Fake>>>, watch::Sender<bool>) {
@@ -238,4 +241,40 @@ async fn shutdown_awaits_an_allocation_in_flight_and_releases_its_route() {
     );
     assert_eq!(*fake.released.lock(), vec![9]);
     assert_eq!(routes.blob(RouteClass::General), None);
+}
+
+/// r7 design §4.6: each own-route death path emits exactly one
+/// identifier-free death line, with its cause and self-test history.
+#[tokio::test]
+async fn each_death_path_logs_one_identifier_free_line() {
+    use crate::route_death::tests::{assert_identifier_free, Deaths};
+    let fake = Arc::new(Fake::new(vec![
+        Ok((0x1f2e_3d4c, b"one".to_vec())),
+        Ok((0x5b6a_7988, b"two".to_vec())),
+        Ok((9, b"three".to_vec())),
+    ]));
+    let (routes, _ready) = owner(&fake, true);
+    routes.want(RouteClass::General);
+    settle().await;
+    routes.self_tested(RouteClass::General, true);
+    routes.self_tested(RouteClass::General, false);
+    let veilid = Deaths::during(|| routes.on_dead(&[0x1f2e_3d4c]));
+    assert_eq!(veilid.len(), 1, "{veilid:?}");
+    assert_identifier_free(&veilid[0]);
+    assert!(veilid[0].contains("class=General cause=veilid hops=3 age_s=0 failures=1 passes=1 since_ok_s=0 node_ready=true"), "{}", veilid[0]);
+    settle().await;
+    // The tally started over for the replacement.
+    routes.self_tested(RouteClass::General, false);
+    let tested = Deaths::during(|| routes.replace(RouteClass::General));
+    assert_eq!(tested.len(), 1, "{tested:?}");
+    assert_identifier_free(&tested[0]);
+    assert!(
+        tested[0].contains("cause=self_test hops=3 age_s=0 failures=1 passes=0 since_ok_s=never"),
+        "{}",
+        tested[0]
+    );
+    // A route that is not ours, or a release, is no death.
+    settle().await;
+    assert!(Deaths::during(|| routes.on_dead(&[77])).is_empty());
+    assert!(Deaths::during(|| routes.release(RouteClass::General)).is_empty());
 }
