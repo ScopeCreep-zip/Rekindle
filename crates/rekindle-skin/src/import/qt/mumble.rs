@@ -77,13 +77,19 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         format!("{qss_path} widget rules"),
         "dropped: QSS is converted to tokens, never applied",
     );
+    super::background::read(tree, &mut read, &root, &qss_path, qss);
     let images = tree.iter().filter(|(k, _)| {
         k.starts_with(&root)
             && std::path::Path::new(k.as_str())
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("svg"))
     });
-    for (path, bytes) in images {
+    let backgrounds: Vec<String> = read
+        .regions
+        .values()
+        .flat_map(|images| images.values().map(|(.., source)| source.clone()))
+        .collect();
+    for (path, bytes) in images.filter(|(k, _)| !backgrounds.contains(k)) {
         read.image(path, bytes);
     }
     Ok(read)

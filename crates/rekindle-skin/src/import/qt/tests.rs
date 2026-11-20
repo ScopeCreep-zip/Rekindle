@@ -230,3 +230,136 @@ fn a_teamspeak_package_ini_author_is_credited() {
     let m = manifest(&mumble_tree(), "synth-mumble", &mumble, "", SkinBase::Dark);
     assert!(m.credits.expect("credits").authors.is_empty());
 }
+
+const BACKGROUND_QSS: &str = r"ApplicationPalette { qproperty-window: #101010; qproperty-windowtext: #eee; }
+/* QPushButton { background-image: url(skin:commented.png); } */
+QMainWindow { background-image: url(skin:bg/window.png); background-repeat: repeat; }
+QTreeView { background-image: url('skin:bg/list.png'); }
+QPushButton { background-image: url(skin:bg/button.png); }
+QPushButton:hover { background-image: url(skin:bg/button.svg); }
+QPushButton:pressed { background-image: url(http://example.invalid/b.png); }
+QPushButton:disabled { background-image: url(data:image/png;base64,AAAA); }
+QStatusBar { background-image: url(skin:../outside.png); }
+QScrollBar::handle:vertical { background-image: url(:/builtin/handle.png); }
+QScrollBar:vertical { background-image: url(skin:bg/huge.png); }
+QToolTip { background-image: url(skin:bg/window.png); }
+";
+
+fn background_tree(qss: &str) -> Tree {
+    let mut t = Tree::new();
+    t.insert(
+        "theme.ini".into(),
+        b"[theme]\nstyles=dark\n[dark]\nqss=Dark.qss\n".to_vec(),
+    );
+    t.insert("Dark.qss".into(), qss.as_bytes().to_vec());
+    t.insert("bg/window.png".into(), png(16));
+    t.insert("bg/list.png".into(), png(8));
+    t.insert("bg/button.png".into(), png(24));
+    t.insert(
+        "bg/button.svg".into(),
+        svg(r##"<rect width="24" height="24" fill="#335"/>"##, 24, 24),
+    );
+    let side = crate::limits::MAX_IMAGE_SIDE + 1;
+    let wide = rekindle_image::RgbaImage::new(side, 1);
+    t.insert(
+        "bg/huge.png".into(),
+        rekindle_image::encode_png(&rekindle_image::DynamicImage::ImageRgba8(wide)).unwrap(),
+    );
+    t
+}
+
+#[test]
+fn qss_backgrounds_inside_the_theme_fill_their_slots() {
+    use rekindle_types::dto::skin::{RegionFit, RegionState};
+    let tree = background_tree(BACKGROUND_QSS);
+    let i = imported(mumble::import(&tree, "synth-bg").unwrap());
+    validate::run(&i.canonical.bytes).unwrap();
+    let read = mumble::read(&tree).unwrap();
+    let states = |slot: &str| read.regions[slot].keys().copied().collect::<Vec<_>>();
+    assert_eq!(
+        read.regions.keys().copied().collect::<Vec<_>>(),
+        ["button.secondary", "window.frame"]
+    );
+    assert_eq!(states("window.frame"), [RegionState::Normal]);
+    assert_eq!(
+        states("button.secondary"),
+        [RegionState::Normal, RegionState::Hover]
+    );
+    // The window's own rule wins over the list's (priority order).
+    assert_eq!(
+        read.regions["window.frame"][&RegionState::Normal].2,
+        "bg/window.png"
+    );
+    let spec = background::spec("button.secondary", &read.regions["button.secondary"]);
+    assert_eq!(spec.fit, RegionFit::Tile);
+    assert_eq!(spec.text_backing.as_deref(), Some("bg.panel"));
+    let n = &i.notice;
+    assert!(
+        has(n, "bg/list.png as window.frame normal", "already set"),
+        "{n}"
+    );
+    assert!(
+        has(
+            n,
+            "QPushButton:pressed background-image",
+            "not a file inside"
+        ),
+        "{n}"
+    );
+    assert!(
+        has(
+            n,
+            "QPushButton:disabled background-image",
+            "not a file inside"
+        ),
+        "{n}"
+    );
+    assert!(
+        has(n, "QStatusBar background-image", "leaves the theme"),
+        "{n}"
+    );
+    assert!(
+        has(n, "handle:vertical background-image", "not a file inside"),
+        "{n}"
+    );
+    assert!(
+        has(n, "bg/huge.png as scrollbar.track normal", "validator"),
+        "{n}"
+    );
+    assert!(
+        has(n, "QToolTip background-image", "not a whole widget"),
+        "{n}"
+    );
+    assert!(!n.contains("commented.png"), "{n}");
+}
+
+#[test]
+fn a_qss_url_outside_the_bounds_is_refused() {
+    let long = format!("skin:{}.png", "a".repeat(background::MAX_URL));
+    for (front, root, url) in [
+        (Front::Mumble, "", long.as_str()),
+        (Front::Mumble, "", "https://example.invalid/x.png"),
+        (Front::Mumble, "", "data:image/png;base64,AAAA"),
+        (Front::Mumble, "", "skin:/etc/x.png"),
+        (Front::Mumble, "", "skin:a/../../x.png"),
+        (Front::Mumble, "", "bg/window.png"),
+        (Front::TeamSpeak3, "", "skin:x.png"),
+    ] {
+        assert!(background::resolve(front, root, url).is_err(), "{url}");
+    }
+    assert_eq!(
+        background::resolve(Front::TeamSpeak3, "pack/", "styles:s/media/a.png").as_deref(),
+        Ok("pack/styles/s/media/a.png")
+    );
+    let many: String = (0..=background::MAX_BACKGROUNDS)
+        .map(|_| "QPushButton { background-image: url(skin:bg/button.png); }\n")
+        .collect();
+    let read = mumble::read(&background_tree(&format!(
+        "ApplicationPalette {{ qproperty-window: #101010; }}\n{many}"
+    )))
+    .unwrap();
+    assert!(read
+        .dropped
+        .iter()
+        .any(|d| d.why.contains("past 64 backgrounds")));
+}

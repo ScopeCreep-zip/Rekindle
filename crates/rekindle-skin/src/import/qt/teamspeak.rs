@@ -88,6 +88,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         format!("{qss_path} widget rules"),
         "dropped: QSS is converted to tokens, never applied",
     );
+    super::background::read(tree, &mut read, &root, qss_path, qss);
     let media = format!("{styles}{stem}/media/");
     for (path, bytes) in tree.range(media.clone()..) {
         let Some(name) = path.strip_prefix(&media) else {

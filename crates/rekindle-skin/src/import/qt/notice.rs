@@ -42,6 +42,19 @@ pub fn render(id: &str, read: &Read, source: &str, made: &[Change]) -> String {
     for (slot, (path, _, file)) in &read.icons {
         let _ = writeln!(s, "  {file} -> {slot} ({path})");
     }
+    let images: Vec<_> = read
+        .regions
+        .iter()
+        .flat_map(|(slot, images)| images.iter().map(move |(state, i)| (slot, state, i)))
+        .collect();
+    let _ = writeln!(
+        s,
+        "\nBackgrounds ({} mapped, tiled, re-encoded PNG)",
+        images.len()
+    );
+    for (slot, state, (path, _, file)) in images {
+        let _ = writeln!(s, "  {file} -> {slot} {} ({path})", state.key());
+    }
     let _ = writeln!(
         s,
         "\nSVG references refused ({}; never read)",

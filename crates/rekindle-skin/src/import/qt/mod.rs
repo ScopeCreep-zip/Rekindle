@@ -7,7 +7,9 @@
 //! * [`teamspeak`]: `styles/<name>.qss` → the header's `QPalette::`
 //!   overrides; `styles/<name>/media/*.png`.
 //!
-//! [`palette`] maps the roles to registry tokens; [`svg`] rasterises SVG
+//! [`palette`] maps the roles to registry tokens; [`background`] reads the
+//! stylesheet's whole-widget `background-image` files inside the theme
+//! onto region slots (plan E7.7.7 S4 part 3); [`svg`] rasterises SVG
 //! with every reference refused. An image fills the status slot its file
 //! stem names (`online.png` → `status.online`, the registry's
 //! [`IconSlot`] ids without `status.`), through [`crate::images::check`].
@@ -15,6 +17,7 @@
 //! rest settles to [`Outcome::Passed`] or an [`Outcome::Draft`] through
 //! [`conclude`] like every importer.
 
+pub mod background;
 pub mod mumble;
 mod notice;
 pub mod palette;
@@ -73,6 +76,8 @@ pub struct Read {
     pub tokens: BTreeMap<String, TokenValue>,
     /// Status slot → (package path, canonical PNG, source file).
     pub icons: BTreeMap<String, (String, Vec<u8>, String)>,
+    /// Region slot → its background images ([`background`]).
+    pub regions: BTreeMap<&'static str, background::SlotImages>,
     /// (SVG file, reference) for every image href the resolver refused.
     pub refused: Vec<(String, String)>,
     pub dropped: Vec<DroppedItem>,
@@ -89,6 +94,7 @@ impl Read {
             colours: Vec::new(),
             tokens: BTreeMap::new(),
             icons: BTreeMap::new(),
+            regions: BTreeMap::new(),
             refused: Vec::new(),
             dropped: Vec::new(),
             authors: Vec::new(),
@@ -224,7 +230,11 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
             contrast: SkinContrast::Standard,
             tokens: TOKENS.to_owned(),
         }],
-        regions: BTreeMap::new(),
+        regions: read
+            .regions
+            .iter()
+            .map(|(slot, images)| ((*slot).to_owned(), background::spec(slot, images)))
+            .collect(),
         icons: read
             .icons
             .iter()
@@ -248,6 +258,7 @@ fn package(tree: &Tree, read: &Read, id: &str) -> Result<Outcome, ImportError> {
     let mut files: BTreeMap<String, Vec<u8>> = read
         .icons
         .values()
+        .chain(read.regions.values().flat_map(BTreeMap::values))
         .map(|(path, bytes, _)| (path.clone(), bytes.clone()))
         .collect();
     files.insert(MANIFEST.to_owned(), manifest_json);
