@@ -10,8 +10,12 @@
 //! `{anchor, channel, author, streamSeq}`. An entry we cannot verify or
 //! link, or whose body no key we hold opens, still advances the cursor:
 //! the chain covers ciphertext. The one exception is a joiner before its
-//! first community key: no entry's tag maps yet, so the cursor stays and
-//! the key's install catches every outbox up again.
+//! first community key: no entry's tag maps yet, so the entry is held
+//! ([`Held::Pending`], not an error) and the cursor stays; the key's
+//! install catches every outbox up again, and when that catch-up lands
+//! while this read still runs, the engine reads again instead of
+//! dropping it (finding CB1: a failed pass drops a trigger that landed
+//! during it).
 //!
 //! The cursor's writer is the author at its member record: a member that
 //! left and re-joined writes a fresh record whose chain starts at 1 again.
@@ -114,10 +118,16 @@ impl StreamSink for OutboxSink<'_> {
             departure_head,
             before: self.before(entry.seq).await,
         };
-        self.channel
+        let held = self
+            .channel
             .apply_outbox_entry(&read, entry)
             .await
             .map_err(sink_error)?;
+        if held == Held::Pending {
+            // Waiting for its key: the cursor stays on it, and a trigger
+            // that landed meanwhile (the key's install) reads again (CB1).
+            return Ok(Held::Pending);
+        }
         *self.last.lock() = Some((entry.seq, entry_hash(&entry.ciphertext)));
         self.advance(stream, writer, entry.seq)
             .await
@@ -250,7 +260,7 @@ impl HostChannel {
         };
         let stream = outbox_stream(community_id);
         let writer = format!("{}:{member_record}", hex::encode(author.0));
-        match engine
+        let diffed = engine
             .diff_log(
                 &*port,
                 &sink,
@@ -258,8 +268,16 @@ impl HostChannel {
                 member_record,
                 (OUTBOX, known_head),
             )
-            .await
-        {
+            .await;
+        // An entry waiting for its key leaves the read short of the head.
+        let waiting = matches!(
+            &diffed,
+            Ok(Diffed {
+                pending: Some(_),
+                ..
+            })
+        );
+        match diffed {
             Ok(Diffed {
                 unreached: Some(head),
                 applied,
@@ -277,6 +295,10 @@ impl HostChannel {
                 tracing::debug!(community_id, author = %writer, %error, "channel outbox not read yet");
                 return;
             }
+        }
+        if waiting {
+            tracing::debug!(community_id, author = %writer, "channel outbox entry waits for its key");
+            return;
         }
         if known_head > 0 {
             self.close_outbox_gap(community_id, author, known_head)
@@ -388,13 +410,14 @@ impl HostChannel {
     }
 
     /// Apply one chain entry of `author`'s outbox: verified, linked to its
-    /// channel by tag, its post ingested. `Err` only when the store failed
-    /// (the cursor stays and the next trigger reads it again).
+    /// channel by tag, its post ingested. [`Held::Pending`] when the entry
+    /// waits for its key; `Err` only when the store failed (the cursor
+    /// stays and the next trigger reads it again).
     async fn apply_outbox_entry(
         &self,
         read: &OutboxRead<'_>,
         entry: &ChainEntry,
-    ) -> Result<(), rekindle_channel::ChannelError> {
+    ) -> Result<Held, rekindle_channel::ChannelError> {
         let (community_id, author) = (read.community_id, read.author);
         let at = ChainPosition {
             anchor: community_id,
@@ -404,7 +427,7 @@ impl HostChannel {
             Ok(decoded) => decoded,
             Err(error) => {
                 tracing::warn!(community_id, author = %hex::encode(author), seq = entry.seq, %error, "channel outbox entry did not verify");
-                return Ok(());
+                return Ok(Held::Stored);
             }
         };
         self.check_link(read, entry.seq, &decoded);
@@ -418,17 +441,14 @@ impl HostChannel {
             // entry no key maps is of a channel we do not read or from
             // before our keys, and the chain covers it.
             if self.entry_waits_for_key(community_id, decoded.generation) {
-                return Err(rekindle_channel::ChannelError::MekMissing {
-                    community: community_id.to_owned(),
-                    channel: String::new(),
-                });
+                return Ok(Held::Pending);
             }
             tracing::debug!(
                 community_id,
                 seq = entry.seq,
                 "channel outbox entry of no channel we read"
             );
-            return Ok(());
+            return Ok(Held::Stored);
         };
         let author_hex = hex::encode(author);
         let (message, forwarded_from_author) = match decoded.entry {
@@ -454,7 +474,7 @@ impl HostChannel {
             change @ (ChannelRecordEntry::Edit(_) | ChannelRecordEntry::Delete(_)) => {
                 self.apply_outbox_change(read, entry, &channel_id, decoded.stream_seq, &change)
                     .await;
-                return Ok(());
+                return Ok(Held::Stored);
             }
             // A holder's possession of a file, a reaction, a poll op or a
             // hand raise: readers aggregate them from the authors' outboxes
@@ -466,16 +486,16 @@ impl HostChannel {
             ChannelRecordEntry::PollCreate(ChannelPollCreate { nonce, .. }) => {
                 let poll_id = rekindle_channel::poll_id_of(&PseudonymKey(*author), &nonce);
                 self.poll_changed(community_id, &channel_id, &poll_id);
-                return Ok(());
+                return Ok(Held::Stored);
             }
             ChannelRecordEntry::PollVote(ChannelPollVote { poll_id, .. })
             | ChannelRecordEntry::PollClose(ChannelPollClose { poll_id, .. }) => {
                 self.poll_changed(community_id, &channel_id, &poll_id);
-                return Ok(());
+                return Ok(Held::Stored);
             }
             ChannelRecordEntry::AttachmentCached(_)
             | ChannelRecordEntry::Reaction(_)
-            | ChannelRecordEntry::HandRaise(_) => return Ok(()),
+            | ChannelRecordEntry::HandRaise(_) => return Ok(Held::Stored),
         };
         // An entry speaks only for the author whose chain holds it.
         if message.sender_pseudonym != author_hex {
@@ -484,7 +504,7 @@ impl HostChannel {
                 seq = entry.seq,
                 "channel outbox entry names another author"
             );
-            return Ok(());
+            return Ok(Held::Stored);
         }
         let post = ReceivedPost {
             community_id: community_id.to_owned(),
@@ -506,7 +526,7 @@ impl HostChannel {
             }
             _ => {}
         }
-        Ok(())
+        Ok(Held::Stored)
     }
 
     /// A broken `prev` link is recorded as an anomaly (plan E3.3
