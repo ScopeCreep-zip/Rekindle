@@ -3,16 +3,15 @@
 //! prekey record (plan E2.4); an accept is the PreKeyInit that opens the
 //! session from theirs; a reject is sealed.
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, RequestAuth};
+use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept};
 use rekindle_crypto::signal::PreKeyBundle;
 
 use super::handshake;
 use crate::operations::friend::{FriendError, FriendHost};
 
-/// Send a friend request, sealed to `to` and naming our profile, so the
-/// receiver can open the session from our prekey record when they accept.
-/// `auth` admits it: the token of the friend code we were given, or the
-/// invite we redeem (plan E2.5, D17).
+/// Send `request` (built by `friend::request::build`), sealed to `to`:
+/// it names our profile, so the receiver can open the session from our
+/// prekey record when they accept.
 ///
 /// It is committed to our `friend_handshake` stream to them (plan E2.5)
 /// and returns then: the outbox sends it by `app_call`, whose empty return
@@ -20,16 +19,13 @@ use crate::operations::friend::{FriendError, FriendHost};
 /// otherwise as any frame, under the same nonce, until it leaves.
 ///
 /// # Errors
-/// Our profile or route is not published yet, or the row could not be
-/// stored.
+/// The request could not be sealed, or the row could not be stored.
 pub async fn send_friend_request(
     host: &dyn FriendHost,
     to: &str,
-    message: &str,
-    auth: RequestAuth,
+    request: &DirectBody,
 ) -> Result<(), FriendError> {
-    let request = crate::operations::friend::request::build(host, message, auth).await?;
-    handshake::enqueue(host, to, &request).await.map(drop)
+    handshake::enqueue(host, to, request).await.map(drop)
 }
 
 /// Accept `to`'s request: open the session from `bundle` (picked from their

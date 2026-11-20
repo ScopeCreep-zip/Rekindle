@@ -33,37 +33,20 @@ async fn check_addable(
     Ok(())
 }
 
-/// The route the target publishes in the profile its code names (subkey
-/// 6), read from the network and cached for the request's `app_call`.
+/// Add a friend by friend code: our request built first, then a
+/// `PendingOut` friend with the profile the code names, and the request,
+/// carrying the code's token and sealed to the code's identity, committed
+/// to our `friend_handshake` stream to them (plan E2.5, live finding LF5).
+/// Nothing here waits on the network for their route: each attempt of the
+/// row resolves it (the route their profile publishes, re-read after a
+/// failed call, `dm::send::call_datagram_answer`), the stream's backoff
+/// paces it, a new route on their watched profile brings it forward
+/// (`route::reachable_again`), and its state reaches the user as the
+/// request's send status.
 ///
 /// # Errors
-/// `NotReady` when the profile cannot be read or publishes no route.
-async fn route_from_code(host: &dyn FriendHost, code: &FriendCode) -> Result<(), FriendError> {
-    let node = host.node()?;
-    let records = node.require_records()?;
-    let blob = rekindle_protocol::dht::profile::read_profile_subkey(
-        records.as_ref(),
-        code.profile_key.as_str(),
-        rekindle_types::dht_layout::profile::ROUTE_BLOB,
-        true,
-    )
-    .await
-    .map_err(|e| FriendError::NotReady(format!("their profile could not be read: {e}")))?
-    .filter(|blob| !blob.is_empty())
-    .ok_or_else(|| FriendError::NotReady("their profile publishes no route yet".to_string()))?;
-    dm::route::cache(&node, code.public_key.as_str(), blob);
-    Ok(())
-}
-
-/// Add a friend by friend code: the target's route read from the profile
-/// the code names, a `PendingOut` friend with that profile, and a request
-/// carrying the code's token, sealed to the code's identity and sent by
-/// `app_call` (an outbox row, sent once the target is reachable).
-///
-/// # Errors
-/// The code names us or a blocked user; our profile is not published yet,
-/// or theirs cannot be read or has no route (`NotReady`); or the friend
-/// cannot be stored.
+/// The code names us or a blocked user; our profile is not published yet
+/// (`NotReady`); or the friend or the request cannot be stored.
 pub async fn add(
     host: &dyn FriendHost,
     code: &FriendCode,
@@ -73,7 +56,10 @@ pub async fn add(
     let owner = state::owner(host)?;
     check_addable(host, &owner, public_key).await?;
     invites::published_identity(host).await?;
-    route_from_code(host, code).await?;
+    // Built before the friend is stored: a request that cannot be built
+    // leaves no `PendingOut` friend without a request behind it.
+    let auth = RequestAuth::Token(code.token.as_str().to_string());
+    let request = super::request::build(host, message, auth).await?;
     let display_name = state::known_name(host, &owner, public_key).await?;
     let display_name = display_name.as_str();
 
@@ -103,8 +89,11 @@ pub async fn add(
     state::echo_failed(host, public_key, ended, "superseded by a new friendship");
     super::list_record::queued(host, "our request");
 
-    let auth = RequestAuth::Token(code.token.as_str().to_string());
-    let committed = dm::send_friend_request(host, public_key, message, auth).await;
+    let committed = dm::send_friend_request(host, public_key, &request).await;
+    match &committed {
+        Ok(()) => tracing::info!("friend request committed to the outbox"),
+        Err(e) => tracing::warn!(error = %e, "friend request not committed"),
+    }
     host.watch_friend(public_key, code.profile_key.as_str())
         .await;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Added {

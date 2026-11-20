@@ -121,6 +121,7 @@ mod rotation;
 mod rotation_routes;
 mod route_link_failure;
 mod route_liveness;
+mod routeless_request;
 mod scenarios;
 mod sending_route;
 mod shell_join_hand_over;

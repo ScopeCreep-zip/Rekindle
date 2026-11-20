@@ -350,6 +350,17 @@ fn answered(
     }
 }
 
+/// What a failed attempt's answer was, without the peer or the error text
+/// (which may name a route): for the INFO line.
+fn answer_outcome(answer: &Result<send::CallAnswer, FriendError>) -> &'static str {
+    match answer {
+        Ok(send::CallAnswer::RetryLater) => "retry later",
+        Ok(_) => "reply",
+        Err(FriendError::NotReady(_)) => "no usable route",
+        Err(_) => "call failed",
+    }
+}
+
 /// One attempt of a handshake row to `to`: a request or a first contact
 /// ([`receipted`]) goes by `app_call` only, over the cached route or one
 /// refreshed from their profile, and is attempted again until its empty
@@ -413,6 +424,14 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
                 Attempt::Deferred
             }
             Answered::Again => {
+                if kind == DmTypeId::FriendRequest {
+                    // Identifier-free at INFO (live finding LF5): a request
+                    // that does not land is seen retrying, never silent.
+                    tracing::info!(
+                        outcome = answer_outcome(&answer),
+                        "friend request attempt failed — attempted again"
+                    );
+                }
                 if let Err(e) = &answer {
                     tracing::debug!(to = %to, ?kind, error = %e,
                         "handshake frame not receipted by app_call — attempted again");

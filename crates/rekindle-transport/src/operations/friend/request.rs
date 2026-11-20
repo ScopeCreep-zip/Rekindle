@@ -11,17 +11,24 @@ use super::error::FriendError;
 use super::host::FriendHost;
 use super::state;
 
-/// How long a friend request waits for our route to be published, when it
-/// is sent within seconds of unlock (B4/P3.2): a request with no route
-/// leaves the receiver no way to answer.
+/// How long a friend request waits for our route, when it is built within
+/// seconds of unlock (B4/P3.2) or while our General route is being
+/// replaced: the route it carries spares the receiver a profile read.
 const ROUTE_WAIT: Duration = Duration::from_secs(5);
 
 /// Our request carrying `message`, admitted by `auth`: it names our
 /// profile, whose device list leads to our prekey record (plan E2.4), our
-/// mailbox, and our route for the answer.
+/// mailbox, and our live route for the answer when we hold one.
+///
+/// A request built while we hold no live route (ours died and its
+/// replacement is not up, live finding LF5) carries none, as an accept
+/// may (`dm::send_friend_accept`): the receiver answers over the route
+/// our profile publishes, which it reads at each attempt of its answer
+/// (`dm::send::call_datagram_answer`; `inbound::incoming` caches only a
+/// carried route), so the request is never held back for our route.
 ///
 /// # Errors
-/// Our profile or route is not published yet.
+/// Our profile is not published yet.
 pub(crate) async fn build(
     host: &dyn FriendHost,
     message: &str,
@@ -36,13 +43,14 @@ pub(crate) async fn build(
         ));
     }
     let routes = host.node()?.routes();
-    let route_blob = tokio::time::timeout(ROUTE_WAIT, routes.available_own(RouteClass::General))
-        .await
-        .map_err(|_| {
-            FriendError::NotReady(
-                "Veilid private route not allocated yet — try again in a moment".to_string(),
-            )
-        })?;
+    let route_blob = if let Ok(blob) =
+        tokio::time::timeout(ROUTE_WAIT, routes.available_own(RouteClass::General)).await
+    {
+        blob
+    } else {
+        tracing::info!("friend request built without our route: none is live");
+        Vec::new()
+    };
     Ok(DirectBody::FriendRequest(FriendRequest {
         display_name: own.display_name,
         message: message.to_string(),
