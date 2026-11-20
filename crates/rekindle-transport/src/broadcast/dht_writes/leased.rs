@@ -121,6 +121,34 @@ pub async fn set_leased_str(
     }
 }
 
+/// [`set_leased_str`] for a value of our own record every reader must
+/// reach: once stored, the pool re-sends it (plan E3.4 OW1).
+///
+/// # Errors
+/// As [`set_leased_str`].
+pub async fn set_own_leased_str(
+    node: &TransportNode,
+    lease: LeaseId,
+    subkey: u32,
+    data: Vec<u8>,
+    writer: Option<&str>,
+) -> Result<Option<NewerValue>> {
+    use rekindle_records::port::SetOutcome;
+    match pool(node)?
+        .set_republished(lease, subkey, data, writer)
+        .await?
+    {
+        SetOutcome::Superseded(newer) => Ok(Some(NewerValue {
+            seq: newer.seq,
+            data: newer.data,
+        })),
+        SetOutcome::Landed | SetOutcome::Unchanged => Ok(None),
+        missed @ SetOutcome::Offline => Err(TransportError::DhtError {
+            reason: format!("set: not stored ({missed:?})"),
+        }),
+    }
+}
+
 /// Local-cache sequence numbers of a leased record (no network I/O).
 pub async fn inspect_leased_local_seqs(
     node: &TransportNode,

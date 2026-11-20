@@ -95,6 +95,17 @@ impl RecordPort for RecordPool {
         RecordPool::set_durable_as(self, lease, subkey, data, writer).await
     }
 
+    async fn set_republished(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+        data: Vec<u8>,
+        writer_text: Option<&str>,
+    ) -> Result<SetOutcome, PortError> {
+        let writer = self.writer(writer_text)?;
+        RecordPool::set_republished(self, lease, subkey, data, writer).await
+    }
+
     async fn inspect(
         &self,
         lease: LeaseId,

@@ -68,6 +68,8 @@ pub struct MemDht {
     /// The pool's readiness sender, kept alive with the backend: the
     /// re-push loop ends when its sender is gone.
     ready: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
+    /// Every set the backend was asked for.
+    sets: Mutex<u32>,
 }
 
 fn writer_key(text: &str) -> WriterKey {
@@ -85,6 +87,11 @@ fn error(kind: DhtErrorKind, message: &str) -> DhtCallError {
 }
 
 impl MemDht {
+    /// How many sets the backend was asked for.
+    pub fn sets(&self) -> u32 {
+        *self.sets.lock()
+    }
+
     /// How every set from now on answers.
     pub fn contest(&self, contest: Contest) {
         *self.contest.lock() = contest;
@@ -227,6 +234,7 @@ impl DhtBackend for MemDht {
         data: Vec<u8>,
         writer: Option<&WriterKey>,
     ) -> Result<Option<RecordValue>, DhtCallError> {
+        *self.sets.lock() += 1;
         self.write(key, subkey, data, writer, 0)
     }
 

@@ -177,6 +177,23 @@ impl HostGovernance {
             .map_err(|e| dht_err("set_dht_value", e))
     }
 
+    /// [`set_dht_value_impl`](Self::set_dht_value_impl) for a value of our
+    /// own member record every reader must reach (the frontier): once
+    /// stored, the pool re-sends it (plan E3.4 OW1).
+    pub(super) async fn set_own_dht_value(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+        value: Vec<u8>,
+        writer: &str,
+    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
+        let node = self.transport()?;
+        dht_writes::set_own_leased_str(&node, lease, subkey, value, Some(writer))
+            .await
+            .map(|newer| newer.map(|n| n.data))
+            .map_err(|e| dht_err("set_dht_value", e))
+    }
+
     /// Sequence numbers from this node's local cache — no network I/O.
     pub(super) async fn inspect_local_seqs_impl(
         &self,

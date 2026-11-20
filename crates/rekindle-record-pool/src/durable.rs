@@ -142,6 +142,8 @@ impl RecordPool {
             SetOutcome::Landed | SetOutcome::Unchanged => {
                 self.held.lock().remove(&slot);
                 self.publish_settled(&slot, &outcome);
+                // Stored may be one side of a split: re-sent (OW1).
+                self.republish_after(&slot.0, slot.1, data, writer);
             }
         }
         Ok(outcome)
@@ -329,7 +331,7 @@ impl RecordPool {
             }
             let pushed = match self.acquire(&slot.0, None, OpenIntent::Hold).await {
                 Ok(lease) => {
-                    let outcome = self.set(lease, slot.1, data.clone(), writer).await;
+                    let outcome = self.set(lease, slot.1, data.clone(), writer.clone()).await;
                     self.release(lease).await;
                     outcome
                 }
@@ -366,6 +368,11 @@ impl RecordPool {
                     tracing::debug!(record = %slot.0, subkey = slot.1, ?outcome, "held write settled");
                     held.remove(&slot);
                     self.publish_settled(&slot, &outcome);
+                    if matches!(outcome, SetOutcome::Landed | SetOutcome::Unchanged) {
+                        drop(held);
+                        // A re-push that stored is re-sent like any own write (OW1).
+                        self.republish_after(&slot.0, slot.1, data, writer);
+                    }
                 }
             }
         }

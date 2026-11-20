@@ -183,6 +183,16 @@ impl RecordPort for MemPort {
         Ok(SetOutcome::Landed)
     }
 
+    async fn set_republished(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&str>,
+    ) -> Result<SetOutcome, PortError> {
+        self.set(lease, subkey, data, writer).await
+    }
+
     async fn set_durable(
         &self,
         _: LeaseId,

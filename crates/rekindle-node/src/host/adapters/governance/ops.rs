@@ -475,11 +475,11 @@ impl HostGovernance {
             }
         }
         let written = self
-            .set_dht_value(
+            .set_own_dht_value(
                 lease,
                 rekindle_types::dht_layout::member_record::FRONTIER,
                 bytes,
-                Some(writer.to_owned()),
+                writer,
             )
             .await;
         self.release_record(lease).await;

@@ -51,6 +51,9 @@ mod read;
 mod refetch;
 #[cfg(test)]
 mod refetch_tests;
+mod republish;
+#[cfg(test)]
+mod republish_tests;
 #[cfg(test)]
 mod set_tests;
 #[cfg(any(test, feature = "test-support"))]
@@ -149,6 +152,8 @@ pub struct RecordPool {
     /// Every durable write that settled (`durable.rs`, plan C7.13).
     settled: tokio::sync::broadcast::Sender<rekindle_records::port::Settled>,
     repush_started: std::sync::atomic::AtomicBool,
+    /// Own writes re-sent after they stored (`republish.rs`, OW1).
+    republish: republish::Republish,
     admit: Mutex<Admit>,
     /// Cancelled by [`drain`](Self::drain): every wait then returns.
     waits: Mutex<CancellationToken>,
@@ -221,6 +226,7 @@ impl RecordPool {
             held_changed: tokio::sync::Notify::new(),
             settled: tokio::sync::broadcast::channel(256).0,
             repush_started: std::sync::atomic::AtomicBool::new(false),
+            republish: republish::Republish::default(),
             admit: Mutex::new(Admit::Open),
             waits: Mutex::new(CancellationToken::new()),
             repush_stop: CancellationToken::new(),

@@ -316,7 +316,7 @@ async fn append_after(
             retired_through,
         };
         let outcome = port
-            .write_once(record, head_subkey, page::encode_head(&head)?, Some(writer))
+            .write_own_once(record, head_subkey, page::encode_head(&head)?, Some(writer))
             .await?;
         // A newer `HEAD` than our copy won: Veilid stored it as our copy
         // (0.5.8 `set_value.rs:741-746`), so the next round chains onto it. The
@@ -579,7 +579,7 @@ pub async fn retire_through(
             retired_through: seq,
         };
         let outcome = port
-            .write_once(
+            .write_own_once(
                 participant,
                 dm_participant::HEAD,
                 page::encode_head(&marked)?,

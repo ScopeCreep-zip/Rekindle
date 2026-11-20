@@ -104,7 +104,18 @@ pub(crate) async fn write_subkey(
     subkey: u32,
     bytes: Vec<u8>,
 ) -> Result<(), String> {
-    write_subkey_seq(port, own, subkey, bytes).await.map(drop)
+    write_subkey_seq(port, own, subkey, bytes, Rewrite::Republished)
+        .await
+        .map(drop)
+}
+
+/// How a member record write reaches readers: a value every reader must
+/// reach is re-sent after it stored (plan E3.4 OW1); the beat (`M`/1) is
+/// rewritten every beat period, so a stale one is never re-sent.
+#[derive(Clone, Copy)]
+enum Rewrite {
+    Republished,
+    EveryBeat,
 }
 
 /// [`write_subkey`], answering the subkey's DHT seq the write left in our
@@ -114,12 +125,19 @@ async fn write_subkey_seq(
     own: &OwnRecord<'_>,
     subkey: u32,
     bytes: Vec<u8>,
+    rewrite: Rewrite,
 ) -> Result<u64, String> {
     let lease = port
         .acquire(own.record, Some(own.writer), OpenIntent::Hold)
         .await
         .map_err(|e| format!("open member record: {e}"))?;
-    let written = port.set(lease, subkey, bytes, Some(own.writer)).await;
+    let written = match rewrite {
+        Rewrite::Republished => {
+            port.set_republished(lease, subkey, bytes, Some(own.writer))
+                .await
+        }
+        Rewrite::EveryBeat => port.set(lease, subkey, bytes, Some(own.writer)).await,
+    };
     let stored = match written.map_err(|e| format!("write member record subkey {subkey}: {e}")) {
         // An identical rewrite (`Unchanged`) is ours on the network too.
         Ok(SetOutcome::Landed | SetOutcome::Unchanged) => port
@@ -202,7 +220,7 @@ pub async fn write_own_beat(
     let bytes = beat
         .encode(own.scope(), own.pseudonym)
         .map_err(|e| format!("presence beat: {e}"))?;
-    write_subkey_seq(port, own, member_record::BEAT, bytes).await
+    write_subkey_seq(port, own, member_record::BEAT, bytes, Rewrite::EveryBeat).await
 }
 
 /// Publish our member record in §4.4's order: the card (`M`/0, so the

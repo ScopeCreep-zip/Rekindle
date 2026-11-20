@@ -264,6 +264,19 @@ pub trait RecordPort: Send + Sync {
         writer: Option<&str>,
     ) -> Result<SetOutcome, PortError>;
 
+    /// [`set`](Self::set) for a value of our own record every reader must
+    /// reach (a member record's card, routes, op-log head, frontier): once
+    /// stored, the same bytes are re-sent at the same seq from 60 s on,
+    /// doubling to 30 min, for 24 h or until a newer value replaces them
+    /// (plan E3.4 OW1). A miss is the caller's to retry.
+    async fn set_republished(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&str>,
+    ) -> Result<SetOutcome, PortError>;
+
     /// Inspect the leased record.
     async fn inspect(
         &self,
@@ -397,6 +410,22 @@ pub trait RecordPort: Send + Sync {
     ) -> Result<SetOutcome, PortError> {
         let lease = self.acquire(key, None, OpenIntent::Check).await?;
         let written = self.set(lease, subkey, data, writer).await;
+        self.release(lease).await;
+        written
+    }
+
+    /// [`write_once`](Self::write_once) through
+    /// [`set_republished`](Self::set_republished): a write to our own
+    /// record that every reader must reach.
+    async fn write_own_once(
+        &self,
+        key: &str,
+        subkey: u32,
+        data: Vec<u8>,
+        writer: Option<&str>,
+    ) -> Result<SetOutcome, PortError> {
+        let lease = self.acquire(key, None, OpenIntent::Check).await?;
+        let written = self.set_republished(lease, subkey, data, writer).await;
         self.release(lease).await;
         written
     }

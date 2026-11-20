@@ -350,3 +350,62 @@ async fn a_leavers_withheld_last_write_is_kept_by_every_member() {
         }
     }
 }
+
+/// Plan E3.4 LV1 (OW1): the honest control with the leaver's gossip
+/// dropped from the cut until every member merged the leave, so only the
+/// durable path carries it. The leave's op-log head and frontier writes
+/// stored on the leaver's side of the split only; the leaver's own-write
+/// republish re-sends them after the heal, and every member reads them.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_leavers_withheld_last_write_reaches_every_member_without_gossip() {
+    let community = Community::of(4, 173).await;
+    let bea = community.pseudonym(1).await;
+    let _ = community.post(1, "bea before the cut").await;
+    for reader in [0, 2, 3] {
+        assert!(
+            community.reads(reader, "bea before the cut", LIMIT).await,
+            "node {reader} reads the member's first post"
+        );
+    }
+    community.sim.fault(Fault::Partition {
+        a: vec![0, 2, 3],
+        b: vec![1],
+    });
+    community.sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 1000,
+    });
+    let _ = community.post(1, "bea last, held").await;
+    assert!(
+        community.history_holds(1, "bea last, held", LIMIT).await,
+        "the held post is in the leaver's own history"
+    );
+    rekindle_governance_runtime::moderation::leave(
+        &community.nodes[1].host.governance(),
+        &community.anchor,
+    )
+    .await
+    .expect("the leave op commits");
+    community.sim.fault(Fault::Heal);
+    for reader in [0, 2, 3] {
+        assert!(
+            eventually(&community.sim, LIMIT, || async {
+                listed(&community, reader, &bea).await.is_none()
+            })
+            .await,
+            "node {reader} merges the leave from the DHT alone"
+        );
+    }
+    community.sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 0,
+    });
+    for reader in [0, 2, 3] {
+        for body in ["bea before the cut", "bea last, held"] {
+            assert!(
+                community.reads(reader, body, LIMIT).await,
+                "node {reader} keeps the leaver's {body:?}"
+            );
+        }
+    }
+}
