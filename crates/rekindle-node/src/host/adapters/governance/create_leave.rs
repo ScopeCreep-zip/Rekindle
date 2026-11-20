@@ -126,7 +126,7 @@ impl HostGovernance {
         let departure = rekindle_governance_runtime::moderation::leave(self, &id)
             .await
             .map_err(|e| format!("community leave op: {e}"))?;
-        if departure == rekindle_governance_runtime::moderation::Departure::Withdrawn {
+        if departure == rekindle_governance_runtime::moderation::LeaveOutcome::Withdrawn {
             tracing::warn!(
                 community = %id,
                 "our join is not admitted by our merged state: withdrawn locally, nothing authored"

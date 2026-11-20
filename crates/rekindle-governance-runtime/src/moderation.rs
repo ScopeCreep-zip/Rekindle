@@ -98,18 +98,18 @@ pub async fn remove_member<D: GovernanceRuntimeDeps>(
 /// A joiner whose own `MemberJoined` the merged state never admitted (it
 /// lost a single-use race, or the inviter refused it) authors nothing:
 /// there is nothing of ours on the DAG to undo (plan SU1, the withdrawal
-/// decision), and [`Departure::Withdrawn`] tells the caller to forget the
+/// decision), and [`LeaveOutcome::Withdrawn`] tells the caller to forget the
 /// community locally only.
 pub async fn leave<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-) -> Result<Departure, GovernanceRuntimeError> {
+) -> Result<LeaveOutcome, GovernanceRuntimeError> {
     apply::write_departure(deps, community_id).await
 }
 
 /// What our [`leave`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Departure {
+pub enum LeaveOutcome {
     /// Our `MemberLeft` was authored on our member record.
     Left,
     /// Our join was never admitted: nothing was authored.

@@ -152,7 +152,7 @@ enum Written {
 }
 
 /// Our `MemberLeft`, unless the merged state never admitted our join:
-/// then nothing is authored and [`Departure::Withdrawn`] answers (plan
+/// then nothing is authored and [`LeaveOutcome::Withdrawn`] answers (plan
 /// SU1, the withdrawal decision; ADR 0011: membership is the merged
 /// state's alone).
 ///
@@ -162,12 +162,12 @@ enum Written {
 /// the locked state the op is built on ([`write_with`]), so a leave never
 /// authors on a state that does not admit us.
 ///
-/// [`Departure::Withdrawn`]: crate::moderation::Departure::Withdrawn
+/// [`LeaveOutcome::Withdrawn`]: crate::moderation::LeaveOutcome::Withdrawn
 pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-) -> Result<crate::moderation::Departure, GovernanceRuntimeError> {
-    use crate::moderation::Departure;
+) -> Result<crate::moderation::LeaveOutcome, GovernanceRuntimeError> {
+    use crate::moderation::LeaveOutcome;
     let me = {
         let lock = deps.rebuild_lock(community_id);
         let _installing = lock.lock().await;
@@ -177,7 +177,7 @@ pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
         op_log::own_member(deps, community_id, &gov_state)?
     };
     if me.record.is_none() {
-        return Ok(Departure::Withdrawn);
+        return Ok(LeaveOutcome::Withdrawn);
     }
     let heads = deps.departed_slot_heads(community_id, &me.hex).await?;
     let written = write_with(
@@ -190,8 +190,8 @@ pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
     )
     .await?;
     Ok(match written {
-        Written::Op(_) => Departure::Left,
-        Written::NotAdmitted(_) => Departure::Withdrawn,
+        Written::Op(_) => LeaveOutcome::Left,
+        Written::NotAdmitted(_) => LeaveOutcome::Withdrawn,
     })
 }
 
@@ -233,15 +233,18 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     // Our member record M(p), where our op log lives: the cert's for the
     // creator, our `MemberJoined` for a joiner (S6), in the state this
     // write builds on. A join the merge never admitted has none: its
-    // leave withdraws, authoring nothing (plan SU1); any other op is
-    // refused.
-    let me = op_log::own_member(deps, community_id, &gov_state)?;
-    if me.record.is_none() && matches!(not_admitted, NotAdmitted::Withdraw) {
-        return Ok(Written::NotAdmitted(me.hex));
+    // leave withdraws before the entry's validation, authoring nothing
+    // (plan SU1); any other op is validated first (a malformed entry is
+    // refused as such, F3h), then refused for the missing record.
+    if matches!(not_admitted, NotAdmitted::Withdraw) {
+        let me = op_log::own_member(deps, community_id, &gov_state)?;
+        if me.record.is_none() {
+            return Ok(Written::NotAdmitted(me.hex));
+        }
     }
-    let pseudo = me.pseudonym;
-
+    let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
     refuse_invalid(&pseudo, &entry, &gov_state)?;
+    let me = op_log::own_member(deps, community_id, &gov_state)?;
     let Some(record) = me.record else {
         return Ok(Written::NotAdmitted(me.hex));
     };

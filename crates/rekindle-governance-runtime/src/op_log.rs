@@ -118,6 +118,29 @@ pub struct OwnMember {
     pub record: Option<String>,
 }
 
+/// Our pseudonym here (the membership's, every op of ours is signed as it)
+/// and its hex; needs no pinned cert, unlike [`own_member`].
+///
+/// # Errors
+/// No membership or pseudonym for the community, or a malformed one.
+pub fn own_pseudonym<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<(PseudonymKey, String), GovernanceRuntimeError> {
+    let hex = deps
+        .community_membership(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?
+        .my_pseudonym_hex
+        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_string()))?;
+    let bytes: [u8; 32] = hex::decode(&hex)
+        .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
+        .try_into()
+        .map_err(|_| {
+            GovernanceRuntimeError::InvalidPseudonymHex("pseudonym must be 32 bytes".into())
+        })?;
+    Ok((PseudonymKey(bytes), hex))
+}
+
 /// Our pseudonym (the membership's, the one every op of ours is signed
 /// as) and our member record in `state` under the pinned cert: the one
 /// answer to "who are we here, and are we admitted" (plan SU1). A caller
@@ -132,18 +155,7 @@ pub fn own_member<D: GovernanceRuntimeDeps>(
     community_id: &str,
     state: &GovernanceState,
 ) -> Result<OwnMember, GovernanceRuntimeError> {
-    let hex = deps
-        .community_membership(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?
-        .my_pseudonym_hex
-        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_string()))?;
-    let bytes: [u8; 32] = hex::decode(&hex)
-        .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
-        .try_into()
-        .map_err(|_| {
-            GovernanceRuntimeError::InvalidPseudonymHex("pseudonym must be 32 bytes".into())
-        })?;
-    let pseudonym = PseudonymKey(bytes);
+    let (pseudonym, hex) = own_pseudonym(deps, community_id)?;
     let cert = deps
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_string()))?;

@@ -4,7 +4,7 @@
 //! state's alone), decided in the same state the leave's op would be
 //! built on.
 
-use rekindle_governance_runtime::moderation::{leave, Departure};
+use rekindle_governance_runtime::moderation::{leave, LeaveOutcome};
 use rekindle_governance_runtime::op_log::verify_held;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_secrets::derive::derive_community_pseudonym;
@@ -39,7 +39,7 @@ async fn a_never_admitted_joins_leave_authors_nothing() {
 
     assert_eq!(
         leave(&gov, "c1").await.expect("the leave answers"),
-        Departure::Withdrawn
+        LeaveOutcome::Withdrawn
     );
     assert_eq!(
         gov.governance_ops("c1").await.unwrap().len(),
