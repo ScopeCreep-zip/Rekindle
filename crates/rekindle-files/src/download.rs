@@ -98,57 +98,17 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
         ));
     }
 
-    // Walk sources in arrival order; for each, request the chunks they
-    // have that we still need. One reply carries only the chunks that fit
-    // Veilid's app-call limit (`serve_attachment_request`), so a source is
-    // asked again while it still delivers chunks we lack.
+    // Walk sources in arrival order (§28.9: every advertising peer is
+    // asked); for each, request the chunks they have that we still need.
+    // A source that is offline or does not answer is recorded and the walk
+    // moves on to the next one, so the attempt fails only when no source
+    // completes it.
+    let mut failed_sources = 0usize;
     for src in &sources {
-        loop {
-            let needed: Vec<u32> = src.bitmap.intersect(&inverse(&have));
-            if needed.is_empty() {
-                break;
-            }
-            let held_before = have.count();
-            let response =
-                send_chunk_request(deps, community_id, channel_id, attachment_id, &needed, src)
-                    .await?;
-            for chunk in response {
-                // Decrypt then verify against the offer's plaintext SHA-256.
-                let plaintext = fek.decrypt(&chunk.data).map_err(|e| {
-                    FilesError::Decrypt(format!("chunk {} decrypt: {e}", chunk.chunk_index))
-                })?;
-                let expected = offer.chunk_hashes.get(chunk.chunk_index as usize).ok_or(
-                    FilesError::ChunkIndexOutOfRange {
-                        index: chunk.chunk_index,
-                        chunk_count,
-                    },
-                )?;
-                if let Err(e) = verify_chunk(&plaintext, expected) {
-                    tracing::warn!(
-                        community = %community_id,
-                        peer = %src.pseudonym,
-                        chunk = chunk.chunk_index,
-                        error = %e,
-                        "dropping malformed chunk; will re-request"
-                    );
-                    continue;
-                }
-                // Re-encrypt with FEK for cache storage (so we can serve the
-                // same wire format back to other peers without re-keying).
-                let stored = fek
-                    .encrypt(&plaintext)
-                    .map_err(|e| FilesError::Encrypt(format!("re-encrypt cache: {e}")))?;
-                let chunk_index = chunk.chunk_index;
-                deps.with_cache_mut(community_id, &mut |cache, pinned| {
-                    cache
-                        .insert(attachment_uuid, chunk_index, &stored, pinned)
-                        .map_err(|e| FilesError::Db(format!("cache insert {chunk_index}: {e}")))
-                })?;
-                have.set(chunk.chunk_index);
-            }
-            if have.count() == held_before {
-                break;
-            }
+        let answered =
+            fetch_from_source(deps, community_id, channel_id, &offer, &fek, src, &mut have).await?;
+        if !answered {
+            failed_sources += 1;
         }
         if have.is_complete() {
             break;
@@ -156,6 +116,13 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     }
 
     if !have.is_complete() {
+        tracing::debug!(
+            failed_sources,
+            sources = sources.len(),
+            have = have.count(),
+            total = chunk_count,
+            "attachment download attempt incomplete after asking every source"
+        );
         return Err(FilesError::DownloadIncomplete {
             have: have.count(),
             total: chunk_count,
@@ -256,6 +223,102 @@ pub async fn download_attachment<D: FilesDeps>(
     Ok(())
 }
 
+/// Ask one source for the chunks it advertises that we still lack, until
+/// it delivers nothing new. One reply carries only the chunks that fit
+/// Veilid's app-call limit (`serve_attachment_request`), so a source is
+/// asked again while it still delivers chunks we lack.
+///
+/// `Ok(false)` records a source that failed (offline, the call failed or
+/// timed out, or its reply did not decode); the caller asks the next one.
+/// `Err` is a local failure (our pseudonym, encoding, the cache) that no
+/// other source can fix. Each chunk is verified against the offer's
+/// plaintext SHA-256 before it is cached; a chunk that does not decrypt,
+/// is out of range or fails its hash is dropped and stays missing.
+async fn fetch_from_source<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+    offer: &AttachmentOffer,
+    fek: &MediaEncryptionKey,
+    src: &DiscoveredSource,
+    have: &mut AttachmentBitmap,
+) -> Result<bool, FilesError> {
+    let attachment_uuid = Uuid::from_bytes(offer.attachment_id);
+    loop {
+        let needed: Vec<u32> = src.bitmap.intersect(&inverse(have));
+        if needed.is_empty() {
+            return Ok(true);
+        }
+        let held_before = have.count();
+        let request =
+            encode_chunk_request(deps, community_id, channel_id, offer.attachment_id, &needed)?;
+        let response = match ask_source(deps, community_id, src, request).await {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::debug!(
+                    reason = source_failure_kind(&e),
+                    "attachment source failed; asking the next source"
+                );
+                return Ok(false);
+            }
+        };
+        for chunk in response {
+            let Some(plaintext) = verified_plaintext(offer, fek, &chunk) else {
+                continue;
+            };
+            // Re-encrypt with FEK for cache storage (so we can serve the
+            // same wire format back to other peers without re-keying).
+            let stored = fek
+                .encrypt(&plaintext)
+                .map_err(|e| FilesError::Encrypt(format!("re-encrypt cache: {e}")))?;
+            let chunk_index = chunk.chunk_index;
+            deps.with_cache_mut(community_id, &mut |cache, pinned| {
+                cache
+                    .insert(attachment_uuid, chunk_index, &stored, pinned)
+                    .map_err(|e| FilesError::Db(format!("cache insert {chunk_index}: {e}")))
+            })?;
+            have.set(chunk_index);
+        }
+        if have.count() == held_before {
+            return Ok(true);
+        }
+    }
+}
+
+/// A served chunk's plaintext, if it decrypts under the FEK, is in range
+/// and matches the offer's plaintext SHA-256; `None` drops it.
+fn verified_plaintext(
+    offer: &AttachmentOffer,
+    fek: &MediaEncryptionKey,
+    chunk: &ChunkResponse,
+) -> Option<Vec<u8>> {
+    let Some(expected) = offer.chunk_hashes.get(chunk.chunk_index as usize) else {
+        tracing::warn!("dropping out-of-range attachment chunk");
+        return None;
+    };
+    let plaintext = match fek.decrypt(&chunk.data) {
+        Ok(plaintext) => plaintext,
+        Err(e) => {
+            tracing::warn!(error = %e, "dropping attachment chunk that does not decrypt");
+            return None;
+        }
+    };
+    if let Err(e) = verify_chunk(&plaintext, expected) {
+        tracing::warn!(error = %e, "dropping malformed attachment chunk; will re-request");
+        return None;
+    }
+    Some(plaintext)
+}
+
+/// The failure class of a source, for logs that carry no identifiers.
+fn source_failure_kind(e: &FilesError) -> &'static str {
+    match e {
+        FilesError::NotFound(_) => "offline",
+        FilesError::Transport(_) => "transport",
+        _ => "other",
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ChunkResponse {
     chunk_index: u32,
@@ -308,26 +371,14 @@ async fn discover_sources<D: FilesDeps>(
     ))
 }
 
-/// Ask a single peer for a subset of chunks. Encodes the
-/// `RequestAttachment` envelope, app_calls the peer's route, decodes
-/// the reply, and unwraps the chunks.
-async fn send_chunk_request<D: FilesDeps>(
+/// Encode the `RequestAttachment` envelope for `requested_chunks`.
+fn encode_chunk_request<D: FilesDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     attachment_id: [u8; 16],
     requested_chunks: &[u32],
-    source: &DiscoveredSource,
-) -> Result<Vec<ChunkResponse>, FilesError> {
-    let route_blob = deps
-        .peer_route_blob(community_id, &source.pseudonym)
-        .ok_or_else(|| {
-            FilesError::NotFound(format!(
-                "source peer {} not online — cannot app_call",
-                source.pseudonym
-            ))
-        })?;
-
+) -> Result<Vec<u8>, FilesError> {
     let requester_pseudonym = deps.my_pseudonym(community_id)?;
     let payload = CommunityEnvelope::Control(ControlPayload::RequestAttachment {
         channel_id: channel_id.to_string(),
@@ -335,10 +386,23 @@ async fn send_chunk_request<D: FilesDeps>(
         requested_chunks: requested_chunks.to_vec(),
         requester_pseudonym,
     });
-    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
-        .map_err(|e| FilesError::Transport(format!("encode RequestAttachment: {e}")))?;
+    rekindle_codec::capnp_envelope::encode_community_envelope(&payload)
+        .map_err(|e| FilesError::Transport(format!("encode RequestAttachment: {e}")))
+}
 
-    let reply = deps.app_call_peer(&route_blob, bytes).await?;
+/// Ask a single peer for a subset of chunks: app_call the peer's route
+/// with the encoded request, decode the reply, and unwrap the chunks.
+/// Every error is the source's (offline, call failed, reply undecodable).
+async fn ask_source<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    source: &DiscoveredSource,
+    request: Vec<u8>,
+) -> Result<Vec<ChunkResponse>, FilesError> {
+    let route_blob = deps
+        .peer_route_blob(community_id, &source.pseudonym)
+        .ok_or_else(|| FilesError::NotFound("source peer not online".into()))?;
+    let reply = deps.app_call_peer(&route_blob, request).await?;
     let envelope = rekindle_codec::capnp_envelope::decode_community_envelope(&reply)
         .map_err(|e| FilesError::Transport(format!("decode reply: {e}")))?;
     match envelope {
@@ -361,6 +425,9 @@ fn parse_attachment_id_hex(hex_str: &str) -> Result<[u8; 16], FilesError> {
         .and_then(|b| b.try_into().ok())
         .ok_or_else(|| FilesError::InvalidAttachmentId(hex_str.to_string()))
 }
+
+#[cfg(test)]
+mod sources_tests;
 
 #[cfg(test)]
 mod tests {
