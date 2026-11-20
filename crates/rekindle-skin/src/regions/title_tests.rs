@@ -79,14 +79,6 @@ fn the_skin_layer_names_the_title_backing_only_when_bare() {
             p.files().map(|(n, b)| (n.to_owned(), b.to_vec())).collect();
         let g = title_ground(&m, &images, &resolved);
         let css = title_css(&m, &images, &resolved);
-        println!(
-            "title backing {b}: {g:?} -> {}",
-            if css.is_empty() {
-                "kept"
-            } else {
-                "transparent"
-            }
-        );
         assert_eq!(
             g.is_some_and(|g| g.bare()),
             css.contains("-title-backing: transparent")
