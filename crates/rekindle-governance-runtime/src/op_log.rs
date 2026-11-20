@@ -437,12 +437,40 @@ pub fn own_frontier(
     me: Option<&PseudonymKey>,
 ) -> Frontier {
     let merged = merge::merge(cert, &set.ops);
-    Frontier {
+    let fork = me.map(|me| own_fork(set, held, me)).unwrap_or_default();
+    fit_fork_proof(Frontier {
         heads: frontier_refs(cert, &merged, set),
         roster_checksum: roster_checksum(&merged),
-        fork_proof: me
-            .map(|me| own_fork_proof(set, held, me))
-            .unwrap_or_default(),
+        fork_proof: fork.iter().map(|op| op.encoded.clone()).collect(),
+        fork_refs: fork.iter().map(|op| op_ref_of(op)).collect(),
+    })
+}
+
+/// `frontier` with its fork proof cut to what one subkey holds beside the
+/// heads, the largest op left out first: two ops near `GOVERNANCE_OP_MAX_BYTES`
+/// never fit one `MAX_SUBKEY_VALUE_LEN` value, and a frontier that does not
+/// encode is never written, which would hide the heads too. An op left out
+/// stays named in `fork_refs`; a reader fetches it from our op log, which
+/// serves one branch (plan E3.2 S7d, frontier rules).
+#[must_use]
+pub fn fit_fork_proof(mut frontier: Frontier) -> Frontier {
+    while !frontier.fork_proof.is_empty()
+        && rekindle_codec::governance_op::encode_frontier(&frontier).is_err()
+    {
+        let largest = (0..frontier.fork_proof.len())
+            .max_by_key(|&i| frontier.fork_proof[i].len())
+            .unwrap_or_default();
+        frontier.fork_proof.remove(largest);
+    }
+    frontier
+}
+
+fn op_ref_of(op: &HeldOp) -> OpRef {
+    OpRef {
+        op_hash: op.hash,
+        author: op.author.clone(),
+        author_record: op.author_record.clone(),
+        author_seq: op.seq,
     }
 }
 
@@ -451,6 +479,14 @@ pub fn own_frontier(
 /// empty when every seq of ours holds one op.
 #[must_use]
 pub fn own_fork_proof(set: &VerifiedSet, held: &[HeldOp], me: &PseudonymKey) -> Vec<Vec<u8>> {
+    own_fork(set, held, me)
+        .into_iter()
+        .map(|op| op.encoded.clone())
+        .collect()
+}
+
+/// The held ops behind [`own_fork_proof`].
+fn own_fork<'a>(set: &VerifiedSet, held: &'a [HeldOp], me: &PseudonymKey) -> Vec<&'a HeldOp> {
     let mut by_seq: std::collections::BTreeMap<u64, BTreeSet<OpHash>> =
         std::collections::BTreeMap::default();
     for op in set.ops.iter().filter(|op| op.author() == me) {
@@ -462,7 +498,6 @@ pub fn own_fork_proof(set: &VerifiedSet, held: &[HeldOp], me: &PseudonymKey) -> 
     fork.iter()
         .take(rekindle_codec::governance_op::MAX_FORK_PROOF_OPS)
         .filter_map(|hash| held.iter().find(|op| op.hash == *hash))
-        .map(|op| op.encoded.clone())
         .collect()
 }
 

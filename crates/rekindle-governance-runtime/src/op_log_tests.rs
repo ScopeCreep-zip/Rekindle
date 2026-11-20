@@ -391,3 +391,41 @@ fn our_own_fork_goes_out_as_the_frontiers_fork_proof() {
         .fork_proof
         .is_empty());
 }
+
+/// Two fork ops near the op bound never fit one frontier subkey beside the
+/// heads (plan E3.2 S7d): the proof keeps what fits, the largest left out,
+/// both stay named in `fork_refs`, and the frontier still encodes, so its
+/// heads are written.
+#[test]
+fn a_fork_proof_too_large_for_the_subkey_keeps_what_fits() {
+    use rekindle_types::dht_layout::member_record::MAX_SUBKEY_VALUE_LEN;
+    let op_ref = |b: u8| OpRef {
+        op_hash: OpHash([b; 32]),
+        author: PseudonymKey([3; 32]),
+        author_record: "VLD0:m".into(),
+        author_seq: 6,
+    };
+    let small = vec![1u8; MAX_SUBKEY_VALUE_LEN / 2];
+    let large = vec![2u8; MAX_SUBKEY_VALUE_LEN / 2 + 1];
+    let frontier = Frontier {
+        heads: vec![op_ref(1), op_ref(2)],
+        roster_checksum: rekindle_types::governance::RosterChecksum([4; 32]),
+        fork_proof: vec![large, small.clone()],
+        fork_refs: vec![op_ref(1), op_ref(2)],
+    };
+    let fitted = fit_fork_proof(frontier.clone());
+    let bytes = rekindle_codec::governance_op::encode_frontier(&fitted).expect("it fits");
+    assert!(bytes.len() <= MAX_SUBKEY_VALUE_LEN);
+    assert_eq!(fitted.fork_proof, vec![small], "the largest is left out");
+    assert_eq!(fitted.fork_refs, frontier.fork_refs, "both stay named");
+    assert_eq!(fitted.heads, frontier.heads);
+    let fits = Frontier {
+        fork_proof: vec![vec![5u8; 64], vec![6u8; 64]],
+        ..frontier
+    };
+    assert_eq!(
+        fit_fork_proof(fits.clone()),
+        fits,
+        "a proof that fits is kept whole"
+    );
+}

@@ -48,6 +48,10 @@ pub struct Frontier {
     /// backup that finds its own fork publishes both branches here and every
     /// reader verifies and stores them, never only the branch the log kept.
     pub fork_proof: Vec<Vec<u8>>,
+    /// Both ops of that fork by reference, always when it exists: the proof
+    /// carries the ops that fit one subkey beside the heads, and a reader
+    /// fetches a named op it lacks from the author's op log.
+    pub fork_refs: Vec<OpRef>,
 }
 
 /// One signed governance op.

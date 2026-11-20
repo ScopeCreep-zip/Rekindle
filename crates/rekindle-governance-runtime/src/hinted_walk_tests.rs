@@ -59,6 +59,7 @@ fn cp_body(cp: &VerifiedOp) -> &Checkpoint {
 fn frontier(world: &World) -> Frontier {
     Frontier {
         fork_proof: Vec::new(),
+        fork_refs: Vec::new(),
         heads: frontier_refs(&world.cert, &world.state, &world.set),
         roster_checksum: roster_checksum(&world.state),
     }

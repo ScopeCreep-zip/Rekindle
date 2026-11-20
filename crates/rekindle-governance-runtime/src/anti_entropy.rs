@@ -216,8 +216,21 @@ async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
             stored += 1;
         }
     }
-    let mut complete = true;
     let logs = op_log::WalkLogCache::default();
+    // A fork op the proof left out (it did not fit beside the heads) is
+    // fetched from the author's op log when that serves it; the log holds
+    // one branch, so a miss does not keep the frontier unread.
+    for op_ref in &frontier.fork_refs {
+        if known.contains(&op_ref.op_hash) {
+            continue;
+        }
+        if let Some(op) = op_log::fetch_held(deps, op_ref, &logs).await? {
+            deps.store_governance_op(community_id, &op).await?;
+            known.insert(op_ref.op_hash);
+            stored += 1;
+        }
+    }
+    let mut complete = true;
     for op_ref in &frontier.heads {
         if known.contains(&op_ref.op_hash) {
             continue;

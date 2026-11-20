@@ -14,6 +14,7 @@ use rekindle_types::id::PseudonymKey;
 fn frontier() -> Vec<u8> {
     rekindle_codec::governance_op::encode_frontier(&Frontier {
         fork_proof: Vec::new(),
+        fork_refs: Vec::new(),
         heads: vec![OpRef {
             op_hash: OpHash([7; 32]),
             author: PseudonymKey([1; 32]),
@@ -89,6 +90,7 @@ fn fetchable() -> (Vec<u8>, Vec<u8>) {
     let encoded = rekindle_codec::governance_op::encode_op(&op).expect("op encodes");
     let frontier = rekindle_codec::governance_op::encode_frontier(&Frontier {
         fork_proof: Vec::new(),
+        fork_refs: Vec::new(),
         heads: vec![OpRef {
             op_hash: hash,
             author: PseudonymKey([1; 32]),
@@ -220,6 +222,7 @@ fn converging_as(
     let known = BTreeSet::from([op.hash()]);
     let bytes = rekindle_codec::governance_op::encode_frontier(&Frontier {
         fork_proof: Vec::new(),
+        fork_refs: Vec::new(),
         heads: vec![op.op_ref("VLD0:m")],
         roster_checksum: checksum,
     })

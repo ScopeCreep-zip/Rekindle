@@ -267,9 +267,19 @@ pub fn encode_frontier(value: &Frontier) -> Result<Vec<u8>, CodecError> {
         MAX_FORK_PROOF_OPS,
     )?;
     let count = u32::try_from(value.fork_proof.len()).unwrap_or(u32::MAX);
-    let mut proof = b.init_fork_proof(count);
+    let mut proof = b.reborrow().init_fork_proof(count);
     for (i, op) in (0..count).zip(&value.fork_proof) {
         proof.set(i, op);
+    }
+    check_len(
+        "frontier fork refs",
+        value.fork_refs.len(),
+        MAX_FORK_PROOF_OPS,
+    )?;
+    let count = u32::try_from(value.fork_refs.len()).unwrap_or(u32::MAX);
+    let mut refs = b.init_fork_refs(count);
+    for (i, op_ref) in (0..count).zip(&value.fork_refs) {
+        write_op_ref(refs.reborrow().get(i), op_ref);
     }
     let out = pack(&builder);
     check_len("frontier", out.len(), MAX_SUBKEY_VALUE_LEN)?;
@@ -306,10 +316,17 @@ pub fn decode_frontier(data: &[u8]) -> Result<Frontier, CodecError> {
         .iter()
         .map(|op| data_field(op).map(<[u8]>::to_vec))
         .collect::<Result<_, _>>()?;
+    let refs = r.get_fork_refs().map_err(|e| capnp_err(&e))?;
+    if usize::try_from(refs.len()).unwrap_or(usize::MAX) > MAX_FORK_PROOF_OPS {
+        return Err(CodecError::Deserialization(format!(
+            "frontier fork refs exceed the bound {MAX_FORK_PROOF_OPS}"
+        )));
+    }
     Ok(Frontier {
         heads: heads.iter().map(read_op_ref).collect::<Result<_, _>>()?,
         roster_checksum,
         fork_proof,
+        fork_refs: refs.iter().map(read_op_ref).collect::<Result<_, _>>()?,
     })
 }
 

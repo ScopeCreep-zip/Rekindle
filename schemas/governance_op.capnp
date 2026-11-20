@@ -26,11 +26,15 @@ struct OpRef {
 # whose heads equal these compares it with its own. `forkProof` holds the
 # signed bytes of the member's own two ops at the seq where it equivocated
 # (D15, S7d), at most 2, empty otherwise: the op log keeps one op per seq,
-# so the other branch is fetchable only from here.
+# so the other branch is fetchable only from here. `forkRefs` names both
+# ops of that fork, always: the proof carries the ops that fit the subkey
+# beside the heads (the largest left out first), and a reader fetches a
+# named op it lacks from the author's op log, which serves one branch.
 struct Frontier {
   heads @0 :List(OpRef);
   rosterChecksum @1 :Data;     # 32 bytes
   forkProof @2 :List(Data);
+  forkRefs @3 :List(OpRef);
 }
 
 struct GovernanceOp {
