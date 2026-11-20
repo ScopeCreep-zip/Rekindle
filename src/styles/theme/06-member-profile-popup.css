@@ -206,6 +206,12 @@
     color: var(--color-xfire-text-dim);
   }
 
+  /* A 1:1 chat whose friend request is not accepted yet (L-UI1). */
+  .chat-awaiting-accept {
+    padding: 4px 8px;
+    color: var(--color-xfire-text-dim);
+  }
+
   /* The safety number behind the header's shield (plan E2.3). */
   .chat-safety-btn {
     width: 24px;

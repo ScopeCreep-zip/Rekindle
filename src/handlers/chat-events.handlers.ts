@@ -89,6 +89,15 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
   });
 }
 
+/** The peer a friend-lifecycle event changes the friendship with. */
+function friendEventPeer(friend: FriendEvent): string | null {
+  if ("accepted" in friend) return friend.accepted.peerKey;
+  if ("added" in friend) return friend.added.peerKey;
+  if ("rejected" in friend) return friend.rejected.peerKey;
+  if ("removed" in friend) return friend.removed.peerKey;
+  return null;
+}
+
 /** Apply one friend-lifecycle event to the friends and notification stores. */
 function applyFriendEvent(friend: FriendEvent): void {
   if ("requestReceived" in friend) {
@@ -318,6 +327,14 @@ export function subscribeDmChatEvents(
     if ("channelMessage" in event && "dmHistoryGap" in event.channelMessage) {
       const gap = event.channelMessage.dmHistoryGap;
       if (gap.peerKey === peerId) applyHistoryGap(gap);
+      return;
+    }
+
+    // This friend's lifecycle (accepted, added, rejected, removed): the
+    // window renders the Host's friendship state, so a pending request's
+    // notice clears when their accept lands (L-UI1).
+    if ("friend" in event && friendEventPeer(event.friend) === peerId) {
+      applyFriendEvent(event.friend);
       return;
     }
 

@@ -83,6 +83,20 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     }
   };
 
+  // The state in words (§13): the icon's tooltip and accessible name.
+  const statusText = () => {
+    switch (props.message.status) {
+      case "sending": return "Sending";
+      case "sent": return "Sent";
+      case "delivered": return "Delivered";
+      case "read": return "Read";
+      case "awaiting_key":
+      case "queued": return "Queued";
+      case "failed": return "Failed";
+      default: return undefined;
+    }
+  };
+
   const statusClass = () => {
     if (!props.message.status) return "";
     return `message-status message-status-${props.message.status}`;
@@ -183,7 +197,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           <ExpiryIndicator expireAt={props.message.expireAt} expireSeconds={props.message.expireSeconds} />
         </Show>
         <Show when={statusIcon()}>
-          <span class={`${statusClass()} nf-icon`}>{statusIcon()}</span>
+          <span class={`${statusClass()} nf-icon`} title={statusText()} aria-label={statusText()} role="img">{statusIcon()}</span>
         </Show>
         <Show when={props.message.isOwn && props.message.status === "awaiting_key"}>
           <span class="message-status-note">Waiting for the community key</span>

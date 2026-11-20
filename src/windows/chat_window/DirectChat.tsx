@@ -59,6 +59,9 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
   // Only a friend has a safety number to compare (audit U-9).
   const isFriend = createMemo(() => friendsState.friends[peerId] !== undefined);
   const pinMismatch = createMemo(() => friendsState.friends[peerId]?.identityPinMismatch === true);
+  // Our request to them is not accepted yet (the Host's `pendingOut`): a
+  // message waits queued until their accept reaches us (L-UI1).
+  const awaitingAccept = createMemo(() => friendsState.friends[peerId]?.friendshipState === "pendingOut");
 
   // The peer's key trust (plan E2.3): the header's badge, and the safety
   // number with its mark-verified flow behind the shield button.
@@ -213,6 +216,11 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           </button>
         </Show>
       </div>
+      <Show when={awaitingAccept()}>
+        <div class="chat-awaiting-accept" role="status">
+          Waiting for {peerName()} to accept your friend request. Messages stay queued until then.
+        </div>
+      </Show>
       <Show when={showSafety() && isFriend()}>
         <div id="chat-safety-number" class="chat-safety-number">
           <SafetyNumberPanel peerKey={peerId} view={safety.view()} onChanged={safety.reload} />
