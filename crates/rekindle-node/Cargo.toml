@@ -132,8 +132,14 @@ rekindle-secrets = { path = "../rekindle-secrets" }
 [features]
 # Builds the `netsim_scale` test target (see its `[[test]]`).
 netsim-scale = []
+# The netsim's entry to one Host call to a member (plan E3.4 S4 netsim B,
+# `HostGovernance::netsim_call_member`); only this crate's own
+# dev-dependency below turns it on, so no production build has it.
+netsim-entry = []
 
 [dev-dependencies]
+# Itself, for the `netsim-entry` feature the netsim scenarios call.
+rekindle-node = { path = ".", features = [ "netsim-entry" ] }
 # The unsigned op fixtures the governance tests merge (`merge_entries`, `at`, `stamp`).
 rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }

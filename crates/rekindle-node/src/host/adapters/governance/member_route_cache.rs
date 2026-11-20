@@ -283,6 +283,24 @@ impl HostGovernance {
         let member = super::moderation::pseudonym(member_hex).ok_or(MemberCallError::NoRoute)?;
         self.call_member_route(community, &member, payload).await
     }
+
+    /// The netsim's entry to one member call (plan E3.4 S4 netsim B):
+    /// [`Self::call_member_hex`] as it is, built only with the
+    /// `netsim-entry` feature, which only this crate's own dev-dependency
+    /// turns on (production calls a member only through the MEK answer,
+    /// the key transfer, files and voice).
+    ///
+    /// # Errors
+    /// [`MemberCallError`].
+    #[cfg(feature = "netsim-entry")]
+    pub async fn netsim_call_member(
+        &self,
+        community: &str,
+        member_hex: &str,
+        payload: Vec<u8>,
+    ) -> Result<Vec<u8>, MemberCallError> {
+        self.call_member_hex(community, member_hex, payload).await
+    }
 }
 
 #[cfg(test)]

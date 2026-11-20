@@ -68,6 +68,8 @@ mod mek_request;
 pub use mek_request::MekRequest;
 mod member_events;
 pub(crate) mod member_route_cache;
+#[cfg(feature = "netsim-entry")]
+pub use member_route_cache::MemberCallError;
 mod membership;
 mod membership_roster;
 mod membership_route;

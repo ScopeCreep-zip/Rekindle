@@ -7699,6 +7699,7 @@ dependencies = [
  "rekindle-link-preview",
  "rekindle-mek-rotation",
  "rekindle-netsim",
+ "rekindle-node",
  "rekindle-outbox",
  "rekindle-presence",
  "rekindle-protocol",
