@@ -215,48 +215,48 @@ fn backgrounds(
     aliases: &BTreeMap<String, String>,
 ) -> Result<Vec<Background>, ImportError> {
     let mut out = Vec::new();
-    for e in &main.entries {
-        let Some(n) = e
+    for entry in &main.entries {
+        let Some(index) = entry
             .key
             .strip_prefix("Window")
             .and_then(|k| k.strip_suffix(".Name"))
         else {
             continue;
         };
-        let get = |k: &str| main.get(&format!("Window{n}.{k}"));
-        let num = |k: &str| get(k).map_or(Some(0), |v| v.trim().parse::<u16>().ok());
+        let get = |key: &str| main.get(&format!("Window{index}.{key}"));
+        let num = |key: &str| get(key).map_or(Some(0), |v| v.trim().parse::<u16>().ok());
         let stretched = get("ResizeX") == Some("100") && get("ResizeY") == Some("100");
         let at = [num("X"), num("Y"), num("IndentRight"), num("IndentBottom")];
-        let (true, [Some(x), Some(y), Some(r), Some(b)]) = (stretched, at) else {
+        let (true, [Some(left), Some(top), Some(right), Some(bottom)]) = (stretched, at) else {
             continue;
         };
-        let Some(s) = skin.section(e.value.trim()) else {
+        let Some(section) = skin.section(entry.value.trim()) else {
             continue;
         };
         let sides = ["left", "right", "top", "bottom"];
         let (Some(value), false) = (
-            s.get("Graphics.middle"),
+            section.get("Graphics.middle"),
             sides
                 .iter()
-                .any(|k| s.get(&format!("Graphics.{k}")).is_some()),
+                .any(|side| section.get(&format!("Graphics.{side}")).is_some()),
         ) else {
             continue;
         };
         let (file, bytes) = resolve(tree, value, aliases)?;
         let mut image = bitmap::decode(file, bytes)?;
-        let by = s
+        let by = section
             .get("Graphics.ColorGroup")
-            .and_then(|c| colours.iter().find(|r| r.name == c))
-            .map_or([0; 3], |r| r.value);
+            .and_then(|group| colours.iter().find(|row| row.name == group))
+            .map_or([0; 3], |row| row.value);
         bitmap::shift(&mut image, by);
-        let z = get("Z")
+        let depth = get("Z")
             .and_then(|v| v.trim().parse::<i64>().ok())
             .unwrap_or(0);
         out.push(Background {
-            name: e.value.trim().to_ascii_lowercase(),
+            name: entry.value.trim().to_ascii_lowercase(),
             image,
-            at: [x, y, r, b],
-            z: u8::try_from(z.clamp(0, 255)).unwrap_or(0),
+            at: [left, top, right, bottom],
+            z: u8::try_from(depth.clamp(0, 255)).unwrap_or(0),
         });
     }
     Ok(out)
@@ -268,21 +268,27 @@ fn backgrounds(
 /// # Errors
 /// Pieces that do not compose, or an image too large for a tile.
 pub fn main_layout(f: &Frame) -> Result<(WindowLayout, BTreeMap<String, Vec<u8>>), ImportError> {
-    let w = SkinWindow::Main;
-    let (mut layout, mut files) = shape::from_nine(w, &f.pieces)?;
+    let window = SkinWindow::Main;
+    let (mut layout, mut files) = shape::from_nine(window, &f.pieces)?;
     for bg in &f.backgrounds {
-        let [x, y, r, b] = bg.at;
+        let [left, top, right, bottom] = bg.at;
         let axes = (
-            TileAxis::Repeat { start: x, end: r },
-            TileAxis::Repeat { start: y, end: b },
+            TileAxis::Repeat {
+                start: left,
+                end: right,
+            },
+            TileAxis::Repeat {
+                start: top,
+                end: bottom,
+            },
         );
         let name = format!("bg-{}", bg.name);
-        let Some((mut t, png)) = shape::tile(w, &name, &bg.image, axes, true)? else {
+        let Some((mut tile, png)) = shape::tile(window, &name, &bg.image, axes, true)? else {
             continue;
         };
-        t.decoration = Some(bg.z);
-        files.insert(t.image.clone(), png);
-        layout.tiles.push(t);
+        tile.decoration = Some(bg.z);
+        files.insert(tile.image.clone(), png);
+        layout.tiles.push(tile);
     }
     Ok((layout, files))
 }
