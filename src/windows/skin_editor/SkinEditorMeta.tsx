@@ -31,13 +31,24 @@ const SkinEditorMeta: Component<{
         />
       </label>
       <label class="skin-editor-field">
-        <span class="form-label">Author</span>
+        <span class="form-label">Author (required)</span>
         <input
           class="form-input"
           placeholder="Your name, as credited"
+          required
+          aria-required="true"
+          aria-invalid={props.report.authorRequired ? "true" : "false"}
+          aria-describedby="skin-editor-author-hint"
           value={props.draft.author}
           onChange={(e) => edit({ author: e.currentTarget.value })}
         />
+        <Show when={props.report.authorRequired}>
+          {(hint) => (
+            <span id="skin-editor-author-hint" class="settings-hint">
+              {hint()}
+            </span>
+          )}
+        </Show>
       </label>
       <div class="skin-editor-field skin-editor-licence-field">
         <label class="skin-editor-field">

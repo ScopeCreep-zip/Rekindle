@@ -1,17 +1,16 @@
 //! `check-contrast-pairs` (plan E7.7.0a): every text-on-ground pair the
 //! region map declares reads at least 4.5:1 (WCAG 1.4.3), and every graphic
 //! pair (`graphic = true`, the status dots) at least 3:1 (1.4.11), on each
-//! base.
+//! base; `gen-contrast-pairs` writes that pair set for the skin validator.
 //!
 //! The text colour of each pair is the rule's own `color` (every rule that
 //! sets it, not only the first); the ground is the entry's `on` list in
 //! `src/styles/regions.toml`; both resolve against the registry tokens
 //! (`src/styles/generated/tokens.css`, plan E7.7.1) and the `@layer sec`
-//! tokens of `src/styles/global.css`. A tint is composited in gamma-encoded sRGB as
-//! `color-mix(in srgb, …)` does; a text colour of
-//! `color-mix(in srgb, <token> N%, transparent)` is composited over each
-//! ground. Luminance and ratio are WCAG 2.x relative luminance (sRGB
-//! transfer per CSS Color 4).
+//! tokens of `src/styles/global.css`. The measurement is
+//! [`rekindle_skin::access::model`]'s, the same the validator runs on every
+//! skin's variants over the committed [`MODEL_FILE`]; this check fails while
+//! that file is not the pair set the sheets and the map give.
 //!
 //! Two passes:
 //!
@@ -21,117 +20,77 @@
 //!   xfire-defaults`), grounds included: the registry gives the light base
 //!   its own grounds, so no stand-in is needed.
 //!
-//! E7.7.1's validator then measures every pair on every skin and variant;
-//! this check is that measurement for the built-in one. A value the check
-//! cannot resolve fails it: a new colour form is taught here, never skipped.
+//! A value the check cannot resolve fails it: a new colour form is taught
+//! here, never skipped.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+pub(crate) use rekindle_skin::access::model::{ground, mix, token, var_colour, Rgb};
+use rekindle_skin::access::model::{ModelPair, MODEL_FILE};
 
-use crate::css;
 use crate::declared_grounds::{self as grounds, Entry, TextRule, MAP};
 use crate::pair_model;
 
-const TEXT_FLOOR: f64 = 4.5;
-const GRAPHIC_FLOOR: f64 = 3.0;
-
-pub(crate) type Rgb = [f64; 3];
-
-/// `#rgb` or `#rrggbb` as gamma-encoded channels in 0..=1.
-fn hex(value: &str) -> Option<Rgb> {
-    let digits = value.trim().strip_prefix('#')?;
-    if !digits.is_ascii() {
-        return None;
-    }
-    let long = match digits.len() {
-        3 => digits.chars().flat_map(|c| [c, c]).collect(),
-        6 => digits.to_string(),
-        _ => return None,
-    };
-    let channel = |i: usize| {
-        u8::from_str_radix(long.get(i..i + 2)?, 16)
-            .ok()
-            .map(|v| f64::from(v) / 255.0)
-    };
-    Some([channel(0)?, channel(2)?, channel(4)?])
+/// One pair of the model and the declaration its colour comes from.
+struct Row {
+    site: String,
+    selector: String,
+    state: String,
+    value: String,
+    ground: String,
+    alpha: f64,
+    graphic: bool,
 }
 
-pub(crate) fn token(tokens: &BTreeMap<String, String>, name: &str) -> Result<Rgb, String> {
-    let value = tokens
-        .get(name)
-        .ok_or_else(|| format!("`{name}` is not a `@theme` colour token"))?;
-    hex(value).ok_or_else(|| format!("`{name}: {value}` is not a hex colour"))
-}
-
-/// `top` at `pct`% over `under`, per channel in gamma-encoded sRGB.
-pub(crate) fn mix(top: Rgb, under: Rgb, pct: f64) -> Rgb {
-    let a = pct / 100.0;
-    [0, 1, 2].map(|i| top[i] * a + under[i] * (1.0 - a))
-}
-
-pub(crate) fn ground(tokens: &BTreeMap<String, String>, declared: &str) -> Result<Rgb, String> {
-    let parsed = grounds::parse_ground(declared)?;
-    let mut rgb = token(tokens, parsed.base)?;
-    for (tint, pct) in parsed.tints.iter().rev() {
-        rgb = mix(token(tokens, tint)?, rgb, grounds::share(tokens, pct)?);
-    }
-    Ok(rgb)
-}
-
-/// The first `var()` of `expr` that names a `@theme` token. In
-/// `var(--profile-accent, var(--color-xfire-accent-text))` the first is a
-/// runtime property, so the default is its fallback.
-pub(crate) fn var_colour(tokens: &BTreeMap<String, String>, expr: &str) -> Result<Rgb, String> {
-    let name = css::var_refs(expr)
-        .into_iter()
-        .find(|r| tokens.contains_key(r))
-        .ok_or_else(|| format!("`{expr}` names no `@theme` colour token"))?;
-    token(tokens, &name)
-}
-
-/// The colour a `color` value paints over `under`.
-fn text_colour(tokens: &BTreeMap<String, String>, value: &str, under: Rgb) -> Result<Rgb, String> {
-    let value = value.trim_end_matches("!important").trim();
-    let Some(args) = value
-        .strip_prefix("color-mix(")
-        .and_then(|rest| rest.strip_suffix(')'))
-    else {
-        return var_colour(tokens, value);
-    };
-    let unsupported = || format!("`{value}` is not `color-mix(in srgb, <token> N%, transparent)`");
-    let parts = css::split_top_level(args, ',');
-    let [space, colour, rest] = parts.as_slice() else {
-        return Err(unsupported());
-    };
-    if space.trim() != "in srgb" || rest.trim() != "transparent" {
-        return Err(unsupported());
-    }
-    let (expr, pct) = colour.trim().rsplit_once(' ').ok_or_else(unsupported)?;
-    let pct = pct
-        .strip_suffix('%')
-        .and_then(|n| n.parse::<f64>().ok())
-        .filter(|n| (0.0..=100.0).contains(n))
-        .ok_or_else(unsupported)?;
-    Ok(mix(var_colour(tokens, expr)?, under, pct))
-}
-
-/// WCAG 2.x relative luminance.
-fn luminance(rgb: Rgb) -> f64 {
-    let linear = |c: f64| {
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
+impl Row {
+    fn pair(&self) -> ModelPair<'_> {
+        ModelPair {
+            selector: &self.selector,
+            state: &self.state,
+            value: &self.value,
+            ground: &self.ground,
+            alpha: self.alpha,
+            graphic: self.graphic,
         }
-    };
-    0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+    }
 }
 
-fn contrast(a: Rgb, b: Rgb) -> f64 {
-    let (la, lb) = (luminance(a), luminance(b));
-    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+/// Each rule on each ground its entry declares (`kind` names the pass:
+/// `text`, `icon`, `boundary`), at the opacity it is drawn at.
+fn rows<'a>(
+    rules: impl Iterator<Item = &'a TextRule>,
+    map: &BTreeMap<String, Entry>,
+    alpha: &BTreeMap<String, f64>,
+    kind: &str,
+) -> Vec<Row> {
+    let mut out = Vec::new();
+    for rule in rules {
+        // An unmapped selector is `check-declared-grounds`' finding.
+        let Some(entry) = map.get(&rule.selector) else {
+            continue;
+        };
+        let states = [
+            (kind.to_owned(), &entry.on),
+            (format!("{kind} hovered"), &entry.on_hover),
+            (format!("{kind} selected"), &entry.on_selected),
+        ];
+        for (state, list) in states {
+            for declared in list {
+                out.push(Row {
+                    site: rule.site.clone(),
+                    selector: rule.selector.clone(),
+                    state: state.clone(),
+                    value: rule.value.clone(),
+                    ground: declared.clone(),
+                    alpha: alpha.get(&rule.selector).copied().unwrap_or(1.0),
+                    graphic: entry.graphic,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// What a measurement found.
@@ -142,53 +101,26 @@ struct Report {
     problems: Vec<String>,
 }
 
-fn measure<'a>(
-    rules: impl Iterator<Item = &'a TextRule>,
-    map: &BTreeMap<String, Entry>,
-    tokens: &BTreeMap<String, String>,
-    alpha: &BTreeMap<String, f64>,
-) -> Report {
+fn measure_rows(rows: &[Row], tokens: &BTreeMap<String, String>) -> Report {
     let mut report = Report::default();
-    for rule in rules {
-        // An unmapped selector is `check-declared-grounds`' finding.
-        let Some(entry) = map.get(&rule.selector) else {
-            continue;
-        };
-        let floor = if entry.graphic {
-            GRAPHIC_FLOOR
-        } else {
-            TEXT_FLOOR
-        };
-        // The opacity the text is drawn at (its own and its dimmers').
-        let a = alpha.get(&rule.selector).copied().unwrap_or(1.0);
-        let dimmed = if a < 1.0 {
-            format!(" at opacity {a:.2}")
+    for row in rows {
+        let pair = row.pair();
+        let floor = pair.floor();
+        report.measured += 1;
+        let dimmed = if row.alpha < 1.0 {
+            format!(" at opacity {:.2}", row.alpha)
         } else {
             String::new()
         };
-        let states = [
-            ("", &entry.on),
-            (" hovered", &entry.on_hover),
-            (" selected", &entry.on_selected),
-        ];
-        for (state, declared) in states
-            .iter()
-            .flat_map(|(state, list)| list.iter().map(move |g| (*state, g)))
-        {
-            let pair = ground(tokens, declared).and_then(|g| {
-                text_colour(tokens, &rule.value, g).map(|t| contrast(mix(t, g, a * 100.0), g))
-            });
-            report.measured += 1;
-            match pair {
-                Ok(ratio) if ratio >= floor => {}
-                Ok(ratio) => report.problems.push(format!(
-                    "{}  `{}`{state}: `{}`{dimmed} on `{declared}` reads {ratio:.2}:1, needs {floor}:1",
-                    rule.site, rule.selector, rule.value
-                )),
-                Err(why) => report
-                    .problems
-                    .push(format!("{}  `{}`: {why}", rule.site, rule.selector)),
-            }
+        match pair.measure(tokens) {
+            Ok(m) if m.ratio >= floor => {}
+            Ok(m) => report.problems.push(format!(
+                "{}  `{}` {}: `{}`{dimmed} on `{}` reads {:.2}:1, needs {floor}:1",
+                row.site, row.selector, row.state, row.value, row.ground, m.ratio
+            )),
+            Err(why) => report
+                .problems
+                .push(format!("{}  `{}`: {why}", row.site, row.selector)),
         }
     }
     report
@@ -204,15 +136,24 @@ fn light_tokens(
     tokens
 }
 
-pub(crate) fn check_contrast_pairs(root: &Path) -> Result<()> {
+/// Every skinnable pair: text, dimmed icons and boundaries (not `@layer
+/// sec`, whose tokens no skin reaches).
+struct Inputs {
+    text: Vec<Row>,
+    icons: Vec<Row>,
+    bounds: Vec<Row>,
+    sec_text: Vec<Row>,
+    sec_bounds: Vec<Row>,
+    global: String,
+    structure: Vec<String>,
+}
+
+fn inputs(root: &Path) -> Result<Inputs> {
     let (sheets, global, map_text) = grounds::read_inputs(root)?;
     let rules = grounds::text_rules(&sheets);
     let map = grounds::read_map(&map_text)?;
     let model = pair_model::read_model(&map_text)?;
     let defaults = grounds::theme_colours(&global);
-    let light = grounds::light_base_colours(&global);
-    let light_all = light_tokens(&defaults, &light);
-    let sec_bases = pair_model::sec_bases(&global);
     let alpha = pair_model::alphas(&sheets, &map, &model, false);
     // Dimmed icons, drawn in a text selector's colour, at 3:1.
     let icon_alpha = pair_model::alphas(&sheets, &map, &model, true);
@@ -228,52 +169,79 @@ pub(crate) fn check_contrast_pairs(root: &Path) -> Result<()> {
     let opaque = BTreeMap::new();
     let (bounds, sec_bounds) = pair_model::boundary_rules(&sheets, &model);
     let sec_rules = pair_model::sec_text_rules(&sheets);
-    let sec_dark = sec_bases
+    let sec_dark = pair_model::sec_bases(&global)
         .first()
         .map(|(_, t)| t.clone())
         .unwrap_or_default();
-    let mut problems: Vec<String> =
-        pair_model::structure(&sheets, &map, &model, &defaults, &sec_dark)
-            .into_iter()
-            .map(|p| format!("map    {p}"))
-            .collect();
+    let structure = pair_model::structure(&sheets, &map, &model, &defaults, &sec_dark);
+    Ok(Inputs {
+        text: rows(rules.iter(), &map, &alpha, "text"),
+        icons: rows(rules.iter(), &icons, &icon_alpha, "icon"),
+        bounds: rows(bounds.iter(), &model.boundaries, &opaque, "boundary"),
+        sec_text: rows(sec_rules.iter(), &model.sec, &opaque, "text"),
+        sec_bounds: rows(sec_bounds.iter(), &model.boundaries, &opaque, "boundary"),
+        global,
+        structure,
+    })
+}
+
+/// The content of [`MODEL_FILE`]: every skinnable pair once, sorted.
+fn render(i: &Inputs) -> String {
+    let mut lines: Vec<String> = i
+        .text
+        .iter()
+        .chain(&i.icons)
+        .chain(&i.bounds)
+        .map(|r| r.pair().row())
+        .collect();
+    lines.sort();
+    lines.dedup();
+    let mut out = String::from(
+        "# Generated by `cargo xtask gen-contrast-pairs` from src/styles/regions.toml and the\n\
+         # sheets: selector, state, value, ground, opacity, graphic. Do not edit.\n",
+    );
+    for l in lines {
+        out.push_str(&l);
+        out.push('\n');
+    }
+    out
+}
+
+/// Writes [`MODEL_FILE`].
+pub(crate) fn gen_contrast_pairs(root: &Path) -> Result<()> {
+    let text = render(&inputs(root)?);
+    std::fs::write(root.join(MODEL_FILE), text).with_context(|| format!("writing {MODEL_FILE}"))?;
+    println!("    wrote {MODEL_FILE}");
+    Ok(())
+}
+
+pub(crate) fn check_contrast_pairs(root: &Path) -> Result<()> {
+    let i = inputs(root)?;
+    let defaults = grounds::theme_colours(&i.global);
+    let light_all = light_tokens(&defaults, &grounds::light_base_colours(&i.global));
+    let mut problems: Vec<String> = i.structure.iter().map(|p| format!("map    {p}")).collect();
+    match std::fs::read_to_string(root.join(MODEL_FILE)) {
+        Ok(on_disk) if on_disk == render(&i) => {}
+        Ok(_) => problems.push(format!(
+            "model  {MODEL_FILE} is stale: run `cargo xtask gen-contrast-pairs`"
+        )),
+        Err(e) => problems.push(format!("model  {MODEL_FILE}: {e}")),
+    }
     let mut counts = Vec::new();
     let mut run = |label: String, report: Report| {
         counts.push(format!("{} {label}", report.measured));
         problems.extend(report.problems.iter().map(|p| format!("{label}  {p}")));
     };
-    run(
-        "dark".into(),
-        measure(rules.iter(), &map, &defaults, &alpha),
-    );
-    run(
-        "light".into(),
-        measure(rules.iter(), &map, &light_all, &alpha),
-    );
-    run(
-        "dark icon".into(),
-        measure(rules.iter(), &icons, &defaults, &icon_alpha),
-    );
-    run(
-        "light icon".into(),
-        measure(rules.iter(), &icons, &light_all, &icon_alpha),
-    );
-    run(
-        "dark boundary".into(),
-        measure(bounds.iter(), &model.boundaries, &defaults, &opaque),
-    );
-    run(
-        "light boundary".into(),
-        measure(bounds.iter(), &model.boundaries, &light_all, &opaque),
-    );
-    for (base, tokens) in &sec_bases {
-        run(
-            format!("sec {base}"),
-            measure(sec_rules.iter(), &model.sec, tokens, &opaque),
-        );
+    for (base, tokens) in [("dark", &defaults), ("light", &light_all)] {
+        run(base.into(), measure_rows(&i.text, tokens));
+        run(format!("{base} icon"), measure_rows(&i.icons, tokens));
+        run(format!("{base} boundary"), measure_rows(&i.bounds, tokens));
+    }
+    for (base, tokens) in &pair_model::sec_bases(&i.global) {
+        run(format!("sec {base}"), measure_rows(&i.sec_text, tokens));
         run(
             format!("sec {base} boundary"),
-            measure(sec_bounds.iter(), &model.boundaries, tokens, &opaque),
+            measure_rows(&i.sec_bounds, tokens),
         );
     }
     if problems.is_empty() {
@@ -299,6 +267,7 @@ pub(crate) fn check_contrast_pairs(root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rekindle_skin::access::model::{contrast, text_colour};
 
     fn tokens() -> BTreeMap<String, String> {
         grounds::theme_colours(
@@ -396,7 +365,10 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let report = measure(rules(css).iter(), &map, &tokens(), &BTreeMap::new());
+        let report = measure_rows(
+            &rows(rules(css).iter(), &map, &BTreeMap::new(), "text"),
+            &tokens(),
+        );
         assert_eq!(report.measured, 5);
         assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
         assert!(report.problems[0].contains("`.low`"));
@@ -409,7 +381,10 @@ mod tests {
         let map = [(".a".to_string(), entry(&["--color-bad"], false))]
             .into_iter()
             .collect();
-        let report = measure(rules(css).iter(), &map, &tokens(), &BTreeMap::new());
+        let report = measure_rows(
+            &rows(rules(css).iter(), &map, &BTreeMap::new(), "text"),
+            &tokens(),
+        );
         assert!(
             report.problems[0].contains("not a hex colour"),
             "{:?}",
@@ -438,7 +413,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let report = measure(all.iter(), &map, &tokens, &BTreeMap::new());
+        let report = measure_rows(&rows(all.iter(), &map, &BTreeMap::new(), "text"), &tokens);
         assert_eq!(report.measured, 3);
         // #8a6d00 on white is 4.96:1, on the light away tint under 4.5:1.
         assert_eq!(report.problems.len(), 1, "{:?}", report.problems);

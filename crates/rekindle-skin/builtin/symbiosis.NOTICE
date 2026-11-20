@@ -434,7 +434,7 @@ Dropped
   triggers: 346
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (8 made)
+Contrast changes (minimal Oklab-lightness walk) (9 made)
   accent.fill: #177cc1 -> #167bc0 (1.4.3 accent.fg on accent.fill: 4.47:1 -> 4.53:1, required 4.50:1)
   status.offline-text: #7d7d7d -> #7e7e7e (1.4.3 status.offline-text on bg.secondary: 4.47:1 -> 4.53:1, required 4.50:1)
   status.offline-text: #7e7e7e -> #858585 (1.4.3 status.offline-text on bg.panel: 4.10:1 -> 4.51:1, required 4.50:1)
@@ -443,3 +443,4 @@ Contrast changes (minimal Oklab-lightness walk) (8 made)
   link: #2f7faf -> #3585b5 (1.4.3 link on bg.secondary: 4.18:1 -> 4.53:1, required 4.50:1)
   link: #3585b5 -> #3c8cbc (1.4.3 link on bg.panel: 4.10:1 -> 4.50:1, required 4.50:1)
   link: #3c8cbc -> #4393c3 (1.4.3 link on bg.tertiary: 4.13:1 -> 4.52:1, required 4.50:1)
+  status.offline-text: #8c8c8c -> #909090 (1.4.3 .buddy-handshake-retrying status.offline-text on accent.fill 30% over bg.dark: 4.30:1 -> passes, required 4.50:1)

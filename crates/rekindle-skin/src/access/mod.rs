@@ -10,14 +10,20 @@
 //!   ≈ 0.179; a dark base needs more contrast against white.
 //! * The registry's constraints (1.4.3 text 4.5:1, 1.4.11 graphics 3:1)
 //!   and [`pairs::PAIRS`] (D4, D5) on the composited colours.
+//! * The full pair model of `src/styles/regions.toml` ([`model`]: tints,
+//!   opacities, hover and selected grounds, icons, boundaries) on the
+//!   variant's own tokens, the same set `cargo xtask check-contrast-pairs`
+//!   measures on the defaults.
 //! * D1–D3 on the opaque danger and accent fills; S1–S3 on the statuses.
 //!
 //! Nothing is auto-fixed: each failure is a [`SkinRule`] naming the rule,
 //! the pair and the measured and required values.
 
 pub mod apca;
+pub mod model;
 pub mod pairs;
 pub mod science;
+mod skin_model;
 
 use std::collections::BTreeMap;
 
@@ -251,7 +257,8 @@ fn cutout_pair(base: Base, v: &Variant<'_>, x: &str) -> Measured {
 }
 
 /// Every declared contrast pair of a variant on `base`, passing or not:
-/// the registry's constraints, [`PAIRS`], S2 and S3, in that order.
+/// the registry's constraints, [`PAIRS`], the pair model, S2 and S3, in
+/// that order.
 #[must_use]
 pub fn measured(base: Base, resolved: &[(&TokenEntry, TokenValue)]) -> Vec<Measured> {
     let v = Variant::new(resolved);
@@ -275,6 +282,7 @@ pub fn measured(base: Base, resolved: &[(&TokenEntry, TokenValue)]) -> Vec<Measu
             out.push(measure(p.rule, &v, p.fg, g, p.floor.x100()));
         }
     }
+    out.extend(skin_model::model_pairs(resolved).into_iter().flatten());
     for x in STATUSES.iter().filter(|x| **x != "status.offline") {
         out.push(cutout_pair(base, &v, x));
     }
@@ -405,6 +413,7 @@ pub fn failures(base: Base, resolved: &[(&TokenEntry, TokenValue)]) -> Vec<SkinR
             out.extend(contrast_rule(p.rule, &v, p.fg, g, p.floor.x100()));
         }
     }
+    out.extend(skin_model::model_failures(resolved));
     out.extend(danger_failures(v.rgb("danger.fill"), v.rgb("accent.fill")));
     out.extend(status_failures(base, &v));
     out

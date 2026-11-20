@@ -207,6 +207,12 @@ pub(crate) fn target_of(fg: &str, ground: &str) -> Option<(String, String)> {
     }
 }
 
+/// The opaque ground beneath a ground's tints: `bg.panel` of
+/// `accent.fill 30.0% over bg.panel`.
+fn ground_base(ground: &str) -> &str {
+    ground.rsplit(" over ").next().unwrap_or(ground)
+}
+
 /// Builds with `build`, validates, and walks every failing pair until the
 /// package passes or a refusal cannot be settled.
 ///
@@ -241,28 +247,43 @@ pub fn settle(
                 changes,
             ));
         };
-        let Some(original) = colour_of(tokens, base, &target) else {
-            return Ok((stop("the token is not a resolved colour"), changes));
-        };
-        // Away from the other colour; text on an image region goes away
-        // from the base's ground.
-        let up = colour_of(tokens, base, &other)
-            .map_or(matches!(base, Base::Dark | Base::HcDark), |o| {
-                colour::luminance(original) >= colour::luminance(o)
-            });
         let same = |e: &SkinError| {
             pair_of(&e.rule).is_some_and(|(r, f, g, _, _)| r == rule && f == fg && g == ground)
         };
-        let mut trial = tokens.clone();
-        let walked = lightness_walk(original, up, |c| {
-            trial.insert(target.clone(), color(c));
-            Ok(match validate::run(&build(&trial)?) {
-                Ok(_) => true,
-                Err(e) => !same(&e),
-            })
-        })?;
-        let Some(new) = walked else {
-            let why = format!("no lightness of {target} passes {rule} on {other}");
+        // The text token first (or the plain ground), then, for a tint, the
+        // opaque ground beneath it: a text drawn on a tint of its own colour
+        // (`.chat-mention-self`) cannot leave it by lightness alone.
+        let mut tries = vec![(target, other)];
+        let beneath = ground_base(&ground);
+        if beneath != ground && settable(beneath) && tries[0].0 != beneath {
+            tries.push((beneath.to_owned(), fg.clone()));
+        }
+        let mut found = None;
+        for (target, other) in tries {
+            let Some(original) = colour_of(tokens, base, &target) else {
+                return Ok((stop("the token is not a resolved colour"), changes));
+            };
+            // Away from the other colour; text on an image region goes away
+            // from the base's ground.
+            let up = colour_of(tokens, base, &other)
+                .map_or(matches!(base, Base::Dark | Base::HcDark), |o| {
+                    colour::luminance(original) >= colour::luminance(o)
+                });
+            let mut trial = tokens.clone();
+            let walked = lightness_walk(original, up, |c| {
+                trial.insert(target.clone(), color(c));
+                Ok(match validate::run(&build(&trial)?) {
+                    Ok(_) => true,
+                    Err(e) => !same(&e),
+                })
+            })?;
+            if let Some(new) = walked {
+                found = Some((target, original, new));
+                break;
+            }
+        }
+        let Some((target, original, new)) = found else {
+            let why = format!("no lightness of {fg} or its ground passes {rule} on {ground}");
             return Ok((stop(&why), changes));
         };
         tokens.insert(target.clone(), color(new));

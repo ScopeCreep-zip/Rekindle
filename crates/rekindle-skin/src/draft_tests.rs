@@ -231,7 +231,15 @@ fn every_builtin_started_as_a_draft_passes_and_asks_only_for_its_author() {
         let r = report(&d).unwrap();
         let bad: Vec<_> = r.pairs.iter().filter(|p| !p.pass).collect();
         assert!(bad.is_empty(), "builtin:{} {bad:?}", pack.id);
-        assert_eq!(r.failures, [NO_AUTHOR], "builtin:{}", pack.id);
+        // The missing author is the required field, not a failing check.
+        assert!(
+            r.failures.is_empty(),
+            "builtin:{} {:?}",
+            pack.id,
+            r.failures
+        );
+        assert_eq!(r.author_required.as_deref(), Some(NO_AUTHOR));
+        assert!(!r.exportable, "builtin:{} exports with no author", pack.id);
         d.author = "Bea".to_owned();
         let r = report(&d).unwrap();
         assert!(
@@ -240,6 +248,7 @@ fn every_builtin_started_as_a_draft_passes_and_asks_only_for_its_author() {
             pack.id,
             r.failures
         );
+        assert_eq!(r.author_required, None, "builtin:{}", pack.id);
         assert!(r.exportable, "builtin:{}", pack.id);
         let assets = Assets {
             source: Some(pack.bytes.to_vec()),

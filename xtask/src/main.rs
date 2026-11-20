@@ -221,6 +221,8 @@ enum Command {
     CheckSkinRegistry,
     /// Write the skin registry's generated CSS, TS, TUI palettes and JSON Schema.
     GenSkinRegistry,
+    /// Write the skin validator's pair model from the sheets and `src/styles/regions.toml`.
+    GenContrastPairs,
     /// Verify the e2e skin and role-tag fixtures are current.
     CheckSkinFixtures,
     /// Write the built-in skins' stylesheets and role-tag colours for the e2e suites.
@@ -480,6 +482,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::GenIsolationCommands => gen_isolation_commands::gen_isolation_commands(&root),
         Command::CheckSkinRegistry => gen_skin_registry::check_skin_registry(&root),
         Command::GenSkinRegistry => gen_skin_registry::gen_skin_registry(&root),
+        Command::GenContrastPairs => contrast_pairs::gen_contrast_pairs(&root),
         Command::CheckSkinFixtures => gen_skin_fixtures::check_skin_fixtures(&root),
         Command::GenSkinFixtures => gen_skin_fixtures::gen_skin_fixtures(&root),
         Command::ImportSkin {

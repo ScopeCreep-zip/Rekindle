@@ -25,6 +25,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 
 use crate::css;
+pub(crate) use rekindle_skin::access::model::{parse_ground, share, share_token, TINT_SHARE};
 
 pub(crate) const MAP: &str = "src/styles/regions.toml";
 pub(crate) const TOKEN_FILE: &str = "src/styles/global.css";
@@ -83,33 +84,6 @@ fn is_pair_token(prop: &str) -> bool {
     prop.starts_with("--color-") || prop.starts_with(TINT_SHARE)
 }
 
-/// The prefix of the registry's tint-share tokens.
-const TINT_SHARE: &str = "--tint-";
-
-/// A tint's share in percent: `N%`, or `var(--tint-…)` read from `tokens`.
-pub(crate) fn share(tokens: &BTreeMap<String, String>, word: &str) -> Result<f64, String> {
-    let value = match share_token(word) {
-        Some(name) => tokens
-            .get(name)
-            .ok_or_else(|| format!("`{name}` is not a registry tint share"))?
-            .as_str(),
-        None => word,
-    };
-    value
-        .trim()
-        .strip_suffix('%')
-        .and_then(|n| n.parse::<f64>().ok())
-        .filter(|n| (0.0..=100.0).contains(n))
-        .ok_or_else(|| format!("`{word}` is not a percentage"))
-}
-
-/// The token of `var(--tint-…)`, if `word` is one.
-pub(crate) fn share_token(word: &str) -> Option<&str> {
-    word.strip_prefix("var(")
-        .and_then(|w| w.strip_suffix(')'))
-        .filter(|name| name.starts_with(TINT_SHARE))
-}
-
 /// The `--color-*` tokens `@theme` defines, with their default values,
 /// and the `--tint-*` shares.
 pub(crate) fn theme_colours(global: &str) -> BTreeMap<String, String> {
@@ -139,37 +113,6 @@ pub(crate) fn light_base_colours(global: &str) -> BTreeMap<String, String> {
 
 fn theme_tokens(global: &str) -> BTreeSet<String> {
     theme_colours(global).into_keys().collect()
-}
-
-/// A declared ground: its tints from the top down, over a base token.
-pub(crate) struct Ground<'a> {
-    /// Each tint's token and share (`N%` or `var(--tint-…)`).
-    pub tints: Vec<(&'a str, &'a str)>,
-    pub base: &'a str,
-}
-
-/// The grammar of a ground, without checking that its tokens exist.
-pub(crate) fn parse_ground(ground: &str) -> Result<Ground<'_>, String> {
-    let mut rest = ground.trim();
-    let mut tints = Vec::new();
-    while let Some((tint, under)) = rest.split_once(" over ") {
-        let mut words = tint.split_whitespace();
-        let (Some(token), Some(pct), None) = (words.next(), words.next(), words.next()) else {
-            return Err(format!("`{tint}` is not `<token> <N>%`"));
-        };
-        let literal = pct
-            .strip_suffix('%')
-            .and_then(|n| n.parse::<u8>().ok())
-            .is_some_and(|n| (1..=100).contains(&n));
-        if !literal && share_token(pct).is_none() {
-            return Err(format!(
-                "`{pct}` is not a percentage 1–100% or `var(--tint-…)`"
-            ));
-        }
-        tints.push((token, pct));
-        rest = under.trim();
-    }
-    Ok(Ground { tints, base: rest })
 }
 
 /// Why a ground is malformed, if it is.

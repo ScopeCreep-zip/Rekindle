@@ -77,7 +77,12 @@ pub struct SkinDraftReport {
     /// The draft's `@layer skin` token stylesheet, for live apply to the
     /// editing window only.
     pub tokens_css: String,
-    /// No pair fails and nothing else is refused: export is allowed.
+    /// The draft has no author of its own yet: the editor shows the author
+    /// field as required with this wording, and export stays disabled
+    /// until it is filled. Not a failing check (lead 2026-11-19).
+    pub author_required: Option<String>,
+    /// No pair fails, nothing else is refused and the author is filled in:
+    /// export is allowed.
     pub exportable: bool,
     /// The licence the export states, as the Host read the draft's.
     pub license: SkinLicense,

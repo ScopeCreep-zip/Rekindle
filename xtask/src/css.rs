@@ -12,6 +12,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::walk_source_files;
+pub(crate) use rekindle_skin::access::model::{split_top_level, var_refs};
 
 /// One `property: value` written directly inside a block.
 #[derive(Debug, Clone)]
@@ -113,36 +114,6 @@ pub(crate) fn collapse_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Split at `sep` outside parentheses, brackets and strings.
-pub(crate) fn split_top_level(s: &str, sep: char) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut depth = 0i32;
-    let mut quote: Option<char> = None;
-    let mut cur = String::new();
-    for c in s.chars() {
-        match quote {
-            Some(q) => {
-                if c == q {
-                    quote = None;
-                }
-            }
-            None => match c {
-                '"' | '\'' => quote = Some(c),
-                '(' | '[' => depth += 1,
-                ')' | ']' => depth -= 1,
-                _ if c == sep && depth == 0 => {
-                    parts.push(std::mem::take(&mut cur));
-                    continue;
-                }
-                _ => {}
-            },
-        }
-        cur.push(c);
-    }
-    parts.push(cur);
-    parts
-}
-
 struct Frame {
     prelude: String,
     line: usize,
@@ -223,24 +194,6 @@ pub(crate) fn blocks(src: &str) -> Vec<Block> {
     }
     out.sort_by_key(|(line, _)| *line);
     out.into_iter().map(|(_, b)| b).collect()
-}
-
-/// The custom properties a value reads: `var(--a, var(--b))` → `--a`, `--b`.
-pub(crate) fn var_refs(value: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = value;
-    while let Some(at) = rest.find("var(") {
-        let after = rest[at + 4..].trim_start();
-        let name: String = after
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-            .collect();
-        if name.starts_with("--") {
-            out.push(name);
-        }
-        rest = &rest[at + 4..];
-    }
-    out
 }
 
 /// Every stylesheet under `src/styles`, as `(relative path, source)`.

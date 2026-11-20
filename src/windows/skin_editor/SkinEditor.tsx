@@ -129,6 +129,8 @@ const SkinEditor: Component = () => {
     if (!r) return "Checking…";
     if (r.exportable) return "Every check passes.";
     const n = failing() + r.failures.length;
+    // A missing author is the required field, not a failing check.
+    if (n === 0) return "Every check passes; add your name as the author to export.";
     return `${n === 1 ? "1 check fails" : `${n} checks fail`}; export is disabled.`;
   };
 

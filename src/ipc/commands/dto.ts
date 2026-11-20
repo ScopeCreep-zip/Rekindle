@@ -577,6 +577,7 @@ export interface SkinDraftReport {
   pairs: SkinPairCheck[];
   failures: string[];
   tokensCss: string;
+  authorRequired: string | null;
   exportable: boolean;
   /// The licence and credits the export carries, as the Host reads them.
   license: SkinLicense;

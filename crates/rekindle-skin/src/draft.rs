@@ -255,15 +255,21 @@ fn apca_x10(m: &Measured) -> i32 {
 /// The editor's wording for a draft with no author of its own yet.
 pub const NO_AUTHOR: &str = "Add your name as the author: the export credits you first.";
 
-/// What the validator would refuse in the draft's manifest. A draft
-/// started from a skin has no author of its own yet; the export credits
-/// its author first (owner 2026-11-18: everyone gets credit), so that is
-/// named in the editor's words, and the rest of the manifest is checked
-/// as if it were filled in, so nothing else hides behind it.
+/// The required-author state of a draft: a draft started from a skin has
+/// no author of its own yet, and the export credits its author first
+/// (owner 2026-11-18: everyone gets credit). The editor shows the field as
+/// required with [`NO_AUTHOR`], not as a failing check (lead 2026-11-19).
+#[must_use]
+pub fn author_required(draft: &SkinDraft) -> Option<String> {
+    draft.author.trim().is_empty().then(|| NO_AUTHOR.to_owned())
+}
+
+/// What the validator would refuse in the draft's manifest, checked as if
+/// the author were filled in, so nothing else hides behind a missing one
+/// ([`author_required`] names that).
 fn manifest_failures(draft: &SkinDraft) -> Result<Vec<String>, SkinError> {
     let mut out = Vec::new();
     let probe = if draft.author.trim().is_empty() {
-        out.push(NO_AUTHOR.to_owned());
         SkinDraft {
             author: "-".to_owned(),
             ..draft.clone()
@@ -323,7 +329,9 @@ pub fn report(draft: &SkinDraft) -> Result<SkinDraftReport, SkinError> {
             },
         )
     })?;
-    let exportable = failures.is_empty() && pairs.iter().all(|p| p.pass);
+    let author_required = author_required(draft);
+    let exportable =
+        failures.is_empty() && pairs.iter().all(|p| p.pass) && author_required.is_none();
     let listed = resolved
         .iter()
         .filter(|(e, _)| e.class == Class::Themeable)
@@ -346,6 +354,7 @@ pub fn report(draft: &SkinDraft) -> Result<SkinDraftReport, SkinError> {
         pairs,
         failures,
         tokens_css,
+        author_required,
         exportable,
         license: license_of(&draft.license),
         credits: credits_of(draft),
