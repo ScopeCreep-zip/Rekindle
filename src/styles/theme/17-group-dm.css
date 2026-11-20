@@ -68,10 +68,13 @@
     background: var(--color-xfire-bg-dark);
   }
 
+  /* One line (plan E2.6 GC1): the names comma-separated, each ellipsised
+     as the header narrows; the full list is the element's title. */
   .group-chat-members {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -80,12 +83,18 @@
   }
 
   .group-chat-member {
+    flex: 0 1 auto;
+    min-width: 0;
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .group-chat-member:not(:last-child)::after {
+    content: ",";
   }
 
   .group-chat-leave {

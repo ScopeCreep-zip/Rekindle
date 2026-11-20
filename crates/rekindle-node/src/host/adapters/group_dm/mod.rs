@@ -13,7 +13,7 @@ use rekindle_db::repo::group_dm_invites::{self, InviteRow};
 use rekindle_db::repo::group_dms::{self, GroupDmRow};
 use rekindle_dm::group::group_id_hex;
 use rekindle_dm::{DmError, GroupDmDeps, GroupSenderKey, GroupState, PendingInvite, Roster};
-use rekindle_transport::operations::friend::{label, FriendError, FriendHost};
+use rekindle_transport::operations::friend::{relationship_name, FriendError, FriendHost};
 use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent};
 
 use super::friends::HostFriends;
@@ -58,6 +58,25 @@ impl HostGroupDm {
             db: host.db()?,
             identity: rekindle_crypto::Identity::from_secret_bytes(&secret),
         })
+    }
+}
+
+impl HostGroupDm {
+    /// The name the roster of a held group or invite carries for
+    /// `identity`, as its creator signed it.
+    async fn carried_name(&self, identity: &str) -> Option<String> {
+        let named = |members: &[rekindle_types::group_dm::GroupDmRosterMember]| {
+            members
+                .iter()
+                .find(|m| m.identity == identity && !m.display_name.trim().is_empty())
+                .map(|m| m.display_name.clone())
+        };
+        let groups = self.groups().await.unwrap_or_default();
+        if let Some(name) = groups.iter().find_map(|g| named(g.roster.members())) {
+            return Some(name);
+        }
+        let invites = self.invites().await.unwrap_or_default();
+        invites.iter().find_map(|p| named(&p.invite.roster))
     }
 }
 
@@ -114,8 +133,23 @@ impl GroupDmDeps for HostGroupDm {
         self.identity.sign(message).to_bytes()
     }
 
+    /// Plan E2.6 GC1: "You" for ourselves; a friend (or a pending
+    /// request) by the name that relationship holds; anyone else by the
+    /// name the creator signed onto the roster, marked as not a friend's
+    /// so it never passes for one (threat model: a name is a label, never
+    /// an identity). Never a key: the key stays on the profile and the
+    /// safety number.
     async fn display_name(&self, identity: &str) -> String {
-        label(&self.host, identity)
+        if identity == self.owner {
+            return "You".to_owned();
+        }
+        match relationship_name(&self.host, &self.owner, identity).await {
+            Ok(Some(name)) => return name,
+            Ok(None) => {}
+            Err(e) => tracing::warn!(error = %e, "group member's relationship not read"),
+        }
+        let carried = self.carried_name(identity).await;
+        format!("{} (not a friend)", carried.as_deref().unwrap_or("Unknown"))
     }
 
     async fn group(&self, group_id: &GroupId) -> Result<Option<GroupState>, DmError> {

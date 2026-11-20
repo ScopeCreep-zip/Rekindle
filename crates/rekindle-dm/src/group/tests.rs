@@ -13,6 +13,7 @@ pub(crate) fn member_of(key: &SigningKey) -> GroupDmRosterMember {
     let identity = hex::encode(key.verifying_key().to_bytes());
     GroupDmRosterMember {
         profile_record_key: format!("VLD0:profile-{}", &identity[..8]),
+        display_name: format!("member {}", &identity[..4]),
         identity,
     }
 }

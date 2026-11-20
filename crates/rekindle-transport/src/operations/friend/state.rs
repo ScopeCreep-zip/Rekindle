@@ -129,17 +129,31 @@ pub(crate) async fn known_name(
     owner: &str,
     public_key: &str,
 ) -> Result<String, FriendError> {
+    Ok(relationship_name(host, owner, public_key)
+        .await?
+        .unwrap_or_else(|| label(host, public_key)))
+}
+
+/// The name a relationship gives `public_key`: their friend row's, else
+/// the name their pending request carried; `None` for a stranger (plan
+/// E2.6 GC1: a group member who is neither).
+///
+/// # Errors
+/// The pending request could not be read.
+pub async fn relationship_name(
+    host: &dyn FriendHost,
+    owner: &str,
+    public_key: &str,
+) -> Result<Option<String>, FriendError> {
     if let Some(f) = friend(host, public_key) {
-        return Ok(f.display_name);
+        return Ok(Some(f.display_name));
     }
     let (ok, pk) = (owner.to_string(), public_key.to_string());
     let answer = db_call!(host, "read pending request", move |conn| {
         rekindle_db::repo::pending_requests::answer(conn, &ok, &pk)
     })
     .await?;
-    Ok(answer
-        .and_then(|a| a.display_name)
-        .unwrap_or_else(|| label(host, public_key)))
+    Ok(answer.and_then(|a| a.display_name))
 }
 
 /// Run a repository call on the identity's database and wait for it: a

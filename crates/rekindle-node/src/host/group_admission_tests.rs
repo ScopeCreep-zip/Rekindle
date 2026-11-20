@@ -22,6 +22,7 @@ fn member(identity: [u8; 32], n: char) -> GroupDmRosterMember {
     GroupDmRosterMember {
         identity: hex::encode(identity),
         profile_record_key: format!("VLD0:{}", n.to_string().repeat(43)),
+        display_name: format!("member {n}"),
     }
 }
 

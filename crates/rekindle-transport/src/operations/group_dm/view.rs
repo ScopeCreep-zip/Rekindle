@@ -1,7 +1,7 @@
 //! The groups and invites as the frontends show them, and a group's
-//! stored messages (plan E2.6). A member is named by our nickname for them
-//! or their fingerprint (`GroupDmDeps::display_name`), never by a name
-//! their payload carries.
+//! stored messages (plan E2.6). A member is named by the Host
+//! (`GroupDmDeps::display_name`, GC1): "You", a friend's name, or the name
+//! the creator signed onto the roster marked as not a friend's; never a key.
 
 use rekindle_dm::GroupDmDeps;
 use rekindle_types::dto::dm::DmMessage;

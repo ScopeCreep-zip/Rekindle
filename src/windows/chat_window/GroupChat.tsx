@@ -84,7 +84,13 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     <>
       <Titlebar title={`Chat — ${name()}`} showMaximize />
       <div class="group-chat-header">
-        <ul class="group-chat-members" aria-label={`Members of ${name()}`}>
+        <ul
+          class="group-chat-members"
+          aria-label={`Members of ${name()}`}
+          title={members()
+            .map((m) => m.label)
+            .join(", ")}
+        >
           <For each={members()}>{(m) => <li class="group-chat-member">{m.label}</li>}</For>
         </ul>
         <Show when={held()}>

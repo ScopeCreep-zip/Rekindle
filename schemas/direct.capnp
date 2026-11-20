@@ -236,6 +236,7 @@ struct DisappearingTimer {
 struct GroupDmRosterMember {
   identity @0 :Text;                    # 64 lowercase hex
   profileRecordKey @1 :Text;            # where its prekey record is found
+  displayName @2 :Text;                 # the creator's name for it (a label)
 }
 
 # 0x0120: the creator's invite, signed by its identity over

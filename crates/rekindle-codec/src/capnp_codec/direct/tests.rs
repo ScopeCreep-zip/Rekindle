@@ -34,6 +34,7 @@ pub(super) fn roster() -> Vec<rekindle_types::group_dm::GroupDmRosterMember> {
         .map(|n| rekindle_types::group_dm::GroupDmRosterMember {
             identity: n.to_string().repeat(64),
             profile_record_key: dht_key(),
+            display_name: format!("member {n}"),
         })
         .collect()
 }

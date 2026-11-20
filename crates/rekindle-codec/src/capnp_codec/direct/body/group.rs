@@ -6,6 +6,7 @@
 //! and verifying are `rekindle-dm`'s (slice G2); these are the bytes.
 
 use rekindle_types::group_dm::{GroupDmRosterMember, MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
+use rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN;
 
 use crate::capnp_codec::direct::{bounded_text, data, fixed, list_len, public_key, record_key};
 use crate::capnp_codec::{capnp_err, CodecError};
@@ -69,6 +70,7 @@ impl GroupDmInvite {
         for member in &self.roster {
             put_len_prefixed(&mut out, member.identity.as_bytes());
             put_len_prefixed(&mut out, member.profile_record_key.as_bytes());
+            put_len_prefixed(&mut out, member.display_name.as_bytes());
         }
         put_len_prefixed(&mut out, self.creator_chain_key.as_bytes());
         out.extend_from_slice(&self.epoch.to_be_bytes());
@@ -85,6 +87,7 @@ impl GroupDmInvite {
                 .get(u32::try_from(i).expect("a roster index fits a u32"));
             m.set_identity(&member.identity);
             m.set_profile_record_key(&member.profile_record_key);
+            m.set_display_name(&member.display_name);
         }
         b.set_creator_sender_key(&self.creator_sender_key);
         b.set_epoch(self.epoch);
@@ -111,6 +114,11 @@ impl GroupDmInvite {
                     profile_record_key: record_key(
                         m.get_profile_record_key(),
                         "roster profile record key",
+                    )?,
+                    display_name: bounded_text(
+                        m.get_display_name(),
+                        MAX_DISPLAY_NAME_LEN,
+                        "roster display name",
                     )?,
                 })
             })

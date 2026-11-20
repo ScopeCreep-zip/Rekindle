@@ -13,6 +13,7 @@ pub(super) fn member(identity: String, n: char) -> GroupDmRosterMember {
     GroupDmRosterMember {
         identity,
         profile_record_key: format!("VLD0:{}", n.to_string().repeat(43)),
+        display_name: format!("member {n}"),
     }
 }
 
@@ -138,4 +139,50 @@ async fn a_member_who_is_not_a_friend_is_admitted_for_the_group_kinds_only() {
     assert!(deps.latest_sender_key(&gid, &b).await.unwrap().is_none());
     assert!(!admitted(&friends, &b, DmTypeId::GroupContent, false).await);
     assert!(admitted(&friends, &c, DmTypeId::GroupContent, false).await);
+}
+
+/// Plan E2.6 GC1: the Host labels a group's members, never by a key: a
+/// friend by its friend row's name (over the roster's), a non-friend by
+/// the name the signed roster carries, marked as not a friend's, and our
+/// own entry as "You".
+#[tokio::test]
+async fn a_groups_members_are_labelled_by_name_never_by_key() {
+    use rekindle_types::friend::{FriendState, FriendshipState};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let deps = HostGroupDm::open(&friends).unwrap();
+    let (me, b, c) = (hex::encode(owner), "b".repeat(64), "c".repeat(64));
+    host.ctx.session.write().as_mut().unwrap().friends.insert(
+        b.clone(),
+        FriendState::new(b.clone(), "Bob".into(), FriendshipState::Accepted),
+    );
+    rekindle_dm::create(
+        &deps,
+        [9; 16],
+        "raid night",
+        member(me.clone(), 'a'),
+        vec![member(b.clone(), 'b'), member(c.clone(), 'c')],
+        &format!("VLD0:{}", "Q".repeat(43)),
+    )
+    .await
+    .unwrap();
+
+    let views = rekindle_transport::operations::group_dm::list(&friends)
+        .await
+        .unwrap();
+    let labels: Vec<(String, String)> = views[0]
+        .members
+        .iter()
+        .map(|m| (m.key.clone(), m.label.clone()))
+        .collect();
+    assert_eq!(
+        labels,
+        vec![
+            (me, "You".to_owned()),
+            (b, "Bob".to_owned()),
+            (c, "member c (not a friend)".to_owned()),
+        ]
+    );
 }

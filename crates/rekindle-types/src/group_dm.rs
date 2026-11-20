@@ -23,4 +23,10 @@ pub struct GroupDmRosterMember {
     /// The member's profile record, where its prekey record is found
     /// (plan E2.4's B2 pick) by the first sender of a pair.
     pub profile_record_key: String,
+    /// The creator's name for the member, signed with the roster: the
+    /// creator's own profile name for itself, its friend's name for each
+    /// other member. A label a non-friend shows under, never an identity
+    /// (threat model: spoofable display fields); the Host marks it as not
+    /// a friend's.
+    pub display_name: String,
 }

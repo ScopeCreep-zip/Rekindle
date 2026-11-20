@@ -111,19 +111,21 @@ pub async fn create(
     let own = crate::operations::friend::published_identity(host).await?;
     let mut others = Vec::with_capacity(members.len());
     for key in members {
-        let profile = state::friend(host, key)
-            .and_then(|f| f.dht_record_key)
+        let (profile, display_name) = state::friend(host, key)
+            .and_then(|f| f.dht_record_key.map(|profile| (profile, f.display_name)))
             .ok_or_else(|| {
                 FriendError::Invalid(format!("{} is not a friend", state::short_key(key)))
             })?;
         others.push(GroupDmRosterMember {
             identity: key.clone(),
             profile_record_key: profile,
+            display_name,
         });
     }
     let me = GroupDmRosterMember {
         identity: own.public_key,
         profile_record_key: own.profile_dht_key,
+        display_name: own.display_name,
     };
     let group_id = rekindle_dm::group::new_group_id(host.rng());
     let gid = rekindle_dm::group::group_id_hex(&group_id);
