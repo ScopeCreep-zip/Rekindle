@@ -9,8 +9,12 @@
 //! The rule, from the pack's own layout (the `<Include>` under `Skin.xml`'s
 //! `<MainSkin>`): the strip ends at the top of the first tile laid over the
 //! title tile's rows whose component fills another slot of this import (its
-//! art is that slot's, not the title's); the title buttons
-//! (`titlebar.btn.*`, Symbiosis's `ButtonMinimize` at Y=5) are the title's. Tiles are placed from the top
+//! art is that slot's, not the title's). The title buttons
+//! (`titlebar.btn.*`) are the title's, and so is a tile that holds them:
+//! Symbiosis lays its `InfoBar` (`buddylist.infobar`) at Y=5 over the
+//! 13-row `MainTopRow`, with `ButtonMinimize`/`ButtonMaximize`/`ButtonClose`
+//! inside it (`MainWindow.xml:48–57`), so that band is the title's and the
+//! strip stays whole. Tiles are placed from the top
 //! (`JustY` absent or `TOP`, every ancestor too) with numeric `Y`s, each
 //! relative to its parent; a tile placed from the bottom or by an
 //! expression (`MainTitleBar.BOTTOM-15`) has no top row to read. The rows
@@ -25,15 +29,28 @@ use rekindle_image::RgbaImage;
 use super::super::tree::Node;
 use super::super::Control;
 
-/// A tile's component and its top row in the window, px.
+/// A tile's component, its top row in the window, px, and whether its
+/// subtree holds a title button.
 struct Placed<'a> {
     component: &'a str,
     top: i64,
+    titled: bool,
+}
+
+/// Whether `node`'s subtree lays a tile of one of `buttons`.
+fn holds(node: &Node, buttons: &[&String]) -> bool {
+    node.children.iter().any(|c| {
+        c.name.eq_ignore_ascii_case("Tile")
+            && (c
+                .attr_ci("Component")
+                .is_some_and(|n| buttons.iter().any(|b| b.eq_ignore_ascii_case(n)))
+                || holds(c, buttons))
+    })
 }
 
 /// Every tile of `node`'s subtree placed from the top, with its absolute
 /// top row (`parent` is the node's own).
-fn placed<'a>(node: &'a Node, parent: i64, out: &mut Vec<Placed<'a>>) {
+fn placed<'a>(node: &'a Node, parent: i64, buttons: &[&String], out: &mut Vec<Placed<'a>>) {
     for tile in node
         .children
         .iter()
@@ -50,9 +67,14 @@ fn placed<'a>(node: &'a Node, parent: i64, out: &mut Vec<Placed<'a>>) {
         };
         let top = parent + y;
         if let Some(component) = tile.attr_ci("Component") {
-            out.push(Placed { component, top });
+            let titled = holds(tile, buttons);
+            out.push(Placed {
+                component,
+                top,
+                titled,
+            });
         }
-        placed(tile, top, out);
+        placed(tile, top, buttons, out);
     }
 }
 
@@ -61,13 +83,22 @@ fn placed<'a>(node: &'a Node, parent: i64, out: &mut Vec<Placed<'a>>) {
 #[must_use]
 pub fn cut(layout: &Node, sources: &BTreeMap<&'static str, String>, height: u32) -> Option<u32> {
     let title = sources.get("titlebar")?;
+    let buttons: Vec<&String> = sources
+        .iter()
+        .filter(|(region, _)| region.starts_with("titlebar."))
+        .map(|(_, name)| name)
+        .collect();
     let mut tiles = Vec::new();
     if layout.name.eq_ignore_ascii_case("Tile") {
         if let Some(component) = layout.attr_ci("Component") {
-            tiles.push(Placed { component, top: 0 });
+            tiles.push(Placed {
+                component,
+                top: 0,
+                titled: true,
+            });
         }
     }
-    placed(layout, 0, &mut tiles);
+    placed(layout, 0, &buttons, &mut tiles);
     let top = tiles
         .iter()
         .find(|t| t.component.eq_ignore_ascii_case(title))?
@@ -81,7 +112,7 @@ pub fn cut(layout: &Node, sources: &BTreeMap<&'static str, String>, height: u32)
         .collect();
     tiles
         .iter()
-        .filter(|t| others.iter().any(|o| o.eq_ignore_ascii_case(t.component)))
+        .filter(|t| !t.titled && others.iter().any(|o| o.eq_ignore_ascii_case(t.component)))
         .filter_map(|t| u32::try_from(t.top - top).ok())
         .filter(|row| (1..height).contains(row))
         .min()
@@ -155,6 +186,27 @@ mod tests {
             ("buddylist.actionbar", "BottomBar"),
         ]);
         assert_eq!(cut(&slim(), &s, 106), None);
+    }
+
+    /// Symbiosis's layout (`MainWindow.xml:35,48–57`), cut to the tiles
+    /// the rule reads.
+    const SYMBIOSIS: &str = r#"<Tile Name="MainWindow" Component="MainWindow">
+        <Tile Name="TopRow" Z="1" ResizeX="100" Component="MainTopRow" />
+        <Tile Name="InfoBar" Y="5" Z="24" Component="InfoBar">
+            <Tile Name="XfireLogo" X="4" Y="5" Component="XfireLogo" />
+            <Tile Name="ButtonClose" X="5" Y="3" JustX="Right" Component="ButtonClose" />
+        </Tile>
+    </Tile>"#;
+
+    #[test]
+    fn a_tile_holding_the_title_buttons_is_the_titles() {
+        let s = sources(&[
+            ("titlebar", "MainTopRow"),
+            ("titlebar.btn.close", "ButtonClose"),
+            ("buddylist.infobar", "InfoBar"),
+        ]);
+        let layout = tree::parse("MainWindow.xml", SYMBIOSIS.as_bytes()).expect("xml");
+        assert_eq!(cut(&layout, &s, 13), None);
     }
 
     #[test]

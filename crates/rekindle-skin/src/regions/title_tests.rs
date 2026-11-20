@@ -70,18 +70,39 @@ fn the_skin_layer_names_the_title_backing_only_when_bare() {
         "xglow",
         "combat",
     ] {
-        let (_, builtin) =
-            crate::builtin::find(&format!("{}{b}", crate::builtin::PREFIX)).expect("a built-in");
-        let p = crate::package::read(builtin.bytes).expect("package");
-        let m = crate::manifest::parse(&p).expect("manifest");
-        let (_, resolved) = active_resolved(&p, &m).expect("tokens");
-        let images: BTreeMap<String, Vec<u8>> =
-            p.files().map(|(n, b)| (n.to_owned(), b.to_vec())).collect();
-        let g = title_ground(&m, &images, &resolved);
-        let css = title_css(&m, &images, &resolved);
+        let (g, css) = builtin_title(b);
         assert_eq!(
             g.is_some_and(|g| g.bare()),
             css.contains("-title-backing: transparent")
         );
     }
+}
+
+/// Built-in `b`'s title ground and the title CSS its skin layer carries.
+fn builtin_title(b: &str) -> (Option<TitleGround>, String) {
+    let (_, builtin) =
+        crate::builtin::find(&format!("{}{b}", crate::builtin::PREFIX)).expect("a built-in");
+    let p = crate::package::read(builtin.bytes).expect("package");
+    let m = crate::manifest::parse(&p).expect("manifest");
+    let (_, resolved) = active_resolved(&p, &m).expect("tokens");
+    let images: BTreeMap<String, Vec<u8>> =
+        p.files().map(|(n, b)| (n.to_owned(), b.to_vec())).collect();
+    (
+        title_ground(&m, &images, &resolved),
+        title_css(&m, &images, &resolved),
+    )
+}
+
+#[test]
+fn xslimfire_measures_its_title_on_the_cropped_strip() {
+    // The importer crops `MainTitleBar` to its 37 title rows
+    // (`import/xfire_xml/title_rows.rs`); measured on the whole 106-row
+    // art, the status bar's rows squashed under the title gave 2.08:1.
+    // The title rows' own light art gives 1.27:1 under white text, below
+    // SC 1.4.3's 4.5:1, so the label keeps its backing.
+    let (g, css) = builtin_title("xslimfire");
+    let g = g.expect("a titlebar strip");
+    assert_eq!(g.worst_x100, 127, "{g:?}");
+    assert!(!g.bare(), "{g:?}");
+    assert_eq!(g.bare(), css.contains("-title-backing: transparent"));
 }
