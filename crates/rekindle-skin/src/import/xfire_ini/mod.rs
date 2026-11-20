@@ -46,7 +46,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use rekindle_image::{encode_png, DynamicImage};
 use rekindle_types::dto::skin::{
     RegionFit, RegionSpec, RegionState, SkinBase, SkinContrast, SkinLicense, SkinManifest,
-    SkinSource, SkinVariant, TokenValue, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
+    SkinSource, SkinVariant, SkinWindow, TokenValue, WindowLayout, SKIN_FORMAT_MAJOR,
+    SKIN_FORMAT_PREFIX,
 };
 
 use super::credit::{Authorship, XfireCredit};
@@ -59,6 +60,7 @@ use super::xfire_xml::ColourRow;
 use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
+use crate::shape;
 use frame::read_frame;
 pub use frame::{Frame, Shape, FRAME, MIDDLE_FRAME, OUTER_FRAME, SHAPES};
 use ini::{Ini, Section};
@@ -402,6 +404,7 @@ fn manifest(
     (source, tree): (&str, &Tree),
     base: SkinBase,
     credit: Option<&XfireCredit>,
+    main: Option<&WindowLayout>,
 ) -> SkinManifest {
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
     let mut regions = BTreeMap::new();
@@ -454,6 +457,9 @@ fn manifest(
         regions,
         icons: BTreeMap::new(),
         sounds: BTreeMap::new(),
+        windows: main
+            .map(|m| BTreeMap::from([(SkinWindow::Main, m.clone())]))
+            .unwrap_or_default(),
     }
 }
 
@@ -475,14 +481,23 @@ pub fn import(
     let source = tree_hash(tree);
     let (skin_base, base) = base_of(&read.tokens);
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
-    let manifest_json =
-        serde_json::to_vec(&manifest(id, &read, (&source, tree), skin_base, credit)).map_err(
-            |e| ImportError::Format {
-                file: MANIFEST.to_owned(),
-                detail: e.to_string(),
-            },
-        )?;
+    // The skin file is the main window's (`MainSkin`); its frame is the
+    // buddy list's outline (plan SK0 S1).
+    let main = read
+        .frame
+        .as_ref()
+        .map(|f| shape::from_nine(SkinWindow::Main, &f.pieces))
+        .transpose()?;
+    let layout = main.as_ref().map(|(l, _)| l);
+    let manifest = manifest(id, &read, (&source, tree), skin_base, credit, layout);
+    let manifest_json = serde_json::to_vec(&manifest).map_err(|e| ImportError::Format {
+        file: MANIFEST.to_owned(),
+        detail: e.to_string(),
+    })?;
     let mut files = BTreeMap::from([(MANIFEST.to_owned(), manifest_json)]);
+    if let Some((_, tiles)) = main {
+        files.extend(tiles);
+    }
     for (state, img) in read.frame.iter().flat_map(|f| &f.images) {
         let path = frame_image(*state);
         let png =

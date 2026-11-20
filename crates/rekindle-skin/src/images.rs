@@ -213,6 +213,18 @@ fn still_limits(frames: Frames, max_alloc: u64) -> DecodeLimits {
     }
 }
 
+/// A canonical PNG's pixels (a frame tile's, plan SK0 S1).
+///
+/// # Errors
+/// What the decoder refuses within the still-image limits.
+pub(crate) fn decode_png(bytes: &[u8]) -> Result<rekindle_image::RgbaImage, SkinRule> {
+    let limits = still_limits(Frames::First, MAX_IMAGE_ALLOC);
+    Ok(decode_limited(bytes, ImageKind::Png, &limits)
+        .map_err(rule_of)?
+        .into_first()
+        .into_rgba8())
+}
+
 /// A PNG's pixels as an RGBA8 PNG.
 fn canonical_png(bytes: &[u8]) -> Result<Vec<u8>, SkinRule> {
     let limits = still_limits(Frames::First, MAX_IMAGE_ALLOC);
@@ -341,6 +353,12 @@ fn check_references(package: &Package<'_>, manifest: &SkinManifest) -> Result<()
     }
     for (id, path) in &manifest.icons {
         check_reference(package, &format!("icons.{id}"), path, "icons/")?;
+    }
+    for (window, layout) in &manifest.windows {
+        for (i, tile) in layout.tiles.iter().enumerate() {
+            let field = format!("windows.{window:?}.tiles.{i}.image");
+            check_reference(package, &field, &tile.image, "assets/")?;
+        }
     }
     Ok(())
 }

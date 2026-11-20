@@ -303,6 +303,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
         regions,
         icons: BTreeMap::new(),
         sounds: BTreeMap::new(),
+        windows: BTreeMap::new(),
     }
 }
 

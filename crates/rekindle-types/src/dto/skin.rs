@@ -54,6 +54,10 @@ pub struct SkinManifest {
     /// Sound entry paths keyed by registry cue id.
     #[serde(default)]
     pub sounds: BTreeMap<String, String>,
+    /// Each window kind's frame layout, the source of its silhouette
+    /// (plan SK0 S1); a window absent here keeps the rectangle.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub windows: BTreeMap<SkinWindow, WindowLayout>,
 }
 
 /// A sound cue: the closed list of events a sound bank may voice (plan E5.2
@@ -231,6 +235,64 @@ pub struct Insets {
     pub left: u16,
 }
 
+/// A window kind whose frame a skin lays (plan SK0 S1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SkinWindow {
+    /// The buddy list (Xfire's `<MainSkin>`).
+    Main,
+    /// A conversation window (Xfire's `<ChatSkin>`).
+    Chat,
+}
+
+/// How a frame tile is placed along one axis of its box (plan SK0 S1):
+/// the frame rectangle, or the whole window for an overhang tile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+pub enum TileAxis {
+    /// Once, its near side `offset` px from the start edge.
+    Start { offset: u16 },
+    /// Once, its far side `offset` px before the end edge.
+    End { offset: u16 },
+    /// Once, centred in the box.
+    Centre,
+    /// Repeated at its source size (never stretched) from `start` px to
+    /// `end` px before the end edge, the last copy cut.
+    Repeat { start: u16, end: u16 },
+}
+
+/// One frame tile: an image of the package placed by its anchors, and its
+/// 1-bit mask (opaque where alpha ≥ 128), hex, rows of `ceil(width / 8)`
+/// bytes, most significant bit first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FrameTile {
+    pub image: String,
+    pub width: u16,
+    pub height: u16,
+    pub x: TileAxis,
+    pub y: TileAxis,
+    /// Placed in the whole window (art outside the main frame), not in
+    /// the frame rectangle.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub overhang: bool,
+    pub mask: String,
+}
+
+/// A window's frame layout (plan SK0 S1): the window is the frame
+/// rectangle grown by `outsets` (room for overhang art); the content
+/// rectangle is the frame rectangle shrunk by `content` and is always
+/// opaque; `min_*` is the smallest frame the tiles fit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowLayout {
+    pub outsets: Insets,
+    pub content: Insets,
+    pub min_width: u16,
+    pub min_height: u16,
+    pub tiles: Vec<FrameTile>,
+}
+
 /// The region states, Rekindle's own enums.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -337,6 +399,16 @@ pub enum SkinRule {
     UnsupportedFormat { major: u32 },
     #[error("{field}: expected {expected}")]
     BadValue { field: String, expected: String },
+    #[error("{window} window: a transparent pixel at ({x}, {y}) is enclosed by the frame")]
+    ShapeHole { window: String, x: u32, y: u32 },
+    #[error("{window} window: tile {tile} reaches into the content rectangle")]
+    ShapeIntrudes { window: String, tile: u64 },
+    #[error("{window} window: the silhouette is {count} rectangles, the limit is {max}")]
+    ShapeTooManyRects {
+        window: String,
+        count: u64,
+        max: u64,
+    },
     #[error("{field} is empty")]
     EmptyText { field: String },
     #[error("{field} is {scalars} scalars, the limit is {max}")]

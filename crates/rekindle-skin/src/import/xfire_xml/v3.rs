@@ -179,7 +179,7 @@ fn image<'a>(
 pub fn frame(
     components: &Node,
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
-) -> Result<Option<(RgbaImage, Insets)>, ImportError> {
+) -> Result<Option<(RgbaImage, Insets, [RgbaImage; 9])>, ImportError> {
     let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
     for (at, slot) in FRAME.into_iter().enumerate() {
         let Some((component, kind)) = slot else {
@@ -196,7 +196,8 @@ pub fn frame(
     let pieces: [RgbaImage; 9] = pieces.try_into().map_err(|_| ImportError::MissingFile {
         file: SOURCE.to_owned(),
     })?;
-    bitmap::compose(SOURCE, &pieces).map(Some)
+    let (img, insets) = bitmap::compose(SOURCE, &pieces)?;
+    Ok(Some((img, insets, pieces)))
 }
 
 #[cfg(test)]

@@ -12,7 +12,7 @@ use rekindle_types::dto::skin::{SkinError, SkinRule};
 
 use crate::output::{self, Canonical};
 use crate::registry::{resolve, Base, ENTRIES};
-use crate::{access, images, manifest, package, regions, sounds, tokens};
+use crate::{access, images, manifest, package, regions, shape, sounds, tokens};
 
 /// A variant whose token file the package lacks.
 fn missing(tokens: &str) -> SkinError {
@@ -26,7 +26,8 @@ fn missing(tokens: &str) -> SkinError {
 
 /// Validates the package `bytes` and returns its canonical package:
 /// 1. the outer size and the strict zip walk; 2. the manifest and its
-///    text rules; 3. every variant's tokens; 4. the images; 5. the sounds;
+///    text rules; 3. every variant's tokens; 4. the images; 5. the sounds,
+///    then each window's frame layout (plan SK0 S1);
 ///    6. accessibility, anti-spoofing and text over every region on each
 ///    variant after the defaults merge, and every status icon against the
 ///    rules its status colour meets; 7. the canonical output.
@@ -43,6 +44,7 @@ pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
     }
     let images = images::validate(&package, &manifest)?;
     let sounds = sounds::validate(&package, &manifest)?;
+    shape::check(&manifest, &images)?;
     for v in &manifest.variants {
         let skin = parsed.get(&v.tokens).ok_or_else(|| missing(&v.tokens))?;
         let base = Base::of(v.base, v.contrast);

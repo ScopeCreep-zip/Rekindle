@@ -241,6 +241,7 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
             .map(|(slot, (path, ..))| (slot.clone(), path.clone()))
             .collect(),
         sounds: BTreeMap::new(),
+        windows: BTreeMap::new(),
     }
 }
 

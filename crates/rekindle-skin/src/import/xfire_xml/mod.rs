@@ -32,8 +32,10 @@ pub mod colours;
 pub mod controls;
 mod notice;
 pub mod refs;
+mod sources;
 pub mod surfaces;
 pub mod tiles;
+use sources::{component_files, count_dropped};
 mod title_rows;
 pub mod v3;
 
@@ -42,7 +44,7 @@ use std::collections::BTreeMap;
 use rekindle_image::{encode_png, DynamicImage, RgbaImage};
 use rekindle_types::dto::skin::{
     RegionFit, RegionSpec, SkinBase, SkinContrast, SkinLicense, SkinManifest, SkinSource,
-    SkinVariant, TokenValue, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
+    SkinVariant, SkinWindow, TokenValue, WindowLayout, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
 };
 
 use super::credit::{Authorship, XfireCredit};
@@ -55,6 +57,7 @@ use crate::colour;
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
 use crate::registry::Base;
+use crate::shape;
 use colours::{absolute, parse_attrs, parse_rgba, target_in, Target};
 
 /// The `source.format` of an imported package.
@@ -97,7 +100,12 @@ pub struct Read {
     pub layout: Layout,
     /// The colour roles the components name ([`refs`]).
     pub refs: Vec<refs::RefsApplied>,
+    /// Each window's frame layout and its tile images (plan SK0 S1).
+    pub windows: Windows,
 }
+
+/// The frame layouts of a package and the tile images they name.
+pub type Windows = BTreeMap<SkinWindow, (WindowLayout, BTreeMap<String, Vec<u8>>)>;
 
 /// The two XML-era layouts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,6 +255,7 @@ fn nine_piece_in<'a>(
 type ReadFrame = (
     Option<(RgbaImage, rekindle_types::dto::skin::Insets)>,
     String,
+    Option<[RgbaImage; 9]>,
 );
 
 /// The file `Skin.xml`'s `section` (`<ChatSkin>`, `<MainSkin>`) includes:
@@ -271,10 +280,9 @@ fn read_frame(
     if layout == Layout::ClassicV3 {
         let source = "xfirecomponents.xml (the chat window's outer edges' middles, \
                       9 px rails; no top or bottom row; transparent middle)";
-        return Ok((
-            v3::frame(&xml(tree, v3::SOURCE)?, decode)?,
-            source.to_owned(),
-        ));
+        let read = v3::frame(&xml(tree, v3::SOURCE)?, decode)?;
+        let (frame, pieces) = read.map(|(i, n, p)| ((i, n), p)).unzip();
+        return Ok((frame, source.to_owned(), pieces));
     }
     let set = if lookup(tree, FRAME_SOURCE).is_ok() {
         nine_piece(&xml(tree, FRAME_SOURCE)?)
@@ -283,14 +291,15 @@ fn read_frame(
     };
     let Some(set) = set else {
         let Some(file) = window_layout(skin, "ChatSkin").filter(|f| lookup(tree, f).is_ok()) else {
-            return Ok((None, String::new()));
+            return Ok((None, String::new(), None));
         };
         return Ok(match tiles::frame(&xml(tree, file)?, components, decode)? {
-            Some((img, insets, shape)) => (
+            Some((img, insets, shape, pieces)) => (
                 Some((img, insets)),
                 format!("the chat window layout {file}: {}", shape.describe()),
+                Some(pieces),
             ),
-            None => (None, String::new()),
+            None => (None, String::new(), None),
         });
     };
     let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
@@ -301,49 +310,7 @@ fn read_frame(
         file: FRAME_SOURCE.to_owned(),
     })?;
     let frame = bitmap::compose(FRAME_SOURCE, &pieces)?;
-    Ok((Some(frame), FRAME_SOURCE.to_owned()))
-}
-
-fn count_dropped(tree: &Tree, components: &[Node]) -> BTreeMap<&'static str, usize> {
-    let mut d = BTreeMap::new();
-    let count = |name: &str| components.iter().map(|c| descendants(c, name).len()).sum();
-    d.insert("triggers", count("Trigger"));
-    d.insert("layout components", count("Component"));
-    d.insert("layout tiles", count("Tile"));
-    let html = tree
-        .keys()
-        .filter(|k| {
-            std::path::Path::new(k.as_str())
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm"))
-        })
-        .count();
-    d.insert("HTML templates", html);
-    d
-}
-
-/// Every included component file: Symbiosis's `Components/*.xml`,
-/// Classic v3's [`v3::SOURCE`], and any other included file whose root is
-/// `<Components>` (Onyx, Space Cowboy, StealthX and Total Chaos keep one
-/// `components.xml` beside `skin.xml`; xSLIMFIRE `xSLIMFIREcomponents.xml`).
-fn component_files(tree: &Tree, included: &[String]) -> Result<Vec<Node>, ImportError> {
-    let mut components = Vec::new();
-    for f in included {
-        if lookup(tree, f).is_err() {
-            continue;
-        }
-        let named = f
-            .get(..11)
-            .is_some_and(|p| p.eq_ignore_ascii_case("Components/"))
-            || f.eq_ignore_ascii_case(v3::SOURCE);
-        if named || ends_with_ci(f, ".xml") {
-            let root = xml(tree, f)?;
-            if named || root.name.eq_ignore_ascii_case("Components") {
-                components.push(root);
-            }
-        }
-    }
-    Ok(components)
+    Ok((Some(frame), FRAME_SOURCE.to_owned(), Some(pieces)))
 }
 
 /// Reads `tree` (an unpacked Xfire XML-era skin).
@@ -374,10 +341,27 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     let (colours, mut tokens) = read_colours(theme, layout)?;
     let components = component_files(tree, &included)?;
     let refs = refs::apply(&refs::xml_refs(&components), &colours, &mut tokens);
-    let (frame, frame_source) = read_frame(tree, (&skin, theme), &colours, layout, &components)?;
+    let (frame, frame_source, chat) =
+        read_frame(tree, (&skin, theme), &colours, layout, &components)?;
     let (mut controls, tally) = controls::read(tree, theme, &colours, &components)?;
+    let mut windows = Windows::new();
     if let Some(f) = window_layout(&skin, "MainSkin").filter(|f| lookup(tree, f).is_ok()) {
-        title_rows::crop(&xml(tree, f)?, &mut controls, &tally.sources);
+        let main = xml(tree, f)?;
+        title_rows::crop(&main, &mut controls, &tally.sources);
+        let bitmaps = bitmaps(theme);
+        let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, &colours, name, shift);
+        if let Some((pieces, _)) = tiles::pieces(&main, &components, decode)? {
+            windows.insert(
+                SkinWindow::Main,
+                shape::from_nine(SkinWindow::Main, &pieces)?,
+            );
+        }
+    }
+    if let Some(pieces) = &chat {
+        windows.insert(
+            SkinWindow::Chat,
+            shape::from_nine(SkinWindow::Chat, pieces)?,
+        );
     }
     let info_xml = match lookup(tree, "Info.xml") {
         Ok((key, bytes)) => Some(tree::parse(key, bytes)?),
@@ -419,6 +403,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         tally,
         layout,
         refs,
+        windows,
     })
 }
 
@@ -511,6 +496,11 @@ fn manifest(
         regions,
         icons: BTreeMap::new(),
         sounds: BTreeMap::new(),
+        windows: read
+            .windows
+            .iter()
+            .map(|(w, (layout, _))| (*w, layout.clone()))
+            .collect(),
     }
 }
 
@@ -546,6 +536,9 @@ pub fn import(
     let mut control_files = BTreeMap::new();
     for c in &read.controls {
         control_files.extend(c.files()?);
+    }
+    for (_, files) in read.windows.values() {
+        control_files.extend(files.clone());
     }
     let build = |tokens: &BTreeMap<String, TokenValue>| {
         let mut files = control_files.clone();

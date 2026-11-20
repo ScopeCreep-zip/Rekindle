@@ -116,6 +116,7 @@ fn manifest_of(draft: &SkinDraft, carried: assets::Carried) -> SkinManifest {
         regions: carried.regions,
         icons: carried.icons,
         sounds: carried.sounds,
+        windows: carried.windows,
     }
 }
 

@@ -139,6 +139,7 @@ fn manifest(id: &str, name: &str, hash: String, cues: &[(SoundCue, String)]) -> 
                 )
             })
             .collect(),
+        windows: BTreeMap::new(),
     }
 }
 

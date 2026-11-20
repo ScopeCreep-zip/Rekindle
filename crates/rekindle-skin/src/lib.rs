@@ -58,6 +58,7 @@ pub mod regions;
 pub mod registry;
 pub mod role_tag;
 pub mod serve;
+pub mod shape;
 pub mod sounds;
 pub mod tokens;
 pub mod validate;

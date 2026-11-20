@@ -333,6 +333,7 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
         regions: BTreeMap::new(),
         icons: paths(&read.icons),
         sounds: paths(&read.sounds),
+        windows: BTreeMap::new(),
     }
 }
 

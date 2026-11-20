@@ -165,7 +165,25 @@ pub fn frame(
     layout: &Node,
     components: &[Node],
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
-) -> Result<Option<(RgbaImage, Insets, Shape)>, ImportError> {
+) -> Result<Option<(RgbaImage, Insets, Shape, [RgbaImage; 9])>, ImportError> {
+    let Some((pieces, shape)) = pieces(layout, components, piece)? else {
+        return Ok(None);
+    };
+    let (img, insets) = bitmap::compose("window layout", &pieces)?;
+    Ok(Some((img, insets, shape, pieces)))
+}
+
+/// The nine pieces (in [`bitmap::NINE`] order) of the frame `layout`
+/// lays, as [`frame`] reads them, uncomposed: a window's frame tiles
+/// (plan SK0 S1); `None` when no shape is complete.
+///
+/// # Errors
+/// What `piece` returns.
+pub fn pieces(
+    layout: &Node,
+    components: &[Node],
+    piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
+) -> Result<Option<([RgbaImage; 9], Shape)>, ImportError> {
     let mut by_name: BTreeMap<String, &Node> = BTreeMap::new();
     for c in components.iter().flat_map(|n| descendants(n, "Component")) {
         if let Some(name) = c.attr_ci("Name") {
@@ -202,6 +220,5 @@ pub fn frame(
     let pieces: [RgbaImage; 9] = pieces.try_into().map_err(|_| ImportError::MissingFile {
         file: "frame pieces".to_owned(),
     })?;
-    let (img, insets) = bitmap::compose("chat window layout", &pieces)?;
-    Ok(Some((img, insets, shape)))
+    Ok(Some((pieces, shape)))
 }

@@ -73,6 +73,9 @@ pub struct Frame {
     pub files: BTreeSet<String>,
     /// A state that was not emitted, and why.
     pub skipped: Vec<(RegionState, String)>,
+    /// The normal state's nine pieces, uncomposed: the main window's
+    /// frame tiles (plan SK0 S1).
+    pub pieces: [RgbaImage; 9],
 }
 
 /// One state's pieces (decoded only when all eight are named), shifted and
@@ -163,6 +166,7 @@ fn read_shape(
                     images: BTreeMap::from([(state, img)]),
                     files,
                     skipped: Vec::new(),
+                    pieces,
                 });
             }
             None => {}

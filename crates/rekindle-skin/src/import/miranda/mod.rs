@@ -416,6 +416,7 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
         regions,
         icons: BTreeMap::new(),
         sounds: BTreeMap::new(),
+        windows: BTreeMap::new(),
     }
 }
 

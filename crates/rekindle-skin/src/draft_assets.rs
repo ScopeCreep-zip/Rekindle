@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::{RegionSpec, SkinError, SkinRule};
+use rekindle_types::dto::skin::{RegionSpec, SkinError, SkinRule, SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_draft::SkinDraft;
 
 use crate::{manifest, package};
@@ -28,6 +28,8 @@ pub(super) struct Carried {
     pub regions: BTreeMap<String, RegionSpec>,
     pub icons: BTreeMap<String, String>,
     pub sounds: BTreeMap<String, String>,
+    /// The frame layouts (plan SK0 S1), carried whole with their tiles.
+    pub windows: BTreeMap<SkinWindow, WindowLayout>,
 }
 
 /// The entry an imported region's image takes: its type from its magic
@@ -66,7 +68,12 @@ pub(super) fn gather(
             .values()
             .flat_map(names)
             .chain(m.icons.values())
-            .chain(m.sounds.values());
+            .chain(m.sounds.values())
+            .chain(
+                m.windows
+                    .values()
+                    .flat_map(|w| w.tiles.iter().map(|t| &t.image)),
+            );
         for name in named {
             if let Some(data) = p.get(name) {
                 files.insert(name.clone(), data.to_vec());
@@ -76,6 +83,7 @@ pub(super) fn gather(
             regions: m.regions,
             icons: m.icons,
             sounds: m.sounds,
+            windows: m.windows,
         };
     }
     for (id, region) in &draft.regions {
