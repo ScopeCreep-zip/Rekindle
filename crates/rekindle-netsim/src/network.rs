@@ -103,6 +103,9 @@ pub(crate) struct Faults {
     pub send_hung: HashSet<usize>,
     /// Nodes whose next send fails at its own route's first hop.
     pub link_failure: HashSet<usize>,
+    /// Nodes whose automatic pool routes fail end to end
+    /// ([`crate::Fault::PoolRoutesFail`]).
+    pub pool_failing: HashSet<usize>,
     /// A modified client's `min_seqnum` for its sets of a record
     /// ([`crate::Fault::MinSeqnum`]), by (node, key).
     pub min_seqnums: HashMap<(usize, String), u32>,

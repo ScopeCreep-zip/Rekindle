@@ -5,7 +5,7 @@ use std::time::Duration;
 use rekindle_records::port::{PortError, PortEvent, RouteClass};
 use rekindle_types::config::SafetyProfile;
 
-use crate::tests::{attached, recv};
+use crate::tests::{attached, recv, sending};
 use crate::{Fault, Netsim, Node};
 
 /// Whether the route `blob` names is live on the network.
@@ -34,6 +34,7 @@ async fn a_dead_route_imports_and_swallows_sends() {
     ));
     let target = nodes[0].ports.routes.import(&blob).unwrap();
     let profile = SafetyProfile::default_dht();
+    sending(&nodes[0]).await;
     nodes[0]
         .ports
         .messages
@@ -56,6 +57,7 @@ async fn an_idle_import_expires_after_five_minutes() {
     let _pump = sim.start();
     let blob = own_blob(&nodes[1]).await;
     attached(&mut nodes[0]).await;
+    sending(&nodes[0]).await;
     let target = nodes[0].ports.routes.import(&blob).unwrap();
     let profile = SafetyProfile::default_dht();
     tokio::time::sleep(Duration::from_secs(299)).await;
@@ -160,6 +162,7 @@ async fn a_first_hop_failure_recompiles_and_kills_nothing() {
     attached(&mut nodes[1]).await;
     let target = nodes[0].ports.routes.import(&theirs).unwrap();
     let profile = SafetyProfile::default_dht();
+    sending(&nodes[0]).await;
     sim.fault(Fault::RouteLinkFailure { node: 0 });
     assert!(matches!(
         nodes[0]
@@ -446,6 +449,7 @@ async fn drop_from_loses_only_what_the_node_sends() {
     attached(&mut nodes[0]).await;
     attached(&mut nodes[1]).await;
     let profile = SafetyProfile::default_dht();
+    tokio::join!(sending(&nodes[0]), sending(&nodes[1]));
     sim.fault(Fault::DropFrom {
         node: 1,
         per_mille: 1000,

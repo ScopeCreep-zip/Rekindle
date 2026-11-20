@@ -65,10 +65,15 @@ impl Sender {
 
     /// Send an already-built 1:1 wire message (`operations::dm::wire`) to the
     /// peer whose route is `target`, over the safe route profile every 1:1
-    /// message takes (`RouteContextSpec::rc_safe`, plan E2.1).
+    /// message takes (`RouteContextSpec::rc_safe`, plan E2.1), pinned to our
+    /// `Sending` route as every app message is ([`AppMessagePort::send`]):
+    /// an untested pool route would lose it silently (Veilid counts only
+    /// lost questions, 0.5.8 `route_stats.rs:144-147`).
     ///
     /// # Errors
-    /// The send failed; an unusable route is forgotten first.
+    /// `OwnRouteUnavailable` while our `Sending` route is not live (there is
+    /// no pool route fallback); the send failed; an unusable route is
+    /// forgotten first.
     pub async fn send_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<()> {
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
         // The route id is scrubbed to a per-run tag at the log sink
@@ -82,7 +87,26 @@ impl Sender {
         self.messages
             .send(target, &profile, message)
             .await
-            .map_err(|e| send_failure(self.routes.as_ref(), target, e))
+            .map_err(|e| own_route_or_failure(self.routes.as_ref(), target, e))
+    }
+}
+
+/// A pinned send's failure: `Routing` is our `Sending` route not live
+/// (`OwnRouteUnavailable`, the peer's route not in question); anything
+/// else as [`send_failure`].
+fn own_route_or_failure(
+    routes: &dyn RoutePort,
+    target: &PeerTarget,
+    e: PortError,
+) -> TransportError {
+    match e {
+        PortError::Routing(reason) => {
+            debug!(%reason, "not sent: no Sending route");
+            TransportError::OwnRouteUnavailable {
+                class: format!("{:?}", RouteClass::Sending),
+            }
+        }
+        e => send_failure(routes, target, e),
     }
 }
 
@@ -172,15 +196,7 @@ impl AppCaller {
         self.messages
             .call_pinned(target, &profile, RouteClass::Sending, message)
             .await
-            .map_err(|e| match e {
-                PortError::Routing(reason) => {
-                    debug!(%reason, "1:1 app_call not sent: no Sending route");
-                    TransportError::OwnRouteUnavailable {
-                        class: format!("{:?}", RouteClass::Sending),
-                    }
-                }
-                e => send_failure(self.routes.as_ref(), target, e),
-            })
+            .map_err(|e| own_route_or_failure(self.routes.as_ref(), target, e))
     }
 
     /// `app_call` a bare, unframed Cap'n Proto `CommunityEnvelope`.
@@ -237,7 +253,13 @@ impl AppCaller {
     /// `call_community_envelope` above.
     ///
     /// Takes the route blob rather than an imported `PeerTarget`; the
-    /// import happens here.
+    /// import happens here. Pinned to our `Sending` route as every app
+    /// message is ([`AppMessagePort::send`]); a statement names no reply
+    /// route, so the member learns nothing of it (threat model L2).
+    ///
+    /// # Errors
+    /// `OwnRouteUnavailable` while our `Sending` route is not live; the
+    /// import or the send failed.
     pub async fn send_unframed_to_route(&self, route_blob: &[u8], data: Vec<u8>) -> Result<()> {
         let target =
             self.routes
@@ -249,6 +271,6 @@ impl AppCaller {
         self.messages
             .send(&target, &self.config.safety.rpc, data)
             .await
-            .map_err(|e| send_failure(self.routes.as_ref(), &target, e))
+            .map_err(|e| own_route_or_failure(self.routes.as_ref(), &target, e))
     }
 }

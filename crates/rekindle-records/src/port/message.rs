@@ -29,10 +29,19 @@ pub fn check_message_len(message: &[u8]) -> Result<(), PortError> {
 /// cap is refused before it is sent ([`check_message_len`]).
 #[async_trait::async_trait]
 pub trait AppMessagePort: Send + Sync {
-    /// Send `message` to `target`, fire and forget.
+    /// Send `message` to `target`, fire and forget, with our live
+    /// `Sending` route as the safety route (Veilid's
+    /// `SafetySpec.preferred_route`), the route our 1:1 calls are pinned to
+    /// ([`call_pinned`](Self::call_pinned)). A statement over an untested
+    /// pool route is lost silently when that route fails: Veilid counts and
+    /// steers on lost questions only (0.5.8 `route_stats.rs:144-147`,
+    /// `route_select.rs:321-410`). A statement names no reply route, so the
+    /// recipient learns nothing of ours (`rpc_processor/mod.rs:1060-1063`).
     ///
     /// # Errors
-    /// The send failed; `RouteUnusable` asks the caller to invalidate.
+    /// `Routing` while our `Sending` route is not live: there is no pool
+    /// route fallback; otherwise the send failed, and `RouteUnusable` asks
+    /// the caller to invalidate.
     async fn send(
         &self,
         target: &PeerTarget,
@@ -40,7 +49,12 @@ pub trait AppMessagePort: Send + Sync {
         message: Vec<u8>,
     ) -> Result<(), PortError>;
 
-    /// Send `message` to `target` and await the reply.
+    /// Send `message` to `target` and await the reply, over a safety and
+    /// reply route Veilid picks from its pool: a call hands its safety
+    /// route to the callee as the reply route, so only a 1:1 call is pinned
+    /// ([`call_pinned`](Self::call_pinned)); a community call pinned to our
+    /// `Sending` route would show members the blob our friends see (threat
+    /// model L2).
     ///
     /// # Errors
     /// The call failed or timed out; `RouteUnusable` as for `send`.
@@ -50,20 +64,6 @@ pub trait AppMessagePort: Send + Sync {
         profile: &rekindle_types::config::SafetyProfile,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError>;
-
-    /// [`send`](Self::send) with our live route of `class` as the safety
-    /// route (Veilid's `SafetySpec.preferred_route`).
-    ///
-    /// # Errors
-    /// `Routing` while our route of `class` is not live: there is no pool
-    /// route fallback; otherwise as for `send`.
-    async fn send_pinned(
-        &self,
-        target: &PeerTarget,
-        profile: &rekindle_types::config::SafetyProfile,
-        class: RouteClass,
-        message: Vec<u8>,
-    ) -> Result<(), PortError>;
 
     /// [`call`](Self::call) with our live route of `class` as the safety
     /// route, so the answer comes back over it too (veilid-core

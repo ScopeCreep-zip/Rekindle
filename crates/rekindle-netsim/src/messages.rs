@@ -86,8 +86,20 @@ impl FakeMessages {
             .ok_or_else(|| PortError::Routing(format!("our {class:?} route is not available")))
     }
 
+    /// Whether this node's automatic pool routes fail end to end
+    /// ([`crate::Fault::PoolRoutesFail`]).
+    fn pool_failing(&self) -> bool {
+        self.net
+            .inner
+            .lock()
+            .faults
+            .pool_failing
+            .contains(&self.node)
+    }
+
     /// The node owning `target`'s route, `None` when its owner released
-    /// it or either route is broken end to end ([`crate::loopback`]: what
+    /// it, either route is broken end to end, or an unpinned send's pool
+    /// safety route fails ([`crate::Fault::PoolRoutesFail`]) ([`crate::loopback`]: what
     /// is sent is lost); `RouteUnusable` when this node's cache does not
     /// resolve it (Veilid's `NoConnection`, [`crate::routes`]) or the first
     /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`], a
@@ -116,6 +128,7 @@ impl FakeMessages {
         }
         if self.net.route_broken(target.as_str())
             || pinned.is_some_and(|id| self.net.route_broken(id))
+            || (pinned.is_none() && self.pool_failing())
         {
             return Ok(None);
         }
@@ -245,7 +258,8 @@ impl FakeMessages {
     /// Whether our reply route is gone as the answer reaches it: the
     /// `pinned` route is no longer ours and live, or is broken; unpinned,
     /// the pool reply route has been released ([`ROUTE_MIN_IDLE`] past its
-    /// last validity).
+    /// last validity) or the node's pool routes fail
+    /// ([`crate::Fault::PoolRoutesFail`]).
     fn reply_route_gone(&self, pinned: Option<&str>) -> bool {
         let inner = self.net.inner.lock();
         match pinned {
@@ -253,11 +267,14 @@ impl FakeMessages {
                 inner.routes.get(id).is_none_or(|r| r.node != self.node)
                     || inner.faults.loopback.contains_key(id)
             }
-            None => inner
-                .nodes
-                .get(self.node)
-                .and_then(|s| s.pool_reply_valid)
-                .is_none_or(|valid| valid.elapsed() >= ROUTE_MIN_IDLE),
+            None => {
+                inner.faults.pool_failing.contains(&self.node)
+                    || inner
+                        .nodes
+                        .get(self.node)
+                        .and_then(|s| s.pool_reply_valid)
+                        .is_none_or(|valid| valid.elapsed() >= ROUTE_MIN_IDLE)
+            }
         }
     }
 }
@@ -270,7 +287,9 @@ impl AppMessagePort for FakeMessages {
         _profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<(), PortError> {
-        self.send_over(target, None, message).await
+        // As `VeilidMessages`: a statement is pinned to our `Sending` route.
+        let pinned = self.pinned(RouteClass::Sending)?;
+        self.send_over(target, Some(&pinned), message).await
     }
 
     async fn call(
@@ -280,17 +299,6 @@ impl AppMessagePort for FakeMessages {
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
         self.call_over(target, profile, None, message).await
-    }
-
-    async fn send_pinned(
-        &self,
-        target: &PeerTarget,
-        _profile: &SafetyProfile,
-        class: RouteClass,
-        message: Vec<u8>,
-    ) -> Result<(), PortError> {
-        let pinned = self.pinned(class)?;
-        self.send_over(target, Some(&pinned), message).await
     }
 
     async fn call_pinned(

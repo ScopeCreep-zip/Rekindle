@@ -107,6 +107,18 @@ pub enum Fault {
     /// the route lives, nobody hears `dead_routes`, and the next send goes
     /// out on the recompiled route ([`routes`](crate::routes)).
     RouteLinkFailure { node: usize },
+    /// The node's automatic pool routes stop carrying traffic end to end
+    /// (or carry it again), while its own allocated routes (General, Media,
+    /// `Sending`) are unaffected: the live case of the 2026-11-19 Linux
+    /// trace, where pool routes failed 3 to 5 loopback tests in a row
+    /// before Veilid released them (0.5.8 `private_route_management.rs`,
+    /// `route_spec_store/mod.rs:51-63`). What an unpinned send takes as its
+    /// safety route is lost: a statement still "sent", since Veilid answers
+    /// once the first hop takes it and counts no lost statement
+    /// (`rpc_processor/mod.rs:2262-2320`, `route_stats.rs:144-147`, `:409`),
+    /// and a question times out, its answer lost on a pool reply route too.
+    /// A pinned send takes our own route and is unaffected.
+    PoolRoutesFail { node: usize, failing: bool },
     /// The node's own route of `class` stops carrying traffic end to end:
     /// what is sent over it or to it is lost, its loopback tests fail, and
     /// a run of 3 (Ordered) or 5 (Unordered) kills it, reported to the
@@ -320,6 +332,13 @@ impl Netsim {
             Fault::RouteSilentDeath { node, class } => self.net.silence_route(node, class),
             Fault::RouteLinkFailure { node } => {
                 self.net.inner.lock().faults.link_failure.insert(node);
+            }
+            Fault::PoolRoutesFail { node, failing } => {
+                toggle(
+                    &mut self.net.inner.lock().faults.pool_failing,
+                    node,
+                    failing,
+                );
             }
             Fault::LoopbackFailures { node, class } => self.net.break_route(node, class),
             Fault::UdpBlocked { node, blocked } => self.net.block_udp(node, blocked),

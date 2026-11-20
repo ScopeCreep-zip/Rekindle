@@ -172,16 +172,6 @@ impl AppMessagePort for Bounded {
         within(profile, self.inner.call(target, profile, message)).await
     }
 
-    async fn send_pinned(
-        &self,
-        target: &PeerTarget,
-        profile: &SafetyProfile,
-        class: RouteClass,
-        message: Vec<u8>,
-    ) -> Result<(), PortError> {
-        sent_within(self.inner.send_pinned(target, profile, class, message)).await
-    }
-
     async fn call_pinned(
         &self,
         target: &PeerTarget,
@@ -268,15 +258,6 @@ mod tests {
         ) -> Result<Vec<u8>, PortError> {
             std::future::pending().await
         }
-        async fn send_pinned(
-            &self,
-            _: &PeerTarget,
-            _: &SafetyProfile,
-            _: RouteClass,
-            _: Vec<u8>,
-        ) -> Result<(), PortError> {
-            std::future::pending().await
-        }
         async fn call_pinned(
             &self,
             _: &PeerTarget,
@@ -324,11 +305,8 @@ mod tests {
         let target = PeerTarget::new("route".into());
         let profile = at(3);
         let started = tokio::time::Instant::now();
-        let pinned = port
-            .send_pinned(&target, &profile, RouteClass::Sending, vec![1])
-            .await;
-        assert!(matches!(pinned, Err(PortError::Send(ref m)) if m.contains("not dispatched")));
+        let sent = port.send(&target, &profile, vec![1]).await;
+        assert!(matches!(sent, Err(PortError::Send(ref m)) if m.contains("not dispatched")));
         assert_eq!(started.elapsed(), app_message_deadline());
-        assert!(port.send(&target, &profile, vec![1]).await.is_err());
     }
 }

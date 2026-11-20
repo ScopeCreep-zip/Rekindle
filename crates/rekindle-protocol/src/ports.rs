@@ -23,6 +23,7 @@ use crate::dht::route_imports::RouteImports;
 use crate::error::ProtocolError;
 use crate::node::{log_dropped, startup, veilid_update_name, NodeConfig, UPDATE_QUEUE};
 use crate::own_routes::VeilidRouteAllocator;
+use crate::route_safety::{pinned_safety, statement_safety};
 
 /// A session's record pool per unlock, over the node's API.
 pub struct VeilidRecords {
@@ -194,27 +195,28 @@ impl VeilidMessages {
         Self { api, own, imports }
     }
 
+    /// The unpinned context of a call that is not a 1:1 call: Veilid picks
+    /// the safety and reply route from its pool. A community call stays
+    /// unpinned because a call hands its safety route to the callee as the
+    /// reply route (0.5.8 `rpc_processor/destination.rs:485-525`): pinned to
+    /// our `Sending` route, every community member we call would learn the
+    /// blob our friends' calls already show, linking our community
+    /// pseudonym to our identity (threat model L2, "application-level
+    /// pseudonyms further decouple"). Statements carry no reply route and
+    /// are pinned ([`statement_safety`]).
     fn context(&self, profile: &SafetyProfile) -> Result<RoutingContext, PortError> {
         self.with_safety(safety_selection(profile))
     }
 
     /// The context of a send pinned to our live route of `class`
-    /// (`SafetySpec.preferred_route`, 0.5.8 `safety.rs:273`); `Routing` while
-    /// none is live, never a pool route in its place.
+    /// ([`pinned_safety`]); `Routing` while none is live, never a pool
+    /// route in its place.
     fn pinned(
         &self,
         profile: &SafetyProfile,
         class: RouteClass,
     ) -> Result<RoutingContext, PortError> {
-        let id = self
-            .own
-            .id(class)
-            .ok_or_else(|| PortError::Routing(format!("our {class:?} route is not available")))?;
-        let veilid_core::SafetySelection::Safe(mut spec) = safety_selection(profile) else {
-            return Err(PortError::Routing("safety selection is not Safe".into()));
-        };
-        spec.preferred_route = Some(id);
-        self.with_safety(veilid_core::SafetySelection::Safe(spec))
+        self.with_safety(pinned_safety(profile, class, self.own.id(class))?)
     }
 
     fn with_safety(
@@ -272,7 +274,7 @@ impl AppMessagePort for VeilidMessages {
         message: Vec<u8>,
     ) -> Result<(), PortError> {
         check_message_len(&message)?;
-        self.context(profile)?
+        self.with_safety(statement_safety(profile, |class| self.own.id(class))?)?
             .app_message(Target::RouteId(route_id(target.as_str())?), message)
             .await
             .map_err(|e| send_error(&e))
@@ -287,20 +289,6 @@ impl AppMessagePort for VeilidMessages {
         check_message_len(&message)?;
         self.context(profile)?
             .app_call(Target::RouteId(route_id(target.as_str())?), message)
-            .await
-            .map_err(|e| send_error(&e))
-    }
-
-    async fn send_pinned(
-        &self,
-        target: &PeerTarget,
-        profile: &SafetyProfile,
-        class: RouteClass,
-        message: Vec<u8>,
-    ) -> Result<(), PortError> {
-        check_message_len(&message)?;
-        self.pinned(profile, class)?
-            .app_message(Target::RouteId(route_id(target.as_str())?), message)
             .await
             .map_err(|e| send_error(&e))
     }

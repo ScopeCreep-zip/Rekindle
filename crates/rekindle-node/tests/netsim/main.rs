@@ -85,6 +85,7 @@ mod own_removal;
 mod own_removal_quiet;
 mod pair;
 mod pins;
+mod pool_route_loss;
 mod post_before_key;
 mod prekey_collision;
 mod prekeys;

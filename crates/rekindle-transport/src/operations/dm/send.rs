@@ -200,6 +200,12 @@ pub(super) async fn route_send_datagram(
                 tracing::debug!(to = %to, ?kind, "frame sent via veilid");
                 return Ok(true);
             }
+            // Our Sending route is not live: not sent, and the peer's
+            // route is not in question, so nothing is refreshed.
+            Err(crate::error::TransportError::OwnRouteUnavailable { .. }) => {
+                tracing::debug!(?kind, "frame not sent: our Sending route is not live");
+                return Ok(false);
+            }
             Err(e) => {
                 // Only the peer's unusable route goes (plan audit G10), so
                 // the next attempt fetches a fresh one; a send that failed
