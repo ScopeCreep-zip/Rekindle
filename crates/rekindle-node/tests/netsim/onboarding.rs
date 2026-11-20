@@ -8,7 +8,7 @@ use std::time::Duration;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_ipc::protocol::{LifecycleRequest, MemberRequest, SettingsRequest};
 use rekindle_types::dto::onboarding::{
-    OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto, OnboardingQuestionDto,
+    OnboardingConfigEdit, OnboardingModeDto, OnboardingOptionEdit, OnboardingQuestionEdit,
     WelcomeScreenDto,
 };
 use rekindle_types::presence::OnboardingAnswer;
@@ -39,19 +39,21 @@ async fn member_roles(community: &Community, i: usize, pseudonym: &str) -> Vec<S
         .unwrap_or_default()
 }
 
-fn prompt(role_id: &str) -> OnboardingConfigDto {
-    OnboardingConfigDto {
+/// A one-question prompt as the editor sends it: the question and its
+/// option are new, so they carry no id and the Host mints them.
+pub(crate) fn prompt(role_id: &str) -> OnboardingConfigEdit {
+    OnboardingConfigEdit {
         enabled: true,
         mode: OnboardingModeDto::Guided,
         default_channels: Vec::new(),
-        questions: vec![OnboardingQuestionDto {
-            question_id: "q1".into(),
+        questions: vec![OnboardingQuestionEdit {
+            question_id: None,
             title: "What brings you here?".into(),
             description: None,
             required: true,
             single_select: true,
-            options: vec![OnboardingOptionDto {
-                option_id: "raid".into(),
+            options: vec![OnboardingOptionEdit {
+                option_id: None,
                 title: "Raiding".into(),
                 description: None,
                 roles_to_assign: vec![role_id.to_owned()],
@@ -60,6 +62,33 @@ fn prompt(role_id: &str) -> OnboardingConfigDto {
         }],
         welcome_message: Some("Welcome!".into()),
         guide_steps: Vec::new(),
+    }
+}
+
+/// Node `i`'s answer choosing the first option of the prompt's first
+/// question, by the ids the Host minted (read from its merged flow).
+pub(crate) async fn first_option_answer(
+    community: &Community,
+    i: usize,
+    key: &str,
+) -> OnboardingAnswer {
+    let flow = community.nodes[i]
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::OnboardingConfigGet {
+                community: key.to_owned(),
+            },
+        )))
+        .await;
+    let question = &flow["questions"][0];
+    OnboardingAnswer {
+        question_id: question["questionId"]
+            .as_str()
+            .expect("a minted id")
+            .to_owned(),
+        selected_options: vec![question["options"][0]["optionId"]
+            .as_str()
+            .expect("a minted id")
+            .to_owned()],
     }
 }
 
@@ -129,10 +158,7 @@ async fn onboarding_role_assignment() {
         .ok(IpcRequest::Community(CommunityRequest::Settings(
             SettingsRequest::OnboardingSubmit {
                 community: key.clone(),
-                answers: vec![OnboardingAnswer {
-                    question_id: "q1".into(),
-                    selected_options: vec!["raid".into()],
-                }],
+                answers: vec![first_option_answer(&community, 1, &key).await],
                 acknowledged_rules: false,
             },
         )))

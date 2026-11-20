@@ -1,7 +1,7 @@
 import { Component, For, createEffect, createSignal } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import { commands } from "../../../ipc/commands";
-import type { OnboardingConfig, WelcomeChannelEntry, WelcomeScreen } from "../../../ipc/commands/dto";
+import type { OnboardingConfig, OnboardingConfigEdit, WelcomeChannelEntry, WelcomeScreen } from "../../../ipc/commands/dto";
 import { handleLoadOnboardingConfig, handleLoadWelcomeScreen } from "../../../actions/community/profile";
 import { addToast } from "../../../stores/toast.store";
 import OnboardingQuestionsEditor from "./OnboardingQuestionsEditor";
@@ -29,7 +29,7 @@ const EMPTY_FLOW: OnboardingConfig = {
  */
 const WelcomeTab: Component<WelcomeTabProps> = (props) => {
   const [screen, setScreen] = createSignal<WelcomeScreen>(EMPTY_SCREEN);
-  const [flow, setFlow] = createSignal<OnboardingConfig>(EMPTY_FLOW);
+  const [flow, setFlow] = createSignal<OnboardingConfigEdit>(EMPTY_FLOW);
   const [saving, setSaving] = createSignal(false);
 
   createEffect(() => {
@@ -211,7 +211,12 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
           onClick={() => void save(
             "Onboarding",
             () => commands.setOnboardingConfig(id(), flow()),
-            () => handleLoadOnboardingConfig(id()),
+            // The Host minted the new items' ids: edit on from its flow, so a
+            // second save keeps them instead of sending new items again.
+            async () => {
+              setFlow(await commands.getOnboardingConfig(id()));
+              await handleLoadOnboardingConfig(id());
+            },
           )}
         >
           Save onboarding

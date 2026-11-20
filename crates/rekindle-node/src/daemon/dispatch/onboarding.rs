@@ -3,7 +3,7 @@
 
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_ipc::protocol::SettingsRequest;
-use rekindle_types::dto::onboarding::{OnboardingConfigDto, WelcomeScreenDto};
+use rekindle_types::dto::onboarding::{OnboardingConfigEdit, WelcomeScreenDto};
 use rekindle_types::presence::OnboardingAnswer;
 
 use super::governance::writable;
@@ -59,7 +59,7 @@ pub(crate) async fn handle_config_set(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    config: &OnboardingConfigDto,
+    config: &OnboardingConfigEdit,
 ) -> IpcResponse {
     match writable(ctx, state, community) {
         Ok(key) => answered(adapter(ctx).set_onboarding_config(&key, config).await),

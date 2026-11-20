@@ -85,6 +85,101 @@ pub struct OnboardingOptionDto {
     pub channels_to_show: Vec<String>,
 }
 
+/// The onboarding flow an editor sends (`OnboardingConfigSet`, plan E7.15
+/// S3): the view's shape, except that a new question or option carries no
+/// id. The Host mints a new item's id and keeps an existing item's, and
+/// refuses an id the merged flow does not hold, so ids are never the
+/// caller's (backend owns policy).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingConfigEdit {
+    pub enabled: bool,
+    pub mode: OnboardingModeDto,
+    #[serde(default)]
+    pub default_channels: Vec<String>,
+    #[serde(default)]
+    pub questions: Vec<OnboardingQuestionEdit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub welcome_message: Option<String>,
+    #[serde(default)]
+    pub guide_steps: Vec<GuideStepDto>,
+}
+
+/// A question as an editor sends it: `question_id` is `None` on a new one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingQuestionEdit {
+    #[serde(default)]
+    pub question_id: Option<String>,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub required: bool,
+    pub single_select: bool,
+    pub options: Vec<OnboardingOptionEdit>,
+}
+
+/// An option as an editor sends it: `option_id` is `None` on a new one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingOptionEdit {
+    #[serde(default)]
+    pub option_id: Option<String>,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Full 16-byte role ids, 32 hex characters each.
+    #[serde(default)]
+    pub roles_to_assign: Vec<String>,
+    #[serde(default)]
+    pub channels_to_show: Vec<String>,
+}
+
+impl Default for OnboardingConfigEdit {
+    fn default() -> Self {
+        OnboardingConfigDto::default().into()
+    }
+}
+
+/// The merged flow as an edit that changes nothing: every item keeps its id.
+impl From<OnboardingConfigDto> for OnboardingConfigEdit {
+    fn from(c: OnboardingConfigDto) -> Self {
+        Self {
+            enabled: c.enabled,
+            mode: c.mode,
+            default_channels: c.default_channels,
+            questions: c.questions.into_iter().map(Into::into).collect(),
+            welcome_message: c.welcome_message,
+            guide_steps: c.guide_steps,
+        }
+    }
+}
+
+impl From<OnboardingQuestionDto> for OnboardingQuestionEdit {
+    fn from(q: OnboardingQuestionDto) -> Self {
+        Self {
+            question_id: Some(q.question_id),
+            title: q.title,
+            description: q.description,
+            required: q.required,
+            single_select: q.single_select,
+            options: q.options.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<OnboardingOptionDto> for OnboardingOptionEdit {
+    fn from(o: OnboardingOptionDto) -> Self {
+        Self {
+            option_id: Some(o.option_id),
+            title: o.title,
+            description: o.description,
+            roles_to_assign: o.roles_to_assign,
+            channels_to_show: o.channels_to_show,
+        }
+    }
+}
+
 /// A guided step shown after onboarding questions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -160,6 +160,24 @@ export interface OnboardingOption {
   channelsToShow: string[];
 }
 
+/**
+ * The flow the editor sends (`set_onboarding_config`, plan E7.15 S3): a new
+ * question or option carries no id (`null`); the Host mints it and keeps an
+ * existing item's id. A loaded `OnboardingConfig` is a valid edit.
+ */
+export interface OnboardingConfigEdit extends Omit<OnboardingConfig, "questions"> {
+  questions: OnboardingQuestionEdit[];
+}
+
+export interface OnboardingQuestionEdit extends Omit<OnboardingQuestion, "questionId" | "options"> {
+  questionId: string | null;
+  options: OnboardingOptionEdit[];
+}
+
+export interface OnboardingOptionEdit extends Omit<OnboardingOption, "optionId"> {
+  optionId: string | null;
+}
+
 export interface GuideStep {
   title: string;
   description: string;

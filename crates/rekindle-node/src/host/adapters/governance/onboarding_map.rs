@@ -6,13 +6,46 @@
 
 use rekindle_governance::state::{OnboardingState, WelcomeScreenState};
 use rekindle_types::dto::onboarding::{
-    GuideStepDto, OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto,
-    OnboardingQuestionDto, WelcomeChannelEntryDto, WelcomeScreenDto,
+    GuideStepDto, OnboardingConfigDto, OnboardingConfigEdit, OnboardingModeDto,
+    OnboardingOptionDto, OnboardingQuestionDto, WelcomeChannelEntryDto, WelcomeScreenDto,
 };
 use rekindle_types::governance::{
     GovernanceEntry, GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel,
 };
 use rekindle_types::id::{ChannelId, RoleId};
+use rekindle_utils::random::{id_bytes_16_from, RandomSource};
+
+/// A new onboarding question's or option's id: 16 random bytes as hex,
+/// minted by the Host (plan E7.15 S3), never by the caller.
+pub(crate) fn mint_id(rng: &dyn RandomSource) -> String {
+    hex::encode(id_bytes_16_from(rng))
+}
+
+/// The first id `edit` names that the merged flow `current` does not hold:
+/// an edit keeps an existing question's id and an existing option's id
+/// within its question; a new item carries none.
+pub(crate) fn unknown_id(
+    edit: &OnboardingConfigEdit,
+    current: Option<&OnboardingState>,
+) -> Option<String> {
+    let held = |id: &str| current?.questions.iter().find(|q| q.question_id == id);
+    for q in &edit.questions {
+        let existing = match &q.question_id {
+            Some(id) => match held(id) {
+                Some(existing) => Some(existing),
+                None => return Some(format!("question id {id:?} is not in the flow")),
+            },
+            None => None,
+        };
+        for o in &q.options {
+            let Some(id) = &o.option_id else { continue };
+            if !existing.is_some_and(|e| e.options.iter().any(|eo| &eo.option_id == id)) {
+                return Some(format!("option id {id:?} is not in its question"));
+            }
+        }
+    }
+    None
+}
 
 /// A channel id from its 32 hex characters.
 fn channel_id(hex_str: &str) -> Result<ChannelId, String> {
@@ -35,17 +68,21 @@ fn mode_name(mode: OnboardingModeDto) -> &'static str {
     }
 }
 
-/// The `OnboardingConfig` entry `config` writes.
+/// The `OnboardingConfig` entry `config` writes; a new question or option
+/// takes its id from `mint`.
 ///
 /// # Errors
 /// A channel id is not 32 hex characters.
-pub(crate) fn config_entry(config: &OnboardingConfigDto) -> Result<GovernanceEntry, String> {
+pub(crate) fn config_entry(
+    config: &OnboardingConfigEdit,
+    mint: &mut dyn FnMut() -> String,
+) -> Result<GovernanceEntry, String> {
     let questions = config
         .questions
         .iter()
         .map(|q| {
             Ok(OnboardingQuestion {
-                question_id: q.question_id.clone(),
+                question_id: q.question_id.clone().unwrap_or_else(&mut *mint),
                 title: q.title.clone(),
                 description: q.description.clone(),
                 required: q.required,
@@ -55,7 +92,7 @@ pub(crate) fn config_entry(config: &OnboardingConfigDto) -> Result<GovernanceEnt
                     .iter()
                     .map(|o| {
                         Ok(OnboardingOption {
-                            option_id: o.option_id.clone(),
+                            option_id: o.option_id.clone().unwrap_or_else(&mut *mint),
                             title: o.title.clone(),
                             description: o.description.clone(),
                             emoji: None,

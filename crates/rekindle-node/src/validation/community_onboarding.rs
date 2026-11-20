@@ -10,6 +10,7 @@ use rekindle_types::governance::{
     MAX_ONBOARDING_QUESTIONS,
 };
 use rekindle_types::presence::OnboardingAnswer;
+use rekindle_utils::OsRandom;
 
 use crate::host::adapters::governance::onboarding_map;
 
@@ -24,7 +25,12 @@ pub(super) fn check(request: &SettingsRequest) -> Checked {
         SettingsRequest::OnboardingConfigSet {
             community: key,
             config,
-        } => community(key).and_then(|()| within_bounds(onboarding_map::config_entry(config))),
+        } => community(key).and_then(|()| {
+            // A new item's id is the Host's to mint; the check maps it with
+            // one of the minted shape, which is always within bounds.
+            let mut mint = || onboarding_map::mint_id(&OsRandom);
+            within_bounds(onboarding_map::config_entry(config, &mut mint))
+        }),
         SettingsRequest::WelcomeScreenSet {
             community: key,
             screen,

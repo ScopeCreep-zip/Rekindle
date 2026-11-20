@@ -18,7 +18,9 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_governance_runtime::membership_events::onboarding::validate_onboarding_answers;
 use rekindle_governance_runtime::membership_events::MembershipEventDeps;
 use rekindle_governance_runtime::{write_entry, GovernanceRuntimeError};
-use rekindle_types::dto::onboarding::{OnboardingConfigDto, WelcomeScreenDto};
+use rekindle_types::dto::onboarding::{
+    OnboardingConfigDto, OnboardingConfigEdit, WelcomeScreenDto,
+};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::presence::OnboardingAnswer;
@@ -85,17 +87,29 @@ impl HostGovernance {
             .unwrap_or_default()
     }
 
-    /// Write `config` as the community's onboarding flow.
+    /// Write `config` as the community's onboarding flow. A new question
+    /// or option gets an id the Host mints; an existing one keeps its own
+    /// (plan E7.15 S3).
     ///
     /// # Errors
-    /// A channel id is malformed, a field is out of bounds, we lack
-    /// `MANAGE_COMMUNITY`, or the write failed.
+    /// A channel id is malformed, an id names no question or option of the
+    /// merged flow, a field is out of bounds, we lack `MANAGE_COMMUNITY`,
+    /// or the write failed.
     pub async fn set_onboarding_config(
         &self,
         community_id: &str,
-        config: &OnboardingConfigDto,
+        config: &OnboardingConfigEdit,
     ) -> Result<(), OnboardingRefusal> {
-        let entry = onboarding_map::config_entry(config).map_err(OnboardingRefusal::Invalid)?;
+        let current = self
+            .governance_state_impl(community_id)
+            .and_then(|g| g.onboarding.clone());
+        if let Some(why) = onboarding_map::unknown_id(config, current.as_ref()) {
+            return Err(OnboardingRefusal::Invalid(why));
+        }
+        let rng = GovernanceRuntimeDeps::rng(self);
+        let mut mint = || onboarding_map::mint_id(rng.as_ref());
+        let entry =
+            onboarding_map::config_entry(config, &mut mint).map_err(OnboardingRefusal::Invalid)?;
         write_entry(self, community_id, entry).await?;
         Ok(())
     }

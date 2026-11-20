@@ -317,12 +317,12 @@ fn governance_bounds_keep_their_error_texts() {
 #[test]
 fn onboarding_and_welcome_fields_are_bounded() {
     use rekindle_types::dto::onboarding::{
-        GuideStepDto, OnboardingConfigDto, WelcomeChannelEntryDto, WelcomeScreenDto,
+        GuideStepDto, OnboardingConfigEdit, WelcomeChannelEntryDto, WelcomeScreenDto,
     };
     use rekindle_types::governance::{
         MAX_ONBOARDING_GUIDE_STEPS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
     };
-    let config = |config: OnboardingConfigDto| {
+    let config = |config: OnboardingConfigEdit| {
         IpcRequest::Community(CommunityRequest::Settings(
             SettingsRequest::OnboardingConfigSet {
                 community: "c".into(),
@@ -349,15 +349,15 @@ fn onboarding_and_welcome_fields_are_bounded() {
         description: "Chat with everyone".into(),
         emoji: None,
     };
-    assert_eq!(status_of(&config(OnboardingConfigDto::default())), None);
-    let long = config(OnboardingConfigDto {
+    assert_eq!(status_of(&config(OnboardingConfigEdit::default())), None);
+    let long = config(OnboardingConfigEdit {
         welcome_message: Some("x".repeat(MAX_ONBOARDING_WELCOME_CHARS + 1)),
-        ..OnboardingConfigDto::default()
+        ..OnboardingConfigEdit::default()
     });
     assert_eq!(message_of(&long), "welcome_message is out of bounds");
-    let steps = config(OnboardingConfigDto {
+    let steps = config(OnboardingConfigEdit {
         guide_steps: vec![step; MAX_ONBOARDING_GUIDE_STEPS + 1],
-        ..OnboardingConfigDto::default()
+        ..OnboardingConfigEdit::default()
     });
     assert!(rejected(&steps));
     assert_eq!(message_of(&steps), "guide_steps is out of bounds");

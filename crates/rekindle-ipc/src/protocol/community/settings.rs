@@ -1,6 +1,6 @@
 //! The community settings: our per-community profile and pictures, the policy, onboarding and the welcome screen (plan E3.1), carried as `CommunityRequest::Settings`.
 
-use rekindle_types::dto::onboarding::{OnboardingConfigDto, WelcomeScreenDto};
+use rekindle_types::dto::onboarding::{OnboardingConfigEdit, WelcomeScreenDto};
 use rekindle_types::presence::OnboardingAnswer;
 use serde::{Deserialize, Serialize};
 
@@ -58,7 +58,7 @@ pub enum SettingsRequest {
     /// Set a community's onboarding flow (`MANAGE_COMMUNITY`).
     OnboardingConfigSet {
         community: String,
-        config: OnboardingConfigDto,
+        config: OnboardingConfigEdit,
     },
 
     /// A community's welcome screen (the empty default when none is set).

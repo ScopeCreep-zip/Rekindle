@@ -1,10 +1,10 @@
 import { Component, For } from "solid-js";
 import type { Channel, Role } from "../../../stores/community.store";
-import type { GuideStep, OnboardingConfig, OnboardingOption, OnboardingQuestion } from "../../../ipc/commands/dto";
+import type { GuideStep, OnboardingConfigEdit, OnboardingOptionEdit, OnboardingQuestionEdit } from "../../../ipc/commands/dto";
 
 interface OnboardingQuestionsEditorProps {
-  flow: OnboardingConfig;
-  setFlow: (update: (f: OnboardingConfig) => OnboardingConfig) => void;
+  flow: OnboardingConfigEdit;
+  setFlow: (update: (f: OnboardingConfigEdit) => OnboardingConfigEdit) => void;
   channels: Channel[];
   roles: Role[];
 }
@@ -13,12 +13,13 @@ interface OnboardingQuestionsEditorProps {
  * The onboarding questions, their options and the guide steps (plan E7.15
  * S2). This edits the fields only: the counts, lengths and ids are checked
  * by the Host's `OnboardingConfigSet` on Save (`validate::bounds`), and its
- * refusal names the field. A new question or option gets a fresh opaque id.
+ * refusal names the field. A new question or option is sent with no id: the
+ * Host mints it (plan E7.15 S3).
  */
 const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (props) => {
-  const setQ = (qi: number, patch: Partial<OnboardingQuestion>): void =>
+  const setQ = (qi: number, patch: Partial<OnboardingQuestionEdit>): void =>
     props.setFlow((f) => ({ ...f, questions: f.questions.map((q, j) => (j === qi ? { ...q, ...patch } : q)) }));
-  const setO = (qi: number, oi: number, patch: Partial<OnboardingOption>): void =>
+  const setO = (qi: number, oi: number, patch: Partial<OnboardingOptionEdit>): void =>
     setQ(qi, { options: props.flow.questions[qi].options.map((o, j) => (j === oi ? { ...o, ...patch } : o)) });
   const setStep = (si: number, patch: Partial<GuideStep>): void =>
     props.setFlow((f) => ({ ...f, guideSteps: f.guideSteps.map((s, j) => (j === si ? { ...s, ...patch } : s)) }));
@@ -92,7 +93,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
                 class="form-btn-secondary"
                 onClick={() => setQ(qi(), {
                   options: [...q.options, {
-                    optionId: crypto.randomUUID(), title: "", description: null, rolesToAssign: [], channelsToShow: [],
+                    optionId: null, title: "", description: null, rolesToAssign: [], channelsToShow: [],
                   }],
                 })}
               >
@@ -113,7 +114,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
         onClick={() => props.setFlow((f) => ({
           ...f,
           questions: [...f.questions, {
-            questionId: crypto.randomUUID(), title: "", description: null, required: false, singleSelect: true, options: [],
+            questionId: null, title: "", description: null, required: false, singleSelect: true, options: [],
           }],
         }))}
       >

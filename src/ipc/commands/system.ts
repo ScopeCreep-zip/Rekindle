@@ -2,7 +2,7 @@ import { hostInvoke, invoke } from "../invoke";
 import type {
   FavouriteServerView, HiddenGameView, NetworkStatus, Preferences, QuickWipeState, SettingsTab,
 } from "./types";
-import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
+import type { OnboardingConfig, OnboardingConfigEdit, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
   AuditEntryView, AuditVerified, GameTotalView, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
   SkinApplied, SkinEntry, SkinLibrary,
@@ -140,7 +140,7 @@ export const systemCommands = {
   // Onboarding & Welcome Screen
   getOnboardingConfig: (communityId: string) =>
     hostInvoke<OnboardingConfig>("get_onboarding_config", { communityId }),
-  setOnboardingConfig: (communityId: string, config: OnboardingConfig) =>
+  setOnboardingConfig: (communityId: string, config: OnboardingConfigEdit) =>
     hostInvoke<void>("set_onboarding_config", { communityId, config }),
   getWelcomeScreen: (communityId: string) =>
     hostInvoke<WelcomeScreen>("get_welcome_screen", { communityId }),

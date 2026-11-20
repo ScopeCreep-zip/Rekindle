@@ -4,7 +4,9 @@
 
 use rekindle_ipc::protocol::SettingsRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_types::dto::onboarding::{OnboardingConfigDto, WelcomeScreenDto};
+use rekindle_types::dto::onboarding::{
+    OnboardingConfigDto, OnboardingConfigEdit, WelcomeScreenDto,
+};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::presence::OnboardingAnswer;
 use tauri::State;
@@ -27,7 +29,7 @@ pub async fn get_onboarding_config(
 pub async fn set_onboarding_config(
     state: State<'_, SharedState>,
     community_id: String,
-    config: OnboardingConfigDto,
+    config: OnboardingConfigEdit,
 ) -> Result<Done<()>, CommandError> {
     let request = CommunityRequest::Settings(SettingsRequest::OnboardingConfigSet {
         community: community_id,

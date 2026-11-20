@@ -12,43 +12,16 @@ use rekindle_ipc::protocol::{
 };
 use rekindle_ipc::protocol::{MemberRequest, SettingsRequest};
 use rekindle_netsim::{Fault, Writes};
-use rekindle_types::dto::onboarding::{
-    OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto, OnboardingQuestionDto,
-};
-use rekindle_types::presence::OnboardingAnswer;
 
 use crate::harness::{eventually, Community};
 use crate::invite_unpublished::creator_record;
+use crate::onboarding::{first_option_answer, prompt};
 
 fn creator_cannot_land(community: &Community) {
     community.sim.fault(Fault::WriteFails {
         node: 0,
         of: Writes::Record(creator_record(community)),
     });
-}
-
-fn prompt(role_id: &str) -> OnboardingConfigDto {
-    OnboardingConfigDto {
-        enabled: true,
-        mode: OnboardingModeDto::Guided,
-        default_channels: Vec::new(),
-        questions: vec![OnboardingQuestionDto {
-            question_id: "q1".into(),
-            title: "Why?".into(),
-            description: None,
-            required: true,
-            single_select: true,
-            options: vec![OnboardingOptionDto {
-                option_id: "raid".into(),
-                title: "Raiding".into(),
-                description: None,
-                roles_to_assign: vec![role_id.to_owned()],
-                channels_to_show: Vec::new(),
-            }],
-        }],
-        welcome_message: None,
-        guide_steps: Vec::new(),
-    }
 }
 
 /// The creator assigns the answered role from its control handler; with
@@ -102,10 +75,7 @@ async fn onboarding_answers_never_wait_on_the_network() {
         .ok(IpcRequest::Community(CommunityRequest::Settings(
             SettingsRequest::OnboardingSubmit {
                 community: key.clone(),
-                answers: vec![OnboardingAnswer {
-                    question_id: "q1".into(),
-                    selected_options: vec!["raid".into()],
-                }],
+                answers: vec![first_option_answer(&community, 1, &key).await],
                 acknowledged_rules: false,
             },
         )))
