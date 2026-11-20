@@ -161,7 +161,9 @@ impl HostGovernance {
     /// route (plan E3.4 S4): a blob that does not import or a peer route the
     /// transport reports `RouteUnusable` (C9.1a; the transport has already
     /// invalidated its import, `broadcast/send.rs` `send_failure`) is
-    /// [`RouteCallError::Unusable`], so a member call re-reads `M`/6.
+    /// [`RouteCallError::Unusable`], and a lost call is
+    /// [`RouteCallError::TimedOut`]; after either a member call re-reads
+    /// `M`/6 ([`RouteCallError::rereads_route`]).
     pub(super) async fn call_route_typed(
         &self,
         target_route_blob: &[u8],
@@ -179,6 +181,9 @@ impl HostGovernance {
             .map_err(|e| match e {
                 rekindle_transport::TransportError::RouteUnusable { .. } => {
                     RouteCallError::Unusable
+                }
+                rekindle_transport::TransportError::Timeout { reason, .. } => {
+                    RouteCallError::TimedOut(reason)
                 }
                 other => RouteCallError::Failed(other.to_string()),
             })
@@ -381,7 +386,24 @@ pub(crate) enum RouteCallError {
     /// The blob did not import or the transport reported `RouteUnusable`.
     #[error("the route is unusable")]
     Unusable,
+    /// The call's answer did not come back (Veilid's `Timeout` or the
+    /// transport's bound): in Veilid 0.5.8 a call into a route its owner
+    /// released is lost this way, never answered `RouteUnusable`, since
+    /// an importer is never told of the release
+    /// (`route_spec_store/mod.rs:235-251`).
+    #[error("the call timed out: {0}")]
+    TimedOut(String),
     /// Any other failure.
     #[error("{0}")]
     Failed(String),
+}
+
+impl RouteCallError {
+    /// Whether the failure may mean the member's route is gone, so its
+    /// `M`/6 is read once more (plan E3.4 S4, lead decision): an unusable
+    /// route or a lost call. Any other failure keeps the route.
+    #[must_use]
+    pub(crate) fn rereads_route(&self) -> bool {
+        matches!(self, Self::Unusable | Self::TimedOut(_))
+    }
 }

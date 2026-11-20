@@ -17,7 +17,7 @@
 //! one place for every caller (the 1:1 rows, RPCs, community envelopes):
 //! [`Bounded`] wraps the node's [`AppMessagePort`] when the node is built.
 //! A bound that fires is a timeout, the outcome unknown, reported as Veilid's
-//! own `Timeout` is (`PortError::Send`, `rekindle-protocol` `ports.rs`
+//! own `Timeout` is (`PortError::Timeout`, `rekindle-protocol` `ports.rs`
 //! `send_error`), so each caller's timeout handling applies unchanged: the
 //! route is refreshed and the row attempted again.
 //!
@@ -102,8 +102,8 @@ async fn within(
             deadline_ms = deadline.as_millis(),
             "app_call unresolved at our deadline: timed out, outcome unknown"
         );
-        return Err(PortError::Send(format!(
-            "app call timed out: unresolved after {} ms (outcome unknown)",
+        return Err(PortError::Timeout(format!(
+            "app call unresolved after {} ms (outcome unknown)",
             deadline.as_millis()
         )));
     };
@@ -115,7 +115,7 @@ async fn within(
 fn log_pre_steps(result: &Result<Vec<u8>, PortError>, elapsed: Duration, wait: Duration) {
     match result {
         // Veilid's answer wait ran in full after the question left.
-        Err(PortError::Send(reason)) if reason == "Timeout" => debug!(
+        Err(PortError::Timeout(_)) => debug!(
             pre_step_ms = elapsed.saturating_sub(wait).as_millis(),
             elapsed_ms = elapsed.as_millis(),
             "app_call pre-steps: Veilid timed out the answer wait"
@@ -289,13 +289,13 @@ mod tests {
         let pinned = port
             .call_pinned(&target, &profile, RouteClass::Sending, vec![1])
             .await;
-        assert!(matches!(pinned, Err(PortError::Send(ref m)) if m.contains("timed out")));
+        assert!(matches!(pinned, Err(PortError::Timeout(ref m)) if m.contains("unresolved")));
         assert_eq!(started.elapsed(), app_call_deadline(&profile));
         assert!(port.call(&target, &profile, vec![1]).await.is_err());
         // The owner's route self-test (plan RH1r-c O1) is a call like any.
         let started = tokio::time::Instant::now();
         let own = port.call_own(RouteClass::General, &profile, vec![1]).await;
-        assert!(matches!(own, Err(PortError::Send(ref m)) if m.contains("timed out")));
+        assert!(matches!(own, Err(PortError::Timeout(ref m)) if m.contains("unresolved")));
         assert_eq!(started.elapsed(), app_call_deadline(&profile));
     }
 

@@ -197,7 +197,7 @@ impl FakeMessages {
             // Into a released route: no answer comes back.
             tokio::time::sleep(call_timeout(profile)).await;
             self.net.lost_question(self.node, target.as_str(), pinned);
-            return Err(PortError::Send("app call timed out".into()));
+            return Err(PortError::Timeout("app call timed out".into()));
         };
         if self.net.inner.lock().faults.hung.contains(&to) {
             // Stuck before the answer wait: nothing is sent, nothing ends it.
@@ -251,7 +251,7 @@ impl FakeMessages {
         } else {
             self.net.inner.lock().calls.remove(&call_id);
             self.net.lost_question(self.node, target.as_str(), pinned);
-            Err(PortError::Send("app call timed out".into()))
+            Err(PortError::Timeout("app call timed out".into()))
         }
     }
 

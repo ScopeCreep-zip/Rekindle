@@ -69,9 +69,12 @@ pub enum TransportError {
     #[error("route to {target} unusable: {reason}")]
     RouteUnusable { target: String, reason: String },
 
-    /// An RPC call (app_call) timed out waiting for a response.
-    #[error("{operation} timed out after {duration_ms}ms")]
-    Timeout { operation: String, duration_ms: u64 },
+    /// An `app_call` to the target timed out waiting for its answer
+    /// (`PortError::Timeout`): the outcome is unknown, and a call into a
+    /// route its owner released ends this way (Veilid 0.5.8 never tells
+    /// an importer of the release).
+    #[error("call to {target} timed out: {reason}")]
+    Timeout { target: String, reason: String },
 
     // ── Receive ──────────────────────────────────────────────────────
     /// The inbound frame header is invalid (too short, corrupt).
@@ -346,6 +349,10 @@ impl From<rekindle_records::port::PortError> for TransportError {
                 reason,
             },
             P::RouteUnusable(reason) => Self::RouteUnusable {
+                target: "<port>".into(),
+                reason,
+            },
+            P::Timeout(reason) => Self::Timeout {
                 target: "<port>".into(),
                 reason,
             },

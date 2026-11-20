@@ -37,6 +37,15 @@ pub enum PortError {
     /// the peer's route (plan VU5).
     #[error("route unusable: {0}")]
     RouteUnusable(String),
+    /// A call's answer did not come back in time: Veilid's `Timeout`
+    /// (veilid-core 0.5.8 `routing_context.rs:341`, the reply deadline
+    /// elapsed) or the transport's own bound on a call Veilid left
+    /// unresolved. The question was lost, so the outcome is unknown; a call
+    /// into a route its owner released ends this way, never as
+    /// `RouteUnusable` (the importer is never told of the release,
+    /// `route_spec_store/mod.rs:235-251`).
+    #[error("call timed out: {0}")]
+    Timeout(String),
     #[error("message of {len} bytes exceeds the {max}-byte message limit")]
     MessageTooLarge { len: usize, max: usize },
     #[error("subkey {subkey} value of {len} bytes exceeds the record's {cap}-byte subkey limit")]

@@ -128,7 +128,8 @@ impl From<rekindle_records::port::PortError> for ProtocolError {
             PortError::Dht(m) => Self::DhtError(m),
             PortError::Unreachable(m) => Self::DhtRecordUnreachable(m),
             PortError::Routing(m) => Self::RoutingError(m),
-            PortError::Send(m) => Self::SendFailed(m),
+            // A lost call's outcome is unknown, as a failed send's is.
+            PortError::Send(m) | PortError::Timeout(m) => Self::SendFailed(m),
             PortError::RouteUnusable(m) => Self::RouteUnusable(m),
             PortError::MessageTooLarge { len, max } => Self::MessageTooLarge { len, max },
             PortError::SubkeyTooLarge { subkey, len, cap } => {

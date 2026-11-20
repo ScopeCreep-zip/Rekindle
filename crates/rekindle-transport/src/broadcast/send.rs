@@ -31,6 +31,10 @@ fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> Tr
             target: target.as_str().to_string(),
             reason,
         },
+        PortError::Timeout(reason) => TransportError::Timeout {
+            target: target.as_str().to_string(),
+            reason,
+        },
         other => other.into(),
     }
 }

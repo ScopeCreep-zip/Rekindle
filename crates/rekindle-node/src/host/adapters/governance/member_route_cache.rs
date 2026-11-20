@@ -5,10 +5,11 @@
 //! (`watch`, `head_advanced`) and by a pinned cold read on first use
 //! (`rekindle_governance_runtime::member_routes::read_member_route_at`,
 //! `RoutePin::Joined`). Every Host call to a member goes through
-//! [`HostGovernance::call_member_route`]: a `RouteUnusable` forgets the
-//! route and re-reads `M`/6 exactly once; only a changed blob is called
-//! again, and an unchanged one is a visible `Unreachable`, never a retry
-//! loop (the outbox row's own retry decides any later attempt).
+//! [`HostGovernance::call_member_route`]: a `RouteUnusable` or a call
+//! timeout (Veilid 0.5.8 loses a call into a released route as a timeout)
+//! forgets the route and re-reads `M`/6 exactly once; only a changed blob
+//! is called again, and an unchanged one is a visible `Unreachable`, never
+//! a retry loop (the outbox row's own retry decides any later attempt).
 
 use rekindle_codec::member_record::{routes::decode_member_routes, RecordScope};
 use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
@@ -18,7 +19,6 @@ use rekindle_records::lease::LeaseId;
 use rekindle_types::dht_layout::member_record::ROUTES;
 use rekindle_types::id::PseudonymKey;
 
-use super::lifecycle::RouteCallError;
 use super::HostGovernance;
 
 /// Why a call to a member did not land.
@@ -27,8 +27,9 @@ pub enum MemberCallError {
     /// The member is not in the roster, or its record holds no route.
     #[error("the member has no route")]
     NoRoute,
-    /// The route was unusable and `M`/6 held no newer one.
-    #[error("the member is unreachable: its route is unusable and no newer one is published")]
+    /// The route was unusable or the call to it was lost, and `M`/6 held
+    /// no newer one (or the newer one failed too).
+    #[error("the member is unreachable: its route failed and no newer one is published")]
     Unreachable,
     /// The call itself failed.
     #[error("the call failed: {0}")]
@@ -124,8 +125,9 @@ impl HostGovernance {
 
     /// `app_call` `member` in `community` with `payload` (unframed,
     /// sealed) at its route ([`Self::member_route`]). On `RouteUnusable`
-    /// the route is forgotten and `M`/6 re-read once; the call is retried
-    /// once only when that read holds a different blob.
+    /// or a timeout ([`super::lifecycle::RouteCallError::rereads_route`]) the route is
+    /// forgotten and `M`/6 re-read once; the call is retried once only
+    /// when that read holds a different blob.
     ///
     /// # Errors
     /// [`MemberCallError`].
@@ -141,29 +143,29 @@ impl HostGovernance {
             .ok_or(MemberCallError::NoRoute)?;
         match self.call_route_typed(&route, payload.clone()).await {
             Ok(reply) => return Ok(reply),
-            Err(RouteCallError::Failed(e)) => return Err(MemberCallError::Call(e)),
-            Err(RouteCallError::Unusable) => {}
+            Err(e) if e.rereads_route() => {}
+            Err(e) => return Err(MemberCallError::Call(e.to_string())),
         }
         let fresh = self.reread_route(community, member).await;
         let Some(fresh) = fresh.filter(|b| *b != route) else {
             self.forget_route(community, member);
             tracing::warn!(
                 community,
-                "a member is unreachable: its route is unusable and M/6 holds no newer one"
+                "a member is unreachable: its route failed and M/6 holds no newer one"
             );
             return Err(MemberCallError::Unreachable);
         };
         match self.call_route_typed(&fresh, payload).await {
             Ok(reply) => Ok(reply),
-            Err(RouteCallError::Failed(e)) => Err(MemberCallError::Call(e)),
-            Err(RouteCallError::Unusable) => {
+            Err(e) if e.rereads_route() => {
                 self.forget_route(community, member);
                 tracing::warn!(
                     community,
-                    "a member is unreachable: its new route is unusable too"
+                    "a member is unreachable: its new route failed too"
                 );
                 Err(MemberCallError::Unreachable)
             }
+            Err(e) => Err(MemberCallError::Call(e.to_string())),
         }
     }
 
@@ -280,5 +282,20 @@ impl HostGovernance {
     ) -> Result<Vec<u8>, MemberCallError> {
         let member = super::moderation::pseudonym(member_hex).ok_or(MemberCallError::NoRoute)?;
         self.call_member_route(community, &member, payload).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::lifecycle::RouteCallError;
+
+    /// Plan E3.4 S4, lead decision: Veilid 0.5.8 loses a call into a
+    /// released route as a timeout, so a timeout re-reads `M`/6 as
+    /// `RouteUnusable` does; any other failure keeps the route.
+    #[test]
+    fn a_timed_out_or_unusable_call_rereads_the_route() {
+        assert!(RouteCallError::Unusable.rereads_route());
+        assert!(RouteCallError::TimedOut("Timeout".into()).rereads_route());
+        assert!(!RouteCallError::Failed("not attached".into()).rereads_route());
     }
 }

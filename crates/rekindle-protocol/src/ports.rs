@@ -264,6 +264,8 @@ pub fn peer_route_unusable(e: &VeilidAPIError) -> bool {
 fn send_error(e: &VeilidAPIError) -> PortError {
     if peer_route_unusable(e) {
         PortError::RouteUnusable(e.to_string())
+    } else if matches!(e, VeilidAPIError::Timeout) {
+        PortError::Timeout(e.to_string())
     } else {
         PortError::Send(e.to_string())
     }
@@ -494,7 +496,6 @@ mod tests {
             VeilidAPIError::no_connection("no routing domain"),
             VeilidAPIError::no_connection("No peer info for stub private route"),
             VeilidAPIError::invalid_target("Own node info must be published to use private route"),
-            VeilidAPIError::timeout(),
         ] {
             assert!(!super::peer_route_unusable(&ours), "{ours}");
             assert!(
@@ -502,6 +503,13 @@ mod tests {
                 "{ours}"
             );
         }
+        // A lost question (the reply deadline elapsed, as a call into a
+        // released route ends) keeps its own type, so a member call
+        // re-reads `M`/6 after it (plan E3.4 S4).
+        assert!(matches!(
+            super::send_error(&VeilidAPIError::timeout()),
+            PortError::Timeout(_)
+        ));
     }
 
     /// Every attached state veilid-core can emit maps to an attached state

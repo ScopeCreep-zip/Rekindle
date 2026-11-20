@@ -108,7 +108,7 @@ async fn a_detached_node_neither_sends_nor_receives() {
     let started = tokio::time::Instant::now();
     assert!(matches!(
         messages.call(&target, &profile, vec![3]).await,
-        Err(PortError::Send(_))
+        Err(PortError::Timeout(_))
     ));
     assert!(started.elapsed() >= call_timeout(&profile));
     sim.quiesce().await;
