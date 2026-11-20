@@ -127,27 +127,6 @@ fn unlocked_memberships(
     Some((transport, session))
 }
 
-/// The daemon's stage 4 of an unlock (`host::unlock`), until its port: the
-/// presence polls (E3.4), last, after the signing key and the overlays
-/// ([`daemon_overlays`]): the poll signs its own row and broadcasts on its
-/// first tick.
-pub(crate) fn request_presence_polls(ctx: &DaemonContext) {
-    let Some((_, session)) = unlocked_memberships(ctx) else {
-        return;
-    };
-    let community_ids: Vec<String> = session.communities.keys().cloned().collect();
-    if !community_ids.is_empty() {
-        let count = community_ids.len();
-        let request =
-            crate::daemon::presence_adapter::supervisor::PresenceStartRequest { community_ids };
-        if ctx.presence_start_tx.send(request).is_err() {
-            tracing::warn!("presence supervisor is gone — no roster will be maintained");
-        } else {
-            tracing::info!(communities = count, "presence polls requested");
-        }
-    }
-}
-
 /// The daemon's half of a teardown (`host::unlock::teardown`), after the
 /// unlock scope stopped: the community scopes, the subscription state, the
 /// per-community runtime (its lease ids name the pool that is ending), the

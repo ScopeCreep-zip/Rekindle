@@ -125,7 +125,14 @@ impl HostGovernance {
             dht_writes::release(&node, lease).await;
         }
         self.watch_community_records_impl(community_id).await;
-        crate::daemon::keepalive::start(&self.ctx, community_id);
+        // Once per community per unlock (plan C7.8b), from this one
+        // hand-over on every path that holds a community (create, join,
+        // unlock, a restore): the record keepalive and the presence poll
+        // (finding IB1).
+        if self.ctx.communities.start_loops_once(community_id) {
+            crate::daemon::keepalive::start(&self.ctx, community_id);
+            crate::daemon::presence_adapter::supervisor::request(&self.ctx, community_id);
+        }
     }
 
     pub(super) async fn get_dht_value_impl(

@@ -55,29 +55,21 @@ pub(crate) async fn handle_create(
 }
 
 /// Bring a community this unlock created or joined up as unlock brings up
-/// each resumed one (`dispatch::lifecycle`): its record keepalive, its
-/// watches and subscription mesh (the message clock lives there), its
-/// gossip mesh, and its presence poll.
+/// each resumed one (`dispatch::lifecycle`): its subscription mesh (the
+/// message clock lives there) and its gossip mesh. Its record keepalive and
+/// presence poll start from the records hand-over the create or join
+/// already ran (`community_records_ready_impl`, finding IB1).
 pub(crate) async fn activate_community(
     ctx: &DaemonContext,
     membership: &rekindle_transport::session::CommunityMembership,
 ) {
     let community_id = membership.anchor.clone();
-    crate::daemon::keepalive::start(ctx, &community_id);
     let subscriptions = ctx.subscriptions.read().clone();
     if let Some(subscriptions) = subscriptions {
         subscriptions.setup_community(membership);
     }
     if let Some(broadcast) = ctx.broadcast_mgr.read().as_ref() {
         broadcast.register_mesh(&community_id);
-    }
-    let started = ctx.presence_start_tx.send(
-        crate::daemon::presence_adapter::supervisor::PresenceStartRequest {
-            community_ids: vec![community_id.clone()],
-        },
-    );
-    if started.is_err() {
-        tracing::warn!(community = %community_id, "presence supervisor is gone — no roster");
     }
     tracing::info!(community = %community_id, "community activated");
 }

@@ -108,11 +108,15 @@ pub(super) async fn bring_up(governance: &HostGovernance, community_id: &str) {
     community(governance, community_id, &CancellationToken::new()).await;
 }
 
-/// One community's stage: open and hand over its records, hydrate its
-/// member state, rebuild its governance (its GovernanceRebuilt and
-/// MembersRefreshed come from the rebuild itself, plan E3.1 C1), and
-/// schedule its history catch-up.
-async fn community(governance: &HostGovernance, community_id: &str, stop: &CancellationToken) {
+/// Open the community's records and hand them over
+/// (`GovernanceRuntimeDeps::community_records_ready`: the leases, the
+/// watches, and, once per community per unlock, the record keepalive and
+/// the presence poll on either host). The one place a held community's
+/// loops start: the stage below for each community at unlock, a reconnect
+/// or a restore, and a join completed during the session (`join.rs`;
+/// Linux finding IB1: the join never handed its records over, so a joiner
+/// wrote no presence row until its next unlock and read as offline).
+pub(super) async fn hand_over(governance: &HostGovernance, community_id: &str) {
     let setup = governance
         .list_communities_for_dht_open()
         .into_iter()
@@ -120,6 +124,14 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
     if let Some(setup) = setup {
         dht_hydration::open_and_track_one_community(governance, &setup).await;
     }
+}
+
+/// One community's stage: open and hand over its records, hydrate its
+/// member state, rebuild its governance (its GovernanceRebuilt and
+/// MembersRefreshed come from the rebuild itself, plan E3.1 C1), and
+/// schedule its history catch-up.
+async fn community(governance: &HostGovernance, community_id: &str, stop: &CancellationToken) {
+    hand_over(governance, community_id).await;
     if stop.is_cancelled() {
         return;
     }

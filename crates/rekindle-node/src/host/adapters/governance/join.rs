@@ -149,6 +149,11 @@ impl HostGovernance {
             }
         }
         self.audit_joined(&id, &outcome.invite.community_name);
+        // The joined community's records handed over as an unlock's stage
+        // hands each one over (finding IB1): held, watched, and its loops
+        // (the presence poll writing our row each minute, the keepalive)
+        // started from that one place on both hosts.
+        super::login_stage::hand_over(self, &id).await;
         // A join is the community's first load: catch up every member's
         // channel outbox (and each departed author's with a recorded head)
         // from our cursors, as an unlock's stage does (plan E3.3 "Cursor

@@ -255,10 +255,9 @@ pub(crate) async fn run(
         super::wake::start(ctx, &scope);
     }
 
-    // 4. Daemon-only stages.
-    if ctx.mode == HostMode::Daemon {
-        crate::daemon::dispatch::request_presence_polls(ctx);
-    }
+    // 4. The presence polls start per community from the records
+    // hand-over of the login stage (3, `login_stage::hand_over`), on both
+    // modes (finding IB1).
 
     // 5. The shell's unported stages.
     if let Some(shell) = ctx.shell.clone() {

@@ -20,13 +20,13 @@ use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource
 #[test]
 fn the_keepalive_starts_once_until_cleared_or_removed() {
     let store = CommunityStore::new(new_map());
-    assert!(store.start_keepalive_once("c1"));
-    assert!(!store.start_keepalive_once("c1"));
-    assert!(store.start_keepalive_once("c2"), "per community");
+    assert!(store.start_loops_once("c1"));
+    assert!(!store.start_loops_once("c1"));
+    assert!(store.start_loops_once("c2"), "per community");
     store.remove("c1");
-    assert!(store.start_keepalive_once("c1"), "leave resets it");
+    assert!(store.start_loops_once("c1"), "leave resets it");
     store.clear();
-    assert!(store.start_keepalive_once("c2"), "lock resets it");
+    assert!(store.start_loops_once("c2"), "lock resets it");
 }
 
 #[test]

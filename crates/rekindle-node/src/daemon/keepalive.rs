@@ -7,11 +7,9 @@ use std::sync::Arc;
 
 use super::dispatch::DaemonContext;
 
-/// Start the community's keepalive, once per community per unlock.
+/// Start the community's keepalive; the hand-over
+/// (`community_records_ready_impl`) calls it once per community per unlock.
 pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
-    if !ctx.communities.start_keepalive_once(community_id) {
-        return;
-    }
     let Some(node) = ctx.transport.read().clone() else {
         return;
     };

@@ -183,9 +183,9 @@ impl CommunityStore {
             .unwrap_or(false)
     }
 
-    /// Mark the community's loops (the record keepalive) started; `true`
-    /// the first time per session (plan C7.8b).
-    pub fn start_keepalive_once(&self, community_id: &str) -> bool {
+    /// Mark the community's loops (the record keepalive, the presence
+    /// poll) started; `true` the first time per session (plan C7.8b).
+    pub fn start_loops_once(&self, community_id: &str) -> bool {
         self.write(community_id, |c| {
             !std::mem::replace(&mut c.loops_started, true)
         })
