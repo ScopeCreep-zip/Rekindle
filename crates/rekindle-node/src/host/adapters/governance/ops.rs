@@ -443,13 +443,17 @@ impl HostGovernance {
         use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
         let lock = self.ctx.communities.frontier_write_lock(community_id);
         let _writing = lock.lock().await;
-        let cert = {
+        let (cert, me) = {
             let map = self.ctx.communities.map().read();
             let community = map.get(community_id).ok_or("community not found")?;
-            community
+            let cert = community
                 .genesis_cert
                 .clone()
-                .ok_or("no genesis cert is pinned")?
+                .ok_or("no genesis cert is pinned")?;
+            (
+                cert,
+                community.my_pseudonym_key.as_deref().and_then(pseudonym_of),
+            )
         };
         let held = self
             .governance_ops(community_id)
@@ -460,7 +464,9 @@ impl HostGovernance {
         // from one merge of the op set (D15's convergence check, compared by
         // a reader whose heads equal these), never the installed state,
         // which lags the op store while a rebuild is pending.
-        let frontier = op_log::own_frontier(&cert, &set);
+        // Our own fork, if a restored backup made one, goes out with it
+        // (D15): every member must see both branches.
+        let frontier = op_log::own_frontier(&cert, &set, &held, me.as_ref());
         let bytes = rekindle_codec::governance_op::encode_frontier(&frontier)
             .map_err(|e| format!("frontier: {e}"))?;
         let lease = self

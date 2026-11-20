@@ -13,6 +13,7 @@ use rekindle_types::id::PseudonymKey;
 
 fn frontier() -> Vec<u8> {
     rekindle_codec::governance_op::encode_frontier(&Frontier {
+        fork_proof: Vec::new(),
         heads: vec![OpRef {
             op_hash: OpHash([7; 32]),
             author: PseudonymKey([1; 32]),
@@ -87,6 +88,7 @@ fn fetchable() -> (Vec<u8>, Vec<u8>) {
     let hash = rekindle_governance::op::op_hash(&unsigned, &op.sig);
     let encoded = rekindle_codec::governance_op::encode_op(&op).expect("op encodes");
     let frontier = rekindle_codec::governance_op::encode_frontier(&Frontier {
+        fork_proof: Vec::new(),
         heads: vec![OpRef {
             op_hash: hash,
             author: PseudonymKey([1; 32]),
@@ -217,6 +219,7 @@ fn converging_as(
     let held = op_log::held(&op, "VLD0:m".into(), encoded, op_log::OpFate::Applied);
     let known = BTreeSet::from([op.hash()]);
     let bytes = rekindle_codec::governance_op::encode_frontier(&Frontier {
+        fork_proof: Vec::new(),
         heads: vec![op.op_ref("VLD0:m")],
         roster_checksum: checksum,
     })
@@ -370,7 +373,7 @@ fn our_frontier_carries_the_checksum_of_its_heads_merge() {
         op_log::OpFate::Applied,
     )];
     let set = op_log::verify_held("A", &held);
-    let frontier = op_log::own_frontier(&cert, &set);
+    let frontier = op_log::own_frontier(&cert, &set, &[], None);
     assert_eq!(frontier.heads, vec![op.op_ref("VLD0:m")]);
     assert_eq!(
         frontier.roster_checksum,

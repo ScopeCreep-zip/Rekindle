@@ -334,3 +334,60 @@ fn a_quarantined_op_raises_one_governance_op_quarantined_event() {
         "already held quarantined: shown once"
     );
 }
+
+/// A restored backup that holds both of its ops at one seq publishes both
+/// as its frontier's fork proof (D15, plan E3.2 S7d): its op log keeps one
+/// op per seq, so a frontier naming only heads hid the branch the log lost.
+/// Another author's frontier, or ours with no fork, carries no proof.
+#[test]
+fn our_own_fork_goes_out_as_the_frontiers_fork_proof() {
+    let key = SigningKey::from_bytes(&[7; 32]);
+    let cert = cert(&key);
+    let state = GovernanceState::default();
+    let build = |set: &VerifiedSet, name: &str, at: u64| {
+        build_op(
+            "A",
+            &cert,
+            &state,
+            set,
+            &key,
+            meta(name),
+            Deps::Frontier,
+            at,
+        )
+        .unwrap()
+    };
+    let (first, first_bytes) = build(&VerifiedSet::default(), "a", 5);
+    let held_first = held(&first, "m".into(), first_bytes, OpFate::Applied);
+    let base = verify_held("A", std::slice::from_ref(&held_first));
+    let (left, left_bytes) = build(&base, "b", 6);
+    let (right, right_bytes) = build(&base, "c", 7);
+    let me = first.author().clone();
+    let clean = own_frontier(&cert, &base, std::slice::from_ref(&held_first), Some(&me));
+    assert!(clean.fork_proof.is_empty(), "no fork, no proof");
+    let held_all = [
+        held_first,
+        held(&left, "m".into(), left_bytes.clone(), OpFate::Applied),
+        held(&right, "m".into(), right_bytes.clone(), OpFate::Applied),
+    ];
+    let set = verify_held("A", &held_all);
+    let ours = own_frontier(&cert, &set, &held_all, Some(&me));
+    let mut proof = ours.fork_proof.clone();
+    proof.sort();
+    let mut want = vec![left_bytes, right_bytes];
+    want.sort();
+    assert_eq!(proof, want, "both branches of our fork");
+    let encoded = rekindle_codec::governance_op::encode_frontier(&ours).unwrap();
+    assert_eq!(
+        rekindle_codec::governance_op::decode_frontier(&encoded).unwrap(),
+        ours,
+        "the proof survives the wire"
+    );
+    let other = PseudonymKey([9; 32]);
+    assert!(own_frontier(&cert, &set, &held_all, Some(&other))
+        .fork_proof
+        .is_empty());
+    assert!(own_frontier(&cert, &set, &held_all, None)
+        .fork_proof
+        .is_empty());
+}

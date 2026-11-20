@@ -205,6 +205,17 @@ async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
     // stored: a head that did not fetch keeps the frontier unread, so the
     // next inspect reads it again although its seq has not moved.
     let mut stored = 0;
+    // A member's own fork first (D15, plan E3.2 S7d): its op log serves
+    // one branch at the forked seq, so the other is stored from the proof,
+    // verified and bounded as a gossiped op is.
+    for encoded in &frontier.fork_proof {
+        if let Some(hash) =
+            crate::op_receive::store_received_op(deps, community_id, encoded.clone()).await?
+        {
+            known.insert(hash);
+            stored += 1;
+        }
+    }
     let mut complete = true;
     let logs = op_log::WalkLogCache::default();
     for op_ref in &frontier.heads {
@@ -255,7 +266,7 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
     let set = op_log::verify_held_with(deps, community_id, &held);
     // Heads and checksum from one merge of the op set, as the writer's
     // (`op_log::own_frontier`): a rebuild still pending is not a mismatch.
-    let ours = op_log::own_frontier(&cert, &set);
+    let ours = op_log::own_frontier(&cert, &set, &held, None);
     let heads = |f: &Frontier| -> BTreeSet<OpHash> { f.heads.iter().map(|r| r.op_hash).collect() };
     if heads(&ours) != heads(frontier) {
         return Ok(());

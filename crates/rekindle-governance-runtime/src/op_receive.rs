@@ -84,14 +84,39 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
     let Ok(read) = read_op(&encoded) else {
         return Ok(false);
     };
-    let decoded = match read {
-        ReadOp::Known(decoded) => *decoded,
-        ReadOp::Unknown(_) => return receive_uninterpretable(deps, community_id, encoded).await,
+    if matches!(read, ReadOp::Unknown(_)) {
+        return receive_uninterpretable(deps, community_id, encoded).await;
+    }
+    if store_received_op(deps, community_id, encoded)
+        .await?
+        .is_none()
+    {
+        return Ok(false);
+    }
+    crate::dht_hydration::rebuild_governance(deps, community_id).await;
+    Ok(true)
+}
+
+/// Store an interpretable op received off our author logs (gossip, or a
+/// frontier's fork proof) when it is new, its author's member record is
+/// known and it does not verify as refused, with no rebuild: the caller
+/// rebuilds. Its hash when stored.
+///
+/// # Errors
+/// No cert is pinned, or the op store failed.
+pub async fn store_received_op<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    encoded: Vec<u8>,
+) -> Result<Option<OpHash>, GovernanceRuntimeError> {
+    let Ok(ReadOp::Known(decoded)) = read_op(&encoded) else {
+        return Ok(None);
     };
+    let decoded = *decoded;
     let hash = op_hash(&decoded.unsigned, &decoded.op.sig);
     let mut held = deps.governance_ops(community_id).await?;
     if held.iter().any(|op| op.hash == hash) {
-        return Ok(false);
+        return Ok(None);
     }
     let cert = deps
         .genesis_cert(community_id)
@@ -104,10 +129,10 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
         _ => author_record(&cert, &state, &decoded.op.author),
     };
     let Some(author_record) = record else {
-        return Ok(false);
+        return Ok(None);
     };
     if !receive_bounded(&decoded.op, &state) {
-        return Ok(false);
+        return Ok(None);
     }
     let mut op = HeldOp {
         hash,
@@ -122,14 +147,13 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
     held.push(op.clone());
     let set = verify_held_with(deps, community_id, &held);
     if set.quarantined.contains(&hash) {
-        return Ok(false);
+        return Ok(None);
     }
     if let Some(verified) = set.ops.iter().find(|v| v.hash() == hash) {
         op.lamport = verified.lamport();
     }
     deps.store_governance_op(community_id, &op).await?;
-    crate::dht_hydration::rebuild_governance(deps, community_id).await;
-    Ok(true)
+    Ok(Some(hash))
 }
 
 /// [`receive_op`] for an op this reader cannot interpret: stored, when new

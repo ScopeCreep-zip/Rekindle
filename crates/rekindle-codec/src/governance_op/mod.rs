@@ -35,6 +35,10 @@ pub const GOVERNANCE_OP_MAX_BYTES: usize = MAX_SUBKEY_VALUE_LEN;
 /// one `Frontier` value.
 pub const GOVERNANCE_OP_MAX_DEPS: usize = MAX_FRONTIER_REFS;
 
+/// The most ops a `Frontier`'s fork proof carries: the two ops of one fork,
+/// all D15 needs to see an equivocation.
+pub const MAX_FORK_PROOF_OPS: usize = 2;
+
 /// A decoded op and the canonical unsigned bytes its signature covers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedOp {
@@ -253,9 +257,19 @@ pub fn encode_frontier(value: &Frontier) -> Result<Vec<u8>, CodecError> {
     let mut b = builder.init_root::<frontier::Builder<'_>>();
     b.set_roster_checksum(&value.roster_checksum.0);
     let count = u32::try_from(value.heads.len()).unwrap_or(u32::MAX);
-    let mut list = b.init_heads(count);
+    let mut list = b.reborrow().init_heads(count);
     for (i, head) in (0..count).zip(&value.heads) {
         write_op_ref(list.reborrow().get(i), head);
+    }
+    check_len(
+        "frontier fork proof",
+        value.fork_proof.len(),
+        MAX_FORK_PROOF_OPS,
+    )?;
+    let count = u32::try_from(value.fork_proof.len()).unwrap_or(u32::MAX);
+    let mut proof = b.init_fork_proof(count);
+    for (i, op) in (0..count).zip(&value.fork_proof) {
+        proof.set(i, op);
     }
     let out = pack(&builder);
     check_len("frontier", out.len(), MAX_SUBKEY_VALUE_LEN)?;
@@ -281,9 +295,21 @@ pub fn decode_frontier(data: &[u8]) -> Result<Frontier, CodecError> {
         data_field(r.get_roster_checksum())?,
         "frontier roster checksum",
     )?);
+    let proof = r.get_fork_proof().map_err(|e| capnp_err(&e))?;
+    let count = usize::try_from(proof.len()).unwrap_or(usize::MAX);
+    if count > MAX_FORK_PROOF_OPS {
+        return Err(CodecError::Deserialization(format!(
+            "frontier fork proof has {count} ops, the bound is {MAX_FORK_PROOF_OPS}"
+        )));
+    }
+    let fork_proof = proof
+        .iter()
+        .map(|op| data_field(op).map(<[u8]>::to_vec))
+        .collect::<Result<_, _>>()?;
     Ok(Frontier {
         heads: heads.iter().map(read_op_ref).collect::<Result<_, _>>()?,
         roster_checksum,
+        fork_proof,
     })
 }
 

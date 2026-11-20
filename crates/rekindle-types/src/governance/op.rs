@@ -42,6 +42,12 @@ pub struct RosterChecksum(pub [u8; 32]);
 pub struct Frontier {
     pub heads: Vec<OpRef>,
     pub roster_checksum: RosterChecksum,
+    /// The encoded, signed ops of the member's own fork (D15, plan E3.2
+    /// S7d): its two ops at the lowest seq it signed twice, empty when it
+    /// never equivocated. Its op log holds one op per seq, so a restored
+    /// backup that finds its own fork publishes both branches here and every
+    /// reader verifies and stores them, never only the branch the log kept.
+    pub fork_proof: Vec<Vec<u8>>,
 }
 
 /// One signed governance op.

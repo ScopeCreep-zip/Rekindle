@@ -424,13 +424,45 @@ pub async fn fetch_held<D: GovernanceRuntimeDeps>(
 /// compares a peer's frontier against it, so a state whose rebuild is
 /// still pending (the installed state behind the op store) neither
 /// publishes nor compares a checksum of fewer ops than its heads name.
+///
+/// When `me` signed two ops at one seq (a restored backup, D15), the
+/// frontier also carries both as its fork proof ([`own_fork_proof`]): our
+/// op log keeps one op per seq, so a reader fetching the other branch from
+/// it would never see the fork.
 #[must_use]
-pub fn own_frontier(cert: &GenesisCert, set: &VerifiedSet) -> Frontier {
+pub fn own_frontier(
+    cert: &GenesisCert,
+    set: &VerifiedSet,
+    held: &[HeldOp],
+    me: Option<&PseudonymKey>,
+) -> Frontier {
     let merged = merge::merge(cert, &set.ops);
     Frontier {
         heads: frontier_refs(cert, &merged, set),
         roster_checksum: roster_checksum(&merged),
+        fork_proof: me
+            .map(|me| own_fork_proof(set, held, me))
+            .unwrap_or_default(),
     }
+}
+
+/// The encoded ops `me` signed at the lowest seq it signed more than once,
+/// the two lowest hashes there (D15's proof is two signed ops at one seq);
+/// empty when every seq of ours holds one op.
+#[must_use]
+pub fn own_fork_proof(set: &VerifiedSet, held: &[HeldOp], me: &PseudonymKey) -> Vec<Vec<u8>> {
+    let mut by_seq: std::collections::BTreeMap<u64, BTreeSet<OpHash>> = Default::default();
+    for op in set.ops.iter().filter(|op| op.author() == me) {
+        by_seq.entry(op.op().seq).or_default().insert(op.hash());
+    }
+    let Some(fork) = by_seq.into_values().find(|hashes| hashes.len() > 1) else {
+        return Vec::new();
+    };
+    fork.iter()
+        .take(rekindle_codec::governance_op::MAX_FORK_PROOF_OPS)
+        .filter_map(|hash| held.iter().find(|op| op.hash == *hash))
+        .map(|op| op.encoded.clone())
+        .collect()
 }
 
 /// Our `Frontier` (`M`/3): the heads of the verified set as `OpRef`s, in

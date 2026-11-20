@@ -23,10 +23,14 @@ struct OpRef {
 # of the op DAG starts at the inviter's frontier. `rosterChecksum` is
 # BLAKE3 derive_key(rekindle-gov-roster-checksum-v1) over the canonical
 # encoding of the member's merged roster and role tables (D15): a reader
-# whose heads equal these compares it with its own.
+# whose heads equal these compares it with its own. `forkProof` holds the
+# signed bytes of the member's own two ops at the seq where it equivocated
+# (D15, S7d), at most 2, empty otherwise: the op log keeps one op per seq,
+# so the other branch is fetchable only from here.
 struct Frontier {
   heads @0 :List(OpRef);
   rosterChecksum @1 :Data;     # 32 bytes
+  forkProof @2 :List(Data);
 }
 
 struct GovernanceOp {

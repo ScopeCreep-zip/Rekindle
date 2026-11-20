@@ -512,6 +512,7 @@ fn a_full_frontier_round_trips_under_the_subkey_cap() {
         })
         .collect();
     let value = rekindle_types::governance::Frontier {
+        fork_proof: Vec::new(),
         heads: heads.clone(),
         roster_checksum: rekindle_types::governance::RosterChecksum([0x3C; 32]),
     };
@@ -529,6 +530,7 @@ fn a_full_frontier_round_trips_under_the_subkey_cap() {
 fn a_frontier_carries_its_roster_checksum() {
     use rekindle_types::governance::{Frontier, RosterChecksum};
     let value = Frontier {
+        fork_proof: Vec::new(),
         heads: vec![OpRef {
             op_hash: OpHash([1; 32]),
             author: pk(2),
