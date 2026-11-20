@@ -26,7 +26,7 @@ use rekindle_types::dto::skin::{FrameTile, SkinWindow, TileAxis, WindowLayout};
 use super::super::tree::Node;
 use super::super::ImportError;
 use super::tiles::normal_set;
-use super::{descendants, stack, tiles, Windows};
+use super::{descendants, row_decor, stack, tiles, Windows};
 use crate::shape;
 
 /// The names a frame row goes by (Symbiosis `TopRow`/`BottomRow`).
@@ -174,6 +174,15 @@ pub fn apply(
         }
         built.1.insert(t.image.clone(), png);
         built.0.tiles.push(t);
+    }
+    for tile in layout.children_named("Tile") {
+        let Some(component) = tile
+            .attr_ci("Component")
+            .and_then(|c| by_name.get(&c.to_ascii_lowercase()))
+        else {
+            continue;
+        };
+        row_decor::add(window, tile, component, &piece, built)?;
     }
     Ok(())
 }

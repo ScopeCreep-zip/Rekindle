@@ -60,7 +60,6 @@ use super::xfire_xml::ColourRow;
 use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
-use crate::shape;
 use frame::read_frame;
 pub use frame::{Frame, Shape, FRAME, MIDDLE_FRAME, OUTER_FRAME, SHAPES};
 use ini::{Ini, Section};
@@ -483,11 +482,7 @@ pub fn import(
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
     // The skin file is the main window's (`MainSkin`); its frame is the
     // buddy list's outline (plan SK0 S1).
-    let main = read
-        .frame
-        .as_ref()
-        .map(|f| shape::from_nine(SkinWindow::Main, &f.pieces))
-        .transpose()?;
+    let main = read.frame.as_ref().map(frame::main_layout).transpose()?;
     let layout = main.as_ref().map(|(l, _)| l);
     let manifest = manifest(id, &read, (&source, tree), skin_base, credit, layout);
     let manifest_json = serde_json::to_vec(&manifest).map_err(|e| ImportError::Format {

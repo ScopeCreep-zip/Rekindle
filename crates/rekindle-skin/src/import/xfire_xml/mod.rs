@@ -33,6 +33,7 @@ pub mod controls;
 mod decor;
 mod notice;
 pub mod refs;
+mod row_decor;
 mod sources;
 mod stack;
 pub mod surfaces;

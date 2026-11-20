@@ -125,12 +125,18 @@ pub fn from_nine(
             tiles.push(t);
         }
     }
-    let band = |a: usize, b: usize, c: usize, f: &dyn Fn(usize) -> u32| f(a).max(f(b)).max(f(c));
+    // The content lies below the top row and above the bottom row (each as
+    // tall as its tallest piece, so no corner reaches into it) and between
+    // the side edges: a side's inset is its edge piece's width, never a
+    // corner's (xfire-classic's 117 px bottom corners belong to the bottom
+    // row, beneath the content; plan SK0 S2 finding), as the row stack's
+    // content row (`import/xfire_xml/stack.rs`).
+    let band = |a: usize, b: usize, c: usize| h(a).max(h(b)).max(h(c));
     let content = Insets {
-        top: u16_of(&file, band(0, 1, 2, &h))?,
-        right: u16_of(&file, band(2, 5, 8, &w))?,
-        bottom: u16_of(&file, band(6, 7, 8, &h))?,
-        left: u16_of(&file, band(0, 3, 6, &w))?,
+        top: u16_of(&file, band(0, 1, 2))?,
+        right: u16_of(&file, w(5))?,
+        bottom: u16_of(&file, band(6, 7, 8))?,
+        left: u16_of(&file, w(3))?,
     };
     let min_width = (w(0) + w(2))
         .max(w(6) + w(8))

@@ -9,9 +9,12 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, RegionState};
 
 use super::super::xfire_xml::{bitmap, ColourRow};
+use rekindle_types::dto::skin::{SkinWindow, TileAxis, WindowLayout};
+
 use super::super::{ImportError, Tree};
-use super::ini::Ini;
+use super::ini::{Ini, Section};
 use super::{resolve, STATES};
+use crate::shape;
 
 /// A frame shape: its pieces in [`bitmap::NINE`] order, (section, key);
 /// `None` is the transparent middle.
@@ -76,6 +79,8 @@ pub struct Frame {
     /// The normal state's nine pieces, uncomposed: the main window's
     /// frame tiles (plan SK0 S1).
     pub pieces: [RgbaImage; 9],
+    /// The windows laid beneath the frame pieces ([`Background`]).
+    pub backgrounds: Vec<Background>,
 }
 
 /// One state's pieces (decoded only when all eight are named), shifted and
@@ -130,7 +135,10 @@ pub(super) fn read_frame(
     aliases: &BTreeMap<String, String>,
 ) -> Result<Option<Frame>, ImportError> {
     for shape in SHAPES {
-        if let Some(f) = read_shape(tree, skin, shape, colours, aliases)? {
+        if let Some(mut f) = read_shape(tree, skin, shape, colours, aliases)? {
+            if let Some(main) = skin.section("MainWindow") {
+                f.backgrounds = backgrounds(tree, skin, main, colours, aliases)?;
+            }
             return Ok(Some(f));
         }
     }
@@ -167,6 +175,7 @@ fn read_shape(
                     files,
                     skipped: Vec::new(),
                     pieces,
+                    backgrounds: Vec::new(),
                 });
             }
             None => {}
@@ -181,4 +190,99 @@ fn read_shape(
         }
     }
     Ok(frame)
+}
+
+/// A `[MainWindow]` window stretched to the window less its indents whose
+/// section lays one tiled `Graphics.middle` image (Alloy's `MAINBG`:
+/// `Alloy.ini` `Window19` `Z=-1 X=5 Y=5 IndentRight=5 IndentBottom=5`,
+/// `[MAINBG] Graphics.middle=MAINBG`). Xfire draws it beneath the frame
+/// pieces, so it fills their keyed holes: it is part of the window's
+/// outline (plan SK0 S1e), a decoration (its `Z`, a negative one as 0).
+#[derive(Debug)]
+pub struct Background {
+    pub name: String,
+    pub image: RgbaImage,
+    /// `X`, `Y`, `IndentRight`, `IndentBottom`, px.
+    pub at: [u16; 4],
+    pub z: u8,
+}
+
+fn backgrounds(
+    tree: &Tree,
+    skin: &Ini,
+    main: &Section,
+    colours: &[ColourRow],
+    aliases: &BTreeMap<String, String>,
+) -> Result<Vec<Background>, ImportError> {
+    let mut out = Vec::new();
+    for e in &main.entries {
+        let Some(n) = e
+            .key
+            .strip_prefix("Window")
+            .and_then(|k| k.strip_suffix(".Name"))
+        else {
+            continue;
+        };
+        let get = |k: &str| main.get(&format!("Window{n}.{k}"));
+        let num = |k: &str| get(k).map_or(Some(0), |v| v.trim().parse::<u16>().ok());
+        let stretched = get("ResizeX") == Some("100") && get("ResizeY") == Some("100");
+        let at = [num("X"), num("Y"), num("IndentRight"), num("IndentBottom")];
+        let (true, [Some(x), Some(y), Some(r), Some(b)]) = (stretched, at) else {
+            continue;
+        };
+        let Some(s) = skin.section(e.value.trim()) else {
+            continue;
+        };
+        let sides = ["left", "right", "top", "bottom"];
+        let (Some(value), false) = (
+            s.get("Graphics.middle"),
+            sides
+                .iter()
+                .any(|k| s.get(&format!("Graphics.{k}")).is_some()),
+        ) else {
+            continue;
+        };
+        let (file, bytes) = resolve(tree, value, aliases)?;
+        let mut image = bitmap::decode(file, bytes)?;
+        let by = s
+            .get("Graphics.ColorGroup")
+            .and_then(|c| colours.iter().find(|r| r.name == c))
+            .map_or([0; 3], |r| r.value);
+        bitmap::shift(&mut image, by);
+        let z = get("Z")
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        out.push(Background {
+            name: e.value.trim().to_ascii_lowercase(),
+            image,
+            at: [x, y, r, b],
+            z: u8::try_from(z.clamp(0, 255)).unwrap_or(0),
+        });
+    }
+    Ok(out)
+}
+
+/// The buddy list's layout: the nine pieces, then each background tiled
+/// over the window less its indents as a decoration.
+///
+/// # Errors
+/// Pieces that do not compose, or an image too large for a tile.
+pub fn main_layout(f: &Frame) -> Result<(WindowLayout, BTreeMap<String, Vec<u8>>), ImportError> {
+    let w = SkinWindow::Main;
+    let (mut layout, mut files) = shape::from_nine(w, &f.pieces)?;
+    for bg in &f.backgrounds {
+        let [x, y, r, b] = bg.at;
+        let axes = (
+            TileAxis::Repeat { start: x, end: r },
+            TileAxis::Repeat { start: y, end: b },
+        );
+        let name = format!("bg-{}", bg.name);
+        let Some((mut t, png)) = shape::tile(w, &name, &bg.image, axes, true)? else {
+            continue;
+        };
+        t.decoration = Some(bg.z);
+        files.insert(t.image.clone(), png);
+        layout.tiles.push(t);
+    }
+    Ok((layout, files))
 }

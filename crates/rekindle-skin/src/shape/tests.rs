@@ -119,6 +119,21 @@ fn a_well_formed_frame_passes() {
 }
 
 #[test]
+fn the_content_sides_are_the_edge_pieces_not_the_corners() {
+    // xfire-classic: 117 px bottom corners hold console art in the bottom
+    // row, the side edges 7 and 6 px (plan SK0 S2 finding).
+    let mut pieces = nine();
+    pieces[3] = solid(7, 2);
+    pieces[5] = solid(6, 2);
+    pieces[6] = solid(117, 9);
+    pieces[8] = solid(115, 9);
+    let (layout, _) = from_nine(SkinWindow::Main, &pieces).unwrap();
+    let c = layout.content;
+    assert_eq!((c.top, c.right, c.bottom, c.left), (4, 6, 9, 7));
+    assert_eq!(checked(&pieces, |_| {}), Ok(()));
+}
+
+#[test]
 fn an_enclosed_gap_in_the_frame_band_is_allowed() {
     // Lead decision (a): transparency in the frame band, enclosed or not,
     // is Xfire's (gaps under short top pieces in Alloy and Combat).
@@ -214,6 +229,9 @@ fn golden(id: &str, size: (u32, u32)) -> (usize, Vec<Rect>) {
 
 #[test]
 fn builtin_silhouettes_match_their_goldens() {
+    // Each at its reference's main window size; Onyx's MenuBar row
+    // decoration fills y 110-127, Alloy's MAINBG the side band, and
+    // Combat keeps the 7 px holes its reference shows (x 11-17, x 323-329).
     let got: Vec<_> = [
         ("builtin:xfire-classic", (605, 412)),
         ("builtin:spacecowboy", (365, 549)),
@@ -223,6 +241,9 @@ fn builtin_silhouettes_match_their_goldens() {
         ("builtin:xslimfire", (330, 492)),
         ("builtin:simple-x", (340, 430)),
         ("builtin:xglow", (350, 378)),
+        ("builtin:onyx", (380, 437)),
+        ("builtin:alloy", (330, 500)),
+        ("builtin:combat", (340, 489)),
     ]
     .into_iter()
     .map(|(id, size)| (id, golden(id, size)))
@@ -231,25 +252,18 @@ fn builtin_silhouettes_match_their_goldens() {
         (
             "builtin:xfire-classic",
             (
-                112,
+                113,
                 vec![r(69, 0, 467, 1), r(62, 1, 481, 1), r(56, 2, 493, 1)],
             ),
         ),
-        // The decorations SCLogo (0,1), AGEAR and IGEAR (bottom corners,
-        // Z=4) over the frame band: the logo's top at y 6, the mechs below.
         (
             "builtin:spacecowboy",
-            (293, vec![r(41, 6, 3, 1), r(40, 7, 5, 10), r(16, 17, 19, 1)]),
+            (314, vec![r(41, 6, 3, 1), r(40, 7, 5, 10), r(16, 17, 19, 1)]),
         ),
-        // The Sides shape (bottom row typed by position): rounded corners,
-        // 7 px at the top, as the reference.
         (
             "builtin:symbiosis",
-            // The frame 386 px wide, the 13 px IndentRight outset beside it
-            // holding the Infoview tab (13×115, centred down the window).
             (39, vec![r(7, 0, 372, 1), r(5, 1, 376, 1), r(4, 2, 378, 1)]),
         ),
-        // The T.C plaque (72 px opaque top, centred) over the title row.
         (
             "builtin:total-chaos",
             (
@@ -257,7 +271,6 @@ fn builtin_silhouettes_match_their_goldens() {
                 vec![r(199, 0, 72, 2), r(168, 2, 134, 1), r(167, 3, 136, 1)],
             ),
         ),
-        // Rounded top corners, the frame band opaque, as the references.
         (
             "builtin:stealthx",
             (11, vec![r(6, 0, 368, 1), r(4, 1, 372, 1), r(3, 2, 374, 1)]),
@@ -266,11 +279,22 @@ fn builtin_silhouettes_match_their_goldens() {
             "builtin:xslimfire",
             (11, vec![r(6, 0, 318, 1), r(4, 1, 322, 1), r(3, 2, 324, 1)]),
         ),
-        // Square corners: the window rectangle.
         ("builtin:simple-x", (1, vec![r(0, 0, 340, 430)])),
         (
             "builtin:xglow",
             (13, vec![r(5, 0, 340, 1), r(4, 1, 342, 1), r(3, 2, 344, 1)]),
+        ),
+        (
+            "builtin:onyx",
+            (7, vec![r(4, 0, 372, 1), r(2, 1, 376, 1), r(1, 2, 378, 2)]),
+        ),
+        (
+            "builtin:alloy",
+            (21, vec![r(10, 0, 311, 1), r(9, 1, 313, 1), r(8, 2, 315, 1)]),
+        ),
+        (
+            "builtin:combat",
+            (46, vec![r(8, 0, 324, 1), r(6, 1, 329, 1), r(4, 2, 332, 1)]),
         ),
     ];
     assert_eq!(got, want);
