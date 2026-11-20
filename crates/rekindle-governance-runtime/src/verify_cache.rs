@@ -46,6 +46,8 @@ struct Inner {
     verdicts: HashMap<OpHash, Verdict>,
     /// How many times `VerifiedOp::verify` ran through this cache.
     verifications: u64,
+    /// The reads' units of work ([`OpVerifyCache::walk_steps`]).
+    walk_steps: u64,
 }
 
 /// One community's op verdicts by hash. Owned per community by the Host
@@ -61,6 +63,16 @@ impl OpVerifyCache {
     #[must_use]
     pub fn verifications(&self) -> u64 {
         self.inner.lock().verifications
+    }
+
+    /// The units of work reads through this cache have done: one per held
+    /// op decoded, per readiness check of an op in a pass, and per
+    /// dependent visited when an op is verified. A read's cost in the
+    /// machine-independent unit its tests assert growth in
+    /// (`tests/verify_held_cost.rs`): linear in the ops and their deps.
+    #[must_use]
+    pub fn walk_steps(&self) -> u64 {
+        self.inner.lock().walk_steps
     }
 
     /// How many verdicts are kept.
@@ -103,6 +115,8 @@ struct Walk<'a> {
     kept: HashMap<OpHash, Verdict>,
     fresh: HashMap<OpHash, Verdict>,
     verifications: u64,
+    /// This read's units of work, added to the cache's `walk_steps`.
+    steps: u64,
     known: HashMap<OpHash, VerifiedOp>,
     /// This read's ops whose signature and proofs passed and which wait on
     /// a dep (`verify` checks those first): not a verdict, never kept.
@@ -114,6 +128,7 @@ impl Walk<'_> {
     /// The step for entry `i` in this pass; `ready` exactly when every hash
     /// it waits on was verified in an earlier pass.
     fn step(&mut self, i: usize) -> Step {
+        self.steps += 1;
         let ready = self.unmet[i] == 0;
         let (hash, op, unsigned) = &self.entries[i];
         match self.kept.get(hash) {
@@ -164,7 +179,9 @@ impl Walk<'_> {
 pub fn verify_held_cached(anchor: &str, held: &[HeldOp], cache: &OpVerifyCache) -> VerifiedSet {
     let mut set = VerifiedSet::default();
     let mut entries: Vec<(OpHash, GovernanceOp, Vec<u8>)> = Vec::new();
+    let mut decodes: u64 = 0;
     for op in held {
+        decodes += 1;
         match decode_op(&op.encoded) {
             Ok(decoded) if op_hash(&decoded.unsigned, &decoded.op.sig) == op.hash => {
                 entries.push((op.hash, decoded.op, decoded.unsigned));
@@ -195,6 +212,7 @@ pub fn verify_held_cached(anchor: &str, held: &[HeldOp], cache: &OpVerifyCache) 
         kept,
         fresh: HashMap::new(),
         verifications: 0,
+        steps: decodes,
         known: HashMap::new(),
         authentic: HashSet::new(),
         unmet,
@@ -225,6 +243,7 @@ pub fn verify_held_cached(anchor: &str, held: &[HeldOp], cache: &OpVerifyCache) 
             let hash = verified.hash();
             if walk.known.insert(hash, verified).is_none() {
                 for &d in dependents.get(&hash).into_iter().flatten() {
+                    walk.steps += 1;
                     walk.unmet[d] -= 1;
                     if walk.unmet[d] == 0 && !decided[d] {
                         next.push(d);
@@ -242,6 +261,7 @@ pub fn verify_held_cached(anchor: &str, held: &[HeldOp], cache: &OpVerifyCache) 
         inner.verdicts.extend(walk.fresh);
         inner.verdicts.retain(|h, _| held_hashes.contains(h));
         inner.verifications += walk.verifications;
+        inner.walk_steps += walk.steps;
     }
     let waiting: Vec<&(OpHash, GovernanceOp, Vec<u8>)> = (walk.entries.iter())
         .zip(&decided)

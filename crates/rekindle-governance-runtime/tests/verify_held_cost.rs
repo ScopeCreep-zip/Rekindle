@@ -9,6 +9,13 @@
 //! chain of n ops is n levels, n²/2 readiness checks (10,000 ops: ~60 s on
 //! a Mac debug build). It is a ready queue now (Kahn's algorithm), linear
 //! in the ops and their deps.
+//!
+//! The growth is asserted in work, not time (plan PT1): the cache counts a
+//! read's units of work ([`OpVerifyCache::walk_steps`]: decodes, readiness
+//! checks, dependent visits), which no machine load changes. Wall-clock
+//! ratios failed under a loaded gate (42 / 82 / 240 ms) while passing alone.
+//! The absolute cost stays guarded by the 10,000-op callee window below and
+//! by `walk_cpu_budget.rs`.
 
 use std::time::{Duration, Instant};
 
@@ -61,30 +68,27 @@ fn chain(len: u64) -> Vec<HeldOp> {
     held
 }
 
-/// A warm read of `held`: every verdict kept by a first read.
-fn warm_read(held: &[HeldOp]) -> Duration {
+/// A warm read of `held` (every verdict kept by a first read): its wall
+/// time and its units of work.
+fn warm_read(held: &[HeldOp]) -> (Duration, u64) {
     let cache = OpVerifyCache::default();
     let cold = verify_held_cached(ANCHOR, held, &cache);
     assert_eq!(cold.ops.len(), held.len());
     let verifications = cache.verifications();
+    let steps = cache.walk_steps();
     let started = Instant::now();
     let warm = verify_held_cached(ANCHOR, held, &cache);
     let elapsed = started.elapsed();
     assert_eq!(cache.verifications(), verifications, "every verdict kept");
     assert_eq!(warm.ops, cold.ops);
     assert!(warm.pending.is_empty() && warm.quarantined.is_empty());
-    elapsed
-}
-
-/// The fastest of three warm reads, so a scheduler hiccup does not count.
-fn best_warm_read(held: &[HeldOp]) -> Duration {
-    (0..3).map(|_| warm_read(held)).min().unwrap()
+    (elapsed, cache.walk_steps() - steps)
 }
 
 #[test]
 fn a_warm_read_of_a_ten_thousand_op_chain_meets_the_callee_window() {
     let held = chain(10_000);
-    let elapsed = warm_read(&held);
+    let (elapsed, _) = warm_read(&held);
     assert!(
         elapsed < TEN_K_BUDGET,
         "10,000-op warm read took {elapsed:?}, budget {TEN_K_BUDGET:?}"
@@ -93,16 +97,20 @@ fn a_warm_read_of_a_ten_thousand_op_chain_meets_the_callee_window() {
 
 #[test]
 fn a_warm_read_grows_linearly_with_the_chain() {
-    let times: Vec<(u64, Duration)> = [1_000, 2_000, 4_000]
+    let work: Vec<(u64, u64)> = [1_000, 2_000, 4_000]
         .into_iter()
-        .map(|len| (len, best_warm_read(&chain(len))))
+        .map(|len| (len, warm_read(&chain(len)).1))
         .collect();
-    let (two_k, four_k) = (times[1].1, times[2].1);
-    // Doubling the chain at most ~doubles the read (4× when quadratic).
-    // Measured on the Mac (debug): 0.53 / 2.07 / 8.33 s before the ready
-    // queue, 44 / 85 / 164 ms after.
-    assert!(
-        four_k.as_secs_f64() < 2.5 * two_k.as_secs_f64(),
-        "warm reads {times:?}: 4,000 ops took more than 2.5× 2,000"
-    );
+    // Doubling the chain doubles the work (4× when quadratic): a chain of
+    // n ops is n decodes, 2n − 1 readiness checks (all n in the first pass,
+    // then one per level) and n − 1 dependent visits, 4n − 2 in all. The
+    // per-level walk did n(n + 1)/2 checks (1,000 ops: 502,499 units).
+    for pair in work.windows(2) {
+        let ((short, short_work), (long, long_work)) = (pair[0], pair[1]);
+        assert!(short_work > 0, "warm reads {work:?}: no work counted");
+        assert!(
+            long_work * 100 <= short_work * 205,
+            "warm reads {work:?}: {long} ops did more than 2.05× the work of {short}"
+        );
+    }
 }
