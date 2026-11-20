@@ -12,6 +12,7 @@
   .xfire-titlebar-text,
   .xfire-titlebar-btn {
     background-image: linear-gradient(var(--skin-region-titlebar-backing), var(--skin-region-titlebar-backing));
+    background-clip: content-box;
   }
   :where(:root[data-window-inactive]) .xfire-titlebar {
     border-image: var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar));
@@ -23,6 +24,7 @@
   .buddy-list-window > .status-bar .status-picker,
   .buddy-list-window > .status-bar .network-indicator {
     background-image: linear-gradient(var(--skin-region-statusbar-backing), var(--skin-region-statusbar-backing));
+    background-clip: content-box;
   }
   .status-picker-arrow {
     border-image: var(--skin-region-statusbar-arrow);
@@ -42,14 +44,18 @@
   }
   .buddy-list-window .menu-bar-item {
     background-image: linear-gradient(var(--skin-region-buddylist-menubar-backing), var(--skin-region-buddylist-menubar-backing));
+    background-clip: content-box;
   }
   .buddy-list-window .identity-bar {
     border-image: var(--skin-region-buddylist-infobar);
     image-rendering: pixelated;
   }
-  .buddy-list-window .identity-bar-top-row,
+  .buddy-list-window .identity-bar-name,
+  .buddy-list-window .identity-bar-key,
+  .buddy-list-window .identity-bar-game,
   .buddy-list-window .identity-bar-status-msg {
     background-image: linear-gradient(var(--skin-region-buddylist-infobar-backing), var(--skin-region-buddylist-infobar-backing));
+    background-clip: content-box;
   }
   .buddy-tab {
     border-image: var(--skin-region-buddylist-tab);
@@ -90,6 +96,7 @@
   }
   .buddy-group-header > span {
     background-image: linear-gradient(var(--skin-region-buddylist-group-header-backing), var(--skin-region-buddylist-group-header-backing));
+    background-clip: content-box;
   }
   .buddy-group-header:hover {
     border-image: var(--skin-region-buddylist-group-header--hover, var(--skin-region-buddylist-group-header));
@@ -100,6 +107,7 @@
   }
   .buddy-list-window .buddy-item-selected .buddy-item-content {
     background-image: linear-gradient(var(--skin-region-buddylist-row-selected-backing), var(--skin-region-buddylist-row-selected-backing));
+    background-clip: content-box;
   }
   .buddy-list-window .action-bar {
     border-image: var(--skin-region-buddylist-actionbar);
@@ -108,6 +116,7 @@
   .buddy-list-window .action-bar-icon-btn,
   .buddy-list-window .logout-icon-btn {
     background-image: linear-gradient(var(--skin-region-buddylist-actionbar-backing), var(--skin-region-buddylist-actionbar-backing));
+    background-clip: content-box;
   }
   .buddy-list-window .action-bar-icon-btn {
     border-image: var(--skin-region-buddylist-action-button);
@@ -150,6 +159,7 @@
   .chat-window .chat-safety-btn,
   .chat-window .chat-call-btn {
     background-image: linear-gradient(var(--skin-region-chat-toolbar-backing), var(--skin-region-chat-toolbar-backing));
+    background-clip: content-box;
   }
   .chat-window .chat-call-btn {
     border-image: var(--skin-region-chat-call-button);
@@ -225,6 +235,7 @@
   .chat-window .message-input-mic-btn,
   .chat-window .message-input-send-btn {
     background-image: linear-gradient(var(--skin-region-chat-input-backing), var(--skin-region-chat-input-backing));
+    background-clip: content-box;
   }
   .chat-window .message-input-send-btn {
     border-image: var(--skin-region-chat-send-button);
@@ -265,6 +276,7 @@
   }
   .chat-window .group-chat-member {
     background-image: linear-gradient(var(--skin-region-chat-group-header-backing), var(--skin-region-chat-group-header-backing));
+    background-clip: content-box;
   }
   .xfire-titlebar-btn-minimize {
     border-image: var(--skin-region-titlebar-btn-minimize);

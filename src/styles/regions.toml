@@ -653,7 +653,7 @@
 'statusbar' = { elements = [".buddy-list-window > .status-bar"], labels = [".buddy-list-window > .status-bar .status-picker", ".buddy-list-window > .status-bar .network-indicator"] }
 'statusbar.arrow' = { elements = [".status-picker-arrow"] }
 'buddylist.menubar' = { elements = [".buddy-list-window .menu-bar"], labels = [".buddy-list-window .menu-bar-item"] }
-'buddylist.infobar' = { elements = [".buddy-list-window .identity-bar"], labels = [".buddy-list-window .identity-bar-top-row", ".buddy-list-window .identity-bar-status-msg"] }
+'buddylist.infobar' = { elements = [".buddy-list-window .identity-bar"], labels = [".buddy-list-window .identity-bar-name", ".buddy-list-window .identity-bar-key", ".buddy-list-window .identity-bar-game", ".buddy-list-window .identity-bar-status-msg"] }
 'buddylist.tab' = { elements = [".buddy-tab"] }
 'buddylist.group-header' = { elements = [".buddy-group-header"], labels = [".buddy-group-header > span"] }
 'buddylist.row-selected' = { elements = [".buddy-list-window .buddy-item-selected"], labels = [".buddy-list-window .buddy-item-selected .buddy-item-content"] }

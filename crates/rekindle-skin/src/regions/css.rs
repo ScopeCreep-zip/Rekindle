@@ -74,7 +74,13 @@
 //!   own `background-image` (a one-colour gradient of
 //!   [`backing_property`]): a child's background paints over its
 //!   ancestor's border image and under its own text, so the bitmap shows
-//!   around the labels and never under their text. Unset, the gradient is
+//!   around the labels and never under their text. The backing is clipped
+//!   to the label's content box (`background-clip: content-box`), where its
+//!   text is laid out: a label's padding (a menu item's 10 px, a button's
+//!   bevel room) shows the bar's bitmap, so a bar whose labels fill it is
+//!   still visibly skinned (E7.7.7 S5: the real app showed Symbiosis's info
+//!   and menu bars as the plain token look because full-width labels
+//!   covered the bitmap edge to edge). Unset, the gradient is
 //!   invalid at computed-value time and `background-image` is `none`, so
 //!   without a skin the labels look as the app draws them. Under
 //!   `forced-colors: active` the labels' `background-image` is `none` too.
@@ -337,7 +343,7 @@ fn rules(map: &BTreeMap<String, RegionMap>) -> Result<(String, String), String> 
         if slot.labelled {
             let _ = write!(
                 out,
-                "  {} {{\n    background-image: linear-gradient(var({b}), var({b}));\n  }}\n",
+                "  {} {{\n    background-image: linear-gradient(var({b}), var({b}));\n    background-clip: content-box;\n  }}\n",
                 entry.labels.join(",\n  "),
                 b = backing_property(slot.id)
             );

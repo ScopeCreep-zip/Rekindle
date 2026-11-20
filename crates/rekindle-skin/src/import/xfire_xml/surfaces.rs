@@ -143,7 +143,7 @@ const HEADER: Pieces = Pieces::Row(["HeaderLeft", "HeaderMiddle", "HeaderRight"]
 /// (`xfirecomponents.xml`, plan E7.7.7 S2), then the INI era's (Combat's
 /// `combat.ini` and its chat skin files). A name two families share
 /// (`DownArrow`, `BuddyView`) is listed once.
-const SURFACES: [Surface; 28] = [
+const SURFACES: [Surface; 29] = [
     // Symbiosis, the buddy list (S1).
     surface("StatusBarContainer", "statusbar", TOP),
     surface("ButtonStatusChanger", "statusbar.arrow", Pieces::Button),
@@ -152,6 +152,9 @@ const SURFACES: [Surface; 28] = [
     surface("ButtonFriendsTab", "buddylist.tab", Pieces::Button).sticky(),
     surface("XfireView", "buddylist.group-header", HEADER),
     surface("FriendsButtonBar", "buddylist.actionbar", TOP),
+    // The main window's top row (`MainWindow.xml:12`, 13 px, `frame1_top_*`):
+    // the strip Xfire draws its title and buttons on, so our titlebar.
+    surface("MainTopRow", "titlebar", LMR),
     surface("ButtonAddFriend", "buddylist.action-button", Pieces::Button),
     // Symbiosis, the chat windows (`ChatWindow.xml`, `GroupChatWindow.xml`).
     surface("ChatEditContainer", "chat.input", Pieces::Fill),

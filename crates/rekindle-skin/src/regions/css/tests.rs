@@ -47,3 +47,45 @@ fn a_status_icon_is_served_with_its_paint_switch() {
     assert!(css.contains("    --skin-icon-status-away-paint: transparent;\n"));
     assert!(!css.contains("--skin-icon-status-online"));
 }
+
+/// Plan E7.7.7 S5: a labelled slot's backing is clipped to each label's
+/// content box, so a label's padding shows the bar's bitmap (the real app
+/// showed Symbiosis's info and menu bars flat under full-width labels).
+#[test]
+fn a_label_backs_only_its_content_box() {
+    let map: BTreeMap<String, RegionMap> = SLOTS
+        .iter()
+        .filter(|s| s.css)
+        .map(|s| {
+            let el = format!(".e-{}", s.id.replace('.', "-"));
+            let entry = if s.labelled {
+                RegionMap::labelled(&[el.as_str()], &[format!("{el} .label").as_str()])
+            } else {
+                RegionMap::elements(&[el.as_str()])
+            };
+            (s.id.to_owned(), entry)
+        })
+        .collect();
+    let css = app_css("t", &map).unwrap();
+    let rule = css
+        .split("  }\n")
+        .find(|r| r.contains(".e-buddylist-infobar .label"))
+        .unwrap();
+    assert!(rule.contains("background-clip: content-box;"), "{rule}");
+}
+
+fn builtin_regions(name: &str) -> Vec<String> {
+    let (_, b) = crate::builtin::find(&format!("builtin:{name}")).unwrap();
+    let p = crate::package::read(b.bytes).unwrap();
+    crate::manifest::parse(&p)
+        .unwrap()
+        .regions
+        .into_keys()
+        .collect()
+}
+
+/// Symbiosis's main window top row (`MainWindow.xml:12`) fills the titlebar.
+#[test]
+fn symbiosis_fills_the_titlebar_from_its_top_row() {
+    assert!(builtin_regions("symbiosis").contains(&"titlebar".to_owned()));
+}

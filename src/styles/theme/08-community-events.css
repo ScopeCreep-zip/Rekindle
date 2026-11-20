@@ -255,6 +255,10 @@
   }
 
   .identity-bar-status-msg {
+    /* Shrinks to its text, so a skinned info bar's backing (E7.7.7) sits
+       under the message only and the bar's bitmap shows beside it. */
+    align-self: flex-start;
+    max-width: 100%;
     font-size: 10px;
     color: var(--color-xfire-text-dim);
     font-style: italic;
