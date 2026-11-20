@@ -212,8 +212,19 @@ export const FLEX_CONTRACT: FlexContract = {
 
 /**
  * The window root as a flex container: a full-height column with exactly
- * one growing child, its last in-flow child ending at the window's bottom
- * edge (`FLEX_CONTRACT` when kept).
+ * one growing child, its last in-flow child ending at the bottom of the
+ * root's content box (`FLEX_CONTRACT` when kept).
+ *
+ * The content box, not the border box: every root is `.app-frame`, whose
+ * border box is the skin's window frame (plan E7.7.7 `window.frame`,
+ * `src/styles/generated/regions/window.css`: `border-width:
+ * var(--skin-region-window-frame-border, 1px)`), as wide as the frame's
+ * nine-slice edges (Symbiosis 13 px on every side) and
+ * 1 px for the token look. The frame insets every child by that edge, the
+ * footer included, so a footer held down ends `border-bottom-width` above
+ * the root's outer bottom (measured 2026-11-20: 437 vs 450, 537 vs 550 on
+ * Symbiosis's 13 px edge). A footer that stops short of the frame's inner
+ * edge (a margin, a wrapper that breaks the flex chain) still fails.
  */
 export function flexContract(el: Element): FlexContract {
   const s = getComputedStyle(el);
@@ -229,7 +240,9 @@ export function flexContract(el: Element): FlexContract {
     direction: s.flexDirection,
     fillsWindow: Math.abs(r.height - window.innerHeight) <= 1,
     growing: flow.filter((c) => Number(getComputedStyle(c).flexGrow) > 0).length,
-    footerAtBottom: last ? Math.abs(last.getBoundingClientRect().bottom - r.bottom) <= 1 : false,
+    footerAtBottom: last
+      ? Math.abs(last.getBoundingClientRect().bottom - (r.bottom - parseFloat(s.borderBottomWidth))) <= 1
+      : false,
   };
 }
 
