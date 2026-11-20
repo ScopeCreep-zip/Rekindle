@@ -112,6 +112,10 @@ pub enum GovernanceRuntimeError {
 
     #[error("adapter error: {0}")]
     Adapter(String),
+    /// A read marker names no message: it is always a stored one's id
+    /// (plan E3.1 G1, finding IB2).
+    #[error("a read marker names no message")]
+    NoMessageId,
 
     /// The inviter answered our `BootstrapRequest` and refused it: its merge
     /// does not hold our `MemberJoined` (plan E3.2). Distinct from an

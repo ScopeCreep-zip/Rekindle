@@ -208,3 +208,32 @@ fn system_events_ride_the_community_channel() {
     ));
     assert_eq!(e.channel(), "community-event");
 }
+
+/// Finding IB2: a post the Host stored (`ChannelMessageEvent::New`, from the
+/// outbox read) reaches the community window on `community-event`, in the
+/// shape its `new` reducer reads (`dispatcher_messages.ts` `applyNew`).
+#[test]
+fn a_stored_post_reaches_the_community_window_as_new() {
+    let e = WebviewEvent::Subscription(SubscriptionEvent::ChannelMessage(
+        rekindle_types::subscription_events::ChannelMessageEvent::New {
+            community: REC.into(),
+            channel: GROUP.into(),
+            message_id: CALL.into(),
+            sender_pseudonym: PK.into(),
+            sequence: 1,
+            timestamp: 7,
+            body: Some("hello".into()),
+            reply_to_message_id: None,
+            automod_blurred: false,
+        },
+    ));
+    assert_eq!(e.channel(), "community-event");
+    assert!(e.audience().includes("community-browser"));
+    let payload = e.payload().expect("serializes");
+    let post = &payload["channelMessage"]["new"];
+    assert_eq!(post["channel"], GROUP);
+    assert_eq!(post["messageId"], CALL);
+    assert_eq!(post["senderPseudonym"], PK);
+    assert_eq!(post["body"], "hello");
+    assert_eq!(post["automodBlurred"], false);
+}

@@ -58,13 +58,16 @@ function publishActiveChannel(communityId: string, channelId: string, kind: stri
 
 /// Mark `channelId` read up to its latest loaded message. Also called
 /// when the Host counts a message in the channel the user is viewing.
-export function markChannelReadToLatest(communityId: string, channelId: string): void {
+/// A marker names a stored message: with none loaded there is nothing to
+/// mark (the Host refuses an empty id, IB2). Whether a mark was sent.
+export function markChannelReadToLatest(communityId: string, channelId: string): boolean {
   const msgs = communityState.channelMessages[channelId];
-  const lastMsg = msgs && msgs.length > 0 ? msgs[msgs.length - 1] : undefined;
-  const lastMessageId = lastMsg ? (lastMsg.serverMessageId ?? String(lastMsg.id)) : "";
+  const lastMessageId = [...(msgs ?? [])].reverse().find((m) => m.serverMessageId)?.serverMessageId;
+  if (!lastMessageId) return false;
   commands.markChannelRead(communityId, channelId, lastMessageId).catch((e) => {
     console.warn("Failed to mark channel read:", e);
   });
+  return true;
 }
 
 export function handleSelectChannel(channelId: string): void {

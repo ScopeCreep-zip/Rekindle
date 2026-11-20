@@ -1,7 +1,8 @@
 //! Plan E3.1 G1 (D25): a member's channel read marker only advances. Bea
 //! marks the general channel read up to Ann's second post; marking the
 //! first post read afterwards leaves the marker where it was, and the
-//! Host's `UnreadCounts` counts only the posts after it.
+//! Host's `UnreadCounts` counts only the posts after it. A mark naming no
+//! message is refused as a bad request and moves nothing (finding IB2).
 
 use std::time::Duration;
 
@@ -89,6 +90,25 @@ async fn read_marker_only_advances() {
         unread(&community, &channel).await,
         1,
         "only the post after the marker counts"
+    );
+
+    let refused = community.nodes[BEA]
+        .call(IpcRequest::Community(CommunityRequest::Unread(
+            UnreadRequest::ChannelMarkRead {
+                community: community.anchor.clone(),
+                channel: channel.clone(),
+                up_to: String::new(),
+            },
+        )))
+        .await;
+    assert!(
+        matches!(&refused, Err(r) if r.code == 400),
+        "a mark naming no message is a bad request, not a store failure: {refused:?}"
+    );
+    assert_eq!(
+        unread(&community, &channel).await,
+        1,
+        "the refused mark moves nothing"
     );
 
     mark_read(&community, &channel, &first).await;

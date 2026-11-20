@@ -1,5 +1,8 @@
 import type { CommunityEvent } from "../../ipc/channels";
-import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
+import type {
+  ChannelMessageEvent,
+  CommunitySubscriptionEvent,
+} from "../../ipc/channels/community_subscription_events";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
@@ -13,6 +16,8 @@ import { markChannelReadToLatest } from "../../actions/community/channels";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
 import { handleLoadChannelMessages } from "../../actions/community/messages";
 import { withCommunity } from "./community_reread";
+
+type NewChannelMessage = Extract<ChannelMessageEvent, { new: unknown }>["new"];
 
 /// Channel-message slice of the community event dispatcher (edits,
 /// deletes, reactions, pins, delivery receipts, typing, system msgs,
@@ -205,6 +210,31 @@ function applyPinned(channel: string, messageId: string, pinned: boolean): void 
   }
 }
 
+/// A post the Host stored and published (`ChannelMessageEvent::New`, every
+/// read path: the outbox read and the slot reads) joins the list of a
+/// channel this window holds, as the Host gave it. Our own posts are the
+/// send path's (`handleSendMessage` holds them from the send); a list not
+/// loaded yet reads the post with the channel's history (IB2).
+function applyNew(post: NewChannelMessage): void {
+  const msgs = communityState.channelMessages[post.channel];
+  if (!msgs) return;
+  const me = communityState.communities[post.community]?.myPseudonymKey;
+  if (me && me.toLowerCase() === post.senderPseudonym.toLowerCase()) return;
+  if (msgs.some((m) => m.serverMessageId === post.messageId)) return;
+  const message: Message = {
+    id: Date.now(),
+    senderId: post.senderPseudonym,
+    body: post.body ?? "",
+    decryptionFailed: post.body === null,
+    automodBlurred: post.automodBlurred,
+    timestamp: post.timestamp,
+    isOwn: false,
+    serverMessageId: post.messageId,
+    replyToId: post.replyToMessageId ?? undefined,
+  };
+  setCommunityState("channelMessages", post.channel, (prev) => [...(prev ?? []), message]);
+}
+
 /// A channel's unread count is the Host's (`UnreadChanged`), rendered as
 /// is. A count in the channel being viewed is read at once.
 function applyChannelUnread(u: UnreadChanged): void {
@@ -216,8 +246,9 @@ function applyChannelUnread(u: UnreadChanged): void {
   if (chIdx < 0) return;
   const viewing =
     communityState.activeCommunity === communityId && communityState.activeChannel === channelId;
-  if (viewing && u.count > 0) {
-    markChannelReadToLatest(communityId, channelId);
+  // A mark names the list's latest stored post; with none loaded the
+  // count shows until the history load reads it.
+  if (viewing && u.count > 0 && markChannelReadToLatest(communityId, channelId)) {
     return;
   }
   setCommunityState("communities", communityId, "channels", chIdx, "unreadCount", u.count);
@@ -250,7 +281,9 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
   }
   if ("channelMessage" in event) {
     const m = event.channelMessage;
-    if ("edited" in m) {
+    if ("new" in m) {
+      applyNew(m.new);
+    } else if ("edited" in m) {
       applyEdit(m.edited.channel, m.edited.messageId, m.edited.body, m.edited.editedAt);
     } else if ("deleted" in m) {
       applyDelete(m.deleted.channel, m.deleted.messageId, m.deleted.removedBy);

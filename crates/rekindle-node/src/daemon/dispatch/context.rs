@@ -126,7 +126,8 @@ pub(crate) fn runtime_refused(
             IpcResponse::error(403, format!("{what}: {e}"))
         }
         rekindle_governance_runtime::GovernanceRuntimeError::Malformed
-        | rekindle_governance_runtime::GovernanceRuntimeError::OutOfBounds { .. } => {
+        | rekindle_governance_runtime::GovernanceRuntimeError::OutOfBounds { .. }
+        | rekindle_governance_runtime::GovernanceRuntimeError::NoMessageId => {
             IpcResponse::error(400, format!("{what}: {e}"))
         }
         _ => IpcResponse::error(500, format!("{what}: {e}")),

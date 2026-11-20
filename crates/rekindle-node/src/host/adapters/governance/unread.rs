@@ -47,13 +47,17 @@ impl HostGovernance {
     /// changes nothing.
     ///
     /// # Errors
-    /// Locked, the message is not stored here, or the database failed.
+    /// No message is named ([`GovernanceRuntimeError::NoMessageId`]),
+    /// locked, the message is not stored here, or the database failed.
     pub(crate) async fn mark_channel_read(
         &self,
         community_id: &str,
         channel_id: &str,
         message_id: &str,
     ) -> Result<(), GovernanceRuntimeError> {
+        if message_id.trim().is_empty() {
+            return Err(GovernanceRuntimeError::NoMessageId);
+        }
         let (owner, db) = self.owner_db()?;
         let (channel, message) = (channel_id.to_owned(), message_id.to_owned());
         let position = db
