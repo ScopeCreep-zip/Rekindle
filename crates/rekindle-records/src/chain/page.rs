@@ -95,14 +95,18 @@ fn check_pointer(what: &'static str, p: &PagePointer) -> Result<(), ChainError> 
     Ok(())
 }
 
-/// A `HEAD` value read from the network: a mark past the newest page is
+/// A `HEAD` value read from the network (`None`: the empty head a writer
+/// puts on a new record, nothing appended): a mark past the newest page is
 /// malformed.
-pub(super) fn decode_head(bytes: &[u8]) -> Result<ChainHead, ChainError> {
+pub(super) fn decode_head(bytes: &[u8]) -> Result<Option<ChainHead>, ChainError> {
     if bytes.len() > PARTICIPANT_CAP {
         return Err(malformed("chain head", "larger than the subkey limit"));
     }
-    let head =
-        wire::decode_chain_head(bytes).map_err(|e| malformed("chain head", e.to_string()))?;
+    let Some(head) =
+        wire::decode_chain_head(bytes).map_err(|e| malformed("chain head", e.to_string()))?
+    else {
+        return Ok(None);
+    };
     check_pointer("chain head", &head.newest)?;
     if head.retired_through > head.newest.last_seq {
         return Err(malformed(
@@ -113,7 +117,12 @@ pub(super) fn decode_head(bytes: &[u8]) -> Result<ChainHead, ChainError> {
             ),
         ));
     }
-    Ok(head)
+    Ok(Some(head))
+}
+
+/// The empty `HEAD`, a new record's first write.
+pub(super) fn empty_head() -> Vec<u8> {
+    wire::encode_empty_chain_head()
 }
 
 /// A page read from the network, checked against the pointer that led to

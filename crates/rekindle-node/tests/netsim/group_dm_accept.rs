@@ -1,0 +1,134 @@
+//! Group DM accepts (plan E2.6, live finding G1): a member's chain is on
+//! the network before its key leaves, and content that reaches a member
+//! before the poster's accept is shown once the accept lands.
+
+use std::time::Duration;
+
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_netsim::{Fault, Netsim};
+
+use crate::group_dm::{own_chain, reads, send, view};
+use crate::harness::{eventually, start, SimNode};
+use crate::pair::{befriend, key, LIMIT};
+
+/// `node`'s own group chain is on the network: its `HEAD` holds the empty
+/// head (nothing appended), so a reader handed the key finds the record.
+fn chain_on_network(sim: &Netsim, node: &SimNode, group_id: &str) -> bool {
+    use rekindle_types::dht_layout::dm_participant;
+    own_chain(node, group_id)
+        .and_then(|k| sim.network_get(&k, dm_participant::HEAD))
+        .is_some_and(|head| {
+            rekindle_codec::capnp_codec::chain::decode_chain_head(&head.data)
+                .is_ok_and(|h| h.is_none())
+        })
+}
+
+/// G1 fault 3: a member's chain record is on the network before the group
+/// (the creator's) or the accept (a member's) names it. Veilid creates a
+/// record locally and writes nothing (0.5.8 `create_record.rs`), so a
+/// reader opening a chain nobody wrote got `KeyNotFound` and waited on
+/// retry backoff; the empty `HEAD` is written at creation.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_member_chain_is_on_the_network_before_its_key_leaves() {
+    let (sim, mut nodes) = start(3, 96).await;
+    for (node, name) in nodes.iter_mut().zip(["Ann", "Bea", "Cat"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[1], &nodes[0]).await;
+    befriend(&sim, &nodes[2], &nodes[0]).await;
+    let gid: String = serde_json::from_value(
+        nodes[0]
+            .ok(IpcRequest::GroupDmCreate {
+                name: "raid night".to_string(),
+                members: vec![key(&nodes[1]), key(&nodes[2])],
+            })
+            .await,
+    )
+    .expect("the group is created");
+    assert!(
+        chain_on_network(&sim, &nodes[0], &gid),
+        "the creator's chain is on the network when the group names it"
+    );
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            view(&nodes[1], &gid).await.is_some_and(|v| v.pending)
+        })
+        .await,
+        "Bea holds the invite"
+    );
+    nodes[1]
+        .ok(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        })
+        .await;
+    assert!(
+        chain_on_network(&sim, &nodes[1], &gid),
+        "Bea's chain is on the network when her accept names it"
+    );
+}
+
+/// G1 fault 2: Bea's post reaches Cat while Bea's accept to Cat is stuck
+/// (every call to Cat hangs; Bea's app messages still arrive), so Cat
+/// holds content from a member whose accept it has not seen. Once the
+/// accept lands, Cat reads the post.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_post_that_arrives_before_the_posters_accept_is_shown_once_it_lands() {
+    let (sim, mut nodes) = start(3, 97).await;
+    for (node, name) in nodes.iter_mut().zip(["Ann", "Bea", "Cat"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[1], &nodes[0]).await;
+    befriend(&sim, &nodes[2], &nodes[0]).await;
+    let gid: String = serde_json::from_value(
+        nodes[0]
+            .ok(IpcRequest::GroupDmCreate {
+                name: "raid night".to_string(),
+                members: vec![key(&nodes[1]), key(&nodes[2])],
+            })
+            .await,
+    )
+    .expect("the group is created");
+    for node in &nodes[1..] {
+        assert!(
+            eventually(&sim, LIMIT, || async {
+                view(node, &gid).await.is_some_and(|v| v.pending)
+            })
+            .await,
+            "node {} holds the invite",
+            node.index
+        );
+    }
+    nodes[2]
+        .ok(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        })
+        .await;
+    send(&nodes[2], &gid, "from Cat").await;
+    assert!(
+        eventually(&sim, LIMIT * 2, || reads(&nodes[0], &gid, "from Cat")).await,
+        "Ann reads Cat"
+    );
+    sim.fault(Fault::CallHangs {
+        node: 2,
+        hangs: true,
+    });
+    nodes[1]
+        .ok(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        })
+        .await;
+    send(&nodes[1], &gid, "from Bea").await;
+    assert!(
+        eventually(&sim, LIMIT * 2, || reads(&nodes[0], &gid, "from Bea")).await,
+        "Ann reads Bea"
+    );
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    sim.fault(Fault::CallHangs {
+        node: 2,
+        hangs: false,
+    });
+    assert!(
+        eventually(&sim, LIMIT * 2, || reads(&nodes[2], &gid, "from Bea")).await,
+        "Cat reads Bea once her accept lands"
+    );
+}

@@ -101,8 +101,9 @@ async fn a_partially_committed_drain_retries_without_duplicates_or_gaps() {
         .sim
         .network_get(&record, OUTBOX)
         .expect("the author's outbox head");
-    let head =
-        rekindle_codec::capnp_codec::chain::decode_chain_head(&head.data).expect("a chain head");
+    let head = rekindle_codec::capnp_codec::chain::decode_chain_head(&head.data)
+        .expect("a chain head")
+        .expect("a chain with entries");
     assert_eq!(
         head.newest.last_seq,
         u64::from(POSTS),

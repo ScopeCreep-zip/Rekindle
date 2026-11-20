@@ -58,22 +58,41 @@ pub fn encode_chain_head(head: &ChainHead) -> Vec<u8> {
     pack(&builder)
 }
 
+/// The head a chain's writer puts on the network when it creates the
+/// record, before its key leaves: no page yet and nothing retired. Veilid
+/// creates a record locally and writes nothing to the network (0.5.8
+/// `storage_manager/create_record.rs`), so a reader given the key of a record
+/// nobody has written finds no record at all; this value is the first write.
+#[must_use]
+pub fn encode_empty_chain_head() -> Vec<u8> {
+    let mut builder = capnp::message::Builder::new_default();
+    builder.init_root::<chain_capnp::chain_head::Builder<'_>>();
+    pack(&builder)
+}
+
+/// `None`: the empty head ([`encode_empty_chain_head`]), a chain with nothing
+/// appended.
+///
 /// # Errors
-/// The bytes are not a `ChainHead`, or it names no page.
-pub fn decode_chain_head(bytes: &[u8]) -> Result<ChainHead, CodecError> {
+/// The bytes are not a `ChainHead`, or a head naming no page retires
+/// something.
+pub fn decode_chain_head(bytes: &[u8]) -> Result<Option<ChainHead>, CodecError> {
     let reader = unpack_bounded(bytes, bounds::CHAIN_HEAD_BOUND)?;
     let r = reader
         .get_root::<chain_capnp::chain_head::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
     if !r.has_newest() {
-        return Err(CodecError::Deserialization(
-            "chain head names no page".into(),
-        ));
+        if r.get_retired_through() != 0 {
+            return Err(CodecError::Deserialization(
+                "chain head names no page yet retires entries".into(),
+            ));
+        }
+        return Ok(None);
     }
-    Ok(ChainHead {
+    Ok(Some(ChainHead {
         newest: read_pointer(r.get_newest().map_err(|e| capnp_err(&e))?)?,
         retired_through: r.get_retired_through(),
-    })
+    }))
 }
 
 /// A page's only subkey.

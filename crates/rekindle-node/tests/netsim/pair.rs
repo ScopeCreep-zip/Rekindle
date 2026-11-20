@@ -180,5 +180,6 @@ fn chain_mark(sim: &rekindle_netsim::Netsim, key: &str) -> Option<u64> {
     let head = sim.network_get(key, dm_participant::HEAD)?;
     rekindle_codec::capnp_codec::chain::decode_chain_head(&head.data)
         .ok()
+        .flatten()
         .map(|h| h.retired_through)
 }

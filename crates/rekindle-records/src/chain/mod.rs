@@ -24,6 +24,7 @@
 //! dropped), so it is written with [`append_at`] and read with
 //! [`read_log_after`].
 
+mod create;
 mod local;
 #[cfg(test)]
 mod logged_tests;
@@ -32,6 +33,7 @@ mod page;
 mod tests;
 
 use crate::port::OpenIntent;
+pub use create::create_participant;
 pub use local::local_newest_entry;
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_codec::capnp_codec::chain::{ChainHead, ChainPage};
@@ -125,8 +127,7 @@ async fn read_head(
 ) -> Result<Option<ChainHead>, ChainError> {
     port.read_once(record, head_subkey, true)
         .await?
-        .map(|v| page::decode_head(&v.data))
-        .transpose()
+        .map_or(Ok(None), |v| page::decode_head(&v.data))
 }
 
 /// The highest retired sequence number (0: none), from `HEAD`.
@@ -384,7 +385,7 @@ async fn own_head_at(
     let lease = port.acquire(record, None, OpenIntent::Check).await?;
     let local = local_value(port, lease, head_subkey).await;
     port.release(lease).await;
-    local?.map(|v| page::decode_head(&v.data)).transpose()
+    local?.map_or(Ok(None), |v| page::decode_head(&v.data))
 }
 
 /// The leased record's local copy of `subkey`, `None` when there is none.
@@ -500,7 +501,9 @@ pub async fn read_log_reaching(
         let Ok(Some(value)) = port.read_newest_once(record, head_subkey).await else {
             continue;
         };
-        let newest = page::decode_head(&value.data)?.newest;
+        let Some(newest) = page::decode_head(&value.data)?.map(|h| h.newest) else {
+            continue;
+        };
         if newest.last_seq >= at_least {
             return Ok(ChainRead {
                 last_seq: newest.last_seq,

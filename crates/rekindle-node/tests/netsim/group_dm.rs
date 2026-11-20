@@ -21,7 +21,7 @@ use crate::harness::{eventually, start, SimNode};
 use crate::pair::{befriend, key, retired, unretired_chain, LIMIT};
 
 /// The group as `node` lists it (a pending invite included).
-async fn view(node: &SimNode, group_id: &str) -> Option<GroupDmView> {
+pub(crate) async fn view(node: &SimNode, group_id: &str) -> Option<GroupDmView> {
     let groups: Vec<GroupDmView> =
         serde_json::from_value(node.ok(IpcRequest::GroupDmList).await).expect("the group list");
     groups.into_iter().find(|g| g.group_id == group_id)
@@ -50,11 +50,11 @@ async fn bodies(node: &SimNode, group_id: &str) -> Vec<String> {
         .collect()
 }
 
-async fn reads(node: &SimNode, group_id: &str, body: &str) -> bool {
+pub(crate) async fn reads(node: &SimNode, group_id: &str, body: &str) -> bool {
     bodies(node, group_id).await.iter().any(|b| b == body)
 }
 
-async fn send(node: &SimNode, group_id: &str, body: &str) {
+pub(crate) async fn send(node: &SimNode, group_id: &str, body: &str) {
     node.ok(IpcRequest::GroupDmSend {
         group_id: group_id.to_string(),
         body: body.to_string(),
@@ -64,7 +64,7 @@ async fn send(node: &SimNode, group_id: &str, body: &str) {
 
 /// `node`'s own group chain for `group_id`: the record whose owner keypair
 /// its vault holds under the group's id.
-fn own_chain(node: &SimNode, group_id: &str) -> Option<String> {
+pub(crate) fn own_chain(node: &SimNode, group_id: &str) -> Option<String> {
     let stores = node.host.identity_stores();
     let guard = stores.vault.lock();
     let vault = guard.as_ref().expect("an unlocked vault");

@@ -199,7 +199,21 @@ fn the_largest_chain_head_decodes() {
         retired_through: u64::MAX,
     };
     let bytes = chain::encode_chain_head(&head);
-    assert_eq!(chain::decode_chain_head(&bytes).unwrap(), head);
+    assert_eq!(chain::decode_chain_head(&bytes).unwrap(), Some(head));
+}
+
+/// The head a writer puts on a new record decodes as a chain with nothing
+/// appended; a head naming no page that retires entries is refused.
+#[test]
+fn the_empty_chain_head_decodes_as_no_page() {
+    let empty = chain::encode_empty_chain_head();
+    assert_eq!(chain::decode_chain_head(&empty).unwrap(), None);
+    let mut builder = capnp::message::Builder::new_default();
+    builder
+        .init_root::<crate::chain_capnp::chain_head::Builder<'_>>()
+        .set_retired_through(1);
+    let bogus = crate::capnp_codec::pack(&builder);
+    assert!(chain::decode_chain_head(&bogus).is_err());
 }
 
 /// A page of the smallest entries a chain holds, sealed frames of a few

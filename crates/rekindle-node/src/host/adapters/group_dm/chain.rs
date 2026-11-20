@@ -55,11 +55,11 @@ pub(crate) async fn writer(
         .node()?
         .require_records()
         .map_err(|e| FriendError::NotReady(format!("records: {e}")))?;
-    let (lease, record_key, keypair) = pool
-        .create(&rekindle_records::schema::dm_participant(), None)
+    // The empty HEAD is written before the key leaves us, so a reader
+    // opening the record finds it (`chain::create_participant`).
+    let (record_key, keypair) = rekindle_records::chain::create_participant(pool.as_ref())
         .await
         .map_err(|e| FriendError::NotReady(format!("group chain record: {e}")))?;
-    pool.release(lease).await;
     {
         let guard = host.ctx().vault.lock();
         let vault = guard.as_ref().ok_or(FriendError::Locked)?;
