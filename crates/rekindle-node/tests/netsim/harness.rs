@@ -13,7 +13,7 @@ use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest, LifecycleReq
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_netsim::Netsim;
-use rekindle_node::host::{claim, Host, HostConfig, HostStores, TransportSource};
+use rekindle_node::host::{claim, Host, HostConfig, HostStores, ShellHooks, TransportSource};
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
 use rekindle_types::subscription_events::{FriendEvent, StreamFrame, SubscriptionEvent};
 use tracing::Instrument;
@@ -57,6 +57,15 @@ fn caller() -> Caller {
 /// `n` nodes on one network for run `seed`, each running a Host; the pump
 /// is started (every node attached).
 pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
+    start_with(n, seed, &|_| None).await
+}
+
+/// Node `i`'s shell hooks ([`start_with`]).
+pub type ShellFor<'a> = &'a dyn Fn(usize) -> Option<Arc<dyn ShellHooks>>;
+
+/// [`start`], node `i`'s Host handing its shell stages to `shell_for(i)`
+/// (`HostConfig::shell`), as the desktop's.
+pub async fn start_with(n: usize, seed: u64, shell_for: ShellFor<'_>) -> (Netsim, Vec<SimNode>) {
     // `RUST_LOG` shows a scenario's Host logs (`--nocapture`); the run's
     // WARN and ERROR events are counted per node ([`crate::logs`]).
     crate::logs::install();
@@ -86,7 +95,7 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
             clock: Arc::clone(&node.clock) as Arc<dyn rekindle_utils::Clock>,
             rng: Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>,
             idle: Arc::clone(&node.idle) as Arc<dyn rekindle_utils::IdleSource>,
-            shell: None,
+            shell: shell_for(node.index),
         })
         .instrument(node_span(node.index))
         .await
