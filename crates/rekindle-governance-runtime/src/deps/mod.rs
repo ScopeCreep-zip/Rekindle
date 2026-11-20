@@ -122,14 +122,15 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// End a borrow; the record closes when it was the last.
     async fn release_record(&self, lease: LeaseId);
 
-    /// Hand the community's session leases to the host. The host merges
-    /// them into the community's held set (a lease on a record the set
-    /// already holds is released, so repeat hand-overs do not accumulate),
-    /// watches the records that were added, and starts its per-community
-    /// loops (inspect, keepalive, presence poll) the first time, in its own
-    /// scope. Called by origin, hydration, a new channel, a segment
-    /// expansion and overflow pages.
+    /// Hand the community's session leases to the host, which merges them
+    /// into the held set (a repeat lease is released), watches the added
+    /// records and starts the per-community loops the first time. Called by
+    /// origin, hydration, a new channel, a segment expansion and overflow.
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases);
+
+    /// Undo a create that failed after origin installed the community:
+    /// forget its keys, MEK, store entry and rows (nothing is told).
+    async fn discard_created_community(&self, community_id: &str);
 
     /// Create a record of `schema` with a fresh random owner; the returned
     /// `owner_keypair` is that owner's keypair text (plan E3.2: the anchor

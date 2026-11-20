@@ -19,6 +19,7 @@ mod code_route_silent_death;
 mod community_block_drops;
 mod community_info_counts;
 mod community_policy;
+mod create_offline;
 mod crossing_request;
 mod data_root;
 mod dm_ack_loss;

@@ -132,6 +132,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.release_record_impl(lease).await;
     }
 
+    async fn discard_created_community(&self, community_id: &str) {
+        self.discard_created(community_id).await;
+    }
+
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases) {
         if let Some(shell) = &self.ctx.shell {
             shell.community_records_ready(community_id, leases).await;

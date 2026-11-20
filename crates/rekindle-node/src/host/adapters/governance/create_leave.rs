@@ -15,6 +15,12 @@ use rekindle_types::id::ChannelId;
 
 use super::HostGovernance;
 
+/// Why a create is refused before it starts: Veilid's DHT is online only
+/// while the public internet is ready (0.5.8 `storage_manager/mod.rs:1096-1104`),
+/// and a create cannot be held for later (the anchor's one-time key, ADR
+/// 0011), so it waits for the network rather than queueing.
+pub(crate) const NOT_CONNECTED: &str = "Not connected to the network yet; try again when connected";
+
 /// How long a left community's tasks get to stop.
 const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
@@ -30,6 +36,9 @@ impl HostGovernance {
         description: &str,
         admission: AdmissionMode,
     ) -> Result<CommunityCreated, String> {
+        if !self.transport().is_ok_and(|node| node.is_ready()) {
+            return Err(NOT_CONNECTED.into());
+        }
         let id = rekindle_governance_runtime::create_community(self, name, admission)
             .await
             .map_err(|e| format!("community create failed: {e}"))?;
@@ -279,5 +288,24 @@ impl HostGovernance {
         self.audit_left(community);
         tracing::info!(community = %community, "removed community forgotten");
         Ok(())
+    }
+
+    /// Undo a create that failed after origin installed the community
+    /// (its deadline, or a later write): its keys, MEK, store entry and
+    /// rows go. Its records were already released; no one knew of it.
+    pub(crate) async fn discard_created(&self, community: &str) {
+        self.forget_keys(community);
+        self.ctx.mek_cache.write().remove_community(community);
+        self.ctx.communities.remove(community);
+        if let Err(e) = crate::host::session::forget_membership(
+            &self.ctx.session,
+            &self.ctx.db,
+            &self.ctx.vault,
+            community,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "an unfinished community's rows were not removed");
+        }
     }
 }

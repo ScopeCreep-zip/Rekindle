@@ -106,6 +106,19 @@ pub(crate) fn genesis_entries(
     ]
 }
 
+/// How long a create may take, from the first record to the creator's
+/// beat. Veilid bounds a set's fanout (`set_value_timeout_ms`, 10 s,
+/// 0.5.8 `veilid_config.rs:1010`) but not its admission: the gate waits on
+/// the set concurrency and upload budgets with no deadline
+/// (`storage_manager/gated_operation.rs:460-465`), and with no deadline of
+/// ours a create held there never resolved (finding C-COM1). Two of the
+/// record pool's retry budgets (30 s each, `rekindle-record-pool`
+/// `RETRY_BUDGET`): room for the create's serial writes at a full fanout
+/// each, and the user is never left waiting on an unbounded review. At the
+/// deadline every record is released and an installed community discarded:
+/// the anchor's one-time key is gone, so the create cannot resume later.
+pub const CREATE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// The records origin creates; every lease is released on a failure.
 struct OriginRecords {
     anchor: DhtRecordInfo,
@@ -122,6 +135,7 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     name: &str,
     admission: AdmissionMode,
 ) -> Result<String, GovernanceRuntimeError> {
+    let deadline = tokio::time::Instant::now() + CREATE_DEADLINE;
     let slot_seed = SlotSeed::generate_with(deps.rng().as_ref());
     let mut member_pubkeys = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
     for i in 0..SLOTS_PER_SEGMENT {
@@ -132,23 +146,19 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         })?;
         member_pubkeys.push(sk.verifying_key().to_bytes());
     }
-    // A, M(p), the registry; a failure releases what exists.
+    // A, M(p), the registry; a failure or the deadline releases what exists.
     let mut created: Vec<DhtRecordInfo> = Vec::with_capacity(3);
-    for which in 0..3 {
-        let result = match which {
-            0 => deps.create_record(&schema::community_anchor()).await,
-            1 => deps.create_record(&schema::member_record()).await,
-            _ => deps.create_smpl_record(&member_pubkeys).await,
-        };
-        match result {
-            Ok(record) => created.push(record),
-            Err(e) => {
-                for record in created {
-                    deps.release_record(record.lease).await;
-                }
-                return Err(e);
-            }
+    let made = tokio::time::timeout_at(
+        deadline,
+        create_records(deps, &member_pubkeys, &mut created),
+    )
+    .await
+    .unwrap_or_else(|_| Err(timed_out()));
+    if let Err(e) = made {
+        for record in created {
+            deps.release_record(record.lease).await;
         }
+        return Err(e);
     }
     let leases: Vec<LeaseId> = created.iter().map(|r| r.lease).collect();
     let mut it = created.into_iter();
@@ -157,20 +167,49 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
             "origin: a record is missing".into(),
         ));
     };
+    let anchor_key = anchor.record_key.clone();
     let records = OriginRecords {
         anchor,
         member,
         registry,
     };
-    match seed_community(deps, name, admission, &slot_seed, records).await {
+    let mut installed = false;
+    let seeded = tokio::time::timeout_at(
+        deadline,
+        seed_community(deps, name, admission, &slot_seed, records, &mut installed),
+    )
+    .await
+    .unwrap_or_else(|_| Err(timed_out()));
+    match seeded {
         Ok(anchor) => Ok(anchor),
         Err(e) => {
             for lease in leases {
                 deps.release_record(lease).await;
             }
+            if installed {
+                deps.discard_created_community(&anchor_key).await;
+            }
             Err(e)
         }
     }
+}
+
+/// The deadline error, naming the bound in seconds.
+fn timed_out() -> GovernanceRuntimeError {
+    GovernanceRuntimeError::CreateTimedOut(CREATE_DEADLINE.as_secs())
+}
+
+/// Create `A`, `M(p)` and the registry in that order, pushing each into
+/// `created` as it exists (the caller releases them on a failure).
+async fn create_records<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    member_pubkeys: &[[u8; 32]],
+    created: &mut Vec<DhtRecordInfo>,
+) -> Result<(), GovernanceRuntimeError> {
+    created.push(deps.create_record(&schema::community_anchor()).await?);
+    created.push(deps.create_record(&schema::member_record()).await?);
+    created.push(deps.create_smpl_record(member_pubkeys).await?);
+    Ok(())
 }
 
 /// Parse a created record's owner keypair text into its signing key.
@@ -226,14 +265,15 @@ async fn write_genesis<D: GovernanceRuntimeDeps>(
 }
 
 /// Origin after the records exist: the cert, the genesis ops, the
-/// creator's registry row, the first MEK, the local install, and handing
-/// the records to the host.
+/// creator's registry row, the first MEK, the local install (`installed`
+/// is set just before it), and handing the records to the host.
 async fn seed_community<D: GovernanceRuntimeDeps>(
     deps: &D,
     name: &str,
     admission: AdmissionMode,
     slot_seed: &SlotSeed,
     records: OriginRecords,
+    installed: &mut bool,
 ) -> Result<String, GovernanceRuntimeError> {
     let OriginRecords {
         anchor,
@@ -341,6 +381,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         generation: mek.generation(),
         key_bytes: *mek.as_bytes(),
     };
+    *installed = true;
     deps.insert_community_mek(&anchor_key, mek_snapshot.clone());
 
     let insert = CommunityInsert {

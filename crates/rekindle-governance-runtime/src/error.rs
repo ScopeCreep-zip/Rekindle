@@ -21,6 +21,13 @@ pub enum GovernanceRuntimeError {
     #[error("not attached to Veilid")]
     NotAttached,
 
+    /// A create did not finish within [`crate::origin::CREATE_DEADLINE`];
+    /// everything it made was released and nothing was kept.
+    #[error(
+        "the network did not take the new community within {0} s; nothing was created, try again"
+    )]
+    CreateTimedOut(u64),
+
     #[error("no pseudonym key for community {0}")]
     PseudonymKeyMissing(String),
 
