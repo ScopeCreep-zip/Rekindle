@@ -11,6 +11,9 @@ autotests = false
 workspace = true
 
 [dependencies]
+# The scrubbing panic hook (rule B19): a panic message may quote the
+# untrusted package, and the Host keeps the start of stderr.
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
 # The canonical package's content address (step 7).
 blake3 = "1"
 crc32fast = "1.5"

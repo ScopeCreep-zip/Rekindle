@@ -12,6 +12,10 @@
 //!                                      rekindle-types::domains.
 //!     cargo xtask check-no-emitter     src-tauri sends webview events only
 //!                                      through event_dispatch (ADR 0007).
+//!     cargo xtask check-log-scrub      Every tracing subscriber writes
+//!                                      through ScrubbingMakeWriter and
+//!                                      every binary installs the
+//!                                      scrubbing panic hook (B19).
 //!     cargo xtask check-capnp-bounds   Every Cap'n Proto read has a
 //!                                      traversal bound (plan F4).
 //!     cargo xtask check-key-erasure    Key-material rows are deleted only
@@ -124,6 +128,7 @@ mod intent_table;
 mod jsx;
 mod key_erasure;
 mod literals;
+mod log_scrub;
 mod motion;
 mod no_emitter;
 mod no_managed_db;
@@ -172,6 +177,8 @@ enum Command {
     CheckDomainLiterals,
     /// Verify src-tauri never uses Tauri's `Emitter` (events go through the router).
     CheckNoEmitter,
+    /// Verify every log sink and panic hook goes through `log_scrub` (rule B19).
+    CheckLogScrub,
     /// Verify every Cap'n Proto read has a traversal bound (no unbounded network decode).
     CheckCapnpBounds,
     /// Verify key-material rows are deleted only through `rekindle_db::erase::delete`.
@@ -320,6 +327,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "no-emitter",
                     Box::new(|| no_emitter::check_no_emitter(&root)),
                 ),
+                ("log-scrub", Box::new(|| log_scrub::check_log_scrub(&root))),
                 ("role-ids", Box::new(|| role_ids::check_role_ids(&root))),
                 (
                     "capnp-bounds",
@@ -437,6 +445,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDuplicateConstants => duplicate_constants::check_duplicate_constants(&root),
         Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
+        Command::CheckLogScrub => log_scrub::check_log_scrub(&root),
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),
         Command::CheckWebdriverRelease => webdriver_release::check_webdriver_release(&root),

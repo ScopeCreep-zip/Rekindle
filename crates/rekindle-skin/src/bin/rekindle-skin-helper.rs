@@ -28,6 +28,8 @@ fn fail(why: &str) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // Any panic report goes through the identifier scrubber (rule B19).
+    rekindle_utils::log_scrub::install_panic_hook();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     if let Err(e) = rekindle_skin::helper::cap_this_process() {
         return fail(&format!("cannot set resource limits: {e}"));

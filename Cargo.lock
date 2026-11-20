@@ -7883,6 +7883,7 @@ dependencies = [
  "quick-xml 0.38.4",
  "rekindle-image",
  "rekindle-types",
+ "rekindle-utils",
  "resvg",
  "rlimit",
  "roxmltree",
