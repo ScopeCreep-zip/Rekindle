@@ -10,16 +10,28 @@
 //! first DM, queued while she waits, must reach Tia once the session is
 //! open.
 //!
-//! FAILS at `50295a012` (slice owed, L-FR2): the accept lands after 109 s
-//! (seed 71) against a 60 s bound; which wait dominates is not traced yet.
+//! The bound (`requester_route_bounds`): with a silent death Ola learns
+//! of it only by her own self-test, so the accept may take the worst
+//! detection + the republish + the accepter's watch and one call + a
+//! margin (~171 s), and her first DM one call after that. Both are wide;
+//! what fix (b) owns is the step after the republish: Tia's waiting row
+//! goes over the new route as soon as her watch hears it, not at its next
+//! backoff. Seed 71: republished ~97 s, accept 100.8 s, DM 101.4 s; with
+//! the profile watch's forward move removed the row waits out its backoff
+//! and lands at 119.8 s, ~22 s after the republish (fails the step).
 
 use std::time::Duration;
 
-use rekindle_netsim::Fault;
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_netsim::{Fault, Netsim};
 use rekindle_records::port::RouteClass;
+use rekindle_types::dht_layout::profile::ROUTE_BLOB;
 
-use crate::harness::{eventually, start};
+use crate::harness::{eventually, start, SimNode};
 use crate::pair::{accept, holds_message, is_accepted_friend, key, request, send};
+use crate::requester_route_bounds::{
+    after_republish, call_timeout, republish, worst_detection, MARGIN,
+};
 
 const FIRST: &str = "hi, right after my request";
 
@@ -39,17 +51,35 @@ async fn an_accept_lands_over_the_requesters_new_route_and_her_first_dm_follows(
         class: RouteClass::General,
     });
     let asked = tokio::time::Instant::now();
+    let (profile, captured) = published_route(&sim, &nodes[1]).await;
     accept(&nodes[0], &nodes[1]).await;
     send(&nodes[1], &tia, FIRST).await;
+    let replaced = eventually(&sim, Duration::from_secs(600), || {
+        std::future::ready(sim.network_get(&profile, ROUTE_BLOB).map(|v| v.data) != captured)
+    })
+    .await;
+    assert!(replaced, "Ola republished a tested replacement");
+    let republished = asked.elapsed();
+    assert!(
+        republished <= worst_detection() + republish(),
+        "the replacement was on the network within its self-test's worst case: {republished:?}"
+    );
     let accepted = eventually(&sim, Duration::from_secs(600), || {
         is_accepted_friend(&nodes[1], &tia)
     })
     .await;
     let took = asked.elapsed();
     assert!(accepted, "the accept reached Ola over her new route");
+    let accept_bound = worst_detection() + republish() + after_republish() + MARGIN;
     assert!(
-        took <= ACCEPT_BOUND,
-        "the accept landed within {ACCEPT_BOUND:?}: {took:?}"
+        took <= accept_bound,
+        "the accept landed within {accept_bound:?}: {took:?}"
+    );
+    let step = after_republish() + MARGIN;
+    assert!(
+        took.saturating_sub(republished) <= step,
+        "the accept followed the republish within {step:?} (fix (b)): {:?}",
+        took.saturating_sub(republished)
     );
     let delivered = eventually(&sim, Duration::from_secs(600), || {
         holds_message(&nodes[0], &ola, FIRST)
@@ -59,12 +89,22 @@ async fn an_accept_lands_over_the_requesters_new_route_and_her_first_dm_follows(
         delivered,
         "Ola's first DM reached Tia once the session was open"
     );
+    let dm_bound = took + call_timeout() + MARGIN;
     assert!(
-        asked.elapsed() <= DM_BOUND,
-        "the first DM within {DM_BOUND:?}: {:?}",
+        asked.elapsed() <= dm_bound,
+        "the first DM one send after the accept, within {dm_bound:?}: {:?}",
         asked.elapsed()
     );
 }
 
-const ACCEPT_BOUND: Duration = Duration::from_secs(60);
-const DM_BOUND: Duration = Duration::from_secs(90);
+/// `node`'s profile record key and the route blob it holds on the network.
+pub async fn published_route(sim: &Netsim, node: &SimNode) -> (String, Option<Vec<u8>>) {
+    let shown = node.ok(IpcRequest::IdentityShow).await;
+    let profile = shown["profileDhtKey"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(!profile.is_empty(), "a profile record");
+    let blob = sim.network_get(&profile, ROUTE_BLOB).map(|v| v.data);
+    (profile, blob)
+}
