@@ -497,7 +497,7 @@ mod tests {
         assert!(
             lines[0]
                 .to_string()
-                .ends_with("bob: psst (disappears in 5m)"),
+                .ends_with("bob: psst (disappears in 4m 59s)"),
             "{}",
             lines[0]
         );
