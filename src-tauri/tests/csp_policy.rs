@@ -6,16 +6,14 @@
 //! slips past. Weakening a directive here is a security change and
 //! should fail CI, not pass review silently.
 //!
-//! These assertions live in Rust rather than in `e2e/security/csp.spec.ts`
-//! because the policy is Rust-side configuration. Tauri injects it via
-//! its custom protocol, so it is simply absent when Playwright runs
-//! against the Vite dev server — the browser-side tests could never see
-//! it. `cargo test` reads the same file the app ships with, on every CI
-//! run, with no browser or build step.
+//! These assertions live in Rust because the policy is Rust-side
+//! configuration: Tauri injects it via its custom protocol, so only the
+//! built app carries it. `cargo test` reads the same file the app ships
+//! with, on every CI run, with no browser or build step.
 //!
 //! Runtime *enforcement* (does the WebView actually refuse an inline
-//! script?) is a different question and is not covered here — see the
-//! skipped tests in `e2e/security/csp.spec.ts`.
+//! script?) is a different question and is not covered here: plan E7.14
+//! S6 checks it in the real app (the real-app suite, e2e/app).
 
 use std::path::Path;
 
