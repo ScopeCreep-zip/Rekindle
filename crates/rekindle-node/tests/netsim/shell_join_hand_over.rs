@@ -30,20 +30,7 @@ impl ShellHooks for Shell {
     fn own_records(&self, _keys: &OwnRecordKeys) {}
     async fn ending(&self) {}
     async fn ended(&self, _reason: EndReason) {}
-    fn send_to_mesh(
-        &self,
-        _community_id: &str,
-        _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<(), String> {
-        Ok(())
-    }
-    async fn send_to_mesh_awaited(
-        &self,
-        _community_id: &str,
-        _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<usize, String> {
-        Ok(0)
-    }
+    fn own_gossip_signed(&self, _community_id: &str, _sender: &str, _dedup_key: &str) {}
     fn community_left(&self, _community_id: &str) {}
     fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
     fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {

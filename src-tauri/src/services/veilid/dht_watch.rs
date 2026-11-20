@@ -162,8 +162,9 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
         content_hash: blake3::hash(value).to_hex().to_string(),
         observer_pseudonym: observer,
     };
-    if let Err(e) =
-        crate::services::community::gossip::send_to_mesh(state, &community_id, &envelope)
+    if let Err(e) = crate::state_helpers::host_governance(state)
+        .map(|host| host.send_to_mesh_impl(&community_id, &envelope))
+        .map_err(|e| e.to_string())
     {
         tracing::debug!(community = %community_id, error = %e, "watch relay gossip failed");
     }

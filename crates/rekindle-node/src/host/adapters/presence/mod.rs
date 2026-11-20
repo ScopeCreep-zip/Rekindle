@@ -16,6 +16,7 @@
 //! the ring, inspected once per beat period in another (plan E3.4 Q1,
 //! `governance::on_screen`).
 
+pub(crate) mod mesh;
 pub(crate) mod view;
 
 use std::sync::{Arc, Weak};

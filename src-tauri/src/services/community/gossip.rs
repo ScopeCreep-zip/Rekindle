@@ -12,50 +12,11 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
+use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use crate::services::gossip_adapter::deps_impl::build_adapter;
 use crate::state::{AppState, SharedState};
 use crate::state_helpers;
-
-/// Sign + dedup + bump lamport + fan out. Returns `Err` if the app
-/// handle / Db can't be acquired; transport failures are
-/// best-effort and recorded as reliability + delivery rows inside
-/// the orchestrator.
-pub fn send_to_mesh(
-    state: &SharedState,
-    community_id: &str,
-    envelope: &CommunityEnvelope,
-) -> Result<(), String> {
-    let Some(adapter) = build_adapter(state) else {
-        return Err("app handle / db pool unavailable".to_string());
-    };
-    // Signed and its peers chosen here, from the overlay as it stands at
-    // the call (the per-peer sends are spawned): the Host gossips a
-    // removal's op and then installs the state that prunes its target, so
-    // a send deferred to a task would miss the member it removes.
-    rekindle_gossip::send_to_mesh(Arc::new(adapter), community_id, envelope)
-        .map_err(|error| format!("send_to_mesh: {error}"))
-}
-
-/// [`send_to_mesh`], waiting for every peer's send instead of spawning the
-/// fan-out in the unlock scope, which a teardown has already closed (the
-/// quit's beat hint, plan E3.4; Linux W5b). The number of peers sent to.
-///
-/// # Errors
-/// No adapter (no database or app handle), or the envelope did not sign.
-pub async fn send_to_mesh_awaited(
-    state: &SharedState,
-    community_id: &str,
-    envelope: &CommunityEnvelope,
-) -> Result<usize, String> {
-    let Some(adapter) = build_adapter(state) else {
-        return Err("app handle / db pool unavailable".to_string());
-    };
-    rekindle_gossip::send_to_mesh_awaited(Arc::new(adapter), community_id, envelope)
-        .await
-        .map_err(|error| format!("send_to_mesh: {error}"))
-}
 
 /// Architecture §10.6 — directed channel-scoped send for voice/video
 /// media and its per-stream control traffic. Resolves the recipient
@@ -184,18 +145,6 @@ pub async fn send_to_channel_peers_now(
     let outcome = if sent.is_ok() { "sent" } else { "failed" };
     tracing::debug!(kind, peer_count, outcome, "direct channel envelope");
     sent.map_err(|e| e.to_string())
-}
-
-/// Fan out a pre-signed envelope. Used by the presence-poll drain
-/// path which holds pending broadcasts from a prior empty-peers
-/// fan-out attempt.
-pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &SignedEnvelope) {
-    let Some(adapter) = build_adapter(state) else {
-        tracing::warn!(community = %community_id, "send_to_mesh_raw: adapter unavailable");
-        return;
-    };
-    let adapter = Arc::new(adapter);
-    rekindle_gossip::send_to_mesh_raw(adapter, community_id, signed.clone());
 }
 
 /// Bump a peer's reliability counters and mark dirty for the next

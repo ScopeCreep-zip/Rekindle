@@ -28,7 +28,7 @@ pub use bootstrap::answer_bootstrap_request;
 pub use expressions::{play_soundboard, upload_soundboard_sound};
 pub use gossip::{
     flush_peer_reliability, hydrate_peer_reliability, record_peer_reliability,
-    send_to_channel_peers, send_to_channel_peers_now, send_to_mesh, start_peer_reliability_flush,
+    send_to_channel_peers, send_to_channel_peers_now, start_peer_reliability_flush,
 };
 pub use governance::write_entry;
 pub use mek_rotation::handle_incoming_mek_transfer;

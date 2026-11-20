@@ -46,7 +46,9 @@ pub async fn fetch_and_broadcast(
         site_name: preview.site_name.clone(),
         fetched_at: preview.fetched_at,
     });
-    crate::services::community::send_to_mesh(state, community_id, &envelope)?;
+    crate::state_helpers::host_governance(state)
+        .map(|host| host.send_to_mesh_impl(community_id, &envelope))
+        .map_err(|e| e.to_string())?;
     Ok(preview)
 }
 

@@ -17,6 +17,12 @@ impl DaemonGossipAdapter {
         sender: &str,
         dedup_key: &str,
     ) {
+        // The shell meters its inbound gossip against its own cache until
+        // the inbound path moves into the Host.
+        if let Some(shell) = &self.ctx.shell {
+            shell.own_gossip_signed(community_id, sender, dedup_key);
+            return;
+        }
         let guard = self.ctx.broadcast_mgr.read();
         let Some(manager) = guard.as_ref() else {
             return;

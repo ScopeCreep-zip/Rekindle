@@ -37,7 +37,9 @@ pub async fn update_community_presence_inner(
         game_info,
         route_blob: state_helpers::our_route_blob(state),
     };
-    let gossip_result = crate::services::community::send_to_mesh(state, &community_id, &envelope);
+    let gossip_result = crate::state_helpers::host_governance(state)
+        .map(|host| host.send_to_mesh_impl(&community_id, &envelope))
+        .map_err(|e| e.to_string());
     crate::services::community::write_our_presence(state, &community_id).await;
     gossip_result
 }
@@ -134,17 +136,17 @@ pub fn fan_out_own_presence(
     for community_id in community_ids {
         let pseudonym_key =
             state_helpers::my_pseudonym_key(state, &community_id).unwrap_or_default();
-        if let Err(e) = crate::services::community::send_to_mesh(
-            state,
-            &community_id,
-            &CommunityEnvelope::PresenceUpdate {
-                pseudonym_key,
-                status: status.as_wire_str().to_string(),
-                game_info: game_info.clone(),
-                route_blob: state_helpers::our_route_blob(state),
-            },
-        ) {
-            tracing::debug!(community = %community_id, error = %e, "own presence not fanned out");
+        let update = CommunityEnvelope::PresenceUpdate {
+            pseudonym_key,
+            status: status.as_wire_str().to_string(),
+            game_info: game_info.clone(),
+            route_blob: state_helpers::our_route_blob(state),
+        };
+        match crate::state_helpers::host_governance(state) {
+            Ok(host) => host.send_to_mesh_impl(&community_id, &update),
+            Err(e) => {
+                tracing::debug!(community = %community_id, error = %e, "own presence not fanned out");
+            }
         }
     }
 }

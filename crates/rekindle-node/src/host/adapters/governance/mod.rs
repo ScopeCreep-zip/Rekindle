@@ -107,7 +107,7 @@ pub mod watch_ring;
 /// The Host, as the governance runtime sees it.
 #[derive(Clone)]
 pub struct HostGovernance {
-    pub(super) ctx: Arc<DaemonContext>,
+    pub(crate) ctx: Arc<DaemonContext>,
 }
 
 impl HostGovernance {

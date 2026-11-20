@@ -38,7 +38,7 @@ impl GossipDeps for DaemonGossipAdapter {
     // ---------- Overlay reads ----------
 
     fn current_peers(&self, community_id: &str) -> Option<Vec<PeerInfo>> {
-        self.current_peers_impl(community_id)
+        Some(self.current_peers_impl(community_id))
     }
 
     fn peer_reliability_scores(&self, community_id: &str) -> HashMap<String, f64> {

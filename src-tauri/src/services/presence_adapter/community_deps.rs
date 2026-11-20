@@ -59,8 +59,9 @@ impl CommunityPresenceDeps for PresenceAdapter {
     }
 
     fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
-        if let Err(error) =
-            crate::services::community::send_to_mesh(&self.state, community_id, &envelope)
+        if let Err(error) = crate::state_helpers::host_governance(&self.state)
+            .map(|host| host.send_to_mesh_impl(community_id, &envelope))
+            .map_err(|e| e.to_string())
         {
             tracing::debug!(
                 community = %community_id,
@@ -378,8 +379,11 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::gossip_overlay::apply_gossip_rebuild_plan(&self.state, community_id, plan);
     }
 
-    fn send_to_mesh_raw(&self, community_id: &str, envelope: SignedEnvelope) {
-        crate::services::community::gossip::send_to_mesh_raw(&self.state, community_id, &envelope);
+    fn send_to_mesh_raw(&self, _community_id: &str, envelope: SignedEnvelope) {
+        // Held broadcasts go to the Host's mesh unchanged (plan E3.4 S5).
+        if let Ok(host) = crate::state_helpers::host_governance(&self.state) {
+            host.forward_signed(envelope);
+        }
     }
 
     fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str) {

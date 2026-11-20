@@ -15,29 +15,13 @@ impl DaemonGossipAdapter {
         self.ctx.identity_secret()
     }
 
-    /// The fan-out targets for this community.
-    ///
-    /// `GossipMesh.peers` is the selected subset (size = fan-out
-    /// degree); `online_members` is everyone reachable. The crate
-    /// re-sorts and truncates to the degree itself, so handing it the
-    /// full online set rather than the pre-selected subset lets its
-    /// reliability weighting actually choose — with only `peers` it
-    /// would be re-ranking a list something else already narrowed.
-    pub(super) fn current_peers_impl(&self, community_id: &str) -> Option<Vec<PeerInfo>> {
-        let guard = self.ctx.broadcast_mgr.read();
-        let manager = guard.as_ref()?;
-        let meshes = manager.meshes().read();
-        let mesh = meshes.get(community_id)?;
-        Some(
-            mesh.online_members
-                .iter()
-                .filter(|(_, member)| !member.route_blob.is_empty())
-                .map(|(pseudonym, member)| PeerInfo {
-                    pseudonym_key: pseudonym.clone(),
-                    route_blob: member.route_blob.clone(),
-                })
-                .collect(),
-        )
+    /// The fan-out targets for this community: the Host's mesh (plan E3.4
+    /// S5), the roster's live members by their `M`/6 routes, already
+    /// picked; the crate's degree keeps them all and, with no scores here,
+    /// its stable sort keeps their order.
+    pub(super) fn current_peers_impl(&self, community_id: &str) -> Vec<PeerInfo> {
+        crate::host::adapters::governance::HostGovernance::new(std::sync::Arc::clone(&self.ctx))
+            .mesh_peers(community_id)
     }
 
     /// Per-peer delivery reliability (§14.5, gossip topology

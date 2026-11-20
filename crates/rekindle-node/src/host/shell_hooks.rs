@@ -74,29 +74,11 @@ pub trait ShellHooks: Send + Sync {
     // ---- Governance capabilities the Host's adapter cannot reach yet
     // (plan E3.1 B2). `rekindled` runs its own; each owner step deletes one.
 
-    /// Fan a governance envelope out over the shell's gossip mesh; an error
-    /// when it could not go. Ported with the gossip mesh at E3.4.
-    ///
-    /// # Errors
-    /// The envelope did not reach the mesh.
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<(), String>;
-
-    /// Fan an envelope out over the shell's gossip mesh now, waiting for
-    /// every peer's send: the sends at a session's end (the quit's beat
-    /// hint, a leave's notice), after the unlock scope a spawned fan-out
-    /// would run in has closed (Linux W5b). The number of peers sent to.
-    ///
-    /// # Errors
-    /// The envelope could not be signed.
-    async fn send_to_mesh_awaited(
-        &self,
-        community_id: &str,
-        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<usize, String>;
+    /// The Host signed a gossip envelope of ours under `dedup_key`: the
+    /// shell records it in the cache its inbound gossip is metered against,
+    /// so a relayed copy coming back is dropped as a duplicate. Ported with
+    /// the inbound gossip path.
+    fn own_gossip_signed(&self, community_id: &str, sender: &str, dedup_key: &str);
 
     /// We left the community: drop the shell's own copies of its keys,
     /// until the MEK adapters move at E3.5.

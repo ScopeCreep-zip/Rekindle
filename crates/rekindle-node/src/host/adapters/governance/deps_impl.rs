@@ -219,8 +219,8 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), GovernanceRuntimeError> {
-        self.send_to_mesh_checked(community_id, envelope)
-            .map_err(GovernanceRuntimeError::Adapter)
+        self.send_to_mesh_impl(community_id, envelope);
+        Ok(())
     }
 
     // ---------- Permissions ----------

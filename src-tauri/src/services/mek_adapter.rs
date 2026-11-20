@@ -244,7 +244,9 @@ impl MekDistributeDeps for MekAdapter {
         community_id: &str,
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<(), rekindle_mek_rotation::MekRotationError> {
-        crate::services::community::send_to_mesh(&self.state, community_id, envelope)
+        crate::state_helpers::host_governance(&self.state)
+            .map(|host| host.send_to_mesh_impl(community_id, envelope))
+            .map_err(|e| e.to_string())
             .map_err(rekindle_mek_rotation::MekRotationError::InvalidInput)
     }
 }

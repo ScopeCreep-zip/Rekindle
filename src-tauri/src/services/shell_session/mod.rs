@@ -52,25 +52,11 @@ impl ShellHooks for ShellSession {
         ended::ended(&self.state, self.app.as_ref(), reason).await;
     }
 
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<(), String> {
-        crate::services::community::send_to_mesh(&self.state, community_id, envelope)
-    }
-
-    async fn send_to_mesh_awaited(
-        &self,
-        community_id: &str,
-        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<usize, String> {
-        crate::services::community::gossip::send_to_mesh_awaited(
-            &self.state,
-            community_id,
-            envelope,
-        )
-        .await
+    fn own_gossip_signed(&self, community_id: &str, sender: &str, dedup_key: &str) {
+        self.state
+            .dedup_cache
+            .lock()
+            .check_and_insert(community_id, sender, dedup_key);
     }
 
     fn community_left(&self, community_id: &str) {

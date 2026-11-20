@@ -20,42 +20,34 @@ const FOLLOW_UP_JITTER_MS: u64 = 8_000;
 impl HostGovernance {
     // ---------- Gossip ----------
 
-    /// Fan a governance envelope out over the community mesh.
-    ///
-    /// Queued for the gossip worker. This used to accept only
-    /// `Control(..)` and, within that, only the variants transport had a
-    /// postcard helper for — everything else returned "this control
-    /// variant has no transport gossip". Every variant now goes, in the
-    /// Cap'n Proto form desktop peers read. See `daemon::gossip`. A send
-    /// the shell refused is logged ([`Self::send_to_mesh_checked`]).
-    pub(crate) fn send_to_mesh_impl(&self, community_id: &str, envelope: &CommunityEnvelope) {
-        if let Err(error) = self.send_to_mesh_checked(community_id, envelope) {
-            tracing::warn!(community = %community_id, %error, "mesh send refused by the shell");
-        }
+    /// Fan an envelope out over the community mesh, on both modes: the
+    /// gossip worker signs it and sends it to [`Self::mesh_peers`] (plan
+    /// E3.4 S5), every variant in the Cap'n Proto form desktop peers read
+    /// (see `daemon::gossip`). Sent to the peers of the call: a caller that
+    /// changes the roster next has already chosen whom it goes to.
+    pub fn send_to_mesh_impl(&self, community_id: &str, envelope: &CommunityEnvelope) {
+        crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
     }
 
-    /// [`Self::send_to_mesh_impl`], answering whether the envelope reached
-    /// the mesh. In the shell the gossip worker does not run
-    /// (`host::runtime` spawns it in daemon mode only, so its queue has no
-    /// reader): the envelope goes to the shell's mesh
-    /// (`ShellHooks::send_to_mesh`, until E3.4 ports the mesh). Queued on
-    /// the worker there, the governance-op fast path (`gossip_op`), the
-    /// join announcement, the `HeadAdvanced` hints and the held-behind key
-    /// requests were dropped on the desktop, and a removal reached the
-    /// removed member only through the remover's frontier watch.
+    /// Sign `envelope` and send it to the mesh now, awaiting every peer's
+    /// send: the sends at a session's end (the quit's beat hint, a leave's
+    /// notice), when the unlock scope a spawned fan-out runs in has closed
+    /// (Linux W5b). Nothing is held without peers: no session follows to
+    /// send it. The number of peers sent to.
     ///
     /// # Errors
-    /// The shell could not hand the envelope to its mesh.
-    pub(crate) fn send_to_mesh_checked(
+    /// The envelope could not be signed or encoded.
+    pub async fn send_to_mesh_awaited(
         &self,
         community_id: &str,
         envelope: &CommunityEnvelope,
-    ) -> Result<(), String> {
-        if let Some(shell) = &self.ctx.shell {
-            return shell.send_to_mesh(community_id, envelope);
-        }
-        crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
-        Ok(())
+    ) -> Result<usize, String> {
+        let adapter = crate::daemon::gossip_adapter::DaemonGossipAdapter::new(
+            std::sync::Arc::clone(&self.ctx),
+        );
+        rekindle_gossip::send_to_mesh_awaited(std::sync::Arc::new(adapter), community_id, envelope)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Open the community's gossip mesh as its membership is recorded, before

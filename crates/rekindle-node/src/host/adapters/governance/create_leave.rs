@@ -184,24 +184,18 @@ impl HostGovernance {
         Ok(())
     }
 
-    /// Gossip our departure (or our quit's hint) while the community's
-    /// overlay still holds its peers: the daemon's worker is awaited until the fan-out has them,
-    /// since the teardown that follows removes the overlay.
+    /// Gossip our departure (or our quit's hint) to the mesh before the
+    /// teardown, every peer's send awaited
+    /// ([`Self::send_to_mesh_awaited`]).
     pub(crate) async fn send_before_teardown(
         &self,
         community: &str,
         notice: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) {
-        if let Some(shell) = &self.ctx.shell {
-            // Awaited: the teardown closed the unlock scope a spawned
-            // fan-out runs in, which dropped the quit's hint (Linux W5b).
-            match shell.send_to_mesh_awaited(community, notice).await {
-                Ok(peers) => tracing::debug!(peers, "gossip before teardown sent"),
-                Err(error) => tracing::warn!(%error, "gossip before teardown not sent"),
-            }
-            return;
+        match self.send_to_mesh_awaited(community, notice).await {
+            Ok(peers) => tracing::debug!(peers, "gossip before teardown sent"),
+            Err(error) => tracing::warn!(%error, "gossip before teardown not sent"),
         }
-        crate::daemon::gossip::send_awaited(&self.ctx.gossip_tx, community, notice).await;
     }
 
     /// Every key of every scope of `community`, stored and live, ours and

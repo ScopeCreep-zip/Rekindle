@@ -360,13 +360,14 @@ impl Host {
         // their queues have no reader there. Each runs in the span the host
         // started in, so its log lines name the host they ran for.
         let workers = tokio_util::task::TaskTracker::new();
+        // The gossip worker runs on both modes: one mesh (plan E3.4 S5).
+        workers.spawn(
+            crate::daemon::gossip::run_worker(Arc::clone(&ctx), gossip_rx).in_current_span(),
+        );
         if mode == HostMode::Daemon {
-            use crate::daemon::{
-                event_forward, gossip, mek_rotation, presence_adapter::supervisor,
-            };
+            use crate::daemon::{event_forward, mek_rotation, presence_adapter::supervisor};
             let c = || Arc::clone(&ctx);
             workers.spawn(mek_rotation::run_worker(c(), mek_rotation_rx).in_current_span());
-            workers.spawn(gossip::run_worker(c(), gossip_rx).in_current_span());
             workers.spawn(supervisor::run_supervisor(c(), presence_start_rx).in_current_span());
             workers.spawn(event_forward::run_forwarder(c()).in_current_span());
         } else {

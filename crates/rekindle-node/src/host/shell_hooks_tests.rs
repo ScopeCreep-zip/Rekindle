@@ -36,21 +36,8 @@ impl shell_hooks::ShellHooks for Recorder {
     async fn ended(&self, reason: shell_hooks::EndReason) {
         self.0.lock().push(format!("ended {reason:?}"));
     }
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<(), String> {
-        self.0.lock().push(format!("mesh {community_id}"));
-        Ok(())
-    }
-    async fn send_to_mesh_awaited(
-        &self,
-        community_id: &str,
-        _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-    ) -> Result<usize, String> {
-        self.0.lock().push(format!("mesh awaited {community_id}"));
-        Ok(1)
+    fn own_gossip_signed(&self, _community_id: &str, _sender: &str, _dedup_key: &str) {
+        self.0.lock().push("own gossip".into());
     }
     fn community_left(&self, _community_id: &str) {}
     fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
@@ -90,48 +77,6 @@ impl shell_hooks::ShellHooks for Recorder {
         _projected: &crate::host::adapters::governance::projection::GovernanceProjected,
     ) {
     }
-}
-
-/// In the shell the gossip worker does not run, so the Host's own gossip
-/// goes to the shell's mesh; queued on the worker it was dropped.
-#[tokio::test]
-async fn the_host_gossips_through_the_shell_mesh() {
-    use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-    let dir = tempfile::tempdir().unwrap();
-    let recorder = Arc::new(Recorder::default());
-    let host = offline_host_with(&dir, Some(recorder.clone())).await;
-    let notice = CommunityEnvelope::Control(ControlPayload::Kick {
-        target_pseudonym: "ab".repeat(32),
-    });
-    crate::host::adapters::governance::HostGovernance::new(Arc::clone(&host.ctx))
-        .send_to_mesh_impl("community-1", &notice);
-    host.shutdown().await.unwrap();
-    assert!(
-        recorder.0.lock().iter().any(|e| e == "mesh community-1"),
-        "{:?}",
-        recorder.0.lock()
-    );
-}
-
-/// A send at the teardown (the quit's beat hint) goes through the shell's
-/// awaited fan-out, run after the unlock scope a spawned fan-out needs has
-/// closed (Linux W5b: the desktop's exit dropped the quit's hint).
-#[tokio::test]
-async fn the_teardown_send_is_awaited_on_the_shell_mesh() {
-    use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-    let dir = tempfile::tempdir().unwrap();
-    let recorder = Arc::new(Recorder::default());
-    let host = offline_host_with(&dir, Some(recorder.clone())).await;
-    let hint = CommunityEnvelope::Control(ControlPayload::HeadAdvanced { hint: vec![1] });
-    let governance = crate::host::adapters::governance::HostGovernance::new(Arc::clone(&host.ctx));
-    host.shutdown().await.unwrap();
-    governance.send_before_teardown("community-1", &hint).await;
-    let log = recorder.0.lock().clone();
-    assert!(
-        log.iter().any(|e| e == "mesh awaited community-1"),
-        "{log:?}"
-    );
-    assert!(!log.iter().any(|e| e == "mesh community-1"), "{log:?}");
 }
 
 /// The Host calls the shell at its fixed points: after its own stages,
@@ -185,20 +130,7 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         fn own_records(&self, _keys: &shell_hooks::OwnRecordKeys) {}
         async fn ending(&self) {}
         async fn ended(&self, _reason: shell_hooks::EndReason) {}
-        fn send_to_mesh(
-            &self,
-            _community_id: &str,
-            _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-        ) -> Result<(), String> {
-            Ok(())
-        }
-        async fn send_to_mesh_awaited(
-            &self,
-            _community_id: &str,
-            _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
-        ) -> Result<usize, String> {
-            Ok(0)
-        }
+        fn own_gossip_signed(&self, _community_id: &str, _sender: &str, _dedup_key: &str) {}
         fn community_left(&self, _community_id: &str) {}
         fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
         fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {

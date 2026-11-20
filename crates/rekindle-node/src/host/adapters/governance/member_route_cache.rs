@@ -81,7 +81,11 @@ impl HostGovernance {
 
     /// Read `member`'s routes cold from the record its merged `MemberJoined`
     /// names, pinned to that op's owner, into the cache; the blob read.
-    async fn read_route_cold(&self, community: &str, member: &PseudonymKey) -> Option<Vec<u8>> {
+    pub(crate) async fn read_route_cold(
+        &self,
+        community: &str,
+        member: &PseudonymKey,
+    ) -> Option<Vec<u8>> {
         let (record, owner) = {
             let state = self.ctx.communities.governance_state(community)?;
             let m = state.members.get(member)?;
@@ -217,11 +221,15 @@ impl HostGovernance {
 
     /// The members of `community`'s roster other than us (joined, not
     /// departed, not banned).
-    fn roster_others(&self, community: &str) -> Vec<PseudonymKey> {
-        let me = self
-            .identity_secret_impl()
+    /// Our pseudonym in `community`, derived from the identity.
+    pub(crate) fn me_in(&self, community: &str) -> Option<PseudonymKey> {
+        self.identity_secret_impl()
             .map(|secret| derive_community_pseudonym(&secret, community))
-            .map(|key| PseudonymKey(key.verifying_key().to_bytes()));
+            .map(|key| PseudonymKey(key.verifying_key().to_bytes()))
+    }
+
+    fn roster_others(&self, community: &str) -> Vec<PseudonymKey> {
+        let me = self.me_in(community);
         let Some(state) = self.ctx.communities.governance_state(community) else {
             return Vec::new();
         };
