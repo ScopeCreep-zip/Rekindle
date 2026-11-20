@@ -114,7 +114,13 @@ describe("a skinned window is the skin's shape", function () {
     await (await byText(browser, ".form-tab", "Appearance")).click();
     await shown(browser, ".skin-row-shown .skin-name", NET_WAIT_MS);
     const inUse = async (): Promise<string> => (await (await browser.$(".skin-row-shown .skin-name")).getText()).trim();
+    const shownHref = (): Promise<string> =>
+      browser.execute('var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";') as Promise<string>;
+    // A changed skin must be a different sheet than the one shown before
+    // the change: the previous skin's loaded sheet never passes for it.
+    let before = "";
     if ((await inUse()) !== pack.name) {
+      before = await shownHref();
       for (const r of await browser.$$(".skin-row")) {
         if ((await (await r.$(".skin-name")).getText()).trim() !== pack.name) continue;
         await (await r.$("input[type=radio]")).click();
@@ -126,8 +132,8 @@ describe("a skinned window is the skin's shape", function () {
     let href = "";
     await waitUntil(
       async () => {
-        href = (await browser.execute('var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";')) as string;
-        return href.startsWith("skin://");
+        href = await shownHref();
+        return href.startsWith("skin://") && href !== before;
       },
       NET_WAIT_MS,
       "Settings never linked the skin's sheet",
