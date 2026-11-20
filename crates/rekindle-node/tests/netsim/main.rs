@@ -103,6 +103,7 @@ mod rejoin_after_kick;
 mod rejoin_after_leave;
 mod rejoin_by_gossip;
 mod removal_ack;
+mod requester_route_replaced;
 mod resume_after_restart;
 mod rich_messaging;
 mod ring_census;
