@@ -14,7 +14,7 @@
 //!    `Bottom`, `BottomRight`), each component's normal set holding the
 //!    one image of that piece (Onyx, Space Cowboy).
 //! 2. [`Shape::Sides`]: tiles `TopRow` and `BottomRow` whose sets hold
-//!    `left`/`middle`/`right`, and `LeftSide`/`RightSide` (and an optional
+//!    `left`/`middle`/`right` (or the row's own nine-piece types), and `LeftSide`/`RightSide` (and an optional
 //!    `Background` centre) of one image each (Symbiosis's
 //!    `MainWindow.xml` "Window Frame" block).
 //! 3. [`Shape::Nine`]: one component whose normal set has all nine piece
@@ -158,14 +158,22 @@ fn single(l: &Laid<'_>) -> Option<Piece> {
 }
 
 fn sides(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
-    let row = |name: &str| {
+    // A row's set types its pieces `left`/`middle`/`right` or by their
+    // nine-piece position: Symbiosis's `MainTopRow` uses the first,
+    // its `MainBottomRow` `BottomLeft`/`Bottom`/`BottomRight`.
+    let row = |name: &str, own: [&str; 3]| {
         let l = tile_named(laid, &[name])?;
-        let [a, b, c] = ["left", "middle", "right"].map(|t| typed(l.set, t));
-        Some([a?, b?, c?])
+        [["left", "middle", "right"], own]
+            .into_iter()
+            .find_map(|types| {
+                let [a, b, c] = types.map(|t| typed(l.set, t));
+                Some([a?, b?, c?])
+            })
     };
     let side = |name: &str| single(tile_named(laid, &[name])?);
-    let [top_left, top, top_right] = row("TopRow")?.map(Some);
-    let [bottom_left, bottom, bottom_right] = row("BottomRow")?.map(Some);
+    let [top_left, top, top_right] = row("TopRow", ["topleft", "top", "topright"])?.map(Some);
+    let [bottom_left, bottom, bottom_right] =
+        row("BottomRow", ["bottomleft", "bottom", "bottomright"])?.map(Some);
     Some([
         top_left,
         top,
@@ -256,4 +264,45 @@ pub fn pieces(
         file: "frame pieces".to_owned(),
     })?;
     Ok(Some((pieces, shape)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::tree::parse;
+    use super::*;
+
+    /// Symbiosis's "Window Frame" block (`MainWindow.xml`): the top row
+    /// typed `Left`/`Middle`/`Right`, the bottom row by position.
+    #[test]
+    fn a_bottom_row_typed_by_position_is_the_sides_shape() {
+        let layout = parse(
+            "MainWindow.xml",
+            br#"<Tile Name="MainWindow" Component="MainWindow">
+<Tile Name="TopRow" Component="MainTopRow"/><Tile Name="LeftSide" Component="MainLeftSide"/>
+<Tile Name="RightSide" Component="MainRightSide"/><Tile Name="BottomRow" Component="MainBottomRow"/></Tile>"#,
+        )
+        .unwrap();
+        let components = parse(
+            "Components/MainWindow.xml",
+            br#"<Components>
+<Component Name="MainTopRow"><Images State="Normal"><Image Type="Left">tl</Image><Image Type="Middle">t</Image><Image Type="Right">tr</Image></Images></Component>
+<Component Name="MainLeftSide"><Images State="Normal"><Image Type="Middle">l</Image></Images></Component>
+<Component Name="MainRightSide"><Images State="Normal"><Image Type="Right">r</Image></Images></Component>
+<Component Name="MainBottomRow"><Images State="Normal"><Image Type="BottomLeft">bl</Image><Image Type="Bottom">b</Image><Image Type="BottomRight">br</Image></Images></Component>
+</Components>"#,
+        )
+        .unwrap();
+        let names = std::cell::RefCell::new(Vec::new());
+        let got = pieces(&layout, &[components], |name, _| {
+            names.borrow_mut().push(name.to_owned());
+            Ok(RgbaImage::new(2, 2))
+        })
+        .unwrap()
+        .map(|(_, shape)| shape);
+        assert_eq!(got, Some(Shape::Sides));
+        assert_eq!(
+            names.into_inner(),
+            ["tl", "t", "tr", "l", "r", "bl", "b", "br"]
+        );
+    }
 }

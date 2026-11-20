@@ -14,9 +14,15 @@ const FOLDER: &str = "Fixture";
 const MAGENTA: Rgba<u8> = Rgba([0xff, 0, 0xff, 0xff]);
 const PIXEL: Rgba<u8> = Rgba([40, 100, 160, 255]);
 
-fn png() -> Vec<u8> {
+/// A 3×3 frame piece; `keyed` puts one #FF00FF pixel at its top left. Only
+/// corners are keyed: a keyed pixel in a repeating side
+/// would cut the window every 3 px, which no pack's art does (SK0 S1: 1440
+/// cuts per side at the cap's 4320 px exceed the 4096-rectangle cap).
+fn png(keyed: bool) -> Vec<u8> {
     let mut img = RgbaImage::from_pixel(3, 3, PIXEL);
-    img.put_pixel(0, 0, MAGENTA);
+    if keyed {
+        img.put_pixel(0, 0, MAGENTA);
+    }
     encode_png(&DynamicImage::ImageRgba8(img)).unwrap()
 }
 
@@ -84,7 +90,9 @@ fn tree() -> Tree {
         "bottom",
         "bottomright",
     ] {
-        t.insert(format!("main/{k}.png"), png());
+        // `middle` is the `[Left]`/`[Right]` rail piece.
+        let corner = k.ends_with("left") || k.ends_with("right");
+        t.insert(format!("main/{k}.png"), png(corner));
     }
     // Never read: a malformed chat skin and junk.
     // The chat skin file is read for its surfaces (plan E7.7.7 S2); this
@@ -198,10 +206,12 @@ fn hover_and_pressed_shifts_and_colour_key_are_baked() {
     assert_eq!(at(RegionState::Normal, 4, 1), [40, 100, 160, 255]);
     assert_eq!(at(RegionState::Hover, 4, 1), [70, 130, 190, 255]);
     assert_eq!(at(RegionState::Down, 4, 1), [10, 70, 130, 255]);
-    // Each piece's #FF00FF pixel is keyed out; the middle is transparent.
+    // The corners' #FF00FF pixel is keyed out (the top right's at (6, 0));
+    // the top side's (3, 0) is kept; the middle is transparent.
     for s in [RegionState::Normal, RegionState::Hover, RegionState::Down] {
         assert_eq!(at(s, 0, 0), [0, 0, 0, 0]);
-        assert_eq!(at(s, 3, 0), [0, 0, 0, 0]);
+        assert_eq!(at(s, 6, 0), [0, 0, 0, 0]);
+        assert_ne!(at(s, 3, 0)[3], 0);
         assert_eq!(at(s, 4, 4), [0, 0, 0, 0]);
     }
     assert!(!f.images.contains_key(&RegionState::WindowInactive));

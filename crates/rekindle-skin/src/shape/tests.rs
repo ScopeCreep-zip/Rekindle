@@ -231,13 +231,17 @@ fn builtin_silhouettes_match_their_goldens() {
                 vec![r(69, 0, 467, 1), r(62, 1, 481, 1), r(56, 2, 493, 1)],
             ),
         ),
-        // Open (SK0 S1): the Named main-* pieces are read now, but only a
-        // 1 px line of them is opaque, so the silhouette is the content
-        // rectangle; the reference shows cut corners and overhang art.
+        // The main-* pieces are #FF00FF (keyed) but for a 1 px black line,
+        // so the frame tiles cut to the content rectangle; the reference's
+        // logo and mechs are separate layout tiles (SCLogo, AGEAR, IGEAR)
+        // over the band, not read yet (SK0 S1 open).
         ("builtin:spacecowboy", (1, vec![r(15, 33, 331, 464)])),
-        // Open (SK0 S1): the Sides shape does not match yet; still a
-        // rectangle against the reference's rounded frame.
-        ("builtin:symbiosis", (1, vec![r(0, 0, 386, 555)])),
+        // The Sides shape (bottom row typed by position): rounded corners,
+        // 7 px at the top, as the reference.
+        (
+            "builtin:symbiosis",
+            (13, vec![r(7, 0, 372, 1), r(5, 1, 376, 1), r(4, 2, 378, 1)]),
+        ),
         // The T.C plaque (72 px opaque top, centred) over the title row.
         (
             "builtin:total-chaos",

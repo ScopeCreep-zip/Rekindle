@@ -10,9 +10,25 @@ use crate::validate;
 const MAGENTA: Rgba<u8> = Rgba([0xff, 0, 0xff, 0xff]);
 
 fn png(w: u32, h: u32, px: Rgba<u8>) -> Vec<u8> {
+    frame_png(w, h, px, true)
+}
+
+/// A frame piece: `keyed` puts one #FF00FF pixel at its top left. Only
+/// corners (and the middle, the content ground) are keyed: a keyed pixel in
+/// a repeating side would cut the window every period, which no pack's art
+/// does (SK0 S1: 1440 cuts per rail at the cap's 4320 px height exceed the
+/// 4096-rectangle cap).
+fn frame_png(w: u32, h: u32, px: Rgba<u8>, keyed: bool) -> Vec<u8> {
     let mut img = RgbaImage::from_pixel(w, h, px);
-    img.put_pixel(0, 0, MAGENTA);
+    if keyed {
+        img.put_pixel(0, 0, MAGENTA);
+    }
     encode_png(&DynamicImage::ImageRgba8(img)).unwrap()
+}
+
+/// A nine-piece type that is not a repeating side.
+fn keyed(piece: &str) -> bool {
+    !matches!(piece, "Top" | "Left" | "Right" | "Bottom")
 }
 
 /// Carbon Fiber's shape: the frame split over components, the top row
@@ -29,7 +45,7 @@ fn tree(colours: &str) -> Tree {
         let side = if *n == "Middle" { 8 } else { 3 };
         t.insert(
             format!("Images/{n}.png"),
-            png(side, side, Rgba([40, 100, 160, 255])),
+            frame_png(side, side, Rgba([40, 100, 160, 255]), keyed(n)),
         );
     }
     t.insert(
@@ -105,7 +121,7 @@ fn shift_and_colour_key_are_baked() {
     // The top row's pieces carry SideCG (+30, -30, 0); the rest do not.
     assert_eq!(img.get_pixel(4, 1).0, [70, 70, 160, 255]);
     assert_eq!(img.get_pixel(4, 5).0, [40, 100, 160, 255]);
-    // Each piece's top-left #FF00FF pixel is keyed out.
+    // The corners' and the middle's top-left #FF00FF pixel is keyed out.
     assert_eq!(img.get_pixel(0, 0).0, [0, 0, 0, 0]);
     assert_eq!(img.get_pixel(3, 3).0, [0, 0, 0, 0]);
 }
@@ -286,7 +302,7 @@ fn v3_tree(colours: &str) -> Tree {
         );
         t.insert(
             format!("frame/{n}.png"),
-            png(4, 4, Rgba([40, 100, 160, 255])),
+            frame_png(4, 4, Rgba([40, 100, 160, 255]), n.len() == 2),
         );
     }
     t.insert(
