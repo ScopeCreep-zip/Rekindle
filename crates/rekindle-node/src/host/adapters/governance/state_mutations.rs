@@ -73,6 +73,7 @@ impl HostGovernance {
             shell.on_governance_projected(community_id, &projected);
         }
         self.publish_member_transitions(transitions);
+        self.publish_thread_creations(community_id, prev.as_ref(), now_secs);
         self.publish_thread_archive_changes(community_id, archives);
         if !permissions.is_empty() {
             self.publish_permission_transitions(community_id, permissions);

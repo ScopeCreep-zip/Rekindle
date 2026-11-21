@@ -82,7 +82,8 @@ pub enum SocialEvent {
 
     // ── Threads ─────────────────────────────────────────────────
     /// A new thread was created.
-    /// Triggered by: gossip `ControlPayload::ThreadCreated`.
+    /// Triggered by: a signed `ThreadCreated` governance entry merged
+    /// (`rekindle-node` `governance/thread_events.rs`).
     ThreadCreated {
         community: String,
         thread: Box<ThreadInfo>,

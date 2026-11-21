@@ -80,7 +80,11 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
   if ("threadCreated" in s) {
     const { community, thread } = s.threadCreated;
     if (communityState.communities[community]) {
-      setCommunityState("channelThreads", thread.channelId, (prev) => [...(prev ?? []), thread]);
+      // The creator's own window may already hold it from its reload
+      // after create; the merged governance announces each thread once.
+      setCommunityState("channelThreads", thread.channelId, (prev) =>
+        prev?.some((t) => t.id === thread.id) ? prev : [...(prev ?? []), thread],
+      );
     }
     return;
   }
