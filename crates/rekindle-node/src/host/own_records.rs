@@ -106,8 +106,8 @@ impl OwnRecords {
         match self.hold(stop).await {
             Some(Ok(())) => outcome.send_replace(OwnRecordsStage::Held),
             Some(Err(why)) => outcome.send_replace(OwnRecordsStage::Failed(why)),
-            None => return,
-        };
+            None => {}
+        }
     }
 
     /// The stage: `None` when `stop` fired first, else whether our
