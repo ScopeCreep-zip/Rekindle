@@ -16,9 +16,11 @@ use std::sync::Arc;
 
 use locks::{CommunityLocks, FollowUp};
 use parking_lot::RwLock;
+use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::rebuild_flight::RebuildFlight;
 use rekindle_governance_runtime::verify_cache::OpVerifyCache;
+use rekindle_protocol::dht::pool::keepalive::WarmRecord;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
 use rekindle_transport::session::CommunityMembership;
 use rekindle_types::id::ThreadId;
@@ -212,6 +214,33 @@ impl CommunityStore {
             crate::host::adapters::governance::watch_ring::warm_member_records,
         )
         .unwrap_or_default()
+    }
+
+    /// The sealed pages the community keeps warm (plan E3.2 S7).
+    pub fn warm_sealed_pages(&self, community_id: &str) -> Vec<WarmRecord> {
+        self.read(community_id, super::sealed_pages::warm_sealed_pages)
+            .unwrap_or_default()
+    }
+
+    /// Hold `checkpoint`'s directory pages, released by a newer one
+    /// (`SealedPages::checkpoint`); `me` is our pseudonym there.
+    pub fn warm_checkpoint_pages(
+        &self,
+        community_id: &str,
+        checkpoint: &rekindle_types::governance::Checkpoint,
+        me: Option<&rekindle_types::id::PseudonymKey>,
+    ) {
+        if let Some(c) = self.map.write().get_mut(community_id) {
+            c.sealed_pages
+                .checkpoint(checkpoint.height, &checkpoint.pages, &checkpoint.cut, me);
+        }
+    }
+
+    /// One of our own op pages, sealed by an append (plan E3.2 S7).
+    pub fn note_own_op_page(&self, community_id: &str, page: &PagePointer) {
+        if let Some(c) = self.map.write().get_mut(community_id) {
+            c.sealed_pages.own_page(page);
+        }
     }
 
     /// The community's held leases but its anchor's, to watch: the anchor

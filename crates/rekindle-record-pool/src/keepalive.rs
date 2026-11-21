@@ -58,13 +58,54 @@ pub fn initial_offset(rng: &dyn RandomSource) -> Duration {
     Duration::from_secs(rng.below(BASE_INTERVAL.as_secs()))
 }
 
+/// One record the keepalive warms.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct WarmRecord {
+    pub key: String,
+    /// A sealed DFLT(1) page (ADR 0011 "Sealed pages": written once, its
+    /// owner dropped): marked immutable while held (plan KA1), so no
+    /// inspect ever runs on it, and its one subkey is read local-first.
+    pub immutable: bool,
+}
+
+impl WarmRecord {
+    /// A record that can change (the anchor is marked by its own lease).
+    #[must_use]
+    pub fn mutable(key: String) -> Self {
+        Self {
+            key,
+            immutable: false,
+        }
+    }
+
+    /// A sealed page.
+    #[must_use]
+    pub fn sealed(key: String) -> Self {
+        Self {
+            key,
+            immutable: true,
+        }
+    }
+}
+
 /// Rehydrate one record: the borrow is [`OpenIntent::Hold`] (warming is
 /// custody), and [`RecordPort::rehydrate`] re-opens with the record's
 /// sticky writer as `Hold`, the only app-side trigger of Veilid's
 /// rehydration (queued when due, see the module notes), so nothing is
 /// downgraded; then it pulls any subkey the network holds newer. A table
 /// hit while the record is held.
-async fn rehydrate(pool: &dyn RecordPort, key: &str) {
+///
+/// A sealed page is marked immutable right after the acquire (plan KA1),
+/// then its subkey is read local-first: a held copy answers locally, and a
+/// page this node never read is fetched once (0.5.8 `get_value.rs:161-169`
+/// goes to the network only with no local copy), since Veilid rehydrates
+/// only a record its local store holds (`rehydrate.rs:155-165`). The
+/// re-open that follows then queues the rehydration that re-pushes the
+/// stored owner-signed value to the replicas short of it
+/// (`rehydrate.rs:309-330`, `tasks/offline_subkey_writes.rs:55-95`): no
+/// writer is needed, so a page whose owner is gone stays alive.
+async fn rehydrate(pool: &dyn RecordPort, record: &WarmRecord) {
+    let key = record.key.as_str();
     let lease = match pool.acquire(key, None, OpenIntent::Hold).await {
         Ok(lease) => lease,
         Err(e) => {
@@ -72,6 +113,14 @@ async fn rehydrate(pool: &dyn RecordPort, key: &str) {
             return;
         }
     };
+    if record.immutable {
+        if let Err(e) = pool.mark_immutable(lease) {
+            tracing::debug!(key, error = %e, "keepalive: page not marked");
+        }
+        if let Err(e) = pool.get(lease, 0, false).await {
+            tracing::debug!(key, error = %e, "keepalive: page not read");
+        }
+    }
     if let Err(e) = pool.rehydrate(lease).await {
         tracing::debug!(key, error = %e, "keepalive: rehydrate failed");
     }
@@ -87,7 +136,7 @@ async fn rehydrate(pool: &dyn RecordPort, key: &str) {
 /// mid-cycle drops none (plan C4.L1).
 pub async fn run(
     pool: impl Fn() -> Option<Arc<dyn RecordPort>>,
-    keys: impl Fn() -> Option<Vec<String>>,
+    keys: impl Fn() -> Option<Vec<WarmRecord>>,
     rng: Arc<dyn RandomSource>,
     stop: CancellationToken,
 ) {

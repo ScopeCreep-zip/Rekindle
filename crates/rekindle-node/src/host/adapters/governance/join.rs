@@ -346,7 +346,7 @@ impl HostGovernance {
         let runs = rekindle_records::chain::page_runs(&entries)
             .map_err(|e| format!("community re-join failed: {e}"))?;
         for run in runs {
-            rekindle_records::chain::append_at(
+            let page = rekindle_records::chain::append_at(
                 &*pool,
                 &outcome.member.record_key,
                 rekindle_types::dht_layout::member_record::GOV_HEAD,
@@ -355,6 +355,7 @@ impl HostGovernance {
             )
             .await
             .map_err(|e| format!("community re-join failed, op log not written: {e}"))?;
+            self.ctx.communities.note_own_op_page(community, &page);
         }
         // Rows of these ops still queued were aimed at the record this
         // re-join replaced, and can never land there: the ops are on the

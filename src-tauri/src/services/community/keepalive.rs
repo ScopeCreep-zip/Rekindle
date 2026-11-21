@@ -22,7 +22,7 @@ pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
                     .communities
                     .read()
                     .get(&community_id)
-                    .map(super::record_inventory::warmable_record_keys)
+                    .map(super::record_inventory::warmable_records)
             },
             rng,
             stop,

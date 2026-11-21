@@ -39,10 +39,12 @@ async fn two_attempts_of_one_row_leave_one_log_entry() {
     // attempted again.
     assert!(append_op_once(&*port, &record, &owner, encoded.clone())
         .await
-        .unwrap());
-    assert!(!append_op_once(&*port, &record, &owner, encoded.clone())
+        .unwrap()
+        .is_some());
+    assert!(append_op_once(&*port, &record, &owner, encoded.clone())
         .await
-        .unwrap());
+        .unwrap()
+        .is_none());
     let log = rekindle_records::chain::read_log_after(&*port, &record, GOV_HEAD, 0)
         .await
         .unwrap();
@@ -98,9 +100,10 @@ async fn a_retry_that_finds_its_op_lands_a_partial_head() {
             .count()
     };
     assert_eq!(holders(), 2, "the partial head");
-    assert!(!append_op_once(&*port, &record, &owner, encoded.clone())
+    assert!(append_op_once(&*port, &record, &owner, encoded.clone())
         .await
-        .unwrap());
+        .unwrap()
+        .is_none());
     assert!(holders() >= 5, "the head landed: {} holders", holders());
     let log = rekindle_records::chain::read_log_after(&*port, &record, GOV_HEAD, 0)
         .await

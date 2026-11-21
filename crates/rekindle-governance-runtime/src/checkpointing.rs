@@ -113,7 +113,9 @@ pub async fn tick<D: GovernanceRuntimeDeps>(
         return Ok(CheckpointStep::Idle);
     };
     body.pages = seal_pages(deps, &replay, &body).await?;
+    let proposed = body.clone();
     crate::apply::write_checkpoint_queued(deps, community_id, body).await?;
+    deps.warm_checkpoint_pages(community_id, &proposed);
     clock.waiting = Some(((height, 0), true));
     Ok(CheckpointStep::Proposed { height })
 }

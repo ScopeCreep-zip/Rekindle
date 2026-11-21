@@ -450,6 +450,15 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         facts: Vec<crate::checkpoint_rows::CheckpointFact>,
     ) -> Result<(), GovernanceRuntimeError>;
+    /// Keep `checkpoint`'s sealed directory pages warm (plan E3.2 S7
+    /// record warming): called with the latest endorsed checkpoint after
+    /// every merge, and with our own proposal once its pages are sealed;
+    /// a newer height releases the pages of an older one.
+    fn warm_checkpoint_pages(
+        &self,
+        community_id: &str,
+        checkpoint: &rekindle_types::governance::Checkpoint,
+    );
     /// The snapshot kept for the checkpoint at `height` with `digest`, only
     /// while its row is usable.
     async fn usable_checkpoint_snapshot(

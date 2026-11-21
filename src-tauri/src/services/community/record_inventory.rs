@@ -15,12 +15,26 @@
 //! invite-secrets DFLT records). Adding a future record type means extending
 //! this one function, nowhere else.
 
+use rekindle_protocol::dht::pool::keepalive::WarmRecord;
+
 use crate::state::community::CommunityState;
 
 /// The complete set of DHT record keys this community owns — the authoritative
 /// inventory the spec calls `CommunityRecords` (§10). Consumed by keepalive
 /// warming (§14.1) and login rehydration so every record shares one durability
 /// path. Result is sorted + de-duped.
+pub fn warmable_records(cs: &CommunityState) -> Vec<WarmRecord> {
+    let mut records: Vec<WarmRecord> = warmable_record_keys(cs)
+        .into_iter()
+        .map(WarmRecord::mutable)
+        .collect();
+    // The latest checkpoint's directory pages and our own op pages beyond
+    // its cut, sealed (plan E3.2 S7 record warming).
+    records.extend(rekindle_node::host::community::sealed_pages::warm_sealed_pages(cs));
+    records
+}
+
+/// The mutable records of [`warmable_records`], sorted and de-duped.
 pub fn warmable_record_keys(cs: &CommunityState) -> Vec<String> {
     let mut keys = Vec::new();
 
@@ -125,6 +139,7 @@ mod tests {
             my_segment_index: None,
             segments: Vec::new(),
             watch_ring: std::collections::BTreeMap::new(),
+            sealed_pages: rekindle_node::host::community::sealed_pages::SealedPages::default(),
             removal_watch: std::collections::BTreeMap::new(),
             beat_view: rekindle_presence::community::BeatView::default(),
             on_screen: rekindle_presence::community::OnScreen::default(),

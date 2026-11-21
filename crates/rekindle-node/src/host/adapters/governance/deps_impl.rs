@@ -427,6 +427,23 @@ impl GovernanceRuntimeDeps for HostGovernance {
             .await
     }
 
+    fn warm_checkpoint_pages(
+        &self,
+        community_id: &str,
+        checkpoint: &rekindle_types::governance::Checkpoint,
+    ) {
+        let me = self
+            .ctx
+            .communities
+            .map()
+            .read()
+            .get(community_id)
+            .and_then(super::watch_ring::my_pseudonym);
+        self.ctx
+            .communities
+            .warm_checkpoint_pages(community_id, checkpoint, me.as_ref());
+    }
+
     async fn usable_checkpoint_snapshot(
         &self,
         community_id: &str,

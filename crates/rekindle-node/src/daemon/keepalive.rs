@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use rekindle_protocol::dht::pool::keepalive::WarmRecord;
+
 use super::dispatch::DaemonContext;
 
 /// Start the community's keepalive; the hand-over
@@ -33,7 +35,10 @@ pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
                     keys.extend(runtime.warm_member_records(&id));
                     keys.sort_unstable();
                     keys.dedup();
-                    Some(keys)
+                    let mut records: Vec<WarmRecord> =
+                        keys.into_iter().map(WarmRecord::mutable).collect();
+                    records.extend(runtime.warm_sealed_pages(&id));
+                    Some(records)
                 },
                 rng,
                 stop,

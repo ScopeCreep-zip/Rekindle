@@ -426,6 +426,9 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             let facts = crate::checkpoint_rows::checkpoint_facts(&set.ops, &outcome);
             deps.record_governance_checkpoints(community_id, facts)
                 .await?;
+            if let Some(latest) = outcome.hints.latest() {
+                deps.warm_checkpoint_pages(community_id, &latest.checkpoint);
+            }
             crate::partial::finish_backfill(deps, community_id, &cert, &set).await?;
             for event in crate::quarantine::newly_quarantined(community_id, &held, &outcome) {
                 deps.emit_event(event);

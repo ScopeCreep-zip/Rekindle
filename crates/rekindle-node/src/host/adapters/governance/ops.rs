@@ -364,7 +364,9 @@ impl HostGovernance {
             .map_err(|e| e.to_string())?
             .require_records()
             .map_err(|e| format!("record pool: {e}"))?;
-        append_op_once(&*pool, record, &writer, op).await?;
+        if let Some(page) = append_op_once(&*pool, record, &writer, op).await? {
+            self.ctx.communities.note_own_op_page(community_id, &page);
+        }
         self.write_own_frontier(community_id, record, &writer).await
     }
 
@@ -490,8 +492,8 @@ impl HostGovernance {
 /// attempt whose write landed but whose acknowledgement was lost left the op
 /// at chain seq `op.seq + 1` or later, so the log after `op.seq` is read
 /// first and an entry with this op's hash settles the attempt without a
-/// second append, once the head naming it is at consensus. `true`: this
-/// call appended it.
+/// second append, once the head naming it is at consensus. `Some`: this
+/// call appended it, on the sealed page it names (kept warm, plan E3.2 S7).
 ///
 /// Readable is not landed: a head write that ended below consensus stays on
 /// the replicas that took it, each having stored it on arrival (0.5.8
@@ -512,7 +514,7 @@ pub(crate) async fn append_op_once(
     record: &str,
     writer: &str,
     op: Vec<u8>,
-) -> Result<bool, String> {
+) -> Result<Option<rekindle_codec::capnp_codec::chain::PagePointer>, String> {
     let decoded =
         rekindle_codec::governance_op::decode_op(&op).map_err(|e| format!("governance op: {e}"))?;
     let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
@@ -531,10 +533,10 @@ pub(crate) async fn append_op_once(
     .await
     .map_err(|e| format!("append op: {e}"))?;
     match appended {
-        rekindle_records::chain::LoggedAppend::Appended(_) => Ok(true),
+        rekindle_records::chain::LoggedAppend::Appended(page) => Ok(Some(page)),
         rekindle_records::chain::LoggedAppend::AlreadyLogged => {
             republish_head(port, record, writer).await?;
-            Ok(false)
+            Ok(None)
         }
     }
 }
