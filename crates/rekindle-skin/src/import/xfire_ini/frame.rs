@@ -82,12 +82,15 @@ pub struct Frame {
     pub pieces: [RgbaImage; 9],
     /// The windows laid beneath the frame pieces ([`Background`]).
     pub backgrounds: Vec<Background>,
-    /// The views' insets (left, right) inside the frame (plan SK0-L1,
-    /// [`views`]): `[MainWindow]`'s window `Name=TabbedControl` stretched
-    /// both ways, its `X` and `IndentRight` (Alloy `Window12` `X=20
-    /// IndentRight=19`); `None` without one or with a placement that is
-    /// not a pixel count.
-    pub views: Option<(u32, u32)>,
+    /// The views' insets `[left, top, right, bottom]` inside the frame
+    /// (plan SK0-L1, [`views`]): the `[MainWindow]` window that holds the
+    /// buddy list (its section lays a window whose `Class=BuddyListView`),
+    /// stretched both ways: its `X` + `IndentLeft`, `Y`, `IndentRight` and
+    /// `IndentBottom` (Alloy `Window12` `TabbedControl` `X=20 Y=157
+    /// IndentRight=19 IndentBottom=58`; Combat `Window10` `MainTabbedArea`
+    /// `X=48 Y=194 IndentRight=51 IndentBottom=110`); `None` without one or
+    /// with a placement that is not a pixel count.
+    pub views: Option<[u32; 4]>,
 }
 
 /// One state's pieces (decoded only when all eight are named), shifted and
@@ -145,7 +148,7 @@ pub(super) fn read_frame(
         if let Some(mut f) = read_shape(tree, skin, shape, colours, aliases)? {
             if let Some(main) = skin.section("MainWindow") {
                 f.backgrounds = backgrounds(tree, skin, main, colours, aliases)?;
-                f.views = views_insets(main);
+                f.views = views_insets(skin, main);
             }
             return Ok(Some(f));
         }
@@ -154,10 +157,10 @@ pub(super) fn read_frame(
 }
 
 /// [`Frame::views`] from `[MainWindow]`.
-fn views_insets(main: &Section) -> Option<(u32, u32)> {
+fn views_insets(skin: &Ini, main: &Section) -> Option<[u32; 4]> {
     main.entries.iter().find_map(|entry| {
         let index = entry.key.strip_prefix("Window")?.strip_suffix(".Name")?;
-        if !entry.value.trim().eq_ignore_ascii_case("TabbedControl") {
+        if !holds_buddy_list(skin, entry.value.trim()) {
             return None;
         }
         let get = |key: &str| main.get(&format!("Window{index}.{key}"));
@@ -167,8 +170,35 @@ fn views_insets(main: &Section) -> Option<(u32, u32)> {
         if get("JustX").is_some_and(|j| !j.trim().eq_ignore_ascii_case("LEFT")) {
             return None;
         }
+        if get("JustY").is_some_and(|j| !j.trim().eq_ignore_ascii_case("TOP")) {
+            return None;
+        }
         let num = |key: &str| get(key).map_or(Some(0), |v| v.trim().parse::<u32>().ok());
-        Some((num("X")? + num("IndentLeft")?, num("IndentRight")?))
+        Some([
+            num("X")? + num("IndentLeft")?,
+            num("Y")?,
+            num("IndentRight")?,
+            num("IndentBottom")?,
+        ])
+    })
+}
+
+/// Whether the section `name` lays a window whose section is the buddy
+/// list (`Class=BuddyListView`): the pack's views (Xfire's tab control
+/// holding `BuddyView`, `ServerView`, `DownloadView`).
+fn holds_buddy_list(skin: &Ini, name: &str) -> bool {
+    let is_list = |child: &str| {
+        skin.section(child)
+            .and_then(|s| s.get("Class"))
+            .is_some_and(|c| c.trim().eq_ignore_ascii_case("BuddyListView"))
+    };
+    skin.section(name).is_some_and(|s| {
+        s.entries.iter().any(|e| {
+            e.key
+                .strip_prefix("Window")
+                .is_some_and(|k| k.ends_with(".Name"))
+                && is_list(e.value.trim())
+        })
     })
 }
 
@@ -298,9 +328,10 @@ fn backgrounds(
 pub fn main_layout(f: &Frame) -> Result<(WindowLayout, BTreeMap<String, Vec<u8>>), ImportError> {
     let window = SkinWindow::Main;
     let mut pieces = f.pieces.clone();
-    if let Some(insets) = f.views {
+    if let Some([left, top, right, bottom]) = f.views {
         let [_, _, _, l, _, r, _, _, _] = &mut pieces;
-        views::to_views_edge(l, r, insets);
+        views::to_views_edge(l, r, (left, right));
+        views::to_views_rows(&mut pieces, (top, bottom));
     }
     let (mut layout, mut files) = shape::from_nine(window, &pieces)?;
     for bg in &f.backgrounds {
@@ -331,22 +362,37 @@ mod tests {
     use super::super::ini::parse;
     use super::views_insets;
 
-    fn main_of(text: &str) -> Option<(u32, u32)> {
+    fn main_of(text: &str) -> Option<[u32; 4]> {
         let ini = parse("skin.ini", text.as_bytes()).unwrap();
-        views_insets(ini.section("MainWindow").unwrap())
+        views_insets(&ini, ini.section("MainWindow").unwrap())
     }
 
-    /// Plan SK0-L1, [`super::Frame::views`]: the `TabbedControl` window
-    /// stretched both ways gives `X` + `IndentLeft` and `IndentRight`
-    /// (XGlow 28/31); one justified right, not stretched both ways, or
-    /// placed by a non-number reads none.
+    const VIEWS: &str = "[Views]\nClass=TabControl\nWindow1.Name=BuddyView\n[BuddyView]\nClass=BuddyListView\n[Back]\nClass=Tile\n";
+
+    /// Plan SK0-L1, [`super::Frame::views`]: the window holding the buddy
+    /// list (any name: XGlow's `TabbedControl`, Combat's `MainTabbedArea`)
+    /// stretched both ways gives `X` + `IndentLeft`, `Y`, `IndentRight`
+    /// and `IndentBottom` (XGlow 28/64/31/159); one justified right or
+    /// bottom, not stretched both ways, placed by a non-number, or holding
+    /// no `BuddyListView` reads none.
     #[test]
-    fn views_are_the_stretched_tabbed_control_window() {
-        let base = "[MainWindow]\nWindow1.Name=Header\nWindow2.Name=TabbedControl\nWindow2.ResizeX=100\nWindow2.ResizeY=100\nWindow2.X=20\nWindow2.IndentLeft=8\nWindow2.IndentRight=31\n";
-        assert_eq!(main_of(base), Some((28, 31)));
-        assert_eq!(main_of(&format!("{base}Window2.JustX=RIGHT\n")), None);
-        assert_eq!(main_of(&base.replace("ResizeY=100", "ResizeY=0")), None);
-        assert_eq!(main_of(&base.replace("X=20", "X=Header.RIGHT")), None);
-        assert_eq!(main_of(&base.replace("=TabbedControl", "=BuddyView")), None);
+    fn views_are_the_stretched_window_holding_the_buddy_list() {
+        let base = format!("[MainWindow]\nWindow1.Name=Back\nWindow1.ResizeX=100\nWindow1.ResizeY=100\nWindow2.Name=Views\nWindow2.ResizeX=100\nWindow2.ResizeY=100\nWindow2.X=20\nWindow2.IndentLeft=8\nWindow2.Y=64\nWindow2.IndentRight=31\nWindow2.IndentBottom=159\n{VIEWS}");
+        assert_eq!(main_of(&base), Some([28, 64, 31, 159]));
+        let named = base.replace("Views", "MainTabbedArea");
+        assert_eq!(main_of(&named), Some([28, 64, 31, 159]));
+        let right = base.replace("Window2.Y=64", "Window2.Y=64\nWindow2.JustX=RIGHT");
+        assert_eq!(main_of(&right), None);
+        let bottom = base.replace("Window2.Y=64", "Window2.Y=64\nWindow2.JustY=BOTTOM");
+        assert_eq!(main_of(&bottom), None);
+        assert_eq!(
+            main_of(&base.replace("Window2.ResizeY=100", "Window2.ResizeY=0")),
+            None
+        );
+        assert_eq!(main_of(&base.replace("Y=64", "Y=Back.BOTTOM")), None);
+        assert_eq!(
+            main_of(&base.replace("Class=BuddyListView", "Class=ServerView")),
+            None
+        );
     }
 }

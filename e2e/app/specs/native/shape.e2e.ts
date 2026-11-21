@@ -74,8 +74,12 @@ function offBy(a: Box, b: Box): string {
   return far <= 1 ? "" : `${JSON.stringify(a)} is not ${JSON.stringify(b)}`;
 }
 
-/** The content box of the window's `.app-frame` (its rect less its padding) and its profile header's rect, logical px. */
-async function pageBoxes(): Promise<{ content: Box; header: Box | null }> {
+/**
+ * The content box of the window's `.app-frame` (its rect less its padding), its profile header's rect, logical px, and
+ * how many `.buddy-item` rows show inside the content box (a row's centre inside it, and the element drawn at that
+ * centre is the row's own: a collapsed or clipped list shows none).
+ */
+async function pageBoxes(): Promise<{ content: Box; header: Box | null; rows: number }> {
   return (await browser.execute(() => {
     const root = document.querySelector(".app-frame") as HTMLElement;
     const r = root.getBoundingClientRect();
@@ -89,8 +93,16 @@ async function pageBoxes(): Promise<{ content: Box; header: Box | null }> {
     };
     const bar = root.querySelector(":scope > .identity-bar");
     const h = bar ? bar.getBoundingClientRect() : null;
-    return { content, header: h ? { x: h.left, y: h.top, width: h.width, height: h.height } : null };
-  })) as { content: Box; header: Box | null };
+    const rows = Array.from(root.querySelectorAll(".buddy-item")).filter((row) => {
+      const b = row.getBoundingClientRect();
+      const cx = b.left + b.width / 2;
+      const cy = b.top + b.height / 2;
+      const inside = cx >= content.x && cx <= content.x + content.width && cy >= content.y && cy <= content.y + content.height;
+      const hit = document.elementFromPoint(cx, cy);
+      return b.width > 0 && b.height > 0 && inside && hit !== null && row.contains(hit);
+    }).length;
+    return { content, header: h ? { x: h.left, y: h.top, width: h.width, height: h.height } : null, rows };
+  })) as { content: Box; header: Box | null; rows: number };
 }
 
 /** The silhouette `pack`'s `frame` cuts a `width × height` window to at `scale` per mille. */
@@ -204,6 +216,8 @@ describe("a skinned window is the skin's shape", function () {
       const content = offBy(page.content, cut.content);
       if (content) found[`${where} content box`] = content;
       if (frame === "main") {
+        // The friends list shows: a collapsed content box hides every row (SK0, Alloy and XGlow 2026-11-20).
+        if (page.rows < 1) found[`${where} friends list`] = "no .buddy-item row shows inside the content box";
         if (!page.header) found[`${where} header`] = "no .identity-bar in the buddy list";
         else if (cut.header) {
           const header = offBy(page.header, cut.header);

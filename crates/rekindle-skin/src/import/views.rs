@@ -50,6 +50,41 @@ pub fn to_views_edge(left: &mut RgbaImage, right: &mut RgbaImage, insets: (u32, 
     }
 }
 
+/// The first `height` rows of `img` (all of it when it is shorter).
+#[must_use]
+pub fn first_rows(img: &RgbaImage, height: u32) -> RgbaImage {
+    let h = height.min(img.height());
+    RgbaImage::from_fn(img.width(), h, |x, y| *img.get_pixel(x, y))
+}
+
+/// The last `height` rows of `img` (all of it when it is shorter).
+#[must_use]
+pub fn last_rows(img: &RgbaImage, height: u32) -> RgbaImage {
+    let h = height.min(img.height());
+    let skip = img.height() - h;
+    RgbaImage::from_fn(img.width(), h, |x, y| *img.get_pixel(x, y + skip))
+}
+
+/// Lays the top and bottom rows of the nine `pieces` (in
+/// [`crate::import::xfire_xml::bitmap::NINE`] order) only to the views'
+/// edge, the views `insets` (top, bottom) px inside the frame, as
+/// [`to_views_edge`] does the sides: a piece taller than its inset keeps
+/// its outer rows (Alloy: top corners 252 px, views 157 px down; Combat:
+/// 214 and 194), whose inner rows lie under the views and are never shown;
+/// a zero inset or one at least the piece's height leaves it whole.
+pub fn to_views_rows(pieces: &mut [RgbaImage; 9], insets: (u32, u32)) {
+    let (top, bottom) = insets;
+    for (i, piece) in pieces.iter_mut().enumerate() {
+        match i {
+            0..=2 if top > 0 && top < piece.height() => *piece = first_rows(piece, top),
+            6..=8 if bottom > 0 && bottom < piece.height() => {
+                *piece = last_rows(piece, bottom);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Widens `built`'s content to the views `insets` (left, right) where a
 /// side piece is narrower than its inset (Space Cowboy: sides 16/20,
 /// views 27/30), painting the band between the side piece and the views
@@ -132,6 +167,31 @@ mod tests {
         assert_eq!((l.width(), r.width()), (50, 8));
         assert_eq!(l.get_pixel(0, 0)[0], 0);
         assert_eq!(r.get_pixel(7, 0)[0], 58);
+    }
+
+    /// Plan SK0-L1 (Alloy, Combat, XGlow): rows taller than the views'
+    /// inset keep their outer rows, the middle row and shorter pieces stay
+    /// whole, and the built content is the views' rectangle.
+    #[test]
+    fn rows_taller_than_the_views_inset_keep_their_outer_rows() {
+        let rows = |h: u32| {
+            RgbaImage::from_fn(4, h, |_, y| {
+                rekindle_image::Rgba([u8::try_from(y).unwrap(), 0, 0, 255])
+            })
+        };
+        let mut nine: [RgbaImage; 9] = std::array::from_fn(|i| match i {
+            0..=2 => rows(30),
+            6..=8 => rows(20),
+            _ => rows(5),
+        });
+        nine[1] = rows(10);
+        to_views_rows(&mut nine, (16, 7));
+        let heights: Vec<u32> = nine.iter().map(RgbaImage::height).collect();
+        assert_eq!(heights, vec![16, 10, 16, 5, 5, 5, 7, 7, 7]);
+        assert_eq!(nine[0].get_pixel(0, 15)[0], 15);
+        assert_eq!(nine[8].get_pixel(0, 0)[0], 13);
+        let built = shape::from_nine(SkinWindow::Main, &nine).unwrap();
+        assert_eq!((built.0.content.top, built.0.content.bottom), (16, 7));
     }
 
     #[test]
