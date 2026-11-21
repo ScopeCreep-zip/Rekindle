@@ -55,24 +55,15 @@ fn xfire_classic_main_golden() {
     assert!(got.is_empty(), "{got:#?}");
 }
 
+/// Plan SK2 lead decision 27, the fix-1 rule for the row stack: Total
+/// Chaos's five rows are its tree's tiles (`MainTitleBar`, `AdBar`,
+/// `MenuBar`, `Content`, `BottomBar`), each drawn once by its node in its
+/// own box; the frame layer lays none of them again at the window's edges
+/// (it laid `row4-*` at end 0, 5 px above the tree's clipped `BottomBar`).
 #[test]
 fn total_chaos_main_golden() {
     let got = slots("builtin:total-chaos", SkinWindow::Main);
-    assert_eq!(got.len(), 15);
-    // The row stack: left/right pieces at the edges, middles repeating
-    // between them at source size. Each node's art is named after its
-    // piece (spec A7, decision 21): `node-adbar-left` is the bytes of the
-    // old `row1-left`, `node-menubar-middle` of `row2-middle`,
-    // `node-bottombar-right` of `row4-right`; the geometry is unchanged.
-    assert_eq!(got[0], "display: block; left: 0px; width: 75px; top: 0px; height: 52px; background: url(\"node-maintitlebar-left.png\") 0 0 / 75px 52px no-repeat;");
-    assert_eq!(got[1], "display: block; left: 75px; right: 75px; top: 0px; height: 52px; background: url(\"node-maintitlebar-middle.png\") 0 0 / 8px 52px repeat-x;");
-    // The T.C plaque: centred on the window (an overhang), floored to a
-    // whole pixel like the silhouette, painted over row 0's middle.
-    assert_eq!(got[3], "display: block; left: calc(0px + round(down, calc((100% - 206px) / 2), 1px)); width: 206px; top: 0px; height: 52px; background: url(\"node-title.png\") 0 0 / 206px 52px no-repeat;");
-    assert_eq!(got[4], "display: block; left: 0px; width: 59px; top: 52px; height: 60px; background: url(\"node-adbar-left.png\") 0 0 / 59px 60px no-repeat;");
-    assert_eq!(got[8], "display: block; left: 83px; right: 83px; top: 112px; height: 69px; background: url(\"node-menubar-middle.png\") 0 0 / 30px 69px repeat-x;");
-    assert_eq!(got[11], "display: block; right: 0px; width: 50px; top: 181px; bottom: 66px; background: url(\"row3-right.png\") 0 0 / 50px 37px repeat-y;");
-    assert_eq!(got[14], "display: block; right: 0px; width: 161px; bottom: 0px; height: 66px; background: url(\"node-bottombar-right.png\") 0 0 / 161px 66px no-repeat;");
+    assert!(got.is_empty(), "{got:#?}");
 }
 
 #[test]

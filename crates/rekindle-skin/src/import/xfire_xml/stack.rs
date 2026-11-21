@@ -142,6 +142,17 @@ pub fn layout(
     build(window, &rows, content_row).map(|built| Some((built, names)))
 }
 
+/// The frame tiles [`layout`] lays for `count` rows, by package path: each
+/// row's `left`, `middle`, `right` and `centre` (plan SK2 lead decision 27:
+/// the component tree draws each row once, in its own box, so under the
+/// tree none of them is laid again at the window's edges).
+#[must_use]
+pub fn row_paths(window: SkinWindow, count: usize) -> Vec<String> {
+    (0..count)
+        .flat_map(|i| NAMES.map(|k| shape::tile_path(window, &format!("row{i}-{k}"))))
+        .collect()
+}
+
 fn height(row: &Row) -> u32 {
     row[1].as_ref().map_or(0, RgbaImage::height)
 }

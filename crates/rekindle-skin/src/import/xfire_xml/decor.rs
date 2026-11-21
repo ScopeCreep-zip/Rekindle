@@ -267,12 +267,16 @@ fn frame_piece_paths(window: SkinWindow) -> [String; 8] {
 /// 10…W−25, `v3/xfiremainwindow.xml:2,16,54-57`), none in the window's box,
 /// so the frame layer draws none of them again at the window's edges.
 fn drop_frame_pieces(window: SkinWindow, built: &mut (WindowLayout, BTreeMap<String, Vec<u8>>)) {
-    let paths = frame_piece_paths(window);
+    drop_tiles(&frame_piece_paths(window), built);
+}
+
+/// Removes the frame tiles at `paths` (not a decoration) and their images.
+fn drop_tiles(paths: &[String], built: &mut (WindowLayout, BTreeMap<String, Vec<u8>>)) {
     built
         .0
         .tiles
         .retain(|t| t.decoration.is_some() || !paths.contains(&t.image));
-    for p in &paths {
+    for p in paths {
         built.1.remove(p);
     }
 }
@@ -293,6 +297,7 @@ pub fn main_window(
     let w = SkinWindow::Main;
     let found = tiles::pieces(main, components, piece)?;
     let carried = found.as_ref().is_some_and(|(_, s, _)| *s == Shape::Rows);
+    let stacked = found.is_none();
     let built = if let Some((mut pieces, _, frame_tiles)) = found {
         let insets = views_insets(main, components);
         if let Some(insets) = insets {
@@ -320,6 +325,13 @@ pub fn main_window(
         crate::skin_tree::import::add(w, main, &with_popups, piece, &rows, &mut built)?;
         if carried {
             drop_frame_pieces(w, &mut built);
+        } else if stacked {
+            // The fix-1 rule for the row stack (plan SK2 lead decision 27):
+            // the tree draws each row in its own box (Total Chaos's
+            // `BottomBar` its top 61 rows at the window's bottom edge), so
+            // the stack laid at the window's edges (`row4-*` at end 0, 5 px
+            // above it) draws none of them again.
+            drop_tiles(&stack::row_paths(w, rows.len()), &mut built);
         }
         windows.insert(w, built);
     }
@@ -506,5 +518,59 @@ mod tests {
             "{:?}",
             files.keys()
         );
+    }
+
+    /// Plan SK2 lead decision 27, the fix-1 rule for the row stack: Total
+    /// Chaos's rows are its tree's tiles, so the stack laid at the window's
+    /// edges (its `BottomBar` at end 0, 5 px above where the tree lays it)
+    /// draws none of them again; each row is drawn once, by its node.
+    #[test]
+    fn a_row_stack_under_the_tree_is_drawn_only_by_the_tree() {
+        let main = parse(
+            "mainwindow.xml",
+            br#"<Tile Name="W" ResizeX="100" ResizeY="100" Component="MainWindow">
+<Tile Name="MainTitleBar" X="0" OutdentLeft="1" Y="0" ResizeX="100" ResizeY="0" Component="MainTitleBar"/>
+<Tile Name="Content" X="0" OutdentLeft="1" Y="MainTitleBar.BOTTOM" IndentBottom="61" ResizeY="100" ResizeX="100" Component="Content"/>
+<Tile Name="BottomBar" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar"/>
+</Tile>"#,
+        )
+        .unwrap();
+        let components = parse(
+            "components.xml",
+            br#"<Components>
+<Component Name="MainWindow" MinWidth="200" MinHeight="200"/>
+<Component Name="MainTitleBar"><Images State="Normal"><Image Type="left">tl-75x52</Image><Image Type="middle">tm-8x52</Image><Image Type="right">tr-75x52</Image></Images></Component>
+<Component Name="Content"><Images State="Normal"><Image Type="left">cl-59x37</Image><Image Type="middle">cm-9x9</Image><Image Type="right">cr-59x37</Image></Images></Component>
+<Component Name="BottomBar"><Images State="Normal"><Image Type="left">bl-61x66</Image><Image Type="middle">bm-37x66</Image><Image Type="right">br-61x66</Image></Images></Component>
+</Components>"#,
+        )
+        .unwrap();
+        let mut windows = Windows::new();
+        main_window(
+            &main,
+            (std::slice::from_ref(&components), &[]),
+            |name, _| {
+                let (w, h) = name.rsplit_once('-').unwrap().1.split_once('x').unwrap();
+                let (w, h) = (w.parse().unwrap(), h.parse().unwrap());
+                Ok(RgbaImage::from_pixel(
+                    w,
+                    h,
+                    rekindle_image::Rgba([9, 9, 9, 255]),
+                ))
+            },
+            &[],
+            &mut windows,
+        )
+        .unwrap();
+        let (layout, files) = &windows[&SkinWindow::Main];
+        let frame: Vec<&str> = layout.tiles.iter().map(|t| t.image.as_str()).collect();
+        assert!(frame.is_empty(), "the frame layer draws {frame:?}");
+        let rows = stack::row_paths(SkinWindow::Main, 3);
+        assert!(
+            files.keys().all(|k| !rows.contains(k)),
+            "{:?}",
+            files.keys()
+        );
+        assert_eq!(layout.tree.as_ref().unwrap().outsets.bottom, 0);
     }
 }

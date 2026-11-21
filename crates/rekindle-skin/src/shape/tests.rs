@@ -453,14 +453,15 @@ fn total_chaos_lays_its_content_region() {
     // `Content` OutdentLeft="1" from `MenuBar.BOTTOM` (52 + 60 + 69 = 181)
     // to IndentBottom="61"; in it `TabbedControl` X="50" IndentRight="50"
     // at `TabHeader.BOTTOM` (181 + 22 = 203). Lead decision 14: the frame
-    // rectangle is the rows' box (from the outdented left edge to the
-    // `BottomBar`'s bottom, 66 px tall), so left 50 and bottom 66, the
-    // content row's 50 px side pieces and the bottom row's height.
+    // rectangle is the rows' box (from the outdented left edge); lead
+    // decision 27: the `BottomBar` is clipped to the 61 px under `Content`
+    // at the window's bottom edge, so left 50 and bottom 61, the content
+    // row's 50 px side pieces and its `IndentBottom`.
     let (_, b) = builtin::find("builtin:total-chaos").unwrap();
     let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
     let main = &m.windows[&SkinWindow::Main];
     let c = main.content;
-    assert_eq!((c.top, c.right, c.bottom, c.left), (203, 50, 66, 50));
+    assert_eq!((c.top, c.right, c.bottom, c.left), (203, 50, 61, 50));
 }
 
 /// Lead decision 3 (plan SK2, 2026-11-20): under the pack's component tree

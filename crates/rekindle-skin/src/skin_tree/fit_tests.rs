@@ -83,15 +83,16 @@ fn the_window_fits_the_tree_and_its_overhang() {
     assert!(checked.is_ok(), "{checked:?}");
 }
 
-/// Plan SK2 lead decision 14: Total Chaos's frame rows (`components.xml`
-/// `mainwindow.xml:2-37`), each `OutdentLeft="1"`, the `BottomBar` 66 px
+/// Plan SK2 lead decision 27 (correcting 14): Total Chaos's frame rows
+/// (`mainwindow.xml:2-37`), each `OutdentLeft="1"`, the `BottomBar` 66 px
 /// tall under a `Content` `IndentBottom="61"`: the window holds the 1 px
-/// outdent and the 5 px the bottom row reaches past the box, and the frame
-/// rectangle is the rows' box (no outsets), so the frame art lies where the
-/// tree's rows do.
+/// outdent but not the 5 px the bottom row reaches past the box; the row is
+/// clipped on its fixed axis to its top 61 rows at the window's bottom edge
+/// (the original, `skinref/total-chaos/buddy-list-1.png`), and its one-row
+/// set is trimmed piece by piece, each kept in its slot.
 #[test]
 fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
-    let (l, tree) = imported_rows(
+    let (l, tree, images) = imported_art(
         br#"<Tile Name="W" Component="MainWindow">
 <Tile Name="MainTitleBar" X="0" OutdentLeft="1" Y="0" ResizeX="100" Component="MainTitleBar"/>
 <Tile Name="Content" X="0" OutdentLeft="1" Y="MainTitleBar.BOTTOM" IndentBottom="61" ResizeX="100" ResizeY="100" Component="Content"/>
@@ -99,18 +100,41 @@ fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
 </Tile>"#,
         br#"<Components>
 <Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-10x52</Image></Images></Component>
-<Component Name="BottomBar"><Images State="Normal"><Image Type="Middle">bottom-10x66</Image></Images></Component>
+<Component Name="BottomBar"><Images State="Normal"><Image Type="left">bl-161x66</Image><Image Type="middle">bm-37x66</Image><Image Type="right">br-161x66</Image></Images></Component>
 </Components>"#,
         &["MainTitleBar", "Content", "BottomBar"],
     );
     let o = |i: Insets| (i.left, i.top, i.right, i.bottom);
-    assert_eq!(o(tree.outsets), (1, 0, 0, 5));
+    assert_eq!(o(tree.outsets), (1, 0, 0, 0));
     assert_eq!(o(l.outsets), (0, 0, 0, 0));
     let (w, h) = (i32::from(l.min_width), i32::from(l.min_height));
     let boxes = tree.boxes(w, h);
-    // The rows span the window, the bottom row ends at its bottom edge.
+    // The rows span the window, the bottom row's top 61 rows end at its
+    // bottom edge.
     assert_eq!(boxes[0].1, [0, 0, w, 52]);
-    assert_eq!(boxes[2].1, [0, h - 66, w, 66]);
+    assert_eq!(boxes[2].1, [0, h - 61, w, 61]);
+    let bottom = tree.root.iter().find(|n| n.id == "BottomBar").unwrap();
+    let set = &bottom.art.as_ref().unwrap().normal;
+    let dims = |p: &str| {
+        let png = &images[p];
+        let be = |i: usize| u32::from_be_bytes(png[i..i + 4].try_into().unwrap());
+        (be(16), be(20))
+    };
+    let got: Vec<_> = set
+        .iter()
+        .map(|(s, p)| (*s, p.width, p.height, dims(&p.image)))
+        .collect();
+    use rekindle_types::dto::skin_tree::PieceSlot as S;
+    assert_eq!(
+        got,
+        [
+            (S::Left, 161, 61, (161, 61)),
+            (S::Middle, 37, 61, (37, 61)),
+            (S::Right, 161, 61, (161, 61)),
+        ]
+    );
+    let checked = validate::check("t", &tree, &l, &images);
+    assert!(checked.is_ok(), "{checked:?}");
 }
 
 /// Plan SK2 lead decision 14: Classic's `StatusWrapper` (`X="32" Y="40"

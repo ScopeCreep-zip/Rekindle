@@ -7,8 +7,14 @@
 //! keeps taking input over what of it is inside (its hit area,
 //! [`super::validate`], is grown from that box). A clipped part then lies
 //! inside its parent, so the overhang ([`super::fit`]) no longer counts it.
-//! A tile stretched on either axis is not clipped: its edges place it past
-//! its parent on purpose (lead decision 14, Total Chaos's rows).
+//! A tile stretched on one axis is still clipped on its fixed axis (lead
+//! decision 27, correcting decision 14's "a stretched tile is not clipped"
+//! against the original's pixels): Total Chaos's `BottomBar` `ResizeX="100"`
+//! is 66 px tall under `Content` `IndentBottom="61"`, and the original shows
+//! its top 61 rows at the window's bottom edge, never growing the window
+//! (`skinref/total-chaos/buddy-list-1.png`). Its stretched axis is placed by
+//! its edges (the rows' `OutdentLeft="1"`) and is never cut; its one-row
+//! piece set is trimmed row by row, each piece kept in its slot.
 
 use std::collections::BTreeMap;
 
@@ -18,6 +24,7 @@ use rekindle_types::dto::skin_tree::{
     Anchor, NodeArt, NodePiece, NodePieces, NodeSpan, PieceSlot, SkinNode,
 };
 
+use super::import::bad;
 use super::pieces;
 
 use crate::import::ImportError;
@@ -210,6 +217,110 @@ fn crop_art(
     Ok(Some(NodeArt { normal, states }))
 }
 
+/// The slots a set may hold to be trimmed across `y` (rows, a one-row set:
+/// `left`, `middle`, `right`) or down (columns, a one-column set).
+fn one_band(p: &NodePieces, y: bool) -> bool {
+    use PieceSlot as S;
+    let ok: [S; 3] = if y {
+        [S::Left, S::Middle, S::Right]
+    } else {
+        [S::Top, S::Middle, S::Bottom]
+    };
+    p.keys().all(|s| ok.contains(s))
+}
+
+/// The set `p` of a box stretched on the other axis, trimmed on its fixed
+/// axis (`y` rows, else columns) by `(before, _)` to `len` px: each piece
+/// keeps its slot and is re-encoded as the `len` px it shows. In a one-row
+/// set every piece is laid from the box's top and repeated down
+/// ([`super::pieces::cell`]), so the box's row `r` shows the piece's row
+/// `r mod height`, and the trimmed piece's row `r` is the source's
+/// `(before + r) mod height`; likewise for a one-column set's columns.
+fn trim(
+    art: &mut Art<'_>,
+    p: NodePieces,
+    y: bool,
+    before: u16,
+    len: u16,
+) -> Result<NodePieces, ImportError> {
+    if !one_band(&p, y) {
+        return Err(bad(format!(
+            "a tile stretched on one axis and clipped on the other has a piece set \
+             that is not one {} ({:?})",
+            if y { "row" } else { "column" },
+            p.keys().collect::<Vec<_>>()
+        )));
+    }
+    let mut out = NodePieces::new();
+    for (slot, x) in p {
+        let src = art
+            .images
+            .get(&x.image)
+            .ok_or_else(|| bad(format!("{} is not among the tree's images", x.image)))?;
+        let (pw, ph) = (src.width(), src.height());
+        let (w, h) = if y {
+            (pw, u32::from(len))
+        } else {
+            (u32::from(len), ph)
+        };
+        let img = RgbaImage::from_fn(w, h, |c, r| {
+            if y {
+                *src.get_pixel(c, (u32::from(before) + r) % ph)
+            } else {
+                *src.get_pixel((u32::from(before) + c) % pw, r)
+            }
+        });
+        art.files.remove(&x.image);
+        let piece = x
+            .image
+            .rsplit_once('/')
+            .map_or(x.image.as_str(), |(_, f)| f)
+            .trim_end_matches(".png")
+            .to_owned();
+        let axes = (TileAxis::Start { offset: 0 }, TileAxis::Start { offset: 0 });
+        if let Some((t, png)) = shape::tile(art.window, &piece, &img, axes, true)? {
+            art.files.insert(t.image.clone(), png);
+            let (width, height) = if y { (x.width, len) } else { (len, x.height) };
+            out.insert(
+                slot,
+                NodePiece {
+                    image: t.image,
+                    width,
+                    height,
+                },
+            );
+        }
+    }
+    Ok(out)
+}
+
+/// `node`'s art, stretched on one axis, trimmed on its fixed axis (`y`
+/// rows, else columns) by `cut` to `len` px; `None` when its normal set has
+/// nothing left to show.
+fn trim_art(
+    art: &mut Art<'_>,
+    a: NodeArt,
+    y: bool,
+    cut: (u16, u16),
+    len: u16,
+) -> Result<Option<NodeArt>, ImportError> {
+    let normal = trim(art, a.normal, y, cut.0, len)?;
+    let mut states = BTreeMap::new();
+    for (k, p) in a.states {
+        let p = trim(art, p, y, cut.0, len)?;
+        if !p.is_empty() {
+            states.insert(k, p);
+        }
+    }
+    if normal.is_empty() {
+        for p in states.values().flat_map(|s| s.values()) {
+            art.files.remove(&p.image);
+        }
+        return Ok(None);
+    }
+    Ok(Some(NodeArt { normal, states }))
+}
+
 /// Clips each of `nodes` (in a parent `(w, h)` px, or `None` on an axis
 /// that stretches with the window) to its parent, then its children to it.
 ///
@@ -221,14 +332,18 @@ pub(super) fn clip(
     art: &mut Art<'_>,
 ) -> Result<(), ImportError> {
     for n in nodes {
-        // A tile stretched on either axis is placed by its edges, not its
-        // art (Total Chaos's `BottomBar` `ResizeX="100"`, 5 px past the
-        // box on purpose: lead decision 14), so only a wholly fixed one is.
-        let fixed = matches!((n.x, n.y), (NodeSpan::Fixed { .. }, NodeSpan::Fixed { .. }));
+        // Each fixed axis is clipped; a stretched axis is placed by its
+        // edges and never cut ([`cut`]), lead decision 27.
         // A 0 px parent is sized by its text or children at render (an
         // art-less menu bar), so it bounds nothing here.
         let parent = (parent.0.filter(|l| *l > 0), parent.1.filter(|l| *l > 0));
-        let cuts = if fixed {
+        // A tile stretched on one axis is clipped on its fixed one for its
+        // art (decision 27); an art-less one is placed by its text
+        // (xSLIMFIRE's `FileMenu` `ResizeY="100"`, its 12 px text in the
+        // 2 px `XfireMenuText`, `xSLIMFIREmainwindow.xml:48-50`, whose
+        // menu the original shows), so only a wholly fixed one is.
+        let fixed = matches!((n.x, n.y), (NodeSpan::Fixed { .. }, NodeSpan::Fixed { .. }));
+        let cuts = if fixed || n.art.is_some() {
             [cut(n.x, parent.0), cut(n.y, parent.1)]
         } else {
             [(0, 0); 2]
@@ -245,8 +360,14 @@ pub(super) fn clip(
         };
         let own = (len(n.x), len(n.y));
         if cuts != [(0, 0); 2] {
-            if let ((Some(w), Some(h)), Some(a)) = (own, n.art.take()) {
-                n.art = crop_art(art, a, cuts, (w, h))?;
+            if let Some(a) = n.art.take() {
+                n.art = match own {
+                    (Some(w), Some(h)) => crop_art(art, a, cuts, (w, h))?,
+                    (None, Some(h)) => trim_art(art, a, true, cuts[1], h)?,
+                    (Some(w), None) => trim_art(art, a, false, cuts[0], w)?,
+                    // A stretched axis is never cut, so no cut leaves both.
+                    (None, None) => Some(a),
+                };
             }
             for c in &mut n.children {
                 if let Some(w) = own.0 {
