@@ -12,7 +12,7 @@
 //!
 //! So after a write that stored (`Landed` or `Unchanged`) through
 //! [`RecordPool::set_durable`] or [`RecordPool::set_republished`], the same
-//! bytes are re-sent at the same seq: a set whose data and writer equal the
+//! bytes are checked and, where the network lacks them, re-sent at the same seq: a set whose data and writer equal the
 //! local copy keeps its seq and resends the stored bytes
 //! (`set_value.rs:353-366`), which a store already holding it takes as
 //! nothing new. Re-sends come 60 s after the write, then at doubling waits
@@ -20,6 +20,19 @@
 //! (a newer write through either call, any other write that changed our
 //! local copy, or a newer value the network holds). One entry per (record,
 //! subkey); the newest write replaces the older one's entry.
+//!
+//! Each round is inspect-first (lead decision OW2): the due entries are
+//! grouped by record and each record gets one set-scope inspect of its due
+//! subkeys, the check Veilid's own rehydration makes before it writes
+//! (0.5.8 `rehydrate.rs:170-215`, `:371-405`). Only a subkey whose network
+//! seq is behind ours, or that the network holds none of, is re-sent; one
+//! the network holds at our seq costs nothing more, one it holds newer
+//! ends the entry. Veilid's public report carries the seq the set-scope
+//! fanout settled on, not its holder count (`dht_record_report.rs:9-20`),
+//! so a seq too few hold shows as behind only once `set_value_count`
+//! holders of an older one answer first (`inspect_record.rs:672-705`). An
+//! inspect that fails sends nothing and leaves every subkey due for the
+//! next round. A fully landed record costs one inspect per round.
 //!
 //! Session-scoped: the entries live in the session's pool, not in a
 //! community's scope, so a leave's last write is re-sent after the leave
@@ -38,7 +51,9 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 use rekindle_records::lease::LeaseId;
-use rekindle_records::port::{OpenIntent, PortError, SetOutcome, WriterKey};
+use rekindle_records::port::{
+    OpenIntent, PortError, RecordReport, ReportScope, SetOutcome, WriterKey,
+};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -88,7 +103,10 @@ enum Resent {
     Sent,
     /// Not sent, or the network holds a newer value: a newer write won.
     Superseded,
-    /// Not stored this time (offline, unreachable): the next one tries.
+    /// The network already holds ours at its seq: nothing was sent.
+    Held,
+    /// Not stored this time (offline, unreachable, or the inspect
+    /// failed): the next round tries.
     Missed,
     /// Veilid refused the write itself: no re-send can land it.
     Refused,
@@ -184,65 +202,125 @@ impl RecordPool {
         }
     }
 
-    /// Re-send every entry that is due, one at a time.
+    /// One round: the due entries grouped by record, one inspect per
+    /// record, and a re-send of only the subkeys the network holds behind
+    /// ours (OW2).
     async fn republish_due(&self) {
         let now = Instant::now();
-        let due: Vec<((String, u32), Vec<u8>, WriterKey)> = self
-            .republish
-            .entries
-            .lock()
-            .iter()
-            .filter(|(_, e)| e.due <= now)
-            .map(|(slot, e)| (slot.clone(), e.data.clone(), e.writer.clone()))
-            .collect();
-        for (slot, data, writer) in due {
+        let mut by_record: BTreeMap<String, Vec<Due>> = BTreeMap::new();
+        for ((key, subkey), e) in self.republish.entries.lock().iter() {
+            if e.due <= now {
+                by_record.entry(key.clone()).or_default().push(Due {
+                    subkey: *subkey,
+                    data: e.data.clone(),
+                    writer: e.writer.clone(),
+                });
+            }
+        }
+        let (mut records, mut resent) = (0usize, 0usize);
+        for (key, due) in by_record {
             if self.repush_stop.is_cancelled() {
                 return;
             }
-            let resent = self.resend(&slot, data.clone(), writer).await;
-            let mut entries = self.republish.entries.lock();
-            // A newer write replaced the entry meanwhile: it starts its own
-            // schedule.
-            let Some(entry) = entries.get_mut(&slot) else {
-                continue;
-            };
-            if entry.data != data {
-                continue;
+            records += 1;
+            for (d, found) in self.republish_record(&key, due).await {
+                resent += usize::from(d.sent);
+                self.settle(&key, &d, found);
             }
-            let attempt = entry.sent.saturating_add(1);
-            let next = match resent {
-                Resent::Sent | Resent::Missed => next_due(entry.since, attempt, Instant::now()),
-                Resent::Superseded | Resent::Refused => None,
-            };
-            match next {
-                Some(due) => {
-                    entry.sent = attempt;
-                    entry.due = due;
-                }
-                None => {
-                    entries.remove(&slot);
-                }
-            }
-            tracing::debug!(
-                kind = "own record subkey",
-                subkey = slot.1,
-                attempt,
-                outcome = ?resent,
-                last = next.is_none(),
-                "own write re-sent"
-            );
         }
+        tracing::info!(records, resent, "own write republish round");
     }
 
-    /// Re-send `data` to `slot` at its seq, if our local copy still holds
-    /// it from `writer`.
-    async fn resend(&self, slot: &(String, u32), data: Vec<u8>, writer: WriterKey) -> Resent {
-        let lease = match self.acquire(&slot.0, None, OpenIntent::Check).await {
-            Ok(lease) => lease,
-            Err(PortError::Unreachable(_) | PortError::Closed) => return Resent::Missed,
-            Err(_) => return Resent::Refused,
+    /// Advance or drop `key`'s entry for `d.subkey` after this round found
+    /// `found`.
+    fn settle(&self, key: &str, d: &Done, found: Resent) {
+        let slot = (key.to_owned(), d.subkey);
+        let mut entries = self.republish.entries.lock();
+        // A newer write replaced the entry meanwhile: it starts its own
+        // schedule.
+        let Some(entry) = entries.get_mut(&slot) else {
+            return;
         };
-        let (key, subkey) = slot.clone();
+        if entry.data != d.data {
+            return;
+        }
+        let attempt = entry.sent.saturating_add(1);
+        let next = match found {
+            Resent::Sent | Resent::Held | Resent::Missed => {
+                next_due(entry.since, attempt, Instant::now())
+            }
+            Resent::Superseded | Resent::Refused => None,
+        };
+        match next {
+            Some(due) => {
+                entry.sent = attempt;
+                entry.due = due;
+            }
+            None => {
+                entries.remove(&slot);
+            }
+        }
+        tracing::debug!(
+            kind = "own record subkey",
+            subkey = slot.1,
+            attempt,
+            outcome = ?found,
+            last = next.is_none(),
+            "own write republish checked"
+        );
+    }
+
+    /// Inspect `key` once for its due subkeys and re-send those the network
+    /// holds behind our seq. An inspect that fails sends nothing: every
+    /// subkey stays due for the next round.
+    async fn republish_record(&self, key: &str, due: Vec<Due>) -> Vec<(Done, Resent)> {
+        let lease = match self.acquire(key, None, OpenIntent::Check).await {
+            Ok(lease) => Ok(lease),
+            Err(PortError::Unreachable(_) | PortError::Closed) => Err(Resent::Missed),
+            Err(_) => Err(Resent::Refused),
+        };
+        let lease = match lease {
+            Ok(lease) => lease,
+            Err(found) => return due.into_iter().map(|d| (d.done(false), found)).collect(),
+        };
+        let subkeys: Vec<u32> = due.iter().map(|d| d.subkey).collect();
+        let k = key.to_owned();
+        // Set scope: the fanout a set uses, counting `set_value_count`
+        // holders, starting from nothing local (0.5.8
+        // `inspect_record.rs:322-330`, `:426-436`).
+        let report = self
+            .run("dht republish inspect", move |backend| async move {
+                backend
+                    .inspect(&k, Some(&subkeys), ReportScope::SyncSet)
+                    .await
+            })
+            .await;
+        let mut out = Vec::with_capacity(due.len());
+        for d in due {
+            let found = match &report {
+                Err(_) => Resent::Missed,
+                Ok(report) => match standing(report, d.subkey) {
+                    Standing::Newer => Resent::Superseded,
+                    Standing::Held => Resent::Held,
+                    Standing::Behind => {
+                        let found = self
+                            .resend(key, d.subkey, d.data.clone(), d.writer.clone())
+                            .await;
+                        out.push((d.done(true), found));
+                        continue;
+                    }
+                },
+            };
+            out.push((d.done(false), found));
+        }
+        self.release(lease).await;
+        out
+    }
+
+    /// Re-send `data` to `key`'s `subkey` at its seq, if our local copy
+    /// still holds it from `writer`. The record is leased by the caller.
+    async fn resend(&self, key: &str, subkey: u32, data: Vec<u8>, writer: WriterKey) -> Resent {
+        let key = key.to_owned();
         let result = self
             .run("dht republish", move |backend| async move {
                 // Only the bytes our copy holds at its seq: any other value
@@ -260,7 +338,6 @@ impl RecordPool {
                 })
             })
             .await;
-        self.release(lease).await;
         match result {
             Ok(resent) => resent,
             Err(e) => match set_failed(&e) {
@@ -268,6 +345,60 @@ impl RecordPool {
                 Err(_) => Resent::Refused,
             },
         }
+    }
+}
+
+/// One due entry of a round.
+struct Due {
+    subkey: u32,
+    data: Vec<u8>,
+    writer: WriterKey,
+}
+
+impl Due {
+    fn done(self, sent: bool) -> Done {
+        Done {
+            subkey: self.subkey,
+            data: self.data,
+            sent,
+        }
+    }
+}
+
+/// A due entry after its round: whether a set went out for it.
+struct Done {
+    subkey: u32,
+    data: Vec<u8>,
+    sent: bool,
+}
+
+/// Where the network stands on one of our subkeys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Standing {
+    /// The network's seq is ours: landed, nothing to send.
+    Held,
+    /// The network's seq is behind ours, or it holds none.
+    Behind,
+    /// The network holds a newer seq: a newer write won.
+    Newer,
+}
+
+/// `subkey`'s standing in an inspect `report`. Veilid reports, per subkey,
+/// the seq the set-scope fanout settled on: the first seq
+/// `set_value_count` holders agreed on, a newer one seen after that
+/// discarded (0.5.8 `inspect_record.rs:672-705`). A subkey the report
+/// leaves out is behind (a re-send checks the local copy first).
+fn standing(report: &RecordReport, subkey: u32) -> Standing {
+    let Some(i) = report.subkeys.iter().position(|s| *s == subkey) else {
+        return Standing::Behind;
+    };
+    let local = report.local_seqs.get(i).copied().flatten();
+    let network = report.network_seqs.get(i).copied().flatten();
+    match (local, network) {
+        (Some(l), Some(n)) if n == l => Standing::Held,
+        (Some(l), Some(n)) if n > l => Standing::Newer,
+        (None, Some(_)) => Standing::Newer,
+        _ => Standing::Behind,
     }
 }
 

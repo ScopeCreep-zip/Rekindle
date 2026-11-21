@@ -7,7 +7,7 @@
 //! ([`Contest::Rival`]). The netsim is the faithful network; this is one
 //! node's store with the set result made explicit.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -56,6 +56,13 @@ struct MemState {
     claims: HashMap<(String, u32), u32>,
     /// The seq a rival holds under [`Contest::Ours`], by `(key, subkey)`.
     rivals: HashMap<(String, u32), u32>,
+    /// Subkeys the network holds none of while the local copy has them (a
+    /// write that stored on too few nodes), until a set of them lands.
+    unheld: HashSet<(String, u32)>,
+    /// How many network-scope inspects were made.
+    inspects: u32,
+    /// Whether network-scope inspects fail with `TryAgain`.
+    inspect_fails: bool,
 }
 
 /// One node's in-memory record store. A writer's keypair text is also its
@@ -116,6 +123,23 @@ impl MemDht {
             .lock()
             .claims
             .insert((key.to_string(), subkey), seq);
+    }
+
+    /// From now on an inspect of `key`'s `subkey` reports no network seq,
+    /// until the next set of it lands.
+    pub fn unhold(&self, key: &str, subkey: u32) {
+        self.state.lock().unheld.insert((key.to_string(), subkey));
+    }
+
+    /// Whether network-scope inspects fail with `TryAgain` from now on.
+    pub fn fail_inspects(&self, fail: bool) {
+        self.state.lock().inspect_fails = fail;
+    }
+
+    /// How many network-scope inspects were made.
+    #[must_use]
+    pub fn inspects(&self) -> u32 {
+        self.state.lock().inspects
     }
 
     /// Every get so far, as `(key, subkey, force_refresh)`, in order.
@@ -253,9 +277,16 @@ impl DhtBackend for MemDht {
         &self,
         key: &str,
         subkeys: Option<&[u32]>,
-        _scope: ReportScope,
+        scope: ReportScope,
     ) -> Result<RecordReport, DhtCallError> {
-        let state = self.state.lock();
+        let mut state = self.state.lock();
+        if scope != ReportScope::Local {
+            state.inspects += 1;
+            if state.inspect_fails {
+                return Err(error(DhtErrorKind::TryAgain, "no node answered"));
+            }
+        }
+        let state = &*state;
         let record = state
             .records
             .get(key)
@@ -270,7 +301,11 @@ impl DhtBackend for MemDht {
             .iter()
             .zip(&local_seqs)
             .map(|(s, local)| {
-                let claim = state.claims.get(&(key.to_string(), *s)).copied();
+                let at = (key.to_string(), *s);
+                if state.unheld.contains(&at) {
+                    return None;
+                }
+                let claim = state.claims.get(&at).copied();
                 (*local).max(claim)
             })
             .collect();
@@ -368,6 +403,7 @@ impl MemDht {
             }
         };
         record.values.insert(subkey, stored);
+        state.unheld.remove(&(key.to_string(), subkey));
         Ok(returned)
     }
 }
