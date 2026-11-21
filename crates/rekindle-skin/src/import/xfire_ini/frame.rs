@@ -11,6 +11,7 @@ use rekindle_types::dto::skin::{Insets, RegionState};
 use super::super::xfire_xml::{bitmap, ColourRow};
 use rekindle_types::dto::skin::{SkinWindow, TileAxis, WindowLayout};
 
+use super::super::views;
 use super::super::{ImportError, Tree};
 use super::ini::{Ini, Section};
 use super::{resolve, STATES};
@@ -81,6 +82,12 @@ pub struct Frame {
     pub pieces: [RgbaImage; 9],
     /// The windows laid beneath the frame pieces ([`Background`]).
     pub backgrounds: Vec<Background>,
+    /// The views' insets (left, right) inside the frame (plan SK0-L1,
+    /// [`views`]): `[MainWindow]`'s window `Name=TabbedControl` stretched
+    /// both ways, its `X` and `IndentRight` (Alloy `Window12` `X=20
+    /// IndentRight=19`); `None` without one or with a placement that is
+    /// not a pixel count.
+    pub views: Option<(u32, u32)>,
 }
 
 /// One state's pieces (decoded only when all eight are named), shifted and
@@ -138,11 +145,31 @@ pub(super) fn read_frame(
         if let Some(mut f) = read_shape(tree, skin, shape, colours, aliases)? {
             if let Some(main) = skin.section("MainWindow") {
                 f.backgrounds = backgrounds(tree, skin, main, colours, aliases)?;
+                f.views = views_insets(main);
             }
             return Ok(Some(f));
         }
     }
     Ok(None)
+}
+
+/// [`Frame::views`] from `[MainWindow]`.
+fn views_insets(main: &Section) -> Option<(u32, u32)> {
+    main.entries.iter().find_map(|entry| {
+        let index = entry.key.strip_prefix("Window")?.strip_suffix(".Name")?;
+        if !entry.value.trim().eq_ignore_ascii_case("TabbedControl") {
+            return None;
+        }
+        let get = |key: &str| main.get(&format!("Window{index}.{key}"));
+        if get("ResizeX") != Some("100") || get("ResizeY") != Some("100") {
+            return None;
+        }
+        if get("JustX").is_some_and(|j| !j.trim().eq_ignore_ascii_case("LEFT")) {
+            return None;
+        }
+        let num = |key: &str| get(key).map_or(Some(0), |v| v.trim().parse::<u32>().ok());
+        Some((num("X")? + num("IndentLeft")?, num("IndentRight")?))
+    })
 }
 
 fn read_shape(
@@ -176,6 +203,7 @@ fn read_shape(
                     skipped: Vec::new(),
                     pieces,
                     backgrounds: Vec::new(),
+                    views: None,
                 });
             }
             None => {}
@@ -269,7 +297,12 @@ fn backgrounds(
 /// Pieces that do not compose, or an image too large for a tile.
 pub fn main_layout(f: &Frame) -> Result<(WindowLayout, BTreeMap<String, Vec<u8>>), ImportError> {
     let window = SkinWindow::Main;
-    let (mut layout, mut files) = shape::from_nine(window, &f.pieces)?;
+    let mut pieces = f.pieces.clone();
+    if let Some(insets) = f.views {
+        let [_, _, _, l, _, r, _, _, _] = &mut pieces;
+        views::to_views_edge(l, r, insets);
+    }
+    let (mut layout, mut files) = shape::from_nine(window, &pieces)?;
     for bg in &f.backgrounds {
         let [left, top, right, bottom] = bg.at;
         let axes = (

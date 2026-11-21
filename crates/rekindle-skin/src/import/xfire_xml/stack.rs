@@ -28,6 +28,7 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, LayoutRegion, SkinWindow, TileAxis, WindowLayout};
 
 use super::super::tree::Node;
+use super::super::views;
 use super::super::ImportError;
 use super::descendants;
 use crate::shape::{self, u16_of};
@@ -80,19 +81,6 @@ fn ad_view(row: &Node, by_name: &BTreeMap<String, &Node>) -> Option<(TileAxis, u
         };
         Some((x, px(t, "Y"), px(c, "MinWidth"), px(c, "MinHeight")))
     })
-}
-
-/// The first `width` columns of `img` (all of it when it is narrower).
-fn first_columns(img: &RgbaImage, width: u32) -> RgbaImage {
-    let w = width.min(img.width());
-    RgbaImage::from_fn(w, img.height(), |x, y| *img.get_pixel(x, y))
-}
-
-/// The last `width` columns of `img` (all of it when it is narrower).
-fn last_columns(img: &RgbaImage, width: u32) -> RgbaImage {
-    let w = width.min(img.width());
-    let skip = img.width() - w;
-    RgbaImage::from_fn(w, img.height(), |x, y| *img.get_pixel(x + skip, y))
 }
 
 const TYPES: [&str; 4] = ["left", "middle", "right", "center"];
@@ -160,13 +148,9 @@ pub fn layout(
         return Ok(None);
     }
     // The content row's sides end where its views begin.
-    if let Some((left, right)) = views_insets(rows[content_row].tile) {
-        let sides = &mut rows[content_row].row;
-        if let Some(img) = sides[0].as_mut().filter(|i| left > 0 && left < i.width()) {
-            *img = first_columns(img, left);
-        }
-        if let Some(img) = sides[2].as_mut().filter(|i| right > 0 && right < i.width()) {
-            *img = last_columns(img, right);
+    if let Some(insets) = views_insets(rows[content_row].tile) {
+        if let [Some(l), _, Some(r), _] = &mut rows[content_row].row {
+            views::to_views_edge(l, r, insets);
         }
     }
     let header = rows[..content_row]

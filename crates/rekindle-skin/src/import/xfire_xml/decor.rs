@@ -24,9 +24,10 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{FrameTile, SkinWindow, TileAxis, WindowLayout};
 
 use super::super::tree::Node;
+use super::super::views;
 use super::super::ImportError;
 use super::tiles::normal_set;
-use super::{descendants, row_decor, stack, tiles, Windows};
+use super::{descendants, nine_piece_in, row_decor, stack, tiles, Windows};
 use crate::shape;
 
 /// The names a frame row goes by (Symbiosis `TopRow`/`BottomRow`).
@@ -187,6 +188,61 @@ pub fn apply(
     Ok(())
 }
 
+/// The views tile (stretched both ways, component `TabbedControl` or
+/// Symbiosis's `XfireView`) and the tiles above it, from `n` down.
+fn views_path<'a>(n: &'a Node, path: &mut Vec<&'a Node>) -> bool {
+    for t in n.children_named("Tile") {
+        path.push(t);
+        let views = t.attr_ci("ResizeX") == Some("100")
+            && t.attr_ci("ResizeY") == Some("100")
+            && t.attr_ci("Component")
+                .is_some_and(|c| eq(c, "TabbedControl") || eq(c, "XfireView"));
+        if views || views_path(t, path) {
+            return true;
+        }
+        path.pop();
+    }
+    false
+}
+
+/// The views' insets (left, right) inside the frame (plan SK0-L1,
+/// [`views`]): each tile's `X` + `IndentLeft` and `IndentRight` summed
+/// from below the deepest tile laying a nine-piece set (StealthX's
+/// `MainBackground` is the frame), else from the layout root less the
+/// frame rows' outsets (Symbiosis's `IndentRight="13"`); `None` without a
+/// views tile or when a placement on the way is not a pixel count (Classic
+/// v3's `X="LeftOuterEdge.RIGHT"`) or is justified to another edge.
+fn views_insets(main: &Node, components: &[Node]) -> Option<(u32, u32)> {
+    let mut path = Vec::new();
+    if !views_path(main, &mut path) {
+        return None;
+    }
+    let by_name: BTreeMap<String, &Node> = components
+        .iter()
+        .flat_map(|n| descendants(n, "Component"))
+        .filter_map(|c| Some((c.attr_ci("Name")?.to_ascii_lowercase(), c)))
+        .collect();
+    let frame_at = path.iter().rposition(|t| {
+        t.attr_ci("Component")
+            .and_then(|c| by_name.get(&c.to_ascii_lowercase()))
+            .and_then(|c| normal_set(c))
+            .is_some_and(|set| nine_piece_in([set]).is_some())
+    });
+    let mut left = 0i64;
+    let mut right = match frame_at {
+        Some(_) => 0i64,
+        None => -i64::from(outsets(main).1),
+    };
+    for t in &path[frame_at.map_or(0, |i| i + 1)..] {
+        if t.attr_ci("JustX").is_some_and(|j| !eq(j, "LEFT")) {
+            return None;
+        }
+        left += i64::from(num(t, "X")?) + i64::from(num(t, "IndentLeft")?);
+        right += i64::from(num(t, "IndentRight")?);
+    }
+    Some((u32::try_from(left).ok()?, u32::try_from(right).ok()?))
+}
+
 /// The buddy list's layout from its layout file `main`: the frame pieces
 /// (a nine-piece shape, else a row stack), then the decorations and
 /// outsets; `None` when no frame is found.
@@ -200,7 +256,11 @@ pub fn main_window(
     windows: &mut Windows,
 ) -> Result<(), ImportError> {
     let w = SkinWindow::Main;
-    let built = if let Some((pieces, _)) = tiles::pieces(main, components, piece)? {
+    let built = if let Some((mut pieces, _)) = tiles::pieces(main, components, piece)? {
+        if let Some(insets) = views_insets(main, components) {
+            let [_, _, _, l, _, r, _, _, _] = &mut pieces;
+            views::to_views_edge(l, r, insets);
+        }
         Some(shape::from_nine(w, &pieces)?)
     } else {
         stack::layout(w, main, components, piece)?
@@ -283,5 +343,52 @@ mod tests {
             true,
         );
         assert_eq!(got, vec![tab, logo]);
+    }
+
+    /// Plan SK0-L1: the views' insets are counted from the tile laying the
+    /// frame's nine-piece set (StealthX: `MainBackground` at X=112, its
+    /// `ListBackground` 24/23 in, the views 2/2 in that), else from the
+    /// root less the rows' outsets (Symbiosis: `XfireView` 5/18, rows
+    /// `IndentRight="13"`); a reference placement reads none.
+    #[test]
+    fn views_insets_are_counted_from_the_frame() {
+        let nine = parse(
+            "Components/MainWindow.xml",
+            br#"<Components><Component Name="Bg"><Images>
+<Image Type="TopLeft">a</Image><Image Type="Top">a</Image><Image Type="TopRight">a</Image>
+<Image Type="Left">a</Image><Image Type="Middle">a</Image><Image Type="Right">a</Image>
+<Image Type="BottomLeft">a</Image><Image Type="Bottom">a</Image><Image Type="BottomRight">a</Image>
+</Images></Component></Components>"#,
+        )
+        .unwrap();
+        let stealth = parse(
+            "MainWindow.xml",
+            br#"<Tile Name="W" ResizeX="100" ResizeY="100" Component="MainWindow">
+<Tile Name="MainBackground" X="112" Y="0" ResizeX="100" ResizeY="100" Component="Bg">
+<Tile Name="List" IndentLeft="24" IndentRight="23" ResizeX="100" ResizeY="100" Component="List">
+<Tile Name="TabbedControl" X="2" Y="2" IndentRight="2" ResizeX="100" ResizeY="100" Component="TabbedControl"/>
+</Tile></Tile></Tile>"#,
+        )
+        .unwrap();
+        assert_eq!(views_insets(&stealth, &[nine.clone()]), Some((26, 25)));
+        let symbiosis = parse(
+            "MainWindow.xml",
+            br#"<Tile Name="MainWindow" Component="MainWindow">
+<Tile Name="TopRow" ResizeX="100" IndentRight="13" Component="Row"/>
+<Tile Name="BottomRow" JustY="Bottom" ResizeX="100" IndentRight="13" Component="Row"/>
+<Tile Name="XfireView" Y="Tabs.Bottom+1" ResizeX="100" ResizeY="100" IndentRight="18" IndentLeft="5" Component="XfireView"/>
+</Tile>"#,
+        )
+        .unwrap();
+        assert_eq!(views_insets(&symbiosis, &[nine.clone()]), Some((5, 5)));
+        let classic = parse(
+            "MainWindow.xml",
+            br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="Inner" X="Edge.RIGHT" ResizeX="100" ResizeY="100" Component="Inner">
+<Tile Name="TabbedControl" X="7" IndentRight="6" ResizeX="100" ResizeY="100" Component="TabbedControl"/>
+</Tile></Tile>"#,
+        )
+        .unwrap();
+        assert_eq!(views_insets(&classic, &[nine]), None);
     }
 }

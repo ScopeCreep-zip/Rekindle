@@ -29,6 +29,7 @@ pub mod pidgin;
 pub mod qt;
 mod raster;
 mod tree;
+pub mod views;
 pub mod walk;
 pub mod winamp;
 pub mod xfire_ini;
