@@ -25,3 +25,4 @@ mod expression;
 mod general;
 mod moderation;
 mod roles;
+mod successors;
