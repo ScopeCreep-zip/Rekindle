@@ -68,7 +68,10 @@ pub fn cell(slot: PieceSlot) -> Cell {
 }
 
 /// The tallest (`f` = height) or widest piece of `p` in `slots`; 0 for none.
-fn most(p: &NodePieces, slots: &[PieceSlot], f: fn(&NodePiece) -> u16) -> i32 {
+/// A piece's extent along one axis (its width or its height).
+type Dim = fn(&NodePiece) -> u16;
+
+fn most(p: &NodePieces, slots: &[PieceSlot], f: Dim) -> i32 {
     slots
         .iter()
         .filter_map(|s| p.get(s))
@@ -80,7 +83,7 @@ fn most(p: &NodePieces, slots: &[PieceSlot], f: fn(&NodePiece) -> u16) -> i32 {
 /// The size of a band's side on one axis: its `corners`' when it has one,
 /// else its `edge`'s (spec A7: corners draw at natural size, the edge
 /// between them is laid in the band the corners make).
-fn side(p: &NodePieces, corners: [PieceSlot; 2], edge: PieceSlot, f: fn(&NodePiece) -> u16) -> i32 {
+fn side(p: &NodePieces, corners: [PieceSlot; 2], edge: PieceSlot, f: Dim) -> i32 {
     if corners.iter().any(|c| p.contains_key(c)) {
         most(p, &corners, f)
     } else {
@@ -93,7 +96,7 @@ fn side(p: &NodePieces, corners: [PieceSlot; 2], edge: PieceSlot, f: fn(&NodePie
 #[must_use]
 pub fn insets(p: &NodePieces) -> [i32; 4] {
     use PieceSlot as S;
-    let (w, h): (fn(&NodePiece) -> u16, fn(&NodePiece) -> u16) = (|x| x.width, |x| x.height);
+    let (w, h): (Dim, Dim) = (|x| x.width, |x| x.height);
     [
         side(p, [S::TopLeft, S::BottomLeft], S::Left, w),
         side(p, [S::TopRight, S::BottomRight], S::Right, w),
@@ -112,7 +115,7 @@ pub fn insets(p: &NodePieces) -> [i32; 4] {
 pub fn natural(set: &NodePieces) -> (i32, i32) {
     use PieceSlot as S;
     let [left, right, top, bottom] = insets(set);
-    let inner = |edges: [S; 2], f: fn(&NodePiece) -> u16| match most(set, &edges, f) {
+    let inner = |edges: [S; 2], f: Dim| match most(set, &edges, f) {
         0 => most(set, &[S::Middle], f),
         n => n,
     };
