@@ -186,7 +186,15 @@ fn component(section: &Section) -> Node {
     if let Some(class) = section.get("Class") {
         attrs.insert("Class".to_owned(), class.trim().to_owned());
     }
-    for key in ["MinWidth", "MinHeight", "MaxWidth", "MaxHeight"] {
+    // `ControlGroupId`: the tab controls that switch together (plan SK2
+    // lead decision 6: XGlow's `[Join]` pages show with the views).
+    for key in [
+        "MinWidth",
+        "MinHeight",
+        "MaxWidth",
+        "MaxHeight",
+        "ControlGroupId",
+    ] {
         if let Some(v) = section.get(key) {
             attrs.insert(key.to_owned(), v.trim().to_owned());
         }

@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, RegionState, SkinWindow, TileAxis, WindowLayout};
-use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
 
 use super::anchor::{axis, outer_for, Sibs, Sizes, X, Y};
 use super::roles::{role, Facts};
@@ -49,6 +49,9 @@ struct Read<'n> {
     img: Option<RgbaImage>,
     wh: (u16, u16),
     max: (Option<u16>, Option<u16>),
+    /// The component's `ControlGroupId` (INI tab controls that switch
+    /// together).
+    group: Option<String>,
 }
 
 struct Walk<'a> {
@@ -56,6 +59,8 @@ struct Walk<'a> {
     by_name: BTreeMap<String, &'a Node>,
     piece: Decode<'a>,
     files: Files,
+    /// Each tab control's path of child indices and its `ControlGroupId`.
+    groups: Vec<(Vec<usize>, String)>,
 }
 
 impl Walk<'_> {
@@ -74,6 +79,38 @@ impl Walk<'_> {
                 t.image
             }),
         )
+    }
+
+    /// Plan SK2 lead decision 8: an art-less tile with no declared size
+    /// takes, on each axis, the largest art of its children stretched on
+    /// that axis (XGlow's `[Add]` `Stretch=ToContent` slot holding
+    /// `AddFriend` `ResizeX=100`, `buttons/add.gif` 54×18).
+    fn content_size(&self, tile: &Node) -> Result<(u16, u16), ImportError> {
+        let mut wh = (0u16, 0u16);
+        for c in tile.children_named("Tile") {
+            let normal = self.image(c, "Normal")?;
+            let img = if normal.is_some() {
+                normal
+            } else {
+                self.image(c, "Hover")?
+            };
+            let (cw, ch) = if let Some(i) = img {
+                (
+                    u16::try_from(i.width()).unwrap_or(u16::MAX),
+                    u16::try_from(i.height()).unwrap_or(u16::MAX),
+                )
+            } else {
+                self.content_size(c)?
+            };
+            let stretched = |k: &str| c.attr_ci(k).is_some_and(|r| r.trim() == "100");
+            if stretched("ResizeX") {
+                wh.0 = wh.0.max(cw);
+            }
+            if stretched("ResizeY") {
+                wh.1 = wh.1.max(ch);
+            }
+        }
+        Ok(wh)
     }
 
     /// An interactive node's normal, hover and down art at one size.
@@ -131,16 +168,36 @@ impl Walk<'_> {
         // grippers `MinWidth="10" MinHeight="10"` (`Components/MainWindow.xml:62`).
         let wh = match &img {
             Some(i) => (size(i.width())?, size(i.height())?),
-            None => match self.image(tile, "Hover")? {
-                // Art only on hover: the button's normal look is baked in
-                // the art under it, and its hover image is its size (Total
-                // Chaos's `TCLink`, `components.xml:507-519`).
-                Some(h) => (size(h.width())?, size(h.height())?),
-                None => (
-                    limit_of(comp, "MinWidth").unwrap_or(0),
-                    limit_of(comp, "MinHeight").unwrap_or(0),
-                ),
-            },
+            // Art only on hover: the button's normal look is baked in the
+            // art under it, and its hover image is its size (Total Chaos's
+            // `TCLink`, `components.xml:507-519`).
+            None => {
+                if let Some(h) = self.image(tile, "Hover")? {
+                    (size(h.width())?, size(h.height())?)
+                } else {
+                    let declared = (
+                        limit_of(comp, "MinWidth").unwrap_or(0),
+                        limit_of(comp, "MinHeight").unwrap_or(0),
+                    );
+                    if declared.0 == 0 || declared.1 == 0 {
+                        let content = self.content_size(tile)?;
+                        (
+                            if declared.0 == 0 {
+                                content.0
+                            } else {
+                                declared.0
+                            },
+                            if declared.1 == 0 {
+                                content.1
+                            } else {
+                                declared.1
+                            },
+                        )
+                    } else {
+                        declared
+                    }
+                }
+            }
         };
         let children: Vec<String> = tile
             .children_named("Tile")
@@ -162,6 +219,10 @@ impl Walk<'_> {
             ))
         })?;
         let max = (limit_of(comp, "MaxWidth"), limit_of(comp, "MaxHeight"));
+        let group = comp
+            .and_then(|c| c.attr_ci("ControlGroupId"))
+            .or(tile.attr_ci("ControlGroupId"))
+            .map(|g| g.trim().to_owned());
         Ok(Read {
             tile,
             id,
@@ -169,6 +230,7 @@ impl Walk<'_> {
             img,
             wh,
             max,
+            group,
         })
     }
 
@@ -180,6 +242,7 @@ impl Walk<'_> {
         node: &Node,
         parent: Option<NodeRole>,
         outer: &Sibs,
+        path: &[usize],
     ) -> Result<Vec<SkinNode>, ImportError> {
         let tiles = node
             .children_named("Tile")
@@ -219,7 +282,12 @@ impl Walk<'_> {
             }
         }
         let mut out = Vec::new();
-        for (t, xy) in tiles.into_iter().zip(placed) {
+        for (i, (t, xy)) in tiles.into_iter().zip(placed).enumerate() {
+            let mut own = path.to_vec();
+            own.push(i);
+            if let Some(g) = &t.group {
+                self.groups.push((own.clone(), g.clone()));
+            }
             let (x, y) = xy.ok_or_else(|| bad(format!("{}: not placed", t.id)))?;
             let art = match (&t.img, t.role.interactive()) {
                 (Some(i), true) => self.art(&t.id, t.tile, i)?,
@@ -235,7 +303,7 @@ impl Walk<'_> {
                 _ => None,
             };
             let inner = outer_for(&names, x, y);
-            let children = self.walk(t.tile, Some(t.role), &inner)?;
+            let children = self.walk(t.tile, Some(t.role), &inner, &own)?;
             out.push(SkinNode {
                 id: t.id,
                 role: t.role,
@@ -249,6 +317,68 @@ impl Walk<'_> {
             });
         }
         Ok(out)
+    }
+}
+
+fn node_at<'a>(nodes: &'a mut [SkinNode], path: &[usize]) -> Option<&'a mut SkinNode> {
+    let (first, rest) = path.split_first()?;
+    let n = nodes.get_mut(*first)?;
+    if rest.is_empty() {
+        Some(n)
+    } else {
+        node_at(&mut n.children, rest)
+    }
+}
+
+/// Tab controls that share a `ControlGroupId` switch together (XGlow's
+/// `[TabbedControl]`, `[Add]`, `[Chat]`, `[Join]`, `[Info]`, all
+/// `ControlGroupId=1`, `Xglow.ini`): a control's i-th window shows with
+/// the views control's i-th view (`[Join]`'s second `JoinGame` is the
+/// Servers tab's join).
+fn pages(root: &mut [SkinNode], groups: &[(Vec<usize>, String)]) {
+    let views_of = |n: &SkinNode| -> Vec<ViewKey> {
+        n.children
+            .iter()
+            .filter_map(|c| match c.role {
+                NodeRole::View(v) => Some(v),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut views: BTreeMap<&str, Vec<ViewKey>> = BTreeMap::new();
+    for (path, g) in groups {
+        let keys = node_at(root, path).map(|n| views_of(n)).unwrap_or_default();
+        if !keys.is_empty() {
+            views.insert(g, keys);
+        }
+    }
+    for (path, g) in groups {
+        let (Some(keys), Some(n)) = (views.get(g.as_str()), node_at(root, path)) else {
+            continue;
+        };
+        if views_of(n).is_empty() {
+            for (c, v) in n.children.iter_mut().zip(keys) {
+                c.shows_with.get_or_insert(*v);
+            }
+        }
+    }
+}
+
+/// Siblings of one name that show with different views (`[Join]`'s two
+/// `JoinGame` windows) are named for their view: `JoinGame@Servers`.
+fn by_view(nodes: &mut [SkinNode]) {
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    for n in nodes.iter() {
+        *seen.entry(n.id.clone()).or_default() += 1;
+    }
+    for n in nodes.iter_mut() {
+        if let Some(v) = n
+            .shows_with
+            .filter(|_| seen.get(&n.id).is_some_and(|c| *c > 1))
+        {
+            n.id = format!("{}@{v:?}", n.id);
+        }
+        by_view(&mut n.children);
     }
 }
 
@@ -413,6 +543,7 @@ pub fn add(
         by_name,
         piece: &piece,
         files: Files::new(),
+        groups: Vec::new(),
     };
     let mut tree = SkinTree {
         outsets: Insets {
@@ -421,8 +552,10 @@ pub fn add(
             bottom: 0,
             left: 0,
         },
-        root: walk.walk(layout, None, &Sibs::new())?,
+        root: walk.walk(layout, None, &Sibs::new(), &[])?,
     };
+    pages(&mut tree.root, &walk.groups);
+    by_view(&mut tree.root);
     qualify(&mut tree.root);
     let window = layout.attr_ci("Component").unwrap_or("MainWindow");
     let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();

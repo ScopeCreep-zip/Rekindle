@@ -3,7 +3,10 @@
 //! resolved spans, at its `Z`, with its art at its own size and its hover,
 //! down and disabled art; an interactive node smaller than 24×24 gets a
 //! 24×24 hit area (`::before`, centred, shifted inward at the window's
-//! edges as [`hit_area`] lays it); a text-sized node is as wide and tall as
+//! edges as [`hit_area`] lays it; an edge grip's yields to the interactive
+//! nodes it overlaps, [`grip_area`], lead decision 6); every node is
+//! stacked by its `Z` and then the pack's document order (the shell nests
+//! the divs in that order, so a later sibling draws above); a text-sized node is as wide and tall as
 //! its text (`max-content`); the views node draws opaque (lead decision 3:
 //! the window art may lie under it). Positions never come from the
 //! webview; the shell (SK2-S2) only nests `div[data-skin-node]`s.
@@ -15,7 +18,7 @@ use rekindle_types::dto::skin::RegionState;
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
 
-use super::validate::{hit_area, text_sized, HIT};
+use super::validate::{grip_area, hit_area, stack_z, text_sized, HIT};
 use crate::regions::css::href;
 
 fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
@@ -64,6 +67,8 @@ struct Ctx<'a> {
     base: &'a str,
     boxes: BTreeMap<&'a str, [i32; 4]>,
     window: (i32, i32),
+    /// The boxes of the interactive nodes that are not grips.
+    live: Vec<[i32; 4]>,
 }
 
 /// The `::before` hit area of an interactive node smaller than 24×24, at
@@ -76,7 +81,11 @@ fn hit_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
     let Some(area) = ctx.boxes.get(n.id.as_str()) else {
         return;
     };
-    let hit = hit_area(*area, ctx.window);
+    let hit = if matches!(n.role, NodeRole::Resize(_)) {
+        grip_area(*area, ctx.window, &ctx.live)
+    } else {
+        hit_area(*area, ctx.window)
+    };
     let _ = writeln!(
         out,
         "  {sel}::before {{\n    content: \"\";\n    position: absolute;\n    left: {}px;\n    top: {}px;\n    width: {}px;\n    height: {}px;\n  }}",
@@ -95,7 +104,7 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
         "position: absolute; {} {} z-index: {};",
         axis(n.x, ("left", "right", "width"), text),
         axis(n.y, ("top", "bottom", "height"), text),
-        n.z
+        stack_z(n)
     );
     if n.role == NodeRole::Views {
         decls.push_str(" background-color: var(--color-xfire-bg-dark);");
@@ -139,16 +148,19 @@ pub fn tree_css(
     let o = layout.outsets;
     let w = i32::from(layout.min_width) + i32::from(o.left) + i32::from(o.right);
     let h = i32::from(layout.min_height) + i32::from(o.top) + i32::from(o.bottom);
+    let boxes = tree.boxes(w, h);
+    let live = boxes
+        .iter()
+        .filter(|(n, _)| n.role.interactive() && !matches!(n.role, NodeRole::Resize(_)))
+        .map(|(_, b)| *b)
+        .collect();
     let ctx = Ctx {
         root,
         images,
         base,
-        boxes: tree
-            .boxes(w, h)
-            .into_iter()
-            .map(|(n, b)| (n.id.as_str(), b))
-            .collect(),
+        boxes: boxes.iter().map(|(n, b)| (n.id.as_str(), *b)).collect(),
         window: (w, h),
+        live,
     };
     let mut out = String::new();
     for n in &tree.root {

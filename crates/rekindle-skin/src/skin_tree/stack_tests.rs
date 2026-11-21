@@ -1,0 +1,104 @@
+//! Plan SK2 lead decision 6: overlapping interactive nodes stack by the
+//! pack's document order, and an edge grip's hit area yields (rule 4).
+
+use std::collections::BTreeMap;
+
+use rekindle_types::dto::skin_tree::{ActionKey, Anchor, Edge, NodeRole, NodeSpan, SkinTree};
+
+use super::tests::{checked, fixed, good, layout, n, refused, whole};
+use super::{css, validate};
+
+/// Lead decision 6: interactive nodes may overlap, stacked by `Z` then the
+/// pack's document order; a node another wholly covers is unreachable.
+#[test]
+fn rule_4_overlap_stacks_by_document_order() {
+    let min = |at: i16, size: u16| {
+        n(
+            "Min",
+            NodeRole::Minimize,
+            NodeSpan::Fixed {
+                at: Anchor::End(at),
+                size,
+            },
+            fixed(4, 16),
+        )
+    };
+    // Overlapping the close box in part: allowed, the later one on top.
+    let mut t = good();
+    t.push(min(10, 18));
+    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
+    // Laid over the whole close box, later in document order: unreachable.
+    let mut t = good();
+    t.push(min(1, 24));
+    refused(t.clone(), "rule 4");
+    // The close box raised above the wider minimize box by its Z: both
+    // reachable again.
+    t[0].z = 3;
+    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
+    // Earlier in document order, the minimize box is the one covered.
+    let mut t = good();
+    t.insert(0, min(4, 18));
+    let e = checked(t, &BTreeMap::new()).unwrap_err();
+    assert!(e.contains("t.Min") && e.contains("rule 4"), "{e}");
+}
+
+/// Lead decision 6: an edge grip's hit area yields to an interactive node
+/// it overlaps, never past the grip's own box.
+#[test]
+fn rule_4_an_edge_grips_hit_area_yields() {
+    // A 5 px left-edge strip and a button 10 px in: the 24 px area stops at
+    // the button.
+    assert_eq!(
+        validate::grip_area([0, 0, 5, 300], (200, 300), &[[10, 100, 30, 16]]),
+        [0, 0, 10, 300]
+    );
+    // A button over the strip itself: the grip keeps only its own box.
+    assert_eq!(
+        validate::grip_area([0, 0, 5, 300], (200, 300), &[[2, 100, 30, 16]]),
+        [0, 0, 5, 300]
+    );
+    // A bottom strip: trimmed upward-facing, toward the bottom edge.
+    assert_eq!(
+        validate::grip_area([0, 295, 200, 5], (200, 300), &[[50, 270, 30, 20]]),
+        [0, 290, 200, 10]
+    );
+    // Nothing near: the full 24 px area.
+    assert_eq!(
+        validate::grip_area([0, 0, 5, 300], (200, 300), &[]),
+        validate::hit_area([0, 0, 5, 300], (200, 300))
+    );
+    let mut t = good();
+    t.push(n(
+        "ResizeLeft",
+        NodeRole::Resize(Edge::Left),
+        fixed(0, 5),
+        whole(),
+    ));
+    t.push(n(
+        "Chat",
+        NodeRole::Button(ActionKey::Chat),
+        fixed(10, 30),
+        fixed(100, 16),
+    ));
+    assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
+    let out = css::tree_css(
+        ".app-frame",
+        &SkinTree {
+            outsets: rekindle_types::dto::skin::Insets {
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+            },
+            root: t,
+        },
+        &layout(None),
+        &BTreeMap::new(),
+        "x",
+    )
+    .unwrap();
+    assert!(
+        out.contains("[data-skin-node=\"ResizeLeft\"]::before {\n    content: \"\";\n    position: absolute;\n    left: 0px;\n    top: 0px;\n    width: 10px;"),
+        "{out}"
+    );
+}

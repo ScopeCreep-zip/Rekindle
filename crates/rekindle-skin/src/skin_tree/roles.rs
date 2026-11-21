@@ -195,6 +195,14 @@ pub fn role(
     if name.trim().eq_ignore_ascii_case("logo2") {
         return Some(R::Decor);
     }
+    // A button bar's child named for a view and not for a button is that
+    // view's row (Space Cowboy's and Total Chaos's `FriendsButtons`,
+    // `ServersButtons`, `FilesButtons` under `TabButtonArea`).
+    if parent == Some(R::ButtonBar) && button(&name_k).is_none() {
+        if let Some(v) = view(name) {
+            return Some(R::ButtonRow(v));
+        }
+    }
     // A tab control holding the buddy list is the views; one holding
     // button rows is the button bar (Classic names both `TabbedControl`).
     // An INI `Class=TabControl` is the same control. One named for a button
@@ -260,8 +268,12 @@ pub fn role(
     };
     match (found, parent) {
         // The same component inside itself is its piece (`FileMenu` under
-        // `XfireMenuText`, `UserNameText` under `UserNameField`).
-        (Some(r), Some(p)) if !r.repeats() && r == p => Some(R::Part),
+        // `XfireMenuText`, `UserNameText` under `UserNameField`, Classic's
+        // `TabNormalButton` art under its `TabNormalText` tab); a group or
+        // decor inside one is its own.
+        (Some(r), Some(p)) if !matches!(r, R::Group | R::Decor | R::Part) && r == p => {
+            Some(R::Part)
+        }
         (Some(r), _) => Some(r),
         (None, Some(p))
             if p.interactive()

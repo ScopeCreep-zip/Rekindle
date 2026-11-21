@@ -14,7 +14,7 @@ use crate::import::tree::parse;
 
 const ON: Rgba<u8> = Rgba([10, 20, 30, 255]);
 
-fn layout(tree: Option<SkinTree>) -> WindowLayout {
+pub(super) fn layout(tree: Option<SkinTree>) -> WindowLayout {
     let z = Insets {
         top: 0,
         right: 0,
@@ -32,14 +32,14 @@ fn layout(tree: Option<SkinTree>) -> WindowLayout {
     }
 }
 
-fn fixed(at: i16, size: u16) -> NodeSpan {
+pub(super) fn fixed(at: i16, size: u16) -> NodeSpan {
     NodeSpan::Fixed {
         at: Anchor::Start(at),
         size,
     }
 }
 
-fn n(id: &str, role: NodeRole, x: NodeSpan, y: NodeSpan) -> SkinNode {
+pub(super) fn n(id: &str, role: NodeRole, x: NodeSpan, y: NodeSpan) -> SkinNode {
     SkinNode {
         id: id.to_owned(),
         role,
@@ -53,13 +53,13 @@ fn n(id: &str, role: NodeRole, x: NodeSpan, y: NodeSpan) -> SkinNode {
     }
 }
 
-fn whole() -> NodeSpan {
+pub(super) fn whole() -> NodeSpan {
     NodeSpan::Stretch { start: 10, end: 10 }
 }
 
 /// A tree every rule passes: views with the friends view, its button row,
 /// a close box and an add button.
-fn good() -> Vec<SkinNode> {
+pub(super) fn good() -> Vec<SkinNode> {
     let mut views = n(
         "Views",
         NodeRole::Views,
@@ -109,7 +109,10 @@ fn good() -> Vec<SkinNode> {
     ]
 }
 
-fn checked(root: Vec<SkinNode>, images: &BTreeMap<String, Vec<u8>>) -> Result<(), String> {
+pub(super) fn checked(
+    root: Vec<SkinNode>,
+    images: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), String> {
     let tree = SkinTree {
         outsets: rekindle_types::dto::skin::Insets {
             top: 0,
@@ -122,7 +125,7 @@ fn checked(root: Vec<SkinNode>, images: &BTreeMap<String, Vec<u8>>) -> Result<()
     validate::check("t", &tree, &layout(Some(tree.clone())), images).map_err(|e| format!("{e:?}"))
 }
 
-fn refused(root: Vec<SkinNode>, rule: &str) {
+pub(super) fn refused(root: Vec<SkinNode>, rule: &str) {
     let e = checked(root, &BTreeMap::new()).unwrap_err();
     assert!(e.contains(rule), "{e}");
 }
@@ -151,25 +154,6 @@ fn rule_3_nodes_lie_inside_the_window() {
     let mut t = good();
     t.push(n("Vent", NodeRole::Decor, fixed(190, 20), fixed(0, 4)));
     refused(t, "rule 3");
-}
-
-#[test]
-fn rule_4_interactive_nodes_never_overlap_at_one_z() {
-    let mut t = good();
-    t.push(n(
-        "CloseBox2",
-        NodeRole::Minimize,
-        NodeSpan::Fixed {
-            at: Anchor::End(10),
-            size: 18,
-        },
-        fixed(4, 16),
-    ));
-    refused(t.clone(), "rule 4");
-    if let Some(m) = t.last_mut() {
-        m.z = 3;
-    }
-    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
 }
 
 #[test]
@@ -261,14 +245,20 @@ fn rule_5_a_text_sized_menu_is_sized_at_render() {
     refused(t, "rule 5");
 }
 
+/// Lead decision 7: only singleton roles are unique; a button bar, a
+/// button or decor may repeat (Symbiosis's two button bars).
 #[test]
-fn rule_6_one_node_per_role_except_the_repeating_ones() {
+fn rule_6_singleton_roles_are_unique() {
     let mut t = good();
     t.push(n("Close2", NodeRole::Close, fixed(40, 24), fixed(40, 24)));
     refused(t, "rule 6");
     let mut t = good();
+    t.push(n("Views2", NodeRole::Views, fixed(40, 24), fixed(80, 24)));
+    refused(t, "rule 6");
+    let mut t = good();
     t.push(n("Bolt", NodeRole::Decor, fixed(0, 4), fixed(0, 4)));
     t.push(n("Bolt2", NodeRole::Decor, fixed(0, 4), fixed(0, 4)));
+    t.push(n("Bar2", NodeRole::ButtonBar, whole(), fixed(250, 20)));
     assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
 }
 

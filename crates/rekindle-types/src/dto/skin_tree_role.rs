@@ -175,17 +175,21 @@ impl NodeRole {
         )
     }
 
-    /// Whether the role may appear more than once in a tree (rule 6).
+    /// Whether a tree holds at most one node of the role (rule 6, plan SK2
+    /// lead decision 7): the title strip, the window boxes, the name and
+    /// status fields and the views; every other role may repeat per view
+    /// or tab (Symbiosis's two button bars).
     #[must_use]
-    pub const fn repeats(self) -> bool {
+    pub const fn singleton(self) -> bool {
         matches!(
             self,
-            Self::Button(_)
-                | Self::Decor
-                | Self::Resize(_)
-                | Self::Tab(_)
-                | Self::Group
-                | Self::Part
+            Self::Drag
+                | Self::Minimize
+                | Self::Maximize
+                | Self::Close
+                | Self::NameField
+                | Self::StatusText
+                | Self::Views
         )
     }
 }
