@@ -6,6 +6,7 @@ import { conversationId } from "../ipc/channels/chat_events";
 import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
 import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
+import { applyCoCreatorEvent } from "../stores/co-creator.store";
 import { chatState, setChatState } from "../stores/chat.store";
 import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "../actions/chat.actions";
 import { handleRefreshFriends } from "../actions/buddy.actions";
@@ -94,6 +95,8 @@ function friendEventPeer(friend: FriendEvent): string | null {
 
 /** Apply one friend-lifecycle event to the friends and notification stores. */
 function applyFriendEvent(friend: FriendEvent): void {
+  // Co-creation invites and statuses (plan E3.2 S7s.3f) have their own store.
+  if (applyCoCreatorEvent(friend)) return;
   if ("requestReceived" in friend) {
     const { fromKey, displayName, message } = friend.requestReceived;
     // Update display name if sender is already a friend (bidirectional add)

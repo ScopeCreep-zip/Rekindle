@@ -7,6 +7,7 @@ import UserIdentityBar from "../components/buddy-list/UserIdentityBar";
 import TabBar from "../components/buddy-list/TabBar";
 import SearchBar, { focusSearchInput } from "../components/buddy-list/SearchBar";
 import PendingRequests from "../components/buddy-list/PendingRequests";
+import CoCreatorInvites from "../components/buddy-list/CoCreatorInvites";
 import BuddyList from "../components/buddy-list/BuddyList";
 import CommunityListCompact from "../components/buddy-list/CommunityListCompact";
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
@@ -137,6 +138,7 @@ const BuddyListWindow: Component = () => {
       <div id="main-content" tabindex="-1" class="window-main">
         <Show when={buddyListUI.activeTab === "friends"}>
           <PendingRequests />
+          <CoCreatorInvites />
           <GroupDmList />
           <BuddyList />
         </Show>

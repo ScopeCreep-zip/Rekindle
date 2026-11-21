@@ -244,8 +244,12 @@
 '.pending-header' = { on = ["--color-xfire-bg-dark"] }
 '.pending-message' = { on = ["--color-xfire-bg-dark"] }
 '.pending-btn-accept' = { on = ["--color-xfire-online var(--tint-fill) over --color-xfire-bg-dark"], on_hover = ["--color-xfire-success-fill"] }
-'.pending-btn-reject' = { on = ["--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark"], on_hover = ["--color-xfire-danger"] }
+'.pending-btn-reject' = { on = ["--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark", "--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-panel"], on_hover = ["--color-xfire-danger"] }
 '.pending-btn-block' = { on = ["--color-xfire-offline var(--tint-fill) over --color-xfire-bg-dark"], on_hover = ["--color-xfire-fill-shade 15% over --color-xfire-offline"] }
+'.co-create-status-hint' = { on = ["--color-xfire-bg-panel"] }
+'.co-create-status-badge' = { on = ["--color-xfire-offline 12% over --color-xfire-bg-panel"] }
+'.co-create-status-badge.co-create-status-accepted' = { on = ["--color-xfire-success 30% over --color-xfire-bg-panel"] }
+'.co-create-status-badge.co-create-status-joining' = { on = ["--color-xfire-success 30% over --color-xfire-bg-panel"] }
 '.add-friend-invite-text' = { on = ["--color-xfire-bg-input"] }
 '.add-friend-copy-btn' = { on = ["--color-xfire-accent"], on_hover = ["--color-xfire-accent 80% over --color-xfire-fill-shade"] }
 '.add-friend-cancel-btn' = { on = ["--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-panel"], on_hover = ["--color-xfire-danger"] }

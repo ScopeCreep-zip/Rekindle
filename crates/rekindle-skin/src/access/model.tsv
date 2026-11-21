@@ -214,6 +214,10 @@
 .chat-safety-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .chat-safety-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
 .chat-safety-btn	text hovered	var(--color-xfire-text-dim)	--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark	1.0	false
+.co-create-status-badge	text	var(--color-xfire-text)	--color-xfire-offline 12% over --color-xfire-bg-panel	1.0	false
+.co-create-status-badge.co-create-status-accepted	text	var(--color-xfire-success)	--color-xfire-success 30% over --color-xfire-bg-panel	1.0	false
+.co-create-status-badge.co-create-status-joining	text	var(--color-xfire-success)	--color-xfire-success 30% over --color-xfire-bg-panel	1.0	false
+.co-create-status-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .community-channel-header	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .community-channel-header-icon	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .community-description-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
@@ -535,6 +539,7 @@
 .pending-btn-block	text	var(--color-xfire-text-on-fill)	--color-xfire-offline var(--tint-fill) over --color-xfire-bg-dark	1.0	false
 .pending-btn-block	text hovered	var(--color-xfire-text-on-fill)	--color-xfire-fill-shade 15% over --color-xfire-offline	1.0	false
 .pending-btn-reject	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark	1.0	false
+.pending-btn-reject	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-panel	1.0	false
 .pending-btn-reject	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false
 .pending-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .pending-message	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
