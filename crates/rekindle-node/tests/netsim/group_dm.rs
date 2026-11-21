@@ -240,7 +240,7 @@ async fn a_group_of_non_friends_talks_and_a_leave_and_a_block_rotate() {
         .all(|m| only_queued_or_sent(m.send_state)));
 }
 
-/// Bea's DHT is off while Ann sends; 31 days on, Ann's next append retires
+/// Bea is detached (no hint, no DHT) while Ann sends; 31 days on, Ann's next append retires
 /// her chain past it (age only, no acks), and Bea's diff stores the gap row
 /// and publishes it. Returns the run's trace hash
 /// ([`a_retired_group_stretch_has_one_trace_per_seed`]).
@@ -265,9 +265,15 @@ async fn retired_stretch_at(seed: u64) -> [u8; 32] {
         Some(0),
         "Ann created her group chain"
     );
-    sim.fault(Fault::DhtOffline {
+    // Bea is unreachable, not only off the DHT: an entry's hint is the
+    // entry itself and is stored on receipt (finding G3, `group_dm/receive.rs`
+    // `on_hint`), so under `DhtOffline` alone, which still delivers app
+    // messages (`rekindle-netsim` `network.rs` `lost_in_transit`), she would
+    // hold the message and the stretch would be no gap of hers. Detached,
+    // neither its hint nor the chain reaches her.
+    sim.fault(Fault::Detach {
         node: 1,
-        offline: true,
+        detached: true,
     });
     send(&nodes[0], &gid, "unread on the chain").await;
     assert!(
@@ -310,9 +316,9 @@ async fn retired_stretch_at(seed: u64) -> [u8; 32] {
         eventually(&sim, LIMIT, || async { retired(&sim, &keys) }).await,
         "Ann's group chain is retired"
     );
-    sim.fault(Fault::DhtOffline {
+    sim.fault(Fault::Detach {
         node: 1,
-        offline: false,
+        detached: false,
     });
     send(&nodes[0], &gid, "once more").await;
     let gap = || async {
