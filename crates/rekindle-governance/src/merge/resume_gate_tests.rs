@@ -115,3 +115,29 @@ fn a_revoke_beside_the_cut_concurrent_with_a_cut_join_is_not_on_top() {
         Some(NotOnTop::BesideTheCut(revoke_hash))
     );
 }
+
+/// Plan E3.2 S7s.3: the checkpoint-resume approval gate
+/// (`resume_gates::approval_gate`) passes a further creator's post-cut ops
+/// without an approval, as the full merge does (decision (17)): limited
+/// to the primary creator, the resume refuses the further creator's ops
+/// and its state departs from the full merge's.
+#[test]
+fn a_further_creator_passes_the_resume_approval_gate() {
+    use rekindle_types::governance::AdmissionMode;
+    let mut cert = crate::fixture::cert(&pk(1), AdmissionMode::ApprovalRequired);
+    cert.additional_creators = vec![pk(7)];
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
+    let c1 = op(&pk(1), 1, &[&c0], 1, meta("before"));
+    let f0 = op(&pk(7), 0, &[&c1], 2, joined(7, None));
+    let f1 = op(&pk(7), 1, &[&f0], 3, meta("by a further creator"));
+    let late = f1.hash();
+    let ops = vec![c0, c1, f0, f1];
+    let heads = [&ops[1]];
+    let resumed = resume(&cert, &ops, &heads).expect("on top");
+    assert!(
+        resumed.applied.contains(&late),
+        "the further creator's op applies"
+    );
+    assert!(resumed.state.is_counted_member(&pk(7)));
+    assert!(!resumed.state.pending_members.contains_key(&pk(7)));
+}
