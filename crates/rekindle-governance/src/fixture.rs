@@ -62,6 +62,9 @@ pub fn cert(creator: &PseudonymKey, policy: AdmissionMode) -> GenesisCert {
     }
 }
 
+/// The community anchor every fixture op is verified for.
+pub const ANCHOR: &str = "VLD0:fixture-community";
+
 /// A fixture op claiming `lamport` outright (a forger's view of itself).
 #[must_use]
 pub fn op_at(

@@ -43,6 +43,7 @@ use rekindle_types::id::PseudonymKey;
 use super::resolve::Ancestry;
 use super::{fold, genesis_state, try_apply, MergeOutcome, QuarantineReason};
 use crate::checkpoint::{CutSnapshot, Hints};
+use crate::device_judge::DeviceView;
 use crate::op::VerifiedOp;
 use crate::power::{class_of, removal_target, target_seq_frontier, OpClass};
 use crate::state::GovernanceState;
@@ -98,6 +99,9 @@ pub(super) struct RestSet<'a> {
     /// its `rest` ancestors' deps) cite; `None` for an op with every cut
     /// head in its past.
     pub reach: Vec<Option<Reach>>,
+    /// The snapshot's device set with the kept `rest` ops harvested into
+    /// it in stamp order, as `resolve::prepare` harvests the full set.
+    pub devices: DeviceView,
 }
 
 /// An author's highest seq cited, keyed by pseudonym bytes.
@@ -296,6 +300,7 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
             .map(|(author, seq)| (PseudonymKey(*author), *seq))
             .collect(),
         reach: Vec::new(),
+        devices: snap.state.devices.clone(),
     };
     let mut masks: Vec<u64> = Vec::new();
     for op in sorted {
@@ -328,6 +333,7 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
             })
             .collect();
         set.index.insert(op.hash(), set.ops.len());
+        set.devices.harvest(op);
         set.ops.push(op);
         set.past.push(&in_rest);
         set.deps.push(deps);
@@ -434,6 +440,7 @@ pub(super) fn rest_round(ctx: &Ctx<'_>, set: &RestSet<'_>, invalid: &[bool]) -> 
     for &q in &power_order[folded - p..] {
         fold(set.ops[q], &mut state);
     }
+    state.devices.clone_from(&set.devices);
     RestRound {
         state,
         applied,

@@ -30,6 +30,7 @@ use rekindle_types::governance::{
 use rekindle_types::id::PseudonymKey;
 
 use crate::device::{endorsement_holds, retirement_holds};
+use crate::op::VerifiedOp;
 
 /// Most effective device keys per member, the first included (ADR 0022
 /// rule 6, Signal-Server `MAX_DEVICES`).
@@ -81,7 +82,7 @@ impl MemberDevices {
 /// The device-key part of an op set (module doc).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DeviceView {
-    members: BTreeMap<PseudonymKey, MemberDevices>,
+    pub(crate) members: BTreeMap<PseudonymKey, MemberDevices>,
 }
 
 impl DeviceView {
@@ -122,25 +123,30 @@ impl DeviceView {
 
     /// Harvest the device elements `op` of community `anchor` carries
     /// (rule 2: from any op that carries them). An element whose `p`
-    /// signature does not hold in its context is not taken.
+    /// signature does not hold in its context is not taken. An op carrying
+    /// none leaves the view as it was.
     pub fn absorb(&mut self, anchor: &str, op: &GovernanceOp) {
-        let md = self.members.entry(op.author.clone()).or_default();
+        let p = &op.author;
         match &op.body {
             GovernanceEntry::MemberJoined {
                 member_record,
                 first_device,
                 ..
             } => {
+                let md = self.members.entry(p.clone()).or_default();
                 md.member_record
                     .get_or_insert_with(|| member_record.clone());
                 if let Some(e) = first_device {
-                    take_endorsement(md, &op.author, anchor, e);
+                    take_endorsement(md, p, anchor, e);
                 }
             }
-            GovernanceEntry::DeviceKey(e) => take_endorsement(md, &op.author, anchor, e),
+            GovernanceEntry::DeviceKey(e) => {
+                take_endorsement(self.members.entry(p.clone()).or_default(), p, anchor, e);
+            }
             GovernanceEntry::DeviceRetired(r) => {
+                let md = self.members.entry(p.clone()).or_default();
                 let held = (md.member_record.as_deref())
-                    .is_some_and(|record| retirement_holds(&op.author, anchor, record, r));
+                    .is_some_and(|record| retirement_holds(p, anchor, record, r));
                 if held {
                     let last = md
                         .retirements
@@ -155,6 +161,13 @@ impl DeviceView {
             }
             _ => {}
         }
+    }
+
+    /// [`Self::absorb`] for a verified op, in the anchor it was verified
+    /// for: how a merge harvests the view its state carries (plan E3.2
+    /// K-CP).
+    pub fn harvest(&mut self, op: &VerifiedOp) {
+        self.absorb(op.anchor(), op.op());
     }
 }
 

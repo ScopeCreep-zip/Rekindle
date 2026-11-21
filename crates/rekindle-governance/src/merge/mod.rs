@@ -337,6 +337,7 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
     for &p in &power_order[folded..] {
         fold(set.ops[p], &mut state);
     }
+    state.devices.clone_from(&set.devices);
     Round {
         state,
         applied,
@@ -504,8 +505,8 @@ fn apply(
         // A hint over a cut changes no state (plan E3.2 S7c.3). The device
         // endorsement set is harvested from every carrier, quarantined ones
         // included (ADR 0022 rule 2), and a readmit counts in the deps of
-        // the op it admits (rule 7): S7d-keys.2's verifier reads them from
-        // the op set, never from applied state.
+        // the op it admits (rule 7): `resolve::prepare` harvests them from
+        // the op set into `GovernanceState::devices` (K-CP), never here.
         G::Checkpoint(_) | G::DeviceKey(_) | G::DeviceRetired(_) | G::DeviceReadmit(_) => {}
         // Kept whole: the gates judge acceptances against applied offers,
         // and readers show every successor (plan E3.2 S7s.3e).
@@ -524,6 +525,8 @@ mod ancestry;
 mod channels;
 mod community;
 mod cut;
+#[cfg(test)]
+mod device_cp_tests;
 #[cfg(test)]
 mod device_tests;
 mod events;

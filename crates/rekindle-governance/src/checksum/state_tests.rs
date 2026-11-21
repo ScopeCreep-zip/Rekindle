@@ -414,6 +414,7 @@ fn later_mutations() -> Vec<(&'static str, Mutation)> {
                     .insert(rekindle_types::governance::OpHash([4; 32]), row);
             }),
         ),
+        ("devices", Box::new(|g| g.devices.fork(&pk(), [1; 32], 0))),
     ]
 }
 
@@ -424,7 +425,7 @@ fn the_state_root_covers_every_governance_state_field() {
     let base = canonical_state(&GovernanceState::default());
     let mut seen = HashSet::from([base]);
     let all = mutations();
-    assert_eq!(all.len(), 37, "one mutation per GovernanceState field");
+    assert_eq!(all.len(), 38, "one mutation per GovernanceState field");
     for (field, mutate) in all {
         let mut state = GovernanceState::default();
         mutate(&mut state);

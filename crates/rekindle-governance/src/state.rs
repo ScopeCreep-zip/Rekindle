@@ -184,6 +184,9 @@ pub struct GovernanceState {
 
     /// Every applied `CommunitySuccessor` op by op hash (plan E3.2 S7s.3e).
     pub successors: BTreeMap<rekindle_types::governance::OpHash, crate::successor::SuccessorState>,
+
+    /// Every member's device set harvested from the merged ops (ADR 0022, plan E3.2 K-CP).
+    pub devices: crate::device_judge::DeviceView,
 }
 
 // ── Sub-states ──

@@ -8,6 +8,7 @@ use std::hash::{Hash, Hasher};
 use rekindle_types::governance::OpHash;
 use rekindle_types::id::PseudonymKey;
 
+use crate::device_judge::DeviceView;
 use crate::op::VerifiedOp;
 
 /// The op set `merge` resolves: complete (every dep present), in stamp
@@ -30,6 +31,9 @@ pub(super) struct OpSet<'a> {
     /// Authors that signed two different ops at one seq, each with the
     /// lowest such seq (its fork).
     pub equivocators: Vec<(PseudonymKey, u64)>,
+    /// The device set the kept ops carry, harvested in stamp order (ADR
+    /// 0022 rule 2: from every carrier, a forked or refused one included).
+    pub devices: DeviceView,
 }
 
 /// `past.contains(i, j)`: op `j` is in op `i`'s causal past.
@@ -159,6 +163,7 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
     let mut deps: Vec<usize> = Vec::new();
     let mut pending = Vec::new();
     let mut forked = Vec::with_capacity(sorted.len());
+    let mut devices = DeviceView::default();
     for op in sorted {
         // An out-of-bounds or forked op stays in the DAG (validation
         // refuses the one, `forked` leaves the other out of every round),
@@ -180,6 +185,7 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
                 .get(&op.author().0)
                 .is_some_and(|seq| op.op().seq >= *seq),
         );
+        devices.harvest(op);
         kept.push(op);
         past.push(&deps);
     }
@@ -193,6 +199,7 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
         equivocators: (fork_at.into_iter())
             .map(|(author, seq)| (PseudonymKey(author), seq))
             .collect(),
+        devices,
     }
 }
 

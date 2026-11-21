@@ -34,7 +34,7 @@ impl<'a> CanonReader<'a> {
         Self { bytes, at: 0 }
     }
 
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> Option<&'a [u8]> {
         let end = self.at.checked_add(n)?;
         let out = self.bytes.get(self.at..end)?;
         self.at = end;
@@ -48,7 +48,7 @@ impl<'a> CanonReader<'a> {
 
     /// A count or a length; each row a count announces takes at least one
     /// byte, so a false count runs out of bytes instead of looping.
-    fn len(&mut self) -> Option<usize> {
+    pub(crate) fn len(&mut self) -> Option<usize> {
         usize::try_from(u32::take(self)?).ok()
     }
 }
@@ -404,5 +404,6 @@ decanon_struct!(GovernanceState {
     expression_remove_stamps,
     community_policy,
     mod_reports,
-    successors
+    successors,
+    devices
 });

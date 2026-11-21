@@ -17,6 +17,7 @@ use crate::state::GovernanceState;
 
 pub(crate) mod canon;
 pub(crate) mod decode;
+mod devices;
 mod state;
 
 pub use state::canonical_state;

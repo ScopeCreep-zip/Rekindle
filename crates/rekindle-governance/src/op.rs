@@ -54,6 +54,9 @@ pub struct VerifiedOp {
     op: GovernanceOp,
     hash: OpHash,
     lamport: u64,
+    /// The community anchor it was verified for: the context its device
+    /// elements are signed in (ADR 0022 rule 10).
+    anchor: String,
 }
 
 /// The op hash: BLAKE3 `derive_key(GOV_OP_HASH)` over the canonical
@@ -169,6 +172,7 @@ impl VerifiedOp {
             op,
             hash,
             lamport: lamport + 1,
+            anchor: anchor.to_owned(),
         })
     }
 
@@ -203,6 +207,12 @@ impl VerifiedOp {
         self.hash
     }
 
+    /// The community anchor this op was verified for.
+    #[must_use]
+    pub fn anchor(&self) -> &str {
+        &self.anchor
+    }
+
     /// `1 + max(dep lamports)`, 1 with no deps.
     #[must_use]
     pub fn lamport(&self) -> u64 {
@@ -233,7 +243,13 @@ impl VerifiedOp {
     /// checked; `lamport` and `hash` are taken as given.
     #[cfg(any(test, feature = "fixture"))]
     pub(crate) fn assume_verified(op: GovernanceOp, hash: OpHash, lamport: u64) -> Self {
-        Self { op, hash, lamport }
+        let anchor = crate::fixture::ANCHOR.to_owned();
+        Self {
+            op,
+            hash,
+            lamport,
+            anchor,
+        }
     }
 }
 

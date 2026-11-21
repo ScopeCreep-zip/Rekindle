@@ -60,6 +60,7 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
         community_policy,
         mod_reports,
         successors,
+        devices,
     } = state;
     let out = &mut Vec::new();
     // The roster sections first, in D15's original order.
@@ -71,7 +72,7 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
     put!(out; pinned_attachments, attachment_pin_stamps, creators, automod_rules);
     put!(out; onboarding, welcome_screen, ban_stamps, segments);
     put!(out; invites, expression_remove_stamps, community_policy, mod_reports);
-    put!(out; successors);
+    put!(out; successors, devices);
     std::mem::take(out)
 }
 

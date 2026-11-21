@@ -8,6 +8,7 @@ use proptest::prelude::*;
 use rekindle_types::governance::{AdmissionMode, Checkpoint, GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::RoleId;
 
+use super::device_cp_tests::{device_op, joined_with_device, who};
 use super::op_proptests::{assign, community, find, head, joined, kick, pk};
 use super::{merge_cut, merge_from, merge_outcome, MergeOutcome, NotOnTop};
 use crate::checkpoint::{causal_past, frontier_hash, state_preimage, state_root_of, CutSnapshot};
@@ -24,7 +25,7 @@ fn mk(
     e: GovernanceEntry,
     back: u64,
 ) -> VerifiedOp {
-    let base = op(&pk(a), seq, deps, tag, e);
+    let base = op(&who(a), seq, deps, tag, e);
     let mut body = base.op().clone();
     body.issued_at = body.issued_at.saturating_sub(back);
     VerifiedOp::assume_verified(body, base.hash(), base.lamport())
@@ -204,8 +205,11 @@ impl Dag {
         usize::try_from(self.x % n.max(1) as u64).unwrap_or(0)
     }
 
-    fn push(&mut self, cite: &[usize], forks: bool, back_dates: bool) {
-        let a = u8::try_from(1 + self.below(7)).unwrap_or(1);
+    /// One op; with `devices`, members 8 and 9 sign device ops (a device
+    /// op past a cut answers `NotOnTop::DeviceOp` until K4b), and either
+    /// way each joins with a first device.
+    fn push(&mut self, cite: &[usize], forks: bool, back_dates: bool, devices: bool) {
+        let a = u8::try_from(1 + self.below(9)).unwrap_or(1);
         let mut deps: BTreeSet<usize> = cite.iter().copied().collect();
         let fork = forks && self.below(12) == 0;
         let (seq, prev) = match self.last.get(&a).copied() {
@@ -230,7 +234,14 @@ impl Dag {
         // Without forks, removals and role changes name members only (a
         // removal before its target joined is undecidable, see
         // `a_rejoin_after_a_cut_removal_is_undecidable`).
-        let entry = if a >= 5 && seq == 0 {
+        let key = u8::try_from(1 + self.below(4)).unwrap_or(1);
+        let entry = if a >= 8 && seq == 0 {
+            joined_with_device(a, key)
+        } else if a >= 8 && devices {
+            device_op(a, kind, key, seq, 17 - a)
+        } else if a >= 8 {
+            meta("m")
+        } else if a >= 5 && seq == 0 {
             joined(a, Some("code"))
         } else if !forks && count == 0 && (2..=5).contains(&kind) {
             meta("m")
@@ -306,7 +317,7 @@ proptest! {
         let mut dag = Dag::new(seed);
         for _ in 0..4 + dag.below(10) {
             let cite = dag.some();
-            dag.push(&cite, true, true);
+            dag.push(&cite, true, true, true);
         }
         let pre = dag.ops.len();
         let picked: Vec<usize> = if dag.below(2) == 0 { (0..pre).collect() } else { (0..=dag.below(4)).map(|_| dag.below(pre)).collect() };
@@ -316,7 +327,7 @@ proptest! {
             if dag.below(4) != 0 {
                 cite.extend(&heads);
             }
-            dag.push(&cite, true, true);
+            dag.push(&cite, true, true, false);
         }
         let cert = mode(dag.below(2));
         let head_ops: Vec<&VerifiedOp> = heads.iter().map(|&h| &dag.ops[h]).collect();
@@ -331,7 +342,9 @@ proptest! {
             let top = top.max(cut_index.unmerged.get(&o.author().0).copied());
             let above = top.is_none_or(|s| o.op().seq > s);
             let dated = class_of(o.body()) == OpClass::Power || Some((o.op().issued_at, o.hash())) > cut_index.mainline_max;
-            whole && above && dated
+            // A device op past the cut is not on top until K4b (K-CP).
+            let device = class_of(o.body()) == OpClass::Device;
+            whole && above && dated && !device
         });
         // Beside (a′), (c) and (d), only an undecidable gate or a fork (its
         // ops stay ancestry and the full merge re-judges what they carry,
@@ -348,14 +361,14 @@ proptest! {
         let mut dag = Dag::new(seed);
         for _ in 0..3 + dag.below(8) {
             let cite = dag.some();
-            dag.push(&cite, false, false);
+            dag.push(&cite, false, false, true);
         }
         let all: Vec<usize> = (0..dag.ops.len()).collect();
         let heads = dag.heads(&all);
         for _ in 0..3 + dag.below(10) {
             let mut cite = dag.some();
             cite.extend(&heads);
-            dag.push(&cite, false, false);
+            dag.push(&cite, false, false, false);
         }
         let cert = mode(dag.below(2));
         let head_ops: Vec<&VerifiedOp> = heads.iter().map(|&h| &dag.ops[h]).collect();
