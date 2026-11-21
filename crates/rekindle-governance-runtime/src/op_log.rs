@@ -433,7 +433,7 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             for event in quarantined.into_iter().chain(unknown) {
                 deps.emit_event(event);
             }
-            crate::successor::announce(deps, community_id, &held, &outcome.state).await;
+            crate::successor::announce(deps, community_id, &outcome.state).await;
             return Ok(outcome.state);
         }
     }

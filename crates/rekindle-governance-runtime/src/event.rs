@@ -83,7 +83,8 @@ pub enum GovernanceRuntimeEvent {
 
     /// An applied successor both sides link (plan E3.2 S7s.3e part 2,
     /// [`crate::successor::announce`]): the Host publishes
-    /// `GovernanceEvent::CommunitySuccessorOffered`, once per op.
+    /// `GovernanceEvent::CommunitySuccessorOffered`, once per op per
+    /// session.
     CommunitySuccessorOffered {
         community_id: String,
         new_anchor: String,

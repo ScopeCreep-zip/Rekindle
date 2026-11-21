@@ -9,6 +9,8 @@
 //! `RoutingContext`) are exchanged as opaque `String` / `Vec<u8>` here.
 //! The crate never imports `veilid-core`.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
@@ -17,6 +19,9 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
+use crate::rebuild_flight::RebuildFlight;
+use crate::successor::SuccessorJudgements;
+use crate::verify_cache::OpVerifyCache;
 
 mod types;
 
@@ -396,18 +401,17 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     /// `community_id`'s rebuild generations, which coalesce the triggers
     /// that arrive while a rebuild runs into one more (plan E3.2 S7l).
-    fn rebuild_flight(
-        &self,
-        community_id: &str,
-    ) -> std::sync::Arc<crate::rebuild_flight::RebuildFlight>;
+    fn rebuild_flight(&self, community_id: &str) -> Arc<RebuildFlight>;
 
     /// `community_id`'s kept op verdicts (plan E3.2 S7, R4-5): every read
     /// of its op set verifies only the ops it has not verified before.
     /// Created on first use, dropped with the community.
-    fn op_verify_cache(
-        &self,
-        community_id: &str,
-    ) -> std::sync::Arc<crate::verify_cache::OpVerifyCache>;
+    fn op_verify_cache(&self, community_id: &str) -> Arc<OpVerifyCache>;
+
+    /// `community_id`'s judged successors (plan E3.2 SS2, lead decision
+    /// (31)): each applied successor's far cert is read until it is offered
+    /// or refused. Kept for the session, dropped with the community.
+    fn successor_judgements(&self, community_id: &str) -> Arc<SuccessorJudgements>;
 
     // ---------- Governance ops (plan E3.2) ----------
 

@@ -19,6 +19,7 @@ use parking_lot::RwLock;
 use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::rebuild_flight::RebuildFlight;
+use rekindle_governance_runtime::successor::SuccessorJudgements;
 use rekindle_governance_runtime::verify_cache::OpVerifyCache;
 use rekindle_protocol::dht::pool::keepalive::WarmRecord;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
@@ -64,6 +65,8 @@ pub struct CommunityStore {
     /// One community's kept op verdicts (S7, R4-5): an op verifies once
     /// per process, not on every read of the op set.
     op_verify: Arc<parking_lot::Mutex<BTreeMap<String, Arc<OpVerifyCache>>>>,
+    /// One community's judged successors (E3.2 SS2, decision (31)).
+    successor_judgements: Arc<parking_lot::Mutex<BTreeMap<String, Arc<SuccessorJudgements>>>>,
     /// One lock per community serializing its `Frontier` (`M`/3) writes
     /// (S7l): `append_own_op` and the post-rebuild republish were two
     /// unsynchronized writers, so an older head set could land last.
@@ -91,6 +94,7 @@ impl CommunityStore {
             rebuilds: Arc::default(),
             rebuild_flights: Arc::default(),
             op_verify: Arc::default(),
+            successor_judgements: Arc::default(),
             frontier_writes: Arc::default(),
             admissions: Arc::default(),
             follow_ups: Arc::default(),

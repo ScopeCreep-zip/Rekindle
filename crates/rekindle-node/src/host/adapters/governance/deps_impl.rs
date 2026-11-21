@@ -348,6 +348,13 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.ctx.communities.op_verify_cache(community_id)
     }
 
+    fn successor_judgements(
+        &self,
+        community_id: &str,
+    ) -> std::sync::Arc<rekindle_governance_runtime::successor::SuccessorJudgements> {
+        self.ctx.communities.successor_judgements(community_id)
+    }
+
     // ---------- Governance ops ----------
 
     fn genesis_cert(&self, community_id: &str) -> Option<GenesisCert> {

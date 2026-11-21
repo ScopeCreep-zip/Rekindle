@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use rekindle_governance_runtime::rebuild_flight::RebuildFlight;
+use rekindle_governance_runtime::successor::SuccessorJudgements;
 use rekindle_governance_runtime::verify_cache::OpVerifyCache;
 
 use super::CommunityStore;
@@ -55,6 +56,17 @@ impl CommunityStore {
     pub fn op_verify_cache(&self, community_id: &str) -> Arc<OpVerifyCache> {
         Arc::clone(
             self.op_verify
+                .lock()
+                .entry(community_id.to_string())
+                .or_default(),
+        )
+    }
+
+    /// `community_id`'s judged successors, created on first use.
+    #[must_use]
+    pub fn successor_judgements(&self, community_id: &str) -> Arc<SuccessorJudgements> {
+        Arc::clone(
+            self.successor_judgements
                 .lock()
                 .entry(community_id.to_string())
                 .or_default(),
@@ -113,6 +125,7 @@ impl CommunityStore {
         self.rebuilds.lock().remove(community_id);
         self.rebuild_flights.lock().remove(community_id);
         self.op_verify.lock().remove(community_id);
+        self.successor_judgements.lock().remove(community_id);
         self.frontier_writes.lock().remove(community_id);
         self.admissions.lock().remove(community_id);
         self.follow_ups.lock().remove(community_id);
@@ -128,6 +141,7 @@ impl CommunityStore {
         self.rebuilds.lock().clear();
         self.rebuild_flights.lock().clear();
         self.op_verify.lock().clear();
+        self.successor_judgements.lock().clear();
         self.frontier_writes.lock().clear();
         self.admissions.lock().clear();
         self.follow_ups.lock().clear();

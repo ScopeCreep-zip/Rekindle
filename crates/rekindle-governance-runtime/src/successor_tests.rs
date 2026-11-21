@@ -1,26 +1,19 @@
-//! Which successors a merge announces (plan E3.2 S7s.3e part 2).
+//! Which successors a rebuild judges and announces (plan E3.2 S7s.3e part
+//! 2, lead decision (31)).
 
 use rekindle_governance::op::OpStamp;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::successor::SuccessorState;
-use rekindle_types::governance::{CommunitySuccessor, OpHash, SuccessorReason};
+use rekindle_types::governance::{
+    AdmissionMode, CommunitySuccessor, GenesisCert, OpHash, SuccessorReason,
+};
 use rekindle_types::id::PseudonymKey;
 
-use super::newly_applied;
-use crate::op_log::{HeldOp, OpFate};
+use super::{judge, pending, SuccessorJudgements};
+use crate::error::GovernanceRuntimeError;
+use crate::event::GovernanceRuntimeEvent;
 
-fn held(hash: u8, fate: OpFate) -> HeldOp {
-    HeldOp {
-        hash: OpHash([hash; 32]),
-        author: PseudonymKey([1; 32]),
-        author_record: "VLD0:rec".into(),
-        seq: u64::from(hash),
-        lamport: u64::from(hash),
-        issued_at: 0,
-        encoded: Vec::new(),
-        fate,
-    }
-}
+const OLD_ANCHOR: &str = "VLD0:old";
 
 fn successor(state: &mut GovernanceState, hash: u8, new_anchor: Option<&str>) {
     let row = SuccessorState {
@@ -45,23 +38,95 @@ fn successor(state: &mut GovernanceState, hash: u8, new_anchor: Option<&str>) {
     state.successors.insert(OpHash([hash; 32]), row);
 }
 
+/// `new_anchor`'s cert naming this community as its predecessor.
+fn linked_cert() -> GenesisCert {
+    let mut cert = rekindle_governance::fixture::cert(&PseudonymKey([5; 32]), AdmissionMode::Open);
+    cert.predecessor = Some(OLD_ANCHOR.into());
+    cert
+}
+
+fn offered(events: &[GovernanceRuntimeEvent]) -> Vec<String> {
+    (events.iter())
+        .map(|e| match e {
+            GovernanceRuntimeEvent::CommunitySuccessorOffered { new_anchor, .. } => {
+                new_anchor.clone()
+            }
+            other => panic!("unexpected event {other:?}"),
+        })
+        .collect()
+}
+
 #[test]
 fn two_valid_successors_are_both_shown() {
     let mut state = GovernanceState::default();
     successor(&mut state, 1, Some("VLD0:a"));
     successor(&mut state, 2, Some("VLD0:b"));
-    // A withdrawal names no anchor; an already applied successor was shown.
+    // A withdrawal names no anchor; an already judged successor was shown.
     successor(&mut state, 3, None);
     successor(&mut state, 4, Some("VLD0:c"));
-    let held = [
-        held(1, OpFate::PendingDeps),
-        held(2, OpFate::PendingDeps),
-        held(3, OpFate::PendingDeps),
-        held(4, OpFate::Applied),
-    ];
-    let anchors: Vec<_> = newly_applied(&held, &state)
+    let judgements = SuccessorJudgements::default();
+    judgements.mark(OpHash([4; 32]));
+    let anchors: Vec<_> = pending(&state, &judgements)
         .iter()
-        .filter_map(|row| row.successor.new_anchor.clone())
+        .filter_map(|(_, row)| row.successor.new_anchor.clone())
         .collect();
     assert_eq!(anchors, ["VLD0:a", "VLD0:b"]);
+}
+
+/// Decision (31): a far cert that cannot be read leaves the offer pending;
+/// the next rebuild reads it and offers it, once.
+#[tokio::test]
+async fn an_unreadable_far_cert_is_offered_once_it_reads() {
+    let mut state = GovernanceState::default();
+    successor(&mut state, 1, Some("VLD0:new"));
+    let judgements = SuccessorJudgements::default();
+    let missing = |anchor: String| async move {
+        Err::<GenesisCert, _>(GovernanceRuntimeError::GenesisCertMissing(anchor))
+    };
+    let first = judge(OLD_ANCHOR, &state, &judgements, missing).await;
+    assert!(first.is_empty(), "nothing to offer before the cert reads");
+    let reads = |_: String| async { Ok(linked_cert()) };
+    let second = judge(OLD_ANCHOR, &state, &judgements, reads).await;
+    assert_eq!(offered(&second), ["VLD0:new"], "offered once it reads");
+    let third = judge(OLD_ANCHOR, &state, &judgements, reads).await;
+    assert!(third.is_empty(), "an offered successor is offered once");
+}
+
+/// Decision (31): a cert that reads and fails a rule is refused and never
+/// read again.
+#[tokio::test]
+async fn a_far_cert_that_fails_a_rule_is_not_read_again() {
+    let mut state = GovernanceState::default();
+    successor(&mut state, 1, Some("VLD0:new"));
+    let judgements = SuccessorJudgements::default();
+    let broken = |anchor: String| async move {
+        Err::<GenesisCert, _>(GovernanceRuntimeError::Crypto(format!("{anchor}: bad sig")))
+    };
+    assert!(judge(OLD_ANCHOR, &state, &judgements, broken)
+        .await
+        .is_empty());
+    let unlinked = |_: String| async {
+        Ok(rekindle_governance::fixture::cert(
+            &PseudonymKey([5; 32]),
+            AdmissionMode::Open,
+        ))
+    };
+    let mut state2 = GovernanceState::default();
+    successor(&mut state2, 2, Some("VLD0:other"));
+    assert!(judge(OLD_ANCHOR, &state2, &judgements, unlinked)
+        .await
+        .is_empty());
+    let reads = |_: String| async { Ok(linked_cert()) };
+    assert!(
+        judge(OLD_ANCHOR, &state, &judgements, reads)
+            .await
+            .is_empty(),
+        "a cert that failed a rule is not read again"
+    );
+    assert!(
+        judge(OLD_ANCHOR, &state2, &judgements, reads)
+            .await
+            .is_empty(),
+        "nor one that did not link back"
+    );
 }
