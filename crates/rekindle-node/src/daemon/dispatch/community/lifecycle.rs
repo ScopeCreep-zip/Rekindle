@@ -219,7 +219,9 @@ pub(crate) async fn handle_update_info(
 /// The Host call's answer to a failed join. The inviter's typed refusal
 /// (plan E3.2 join step 5, ADR 0019) keeps its code and what the user is
 /// told, rendered as is; anything else is a 500.
-fn join_failure_response(failure: crate::host::adapters::governance::JoinFailure) -> IpcResponse {
+pub(super) fn join_failure_response(
+    failure: crate::host::adapters::governance::JoinFailure,
+) -> IpcResponse {
     match failure {
         crate::host::adapters::governance::JoinFailure::Refused(reason) => IpcResponse::Error {
             code: reason.code(),

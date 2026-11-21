@@ -157,6 +157,18 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("create_community", HostCall::Request("CommunityCreate")),
     ("remove_co_creator", HostCall::Request("CreatorRemove")),
     (
+        "publish_community_successor",
+        HostCall::Request("CommunityPublishSuccessor"),
+    ),
+    (
+        "follow_community_successor",
+        HostCall::Request("CommunityFollowSuccessor"),
+    ),
+    (
+        "get_community_successors",
+        HostCall::Request("CommunitySuccessors"),
+    ),
+    (
         "cancel_community_create",
         HostCall::Request("CommunityCreateCancel"),
     ),

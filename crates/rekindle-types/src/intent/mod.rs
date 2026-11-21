@@ -318,6 +318,22 @@ pub enum Fact {
     IpAddressLeaves,
     /// Rejoining needs a new invite.
     RejoinNeedsInvite,
+    /// The creators who continue into a successor community, by their
+    /// pseudonyms here, hex (plan E3.2 S7s.4).
+    #[serde(rename_all = "camelCase")]
+    NewCreatorSet { creators: Vec<String> },
+    /// The creators of this community who are not creators of the
+    /// successor, by their pseudonyms here, hex (plan E3.2 S7s.4).
+    #[serde(rename_all = "camelCase")]
+    CreatorsLeave { creators: Vec<String> },
+    /// No history is copied into the successor; the old community stays
+    /// readable (ADR 0011 "Successor community").
+    NoHistoryCopied,
+    /// A successor both sides link, signed by `signer` (its pseudonym in
+    /// the old community, hex): the op here and the new anchor's
+    /// `predecessor` (ADR 0011).
+    #[serde(rename_all = "camelCase")]
+    SuccessorLinked { signer: String },
 }
 
 /// Whether the action can be taken back.

@@ -72,6 +72,10 @@ fn fact_name(f: &Fact) -> &'static str {
         Fact::PresenceVisible => "presenceVisible",
         Fact::IpAddressLeaves => "ipAddressLeaves",
         Fact::RejoinNeedsInvite => "rejoinNeedsInvite",
+        Fact::NewCreatorSet { .. } => "newCreatorSet",
+        Fact::CreatorsLeave { .. } => "creatorsLeave",
+        Fact::NoHistoryCopied => "noHistoryCopied",
+        Fact::SuccessorLinked { .. } => "successorLinked",
     }
 }
 
@@ -189,6 +193,16 @@ fn facts() -> Vec<Fact> {
         Fact::PresenceVisible,
         Fact::IpAddressLeaves,
         Fact::RejoinNeedsInvite,
+        Fact::NewCreatorSet {
+            creators: vec!["aa".repeat(32)],
+        },
+        Fact::CreatorsLeave {
+            creators: vec!["bb".repeat(32)],
+        },
+        Fact::NoHistoryCopied,
+        Fact::SuccessorLinked {
+            signer: "aa".repeat(32),
+        },
     ]
 }
 

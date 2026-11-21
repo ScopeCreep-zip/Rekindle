@@ -98,6 +98,25 @@ pub enum LifecycleRequest {
         new_owner_pseudonym: String,
     },
 
+    /// Re-create `anchor` under a new anchor whose cert names it as
+    /// `predecessor`, with us as its sole creator, and name the new anchor
+    /// here as its successor (ADR 0011 "Successor community", plan E3.2
+    /// S7s.4). Creator-only.
+    CommunityPublishSuccessor { anchor: String },
+
+    /// Follow `new_anchor`, a successor of `anchor`, by joining it with
+    /// `invite` (a link to `new_anchor`): both links are re-checked first
+    /// and `anchor` is kept (plan E3.2 S7s.4).
+    CommunityFollowSuccessor {
+        anchor: String,
+        new_anchor: String,
+        invite: String,
+    },
+
+    /// The successors of `anchor` offered this session (lead decision
+    /// (33)'s snapshot of `CommunitySuccessorOffered`).
+    CommunitySuccessors { anchor: String },
+
     /// Create a community invite.
     InviteCreate {
         community: String,
@@ -147,6 +166,13 @@ impl LifecycleRequest {
             Self::CommunityTransferOwnership { .. } => {
                 ("CommunityTransferOwnership", Write, Authenticated)
             }
+            Self::CommunityPublishSuccessor { .. } => {
+                ("CommunityPublishSuccessor", Write, Authenticated)
+            }
+            Self::CommunityFollowSuccessor { .. } => {
+                ("CommunityFollowSuccessor", Write, Authenticated)
+            }
+            Self::CommunitySuccessors { .. } => ("CommunitySuccessors", Query, Authenticated),
             Self::InviteCreate { .. } => ("InviteCreate", Write, Authenticated),
             Self::InviteList { .. } => ("InviteList", Query, Authenticated),
             Self::InviteRevoke { .. } => ("InviteRevoke", Write, Authenticated),
@@ -165,12 +191,14 @@ impl LifecycleRequest {
             | Self::CommunityMembers { .. }
             | Self::CommunityInfo { .. }
             | Self::CommunityPendingMembers { .. }
+            | Self::CommunitySuccessors { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
             | Self::CreatorRemove { .. }
             | Self::CommunityCreateCancel { .. }
             | Self::CreatorInviteAnswer { .. }
             | Self::CommunityJoin { .. }
+            | Self::CommunityFollowSuccessor { .. }
             | Self::CommunityLeave { .. }
             | Self::CommunityForget { .. }
             | Self::CommunityUpdateInfo { .. }
@@ -180,7 +208,10 @@ impl LifecycleRequest {
                 Some(C::ModerationWrite)
             }
             // Channel keys are key material; ownership is the owner's own.
-            Self::CommunityTransferOwnership { .. } => None,
+            // A successor moves creator authority: the creator's own act.
+            Self::CommunityTransferOwnership { .. } | Self::CommunityPublishSuccessor { .. } => {
+                None
+            }
         }
     }
 }

@@ -62,6 +62,15 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ),
     ("CommunityCreate", Some(IntentKind::CreateCommunity)),
     ("CommunityJoin", Some(IntentKind::JoinCommunity)),
+    (
+        "CommunityPublishSuccessor",
+        Some(IntentKind::PublishCommunitySuccessor),
+    ),
+    (
+        "CommunityFollowSuccessor",
+        Some(IntentKind::FollowCommunitySuccessor),
+    ),
+    ("CommunitySuccessors", None),
     ("CreatorRemove", Some(IntentKind::RemoveCoCreator)),
     (
         "CommunityCreateCancel",
@@ -90,7 +99,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("CommunityPendingMembers", None),
     (
         "CommunityTransferOwnership",
-        Some(IntentKind::TransferCommunityOwnership),
+        Some(IntentKind::PublishCommunitySuccessor),
     ),
     ("ChannelList", None),
     ("ChannelCreate", Some(IntentKind::CreateChannel)),

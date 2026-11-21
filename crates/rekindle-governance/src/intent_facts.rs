@@ -3,7 +3,7 @@
 //! the crate; the host passes the current member set from its registry.
 
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
-use rekindle_types::intent::Escalation;
+use rekindle_types::intent::{Escalation, Fact};
 use rekindle_types::permissions::ADMINISTRATOR;
 
 use crate::permissions::{channel_read_roster, compute_permissions};
@@ -108,12 +108,50 @@ pub fn forward_escalations(from: ChannelAudience<'_>, to: ChannelAudience<'_>) -
     }]
 }
 
+/// What the review of publishing a successor states (plan E3.2 S7s.4,
+/// ADR 0019's Destructive class): the publisher re-creates the community
+/// as its sole creator, so `me` continues, every other creator of this
+/// community leaves the creator set, and no history is copied.
+#[must_use]
+pub fn successor_publish_facts(state: &GovernanceState, me: &PseudonymKey) -> Vec<Fact> {
+    let leaving = (state.creators.iter())
+        .filter(|c| *c != me)
+        .map(PseudonymKey::to_hex)
+        .collect();
+    vec![
+        Fact::NewCreatorSet {
+            creators: vec![me.to_hex()],
+        },
+        Fact::CreatorsLeave { creators: leaving },
+        Fact::NoHistoryCopied,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
     use super::*;
     use crate::state::RoleState;
+
+    #[test]
+    fn the_publish_review_states_the_new_set_who_leaves_and_no_history() {
+        let mut state = GovernanceState::default();
+        state.creators.extend([key(1), key(2), key(3)]);
+        let facts = super::successor_publish_facts(&state, &key(2));
+        assert_eq!(
+            facts,
+            [
+                Fact::NewCreatorSet {
+                    creators: vec![key(2).to_hex()],
+                },
+                Fact::CreatorsLeave {
+                    creators: vec![key(1).to_hex(), key(3).to_hex()],
+                },
+                Fact::NoHistoryCopied,
+            ]
+        );
+    }
 
     fn key(b: u8) -> PseudonymKey {
         PseudonymKey([b; 32])

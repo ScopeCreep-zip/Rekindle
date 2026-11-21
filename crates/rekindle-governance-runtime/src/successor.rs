@@ -15,12 +15,15 @@
 //! signed by its anchor's owner, its creator set or a signature fails, or
 //! it does not link back) is refused with its reason and not read again.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::successor::{offered_creators, SuccessorState};
-use rekindle_types::governance::{GenesisCert, OpHash};
+use rekindle_types::governance::{
+    CommunitySuccessor, GenesisCert, GovernanceEntry, OpHash, SuccessorReason,
+};
+use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
@@ -34,6 +37,9 @@ use crate::event::GovernanceRuntimeEvent;
 #[derive(Debug, Default)]
 pub struct SuccessorJudgements {
     judged: parking_lot::Mutex<BTreeSet<OpHash>>,
+    /// The offers among them, for a window opened after the event (lead
+    /// decision (33)'s snapshot).
+    offered: parking_lot::Mutex<BTreeMap<OpHash, GovernanceRuntimeEvent>>,
 }
 
 impl SuccessorJudgements {
@@ -43,6 +49,18 @@ impl SuccessorJudgements {
 
     fn mark(&self, hash: OpHash) {
         self.judged.lock().insert(hash);
+    }
+
+    fn offer(&self, hash: OpHash, offer: GovernanceRuntimeEvent) {
+        self.offered.lock().insert(hash, offer);
+    }
+
+    /// Every successor offered this session, each a
+    /// [`GovernanceRuntimeEvent::CommunitySuccessorOffered`], in op-hash
+    /// order.
+    #[must_use]
+    pub fn offers(&self) -> Vec<GovernanceRuntimeEvent> {
+        self.offered.lock().values().cloned().collect()
     }
 }
 
@@ -110,13 +128,17 @@ where
         };
         judgements.mark(hash);
         match offered_creators(community_id, row, &cert) {
-            Ok(creators) => offers.push(GovernanceRuntimeEvent::CommunitySuccessorOffered {
-                community_id: community_id.to_owned(),
-                new_anchor,
-                signer: row.author.clone(),
-                reason: row.successor.reason,
-                creators,
-            }),
+            Ok(creators) => {
+                let offer = GovernanceRuntimeEvent::CommunitySuccessorOffered {
+                    community_id: community_id.to_owned(),
+                    new_anchor,
+                    signer: row.author.clone(),
+                    reason: row.successor.reason,
+                    creators,
+                };
+                judgements.offer(hash, offer.clone());
+                offers.push(offer);
+            }
             Err(why) => tracing::warn!(
                 community = community_id,
                 new_anchor,
@@ -145,6 +167,115 @@ pub async fn announce<D: GovernanceRuntimeDeps>(
     for offer in judge(community_id, state, &judgements, read).await {
         deps.emit_event(offer);
     }
+}
+
+/// Re-create `community_id` under a new anchor whose cert names it as
+/// `predecessor` (plan E3.2 S7s.4, `publish_community_successor`): the
+/// same name and admission mode, with us as its sole creator. Returns the
+/// new anchor; [`publish`] then names it here.
+///
+/// # Errors
+/// We are not a creator here (ADR 0011: only a creator signs a successor),
+/// the state is not loaded, or the create failed.
+pub async fn create_successor<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<String, GovernanceRuntimeError> {
+    let state = deps
+        .governance_state(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_owned()))?;
+    let me = deps
+        .community_membership(community_id)
+        .and_then(|m| m.my_pseudonym_hex)
+        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_owned()))?;
+    if !state.is_creator(&PseudonymKey::from_hex_lossy(&me)) {
+        return Err(GovernanceRuntimeError::PermissionDenied);
+    }
+    let name = (state.metadata.as_ref())
+        .map(|m| m.name.clone())
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_owned()))?;
+    let admission = state.effective_admission_mode();
+    crate::origin::create_successor_community(deps, &name, admission, community_id).await
+}
+
+/// Name `new_anchor` as `community_id`'s successor: the near link, the
+/// `CommunitySuccessor` op readers check against the new cert's
+/// `predecessor` (ADR 0011).
+///
+/// # Errors
+/// The op was refused or not written.
+pub async fn publish<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    new_anchor: &str,
+) -> Result<(), GovernanceRuntimeError> {
+    let entry = GovernanceEntry::CommunitySuccessor(CommunitySuccessor {
+        new_anchor: Some(new_anchor.to_owned()),
+        reason: SuccessorReason::Recreate,
+        transfer_to: None,
+        creator_set_hash: None,
+        accepts: None,
+        links: Vec::new(),
+    });
+    crate::apply::write_entry(deps, community_id, entry)
+        .await
+        .map(drop)
+}
+
+/// The signer and creator set of an applied successor of `community`
+/// naming `new_anchor`, judged against `cert`, the new anchor's verified
+/// cert: both links from the new community's side, so a follow never
+/// trusts an offer it has not re-checked. The first row both links hold
+/// wins; none → the last refusal, or `NoSuccessorOp`.
+///
+/// # Errors
+/// No applied successor here names `new_anchor`, or its links fail.
+pub fn follow_creators(
+    community: &str,
+    state: &GovernanceState,
+    new_anchor: &str,
+    cert: &GenesisCert,
+) -> Result<(PseudonymKey, Vec<PseudonymKey>), FollowRefusal> {
+    let mut refusal = FollowRefusal::NoSuccessorOp;
+    let rows = (state.successors.values())
+        .filter(|row| row.successor.new_anchor.as_deref() == Some(new_anchor));
+    for row in rows {
+        match offered_creators(community, row, cert) {
+            Ok(creators) => return Ok((row.author.clone(), creators)),
+            Err(why) => refusal = FollowRefusal::Links(why),
+        }
+    }
+    Err(refusal)
+}
+
+/// Why a successor cannot be followed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FollowRefusal {
+    /// No applied successor in the old community names the anchor (the
+    /// near link is missing).
+    NoSuccessorOp,
+    /// The new anchor's cert does not link back.
+    Links(rekindle_governance::successor::SuccessorRefusal),
+}
+
+/// Check both links before following `new_anchor` from `community_id`:
+/// read the new cert pinned to its owner and judge it with
+/// [`follow_creators`]. Returns the signer and the creator set.
+///
+/// # Errors
+/// The state is not loaded, the cert cannot be read, or a link fails.
+pub async fn check_follow<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    new_anchor: &str,
+) -> Result<(PseudonymKey, Vec<PseudonymKey>), GovernanceRuntimeError> {
+    let state = deps
+        .governance_state(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_owned()))?;
+    let (cert, _) = crate::genesis::read_pinned(deps, new_anchor).await?;
+    follow_creators(community_id, &state, new_anchor, &cert).map_err(|why| {
+        GovernanceRuntimeError::OpRefused(format!("not a linked successor: {why:?}"))
+    })
 }
 
 #[cfg(test)]

@@ -58,6 +58,21 @@ pub struct CommunityCreated {
     pub pending_co_creators: Vec<String>,
 }
 
+/// A successor community both sides link, as offered to this member (ADR
+/// 0011 "Successor community", plan E3.2 S7s.4): the snapshot of
+/// `GovernanceEvent::CommunitySuccessorOffered` a window opened after the
+/// event reads (lead decision (33)). `signer` is the op's author and
+/// `creators` the new community's creator set, hex.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessorOffer {
+    pub community: String,
+    pub new_anchor: String,
+    pub signer: String,
+    pub reason: crate::governance::SuccessorReason,
+    pub creators: Vec<String>,
+}
+
 /// A community this identity just joined from an invite (plan E3.1 D2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

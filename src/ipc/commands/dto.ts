@@ -274,6 +274,10 @@ export type Fact =
   | "presenceVisible"
   | "ipAddressLeaves"
   | "rejoinNeedsInvite"
+  | "noHistoryCopied"
+  | { newCreatorSet: { creators: string[] } }
+  | { creatorsLeave: { creators: string[] } }
+  | { successorLinked: { signer: string } }
   | { fingerprint: { fingerprint: string } }
   | { safetyNumber: { safetyNumber: string } }
   | { safetyNumberChanged: { oldSafetyNumber: string; newSafetyNumber: string } }

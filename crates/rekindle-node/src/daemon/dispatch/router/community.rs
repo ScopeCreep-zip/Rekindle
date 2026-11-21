@@ -128,6 +128,17 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityPendingMembers { anchor } => {
             community::handle_pending_members(ctx, state, &anchor)
         }
+        LifecycleRequest::CommunityPublishSuccessor { anchor } => {
+            community::handle_publish_successor(ctx, state, &anchor).await
+        }
+        LifecycleRequest::CommunityFollowSuccessor {
+            anchor,
+            new_anchor: _,
+            invite,
+        } => community::handle_follow_successor(ctx, state, &anchor, &invite).await,
+        LifecycleRequest::CommunitySuccessors { anchor } => {
+            community::handle_successors(ctx, state, &anchor)
+        }
         LifecycleRequest::CommunityTransferOwnership {
             anchor,
             new_owner_pseudonym,

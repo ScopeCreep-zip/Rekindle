@@ -281,6 +281,30 @@ pub async fn dispatch(
                 .unwrap_or_default();
             table::print_table(&["Pseudonym", "Name", "Status"], &rows, mode)
         }
+        CommunityCmd::PublishSuccessor { community } => {
+            let request = LifecycleRequest::CommunityPublishSuccessor {
+                anchor: community.clone(),
+            };
+            lifecycle(client, mode, request).await
+        }
+        CommunityCmd::FollowSuccessor {
+            community,
+            new_anchor,
+            invite,
+        } => {
+            let request = LifecycleRequest::CommunityFollowSuccessor {
+                anchor: community.clone(),
+                new_anchor: new_anchor.clone(),
+                invite: invite.clone(),
+            };
+            lifecycle(client, mode, request).await
+        }
+        CommunityCmd::Successors { community } => {
+            let request = LifecycleRequest::CommunitySuccessors {
+                anchor: community.clone(),
+            };
+            lifecycle(client, mode, request).await
+        }
         CommunityCmd::Transfer {
             community,
             new_owner,

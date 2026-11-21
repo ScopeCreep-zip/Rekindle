@@ -107,7 +107,7 @@ pub use membership_events::{
     process_member_roles_changed, process_onboarding_answers, MembershipEventDeps,
 };
 pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
-pub use origin::{create_community, finish_community};
+pub use origin::{create_community, create_successor_community, finish_community};
 pub use origin_reserve::{
     release_reserved, reserve_community, CoCreatorAcceptance, ReservedCommunity,
 };

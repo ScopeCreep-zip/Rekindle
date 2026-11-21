@@ -1,8 +1,8 @@
 //! The selection of a community lifecycle and invite request (plans D3.3, E3.1).
 
 use super::{
-    community, leave_escalations, members, DaemonContext, Fact, IntentKind, IpcResponse,
-    LifecycleRequest, Notifies, Reversibility, Selection, Subject,
+    community, leave_escalations, members, pseudonym, unavailable, DaemonContext, Fact, IntentKind,
+    IpcResponse, LifecycleRequest, Notifies, Reversibility, Selection, Subject,
 };
 
 /// `selection` for the community lifecycle and invite requests.
@@ -98,6 +98,50 @@ pub(super) fn selection(
                 name: member_pseudonym.clone(),
             };
             s.notifies = members(ctx, &id);
+        }
+        LifecycleRequest::CommunityPublishSuccessor { anchor } => {
+            // ADR 0019 Destructive: the new creator set, who leaves it, and
+            // that no history is copied (plan E3.2 S7s.4).
+            let (id, name) = community(ctx, anchor)?;
+            let state = (ctx.communities.governance_state(&id))
+                .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
+            let me = pseudonym(&ctx.my_pseudonym(&id))
+                .ok_or_else(|| unavailable("our pseudonym", "not in the community"))?;
+            if !state.is_creator(&me) {
+                return Err(IpcResponse::error(
+                    403,
+                    "only a creator of this community can publish its successor",
+                ));
+            }
+            s.facts
+                .extend(rekindle_governance::intent_facts::successor_publish_facts(
+                    &state, &me,
+                ));
+            s.reversibility = Reversibility::Never;
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
+        }
+        LifecycleRequest::CommunityFollowSuccessor {
+            anchor, new_anchor, ..
+        } => {
+            // TrustChanging, as a join: the signer and that both links
+            // held when offered; the handler re-checks them.
+            let (id, _) = community(ctx, anchor)?;
+            let offers = crate::daemon::dispatch::adapter(ctx).successor_offers(&id);
+            let offer = (offers.into_iter())
+                .find(|o| o.new_anchor == *new_anchor)
+                .ok_or_else(|| {
+                    IpcResponse::error(409, "this successor has not been offered here")
+                })?;
+            let fingerprint = crate::host::adapters::governance::invite_fingerprint(new_anchor)
+                .ok_or_else(|| IpcResponse::error(400, "the successor is not a record key"))?;
+            s.subject = Subject::Named { name: fingerprint };
+            s.facts.push(Fact::SuccessorLinked {
+                signer: offer.signer,
+            });
+            s.facts.push(Fact::PresenceVisible);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
+            s.notifies = Notifies::Subject;
         }
         LifecycleRequest::InviteCreate {
             community: target, ..

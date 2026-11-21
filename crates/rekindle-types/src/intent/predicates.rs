@@ -160,6 +160,7 @@ impl IntentKind {
             | Self::ConfirmDeepLink
             | Self::CreateCommunity
             | Self::JoinCommunity
+            | Self::FollowCommunitySuccessor
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
@@ -190,7 +191,7 @@ impl IntentKind {
             | Self::SetGamePresence
             | Self::ClearGamePresence
             | Self::ApproveJoinRequest
-            | Self::TransferCommunityOwnership
+            | Self::PublishCommunitySuccessor
             | Self::ForgetCommunity
             | Self::ExportIdentity
             | Self::ImportIdentity
@@ -366,6 +367,7 @@ impl IntentKind {
             | Self::ConfirmDeepLink
             | Self::CreateCommunity
             | Self::JoinCommunity
+            | Self::FollowCommunitySuccessor
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
@@ -396,7 +398,7 @@ impl IntentKind {
             | Self::RejectJoinRequest
             | Self::RevokeAgent
             | Self::ApproveJoinRequest
-            | Self::TransferCommunityOwnership
+            | Self::PublishCommunitySuccessor
             | Self::ForgetCommunity
             | Self::ExportIdentity
             | Self::RotateIdentity

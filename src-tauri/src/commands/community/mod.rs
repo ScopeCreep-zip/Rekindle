@@ -64,18 +64,21 @@ pub use channels::{
 };
 pub use crud::{
     __cmd__answer_creator_invite, __cmd__cancel_community_create, __cmd__create_community,
-    __cmd__get_co_creation, __cmd__get_communities, __cmd__get_community_details,
-    __cmd__join_community, __cmd__leave_community, __cmd__remove_co_creator,
+    __cmd__follow_community_successor, __cmd__get_co_creation, __cmd__get_communities,
+    __cmd__get_community_details, __cmd__get_community_successors, __cmd__join_community,
+    __cmd__leave_community, __cmd__publish_community_successor, __cmd__remove_co_creator,
     __cmd__update_community_info, __tauri_command_name_answer_creator_invite,
     __tauri_command_name_cancel_community_create, __tauri_command_name_create_community,
-    __tauri_command_name_get_co_creation, __tauri_command_name_get_communities,
-    __tauri_command_name_get_community_details, __tauri_command_name_join_community,
-    __tauri_command_name_leave_community, __tauri_command_name_remove_co_creator,
-    __tauri_command_name_update_community_info,
+    __tauri_command_name_follow_community_successor, __tauri_command_name_get_co_creation,
+    __tauri_command_name_get_communities, __tauri_command_name_get_community_details,
+    __tauri_command_name_get_community_successors, __tauri_command_name_join_community,
+    __tauri_command_name_leave_community, __tauri_command_name_publish_community_successor,
+    __tauri_command_name_remove_co_creator, __tauri_command_name_update_community_info,
 };
 pub use crud::{
-    answer_creator_invite, cancel_community_create, create_community, get_co_creation,
-    get_communities, get_community_details, join_community, leave_community, remove_co_creator,
+    answer_creator_invite, cancel_community_create, create_community, follow_community_successor,
+    get_co_creation, get_communities, get_community_details, get_community_successors,
+    join_community, leave_community, publish_community_successor, remove_co_creator,
     update_community_info,
 };
 #[cfg(debug_assertions)]

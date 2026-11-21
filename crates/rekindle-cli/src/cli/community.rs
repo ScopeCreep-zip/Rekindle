@@ -133,6 +133,34 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Re-create the community under a new anchor that names it as its
+    /// predecessor, with you as sole creator, and offer it to the members.
+    PublishSuccessor {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+
+    /// Follow an offered successor: join it, keeping this community.
+    FollowSuccessor {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// The successor's anchor key.
+        #[arg(long)]
+        new_anchor: String,
+        /// An invite link to the successor.
+        #[arg(long)]
+        invite: String,
+    },
+
+    /// List the successors offered for a community.
+    Successors {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+
     /// Transfer community ownership to another member.
     Transfer {
         /// Community name or anchor key.

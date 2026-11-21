@@ -162,6 +162,26 @@ LifecycleRequest::CommunityReject {
             pseudonym(member_pseudonym, "member pseudonym")?;
             text(reason, MAX_NOTE_LEN, "reason")
         }
+LifecycleRequest::CommunityPublishSuccessor { anchor }
+        | LifecycleRequest::CommunitySuccessors { anchor } => community(anchor),
+LifecycleRequest::CommunityFollowSuccessor {
+            anchor,
+            new_anchor,
+            invite,
+        } => {
+            community(anchor)?;
+            // The invite must open the successor itself, not any community.
+            let link = InviteLink::parse(invite)
+                .map_err(|e| IpcResponse::error(400, format!("successor invite: {e}")))?;
+            if link.anchor.as_str() == new_anchor {
+                Ok(())
+            } else {
+                Err(IpcResponse::error(
+                    400,
+                    "the invite does not open the successor community",
+                ))
+            }
+        }
 LifecycleRequest::CommunityTransferOwnership {
             anchor,
             new_owner_pseudonym,

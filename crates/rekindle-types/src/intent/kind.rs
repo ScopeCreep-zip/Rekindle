@@ -188,6 +188,9 @@ pub enum IntentKind {
     ConfirmDeepLink,
     CreateCommunity,
     JoinCommunity,
+    /// Follow a successor both sides link: join its new anchor, keeping
+    /// the old community (ADR 0011, plan E3.2 S7s.4).
+    FollowCommunitySuccessor,
     AnswerCreatorInvite,
     // TrustChanging: Key trust
     AcceptSessionReset,
@@ -235,7 +238,11 @@ pub enum IntentKind {
     // TrustChanging: Admitting a person (daemon)
     ApproveJoinRequest,
     // Destructive: Irreversible loss for others (daemon)
-    TransferCommunityOwnership,
+    /// Re-create the community under a new anchor whose `GenesisCert`
+    /// names this one as `predecessor`, and offer it to the members (ADR
+    /// 0011 "Successor community", plan E3.2 S7s.4): moves creator
+    /// authority to a new creator set for everyone who follows.
+    PublishCommunitySuccessor,
     /// Delete a community we were removed from: its kept history and
     /// every local trace (plan E3.2 S9 R3-5; Element's "Forget this room").
     ForgetCommunity,
@@ -436,6 +443,7 @@ impl IntentKind {
             | Self::ConfirmDeepLink
             | Self::CreateCommunity
             | Self::JoinCommunity
+            | Self::FollowCommunitySuccessor
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
@@ -458,7 +466,7 @@ impl IntentKind {
             | Self::ClearVerification
             | Self::ImportSkin => IntentClass::TrustChanging,
             Self::BulkDeleteChannelMessages
-            | Self::TransferCommunityOwnership
+            | Self::PublishCommunitySuccessor
             | Self::ForgetCommunity
             | Self::DeleteCommunity
             | Self::DeleteAccount => IntentClass::Destructive,

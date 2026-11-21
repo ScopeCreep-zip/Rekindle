@@ -8,6 +8,7 @@ mod lifecycle;
 mod membership;
 mod ownership;
 mod query;
+mod successor;
 
 pub(crate) use lifecycle::{
     activate_community, handle_create, handle_creator_round, handle_forget, handle_join,
@@ -18,3 +19,4 @@ pub(crate) use ownership::handle_transfer_ownership;
 pub(crate) use query::{
     handle_co_creation, handle_info, handle_list, handle_members, handle_views,
 };
+pub(crate) use successor::{handle_follow_successor, handle_publish_successor, handle_successors};

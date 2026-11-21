@@ -157,6 +157,36 @@ pub async fn finish_community<D: GovernanceRuntimeDeps>(
     admission: AdmissionMode,
     accepted: &[CoCreatorAcceptance],
 ) -> Result<String, GovernanceRuntimeError> {
+    finish_with(deps, reserved, name, admission, accepted, None).await
+}
+
+/// Create a successor of `predecessor` (ADR 0011 "Successor community",
+/// plan E3.2 S7s.4) with no co-creator: a new community whose
+/// `GenesisCert.predecessor` names `predecessor`, the far link readers
+/// check before they offer it.
+///
+/// # Errors
+/// As [`create_community`].
+pub async fn create_successor_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    name: &str,
+    admission: AdmissionMode,
+    predecessor: &str,
+) -> Result<String, GovernanceRuntimeError> {
+    let reserved = reserve_community(deps).await?;
+    let predecessor = Some(predecessor.to_owned());
+    finish_with(deps, reserved, name, admission, &[], predecessor).await
+}
+
+/// [`finish_community`] with the cert's `predecessor`.
+async fn finish_with<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    reserved: ReservedCommunity,
+    name: &str,
+    admission: AdmissionMode,
+    accepted: &[CoCreatorAcceptance],
+    predecessor: Option<String>,
+) -> Result<String, GovernanceRuntimeError> {
     let deadline = tokio::time::Instant::now() + CREATE_DEADLINE;
     let ReservedCommunity { slot_seed, records } = reserved;
     let anchor_key = records.anchor.record_key.clone();
@@ -175,6 +205,7 @@ pub async fn finish_community<D: GovernanceRuntimeDeps>(
                     name,
                     admission,
                     further,
+                    predecessor,
                 },
                 &slot_seed,
                 records,
@@ -200,11 +231,12 @@ pub async fn finish_community<D: GovernanceRuntimeDeps>(
 }
 
 /// What the cert says beyond the records: the name, the admission mode
-/// and the further creators.
+/// the further creators and the community this one succeeds.
 struct Genesis<'a> {
     name: &'a str,
     admission: AdmissionMode,
     further: Vec<PseudonymKey>,
+    predecessor: Option<String>,
 }
 
 /// The deadline error, naming the bound in seconds.
@@ -291,6 +323,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         name,
         admission,
         further,
+        predecessor,
     } = genesis;
     let OriginRecords {
         anchor,
@@ -328,7 +361,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         creator_member_record_owner: member_owner,
         created_at: deps.clock().now_secs(),
         additional_creators: further,
-        predecessor: None,
+        predecessor,
     };
     rekindle_governance::genesis::check_creator_set(&cert).map_err(|e| {
         GovernanceRuntimeError::Crypto(format!("origin: the creator set is refused: {e:?}"))

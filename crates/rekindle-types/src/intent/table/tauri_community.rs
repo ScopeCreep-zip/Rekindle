@@ -8,6 +8,15 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("join_community", Some(IntentKind::JoinCommunity)),
     ("remove_co_creator", Some(IntentKind::RemoveCoCreator)),
     (
+        "publish_community_successor",
+        Some(IntentKind::PublishCommunitySuccessor),
+    ),
+    (
+        "follow_community_successor",
+        Some(IntentKind::FollowCommunitySuccessor),
+    ),
+    ("get_community_successors", None),
+    (
         "cancel_community_create",
         Some(IntentKind::CancelCommunityCreate),
     ),

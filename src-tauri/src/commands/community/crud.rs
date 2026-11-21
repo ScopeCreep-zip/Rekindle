@@ -93,6 +93,55 @@ pub async fn remove_co_creator(
     host_call::call(&state, request).await
 }
 
+/// Publish a successor of a community we created
+/// (`LifecycleRequest::CommunityPublishSuccessor`, plan E3.2 S7s.4).
+#[tauri::command]
+pub async fn publish_community_successor(
+    community_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityPublishSuccessor {
+            anchor: community_id,
+        },
+    ));
+    host_call::call(&state, request).await
+}
+
+/// Follow an offered successor with an invite to it
+/// (`LifecycleRequest::CommunityFollowSuccessor`, plan E3.2 S7s.4).
+#[tauri::command]
+pub async fn follow_community_successor(
+    community_id: String,
+    new_anchor: String,
+    invite: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityFollowSuccessor {
+            anchor: community_id,
+            new_anchor,
+            invite,
+        },
+    ));
+    host_call::call(&state, request).await
+}
+
+/// The successors offered for a community this session
+/// (`LifecycleRequest::CommunitySuccessors`, lead decision (33)).
+#[tauri::command]
+pub async fn get_community_successors(
+    community_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunitySuccessors {
+            anchor: community_id,
+        },
+    ));
+    host_call::call(&state, request).await
+}
+
 /// Cancel our pending creation (`LifecycleRequest::CommunityCreateCancel`).
 #[tauri::command]
 pub async fn cancel_community_create(

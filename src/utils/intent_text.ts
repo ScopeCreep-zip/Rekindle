@@ -61,6 +61,21 @@ export function factText(fact: Fact): string {
   if (fact === "presenceVisible") return "They will see when you are online and can reach you.";
   if (fact === "ipAddressLeaves") return "The site will see your IP address.";
   if (fact === "rejoinNeedsInvite") return "Rejoining needs a new invite.";
+  if (fact === "noHistoryCopied") {
+    return "No history is copied; this community stays readable.";
+  }
+  if ("newCreatorSet" in fact) {
+    return `The new community's creators: ${fact.newCreatorSet.creators.join(", ")}.`;
+  }
+  if ("creatorsLeave" in fact) {
+    const leaving = fact.creatorsLeave.creators;
+    return leaving.length === 0
+      ? "No creator leaves the creator set."
+      : `These creators are not creators of the new community: ${leaving.join(", ")}.`;
+  }
+  if ("successorLinked" in fact) {
+    return `Signed by ${fact.successorLinked.signer}; both communities link to each other.`;
+  }
   if ("fingerprint" in fact) return `Key fingerprint: ${fact.fingerprint.fingerprint}`;
   if ("safetyNumber" in fact) {
     return `Safety number: ${groupDigits(fact.safetyNumber.safetyNumber).join(" ")}`;

@@ -9,7 +9,7 @@ use rekindle_types::governance::{
 };
 use rekindle_types::id::PseudonymKey;
 
-use super::{judge, pending, SuccessorJudgements};
+use super::{follow_creators, judge, pending, FollowRefusal, SuccessorJudgements};
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 
@@ -129,4 +129,43 @@ async fn a_far_cert_that_fails_a_rule_is_not_read_again() {
             .is_empty(),
         "nor one that did not link back"
     );
+}
+
+/// A follow re-checks both links from the new community's side: the op
+/// here naming the anchor, and the new cert naming this community.
+#[test]
+fn follow_checks_both_links_from_the_new_communitys_side() {
+    use rekindle_governance::successor::SuccessorRefusal;
+    let mut state = GovernanceState::default();
+    successor(&mut state, 1, Some("VLD0:new"));
+    let linked = linked_cert();
+    let (signer, creators) =
+        follow_creators(OLD_ANCHOR, &state, "VLD0:new", &linked).expect("both links hold");
+    assert_eq!(signer, PseudonymKey([1; 32]));
+    assert_eq!(creators, [PseudonymKey([5; 32])]);
+    // The far link missing: the op alone is not enough.
+    let mut unlinked = linked.clone();
+    unlinked.predecessor = None;
+    assert_eq!(
+        follow_creators(OLD_ANCHOR, &state, "VLD0:new", &unlinked),
+        Err(FollowRefusal::Links(SuccessorRefusal::NoPredecessorLink))
+    );
+    // The near link missing: a cert naming us is not enough.
+    assert_eq!(
+        follow_creators(OLD_ANCHOR, &state, "VLD0:other", &linked),
+        Err(FollowRefusal::NoSuccessorOp)
+    );
+}
+
+/// The offers a rebuild made are kept for the snapshot a window reads.
+#[tokio::test]
+async fn an_offer_is_kept_for_the_snapshot() {
+    let mut state = GovernanceState::default();
+    successor(&mut state, 1, Some("VLD0:a"));
+    let judgements = SuccessorJudgements::default();
+    assert!(judgements.offers().is_empty());
+    let read = |_: String| async { Ok::<_, GovernanceRuntimeError>(linked_cert()) };
+    let events = judge(OLD_ANCHOR, &state, &judgements, read).await;
+    assert_eq!(offered(&events), ["VLD0:a"]);
+    assert_eq!(offered(&judgements.offers()), ["VLD0:a"]);
 }

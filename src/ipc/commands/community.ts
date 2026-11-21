@@ -14,6 +14,16 @@ import type {
 } from "./types";
 import type { CommunityBanView, MemberGroup, TargetModeration } from "./dto";
 
+/** `SuccessorOffer` (rekindle-types `dto::community`): a successor both
+ *  sides link, as `communitySuccessorOffered` carries it. */
+export interface SuccessorOffer {
+  community: string;
+  newAnchor: string;
+  signer: string;
+  reason: "recreate" | "transfer";
+  creators: string[];
+}
+
 /** `CommunityCreated` (rekindle-types `dto::community`). */
 export interface CommunityCreated {
   anchor: string;
@@ -136,6 +146,18 @@ export const communityCommands = {
     hostInvoke<CommunityCreated>("create_community", { name, coCreators }),
   /// Read once the window's event stream is live (plan VI1's pattern).
   getCoCreation: () => invoke<CoCreationSnapshot>("get_co_creation"),
+  /// Re-creates the community under a new anchor naming it as
+  /// predecessor, with us as sole creator, and offers it (plan E3.2 S7s.4).
+  publishCommunitySuccessor: (communityId: string) =>
+    hostInvoke<CommunityCreated>("publish_community_successor", { communityId }),
+  /// Follows an offered successor with an invite to it; the old community
+  /// is kept.
+  followCommunitySuccessor: (communityId: string, newAnchor: string, invite: string) =>
+    hostInvoke<{ anchor: string; name: string }>("follow_community_successor", { communityId, newAnchor, invite }),
+  /// The successors offered this session (lead decision (33)'s snapshot,
+  /// read after the event stream is live).
+  getCommunitySuccessors: (communityId: string) =>
+    hostInvoke<SuccessorOffer[]>("get_community_successors", { communityId }),
   removeCoCreator: (communityId: string, identity: string) =>
     hostInvoke<void>("remove_co_creator", { communityId, identity }),
   cancelCommunityCreate: (communityId: string) =>
