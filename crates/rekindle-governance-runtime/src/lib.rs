@@ -69,6 +69,7 @@ pub mod roles;
 pub mod roster;
 pub mod seen_frontiers;
 pub mod segments;
+pub mod successor;
 pub mod verify_cache;
 pub mod watch_ring;
 

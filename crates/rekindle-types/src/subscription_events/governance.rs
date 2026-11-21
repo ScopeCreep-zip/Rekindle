@@ -167,6 +167,22 @@ pub enum GovernanceEvent {
         /// The hint's checkpoint digest, hex.
         digest: String,
     },
+
+    /// A successor community both sides link (ADR 0011 "Successor
+    /// community", plan E3.2 S7s.3e): an applied `CommunitySuccessor` op in
+    /// this community names `new_anchor`, and that anchor's verified
+    /// `GenesisCert` names this community as its `predecessor` (for a
+    /// transfer, its creator set is the acceptance's links, each signed by
+    /// the creator's old pseudonym). Announced once per op; two valid
+    /// successors are both offered. `signer` is the op's author, hex;
+    /// `creators` the new community's creator set, hex.
+    CommunitySuccessorOffered {
+        community: String,
+        new_anchor: String,
+        signer: String,
+        reason: crate::governance::SuccessorReason,
+        creators: Vec<String>,
+    },
 }
 
 /// Why a governance op is quarantined
@@ -231,7 +247,8 @@ impl GovernanceEvent {
             | Self::EffectivePermissionsChanged { community, .. }
             | Self::GovernanceRebuilt { community }
             | Self::GovernanceOpQuarantined { community, .. }
-            | Self::CheckpointSnapshotMismatch { community, .. } => community,
+            | Self::CheckpointSnapshotMismatch { community, .. }
+            | Self::CommunitySuccessorOffered { community, .. } => community,
         }
     }
 }

@@ -182,6 +182,19 @@ impl HostGovernance {
                 height: *height,
                 digest: hex::encode(digest),
             }),
+            GovernanceRuntimeEvent::CommunitySuccessorOffered {
+                community_id,
+                new_anchor,
+                signer,
+                reason,
+                creators,
+            } => governance(GovernanceEvent::CommunitySuccessorOffered {
+                community: community_id.clone(),
+                new_anchor: new_anchor.clone(),
+                signer: hex::encode(signer.0),
+                reason: *reason,
+                creators: creators.iter().map(|c| hex::encode(c.0)).collect(),
+            }),
             GovernanceRuntimeEvent::GovernanceRebuilt { .. }
             | GovernanceRuntimeEvent::BootstrapResponseBuilt { .. }
             | GovernanceRuntimeEvent::GovernanceEntryApplied { .. } => None,

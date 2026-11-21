@@ -218,6 +218,11 @@ labels! {
     /// the old pseudonyms of the new creator set, sorted (plan E3.2 S7s.3e,
     /// lead decision (24)).
     GOV_SUCCESSOR_SET = "rekindle-gov-successor-set-v1";
+    /// Signature domain: a transfer acceptance's `CreatorLink`, signed by
+    /// the creator's old pseudonym over label ‖ old anchor ‖ new anchor ‖
+    /// new pseudonym, each anchor length-prefixed (plan E3.2 S7s.3e, lead
+    /// decision (24)).
+    GOV_SUCCESSOR_LINK = "rekindle-gov-successor-link-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// BLAKE3 `derive_key` context: a `MekTransferAck`'s key-confirmation

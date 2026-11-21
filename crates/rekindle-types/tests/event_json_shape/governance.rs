@@ -24,6 +24,7 @@ pub const NAMES: &[&str] = &[
     "opPublication",
     "governanceOpQuarantined",
     "checkpointSnapshotMismatch",
+    "communitySuccessorOffered",
 ];
 
 pub fn variant_name(e: &GovernanceEvent) -> &'static str {
@@ -43,6 +44,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::OpPublication { .. } => "opPublication",
         GovernanceEvent::GovernanceOpQuarantined { .. } => "governanceOpQuarantined",
         GovernanceEvent::CheckpointSnapshotMismatch { .. } => "checkpointSnapshotMismatch",
+        GovernanceEvent::CommunitySuccessorOffered { .. } => "communitySuccessorOffered",
     }
 }
 
@@ -65,6 +67,16 @@ pub fn samples() -> Vec<Sample> {
 
 fn structure() -> Vec<Sample> {
     vec![
+        ev(
+            "communitySuccessorOffered",
+            GovernanceEvent::CommunitySuccessorOffered {
+                community: community(),
+                new_anchor: "VLD0:newanchor".into(),
+                signer: "5".repeat(64),
+                reason: rekindle_types::governance::SuccessorReason::Transfer,
+                creators: vec!["5".repeat(64), "6".repeat(64)],
+            },
+        ),
         ev(
             "checkpointSnapshotMismatch",
             GovernanceEvent::CheckpointSnapshotMismatch {

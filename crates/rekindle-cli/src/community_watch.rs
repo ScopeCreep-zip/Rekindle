@@ -367,6 +367,21 @@ fn governance(event: &GovernanceEvent) -> String {
             "checkpoint {} at height {height} endorsed a false state snapshot",
             abbreviate_key(digest)
         ),
+        GovernanceEvent::CommunitySuccessorOffered {
+            new_anchor,
+            signer,
+            creators,
+            ..
+        } => format!(
+            "{} offers successor community {} (creators: {})",
+            abbreviate_key(signer),
+            abbreviate_key(new_anchor),
+            creators
+                .iter()
+                .map(|c| abbreviate_key(c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 

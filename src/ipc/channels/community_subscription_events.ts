@@ -241,6 +241,20 @@ export type GovernanceEvent =
        *  snapshot (plan E3.2 S7c.8, threat T8); the community stays on the
        *  full history. Height and digest are the hint's checkpoint. */
       checkpointSnapshotMismatch: { community: string; height: number; digest: string };
+    }
+  | {
+      /** A successor community both sides link (ADR 0011, plan E3.2 S7s.3e):
+       *  an applied successor op here names `newAnchor`, and its verified
+       *  genesis cert names this community as predecessor. Announced once
+       *  per op; two valid successors are both offered. `signer` and
+       *  `creators` are pseudonyms, hex. */
+      communitySuccessorOffered: {
+        community: string;
+        newAnchor: string;
+        signer: string;
+        reason: "recreate" | "transfer";
+        creators: string[];
+      };
     };
 
 /** Why the backend set a governance op aside, never applied

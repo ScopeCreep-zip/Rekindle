@@ -81,6 +81,17 @@ pub enum GovernanceRuntimeEvent {
         digest: [u8; 32],
     },
 
+    /// An applied successor both sides link (plan E3.2 S7s.3e part 2,
+    /// [`crate::successor::announce`]): the Host publishes
+    /// `GovernanceEvent::CommunitySuccessorOffered`, once per op.
+    CommunitySuccessorOffered {
+        community_id: String,
+        new_anchor: String,
+        signer: PseudonymKey,
+        reason: rekindle_types::governance::SuccessorReason,
+        creators: Vec<PseudonymKey>,
+    },
+
     /// A bootstrap response has been built for a joiner. Adapter logs
     /// this for telemetry (no user-visible event today).
     BootstrapResponseBuilt {

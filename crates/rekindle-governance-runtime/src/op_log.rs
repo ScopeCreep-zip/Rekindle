@@ -427,14 +427,13 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             deps.set_governance_op_fates(community_id, verdicts).await?;
             crate::checkpoint_rows::record(deps, community_id, &set.ops, &outcome).await?;
             crate::partial::finish_backfill(deps, community_id, &cert, &set).await?;
-            for event in crate::quarantine::newly_quarantined(community_id, &held, &outcome) {
-                deps.emit_event(event);
-            }
+            let quarantined = crate::quarantine::newly_quarantined(community_id, &held, &outcome);
             let unknown =
                 crate::quarantine::newly_uninterpretable(community_id, &held, &outcome.state);
-            for event in unknown {
+            for event in quarantined.into_iter().chain(unknown) {
                 deps.emit_event(event);
             }
+            crate::successor::announce(deps, community_id, &held, &outcome.state).await;
             return Ok(outcome.state);
         }
     }

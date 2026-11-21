@@ -565,6 +565,20 @@
       }
     }
   },
+  "governance.communitySuccessorOffered": {
+    "governance": {
+      "communitySuccessorOffered": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "creators": [
+          "5555555555555555555555555555555555555555555555555555555555555555",
+          "6666666666666666666666666666666666666666666666666666666666666666"
+        ],
+        "newAnchor": "VLD0:newanchor",
+        "reason": "transfer",
+        "signer": "5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    }
+  },
   "governance.effectivePermissionsChanged": {
     "governance": {
       "effectivePermissionsChanged": {
