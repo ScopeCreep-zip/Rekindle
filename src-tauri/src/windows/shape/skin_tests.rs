@@ -42,7 +42,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                     decoration: None,
                     fill: false,
                 }],
-                header: None,
+                tree: None,
                 title: None,
             },
             masks: vec![SkinTileMask {

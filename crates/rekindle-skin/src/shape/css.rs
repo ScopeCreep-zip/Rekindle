@@ -149,27 +149,6 @@ fn window_rules(
         pad(o.left, c.left),
     );
     let _ = writeln!(out, "  {root} > .skin-frame {{\n    display: block;\n  }}");
-    // The pack's header region holds the profile header (plan SK0-L1): it
-    // leaves the content's flow and sits over the frame where the pack laid
-    // its banner, above the tiles (`.skin-frame` is `z-index: -1`). The box
-    // is the pack's (Total Chaos 236×60), so the bar fits it: its two rows
-    // (24 px avatar row, status line: about 40 px) centred down the box,
-    // 8 px in from its sides so the key, dot, avatar and bell (180 px with
-    // the gaps) leave the name room in 220, and no rule under it (the
-    // banner is the header, not a strip over the list).
-    if let Some(r) = layout.header.filter(|_| window == SkinWindow::Main) {
-        let (x, _) = axis(r.x, (o.left, o.right), ("left", "right", "width"), r.width);
-        let (y, _) = axis(
-            r.y,
-            (o.top, o.bottom),
-            ("top", "bottom", "height"),
-            r.height,
-        );
-        let _ = writeln!(
-            out,
-            "  {root} > .identity-bar {{\n    position: absolute;\n    {x} {y}\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;\n    justify-content: center;\n    padding: 4px 8px;\n    border-bottom: 0;\n  }}"
-        );
-    }
     for (slot, i) in paint_order(layout).into_iter().enumerate() {
         let t = &layout.tiles[i];
         let h = href(base, &t.image, images)?;
@@ -219,6 +198,12 @@ pub fn frame_css(
         };
         let top = layout.outsets.top.saturating_add(layout.content.top);
         out.push_str(&super::title::title_css(&root, title, top, images, base)?);
+    }
+    // The pack's component trees (plan SK2): one rule per node.
+    for (&window, layout) in &manifest.windows {
+        let Some(tree) = &layout.tree else { continue };
+        let root = format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window));
+        out.push_str(&crate::skin_tree::css::tree_css(&root, tree, images, base)?);
     }
     out.push_str("}\n");
     Some(out)

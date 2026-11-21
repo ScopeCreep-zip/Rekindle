@@ -18,5 +18,7 @@ pub mod skin_draft;
 pub mod skin_layout;
 pub mod skin_library;
 pub mod skin_title;
+pub mod skin_tree;
+pub mod skin_tree_role;
 
 pub use command::{CommandError, Done};

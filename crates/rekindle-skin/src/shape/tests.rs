@@ -3,9 +3,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::{Rgba, RgbaImage};
-use rekindle_types::dto::skin::{
-    LayoutRegion, SkinManifest, SkinRule, SkinWindow, TileAxis, WindowLayout,
-};
+use rekindle_types::dto::skin::{SkinManifest, SkinRule, SkinWindow, TileAxis, WindowLayout};
 
 use super::*;
 use crate::{builtin, images, manifest, package};
@@ -428,97 +426,13 @@ fn space_cowboys_content_is_its_views_and_the_band_is_its_centre_fill() {
     );
 }
 
-/// `nine()`'s main frame with `header`, checked (plan SK0-L1).
-fn header_checked(window: SkinWindow, header: Option<LayoutRegion>) -> Result<(), SkinRule> {
-    let (mut layout, files) = from_nine(window, &nine()).unwrap();
-    layout.header = header;
-    let mut m = base();
-    m.windows = BTreeMap::from([(window, layout)]);
-    check(&m, &files).map_err(|e| e.rule)
-}
-
-fn region(x: TileAxis, y: TileAxis, width: u16, height: u16) -> LayoutRegion {
-    LayoutRegion {
-        x,
-        y,
-        width,
-        height,
-    }
-}
-
-fn bad_header(window: &str, expected: &str) -> Result<(), SkinRule> {
-    Err(SkinRule::BadValue {
-        field: format!("windows.{window}.header"),
-        expected: expected.to_owned(),
-    })
-}
-
 #[test]
-fn a_header_region_over_the_opaque_band_passes_and_is_placed() {
-    let at = |offset| TileAxis::Start { offset };
-    let ok = Some(region(at(2), at(1), 2, 2));
-    assert_eq!(header_checked(SkinWindow::Main, ok), Ok(()));
-    let (mut layout, _) = from_nine(SkinWindow::Main, &nine()).unwrap();
-    layout.header = Some(region(TileAxis::Centre, at(1), 2, 2));
-    assert_eq!(
-        regions(&layout, 20, 30),
-        ((4, 4, 12, 22), Some((9, 1, 2, 2)))
-    );
-}
-
-#[test]
-fn a_header_region_that_breaks_rule_6_is_refused() {
-    let at = |offset| TileAxis::Start { offset };
-    let main = SkinWindow::Main;
-    // Into the content rectangle (it starts 4 px down).
-    assert_eq!(
-        header_checked(main, Some(region(at(3), at(2), 2, 3))),
-        bad_header("main", "a region outside the content rectangle")
-    );
-    // Over the corner's transparent pixel (0, 0).
-    assert_eq!(
-        header_checked(main, Some(region(at(0), at(0), 2, 2))),
-        bad_header("main", "a region over the frame's opaque pixels")
-    );
-    // Past the window's bottom.
-    assert_eq!(
-        header_checked(main, Some(region(at(2), at(1), 2, 400))),
-        bad_header("main", "a region inside the window")
-    );
-    assert_eq!(
-        header_checked(
-            main,
-            Some(region(TileAxis::Repeat { start: 0, end: 0 }, at(1), 2, 2))
-        ),
-        bad_header("main", "a region placed once on each axis")
-    );
-    assert_eq!(
-        header_checked(main, Some(region(at(2), at(1), 0, 2))),
-        bad_header("main", "a region at least 1 px each way")
-    );
-    assert_eq!(
-        header_checked(SkinWindow::Chat, Some(region(at(2), at(1), 2, 2))),
-        bad_header("chat", "no header region (main window only)")
-    );
-}
-
-#[test]
-fn total_chaos_lays_its_content_region_and_its_banner_as_the_header() {
+fn total_chaos_lays_its_content_region() {
     // mainwindow.xml: `TabbedControl` X="50" IndentRight="50" under
-    // `MenuBar.BOTTOM` (52 + 60 + 69 = 181), `BottomBar` 66 px; `AdArea`
-    // (`AdView`, 236×60) centred at `MainTitleBar.BOTTOM` (52).
+    // `MenuBar.BOTTOM` (52 + 60 + 69 = 181), `BottomBar` 66 px.
     let (_, b) = builtin::find("builtin:total-chaos").unwrap();
     let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
     let main = &m.windows[&SkinWindow::Main];
     let c = main.content;
     assert_eq!((c.top, c.right, c.bottom, c.left), (181, 50, 66, 50));
-    assert_eq!(
-        main.header,
-        Some(region(
-            TileAxis::Centre,
-            TileAxis::Start { offset: 52 },
-            236,
-            60
-        ))
-    );
 }

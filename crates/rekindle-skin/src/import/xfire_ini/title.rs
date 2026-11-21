@@ -24,7 +24,7 @@ use super::ini::{Ini, Section};
 const MAX_DEPTH: usize = 8;
 
 /// The tile attributes a `Window<n>.` key may carry.
-const TILE_ATTRS: [&str; 9] = [
+const TILE_ATTRS: [&str; 16] = [
     "Name",
     "X",
     "Y",
@@ -34,6 +34,13 @@ const TILE_ATTRS: [&str; 9] = [
     "ResizeX",
     "IndentLeft",
     "IndentRight",
+    "ResizeY",
+    "IndentTop",
+    "IndentBottom",
+    "OutdentLeft",
+    "OutdentRight",
+    "OutdentTop",
+    "OutdentBottom",
 ];
 
 /// The state prefixes and the XML state each is.

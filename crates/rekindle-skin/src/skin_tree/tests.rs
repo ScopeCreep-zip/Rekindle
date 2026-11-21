@@ -1,0 +1,333 @@
+//! The tree importer's anchors and the Host's ten rules (plan SK2-S1).
+
+use std::collections::BTreeMap;
+
+use rekindle_image::{Rgba, RgbaImage};
+use rekindle_types::dto::skin::{Insets, SkinWindow, WindowLayout};
+use rekindle_types::dto::skin_tree::{
+    ActionKey, Anchor, NodeArt, NodeRole, SkinNode, SkinTree, Span, ViewKey,
+};
+
+use super::{css, import, validate};
+use crate::import::tree::parse;
+
+const ON: Rgba<u8> = Rgba([10, 20, 30, 255]);
+
+fn layout(tree: Option<SkinTree>) -> WindowLayout {
+    let z = Insets {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+    };
+    WindowLayout {
+        outsets: z,
+        content: z,
+        min_width: 200,
+        min_height: 300,
+        tiles: Vec::new(),
+        title: None,
+        tree,
+    }
+}
+
+fn fixed(at: i16, size: u16) -> Span {
+    Span::Fixed {
+        at: Anchor::Start(at),
+        size,
+    }
+}
+
+fn n(id: &str, role: NodeRole, x: Span, y: Span) -> SkinNode {
+    SkinNode {
+        id: id.to_owned(),
+        role,
+        x,
+        y,
+        z: 0,
+        art: None,
+        text: None,
+        shows_with: None,
+        children: Vec::new(),
+    }
+}
+
+fn whole() -> Span {
+    Span::Stretch { start: 10, end: 10 }
+}
+
+/// A tree every rule passes: views with the friends view, its button row,
+/// a close box and an add button.
+fn good() -> Vec<SkinNode> {
+    let mut views = n(
+        "Views",
+        NodeRole::Views,
+        whole(),
+        Span::Stretch { start: 40, end: 60 },
+    );
+    views.children.push(n(
+        "BuddyView",
+        NodeRole::View(ViewKey::Friends),
+        whole(),
+        whole(),
+    ));
+    let mut bar = n(
+        "Bar",
+        NodeRole::ButtonBar,
+        whole(),
+        Span::Fixed {
+            at: Anchor::End(10),
+            size: 40,
+        },
+    );
+    let mut row = n(
+        "FriendsButtons",
+        NodeRole::ButtonRow(ViewKey::Friends),
+        whole(),
+        whole(),
+    );
+    row.children.push(n(
+        "AddButton",
+        NodeRole::Button(ActionKey::AddFriend),
+        fixed(4, 30),
+        fixed(2, 16),
+    ));
+    bar.children.push(row);
+    vec![
+        n(
+            "CloseBox",
+            NodeRole::Close,
+            Span::Fixed {
+                at: Anchor::End(4),
+                size: 18,
+            },
+            fixed(4, 16),
+        ),
+        views,
+        bar,
+    ]
+}
+
+fn checked(root: Vec<SkinNode>, images: &BTreeMap<String, Vec<u8>>) -> Result<(), String> {
+    let tree = SkinTree { root };
+    validate::check("t", &tree, &layout(Some(tree.clone())), images).map_err(|e| format!("{e:?}"))
+}
+
+fn refused(root: Vec<SkinNode>, rule: &str) {
+    let e = checked(root, &BTreeMap::new()).unwrap_err();
+    assert!(e.contains(rule), "{e}");
+}
+
+#[test]
+fn a_good_tree_passes() {
+    assert_eq!(checked(good(), &BTreeMap::new()), Ok(()));
+}
+
+#[test]
+fn rule_1_a_part_is_never_a_root() {
+    let mut t = good();
+    t.push(n("Piece", NodeRole::Part, fixed(0, 4), fixed(0, 4)));
+    refused(t, "rule 1");
+}
+
+#[test]
+fn rule_2_ids_are_unique() {
+    let mut t = good();
+    t.push(n("CloseBox", NodeRole::Decor, fixed(0, 4), fixed(0, 4)));
+    refused(t, "rule 2");
+}
+
+#[test]
+fn rule_3_nodes_lie_inside_the_window() {
+    let mut t = good();
+    t.push(n("Vent", NodeRole::Decor, fixed(190, 20), fixed(0, 4)));
+    refused(t, "rule 3");
+}
+
+#[test]
+fn rule_4_interactive_nodes_never_overlap_at_one_z() {
+    let mut t = good();
+    t.push(n(
+        "CloseBox2",
+        NodeRole::Minimize,
+        Span::Fixed {
+            at: Anchor::End(10),
+            size: 18,
+        },
+        fixed(4, 16),
+    ));
+    refused(t.clone(), "rule 4");
+    if let Some(m) = t.last_mut() {
+        m.z = 3;
+    }
+    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
+}
+
+#[test]
+fn rule_5_an_interactive_node_has_a_hit_area_in_the_window() {
+    let mut t = good();
+    t.push(n("Min", NodeRole::Minimize, fixed(0, 0), fixed(30, 0)));
+    refused(t, "rule 5");
+    let mut t = good();
+    // 16 px tall at the top edge: its 24 px hit area leaves the window.
+    t.push(n("Min", NodeRole::Minimize, fixed(60, 16), fixed(0, 16)));
+    refused(t, "rule 5");
+}
+
+#[test]
+fn rule_6_one_node_per_role_except_the_repeating_ones() {
+    let mut t = good();
+    t.push(n("Close2", NodeRole::Close, fixed(40, 24), fixed(40, 24)));
+    refused(t, "rule 6");
+    let mut t = good();
+    t.push(n("Bolt", NodeRole::Decor, fixed(0, 4), fixed(0, 4)));
+    t.push(n("Bolt2", NodeRole::Decor, fixed(0, 4), fixed(0, 4)));
+    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
+}
+
+#[test]
+fn rule_7_the_views_hold_the_friends_view() {
+    let mut t = good();
+    t[1].children[0].role = NodeRole::View(ViewKey::Servers);
+    t[2].children[0].role = NodeRole::ButtonRow(ViewKey::Servers);
+    refused(t, "rule 7");
+}
+
+#[test]
+fn rule_8_a_button_row_has_its_view() {
+    let mut t = good();
+    t[2].children[0].role = NodeRole::ButtonRow(ViewKey::Files);
+    refused(t, "rule 8");
+}
+
+#[test]
+fn rule_9_art_is_in_the_package() {
+    let mut t = good();
+    t[0].art = Some(NodeArt {
+        image: "images/node-closebox.png".to_owned(),
+        states: BTreeMap::new(),
+    });
+    refused(t.clone(), "rule 9");
+    let images = BTreeMap::from([("images/node-closebox.png".to_owned(), vec![0u8])]);
+    assert_eq!(checked(t, &images), Ok(()));
+}
+
+#[test]
+fn a_tree_never_requires_a_component_the_pack_lacks() {
+    // XGlow lays no close box and StealthX no name field: a tree with
+    // neither, and no views at all, passes.
+    let t = vec![n(
+        "MinimizeButton",
+        NodeRole::Minimize,
+        fixed(6, 24),
+        fixed(13, 24),
+    )];
+    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
+}
+
+/// Classic v3's title tiles (`xfiremainwindow.xml:2-12`) and a views box.
+const CLASSIC: &[u8] = br#"<Tile Name="XfireMainWindow" Component="MainWindow">
+<Tile Name="MainTitleBar" Z="4" X="0" Y="0" IndentLeft="14" IndentRight="13+14" ResizeX="100" Component="MainTitleBar">
+<Tile Name="XfireLogo" X="20" Y="20" Component="XfireLogo"/>
+<Tile Name="UserNameField" X="XfireLogo.RIGHT+6" Y="XfireLogo.TOP+2" ResizeX="100" IndentRight="48" Component="UserNameField">
+<Tile Name="UserNameText" X="13" Y="0" ResizeX="100" IndentRight="13" Component="UserNameText"/></Tile>
+<Tile Name="CloseBox" X="UserNameField.RIGHT+1" Y="UserNameField.TOP" Component="CloseBox"/>
+</Tile>
+<Tile Name="TabbedControl" X="7" Y="MainTitleBar.BOTTOM" IndentTop="9" IndentBottom="20+3" IndentRight="6" ResizeX="100" ResizeY="100" Component="TabbedControl">
+<Tile Name="BuddyView" ResizeX="100" ResizeY="100" Component="BuddyView"/></Tile>
+</Tile>"#;
+
+const PARTS: &[u8] = br#"<Components>
+<Component Name="MainTitleBar"><Images State="Normal"><Image>bar-300x50</Image></Images></Component>
+<Component Name="XfireLogo"><Images State="Normal"><Image>logo-40x30</Image></Images></Component>
+<Component Name="CloseBox"><Images State="Normal"><Image>close-18x16</Image></Images></Component>
+</Components>"#;
+
+fn piece(path: &str, _: Option<&str>) -> Result<RgbaImage, crate::import::ImportError> {
+    let (w, h) = path
+        .rsplit_once('-')
+        .and_then(|(_, d)| d.split_once('x'))
+        .unwrap();
+    Ok(RgbaImage::from_pixel(
+        w.parse().unwrap(),
+        h.parse().unwrap(),
+        ON,
+    ))
+}
+
+fn imported(xml: &[u8]) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
+    let main = parse("main.xml", xml).unwrap();
+    let parts = parse("parts.xml", PARTS).unwrap();
+    let mut built = (layout(None), BTreeMap::new());
+    import::add(
+        SkinWindow::Main,
+        &main,
+        std::slice::from_ref(&parts),
+        piece,
+        &mut built,
+    )?;
+    let tree = built.0.tree.clone().unwrap();
+    Ok((built.0, tree))
+}
+
+#[test]
+fn classic_anchors_resolve_parent_relative() {
+    let (l, tree) = imported(CLASSIC).unwrap();
+    let bar = &tree.root[0];
+    assert_eq!(bar.role, NodeRole::Drag);
+    assert_eq!(bar.x, Span::Stretch { start: 14, end: 27 });
+    let [logo, name, close] = &bar.children[..] else {
+        panic!("{:?}", bar.children)
+    };
+    assert_eq!((logo.role, logo.x), (NodeRole::Logo, fixed(20, 40)));
+    // `X="XfireLogo.RIGHT+6"`: 20 + 40 + 6.
+    assert_eq!(
+        (name.role, name.x),
+        (NodeRole::NameField, Span::Stretch { start: 66, end: 48 })
+    );
+    assert_eq!(name.y, fixed(22, 0));
+    assert_eq!(name.children[0].role, NodeRole::Part);
+    // `X="UserNameField.RIGHT+1"`: the stretching sibling's right inset, less 1, less its width.
+    assert_eq!(
+        close.x,
+        Span::Fixed {
+            at: Anchor::End(29),
+            size: 18
+        }
+    );
+    assert!(close.art.is_some());
+    // The views box is the content: 7 left, 50 + 9 top, 6 right, 23 bottom.
+    let c = l.content;
+    assert_eq!((c.left, c.top, c.right, c.bottom), (7, 59, 6, 23));
+}
+
+#[test]
+fn rule_1_an_unknown_component_without_art_is_refused() {
+    let xml = br#"<Tile Name="W" Component="MainWindow"><Tile Name="Mystery" Component="Mystery"/></Tile>"#;
+    let e = imported(xml).unwrap_err();
+    assert!(e.to_string().contains("has no role"), "{e}");
+}
+
+#[test]
+fn rule_2_an_anchor_that_does_not_resolve_is_refused() {
+    let xml = br#"<Tile Name="W" Component="MainWindow"><Tile Name="CloseBox" X="Nowhere.RIGHT+1" Component="CloseBox"/></Tile>"#;
+    let e = imported(xml).unwrap_err();
+    assert!(e.to_string().contains("no sibling Nowhere"), "{e}");
+}
+
+#[test]
+fn css_lays_one_rule_per_node_with_a_hit_area() {
+    let tree = SkinTree { root: good() };
+    let out = css::tree_css(".app-frame", &tree, &BTreeMap::new(), "x").unwrap();
+    assert_eq!(
+        out.matches(" {\n    position: absolute;").count(),
+        6,
+        "{out}"
+    );
+    assert!(out.contains("[data-skin-node=\"CloseBox\"] {\n    position: absolute; right: 4px; width: 18px; top: 4px; height: 16px; z-index: 0;"), "{out}");
+    assert!(
+        out.contains("[data-skin-node=\"CloseBox\"]::before"),
+        "{out}"
+    );
+    assert!(!out.contains("[data-skin-node=\"Views\"]::before"), "{out}");
+}

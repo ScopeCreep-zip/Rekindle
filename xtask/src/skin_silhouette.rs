@@ -12,10 +12,10 @@
 //! rects in device pixels, or `"rects":null` when the skin lays no frame for
 //! that window (it keeps its rectangle). `alphaOpaque` is the alpha from
 //! which a pixel is part of the window (`rekindle_skin::shape::ALPHA_OPAQUE`).
-//! `content` and `header` are the layout's content rectangle and header
-//! region at that size (`rekindle_skin::shape::regions`, plan SK0-L1), in
-//! logical px, for the spec to hold the page's content box and profile
-//! header to; `null` when the skin lays no frame (or no header region).
+//! `content` is the layout's content rectangle at that size (the pack's
+//! views box, `rekindle_skin::shape::content_area`, plan SK2), in logical
+//! px, for the spec to hold the page's content box to; `null` when the
+//! skin lays no frame.
 
 use anyhow::{anyhow, Context, Result};
 use clap::Args as ClapArgs;
@@ -23,7 +23,7 @@ use serde::Serialize;
 
 use rekindle_skin::builtin::PACKS;
 use rekindle_skin::serve::frames;
-use rekindle_skin::shape::{regions, silhouette, Area, Mask, ALPHA_OPAQUE};
+use rekindle_skin::shape::{content_area, silhouette, Area, Mask, ALPHA_OPAQUE};
 use rekindle_types::dto::skin::SkinWindow;
 
 /// `cargo xtask skin-silhouette`'s arguments.
@@ -60,7 +60,6 @@ struct Answer {
     alpha_opaque: u8,
     rects: Option<Vec<Rect>>,
     content: Option<Rect>,
-    header: Option<Rect>,
 }
 
 /// A logical-px area as a rect, negative edges and sizes clamped to 0.
@@ -102,12 +101,11 @@ pub(crate) fn skin_silhouette(args: &Args) -> Result<()> {
         .find(|b| b.id == pack)
         .ok_or_else(|| anyhow!("no built-in pack {pack:?} in rekindle_skin::builtin::PACKS"))?;
     let windows = frames(builtin.bytes).with_context(|| format!("frames of {pack}"))?;
-    let mut boxes = (None, None);
+    let mut content = None;
     let rects = match windows.into_iter().find(|w| w.window == wanted) {
         None => None,
         Some(w) => {
-            let (content, header) = regions(&w.layout, width, height);
-            boxes = (Some(rect(content)), header.map(rect));
+            content = Some(rect(content_area(&w.layout, width, height)));
             let masks = w
                 .masks
                 .into_iter()
@@ -135,8 +133,7 @@ pub(crate) fn skin_silhouette(args: &Args) -> Result<()> {
         serde_json::to_string(&Answer {
             alpha_opaque: ALPHA_OPAQUE,
             rects,
-            content: boxes.0,
-            header: boxes.1,
+            content,
         })?
     );
     Ok(())

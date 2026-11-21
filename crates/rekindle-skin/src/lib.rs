@@ -59,6 +59,7 @@ pub mod registry;
 pub mod role_tag;
 pub mod serve;
 pub mod shape;
+pub mod skin_tree;
 pub mod sounds;
 pub mod tokens;
 pub mod validate;

@@ -24,18 +24,14 @@
 //!    what bounds the frame band's transparency);
 //! 5. at most [`MAX_FRAME_TILES`] tiles, the slots the window draws them in
 //!    (plan SK0 S2);
-//! 6. a header region (plan SK0-L1) is the main window's only, placed once
-//!    on each axis, not empty, inside the window, outside the content
-//!    rectangle and wholly over the frame's opaque pixels, so the shaper
-//!    never cuts the profile header and no other app shows through it.
+//! 6. the pack's component tree (plan SK2) passes
+//!    [`crate::skin_tree::validate::check`]; the header region (SK0-L1) is withdrawn.
 
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule, SkinWindow, WindowLayout};
 
-use rekindle_types::dto::skin::TileAxis;
-
-use super::silhouette::{boxes, placed, regions};
+use super::silhouette::{boxes, placed};
 use super::{of_layout, silhouette, Mask, ShapeError, MAX_FRAME_TILES, SCALE_ONE};
 
 /// The most rectangles a silhouette may take. The packs' real counts at
@@ -162,58 +158,6 @@ fn closed(
     Ok(())
 }
 
-/// Rule 6 at `width × height`.
-fn header(
-    window: SkinWindow,
-    layout: &WindowLayout,
-    masks: &[Mask],
-    width: u32,
-    height: u32,
-) -> Result<(), SkinError> {
-    let Some(region) = layout.header else {
-        return Ok(());
-    };
-    let field = format!("windows.{}.header", name(window));
-    if window != SkinWindow::Main {
-        return Err(bad(&field, "no header region (main window only)"));
-    }
-    if matches!(region.x, TileAxis::Repeat { .. }) || matches!(region.y, TileAxis::Repeat { .. }) {
-        return Err(bad(&field, "a region placed once on each axis"));
-    }
-    if region.width == 0 || region.height == 0 {
-        return Err(bad(&field, "a region at least 1 px each way"));
-    }
-    let (content, Some((left, top, wide, tall))) = regions(layout, width, height) else {
-        return Ok(());
-    };
-    if left < 0 || top < 0 || left + wide > i64::from(width) || top + tall > i64::from(height) {
-        return Err(bad(&field, "a region inside the window"));
-    }
-    let (cx, cy, cw, ch) = content;
-    if left < cx + cw && cx < left + wide && top < cy + ch && cy < top + tall {
-        return Err(bad(&field, "a region outside the content rectangle"));
-    }
-    let tiles = placed(layout, width, height);
-    for py in top..top + tall {
-        for px in left..left + wide {
-            let opaque = tiles.iter().any(|&(i, (tx, ty, tw, th))| {
-                px >= tx
-                    && py >= ty
-                    && px < tx + tw
-                    && py < ty + th
-                    && u32::try_from(px - tx)
-                        .ok()
-                        .zip(u32::try_from(py - ty).ok())
-                        .is_some_and(|(mx, my)| masks[i].get(mx, my))
-            });
-            if !opaque {
-                return Err(bad(&field, "a region over the frame's opaque pixels"));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Refuses a manifest whose frame layouts break the rules above;
 /// `images` are the package's canonical images.
 ///
@@ -249,8 +193,11 @@ pub fn check(manifest: &SkinManifest, images: &BTreeMap<String, Vec<u8>>) -> Res
             base_h + 2 * span(|t| t.height) + 1,
         );
         closed(window, layout, &masks, big_w, big_h)?;
-        header(window, layout, &masks, base_w, base_h)?;
-        header(window, layout, &masks, big_w, big_h)?;
+        // Rule 6: the component tree (plan SK2).
+        if let Some(tree) = &layout.tree {
+            let field = format!("windows.{}.tree", name(window));
+            crate::skin_tree::validate::check(&field, tree, layout, images)?;
+        }
         silhouette(
             layout,
             &masks,

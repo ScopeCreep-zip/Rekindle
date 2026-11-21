@@ -1,6 +1,5 @@
 //! A window's frame layout (plan SK0 S1, SK0-L1): the window kinds a skin
-//! frames, the tiles that lay the frame and the regions the pack places in
-//! it. Re-exported from [`super::skin`], whose manifest carries them.
+//! frames, the tiles that lay the frame and the pack's component tree. Re-exported from [`super::skin`], whose manifest carries them.
 
 use serde::{Deserialize, Serialize};
 
@@ -70,21 +69,10 @@ pub struct WindowLayout {
     pub min_width: u16,
     pub min_height: u16,
     pub tiles: Vec<FrameTile>,
-    /// The pack's banner region (main window, plan SK0-L1): the profile header; `None`: content.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub header: Option<LayoutRegion>,
     /// The pack-laid title strip (plan SK1-S1); `None` keeps the app's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<super::skin_title::TitleLayout>,
-}
-
-/// A rectangle the pack lays in the frame rectangle (plan SK0-L1): placed
-/// once on each axis (`Start`, `End` or `Centre`; never `Repeat`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LayoutRegion {
-    pub x: TileAxis,
-    pub y: TileAxis,
-    pub width: u16,
-    pub height: u16,
+    /// The pack's component tree (plan SK2); `content` is its views node's box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree: Option<super::skin_tree::SkinTree>,
 }

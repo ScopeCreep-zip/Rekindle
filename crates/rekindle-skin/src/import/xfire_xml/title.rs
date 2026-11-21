@@ -80,7 +80,7 @@ fn add_opt(a: Option<i32>, b: Option<i32>) -> Option<i32> {
 }
 
 /// `Sibling.EDGE(+|-)n`: the sibling, the edge and n.
-fn reference(v: &str) -> Option<(&str, &str, i32)> {
+pub(crate) fn reference(v: &str) -> Option<(&str, &str, i32)> {
     let (name, rest) = v.trim().split_once('.')?;
     let cut = rest.find(['+', '-']).unwrap_or(rest.len());
     let (edge, n) = rest.split_at(cut);
@@ -222,7 +222,7 @@ fn face(
 /// The package images a part adds, by path.
 type Files = Vec<(String, Vec<u8>)>;
 
-type Decode<'a> = &'a dyn Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>;
+pub(crate) type Decode<'a> = &'a dyn Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>;
 
 struct Walk<'a> {
     window: SkinWindow,
@@ -240,26 +240,7 @@ impl Walk<'_> {
 
     /// `tile`'s component's `state` set image (its `Middle`, else its first).
     fn image_of(&self, tile: &Node, state: &str) -> Result<Option<RgbaImage>, ImportError> {
-        let component = tile
-            .attr_ci("Component")
-            .and_then(|c| self.by_name.get(&c.to_ascii_lowercase()));
-        let set = component.and_then(|c| {
-            if eq(state, "Normal") {
-                normal_set(c)
-            } else {
-                c.children_named("Images")
-                    .find(|i| i.attr_ci("State").is_some_and(|s| eq(s, state)))
-            }
-        });
-        let Some(set) = set else {
-            return Ok(None);
-        };
-        let img = set
-            .children_named("Image")
-            .find(|i| i.attr_ci("Type").is_some_and(|t| eq(t, "Middle")))
-            .or_else(|| set.children_named("Image").next());
-        img.map(|i| (self.piece)(&i.text, set.attr_ci("Color")))
-            .transpose()
+        component_image(&self.by_name, self.piece, tile, state)
     }
 
     /// The name field's 3-slice art: its component's normal `Left`,
@@ -446,6 +427,39 @@ impl Walk<'_> {
         }
         Ok(())
     }
+}
+
+/// `tile`'s component's `state` set image (its `Middle`, else its first);
+/// `by_name` holds the components by lower-case name.
+///
+/// # Errors
+/// What `piece` returns.
+pub(crate) fn component_image(
+    by_name: &BTreeMap<String, &Node>,
+    piece: Decode<'_>,
+    tile: &Node,
+    state: &str,
+) -> Result<Option<RgbaImage>, ImportError> {
+    let component = tile
+        .attr_ci("Component")
+        .and_then(|c| by_name.get(&c.to_ascii_lowercase()));
+    let set = component.and_then(|c| {
+        if eq(state, "Normal") {
+            normal_set(c)
+        } else {
+            c.children_named("Images")
+                .find(|i| i.attr_ci("State").is_some_and(|s| eq(s, state)))
+        }
+    });
+    let Some(set) = set else {
+        return Ok(None);
+    };
+    let img = set
+        .children_named("Image")
+        .find(|i| i.attr_ci("Type").is_some_and(|t| eq(t, "Middle")))
+        .or_else(|| set.children_named("Image").next());
+    img.map(|i| piece(&i.text, set.attr_ci("Color")))
+        .transpose()
 }
 
 /// Adds the strip `layout` (the window's layout file) lays to `built`.

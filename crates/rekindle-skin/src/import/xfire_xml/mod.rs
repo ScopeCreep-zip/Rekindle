@@ -139,7 +139,7 @@ fn xml(tree: &Tree, name: &str) -> Result<Node, ImportError> {
     tree::parse(name, file(tree, name)?)
 }
 
-fn descendants<'a>(n: &'a Node, name: &str) -> Vec<&'a Node> {
+pub(crate) fn descendants<'a>(n: &'a Node, name: &str) -> Vec<&'a Node> {
     let mut out = Vec::new();
     n.descendants(name, &mut out);
     out

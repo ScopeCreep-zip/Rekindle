@@ -18,14 +18,12 @@
 //! sits `X` px from the left and `IndentRight` px from the right, inside the
 //! row's side pieces (Total Chaos: 50 px in 59 px sides), so the sides are
 //! laid only to that edge (their inner columns lay under the pack's views,
-//! never shown). A row above the content holding an `AdView` (Total
-//! Chaos's `AdArea`, 236×60 centred in `AdBar`) is the header region
-//! ([`WindowLayout::header`]).
+//! never shown).
 
 use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
-use rekindle_types::dto::skin::{Insets, LayoutRegion, SkinWindow, TileAxis, WindowLayout};
+use rekindle_types::dto::skin::{Insets, SkinWindow, TileAxis, WindowLayout};
 
 use super::super::tree::Node;
 use super::super::views;
@@ -60,27 +58,6 @@ fn views_insets(content: &Node) -> Option<(u32, u32)> {
         .children_named("Tile")
         .find(|t| t.attr_ci("ResizeX") == Some("100") && t.attr_ci("ResizeY") == Some("100"))
         .map(|t| (px(t, "X"), px(t, "IndentRight")))
-}
-
-/// The `AdView` tile of a row above the content, as (x, y in the row,
-/// width, height): its component's `MinWidth`/`MinHeight`, centred for
-/// `JustX="CENTER"`, else `X` px in; `Y` names the row's top or a pixel
-/// offset in it.
-fn ad_view(row: &Node, by_name: &BTreeMap<String, &Node>) -> Option<(TileAxis, u32, u32, u32)> {
-    row.children_named("Tile").find_map(|t| {
-        let c = by_name.get(&t.attr_ci("Component")?.to_ascii_lowercase())?;
-        if !c.attr_ci("Class").is_some_and(|k| eq(k, "AdView")) {
-            return None;
-        }
-        let x = if t.attr_ci("JustX").is_some_and(|j| eq(j, "CENTER")) {
-            TileAxis::Centre
-        } else {
-            TileAxis::Start {
-                offset: u16::try_from(px(t, "X")).ok()?,
-            }
-        };
-        Some((x, px(t, "Y"), px(c, "MinWidth"), px(c, "MinHeight")))
-    })
 }
 
 const TYPES: [&str; 4] = ["left", "middle", "right", "center"];
@@ -153,26 +130,7 @@ pub fn layout(
             views::to_views_edge(l, r, insets);
         }
     }
-    let header = rows[..content_row]
-        .iter()
-        .enumerate()
-        .find_map(|(i, r)| ad_view(r.tile, &by_name).map(|a| (i, a)));
-    let built = build(window, &rows, content_row)?;
-    let Some((row_at, (ad_x, ad_y, ad_w, ad_h))) = header else {
-        return Ok(Some(built));
-    };
-    let file = shape::tile_path(window, "frame");
-    let top: u32 = rows[..row_at].iter().map(|r| height(&r.row)).sum();
-    let (mut layout, files) = built;
-    layout.header = Some(LayoutRegion {
-        x: ad_x,
-        y: TileAxis::Start {
-            offset: u16_of(&file, top + ad_y)?,
-        },
-        width: u16_of(&file, ad_w)?,
-        height: u16_of(&file, ad_h)?,
-    });
-    Ok(Some((layout, files)))
+    build(window, &rows, content_row).map(Some)
 }
 
 fn height(row: &Row) -> u32 {
@@ -259,7 +217,7 @@ fn build(window: SkinWindow, rows: &[Stacked], content_row: usize) -> Result<Bui
             min_width: u16_of(&file, min_width)?,
             min_height: u16_of(&file, top + bottom)?,
             tiles,
-            header: None,
+            tree: None,
             title: None,
         },
         files,

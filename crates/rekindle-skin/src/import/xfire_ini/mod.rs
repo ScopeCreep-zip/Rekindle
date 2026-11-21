@@ -328,6 +328,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
             decode,
             built,
         )?;
+        crate::skin_tree::import::add(SkinWindow::Main, &layout, components, decode, built)?;
     }
     count_dropped(&skin, (frame.as_ref(), &control_sections), &mut dropped);
     let mut read_files = vec![version_key, skin_key, theme_key];

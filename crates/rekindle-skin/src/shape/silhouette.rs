@@ -62,20 +62,11 @@ pub(super) fn boxes(layout: &WindowLayout, width: u32, height: u32) -> (Area, Ar
     (frame, content)
 }
 
-/// The content rectangle and the header region (plan SK0-L1) of a
-/// `width × height` window, logical px: where the window's content and
-/// its profile header are drawn. A `Repeat` header axis (refused by
-/// [`super::check`]) is placed at its first copy.
+/// The content rectangle of a `width × height` window, logical px: where
+/// the window's content (the pack's views box, plan SK2) is drawn.
 #[must_use]
-pub fn regions(layout: &WindowLayout, width: u32, height: u32) -> (Area, Option<Area>) {
-    let (frame, content) = boxes(layout, width, height);
-    let header = layout.header.and_then(|r| {
-        let (w, h) = (i64::from(r.width), i64::from(r.height));
-        let x = copies(r.x, frame.0, frame.2, w).first()?.0;
-        let y = copies(r.y, frame.1, frame.3, h).first()?.0;
-        Some((x, y, w, h))
-    });
-    (content, header)
+pub fn content_area(layout: &WindowLayout, width: u32, height: u32) -> Area {
+    boxes(layout, width, height).1
 }
 
 /// Every placed copy of every tile: (tile index, x, y, width, height).
