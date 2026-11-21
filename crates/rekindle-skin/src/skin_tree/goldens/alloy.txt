@@ -1,0 +1,55 @@
+Top Decor
+Logo Logo
+MenuBar MenuBar
+  FileMenu Menu(First)
+  ToolsMenu Menu(Tools)
+  HelpMenu Menu(Help)
+UserNameField NameField
+  UserNameText Part
+StatusWrapper Group
+StatusEdit StatusText
+DownArrow StatusList
+TopButtonBar Group
+  MinimizeBox Minimize
+  MaximizeBox Maximize
+  CloseBox Close
+Middle Decor
+LeftDetail Decor
+InfoViewButton InfoToggle
+TabbedControl Views
+  BuddyView View(Friends)
+    BuddyView.BvBk Part
+  ServerView View(Servers)
+    ServerView.BvBk Part
+  DownloadView View(Files)
+    DownloadView.BvBk Part
+TabHeader TabStrip
+  TabButtonBar Part
+    TabNormalButton Tab(Friends)
+    TabServerButton Tab(Servers)
+    TabDownloadButton Tab(Files)
+Bottom Decor
+AdArea AdArea
+  AdView Part
+ButtonHolder Group
+  TabAddButton Group
+    AddButton Button(AddFriend)
+    AddServerButton Button(AddServer)
+    SearchFiles Button(Find)
+  TabChatRefreshButton Group
+    ChatButton Button(Chat)
+    RefreshButton Button(Refresh)
+  TabGameDownloadButton Group
+    GameButton@Friends Button(Join)
+    GameButton@Servers Button(Join)
+  TabInfoButton Group
+    InfoButton@Friends Button(Profile)
+    InfoButton@Servers Button(Profile)
+IVButtonHolder InfoToggle
+RightDetail Decor
+MAINBG Decor
+ResizeUp Resize(Top)
+ResizeLeft Resize(Left)
+ResizeRight Resize(Right)
+ResizeDown Resize(Bottom)
+GripperBR Resize(BottomRight)

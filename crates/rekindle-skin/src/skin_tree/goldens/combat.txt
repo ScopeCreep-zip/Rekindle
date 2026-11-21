@@ -1,0 +1,57 @@
+OuterFrame Decor
+CombatDragBar Drag
+  Minimizebox Minimize
+FileMenuText Menu(First)
+  FileMenu Part
+ToolsMenuText Menu(Tools)
+  ToolsMenu Part
+HelpMenuText Menu(Help)
+  HelpMenu Part
+AdArea AdArea
+BackgroundArea Decor
+ResizeUlbr Resize(BottomRight)
+CenterConsole Group
+  TabControl TabStrip
+    Knob01 Knob(Friends)
+    Knob02 Knob(Servers)
+    Knob03 Knob(Files)
+    Knob04 Part
+  DownloadBlink Lamp(Files)
+    WhiteBlinkNoAnimation Part
+    RedBlinker Part
+  ConsoleText ConsoleLabel
+    BuddyText Part
+    ServerText Part
+    DownloadText Part
+MainTabbedArea Views
+  BuddyView View(Friends)
+  ServerView View(Servers)
+  DownloadView View(Files)
+Title NameField
+StatusEdit StatusText
+DownArrow StatusList
+JoinPlayTab Group
+  JoinButton@Friends Button(Join)
+  JoinButton@Servers Button(Join)
+  PlayButton Button(Join)
+ProfileBrowseTab Group
+  ProfileButton@Friends Button(Profile)
+  ProfileButton@Servers Button(Profile)
+  BrowseButton Button(Browse)
+ChatRefreshStopTab Group
+  ChatButton Button(Chat)
+  RefreshButton Button(Refresh)
+  StopButton Button(StopDownload)
+AddDownloadTab Group
+  AddFriendButton Button(AddFriend)
+  AddServerButton Button(AddServer)
+  StartDownloadButton Button(StartDownload)
+TopOuterEdge Decor
+LeftOuterEdge Decor
+BottomOuterEdge Decor
+RightOuterEdge Decor
+XfireLogo Logo
+InfoViewSwitch InfoToggle
+  InfoViewSwitchIn Part
+  InfoviewSwitchOut Part
+SystemMenu SystemMenu

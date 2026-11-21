@@ -1,0 +1,66 @@
+MainTitleBar Drag
+  Vent Decor
+  XfireLogo Logo
+    TheX Decor
+      TheXCover Decor
+  UserNameField NameField
+    UserNameText Part
+  CloseBox Close
+  ResizeUp Resize(Top)
+GripperTopLeft Resize(TopLeft)
+GripperTopRight Resize(TopRight)
+BaseBoard Group
+  ButtonArea ButtonBar
+    FriendsButtons ButtonRow(Friends)
+      AddButton Button(AddFriend)
+      ChatButton Button(Chat)
+      GameButton1 Button(Join)
+      InfoButton1 Button(Profile)
+    ServersButtons ButtonRow(Servers)
+      AddServerButton Button(AddServer)
+      RefreshButton Button(Refresh)
+      GameButton2 Button(Join)
+      InfoButton2 Button(Profile)
+    FilesButtons ButtonRow(Files)
+      BigBrowseFileButton Button(Browse)
+        BigBrowseFileText Part
+  StatusWrapper Group
+  StatusEdit StatusText
+  DownArrow StatusList
+  ResizeDown Resize(Bottom)
+LeftOuterEdge Decor
+MainRightOuterEdge Decor
+GripperBottomLeft Resize(BottomLeft)
+GripperBottomRight Resize(BottomRight)
+InnerBevel Decor
+  TopBevel Decor
+  BottomBevel Decor
+  MiddleBevel Decor
+  MenuBar MenuBar
+    XfireMenuText Menu(First)
+      FileMenu Part
+    ToolsMenuText Menu(Tools)
+      ToolsMenu Part
+    HelpMenuText Menu(Help)
+      HelpMenu Part
+  AdArea AdArea
+    AdView Part
+  Divider Decor
+  TabHeader TabStrip
+    TabNormalText Tab(Friends)
+      TabNormalButton Part
+    TabServerText Tab(Servers)
+      TabServerButton Part
+    TabDownloadText Tab(Files)
+      TabDownloadButton Part
+  TabbedControl Views
+    BuddyView View(Friends)
+      BvBk1 Part
+    ServerView View(Servers)
+      BvBk2 Part
+    DownloadView View(Files)
+      BvBk3 Part
+BottomBar Group
+  PartnerGraphic Decor
+    PartnerFrame Decor
+InfoViewButton InfoToggle

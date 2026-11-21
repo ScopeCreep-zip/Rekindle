@@ -1,0 +1,68 @@
+TopLeft Decor
+Top Decor
+TopRight Decor
+SCLogo Decor
+LeftEdge Decor
+RightEdge Decor
+Middle Decor
+BottomLeft Decor
+Bottom Decor
+BottomRight Decor
+AdAreaBG AdArea
+  AdArea Part
+ExpandButton InfoToggle
+MainTitleBar Drag
+  Logo Logo
+  Title NameField
+AGEAR Decor
+IGEAR Decor
+StatusWrapper Group
+  StatusEdit StatusText
+  DownArrow StatusList
+TabHeader TabStrip
+  TabNormalText Tab(Friends)
+    TabNormalButton Part
+  TabServerText Tab(Servers)
+    TabServerButton Part
+  TabDownloadText Tab(Files)
+    TabDownloadButton Part
+TopButtonBar Group
+  Minimize Minimize
+  Maximize Maximize
+  Close Close
+MenuBar MenuBar
+  XfireMenuText Menu(First)
+    FileMenu Part
+  ToolsMenuText Menu(Tools)
+    ToolsMenu Part
+  HelpMenuText Menu(Help)
+    HelpMenu Part
+ListViewBG Decor
+TabbedControl Views
+  BuddyView View(Friends)
+    BuddyView.BvBk Part
+  ServerView View(Servers)
+    ServerView.BvBk Part
+  DownloadView View(Files)
+    DownloadView.BvBk Part
+TabButtonArea ButtonBar
+  FriendsButtons ButtonRow(Friends)
+    AddButton Button(AddFriend)
+    ImButton Button(Chat)
+    JoinFriendButton Button(Join)
+    InfoButton1 Button(Profile)
+  ServerButtons ButtonRow(Servers)
+    AddServerButton Button(AddServer)
+    RefreshButton Button(Refresh)
+    JoinServerButton Button(Join)
+    InfoButton2 Button(Profile)
+  FilesButtons ButtonRow(Files)
+    StartDownloadButton Button(StartDownload)
+    StopDownloadButton Button(StopDownload)
+    ExecuteDownloadButton Button(OpenDownload)
+    DownloadInfoButton Button(DownloadInfo)
+ResizeLeft Resize(Left)
+ResizeRight Resize(Right)
+ResizeUp Resize(Top)
+ResizeDown Resize(Bottom)
+BRGripper Resize(BottomRight)

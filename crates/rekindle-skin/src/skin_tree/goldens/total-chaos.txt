@@ -1,0 +1,46 @@
+MainTitleBar Drag
+  TopLeft Decor
+  TopRight Decor
+  Logo Logo
+  Title NameField
+  Minimize Minimize
+  Maximize Maximize
+  Close Close
+AdBar AdArea
+  AdArea Part
+MenuBar MenuBar
+  MenuBg Part
+    FileMenu Menu(First)
+    ToolsMenu Menu(Tools)
+    HelpMenu Menu(Help)
+Content Group
+  ExpandButton InfoToggle
+  TabHeader TabStrip
+    TabNormalButton Tab(Friends)
+    TabServerButton Tab(Servers)
+    TabDownloadButton Tab(Files)
+  TabbedControl Views
+    BuddyView View(Friends)
+    ServerView View(Servers)
+    DownloadView View(Files)
+BottomBar Group
+  BottomLeft Decor
+  BottomRight Decor
+  BottomCenter Decor
+    TCLink PackLink
+  TabButtonArea ButtonBar
+    FriendsButtons ButtonRow(Friends)
+      AddButton Button(AddFriend)
+      ImButton Button(Chat)
+      InfoButton Button(Profile)
+      JoinFriendButton Button(Join)
+    ServersButtons ButtonRow(Servers)
+      AddServerButton Button(AddServer)
+      RefreshButton Button(Refresh)
+      PlaceHolder Decor
+      JoinServerButton Button(Join)
+    FilesButtons ButtonRow(Files)
+      StartDownloadButton Button(StartDownload)
+      StopDownloadButton Button(StopDownload)
+      ExecuteDownloadButton Button(OpenDownload)
+      DownloadInfoButton Button(DownloadInfo)

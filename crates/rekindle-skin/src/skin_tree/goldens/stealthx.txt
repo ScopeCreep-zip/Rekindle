@@ -1,0 +1,20 @@
+MainBackground Decor
+  MainBackgroundCol Decor
+  MenuButton SideRail
+  InfoViewButton InfoToggle
+  ListBackground Decor
+    TabbedControl Views
+      BuddyView View(Friends)
+      ServerView View(Servers)
+      DownloadView View(Files)
+  AdArea AdArea
+    AdView Part
+  WndClose Close
+  WndMax Maximize
+  WndMin Minimize
+  WndXfire Logo
+  StatusEdit StatusText
+  StatusBtn StatusList
+  ResizeRight Resize(Right)
+  ResizeBottom Resize(Bottom)
+  ResizeBottomRight Resize(BottomRight)

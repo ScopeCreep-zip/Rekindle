@@ -1,0 +1,42 @@
+Top Decor
+FileMenu Menu(First)
+ToolMenu Menu(Tools)
+HelpMenu Menu(Help)
+XfireLogo Logo
+MinimizeButton Minimize
+Left Decor
+Right Decor
+Middle Decor
+TabbedControl Views
+  BuddyView View(Friends)
+  ServerView View(Servers)
+  DownloadView View(Files)
+Bottom Decor
+Add Group
+  AddFriend Button(AddFriend)
+  AddServer Button(AddServer)
+  StartDownload Button(StartDownload)
+Chat Group
+  ChatButton Button(Chat)
+  RefreshButton Button(Refresh)
+  StopDownloadButton Button(StopDownload)
+Join Group
+  JoinGame@Friends Button(Join)
+  JoinGame@Servers Button(Join)
+  ExecuteDownload Button(OpenDownload)
+Info Group
+  InfoButton Button(Profile)
+  InfoButton2 Button(Profile)
+  DownloadInfo Button(DownloadInfo)
+ButtonDivider Decor
+Friends Tab(Friends)
+Servers Tab(Servers)
+Downloads Tab(Files)
+AdArea AdArea
+UserName NameField
+DownArrow StatusList
+StatusMiddle Decor
+StatusRight Decor
+Status StatusText
+ViewInfo InfoToggle
+Gripper Resize(BottomRight)
