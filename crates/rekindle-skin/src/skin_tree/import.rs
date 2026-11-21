@@ -49,6 +49,30 @@ fn limit_of(component: Option<&Node>, key: &str) -> Option<u16> {
     component?.attr_ci(key)?.trim().parse().ok()
 }
 
+/// How far a component's `DrawOnTopmost`/`DrawOnBottommost` (spec A9;
+/// `Xfire.exe` UTF-16 strings at 0x2b75a4, 0x2b75c0) lifts its tile out of
+/// its siblings' `Z` order: past every pack `Z` (they run -4..100), so
+/// Classic's `TheX` (`xfirecomponents.xml:147`, `DrawOnTopmost="true"`)
+/// draws above the siblings laid after it.
+const TOPMOST: i16 = 1000;
+
+/// The layer a tile's `component` puts it in (spec A9): [`TOPMOST`] above
+/// its siblings, its negation below them, else 0.
+fn layer_of(component: Option<&Node>) -> i16 {
+    let on = |k: &str| {
+        component
+            .and_then(|c| c.attr_ci(k))
+            .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
+    };
+    if on("DrawOnTopmost") {
+        TOPMOST
+    } else if on("DrawOnBottommost") {
+        -TOPMOST
+    } else {
+        0
+    }
+}
+
 /// A state's pieces as decoded, in the pack's order.
 type Pieces = Vec<(PieceSlot, RgbaImage)>;
 
@@ -85,6 +109,8 @@ struct Read<'n> {
     pieces: Pieces,
     wh: (u16, u16),
     max: (Option<u16>, Option<u16>),
+    /// The component's layer ([`layer_of`]).
+    layer: i16,
     /// The component's `ControlGroupId` (INI tab controls that switch
     /// together).
     group: Option<String>,
@@ -260,6 +286,14 @@ impl Walk<'_> {
                 }
             }
         };
+        // Spec A6, row 6: the component's `MinWidth`/`MinHeight` raise a
+        // fixed tile above its art (Classic's `MainTitleBar` `MinHeight="51"`
+        // over 47 px art, `xfirecomponents.xml:65-69`: 51 tall, so
+        // `GripperTopLeft` `Y="MainTitleBar.Bottom-15"` lands at y 36).
+        let wh = (
+            wh.0.max(limit_of(comp, "MinWidth").unwrap_or(0)),
+            wh.1.max(limit_of(comp, "MinHeight").unwrap_or(0)),
+        );
         let children: Vec<String> = tile
             .children_named("Tile")
             .filter_map(|t| {
@@ -291,6 +325,7 @@ impl Walk<'_> {
             pieces,
             wh,
             max,
+            layer: layer_of(comp),
             group,
         })
     }
@@ -358,11 +393,16 @@ impl Walk<'_> {
             } else {
                 self.art(&t.id, t.tile, &t.pieces)?
             };
-            let z = t.tile.attr_ci("Z").map_or(Ok(0), |z| {
-                z.trim()
-                    .parse::<i16>()
-                    .map_err(|_| bad(format!("{}: Z={z}", t.id)))
-            })?;
+            let z = t
+                .tile
+                .attr_ci("Z")
+                .map_or(Ok(0), |z| {
+                    z.trim()
+                        .parse::<i16>()
+                        .map_err(|_| bad(format!("{}: Z={z}", t.id)))
+                })?
+                .checked_add(t.layer)
+                .ok_or_else(|| bad(format!("{}: Z out of range", t.id)))?;
             // A knob rotation shows only while its tab is selected (Combat's
             // `Knob01`-`Knob03`, one place for three tabs, `combat.ini`
             // `[TabControl]`): one shows at a time, like the views.

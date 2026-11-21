@@ -329,3 +329,39 @@ fn a_tab_control_of_chat_state_buttons_is_a_button_bar() {
     );
     assert_eq!(bar, Some(NodeRole::ButtonBar));
 }
+
+/// Spec A6 row 6: Classic's `MainTitleBar` `MinHeight="51"` over 47 px art
+/// (`xfirecomponents.xml:65-69`) is 51 tall, so `GripperTopLeft`
+/// `Y="MainTitleBar.Bottom-15"` lands at y 36, not 32.
+#[test]
+fn a_components_min_size_raises_a_fixed_tile_above_its_art() {
+    let parts = br#"<Components>
+<Component Name="MainTitleBar" MinHeight="51"><Images State="Normal"><Image Type="Middle">bar-300x47</Image></Images></Component>
+<Component Name="XfireLogo"><Images State="Normal"><Image Type="Middle">logo-25x44</Image></Images></Component>
+</Components>"#;
+    let xml = br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="MainTitleBar" ResizeX="100" Component="MainTitleBar"/>
+<Tile Name="XfireLogo" Y="MainTitleBar.Bottom-15" Component="XfireLogo"/></Tile>"#;
+    let root = imported_with(xml, parts).unwrap().1.root;
+    assert_eq!(root[0].y, fixed(0, 51));
+    assert_eq!(root[1].y, fixed(36, 44));
+}
+
+/// Spec A9 row 9: a component's `DrawOnTopmost` (any case, Classic's
+/// `TheX`, `xfirecomponents.xml:147`) lifts its tile above every sibling's
+/// `Z`; `DrawOnBottommost` drops it below them.
+#[test]
+fn draw_on_topmost_lifts_a_tile_out_of_its_siblings_order() {
+    let parts = br#"<Components>
+<Component Name="XfireLogo" DrawOnTopMost="True"><Images State="Normal"><Image Type="Middle">logo-40x30</Image></Images></Component>
+<Component Name="CloseBox" DrawOnBottommost="true"><Images State="Normal"><Image Type="Middle">close-18x16</Image></Images></Component>
+<Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-300x50</Image></Images></Component>
+</Components>"#;
+    let xml = br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="XfireLogo" Z="2" Component="XfireLogo"/>
+<Tile Name="MainTitleBar" Z="100" Component="MainTitleBar"/>
+<Tile Name="CloseBox" Component="CloseBox"/></Tile>"#;
+    let root = imported_with(xml, parts).unwrap().1.root;
+    let z: Vec<i16> = root.iter().map(|n| n.z).collect();
+    assert_eq!(z, vec![1002, 100, -1000]);
+}
