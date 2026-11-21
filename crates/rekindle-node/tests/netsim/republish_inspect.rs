@@ -48,7 +48,7 @@ async fn a_landed_prekey_record_costs_one_inspect_a_round_and_no_re_send() {
     tokio::time::sleep(Duration::from_secs(62 * 60)).await;
     let inspected = sim.app_inspects(0, &record) - inspects;
     let resent = sim.app_resends(0) - resends;
-    println!("prekey record: {inspected} inspects, node 0: {resent} re-sends in 62 min");
+    tracing::info!(inspected, resent, "prekey record over 62 min: inspects and re-sends");
     assert_eq!(
         resent, 0,
         "every own write landed: the republish re-sends none of them"
