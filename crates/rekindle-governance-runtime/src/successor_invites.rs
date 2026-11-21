@@ -140,23 +140,54 @@ pub async fn open_own_invite<D: GovernanceRuntimeDeps>(
     me: &PseudonymKey,
     hpke_secret: &[u8; 32],
 ) -> Result<String, GovernanceRuntimeError> {
-    let first = read_page(deps, record).await?;
-    let mut entry = find(&first, me);
-    for key in &first.pages {
-        if entry.is_some() {
-            break;
+    let follow = Follow {
+        old_anchor,
+        new_anchor,
+        me,
+        hpke_secret,
+    };
+    follow
+        .open(record, |key| async move { read_page(deps, &key).await })
+        .await
+}
+
+/// One follower opening its own invite from the pages `read` returns.
+struct Follow<'a> {
+    old_anchor: &'a str,
+    new_anchor: &'a str,
+    me: &'a PseudonymKey,
+    hpke_secret: &'a [u8; 32],
+}
+
+impl Follow<'_> {
+    async fn open<R, F>(&self, record: &str, read: R) -> Result<String, GovernanceRuntimeError>
+    where
+        R: Fn(String) -> F,
+        F: std::future::Future<Output = Result<InvitesPage, GovernanceRuntimeError>>,
+    {
+        let first = read(record.to_owned()).await?;
+        let mut entry = find(&first, self.me);
+        for key in &first.pages {
+            if entry.is_some() {
+                break;
+            }
+            entry = find(&read(key.clone()).await?, self.me);
         }
-        entry = find(&read_page(deps, key).await?, me);
+        let new_anchor = self.new_anchor;
+        let entry = entry.ok_or_else(|| {
+            GovernanceRuntimeError::OpRefused(format!(
+                "the publisher of {new_anchor} did not continue you: its sealed invites hold none for you"
+            ))
+        })?;
+        open_invite(self.old_anchor, new_anchor, &entry, self.hpke_secret)
+            .map_err(|e| GovernanceRuntimeError::Crypto(format!("your successor invite: {e}")))
     }
-    let entry = entry.ok_or_else(|| {
-        GovernanceRuntimeError::OpRefused(format!(
-            "the publisher of {new_anchor} did not continue you: its sealed invites hold none for you"
-        ))
-    })?;
-    open_invite(old_anchor, new_anchor, &entry, hpke_secret)
-        .map_err(|e| GovernanceRuntimeError::Crypto(format!("your successor invite: {e}")))
 }
 
 fn find(page: &InvitesPage, me: &PseudonymKey) -> Option<SealedInvite> {
     page.entries.iter().find(|e| e.member == *me).cloned()
 }
+
+#[cfg(test)]
+#[path = "successor_invites_tests.rs"]
+mod tests;

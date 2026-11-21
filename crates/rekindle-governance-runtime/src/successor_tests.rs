@@ -5,11 +5,14 @@ use rekindle_governance::op::OpStamp;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::successor::SuccessorState;
 use rekindle_types::governance::{
-    AdmissionMode, CommunitySuccessor, GenesisCert, OpHash, SuccessorReason,
+    AdmissionMode, CommunitySuccessor, GenesisCert, GovernanceEntry, OpHash, SuccessorReason,
 };
 use rekindle_types::id::PseudonymKey;
 
-use super::{follow_creators, judge, pending, FollowRefusal, SuccessorJudgements};
+use super::{
+    follow_creators, invites_record, judge, pending, successor_entry, FollowRefusal,
+    SuccessorJudgements,
+};
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 
@@ -169,4 +172,33 @@ async fn an_offer_is_kept_for_the_snapshot() {
     let events = judge(OLD_ANCHOR, &state, &judgements, read).await;
     assert_eq!(offered(&events), ["VLD0:a"]);
     assert_eq!(offered(&judgements.offers()), ["VLD0:a"]);
+}
+
+/// Decision (34): the published op carries the first invites page's key.
+#[test]
+fn the_published_op_carries_its_invites_record() {
+    let GovernanceEntry::CommunitySuccessor(op) = successor_entry("VLD0:new", "VLD0:inv") else {
+        panic!("not a successor op");
+    };
+    assert_eq!(op.new_anchor.as_deref(), Some("VLD0:new"));
+    assert_eq!(op.invites_record.as_deref(), Some("VLD0:inv"));
+}
+
+/// A follow reads the invites of the successor naming the anchor it
+/// follows, by the signer it checked; a link naming another anchor, or
+/// another author's successor, gives none and the follow is refused.
+#[test]
+fn a_follow_reads_only_the_linked_successors_invites() {
+    let mut state = GovernanceState::default();
+    successor(&mut state, 1, Some("VLD0:new"));
+    let signer = PseudonymKey([1; 32]);
+    assert_eq!(
+        invites_record(&state, "VLD0:new", &signer).as_deref(),
+        Some("VLD0:inv")
+    );
+    assert_eq!(invites_record(&state, "VLD0:other", &signer), None);
+    assert_eq!(
+        invites_record(&state, "VLD0:new", &PseudonymKey([9; 32])),
+        None
+    );
 }

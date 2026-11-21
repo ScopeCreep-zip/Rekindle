@@ -212,7 +212,16 @@ pub async fn publish<D: GovernanceRuntimeDeps>(
     new_anchor: &str,
     invites_record: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    let entry = GovernanceEntry::CommunitySuccessor(CommunitySuccessor {
+    let entry = successor_entry(new_anchor, invites_record);
+    crate::apply::write_entry(deps, community_id, entry)
+        .await
+        .map(drop)
+}
+
+/// The re-creation `CommunitySuccessor` op [`publish`] writes: it names
+/// `new_anchor` and carries `invites_record`.
+fn successor_entry(new_anchor: &str, invites_record: &str) -> GovernanceEntry {
+    GovernanceEntry::CommunitySuccessor(CommunitySuccessor {
         new_anchor: Some(new_anchor.to_owned()),
         reason: SuccessorReason::Recreate,
         transfer_to: None,
@@ -220,10 +229,7 @@ pub async fn publish<D: GovernanceRuntimeDeps>(
         accepts: None,
         links: Vec::new(),
         invites_record: Some(invites_record.to_owned()),
-    });
-    crate::apply::write_entry(deps, community_id, entry)
-        .await
-        .map(drop)
+    })
 }
 
 /// The signer and creator set of an applied successor of `community`
