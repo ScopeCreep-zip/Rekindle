@@ -49,21 +49,31 @@ async function rowJoinButton(b: Browser): Promise<Awaited<ReturnType<Browser["$"
   return btn;
 }
 
-/** Fail with the toast handleJoinVoice shows when the Host refuses (voice.actions.ts:140-144). */
-async function joinRefusal(b: Browser): Promise<string> {
-  for (const t of await b.$$(".toast-item.toast-error")) {
-    const text = await t.getText();
-    if (text.includes("Couldn't join voice")) return text;
-  }
-  return "";
+/** The text of every toast matching `selector`, read in one script: a toast that dismisses itself mid-read cannot go stale. */
+async function toastTexts(b: Browser, selector: string): Promise<string[]> {
+  return (await b.execute(
+    (sel: string) => Array.from(document.querySelectorAll(sel)).map((t) => (t.textContent ?? "").trim()),
+    selector,
+  )) as string[];
 }
 
-/** The names in the sidebar voice panel (VoicePanel.tsx:75-80, VoiceParticipant.tsx:14-16). */
+/** Fail with the toast handleJoinVoice shows when the Host refuses (voice.actions.ts:140-144). */
+async function joinRefusal(b: Browser): Promise<string> {
+  return (await toastTexts(b, ".toast-item.toast-error")).find((text) => text.includes("Couldn't join voice")) ?? "";
+}
+
+/**
+ * The names in the sidebar voice panel (VoicePanel.tsx:75-80,
+ * VoiceParticipant.tsx:14-16), read in one script: a snapshot. Listing the
+ * elements and then reading each one raced a participant leaving between
+ * the two (Linux walk at f00132dc2, M25: "element at index 1 wasn't found").
+ */
 async function voiceNames(b: Browser): Promise<string> {
-  const names = await b.$$(".voice-panel .voice-participant-name");
-  const out: string[] = [];
-  for (const n of names) out.push(await n.getText());
-  return out.join(" | ");
+  return (await b.execute(() =>
+    Array.from(document.querySelectorAll(".voice-panel .voice-participant-name"))
+      .map((n) => (n.textContent ?? "").trim())
+      .join(" | "),
+  )) as string;
 }
 
 async function waitListed(b: Browser, name: string, listed: boolean, who: string): Promise<void> {
@@ -104,10 +114,7 @@ async function serverAction(b: Browser, community: string, item: string, passphr
   let toast = "";
   await waitUntil(
     async () => {
-      for (const t of await b.$$(".toast-item")) {
-        const text = await t.getText();
-        if (/server-(muted|deafened)|Failed to update server-/i.test(text)) toast = text;
-      }
+      toast = (await toastTexts(b, ".toast-item")).find((text) => /server-(muted|deafened)|Failed to update server-/i.test(text)) ?? toast;
       return toast !== "";
     },
     WAIT_MS,
