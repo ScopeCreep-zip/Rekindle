@@ -428,13 +428,15 @@ fn space_cowboys_content_is_its_views_and_the_band_is_its_centre_fill() {
 
 #[test]
 fn total_chaos_lays_its_content_region() {
-    // mainwindow.xml: `TabbedControl` X="50" IndentRight="50" under
-    // `MenuBar.BOTTOM` (52 + 60 + 69 = 181), `BottomBar` 66 px.
+    // SK2: the content is the views node's box. mainwindow.xml:22-31:
+    // `Content` OutdentLeft="1" from `MenuBar.BOTTOM` (52 + 60 + 69 = 181)
+    // to IndentBottom="61"; in it `TabbedControl` X="50" IndentRight="50"
+    // at `TabHeader.BOTTOM` (181 + 22 = 203). Left 50 - the 1 px outdent.
     let (_, b) = builtin::find("builtin:total-chaos").unwrap();
     let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
     let main = &m.windows[&SkinWindow::Main];
     let c = main.content;
-    assert_eq!((c.top, c.right, c.bottom, c.left), (181, 50, 66, 50));
+    assert_eq!((c.top, c.right, c.bottom, c.left), (203, 50, 61, 49));
 }
 
 /// Lead decision 3 (plan SK2, 2026-11-20): under the pack's component tree

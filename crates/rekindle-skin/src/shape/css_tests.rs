@@ -81,11 +81,12 @@ fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
     let (m, files) = pack("builtin:symbiosis");
     let css = frame_css(&m, &files, BASE).unwrap();
     assert!(css.starts_with("@layer shape {\n"));
-    // The Infoview strip's 13 px outset on the right, then the 13 px rows and
-    // the views' 5 px sides (`XfireView` IndentLeft 5, IndentRight 18 less
-    // the rows' 13; plan SK0-L1).
+    // SK2: the content is the views node's box (`XfireView`
+    // `Y="Tabs.Bottom+1"` IndentRight 18 IndentBottom 91 IndentLeft 5,
+    // `MainWindow.xml:125`): top 185 + 51 + 1 = 237, right 5 + the Infoview
+    // strip's 13 px outset = 18, bottom 91, left 5.
     assert!(css.contains(
-        "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 13px 18px 13px 5px;\n    background: var(--color-xfire-bg-dark) content-box;\n"
+        "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 237px 18px 91px 5px;\n    background: var(--color-xfire-bg-dark) content-box;\n"
     ));
     // The strip is a decoration: drawn after the eight frame pieces, at the
     // window's right edge (an overhang ignores the outsets).
@@ -218,21 +219,4 @@ fn a_shaped_window_without_a_frame_keeps_square_corners() {
         css.contains(rule),
         "22-skin-frame.css must square a shaped window: {css}"
     );
-}
-
-#[test]
-fn the_header_region_places_the_profile_header_over_the_banner() {
-    // Total Chaos's `AdArea` (236×60, centred at 52 px): the profile header
-    // leaves the content's flow and sits there (plan SK0-L1).
-    let rule = |id: &str| {
-        let (m, files) = pack(id);
-        let css = frame_css(&m, &files, BASE).unwrap();
-        css.split_once("  .app-frame[data-skin-window=\"main\"] > .identity-bar {\n")
-            .map(|(_, r)| r.split_once("\n  }").unwrap().0.to_owned())
-    };
-    assert_eq!(
-        rule("builtin:total-chaos").as_deref(),
-        Some("    position: absolute;\n    left: calc(0px + round(down, calc((100% - 236px) / 2), 1px)); width: 236px; top: 52px; height: 60px;\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;\n    justify-content: center;\n    padding: 4px 8px;\n    border-bottom: 0;")
-    );
-    assert_eq!(rule("builtin:xfire-classic"), None);
 }
