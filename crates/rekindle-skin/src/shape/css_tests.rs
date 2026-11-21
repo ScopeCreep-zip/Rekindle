@@ -232,7 +232,7 @@ fn the_header_region_places_the_profile_header_over_the_banner() {
     };
     assert_eq!(
         rule("builtin:total-chaos").as_deref(),
-        Some("    position: absolute;\n    left: calc(0px + round(down, calc((100% - 236px) / 2), 1px)); width: 236px; top: 52px; height: 60px;\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;")
+        Some("    position: absolute;\n    left: calc(0px + round(down, calc((100% - 236px) / 2), 1px)); width: 236px; top: 52px; height: 60px;\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;\n    justify-content: center;\n    padding: 4px 8px;\n    border-bottom: 0;")
     );
     assert_eq!(rule("builtin:xfire-classic"), None);
 }

@@ -151,7 +151,12 @@ fn window_rules(
     let _ = writeln!(out, "  {root} > .skin-frame {{\n    display: block;\n  }}");
     // The pack's header region holds the profile header (plan SK0-L1): it
     // leaves the content's flow and sits over the frame where the pack laid
-    // its banner, above the tiles (`.skin-frame` is `z-index: -1`).
+    // its banner, above the tiles (`.skin-frame` is `z-index: -1`). The box
+    // is the pack's (Total Chaos 236×60), so the bar fits it: its two rows
+    // (24 px avatar row, status line: about 40 px) centred down the box,
+    // 8 px in from its sides so the key, dot, avatar and bell (180 px with
+    // the gaps) leave the name room in 220, and no rule under it (the
+    // banner is the header, not a strip over the list).
     if let Some(r) = layout.header.filter(|_| window == SkinWindow::Main) {
         let (x, _) = axis(r.x, (o.left, o.right), ("left", "right", "width"), r.width);
         let (y, _) = axis(
@@ -162,7 +167,7 @@ fn window_rules(
         );
         let _ = writeln!(
             out,
-            "  {root} > .identity-bar {{\n    position: absolute;\n    {x} {y}\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;\n  }}"
+            "  {root} > .identity-bar {{\n    position: absolute;\n    {x} {y}\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;\n    justify-content: center;\n    padding: 4px 8px;\n    border-bottom: 0;\n  }}"
         );
     }
     for (slot, i) in paint_order(layout).into_iter().enumerate() {
