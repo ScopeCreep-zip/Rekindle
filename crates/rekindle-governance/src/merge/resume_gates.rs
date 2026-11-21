@@ -223,11 +223,10 @@ fn record_gate(
                 invalid[o] = true;
                 refusals.insert(o, PseudonymKey(*held));
             }
-            Some(_) => {}
             None if round.applied[o] && !invalid[o] => {
                 holder.insert(member_record.clone(), op.author().0);
             }
-            None => {}
+            Some(_) | None => {}
         }
     }
     Ok(())

@@ -193,11 +193,10 @@ fn record_gate(
                 invalid[o] = true;
                 refusals.insert(o, held.clone());
             }
-            Some(_) => {}
             None if round.applied[o] && !invalid[o] => {
                 holder.insert(member_record.as_str(), op.author());
             }
-            None => {}
+            Some(_) | None => {}
         }
     }
 }
