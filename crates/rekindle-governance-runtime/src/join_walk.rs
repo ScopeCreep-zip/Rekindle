@@ -98,6 +98,10 @@ async fn full_walk<D: GovernanceRuntimeDeps>(
 
 /// Read and merge `anchor`'s op set from the inviter's `frontier`, from a
 /// hint asked of the inviter as `asker` when one is on top (module doc).
+/// `seed` holds the invite's `InviteCreated` when the frontier read was
+/// older than the invite link (`join_frontier`): the walk is then full from
+/// the frontier with it held, since a hint's resume compares against a
+/// frontier known to be stale.
 ///
 /// # Errors
 /// A fetch failed.
@@ -105,12 +109,13 @@ pub async fn walk_for_join<D: GovernanceRuntimeDeps>(
     deps: &D,
     anchor: &str,
     cert: &GenesisCert,
-    frontier: &Frontier,
+    (frontier, seed): (&Frontier, Vec<HeldOp>),
     asker: &Asker<'_>,
 ) -> Result<WalkedSet, GovernanceRuntimeError> {
     let joiner = PseudonymKey(asker.me.verifying_key().to_bytes());
-    let own = own_held(deps, anchor, &joiner).await?;
-    if asker.route.is_empty() || !own.is_empty() {
+    let mut own = own_held(deps, anchor, &joiner).await?;
+    if asker.route.is_empty() || !own.is_empty() || !seed.is_empty() {
+        own.extend(seed);
         return full_walk(deps, anchor, cert, frontier, own).await;
     }
     let hints = verified_hints(deps, anchor, cert, asker).await;

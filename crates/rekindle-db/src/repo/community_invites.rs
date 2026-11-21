@@ -10,14 +10,13 @@ pub fn insert(
     conn: &Connection,
     owner_key: &str,
     community_id: &str,
-    code: &str,
-    code_hash: &str,
+    (code, code_hash, url): (&str, &str, &str),
     created_at: i64,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO community_invites (owner_key, community_id, code, code_hash, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![owner_key, community_id, code, code_hash, created_at],
+        "INSERT INTO community_invites (owner_key, community_id, code, code_hash, url, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![owner_key, community_id, code, code_hash, url, created_at],
     )?;
     Ok(())
 }
@@ -64,6 +63,8 @@ pub fn delete(
 pub struct OwnInvite {
     pub code: String,
     pub code_hash: String,
+    /// The link as minted (plan IV1b).
+    pub url: String,
     pub created_at: i64,
 }
 
@@ -77,14 +78,15 @@ pub fn list(
     community_id: &str,
 ) -> rusqlite::Result<Vec<OwnInvite>> {
     let mut stmt = conn.prepare(
-        "SELECT code, code_hash, created_at FROM community_invites \
+        "SELECT code, code_hash, url, created_at FROM community_invites \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY code_hash",
     )?;
     let rows = stmt.query_map(params![owner_key, community_id], |row| {
         Ok(OwnInvite {
             code: row.get(0)?,
             code_hash: row.get(1)?,
-            created_at: row.get(2)?,
+            url: row.get(2)?,
+            created_at: row.get(3)?,
         })
     })?;
     rows.collect()

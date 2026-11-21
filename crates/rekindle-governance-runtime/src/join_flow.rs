@@ -20,11 +20,9 @@
 use rekindle_crypto::keypair_text;
 use rekindle_governance::op::{invite_proof_bytes, VerifiedOp};
 use rekindle_governance::state::GovernanceState;
-use rekindle_records::port::OpenIntent;
 use rekindle_records::schema;
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::dht_layout::member_record;
-use rekindle_types::governance::{Frontier, GenesisCert, GovernanceEntry, InviteProof, OpHash};
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, InviteProof, OpHash};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::invite::InviteSecrets;
 use rekindle_types::join_refusal::JoinRefusal;
@@ -94,27 +92,6 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
         })?;
     serde_json::from_slice(&secrets_json)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid invite secrets: {e}")))
-}
-
-/// A member's `Frontier` (`M`/3), read from the network: its heads and
-/// roster checksum.
-///
-/// # Errors
-/// The record is unreadable, holds no frontier, or it does not decode.
-pub async fn read_frontier<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    record: &str,
-) -> Result<Frontier, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record, None, OpenIntent::Check).await?;
-    let read = deps
-        .get_dht_value(lease, member_record::FRONTIER, true)
-        .await;
-    deps.release_record(lease).await;
-    let bytes = read?.ok_or_else(|| {
-        GovernanceRuntimeError::Adapter(format!("member record {record} has no frontier"))
-    })?;
-    rekindle_codec::governance_op::decode_frontier(&bytes)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("frontier of {record}: {e}")))
 }
 
 fn parse_pseudonym(hex_key: &str) -> Result<PseudonymKey, GovernanceRuntimeError> {
@@ -377,15 +354,36 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     // above a hint's cut from its snapshot when the inviter gives one that
     // verifies (plan E3.2 S7c.5), else in full.
     let code_hash = rekindle_secrets::invite::hash_invite_code(link.invite_code.as_str());
-    let frontier = read_frontier(deps, &invite.inviter_member_record).await?;
+    let read = crate::join_frontier::read_frontier(deps, &invite.inviter_member_record).await?;
     let inviter_pseudonym = parse_pseudonym(&invite.inviter_pseudonym)?;
+    tracing::info!(
+        community = anchor,
+        frontier_seq = read.seq,
+        minimum = link.frontier_seq,
+        heads = read.frontier.heads.len(),
+        frontier = %read.short_hash,
+        "join: the inviter's frontier read"
+    );
+    let invite_ref = rekindle_types::governance::OpRef {
+        op_hash: link.invite_op,
+        author: inviter_pseudonym.clone(),
+        author_record: invite.inviter_member_record.clone(),
+        author_seq: link.invite_op_seq,
+    };
+    let seed = crate::join_frontier::invite_op_seed(deps, link, invite_ref, &read).await?;
+    let frontier = read.frontier;
     let inviter_route = resolve_inviter_route(deps, anchor, &invite, &inviter_pseudonym).await;
     let asker = Asker {
         me: &identity.pseudonym_signing,
         route: &inviter_route,
         code: link.invite_code.as_str(),
     };
-    let walked = walk_for_join(deps, anchor, &cert, &frontier, &asker).await?;
+    let walked = walk_for_join(deps, anchor, &cert, (&frontier, seed), &asker).await?;
+    tracing::info!(
+        community = anchor,
+        walked = walked.held.len(),
+        "join: the op set walked"
+    );
     let gov_state = walked.merged.state.clone();
 
     if gov_state.bans.contains(&identity.pseudo) {
@@ -395,7 +393,10 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     }
     let now = deps.clock().now_secs();
     let applied = walked.merged.applied.as_slice();
-    let inviter = check_invite(&gov_state, (&walked.set.ops, applied), &code_hash, now)?;
+    let inviter = check_invite(&gov_state, (&walked.set.ops, applied), &code_hash, now)
+        .inspect_err(|refused| {
+            tracing::info!(community = anchor, source = "check_invite", %refused, "join refused");
+        })?;
     if inviter != inviter_pseudonym {
         return Err(GovernanceRuntimeError::Adapter(
             "the invite's secrets name another inviter than its InviteCreated".into(),

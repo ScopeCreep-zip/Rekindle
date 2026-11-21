@@ -14,7 +14,7 @@ const INVITE_RECORD_KEY: &str = "VLD0:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 fn join() -> IpcRequest {
     IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityJoin {
-        invite: format!("rekindle://invite/{INVITE_RECORD_KEY}/{INVITE_RECORD_KEY}/3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c"),
+        invite: format!("rekindle://invite/{INVITE_RECORD_KEY}/{INVITE_RECORD_KEY}/3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c/5e0f9c2b7a1d3e4f6a8b0c2d4e6f8a0b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e2f/7/3"),
     }))
 }
 

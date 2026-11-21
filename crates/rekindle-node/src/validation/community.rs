@@ -122,7 +122,7 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 400,
                 format!(
                     "join requires a full invite link \
-                     (rekindle://invite/{{anchor}}/{{secrets_record_key}}/{{invite_code}}): {e}"
+                     (rekindle://invite/{{anchor}}/{{secrets_record_key}}/{{invite_code}}/{{invite_op}}/{{invite_op_seq}}/{{frontier_seq}}): {e}"
                 ),
             )
         }),

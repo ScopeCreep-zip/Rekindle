@@ -154,9 +154,10 @@ mod tests {
         };
         let link = |anchor: &str| {
             format!(
-                "rekindle://invite/{anchor}/{}/{}",
+                "rekindle://invite/{anchor}/{}/{}/{}/7/3",
                 key('S'),
-                "ab".repeat(16)
+                "ab".repeat(16),
+                "cd".repeat(32)
             )
         };
         assert!(DirectBody::decode(DmTypeId::CreatorJoin, &bytes(&link(&key('B')))).is_err());

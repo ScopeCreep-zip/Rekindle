@@ -188,10 +188,11 @@ fn samples() -> Vec<DirectBody> {
         DirectBody::CreatorJoin(CreatorJoin {
             anchor: dht_key(),
             invite: format!(
-                "rekindle://invite/{}/{}/{}",
+                "rekindle://invite/{}/{}/{}/{}/7/3",
                 dht_key(),
                 dht_key(),
-                "ab".repeat(16)
+                "ab".repeat(16),
+                "cd".repeat(32)
             ),
         }),
         DirectBody::CallInvite(CallInvite {

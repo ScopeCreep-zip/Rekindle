@@ -785,6 +785,10 @@ CREATE TABLE IF NOT EXISTS community_invites (
     community_id TEXT NOT NULL,
     code TEXT NOT NULL,
     code_hash TEXT NOT NULL,
+    -- The link as minted: it names the InviteCreated op and the frontier
+    -- seq the inviter had on M/3 when it handed the link out (plan IV1b),
+    -- which the code alone does not rebuild.
+    url TEXT NOT NULL,
     -- VLD0 pointer to the single-owner DFLT record holding this invite's
     -- encrypted InviteSecrets blob. Surfaced into the deep link so the
     -- joiner fetches+decrypts secrets directly (chiral §12), without

@@ -60,14 +60,21 @@ impl From<String> for InviteRefusal {
     }
 }
 
-/// The canonical link for an invite: all three parts the joiner needs.
-fn invite_url(anchor: &str, secrets_record_key: &str, code: &str) -> Result<String, String> {
+/// The canonical link for an invite: every part the joiner needs, with the
+/// op and frontier seq it was handed out at (plan IV1b).
+fn invite_url(
+    anchor: &str,
+    invite: &rekindle_governance_runtime::invites::MintedInvite,
+) -> Result<String, String> {
     use rekindle_types::key_format;
     let link = rekindle_types::invite::InviteLink {
         anchor: key_format::record_key(anchor).map_err(|e| format!("invite anchor: {e}"))?,
-        secrets_record_key: key_format::record_key(secrets_record_key)
+        secrets_record_key: key_format::record_key(&invite.secrets_record_key)
             .map_err(|e| format!("invite secrets key: {e}"))?,
-        invite_code: key_format::hex16_id(code).map_err(|e| format!("invite code: {e}"))?,
+        invite_code: key_format::hex16_id(&invite.code).map_err(|e| format!("invite code: {e}"))?,
+        invite_op: invite.invite_op,
+        invite_op_seq: invite.invite_op_seq,
+        frontier_seq: invite.frontier_seq,
     };
     Ok(link.to_url())
 }
@@ -94,20 +101,27 @@ impl HostGovernance {
         )
         .await
         .map_err(InviteRefusal::Runtime)?;
-        let url = invite_url(community, &invite.secrets_record_key, &invite.code)?;
+        let url = invite_url(community, &invite)?;
         let owner = self
             .ctx
             .require_owner()
             .map_err(|_| InviteRefusal::Failed("no identity is unlocked".into()))?;
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
-        let (cid, code, hash) = (
+        let (cid, code, hash, link) = (
             community.to_owned(),
             invite.code.clone(),
             invite.code_hash.clone(),
+            url.clone(),
         );
         let now = self.ctx.clock.now_ms_i64();
         db.call(move |c| {
-            rekindle_db::repo::community_invites::insert(c, &owner, &cid, &code, &hash, now)
+            rekindle_db::repo::community_invites::insert(
+                c,
+                &owner,
+                &cid,
+                (&code, &hash, &link),
+                now,
+            )
         })
         .await
         .map_err(|e| format!("invite minted but not stored: {e}"))?;
@@ -185,8 +199,7 @@ impl HostGovernance {
                     uses: inv.uses,
                     expires_at: inv.expires_at,
                     created_at: own.map(|o| o.created_at),
-                    url: own
-                        .and_then(|o| invite_url(community, &inv.secrets_record_key, &o.code).ok()),
+                    url: own.map(|o| o.url.clone()),
                     fingerprint: fingerprint.clone(),
                 }
             })

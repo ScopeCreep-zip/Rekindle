@@ -147,8 +147,7 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
                 c,
                 &owner,
                 "c1",
-                &stored_code,
-                &stored_hash,
+                (&stored_code, &stored_hash, "rekindle://invite/stored"),
                 1,
             )
         })

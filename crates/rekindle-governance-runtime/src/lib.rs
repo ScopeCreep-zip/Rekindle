@@ -46,6 +46,7 @@ pub mod invites;
 pub mod join;
 pub mod join_deps;
 pub mod join_flow;
+pub mod join_frontier;
 pub mod join_gate;
 pub mod join_stages;
 pub mod join_walk;

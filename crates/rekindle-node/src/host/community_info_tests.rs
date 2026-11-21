@@ -99,8 +99,7 @@ async fn seed_keyed_community(host: &crate::host::Host, owner: &str, gov: Govern
                 conn,
                 &owner,
                 KEYED_ANCHOR,
-                OWN_CODE,
-                "ours",
+                (OWN_CODE, "ours", "rekindle://invite/ours"),
                 7,
             )
         })

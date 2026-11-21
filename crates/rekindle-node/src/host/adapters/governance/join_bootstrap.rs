@@ -191,6 +191,12 @@ impl HostGovernance {
         {
             Ok(walked) => walked,
             Err(GovernanceRuntimeError::BootstrapRefused(reason)) => {
+                tracing::info!(
+                    community,
+                    source = "BootstrapRefused",
+                    ?reason,
+                    "join refused"
+                );
                 return Exchange::Refused(reason);
             }
             Err(e) => return Exchange::Unanswered(e.to_string()),

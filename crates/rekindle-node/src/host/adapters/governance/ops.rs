@@ -492,6 +492,22 @@ impl HostGovernance {
                 writer,
             )
             .await;
+        // What a joiner's read must meet (plan IV1b): the seq written, and
+        // the heads, beside the joiner's own frontier-read line.
+        if written.is_ok() {
+            let seqs = self.inspect_dht_record_local_seqs(lease).await;
+            let seq = seqs.ok().and_then(|s| {
+                s.get(rekindle_types::dht_layout::member_record::FRONTIER as usize)
+                    .copied()
+                    .flatten()
+            });
+            tracing::info!(
+                community = community_id,
+                seq,
+                heads = frontier.heads.len(),
+                "own frontier written"
+            );
+        }
         self.release_record(lease).await;
         written
             .map(drop)

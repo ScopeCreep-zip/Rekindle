@@ -75,23 +75,35 @@ use crate::key_format::{self, Hex16Id, KeyFormatError, RecordKeyStr};
 /// Scheme and path prefix of every invite link.
 const INVITE_PREFIX: &str = "rekindle://invite/";
 /// Longest invite URL accepted. A canonical link with two two-segment
-/// record keys is 236 bytes.
-pub const MAX_INVITE_URL_LEN: usize = 256;
+/// record keys, a 20-digit op seq and a 10-digit frontier seq is 333 bytes.
+pub const MAX_INVITE_URL_LEN: usize = 352;
 
-/// The three components an invite link carries.
+/// The components an invite link carries.
 ///
 /// Lives in Tier 1 so every frontend (desktop deep links, the daemon's
 /// `CommunityJoin`, the CLI) accepts exactly the same link, and every
 /// producer builds it with [`InviteLink::to_url`].
 ///
-/// Format: `rekindle://invite/{anchor}/{secrets_record_key}/{invite_code}`,
-/// where both keys are Veilid record keys and the code is 32 lowercase hex
-/// (16 random bytes).
+/// Format: `rekindle://invite/{anchor}/{secrets_record_key}/{invite_code}/
+/// {invite_op}/{invite_op_seq}/{frontier_seq}`, where both keys are Veilid
+/// record keys, the code is 32 lowercase hex (16 random bytes), the op is
+/// 64 lowercase hex and both seqs are canonical decimal.
+///
+/// The last three name what the inviter had on the DHT when it handed the
+/// link out (plan IV1b, lead decision (28)): its `InviteCreated` op (hash and
+/// seq in its own chain; the author and its record are in the secrets) and
+/// the seq its frontier (`M`/3) was written at. A joiner whose frontier read
+/// settles below that seq fetches the op by this ref instead of refusing the
+/// invite as unknown. They disclose nothing the link does not already open:
+/// the op is on the inviter's op log, which the secrets name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InviteLink {
     pub anchor: RecordKeyStr,
     pub secrets_record_key: RecordKeyStr,
     pub invite_code: Hex16Id,
+    pub invite_op: crate::governance::OpHash,
+    pub invite_op_seq: u64,
+    pub frontier_seq: u32,
 }
 
 /// Why a string is not an invite link.
@@ -101,7 +113,9 @@ pub enum InviteLinkError {
     NotAnInvite,
     #[error("invite link is {got} bytes, max {max}")]
     TooLong { max: usize, got: usize },
-    #[error("invite link needs an anchor, a secrets key and a code")]
+    #[error(
+        "invite link needs an anchor, a secrets key, a code, an op, its seq and a frontier seq"
+    )]
     MissingPart,
     #[error("invite link has extra path segments")]
     ExtraPart,
@@ -111,6 +125,31 @@ pub enum InviteLinkError {
     SecretsRecordKey(KeyFormatError),
     #[error("invite code: {0}")]
     InviteCode(KeyFormatError),
+    #[error("invite op: not 64 lowercase hex")]
+    InviteOp,
+    #[error("invite {0} seq: not a canonical decimal")]
+    Seq(&'static str),
+}
+
+/// `text` as 32 bytes of lowercase hex.
+fn op_hash(text: &str) -> Result<crate::governance::OpHash, InviteLinkError> {
+    let lower = text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    let bytes = hex::decode(text).ok().filter(|_| lower);
+    let bytes = bytes.and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok());
+    bytes
+        .map(crate::governance::OpHash)
+        .ok_or(InviteLinkError::InviteOp)
+}
+
+/// `text` as a canonical decimal (digits only, no leading zero), so
+/// [`InviteLink::to_url`] gives back the same text.
+fn seq<T: std::str::FromStr>(text: &str, which: &'static str) -> Result<T, InviteLinkError> {
+    let canonical =
+        text.bytes().all(|b| b.is_ascii_digit()) && (text == "0" || !text.starts_with('0'));
+    canonical
+        .then(|| text.parse().ok())
+        .flatten()
+        .ok_or(InviteLinkError::Seq(which))
 }
 
 impl InviteLink {
@@ -137,6 +176,9 @@ impl InviteLink {
         let anchor = next()?;
         let secrets_record_key = next()?;
         let invite_code = next()?;
+        let invite_op = next()?;
+        let invite_op_seq = next()?;
+        let frontier_seq = next()?;
         if parts.next().is_some() {
             return Err(InviteLinkError::ExtraPart);
         }
@@ -145,6 +187,9 @@ impl InviteLink {
             secrets_record_key: key_format::record_key(secrets_record_key)
                 .map_err(InviteLinkError::SecretsRecordKey)?,
             invite_code: key_format::hex16_id(invite_code).map_err(InviteLinkError::InviteCode)?,
+            invite_op: op_hash(invite_op)?,
+            invite_op_seq: seq(invite_op_seq, "op")?,
+            frontier_seq: seq(frontier_seq, "frontier")?,
         })
     }
 
@@ -152,8 +197,13 @@ impl InviteLink {
     #[must_use]
     pub fn to_url(&self) -> String {
         format!(
-            "{INVITE_PREFIX}{}/{}/{}",
-            self.anchor, self.secrets_record_key, self.invite_code
+            "{INVITE_PREFIX}{}/{}/{}/{}/{}/{}",
+            self.anchor,
+            self.secrets_record_key,
+            self.invite_code,
+            hex::encode(self.invite_op.0),
+            self.invite_op_seq,
+            self.frontier_seq
         )
     }
 }
@@ -254,8 +304,10 @@ mod invite_link_tests {
     const B64: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
     const CODE: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c";
 
+    const OP: &str = "5e0f9c2b7a1d3e4f6a8b0c2d4e6f8a0b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e2f";
+
     fn link(gov: &str, sec: &str, code: &str) -> String {
-        format!("rekindle://invite/{gov}/{sec}/{code}")
+        format!("rekindle://invite/{gov}/{sec}/{code}/{OP}/7/3")
     }
 
     #[test]
@@ -267,8 +319,18 @@ mod invite_link_tests {
         assert_eq!(parsed.anchor.as_str(), gov);
         assert_eq!(parsed.secrets_record_key.as_str(), sec);
         assert_eq!(parsed.invite_code.as_str(), CODE);
+        assert_eq!(hex::encode(parsed.invite_op.0), OP);
+        assert_eq!((parsed.invite_op_seq, parsed.frontier_seq), (7, 3));
         assert_eq!(parsed.to_url(), url);
-        assert!(url.len() <= MAX_INVITE_URL_LEN);
+        // The longest canonical link: both seqs at their widest.
+        let widest = format!(
+            "rekindle://invite/{gov}/{gov}/{CODE}/{OP}/{}/{}",
+            u64::MAX,
+            u32::MAX
+        );
+        assert_eq!(widest.len(), 333);
+        assert_eq!(InviteLink::parse(&widest).unwrap().to_url(), widest);
+        assert!(widest.len() <= MAX_INVITE_URL_LEN);
     }
 
     #[test]
@@ -296,8 +358,31 @@ mod invite_link_tests {
                 InviteLinkError::ExtraPart,
             ),
             (
+                format!("rekindle://invite/{k}/{k}/{CODE}/{OP}/7"),
+                InviteLinkError::MissingPart,
+            ),
+            (
                 link(&k, &k, &format!("{CODE}/x")),
-                InviteLinkError::ExtraPart,
+                InviteLinkError::InviteOp,
+            ),
+            (
+                format!("rekindle://invite/{k}/{k}/{CODE}/{}/7/3", OP.to_uppercase()),
+                InviteLinkError::InviteOp,
+            ),
+            (
+                format!("rekindle://invite/{k}/{k}/{CODE}/{OP}/07/3"),
+                InviteLinkError::Seq("op"),
+            ),
+            (
+                format!("rekindle://invite/{k}/{k}/{CODE}/{OP}/7/+3"),
+                InviteLinkError::Seq("frontier"),
+            ),
+            (
+                format!(
+                    "rekindle://invite/{k}/{k}/{CODE}/{OP}/7/{}",
+                    u64::from(u32::MAX) + 1
+                ),
+                InviteLinkError::Seq("frontier"),
             ),
         ];
         for (url, err) in cases {
@@ -320,7 +405,7 @@ mod invite_link_tests {
             Err(InviteLinkError::InviteCode(_))
         ));
         assert!(matches!(
-            InviteLink::parse(&format!("rekindle://invite/{}", "A".repeat(300))),
+            InviteLink::parse(&format!("rekindle://invite/{}", "A".repeat(400))),
             Err(InviteLinkError::TooLong { .. })
         ));
     }

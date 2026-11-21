@@ -46,6 +46,13 @@ pub struct MintedInvite {
     pub secrets_record_key: String,
     pub invite_id: [u8; 16],
     pub expires_at: Option<u64>,
+    /// Our `InviteCreated` by hash and seq in our chain, and the seq of our
+    /// frontier (`M`/3) once it landed: the link carries them, so a joiner
+    /// whose frontier read is older fetches the op by ref (plan IV1b, lead
+    /// decision (28)).
+    pub invite_op: rekindle_types::governance::OpHash,
+    pub invite_op_seq: u64,
+    pub frontier_seq: u32,
 }
 
 /// Mint an invite and announce it in governance.
@@ -169,6 +176,8 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         .await?;
     }
     created?;
+    let (invite_op, invite_op_seq) = own_invite_op(deps, community_id, &me, invite_id).await?;
+    let frontier_seq = landed_frontier_seq(deps, &secrets.inviter_member_record).await?;
 
     Ok(MintedInvite {
         code,
@@ -176,7 +185,46 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         secrets_record_key,
         invite_id,
         expires_at,
+        invite_op,
+        invite_op_seq,
+        frontier_seq,
     })
+}
+
+/// Our `InviteCreated` of `invite_id` in our op store: its hash and seq.
+async fn own_invite_op<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    me: &rekindle_types::id::PseudonymKey,
+    invite_id: [u8; 16],
+) -> Result<(rekindle_types::governance::OpHash, u64), GovernanceRuntimeError> {
+    let held = deps.governance_ops(community_id).await?;
+    let set = crate::op_log::verify_held_with(deps, community_id, &held);
+    (set.ops.iter())
+        .filter(|op| op.author() == me)
+        .find(|op| {
+            matches!(op.body(), GovernanceEntry::InviteCreated { invite_id: id, .. } if *id == invite_id)
+        })
+        .map(|op| (op.hash(), op.op().seq))
+        .ok_or_else(|| GovernanceRuntimeError::Adapter("our InviteCreated is not stored".into()))
+}
+
+/// The seq our frontier (`M`/3) holds locally once the invite's op and
+/// frontier landed (`apply::write_invite_created`): the minimum a joiner's
+/// read of it must meet.
+async fn landed_frontier_seq<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    record: &str,
+) -> Result<u32, GovernanceRuntimeError> {
+    use rekindle_types::dht_layout::member_record::FRONTIER;
+    let lease = deps
+        .acquire_record(record, None, rekindle_records::port::OpenIntent::Check)
+        .await?;
+    let seqs = deps.inspect_dht_record_local_seqs(lease).await;
+    deps.release_record(lease).await;
+    let seq = seqs?.get(FRONTIER as usize).copied().flatten();
+    seq.and_then(|s| u32::try_from(s).ok())
+        .ok_or_else(|| GovernanceRuntimeError::Adapter("our frontier holds no seq".into()))
 }
 
 /// Revoke an invite by writing the tombstone every peer merges.

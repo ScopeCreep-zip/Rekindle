@@ -7,8 +7,8 @@
 //! (`join_flow::check_invite`) on every seed.
 //!
 //! The seed set is `0..IV1_SEEDS` (default 8); a sweep sets it higher. Every
-//! refused seed is collected with its trace hash before the assertion, so one
-//! run names them all.
+//! refused seed is collected with its trace hash into the assertion's message,
+//! so one run names them all.
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
 
@@ -23,10 +23,6 @@ fn seeds() -> u64 {
         .unwrap_or(8)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_fresh_invite_is_known_to_an_immediate_join() {
     let mut refused = Vec::new();
@@ -39,13 +35,7 @@ async fn a_fresh_invite_is_known_to_an_immediate_join() {
             )))
             .await;
         if let Err(refusal) = joined {
-            let hash = hex(&community.sim.trace().hash());
-            eprintln!(
-                "iv1: seed {} refused {} {:?} trace {hash}",
-                9_100 + seed,
-                refusal.code,
-                refusal.message
-            );
+            let hash = hex::encode(community.sim.trace().hash());
             refused.push((9_100 + seed, refusal.code, refusal.message, hash));
         }
     }
@@ -81,11 +71,7 @@ async fn a_stale_frontier_read_does_not_refuse_a_fresh_invite() {
             )))
             .await;
         if let Err(refusal) = joined {
-            let hash = hex(&community.sim.trace().hash());
-            eprintln!(
-                "iv1b: seed {seed} refused {} {:?} trace {hash}",
-                refusal.code, refusal.message
-            );
+            let hash = hex::encode(community.sim.trace().hash());
             refused.push((seed, refusal.code, refusal.message, hash));
         }
     }
