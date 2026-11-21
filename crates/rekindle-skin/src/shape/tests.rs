@@ -356,6 +356,78 @@ fn a_decoration_adds_its_art_outside_the_content_and_never_cuts_it() {
     assert!((4..16).all(|y| (6..18).all(|x| inside(x, y))));
 }
 
+/// `nine()` with a centre fill tile of `art` at (`x`, `y`) and the content's
+/// left inset `left` (plan SK0-L1).
+fn with_fill(
+    art: &RgbaImage,
+    x: TileAxis,
+    y: TileAxis,
+    left: u16,
+) -> impl Fn(&mut WindowLayout, &mut BTreeMap<String, Vec<u8>>) + '_ {
+    move |l, files| {
+        let (mut t, png) = tile(SkinWindow::Chat, "band", art, (x, y), false)
+            .unwrap()
+            .unwrap();
+        t.fill = true;
+        files.insert(t.image.clone(), png);
+        l.tiles.push(t);
+        l.content.left = left;
+        l.min_width = 16;
+    }
+}
+
+/// Rule 2's fill band (plan SK0-L1, lead decision for Space Cowboy): a
+/// wholly opaque centre fill beside the content passes; one over the
+/// content, one with a transparent pixel, or one above the content is
+/// refused.
+#[test]
+fn a_centre_fill_is_allowed_only_opaque_in_the_band_beside_the_content() {
+    let art = solid(3, 2);
+    let (at, down) = (
+        TileAxis::Start { offset: 4 },
+        TileAxis::Repeat { start: 4, end: 4 },
+    );
+    assert_eq!(checked_with(&nine(), with_fill(&art, at, down, 7)), Ok(()));
+    let refused = Err(SkinRule::BadValue {
+        field: "windows.chat.tiles.8".to_owned(),
+        expected: "a centre fill wholly opaque in the band between a side piece and the content"
+            .to_owned(),
+    });
+    assert_eq!(checked_with(&nine(), with_fill(&art, at, down, 4)), refused);
+    let mut holed = art.clone();
+    holed.put_pixel(2, 1, OFF);
+    assert_eq!(
+        checked_with(&nine(), with_fill(&holed, at, down, 7)),
+        refused
+    );
+    let top = TileAxis::Start { offset: 0 };
+    assert_eq!(checked_with(&nine(), with_fill(&art, at, top, 7)), refused);
+}
+
+/// Space Cowboy's content is its views' rectangle (27/30 px in,
+/// `mainwindow.xml` `TabbedControl`), its 16/20 px sides widened by the
+/// pack's centre fill (plan SK0-L1, lead decision).
+#[test]
+fn space_cowboys_content_is_its_views_and_the_band_is_its_centre_fill() {
+    let (_, b) = builtin::find("builtin:spacecowboy").unwrap();
+    let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
+    let main = &m.windows[&SkinWindow::Main];
+    assert_eq!((main.content.left, main.content.right), (27, 30));
+    let fills: Vec<_> = main
+        .tiles
+        .iter()
+        .filter(|t| t.fill)
+        .map(|t| (t.width, t.x))
+        .collect();
+    assert_eq!(
+        fills,
+        vec![
+            (11, TileAxis::Start { offset: 16 }),
+            (10, TileAxis::End { offset: 20 })
+        ]
+    );
+}
+
 /// `nine()`'s main frame with `header`, checked (plan SK0-L1).
 fn header_checked(window: SkinWindow, header: Option<LayoutRegion>) -> Result<(), SkinRule> {
     let (mut layout, files) = from_nine(window, &nine()).unwrap();

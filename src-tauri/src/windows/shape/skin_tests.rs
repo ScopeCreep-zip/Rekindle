@@ -40,6 +40,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                     y: TileAxis::Start { offset: 0 },
                     overhang: false,
                     decoration: None,
+                    fill: false,
                 }],
                 header: None,
             },

@@ -8,7 +8,12 @@
 //! 2. no frame tile reaches into the content rectangle (security surfaces
 //!    live there, `@layer sec`); a decoration (a pack tile above the frame
 //!    band, `FrameTile::decoration`) may, because it draws beneath the
-//!    content's interactive layer and the content stays opaque under it;
+//!    content's interactive layer and the content stays opaque under it.
+//!    A fill tile (`FrameTile::fill`, the pack's centre art) is allowed
+//!    only in the band between a side piece and the content (plan SK0-L1,
+//!    lead decision for Space Cowboy): every copy wholly inside the frame
+//!    rectangle, beside the content and no taller than it, never over it,
+//!    not an overhang or a decoration, and its art wholly opaque;
 //! 3. the content rectangle is fully opaque: an overhang tile may lie over
 //!    it only with opaque pixels, so nothing behind the window ever shows
 //!    through the content. Transparent pixels in the frame band, enclosed
@@ -75,6 +80,36 @@ fn shape_err(window: SkinWindow, e: &ShapeError) -> SkinError {
     }
 }
 
+/// Rule 2's fill band at `width × height`: each fill tile's copies lie
+/// beside the content rectangle inside the frame's, and its art is opaque.
+fn fill_band(
+    window: SkinWindow,
+    layout: &WindowLayout,
+    masks: &[Mask],
+    width: u32,
+    height: u32,
+) -> Result<(), SkinError> {
+    let w = name(window);
+    let (f, c) = boxes(layout, width, height);
+    for (i, (x, y, tw, th)) in placed(layout, width, height) {
+        let t = &layout.tiles[i];
+        if !t.fill {
+            continue;
+        }
+        let opaque = (0..u32::from(t.height))
+            .all(|my| (0..u32::from(t.width)).all(|mx| masks[i].get(mx, my)));
+        let in_frame = x >= f.0 && y >= f.1 && x + tw <= f.0 + f.2 && y + th <= f.1 + f.3;
+        let beside = (x + tw <= c.0 || x >= c.0 + c.2) && y >= c.1 && y + th <= c.1 + c.3;
+        if t.overhang || t.decoration.is_some() || !opaque || !in_frame || !beside {
+            return Err(bad(
+                &format!("windows.{w}.tiles.{i}"),
+                "a centre fill wholly opaque in the band between a side piece and the content",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Rules 2 to 4 at `width × height`.
 fn closed(
     window: SkinWindow,
@@ -83,6 +118,7 @@ fn closed(
     width: u32,
     height: u32,
 ) -> Result<(), SkinError> {
+    fill_band(window, layout, masks, width, height)?;
     let w = name(window);
     let (_, c) = boxes(layout, width, height);
     for (i, (x, y, tw, th)) in placed(layout, width, height) {

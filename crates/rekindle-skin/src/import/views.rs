@@ -13,7 +13,13 @@
 //! whole (the content never grows past a frame piece into a band no tile
 //! covers).
 
+use std::collections::BTreeMap;
+
 use rekindle_image::RgbaImage;
+use rekindle_types::dto::skin::{SkinWindow, TileAxis, WindowLayout};
+
+use super::ImportError;
+use crate::shape::{self, u16_of};
 
 /// The first `width` columns of `img` (all of it when it is narrower).
 #[must_use]
@@ -44,6 +50,71 @@ pub fn to_views_edge(left: &mut RgbaImage, right: &mut RgbaImage, insets: (u32, 
     }
 }
 
+/// Widens `built`'s content to the views `insets` (left, right) where a
+/// side piece is narrower than its inset (Space Cowboy: sides 16/20,
+/// views 27/30), painting the band between the side piece and the views
+/// with the pack's `centre` fill (lead decision, plan SK0-L1: the original
+/// shows its background there), one [`FrameTile::fill`] tile per side laid
+/// down the content's height. The centre art must be present and wholly
+/// opaque (the band is then never see-through, rule 2 of
+/// [`crate::shape::check`]); without it no band is laid and the content
+/// keeps the side's width (the content never grows into a band no tile
+/// covers).
+///
+/// # Errors
+/// A band too large for a tile, or one that does not encode.
+///
+/// [`FrameTile::fill`]: rekindle_types::dto::skin::FrameTile::fill
+pub fn fill_band(
+    window: SkinWindow,
+    built: &mut (WindowLayout, BTreeMap<String, Vec<u8>>),
+    centre: &RgbaImage,
+    insets: (u32, u32),
+) -> Result<(), ImportError> {
+    let present = centre.width() > 0
+        && centre.height() > 0
+        && centre.pixels().all(|p| p[3] >= shape::ALPHA_OPAQUE);
+    if !present {
+        return Ok(());
+    }
+    let file = shape::tile_path(window, "frame");
+    let content = built.0.content;
+    let y = TileAxis::Repeat {
+        start: content.top,
+        end: content.bottom,
+    };
+    for (left, inset) in [(true, insets.0), (false, insets.1)] {
+        let edge = if left { content.left } else { content.right };
+        if inset <= u32::from(edge) {
+            continue;
+        }
+        let band = inset - u32::from(edge);
+        let img = RgbaImage::from_fn(band, centre.height(), |x, y| {
+            *centre.get_pixel(x % centre.width(), y)
+        });
+        let (name, x) = if left {
+            ("views-band-left", TileAxis::Start { offset: edge })
+        } else {
+            ("views-band-right", TileAxis::End { offset: edge })
+        };
+        let Some((mut t, png)) = shape::tile(window, name, &img, (x, y), false)? else {
+            continue;
+        };
+        t.fill = true;
+        built.1.insert(t.image.clone(), png);
+        built.0.tiles.push(t);
+        let inset = u16_of(&file, inset)?;
+        if left {
+            built.0.content.left = inset;
+        } else {
+            built.0.content.right = inset;
+        }
+    }
+    let c = built.0.content;
+    built.0.min_width = built.0.min_width.max(c.left.saturating_add(c.right));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,5 +139,41 @@ mod tests {
         let (mut l, mut r) = (striped(16), striped(20));
         to_views_edge(&mut l, &mut r, (27, 0));
         assert_eq!((l.width(), r.width()), (16, 20));
+    }
+
+    /// Plan SK0-L1 (Space Cowboy, sides narrower than the views): the
+    /// content is the views' rectangle and the band is the centre art; a
+    /// centre with a transparent pixel lays no band.
+    #[test]
+    fn a_narrow_sides_band_to_the_views_is_the_centre_fill() {
+        let px = |a| rekindle_image::Rgba([9, 9, 9, a]);
+        let nine: [RgbaImage; 9] = std::array::from_fn(|i| {
+            if i == 4 {
+                RgbaImage::from_fn(3, 2, |x, _| {
+                    rekindle_image::Rgba([u8::try_from(x).unwrap(), 0, 0, 255])
+                })
+            } else {
+                RgbaImage::from_pixel(4, 4, px(255))
+            }
+        });
+        let mut built = shape::from_nine(SkinWindow::Main, &nine).unwrap();
+        fill_band(SkinWindow::Main, &mut built, &nine[4], (9, 4)).unwrap();
+        assert_eq!((built.0.content.left, built.0.content.right), (9, 4));
+        assert!(built.0.min_width >= 13);
+        let fills: Vec<_> = built
+            .0
+            .tiles
+            .iter()
+            .filter(|t| t.fill)
+            .map(|t| (t.width, t.height, t.x, t.y, t.overhang))
+            .collect();
+        let y = TileAxis::Repeat { start: 4, end: 4 };
+        assert_eq!(fills, vec![(5, 2, TileAxis::Start { offset: 4 }, y, false)]);
+        let mut clear = shape::from_nine(SkinWindow::Main, &nine).unwrap();
+        let mut centre = nine[4].clone();
+        centre.put_pixel(1, 1, px(0));
+        fill_band(SkinWindow::Main, &mut clear, &centre, (9, 4)).unwrap();
+        assert_eq!(clear.0.content.left, 4);
+        assert!(!clear.0.tiles.iter().any(|t| t.fill));
     }
 }

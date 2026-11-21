@@ -79,6 +79,7 @@ pub fn tile(
             y: axes.1,
             overhang,
             decoration: None,
+            fill: false,
         },
         png,
     )))

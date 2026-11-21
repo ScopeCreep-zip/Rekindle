@@ -81,9 +81,11 @@ fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
     let (m, files) = pack("builtin:symbiosis");
     let css = frame_css(&m, &files, BASE).unwrap();
     assert!(css.starts_with("@layer shape {\n"));
-    // The Infoview strip's 13 px outset on the right, then the 13 px insets.
+    // The Infoview strip's 13 px outset on the right, then the 13 px rows and
+    // the views' 5 px sides (`XfireView` IndentLeft 5, IndentRight 18 less
+    // the rows' 13; plan SK0-L1).
     assert!(css.contains(
-        "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 13px 26px 13px 13px;\n    background: var(--color-xfire-bg-dark) content-box;\n"
+        "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 13px 18px 13px 5px;\n    background: var(--color-xfire-bg-dark) content-box;\n"
     ));
     // The strip is a decoration: drawn after the eight frame pieces, at the
     // window's right edge (an overhang ignores the outsets).

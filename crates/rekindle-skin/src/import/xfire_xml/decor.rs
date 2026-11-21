@@ -257,11 +257,16 @@ pub fn main_window(
 ) -> Result<(), ImportError> {
     let w = SkinWindow::Main;
     let built = if let Some((mut pieces, _)) = tiles::pieces(main, components, piece)? {
-        if let Some(insets) = views_insets(main, components) {
+        let insets = views_insets(main, components);
+        if let Some(insets) = insets {
             let [_, _, _, l, _, r, _, _, _] = &mut pieces;
             views::to_views_edge(l, r, insets);
         }
-        Some(shape::from_nine(w, &pieces)?)
+        let mut built = shape::from_nine(w, &pieces)?;
+        if let Some(insets) = insets {
+            views::fill_band(w, &mut built, &pieces[4], insets)?;
+        }
+        Some(built)
     } else {
         stack::layout(w, main, components, piece)?
     };
