@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, doubleClick, gone, present, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy, openAddFriend, setValue, submitJoin } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
@@ -334,4 +334,42 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
     "Settings never linked the skin's sheet",
   );
   return href;
+}
+
+/** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
+export async function setLoginSkin(b: Browser, user: User, name: string): Promise<void> {
+  for (const row of await b.$$(".skin-row")) {
+    if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
+    if (!(await (await row.$(".skin-badge")).isExisting())) {
+      await press(b, await row.$(".skin-action"));
+      await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+    }
+    await waitUntil(async () => (await (await row.$(".skin-badge")).isExisting()), NET_WAIT_MS, `${name} never marked as the login skin`);
+    return;
+  }
+  throw new Error(`Settings lists no skin named ${name}`);
+}
+
+/** `user` logs out from the buddy list (Logout, then the review) to the unlock screen under their name. */
+export async function logOut(b: Browser, user: User): Promise<void> {
+  await inBuddy(b);
+  await (await b.$('[aria-label="Logout"]')).click();
+  await resolveIntent(b, { passphrase: user.passphrase });
+  await switchTo(b, LOGIN, NET_WAIT_MS);
+  await waitUntil(
+    async () => (await (await shown(b, ".lock-name", NET_WAIT_MS)).getText()).trim() === user.displayName,
+    NET_WAIT_MS,
+    `the unlock screen does not name ${user.displayName}`,
+  );
+}
+
+/** On the unlock screen, `user` unlocks with their passphrase and the buddy list opens. */
+export async function unlock(b: Browser, user: User): Promise<void> {
+  await switchTo(b, LOGIN, NET_WAIT_MS);
+  await typeInto(await shown(b, 'form.login-container input[type="password"]'), user.passphrase);
+  const submit = await b.$('form.login-container button[type="submit"]');
+  await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Unlock stayed disabled (Connecting…)" });
+  await submit.click();
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await inBuddy(b);
 }
