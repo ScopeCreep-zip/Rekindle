@@ -122,10 +122,10 @@ impl SkinTree {
         let over = self.outsets;
         let (left, top) = (i32::from(over.left), i32::from(over.top));
         let pack = [
-            l,
-            t,
-            w - l - i32::from(o.right),
-            h - t - i32::from(o.bottom),
+            left,
+            top,
+            w - left - i32::from(over.right),
+            h - top - i32::from(over.bottom),
         ];
         for n in &self.root {
             walk(n, pack, &mut out);

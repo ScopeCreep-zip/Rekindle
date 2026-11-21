@@ -116,9 +116,9 @@ pub fn check(
     layout: &WindowLayout,
     images: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(), SkinError> {
-    let o = layout.outsets;
-    let w = i32::from(layout.min_width) + i32::from(o.left) + i32::from(o.right);
-    let h = i32::from(layout.min_height) + i32::from(o.top) + i32::from(o.bottom);
+    let out = layout.outsets;
+    let w = i32::from(layout.min_width) + i32::from(out.left) + i32::from(out.right);
+    let h = i32::from(layout.min_height) + i32::from(out.top) + i32::from(out.bottom);
     let boxes = tree.boxes(w, h);
     if boxes.len() > MAX_NODES {
         return Err(bad(field, "at most 512 nodes"));
