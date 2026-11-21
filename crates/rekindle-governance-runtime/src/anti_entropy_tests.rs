@@ -230,6 +230,11 @@ fn converging_as(
         .returning(move |_, _, _| Ok(Some(bytes.clone())));
     deps.expect_genesis_cert()
         .returning(move |_| Some(cert.clone()));
+    // The op set and the installed state are read under the lock every
+    // installer holds (plan S7m4b).
+    let rebuild = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+    deps.expect_rebuild_lock()
+        .returning(move |_| std::sync::Arc::clone(&rebuild));
     deps.expect_governance_state()
         .returning(move |_| Some(state.clone()));
     deps.expect_governance_ops()
