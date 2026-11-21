@@ -25,6 +25,7 @@ use super::anchor::{axis, client_box, client_inset, outer_for, to_tile, Sibs, Si
 use super::clip::{clip, Art, Images};
 use super::fit::fit;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
+use super::rail;
 use super::roles::{role, Facts};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_image, Decode};
@@ -453,6 +454,7 @@ pub fn add(
         limit_of(declared, "MinHeight").unwrap_or(0),
     );
     fit(&mut tree, pack_min, rows, &mut built.0)?;
+    rail::lay(walk.window, &tree, (&laid, &walk.by_name), &piece, built)?;
     if tree
         .boxes(0, 0)
         .iter()

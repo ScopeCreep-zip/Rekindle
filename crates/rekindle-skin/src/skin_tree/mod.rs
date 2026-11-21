@@ -10,6 +10,7 @@ pub mod css;
 mod fit;
 pub mod import;
 mod passes;
+mod rail;
 pub mod roles;
 pub mod validate;
 
@@ -19,6 +20,8 @@ mod anchor_tests;
 mod fit_tests;
 #[cfg(test)]
 mod golden_tests;
+#[cfg(test)]
+mod rail_tests;
 #[cfg(test)]
 mod stack_tests;
 #[cfg(test)]

@@ -226,7 +226,7 @@ fn nine_piece(components: &Node) -> Option<[(String, Option<String>); 9]> {
 }
 
 /// [`nine_piece`] over the image sets `sets`, in order.
-fn nine_piece_in<'a>(
+pub(crate) fn nine_piece_in<'a>(
     sets: impl IntoIterator<Item = &'a Node>,
 ) -> Option<[(String, Option<String>); 9]> {
     let mut found: [Option<(String, Option<String>)>; 9] = Default::default();
