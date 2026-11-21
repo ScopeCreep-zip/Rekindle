@@ -288,7 +288,7 @@ mod tests {
             "ButtonHolder",
             NodeRole::Group,
             NodeSpan::Fixed {
-                at: Anchor::Centre(0),
+                at: Anchor::centre(0),
                 size: 190,
             },
             fixed(0, 26),
@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn a_centred_slot_stays_a_wrapper_with_its_art() {
         let span = NodeSpan::Fixed {
-            at: Anchor::Centre(0),
+            at: Anchor::centre(0),
             size: 37,
         };
         let mut slot = n("Slot", NodeRole::Group, span, fixed(0, 20));

@@ -184,7 +184,7 @@ fn a_tile_beside_a_centred_sibling_is_centred() {
 <Tile Name="XfireLogo" X="CloseBox.RIGHT+2" Component="XfireLogo"/></Tile>"#,
     );
     let at = NodeSpan::Fixed {
-        at: Anchor::Centre(31),
+        at: Anchor::centre(31),
         size: 40,
     };
     assert_eq!(kids[1].x, at);
@@ -229,7 +229,9 @@ fn a_stretch_is_capped_by_its_components_max_width() {
 
 /// Simple X's `AdArea` (`SimpleX.ini:121-127`, `[AdArea]` `MaxWidth=240`):
 /// a centred stretch under its component's cap is centred over the span it
-/// would stretch across, never pinned to that span's start.
+/// would stretch across, never pinned to that span's start: its frame is
+/// that span (lead decision 32), from −7 to 7 before the end, so it lies at
+/// ⌊(len − 240) / 2⌋ − 7 at every width.
 #[test]
 fn a_centred_capped_stretch_is_centred_in_its_span() {
     let parts =
@@ -242,10 +244,17 @@ fn a_centred_capped_stretch_is_centred_in_its_span() {
         panic!("{:?}", tree.root)
     };
     let want = NodeSpan::Fixed {
-        at: Anchor::Centre(-7),
+        at: Anchor::Centre {
+            by: 0,
+            before: 7,
+            after: -7,
+        },
         size: 240,
     };
     assert_eq!(ad.x, want);
+    for len in [348, 349] {
+        assert_eq!(ad.x.place(len).0, (len - 240).div_euclid(2) - 7, "{len}");
+    }
 }
 
 /// A `Title` names the user only as text: Combat's `[Title]` is

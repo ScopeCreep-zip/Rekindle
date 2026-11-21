@@ -27,7 +27,7 @@ use crate::regions::css::href;
 fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
     match s {
         NodeSpan::Fixed {
-            at: Anchor::Start(o) | Anchor::Centre(o),
+            at: Anchor::Start(o) | Anchor::Centre { by: o, .. },
             size: 0,
         } if text => format!("{start}: {o}px; {len}: max-content;"),
         NodeSpan::Fixed {
@@ -42,13 +42,20 @@ fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> Strin
             at: Anchor::End(o),
             size,
         } => format!("{end}: {o}px; {len}: {size}px;"),
+        // Lead decision 32: the floor `NodeSpan::place` takes, in whole
+        // pixels at every parent size (`round(down, …, 1px)` is CSS's
+        // floor, as the frame's centred tiles use, `shape/css.rs`).
         NodeSpan::Fixed {
-            at: Anchor::Centre(o),
+            at: Anchor::Centre { by, before, after },
             size,
         } => {
+            let (b, a) = (i32::from(before), i32::from(after));
+            let k = b + a - i32::from(size);
+            let sign = if k < 0 { '-' } else { '+' };
             format!(
-                "{start}: calc(50% - {}px); {len}: {size}px;",
-                i32::from(size) / 2 - i32::from(o)
+                "{start}: calc({}px + round(down, calc((100% {sign} {}px) / 2), 1px)); {len}: {size}px;",
+                i32::from(by) - b,
+                k.abs()
             )
         }
         NodeSpan::Stretch { start: s, end: e } => format!("{start}: {s}px; {end}: {e}px;"),
@@ -287,4 +294,99 @@ pub fn tree_css(
         node(&mut out, n, &ctx)?;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use rekindle_types::dto::skin_tree::{NodeSpan, SkinNode};
+
+    use super::{axis, text_sized};
+    use crate::{builtin, images, manifest, package};
+
+    /// The start `decls` (one axis's declarations from [`axis`]) gives a
+    /// node in a parent `len` px long, as the browser computes it.
+    fn start_of(decls: &str, len: i32) -> Option<i32> {
+        let px = |v: &str| v.trim().strip_suffix("px")?.parse::<i32>().ok();
+        let val = |p: &str| {
+            let at = decls.find(&format!("{p}: "))?;
+            decls[at + p.len() + 2..].split_once(';').map(|(v, _)| v)
+        };
+        let Some(v) = val("left") else {
+            return Some(len - px(val("right")?)? - px(val("width")?)?);
+        };
+        if let Some(n) = px(v) {
+            return Some(n);
+        }
+        // A plain half: whole pixels only in an even parent.
+        if let Some(n) = v
+            .strip_prefix("calc(50% - ")
+            .and_then(|r| px(r.strip_suffix(')')?))
+        {
+            return (len % 2 == 0).then_some(len / 2 - n);
+        }
+        // calc(Cpx + round(down, calc((100% ± Kpx) / 2), 1px))
+        let c = px(v.strip_prefix("calc(")?.split_once('+')?.0)?;
+        let (sign, k) = v.split_once("100% ")?.1.split_once(' ')?;
+        let k = px(k.split_once(')')?.0)?;
+        let k = if sign == "-" { -k } else { k };
+        Some(c + (len + k).div_euclid(2))
+    }
+
+    fn walk(n: &SkinNode, (w, h): (i32, i32), wrong: &mut Vec<String>, id: &str) {
+        let (_, wide) = n.x.place(w);
+        let (_, tall) = n.y.place(h);
+        if !text_sized(n) {
+            for (span, len) in [(n.x, w), (n.y, h)] {
+                let css = axis(span, ("left", "right", "width"), false);
+                let want = span.place(len).0;
+                if start_of(&css, len) != Some(want) {
+                    wrong.push(format!("{id} {}: {css} at {len} != {want}", n.id));
+                }
+            }
+        }
+        for c in &n.children {
+            walk(c, (wide, tall), wrong, id);
+        }
+    }
+
+    /// Lead decision 32: every built-in node's stylesheet position is
+    /// `NodeSpan::place`'s, in whole pixels, at an odd and an even window.
+    #[test]
+    fn every_builtin_node_sits_where_place_lays_it_at_odd_and_even_sizes() {
+        let mut wrong = Vec::new();
+        let mut centred = 0;
+        for b in builtin::PACKS {
+            let id = b.id;
+            let package = package::read(b.bytes).unwrap();
+            let m = manifest::parse(&package).unwrap();
+            images::validate(&package, &m).unwrap();
+            for l in m.windows.values() {
+                let Some(tree) = &l.tree else { continue };
+                let w = i32::from(l.min_width);
+                let h = i32::from(l.min_height);
+                for size in [(w, h), (w + 1, h + 1)] {
+                    for n in &tree.root {
+                        walk(n, size, &mut wrong, id);
+                    }
+                }
+                centred += tree
+                    .boxes(w, h)
+                    .iter()
+                    .filter(|(n, _)| {
+                        [n.x, n.y].iter().any(|s| {
+                            matches!(
+                                s,
+                                NodeSpan::Fixed {
+                                    at: super::Anchor::Centre { .. },
+                                    ..
+                                }
+                            )
+                        })
+                    })
+                    .count();
+            }
+        }
+        assert!(centred > 0, "no centred node to check");
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
 }

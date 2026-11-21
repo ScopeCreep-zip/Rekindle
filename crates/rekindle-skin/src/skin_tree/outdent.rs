@@ -45,9 +45,11 @@ fn inside(span: NodeSpan) -> NodeSpan {
 }
 
 /// A child's `span` in its parent's frame after the parent's stretched box
-/// lost `(b, a)` px at its start and end. A centred child keeps its place
-/// to the pixel when `a − b` is even; when odd, the half pixel rounds as the
-/// anchors do (`anchor.rs`, `(start − end).div_euclid(2)`).
+/// lost `(b, a)` px at its start and end. A centred child stays centred in
+/// the uncut frame (lead decision 32): the cut widens its frame by `(b, a)`
+/// so [`NodeSpan::place`] floors in the parent's uncut length, as Xfire
+/// does at every window size (Total Chaos's `BottomCenter` tab at x 149 in
+/// a 470 px window, not 148).
 fn shift_child(span: NodeSpan, (b, a): (u16, u16)) -> NodeSpan {
     let i = |v: u16| i16::try_from(v).unwrap_or(i16::MAX);
     match span {
@@ -66,10 +68,14 @@ fn shift_child(span: NodeSpan, (b, a): (u16, u16)) -> NodeSpan {
             size,
         },
         NodeSpan::Fixed {
-            at: Anchor::Centre(o),
+            at: Anchor::Centre { by, before, after },
             size,
         } => NodeSpan::Fixed {
-            at: Anchor::Centre(o.saturating_add((i(a) - i(b)).div_euclid(2))),
+            at: Anchor::Centre {
+                by,
+                before: before.saturating_add(i(b)),
+                after: after.saturating_add(i(a)),
+            },
             size,
         },
         NodeSpan::Stretch { start, end } => NodeSpan::Stretch {

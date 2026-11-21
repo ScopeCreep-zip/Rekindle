@@ -273,10 +273,14 @@ fn builtin_silhouettes_match_their_goldens() {
     // along the outline, the original's 0.75 resampling.
     // SK2-P8 (opacity XOR against the reference, the cut at alpha 128):
     // Total Chaos is 470x555 (decision 29: the rows' `OutdentLeft` column
-    // is cut, not added; the reference is opaque down to row 554), 541 px:
-    // 530 at reference alpha 1-254 (its soft outline and the bottom band's
-    // shadow) and 11 at alpha 0, one column per row of the `BottomCenter`
-    // tab's left diagonal (x 170-180, y 543-554). Space Cowboy is the
+    // is cut, not added; the reference is opaque down to row 554), 541 px,
+    // every one at reference alpha 1-254 (494 under the 128 cut that we
+    // paint, 47 over it that we leave clear): its soft outline and the
+    // bottom band's shadow, none at alpha 0 or 255. SK2-P9 (decision 32):
+    // the `BottomCenter` tab centred in the uncut 471 px `BottomBar` sits
+    // at x 149, so the 11 alpha-0 pixels of its left diagonal (x 170-180,
+    // y 544-554) are gone and its right diagonal's 11 at alpha 111-116
+    // (x 290-299) join the soft outline. Space Cowboy is the
     // 380x555 window (`DefaultHeight`/`MinHeight` 555) whose screenshot
     // lacks its top 6 rows (reference row y = window row y + 6): 7,930 px
     // in x 360-379, the separate `InfoPopup` window (`popups.xml:2`), and

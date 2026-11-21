@@ -24,8 +24,27 @@ pub enum Anchor {
     Start(i16),
     /// Its far side this far before the parent's end edge.
     End(i16),
-    /// Centred, then moved by this much.
-    Centre(i16),
+    /// Centred in its parent's box widened by `before` px at its start and
+    /// `after` px at its end, then moved by `by` (plan SK2 lead decision
+    /// 32): the frame the pack centred it in. A parent an `Outdent*` cut
+    /// keeps its uncut length here (Total Chaos's `BottomCenter` tab,
+    /// centred in the 471 px `BottomBar` that lost its first column); a
+    /// client box or a capped stretch is a narrower frame (negative).
+    /// Xfire floors: the start is ⌊(len + before + after − size) / 2⌋ +
+    /// `by` − `before`, the one rule the shape and the stylesheet place by.
+    Centre { by: i16, before: i16, after: i16 },
+}
+
+impl Anchor {
+    /// Centred in the parent's own box, then moved by `by`.
+    #[must_use]
+    pub const fn centre(by: i16) -> Self {
+        Self::Centre {
+            by,
+            before: 0,
+            after: 0,
+        }
+    }
 }
 
 /// One axis of a node's box, parent-relative.
@@ -49,7 +68,10 @@ impl NodeSpan {
                 let start = match at {
                     Anchor::Start(o) => i32::from(o),
                     Anchor::End(o) => len - i32::from(o) - size,
-                    Anchor::Centre(o) => (len - size) / 2 + i32::from(o),
+                    Anchor::Centre { by, before, after } => {
+                        let (b, a) = (i32::from(before), i32::from(after));
+                        (len + b + a - size).div_euclid(2) + i32::from(by) - b
+                    }
                 };
                 (start, size)
             }

@@ -157,12 +157,20 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
         (NodeSpan::Stretch { start, .. }, false) => At::Start(i32::from(start) + by),
         (
             NodeSpan::Fixed {
-                at: Anchor::Centre(mid),
+                at:
+                    Anchor::Centre {
+                        by: mid,
+                        before,
+                        after,
+                    },
                 size,
             },
             far,
         ) => {
-            let left = i32::from(mid) - i32::from(size) / 2;
+            // A point is measured from the parent's centre: the frame's
+            // widening moves the centre by half its difference.
+            let mid = i32::from(mid) + (i32::from(after) - i32::from(before)).div_euclid(2);
+            let left = mid - i32::from(size) / 2;
             At::Centre(if far { left + i32::from(size) } else { left } + by)
         }
     }))
@@ -202,7 +210,11 @@ fn capped(span: NodeSpan, max: Option<u16>, (at_end, centred): (bool, bool)) -> 
     match (span, max) {
         (NodeSpan::Stretch { start, end }, Some(size)) => NodeSpan::Fixed {
             at: if centred {
-                Anchor::Centre((start - end).div_euclid(2))
+                Anchor::Centre {
+                    by: 0,
+                    before: start.saturating_neg(),
+                    after: end.saturating_neg(),
+                }
             } else if at_end {
                 Anchor::End(end)
             } else {
@@ -266,15 +278,15 @@ pub(super) fn axis(
     // A sibling's edge is a point: `Just*=RIGHT/BOTTOM` puts the tile's far
     // edge on it (StealthX's `WndMax` `JustX=RIGHT X="WndClose.LEFT-3"`).
     let at = match (pos, at_end, centred) {
-        (Pos::Num(p), _, true) => Anchor::Centre(i16_of(p)?),
+        (Pos::Num(p), _, true) => Anchor::centre(i16_of(p)?),
         (Pos::Num(p), true, _) => Anchor::End(i16_of(p)?),
         (Pos::Num(p), false, _) if p < 0 => Anchor::End(i16_of(-p - own)?),
         (Pos::Num(p) | Pos::Ref(At::Start(p)), false, _) => Anchor::Start(i16_of(p)?),
         (Pos::Ref(At::Start(p)), true, _) => Anchor::Start(i16_of(p - own)?),
         (Pos::Ref(At::End(far_at)), true, _) => Anchor::End(i16_of(far_at)?),
         (Pos::Ref(At::End(far_at)), false, _) => Anchor::End(i16_of(far_at - own)?),
-        (Pos::Ref(At::Centre(p)), true, _) => Anchor::Centre(i16_of(p - own / 2)?),
-        (Pos::Ref(At::Centre(p)), false, _) => Anchor::Centre(i16_of(p + own / 2)?),
+        (Pos::Ref(At::Centre(p)), true, _) => Anchor::centre(i16_of(p - own / 2)?),
+        (Pos::Ref(At::Centre(p)), false, _) => Anchor::centre(i16_of(p + own / 2)?),
     };
     Ok(capped(NodeSpan::Fixed { at, size }, max, (at_end, centred)))
 }
@@ -293,7 +305,7 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
         } => (None, Some(off)),
         NodeSpan::Stretch { start, end } => (Some(start), Some(end)),
         NodeSpan::Fixed {
-            at: Anchor::Centre(_),
+            at: Anchor::Centre { .. },
             ..
         } => (None, None),
     };
@@ -318,7 +330,7 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
             end: by(hi, end)?,
         },
         NodeSpan::Fixed {
-            at: Anchor::Centre(_),
+            at: Anchor::Centre { .. },
             ..
         } => return None,
     })
@@ -371,31 +383,39 @@ pub(super) fn client_box(span: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan,
     let at = match at {
         Anchor::Start(o) => Anchor::Start(i16_of(i32::from(o) + s)?),
         Anchor::End(o) => Anchor::End(i16_of(i32::from(o) + e)?),
-        Anchor::Centre(o) => Anchor::Centre(o),
+        // The client box is the tile's box less `(s, e)`: centred in the
+        // same frame, narrowed by the insets (lead decision 32).
+        Anchor::Centre { by, before, after } => Anchor::Centre {
+            by,
+            before: i16_of(i32::from(before) - s)?,
+            after: i16_of(i32::from(after) - e)?,
+        },
     };
     let size = u16::try_from(i32::from(size) - s - e)
         .map_err(|_| bad(format!("a client inset {s}+{e} wider than its tile {size}")))?;
     Ok(NodeSpan::Fixed { at, size })
 }
 
-/// `child` (laid in the client box of a tile `size` long inset by `(s, e)`)
+/// `child` (laid in the client box of a tile inset by `(s, e)`)
 /// in the tile's own frame.
-fn from_client(child: NodeSpan, size: u16, (s, e): (i32, i32)) -> Result<NodeSpan, ImportError> {
-    let by = |o: i16, d: i32| i16_of(i32::from(o) + d);
+fn from_client(child: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportError> {
+    let add = |o: i16, d: i32| i16_of(i32::from(o) + d);
     Ok(match child {
         NodeSpan::Stretch { start, end } => NodeSpan::Stretch {
-            start: by(start, s)?,
-            end: by(end, e)?,
+            start: add(start, s)?,
+            end: add(end, e)?,
         },
         NodeSpan::Fixed { at, size: own } => {
             let at = match at {
-                Anchor::Start(o) => Anchor::Start(by(o, s)?),
-                Anchor::End(o) => Anchor::End(by(o, e)?),
-                Anchor::Centre(o) => {
-                    let (len, own) = (i32::from(size), i32::from(own));
-                    let left = s + (len - s - e - own) / 2 + i32::from(o);
-                    Anchor::Centre(i16_of(left - (len - own) / 2)?)
-                }
+                Anchor::Start(o) => Anchor::Start(add(o, s)?),
+                Anchor::End(o) => Anchor::End(add(o, e)?),
+                // Centred in the client box: the tile's box narrowed by
+                // `(s, e)` (lead decision 32).
+                Anchor::Centre { by, before, after } => Anchor::Centre {
+                    by,
+                    before: add(before, -s)?,
+                    after: add(after, -e)?,
+                },
             };
             NodeSpan::Fixed { at, size: own }
         }
@@ -418,7 +438,7 @@ pub(super) fn to_tile(
         }
         for n in &mut children {
             let slot = if c == 0 { &mut n.x } else { &mut n.y };
-            *slot = from_client(*slot, size, (s, e))?;
+            *slot = from_client(*slot, (s, e))?;
         }
     }
     Ok(children)

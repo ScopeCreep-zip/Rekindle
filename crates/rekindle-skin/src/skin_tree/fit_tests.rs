@@ -537,3 +537,38 @@ fn a_fixed_tile_is_clipped_to_its_parent() {
         [10]
     );
 }
+
+/// Plan SK2 lead decision 32: Total Chaos's `BottomCenter` tab (171 px,
+/// `JustX="CENTER"`) is centred in the uncut 1 + w px `BottomBar`, as Xfire
+/// floors it: ⌊(w + 1 − 171) / 2⌋ − 1, x 149 in the original's 470 px
+/// window (`skinref/total-chaos/buddy-list-1.png`), at odd and even widths.
+#[test]
+fn a_centred_child_of_a_cut_row_is_placed_in_the_uncut_row() {
+    let (_, tree, _) = imported_art(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="MainTitleBar" X="0" OutdentLeft="1" Y="0" ResizeX="100" Component="MainTitleBar"/>
+<Tile Name="Content" X="0" OutdentLeft="1" Y="MainTitleBar.BOTTOM" IndentBottom="61" ResizeX="100" ResizeY="100" Component="Content"/>
+<Tile Name="BottomBar" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar">
+<Tile Name="BottomCenter" JustX="CENTER" X="0" Y="0" Component="BottomCenter"/>
+</Tile>
+</Tile>"#,
+        br#"<Components>
+<Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-10x52</Image></Images></Component>
+<Component Name="Content"><Images State="Normal"><Image Type="Middle">ct-10x10</Image></Images></Component>
+<Component Name="BottomCenter"><Images State="Normal"><Image Type="Middle">bc-171x20</Image></Images></Component>
+<Component Name="BottomBar"><Images State="Normal"><Image Type="left">bl-161x66</Image><Image Type="middle">bm-37x66</Image><Image Type="right">br-161x66</Image></Images></Component>
+</Components>"#,
+        &["MainTitleBar", "Content", "BottomBar"],
+    );
+    let at = |w: i32| {
+        tree.boxes(w, 555)
+            .iter()
+            .find(|(n, _)| n.id == "BottomCenter")
+            .unwrap()
+            .1[0]
+    };
+    assert_eq!(at(470), 149);
+    for w in [470, 471, 500, 501] {
+        assert_eq!(at(w), (w + 1 - 171).div_euclid(2) - 1, "w = {w}");
+    }
+}

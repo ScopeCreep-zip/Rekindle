@@ -54,7 +54,7 @@ fn cut(span: NodeSpan, len: Option<u16>) -> (u16, u16) {
         }
         (None, Anchor::Start(o)) => ((-i32::from(o)).max(0), 0),
         (None, Anchor::End(o)) => (0, (-i32::from(o)).max(0)),
-        (None, Anchor::Centre(_)) => (0, 0),
+        (None, Anchor::Centre { .. }) => (0, 0),
     };
     let b = u16::try_from(before).unwrap_or(u16::MAX).min(size);
     let a = u16::try_from(after).unwrap_or(u16::MAX).min(size - b);
@@ -70,11 +70,11 @@ fn clipped(span: NodeSpan, (b, a): (u16, u16), len: Option<u16>) -> NodeSpan {
     let at = match (at, len) {
         (Anchor::Start(o), _) => Anchor::Start(o.saturating_add_unsigned(b)),
         (Anchor::End(o), _) => Anchor::End(o.saturating_add_unsigned(a)),
-        (Anchor::Centre(_), Some(len)) => {
+        (Anchor::Centre { .. }, Some(len)) => {
             let start = span.place(i32::from(len)).0 + i32::from(b);
             Anchor::Start(i16::try_from(start).unwrap_or(i16::MAX))
         }
-        (Anchor::Centre(o), None) => Anchor::Centre(o),
+        (centre @ Anchor::Centre { .. }, None) => centre,
     };
     NodeSpan::Fixed {
         at,
@@ -105,7 +105,7 @@ fn shifted(span: NodeSpan, (b, a): (u16, u16), len: u16) -> NodeSpan {
             size,
         },
         NodeSpan::Fixed {
-            at: Anchor::Centre(_),
+            at: Anchor::Centre { .. },
             size,
         } => {
             let old = len + b + a;
