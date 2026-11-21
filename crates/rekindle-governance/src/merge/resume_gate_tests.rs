@@ -86,3 +86,29 @@ fn a_join_on_an_invite_revoked_in_the_cut_is_refused() {
     let resumed = resume(&cert, &ops, &heads).expect("on top");
     assert!(resumed.refused.contains(&hash));
 }
+
+/// SU1 + S7c.8 (MR1, seed 2330924744309632130): a revoke beside the cut,
+/// concurrent with a cut join on its invite, refuses that join in the full
+/// merge; the snapshot counts the cut's joins but cannot name them, so the
+/// resume is not on top rather than keeping the joiner a member.
+#[test]
+fn a_revoke_beside_the_cut_concurrent_with_a_cut_join_is_not_on_top() {
+    let (cert, mut ops) = base();
+    let before = head(&ops).clone();
+    let j = op(&pk(6), 0, &[find(&ops, 1, 1)], 40, joined(6, Some("code")));
+    let revoke = GovernanceEntry::InviteRevoked { invite_id: [7; 16] };
+    let r = op(&pk(1), 6, &[&before], 41, revoke);
+    let (joined_hash, revoke_hash) = (j.hash(), r.hash());
+    ops.push(j);
+    ops.push(r);
+    let full = super::super::merge_outcome(&cert, &ops);
+    assert!(
+        full.refused.contains(&joined_hash),
+        "outside the revoke's past"
+    );
+    let heads = [&before, &ops[ops.len() - 2]];
+    assert_eq!(
+        resume(&cert, &ops, &heads).err(),
+        Some(NotOnTop::BesideTheCut(revoke_hash))
+    );
+}

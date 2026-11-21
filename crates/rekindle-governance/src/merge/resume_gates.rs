@@ -34,6 +34,7 @@ pub(super) fn invalidated(
     backdated_join_gate(ctx, set, &mut invalid)?;
     record_gate(ctx, set, round, &mut invalid)?;
     checkpoint_gate(ctx, set, round, &mut invalid)?;
+    beside_revoke_gate(ctx, set, round)?;
     let mut invite_refusals = BTreeMap::new();
     let uses = invite_gate(ctx, set, round, &mut invalid, &mut invite_refusals)?;
     Ok(Gated {
@@ -403,9 +404,35 @@ fn invite_gate(
     Ok(uses)
 }
 
+/// SU1 refuses a join outside the causal past of any applied
+/// `InviteRevoked` of its invite (`gates::revoke_excluding`), a cut join
+/// included. A revoke with every cut head in its past holds every cut join;
+/// one beside the cut (S7c.8) may not, and the snapshot carries only the
+/// count of the cut's joins, not which ops they are, so whether the full
+/// merge refuses a cut join (and changes the cut's membership) is not
+/// decidable from it: not on top when the cut holds the invite and may
+/// have admitted a join on it (revoked in the cut, or live with a use).
+fn beside_revoke_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound) -> Result<(), NotOnTop> {
+    for (v, op) in set.ops.iter().enumerate() {
+        let GovernanceEntry::InviteRevoked { invite_id } = op.body() else {
+            continue;
+        };
+        if set.reach[v].is_none() || !round.applied[v] {
+            continue;
+        }
+        let in_cut = (ctx.snap.cut.invite_codes.values()).find(|(id, _, _)| id == invite_id);
+        if let Some((_, revoked, _)) = in_cut {
+            if *revoked || live_uses(&ctx.snap.state, *invite_id) > 0 {
+                return Err(NotOnTop::BesideTheCut(op.hash()));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The joins the snapshot counted on `invite_id` below the cut (none for an
-/// invite the cut does not hold live): a revoke after the cut has the
-/// cut's joins in its past.
+/// invite the cut does not hold live): a revoke after the cut that applies
+/// here has the cut's joins in its past (`beside_revoke_gate`).
 fn live_uses(state: &crate::state::GovernanceState, invite_id: [u8; 16]) -> u32 {
     state.invites.get(&invite_id).map_or(0, |i| i.uses)
 }
