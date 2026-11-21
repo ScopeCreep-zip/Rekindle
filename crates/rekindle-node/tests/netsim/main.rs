@@ -32,6 +32,7 @@ mod dm_chain_watch;
 mod dm_first_burst_loss;
 mod dm_hint_loss;
 mod dm_new_friendship;
+mod ephemeral_route_aged;
 mod equivocation;
 mod events;
 mod expressions;

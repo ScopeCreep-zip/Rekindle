@@ -140,14 +140,15 @@ pub(crate) async fn framed(
 }
 
 /// Send `body` to `to` once, as its kind travels: the cached route, then
-/// one refreshed inline. An ephemeral kind (typing, a call signal, DM
-/// video: `DmTypeId::is_ephemeral`) that finds no route is dropped:
-/// minutes late it is worse than none.
+/// the one their profile publishes, re-resolved inline (every kind: an
+/// ephemeral one, typing, a call signal or DM video, is never queued, since
+/// minutes late it is worse than none, but a profile read is not minutes).
 ///
 /// # Errors
 /// The frame could not be sealed (no session for a ratchet kind), it is
-/// over Veilid's message cap (plan C7.25), or a kind that is not ephemeral
-/// found no usable route (`NotReady`; what must arrive is an outbox row).
+/// over Veilid's message cap (plan C7.25), or no usable route took it
+/// (`NotReady`; what must arrive is an outbox row). Typing alone is
+/// dropped with no error: its loss shows nothing (D24 `Implicit`).
 pub async fn send_to_peer(
     host: &dyn FriendHost,
     to: &str,
@@ -170,9 +171,11 @@ pub async fn send_frame(
     deliver(host, to, frame).await
 }
 
-/// One send of `frame`: the cached route, then (with `refresh`; never for
-/// an ephemeral kind) a route refreshed from the peer's profile, with a
-/// status probe when none was cached. Whether it left this device.
+/// One send of `frame`: the cached route, then the route re-resolved from
+/// the peer's profile (live finding CR1: the cache's 900 s backstop age, a
+/// dead-route report or an unusable send empties it, and only a
+/// re-resolve fills it again), with a status probe when none was cached
+/// and the kind is not ephemeral. Whether it left this device.
 ///
 /// # Errors
 /// The frame is over Veilid's message cap, or the node is not up.
@@ -180,9 +183,8 @@ pub(crate) async fn route_send(
     host: &dyn FriendHost,
     to: &str,
     frame: &DmFrame,
-    refresh: bool,
 ) -> Result<bool, FriendError> {
-    route_send_datagram(host, to, &frame::wire(frame)?, frame.type_id, refresh).await
+    route_send_datagram(host, to, &frame::wire(frame)?, frame.type_id).await
 }
 
 /// [`route_send`] of a datagram already wired (a `friend_handshake` row's).
@@ -194,7 +196,6 @@ pub(super) async fn route_send_datagram(
     to: &str,
     datagram: &[u8],
     kind: DmTypeId,
-    refresh: bool,
 ) -> Result<bool, FriendError> {
     let datagram = datagram.to_vec();
     let node = host.node()?;
@@ -223,15 +224,13 @@ pub(super) async fn route_send_datagram(
         },
         None => None,
     };
-    if !refresh {
-        tracing::debug!(to = %to, error = ?failure, "no route for peer — dropping ephemeral frame");
-        return Ok(false);
-    }
     if refresh_and_send(host, to, &datagram).await {
         tracing::debug!(to = %to, ?kind, "frame sent via veilid (after inline route refresh)");
         return Ok(true);
     }
-    if failure.is_none() {
+    // The status probe asks friends for a route for the next send; an
+    // ephemeral frame has no next send to wait for.
+    if failure.is_none() && !kind.is_ephemeral() {
         probe_in_background(host, to);
     }
     tracing::debug!(to = %to, error = ?failure, "no usable route for peer");
@@ -276,13 +275,14 @@ pub(crate) async fn send_once(
     body: &DirectBody,
 ) -> Result<bool, FriendError> {
     let (frame, _) = framed(host, to, body).await?;
-    route_send(host, to, &frame, true).await
+    route_send(host, to, &frame).await
 }
 
-/// One send of `frame`; an ephemeral kind that finds no route is dropped.
+/// One send of `frame`; one that no route took is a visible failure (a
+/// call that cannot be placed says so, never a silent ring-out), except
+/// typing, whose loss shows nothing.
 async fn deliver(host: &dyn FriendHost, to: &str, frame: &DmFrame) -> Result<(), FriendError> {
-    let ephemeral = frame.type_id.is_ephemeral();
-    if route_send(host, to, frame, !ephemeral).await? || ephemeral {
+    if route_send(host, to, frame).await? || hint_for(frame.type_id) == ContentHint::Implicit {
         return Ok(());
     }
     Err(FriendError::NotReady(format!(

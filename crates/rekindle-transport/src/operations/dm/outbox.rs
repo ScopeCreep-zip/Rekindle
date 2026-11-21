@@ -341,7 +341,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     // round trip.
     let hints = async {
         for (_, datagram, _, type_id) in chained.iter().filter(|_| hint) {
-            match send::route_send_datagram(host, to, datagram, *type_id, true).await {
+            match send::route_send_datagram(host, to, datagram, *type_id).await {
                 Ok(true) => super::route_health::sent(host, to, *type_id),
                 Ok(false) => {}
                 Err(e) => tracing::debug!(to = %to, error = %e, "chain entry hint not sent"),
@@ -422,7 +422,7 @@ async fn rehint(host: &dyn FriendHost, to: &str, row: &RowAttempt<'_>) {
                 ..
             }
             | Framed::Record(datagram, type_id),
-        ) => match send::route_send_datagram(host, to, &datagram, type_id, true).await {
+        ) => match send::route_send_datagram(host, to, &datagram, type_id).await {
             Ok(true) => super::route_health::sent(host, to, type_id),
             Ok(false) => {}
             Err(e) => tracing::debug!(to = %to, error = %e, "landed entry re-hint not sent"),

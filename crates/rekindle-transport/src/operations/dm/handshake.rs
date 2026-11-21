@@ -443,7 +443,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             }
         };
     }
-    match send::route_send_datagram(host, to, &datagram, kind, true).await {
+    match send::route_send_datagram(host, to, &datagram, kind).await {
         Ok(true) if kind == DmTypeId::Unfriended => Attempt::Awaiting,
         Ok(true) => Attempt::Sent,
         Ok(false) => {
