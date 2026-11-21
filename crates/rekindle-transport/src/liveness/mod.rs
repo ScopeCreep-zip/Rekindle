@@ -10,6 +10,8 @@
 //! - **Sender** ([`peer`]): a peer's route is suspected from missing acks,
 //!   re-read from their profile at a bounded rate and probed, and the peer
 //!   shown unreachable after six rounds (S1–S5).
+//! - **Re-resolve** ([`resolve`]): one profile read in flight per peer
+//!   with no usable route, a 5 s backoff after a failed one (CR2).
 //!
 //! The probe is `'L'` ‖ 16 random bytes (`rekindle_codec::ingress`
 //! `LIVENESS_TAG`). Our dispatch echoes only a nonce we issued; any other
@@ -17,6 +19,7 @@
 
 pub mod owner;
 pub mod peer;
+pub mod resolve;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -84,6 +87,8 @@ pub struct Liveness {
     /// Whether this node answers its own probes (it dispatches its own
     /// events); an outbound-only node never self-tests.
     self_tests: bool,
+    /// One re-resolve of a peer's route in flight at a time (CR2).
+    resolves: resolve::ResolveFlights,
 }
 
 impl Liveness {
@@ -105,6 +110,7 @@ impl Liveness {
             network_changed: Notify::new(),
             heal_pending: Mutex::new(HashSet::new()),
             self_tests,
+            resolves: resolve::ResolveFlights::default(),
         })
     }
 

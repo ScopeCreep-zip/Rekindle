@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use super::frame::{self, Nonce};
 use super::route;
+use crate::broadcast::node::TransportNode;
+use crate::liveness::resolve::Resolve;
 use crate::operations::direct::frame::Opened;
 use crate::operations::friend::{FriendError, FriendHost};
 
@@ -83,6 +85,37 @@ async fn refresh_and_send(host: &dyn FriendHost, to: &str, datagram: &[u8]) -> b
         .send_direct(&target, datagram.to_vec())
         .await
         .is_ok()
+}
+
+/// The peer's route re-resolved once for every send that needs it now
+/// (live finding CR2): one send leads (profile read, import, send); a
+/// durable kind waits up to 10 s for it and sends over the route it
+/// cached; DM video and typing fail fast meanwhile, and a failed lead
+/// backs the peer off for 5 s (`Liveness::resolve`). Whether it sent.
+async fn resolve_and_send(
+    host: &dyn FriendHost,
+    node: &TransportNode,
+    to: &str,
+    datagram: &[u8],
+    kind: DmTypeId,
+) -> bool {
+    let wait = !matches!(kind, DmTypeId::DmVideoFragment | DmTypeId::Typing);
+    match node
+        .liveness()
+        .resolve(to, wait, || refresh_and_send(host, to, datagram))
+        .await
+    {
+        Resolve::Led(sent) => sent,
+        Resolve::Landed => match route::cached_target(node, to) {
+            Some(target) => node
+                .sender()
+                .send_direct(&target, datagram.to_vec())
+                .await
+                .is_ok(),
+            None => false,
+        },
+        Resolve::NotResolved => false,
+    }
 }
 
 /// Ask friends in the background whether any holds a fresh status and
@@ -226,7 +259,7 @@ pub(super) async fn route_send_datagram(
         },
         None => None,
     };
-    if refresh_and_send(host, to, &datagram).await {
+    if resolve_and_send(host, &node, to, &datagram, kind).await {
         tracing::debug!(to = %to, ?kind, "frame sent via veilid (after inline route refresh)");
         return Ok(true);
     }
