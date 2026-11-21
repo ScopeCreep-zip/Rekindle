@@ -17,7 +17,11 @@ use crate::op::VerifiedOp;
 /// Which phase of resolution an op belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpClass {
-    /// Resolved first, in causal order, against the power state.
+    /// A device key's endorsement, retirement or re-admission (ADR 0022
+    /// rule 6, plan E3.2 S7d-keys.1): resolved before the power ops, in
+    /// stamp order `(lamport, op_hash)`.
+    Device,
+    /// Resolved next, in causal order, against the power state.
     Power,
     /// Ordered by mainline anchor, then `issued_at`, then op hash.
     NonPower,
@@ -74,6 +78,7 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         | G::Checkpoint(_)
         // It changes no permission: it names another community (S7s.3e).
         | G::CommunitySuccessor(_) => OpClass::NonPower,
+        G::DeviceKey(_) | G::DeviceRetired(_) | G::DeviceReadmit(_) => OpClass::Device,
     }
 }
 

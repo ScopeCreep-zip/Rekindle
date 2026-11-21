@@ -153,6 +153,10 @@ pub enum GovernanceEntry {
         /// author (`MEMBER_RECORD_BINDING ‖ anchor ‖ author ‖
         /// member_record`, `rekindle_secrets::member_record`); 64 bytes.
         owner_proof: Vec<u8>,
+        /// The joiner's first device key, endorsed by the author (ADR 0022,
+        /// plan E3.2 S7d-keys.1); `None` until S7d-keys.6 mints one at join.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_device: Option<super::device::DeviceEndorsement>,
     },
 
     /// The author moved to a new member record (self-authored).
@@ -530,6 +534,18 @@ pub enum GovernanceEntry {
     /// plan E3.2 S7s.3e): creator-signed, an acceptance by the offer's
     /// `transferTo` only.
     CommunitySuccessor(super::successor::CommunitySuccessor),
+
+    /// The author pseudonym endorses one of its device keys (ADR 0022, plan
+    /// E3.2 S7d-keys.1): valid from any carrier.
+    DeviceKey(super::device::DeviceEndorsement),
+
+    /// The author pseudonym retires one of its device keys above a seq
+    /// (ADR 0022 rules 4 and 5): valid from any carrier.
+    DeviceRetired(super::device::DeviceRetired),
+
+    /// A co-signed re-admission of a member's new device key after a fork
+    /// (ADR 0022 rules 7 and 8).
+    DeviceReadmit(super::device::DeviceReadmit),
 }
 
 /// The exact value of a member's slot in one channel record, as a

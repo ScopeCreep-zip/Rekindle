@@ -23,6 +23,7 @@ fn chain(len: usize) -> Vec<HeldOp> {
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
+        creator_device: None,
     };
     let state = GovernanceState::default();
     let mut out = Vec::new();

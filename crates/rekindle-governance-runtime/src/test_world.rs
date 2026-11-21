@@ -34,6 +34,7 @@ impl Member {
             member_record_owner: self.owner_text(),
             invite_proof: Some(InviteProof { code_hash, sig }),
             owner_proof: owner_proof.to_vec(),
+            first_device: None,
         }
     }
 }
@@ -70,6 +71,7 @@ impl World {
             created_at: 1,
             additional_creators: Vec::new(),
             predecessor: None,
+            creator_device: None,
         };
         let mut world = Self {
             cert,

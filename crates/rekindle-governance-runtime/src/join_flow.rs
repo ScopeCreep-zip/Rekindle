@@ -309,6 +309,7 @@ fn joined_op(
         member_record_owner: owner,
         invite_proof: Some(InviteProof { code_hash, sig }),
         owner_proof: owner_proof.to_vec(),
+        first_device: None,
     };
     let (set, outcome) = (&walked.set, &walked.merged);
     let hint = walked.hint.as_ref();

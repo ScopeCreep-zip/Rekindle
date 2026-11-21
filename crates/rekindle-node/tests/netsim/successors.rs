@@ -112,6 +112,7 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
             }),
             owner_proof: sign_member_record_binding(&[0x47; 32], &anchor, &author.0, &record)
                 .to_vec(),
+            first_device: None,
         },
         sig: [0; 64],
     };

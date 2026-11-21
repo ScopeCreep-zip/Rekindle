@@ -64,6 +64,7 @@ fn a_join_naming_a_record_held_before_the_cut_is_refused() {
         member_record_owner,
         invite_proof,
         owner_proof,
+        first_device: None,
     };
     let j = op(&pk(9), 0, &[head(&ops)], 40, taken);
     let hash = j.hash();

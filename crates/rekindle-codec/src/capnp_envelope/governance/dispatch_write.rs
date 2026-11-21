@@ -203,12 +203,14 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             member_record_owner,
             invite_proof,
             owner_proof,
+            first_device,
         } => write_member_joined(
             b.reborrow().init_member_joined(),
             member_record,
             member_record_owner,
             invite_proof.as_ref(),
             owner_proof,
+            first_device.as_ref(),
         ),
         GovernanceEntry::MemberRecordMoved {
             member_record,
@@ -240,6 +242,15 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         }
         GovernanceEntry::CommunitySuccessor(s) => {
             super::successor::write_community_successor(b.reborrow().init_community_successor(), s);
+        }
+        GovernanceEntry::DeviceKey(e) => {
+            crate::governance_op::write_device_key(b.reborrow().init_device_key(), e);
+        }
+        GovernanceEntry::DeviceRetired(r) => {
+            crate::governance_op::write_device_retired(b.reborrow().init_device_retired(), r);
+        }
+        GovernanceEntry::DeviceReadmit(r) => {
+            crate::governance_op::write_device_readmit(b.reborrow().init_device_readmit(), r);
         }
         GovernanceEntry::MemberApproved { target } => {
             write_member_approved(b.reborrow().init_member_approved(), target);

@@ -17,6 +17,7 @@ fn cert(key: &SigningKey) -> GenesisCert {
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
+        creator_device: None,
     }
 }
 
@@ -160,6 +161,7 @@ fn joined(key: &SigningKey, code_hash: Option<&str>) -> GovernanceOp {
                 sig: vec![0; 64],
             }),
             owner_proof: vec![0; 64],
+            first_device: None,
         },
         sig: [0; 64],
     }

@@ -67,4 +67,5 @@ struct GenesisCert {
   creatorSig @9 :Data;                 # 64 bytes; unset in the unsigned form
   additionalCreators @10 :List(Data);  # <= 8 further creator pseudonyms, 32 bytes each (Q3)
   predecessor @11 :Text;               # the anchor this community succeeds; unset if none
+  creatorDevice @12 :Gov.DeviceKeyEntry;  # the creator's first device key (ADR 0022, S7d-keys.1); unset until S7d-keys.5
 }

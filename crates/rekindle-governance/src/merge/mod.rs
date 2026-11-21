@@ -289,16 +289,27 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
     let mut applied = vec![false; n];
     let mut order = Vec::new();
     let candidates = (0..n).filter(|&i| !invalid[i]);
+    let (device, others): (Vec<usize>, Vec<usize>) =
+        candidates.partition(|&i| class_of(set.ops[i].body()) == OpClass::Device);
     let (power, rest): (Vec<usize>, Vec<usize>) =
-        candidates.partition(|&i| class_of(set.ops[i].body()) == OpClass::Power);
+        (others.into_iter()).partition(|&i| class_of(set.ops[i].body()) == OpClass::Power);
     let mut power_state = genesis_state(cert);
+    // The device phase (ADR 0022 rule 6): before every power op, in stamp
+    // order; device ops anchor no mainline op.
+    for i in device {
+        if try_apply(set.ops[i], &mut power_state) {
+            applied[i] = true;
+            order.push(i);
+        }
+    }
+    let device_order = order.len();
     for i in power {
         if frontier_holds(set, i) && try_apply(set.ops[i], &mut power_state) {
             applied[i] = true;
             order.push(i);
         }
     }
-    let power_order = order.clone();
+    let power_order = order[device_order..].to_vec();
     let anchor: Vec<Option<usize>> = (0..n)
         .map(|i| power_order.iter().rposition(|&p| set.past.contains(i, p)))
         .collect();
@@ -308,6 +319,9 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
         .collect();
     mainline.sort();
     let mut state = genesis_state(cert);
+    for &d in &order[..device_order] {
+        fold(set.ops[d], &mut state);
+    }
     let mut folded = 0;
     for (at, _, _, i) in mainline {
         let through = at.map_or(0, |a| a + 1);
@@ -487,8 +501,12 @@ fn apply(
         | G::RoleAssignment { .. }
         | G::RoleUnassignment { .. }
         | G::RoleArchived { .. } => apply_roles(entry, stamp, state),
-        // A hint over a cut: it changes no state (plan E3.2 S7c.3).
-        G::Checkpoint(_) => {}
+        // A hint over a cut changes no state (plan E3.2 S7c.3). The device
+        // endorsement set is harvested from every carrier, quarantined ones
+        // included (ADR 0022 rule 2), and a readmit counts in the deps of
+        // the op it admits (rule 7): S7d-keys.2's verifier reads them from
+        // the op set, never from applied state.
+        G::Checkpoint(_) | G::DeviceKey(_) | G::DeviceRetired(_) | G::DeviceReadmit(_) => {}
         // Kept whole: the gates judge acceptances against applied offers,
         // and readers show every successor (plan E3.2 S7s.3e).
         G::CommunitySuccessor(successor) => {
@@ -506,6 +524,8 @@ mod ancestry;
 mod channels;
 mod community;
 mod cut;
+#[cfg(test)]
+mod device_tests;
 mod events;
 mod expression;
 mod fixpoint;

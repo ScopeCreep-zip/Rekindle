@@ -42,6 +42,7 @@ impl Member {
                 sig: invite,
             }),
             owner_proof: owner_proof.to_vec(),
+            first_device: None,
         }
     }
 }
@@ -57,6 +58,7 @@ fn cert(creator: &Member) -> GenesisCert {
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
+        creator_device: None,
     }
 }
 
@@ -236,6 +238,7 @@ fn an_op_log_reader_without_the_invite_code_cannot_join() {
         member_record_owner: outsider.owner_text(),
         invite_proof: Some(InviteProof { code_hash, sig }),
         owner_proof: owner_proof.to_vec(),
+        first_device: None,
     };
     let join = signed(&cert, &[&inv], &outsider.pseudonym, forged, 11);
     let set = verify_held(ANCHOR, &[inv, join.clone()]);
@@ -282,6 +285,7 @@ fn a_seen_invite_proof_cannot_be_replayed_for_another_joiner() {
         member_record_owner,
         invite_proof,
         owner_proof,
+        first_device: None,
     };
     let copy = signed(&cert, &[&inv, &theirs], &copier.pseudonym, replayed, 12);
     let set = verify_held(ANCHOR, &[inv, theirs, copy.clone()]);

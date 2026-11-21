@@ -116,6 +116,7 @@ async fn outsider_is_refused_and_not_stored(
                 invite_proof,
                 owner_proof: sign_member_record_binding(&[0xB8; 32], &anchor, &author.0, &record)
                     .to_vec(),
+                first_device: None,
             },
             sig: [0; 64],
         },

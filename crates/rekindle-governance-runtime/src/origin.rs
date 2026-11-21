@@ -362,6 +362,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         created_at: deps.clock().now_secs(),
         additional_creators: further,
         predecessor,
+        creator_device: None,
     };
     rekindle_governance::genesis::check_creator_set(&cert).map_err(|e| {
         GovernanceRuntimeError::Crypto(format!("origin: the creator set is refused: {e:?}"))

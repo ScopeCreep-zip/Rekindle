@@ -113,6 +113,15 @@ pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::CommunitySuccessor(p) => {
             successor::read_community_successor(p.map_err(|e| capnp_err(&e))?)
         }
+        Which::DeviceKey(p) => Ok(GovernanceEntry::DeviceKey(
+            crate::governance_op::read_device_key(p.map_err(|e| capnp_err(&e))?)?,
+        )),
+        Which::DeviceRetired(p) => Ok(GovernanceEntry::DeviceRetired(
+            crate::governance_op::read_device_retired(p.map_err(|e| capnp_err(&e))?)?,
+        )),
+        Which::DeviceReadmit(p) => Ok(GovernanceEntry::DeviceReadmit(
+            crate::governance_op::read_device_readmit(p.map_err(|e| capnp_err(&e))?)?,
+        )),
         Which::ChannelCreated(p) => read_channel_created(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelArchived(p) => read_channel_archived(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelUpdated(p) => read_channel_updated(p.map_err(|e| capnp_err(&e))?),
@@ -251,6 +260,7 @@ mod admission_wire_tests {
                 member_record_owner: "owner".into(),
                 invite_proof: proof,
                 owner_proof: vec![7; 64],
+                first_device: None,
             });
         }
         round_trip(&GovernanceEntry::MemberRecordMoved {

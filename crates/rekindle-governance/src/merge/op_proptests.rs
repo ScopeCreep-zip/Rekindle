@@ -26,6 +26,7 @@ pub(super) fn joined(by: u8, code: Option<&str>) -> GovernanceEntry {
             sig: vec![0; 64],
         }),
         owner_proof: vec![0; 64],
+        first_device: None,
     }
 }
 
@@ -420,6 +421,7 @@ fn two_joins_naming_one_member_record_admit_only_the_first() {
             sig: vec![0; 64],
         }),
         owner_proof: vec![0; 64],
+        first_device: None,
     };
     let base = community();
     let x = op(&pk(5), 0, &[head(&base)], 60, claim(5, "VLD0:shared"));
@@ -486,6 +488,7 @@ fn a_move_onto_a_held_member_record_is_refused() {
             sig: vec![0; 64],
         }),
         owner_proof: vec![0; 64],
+        first_device: None,
     };
     let moved = |record: &str| GovernanceEntry::MemberRecordMoved {
         member_record: record.into(),

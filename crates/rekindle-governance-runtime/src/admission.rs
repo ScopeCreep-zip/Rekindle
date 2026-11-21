@@ -55,6 +55,7 @@ pub async fn announce_joined<D: GovernanceRuntimeDeps>(
             member_record_owner: member_record_owner.to_string(),
             invite_proof,
             owner_proof: owner_proof.to_vec(),
+            first_device: None,
         },
     )
     .await?;

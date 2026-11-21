@@ -223,6 +223,31 @@ labels! {
     /// new pseudonym, each anchor length-prefixed (plan E3.2 S7s.3e, lead
     /// decision (24)).
     GOV_SUCCESSOR_LINK = "rekindle-gov-successor-link-v1";
+    /// Ed25519 context: a pseudonym's endorsement of a device key (ADR 0022
+    /// rule 10): label ‖ community ‖ member record ‖ device key ‖
+    /// incarnation ‖ extended set ‖ device record ‖ its owner ‖ fork
+    /// evidence (plan E3.2 S7d-keys.1).
+    GOV_DEVICE_KEY = "rekindle-gov-device-key-v1";
+    /// Ed25519 context: a pseudonym's retirement of a device key (ADR 0022
+    /// rule 10): label ‖ community ‖ member record ‖ device key ‖
+    /// incarnation ‖ last seq.
+    GOV_DEVICE_RETIRED = "rekindle-gov-device-retired-v1";
+    /// Body label of a `DeviceReadmit` (ADR 0022 rule 10): label ‖ community
+    /// ‖ member record ‖ new key ‖ incarnation ‖ fork evidence.
+    GOV_DEVICE_READMIT = "rekindle-gov-device-readmit-v1";
+    /// BLAKE3 `derive_key` context: an endorsement's `extendsSet` over the
+    /// sorted element ids `(kind, device key, incarnation)` (ADR 0022 rule 10).
+    GOV_DEVICE_SET = "rekindle-gov-device-set-v1";
+    /// BLAKE3 `derive_key` context: fork evidence over community ‖ device
+    /// key ‖ seq ‖ the two op hashes in byte order (ADR 0022 rule 5).
+    GOV_FORK_EVIDENCE = "rekindle-gov-fork-evidence-v1";
+    /// BLAKE3 `derive_key` context: the "retired by restore" marker over
+    /// community ‖ device key ‖ incarnation ‖ last seq ‖ the `GovHead` op
+    /// hash the barrier read (ADR 0022 rule 8).
+    GOV_RESTORE_EVIDENCE = "rekindle-gov-restore-evidence-v1";
+    /// Ed25519 context: a creator pseudonym's own successor (ADR 0022 rule
+    /// 10): label ‖ community ‖ cut ‖ new anchor ‖ fork evidence (S7d-keys K8).
+    GOV_SUCCESSOR = "rekindle-gov-successor-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// BLAKE3 `derive_key` context: a `MekTransferAck`'s key-confirmation

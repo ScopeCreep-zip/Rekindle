@@ -93,6 +93,7 @@ fn member_bodies() -> Vec<GovernanceEntry> {
                 sig: vec![9; 64],
             }),
             owner_proof: vec![7; 64],
+            first_device: Some(super::device_tests::endorsement(29)),
         },
         E::MemberRecordMoved {
             member_record: s("VLD0:n"),
@@ -311,6 +312,9 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
                 sig: vec![28; 64],
             }],
         }),
+        E::DeviceKey(super::device_tests::endorsement(30)),
+        E::DeviceRetired(super::device_tests::retired(31)),
+        E::DeviceReadmit(super::device_tests::readmit(32)),
     ]
 }
 
@@ -363,6 +367,9 @@ fn arm_index(entry: &GovernanceEntry) -> usize {
         E::CommunityPolicy { .. } => 41,
         E::Checkpoint(_) => 42,
         E::CommunitySuccessor(_) => 43,
+        E::DeviceKey(_) => 44,
+        E::DeviceRetired(_) => 45,
+        E::DeviceReadmit(_) => 46,
     }
 }
 
@@ -393,7 +400,7 @@ fn every_body_arm_round_trips() {
     let bodies = every_body();
     let arms: std::collections::BTreeSet<usize> = bodies.iter().map(arm_index).collect();
     assert_eq!(arms.len(), bodies.len(), "one value per arm");
-    assert_eq!(arms.len(), 44, "every live arm");
+    assert_eq!(arms.len(), 47, "every live arm");
     for body in bodies {
         let original = op(body, vec![op_ref(1), op_ref(2)]);
         let decoded = decode_op(&encode_op(&original).unwrap()).unwrap();

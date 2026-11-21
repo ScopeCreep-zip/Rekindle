@@ -447,6 +447,7 @@ mod tests {
                 member_record_owner: "o".into(),
                 invite_proof: None,
                 owner_proof: vec![0; 64],
+                first_device: None,
             },
             sig: [0; 64],
         };

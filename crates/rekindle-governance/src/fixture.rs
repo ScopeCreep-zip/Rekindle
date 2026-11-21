@@ -58,6 +58,7 @@ pub fn cert(creator: &PseudonymKey, policy: AdmissionMode) -> GenesisCert {
         created_at: 0,
         additional_creators: Vec::new(),
         predecessor: None,
+        creator_device: None,
     }
 }
 

@@ -105,6 +105,7 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
             }),
             owner_proof: sign_member_record_binding(&[0xEF; 32], &anchor, &author.0, &record)
                 .to_vec(),
+            first_device: None,
         },
         sig: [0; 64],
     };

@@ -90,6 +90,19 @@ pub fn well_formed(
         {
             return false;
         }
+        // A device body malformed on its own: a short signature, an
+        // element list out of canonical order or not hashing to
+        // `extendsSet`, an incarnation not above it (ADR 0022 rules 2 and
+        // 10, plan E3.2 S7d-keys.1), whoever wrote it.
+        GovernanceEntry::DeviceKey(e) if !crate::device::endorsement_well_formed(e) => {
+            return false;
+        }
+        GovernanceEntry::MemberJoined {
+            first_device: Some(e),
+            ..
+        } if !crate::device::endorsement_well_formed(e) => return false,
+        GovernanceEntry::DeviceRetired(r) if !r.well_formed() => return false,
+        GovernanceEntry::DeviceReadmit(r) if !r.well_formed() => return false,
         // A successor body in none of its four shapes (S7s.3e).
         GovernanceEntry::CommunitySuccessor(s) if s.shape().is_none() => return false,
         // Value bounds (plan E3.0): an out-of-range slowmode, timeout or
@@ -136,6 +149,18 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
                 && !state.bans.contains(writer));
     }
 
+    // A device key's endorsement and retirement name the author's own key
+    // (`p` signs them, ADR 0022 rule 1) and are valid from any carrier, a
+    // banned, departed or forked member's included (rule 2, plan E3.2
+    // S7d-keys.1), so standing never refuses them; their signatures and
+    // effectiveness are judged at the op's deps (S7d-keys.2).
+    if matches!(
+        entry,
+        GovernanceEntry::DeviceKey(_) | GovernanceEntry::DeviceRetired(_)
+    ) {
+        return true;
+    }
+
     // Creator always passes validation
     if state.is_creator(writer) {
         return true;
@@ -164,7 +189,18 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         | GovernanceEntry::MemberLeft { .. } => true,
 
         // Decided above, before the creator bypass.
-        GovernanceEntry::Checkpoint(_) | GovernanceEntry::CommunitySuccessor(_) => true,
+        GovernanceEntry::Checkpoint(_)
+        | GovernanceEntry::CommunitySuccessor(_)
+        | GovernanceEntry::DeviceKey(_)
+        | GovernanceEntry::DeviceRetired(_) => true,
+
+        // A re-admission is the member's own (rule 7: by one of its pre-fork
+        // device keys, checked at the op's deps in S7d-keys.2) or a kick's:
+        // `KICK_MEMBERS` and outranking the member's highest role (rule 8).
+        GovernanceEntry::DeviceReadmit(r) => {
+            r.member == *writer
+                || target::acts_on_lower(perms, KICK_MEMBERS, writer, &r.member, state)
+        }
 
         // The durable kick: the same authority and hierarchy as a ban,
         // and the creator cannot be removed (MSC4289).

@@ -12,12 +12,19 @@
 //! [`ReadOp::Unknown`]), which the caller quarantines with that reason (D15).
 //! A retired body arm is [`CodecError::UnknownGovernanceArm`].
 
+mod device;
+#[cfg(test)]
+mod device_tests;
 pub mod genesis;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod unknown_tests;
 
+pub(crate) use device::{
+    read_device_key, read_device_readmit, read_device_retired, write_device_key,
+    write_device_readmit, write_device_retired,
+};
 use rekindle_types::dht_layout::member_record::{MAX_FRONTIER_REFS, MAX_SUBKEY_VALUE_LEN};
 use rekindle_types::governance::{Frontier, GovernanceOp, OpHash, OpRef, RosterChecksum};
 use rekindle_types::id::PseudonymKey;

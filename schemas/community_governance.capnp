@@ -207,6 +207,10 @@ struct MemberJoinedPayload {
     inviteSig            @4 :Data;
     # K_M's binding proof (64 bytes; `MEMBER_RECORD_BINDING`).
     ownerProof           @5 :Data;
+    # The joiner's first device key, endorsed by its pseudonym (ADR 0022
+    # rules 1 and 10, plan E3.2 S7d-keys.1); unset until a device key is
+    # minted at join (S7d-keys.6).
+    firstDevice          @6 :DeviceKeyEntry;
 }
 
 struct MemberRecordMovedPayload {
@@ -263,6 +267,57 @@ struct CheckpointEntry {
 # `newAnchor`, `creatorSetHash`, `accepts` (among the op's deps) and one
 # link per new creator. ADR 0022 rule 8's `cut`, `forkEvidence` and
 # `pseudonymSig` append at @6 onward (S7d-keys K8).
+# One element id of a member's device endorsement set (ADR 0022 rule 10):
+# `(kind, deviceKey, incarnation)`.
+enum DeviceSetElementKind {
+    endorsement @0;
+    retirement  @1;
+}
+
+struct DeviceSetElement {
+    kind                 @0 :DeviceSetElementKind;
+    deviceKey            @1 :Data;            # 32 bytes
+    incarnation          @2 :UInt64;
+}
+
+# A pseudonym's endorsement of one of its per-community device keys (ADR
+# 0022 rules 1, 2 and 10, plan E3.2 S7d-keys.1). `endorsementSig` is the
+# pseudonym's Ed25519 over `rekindle-gov-device-key-v1 ‖ community ‖
+# memberRecord ‖ deviceKey ‖ incarnation ‖ extendsSet ‖ deviceRecord ‖
+# deviceRecordOwner ‖ forkEvidence`; `extendsSet` is BLAKE3
+# derive_key(rekindle-gov-device-set-v1) over `extendsElements`, sorted.
+struct DeviceKeyEntry {
+    deviceKey            @0 :Data;            # 32 bytes
+    incarnation          @1 :UInt64;
+    extendsSet           @2 :Data;            # 32 bytes
+    extendsElements      @3 :List(DeviceSetElement);
+    deviceRecord         @4 :Text;            # DHT key of M(p,d)
+    deviceRecordOwner    @5 :Text;            # K_M(p,d)'s public key text
+    forkEvidence         @6 :Data;            # 32 bytes; zero when it answers none
+    endorsementSig       @7 :Data;            # 64 bytes
+}
+
+# A pseudonym's retirement of one device key above `lastSeq` (ADR 0022
+# rules 4, 5 and 10): Ed25519 by the pseudonym over
+# `rekindle-gov-device-retired-v1 ‖ community ‖ memberRecord ‖ deviceKey ‖
+# incarnation ‖ lastSeq`.
+struct DeviceRetiredEntry {
+    deviceKey            @0 :Data;            # 32 bytes
+    incarnation          @1 :UInt64;
+    lastSeq              @2 :UInt64;
+    retirementSig        @3 :Data;            # 64 bytes
+}
+
+# A co-signed re-admission of a member's new device key after a fork (ADR
+# 0022 rules 7, 8 and 10); its body under `rekindle-gov-device-readmit-v1`.
+struct DeviceReadmitEntry {
+    member               @0 :Data;            # the member's pseudonym, 32 bytes
+    memberRecord         @1 :Text;            # M(p) from its MemberJoined
+    newKey               @2 :Data;            # 32 bytes
+    incarnation          @3 :UInt64;
+    forkEvidence         @4 :Data;            # 32 bytes
+}
+
 struct CommunitySuccessorEntry {
     newAnchor            @0 :Text;            # empty in an offer or withdrawal
     reason               @1 :SuccessorReason;
@@ -712,5 +767,8 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         memberRemoved                 @44 :MemberRemovedPayload;
         checkpoint                    @45 :CheckpointEntry;
         communitySuccessor            @46 :CommunitySuccessorEntry;
+        deviceKey                     @47 :DeviceKeyEntry;
+        deviceRetired                 @48 :DeviceRetiredEntry;
+        deviceReadmit                 @49 :DeviceReadmitEntry;
     }
 }

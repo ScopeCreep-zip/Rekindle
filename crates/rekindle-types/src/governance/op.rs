@@ -108,6 +108,10 @@ pub struct GenesisCert {
     pub additional_creators: Vec<PseudonymKey>,
     /// The anchor of the community this one succeeds, or `None`.
     pub predecessor: Option<String>,
+    /// The creator's first device key, endorsed by the creator pseudonym
+    /// and covered by `creatorSig` (ADR 0022, plan E3.2 S7d-keys.1); `None`
+    /// until S7d-keys.5 mints it at creation.
+    pub creator_device: Option<super::device::DeviceEndorsement>,
 }
 
 impl GenesisCert {

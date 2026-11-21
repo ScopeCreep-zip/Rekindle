@@ -84,6 +84,7 @@ async fn an_op_log_reader_without_the_code_is_admitted_nowhere() {
             }),
             owner_proof: sign_member_record_binding(&[0xC4; 32], &anchor, &author.0, &record)
                 .to_vec(),
+            first_device: None,
         },
         sig: [0; 64],
     };

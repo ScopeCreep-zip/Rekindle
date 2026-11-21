@@ -182,6 +182,7 @@ fn converging_as(
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
+        creator_device: None,
     };
     let state = rekindle_governance::state::GovernanceState::default();
     let (op, encoded) = op_log::build_op(
@@ -325,6 +326,7 @@ fn our_frontier_carries_the_checksum_of_its_heads_merge() {
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
+        creator_device: None,
     };
     let (op, encoded) = op_log::build_op(
         "A",

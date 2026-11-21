@@ -28,6 +28,7 @@ fn joined(b: u8) -> GovernanceEntry {
         member_record_owner: format!("owner-{b}"),
         invite_proof: None,
         owner_proof: vec![0; 64],
+        first_device: None,
     }
 }
 

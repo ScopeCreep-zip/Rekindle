@@ -8,6 +8,7 @@
 //! See rekindle-architecture-v2.md §4 for field specifications.
 
 mod checkpoint;
+mod device;
 mod entry;
 mod mod_report;
 mod onboarding;
@@ -22,6 +23,10 @@ mod tests;
 mod automod;
 pub use automod::AutoModAction;
 pub use checkpoint::Checkpoint;
+pub use device::{
+    DeviceEndorsement, DeviceReadmit, DeviceRetired, DeviceSetElement, DeviceSetElementKind,
+    MAX_DEVICE_SET_ELEMENTS,
+};
 pub use entry::{AdmissionMode, GovernanceEntry, SlotHead};
 pub use mod_report::ModReportTarget;
 pub use onboarding::{

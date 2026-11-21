@@ -5,7 +5,7 @@ use super::super::sub_types::pseudonym_key_from_capnp;
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::CodecError;
-use rekindle_types::governance::{GovernanceEntry, InviteProof, SlotHead};
+use rekindle_types::governance::{DeviceEndorsement, GovernanceEntry, InviteProof, SlotHead};
 
 pub(super) fn read_member_joined(
     p: schema_pkg::member_joined_payload::Reader<'_>,
@@ -25,6 +25,13 @@ pub(super) fn read_member_joined(
         )?,
         invite_proof,
         owner_proof: p.get_owner_proof().map_err(|e| capnp_err(&e))?.to_vec(),
+        first_device: if p.has_first_device() {
+            Some(crate::governance_op::read_device_key(
+                p.get_first_device().map_err(|e| capnp_err(&e))?,
+            )?)
+        } else {
+            None
+        },
     })
 }
 
@@ -96,7 +103,11 @@ pub(super) fn write_member_joined(
     member_record_owner: &str,
     invite_proof: Option<&InviteProof>,
     owner_proof: &[u8],
+    first_device: Option<&DeviceEndorsement>,
 ) {
+    if let Some(device) = first_device {
+        crate::governance_op::write_device_key(p.reborrow().init_first_device(), device);
+    }
     p.set_owner_proof(owner_proof);
     p.set_member_record(member_record);
     p.set_member_record_owner(member_record_owner);

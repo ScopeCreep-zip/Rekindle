@@ -71,6 +71,9 @@ pub enum NotOnTop {
     /// the whole op set, which the snapshot does not carry.
     /// `author` is the pseudonym's bytes (the error stays `Copy`).
     Forked { author: [u8; 32], seq: u64 },
+    /// (a): a device op in `rest`; the device phase resolves before every
+    /// cut power op (ADR 0022 rule 6, plan E3.2 S7d-keys.1).
+    DeviceOp(OpHash),
 }
 
 /// Where an op's dep is.
@@ -258,6 +261,9 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
     if let Some(op) = (sorted.iter()).find(|o| cut_top(o.author()).is_some_and(|s| o.op().seq <= s))
     {
         return Err(NotOnTop::IntoTheCut(op.hash()));
+    }
+    if let Some(op) = (sorted.iter()).find(|o| class_of(o.body()) == OpClass::Device) {
+        return Err(NotOnTop::DeviceOp(op.hash()));
     }
     let mut by_seq: Vec<(u64, [u8; 32], OpHash)> = (sorted.iter())
         .map(|o| (o.op().seq, o.author().0, o.hash()))

@@ -126,6 +126,13 @@ pub fn decode_genesis(data: &[u8]) -> Result<DecodedGenesis, CodecError> {
         created_at: r.get_created_at(),
         additional_creators,
         predecessor,
+        creator_device: if r.has_creator_device() {
+            Some(super::read_device_key(
+                r.get_creator_device().map_err(|e| capnp_err(&e))?,
+            )?)
+        } else {
+            None
+        },
     };
     let anchor_owner = fixed(data_field(r.get_anchor_owner())?, "genesis anchor owner")?;
     let unsigned = genesis_unsigned_bytes(&cert, &anchor_owner);
@@ -165,6 +172,9 @@ fn encode(cert: &GenesisCert, anchor_owner: &[u8; 32], sigs: Option<&SignedGenes
     if let Some(predecessor) = &cert.predecessor {
         b.set_predecessor(predecessor.as_str());
     }
+    if let Some(device) = &cert.creator_device {
+        super::write_device_key(b.reborrow().init_creator_device(), device);
+    }
     if let Some(signed) = sigs {
         b.set_anchor_sig(&signed.anchor_sig);
         b.set_creator_sig(&signed.creator_sig);
@@ -188,6 +198,7 @@ mod tests {
                 created_at: 7,
                 additional_creators: vec![PseudonymKey([5; 32]), PseudonymKey([6; 32])],
                 predecessor: Some("VLD0:old".into()),
+                creator_device: None,
             },
             anchor_owner: [2; 32],
             anchor_sig: [3; 64],
