@@ -121,9 +121,11 @@ async fn a_forged_prekey_rejection_leaves_the_pending_init() {
 
 /// A friend request names our profile, whose device list leads to our
 /// prekey record: before the own-records stage has published it (here:
-/// never, on a host with no network), adding a friend waits for it, then
-/// refuses (`NotReady`) and stores nothing, rather than send a request the
-/// peer could never open a session from.
+/// never, on a host with no network), adding a friend waits for the stage
+/// (plan E2.5 FC2: no fixed deadline) and stores nothing meanwhile, rather
+/// than send a request the peer could never open a session from; a stage
+/// that ends without the records answers its failure and still stores
+/// nothing.
 #[tokio::test(start_paused = true)]
 async fn adding_a_friend_waits_for_our_published_profile() {
     let dir = tempfile::tempdir().unwrap();
@@ -136,25 +138,39 @@ async fn adding_a_friend_waits_for_our_published_profile() {
         rekindle_secrets::friend_token::mint()
     ))
     .unwrap();
+    let stored = || {
+        let o = hex::encode(owner);
+        let db = host.ctx.db.current().unwrap();
+        async move {
+            db.call(move |conn| rekindle_db::repo::friends::load_all(conn, &o))
+                .await
+                .unwrap()
+        }
+    };
 
-    let added = rekindle_transport::operations::friend::add(&friends, &code, "hi").await;
+    let adding = tokio::spawn(async move {
+        rekindle_transport::operations::friend::add(&friends, &code, "hi").await
+    });
+    tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+    assert!(
+        !adding.is_finished(),
+        "the add answered before our records were held"
+    );
+    assert!(stored().await.is_empty(), "no friend stored while waiting");
+
+    host.ctx.friend_stores.own_records.send_replace(
+        rekindle_transport::operations::friend::OwnRecordsStage::Failed("no record pool".into()),
+    );
+    let added = adding.await.unwrap();
     assert!(
         matches!(
-            added,
-            Err(rekindle_transport::operations::friend::FriendError::NotReady(_))
+            &added,
+            Err(rekindle_transport::operations::friend::FriendError::Failed(why))
+                if why.contains("no record pool")
         ),
         "{added:?}"
     );
-    let o = hex::encode(owner);
-    let stored = host
-        .ctx
-        .db
-        .current()
-        .unwrap()
-        .call(move |conn| rekindle_db::repo::friends::load_all(conn, &o))
-        .await
-        .unwrap();
-    assert!(stored.is_empty(), "no friend stored");
+    assert!(stored().await.is_empty(), "no friend stored");
 }
 
 /// Ann's prekeys, minted and stored as her own-records stage does (an
