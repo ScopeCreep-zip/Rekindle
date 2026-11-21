@@ -114,6 +114,7 @@ mod republish_inspect;
 mod requester_route_bounds;
 mod requester_route_replaced;
 mod requester_route_stale;
+mod restart;
 mod resume_after_restart;
 mod rich_messaging;
 mod ring_census;

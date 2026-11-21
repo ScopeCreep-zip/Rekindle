@@ -13,7 +13,7 @@ use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest, LifecycleReq
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_netsim::Netsim;
-use rekindle_node::host::{claim, Host, HostConfig, HostStores, ShellHooks, TransportSource};
+use rekindle_node::host::{Host, ShellHooks};
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
 use rekindle_types::subscription_events::{FriendEvent, StreamFrame, SubscriptionEvent};
 use tracing::Instrument;
@@ -29,7 +29,7 @@ pub struct SimNode {
     pub public_key: Option<String>,
     /// The node's route port, the one its Host holds, to read our routes.
     pub routes: Arc<dyn rekindle_records::port::RoutePort>,
-    dir: tempfile::TempDir,
+    pub(crate) dir: tempfile::TempDir,
 }
 
 /// A request the host refused.
@@ -39,7 +39,7 @@ pub struct Refused {
     pub message: String,
 }
 
-fn temp_root(dir: &tempfile::TempDir) -> rekindle_db::paths::DataRoot {
+pub(crate) fn temp_root(dir: &tempfile::TempDir) -> rekindle_db::paths::DataRoot {
     rekindle_db::paths::DataRoot::under(dir.path())
 }
 
@@ -77,31 +77,11 @@ pub async fn start_with(n: usize, seed: u64, shell_for: ShellFor<'_>) -> (Netsim
     let mut hosts = Vec::with_capacity(n);
     for node in nodes {
         let dir = tempfile::tempdir().expect("temp dir");
-        let root = temp_root(&dir);
-        let storage_dir = root.data.join("veilid").display().to_string();
         let routes = Arc::clone(&node.ports.routes);
-        let host = Host::start(HostConfig {
-            root: claim(root).expect("claim the temp root"),
-            stores: HostStores::default(),
-            transport: TransportSource::Ports {
-                config: rekindle_types::config::TransportConfig {
-                    storage_dir,
-                    ..Default::default()
-                },
-                ports: node.ports,
-                events: node.events,
-            },
-            serve_bus: false,
-            clock: Arc::clone(&node.clock) as Arc<dyn rekindle_utils::Clock>,
-            rng: Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>,
-            idle: Arc::clone(&node.idle) as Arc<dyn rekindle_utils::IdleSource>,
-            shell: shell_for(node.index),
-        })
-        .instrument(node_span(node.index))
-        .await
-        .expect("host starts");
+        let index = node.index;
+        let host = crate::restart::host_on(node, &dir, shell_for(index)).await;
         hosts.push(SimNode {
-            index: node.index,
+            index,
             host,
             public_key: None,
             routes,
@@ -114,7 +94,7 @@ pub async fn start_with(n: usize, seed: u64, shell_for: ShellFor<'_>) -> (Netsim
 }
 
 /// The span a node's Host work runs in ([`crate::logs::NODE_SPAN`]).
-fn node_span(node: usize) -> tracing::Span {
+pub(crate) fn node_span(node: usize) -> tracing::Span {
     tracing::info_span!(target: "netsim", "netsim_node", node = node as u64)
 }
 
