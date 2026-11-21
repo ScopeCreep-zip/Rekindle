@@ -31,7 +31,7 @@ pub enum Anchor {
 /// One axis of a node's box, parent-relative.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
-pub enum Span {
+pub enum NodeSpan {
     /// Its own size (its art's), placed once.
     Fixed { at: Anchor, size: u16 },
     /// Stretched between two insets from the parent's edges (Xfire's
@@ -39,7 +39,7 @@ pub enum Span {
     Stretch { start: i16, end: i16 },
 }
 
-impl Span {
+impl NodeSpan {
     /// The span's start and length inside a parent `len` px long.
     #[must_use]
     pub fn place(self, len: i32) -> (i32, i32) {
@@ -78,8 +78,8 @@ pub struct SkinNode {
     /// The pack's tile name, unique in the tree.
     pub id: String,
     pub role: NodeRole,
-    pub x: Span,
-    pub y: Span,
+    pub x: NodeSpan,
+    pub y: NodeSpan,
     /// The pack's `Z`.
     #[serde(default)]
     pub z: i16,

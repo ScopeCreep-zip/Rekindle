@@ -4,6 +4,7 @@
 //! (rules 1–10, run by [`crate::shape::check`] before a package is served)
 //! and the stylesheet's one rule per node. The shell renders it in SK2-S2.
 
+mod anchor;
 pub mod css;
 pub mod import;
 pub mod roles;

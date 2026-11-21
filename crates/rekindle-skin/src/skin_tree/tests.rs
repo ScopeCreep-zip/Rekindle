@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rekindle_image::{Rgba, RgbaImage};
 use rekindle_types::dto::skin::{Insets, SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_tree::{
-    ActionKey, Anchor, NodeArt, NodeRole, SkinNode, SkinTree, Span, ViewKey,
+    ActionKey, Anchor, MenuKey, NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
 };
 
 use super::roles::{role, Facts};
@@ -32,14 +32,14 @@ fn layout(tree: Option<SkinTree>) -> WindowLayout {
     }
 }
 
-fn fixed(at: i16, size: u16) -> Span {
-    Span::Fixed {
+fn fixed(at: i16, size: u16) -> NodeSpan {
+    NodeSpan::Fixed {
         at: Anchor::Start(at),
         size,
     }
 }
 
-fn n(id: &str, role: NodeRole, x: Span, y: Span) -> SkinNode {
+fn n(id: &str, role: NodeRole, x: NodeSpan, y: NodeSpan) -> SkinNode {
     SkinNode {
         id: id.to_owned(),
         role,
@@ -53,8 +53,8 @@ fn n(id: &str, role: NodeRole, x: Span, y: Span) -> SkinNode {
     }
 }
 
-fn whole() -> Span {
-    Span::Stretch { start: 10, end: 10 }
+fn whole() -> NodeSpan {
+    NodeSpan::Stretch { start: 10, end: 10 }
 }
 
 /// A tree every rule passes: views with the friends view, its button row,
@@ -64,7 +64,7 @@ fn good() -> Vec<SkinNode> {
         "Views",
         NodeRole::Views,
         whole(),
-        Span::Stretch { start: 40, end: 60 },
+        NodeSpan::Stretch { start: 40, end: 60 },
     );
     views.children.push(n(
         "BuddyView",
@@ -76,7 +76,7 @@ fn good() -> Vec<SkinNode> {
         "Bar",
         NodeRole::ButtonBar,
         whole(),
-        Span::Fixed {
+        NodeSpan::Fixed {
             at: Anchor::End(10),
             size: 40,
         },
@@ -98,7 +98,7 @@ fn good() -> Vec<SkinNode> {
         n(
             "CloseBox",
             NodeRole::Close,
-            Span::Fixed {
+            NodeSpan::Fixed {
                 at: Anchor::End(4),
                 size: 18,
             },
@@ -151,7 +151,7 @@ fn rule_4_interactive_nodes_never_overlap_at_one_z() {
     t.push(n(
         "CloseBox2",
         NodeRole::Minimize,
-        Span::Fixed {
+        NodeSpan::Fixed {
             at: Anchor::End(10),
             size: 18,
         },
@@ -169,9 +169,63 @@ fn rule_5_an_interactive_node_has_a_hit_area_in_the_window() {
     let mut t = good();
     t.push(n("Min", NodeRole::Minimize, fixed(0, 0), fixed(30, 0)));
     refused(t, "rule 5");
-    let mut t = good();
-    // 16 px tall at the top edge: its 24 px hit area leaves the window.
+    // A window too small for any 24 px target refuses every interactive node.
+    let mut t = vec![n("Min", NodeRole::Minimize, fixed(0, 16), fixed(0, 16))];
+    let mut small = layout(None);
+    small.min_width = 20;
+    small.tree = Some(SkinTree { root: t.clone() });
+    let e = validate::check(
+        "main",
+        &SkinTree { root: t.clone() },
+        &small,
+        &BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(format!("{e:?}").contains("rule 5"), "{e:?}");
+    // Lead decision 2: 16 px tall at the top edge, its 24 px hit area is
+    // shifted inward (down) to stay in the window, not refused.
+    t = good();
     t.push(n("Min", NodeRole::Minimize, fixed(60, 16), fixed(0, 16)));
+    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
+    assert_eq!(
+        validate::hit_area([60, 0, 16, 16], (200, 300)),
+        [56, 0, 24, 24]
+    );
+    assert_eq!(
+        validate::hit_area([190, 290, 10, 10], (200, 300)),
+        [176, 276, 24, 24]
+    );
+}
+
+/// Lead decision 2: a menu drawn as text has a 0 px import box; it is sized
+/// by its text at render (`max-content`), so rule 5 does not refuse it, while
+/// a 0 px button still is.
+#[test]
+fn rule_5_a_text_sized_menu_is_sized_at_render() {
+    let mut t = good();
+    t.push(n(
+        "XfireMenuText",
+        NodeRole::Menu(MenuKey::First),
+        fixed(40, 0),
+        fixed(30, 0),
+    ));
+    assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
+    let out = css::tree_css(
+        ".app-frame",
+        &SkinTree { root: t },
+        &layout(None),
+        &BTreeMap::new(),
+        "x",
+    )
+    .unwrap();
+    assert!(out.contains("[data-skin-node=\"XfireMenuText\"] {\n    position: absolute; left: 40px; width: max-content; top: 30px; height: max-content;"), "{out}");
+    let mut t = good();
+    t.push(n(
+        "Chat",
+        NodeRole::Button(ActionKey::Chat),
+        fixed(40, 0),
+        fixed(30, 0),
+    ));
     refused(t, "rule 5");
 }
 
@@ -244,16 +298,12 @@ const PARTS: &[u8] = br#"<Components>
 <Component Name="CloseBox"><Images State="Normal"><Image>close-18x16</Image></Images></Component>
 </Components>"#;
 
-fn piece(path: &str, _: Option<&str>) -> Result<RgbaImage, crate::import::ImportError> {
+fn piece(path: &str) -> RgbaImage {
     let (w, h) = path
         .rsplit_once('-')
         .and_then(|(_, d)| d.split_once('x'))
         .unwrap();
-    Ok(RgbaImage::from_pixel(
-        w.parse().unwrap(),
-        h.parse().unwrap(),
-        ON,
-    ))
+    RgbaImage::from_pixel(w.parse().unwrap(), h.parse().unwrap(), ON)
 }
 
 fn imported(xml: &[u8]) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
@@ -271,7 +321,7 @@ fn imported_with(
         SkinWindow::Main,
         &main,
         std::slice::from_ref(&parts),
-        piece,
+        |path, _| Ok(piece(path)),
         &mut built,
     )?;
     let tree = built.0.tree.clone().unwrap();
@@ -283,7 +333,7 @@ fn classic_anchors_resolve_parent_relative() {
     let (l, tree) = imported(CLASSIC).unwrap();
     let bar = &tree.root[0];
     assert_eq!(bar.role, NodeRole::Drag);
-    assert_eq!(bar.x, Span::Stretch { start: 14, end: 27 });
+    assert_eq!(bar.x, NodeSpan::Stretch { start: 14, end: 27 });
     let [logo, name, close] = &bar.children[..] else {
         panic!("{:?}", bar.children)
     };
@@ -291,14 +341,17 @@ fn classic_anchors_resolve_parent_relative() {
     // `X="XfireLogo.RIGHT+6"`: 20 + 40 + 6.
     assert_eq!(
         (name.role, name.x),
-        (NodeRole::NameField, Span::Stretch { start: 66, end: 48 })
+        (
+            NodeRole::NameField,
+            NodeSpan::Stretch { start: 66, end: 48 }
+        )
     );
     assert_eq!(name.y, fixed(22, 0));
     assert_eq!(name.children[0].role, NodeRole::Part);
     // `X="UserNameField.RIGHT+1"`: the stretching sibling's right inset, less 1, less its width.
     assert_eq!(
         close.x,
-        Span::Fixed {
+        NodeSpan::Fixed {
             at: Anchor::End(29),
             size: 18
         }
@@ -326,7 +379,7 @@ fn rule_2_an_anchor_that_does_not_resolve_is_refused() {
 #[test]
 fn css_lays_one_rule_per_node_with_a_hit_area() {
     let tree = SkinTree { root: good() };
-    let out = css::tree_css(".app-frame", &tree, &BTreeMap::new(), "x").unwrap();
+    let out = css::tree_css(".app-frame", &tree, &layout(None), &BTreeMap::new(), "x").unwrap();
     assert_eq!(
         out.matches(" {\n    position: absolute;").count(),
         6,
@@ -338,6 +391,11 @@ fn css_lays_one_rule_per_node_with_a_hit_area() {
         "{out}"
     );
     assert!(!out.contains("[data-skin-node=\"Views\"]::before"), "{out}");
+    // Lead decision 2: CloseBox (18x16 at right 4, top 4) grows to 24x24
+    // shifted inward: 3 px left of centre would leave the top edge.
+    assert!(out.contains("[data-skin-node=\"CloseBox\"]::before {\n    content: \"\";\n    position: absolute;\n    left: -3px;\n    top: -4px;\n    width: 24px;\n    height: 24px;"), "{out}");
+    // Lead decision 3: the views node draws opaque over the window art.
+    assert!(out.contains("[data-skin-node=\"Views\"] {\n    position: absolute; left: 10px; right: 10px; top: 40px; bottom: 60px; z-index: 0; background-color: var(--color-xfire-bg-dark);"), "{out}");
 }
 
 fn root_of(xml: &[u8]) -> Vec<SkinNode> {
@@ -353,7 +411,7 @@ fn a_reference_to_a_later_sibling_resolves() {
 <Tile Name="MainTitleBar" ResizeX="100" IndentRight="CloseBox.WIDTH+2" Component="MainTitleBar"/>
 <Tile Name="CloseBox" JustX="RIGHT" X="4" Component="CloseBox"/></Tile>"#,
     );
-    assert_eq!(kids[0].x, Span::Stretch { start: 0, end: 20 });
+    assert_eq!(kids[0].x, NodeSpan::Stretch { start: 0, end: 20 });
 }
 
 /// StealthX's `WndMax` `JustX="RIGHT" X="WndClose.LEFT-3"`: the sibling's
@@ -365,7 +423,7 @@ fn a_right_justified_tile_ends_on_a_siblings_edge() {
 <Tile Name="CloseBox" JustX="RIGHT" X="4" Component="CloseBox"/>
 <Tile Name="XfireLogo" JustX="RIGHT" X="CloseBox.LEFT-3" Component="XfireLogo"/></Tile>"#,
     );
-    let at = Span::Fixed {
+    let at = NodeSpan::Fixed {
         at: Anchor::End(25),
         size: 40,
     };
@@ -381,7 +439,7 @@ fn a_tile_beside_a_centred_sibling_is_centred() {
 <Tile Name="CloseBox" JustX="CENTER" X="0" Component="CloseBox"/>
 <Tile Name="XfireLogo" X="CloseBox.RIGHT+2" Component="XfireLogo"/></Tile>"#,
     );
-    let at = Span::Fixed {
+    let at = NodeSpan::Fixed {
         at: Anchor::Centre(31),
         size: 40,
     };

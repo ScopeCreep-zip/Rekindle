@@ -203,7 +203,9 @@ pub fn frame_css(
     for (&window, layout) in &manifest.windows {
         let Some(tree) = &layout.tree else { continue };
         let root = format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window));
-        out.push_str(&crate::skin_tree::css::tree_css(&root, tree, images, base)?);
+        out.push_str(&crate::skin_tree::css::tree_css(
+            &root, tree, layout, images, base,
+        )?);
     }
     out.push_str("}\n");
     Some(out)

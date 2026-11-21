@@ -10,19 +10,27 @@
 //!    outsets: the overhangs) at its smallest size;
 //! 4. two interactive nodes never overlap at the same z;
 //! 5. every interactive node has a box, and its 24×24 hit area (the
-//!    stylesheet's) lies inside the window;
+//!    stylesheet's, grown about its centre and shifted inward at the window's
+//!    edges: lead decision 2, an edge grip's area stays in the window) lies
+//!    inside the window; a text-sized node (a menu or tab drawn as text, no
+//!    art) is sized by its text at render, so its target is checked on the
+//!    rendered window, not on its 0 px import box;
 //! 6. each role appears at most once, except `Button`, `Decor`, `Resize`,
 //!    `Tab`, and the role-less `Group`/`Part`;
 //! 7. a `Views` node has a `View(Friends)`;
 //! 8. every `ButtonRow(v)` has a matching `View(v)`;
 //! 9. every art image is in the package;
 //! 10. the frame tiles keep SK0's rules ([`crate::shape::check`] runs them
-//!     on the same layout; the tree adds no frame tile).
+//!     on the same layout; the tree adds no frame tile). SK0's "frame tiles
+//!     stay out of the content rect" belonged to the frame-around-our-app
+//!     model and is withdrawn (lead decision 3): the window's background art
+//!     may lie under any component, the views included; the views node draws
+//!     opaque instead (its stylesheet rule's background).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::dto::skin::{SkinError, SkinRule, WindowLayout};
-use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree, ViewKey};
+use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
 
 /// The most nodes a tree may hold.
 pub const MAX_NODES: usize = 512;
@@ -48,16 +56,27 @@ fn inside(b: [i32; 4], w: i32, h: i32) -> bool {
     b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= w && b[1] + b[3] <= h
 }
 
-/// The node's hit area: its box grown to 24×24 about its centre.
+/// A node sized by its text at render: a menu or tab drawn as text, with
+/// no art (its import box is 0 px on an axis).
 #[must_use]
-pub fn hit_area(b: [i32; 4]) -> [i32; 4] {
-    let grow = |at: i32, len: i32| {
-        let l = len.max(HIT);
-        (at - (l - len) / 2, l)
+pub fn text_sized(n: &SkinNode) -> bool {
+    let empty = |s: NodeSpan| matches!(s, NodeSpan::Fixed { size: 0, .. });
+    n.art.is_none()
+        && matches!(n.role, NodeRole::Menu(_) | NodeRole::Tab(_))
+        && (empty(n.x) || empty(n.y))
+}
+
+/// The node's hit area in a `win_w × win_h` window: its box grown to 24×24
+/// about its centre, then shifted inward to lie inside the window.
+#[must_use]
+pub fn hit_area(area: [i32; 4], (win_w, win_h): (i32, i32)) -> [i32; 4] {
+    let grow = |at: i32, len: i32, win: i32| {
+        let full = len.max(HIT);
+        ((at - (full - len) / 2).min(win - full).max(0), full)
     };
-    let (x, w) = grow(b[0], b[2]);
-    let (y, h) = grow(b[1], b[3]);
-    [x, y, w, h]
+    let (left, width) = grow(area[0], area[2], win_w);
+    let (top, height) = grow(area[1], area[3], win_h);
+    [left, top, width, height]
 }
 
 fn art_paths(n: &SkinNode) -> impl Iterator<Item = &String> {
@@ -95,7 +114,9 @@ pub fn check(
         if b[2] > 0 && b[3] > 0 && !inside(*b, w, h) {
             return Err(bad(&at, "rule 3: a node inside the window"));
         }
-        if n.role.interactive() && (b[2] <= 0 || b[3] <= 0 || !inside(hit_area(*b), w, h)) {
+        let sized = b[2] > 0 && b[3] > 0;
+        if n.role.interactive() && !text_sized(n) && (!sized || !inside(hit_area(*b, (w, h)), w, h))
+        {
             return Err(bad(
                 &at,
                 "rule 5: an interactive node with a 24x24 hit area in the window",
