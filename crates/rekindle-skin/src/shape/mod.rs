@@ -18,6 +18,7 @@ mod check;
 pub mod css;
 mod mask;
 mod silhouette;
+pub mod title;
 
 #[cfg(test)]
 mod tests;

@@ -16,6 +16,9 @@ interface TitlebarProps {
 const Titlebar: Component<TitlebarProps> = (props) => {
   return (
     <div class="xfire-titlebar" data-tauri-drag-region>
+      {/* The pack's logo art (plan SK1-S1): shown and placed by the Host's
+          served stylesheet when the skin lays a title strip. */}
+      <span class="xfire-titlebar-logo" aria-hidden="true" data-tauri-drag-region />
       <span class="xfire-titlebar-text" data-tauri-drag-region>
         {props.title}
       </span>
@@ -25,7 +28,7 @@ const Titlebar: Component<TitlebarProps> = (props) => {
         onClick={handleMinimize}
         aria-label="Minimize window"
       >
-        &#x2014;
+        <span class="xfire-titlebar-glyph" aria-hidden="true">&#x2014;</span>
       </button>
       {props.showMaximize && (
         <button
@@ -33,7 +36,7 @@ const Titlebar: Component<TitlebarProps> = (props) => {
           onClick={handleMaximize}
           aria-label="Maximize window"
         >
-          &#x25A1;
+          <span class="xfire-titlebar-glyph" aria-hidden="true">&#x25A1;</span>
         </button>
       )}
       <button
@@ -41,7 +44,7 @@ const Titlebar: Component<TitlebarProps> = (props) => {
         onClick={props.hideOnClose ? handleHide : handleClose}
         aria-label={props.hideOnClose ? "Hide window" : "Close window"}
       >
-        &#x2715;
+        <span class="xfire-titlebar-glyph" aria-hidden="true">&#x2715;</span>
       </button>
     </div>
   );

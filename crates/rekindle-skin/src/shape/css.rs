@@ -201,6 +201,25 @@ pub fn frame_css(
     for (&window, layout) in &manifest.windows {
         window_rules(&mut out, window, layout, images, base)?;
     }
+    // The pack-laid title strips (plan SK1-S1): the buddy list's lays every
+    // window without its own (Xfire's dialogs and windows share the pack's
+    // title buttons); a window kind with its own strip lays its windows.
+    let own_chat = manifest
+        .windows
+        .get(&SkinWindow::Chat)
+        .is_some_and(|l| l.title.is_some());
+    for (&window, layout) in &manifest.windows {
+        let Some(title) = &layout.title else { continue };
+        let root = match (window, own_chat) {
+            (SkinWindow::Main, true) => ".app-frame:not([data-skin-window=\"chat\"])".to_owned(),
+            (SkinWindow::Main, false) => ".app-frame".to_owned(),
+            (SkinWindow::Chat, _) => {
+                format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window))
+            }
+        };
+        let top = layout.outsets.top.saturating_add(layout.content.top);
+        out.push_str(&super::title::title_css(&root, title, top, images, base)?);
+    }
     out.push_str("}\n");
     Some(out)
 }

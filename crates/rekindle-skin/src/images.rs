@@ -359,6 +359,13 @@ fn check_references(package: &Package<'_>, manifest: &SkinManifest) -> Result<()
             let field = format!("windows.{window:?}.tiles.{i}.image");
             check_reference(package, &field, &tile.image, "assets/")?;
         }
+        // The pack-laid title strip's images (plan SK1-S1).
+        for (i, part) in layout.title.iter().flat_map(|t| &t.parts).enumerate() {
+            for path in part.image.iter().chain(part.states.values()) {
+                let field = format!("windows.{window:?}.title.parts.{i}.image");
+                check_reference(package, &field, path, "assets/")?;
+            }
+        }
     }
     Ok(())
 }

@@ -73,6 +73,9 @@ pub struct WindowLayout {
     /// The pack's banner region (main window, plan SK0-L1): the profile header; `None`: content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub header: Option<LayoutRegion>,
+    /// The pack-laid title strip (plan SK1-S1); `None` keeps the app's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<super::skin_title::TitleLayout>,
 }
 
 /// A rectangle the pack lays in the frame rectangle (plan SK0-L1): placed

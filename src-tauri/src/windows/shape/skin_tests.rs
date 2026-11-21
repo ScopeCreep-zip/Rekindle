@@ -43,6 +43,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                     fill: false,
                 }],
                 header: None,
+                title: None,
             },
             masks: vec![SkinTileMask {
                 width: 4,

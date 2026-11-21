@@ -472,7 +472,7 @@ pub(crate) fn href(base: &str, path: &str, images: &BTreeMap<String, Vec<u8>>) -
 }
 
 /// The width and height of the canonical image `path`, from its header.
-fn dimensions(path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<(u32, u32)> {
+pub(crate) fn dimensions(path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<(u32, u32)> {
     let kind = match extension(path).as_deref() {
         Some("gif") => ImageKind::Gif,
         Some("png") => ImageKind::Png,

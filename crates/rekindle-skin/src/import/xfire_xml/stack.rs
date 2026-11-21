@@ -260,6 +260,7 @@ fn build(window: SkinWindow, rows: &[Stacked], content_row: usize) -> Result<Bui
             min_height: u16_of(&file, top + bottom)?,
             tiles,
             header: None,
+            title: None,
         },
         files,
     ))

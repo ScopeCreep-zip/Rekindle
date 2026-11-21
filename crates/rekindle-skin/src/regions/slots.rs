@@ -209,7 +209,9 @@ pub const SLOTS: [RegionSlot; 36] = [
     // Every titlebar button (Miranda's one `Titlebutton` set).
     slot("titlebar.buttons", CHROME, CHROME, &[]).states(BUTTON),
     // One titlebar button each (Xfire `ButtonMinimize` …; Winamp
-    // TITLEBAR.BMP). The glyph is drawn over the image, never replaced.
+    // TITLEBAR.BMP). For a strip the pack does not lay, the glyph is drawn
+    // over the image; a pack-laid strip (plan SK1-S1, `shape::title`)
+    // draws the pack's own button images at their size with no glyph.
     slot("titlebar.btn.minimize", CHROME, CHROME, &[]).painted(BUTTON),
     slot("titlebar.btn.maximize", CHROME, CHROME, &[]).painted(BUTTON),
     slot("titlebar.btn.close", CHROME, CHROME, &[]).painted(BUTTON),

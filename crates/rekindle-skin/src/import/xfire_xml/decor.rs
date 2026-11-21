@@ -272,6 +272,7 @@ pub fn main_window(
     };
     if let Some(mut built) = built {
         apply(w, main, components, piece, &mut built)?;
+        super::title::add(w, main, components, piece, &mut built)?;
         windows.insert(w, built);
     }
     Ok(())

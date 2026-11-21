@@ -39,6 +39,7 @@ mod stack;
 pub mod surfaces;
 pub mod tiles;
 use sources::{component_files, count_dropped};
+mod title;
 mod title_rows;
 pub mod v3;
 

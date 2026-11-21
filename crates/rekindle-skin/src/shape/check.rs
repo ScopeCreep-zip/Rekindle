@@ -220,6 +220,8 @@ fn header(
 /// # Errors
 /// The first rule a layout breaks.
 pub fn check(manifest: &SkinManifest, images: &BTreeMap<String, Vec<u8>>) -> Result<(), SkinError> {
+    // The pack-laid title strips (plan SK1-S1).
+    super::title::check(manifest, images)?;
     for (&window, layout) in &manifest.windows {
         // Rule 5: no more tiles than the window draws (`SkinFrame`'s slots).
         if layout.tiles.len() > MAX_FRAME_TILES {

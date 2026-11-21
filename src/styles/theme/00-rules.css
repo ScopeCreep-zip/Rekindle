@@ -169,6 +169,12 @@
     flex: 1;
   }
 
+  /* A pack-laid strip (plan SK1-S1, `rekindle-skin` `shape/title.rs`)
+   * shows and places the logo; the app's own strip has none. */
+  .xfire-titlebar-logo {
+    display: none;
+  }
+
   /* ─── Form primitives ─── */
 
   .form-input:focus {

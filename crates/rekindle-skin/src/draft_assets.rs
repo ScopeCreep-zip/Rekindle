@@ -73,7 +73,13 @@ pub(super) fn gather(
                 m.windows
                     .values()
                     .flat_map(|w| w.tiles.iter().map(|t| &t.image)),
-            );
+            )
+            .chain(m.windows.values().flat_map(|w| {
+                w.title
+                    .iter()
+                    .flat_map(|t| &t.parts)
+                    .flat_map(|p| p.image.iter().chain(p.states.values()))
+            }));
         for name in named {
             if let Some(data) = p.get(name) {
                 files.insert(name.clone(), data.to_vec());

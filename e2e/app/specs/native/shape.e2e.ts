@@ -233,12 +233,36 @@ describe("a skinned window is the skin's shape", function () {
     return found;
   }
 
+  /** Plan SK1-S1: where the skin lays the title strip, each shown title button is the pack's image at its own size with no glyph or text over it, and no "Rekindle" label is painted. */
+  async function titleStrip(file: string): Promise<Record<string, unknown>> {
+    const got = (await browser.execute(() => {
+      const bad: string[] = [];
+      const logo = document.querySelector(".xfire-titlebar-logo");
+      if (!logo || getComputedStyle(logo).display === "none") return { laid: false, bad };
+      const text = document.querySelector(".xfire-titlebar-text");
+      if (text && getComputedStyle(text).display !== "none" && (text.textContent ?? "").trim() === "Rekindle") bad.push("the Rekindle label is painted");
+      for (const b of Array.from(document.querySelectorAll<HTMLElement>(".xfire-titlebar-btn"))) {
+        const s = getComputedStyle(b);
+        if (s.display === "none") continue;
+        const glyph = b.querySelector(".xfire-titlebar-glyph");
+        if (!s.backgroundImage.startsWith('url("skin://')) bad.push(`${b.className}: background ${s.backgroundImage}`);
+        if (s.backgroundSize !== `${s.width} ${s.height}`) bad.push(`${b.className}: art ${s.backgroundSize} in a ${s.width} x ${s.height} box`);
+        if (glyph && getComputedStyle(glyph).display !== "none") bad.push(`${b.className}: glyph shown`);
+        if (b.innerText.trim() !== "") bad.push(`${b.className}: text "${b.innerText.trim()}"`);
+        if (!b.getAttribute("aria-label")) bad.push(`${b.className}: no accessible name`);
+      }
+      return { laid: true, bad };
+    })) as { laid: boolean; bad: string[] };
+    return got.bad.length === 0 ? {} : { [`${file} title strip`]: got.bad };
+  }
+
   for (const pack of PACKS) {
     it(`${pack.name}: the buddy list and a chat window are drawn exactly to the skin's cut`, async () => {
       const href = await apply(pack);
       const found: Record<string, unknown> = {};
       await switchTo(browser, BUDDY);
       Object.assign(found, await measure(pack, "main", "buddy-list", href));
+      Object.assign(found, await titleStrip("buddy-list"));
       if (!NATIVE_WAYLAND) {
         // A resize recomputes the cut (the shaper reshapes on Resized).
         await sizeWindow(browser, { width: BUDDY_LIST.def.width + 60, height: BUDDY_LIST.def.height + 80 });
