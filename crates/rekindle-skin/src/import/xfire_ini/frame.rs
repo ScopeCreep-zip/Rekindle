@@ -325,3 +325,28 @@ pub fn main_layout(f: &Frame) -> Result<(WindowLayout, BTreeMap<String, Vec<u8>>
     }
     Ok((layout, files))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::ini::parse;
+    use super::views_insets;
+
+    fn main_of(text: &str) -> Option<(u32, u32)> {
+        let ini = parse("skin.ini", text.as_bytes()).unwrap();
+        views_insets(ini.section("MainWindow").unwrap())
+    }
+
+    /// Plan SK0-L1, [`super::Frame::views`]: the `TabbedControl` window
+    /// stretched both ways gives `X` + `IndentLeft` and `IndentRight`
+    /// (XGlow 28/31); one justified right, not stretched both ways, or
+    /// placed by a non-number reads none.
+    #[test]
+    fn views_are_the_stretched_tabbed_control_window() {
+        let base = "[MainWindow]\nWindow1.Name=Header\nWindow2.Name=TabbedControl\nWindow2.ResizeX=100\nWindow2.ResizeY=100\nWindow2.X=20\nWindow2.IndentLeft=8\nWindow2.IndentRight=31\n";
+        assert_eq!(main_of(base), Some((28, 31)));
+        assert_eq!(main_of(&format!("{base}Window2.JustX=RIGHT\n")), None);
+        assert_eq!(main_of(&base.replace("ResizeY=100", "ResizeY=0")), None);
+        assert_eq!(main_of(&base.replace("X=20", "X=Header.RIGHT")), None);
+        assert_eq!(main_of(&base.replace("=TabbedControl", "=BuddyView")), None);
+    }
+}
