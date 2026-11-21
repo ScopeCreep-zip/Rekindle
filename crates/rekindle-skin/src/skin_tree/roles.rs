@@ -135,6 +135,14 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         | "thexcover" => Some(R::Decor),
         "tabheader" | "tabs" | "tabbuttonbar" => Some(R::TabStrip),
         "tabcontrol" if f.children.iter().any(|c| key(c) == "knob") => Some(R::TabStrip),
+        // Symbiosis's one list for every tab (lead decision 9): the views,
+        // split into one view per tab by `passes::tab_views`.
+        "xfireview"
+            if f.class
+                .is_some_and(|c| c.trim().eq_ignore_ascii_case("XfireView")) =>
+        {
+            Some(R::Views)
+        }
         "buddyview" | "xfireview" => Some(R::View(ViewKey::Friends)),
         "serverview" => Some(R::View(ViewKey::Servers)),
         "downloadview" => Some(R::View(ViewKey::Files)),

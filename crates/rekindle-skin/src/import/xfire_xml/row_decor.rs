@@ -93,6 +93,15 @@ pub(super) fn add(
     else {
         return Ok(());
     };
+    // A stretch its component caps (`MaxWidth`) never spans the window, so
+    // it is no row: Space Cowboy's `BRGripper` (`mainwindow.xml:89`
+    // `ResizeX="100" JustX="RIGHT" X="19"`, `components.xml:1354-1359`
+    // `MinWidth="38" MaxWidth="38"`) is one 38 px grip in the bottom right
+    // corner (the tree's `Resize(BottomRight)` node draws its art), not 38 px
+    // dots repeated across the window.
+    if component.attr_ci("MaxWidth").is_some() {
+        return Ok(());
+    }
     // A piece naming a bitmap the pack never defines lays nothing, as in
     // Xfire (xSLIMFIRE's `AdArea` left/right `ADBARLEFT`/`ADBARRIGHT`); a
     // defined bitmap whose file is missing still stops the import.
@@ -267,5 +276,42 @@ mod tests {
             ),
             Err(ImportError::MissingFile { .. })
         ));
+    }
+
+    /// Space Cowboy's `BRGripper`: stretched (`ResizeX="100"`) but capped by
+    /// its component's `MaxWidth="38"`, so it is no row (laid across a wide
+    /// window its dots made 4499 silhouette rectangles).
+    #[test]
+    fn a_stretch_its_component_caps_is_no_row() {
+        let layout = parse(
+            "mainwindow.xml",
+            br#"<Tile Name="Main" Component="MainWindow">
+<Tile Name="BRGripper" JustX="RIGHT" X="19" JustY="BOTTOM" Y="2" ResizeX="100" Z="40" Component="BRGripper"/></Tile>"#,
+        )
+        .unwrap();
+        let components = parse(
+            "components.xml",
+            br#"<Components><Component Name="BRGripper" Class="Tile" MinWidth="38" MaxWidth="38"><Images>
+<Image Type="middle">grip</Image></Images></Component></Components>"#,
+        )
+        .unwrap();
+        let px = |a| rekindle_image::Rgba([1, 2, 3, a]);
+        let pieces = std::array::from_fn(|i| {
+            RgbaImage::from_pixel(10, 10, px(if i == 3 || i == 5 || i == 7 { 0 } else { 255 }))
+        });
+        let mut built = shape::from_nine(SkinWindow::Main, &pieces).unwrap();
+        apply(
+            SkinWindow::Main,
+            &layout,
+            &[components],
+            |_, _| Ok(RgbaImage::from_pixel(10, 2, px(255))),
+            &mut built,
+        )
+        .unwrap();
+        assert!(
+            built.0.tiles.iter().all(|t| t.decoration.is_none()),
+            "{:?}",
+            built.0.tiles
+        );
     }
 }

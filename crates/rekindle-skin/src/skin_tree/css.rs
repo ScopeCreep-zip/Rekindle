@@ -18,7 +18,7 @@ use rekindle_types::dto::skin::RegionState;
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
 
-use super::validate::{grip_area, hit_area, stack_z, text_sized, HIT};
+use super::validate::{grip_area, hit_area, stack_z, text_sized, Stack, HIT};
 use crate::regions::css::href;
 
 fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
@@ -67,28 +67,43 @@ struct Ctx<'a> {
     base: &'a str,
     boxes: BTreeMap<&'a str, [i32; 4]>,
     window: (i32, i32),
-    /// The boxes of the interactive nodes that are not grips.
-    live: Vec<[i32; 4]>,
+    /// The interactive nodes that are not grips, with their boxes.
+    live: Vec<(&'a str, [i32; 4])>,
+    stack: Stack<'a>,
 }
 
 /// The `::before` hit area of an interactive node smaller than 24×24, at
 /// its offset from the node's box (shifted inward at the window's edges).
 fn hit_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
     let small = |s: NodeSpan| size(s).is_some_and(|v| i32::from(v) < HIT);
-    if !n.role.interactive() || !(small(n.x) || small(n.y)) || text_sized(n) {
+    let grip = matches!(n.role, NodeRole::Resize(_));
+    if !n.role.interactive() || !(grip || small(n.x) || small(n.y)) || text_sized(n) {
         return;
     }
     let Some(area) = ctx.boxes.get(n.id.as_str()) else {
         return;
     };
-    let hit = if matches!(n.role, NodeRole::Resize(_)) {
-        grip_area(*area, ctx.window, &ctx.live)
+    let hit = if grip {
+        let yields: Vec<_> = ctx
+            .live
+            .iter()
+            .filter(|(id, _)| ctx.stack.yields(&n.id, id))
+            .map(|(_, b)| *b)
+            .collect();
+        grip_area(*area, ctx.window, &yields)
     } else {
         hit_area(*area, ctx.window)
     };
+    // A grip's own box takes no pointer events (lead decision 10): only its
+    // hit area, which leaves the nodes it yields to, does.
+    let events = if grip {
+        "\n    pointer-events: auto;"
+    } else {
+        ""
+    };
     let _ = writeln!(
         out,
-        "  {sel}::before {{\n    content: \"\";\n    position: absolute;\n    left: {}px;\n    top: {}px;\n    width: {}px;\n    height: {}px;\n  }}",
+        "  {sel}::before {{\n    content: \"\";\n    position: absolute;\n    left: {}px;\n    top: {}px;\n    width: {}px;\n    height: {}px;{events}\n  }}",
         hit[0] - area[0],
         hit[1] - area[1],
         hit[2],
@@ -108,6 +123,9 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     );
     if n.role == NodeRole::Views {
         decls.push_str(" background-color: var(--color-xfire-bg-dark);");
+    }
+    if matches!(n.role, NodeRole::Resize(_)) {
+        decls.push_str(" pointer-events: none;");
     }
     if let Some(art) = &n.art {
         let h = href(base, &art.image, images)?;
@@ -152,7 +170,7 @@ pub fn tree_css(
     let live = boxes
         .iter()
         .filter(|(n, _)| n.role.interactive() && !matches!(n.role, NodeRole::Resize(_)))
-        .map(|(_, b)| *b)
+        .map(|(n, b)| (n.id.as_str(), *b))
         .collect();
     let ctx = Ctx {
         root,
@@ -161,6 +179,7 @@ pub fn tree_css(
         boxes: boxes.iter().map(|(n, b)| (n.id.as_str(), *b)).collect(),
         window: (w, h),
         live,
+        stack: Stack::new(&tree.root),
     };
     let mut out = String::new();
     for n in &tree.root {

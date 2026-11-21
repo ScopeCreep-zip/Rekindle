@@ -14,8 +14,10 @@
 //!    is refused only when one later-stacked interactive node covers its
 //!    whole box (it could never be reached), unless the two show with
 //!    different views (a button row per tab); an edge grip yields to the
-//!    interactive nodes it overlaps: it stacks below its siblings at its
-//!    `Z` ([`stack_z`]) and its hit area stops short of them
+//!    interactive nodes above it in the window's global order (lead
+//!    decision 10: effective z through the parent chain, [`Stack::yields`]):
+//!    it stacks below its siblings at its `Z` ([`stack_z`]), its own box
+//!    takes no pointer events and its hit area leaves their boxes
 //!    ([`grip_area`]);
 //! 5. every interactive node has a box, and its 24×24 hit area (the
 //!    stylesheet's, grown about its centre and shifted inward at the window's
@@ -93,21 +95,41 @@ pub fn hit_area(area: [i32; 4], (win_w, win_h): (i32, i32)) -> [i32; 4] {
     [left, top, width, height]
 }
 
-/// An edge grip's hit area (lead decision 6): [`hit_area`], then trimmed
-/// back toward the grip's own box along each axis the grip is thinner than
-/// 24 px, so it never lies over an interactive node in `live` (the
-/// interactive nodes that are not grips); a grip whose own box overlaps one
-/// keeps its own box there, stacked by document order.
+/// An edge grip's hit area (lead decisions 6 and 10): its own box less,
+/// along its long axis, each node in `live` (the interactive nodes the grip
+/// yields to, [`Stack::yields`]) that lies over it (the larger piece kept:
+/// xSLIMFIRE's `ResizeUp` stops short of the `CloseBox` over its strip),
+/// then [`hit_area`], trimmed back toward that box along each axis the grip
+/// is thinner than 24 px so it never lies over a node in `live`. Empty
+/// when the nodes it yields to cover the whole strip.
 #[must_use]
 pub fn grip_area(area: [i32; 4], window: (i32, i32), live: &[[i32; 4]]) -> [i32; 4] {
-    let mut hit = hit_area(area, window);
+    let mut own = area;
+    for other in live {
+        if overlap(own, *other) {
+            let axis = usize::from(own[2] < own[3]);
+            let (lo, hi) = (own[axis], own[axis] + own[axis + 2]);
+            let before = other[axis].clamp(lo, hi) - lo;
+            let after = hi - (other[axis] + other[axis + 2]).clamp(lo, hi);
+            if before >= after {
+                own[axis + 2] = before;
+            } else {
+                own[axis] = hi - after;
+                own[axis + 2] = after;
+            }
+        }
+    }
+    if own[2] <= 0 || own[3] <= 0 {
+        return [own[0], own[1], 0, 0];
+    }
+    let mut hit = hit_area(own, window);
     for other in live {
         for axis in [0, 1] {
-            if area[axis + 2] >= HIT || !overlap(hit, *other) {
+            if own[axis + 2] >= HIT || !overlap(hit, *other) {
                 continue;
             }
             let (lo, hi) = (hit[axis], hit[axis] + hit[axis + 2]);
-            let (own_lo, own_hi) = (area[axis], area[axis] + area[axis + 2]);
+            let (own_lo, own_hi) = (own[axis], own[axis] + own[axis + 2]);
             let (o_lo, o_hi) = (other[axis], other[axis] + other[axis + 2]);
             // Keep the side of the grip's own box away from the node.
             let (new_lo, new_hi) = if o_lo >= own_hi {
@@ -132,20 +154,56 @@ pub fn stack_z(n: &SkinNode) -> i32 {
     2 * i32::from(n.z) - i32::from(matches!(n.role, NodeRole::Resize(_)))
 }
 
-/// Each node's stacking path (lead decision 6): its and its ancestors'
-/// `(`[`stack_z`]`, sibling index)`, root first. A path stacks above another when it is
-/// greater at their first difference, or extends it (a child above its
-/// parent).
-fn stacking<'a>(
-    nodes: &'a [SkinNode],
-    path: &[(i32, usize)],
-    out: &mut BTreeMap<&'a str, Vec<(i32, usize)>>,
-) {
-    for (i, n) in nodes.iter().enumerate() {
-        let mut own = path.to_vec();
-        own.push((stack_z(n), i));
-        stacking(&n.children, &own, out);
-        out.insert(n.id.as_str(), own);
+/// The window's global stacking order (lead decisions 6 and 10).
+pub struct Stack<'a> {
+    /// Each node's path of its and its ancestors' `(`[`stack_z`]`, sibling
+    /// index)`, root first: a path stacks above another when it is greater
+    /// at their first difference, or extends it (a child above its parent).
+    path: BTreeMap<&'a str, Vec<(i32, usize)>>,
+    /// Each node's effective z: the highest [`stack_z`] through its parent
+    /// chain (xSLIMFIRE's `CloseBox` `Z=3` inside `MainTitleBar` `Z=1` is at
+    /// 3, above the root `ResizeUp` `Z=2`).
+    effective: BTreeMap<&'a str, i32>,
+}
+
+impl<'a> Stack<'a> {
+    /// The stacking of every node under `root`.
+    #[must_use]
+    pub fn new(root: &'a [SkinNode]) -> Self {
+        fn walk<'a>(nodes: &'a [SkinNode], path: &[(i32, usize)], s: &mut Stack<'a>) {
+            for (i, n) in nodes.iter().enumerate() {
+                let mut own = path.to_vec();
+                own.push((stack_z(n), i));
+                let z = own.iter().map(|(z, _)| *z).max().unwrap_or(0);
+                walk(&n.children, &own, s);
+                s.path.insert(n.id.as_str(), own);
+                s.effective.insert(n.id.as_str(), z);
+            }
+        }
+        let mut s = Stack {
+            path: BTreeMap::new(),
+            effective: BTreeMap::new(),
+        };
+        walk(root, &[], &mut s);
+        s
+    }
+
+    /// Whether `a` stacks above `b` in document order.
+    #[must_use]
+    pub fn above(&self, a: &str, b: &str) -> bool {
+        self.path.get(a) > self.path.get(b)
+    }
+
+    /// Whether the grip `grip` yields to `other` (lead decision 10): `other`
+    /// is above it in the window's global order, by effective z, then by
+    /// document order.
+    #[must_use]
+    pub fn yields(&self, grip: &str, other: &str) -> bool {
+        match self.effective.get(other).cmp(&self.effective.get(grip)) {
+            std::cmp::Ordering::Greater => true,
+            std::cmp::Ordering::Less => false,
+            std::cmp::Ordering::Equal => self.above(other, grip),
+        }
     }
 }
 
@@ -228,16 +286,19 @@ pub fn check(
         (Some(Some(x)), Some(Some(y))) => x != y,
         _ => false,
     };
-    let mut stack = BTreeMap::new();
-    stacking(&tree.root, &[], &mut stack);
-    let above = |a: &str, b: &str| stack.get(a) > stack.get(b);
+    let stack = Stack::new(&tree.root);
+    // A grip covers a node only when it does not yield to it (lead
+    // decision 10): its hit area then leaves the node's box.
+    let covers = |b: &SkinNode, a: &str| {
+        stack.above(&b.id, a) && !(matches!(b.role, NodeRole::Resize(_)) && stack.yields(&b.id, a))
+    };
     let live: Vec<_> = boxes
         .iter()
         .filter(|(n, b)| n.role.interactive() && b[2] > 0 && b[3] > 0)
         .collect();
     for (a, ab) in &live {
         if live.iter().any(|(b, bb)| {
-            b.id != a.id && above(&b.id, &a.id) && contains(*bb, *ab) && !apart(&a.id, &b.id)
+            b.id != a.id && covers(b, &a.id) && contains(*bb, *ab) && !apart(&a.id, &b.id)
         }) {
             return Err(bad(
                 &format!("{field}.{}", a.id),

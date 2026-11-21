@@ -7,6 +7,7 @@
 mod anchor;
 pub mod css;
 pub mod import;
+mod passes;
 pub mod roles;
 pub mod validate;
 
