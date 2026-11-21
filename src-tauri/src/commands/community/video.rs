@@ -162,9 +162,12 @@ pub async fn unregister_community_video_channel(
 #[tauri::command]
 pub async fn register_native_preview_channel(
     on_frame: tauri::ipc::Channel<crate::video_channels::NativePreviewFrameMsg>,
+    webview: tauri::Webview,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    state.video_channels.register_native_preview(on_frame);
+    state
+        .video_channels
+        .register_native_preview(webview.label(), on_frame);
     Ok(())
 }
 

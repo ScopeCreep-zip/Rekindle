@@ -155,6 +155,8 @@ pub fn run() {
             if let WindowEvent::Destroyed = event {
                 if let Some(state) = window.app_handle().try_state::<SharedState>() {
                     state.event_router.remove(window.label());
+                    // Plan CL2: its video frame channels go with it.
+                    state.video_channels.release_window(window.label());
                 }
             }
             if let WindowEvent::CloseRequested { api, .. } = event {

@@ -82,12 +82,15 @@ pub struct CommunityVideoFrameMsg {
 }
 
 /// Frontend-registered video channels. DM channels are keyed by peer
-/// pubkey hex; community channels by community id. Keying community by
+/// pubkey hex; community channels by community id. A DM channel and the
+/// native self-view channel remember the window that registered them
+/// (plan CL2): a call window's are dropped when it is destroyed
+/// ([`Self::release_window`]), whether the call ended or it was closed. Keying community by
 /// id alone matches the single-slot voice engine: only one community
 /// video panel is ever open at a time.
 #[derive(Default)]
 pub struct VideoChannelRegistry {
-    dm: Mutex<HashMap<String, Channel<DmVideoFrameMsg>>>,
+    dm: Mutex<HashMap<String, (String, Channel<DmVideoFrameMsg>)>>,
     community: Mutex<HashMap<String, Channel<CommunityVideoFrameMsg>>>,
     /// Frames that arrived before `register_community` — drained into
     /// the channel, in order, the moment it registers (Phase 6).
@@ -96,7 +99,7 @@ pub struct VideoChannelRegistry {
     /// one native camera session runs at a time. No pre-registration
     /// buffer — the panel registers before it starts the native session,
     /// and a dropped preview still is harmless (the next is a full JPEG).
-    native_preview: Mutex<Option<Channel<NativePreviewFrameMsg>>>,
+    native_preview: Mutex<Option<(String, Channel<NativePreviewFrameMsg>)>>,
 }
 
 impl VideoChannelRegistry {
@@ -105,8 +108,27 @@ impl VideoChannelRegistry {
         Self::default()
     }
 
-    pub fn register_dm(&self, peer_pubkey: String, channel: Channel<DmVideoFrameMsg>) {
-        self.dm.lock().insert(peer_pubkey, channel);
+    /// Register `window`'s channel for `peer_pubkey`'s frames.
+    pub fn register_dm(
+        &self,
+        window: &str,
+        peer_pubkey: String,
+        channel: Channel<DmVideoFrameMsg>,
+    ) {
+        self.dm
+            .lock()
+            .insert(peer_pubkey, (window.to_owned(), channel));
+    }
+
+    /// Drop every channel `window` registered (it was destroyed): its
+    /// DM video channels and its native self-view channel. The webview
+    /// that listened on them is gone, so nothing would read their frames.
+    pub fn release_window(&self, window: &str) {
+        self.dm.lock().retain(|_, (owner, _)| owner != window);
+        let mut preview = self.native_preview.lock();
+        if preview.as_ref().is_some_and(|(owner, _)| owner == window) {
+            *preview = None;
+        }
     }
 
     pub fn unregister_dm(&self, peer_pubkey: &str) {
@@ -121,7 +143,7 @@ impl VideoChannelRegistry {
         let mut map = self.dm.lock();
         let dead = map
             .get(peer_pubkey)
-            .is_some_and(|ch| ch.send(frame).is_err());
+            .is_some_and(|(_, ch)| ch.send(frame).is_err());
         if dead {
             map.remove(peer_pubkey);
         }
@@ -192,8 +214,9 @@ impl VideoChannelRegistry {
         }
     }
 
-    pub fn register_native_preview(&self, channel: Channel<NativePreviewFrameMsg>) {
-        *self.native_preview.lock() = Some(channel);
+    /// Register `window`'s self-view channel (one slot).
+    pub fn register_native_preview(&self, window: &str, channel: Channel<NativePreviewFrameMsg>) {
+        *self.native_preview.lock() = Some((window.to_owned(), channel));
     }
 
     pub fn unregister_native_preview(&self) {
@@ -205,7 +228,7 @@ impl VideoChannelRegistry {
     /// so it can't linger.
     pub fn send_native_preview(&self, frame: NativePreviewFrameMsg) {
         let mut slot = self.native_preview.lock();
-        let dead = slot.as_ref().is_some_and(|ch| ch.send(frame).is_err());
+        let dead = slot.as_ref().is_some_and(|(_, ch)| ch.send(frame).is_err());
         if dead {
             *slot = None;
         }
@@ -248,7 +271,7 @@ mod tests {
     fn send_dm_routes_to_registered_peer_with_camelcase_fields() {
         let reg = VideoChannelRegistry::new();
         let (channel, log) = recording_channel::<DmVideoFrameMsg>();
-        reg.register_dm("peerA".into(), channel);
+        reg.register_dm("call-1", "peerA".into(), channel);
 
         reg.send_dm("peerA", dm_frame("peerA", 7));
 
@@ -274,7 +297,7 @@ mod tests {
     fn unregister_dm_stops_delivery() {
         let reg = VideoChannelRegistry::new();
         let (channel, log) = recording_channel::<DmVideoFrameMsg>();
-        reg.register_dm("peerA".into(), channel);
+        reg.register_dm("call-1", "peerA".into(), channel);
         reg.unregister_dm("peerA");
 
         reg.send_dm("peerA", dm_frame("peerA", 2));
@@ -286,8 +309,8 @@ mod tests {
         let reg = VideoChannelRegistry::new();
         let (channel_a, log_a) = recording_channel::<DmVideoFrameMsg>();
         let (channel_b, log_b) = recording_channel::<DmVideoFrameMsg>();
-        reg.register_dm("peerA".into(), channel_a);
-        reg.register_dm("peerB".into(), channel_b);
+        reg.register_dm("call-1", "peerA".into(), channel_a);
+        reg.register_dm("call-1", "peerB".into(), channel_b);
 
         reg.send_dm("peerA", dm_frame("peerA", 1));
 
@@ -374,7 +397,7 @@ mod tests {
     fn native_preview_routes_then_stops_on_unregister() {
         let reg = VideoChannelRegistry::new();
         let (channel, log) = recording_channel::<NativePreviewFrameMsg>();
-        reg.register_native_preview(channel);
+        reg.register_native_preview("call-1", channel);
         reg.send_native_preview(NativePreviewFrameMsg {
             stream_id_hex: "ab12".into(),
             jpeg_b64: "Zm9v".into(),
@@ -392,6 +415,37 @@ mod tests {
             jpeg_b64: "YmFy".into(),
         });
         assert_eq!(log.lock().len(), 1, "no delivery after unregister");
+    }
+
+    /// Plan CL2: a destroyed call window's DM and self-view channels are
+    /// dropped; another window's stay.
+    #[test]
+    fn a_destroyed_windows_channels_are_dropped() {
+        let reg = VideoChannelRegistry::new();
+        let (gone, gone_log) = recording_channel::<DmVideoFrameMsg>();
+        let (kept, kept_log) = recording_channel::<DmVideoFrameMsg>();
+        let (preview, preview_log) = recording_channel::<NativePreviewFrameMsg>();
+        reg.register_dm("call-1", "peerA".into(), gone);
+        reg.register_dm("call-2", "peerB".into(), kept);
+        reg.register_native_preview("call-1", preview);
+
+        reg.release_window("call-1");
+
+        reg.send_dm("peerA", dm_frame("peerA", 1));
+        reg.send_dm("peerB", dm_frame("peerB", 1));
+        reg.send_native_preview(NativePreviewFrameMsg {
+            stream_id_hex: "ab12".into(),
+            jpeg_b64: "Zm9v".into(),
+        });
+        assert!(
+            gone_log.lock().is_empty(),
+            "the destroyed window's DM channel was dropped"
+        );
+        assert!(
+            preview_log.lock().is_empty(),
+            "its self-view channel was dropped"
+        );
+        assert_eq!(kept_log.lock().len(), 1, "another window's channel stays");
     }
 
     #[test]

@@ -46,9 +46,12 @@ pub struct SendDmVideoFrameRequest {
 pub async fn register_dm_video_channel(
     peer_pubkey: String,
     on_frame: tauri::ipc::Channel<crate::video_channels::DmVideoFrameMsg>,
+    webview: tauri::Webview,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    state.video_channels.register_dm(peer_pubkey, on_frame);
+    state
+        .video_channels
+        .register_dm(webview.label(), peer_pubkey, on_frame);
     Ok(())
 }
 
