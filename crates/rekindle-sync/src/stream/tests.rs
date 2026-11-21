@@ -1,7 +1,7 @@
 use parking_lot::Mutex;
 use rekindle_records::chain::ChainEntry;
 
-use super::{classify, Held, Rule, SinkError, StreamEngine, StreamSink};
+use super::{classify, Held, Rule, SinkError, StreamEngine, StreamError, StreamSink};
 
 #[test]
 fn the_receive_rule_applies_the_next_passes_older_and_holds_a_gap() {
@@ -92,4 +92,75 @@ async fn a_head_past_an_entry_not_held_never_moves_the_cursor_over_it() {
         .unwrap();
     assert_eq!((done.pending, done.applied), (None, 2));
     assert_eq!(*sink.cursor.lock(), 2, "both held: the cursor covers both");
+}
+
+/// One pass over `read` from the sink's cursor, as `diff_chain` runs it
+/// (the chain read itself is the record crate's, tested there).
+async fn pass_over(sink: &Sink, read: &[ChainEntry]) -> Result<super::Diffed, StreamError> {
+    let cursor = *sink.cursor.lock();
+    StreamEngine::apply_entries(sink, ("channel_outbox:c1", "author"), cursor, read).await
+}
+
+/// Finding CB1: a joiner's catch-up reads an author's outbox before its
+/// first community key lands, so the entry waits ([`Held::Pending`]); the
+/// key's install starts another catch-up while that read still runs, and
+/// the claim it makes coalesces into it. The diff must read again and
+/// hold the entry then, not drop the install's trigger until the author's
+/// next post. The outbox sink once returned an error for the wait, and a
+/// failed pass ends the diff with the claim dropped
+/// ([`a_failed_pass_drops_a_trigger_that_landed_during_it`]).
+#[tokio::test(flavor = "current_thread")]
+async fn a_trigger_during_a_pass_held_pending_reads_again_and_holds_the_entry() {
+    let engine = StreamEngine::default();
+    let sink = Sink::default();
+    let key = ("channel_outbox:c1".to_string(), "author".to_string());
+    let read = entries(1..=1);
+    let passes = Mutex::new(0_usize);
+    let total = engine
+        .run_passes(&sink, ("channel_outbox:c1", "author"), || async {
+            let n = {
+                let mut passes = passes.lock();
+                *passes += 1;
+                *passes
+            };
+            let done = pass_over(&sink, &read).await;
+            if n == 1 {
+                // The key's install lands during the read: its catch-up
+                // coalesces, and the entry's key is held from now on.
+                assert!(!engine.claim(&key), "the install's catch-up coalesces");
+                sink.arrived.lock().push(1);
+            }
+            done
+        })
+        .await
+        .expect("a wait is not a failure");
+    assert_eq!(*passes.lock(), 2, "the coalesced trigger reads again");
+    assert_eq!((total.applied, total.pending), (1, None));
+    assert_eq!(*sink.cursor.lock(), 1, "the entry is held");
+    assert_eq!(*sink.caught_up.lock(), 1);
+    assert!(engine.claim(&key), "the diff released the stream");
+}
+
+/// Why a wait must not be an error: a failed pass ends the diff, and a
+/// trigger that coalesced into it is gone with it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_pass_drops_a_trigger_that_landed_during_it() {
+    let engine = StreamEngine::default();
+    let sink = Sink::default();
+    let key = ("channel_outbox:c1".to_string(), "author".to_string());
+    let passes = Mutex::new(0_usize);
+    let failed = engine
+        .run_passes(&sink, ("channel_outbox:c1", "author"), || async {
+            *passes.lock() += 1;
+            assert!(!engine.claim(&key));
+            Err::<super::Diffed, _>(StreamError::Sink(SinkError("store".into())))
+        })
+        .await;
+    assert!(failed.is_err());
+    assert_eq!(*passes.lock(), 1, "no second pass after a failure");
+    assert_eq!(*sink.caught_up.lock(), 0);
+    assert!(
+        engine.claim(&key),
+        "the stream is released, the trigger dropped"
+    );
 }

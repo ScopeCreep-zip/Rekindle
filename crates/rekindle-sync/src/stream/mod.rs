@@ -231,6 +231,25 @@ impl StreamEngine {
         record: &str,
         chain: Chain,
     ) -> Result<Diffed, StreamError> {
+        self.run_passes(sink, (stream, writer), || {
+            Self::pass(port, sink, (stream, writer), record, chain)
+        })
+        .await
+    }
+
+    /// Claim the stream and run `pass` until no trigger landed during the
+    /// last one (a failed pass ends the diff), then `CaughtUp` unless the
+    /// read stopped short of the head or at an entry not held.
+    async fn run_passes<F, Fut>(
+        &self,
+        sink: &dyn StreamSink,
+        (stream, writer): (&str, &str),
+        mut pass: F,
+    ) -> Result<Diffed, StreamError>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<Diffed, StreamError>>,
+    {
         let key = (stream.to_string(), writer.to_string());
         if !self.claim(&key) {
             return Ok(Diffed {
@@ -240,7 +259,7 @@ impl StreamEngine {
         }
         let mut total = Diffed::default();
         loop {
-            let pass = Self::pass(port, sink, (stream, writer), record, chain).await;
+            let pass = pass().await;
             let failed = pass.is_err();
             match pass {
                 Ok(d) => {
