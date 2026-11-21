@@ -96,10 +96,6 @@ pub enum ControlPayload {
         role_ids: Vec<RoleId>,
     },
 
-    // ── Channel permission overwrites ──
-    /// Broadcast: channel overwrite changed.
-    ChannelOverwriteChanged { channel_id: String },
-
     // ── Reactions ──
     /// Broadcast: reaction added.
     ReactionAdded {
@@ -148,10 +144,6 @@ pub enum ControlPayload {
     },
 
     // ── Threads ──
-    /// Broadcast: thread created.
-    ThreadCreated {
-        thread: rekindle_types::thread::ThreadInfo,
-    },
     /// Broadcast: a thread reply exists (plan E3.3): its body rides the
     /// author's channel outbox, so the notice carries none.
     ThreadMessageReceived {
@@ -162,8 +154,6 @@ pub enum ControlPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to_id: Option<String>,
     },
-    /// Broadcast: thread archived/unarchived.
-    ThreadArchived { thread_id: String, archived: bool },
 
     // ── Game servers ──
     /// Broadcast: game server added.
@@ -176,22 +166,6 @@ pub enum ControlPayload {
     // ── Onboarding ──
     /// Submit onboarding answers.
     SubmitOnboardingAnswers { answers: Vec<OnboardingAnswer> },
-
-    // ── Event reminders ──
-    /// Broadcast: event starting soon reminder.
-    EventReminder {
-        event_id: String,
-        title: String,
-        minutes_until_start: u32,
-    },
-
-    // ── AutoMod / Raid notifications ──
-    /// Raid alert broadcast to all members (owners/admins should act).
-    RaidAlert { active: bool },
-    /// Channel lockdown broadcast: non-admins should restrict sending.
-    ChannelLockdown { locked: bool },
-    /// System message broadcast (join/leave/kick/ban events posted to chat feed).
-    SystemMessage { body: String, timestamp: u64 },
 
     // ── Bootstrap protocol ──
     /// The joiner's bootstrap request (plan E3.2): a bare app_call to the

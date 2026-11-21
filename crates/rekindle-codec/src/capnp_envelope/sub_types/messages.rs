@@ -1,11 +1,10 @@
-//! Message-plane leaf codecs: presence game info, thread
-//! info, game servers, synced messages.
+//! Message-plane leaf codecs: presence game info, game servers,
+//! synced messages.
 
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community::envelope::PresenceGameInfo;
 use crate::error::CodecError;
 use rekindle_types::game_server::GameServerInfo;
-use rekindle_types::thread::ThreadInfo;
 
 // ── PresenceGameInfo (envelope.PresenceUpdate.game_info) ─────────────
 
@@ -50,50 +49,6 @@ pub(crate) fn read_presence_game_info(
         } else {
             None
         },
-    })
-}
-
-// ── ThreadInfo ───────────────────────────────────────────────────────
-
-pub(crate) fn write_thread_info(
-    mut b: crate::community_thread_capnp::thread_info::Builder<'_>,
-    t: &ThreadInfo,
-) {
-    b.set_id(&t.id);
-    b.set_channel_id(&t.channel_id);
-    b.set_name(&t.name);
-    b.set_starter_message_id(&t.starter_message_id);
-    b.set_creator_pseudonym(&t.creator_pseudonym);
-    if let Some(ref tag) = t.forum_tag {
-        b.set_forum_tag(tag);
-    }
-    b.set_created_at(t.created_at);
-    b.set_archived(t.archived);
-    b.set_auto_archive_seconds(t.auto_archive_seconds);
-    b.set_last_message_at(t.last_message_at);
-    b.set_message_count(t.message_count);
-}
-
-pub(crate) fn read_thread_info(
-    r: crate::community_thread_capnp::thread_info::Reader<'_>,
-) -> Result<ThreadInfo, CodecError> {
-    let forum_tag_text = text_to_string(r.get_forum_tag().map_err(|e| capnp_err(&e))?)?;
-    Ok(ThreadInfo {
-        id: text_to_string(r.get_id().map_err(|e| capnp_err(&e))?)?,
-        channel_id: text_to_string(r.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        name: text_to_string(r.get_name().map_err(|e| capnp_err(&e))?)?,
-        starter_message_id: text_to_string(r.get_starter_message_id().map_err(|e| capnp_err(&e))?)?,
-        creator_pseudonym: text_to_string(r.get_creator_pseudonym().map_err(|e| capnp_err(&e))?)?,
-        forum_tag: if forum_tag_text.is_empty() {
-            None
-        } else {
-            Some(forum_tag_text)
-        },
-        created_at: r.get_created_at(),
-        archived: r.get_archived(),
-        auto_archive_seconds: r.get_auto_archive_seconds(),
-        last_message_at: r.get_last_message_at(),
-        message_count: r.get_message_count(),
     })
 }
 

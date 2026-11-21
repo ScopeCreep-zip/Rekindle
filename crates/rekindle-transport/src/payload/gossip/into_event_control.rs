@@ -140,7 +140,6 @@ pub fn control_into_event(
         | ControlPayload::EventUpdated { .. }
         | ControlPayload::EventDeleted { .. }
         | ControlPayload::EventRsvpChanged { .. }
-        | ControlPayload::EventReminder { .. }
         | ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }
         | ControlPayload::VoiceJoin { .. }
@@ -151,9 +150,6 @@ pub fn control_into_event(
         | ControlPayload::VoiceRoster { .. }
         | ControlPayload::BootstrapRequest { .. }
         | ControlPayload::BootstrapResponseV2 { .. }
-        | ControlPayload::SystemMessage { .. }
-        | ControlPayload::RaidAlert { .. }
-        | ControlPayload::ChannelLockdown { .. }
         // Stage signalling. These are gossiped decisions every member
         // observes, not local session state — the desktop surfaced them
         // and the daemon dropped them, so a TUI could not render a
@@ -191,9 +187,7 @@ pub fn control_into_event(
         ControlPayload::MemberJoined { .. }
         | ControlPayload::MemberLeave { .. }
         | ControlPayload::Kick { .. }
-        | ControlPayload::ThreadCreated { .. }
         | ControlPayload::ThreadMessageReceived { .. }
-        | ControlPayload::ThreadArchived { .. }
         | ControlPayload::MekTransferAck(_)
         | ControlPayload::RequestSegmentExpansion { .. }
         | ControlPayload::VoiceJoinAck { .. }
@@ -221,9 +215,6 @@ pub fn control_into_event(
         | ControlPayload::KeyframeRequest { .. }
         | ControlPayload::MediaCapabilities { .. }
         | ControlPayload::TopologyChange { .. }
-        | ControlPayload::LinkPreview { .. }
-        // An overwrite is a governance op: the Host publishes
-        // `ChannelPermissionsChanged` from the merge (plan E3.2 S9).
-        | ControlPayload::ChannelOverwriteChanged { .. } => return None,
+        | ControlPayload::LinkPreview { .. } => return None,
     })
 }

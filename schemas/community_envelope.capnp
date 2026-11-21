@@ -18,7 +18,6 @@
 @0x868847d85d782d8c;
 
 using import "community_event.capnp".EventInfo;
-using import "community_thread.capnp".ThreadInfo;
 using import "community_game_server.capnp".GameServerInfo;
 using import "governance_op.capnp".OpRef;
 using import "community_governance.capnp".GovernanceEntry;
@@ -212,10 +211,6 @@ struct OnboardingCompletePayload @0xea0012000000a000 {
     roleIds              @1 :List(Data);    # 16-byte role ids
 }
 
-struct ChannelOverwriteChangedPayload @0xea0014000000a000 {
-    channelId            @0 :Text;
-}
-
 struct ReactionAddedPayload @0xea0015000000a000 {
     channelId            @0 :Text;
     messageId            @1 :Text;
@@ -259,10 +254,6 @@ struct EventRsvpChangedPayload @0xea001c000000a000 {
     status               @2 :Text;
 }
 
-struct ThreadCreatedPayload @0xea001d000000a000 {
-    thread               @0 :ThreadInfo;
-}
-
 struct ThreadMessageReceivedPayload @0xea001e000000a000 {
     threadId             @0 :Text;
     messageId            @1 :Text;
@@ -277,11 +268,6 @@ struct ThreadMessageReceivedPayload @0xea001e000000a000 {
     replyToId            @7 :Text;
 }
 
-struct ThreadArchivedPayload @0xea001f000000a000 {
-    threadId             @0 :Text;
-    archived             @1 :Bool;
-}
-
 struct GameServerAddedPayload @0xea0020000000a000 {
     server               @0 :GameServerInfo;
 }
@@ -292,25 +278,6 @@ struct GameServerRemovedPayload @0xea0021000000a000 {
 
 struct SubmitOnboardingAnswersPayload @0xea0022000000a000 {
     answers              @0 :List(OnboardingAnswer);
-}
-
-struct EventReminderPayload @0xea0023000000a000 {
-    eventId              @0 :Text;
-    title                @1 :Text;
-    minutesUntilStart    @2 :UInt32;
-}
-
-struct RaidAlertPayload @0xea0024000000a000 {
-    active               @0 :Bool;
-}
-
-struct ChannelLockdownPayload @0xea0025000000a000 {
-    locked               @0 :Bool;
-}
-
-struct SystemMessagePayload @0xea0026000000a000 {
-    body                 @0 :Text;
-    timestamp            @1 :UInt64;
 }
 
 # The joiner's bootstrap request (plan E3.2): a bare app_call to the
@@ -623,7 +590,12 @@ struct LinkPreviewPayload @0xea0042000000a000 {
 # governance ops (plan E3.2 S8); @12 and @13 (messageEdited and
 # messageDeleted, the context-free edit seal and the moderator's delete
 # notice), replaced by the edit and delete entries in the author's record
-# and the readers' apply of the `AdminDelete` op (plan E3.3).
+# and the readers' apply of the `AdminDelete` op (plan E3.3); @19, @28,
+# @30, @34 and @36–@38 (channelOverwriteChanged, threadCreated,
+# threadArchived, eventReminder, raidAlert, channelLockdown and
+# systemMessage), which no peer ever sent: an overwrite and a thread's
+# opening and archive are signed governance ops, a reminder and a raid
+# alert are raised locally (plan E3.2 S8-E).
 
 struct ControlPayload @0xeaffffff00000001 {
     union {
@@ -646,7 +618,7 @@ struct ControlPayload @0xeaffffff00000001 {
         mekTransfer              @16 :MekTransferPayload;
         onboardingComplete       @17 :OnboardingCompletePayload;
         obsolete18               @18 :Void;
-        channelOverwriteChanged  @19 :ChannelOverwriteChangedPayload;
+        obsolete19               @19 :Void;
         reactionAdded            @20 :ReactionAddedPayload;
         reactionRemoved          @21 :ReactionRemovedPayload;
         messagePinned            @22 :MessagePinnedPayload;
@@ -655,19 +627,19 @@ struct ControlPayload @0xeaffffff00000001 {
         eventUpdated             @25 :EventUpdatedPayload;
         eventDeleted             @26 :EventDeletedPayload;
         eventRsvpChanged         @27 :EventRsvpChangedPayload;
-        threadCreated            @28 :ThreadCreatedPayload;
+        obsolete28               @28 :Void;
         threadMessageReceived    @29 :ThreadMessageReceivedPayload;
-        threadArchived           @30 :ThreadArchivedPayload;
+        obsolete30               @30 :Void;
         gameServerAdded          @31 :GameServerAddedPayload;
         gameServerRemoved        @32 :GameServerRemovedPayload;
         submitOnboardingAnswers  @33 :SubmitOnboardingAnswersPayload;
-        eventReminder            @34 :EventReminderPayload;
+        obsolete34               @34 :Void;
         # Unit variant — no payload bytes; presence of ordinal is the
         # signal.
         obsolete35               @35 :Void;
-        raidAlert                @36 :RaidAlertPayload;
-        channelLockdown          @37 :ChannelLockdownPayload;
-        systemMessage            @38 :SystemMessagePayload;
+        obsolete36               @36 :Void;
+        obsolete37               @37 :Void;
+        obsolete38               @38 :Void;
         obsolete39               @39 :Void;
         obsolete40               @40 :Void;
         obsolete41               @41 :Void;

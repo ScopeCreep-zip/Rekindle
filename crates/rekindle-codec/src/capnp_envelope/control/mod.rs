@@ -28,12 +28,10 @@ use bootstrap_sync::{
     write_bootstrap_response_v2,
 };
 use events::{
-    read_event_created, read_event_deleted, read_event_reminder, read_event_rsvp_changed,
-    read_event_updated, read_game_server_added, read_game_server_removed, read_thread_archived,
-    read_thread_created, read_thread_message_received, write_event_created, write_event_deleted,
-    write_event_reminder, write_event_rsvp_changed, write_event_updated, write_game_server_added,
-    write_game_server_removed, write_thread_archived, write_thread_created,
-    write_thread_message_received,
+    read_event_created, read_event_deleted, read_event_rsvp_changed, read_event_updated,
+    read_game_server_added, read_game_server_removed, read_thread_message_received,
+    write_event_created, write_event_deleted, write_event_rsvp_changed, write_event_updated,
+    write_game_server_added, write_game_server_removed, write_thread_message_received,
 };
 use keys::{
     read_mek_rotated, read_mek_transfer, read_mek_transfer_ack, read_request_mek,
@@ -48,20 +46,17 @@ use media::{
     write_video_parity_fragment,
 };
 use membership::{
-    read_channel_overwrite_changed, read_member_joined, read_member_leave,
-    read_onboarding_complete, read_request_segment_expansion, read_submit_onboarding_answers,
-    write_channel_overwrite_changed, write_member_joined, write_member_leave,
-    write_onboarding_complete, write_request_segment_expansion, write_submit_onboarding_answers,
+    read_member_joined, read_member_leave, read_onboarding_complete,
+    read_request_segment_expansion, read_submit_onboarding_answers, write_member_joined,
+    write_member_leave, write_onboarding_complete, write_request_segment_expansion,
+    write_submit_onboarding_answers,
 };
 use messaging::{
     read_link_preview, read_message_pinned, read_message_unpinned, read_reaction_added,
     read_reaction_removed, write_link_preview, write_message_pinned, write_message_unpinned,
     write_reaction_added, write_reaction_removed,
 };
-use moderation::{
-    read_channel_lockdown, read_kick, read_raid_alert, read_system_message, write_channel_lockdown,
-    write_kick, write_raid_alert, write_system_message,
-};
+use moderation::{read_kick, write_kick};
 use voice::{
     read_soundboard_play, read_speak_request, read_speak_response, read_stage_update,
     read_voice_deafen, read_voice_join, read_voice_join_ack, read_voice_join_confirmed,
@@ -95,9 +90,6 @@ pub fn encode_control_payload(
         CP::OnboardingComplete { .. } => {
             write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload);
         }
-        CP::ChannelOverwriteChanged { .. } => {
-            write_channel_overwrite_changed(b.reborrow().init_channel_overwrite_changed(), payload);
-        }
         CP::ReactionAdded { .. } => {
             write_reaction_added(b.reborrow().init_reaction_added(), payload);
         }
@@ -116,14 +108,8 @@ pub fn encode_control_payload(
         CP::EventRsvpChanged { .. } => {
             write_event_rsvp_changed(b.reborrow().init_event_rsvp_changed(), payload);
         }
-        CP::ThreadCreated { .. } => {
-            write_thread_created(b.reborrow().init_thread_created(), payload);
-        }
         CP::ThreadMessageReceived { .. } => {
             write_thread_message_received(b.reborrow().init_thread_message_received(), payload);
-        }
-        CP::ThreadArchived { .. } => {
-            write_thread_archived(b.reborrow().init_thread_archived(), payload);
         }
         CP::GameServerAdded { .. } => {
             write_game_server_added(b.reborrow().init_game_server_added(), payload);
@@ -133,16 +119,6 @@ pub fn encode_control_payload(
         }
         CP::SubmitOnboardingAnswers { .. } => {
             write_submit_onboarding_answers(b.reborrow().init_submit_onboarding_answers(), payload);
-        }
-        CP::EventReminder { .. } => {
-            write_event_reminder(b.reborrow().init_event_reminder(), payload);
-        }
-        CP::RaidAlert { .. } => write_raid_alert(b.reborrow().init_raid_alert(), payload),
-        CP::ChannelLockdown { .. } => {
-            write_channel_lockdown(b.reborrow().init_channel_lockdown(), payload);
-        }
-        CP::SystemMessage { .. } => {
-            write_system_message(b.reborrow().init_system_message(), payload);
         }
         CP::BootstrapRequest { .. } => {
             write_bootstrap_request(b.reborrow().init_bootstrap_request(), payload);
@@ -236,9 +212,6 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
             read_request_segment_expansion(p.map_err(|e| capnp_err(&e))?)
         }
         Which::OnboardingComplete(p) => read_onboarding_complete(p.map_err(|e| capnp_err(&e))?),
-        Which::ChannelOverwriteChanged(p) => {
-            read_channel_overwrite_changed(p.map_err(|e| capnp_err(&e))?)
-        }
         Which::ReactionAdded(p) => read_reaction_added(p.map_err(|e| capnp_err(&e))?),
         Which::ReactionRemoved(p) => read_reaction_removed(p.map_err(|e| capnp_err(&e))?),
         Which::MessagePinned(p) => read_message_pinned(p.map_err(|e| capnp_err(&e))?),
@@ -247,20 +220,14 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::EventUpdated(p) => read_event_updated(p.map_err(|e| capnp_err(&e))?),
         Which::EventDeleted(p) => read_event_deleted(p.map_err(|e| capnp_err(&e))?),
         Which::EventRsvpChanged(p) => read_event_rsvp_changed(p.map_err(|e| capnp_err(&e))?),
-        Which::ThreadCreated(p) => read_thread_created(p.map_err(|e| capnp_err(&e))?),
         Which::ThreadMessageReceived(p) => {
             read_thread_message_received(p.map_err(|e| capnp_err(&e))?)
         }
-        Which::ThreadArchived(p) => read_thread_archived(p.map_err(|e| capnp_err(&e))?),
         Which::GameServerAdded(p) => read_game_server_added(p.map_err(|e| capnp_err(&e))?),
         Which::GameServerRemoved(p) => read_game_server_removed(p.map_err(|e| capnp_err(&e))?),
         Which::SubmitOnboardingAnswers(p) => {
             read_submit_onboarding_answers(p.map_err(|e| capnp_err(&e))?)
         }
-        Which::EventReminder(p) => read_event_reminder(p.map_err(|e| capnp_err(&e))?),
-        Which::RaidAlert(p) => Ok(read_raid_alert(p.map_err(|e| capnp_err(&e))?)),
-        Which::ChannelLockdown(p) => Ok(read_channel_lockdown(p.map_err(|e| capnp_err(&e))?)),
-        Which::SystemMessage(p) => read_system_message(p.map_err(|e| capnp_err(&e))?),
         Which::BootstrapRequest(p) => read_bootstrap_request(p.map_err(|e| capnp_err(&e))?),
         Which::BootstrapResponseV2(p) => read_bootstrap_response_v2(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceJoin(p) => read_voice_join(p.map_err(|e| capnp_err(&e))?),
@@ -319,7 +286,9 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         // Removed variants (plan E4.3.3; @35 by E3.2 S9 own removal; the
         // unsigned membership notices, the legacy join answer, the keypair
         // grants and `governanceUpdated` by E3.2 S8, replaced by signed
-        // governance ops): skipped like an unknown one.
+        // governance ops; the senderless overwrite, thread, reminder, raid,
+        // lockdown and system notices by E3.2 S8-E): skipped like an
+        // unknown one.
         Which::Obsolete0(())
         | Which::Obsolete2(())
         | Which::Obsolete3(())
@@ -332,7 +301,14 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         | Which::Obsolete12(())
         | Which::Obsolete13(())
         | Which::Obsolete18(())
+        | Which::Obsolete19(())
+        | Which::Obsolete28(())
+        | Which::Obsolete30(())
+        | Which::Obsolete34(())
         | Which::Obsolete35(())
+        | Which::Obsolete36(())
+        | Which::Obsolete37(())
+        | Which::Obsolete38(())
         | Which::Obsolete39(())
         | Which::Obsolete40(())
         | Which::Obsolete41(())

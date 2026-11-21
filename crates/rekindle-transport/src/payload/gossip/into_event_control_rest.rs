@@ -57,16 +57,6 @@ pub fn control_into_event_rest(
             pseudonym: pseudonym_key,
             rsvp_status: status,
         }),
-        ControlPayload::EventReminder {
-            event_id,
-            title,
-            minutes_until_start,
-        } => SubscriptionEvent::Social(SocialEvent::EventReminder {
-            community: c(),
-            event_id,
-            title,
-            minutes_until_start,
-        }),
 
         // ── Game servers ────────────────────────────────────
         ControlPayload::GameServerAdded { server } => {
@@ -201,25 +191,6 @@ pub fn control_into_event_rest(
         }),
         ControlPayload::BootstrapResponseV2 { .. } => {
             SubscriptionEvent::System(SystemEvent::BootstrapReceived { community: c() })
-        }
-
-        // ── System ──────────────────────────────────────────
-        ControlPayload::SystemMessage { body, timestamp } => {
-            SubscriptionEvent::System(SystemEvent::Announcement {
-                community: Some(c()),
-                body,
-                timestamp,
-            })
-        }
-        ControlPayload::RaidAlert { active } => SubscriptionEvent::System(SystemEvent::RaidAlert {
-            community: c(),
-            active,
-        }),
-        ControlPayload::ChannelLockdown { locked } => {
-            SubscriptionEvent::System(SystemEvent::ChannelLockdown {
-                community: c(),
-                locked,
-            })
         }
 
         // Unreachable: every variant above the split is routed here by

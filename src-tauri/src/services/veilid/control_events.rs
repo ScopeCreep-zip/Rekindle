@@ -18,9 +18,6 @@ pub(crate) async fn handle_control_events_and_threads(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        // An overwrite is a governance op: the Host publishes
-        // `ChannelPermissionsChanged` from the merge (plan E3.2 S9).
-        ControlPayload::ChannelOverwriteChanged { .. } => {}
         payload @ (ControlPayload::MessagePinned { .. }
         | ControlPayload::MessageUnpinned { .. }) => {
             handle_pin_payload(app_handle, state, community_id, sender_pseudonym, payload).await;
@@ -31,9 +28,7 @@ pub(crate) async fn handle_control_events_and_threads(
         | ControlPayload::EventRsvpChanged { .. }) => {
             handle_event_payload(app_handle, state, community_id, sender_pseudonym, payload).await;
         }
-        payload @ (ControlPayload::ThreadCreated { .. }
-        | ControlPayload::ThreadArchived { .. }
-        | ControlPayload::ThreadMessageReceived { .. }) => {
+        payload @ ControlPayload::ThreadMessageReceived { .. } => {
             handle_thread_payload(app_handle, state, community_id, payload);
         }
         ControlPayload::GovernanceOp { op } => {
@@ -94,59 +89,6 @@ pub(crate) async fn handle_control_events_and_threads(
                 },
             );
         }
-        ControlPayload::EventReminder {
-            event_id,
-            title,
-            minutes_until_start,
-        } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Social(
-                    rekindle_types::subscription_events::SocialEvent::EventReminder {
-                        community: community_id.to_string(),
-                        event_id,
-                        title,
-                        minutes_until_start,
-                    },
-                ),
-            );
-        }
-        ControlPayload::SystemMessage { body, timestamp } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::System(
-                    rekindle_types::subscription_events::SystemEvent::Announcement {
-                        // Tier 1's announcement is optionally global;
-                        // a gossiped system message always has one.
-                        community: Some(community_id.to_string()),
-                        body,
-                        timestamp,
-                    },
-                ),
-            );
-        }
-        ControlPayload::RaidAlert { active } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::System(
-                    rekindle_types::subscription_events::SystemEvent::RaidAlert {
-                        community: community_id.to_string(),
-                        active,
-                    },
-                ),
-            );
-        }
-        ControlPayload::ChannelLockdown { locked } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::System(
-                    rekindle_types::subscription_events::SystemEvent::ChannelLockdown {
-                        community: community_id.to_string(),
-                        locked,
-                    },
-                ),
-            );
-        }
         other => {
             handle_gossip_control_payloads(
                 app_handle,
@@ -159,9 +101,10 @@ pub(crate) async fn handle_control_events_and_threads(
     }
 }
 
-/// A thread opened, archived or replied to: stored by the Host's channel
-/// adapter (plan E3.1 E3f), which reads a reply's body from the thread
-/// record; the shell shows the event it returns.
+/// A thread reply: stored by the Host's channel adapter (plan E3.1 E3f),
+/// which reads its body from the thread record; the shell shows the event
+/// it returns. A thread's opening and archive are signed governance ops
+/// (plan E3.2 S8-E).
 fn handle_thread_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,

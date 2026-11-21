@@ -227,6 +227,10 @@ fn read_community_envelope(
 }
 
 #[cfg(test)]
+#[path = "retired_control_tests.rs"]
+mod retired_control_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::community::envelope::PresenceGameInfo;

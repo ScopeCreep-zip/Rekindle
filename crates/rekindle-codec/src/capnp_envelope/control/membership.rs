@@ -92,16 +92,6 @@ pub(super) fn write_onboarding_complete(
     }
 }
 
-pub(super) fn write_channel_overwrite_changed(
-    mut p: cap::channel_overwrite_changed_payload::Builder<'_>,
-    payload: &ControlPayload,
-) {
-    let ControlPayload::ChannelOverwriteChanged { channel_id } = payload else {
-        unreachable!("write_channel_overwrite_changed: variant mismatch")
-    };
-    p.set_channel_id(channel_id);
-}
-
 pub(super) fn write_submit_onboarding_answers(
     mut p: cap::submit_onboarding_answers_payload::Builder<'_>,
     payload: &ControlPayload,
@@ -159,14 +149,6 @@ pub(super) fn read_onboarding_complete(
     Ok(ControlPayload::OnboardingComplete {
         pseudonym_key: text_to_string(p.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
         role_ids,
-    })
-}
-
-pub(super) fn read_channel_overwrite_changed(
-    p: cap::channel_overwrite_changed_payload::Reader<'_>,
-) -> Result<ControlPayload, CodecError> {
-    Ok(ControlPayload::ChannelOverwriteChanged {
-        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
     })
 }
 

@@ -130,14 +130,13 @@ impl DaemonHandler {
             }
         }
 
-        // A thread opened, archived or replied to (plan E3.1 E3f): stored by
-        // the Host's channel adapter, which returns the event to publish (a
-        // reply's carries the body it read from the thread record; the
-        // transport maps no thread payload).
+        // A thread reply (plan E3.1 E3f): stored by the Host's channel
+        // adapter, which returns the event to publish carrying the body it
+        // read from the thread record (the transport maps no thread
+        // payload). A thread's opening and archive are signed governance
+        // ops, never a gossip frame (plan E3.2 S8-E).
         if let CommunityEnvelope::Control(
-            ref payload @ (ControlPayload::ThreadCreated { .. }
-            | ControlPayload::ThreadArchived { .. }
-            | ControlPayload::ThreadMessageReceived { .. }),
+            ref payload @ ControlPayload::ThreadMessageReceived { .. },
         ) = envelope
         {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
