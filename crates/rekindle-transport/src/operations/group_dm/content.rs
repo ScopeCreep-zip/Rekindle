@@ -50,7 +50,7 @@ pub fn inner(body: &DirectBody, sent_at_ms: u64, stream_seq: u64) -> Vec<u8> {
 
 /// An [`inner`] read back.
 #[derive(Debug)]
-pub struct Inner {
+pub struct GroupContentInner {
     pub body: DirectBody,
     /// The author's clock when the message was written.
     pub sent_at_ms: u64,
@@ -64,13 +64,13 @@ pub struct Inner {
 ///
 /// # Errors
 /// Not an [`inner`] of an allocated kind.
-pub fn parse_inner(plain: &[u8]) -> Result<Inner, String> {
+pub fn parse_inner(plain: &[u8]) -> Result<GroupContentInner, String> {
     let (id, rest) = plain.split_at_checked(2).ok_or("entry too short")?;
     let raw = u16::from_be_bytes([id[0], id[1]]);
     let type_id = DmTypeId::from_u16(raw).ok_or_else(|| format!("typeId {raw:#06x}"))?;
     let content = DmContent::decode(rest).map_err(|e| e.to_string())?;
     let body = DirectBody::decode(type_id, &content.payload).map_err(|e| e.to_string())?;
-    Ok(Inner {
+    Ok(GroupContentInner {
         body,
         sent_at_ms: content.sent_at_ms,
         stream_seq: content.stream_seq,

@@ -13,7 +13,7 @@
 //! chain's copy is then a duplicate the cursor passes (finding G3: a hint
 //! that only diffed read the chain before the append and applied nothing
 //! until the chain's watch fired, 15 s later). Both copies store under
-//! the author's outbox stream seq ([`super::content::Inner::stream_seq`]).
+//! the author's outbox stream seq ([`super::content::GroupContentInner::stream_seq`]).
 //!
 //! The diff's triggers mirror the DM chain's: a member's hint, its
 //! chain's watch ([`on_watch_change`], opened by [`watch_all`] at unlock and
@@ -32,7 +32,7 @@ use rekindle_types::subscription_events::{
     GroupDmEvent, GroupDmMember, SubscriptionEvent, TypingContext,
 };
 
-use super::content::{parse_inner, stream_name, Inner};
+use super::content::{parse_inner, stream_name, GroupContentInner};
 use crate::operations::dm::client_id_text;
 use crate::operations::friend::inbox::records;
 use crate::operations::friend::{state, FriendHost};
@@ -71,7 +71,7 @@ pub async fn on_hint(host: &dyn FriendHost, sender: &str, content: &GroupContent
     };
     match rekindle_dm::open_received(deps.as_ref(), sender, content).await {
         Ok(plain) => {
-            if let Ok(Inner {
+            if let Ok(GroupContentInner {
                 body: DirectBody::Typing(t),
                 ..
             }) = parse_inner(&plain)
@@ -254,7 +254,7 @@ impl GroupSink<'_> {
     /// Store `writer`'s opened entry (its hint, or its chain copy); a
     /// replay or the other copy finds it held.
     async fn store(&self, writer: &str, plain: &[u8]) -> Result<(), SinkError> {
-        let Inner {
+        let GroupContentInner {
             body,
             sent_at_ms,
             stream_seq,
