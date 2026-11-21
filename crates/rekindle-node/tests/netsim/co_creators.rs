@@ -11,6 +11,7 @@ use std::time::Duration;
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_ipc::protocol::{CommunityRequest, LifecycleRequest};
 use rekindle_netsim::Netsim;
+use rekindle_types::dto::community::{CoCreationSnapshot, CoCreatorState, HeldCreatorInvite};
 use rekindle_types::subscription_events::FriendEvent;
 
 use crate::harness::{eventually, start, Events, SimNode, PASSPHRASE};
@@ -91,6 +92,21 @@ fn status_of(events: &Events, peer: &str, anchor: &str, status: &str) -> bool {
     })
 }
 
+fn finished(events: &Events, anchor: &str, created: bool) -> bool {
+    events.friend().iter().any(|e| {
+        matches!(e, FriendEvent::CoCreationFinished { anchor: a, created: c }
+            if a == anchor && *c == created)
+    })
+}
+
+async fn snapshot(node: &SimNode) -> CoCreationSnapshot {
+    serde_json::from_value(
+        node.ok(lifecycle(LifecycleRequest::CoCreationSnapshot))
+            .await,
+    )
+    .expect("the co-creation snapshot")
+}
+
 async fn answer(node: &SimNode, anchor: &str, accept: bool) {
     node.ok(lifecycle(LifecycleRequest::CreatorInviteAnswer {
         anchor: anchor.to_string(),
@@ -122,8 +138,31 @@ async fn an_accept_is_listed_a_decline_omitted_and_the_creation_waits_for_both()
         "Ann sees Bob's accept"
     );
     assert!(!lists(ann, &anchor).await, "the creation waits on Cat");
-    answer(cat, &anchor, false).await;
+    // A window opened now reads what the events said (lead decision (33)).
     let cat_key = key(cat);
+    let held = snapshot(cat).await;
+    assert_eq!(
+        held.invites,
+        vec![HeldCreatorInvite {
+            anchor: anchor.clone(),
+            peer_key: key(ann),
+            community_name: "Co".into(),
+        }],
+        "Cat's held invite"
+    );
+    let ours = snapshot(ann).await;
+    assert_eq!(ours.creations.len(), 1, "Ann's pending creation");
+    let state = |peer: &str, status: &str| CoCreatorState {
+        peer_key: peer.to_owned(),
+        status: status.to_owned(),
+    };
+    assert_eq!(
+        ours.creations[0].co_creators,
+        vec![state(&bob_key, "accepted"), state(&cat_key, "pending")],
+        "each co-creator's state, in the order named"
+    );
+    assert!(!finished(&ann_seen, &anchor, true), "not finished yet");
+    answer(cat, &anchor, false).await;
     assert!(
         eventually(&sim, LIMIT, || async {
             status_of(&ann_seen, &cat_key, &anchor, "declined")
@@ -135,6 +174,11 @@ async fn an_accept_is_listed_a_decline_omitted_and_the_creation_waits_for_both()
         eventually(&sim, LIMIT, || lists(ann, &anchor)).await,
         "Ann's community is written"
     );
+    assert!(
+        eventually(&sim, LIMIT, || async { finished(&ann_seen, &anchor, true) }).await,
+        "Ann is told the co-creation finished"
+    );
+    assert!(snapshot(ann).await.creations.is_empty(), "nothing pending");
     let set = creators(&info(ann, &anchor).await);
     assert_eq!(set.len(), 2, "the cert lists Ann and Bob only: {set:?}");
     assert!(

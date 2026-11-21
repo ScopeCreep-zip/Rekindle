@@ -5,8 +5,7 @@ import LoadingButton from "../common/LoadingButton";
 import { errorMessage } from "../../utils/error";
 import { handleCreateCommunity } from "../../actions/community.actions";
 import { handleCreateWithCoCreators } from "../../actions/community/co_create";
-import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
-import { communityState } from "../../stores/community.store";
+import { coCreatorState, stopWatchingCreation, trackCoCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
 import CoCreatorStatusView from "./CoCreatorStatusView";
 import { CREATE_WAIT_REASON, canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stores/network.store";
@@ -36,6 +35,8 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
   // Create waits for the network (plan E7.13, `canCreateCommunity`); the
   // Host still refuses a create that races a drop, and that reason shows.
   trackNetworkStatus();
+  // Held invites and pending creations from before this window opened.
+  trackCoCreation();
 
   // Reset on every open so a previous error / name doesn't carry over.
   createEffect(() => {
@@ -46,7 +47,7 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
       setSubmitting(false);
       // A watched creation that finished while the dialog was closed.
       const watching = coCreatorState.watching;
-      if (watching && communityState.communities[watching.anchor]) stopWatchingCreation();
+      if (watching && coCreatorState.finished[watching.anchor] !== undefined) stopWatchingCreation();
     }
   });
 

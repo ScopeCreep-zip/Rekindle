@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
-import { coCreatorState } from "../../stores/co-creator.store";
+import { coCreatorState, trackCoCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
 import { handleAnswerCreatorInvite } from "../../actions/community/co_create";
 
@@ -12,6 +12,8 @@ import { handleAnswerCreatorInvite } from "../../actions/community/co_create";
 const CoCreatorInvites: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  // Invites held before this window opened (plan E3.2 S7s.3g).
+  trackCoCreation();
   const invites = () => Object.values(coCreatorState.invites);
   const inviterName = (peer: string): string =>
     friendsState.friends[peer]?.displayName ?? `${peer.slice(0, 12)}…`;

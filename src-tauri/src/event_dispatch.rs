@@ -23,8 +23,8 @@
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, EventScope, NetworkEvent, SubscriptionEvent, SystemEvent, TypingContext,
-    TypingEvent,
+    ChannelMessageEvent, EventScope, FriendEvent, NetworkEvent, SubscriptionEvent, SystemEvent,
+    TypingContext, TypingEvent,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -166,6 +166,10 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         // keeps it in its network store; the login window has nothing to
         // gate.
         SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { .. }) => Audience::post_auth(),
+        // A co-creation's end closes the creation's status view, in the
+        // Create Community dialog of the buddy list or a community window
+        // (plan E3.2 S7s.3g).
+        SubscriptionEvent::Friend(FriendEvent::CoCreationFinished { .. }) => communities(),
         _ => match event.scope() {
             EventScope::Device => Audience::post_auth(),
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),

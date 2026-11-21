@@ -1,4 +1,5 @@
 import { commands } from "../../ipc/commands";
+import type { CoCreationSnapshot } from "../../ipc/commands/community";
 import { dropCreatorInvite, watchCreation } from "../../stores/co-creator.store";
 import { errorMessage } from "../../utils/error";
 
@@ -15,6 +16,16 @@ export async function handleCreateWithCoCreators(
 ): Promise<void> {
   const created = await commands.createCommunityWithCoCreators(name, coCreators);
   watchCreation(created.anchor, created.name, created.pendingCoCreators);
+}
+
+/// The Host's co-creation snapshot, or null (logged) when it is not read.
+export async function handleGetCoCreation(): Promise<CoCreationSnapshot | null> {
+  try {
+    return await commands.getCoCreation();
+  } catch (e) {
+    console.warn("co-creation snapshot not read:", errorMessage(e));
+    return null;
+  }
 }
 
 /// Remove `identity` from the creation of `anchor`; the Host's error, or null.

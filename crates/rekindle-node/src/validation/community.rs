@@ -100,7 +100,9 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
 /// `check` for the community lifecycle and invite requests.
 pub(super) fn check_lifecycle(request: &LifecycleRequest) -> Checked {
     match request {
-LifecycleRequest::CommunityList | LifecycleRequest::CommunityViews => Ok(()),
+LifecycleRequest::CommunityList
+        | LifecycleRequest::CoCreationSnapshot
+        | LifecycleRequest::CommunityViews => Ok(()),
 LifecycleRequest::CommunityCreate {
             name: community_name,
             description,

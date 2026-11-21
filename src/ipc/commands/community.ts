@@ -22,6 +22,17 @@ export interface CommunityCreated {
   pendingCoCreators: string[];
 }
 
+/// The held co-creator invites and our pending creations, as the Host
+/// holds them (`CoCreationSnapshot`, plan E3.2 S7s.3g).
+export interface CoCreationSnapshot {
+  invites: { anchor: string; peerKey: string; communityName: string }[];
+  creations: {
+    anchor: string;
+    name: string;
+    coCreators: { peerKey: string; status: string }[];
+  }[];
+}
+
 export const communityCommands = {
   // Community
   getCommunities: () =>
@@ -123,6 +134,8 @@ export const communityCommands = {
   /// result lists the co-creators still pending.
   createCommunityWithCoCreators: (name: string, coCreators: string[]) =>
     hostInvoke<CommunityCreated>("create_community", { name, coCreators }),
+  /// Read once the window's event stream is live (plan VI1's pattern).
+  getCoCreation: () => invoke<CoCreationSnapshot>("get_co_creation"),
   removeCoCreator: (communityId: string, identity: string) =>
     hostInvoke<void>("remove_co_creator", { communityId, identity }),
   cancelCommunityCreate: (communityId: string) =>

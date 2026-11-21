@@ -27,6 +27,7 @@
     "allow-answer-creator-invite",
     "allow-create-friend-group",
     "allow-generate-invite",
+    "allow-get-co-creation",
     "allow-get-communities",
     "allow-get-game-status",
     "allow-get-network-status",

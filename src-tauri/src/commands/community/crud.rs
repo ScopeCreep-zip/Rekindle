@@ -6,7 +6,9 @@ use tauri::State;
 use crate::host_call;
 
 use crate::state::SharedState;
-use rekindle_types::dto::community::{CommunityCreated, CommunityJoined, CommunityView};
+use rekindle_types::dto::community::{
+    CoCreationSnapshot, CommunityCreated, CommunityJoined, CommunityView,
+};
 
 /// The joined communities (`IpcRequest::Community(CommunityRequest::CommunityList)`).
 #[tauri::command]
@@ -30,6 +32,22 @@ pub async fn get_community_details(
         &state,
         IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityViews,
+        )),
+    )
+    .await
+}
+
+/// The held co-creator invites and our pending creations' co-creator
+/// states (`LifecycleRequest::CoCreationSnapshot`, plan E3.2 S7s.3g), read
+/// once the window's event stream is live.
+#[tauri::command]
+pub async fn get_co_creation(
+    state: State<'_, SharedState>,
+) -> Result<Done<CoCreationSnapshot>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CoCreationSnapshot,
         )),
     )
     .await

@@ -354,6 +354,14 @@
       }
     }
   },
+  "friend.coCreationFinished": {
+    "friend": {
+      "coCreationFinished": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created": true
+      }
+    }
+  },
   "friend.coCreatorStatus": {
     "friend": {
       "coCreatorStatus": {

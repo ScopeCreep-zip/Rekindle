@@ -28,6 +28,7 @@ pub const NAMES: &[&str] = &[
     "creatorInvited",
     "creatorInviteWithdrawn",
     "coCreatorStatus",
+    "coCreationFinished",
 ];
 
 pub fn variant_name(e: &FriendEvent) -> &'static str {
@@ -55,6 +56,7 @@ pub fn variant_name(e: &FriendEvent) -> &'static str {
         FriendEvent::CreatorInvited { .. } => "creatorInvited",
         FriendEvent::CreatorInviteWithdrawn { .. } => "creatorInviteWithdrawn",
         FriendEvent::CoCreatorStatus { .. } => "coCreatorStatus",
+        FriendEvent::CoCreationFinished { .. } => "coCreationFinished",
     }
 }
 
@@ -208,6 +210,13 @@ pub fn samples() -> Vec<Sample> {
                 peer_key: pk('b'),
                 anchor: rk('a'),
                 status: text("accepted"),
+            },
+        ),
+        ev(
+            "coCreationFinished",
+            FriendEvent::CoCreationFinished {
+                anchor: rk('a'),
+                created: true,
             },
         ),
     ]

@@ -102,7 +102,10 @@ impl SubscriptionEvent {
                     EventScope::Community(community.clone())
                 }
             },
-            Self::Friend(e) => EventScope::Peer(friend_peer(e).to_owned()),
+            // A co-creation's end belongs to the creation, not to a peer.
+            Self::Friend(e) => {
+                friend_peer(e).map_or(EventScope::Device, |peer| EventScope::Peer(peer.to_owned()))
+            }
             // An invite is into a conversation no view holds yet; the rest
             // belong to the group's conversation.
             Self::GroupDm(crate::subscription_events::GroupDmEvent::Invited { .. }) => {
@@ -184,8 +187,9 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
     }
 }
 
-fn friend_peer(e: &FriendEvent) -> &str {
-    match e {
+fn friend_peer(e: &FriendEvent) -> Option<&str> {
+    Some(match e {
+        FriendEvent::CoCreationFinished { .. } => return None,
         FriendEvent::RequestReceived { from_key, .. } => from_key,
         FriendEvent::RequestAcknowledged { peer_key }
         | FriendEvent::Accepted { peer_key, .. }
@@ -209,7 +213,7 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::CreatorInvited { peer_key, .. }
         | FriendEvent::CreatorInviteWithdrawn { peer_key, .. }
         | FriendEvent::CoCreatorStatus { peer_key, .. } => peer_key,
-    }
+    })
 }
 
 fn social_community(e: &SocialEvent) -> &str {

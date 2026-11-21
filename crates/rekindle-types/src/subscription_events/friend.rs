@@ -155,4 +155,12 @@ pub enum FriendEvent {
         anchor: String,
         status: String,
     },
+    /// Our creation of `anchor` with co-creators ended (plan E3.2 S7s.3g,
+    /// lead decision (33)): `created` when its genesis is written (the
+    /// community's id is `anchor`), otherwise it failed and every accepted
+    /// co-creator was withdrawn. One event for the creation, not per
+    /// co-creator: a creation every co-creator declined has no peer to
+    /// carry a terminal `CoCreatorStatus`. Triggered by: the last
+    /// co-creator answering or being removed (`co_creator_settled`).
+    CoCreationFinished { anchor: String, created: bool },
 }

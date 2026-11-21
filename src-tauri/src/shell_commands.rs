@@ -166,6 +166,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ),
     ("leave_community", HostCall::Request("CommunityLeave")),
     ("join_community", HostCall::Request("CommunityJoin")),
+    ("get_co_creation", HostCall::Request("CoCreationSnapshot")),
     ("get_communities", HostCall::Request("CommunityList")),
     ("get_community_details", HostCall::Request("CommunityViews")),
     (

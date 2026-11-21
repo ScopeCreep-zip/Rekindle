@@ -421,6 +421,7 @@ impl App {
                 | FriendEvent::CreatorInvited { .. }
                 | FriendEvent::CreatorInviteWithdrawn { .. }
                 | FriendEvent::CoCreatorStatus { .. }
+                | FriendEvent::CoCreationFinished { .. }
                 | FriendEvent::GroupChanged { .. }
                 | FriendEvent::NicknameChanged { .. }
                 | FriendEvent::DisplayNameChanged { .. }

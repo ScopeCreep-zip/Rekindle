@@ -48,6 +48,11 @@ pub enum LifecycleRequest {
     /// and every local row (plan E3.2 S9 R3-5).
     CommunityForget { anchor: String },
 
+    /// The held co-creator invites and our pending creations' co-creator
+    /// states (plan E3.2 S7s.3g), read once a window's event stream is
+    /// live.
+    CoCreationSnapshot,
+
     /// List all joined communities.
     CommunityList,
 
@@ -128,6 +133,7 @@ impl LifecycleRequest {
             Self::CommunityJoin { .. } => ("CommunityJoin", Write, Authenticated),
             Self::CommunityLeave { .. } => ("CommunityLeave", Write, Authenticated),
             Self::CommunityForget { .. } => ("CommunityForget", Write, Authenticated),
+            Self::CoCreationSnapshot => ("CoCreationSnapshot", Query, Authenticated),
             Self::CommunityList => ("CommunityList", Query, Authenticated),
             Self::CommunityViews => ("CommunityViews", Query, Authenticated),
             Self::CommunityMembers { .. } => ("CommunityMembers", Query, Authenticated),
@@ -154,6 +160,7 @@ impl LifecycleRequest {
         use AgentCapability as C;
         match self {
             Self::CommunityList
+            | Self::CoCreationSnapshot
             | Self::CommunityViews
             | Self::CommunityMembers { .. }
             | Self::CommunityInfo { .. }

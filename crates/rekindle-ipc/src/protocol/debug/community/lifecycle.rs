@@ -44,6 +44,7 @@ impl std::fmt::Debug for LifecycleRequest {
                 .debug_struct("CommunityForget")
                 .field("anchor", anchor)
                 .finish(),
+            Self::CoCreationSnapshot => write!(f, "CoCreationSnapshot"),
             Self::CommunityList => write!(f, "CommunityList"),
             Self::CommunityViews => write!(f, "CommunityViews"),
             Self::CommunityMembers { anchor } => f

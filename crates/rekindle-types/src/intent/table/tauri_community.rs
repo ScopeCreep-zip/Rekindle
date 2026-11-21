@@ -37,6 +37,7 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
         Some(IntentKind::DeleteChannelMessage),
     ),
     ("get_channel_messages", None),
+    ("get_co_creation", None),
     ("get_communities", None),
     ("get_community_details", None),
     ("get_community_members", None),

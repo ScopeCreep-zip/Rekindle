@@ -15,4 +15,6 @@ pub(crate) use lifecycle::{
 };
 pub(crate) use membership::{handle_approve, handle_pending_members, handle_reject};
 pub(crate) use ownership::handle_transfer_ownership;
-pub(crate) use query::{handle_info, handle_list, handle_members, handle_views};
+pub(crate) use query::{
+    handle_co_creation, handle_info, handle_list, handle_members, handle_views,
+};

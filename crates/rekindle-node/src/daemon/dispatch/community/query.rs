@@ -146,6 +146,21 @@ pub(crate) async fn handle_views(ctx: &DaemonContext, state: DaemonState) -> Ipc
     )
 }
 
+/// The held co-creator invites and our pending creations (plan E3.2
+/// S7s.3g, lead decision (33)).
+pub(crate) async fn handle_co_creation(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    match crate::daemon::dispatch::adapter(ctx)
+        .co_creation_snapshot()
+        .await
+    {
+        Ok(snapshot) => IpcResponse::ok(&snapshot),
+        Err(e) => IpcResponse::error(500, e),
+    }
+}
+
 /// A community's member list (plan E3.1 D1b).
 pub(crate) async fn handle_members(
     ctx: &DaemonContext,

@@ -80,6 +80,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "get_channel_messages",
   "get_channel_pins",
   "get_channel_threads",
+  "get_co_creation",
   "get_communities",
   "get_community_analytics",
   "get_community_avatar_data_url",

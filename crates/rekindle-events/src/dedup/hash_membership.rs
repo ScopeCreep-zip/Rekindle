@@ -320,6 +320,11 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"|");
             h.update(status.as_bytes());
         }
+        FriendEvent::CoCreationFinished { anchor, created } => {
+            h.update(b"co_creation_finished|");
+            h.update(anchor.as_bytes());
+            h.update(&[u8::from(*created)]);
+        }
         FriendEvent::BlockChanged { peer_key, blocked } => {
             h.update(b"blocked|");
             h.update(peer_key.as_bytes());

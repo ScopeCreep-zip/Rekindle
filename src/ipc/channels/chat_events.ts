@@ -154,7 +154,10 @@ export type FriendEvent =
   | { gameInvite: { peerKey: string; gameId: number; server: string } }
   | { creatorInvited: { peerKey: string; anchor: string; communityName: string } }
   | { creatorInviteWithdrawn: { peerKey: string; anchor: string } }
-  | { coCreatorStatus: { peerKey: string; anchor: string; status: string } };
+  | { coCreatorStatus: { peerKey: string; anchor: string; status: string } }
+  /** Our co-creation of `anchor` ended: `created` when its genesis is
+   *  written, otherwise it failed (plan E3.2 S7s.3g). */
+  | { coCreationFinished: { anchor: string; created: boolean } };
 
 /** Peer on the other end of a direct call; absent for a group call. */
 export interface DirectCallInfo {

@@ -89,6 +89,7 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityForget { anchor } => {
             community::handle_forget(ctx, state, &anchor).await
         }
+        LifecycleRequest::CoCreationSnapshot => community::handle_co_creation(ctx, state).await,
         LifecycleRequest::CommunityList => community::handle_list(ctx, state),
         LifecycleRequest::CommunityViews => community::handle_views(ctx, state).await,
         LifecycleRequest::CommunityMembers { anchor } => {

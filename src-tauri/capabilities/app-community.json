@@ -54,6 +54,7 @@
     "allow-get-channel-messages",
     "allow-get-channel-pins",
     "allow-get-channel-threads",
+    "allow-get-co-creation",
     "allow-get-communities",
     "allow-get-community-analytics",
     "allow-get-community-default-notification-level",

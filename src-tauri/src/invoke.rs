@@ -134,6 +134,7 @@ macro_rules! community_commands {
         commands::community::get_channel_messages,
         commands::community::get_communities,
         commands::community::get_community_details,
+        commands::community::get_co_creation,
         commands::community::get_community_members,
         commands::community::remove_community_member,
         commands::community::get_roles,

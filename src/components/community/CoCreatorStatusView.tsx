@@ -1,7 +1,6 @@
 import { Component, For, Show, createEffect, createSignal } from "solid-js";
 
 import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
-import { communityState } from "../../stores/community.store";
 import { friendsState } from "../../stores/friends.store";
 import { handleCancelCreation, handleRemoveCoCreator } from "../../actions/community/co_create";
 
@@ -25,8 +24,8 @@ function removable(status: string): boolean {
  * A creation with co-creators (plan E3.2 S7s.3f): each co-creator's state
  * as the Host states it (`coCreatorStatus`), with Remove per co-creator and
  * Cancel for the creation, both through the Host's intent review (ADR
- * 0019). The view closes once the community exists: the Host's
- * `CommunityCreated` re-reads it into the community store.
+ * 0019). The view closes on the Host's `coCreationFinished` for its
+ * creation (plan E3.2 S7s.3g); a failed finish stays open with its reason.
  */
 const CoCreatorStatusView: Component<CoCreatorStatusViewProps> = (props) => {
   const [busy, setBusy] = createSignal(false);
@@ -36,10 +35,14 @@ const CoCreatorStatusView: Component<CoCreatorStatusViewProps> = (props) => {
   const nameOf = (peer: string): string =>
     friendsState.friends[peer]?.displayName ?? `${peer.slice(0, 12)}…`;
 
+  const finished = () => coCreatorState.finished[props.anchor];
   createEffect(() => {
-    if (communityState.communities[props.anchor]) {
+    const outcome = finished();
+    if (outcome === true) {
       stopWatchingCreation();
       props.onClose();
+    } else if (outcome === false) {
+      setError("The community could not be written; its co-creators were told.");
     }
   });
 
@@ -85,17 +88,26 @@ const CoCreatorStatusView: Component<CoCreatorStatusViewProps> = (props) => {
         <div class="form-error" role="alert">{error()}</div>
       </Show>
       <div class="form-field-row">
-        <button type="button" class="form-btn-secondary" onClick={() => props.onClose()}>
-          Close
-        </button>
         <button
           type="button"
           class="form-btn-secondary"
-          disabled={busy()}
-          onClick={() => void run(() => handleCancelCreation(props.anchor), true)}
+          onClick={() => {
+            if (finished() === false) stopWatchingCreation();
+            props.onClose();
+          }}
         >
-          Cancel creation
+          Close
         </button>
+        <Show when={finished() === undefined}>
+          <button
+            type="button"
+            class="form-btn-secondary"
+            disabled={busy()}
+            onClick={() => void run(() => handleCancelCreation(props.anchor), true)}
+          >
+            Cancel creation
+          </button>
+        </Show>
       </div>
     </div>
   );

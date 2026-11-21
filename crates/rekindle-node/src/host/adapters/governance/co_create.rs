@@ -15,10 +15,15 @@ use std::collections::{BTreeSet, HashMap};
 use rekindle_crypto::group::pseudonym::{derive_community_pseudonym, sign_with_pseudonym};
 use rekindle_governance_runtime::{CoCreatorAcceptance, ReservedCommunity};
 use rekindle_transport::operations::friend::creator_round::{self, CreatorFrame};
+use rekindle_transport::operations::friend::CreatorAnswer;
+use rekindle_transport::operations::friend::FriendHost as _;
 use rekindle_transport::TransportNode;
-use rekindle_types::dto::community::CommunityCreated;
+use rekindle_types::dto::community::{
+    CoCreationSnapshot, CoCreatorState, CommunityCreated, HeldCreatorInvite, PendingCoCreation,
+};
 use rekindle_types::governance::{AdmissionMode, MAX_ADDITIONAL_CREATORS};
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::create_leave::NOT_CONNECTED;
 use super::HostGovernance;
@@ -60,6 +65,23 @@ impl PendingCreations {
             }
         }
         count
+    }
+}
+
+/// `peer`'s state in `pending`, in `FriendEvent::CoCreatorStatus` words:
+/// waited on, answered (a verified accept or a decline), or removed.
+fn co_creator_status(
+    pending: &PendingCreation,
+    answers: Option<&HashMap<String, CreatorAnswer>>,
+    peer: &str,
+) -> &'static str {
+    if pending.waiting.contains(peer) {
+        return "pending";
+    }
+    match answers.and_then(|a| a.get(peer)) {
+        Some(Some(_)) => "accepted",
+        Some(None) => "declined",
+        None => "removed",
     }
 }
 
@@ -294,6 +316,7 @@ impl HostGovernance {
             Err(e) => Err(e),
         };
         self.clear_pending_rows(anchor).await;
+        let written = created.is_ok();
         match created {
             Ok(created) => {
                 self.activate_created(&created.anchor).await;
@@ -304,6 +327,12 @@ impl HostGovernance {
                 self.withdraw(anchor, &joiners).await;
             }
         }
+        HostFriends::of(&self.ctx).publish(SubscriptionEvent::Friend(
+            FriendEvent::CoCreationFinished {
+                anchor: anchor.to_owned(),
+                created: written,
+            },
+        ));
     }
 
     /// Mint each accepted co-creator a one-use invite and send it as
@@ -328,6 +357,52 @@ impl HostGovernance {
                 Err(e) => tracing::warn!(error = %e, "CreatorJoin not committed"),
             }
         }
+    }
+
+    /// The held co-creator invites (`creator_invites`, as the unlock replay
+    /// states them) and each creation of ours still waiting, with every
+    /// named co-creator's state (plan E3.2 S7s.3g, lead decision (33)).
+    /// The creations come from the in-memory reservations alone: a
+    /// `pending_creations` row without one is a dead creation the unlock
+    /// sweep has already withdrawn (decision (20)), never a live one.
+    ///
+    /// # Errors
+    /// No identity is unlocked or the invites could not be read.
+    pub(crate) async fn co_creation_snapshot(&self) -> Result<CoCreationSnapshot, String> {
+        let owner = self
+            .ctx
+            .require_owner()
+            .map_err(|_| "no identity is unlocked")?;
+        let db = self.ctx.db.current().map_err(|e| e.to_string())?;
+        let rows = db
+            .call(move |c| rekindle_db::repo::creator_round::invites(c, &owner))
+            .await
+            .map_err(|e| format!("co-creator invites not read: {e}"))?;
+        let invites = rows
+            .into_iter()
+            .map(|row| HeldCreatorInvite {
+                anchor: row.anchor,
+                peer_key: row.inviter_key,
+                community_name: row.community_name,
+            })
+            .collect();
+        let answers = self.ctx.friend_stores.creator_answers.lock().clone();
+        let creations = (self.ctx.pending_creations.0.lock())
+            .iter()
+            .map(|(anchor, pending)| PendingCoCreation {
+                anchor: anchor.clone(),
+                name: pending.name.clone(),
+                co_creators: pending
+                    .named
+                    .iter()
+                    .map(|peer| CoCreatorState {
+                        peer_key: peer.clone(),
+                        status: co_creator_status(pending, answers.get(anchor), peer).into(),
+                    })
+                    .collect(),
+            })
+            .collect();
+        Ok(CoCreationSnapshot { invites, creations })
     }
 
     /// Answer the held co-creator invite to `anchor`: an accept sends our
