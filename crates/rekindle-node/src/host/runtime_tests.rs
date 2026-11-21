@@ -45,6 +45,8 @@ mod held_threads;
 mod invite_bounds;
 #[path = "login_stage_tests.rs"]
 mod login_stage;
+#[path = "mek_transfer_tests.rs"]
+mod mek_transfer_tests;
 #[path = "membership_tests.rs"]
 mod membership;
 #[path = "onboarding_bounds_tests.rs"]
