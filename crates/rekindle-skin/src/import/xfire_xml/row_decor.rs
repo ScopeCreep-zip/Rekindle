@@ -93,11 +93,20 @@ pub(super) fn add(
     else {
         return Ok(());
     };
+    // A piece naming a bitmap the pack never defines lays nothing, as in
+    // Xfire (xSLIMFIRE's `AdArea` left/right `ADBARLEFT`/`ADBARRIGHT`); a
+    // defined bitmap whose file is missing still stops the import.
     let image = |ty: &str| -> Result<Option<RgbaImage>, ImportError> {
-        set.children_named("Image")
+        let Some(i) = set
+            .children_named("Image")
             .find(|i| i.attr_ci("Type").is_some_and(|t| eq(t, ty)))
-            .map(|i| piece(&i.text, set.attr_ci("Color")))
-            .transpose()
+        else {
+            return Ok(None);
+        };
+        match piece(&i.text, set.attr_ci("Color")) {
+            Err(ImportError::UndefinedBitmap { .. }) => Ok(None),
+            other => other.map(Some),
+        }
     };
     let (Some(middle), left, right) = (image("middle")?, image("left")?, image("right")?) else {
         return Ok(());
@@ -194,5 +203,63 @@ mod tests {
             (r.as_str(), TileAxis::End { offset: 0 }, y),
         ];
         assert_eq!(got, want);
+    }
+
+    /// xSLIMFIRE's `AdArea` row names `ADBARLEFT`/`ADBARRIGHT`, which its
+    /// theme never defines: the row lays its middle only and the import
+    /// goes on; a defined bitmap whose file is missing still stops it.
+    #[test]
+    fn an_undefined_side_bitmap_lays_nothing_and_a_missing_file_stops() {
+        let layout = parse(
+            "mainwindow.xml",
+            br#"<Tile Name="Main" Component="MainWindow">
+<Tile Name="AdArea" X="0" Y="12" Z="1" ResizeX="100" IndentRight="0" Component="Bar"/></Tile>"#,
+        )
+        .unwrap();
+        let components = parse(
+            "components.xml",
+            br#"<Components><Component Name="Bar"><Images>
+<Image Type="left">ADBARLEFT</Image><Image Type="middle">BLACK</Image><Image Type="right">ADBARRIGHT</Image>
+</Images></Component></Components>"#,
+        )
+        .unwrap();
+        let px = |a| rekindle_image::Rgba([1, 2, 3, a]);
+        let pieces = std::array::from_fn(|i| {
+            RgbaImage::from_pixel(10, 10, px(if i == 3 || i == 5 { 0 } else { 255 }))
+        });
+        let mut built = shape::from_nine(SkinWindow::Main, &pieces).unwrap();
+        let undefined = |name: &str, _: Option<&str>| match name {
+            "BLACK" => Ok(RgbaImage::from_pixel(10, 2, px(255))),
+            _ => Err(ImportError::UndefinedBitmap {
+                name: name.to_owned(),
+            }),
+        };
+        apply(
+            SkinWindow::Main,
+            &layout,
+            std::slice::from_ref(&components),
+            undefined,
+            &mut built,
+        )
+        .unwrap();
+        let got: Vec<_> = built
+            .0
+            .tiles
+            .iter()
+            .filter(|t| t.decoration.is_some())
+            .map(|t| t.image.as_str())
+            .collect();
+        assert_eq!(got, ["assets/frame/main/row-adarea-middle.png"]);
+        let missing = |name: &str, _: Option<&str>| match name {
+            "BLACK" => Ok(RgbaImage::from_pixel(10, 2, px(255))),
+            _ => Err(ImportError::MissingFile {
+                file: format!("main/{name}.gif"),
+            }),
+        };
+        let mut built = shape::from_nine(SkinWindow::Main, &pieces).unwrap();
+        assert!(matches!(
+            apply(SkinWindow::Main, &layout, &[components], missing, &mut built),
+            Err(ImportError::MissingFile { .. })
+        ));
     }
 }

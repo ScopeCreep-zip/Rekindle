@@ -182,8 +182,8 @@ fn piece(
         Some(path) => *path,
         None if lookup(tree, name).is_ok() => name,
         None => {
-            return Err(ImportError::MissingFile {
-                file: format!("Bitmap {name}"),
+            return Err(ImportError::UndefinedBitmap {
+                name: name.to_owned(),
             })
         }
     };

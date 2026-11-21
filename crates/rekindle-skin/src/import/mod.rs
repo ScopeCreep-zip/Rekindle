@@ -61,6 +61,11 @@ pub enum ImportError {
     Format { file: String, detail: String },
     #[error("{file}: missing from the tree")]
     MissingFile { file: String },
+    /// A component names a bitmap the theme never defines and no file of
+    /// the tree is called (xSLIMFIRE's `AdArea` names `ADBARLEFT`): Xfire
+    /// lays nothing for it, so a reader whose piece is optional skips it.
+    #[error("Bitmap {name}: not defined by the theme and not a file of the tree")]
+    UndefinedBitmap { name: String },
     #[error("{name}: RGBA alpha {alpha} is not 0 (the byte is unused, COLORREF-style)")]
     NonZeroAlpha { name: String, alpha: i32 },
     #[error("{name}: {value} is not RGBA(r,g,b,a) with r, g, b in 0-255")]
