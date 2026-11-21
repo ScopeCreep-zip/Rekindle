@@ -35,7 +35,8 @@ pub async fn shutdown_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, opts: &
         None
     };
     let scopes = deps.take_loop_scopes(*opts);
-    for scope in [scopes.loops, scopes.mcu, scopes.monitor]
+    // Egress last: the loops enqueue into the links its drivers drain.
+    for scope in [scopes.loops, scopes.mcu, scopes.monitor, scopes.egress]
         .into_iter()
         .flatten()
     {

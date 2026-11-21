@@ -74,6 +74,7 @@ pub(super) fn init_voice_session_impl(
         loops: None,
         monitor: None,
         mcu: None,
+        egress: None,
         channel_id: channel_id.to_string(),
         community_id: community_id.map(String::from),
         muted_flag: Arc::clone(&muted_flag),
@@ -119,7 +120,7 @@ pub(super) fn init_voice_session_impl(
     if self_voice_id.is_empty() {
         return Err(VoiceError::IdentityNotLoaded);
     }
-    let transport = create_transport_impl(
+    let (transport, egress) = create_transport_impl(
         state,
         &self_voice_id,
         channel_id,
@@ -135,6 +136,7 @@ pub(super) fn init_voice_session_impl(
         if let Some(ref mut handle) = *ve {
             handle.transport = Arc::clone(&shared_transport);
             handle.media = media;
+            handle.egress = egress;
         }
     }
 
@@ -155,6 +157,7 @@ pub(super) fn take_loop_scopes_impl(state: &AppState, opts: VoiceShutdownOpts) -
             loops: None,
             monitor: None,
             mcu: None,
+            egress: None,
         };
     };
     VoiceLoopScopes {
@@ -173,19 +176,29 @@ pub(super) fn take_loop_scopes_impl(state: &AppState, opts: VoiceShutdownOpts) -
         } else {
             None
         },
+        // The transport lives as long as the engine: its drivers end
+        // with the session, not with a restart.
+        egress: if opts.stop_devices {
+            handle.egress.take()
+        } else {
+            None
+        },
     }
 }
 
 /// Build the shared VoiceTransport with full Veilid api init +
-/// signing key + (for 1:1) AEAD call_key install. Relocated verbatim
-/// from the deleted `services::voice::session::create_transport`.
+/// signing key + (for 1:1) AEAD call_key install, and the scope its
+/// egress drivers run in (`None` without a frame sender: no drivers).
 fn create_transport_impl(
     state: &Arc<AppState>,
     self_voice_id: &str,
     channel_id: &str,
     community_id: Option<&str>,
     resolved_peer_route: Option<&[u8]>,
-) -> rekindle_voice::transport::VoiceTransport {
+) -> (
+    rekindle_voice::transport::VoiceTransport,
+    Option<Arc<rekindle_lifecycle::SessionScope>>,
+) {
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
     let api = state_helpers::veilid_api(state);
     let sender_key = hex::decode(self_voice_id).unwrap_or_default();
@@ -203,20 +216,21 @@ fn create_transport_impl(
         }
         _ => None,
     };
-    if let Some(sender) = sender {
-        // Each roster peer's egress driver runs here, ending with the
-        // login at the latest; leaving the call stops them one by one.
+    let egress = sender.map(|sender| {
+        // Each roster peer's egress driver runs here; the session's
+        // teardown shuts the scope down (`take_loop_scopes_impl`).
         let egress = state_helpers::login_scope_or_closed(state).child("voice media egress");
         if community_id.is_some() {
-            transport.init(sender, sender_key, egress);
+            transport.init(sender, sender_key, Arc::clone(&egress));
         } else if let Some(blob) = resolved_peer_route {
             // For a DM call the channel id *is* the peer's public key,
             // so the roster is keyed by the peer's real identity.
-            transport.connect(sender, blob, sender_key, channel_id, egress);
+            transport.connect(sender, blob, sender_key, channel_id, Arc::clone(&egress));
         } else {
-            transport.init(sender, sender_key, egress);
+            transport.init(sender, sender_key, Arc::clone(&egress));
         }
-    }
+        egress
+    });
 
     if let Some(cid) = community_id {
         if let Ok((_, signing_key)) = state_helpers::pseudonym_credentials(state, cid) {
@@ -236,7 +250,7 @@ fn create_transport_impl(
         }
     }
 
-    transport
+    (transport, egress)
 }
 
 fn take_channels_and_config(state: &AppState) -> Result<LoopBundle, String> {

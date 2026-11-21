@@ -26,7 +26,8 @@ use crate::session_deps::{
 };
 use crate::signaling::MediaKeyOutbox;
 use crate::transport::{VoicePacket, VoiceTransport};
-use crate::VoiceError;
+use crate::{VoiceError, VoiceFrameSender};
+use rekindle_lifecycle::SessionScope;
 
 const COMMUNITY: &str = "community";
 const CHANNEL: &str = "voice";
@@ -52,6 +53,18 @@ struct Joiner {
     mesh: Mutex<Vec<CommunityEnvelope>>,
     /// The leave path's steps, in order.
     steps: Mutex<Vec<&'static str>>,
+    /// The current session's egress scope, as the engine handle holds it.
+    egress: Mutex<Option<Arc<SessionScope>>>,
+}
+
+/// A frame sender that accepts every datagram.
+struct Sink;
+
+#[async_trait]
+impl VoiceFrameSender for Sink {
+    async fn send_voice_frame(&self, _: &[u8], _: Vec<u8>) -> Result<(), VoiceError> {
+        Ok(())
+    }
 }
 
 impl MediaKeySource for Joiner {
@@ -202,11 +215,16 @@ impl VoiceSessionDeps for Joiner {
     async fn stop_active_mcu(&self) {
         unreachable!("not on the leave path")
     }
-    fn take_loop_scopes(&self, _: VoiceShutdownOpts) -> VoiceLoopScopes {
+    fn take_loop_scopes(&self, opts: VoiceShutdownOpts) -> VoiceLoopScopes {
         VoiceLoopScopes {
             loops: None,
             monitor: None,
             mcu: None,
+            egress: if opts.stop_devices {
+                self.egress.lock().take()
+            } else {
+                None
+            },
         }
     }
     fn stop_devices_and_clear_engine(&self) {}
@@ -314,4 +332,30 @@ async fn leave_right_after_a_rejoin_ends_the_session_before_the_leave() {
         "the session's key deliveries must end before its leave goes out: {steps:?}"
     );
     assert!(steps.contains(&"leave sent to the roster"), "{steps:?}");
+}
+
+/// Plan CL1 (Linux soak: every call left its media behind): a session's
+/// egress drivers end with it. Nothing else stops the driver of a peer
+/// still on the roster, so each ended call kept one pacing (and padding)
+/// to the old route until logout.
+#[tokio::test]
+async fn ended_sessions_leave_no_egress_driver_running() {
+    let login = SessionScope::new("login", Arc::new(|_| {}));
+    let joiner = Arc::new(Joiner::default());
+    for _ in 0..3 {
+        let egress = login.child("voice media egress");
+        let mut transport = VoiceTransport::new(CHANNEL.into());
+        transport.set_signing_key(ed25519_dalek::SigningKey::from_bytes(&[3; 32]));
+        transport.connect(
+            Arc::new(Sink),
+            b"route",
+            vec![1; 32],
+            "peer",
+            Arc::clone(&egress),
+        );
+        *joiner.egress.lock() = Some(egress);
+        crate::session::shutdown_voice(&joiner, &VoiceShutdownOpts::FULL).await;
+        drop(transport);
+    }
+    assert!(login.is_empty(), "still running: {:?}", login.running());
 }

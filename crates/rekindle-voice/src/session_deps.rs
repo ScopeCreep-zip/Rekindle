@@ -123,6 +123,12 @@ pub struct VoiceLoopScopes {
     pub monitor: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
     /// The MCU mix loop, while this peer is the voice host.
     pub mcu: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+    /// The transport's per-peer egress drivers (`PeerLink::drive`). Taken
+    /// only when the session ends (`stop_devices`): a restart keeps the
+    /// transport. Nothing else stops a driver whose peer is still on the
+    /// roster, so without this every call's drivers kept pacing (and
+    /// padding) to the old routes until logout (plan CL1).
+    pub egress: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
 }
 
 /// The key sources SFrame needs for a voice session (`media_crypto`):

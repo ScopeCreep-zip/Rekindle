@@ -46,6 +46,9 @@ pub struct VoiceEngineHandle {
     pub monitor: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
     /// The MCU mix loop, while this peer is the voice host.
     pub mcu: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
+    /// The transport's per-peer egress drivers; shut down when the
+    /// session ends (plan CL1).
+    pub egress: Option<std::sync::Arc<rekindle_lifecycle::SessionScope>>,
     pub channel_id: String,
     /// Community ID if this is a community voice channel (None for DM voice).
     pub community_id: Option<String>,
