@@ -244,14 +244,32 @@ async fn a_rotation_supersedes_a_queued_key_transfer() {
             "the generation-3 row settles superseded"
         );
     } else {
-        let mut superseded = false;
-        while let Ok(change) = changes.try_recv() {
-            superseded |=
-                change.client_id == old && change.wedge_reason.as_deref() == Some(SUPERSEDED);
-        }
-        assert!(
-            superseded,
-            "the outbox settled the generation-3 row superseded"
+        // The running outbox settled it before our read: wait on the
+        // change stream (subscribed before the rotation) for the row's own
+        // settlement, and say what was seen if it is not the supersession.
+        let mut seen = Vec::new();
+        let settled = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                match changes.recv().await {
+                    Ok(change) if change.client_id == old => {
+                        seen.push(format!("{:?} {:?}", change.state, change.wedge_reason));
+                        if change.wedge_reason.is_some() {
+                            return change.wedge_reason;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        seen.push(format!("lagged {n}"));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        })
+        .await;
+        assert_eq!(
+            settled.ok().flatten().as_deref(),
+            Some(SUPERSEDED),
+            "the outbox settled the generation-3 row superseded; its changes: {seen:?}"
         );
     }
     let current = queued
