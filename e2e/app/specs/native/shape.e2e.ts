@@ -53,9 +53,44 @@ const OUT = path.join(import.meta.dirname, "..", "..", "out", "shape");
 const PACKS = builtinPacks();
 const NATIVE_WAYLAND = process.platform === "linux" && Boolean(process.env.WAYLAND_DISPLAY) && process.env.GDK_BACKEND !== "x11";
 
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface Cut {
   alphaOpaque: number;
-  rects: { x: number; y: number; width: number; height: number }[] | null;
+  rects: Box[] | null;
+  /** The layout's content rectangle and header region (plan SK0-L1), logical px; null without a frame / header region. */
+  content: Box | null;
+  header: Box | null;
+}
+
+/** Where `a` and `b` differ by more than 1 px on any edge, as text; empty when they agree. */
+function offBy(a: Box, b: Box): string {
+  const far = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.width - b.width), Math.abs(a.height - b.height));
+  return far <= 1 ? "" : `${JSON.stringify(a)} is not ${JSON.stringify(b)}`;
+}
+
+/** The content box of the window's `.app-frame` (its rect less its padding) and its profile header's rect, logical px. */
+async function pageBoxes(): Promise<{ content: Box; header: Box | null }> {
+  return (await browser.execute(() => {
+    const root = document.querySelector(".app-frame") as HTMLElement;
+    const r = root.getBoundingClientRect();
+    const cs = getComputedStyle(root);
+    const p = (k: string): number => parseFloat(cs.getPropertyValue(k)) || 0;
+    const content = {
+      x: r.left + p("padding-left"),
+      y: r.top + p("padding-top"),
+      width: r.width - p("padding-left") - p("padding-right"),
+      height: r.height - p("padding-top") - p("padding-bottom"),
+    };
+    const bar = root.querySelector(":scope > .identity-bar");
+    const h = bar ? bar.getBoundingClientRect() : null;
+    return { content, header: h ? { x: h.left, y: h.top, width: h.width, height: h.height } : null };
+  })) as { content: Box; header: Box | null };
 }
 
 /** The silhouette `pack`'s `frame` cuts a `width × height` window to at `scale` per mille. */
@@ -157,8 +192,31 @@ describe("a skinned window is the skin's shape", function () {
     writeFileSync(path.join(dir, `${file}-over-magenta.png`), encodePng(over(img, [255, 0, 255])));
     const scale = Math.round((img.width * 1000) / viewport.width);
     const cut = silhouette(pack.file, frame, viewport.width, viewport.height, scale);
-    const found = disagreements(img, cut);
-    return found.outsideDrawn + found.insideClear === 0 ? {} : { [`${file} ${viewport.width}x${viewport.height} at ${scale}‰`]: found };
+    const found: Record<string, unknown> = {};
+    const where = `${file} ${viewport.width}x${viewport.height}`;
+    const cutOff = disagreements(img, cut);
+    if (cutOff.outsideDrawn + cutOff.insideClear !== 0) found[`${where} at ${scale}‰`] = cutOff;
+    // The content box is the pack's content region exactly; the profile
+    // header sits in the pack's header region when it lays one, else in
+    // the content box (plan SK0-L1).
+    if (cut.content) {
+      const page = await pageBoxes();
+      const content = offBy(page.content, cut.content);
+      if (content) found[`${where} content box`] = content;
+      if (frame === "main") {
+        if (!page.header) found[`${where} header`] = "no .identity-bar in the buddy list";
+        else if (cut.header) {
+          const header = offBy(page.header, cut.header);
+          if (header) found[`${where} header region`] = header;
+        } else {
+          const c = cut.content;
+          const h = page.header;
+          const inside = h.x >= c.x - 1 && h.y >= c.y - 1 && h.x + h.width <= c.x + c.width + 1 && h.y + h.height <= c.y + c.height + 1;
+          if (!inside) found[`${where} header in content`] = `${JSON.stringify(h)} is not inside ${JSON.stringify(c)}`;
+        }
+      }
+    }
+    return found;
   }
 
   for (const pack of PACKS) {

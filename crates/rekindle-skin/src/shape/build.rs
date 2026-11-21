@@ -156,6 +156,7 @@ pub fn from_nine(
             min_width: u16_of(&file, min_width)?,
             min_height: u16_of(&file, min_height)?,
             tiles,
+            header: None,
         },
         files,
     ))

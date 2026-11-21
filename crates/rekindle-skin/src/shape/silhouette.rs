@@ -20,7 +20,7 @@ pub struct Rect {
 }
 
 /// A box on the window, logical px: (x, y, width, height).
-pub(super) type Area = (i64, i64, i64, i64);
+pub type Area = (i64, i64, i64, i64);
 
 /// A tile's copies across and down: (position, length) each.
 type Axes = (Vec<(i64, i64)>, Vec<(i64, i64)>);
@@ -60,6 +60,22 @@ pub(super) fn boxes(layout: &WindowLayout, width: u32, height: u32) -> (Area, Ar
         frame.3 - i64::from(c.top) - i64::from(c.bottom),
     );
     (frame, content)
+}
+
+/// The content rectangle and the header region (plan SK0-L1) of a
+/// `width × height` window, logical px: where the window's content and
+/// its profile header are drawn. A `Repeat` header axis (refused by
+/// [`super::check`]) is placed at its first copy.
+#[must_use]
+pub fn regions(layout: &WindowLayout, width: u32, height: u32) -> (Area, Option<Area>) {
+    let (frame, content) = boxes(layout, width, height);
+    let header = layout.header.and_then(|r| {
+        let (w, h) = (i64::from(r.width), i64::from(r.height));
+        let x = copies(r.x, frame.0, frame.2, w).first()?.0;
+        let y = copies(r.y, frame.1, frame.3, h).first()?.0;
+        Some((x, y, w, h))
+    });
+    (content, header)
 }
 
 /// Every placed copy of every tile: (tile index, x, y, width, height).

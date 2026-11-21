@@ -41,6 +41,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                     overhang: false,
                     decoration: None,
                 }],
+                header: None,
             },
             masks: vec![SkinTileMask {
                 width: 4,

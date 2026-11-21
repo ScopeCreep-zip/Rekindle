@@ -283,6 +283,7 @@ pub struct FrameTile {
     pub decoration: Option<u8>,
 }
 
+pub use super::skin_layout::LayoutRegion;
 /// A window's frame layout (plan SK0 S1): the window is the frame
 /// rectangle grown by `outsets` (room for overhang art); the content
 /// rectangle is the frame rectangle shrunk by `content` and is always
@@ -295,6 +296,9 @@ pub struct WindowLayout {
     pub min_width: u16,
     pub min_height: u16,
     pub tiles: Vec<FrameTile>,
+    /// The pack's banner region (main window, plan SK0-L1): the profile header; `None`: content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<LayoutRegion>,
 }
 
 /// The region states, Rekindle's own enums.

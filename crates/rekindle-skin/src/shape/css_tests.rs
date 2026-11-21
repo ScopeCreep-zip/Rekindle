@@ -72,7 +72,7 @@ fn total_chaos_main_golden() {
     assert_eq!(got[3], "display: block; left: calc(0px + round(down, calc((100% - 206px) / 2), 1px)); width: 206px; top: 0px; height: 52px; background: url(\"row0-centre.png\") 0 0 / 206px 52px no-repeat;");
     assert_eq!(got[4], "display: block; left: 0px; width: 59px; top: 52px; height: 60px; background: url(\"row1-left.png\") 0 0 / 59px 60px no-repeat;");
     assert_eq!(got[8], "display: block; left: 83px; right: 83px; top: 112px; height: 69px; background: url(\"row2-middle.png\") 0 0 / 30px 69px repeat-x;");
-    assert_eq!(got[11], "display: block; right: 0px; width: 59px; top: 181px; bottom: 66px; background: url(\"row3-right.png\") 0 0 / 59px 37px repeat-y;");
+    assert_eq!(got[11], "display: block; right: 0px; width: 50px; top: 181px; bottom: 66px; background: url(\"row3-right.png\") 0 0 / 50px 37px repeat-y;");
     assert_eq!(got[14], "display: block; right: 0px; width: 161px; bottom: 0px; height: 66px; background: url(\"row4-right.png\") 0 0 / 161px 66px no-repeat;");
 }
 
@@ -216,4 +216,21 @@ fn a_shaped_window_without_a_frame_keeps_square_corners() {
         css.contains(rule),
         "22-skin-frame.css must square a shaped window: {css}"
     );
+}
+
+#[test]
+fn the_header_region_places_the_profile_header_over_the_banner() {
+    // Total Chaos's `AdArea` (236×60, centred at 52 px): the profile header
+    // leaves the content's flow and sits there (plan SK0-L1).
+    let rule = |id: &str| {
+        let (m, files) = pack(id);
+        let css = frame_css(&m, &files, BASE).unwrap();
+        css.split_once("  .app-frame[data-skin-window=\"main\"] > .identity-bar {\n")
+            .map(|(_, r)| r.split_once("\n  }").unwrap().0.to_owned())
+    };
+    assert_eq!(
+        rule("builtin:total-chaos").as_deref(),
+        Some("    position: absolute;\n    left: calc(0px + round(down, calc((100% - 236px) / 2), 1px)); width: 236px; top: 52px; height: 60px;\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;")
+    );
+    assert_eq!(rule("builtin:xfire-classic"), None);
 }

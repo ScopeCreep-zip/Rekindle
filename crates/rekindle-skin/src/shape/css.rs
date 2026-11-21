@@ -149,6 +149,22 @@ fn window_rules(
         pad(o.left, c.left),
     );
     let _ = writeln!(out, "  {root} > .skin-frame {{\n    display: block;\n  }}");
+    // The pack's header region holds the profile header (plan SK0-L1): it
+    // leaves the content's flow and sits over the frame where the pack laid
+    // its banner, above the tiles (`.skin-frame` is `z-index: -1`).
+    if let Some(r) = layout.header.filter(|_| window == SkinWindow::Main) {
+        let (x, _) = axis(r.x, (o.left, o.right), ("left", "right", "width"), r.width);
+        let (y, _) = axis(
+            r.y,
+            (o.top, o.bottom),
+            ("top", "bottom", "height"),
+            r.height,
+        );
+        let _ = writeln!(
+            out,
+            "  {root} > .identity-bar {{\n    position: absolute;\n    {x} {y}\n    box-sizing: border-box;\n    margin: 0;\n    overflow: hidden;\n    z-index: 1;\n  }}"
+        );
+    }
     for (slot, i) in paint_order(layout).into_iter().enumerate() {
         let t = &layout.tiles[i];
         let h = href(base, &t.image, images)?;

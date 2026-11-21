@@ -27,7 +27,7 @@ pub use build::{from_nine, tile, tile_path};
 pub use check::{check, MAX_RECTS, MAX_WINDOW_HEIGHT, MAX_WINDOW_WIDTH};
 pub use css::{frame_css, MAX_FRAME_TILES};
 pub use mask::{of_layout, Mask, ALPHA_OPAQUE};
-pub use silhouette::{silhouette, Rect, SCALE_ONE};
+pub use silhouette::{regions, silhouette, Area, Rect, SCALE_ONE};
 
 /// A layout that does not compose (a mask that does not decode, or a
 /// silhouette past [`MAX_RECTS`]).
