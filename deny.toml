@@ -167,21 +167,30 @@ deny = [
     # file an upstream issue rather than whitelisting here.
     #
     # One recorded exception (plan SC1, 2026-11-20): `libsqlite3-sys` may
-    # link it, because SQLCipher is C and its page cipher needs a C crypto
-    # provider (OpenSSL, LibTomCrypt, NSS or Apple CommonCrypto); no Rust
-    # crypto crate can serve it. Our `rusqlite/bundled-sqlcipher-vendored-
-    # openssl` (rekindle-db, rekindle-vault; one libsqlite3 per process,
-    # SQLCipher winning feature unification, CLAUDE.md DB note, ADR 0017's
-    # veilid-core tree needing rusqlite 0.39) builds OpenSSL statically
-    # from the pinned `openssl-src` and SQLCipher is its only caller: no
-    # Rust code reaches it, and it serves only the at-rest page cipher
-    # (crypto-primitives.md: AES-256-CBC + HMAC-SHA512 via SQLCipher).
-    # Any other crate linking `openssl-sys` still fails here. Next slice:
-    # Apple targets take SQLCipher's CommonCrypto provider (`bundled-
-    # sqlcipher` alone selects `SQLCIPHER_CRYPTO_CC`, libsqlite3-sys 0.37
-    # build.rs), proved by opening a committed database written by the
-    # OpenSSL build; Linux and Windows keep the vendored OpenSSL.
-    { crate = "openssl-sys", wrappers = ["libsqlite3-sys"], reason = "Use Rustls / RustCrypto / ring instead; only SQLCipher (libsqlite3-sys) may link it, as its C page-cipher provider." },
+    # link it on non-Apple targets, because SQLCipher is C and its page
+    # cipher needs a C crypto provider (OpenSSL, LibTomCrypt, NSS or Apple
+    # CommonCrypto); no Rust crypto crate can serve it. One libsqlite3 per
+    # process, SQLCipher winning feature unification (CLAUDE.md DB note;
+    # ADR 0017's veilid-core tree needs rusqlite 0.39 -> libsqlite3-sys
+    # 0.37). Per target (SC1 slice 3, rekindle-db and rekindle-vault
+    # Cargo.toml):
+    # - Apple (macOS, iOS): `rusqlite/bundled-sqlcipher` alone, so
+    #   libsqlite3-sys build.rs:219-222 defines SQLCIPHER_CRYPTO_CC and
+    #   links Security.framework: no `openssl-sys` in the graph. cargo-deny
+    #   cannot scope a ban to targets, so `cargo xtask check-supply-chain`
+    #   fails if `cargo tree -i openssl-sys` finds it for an Apple target;
+    #   `rekindle-db/tests/sqlcipher_provider.rs` asserts `PRAGMA
+    #   cipher_provider` = commoncrypto and opens a committed database the
+    #   OpenSSL build wrote.
+    # - Linux, Windows, Android: `bundled-sqlcipher-vendored-openssl`,
+    #   OpenSSL built statically from the pinned `openssl-src`; SQLCipher is
+    #   its only caller, no Rust code reaches it, and it serves only the
+    #   at-rest page cipher (crypto-primitives.md: AES-256-CBC +
+    #   HMAC-SHA512 via SQLCipher). Without it libsqlite3-sys links a system
+    #   `libcrypto` dynamically (build.rs:223-226) or, on Windows, panics
+    #   without OPENSSL_DIR (build.rs:170-171).
+    # Any other crate linking `openssl-sys` still fails here.
+    { crate = "openssl-sys", wrappers = ["libsqlite3-sys"], reason = "Use Rustls / RustCrypto / ring instead; only SQLCipher (libsqlite3-sys) may link it, as its C page-cipher provider on non-Apple targets (Apple: CommonCrypto, checked by xtask check-supply-chain)." },
 
     # The `ed25519` crate is RustCrypto's signature-type/trait crate. It
     # lets any Ed25519 backend plug in behind one type; only the dalek

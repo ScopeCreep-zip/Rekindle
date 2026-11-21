@@ -40,9 +40,9 @@ rekindle-codec = { path = "../rekindle-codec", optional = true }
 # cipher's C crypto provider is chosen per target (plan SC1 slice 3):
 # Apple builds take CommonCrypto (`bundled-sqlcipher` alone defines
 # SQLCIPHER_CRYPTO_CC and links Security.framework, libsqlite3-sys 0.37
-# build.rs:209-212), so `openssl-sys` is not in them; every other target
+# build.rs:219-222), so `openssl-sys` is not in them; every other target
 # keeps the static, pinned OpenSSL from `openssl-src` (without it,
-# build.rs:213-215 links a system `libcrypto` dynamically, and on Windows
+# build.rs:223-226 links a system `libcrypto` dynamically, and on Windows
 # panics without OPENSSL_DIR, build.rs:170-171).
 [target.'cfg(target_vendor = "apple")'.dependencies]
 rusqlite = { version = "0.39", features = [ "bundled-sqlcipher" ] }
