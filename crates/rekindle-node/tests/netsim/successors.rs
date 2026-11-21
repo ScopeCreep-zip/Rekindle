@@ -228,11 +228,19 @@ async fn offered_to(node: &SimNode, anchor: &str) -> Vec<serde_json::Value> {
         .unwrap_or_default()
 }
 
-/// Node 0, the creator, publishes a successor; its new anchor.
+/// Node 0, the creator, publishes a successor continuing every member;
+/// its new anchor.
 async fn publish(community: &Community) -> String {
+    publish_continuing(community, None).await
+}
+
+/// Node 0 publishes a successor continuing `continuing` (pseudonym hex;
+/// `None`, every member); its new anchor.
+async fn publish_continuing(community: &Community, continuing: Option<Vec<String>>) -> String {
     let created = community.nodes[0]
         .ok(lifecycle(LifecycleRequest::CommunityPublishSuccessor {
             anchor: community.anchor.clone(),
+            continuing,
         }))
         .await;
     created["anchor"]
@@ -313,19 +321,12 @@ async fn follow_joins_the_new_community_and_keeps_the_old_readable() {
     let community = Community::of(2, 464).await;
     let new_anchor = publish(&community).await;
     offered_to_members(&community, std::slice::from_ref(&new_anchor)).await;
-    let invite = community.nodes[0]
-        .ok(lifecycle(LifecycleRequest::InviteCreate {
-            community: new_anchor.clone(),
-            max_uses: 1,
-            expires_seconds: None,
-        }))
-        .await;
-    let invite = invite["url"].as_str().expect("an invite link").to_owned();
+    // No invite is handed over: the follower opens the one sealed to its
+    // card in the successor's invites record (lead decision (34)).
     community.nodes[1]
         .ok(lifecycle(LifecycleRequest::CommunityFollowSuccessor {
             anchor: community.anchor.clone(),
             new_anchor: new_anchor.clone(),
-            invite,
         }))
         .await;
     let both = eventually(&community.sim, Duration::from_secs(120), || async {
@@ -344,4 +345,43 @@ async fn follow_joins_the_new_community_and_keeps_the_old_readable() {
     );
     let old = (community.nodes[1].host.governance()).governance_state(&community.anchor);
     assert!(old.is_some(), "the old community stays readable");
+}
+
+/// The pseudonym hex of `node` in `anchor`.
+fn pseudonym_of(node: &SimNode, anchor: &str) -> String {
+    (node.host.governance().community_membership(anchor))
+        .and_then(|m| m.my_pseudonym_hex)
+        .expect("a pseudonym")
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_member_the_publisher_left_out_has_no_sealed_invite() {
+    let community = Community::of(3, 465).await;
+    let kept = pseudonym_of(&community.nodes[1], &community.anchor);
+    let new_anchor = publish_continuing(&community, Some(vec![kept])).await;
+    offered_to_members(&community, std::slice::from_ref(&new_anchor)).await;
+    let follow = || {
+        lifecycle(LifecycleRequest::CommunityFollowSuccessor {
+            anchor: community.anchor.clone(),
+            new_anchor: new_anchor.clone(),
+        })
+    };
+    let refused = community.nodes[2].call(follow()).await;
+    let why = format!(
+        "{:?}",
+        refused.expect_err("the left-out member cannot follow")
+    );
+    assert!(why.contains("did not continue you"), "told plainly: {why}");
+    community.nodes[1].ok(follow()).await;
+    let joined = eventually(&community.sim, Duration::from_secs(120), || async {
+        (community.nodes[1]
+            .call(lifecycle(LifecycleRequest::CommunityList))
+            .await)
+            .is_ok_and(|v| v.to_string().contains(&new_anchor))
+    })
+    .await;
+    assert!(
+        joined,
+        "the continued member follows with its sealed invite"
+    );
 }

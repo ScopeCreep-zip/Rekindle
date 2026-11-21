@@ -98,30 +98,31 @@ pub async fn remove_co_creator(
 #[tauri::command]
 pub async fn publish_community_successor(
     community_id: String,
+    continuing: Option<Vec<String>>,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::CommunityPublishSuccessor {
             anchor: community_id,
+            continuing,
         },
     ));
     host_call::call(&state, request).await
 }
 
-/// Follow an offered successor with an invite to it
-/// (`LifecycleRequest::CommunityFollowSuccessor`, plan E3.2 S7s.4).
+/// Follow an offered successor with the invite sealed to us in its invites
+/// record (`LifecycleRequest::CommunityFollowSuccessor`, plan E3.2 S7s.4,
+/// lead decision (34)).
 #[tauri::command]
 pub async fn follow_community_successor(
     community_id: String,
     new_anchor: String,
-    invite: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::CommunityFollowSuccessor {
             anchor: community_id,
             new_anchor,
-            invite,
         },
     ));
     host_call::call(&state, request).await

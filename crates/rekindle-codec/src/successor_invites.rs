@@ -129,7 +129,7 @@ pub fn open_invite(
 ///
 /// # Errors
 /// More than [`MAX_PAGES`] pages would be needed.
-pub fn paginate(entries: Vec<SealedInvite>) -> Result<Vec<InvitesPage>, InviteSealError> {
+pub fn paginate(entries: &[SealedInvite]) -> Result<Vec<InvitesPage>, InviteSealError> {
     let count = entries.len();
     let mut pages: Vec<InvitesPage> = entries
         .chunks(ENTRIES_PER_PAGE)

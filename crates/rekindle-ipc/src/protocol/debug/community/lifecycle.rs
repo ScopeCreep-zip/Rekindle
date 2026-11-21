@@ -99,19 +99,15 @@ impl std::fmt::Debug for LifecycleRequest {
                 .field("anchor", anchor)
                 .field("new_owner_pseudonym", new_owner_pseudonym)
                 .finish(),
-            Self::CommunityPublishSuccessor { anchor } => f
+            Self::CommunityPublishSuccessor { anchor, continuing } => f
                 .debug_struct("CommunityPublishSuccessor")
                 .field("anchor", anchor)
+                .field("continuing", &continuing.as_ref().map(Vec::len))
                 .finish(),
-            Self::CommunityFollowSuccessor {
-                anchor,
-                new_anchor,
-                invite,
-            } => f
+            Self::CommunityFollowSuccessor { anchor, new_anchor } => f
                 .debug_struct("CommunityFollowSuccessor")
                 .field("anchor", anchor)
                 .field("new_anchor", new_anchor)
-                .field("invite_len", &invite.len())
                 .finish(),
             Self::CommunitySuccessors { anchor } => f
                 .debug_struct("CommunitySuccessors")

@@ -139,6 +139,10 @@ pub enum CommunityCmd {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
+        /// A member (pseudonym hex) the successor continues with a sealed
+        /// invite; repeat it. Absent, every current member is continued.
+        #[arg(long = "continue")]
+        continuing: Vec<String>,
     },
 
     /// Follow an offered successor: join it, keeping this community.
@@ -146,12 +150,10 @@ pub enum CommunityCmd {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
-        /// The successor's anchor key.
+        /// The successor's anchor key; your invite is the one sealed to
+        /// you in its invites record.
         #[arg(long)]
         new_anchor: String,
-        /// An invite link to the successor.
-        #[arg(long)]
-        invite: String,
     },
 
     /// List the successors offered for a community.

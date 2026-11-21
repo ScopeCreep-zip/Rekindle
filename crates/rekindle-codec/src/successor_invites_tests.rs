@@ -77,13 +77,13 @@ fn a_full_first_page_fits_one_subkey_and_round_trips() {
 fn paging_splits_by_the_page_count_and_caps_the_pages() {
     let (m, _, key) = member(1);
     let one = seal_invite(OLD, NEW, &m, &key, "i").unwrap();
-    let pages = paginate(vec![one.clone(); ENTRIES_PER_PAGE + 1]).unwrap();
+    let pages = paginate(&vec![one.clone(); ENTRIES_PER_PAGE + 1]).unwrap();
     assert_eq!(pages.len(), 2);
     assert_eq!(pages[1].entries.len(), 1);
-    assert_eq!(paginate(Vec::new()).unwrap().len(), 1);
+    assert_eq!(paginate(&[]).unwrap().len(), 1);
     let over = ENTRIES_PER_PAGE * MAX_PAGES + 1;
     assert_eq!(
-        paginate(vec![one; over]),
+        paginate(&vec![one; over]),
         Err(InviteSealError::TooManyMembers(over))
     );
 }

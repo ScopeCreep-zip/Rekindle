@@ -147,13 +147,14 @@ export const communityCommands = {
   /// Read once the window's event stream is live (plan VI1's pattern).
   getCoCreation: () => invoke<CoCreationSnapshot>("get_co_creation"),
   /// Re-creates the community under a new anchor naming it as
-  /// predecessor, with us as sole creator, and offers it (plan E3.2 S7s.4).
-  publishCommunitySuccessor: (communityId: string) =>
-    hostInvoke<CommunityCreated>("publish_community_successor", { communityId }),
-  /// Follows an offered successor with an invite to it; the old community
-  /// is kept.
-  followCommunitySuccessor: (communityId: string, newAnchor: string, invite: string) =>
-    hostInvoke<{ anchor: string; name: string }>("follow_community_successor", { communityId, newAnchor, invite }),
+  /// predecessor, with us as sole creator, and offers it (plan E3.2 S7s.4);
+  /// `continuing` (pseudonym hex) get a sealed invite, absent every member.
+  publishCommunitySuccessor: (communityId: string, continuing?: string[]) =>
+    hostInvoke<CommunityCreated>("publish_community_successor", { communityId, continuing }),
+  /// Follows an offered successor with the invite sealed to us in its
+  /// invites record; the old community is kept.
+  followCommunitySuccessor: (communityId: string, newAnchor: string) =>
+    hostInvoke<{ anchor: string; name: string }>("follow_community_successor", { communityId, newAnchor }),
   /// The successors offered this session (lead decision (33)'s snapshot,
   /// read after the event stream is live).
   getCommunitySuccessors: (communityId: string) =>

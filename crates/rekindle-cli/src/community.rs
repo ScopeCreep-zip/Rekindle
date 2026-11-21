@@ -404,19 +404,19 @@ async fn successor(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     let request = match cmd {
-        CommunityCmd::PublishSuccessor { community } => {
-            LifecycleRequest::CommunityPublishSuccessor {
-                anchor: community.clone(),
-            }
-        }
+        CommunityCmd::PublishSuccessor {
+            community,
+            continuing,
+        } => LifecycleRequest::CommunityPublishSuccessor {
+            anchor: community.clone(),
+            continuing: (!continuing.is_empty()).then(|| continuing.clone()),
+        },
         CommunityCmd::FollowSuccessor {
             community,
             new_anchor,
-            invite,
         } => LifecycleRequest::CommunityFollowSuccessor {
             anchor: community.clone(),
             new_anchor: new_anchor.clone(),
-            invite: invite.clone(),
         },
         CommunityCmd::Successors { community } => LifecycleRequest::CommunitySuccessors {
             anchor: community.clone(),

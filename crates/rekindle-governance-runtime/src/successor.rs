@@ -200,7 +200,9 @@ pub async fn create_successor<D: GovernanceRuntimeDeps>(
 
 /// Name `new_anchor` as `community_id`'s successor: the near link, the
 /// `CommunitySuccessor` op readers check against the new cert's
-/// `predecessor` (ADR 0011).
+/// `predecessor` (ADR 0011), carrying `invites_record`, the first page of
+/// the continuing members' sealed invites (lead decision (34),
+/// [`crate::successor_invites`]).
 ///
 /// # Errors
 /// The op was refused or not written.
@@ -208,6 +210,7 @@ pub async fn publish<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     new_anchor: &str,
+    invites_record: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     let entry = GovernanceEntry::CommunitySuccessor(CommunitySuccessor {
         new_anchor: Some(new_anchor.to_owned()),
@@ -216,6 +219,7 @@ pub async fn publish<D: GovernanceRuntimeDeps>(
         creator_set_hash: None,
         accepts: None,
         links: Vec::new(),
+        invites_record: Some(invites_record.to_owned()),
     });
     crate::apply::write_entry(deps, community_id, entry)
         .await
@@ -260,22 +264,40 @@ pub enum FollowRefusal {
 
 /// Check both links before following `new_anchor` from `community_id`:
 /// read the new cert pinned to its owner and judge it with
-/// [`follow_creators`]. Returns the signer and the creator set.
+/// [`follow_creators`]. Returns the linked successor's `invitesRecord`,
+/// where the follower's sealed invite is (lead decision (34)).
 ///
 /// # Errors
-/// The state is not loaded, the cert cannot be read, or a link fails.
+/// The state is not loaded, the cert cannot be read, a link fails, or the
+/// linked successor names no invites record.
 pub async fn check_follow<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     new_anchor: &str,
-) -> Result<(PseudonymKey, Vec<PseudonymKey>), GovernanceRuntimeError> {
+) -> Result<String, GovernanceRuntimeError> {
     let state = deps
         .governance_state(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_owned()))?;
     let (cert, _) = crate::genesis::read_pinned(deps, new_anchor).await?;
-    follow_creators(community_id, &state, new_anchor, &cert).map_err(|why| {
+    let (signer, _) = follow_creators(community_id, &state, new_anchor, &cert).map_err(|why| {
         GovernanceRuntimeError::OpRefused(format!("not a linked successor: {why:?}"))
+    })?;
+    invites_record(&state, new_anchor, &signer).ok_or_else(|| {
+        GovernanceRuntimeError::OpRefused(format!("the successor {new_anchor} names no invites"))
     })
+}
+
+/// The `invitesRecord` of `signer`'s applied successor naming `new_anchor`.
+#[must_use]
+pub fn invites_record(
+    state: &GovernanceState,
+    new_anchor: &str,
+    signer: &PseudonymKey,
+) -> Option<String> {
+    (state.successors.values())
+        .filter(|row| row.author == *signer)
+        .filter(|row| row.successor.new_anchor.as_deref() == Some(new_anchor))
+        .find_map(|row| row.successor.invites_record.clone())
 }
 
 #[cfg(test)]

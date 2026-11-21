@@ -128,7 +128,7 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 ),
             )
         }),
-LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } | LifecycleRequest::CommunityPublishSuccessor { anchor } | LifecycleRequest::CommunitySuccessors { anchor } => community(anchor),
+LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } | LifecycleRequest::CommunitySuccessors { anchor } => community(anchor),
 LifecycleRequest::CommunityUpdateInfo {
             anchor,
             name: community_name,
@@ -162,23 +162,19 @@ LifecycleRequest::CommunityReject {
             pseudonym(member_pseudonym, "member pseudonym")?;
             text(reason, MAX_NOTE_LEN, "reason")
         }
-LifecycleRequest::CommunityFollowSuccessor {
-            anchor,
-            new_anchor,
-            invite,
-        } => {
+LifecycleRequest::CommunityPublishSuccessor { anchor, continuing } => {
             community(anchor)?;
-            // The invite must open the successor itself, not any community.
-            let link = InviteLink::parse(invite)
-                .map_err(|e| IpcResponse::error(400, format!("successor invite: {e}")))?;
-            if link.anchor.as_str() == new_anchor {
-                Ok(())
-            } else {
-                Err(IpcResponse::error(
-                    400,
-                    "the invite does not open the successor community",
-                ))
+            let keys = continuing.as_deref().unwrap_or_default();
+            let max = rekindle_codec::successor_invites::ENTRIES_PER_PAGE
+                * rekindle_codec::successor_invites::MAX_PAGES;
+            if keys.len() > max {
+                return Err(IpcResponse::error(400, format!("over {max} continuing members")));
             }
+            keys.iter().try_for_each(|k| pseudonym(k, "continuing member"))
+        }
+LifecycleRequest::CommunityFollowSuccessor { anchor, new_anchor } => {
+            community(anchor)?;
+            community(new_anchor)
         }
 LifecycleRequest::CommunityTransferOwnership {
             anchor,

@@ -99,7 +99,7 @@ pub(super) fn selection(
             };
             s.notifies = members(ctx, &id);
         }
-        LifecycleRequest::CommunityPublishSuccessor { anchor } => {
+        LifecycleRequest::CommunityPublishSuccessor { anchor, .. } => {
             // ADR 0019 Destructive: the new creator set, who leaves it, and
             // that no history is copied (plan E3.2 S7s.4).
             let (id, name) = community(ctx, anchor)?;

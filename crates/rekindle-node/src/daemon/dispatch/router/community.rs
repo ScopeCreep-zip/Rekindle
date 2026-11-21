@@ -128,14 +128,12 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityPendingMembers { anchor } => {
             community::handle_pending_members(ctx, state, &anchor)
         }
-        LifecycleRequest::CommunityPublishSuccessor { anchor } => {
-            community::handle_publish_successor(ctx, state, &anchor).await
+        LifecycleRequest::CommunityPublishSuccessor { anchor, continuing } => {
+            community::handle_publish_successor(ctx, state, &anchor, continuing.as_deref()).await
         }
-        LifecycleRequest::CommunityFollowSuccessor {
-            anchor,
-            new_anchor: _,
-            invite,
-        } => community::handle_follow_successor(ctx, state, &anchor, &invite).await,
+        LifecycleRequest::CommunityFollowSuccessor { anchor, new_anchor } => {
+            community::handle_follow_successor(ctx, state, &anchor, &new_anchor).await
+        }
         LifecycleRequest::CommunitySuccessors { anchor } => {
             community::handle_successors(ctx, state, &anchor)
         }

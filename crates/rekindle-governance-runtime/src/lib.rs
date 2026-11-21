@@ -71,6 +71,7 @@ pub mod roster;
 pub mod seen_frontiers;
 pub mod segments;
 pub mod successor;
+pub mod successor_invites;
 pub mod verify_cache;
 pub mod watch_ring;
 

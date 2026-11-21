@@ -101,17 +101,18 @@ pub enum LifecycleRequest {
     /// Re-create `anchor` under a new anchor whose cert names it as
     /// `predecessor`, with us as its sole creator, and name the new anchor
     /// here as its successor (ADR 0011 "Successor community", plan E3.2
-    /// S7s.4). Creator-only.
-    CommunityPublishSuccessor { anchor: String },
-
-    /// Follow `new_anchor`, a successor of `anchor`, by joining it with
-    /// `invite` (a link to `new_anchor`): both links are re-checked first
-    /// and `anchor` is kept (plan E3.2 S7s.4).
-    CommunityFollowSuccessor {
+    /// S7s.4). Creator-only. `continuing` names the members (pseudonym
+    /// hex) who get a sealed invite to it; absent, every current member
+    /// does (lead decision (34)).
+    CommunityPublishSuccessor {
         anchor: String,
-        new_anchor: String,
-        invite: String,
+        continuing: Option<Vec<String>>,
     },
+
+    /// Follow `new_anchor`, a successor of `anchor`, by joining it with our
+    /// invite sealed in its `invitesRecord` (lead decision (34)): both links
+    /// are re-checked first and `anchor` is kept (plan E3.2 S7s.4).
+    CommunityFollowSuccessor { anchor: String, new_anchor: String },
 
     /// The successors of `anchor` offered this session (lead decision
     /// (33)'s snapshot of `CommunitySuccessorOffered`).

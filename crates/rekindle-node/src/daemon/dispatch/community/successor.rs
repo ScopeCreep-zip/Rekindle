@@ -2,6 +2,7 @@
 //! S7s.4): publish one, follow one, and the snapshot of those offered.
 
 use rekindle_ipc::protocol::IpcResponse;
+use rekindle_types::id::PseudonymKey;
 
 use super::lifecycle::{activate_community, join_failure_response};
 use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
@@ -13,6 +14,7 @@ pub(crate) async fn handle_publish_successor(
     ctx: &DaemonContext,
     state: DaemonState,
     anchor: &str,
+    continuing: Option<&[String]>,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -21,7 +23,13 @@ pub(crate) async fn handle_publish_successor(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let created = Box::pin(adapter(ctx).publish_successor(&membership.anchor)).await;
+    let continuing: Option<Vec<PseudonymKey>> = continuing.map(|keys| {
+        keys.iter()
+            .map(|k| PseudonymKey::from_hex_lossy(k))
+            .collect()
+    });
+    let created =
+        Box::pin(adapter(ctx).publish_successor(&membership.anchor, continuing.as_deref())).await;
     match created {
         Ok(created) => {
             if ctx.shell.is_none() {
@@ -39,7 +47,7 @@ pub(crate) async fn handle_follow_successor(
     ctx: &DaemonContext,
     state: DaemonState,
     anchor: &str,
-    invite: &str,
+    new_anchor: &str,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -48,11 +56,8 @@ pub(crate) async fn handle_follow_successor(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let link = match rekindle_types::invite::InviteLink::parse(invite) {
-        Ok(link) => link,
-        Err(e) => return IpcResponse::error(400, format!("successor invite: {e}")),
-    };
-    let joined = match Box::pin(adapter(ctx).follow_successor(&membership.anchor, &link)).await {
+    let joined = match Box::pin(adapter(ctx).follow_successor(&membership.anchor, new_anchor)).await
+    {
         Ok(joined) => joined,
         Err(failure) => return join_failure_response(failure),
     };
