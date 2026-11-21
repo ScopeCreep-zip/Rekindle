@@ -90,7 +90,7 @@ Dropped
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (101):
+  files not read (98):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
@@ -126,8 +126,6 @@ Dropped
     c_close_hover.gif
     c_header_arrow_down.gif
     c_header_arrow_up.gif
-    c_infoview_in_hover.gif
-    c_infoview_out_hover.gif
     c_menu_down.gif
     c_menu_down_top.gif
     c_menu_hover_top.gif
@@ -137,7 +135,6 @@ Dropped
     c_top_middle_off.gif
     c_top_right_off.gif
     c_white_background.gif
-    c_xfire_logo_hover.gif
     chat/c_chat_bottom_left.gif
     chat/c_chat_bottom_middle.gif
     chat/c_chat_bottom_right.gif

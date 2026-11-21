@@ -123,7 +123,7 @@ impl Walk<'_> {
         Ok(wh)
     }
 
-    /// An interactive node's normal, hover and down art at one size.
+    /// A node's normal, hover and down art at one size.
     fn art(
         &mut self,
         id: &str,
@@ -299,9 +299,12 @@ impl Walk<'_> {
                 self.groups.push((own.clone(), g.clone()));
             }
             let (x, y) = xy.ok_or_else(|| bad(format!("{}: not placed", t.id)))?;
-            let art = match (&t.img, t.role.interactive()) {
-                (Some(i), true) => self.art(&t.id, t.tile, i)?,
-                _ => None,
+            // Every tile's art is the node's (SK0: the art is the window's
+            // shape; plan SK2-S1r): a decor band, logo or ad ground draws and
+            // joins the outline like a button does.
+            let art = match &t.img {
+                Some(i) => self.art(&t.id, t.tile, i)?,
+                None => None,
             };
             let z = t.tile.attr_ci("Z").map_or(Ok(0), |z| {
                 z.trim()

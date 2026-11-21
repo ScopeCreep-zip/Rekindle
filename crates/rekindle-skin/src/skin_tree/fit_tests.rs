@@ -21,6 +21,17 @@ fn imported(xml: &[u8], parts: &[u8]) -> (WindowLayout, SkinTree) {
 
 /// `xml` imported with its frame laid from the tiles `rows` (a row stack).
 fn imported_rows(xml: &[u8], parts: &[u8], rows: &[&str]) -> (WindowLayout, SkinTree) {
+    let (l, tree, _) = imported_art(xml, parts, rows);
+    (l, tree)
+}
+
+/// [`imported_rows`] with the images the import wrote, which every imaged
+/// node's art names (plan SK2 lead decision 18).
+fn imported_art(
+    xml: &[u8],
+    parts: &[u8],
+    rows: &[&str],
+) -> (WindowLayout, SkinTree, BTreeMap<String, Vec<u8>>) {
     let main = parse("main.xml", xml).unwrap();
     let parts = parse("parts.xml", parts).unwrap();
     let mut built = (frame(), BTreeMap::new());
@@ -35,17 +46,19 @@ fn imported_rows(xml: &[u8], parts: &[u8], rows: &[&str]) -> (WindowLayout, Skin
     )
     .unwrap();
     let tree = built.0.tree.clone().unwrap();
-    (built.0, tree)
+    (built.0, tree, built.1)
 }
 
 /// Total Chaos's `MainTitleBar` `OutdentLeft="1"` (a frame row) and a logo
 /// wider than the frame's smallest size: the window holds the outdent, the
 /// frame rectangle starts where the row does (lead decision 14), the window
 /// grows to the declared `MinWidth`/`MinHeight` and then until the logo
-/// fits, and every node then lies inside it (rule 3).
+/// fits, and every node then lies inside it (rule 3). The bar and the logo
+/// carry their art (lead decision 18: every imaged node does), so the tree
+/// is checked against the images the import wrote.
 #[test]
 fn the_window_fits_the_tree_and_its_overhang() {
-    let (l, tree) = imported_rows(
+    let (l, tree, images) = imported_art(
         br#"<Tile Name="W" Component="MainWindow">
 <Tile Name="MainTitleBar" X="0" OutdentLeft="1" Y="0" ResizeX="100" Component="MainTitleBar"/>
 <Tile Name="SCLogo" X="0" Y="60" Component="SCLogo"/>
@@ -64,7 +77,10 @@ fn the_window_fits_the_tree_and_its_overhang() {
     let full = (i32::from(l.min_width), i32::from(l.min_height));
     let boxes = tree.boxes(full.0, full.1);
     assert_eq!(boxes[0].1, [0, 0, full.0, 50]);
-    assert!(validate::check("t", &tree, &l, &BTreeMap::new()).is_ok());
+    let logo = tree.root.iter().find(|n| n.id == "SCLogo").unwrap();
+    assert!(logo.art.is_some(), "a decor logo carries its art");
+    let checked = validate::check("t", &tree, &l, &images);
+    assert!(checked.is_ok(), "{checked:?}");
 }
 
 /// Plan SK2 lead decision 14: Total Chaos's frame rows (`components.xml`
