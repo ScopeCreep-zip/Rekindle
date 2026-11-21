@@ -183,13 +183,20 @@ pub(super) fn clip(
         // art (Total Chaos's `BottomBar` `ResizeX="100"`, 5 px past the
         // box on purpose: lead decision 14), so only a wholly fixed one is.
         let fixed = matches!((n.x, n.y), (NodeSpan::Fixed { .. }, NodeSpan::Fixed { .. }));
+        // A 0 px parent is sized by its text or children at render (an
+        // art-less menu bar), so it bounds nothing here.
+        let parent = (parent.0.filter(|l| *l > 0), parent.1.filter(|l| *l > 0));
         let cuts = if fixed {
             [cut(n.x, parent.0), cut(n.y, parent.1)]
         } else {
             [(0, 0); 2]
         };
-        n.x = clipped(n.x, cuts[0], parent.0);
-        n.y = clipped(n.y, cuts[1], parent.1);
+        if cuts[0] != (0, 0) {
+            n.x = clipped(n.x, cuts[0], parent.0);
+        }
+        if cuts[1] != (0, 0) {
+            n.y = clipped(n.y, cuts[1], parent.1);
+        }
         let len = |s: NodeSpan| match s {
             NodeSpan::Fixed { size, .. } => Some(size),
             NodeSpan::Stretch { .. } => None,
