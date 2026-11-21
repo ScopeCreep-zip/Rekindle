@@ -12,7 +12,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
 import { setDmPeerDecodeCodecs, videoSessionConfigFor } from "../../../stores/video.store";
-import type { RemoteStream } from "./codec_utils";
+import { releaseRemoteStream, type RemoteStream } from "./codec_utils";
 import { createCaptureController } from "./panel_capture";
 import type { PanelCtx, Ref } from "./panel_ctx";
 import { createDecodePipeline } from "./panel_decode";
@@ -141,7 +141,8 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   };
   const decode = createDecodePipeline(ctx);
   const capture = createCaptureController(ctx);
-  const togglePictureInPicture = createPipToggle(ctx);
+  const pip = createPipToggle(ctx);
+  const togglePictureInPicture = pip.toggle;
 
   // The pipeline now lives in a headless host (CallPipelineHost) so the
   // call survives navigating between channels. The local-preview <video>
@@ -194,11 +195,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           setRemotes((prev) =>
             prev.filter((r) => {
               if (r.streamId === streamId) {
-                try {
-                  r.decoder.close();
-                } catch (e) {
-                  console.error("decoder close failed:", e);
-                }
+                releaseRemoteStream(r);
                 return false;
               }
               return true;
@@ -302,13 +299,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     if (dmFrameChannel && props.mode === "dm") {
       void commands.unregisterDmVideoChannel(props.peerId);
     }
-    for (const r of remotes()) {
-      try {
-        r.decoder.close();
-      } catch (e) {
-        console.error("decoder close failed:", e);
-      }
-    }
+    pip.release();
+    for (const r of remotes()) releaseRemoteStream(r);
+    setRemotes(() => []);
   });
 
   // Phase C — when the backend re-negotiates the session config (a
@@ -346,13 +339,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     // inbound keyframe re-seeds a fresh RemoteStream with the new
     // decoder constraints from the store.
     setRemotes((prev) => {
-      for (const r of prev) {
-        try {
-          r.decoder.close();
-        } catch (e) {
-          console.error("decoder close on config change failed:", e);
-        }
-      }
+      for (const r of prev) releaseRemoteStream(r);
       return [];
     });
   });

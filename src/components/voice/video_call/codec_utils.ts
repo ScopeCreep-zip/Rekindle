@@ -83,6 +83,27 @@ export interface RemoteStream {
   lastRenderReportAt: number;
 }
 
+/** Release every handle a remote tile owns (plan CL2): close its
+ *  WebCodecs decoder (a decoder holds platform decode resources until
+ *  `close()`, which also discards queued outputs) and drop its 2D
+ *  canvas backing store by zeroing the canvas (a detached canvas keeps
+ *  its backing store until garbage collection otherwise). The one
+ *  teardown for a remote stream: every path that drops a remote from
+ *  the panel calls this, so no handle outlives its tile. */
+export function releaseRemoteStream(r: RemoteStream): void {
+  try {
+    if (r.decoder.state !== "closed") r.decoder.close();
+  } catch (e) {
+    console.error("decoder close failed:", e);
+  }
+  r.ready = false;
+  r.ctx = null;
+  r.canvas.width = 0;
+  r.canvas.height = 0;
+  r.decodeStamps.length = 0;
+  r.renderFacts = [];
+}
+
 /** One painted frame: its wire timestamp (sender capture wall clock, ms
  *  mod 2^32) and the local wall-clock ms it was painted at. */
 export interface RenderedFrame {

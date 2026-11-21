@@ -109,6 +109,7 @@ pub(crate) async fn handle_call_signaling_payload(
                     )
                     .await;
                 }
+                crate::windows::retire_call_window(app_handle, &call_id);
                 crate::event_dispatch::emit_call(
                     app_handle,
                     rekindle_types::subscription_events::CallEvent::Ended {

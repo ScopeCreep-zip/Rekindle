@@ -378,6 +378,7 @@ impl CallSignalingDeps for CallsAdapter {
                 call_id, reason, ..
             }
             | CallSignalEvent::GroupCallEnded { call_id, reason } => {
+                crate::windows::retire_call_window(&self.app_handle, &call_id);
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
                     rekindle_types::subscription_events::CallEvent::Ended { call_id, reason },

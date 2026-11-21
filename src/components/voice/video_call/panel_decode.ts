@@ -12,6 +12,7 @@ import {
   RENDER_REPORT_INTERVAL_MS,
   type RemoteStream,
   decodeBase64ToBytes,
+  releaseRemoteStream,
   wireCodecToWebCodecsString,
 } from "./codec_utils";
 import type { PanelCtx } from "./panel_ctx";
@@ -186,11 +187,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
       console.warn(
         `codec switch ${remote.codec} → ${codec} on stream ${streamId.slice(0, 8)} — decoder torn down`,
       );
-      try {
-        remote.decoder.close();
-      } catch (e) {
-        console.error("decoder close on codec switch failed:", e);
-      }
+      releaseRemoteStream(remote);
       ctx.setRemotes((prev) => prev.filter((r) => r.streamId !== streamId));
       remote = undefined;
     }

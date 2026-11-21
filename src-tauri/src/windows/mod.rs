@@ -346,6 +346,31 @@ pub fn open_call_window(app: &AppHandle, call: &str) -> Result<(), String> {
     finish(builder, WindowKind::Call).map(drop)
 }
 
+/// The 1:1 call is over: destroy its window (plan CL2).
+///
+/// `open_call_window` makes one window per call (its label carries the
+/// call id), so a window left open after the call ended was never reused:
+/// every call added a webview whose compositor GL contexts and WebKit IPC
+/// connections stayed alive until the user closed it (Linux, 5 calls:
+/// +2–3 Mesa GL contexts and +1–2 `IPC::Connection` receive queues per
+/// call, all still present 2 min after the last hang-up). `destroy`, not
+/// `hide`: a hidden webview keeps every one of those resources, and
+/// `destroy` skips the `CloseRequested` round trip (tauri 2
+/// `WebviewWindow::destroy`), which for a call window has nothing to
+/// intercept. No window for the call (a group call, or one that never
+/// connected) is a no-op.
+pub fn retire_call_window(app: &AppHandle, call: &str) {
+    let Some(label) = labels::call_label_for(call) else {
+        return;
+    };
+    let Some(window) = app.get_webview_window(&label) else {
+        return;
+    };
+    if let Err(e) = window.destroy() {
+        tracing::warn!(error = %e, "could not destroy the ended call's window");
+    }
+}
+
 /// Open (or raise) the skin editor (plan E7.7.5: a Settings sub-window,
 /// one at a time). Its draft's live style applies to its own document
 /// only; the commands that read and export a draft are granted to it alone

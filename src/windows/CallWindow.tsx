@@ -12,7 +12,10 @@ import { initVoiceEventListener } from "../actions/voice.actions";
 /// The call window: the one place a connected 1:1 call's controls and
 /// media pipeline run. The backend opens it on connect
 /// (`present_active_call`); it reads the call's current state with
-/// `get_active_call`, then follows the call's events.
+/// `get_active_call`, then follows the call's events. When the call ends
+/// the backend destroys this window (`retire_call_window`, plan CL2), so
+/// its webview and media resources go with it; the "Call ended" fallback
+/// shows only when the window opens after its call already ended.
 function getCallIdFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
   return params.get("id") ?? "";
