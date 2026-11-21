@@ -13,6 +13,10 @@ use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX, ROUTES};
 
+#[cfg(test)]
+#[path = "watch_tests.rs"]
+mod tests;
+
 use super::HostGovernance;
 
 /// Does a ring change on `subkeys` of a member record rebuild the
@@ -66,16 +70,31 @@ impl HostGovernance {
         if subkeys.contains(&ROUTES) {
             self.ring_route_moved(&community, record).await;
         }
+        let frontier_follows_head = self.frontier_follows_head(&community, record, subkeys);
         if rebuilds_on(subkeys) {
             // The change names the frontier: it is force-read (VU3's hint
-            // contract), never gated on an inspect a lagging replica answers.
-            tracing::info!(%community, record, "ring member's frontier changed — reading it");
-            self.refresh_member_record(&community, record).await;
+            // contract), never gated on an inspect a lagging replica answers;
+            // the inspected seq only tells a catch-up already in flight
+            // whether to read once more. An unknown seq always does.
+            let seq = seqs
+                .as_ref()
+                .and_then(|s| s.get(FRONTIER as usize).copied().flatten())
+                .unwrap_or(u64::MAX);
+            tracing::debug!(%community, record, seq, "ring member's frontier changed");
+            self.refresh_member_record(&community, record, seq, true)
+                .await;
         } else {
             tracing::debug!(%community, record, ?subkeys, "ring member record changed, no frontier — recorded, not rebuilt");
         }
         if let Some(seqs) = seqs {
-            self.relay_head_advanced(&community, record, subkeys, &seqs, beat_moved);
+            self.relay_head_advanced(
+                &community,
+                record,
+                subkeys,
+                &seqs,
+                beat_moved,
+                frontier_follows_head,
+            );
         }
         true
     }
@@ -91,15 +110,39 @@ impl HostGovernance {
         self.inspect_dht_record_update_get_seqs(lease).await.ok()
     }
 
-    /// Mark `record`'s frontier read at `seq`, once every head it names is
-    /// stored (`anti_entropy::inspect_one` counts it read only then), so a
-    /// frontier whose head did not fetch yet is read again on its next
-    /// change or hint; a hint for a frontier seq already read is not read
-    /// again (`head_advanced.rs`, `head_hints.worth_reading`).
-    fn mark_frontier_read(&self, community: &str, record: &str, seq: u64) {
-        if let Some(c) = self.ctx.communities.map().write().get_mut(community) {
-            c.head_hints.record_read(record, FRONTIER, seq);
-        }
+    /// Does this ring change of `record` relay a frontier hint
+    /// ([`HeadHints::frontier_follows_head`](crate::host::community::state::HeadHints::frontier_follows_head))?
+    fn frontier_follows_head(&self, community: &str, record: &str, subkeys: &[u32]) -> bool {
+        self.ctx
+            .communities
+            .map()
+            .write()
+            .get_mut(community)
+            .is_some_and(|c| c.head_hints.frontier_follows_head(record, subkeys))
+    }
+
+    /// Claim `record`'s frontier catch-up under the communities write
+    /// lock (`HeadHints::claim_frontier`).
+    fn claim_frontier(&self, community: &str, record: &str, seq: u64, forced: bool) -> bool {
+        self.ctx
+            .communities
+            .map()
+            .write()
+            .get_mut(community)
+            .is_some_and(|c| c.head_hints.claim_frontier(record, seq, forced))
+    }
+
+    /// End the claimed catch-up, marking the frontier read at `read` when
+    /// every head it names is stored (`anti_entropy::inspect_one` counts it
+    /// read only then), so a frontier whose head did not fetch yet is read
+    /// again on its next change or hint; the seq to catch up again.
+    fn finish_frontier(&self, community: &str, record: &str, read: Option<u64>) -> Option<u64> {
+        self.ctx
+            .communities
+            .map()
+            .write()
+            .get_mut(community)
+            .and_then(|c| c.head_hints.finish_frontier(record, read))
     }
 
     /// Read `record`'s frontier and, when the read stored a head we lacked,
@@ -111,12 +154,37 @@ impl HostGovernance {
     /// hold, and the read's own D15 convergence check
     /// (`anti_entropy::check_convergence`) rebuilds when equal heads carry
     /// a roster checksum other than ours (R5-3). A ring change and a hint
-    /// for one frontier write cost one rebuild: the second read finds
-    /// every head held.
-    pub(super) async fn refresh_member_record(&self, community: &str, record: &str) {
-        let (read, stored) = self.catch_up_record(community, record).await;
-        if let Some(seq) = read {
-            self.mark_frontier_read(community, record, seq);
+    /// for one frontier write cost one catch-up: whichever claims it first
+    /// (`HeadHints::claim_frontier`, `seq` the trigger's, `forced` for a
+    /// ring change) reads, and the other is refused; a trigger refused
+    /// for a seq above what the read found is caught up after it.
+    pub(super) async fn refresh_member_record(
+        &self,
+        community: &str,
+        record: &str,
+        seq: u64,
+        forced: bool,
+    ) {
+        if !self.claim_frontier(community, record, seq, forced) {
+            tracing::debug!(
+                community,
+                record,
+                seq,
+                "member's frontier already read or being read"
+            );
+            return;
+        }
+        let mut stored = 0;
+        let mut read = None;
+        loop {
+            tracing::info!(community, record, "reading a member's frontier");
+            let (seq_read, stored_now) = self.catch_up_record(community, record).await;
+            stored += stored_now;
+            read = seq_read.or(read);
+            match self.finish_frontier(community, record, seq_read) {
+                Some(again) if self.claim_frontier(community, record, again, true) => {}
+                _ => break,
+            }
         }
         if stored == 0 {
             tracing::debug!(
@@ -182,36 +250,5 @@ impl HostGovernance {
             "ring change: frontier heads stored"
         );
         (seen.get(record).copied(), stored)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use rekindle_types::dht_layout::member_record::{FRONTIER, SUBKEY_COUNT};
-
-    use super::rebuilds_on;
-
-    /// A ring change on each subkey of `M` rebuilds only for the frontier
-    /// (`M`/3), the writer's commit point; the op-log head alone, a beat,
-    /// an outbox or any other subkey never does (register 2026-10-24,
-    /// "S8 sequencing"). `on_watched_change` itself is driven in the
-    /// netsim (`ring_frontier`).
-    #[test]
-    fn only_a_frontier_change_rebuilds() {
-        for subkey in 0..u32::from(SUBKEY_COUNT) {
-            assert_eq!(
-                rebuilds_on(&[subkey]),
-                subkey == FRONTIER,
-                "a ring change on subkey {subkey}"
-            );
-        }
-        assert!(
-            rebuilds_on(&[2, 3]),
-            "a change naming the frontier rebuilds"
-        );
-        assert!(
-            !rebuilds_on(&[1, 2, 4]),
-            "a head without its frontier does not"
-        );
     }
 }

@@ -1,5 +1,6 @@
 //! The Host's community model and its one store (plan E3.1).
 
+pub mod head_hints;
 pub mod sealed_pages;
 pub mod state;
 pub mod store;

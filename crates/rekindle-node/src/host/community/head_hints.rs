@@ -1,0 +1,130 @@
+//! What the watch ring and its `HeadAdvanced` hints have read of each
+//! member record (plan E3.2 S7, `evidence/slot-integrity.md` §4.3/§4.5):
+//! the seqs read from the DHT, the frontier catch-ups in flight, and the
+//! records whose op-log head moved since their frontier was last relayed.
+//! In memory only (`CommunityState::head_hints` is `#[serde(skip)]`): the
+//! login sweep reads every frontier again after a restart.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use rekindle_types::dht_layout::member_record::{FRONTIER, GOV_HEAD};
+
+/// The seqs `HeadAdvanced` hints were acted on at, per (member record,
+/// subkey): a seq is recorded only once read from the DHT, never from the
+/// hint (`evidence/slot-integrity.md` §4.3, "hints are self-verifying";
+/// register S7l), so one member's `u64::MAX` hint mutes nothing.
+#[derive(Debug, Clone, Default)]
+pub struct HeadHints {
+    read: BTreeMap<(String, u32), u64>,
+    /// One frontier catch-up per record at a time (review S7m 83f7fc6b
+    /// P1): the claim is taken under the communities write lock before
+    /// the DHT reads, so a ring change and the hints of up to four
+    /// relayers for one frontier write cost one catch-up.
+    in_flight: BTreeMap<String, Flight>,
+    /// Ring records whose op-log head (`M`/2) moved in a change that did
+    /// not also name the frontier: the frontier write that follows is the
+    /// author's append, the one frontier change a ring watcher relays.
+    head_moved: BTreeSet<String>,
+}
+
+/// A frontier catch-up in flight: the highest seq a trigger refused
+/// while it ran named, read again after it when above the seq it read.
+#[derive(Debug, Clone, Default)]
+struct Flight {
+    missed: Option<u64>,
+}
+
+impl HeadHints {
+    /// Is a hint at `hinted` worth a read: above the seq last read, or
+    /// for a subkey never read? Records nothing. A subkey's first value
+    /// is at seq 0 (Veilid `ValueSeqNum::next` from NONE,
+    /// `veilid_api/types/dht/value_seq_num.rs:24`), so an unread subkey
+    /// is not "read at 0": a fresh member record's first outbox entry
+    /// is hinted at seq 0 and must be read.
+    #[must_use]
+    pub fn worth_reading(&self, record: &str, subkey: u32, hinted: u64) -> bool {
+        self.read_at(record, subkey)
+            .is_none_or(|read| hinted > read)
+    }
+
+    /// Record the seq the DHT read returned: `true` when it moved past
+    /// the last one read (any seq for a subkey never read), so the hint
+    /// is acted on.
+    pub fn record_read(&mut self, record: &str, subkey: u32, read: u64) -> bool {
+        let seen = self.read.entry((record.to_owned(), subkey));
+        match seen {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(read);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                let moved = read > *slot.get();
+                *slot.get_mut() = (*slot.get()).max(read);
+                moved
+            }
+        }
+    }
+
+    /// Claim `record`'s frontier catch-up for a trigger naming `seq` (a
+    /// hint's seq, or the ring change's inspected seq): `false` while
+    /// another catch-up of it runs (its seq is then kept as missed, see
+    /// [`Self::finish_frontier`]) or, unless `forced` (a ring change, never
+    /// gated on an inspect a lagging replica answers), when `seq` was read.
+    pub fn claim_frontier(&mut self, record: &str, seq: u64, forced: bool) -> bool {
+        if let Some(flight) = self.in_flight.get_mut(record) {
+            flight.missed = flight.missed.max(Some(seq));
+            return false;
+        }
+        if !forced && !self.worth_reading(record, FRONTIER, seq) {
+            return false;
+        }
+        self.in_flight.insert(record.to_owned(), Flight::default());
+        true
+    }
+
+    /// End `record`'s claimed catch-up: a complete one marks its frontier
+    /// read at `read`. The seq to catch up again, when a trigger refused
+    /// while it ran named one above what it read (or it read nothing), so
+    /// a frontier written after its read is not lost.
+    pub fn finish_frontier(&mut self, record: &str, read: Option<u64>) -> Option<u64> {
+        let flight = self.in_flight.remove(record).unwrap_or_default();
+        if let Some(read) = read {
+            self.record_read(record, FRONTIER, read);
+        }
+        flight
+            .missed
+            .filter(|missed| read.is_none_or(|read| *missed > read))
+    }
+
+    /// Does the ring change on `subkeys` of `record` relay a frontier
+    /// hint? Only when the same write advanced the op-log head (review
+    /// S7m 83f7fc6b P2): the change names both, or the head moved in an
+    /// earlier change (the writer appends `M`/2, then writes `M`/3). A
+    /// republish after a rebuild moves the frontier alone and stays a
+    /// ring-local signal, so ops spread hop by hop, not by mesh floods.
+    pub fn frontier_follows_head(&mut self, record: &str, subkeys: &[u32]) -> bool {
+        let head = subkeys.contains(&GOV_HEAD);
+        if !subkeys.contains(&FRONTIER) {
+            if head {
+                self.head_moved.insert(record.to_owned());
+            }
+            return false;
+        }
+        self.head_moved.remove(record) || head
+    }
+
+    /// Forget every record not in `records` (the current members' records,
+    /// after a rebuild): a departed member's entries are never read again.
+    pub fn retain_records(&mut self, records: &BTreeSet<String>) {
+        self.read.retain(|(record, _), _| records.contains(record));
+        self.head_moved.retain(|record| records.contains(record));
+    }
+
+    fn read_at(&self, record: &str, subkey: u32) -> Option<u64> {
+        self.read.get(&(record.to_owned(), subkey)).copied()
+    }
+}
+
+#[cfg(test)]
+#[path = "head_hints_tests.rs"]
+mod tests;

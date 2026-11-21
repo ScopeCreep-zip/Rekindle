@@ -39,7 +39,10 @@ impl HostGovernance {
             .map(|(p, _)| p.clone())
     }
 
-    /// Relay a hint for each relayed subkey our watch saw `record` change.
+    /// Relay a hint for each relayed subkey our watch saw `record` change:
+    /// a beat only on a status transition (`beat_moved`), a frontier only
+    /// when it follows the author's head advance (`frontier_follows_head`,
+    /// never a republish, review S7m 83f7fc6b P2).
     pub(super) fn relay_head_advanced(
         &self,
         community_id: &str,
@@ -47,6 +50,7 @@ impl HostGovernance {
         subkeys: &[u32],
         seqs: &[Option<u64>],
         beat_moved: bool,
+        frontier_follows_head: bool,
     ) {
         let relayed: Vec<u32> = RELAYED_SUBKEYS
             .iter()
@@ -68,6 +72,10 @@ impl HostGovernance {
             if subkey == BEAT && !beat_moved {
                 continue;
             }
+            // A frontier republish stays a ring-local signal (§4.5).
+            if subkey == FRONTIER && !frontier_follows_head {
+                continue;
+            }
             let Some(Some(seq)) = seqs.get(subkey as usize).copied() else {
                 continue;
             };
@@ -77,6 +85,9 @@ impl HostGovernance {
                 subkey,
                 seq,
             };
+            if subkey == FRONTIER {
+                tracing::info!(community_id, record, seq, "ring relayed a frontier hint");
+            }
             match hint.encode(community_id, &relayer) {
                 Ok(hint) => self.send_to_mesh_impl(
                     community_id,
@@ -219,15 +230,16 @@ impl HostGovernance {
     /// (1) has no governance effect alone, so it is only recorded.
     async fn read_hinted(&self, community_id: &str, hint: HeadAdvanced) {
         let record = hint.member_record.as_str();
+        if hint.subkey == FRONTIER {
+            // The frontier is opened and read once, forced, by the
+            // catch-up itself, and only by the trigger that claims it.
+            self.refresh_member_record(community_id, record, hint.seq, false)
+                .await;
+            return;
+        }
         let Ok(lease) = self.acquire_record(record, None, OpenIntent::Check).await else {
             return;
         };
-        if hint.subkey == FRONTIER {
-            // The frontier is read once, forced, by the catch-up itself.
-            self.release_record(lease).await;
-            self.refresh_member_record(community_id, record).await;
-            return;
-        }
         let read = if hint.subkey == BEAT {
             // A status transition a ring watcher relayed: into the view.
             let now = Some(self.ctx.clock.now_ms());
@@ -268,6 +280,22 @@ impl HostGovernance {
         }
     }
 
+    /// Forget the hint state of every record no current member owns
+    /// (after a rebuild): a departed member's entries are never read again.
+    pub(super) fn prune_head_hints(&self, community_id: &str) {
+        let Some(state) = self.ctx.communities.governance_state(community_id) else {
+            return;
+        };
+        let records: std::collections::BTreeSet<String> = state
+            .members
+            .values()
+            .map(|m| m.member_record.clone())
+            .collect();
+        if let Some(c) = self.ctx.communities.map().write().get_mut(community_id) {
+            c.head_hints.retain_records(&records);
+        }
+    }
+
     /// Diff the channel outbox (`M`/4) of the member whose record is
     /// `record` (plan E3.3: a hint or a ring change of subkey 4), never a
     /// governance rebuild.
@@ -291,45 +319,5 @@ impl HostGovernance {
         crate::host::adapters::channel::HostChannel::new(&self.ctx)
             .read_author_outbox(community_id, &author, record, false)
             .await;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::host::community::state::HeadHints;
-
-    /// One member's `u64::MAX` hint must not mute a record (register S7l,
-    /// `evidence/slot-integrity.md` §4.3): the seq kept is the one read
-    /// from the DHT, so the record's next real advance is still read.
-    #[test]
-    fn a_hint_at_u64_max_does_not_mute_the_record() {
-        let mut hints = HeadHints::default();
-        assert!(hints.worth_reading("M", 2, u64::MAX));
-        assert!(hints.record_read("M", 2, 7), "the DHT held seq 7");
-        assert!(
-            hints.worth_reading("M", 2, 8),
-            "the record's real seq 8 is still read"
-        );
-        assert!(!hints.worth_reading("M", 2, 7), "seq 7 was read");
-        assert!(hints.record_read("M", 2, 8));
-        assert!(
-            !hints.record_read("M", 2, 8),
-            "an unmoved read is not acted on"
-        );
-    }
-
-    /// A subkey's first value is at seq 0 (Veilid `ValueSeqNum::next`
-    /// from NONE): a hint at seq 0 for a subkey never read is worth a
-    /// read, and that read is acted on, so a re-joiner's first post on
-    /// its fresh member record reaches the members by its own hint
-    /// (netsim `a_rejoin_missed_by_gossip_converges_by_the_sweep`).
-    #[test]
-    fn a_first_value_at_seq_0_is_read() {
-        let mut hints = HeadHints::default();
-        assert!(hints.worth_reading("M", 4, 0), "subkey 4 was never read");
-        assert!(hints.record_read("M", 4, 0), "the first read is acted on");
-        assert!(!hints.worth_reading("M", 4, 0), "seq 0 was read");
-        assert!(!hints.record_read("M", 4, 0));
-        assert!(hints.worth_reading("M", 4, 1));
     }
 }
