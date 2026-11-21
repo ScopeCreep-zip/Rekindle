@@ -8,6 +8,7 @@ use rekindle_types::join_refusal::JoinRefusal;
 use std::collections::{BTreeMap, HashMap};
 
 use rekindle_types::governance::{AdmissionMode, GovernanceEntry, OpHash};
+use rekindle_types::id::PseudonymKey;
 
 use super::resume::{Ctx, Dep, NotOnTop, RestRound, RestSet};
 use crate::power::{removal_target, target_seq_frontier};
@@ -21,6 +22,9 @@ pub(super) struct Gated {
     pub uses: BTreeMap<[u8; 16], u32>,
     /// Per op index, why `invite_gate` refused a `MemberJoined`.
     pub invite_refusals: BTreeMap<usize, JoinRefusal>,
+    /// Per op index, the member holding the record a claim refused by
+    /// `record_gate` named (`gates::Gated::record_refusals`).
+    pub record_refusals: BTreeMap<usize, PseudonymKey>,
 }
 
 pub(super) fn invalidated(
@@ -32,7 +36,8 @@ pub(super) fn invalidated(
     let masked_by = strong_removal(ctx, set, round, &mut invalid)?;
     approval_gate(ctx, set, round, &mut invalid);
     backdated_join_gate(ctx, set, &mut invalid)?;
-    record_gate(ctx, set, round, &mut invalid)?;
+    let mut record_refusals = BTreeMap::new();
+    record_gate(ctx, set, round, &mut invalid, &mut record_refusals)?;
     checkpoint_gate(ctx, set, round, &mut invalid)?;
     beside_revoke_gate(ctx, set, round)?;
     let mut invite_refusals = BTreeMap::new();
@@ -42,6 +47,7 @@ pub(super) fn invalidated(
         masked_by,
         uses,
         invite_refusals,
+        record_refusals,
     })
 }
 
@@ -199,6 +205,7 @@ fn record_gate(
     set: &RestSet<'_>,
     round: &RestRound,
     invalid: &mut [bool],
+    refusals: &mut BTreeMap<usize, PseudonymKey>,
 ) -> Result<(), NotOnTop> {
     let mut holder = ctx.snap.cut.holders.clone();
     for (o, op) in set.ops.iter().enumerate() {
@@ -212,7 +219,11 @@ fn record_gate(
             return Err(NotOnTop::BesideTheCut(op.hash()));
         }
         match holder.get(member_record) {
-            Some(held) => invalid[o] |= *held != op.author().0,
+            Some(held) if *held != op.author().0 => {
+                invalid[o] = true;
+                refusals.insert(o, PseudonymKey(*held));
+            }
+            Some(_) => {}
             None if round.applied[o] && !invalid[o] => {
                 holder.insert(member_record.clone(), op.author().0);
             }

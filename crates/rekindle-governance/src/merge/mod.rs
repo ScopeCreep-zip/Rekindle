@@ -78,7 +78,7 @@ pub struct MergeOutcome {
 }
 
 /// Why an op is quarantined rather than applied.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuarantineReason {
     /// After its author's removal: its seq is at or above the target seq
     /// frontier of `cause`, a `MemberRemoved` or `BanEntry` of its author.
@@ -92,16 +92,23 @@ pub enum QuarantineReason {
     /// `prevCheckpoint` (plan E3.2 S7c.4); `cause`: the lowest
     /// `(lamport, op_hash)` `Checkpoint` op of the other digest.
     CheckpointEquivocation { cause: OpHash },
+    /// "member record already claimed": a `MemberJoined` or
+    /// `MemberRecordMoved` naming a member record `holder` holds (the
+    /// record gate, ADR 0011: one member per record). The claimant learns
+    /// why its join did not take (D15 "visible reason").
+    RecordClaimed { holder: PseudonymKey },
 }
 
 impl QuarantineReason {
-    /// The op that caused the quarantine.
+    /// The op that caused the quarantine; none for a record claimed by
+    /// its holder (the cert's creator holds its record with no op).
     #[must_use]
-    pub fn cause(&self) -> OpHash {
+    pub fn cause(&self) -> Option<OpHash> {
         match self {
             Self::AfterAuthorRemoval { cause }
             | Self::TwoCheckpointEndorsementsInOneRound { cause }
-            | Self::CheckpointEquivocation { cause } => *cause,
+            | Self::CheckpointEquivocation { cause } => Some(*cause),
+            Self::RecordClaimed { .. } => None,
         }
     }
 }
@@ -117,7 +124,7 @@ pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
 #[must_use]
 pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     let set = resolve::prepare(ops);
-    let (round, masked_by, invite_refusals) = resolve_stable(cert, &set);
+    let (round, masked_by, invite_refusals, record_refusals) = resolve_stable(cert, &set);
     let join_refusals = (invite_refusals.into_iter())
         .filter(|&(i, _)| !round.applied[i] && masked_by[i].is_none())
         .map(|(i, r)| (set.ops[i].hash(), r))
@@ -125,6 +132,7 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     let mut applied: Vec<OpHash> = round.order.iter().map(|&i| set.ops[i].hash()).collect();
     let refused = (0..set.ops.len())
         .filter(|&i| !round.applied[i] && masked_by[i].is_none())
+        .filter(|i| !record_refusals.contains_key(i))
         .map(|i| set.ops[i].hash())
         .collect();
     let mut quarantined: Vec<(OpHash, QuarantineReason)> = (0..set.ops.len())
@@ -136,6 +144,18 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
             ))
         })
         .collect();
+    quarantined.extend(
+        (record_refusals.iter())
+            .filter(|&(&i, _)| !round.applied[i] && masked_by[i].is_none())
+            .map(|(&i, holder)| {
+                (
+                    set.ops[i].hash(),
+                    QuarantineReason::RecordClaimed {
+                        holder: holder.clone(),
+                    },
+                )
+            }),
+    );
     let counted: HashSet<OpHash> = applied.iter().copied().collect();
     let hints = checkpoint::hints(cert, ops, |h| counted.contains(h));
     let faulted: HashSet<OpHash> = hints.faults.iter().map(|(h, _)| *h).collect();
@@ -166,8 +186,14 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
 /// Resolution rerun until the invalidated set is stable; the settled
 /// round's invites carry the joins `invite_gate` counted on them. Returns
 /// the round, per op the removal that masks it, and why the invite gate
-/// refused each join it refused.
-type Settled = (Round, Vec<Option<usize>>, BTreeMap<usize, JoinRefusal>);
+/// refused each join it refused, and the holder of each record a refused
+/// claim named.
+type Settled = (
+    Round,
+    Vec<Option<usize>>,
+    BTreeMap<usize, JoinRefusal>,
+    BTreeMap<usize, PseudonymKey>,
+);
 
 fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> Settled {
     let mut invalid = vec![false; set.ops.len()];
@@ -180,7 +206,12 @@ fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> Settled {
             for (id, invite) in &mut round.state.invites {
                 invite.uses = gated.uses.get(id).copied().unwrap_or(0);
             }
-            return (round, gated.masked_by, gated.invite_refusals);
+            return (
+                round,
+                gated.masked_by,
+                gated.invite_refusals,
+                gated.record_refusals,
+            );
         }
         invalid = gated.invalid;
         round = resolve_round(cert, set, &invalid);

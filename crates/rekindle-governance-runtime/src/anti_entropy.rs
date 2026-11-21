@@ -7,14 +7,17 @@
 //! records an equivocating author's ops as `Equivocation` (D15): a forked
 //! chain shows up as two ops cited by different frontiers. A frontier whose
 //! heads equal ours carries the roster checksum its member merged; one that
-//! differs from ours logs a WARN and rebuilds our state (D15's convergence
-//! check, [`check_convergence`]). These records are
+//! differs from ours is a divergence signal, warned once and never a
+//! rebuild, and our state is rebuilt only when it lags our own merge (D15's
+//! convergence check, [`check_convergence`]). Every path that reads a
+//! frontier shares one [`SeenFrontiers`] per community. These records are
 //! deliberately unwatched by most members (the ring watches 4 of them), so
 //! this is the one app inspect D4 allows.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::time::Duration;
 
+use rekindle_governance::checksum::roster_checksum;
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::governance::{Frontier, OpHash};
@@ -22,14 +25,13 @@ use rekindle_types::governance::{Frontier, OpHash};
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::op_log;
+pub use crate::seen_frontiers::SeenFrontiers;
+use crate::seen_frontiers::{op_set_digest, MergedView};
 
 /// Member records inspected per periodic sweep.
 pub const SWEEP_SAMPLE: usize = 16;
 /// The periodic sweep's period.
 pub const SWEEP_PERIOD: Duration = Duration::from_secs(60);
-
-/// The frontier seq last read per member record, per community.
-pub type SeenFrontiers = BTreeMap<String, u64>;
 
 /// Which records a sweep inspects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +82,7 @@ pub async fn sweep<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     kind: Sweep,
-    seen: &mut SeenFrontiers,
+    seen: &SeenFrontiers,
 ) -> Result<usize, GovernanceRuntimeError> {
     if deps.genesis_cert(community_id).is_none() {
         return Err(GovernanceRuntimeError::GenesisCertMissing(
@@ -138,7 +140,7 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     record: &str,
-    seen: &mut SeenFrontiers,
+    seen: &SeenFrontiers,
     known: &mut BTreeSet<OpHash>,
     mode: FrontierRead,
 ) -> Result<usize, GovernanceRuntimeError> {
@@ -167,7 +169,7 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
                 .flatten()
         });
     let read = match seq {
-        Some(seq) if seen.get(record) != Some(&seq) => {
+        Some(seq) if seen.unread(record, seq) => {
             let bytes = deps
                 .get_dht_value(lease, member_record::FRONTIER, true)
                 .await;
@@ -188,7 +190,7 @@ async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     record: &str,
-    seen: &mut SeenFrontiers,
+    seen: &SeenFrontiers,
     known: &mut BTreeSet<OpHash>,
     seq: u64,
     bytes: &[u8],
@@ -246,18 +248,23 @@ async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
     }
     if complete {
         if stored == 0 {
-            check_convergence(deps, community_id, record, &frontier).await?;
+            check_convergence(deps, community_id, record, &frontier, seen).await?;
         }
-        seen.insert(record.to_owned(), seq);
+        seen.mark_read(record, seq);
     }
     Ok(stored)
 }
 
-/// D15's convergence check: when `frontier`'s heads are exactly the heads
-/// we publish, its roster checksum must equal the one of the merge of our
-/// op set (both from [`op_log::own_frontier`]);
-/// a mismatch is logged and our state rebuilt from the op set
-/// ([`crate::rebuild_governance`]). Heads that differ say nothing.
+/// D15's convergence check (review S7m part 2 P2, part 4 Q2). Our
+/// installed state is rebuilt only when its roster checksum differs from
+/// the merge of our op set ([`op_log::own_frontier`]), once per op set: a
+/// rebuild that did not close the lag is not repeated. A peer frontier
+/// whose heads are exactly ours with another checksum is a divergence
+/// signal, warned once per (record, heads, checksum) and never a rebuild:
+/// rebuilding the same deterministic merge of the same op set cannot
+/// change our checksum, and a peer could otherwise trigger rebuilds at
+/// will. Heads that differ say nothing. The merge is cached in `seen` by
+/// op-set digest.
 ///
 /// # Errors
 /// The op store failed.
@@ -266,6 +273,7 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
     community_id: &str,
     record: &str,
     frontier: &Frontier,
+    seen: &SeenFrontiers,
 ) -> Result<(), GovernanceRuntimeError> {
     // A partial community's checksum is of fewer ops than its peers' (S7c.8
     // (1)): nothing to compare until the backfill ends.
@@ -276,23 +284,48 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
         return Ok(());
     };
     let held = deps.governance_ops(community_id).await?;
-    let set = op_log::verify_held_with(deps, community_id, &held);
-    // Heads and checksum from one merge of the op set, as the writer's
-    // (`op_log::own_frontier`): a rebuild still pending is not a mismatch.
-    let ours = op_log::own_frontier(&cert, &set, &held, None);
-    let heads = |f: &Frontier| -> BTreeSet<OpHash> { f.heads.iter().map(|r| r.op_hash).collect() };
-    if heads(&ours) != heads(frontier) {
-        return Ok(());
+    let digest = op_set_digest(held.iter().map(|op| &op.hash));
+    let ours = if let Some(view) = seen.merged(&digest) {
+        view
+    } else {
+        // Heads and checksum from one merge of the op set, as the writer's.
+        let set = op_log::verify_held_with(deps, community_id, &held);
+        let merged = op_log::own_frontier(&cert, &set, &held, None);
+        let view = MergedView {
+            heads: merged.heads.iter().map(|r| r.op_hash).collect(),
+            checksum: merged.roster_checksum,
+        };
+        seen.cache_merged(digest, view.clone());
+        view
+    };
+    let installed = deps
+        .governance_state(community_id)
+        .map(|state| roster_checksum(&state));
+    if installed != Some(ours.checksum) {
+        if seen.claim_lag_rebuild(digest) {
+            tracing::info!(
+                community = community_id,
+                "installed governance state lags our op set's merge; rebuilding"
+            );
+            crate::rebuild_governance(deps, community_id).await;
+        } else {
+            tracing::debug!(
+                community = community_id,
+                "installed governance state still lags this op set after its rebuild"
+            );
+        }
     }
-    if ours.roster_checksum == frontier.roster_checksum {
-        return Ok(());
+    let heads: BTreeSet<OpHash> = frontier.heads.iter().map(|r| r.op_hash).collect();
+    if heads == ours.heads
+        && frontier.roster_checksum != ours.checksum
+        && seen.note_divergence(record, op_set_digest(&heads), frontier.roster_checksum)
+    {
+        tracing::warn!(
+            community = community_id,
+            record,
+            "sweep: equal heads, different roster checksum; the member's merge diverges from ours (not rebuilt)"
+        );
     }
-    tracing::warn!(
-        community = community_id,
-        record,
-        "sweep: equal heads, different roster checksum; rebuilding the governance state"
-    );
-    crate::rebuild_governance(deps, community_id).await;
     Ok(())
 }
 

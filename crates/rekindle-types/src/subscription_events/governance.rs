@@ -151,7 +151,8 @@ pub enum GovernanceEvent {
         reason: OpQuarantineReason,
         /// The hash (hex) of the op that caused it: the removal, or the
         /// other `Checkpoint` op; `None` for an op this reader cannot
-        /// interpret, which quarantines the community (D15).
+        /// interpret, which quarantines the community (D15), and for a
+        /// claim of a record another member holds.
         cause: Option<String>,
     },
 
@@ -179,6 +180,11 @@ pub enum OpQuarantineReason {
     TwoCheckpointEndorsementsInOneRound,
     /// "checkpoint equivocation".
     CheckpointEquivocation,
+    /// "member record already claimed": a join or record move naming a
+    /// member record another member holds (ADR 0011, one member per
+    /// record); `cause` is `None`. The claimant's own refused join tells
+    /// it to enrol again with a record of its own.
+    RecordClaimed,
     /// A validly signed op of a kind this reader's schema does not have
     /// (D15): the community is quarantined, likely by a newer version's
     /// op; `cause` is `None`.

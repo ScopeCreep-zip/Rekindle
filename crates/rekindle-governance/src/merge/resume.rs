@@ -177,9 +177,10 @@ pub fn merge_from(
     refused.extend(
         (0..n)
             .filter(|&i| !round.applied[i] && gated.masked_by[i].is_none())
+            .filter(|i| !gated.record_refusals.contains_key(i))
             .map(|i| set.ops[i].hash()),
     );
-    let quarantined = (0..n)
+    let mut quarantined: Vec<(OpHash, QuarantineReason)> = (0..n)
         .filter_map(|i| {
             let cause = gated.masked_by[i]?;
             Some((
@@ -188,6 +189,18 @@ pub fn merge_from(
             ))
         })
         .collect();
+    quarantined.extend(
+        (gated.record_refusals.iter())
+            .filter(|&(&i, _)| !round.applied[i] && gated.masked_by[i].is_none())
+            .map(|(&i, holder)| {
+                (
+                    set.ops[i].hash(),
+                    QuarantineReason::RecordClaimed {
+                        holder: holder.clone(),
+                    },
+                )
+            }),
+    );
     let join_refusals = (gated.invite_refusals.iter())
         .filter(|&(&i, _)| !round.applied[i] && gated.masked_by[i].is_none())
         .map(|(&i, &r)| (set.ops[i].hash(), r))

@@ -121,6 +121,19 @@ impl HostGovernance {
             .is_some_and(|c| c.head_hints.frontier_follows_head(record, subkeys))
     }
 
+    /// `community`'s frontier reads, shared by its sweeps, ring changes and
+    /// hints (`HeadHints::frontiers`); a community no longer held has none
+    /// to share.
+    pub(super) fn seen_frontiers(&self, community: &str) -> SeenFrontiers {
+        self.ctx
+            .communities
+            .map()
+            .read()
+            .get(community)
+            .map(|c| c.head_hints.frontiers())
+            .unwrap_or_default()
+    }
+
     /// Claim `record`'s frontier catch-up under the communities write
     /// lock (`HeadHints::claim_frontier`).
     fn claim_frontier(&self, community: &str, record: &str, seq: u64, forced: bool) -> bool {
@@ -205,7 +218,8 @@ impl HostGovernance {
     }
 
     /// Store the heads `record`'s frontier names that we do not hold; the
-    /// frontier seq, when every head is stored, and how many were stored.
+    /// frontier seq read (this read's when every head is stored), and how
+    /// many were stored.
     async fn catch_up_record(&self, community: &str, record: &str) -> (Option<u64>, usize) {
         let known: Result<BTreeSet<_>, _> = self
             .governance_ops(community)
@@ -218,12 +232,12 @@ impl HostGovernance {
                 return (None, 0);
             }
         };
-        let mut seen = SeenFrontiers::new();
+        let seen = self.seen_frontiers(community);
         let stored = match anti_entropy::inspect_one(
             self,
             community,
             record,
-            &mut seen,
+            &seen,
             &mut known,
             FrontierRead::Hinted,
         )
@@ -249,6 +263,8 @@ impl HostGovernance {
             stored,
             "ring change: frontier heads stored"
         );
-        (seen.get(record).copied(), stored)
+        // The shared seq: this read's when it completed, else the last one
+        // read (by any path), which a refused trigger is compared against.
+        (seen.get(record), stored)
     }
 }

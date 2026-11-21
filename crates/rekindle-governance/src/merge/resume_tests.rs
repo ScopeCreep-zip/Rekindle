@@ -131,7 +131,7 @@ pub(super) fn resume(
     let q = |o: &MergeOutcome| -> Vec<_> {
         (o.quarantined.iter())
             .filter(|(h, _)| post.contains(h))
-            .copied()
+            .cloned()
             .collect()
     };
     assert_eq!(q(&resumed), q(&full), "post-cut quarantines");

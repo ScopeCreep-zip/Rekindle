@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use rekindle_governance_runtime::anti_entropy::SeenFrontiers;
 use rekindle_types::dht_layout::member_record::{FRONTIER, GOV_HEAD};
 
 /// The seqs `HeadAdvanced` hints were acted on at, per (member record,
@@ -16,6 +17,10 @@ use rekindle_types::dht_layout::member_record::{FRONTIER, GOV_HEAD};
 #[derive(Debug, Clone, Default)]
 pub struct HeadHints {
     read: BTreeMap<(String, u32), u64>,
+    /// The frontier (`M`/3) seqs read, shared with the anti-entropy
+    /// sweeps (review S7m part 2 P2): a frontier the ring or a hint read
+    /// is not read again by a sweep, nor the reverse. Its clones share it.
+    frontiers: SeenFrontiers,
     /// One frontier catch-up per record at a time (review S7m 83f7fc6b
     /// P1): the claim is taken under the communities write lock before
     /// the DHT reads, so a ring change and the hints of up to four
@@ -51,6 +56,9 @@ impl HeadHints {
     /// the last one read (any seq for a subkey never read), so the hint
     /// is acted on.
     pub fn record_read(&mut self, record: &str, subkey: u32, read: u64) -> bool {
+        if subkey == FRONTIER {
+            return self.frontiers.mark_read(record, read);
+        }
         let seen = self.read.entry((record.to_owned(), subkey));
         match seen {
             std::collections::btree_map::Entry::Vacant(slot) => {
@@ -116,11 +124,21 @@ impl HeadHints {
     /// Forget every record not in `records` (the current members' records,
     /// after a rebuild): a departed member's entries are never read again.
     pub fn retain_records(&mut self, records: &BTreeSet<String>) {
+        self.frontiers.retain_records(records);
         self.read.retain(|(record, _), _| records.contains(record));
         self.head_moved.retain(|record| records.contains(record));
     }
 
+    /// The community's frontier reads, shared with its sweeps.
+    #[must_use]
+    pub fn frontiers(&self) -> SeenFrontiers {
+        self.frontiers.clone()
+    }
+
     fn read_at(&self, record: &str, subkey: u32) -> Option<u64> {
+        if subkey == FRONTIER {
+            return self.frontiers.get(record);
+        }
         self.read.get(&(record.to_owned(), subkey)).copied()
     }
 }

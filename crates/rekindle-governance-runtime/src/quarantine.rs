@@ -34,7 +34,7 @@ pub fn newly_quarantined(
                     community_id: community_id.to_owned(),
                     op: *hash,
                     author: op.author.clone(),
-                    reason: *reason,
+                    reason: reason.clone(),
                 }
             })
         })

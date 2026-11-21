@@ -286,10 +286,19 @@ impl HostGovernance {
         let Some(state) = self.ctx.communities.governance_state(community_id) else {
             return;
         };
+        // The creator's record too: the sweeps inspect it while it is in
+        // the cert, member or not (`anti_entropy::member_records`).
         let records: std::collections::BTreeSet<String> = state
             .members
             .values()
             .map(|m| m.member_record.clone())
+            .chain(
+                rekindle_governance_runtime::deps::GovernanceRuntimeDeps::genesis_cert(
+                    self,
+                    community_id,
+                )
+                .map(|cert| cert.creator_member_record),
+            )
             .collect();
         if let Some(c) = self.ctx.communities.map().write().get_mut(community_id) {
             c.head_hints.retain_records(&records);

@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_governance_runtime::anti_entropy::{self, SeenFrontiers, Sweep, SWEEP_PERIOD};
+use rekindle_governance_runtime::anti_entropy::{self, Sweep, SWEEP_PERIOD};
 use rekindle_governance_runtime::checkpointing::{self, CheckpointClock, CheckpointStep};
 use tokio_util::sync::CancellationToken;
 
@@ -19,7 +19,6 @@ use super::HostGovernance;
 pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
     let mut ticks =
         tokio::time::interval_at(tokio::time::Instant::now() + SWEEP_PERIOD, SWEEP_PERIOD);
-    let mut seen: BTreeMap<String, SeenFrontiers> = BTreeMap::new();
     let mut clocks: BTreeMap<String, CheckpointClock> = BTreeMap::new();
     let mut offline = false;
     while stop.run_until_cancelled(ticks.tick()).await.is_some() {
@@ -39,8 +38,9 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
             // A ring record that failed to open is opened again (the pool
             // re-arms a refused watch itself).
             host.rearm_watch_ring(&community_id).await;
-            let frontiers = seen.entry(community_id.clone()).or_default();
-            match anti_entropy::sweep(&host, &community_id, kind, frontiers).await {
+            // The frontier reads the ring and hints share (review S7m part 2).
+            let frontiers = host.seen_frontiers(&community_id);
+            match anti_entropy::sweep(&host, &community_id, kind, &frontiers).await {
                 Ok(0) => {}
                 Ok(stored) => {
                     tracing::debug!(community = %community_id, stored, "anti-entropy stored heads");

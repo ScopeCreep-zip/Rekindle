@@ -1,8 +1,8 @@
 //! A frontier whose heads did not all fetch stays unread: the next
 //! inspect reads it again although its seq has not moved. A frontier with
-//! our heads and another roster checksum rebuilds our state (D15); one with
-//! the checksum of our op set's merge does not, even while our installed
-//! state lags the op set.
+//! our heads and another roster checksum is warned once and never rebuilds
+//! our state (D15, review S7m part 4 Q2); an installed state lagging our
+//! op set's merge is rebuilt once.
 
 use super::*;
 use crate::deps::MockGovernanceRuntimeDeps;
@@ -49,22 +49,15 @@ fn deps(reads: usize) -> MockGovernanceRuntimeDeps {
 #[tokio::test]
 async fn a_head_that_did_not_fetch_leaves_the_frontier_unread() {
     let deps = deps(2);
-    let mut seen = SeenFrontiers::new();
+    let seen = SeenFrontiers::new();
     let mut known = BTreeSet::new();
     for _ in 0..2 {
-        let stored = inspect_one(
-            &deps,
-            "A",
-            "VLD0:m",
-            &mut seen,
-            &mut known,
-            FrontierRead::Sweep,
-        )
-        .await
-        .expect("inspected");
+        let stored = inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+            .await
+            .expect("inspected");
         assert_eq!(stored, 0);
     }
-    assert!(seen.is_empty(), "{seen:?}");
+    assert!(seen.get("VLD0:m").is_none(), "{seen:?}");
     assert!(known.is_empty(), "an unfetched head is not known");
 }
 
@@ -132,25 +125,18 @@ async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read(
     deps.expect_store_governance_op()
         .times(1)
         .returning(|_, _| Ok(()));
-    let mut seen = SeenFrontiers::new();
+    let seen = SeenFrontiers::new();
     let mut known = BTreeSet::new();
     let mut stored = Vec::new();
     for _ in 0..3 {
         stored.push(
-            inspect_one(
-                &deps,
-                "A",
-                "VLD0:m",
-                &mut seen,
-                &mut known,
-                FrontierRead::Sweep,
-            )
-            .await
-            .expect("inspected"),
+            inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+                .await
+                .expect("inspected"),
         );
     }
     assert_eq!(stored, [0, 1, 0]);
-    assert_eq!(seen.get("VLD0:m"), Some(&5));
+    assert_eq!(seen.get("VLD0:m"), Some(5));
 }
 
 /// The roster checksum a peer's frontier carries in [`converging`].
@@ -172,7 +158,7 @@ fn converging(
     peer: &Peer,
     stale: bool,
     rebuilds: usize,
-) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>) {
+) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>, Frontier) {
     converging_as(peer, stale, rebuilds, false)
 }
 
@@ -183,7 +169,7 @@ fn converging_as(
     stale: bool,
     rebuilds: usize,
     partial: bool,
-) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>) {
+) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>, Frontier) {
     use rekindle_secrets::ed25519_dalek::SigningKey;
     let key = SigningKey::from_bytes(&[9; 32]);
     let cert = rekindle_types::governance::GenesisCert {
@@ -220,13 +206,13 @@ fn converging_as(
     let state = if stale { state } else { merged };
     let held = op_log::held(&op, "VLD0:m".into(), encoded, op_log::OpFate::Applied);
     let known = BTreeSet::from([op.hash()]);
-    let bytes = rekindle_codec::governance_op::encode_frontier(&Frontier {
+    let served = Frontier {
         fork_proof: Vec::new(),
         fork_refs: Vec::new(),
         heads: vec![op.op_ref("VLD0:m")],
         roster_checksum: checksum,
-    })
-    .expect("frontier encodes");
+    };
+    let bytes = rekindle_codec::governance_op::encode_frontier(&served).expect("frontier encodes");
     let mut deps = MockGovernanceRuntimeDeps::new();
     deps.expect_acquire_record()
         .returning(|_, _, _| Ok(LeaseId(1)));
@@ -259,88 +245,61 @@ fn converging_as(
     deps.expect_list_community_governance_targets()
         .times(rebuilds)
         .returning(Vec::new);
-    (deps, known)
+    (deps, known, served)
 }
 
-/// Equal heads with another roster checksum: our merge disagrees with a
-/// peer holding the same op set, so the state is rebuilt, once, and the
+/// Equal heads with another roster checksum: a peer's merge disagrees
+/// with ours over the same op set. Rebuilding the same merge cannot change
+/// ours, so nothing is rebuilt (a peer cannot trigger rebuilds), and the
 /// seq is read.
 #[tokio::test]
-async fn equal_heads_with_another_checksum_rebuild_the_state() {
-    let (deps, mut known) = converging(&Peer::Other, false, 1);
-    let mut seen = SeenFrontiers::new();
-    let stored = inspect_one(
-        &deps,
-        "A",
-        "VLD0:m",
-        &mut seen,
-        &mut known,
-        FrontierRead::Sweep,
-    )
-    .await
-    .expect("inspected");
+async fn a_peer_mismatch_with_equal_heads_does_not_rebuild() {
+    let (deps, mut known, _) = converging(&Peer::Other, false, 0);
+    let seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
     assert_eq!(stored, 0);
-    assert_eq!(seen.get("VLD0:m"), Some(&5));
+    assert_eq!(seen.get("VLD0:m"), Some(5));
 }
 
 /// Plan E3.2 S7c.8 (1): a partial community compares no D15 roster
 /// checksum, so equal heads with another checksum do not rebuild it.
 #[tokio::test]
 async fn a_partial_community_compares_no_roster_checksum() {
-    let (deps, mut known) = converging_as(&Peer::Other, false, 0, true);
-    let mut seen = SeenFrontiers::new();
-    let stored = inspect_one(
-        &deps,
-        "A",
-        "VLD0:m",
-        &mut seen,
-        &mut known,
-        FrontierRead::Sweep,
-    )
-    .await
-    .expect("inspected");
+    let (deps, mut known, _) = converging_as(&Peer::Other, false, 0, true);
+    let seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
     assert_eq!(stored, 0);
-    assert_eq!(seen.get("VLD0:m"), Some(&5));
+    assert_eq!(seen.get("VLD0:m"), Some(5));
 }
 
 /// Equal heads with our own checksum: nothing to rebuild.
 #[tokio::test]
 async fn equal_heads_with_our_checksum_do_not_rebuild() {
-    let (deps, mut known) = converging(&Peer::Merged, false, 0);
-    let mut seen = SeenFrontiers::new();
-    let stored = inspect_one(
-        &deps,
-        "A",
-        "VLD0:m",
-        &mut seen,
-        &mut known,
-        FrontierRead::Sweep,
-    )
-    .await
-    .expect("inspected");
+    let (deps, mut known, _) = converging(&Peer::Merged, false, 0);
+    let seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
     assert_eq!(stored, 0);
-    assert_eq!(seen.get("VLD0:m"), Some(&5));
+    assert_eq!(seen.get("VLD0:m"), Some(5));
 }
 
 /// Equal heads with the checksum of our op set's merge while our installed
-/// state lags it (a rebuild still pending): heads and checksum both come
-/// from that one merge, as the writer's do, so nothing warns or rebuilds.
+/// state lags it: our own state is behind our own merge, so it is rebuilt,
+/// once.
 #[tokio::test]
-async fn a_pending_rebuild_with_equal_heads_does_not_rebuild() {
-    let (deps, mut known) = converging(&Peer::Merged, true, 0);
-    let mut seen = SeenFrontiers::new();
-    let stored = inspect_one(
-        &deps,
-        "A",
-        "VLD0:m",
-        &mut seen,
-        &mut known,
-        FrontierRead::Sweep,
-    )
-    .await
-    .expect("inspected");
+async fn a_lagging_installed_state_is_rebuilt_once() {
+    let (deps, mut known, _) = converging(&Peer::Merged, true, 1);
+    let seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
     assert_eq!(stored, 0);
-    assert_eq!(seen.get("VLD0:m"), Some(&5));
+    assert_eq!(seen.get("VLD0:m"), Some(5));
 }
 
 /// The frontier we write carries the checksum of the merge of the op set
@@ -403,14 +362,14 @@ async fn a_hinted_frontier_read_never_inspects_first() {
             Ok(Some((6, frontier())))
         });
     deps.expect_fetch_governance_op().returning(|_, _| Ok(None));
-    let mut seen = SeenFrontiers::new();
-    seen.insert("VLD0:m".to_owned(), 5);
+    let seen = SeenFrontiers::new();
+    seen.mark_read("VLD0:m", 5);
     let mut known = BTreeSet::new();
     let stored = inspect_one(
         &deps,
         "A",
         "VLD0:m",
-        &mut seen,
+        &seen,
         &mut known,
         FrontierRead::Hinted,
     )
@@ -419,7 +378,66 @@ async fn a_hinted_frontier_read_never_inspects_first() {
     assert_eq!(stored, 0, "its head did not fetch");
     assert_eq!(
         seen.get("VLD0:m"),
-        Some(&5),
+        Some(5),
         "an incomplete read stays unread"
     );
+}
+
+/// Review S7m part 4 Q2: the same bogus frontier checked again (the
+/// sweep, then the ring or a hint) warns once and rebuilds nothing; the
+/// divergence memo holds it, and the second check reuses the cached merge.
+#[tokio::test]
+async fn a_repeated_peer_mismatch_warns_once_and_never_rebuilds() {
+    let (deps, mut known, served) = converging(&Peer::Other, false, 0);
+    let seen = SeenFrontiers::new();
+    inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
+    check_convergence(&deps, "A", "VLD0:m", &served, &seen)
+        .await
+        .expect("checked");
+    let heads = op_set_digest(served.heads.iter().map(|r| &r.op_hash));
+    assert!(
+        !seen.note_divergence("VLD0:m", heads, served.roster_checksum),
+        "the first check noted (and warned about) this tuple; the repeat was silent"
+    );
+    assert!(seen.merged(&op_set_digest(&known)).is_some());
+}
+
+/// A lagging installed state checked twice for one op set is rebuilt once:
+/// a rebuild that did not close the lag is not repeated.
+#[tokio::test]
+async fn a_lag_the_rebuild_did_not_close_is_not_rebuilt_again() {
+    let (deps, mut known, served) = converging(&Peer::Merged, true, 1);
+    let seen = SeenFrontiers::new();
+    inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
+    check_convergence(&deps, "A", "VLD0:m", &served, &seen)
+        .await
+        .expect("checked");
+}
+
+/// The sweep and a ring catch-up hold one `SeenFrontiers`: a frontier the
+/// ring read at seq 5 is not read again by the sweep's inspect at seq 5.
+#[tokio::test]
+async fn the_sweep_and_the_ring_share_their_reads() {
+    let (deps, mut known, _) = converging(&Peer::Merged, false, 0);
+    let ring = SeenFrontiers::new();
+    let sweep = ring.clone();
+    inspect_one(&deps, "A", "VLD0:m", &ring, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
+    // `converging` allows one frontier read: a second would fail the mock.
+    let stored = inspect_one(
+        &deps,
+        "A",
+        "VLD0:m",
+        &sweep,
+        &mut known,
+        FrontierRead::Sweep,
+    )
+    .await
+    .expect("inspected");
+    assert_eq!(stored, 0);
 }

@@ -3,7 +3,7 @@
 //! equivocation and order independence.
 
 use proptest::prelude::*;
-use rekindle_types::governance::{AdmissionMode, GovernanceEntry, InviteProof};
+use rekindle_types::governance::{AdmissionMode, GovernanceEntry, InviteProof, OpHash};
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions::{CREATE_INVITES, KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
 
@@ -407,8 +407,9 @@ fn an_invite_without_a_use_cap_is_refused() {
 }
 
 /// Two members whose joins name one member record: only the first in the
-/// op set's stamp order holds it, the other's join is refused, alike in
-/// either arrival order; a join naming the creator's record is refused.
+/// op set's stamp order holds it, the other's join is quarantined as a
+/// claimed record naming the holder, alike in either arrival order; a join
+/// naming the creator's record is quarantined the same way.
 #[test]
 fn two_joins_naming_one_member_record_admit_only_the_first() {
     let claim = |by: u8, record: &str| GovernanceEntry::MemberJoined {
@@ -445,13 +446,31 @@ fn two_joins_naming_one_member_record_admit_only_the_first() {
             !members.contains_key(second.author()),
             "the second is refused"
         );
-        assert!(outcome.refused.contains(&second.hash()));
+        // D15 "visible reason": quarantined as a claimed record, naming
+        // its holder, not silently refused.
+        let fate = |h: OpHash| {
+            outcome
+                .quarantined
+                .iter()
+                .find(|(q, _)| *q == h)
+                .map(|(_, r)| r.clone())
+        };
+        assert_eq!(
+            fate(second.hash()),
+            Some(QuarantineReason::RecordClaimed {
+                holder: first.author().clone()
+            })
+        );
+        assert!(!outcome.refused.contains(&second.hash()));
         assert!(outcome.applied.contains(&first.hash()));
         assert!(
             !members.contains_key(&pk(7)),
             "the creator's record is held"
         );
-        assert!(outcome.refused.contains(&z.hash()));
+        assert_eq!(
+            fate(z.hash()),
+            Some(QuarantineReason::RecordClaimed { holder: pk(1) })
+        );
     }
 }
 
@@ -481,8 +500,14 @@ fn a_move_onto_a_held_member_record_is_refused() {
     let onto_creator = op(&pk(5), 1, &[&x, &y], 63, moved("VLD0:creator-record"));
     ops.extend([onto_x.clone(), onto_creator.clone()]);
     let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
-    assert!(outcome.refused.contains(&onto_x.hash()));
-    assert!(outcome.refused.contains(&onto_creator.hash()));
+    let claimed = |h: OpHash, holder: PseudonymKey| {
+        outcome
+            .quarantined
+            .contains(&(h, QuarantineReason::RecordClaimed { holder }))
+    };
+    assert!(claimed(onto_x.hash(), pk(5)));
+    assert!(claimed(onto_creator.hash(), pk(1)));
+    assert!(!outcome.refused.contains(&onto_x.hash()));
     let record = |p: u8| outcome.state.members[&pk(p)].member_record.clone();
     assert_eq!((record(5), record(6)), ("VLD0:mx".into(), "VLD0:my".into()));
 }

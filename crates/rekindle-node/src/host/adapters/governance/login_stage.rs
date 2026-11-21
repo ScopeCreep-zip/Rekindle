@@ -140,15 +140,8 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
     // The heads the community wrote while we were away: the full
     // anti-entropy sweep of the members' frontiers (plan E3.2 S7); the
     // rebuild below fetches their deps and merges.
-    let mut seen = anti_entropy::SeenFrontiers::new();
-    match anti_entropy::sweep(
-        governance,
-        community_id,
-        anti_entropy::Sweep::Full,
-        &mut seen,
-    )
-    .await
-    {
+    let seen = governance.seen_frontiers(community_id);
+    match anti_entropy::sweep(governance, community_id, anti_entropy::Sweep::Full, &seen).await {
         Ok(stored) => tracing::debug!(community = community_id, stored, "frontier heads caught up"),
         Err(error) => tracing::warn!(community = community_id, %error, "frontier catch-up failed"),
     }

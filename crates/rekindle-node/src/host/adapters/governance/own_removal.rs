@@ -222,8 +222,10 @@ impl HostGovernance {
     /// clears the mark ([`Self::on_not_removed`]).
     pub(super) async fn catch_up_before_teardown(&self, community_id: &str) {
         use rekindle_governance_runtime::{anti_entropy, dht_hydration};
-        let mut seen = anti_entropy::SeenFrontiers::new();
-        match anti_entropy::sweep(self, community_id, anti_entropy::Sweep::Full, &mut seen).await {
+        // A fresh read set on purpose: the removal is judged on every
+        // frontier as published now, including ones already read.
+        let seen = anti_entropy::SeenFrontiers::new();
+        match anti_entropy::sweep(self, community_id, anti_entropy::Sweep::Full, &seen).await {
             Ok(stored) => {
                 tracing::debug!(community = %community_id, stored, "frontiers read before a removal's teardown");
             }

@@ -5,6 +5,7 @@ import { communityState } from "../../stores/community.store";
 const QUARANTINE_TEXT: Record<OpQuarantineReason, string> = {
   afterAuthorRemoval: "written after its author's removal",
   twoCheckpointEndorsementsInOneRound: "two checkpoint endorsements in one round",
+  recordClaimed: "member record already claimed by another member",
   checkpointEquivocation: "checkpoint equivocation",
   unknownOpKind: "a kind of change this version of Rekindle cannot read",
   unknownOpVersion: "a change from a newer version of Rekindle",

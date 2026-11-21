@@ -29,6 +29,9 @@ pub(super) struct Gated {
     pub uses: InviteUses,
     /// Per op index, why `invite_gate` refused a `MemberJoined`.
     pub invite_refusals: BTreeMap<usize, JoinRefusal>,
+    /// Per op index, the member holding the record a `MemberJoined` or
+    /// `MemberRecordMoved` refused by `record_gate` named.
+    pub record_refusals: BTreeMap<usize, PseudonymKey>,
 }
 
 /// The ops the next round leaves out, from what `round` applied.
@@ -38,7 +41,8 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
     let masked_by = strong_removal(set, round, &mut invalid);
     approval_gate(cert, set, round, &mut invalid);
     backdated_join_gate(set, &mut invalid);
-    record_gate(cert, set, round, &mut invalid);
+    let mut record_refusals = BTreeMap::new();
+    record_gate(cert, set, round, &mut invalid, &mut record_refusals);
     checkpoint_gate(set, round, &mut invalid);
     let mut invite_refusals = BTreeMap::new();
     let uses = invite_gate(set, round, &mut invalid, &mut invite_refusals);
@@ -47,6 +51,7 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
         masked_by,
         uses,
         invite_refusals,
+        record_refusals,
     }
 }
 
@@ -164,8 +169,17 @@ fn backdated_join_gate(set: &OpSet<'_>, invalid: &mut [bool]) {
 /// record goes to the first applied join in the op set's stamp order (the
 /// cert's creator holds its own from the start), which every reader
 /// computes alike whatever order the ops arrived in; a member's own
-/// re-join on its record is not a second claim.
-fn record_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
+/// re-join on its record is not a second claim. Each refused claim is
+/// kept in `refusals` with the record's holder, so the claimant's op is
+/// quarantined with that reason (D15 "visible reason"), never dropped
+/// silently.
+fn record_gate(
+    cert: &GenesisCert,
+    set: &OpSet<'_>,
+    round: &Round,
+    invalid: &mut [bool],
+    refusals: &mut BTreeMap<usize, PseudonymKey>,
+) {
     let mut holder: BTreeMap<&str, &PseudonymKey> = BTreeMap::new();
     holder.insert(cert.creator_member_record.as_str(), &cert.creator_pseudonym);
     for (o, op) in set.ops.iter().enumerate() {
@@ -175,7 +189,11 @@ fn record_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &mut
             continue;
         };
         match holder.get(member_record.as_str()) {
-            Some(&held) => invalid[o] |= held != op.author(),
+            Some(&held) if held != op.author() => {
+                invalid[o] = true;
+                refusals.insert(o, held.clone());
+            }
+            Some(_) => {}
             None if round.applied[o] && !invalid[o] => {
                 holder.insert(member_record.as_str(), op.author());
             }

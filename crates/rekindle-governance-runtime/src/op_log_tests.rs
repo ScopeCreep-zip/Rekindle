@@ -328,7 +328,7 @@ fn a_quarantined_op_raises_one_governance_op_quarantined_event() {
     let mut outcome = merge::merge_outcome(&cert, &set.ops);
     outcome.applied.clear();
     let reason = merge::QuarantineReason::AfterAuthorRemoval { cause: ours.hash() };
-    outcome.quarantined.push((ours.hash(), reason));
+    outcome.quarantined.push((ours.hash(), reason.clone()));
 
     let events = crate::quarantine::newly_quarantined("A", &[applied], &outcome);
     assert_eq!(events.len(), 1, "one event for the move");
@@ -342,8 +342,8 @@ fn a_quarantined_op_raises_one_governance_op_quarantined_event() {
         panic!("not GovernanceOpQuarantined");
     };
     assert_eq!(
-        (community_id.as_str(), *op, author, *got),
-        ("A", ours.hash(), ours.author(), reason)
+        (community_id.as_str(), *op, author, got),
+        ("A", ours.hash(), ours.author(), &reason)
     );
 
     let kept = held(&ours, "m".into(), bytes, OpFate::Quarantined);

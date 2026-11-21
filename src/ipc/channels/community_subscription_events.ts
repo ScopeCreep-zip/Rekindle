@@ -255,6 +255,7 @@ export type GovernanceEvent =
 export type OpQuarantineReason =
   | "afterAuthorRemoval"
   | "twoCheckpointEndorsementsInOneRound"
+  | "recordClaimed"
   | "checkpointEquivocation"
   | "unknownOpKind"
   | "unknownOpVersion";

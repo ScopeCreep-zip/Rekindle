@@ -70,7 +70,10 @@ fn a_join_naming_a_record_held_before_the_cut_is_refused() {
     ops.push(j);
     let heads = [&ops[ops.len() - 2]];
     let resumed = resume(&cert, &ops, &heads).expect("on top");
-    assert!(resumed.refused.contains(&hash));
+    // Quarantined with a visible reason (D15), not silently refused.
+    assert!(resumed.quarantined.iter().any(|(h, reason)| *h == hash
+        && matches!(reason, crate::merge::QuarantineReason::RecordClaimed { .. })));
+    assert!(!resumed.refused.contains(&hash));
 }
 
 #[test]

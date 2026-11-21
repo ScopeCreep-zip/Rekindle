@@ -37,8 +37,9 @@ fn op_quarantined(
             QuarantineReason::CheckpointEquivocation { .. } => {
                 OpQuarantineReason::CheckpointEquivocation
             }
+            QuarantineReason::RecordClaimed { .. } => OpQuarantineReason::RecordClaimed,
         },
-        cause: Some(hex::encode(reason.cause().0)),
+        cause: reason.cause().map(|cause| hex::encode(cause.0)),
     }
 }
 

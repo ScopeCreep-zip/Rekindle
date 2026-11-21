@@ -143,3 +143,22 @@ fn a_departed_members_entries_are_pruned() {
     assert!(!hints.worth_reading("Kept", FRONTIER, 4));
     assert!(hints.frontier_follows_head("Kept", &[FRONTIER]));
 }
+
+/// Review S7m part 2 P2: a frontier the ring or a hint read is the read
+/// the community's sweeps see (one `SeenFrontiers`), and the reverse.
+#[test]
+fn the_ring_and_the_sweeps_share_one_frontier_read_set() {
+    let mut hints = HeadHints::default();
+    let sweep = hints.frontiers();
+    assert!(hints.claim_frontier("VLD0:m", 5, true));
+    assert_eq!(hints.finish_frontier("VLD0:m", Some(5)), None);
+    assert!(
+        !sweep.unread("VLD0:m", 5),
+        "the sweep skips what the ring read"
+    );
+    sweep.mark_read("VLD0:m", 7);
+    assert!(
+        !hints.worth_reading("VLD0:m", FRONTIER, 7),
+        "the ring skips what the sweep read"
+    );
+}
