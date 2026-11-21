@@ -158,18 +158,12 @@ pub fn merge_from(
     let set = prepare_rest(snapshot, rest)?;
     beside_anchored(&ctx, &set)?;
     let n = set.ops.len();
-    let mut invalid = vec![false; n];
-    let mut round = rest_round(&ctx, &set, &invalid);
-    let mut passes = 0;
-    let gated = loop {
-        let gated = super::resume_gates::invalidated(&ctx, &set, &round)?;
-        passes += 1;
-        if gated.invalid == invalid || passes > n + 1 {
-            break gated;
-        }
-        invalid = gated.invalid;
-        round = rest_round(&ctx, &set, &invalid);
-    };
+    let (mut round, gated) = super::fixpoint::settle(
+        n,
+        |invalid| rest_round(&ctx, &set, invalid),
+        |round| super::resume_gates::invalidated(&ctx, &set, round),
+        |gated| &gated.invalid,
+    )?;
     above_the_cut(&ctx, &set, &round)?;
     for (id, invite) in &mut round.state.invites {
         invite.uses = gated.uses.get(id).copied().unwrap_or(0);

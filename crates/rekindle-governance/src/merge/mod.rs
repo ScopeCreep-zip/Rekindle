@@ -203,7 +203,7 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     }
 }
 
-/// Resolution rerun until the invalidated set is stable; the settled
+/// Resolution rerun until the invalidated set is stable (`fixpoint`); the settled
 /// round's invites carry the joins `invite_gate` counted on them. Returns
 /// the round, per op the removal that masks it, and why the invite gate
 /// refused each join it refused, and the holder of each record a refused
@@ -221,26 +221,25 @@ fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>, exclude: &[bool]
     let skip = |invalid: &[bool]| -> Vec<bool> {
         invalid.iter().zip(exclude).map(|(a, b)| *a || *b).collect()
     };
-    let mut invalid = vec![false; set.ops.len()];
-    let mut round = resolve_round(cert, set, &skip(&invalid));
-    let mut passes = 0;
-    loop {
-        let gated = gates::invalidated(cert, set, &round);
-        passes += 1;
-        if gated.invalid == invalid || passes > set.ops.len() + 1 {
-            for (id, invite) in &mut round.state.invites {
-                invite.uses = gated.uses.get(id).copied().unwrap_or(0);
-            }
-            return (
-                round,
-                gated.masked_by,
-                gated.invite_refusals,
-                gated.record_refusals,
-            );
-        }
-        invalid = gated.invalid;
-        round = resolve_round(cert, set, &skip(&invalid));
+    let settled = fixpoint::settle(
+        set.ops.len(),
+        |invalid| resolve_round(cert, set, &skip(invalid)),
+        |round| Ok::<_, std::convert::Infallible>(gates::invalidated(cert, set, round)),
+        |gated| &gated.invalid,
+    );
+    let (mut round, gated) = match settled {
+        Ok(settled) => settled,
+        Err(never) => match never {},
+    };
+    for (id, invite) in &mut round.state.invites {
+        invite.uses = gated.uses.get(id).copied().unwrap_or(0);
     }
+    (
+        round,
+        gated.masked_by,
+        gated.invite_refusals,
+        gated.record_refusals,
+    )
 }
 
 /// One resolution pass with the ops in `invalid` left out.
@@ -509,6 +508,7 @@ mod community;
 mod cut;
 mod events;
 mod expression;
+mod fixpoint;
 mod gates;
 mod membership;
 mod moderation;
