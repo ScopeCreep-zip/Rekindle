@@ -19,12 +19,14 @@ impl MediaKeySource for VoiceAdapter {
     }
 
     fn call_media(&self, peer_pubkey: &str) -> Option<CallMediaKeys> {
+        // The keys of the call that owns the media (plan CE2, decision 30),
+        // never another call with the same peer (a stale one superseded).
+        let owner = self.state.call_media.owner()?;
         let call = self
             .state
             .active_calls
-            .list_all()
-            .into_iter()
-            .find(|c| c.peer_pubkey == peer_pubkey)?;
+            .get(&owner)
+            .filter(|c| c.peer_pubkey == peer_pubkey)?;
         Some(CallMediaKeys {
             secret: call.media_secret?,
             sender: call.media_sender,

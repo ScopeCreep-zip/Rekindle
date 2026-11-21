@@ -149,7 +149,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
     // caller's first packets.
     if let Err(e) = deps.start_voice_session(call_id, &peer_pubkey, kind).await {
         registry.remove(call_id);
-        deps.shutdown_voice_session().await;
+        deps.shutdown_voice_session(call_id).await;
         // Tell the caller we couldn't accept.
         let _ = deps
             .send_to_peer(

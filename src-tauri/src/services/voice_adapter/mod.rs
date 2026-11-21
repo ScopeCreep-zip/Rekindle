@@ -136,6 +136,10 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
     let adapter = VoiceAdapter::new(Arc::clone(&state_arc), app_handle, pool);
     let deps: Arc<dyn VoiceSessionDeps> = adapter;
     rekindle_voice::session::shutdown_voice(&deps, opts).await;
+    if opts.stop_devices {
+        // The session is gone, whichever call owned its media (plan CE2).
+        state.call_media.clear();
+    }
 
     // Belt-and-suspenders: clear voice channels even if the adapter
     // path early-returned (no AppHandle in tests, etc.).

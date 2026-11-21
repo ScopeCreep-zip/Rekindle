@@ -97,7 +97,10 @@ impl CallSignalingDeps for CallsAdapter {
         self.state.clock.now_ms()
     }
 
-    fn last_inbound_media_ms(&self) -> Option<u64> {
+    fn last_inbound_media_ms(&self, call_id: &str) -> Option<u64> {
+        if !self.state.call_media.is(call_id) {
+            return None;
+        }
         let engine = self.state.voice_engine.lock();
         engine.as_ref().and_then(|h| h.media_liveness.latest())
     }
@@ -128,27 +131,47 @@ impl CallSignalingDeps for CallsAdapter {
 
     async fn start_voice_session(
         &self,
-        _call_id: &str,
+        call_id: &str,
         peer_pubkey_hex: &str,
         _kind: CallKind,
     ) -> Result<(), CallError> {
-        // The crate handler stores the call's media secret in the
-        // registry BEFORE invoking this method; the voice session reads
-        // it (with the call's sender state) through `MediaKeySource`.
+        // Plan CE2 (30): one session runs, owned by one call. Another
+        // call's media still running is torn down before this call's
+        // starts (the FULL teardown clears its ownership).
+        if let Some(previous) = self.state.call_media.owner().filter(|o| o != call_id) {
+            tracing::info!(call = %call_id, %previous,
+                "another call's media is still running; tearing it down first");
+            crate::services::voice_adapter::shutdown_voice(
+                &self.state,
+                &rekindle_voice::VoiceShutdownOpts::FULL,
+            )
+            .await;
+        }
+        // Owned before the session starts: its receive loop reads the
+        // call's SFrame keys by this owner (`MediaKeySource::call_media`).
+        self.state.call_media.claim(call_id);
         // 1:1 calls pass `peer_pubkey_hex` as the channel-id argument
         // (the function dual-purposes that parameter — `community_id`
         // is `None` for 1:1).
-        crate::services::voice_adapter::start_session(
+        let started = crate::services::voice_adapter::start_session(
             peer_pubkey_hex,
             None,
             &self.app_handle,
             &self.state,
         )
-        .await
-        .map_err(|e| CallError::Session(format!("voice session start: {e}")))
+        .await;
+        if started.is_err() {
+            self.state.call_media.release(call_id);
+        }
+        started.map_err(|e| CallError::Session(format!("voice session start: {e}")))
     }
 
-    async fn shutdown_voice_session(&self) {
+    async fn shutdown_voice_session(&self, call_id: &str) {
+        // Plan CE2 (30): ending a call stops only its own media.
+        if !self.state.call_media.release(call_id) {
+            tracing::debug!(call = %call_id, "call's media is not running; nothing to stop");
+            return;
+        }
         crate::services::voice_adapter::shutdown_voice(
             &self.state,
             &rekindle_voice::VoiceShutdownOpts::FULL,

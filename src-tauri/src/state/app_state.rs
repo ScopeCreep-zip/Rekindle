@@ -59,6 +59,9 @@ pub struct AppState {
     /// keep direct access while external callers go through the typed
     /// `AppState` helpers below.
     pub(crate) voice_engine: Arc<Mutex<Option<VoiceEngineHandle>>>,
+    /// Which 1:1 call owns the running voice session's media (plan CE2,
+    /// lead decision 30): a call's end stops the media only when it owns it.
+    pub(crate) call_media: Arc<rekindle_calls::signaling::CallMediaOwner>,
     /// Channel for sending shutdown signals to background services.
     pub shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
     /// The identity's Ed25519 secret, stored at unlock for the unported
@@ -244,6 +247,7 @@ impl Default for AppState {
             identity_attempts: Arc::new(rekindle_idempotency::attempts::AttemptLimiter::default()),
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
             voice_engine: Arc::new(Mutex::new(None)),
+            call_media: Arc::new(rekindle_calls::signaling::CallMediaOwner::default()),
             shutdown_tx: Arc::new(RwLock::new(None)),
             identity_secret: Mutex::new(None),
             audit_chain: Arc::new(Mutex::new(None)),

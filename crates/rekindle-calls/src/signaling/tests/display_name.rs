@@ -58,8 +58,8 @@ impl CallSignalingDeps for EmptyNameDeps {
     fn now_ms(&self) -> u64 {
         self.0.now_ms()
     }
-    fn last_inbound_media_ms(&self) -> Option<u64> {
-        self.0.last_inbound_media_ms()
+    fn last_inbound_media_ms(&self, c: &str) -> Option<u64> {
+        self.0.last_inbound_media_ms(c)
     }
     fn spawn_consent_watch(&self, c: String, since: u64) {
         self.0.spawn_consent_watch(c, since);
@@ -67,8 +67,8 @@ impl CallSignalingDeps for EmptyNameDeps {
     async fn start_voice_session(&self, c: &str, p: &str, kind: CallKind) -> Result<(), CallError> {
         self.0.start_voice_session(c, p, kind).await
     }
-    async fn shutdown_voice_session(&self) {
-        self.0.shutdown_voice_session().await;
+    async fn shutdown_voice_session(&self, c: &str) {
+        self.0.shutdown_voice_session(c).await;
     }
     fn voice_active(&self) -> bool {
         self.0.voice_active()

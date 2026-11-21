@@ -84,9 +84,10 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     fn now_ms(&self) -> u64;
 
     /// The latest media-plane proof of life (a voice packet or a verified
-    /// receiver report) of the running 1:1 voice session, on the clock
-    /// [`Self::now_ms`] reads; `None` before any arrived or with no session.
-    fn last_inbound_media_ms(&self) -> Option<u64>;
+    /// receiver report) of `call_id`'s media, on the clock [`Self::now_ms`]
+    /// reads; `None` before any arrived, or when the running media is not
+    /// `call_id`'s (plan CE2, lead decision 30: media is per call).
+    fn last_inbound_media_ms(&self, call_id: &str) -> Option<u64>;
 
     /// Watch an Active call's consent: run
     /// [`crate::signaling::lifecycle::check_consent`] with `since_ms`
@@ -97,9 +98,11 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
 
     // --- Voice integration ---
 
-    /// Start the voice session for an accepted call. The call's media
-    /// keys are already in the registry, where the voice session reads
-    /// them.
+    /// Start the voice session for an accepted call, owned by `call_id`
+    /// (plan CE2, lead decision 30): its SFrame keys are `call_id`'s, read
+    /// from the registry, and only [`Self::shutdown_voice_session`] for
+    /// `call_id` stops it. Media still running for another call is torn
+    /// down first, before this call's starts.
     async fn start_voice_session(
         &self,
         call_id: &str,
@@ -107,9 +110,11 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
         kind: CallKind,
     ) -> Result<(), CallError>;
 
-    /// Tear down the active voice session (CallEnd, decline-while-up,
-    /// glare loss, error path). No-op if voice is not currently up.
-    async fn shutdown_voice_session(&self);
+    /// Tear down `call_id`'s media: its voice session, frame channels,
+    /// egress and ingress (CallEnd, decline-while-up, glare loss, error
+    /// path). A no-op when the running media is another call's, or none
+    /// (plan CE2, lead decision 30: ending one call never stops another's).
+    async fn shutdown_voice_session(&self, call_id: &str);
 
     /// Returns `true` if voice is currently up. Used by `CallEnd` to
     /// decide whether to emit `voice_was_up: true` (so the UI knows to

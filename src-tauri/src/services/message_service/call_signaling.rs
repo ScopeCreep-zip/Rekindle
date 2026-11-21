@@ -87,40 +87,12 @@ pub(crate) async fn handle_call_signaling_payload(
         // cancel-while-ringing or decline-after-accept-race cleans
         // up both sides cleanly.
         DirectBody::CallEnd(CallClosed { call_id, reason }) => {
-            // W15.2 — capture status before remove so we know
-            // whether voice was actually running. Tear it down if so.
-            let (removed, was_voice_up) =
-                state
-                    .active_calls
-                    .remove(&call_id)
-                    .map_or((false, false), |c| {
-                        let voice_up = matches!(
-                            c.status,
-                            rekindle_calls::CallStatus::Active
-                                | rekindle_calls::CallStatus::Connecting
-                        );
-                        (true, voice_up)
-                    });
-            if removed {
-                if was_voice_up {
-                    crate::services::voice_adapter::shutdown_voice(
-                        state,
-                        &rekindle_voice::VoiceShutdownOpts::FULL,
-                    )
-                    .await;
-                }
-                crate::windows::retire_call_window(app_handle, &call_id);
-                crate::event_dispatch::emit_call(
-                    app_handle,
-                    rekindle_types::subscription_events::CallEvent::Ended {
-                        call_id: call_id.clone(),
-                        reason: reason.clone(),
-                    },
-                );
-                tracing::info!(call_id = %call_id, %reason, "remote ended DM call");
-            } else {
-                tracing::debug!(call_id = %call_id, "CallEnd for unknown call_id; ignoring");
-            }
+            // Plan CE2 (30): only this call's media stops; a late end for a
+            // superseded call leaves the new call's media running.
+            rekindle_calls::signaling::handlers::handle_end_received(
+                deps, sender_hex, &call_id, reason,
+            )
+            .await;
         }
         // Wave 12 W12.6 — peer toggled their mic / camera / screen.
         // Emit a chat-event so the frontend's ActiveCallPanel /

@@ -55,10 +55,32 @@ pub(crate) async fn end_locally<D: CallSignalingDeps + ?Sized>(
         voice_was_up: was_voice_up,
     });
     if was_voice_up {
-        deps.shutdown_voice_session().await;
+        deps.shutdown_voice_session(call_id).await;
     }
     commit_end(deps, &peer, call_id, reason).await;
     Some(peer)
+}
+
+/// End here every call with `peer` other than `keep` that is not our own
+/// Outgoing one: the peer has left it, since it rang or answered `keep`
+/// (plan CE1 (22c), CE2 (30)). Each is ended through [`end_locally`], whose
+/// media teardown completes before this returns, so `keep`'s media starts
+/// after it.
+pub(crate) async fn supersede_stale_with<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    peer: &str,
+    keep: &str,
+) {
+    for call in deps.registry().list_all() {
+        let stale = call.peer_pubkey == peer
+            && call.call_id != keep
+            && !matches!(call.status, CallStatus::Outgoing);
+        if stale {
+            tracing::info!(stale = %call.call_id, new = %keep,
+                "the peer's new call supersedes our stale call with them");
+            end_locally(deps, &call.call_id, CALL_SUPERSEDED).await;
+        }
+    }
 }
 
 /// Commit `CallEnd` for `call_id` to `peer` through the outbox, due by
@@ -109,7 +131,7 @@ pub async fn check_consent<D: CallSignalingDeps + ?Sized>(
         return ConsentCheck::Gone;
     }
     let last = deps
-        .last_inbound_media_ms()
+        .last_inbound_media_ms(call_id)
         .map_or(since_ms, |m| m.max(since_ms));
     let silent = deps.now_ms().saturating_sub(last);
     if silent < CONSENT_TIMEOUT_MS {

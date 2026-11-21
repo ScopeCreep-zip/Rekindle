@@ -144,6 +144,8 @@ pub(super) struct MockDeps {
     state: Mutex<MockState>,
     pub(super) registry: Arc<MockRegistry>,
     pub(super) group_registry: Arc<MockGroupRegistry>,
+    /// Which call's media runs (plan CE2), as the desktop adapter keeps it.
+    pub(super) media: crate::signaling::CallMediaOwner,
     owner_key: String,
     identity_secret: [u8; 32],
 }
@@ -161,6 +163,7 @@ impl MockDeps {
             group_registry: Arc::new(MockGroupRegistry {
                 inner: Mutex::new(HashMap::new()),
             }),
+            media: crate::signaling::CallMediaOwner::default(),
             owner_key: "aa".repeat(32),
             identity_secret: [0xCC; 32],
         })
@@ -224,7 +227,7 @@ impl CallSignalingDeps for MockDeps {
     fn now_ms(&self) -> u64 {
         self.state.lock().now_ms
     }
-    fn last_inbound_media_ms(&self) -> Option<u64> {
+    fn last_inbound_media_ms(&self, _call_id: &str) -> Option<u64> {
         self.state.lock().last_inbound_ms
     }
     fn spawn_consent_watch(&self, call_id: String, since_ms: u64) {
@@ -241,10 +244,18 @@ impl CallSignalingDeps for MockDeps {
             call_id: call_id.to_string(),
             kind,
         });
-        std::mem::replace(&mut s.start_voice_session_result, Ok(()))
+        let result = std::mem::replace(&mut s.start_voice_session_result, Ok(()));
+        if result.is_ok() {
+            // As the desktop adapter: another call's media is torn down
+            // first, then this call owns the one session.
+            self.media.claim(call_id);
+        }
+        result
     }
-    async fn shutdown_voice_session(&self) {
+    async fn shutdown_voice_session(&self, call_id: &str) {
         self.state.lock().shutdowns += 1;
+        // As the desktop adapter: only the owning call's end stops it.
+        self.media.release(call_id);
     }
     fn voice_active(&self) -> bool {
         false
