@@ -606,7 +606,6 @@
 .profile-status-message	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .push-relay-platform	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
 .push-relay-watch-count	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
-.raid-alert-banner	text	var(--color-xfire-danger-text)	--color-xfire-busy 30% over --color-xfire-bg-dark	1.0	false
 .reaction-chip-active .reaction-chip-count	text	var(--color-xfire-accent-text)	--color-xfire-accent 9% over --color-xfire-bg-dark	1.0	false
 .reaction-chip-active .reaction-chip-count	text	var(--color-xfire-accent-text)	--color-xfire-accent 9% over --color-xfire-bg-panel	1.0	false
 .reaction-chip-count	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false

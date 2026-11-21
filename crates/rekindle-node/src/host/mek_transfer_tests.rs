@@ -214,6 +214,12 @@ async fn a_rotation_supersedes_a_queued_key_transfer() {
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
     let joiner = queued_for_a_joiner(&host, &owner).await;
+    let old = format!("MekTransfer:c1:{joiner}:3");
+    let new = format!("MekTransfer:c1:{joiner}:4");
+    // The running outbox may attempt the generation-3 row on its own once
+    // the rotation wakes it, settling it superseded before we read: watch
+    // its changes from before the rotation so either order is checked.
+    let mut changes = host.ctx.outbox.channel_posts().expect("unlocked").changes();
     assert!(host.governance().install_transferred_mek(
         "c1",
         KeyScope::Community,
@@ -221,30 +227,39 @@ async fn a_rotation_supersedes_a_queued_key_transfer() {
     ));
     let mut queued = rows(&host).await;
     for _ in 0..100 {
-        if queued.len() == 2 {
+        if queued.iter().any(|r| r.client_id == new) {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         queued = rows(&host).await;
     }
     let ids: Vec<&str> = queued.iter().map(|r| r.client_id.as_str()).collect();
-    assert_eq!(
-        ids,
-        [
-            format!("MekTransfer:c1:{joiner}:3"),
-            format!("MekTransfer:c1:{joiner}:4")
-        ],
-        "the rotation queued the joiner's key at generation 4"
-    );
     assert!(
-        matches!(attempt(&host, &queued[0]).await, AttemptOutcome::Superseded(r) if r == SUPERSEDED),
-        "the generation-3 row settles superseded"
+        ids.contains(&new.as_str()) && ids.iter().all(|id| *id == old || *id == new),
+        "the rotation queued the joiner's key at generation 4: {ids:?}"
     );
+    if let Some(row) = queued.iter().find(|r| r.client_id == old) {
+        assert!(
+            matches!(attempt(&host, row).await, AttemptOutcome::Superseded(r) if r == SUPERSEDED),
+            "the generation-3 row settles superseded"
+        );
+    } else {
+        let mut superseded = false;
+        while let Ok(change) = changes.try_recv() {
+            superseded |=
+                change.client_id == old && change.wedge_reason.as_deref() == Some(SUPERSEDED);
+        }
+        assert!(
+            superseded,
+            "the outbox settled the generation-3 row superseded"
+        );
+    }
+    let current = queued
+        .iter()
+        .find(|r| r.client_id == new)
+        .expect("generation-4 row");
     assert!(
-        !matches!(
-            attempt(&host, &queued[1]).await,
-            AttemptOutcome::Superseded(_)
-        ),
+        !matches!(attempt(&host, current).await, AttemptOutcome::Superseded(_)),
         "the generation-4 row is attempted"
     );
     host.shutdown().await.unwrap();
