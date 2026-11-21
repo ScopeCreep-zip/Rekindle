@@ -33,7 +33,7 @@ filename is `NNNN-short-title.md`.
 | [0019](0019-intentional-actions.md) | Intentional actions: one backend gate classifies every user action | Accepted (ruling O6) |
 | [0020](0020-domain-logic-in-host-and-tier-crates.md) | Domain logic lives in tier crates and the Host; `src-tauri` is a frontend | Accepted (supersedes 0008) |
 | [0021](0021-record-pool-crate.md) | The record pool is its own Veilid-free crate; `rekindle-protocol` keeps its Veilid backend | Accepted (amends 0014) |
-| [0022](0022-device-op-keys.md) | Governance ops are signed by per-community device keys the community pseudonym endorses | Proposed (amends 0011 and D15: restored devices mint a new device key; a fork retires the device key, not the person; one `M(p,d)` per device) |
+| [0022](0022-device-op-keys.md) | Governance ops are signed by per-community device keys the community pseudonym endorses | Accepted 2026-11-21 (amends 0011 and D15: restored devices mint a new device key; a fork retires the device key, not the person; one `M(p,d)` per device) |
 | [0023](0023-mobile-in-process-host.md) | Mobile keeps the Host in-process permanently | Accepted (amends 0010 for mobile; Q9, decided from research 2026-10-24) |
 
 ## How to write a new ADR

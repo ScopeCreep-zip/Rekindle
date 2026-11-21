@@ -1,6 +1,6 @@
 # 0022 — Governance ops are signed by per-community device keys the community pseudonym endorses
 
-- **Status:** Proposed (decided 2026-10-24 from the research, register Q7 "restored backups"; the owner asked
+- **Status:** Accepted 2026-11-21 (plan E3.2 S7d-keys is built against it). Proposed (decided 2026-10-24 from the research, register Q7 "restored backups"; the owner asked
   to "refer to our plan or see how similar apps behave" rather than be asked). Revised 2026-10-24 after the
   review of the first draft (the record owner, the endorser, the endorsement set, per-device records, the
   re-admission rank rule, the cap and rate limit, the signed layouts and the unlock barrier). Revised again
