@@ -102,3 +102,13 @@ fn a_retry_later_is_attempted_again_for_every_kind() {
         }
     }
 }
+
+/// Plan CE3: a `CallInvite` waits for its answer like an `Unfriended`;
+/// other route frames settle once they leave.
+#[test]
+fn a_call_invite_awaits_its_answer() {
+    assert!(awaits_answer(DmTypeId::CallInvite));
+    assert!(awaits_answer(DmTypeId::Unfriended));
+    assert!(!awaits_answer(DmTypeId::CallEnd));
+    assert!(!awaits_answer(DmTypeId::CallRinging));
+}

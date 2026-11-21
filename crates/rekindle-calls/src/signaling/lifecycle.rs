@@ -46,8 +46,13 @@ pub(crate) async fn end_locally<D: CallSignalingDeps + ?Sized>(
 ) -> Option<String> {
     let removed = deps.registry().remove(call_id)?;
     let was_voice_up = matches!(removed.status, CallStatus::Active | CallStatus::Connecting);
+    let was_outgoing = matches!(removed.status, CallStatus::Outgoing);
     let peer = removed.peer_pubkey.clone();
     drop(removed); // Zeroize the call's secrets now.
+    if was_outgoing {
+        // Plan CE3: a cancelled invite is never re-sent.
+        deps.settle_call_invite(call_id, false).await;
+    }
     deps.emit_event(CallSignalEvent::CallEnded {
         call_id: call_id.to_string(),
         peer_public_key: peer.clone(),

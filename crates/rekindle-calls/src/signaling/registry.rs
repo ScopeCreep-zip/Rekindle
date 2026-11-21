@@ -27,6 +27,11 @@ pub trait CallRegistry: Send + Sync {
     fn outgoing_to_peer(&self, peer_pubkey_hex: &str) -> Option<CallState>;
     /// Snapshot of all calls (for debug + diagnostics commands).
     fn list_all(&self) -> Vec<CallState>;
+    /// Whether `call_id` was held and removed, and its invite has not yet
+    /// expired: a re-sent `CallInvite` for it (the caller's outbox retries
+    /// until an answer settles it, plan CE3) must not ring again. Every
+    /// [`Self::remove`] records it until the call's `expires_at_ms`.
+    fn ended_recently(&self, call_id: &str) -> bool;
 }
 
 /// Group call registry. Backed by `Mutex<HashMap<call_id, GroupCallState>>`

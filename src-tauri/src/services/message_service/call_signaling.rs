@@ -75,12 +75,14 @@ pub(crate) async fn handle_call_signaling_payload(
         DirectBody::CallDecline(CallClosed { call_id, reason }) => {
             rekindle_calls::signaling::handlers::handle_decline_received(
                 deps, sender_hex, &call_id, reason,
-            );
+            )
+            .await;
         }
         DirectBody::CallRinging(CallRinging { call_id }) => {
             rekindle_calls::signaling::handlers::handle_ringing_received(
                 deps, sender_hex, &call_id,
-            );
+            )
+            .await;
         }
         // Wave 13 W13.9 — hangup / cancel. Works for any state
         // (Outgoing / Incoming / Connecting / Active) so a

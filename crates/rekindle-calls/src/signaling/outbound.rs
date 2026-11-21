@@ -67,10 +67,14 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
         expires_at_ms,
         video_decode_codecs: deps.local_video_decode_codecs(),
     });
-    if let Err(e) = deps.send_to_peer(peer_public_key, invite).await {
+    // Plan CE3 (30): durable until the callee answers or it expires.
+    if let Err(e) = deps
+        .commit_call_invite(peer_public_key, &call_id, invite, expires_at_ms)
+        .await
+    {
         deps.registry().remove(&call_id);
         return Err(CallError::Transport(format!(
-            "call invite send failed: {e}"
+            "call invite not committed: {e}"
         )));
     }
 

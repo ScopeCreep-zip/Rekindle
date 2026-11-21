@@ -78,6 +78,24 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
         deadline_ms: u64,
     ) -> Result<(), CallError>;
 
+    /// Commit call `call_id`'s `CallInvite` (`body`) to `peer_pubkey_hex`
+    /// through the outbox, due by `deadline_ms` (the invite's `expires_at`):
+    /// re-sent until [`Self::settle_call_invite`] or the deadline (plan CE3,
+    /// lead decision 30). Returns once the row is stored.
+    async fn commit_call_invite(
+        &self,
+        peer_pubkey_hex: &str,
+        call_id: &str,
+        body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError>;
+
+    /// Settle call `call_id`'s invite row: `answered` when the callee's
+    /// `CallRinging`, accept or decline arrived, else (we cancelled, lost
+    /// glare) it is discarded. A no-op when no row waits; a storage
+    /// failure is logged (the row then fails at its deadline).
+    async fn settle_call_invite(&self, call_id: &str, answered: bool);
+
     // --- Clock and media liveness (RFC 7675 consent, plan CE1) ---
 
     /// Now, ms since the epoch, from the host's clock port.

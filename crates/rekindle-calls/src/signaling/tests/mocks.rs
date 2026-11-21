@@ -41,6 +41,10 @@ pub(super) struct MockState {
     pub(super) sent: Vec<(String, DirectBody)>,
     /// Every `CallEnd` committed to the outbox: (peer, body, deadline).
     pub(super) committed: Vec<(String, DirectBody, u64)>,
+    /// Every `CallInvite` committed: (peer, call id, deadline).
+    pub(super) invites: Vec<(String, String, u64)>,
+    /// Every `settle_call_invite`: (call id, answered).
+    pub(super) settled: Vec<(String, bool)>,
     /// When set, `commit_call_end` never completes (a send that hangs).
     pub(super) commit_hangs: bool,
     pub(super) shutdowns: usize,
@@ -59,6 +63,8 @@ impl Default for MockState {
             sent: Vec::new(),
             committed: Vec::new(),
             commit_hangs: false,
+            invites: Vec::new(),
+            settled: Vec::new(),
             shutdowns: 0,
             now_ms: 1_000_000,
             last_inbound_ms: None,
@@ -69,6 +75,7 @@ impl Default for MockState {
 
 pub(super) struct MockRegistry {
     inner: Mutex<HashMap<String, CallState>>,
+    ended: Mutex<std::collections::HashSet<String>>,
 }
 impl CallRegistry for MockRegistry {
     fn insert(&self, call: CallState) {
@@ -78,10 +85,17 @@ impl CallRegistry for MockRegistry {
         self.inner.lock().get(call_id).cloned()
     }
     fn remove(&self, call_id: &str) -> Option<CallState> {
-        self.inner.lock().remove(call_id)
+        let removed = self.inner.lock().remove(call_id);
+        if removed.is_some() {
+            self.ended.lock().insert(call_id.to_string());
+        }
+        removed
     }
     fn contains(&self, call_id: &str) -> bool {
         self.inner.lock().contains_key(call_id)
+    }
+    fn ended_recently(&self, call_id: &str) -> bool {
+        self.ended.lock().contains(call_id)
     }
     fn outgoing_to_peer(&self, peer: &str) -> Option<CallState> {
         self.inner
@@ -159,6 +173,7 @@ impl MockDeps {
             }),
             registry: Arc::new(MockRegistry {
                 inner: Mutex::new(HashMap::new()),
+                ended: Mutex::new(std::collections::HashSet::new()),
             }),
             group_registry: Arc::new(MockGroupRegistry {
                 inner: Mutex::new(HashMap::new()),
@@ -223,6 +238,25 @@ impl CallSignalingDeps for MockDeps {
             std::future::pending::<()>().await;
         }
         Ok(())
+    }
+    async fn commit_call_invite(
+        &self,
+        peer: &str,
+        call_id: &str,
+        _body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError> {
+        self.state
+            .lock()
+            .invites
+            .push((peer.to_string(), call_id.to_string(), deadline_ms));
+        Ok(())
+    }
+    async fn settle_call_invite(&self, call_id: &str, answered: bool) {
+        self.state
+            .lock()
+            .settled
+            .push((call_id.to_string(), answered));
     }
     fn now_ms(&self) -> u64 {
         self.state.lock().now_ms

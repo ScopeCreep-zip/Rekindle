@@ -55,6 +55,18 @@ impl CallSignalingDeps for EmptyNameDeps {
     async fn commit_call_end(&self, p: &str, body: DirectBody, d: u64) -> Result<(), CallError> {
         self.0.commit_call_end(p, body, d).await
     }
+    async fn commit_call_invite(
+        &self,
+        p: &str,
+        c: &str,
+        body: DirectBody,
+        d: u64,
+    ) -> Result<(), CallError> {
+        self.0.commit_call_invite(p, c, body, d).await
+    }
+    async fn settle_call_invite(&self, c: &str, answered: bool) {
+        self.0.settle_call_invite(c, answered).await;
+    }
     fn now_ms(&self) -> u64 {
         self.0.now_ms()
     }

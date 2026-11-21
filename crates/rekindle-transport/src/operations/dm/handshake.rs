@@ -522,7 +522,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         };
     }
     match send::route_send_datagram(host, to, &datagram, kind).await {
-        Ok(true) if kind == DmTypeId::Unfriended => Attempt::Awaiting,
+        Ok(true) if awaits_answer(kind) => Attempt::Awaiting,
         Ok(true) => Attempt::Sent,
         Ok(false) => {
             tracing::debug!(to = %to, ?kind, "handshake row deferred: no usable route");
@@ -534,6 +534,17 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         }
         Err(e) => Attempt::Wedged(e.to_string()),
     }
+}
+
+/// Whether a frame sent over the route stays unsettled until the peer
+/// answers it, re-sent meanwhile with the stream's backoff and when the
+/// peer is reachable again, until its deadline: an `Unfriended` (its
+/// `UnfriendedAck`), and a `CallInvite` (plan CE3, lead decision 30: its
+/// `CallRinging`, accept or decline; `call_invite::settle`), since an
+/// `app_message` over a stale route is lost unseen.
+#[must_use]
+pub fn awaits_answer(kind: DmTypeId) -> bool {
+    matches!(kind, DmTypeId::Unfriended | DmTypeId::CallInvite)
 }
 
 #[cfg(test)]

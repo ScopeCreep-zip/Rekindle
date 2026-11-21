@@ -21,6 +21,7 @@ use rekindle_calls::signaling::{CallRegistry, GroupCallRegistry};
 use crate::state::AppState;
 use rekindle_db::Db;
 
+mod call_media;
 pub mod deps_impl;
 pub mod registry;
 
