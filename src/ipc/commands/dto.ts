@@ -209,7 +209,6 @@ export interface GossipDiagnostics {
   knownMemberCount: number;
   needsInitialSync: boolean;
   messageClock: number;
-  governanceClock: number;
   hasRouteBlob: boolean;
   myPseudonymKey: string | null;
   mySubkeyIndex: number | null;

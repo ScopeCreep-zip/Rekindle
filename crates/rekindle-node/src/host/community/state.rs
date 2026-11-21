@@ -154,11 +154,6 @@ pub struct CommunityState {
     /// `MAX(messages.lamport_ts)`.
     #[serde(skip)]
     pub message_clock: u64,
-    /// Lamport clock for the `GovernanceEntry`s we write. Ticked per
-    /// entry, raised by governance rebuilds to what the accepted entries
-    /// justify. Persisted as `communities.lamport_clock`.
-    #[serde(skip)]
-    pub governance_clock: u64,
 
     // ── Gossip mesh fields (Phase 2) ──
     /// Gossip overlay state (peer set, online members).

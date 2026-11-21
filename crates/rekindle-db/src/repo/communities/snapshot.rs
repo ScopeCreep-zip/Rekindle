@@ -59,15 +59,13 @@ pub struct StoredGovernance {
     pub icon_hash: Option<String>,
     pub banner_hash: Option<String>,
     pub mek_generation: i64,
-    pub lamport_clock: i64,
     pub channels: Vec<SnapshotChannel>,
     pub roles: Vec<SnapshotRole>,
     pub categories: Vec<SnapshotCategory>,
     pub overwrites: Vec<SnapshotOverwrite>,
 }
 
-/// Write the snapshot: the community row's governance fields (the clock
-/// only advances) and the community's channels, roles, categories and
+/// Write the snapshot: the community row's governance fields and the community's channels, roles, categories and
 /// overwrites replaced by the snapshot's.
 ///
 /// # Errors
@@ -88,7 +86,6 @@ pub fn replace(
             icon_hash: snapshot.icon_hash.as_deref(),
             banner_hash: snapshot.banner_hash.as_deref(),
             mek_generation: snapshot.mek_generation,
-            lamport_clock: snapshot.lamport_clock,
         },
     )?;
     replace_channels(conn, owner_key, community_id, &snapshot.channels)?;

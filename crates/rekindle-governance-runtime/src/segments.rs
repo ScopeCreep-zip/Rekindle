@@ -307,7 +307,6 @@ mod tests {
             my_segment_index: None,
             slot_keypair: None,
             slot_seed_hex: Some(hex::encode([5u8; 32])),
-            governance_clock: 0,
             channel_ids: Vec::new(),
             mek_generation: 0,
         };
@@ -325,7 +324,6 @@ mod tests {
             my_segment_index: None,
             slot_keypair: None,
             slot_seed_hex: None,
-            governance_clock: 0,
             channel_ids: Vec::new(),
             mek_generation: 0,
         };

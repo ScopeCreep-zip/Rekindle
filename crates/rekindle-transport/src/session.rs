@@ -146,13 +146,6 @@ pub struct CommunityMembership {
     /// slot_index`, so for segment 0 the two are equal.
     pub segment_index: Option<u32>,
 
-    /// Governance CRDT Lamport counter for this community.
-    ///
-    /// NOT the gossip mesh clock (`GossipMesh::clock`) — that one orders
-    /// epidemic broadcast, this one orders governance entries for the
-    /// CRDT merge. Two clocks, deliberately separate.
-    pub lamport_counter: u64,
-
     /// Highest community-level MEK generation we have seen.
     pub mek_generation: u64,
 }
@@ -182,7 +175,6 @@ mod tests {
             community_name: "dev-team".into(),
             slot_seed: None,
             segment_index: Some(0),
-            lamport_counter: 7,
             mek_generation: 2,
         }
     }

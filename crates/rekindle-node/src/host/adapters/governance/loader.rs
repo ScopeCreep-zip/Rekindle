@@ -150,7 +150,6 @@ pub(crate) fn membership(state: &CommunityState) -> CommunityMembership {
             .and_then(|bytes| bytes.try_into().ok()),
         // A channel has no record (plan E3.3 slice 8).
         segment_index: state.my_segment_index,
-        lamport_counter: state.governance_clock,
         mek_generation: state.mek_generation,
     }
 }
@@ -208,7 +207,6 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
         my_event_rsvps: rsvps_of(id, &load.event_rsvps),
         onboarding_complete: community.onboarding_complete,
         message_clock: community.message_clock,
-        governance_clock: community.governance_clock,
         member_profiles: profiles_of(id, &load.members),
         // NULL column: the community never set a policy.
         presence_policy: community.presence_policy.clone().unwrap_or_default(),

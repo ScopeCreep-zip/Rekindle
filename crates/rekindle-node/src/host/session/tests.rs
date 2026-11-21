@@ -14,14 +14,13 @@ fn membership() -> CommunityMembership {
         community_name: "Team".into(),
         slot_seed: Some([9; 32]),
         segment_index: Some(1),
-        lamport_counter: 12,
         mek_generation: 2,
     }
 }
 
 /// Everything the daemon writes through these helpers comes back in the
 /// projection the next unlock loads: the identity, a membership with its
-/// slot seed and clock, a friend, and a forgotten membership's absence.
+/// slot seed, a friend, and a forgotten membership's absence.
 #[tokio::test]
 async fn writes_come_back_in_the_next_projection() {
     let f = Fixture::new();
@@ -86,7 +85,6 @@ async fn writes_come_back_in_the_next_projection() {
             stored.my_pseudonym_key.as_deref(),
             Some("cd".repeat(32).as_str())
         );
-        assert_eq!(stored.governance_clock, 12);
         // Our role ids are the projection's alone (review RV7 M1): a
         // membership brings none.
         assert!(stored.my_role_ids.is_empty());
@@ -121,7 +119,6 @@ async fn writes_come_back_in_the_next_projection() {
     assert_eq!(m.slot_seed, Some([9; 32]));
     assert_eq!(m.slot_index, 3);
     assert_eq!(m.segment_index, Some(1));
-    assert_eq!(m.lamport_counter, 12);
     assert_eq!(m.community_name, "Team");
     let bob = &reloaded.friends["bob"];
     assert_eq!(bob.mailbox_dht_key.as_deref(), Some("bob-mailbox"));

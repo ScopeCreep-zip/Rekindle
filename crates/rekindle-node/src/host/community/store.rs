@@ -159,16 +159,11 @@ impl CommunityStore {
         })
     }
 
-    /// The community's merged governance as SQLite stores it, at our
-    /// governance clock; `None` before its governance has merged or when
-    /// the clock is beyond what SQLite holds.
+    /// The community's merged governance as SQLite stores it; `None`
+    /// before its governance has merged.
     #[must_use]
     pub fn governance_snapshot(&self, community_id: &str) -> Option<StoredGovernance> {
-        self.read(community_id, |c| {
-            let clock = i64::try_from(c.governance_clock).ok()?;
-            projection::snapshot(c, clock)
-        })
-        .flatten()
+        self.read(community_id, projection::snapshot).flatten()
     }
 
     /// Fold `incoming` into the community's leases
@@ -445,7 +440,6 @@ impl CommunityStore {
             c.my_subkey_index = Some(membership.slot_index);
             c.my_segment_index = membership.segment_index;
             c.slot_seed = membership.slot_seed.as_ref().map(hex::encode);
-            c.governance_clock = c.governance_clock.max(membership.lamport_counter);
             c.mek_generation = membership.mek_generation;
             if let Some(keypair) = registry_owner_keypair {
                 c.registry_owner_keypair = Some(keypair.to_string());

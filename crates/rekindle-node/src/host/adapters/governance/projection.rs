@@ -222,10 +222,10 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
     GovernanceProjected { new_watch_targets }
 }
 
-/// The SQLite snapshot of a projected community at `lamport_clock`; `None`
-/// before its governance has merged.
+/// The SQLite snapshot of a projected community; `None` before its
+/// governance has merged.
 #[must_use]
-pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGovernance> {
+pub fn snapshot(cs: &CommunityState) -> Option<StoredGovernance> {
     let gov = cs.governance_state.as_ref()?;
     let mek_generation = i64::try_from(cs.mek_generation).unwrap_or(i64::MAX);
     let mut channels: Vec<SnapshotChannel> = gov
@@ -310,7 +310,6 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
         icon_hash: metadata.and_then(|m| m.icon_hash.clone()),
         banner_hash: metadata.and_then(|m| m.banner_hash.clone()),
         mek_generation,
-        lamport_clock,
         channels,
         roles,
         categories,

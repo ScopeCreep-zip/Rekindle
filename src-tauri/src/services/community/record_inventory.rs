@@ -152,7 +152,6 @@ mod tests {
             own_removal: None,
             removal_gate: std::sync::Arc::default(),
             message_clock: 0,
-            governance_clock: 0,
             gossip: None,
             slot_keypair: None,
             registry_owner_keypair: None,

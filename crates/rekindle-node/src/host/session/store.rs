@@ -354,12 +354,7 @@ pub fn record_membership(
                 cert,
             )?;
         }
-        repo::communities::raise_clock(
-            conn,
-            &owner,
-            &row.anchor,
-            i64::try_from(row.lamport_counter).unwrap_or(i64::MAX),
-        )
+        Ok(())
     });
     if let Some(s) = session.write().as_mut() {
         s.join_community(membership);

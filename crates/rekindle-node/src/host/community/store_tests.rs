@@ -85,7 +85,6 @@ fn membership(me: &PseudonymKey) -> CommunityMembership {
         community_name: "Team".into(),
         slot_seed: None,
         segment_index: Some(0),
-        lamport_counter: 0,
         mek_generation: 0,
     }
 }

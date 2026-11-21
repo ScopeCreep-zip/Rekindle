@@ -77,7 +77,6 @@ impl HostGovernance {
             my_segment_index: membership.segment_index,
             slot_keypair,
             slot_seed_hex: membership.slot_seed.as_ref().map(hex::encode),
-            governance_clock: membership.lamport_counter,
             channel_ids: self.channel_ids_impl(community_id),
             mek_generation: membership.mek_generation,
         })

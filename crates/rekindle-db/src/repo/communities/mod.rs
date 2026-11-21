@@ -25,8 +25,6 @@ pub struct CommunityRow {
     pub onboarding_complete: bool,
     /// `None` when the community never set one.
     pub presence_policy: Option<rekindle_types::presence::PresenceSharingPolicy>,
-    /// Persisted governance clock (`lamport_clock`).
-    pub governance_clock: u64,
     /// Highest Lamport timestamp among the community's stored channel
     /// messages: where the message clock resumes.
     pub message_clock: u64,
@@ -46,7 +44,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
         "SELECT c.id, c.name, c.description, c.icon_hash, c.banner_hash, \
          c.my_pseudonym_key, c.mek_generation, \
          c.member_registry_key, c.my_subkey_index, c.my_segment_index, \
-         COALESCE(cm.onboarding_complete, 0), c.presence_policy, c.lamport_clock, \
+         COALESCE(cm.onboarding_complete, 0), c.presence_policy, \
          (SELECT COALESCE(MAX(m.lamport_ts), 0) FROM messages m \
             JOIN channels ch ON ch.owner_key = m.owner_key AND ch.id = m.conversation_id \
            WHERE m.owner_key = c.owner_key AND m.conversation_type = 'channel' \
@@ -74,10 +72,9 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
                 my_segment_index: row.get(9)?,
                 onboarding_complete: row.get::<_, i64>(10)? != 0,
                 presence_policy: crate::row::get_json_opt(row, "presence_policy")?,
-                governance_clock: crate::row::get_u64(row, 12)?,
-                message_clock: crate::row::get_u64(row, 13)?,
-                removed_by_name: row.get(14)?,
-                my_member_record: row.get(15)?,
+                message_clock: crate::row::get_u64(row, 12)?,
+                removed_by_name: row.get(13)?,
+                my_member_record: row.get(14)?,
             })
         })?
         .collect();
@@ -271,24 +268,6 @@ pub fn genesis_cert(
         .flatten())
 }
 
-/// Advance the stored governance clock; it never moves back.
-///
-/// # Errors
-/// The write failed.
-pub fn raise_clock(
-    conn: &Connection,
-    owner_key: &str,
-    id: &str,
-    clock: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE communities SET lamport_clock = MAX(lamport_clock, ?1) \
-         WHERE owner_key = ?2 AND id = ?3",
-        params![clock, owner_key, id],
-    )?;
-    Ok(())
-}
-
 /// Advance our beat count in the community by one and return it
 /// (`beat_seq`, plan E3.4 S1): persisted before the beat it numbers is
 /// written, so no beat `seq` is reused across a restart.
@@ -313,10 +292,9 @@ pub struct GovernanceFields<'a> {
     pub icon_hash: Option<&'a str>,
     pub banner_hash: Option<&'a str>,
     pub mek_generation: i64,
-    pub lamport_clock: i64,
 }
 
-/// Write the fields merged governance decides; the clock only advances.
+/// Write the fields merged governance decides.
 ///
 /// # Errors
 /// The write failed.
@@ -328,15 +306,14 @@ pub fn apply_governance(
 ) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE communities SET name = ?1, description = ?2, icon_hash = ?3, banner_hash = ?4, \
-         mek_generation = ?5, lamport_clock = MAX(lamport_clock, ?6) \
-         WHERE owner_key = ?7 AND id = ?8",
+         mek_generation = ?5 \
+         WHERE owner_key = ?6 AND id = ?7",
         params![
             fields.name,
             fields.description,
             fields.icon_hash,
             fields.banner_hash,
             fields.mek_generation,
-            fields.lamport_clock,
             owner_key,
             id,
         ],
@@ -385,16 +362,14 @@ mod tests {
         assert_eq!(genesis_cert(&conn, OWNER, "absent").unwrap(), None);
     }
 
-    /// After a restart both clocks resume where they were: governance from
-    /// `lamport_clock`, messages from the community's highest stored
-    /// channel `lamport_ts` (only its own channels, never DMs).
+    /// After a restart the message clock resumes from the community's
+    /// highest stored channel `lamport_ts` (only its own channels, never
+    /// DMs).
     #[test]
-    fn clocks_reload_from_storage() {
+    fn message_clock_reloads_from_storage() {
         let conn = fixture::conn();
         insert(&conn, OWNER, &community("c1", "One")).unwrap();
         insert(&conn, OWNER, &community("c2", "One")).unwrap();
-        raise_clock(&conn, OWNER, "c1", 42).unwrap();
-        raise_clock(&conn, OWNER, "c1", 7).unwrap();
         conn.execute_batch(&format!(
             "INSERT INTO channels (owner_key, id, community_id, name, channel_type) \
                VALUES ('{OWNER}', 'ch1', 'c1', 'general', 'text'), \
@@ -407,12 +382,9 @@ mod tests {
         ))
         .unwrap();
         let rows = load_all(&conn, OWNER).unwrap();
-        let clocks = |id: &str| {
-            let row = rows.iter().find(|r| r.id == id).unwrap();
-            (row.governance_clock, row.message_clock)
-        };
-        assert_eq!(clocks("c1"), (42, 1500));
-        assert_eq!(clocks("c2"), (0, 7));
+        let clock = |id: &str| rows.iter().find(|r| r.id == id).unwrap().message_clock;
+        assert_eq!(clock("c1"), 1500);
+        assert_eq!(clock("c2"), 7);
     }
 
     #[test]

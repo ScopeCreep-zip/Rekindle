@@ -113,7 +113,6 @@ mod tests {
             community_name: "test".into(),
             slot_seed: None,
             segment_index: Some(0),
-            lamport_counter: 0,
             mek_generation: 1,
         }
     }

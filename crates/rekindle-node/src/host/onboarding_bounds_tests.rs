@@ -44,7 +44,6 @@ pub(super) fn load_membership(host: &crate::host::Host) {
         community_name: "C".into(),
         slot_seed: None,
         segment_index: None,
-        lamport_counter: 1,
         mek_generation: 0,
     };
     let mut session = host.ctx.session.write();

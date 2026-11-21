@@ -191,7 +191,6 @@ impl HostGovernance {
             community_name: community.name.clone(),
             slot_seed,
             segment_index: Some(0),
-            lamport_counter: 0,
             mek_generation: community.mek.generation,
         };
         // The registry keypair grants no writer slot under `o_cnt: 0`, but

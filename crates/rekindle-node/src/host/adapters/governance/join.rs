@@ -66,7 +66,6 @@ impl HostGovernance {
             community_name: outcome.invite.community_name.clone(),
             slot_seed,
             segment_index: Some(outcome.claimed.segment_index),
-            lamport_counter: 0,
             // No key yet: 0 is the sentinel for "no community key held",
             // never a generation (the genesis key is
             // `GENESIS_MEK_GENERATION`, 1). The key arrives through
