@@ -30,8 +30,6 @@ pub struct DaemonHandler {
     pub(crate) subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
     /// Session state (shared with DaemonContext).
     pub(crate) session: Arc<RwLock<Option<Session>>>,
-    /// Signing key (shared with DaemonContext, passed to RPC handlers).
-    pub(crate) signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
     /// Transport node, weak: the node's dispatch loop owns this handler, so
     /// a strong reference here is a cycle that kept the node from being
     /// shut down at exit (A/B R1-16 "outstanding references").
@@ -57,7 +55,6 @@ impl DaemonHandler {
     pub fn new(
         subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
         session: Arc<RwLock<Option<Session>>>,
-        signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
         transport: Arc<RwLock<Option<std::sync::Weak<rekindle_transport::TransportNode>>>>,
         mek_rotation_tx: crate::daemon::mek_rotation::MekRotationSender,
         gossip_tx: crate::daemon::gossip::GossipSender,
@@ -68,7 +65,6 @@ impl DaemonHandler {
         Self {
             subscriptions,
             session,
-            signing_key,
             transport,
             mek_rotation_tx,
             gossip_tx,
@@ -232,12 +228,7 @@ impl InboundHandler for DaemonHandler {
                     .get()
                     .and_then(std::sync::Weak::upgrade)
                     .map(crate::host::adapters::governance::HostGovernance::new);
-                super::community_rpc::handle_mek_transfer(
-                    &transfer,
-                    &self.session,
-                    &self.signing_key,
-                    governance.as_ref(),
-                )
+                super::community_rpc::handle_mek_transfer(&transfer, governance.as_ref())
             }
             InboundCall::BootstrapRequest {
                 joiner_pseudonym,

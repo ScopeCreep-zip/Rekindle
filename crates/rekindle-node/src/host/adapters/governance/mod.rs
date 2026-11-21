@@ -65,6 +65,7 @@ pub(crate) mod login_stage;
 mod mek;
 mod mek_recovery;
 mod mek_request;
+pub mod mek_transfer;
 pub use mek_request::MekRequest;
 mod member_events;
 pub(crate) mod member_route_cache;

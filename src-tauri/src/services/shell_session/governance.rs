@@ -54,7 +54,16 @@ pub(super) fn install_mek(
         rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(key_bytes, generation);
     if !crate::state_helpers::install_mek(state, community_id, scope, key) {
         tracing::debug!(community = %community_id, %scope, "the shell kept a newer key");
+        return;
     }
+    // The shell's community view follows every key the Host installs
+    // (restore, hydration, a transfer, our own rotation).
+    crate::services::community::mek_rotation_support::update_generation_state(
+        state,
+        community_id,
+        scope,
+        generation,
+    );
 }
 
 /// Flip `onboarding_complete[community_id]` on the personal sync ReadState

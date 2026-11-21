@@ -191,25 +191,14 @@ impl MekDistributeDeps for MekAdapter {
         scope: KeyScope,
         mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
     ) -> bool {
-        // The Host's one install (finding CB3): the convergence rule
+        // A key this shell's own rotation minted (`rotate.rs`), installed
+        // as the Host installs every key (finding CB3): the convergence rule
         // (downgrade refused, lowest election rank at an equal generation),
-        // the shell's live keys through `ShellHooks::on_mek_installed`, the
-        // vault, the waiting posts, and the outbox catch-up that reads the
-        // entries a joiner held back for want of this key. Refused → don't
-        // touch generation state / media-ready either.
-        let Ok(host) = state_helpers::host_governance(&self.state) else {
-            return false;
-        };
-        if !host.install_transferred_mek(community_id, scope, mek) {
-            return false;
-        }
-        crate::services::community::mek_rotation_support::update_generation_state(
-            &self.state,
-            community_id,
-            scope,
-            mek.generation(),
-        );
-        true
+        // the shell's live keys and generation through
+        // `ShellHooks::on_mek_installed`, the vault, the waiting posts, and
+        // the outbox catch-up.
+        state_helpers::host_governance(&self.state)
+            .is_ok_and(|host| host.install_transferred_mek(community_id, scope, mek))
     }
 
     /// Already stored: the Host's install above wrote it to the vault the

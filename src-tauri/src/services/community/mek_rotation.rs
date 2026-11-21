@@ -1,8 +1,6 @@
-//! Phase 23.D.10 — thin facade. All MEK receive logic
-//! (unwrap_received_mek + apply_received_mek + handle_incoming_mek_transfer
-//! + mek_cache_has_generation) ported into `rekindle_mek_rotation::receive`
-//! parameterised over `MekDistributeDeps`. Only `spawn_mek_request_with_retry`
-//! stays here — it's a Tier-9 tokio::spawn wrapper that pushes
+//! A delivered key (`MekTransfer`) is received by the Host
+//! (`HostGovernance::receive_mek_transfer`, plan E3.1 CB3 glue audit), never
+//! here. Only `spawn_mek_request_with_retry` stays here — it's a Tier-9 tokio::spawn wrapper that pushes
 //! `RequestMEK` envelopes onto the mesh on a cascade-fall-through schedule.
 
 use std::sync::Arc;
@@ -294,29 +292,6 @@ pub fn spawn_community_mek_recovery(
             }
         },
     );
-}
-
-/// Phase 23.D.10 — facade around `rekindle_mek_rotation::handle_incoming_mek_transfer`.
-/// Constructs a `MekAdapter` per call and delegates.
-pub fn handle_incoming_mek_transfer(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    scope: rekindle_types::channel_keys::KeyScope,
-    sender_pseudonym: &str,
-    wrapped_mek: &[u8],
-) -> Result<rekindle_crypto::group::media_key::MediaEncryptionKey, String> {
-    let pool = state.db.current()?;
-    let adapter =
-        crate::services::mek_adapter::MekAdapter::new(Arc::clone(state), app_handle.clone(), pool);
-    rekindle_mek_rotation::handle_incoming_mek_transfer(
-        adapter.as_ref(),
-        community_id,
-        scope,
-        sender_pseudonym,
-        wrapped_mek,
-    )
-    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

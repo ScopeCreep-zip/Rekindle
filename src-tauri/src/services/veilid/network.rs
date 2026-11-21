@@ -178,51 +178,28 @@ async fn community_call(
                 }
             }
             Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
-                // P1.3, review S7m part 1: reply with a `MekTransferAck` whose
-                // key-confirmation tag is keyed by the key we unwrapped, so the
-                // sender settles the transfer only on proof of the unwrap. On an
-                // unwrap failure we reply a bare `ACK` (the sender retries).
-                let received = rekindle_types::channel_keys::KeyScope::from_wire(
-                    transfer.channel_id.as_deref(),
-                )
-                .ok_or_else(|| format!("MekTransfer names no key scope: {:?}", transfer.channel_id))
-                .and_then(|scope| {
-                    crate::services::community::handle_incoming_mek_transfer(
-                        app_handle,
-                        state,
-                        &transfer.community_id,
-                        scope,
-                        &transfer.sender_pseudonym,
-                        &transfer.wrapped_mek,
-                    )
-                });
-                let requester_pseudonym = {
-                    let communities = state.communities.read();
-                    communities
-                        .get(&transfer.community_id)
-                        .and_then(|cs| cs.my_pseudonym_key.clone())
-                };
-                match (received, requester_pseudonym) {
-                (Ok(mek), Some(requester)) => rekindle_mek_rotation::encode_mek_transfer_ack(
-                    &transfer, &mek, &requester,
-                )
-                .unwrap_or_else(|e| {
-                    tracing::warn!(call_id = %call_id, error = %e, "MekTransferAck not encoded");
-                    b"ACK".to_vec()
-                }),
-                (Ok(_), None) => {
-                    tracing::warn!(call_id = %call_id, "MEK transfer for a community without our pseudonym");
-                    b"ACK".to_vec()
+                // The Host's one receive path (plan E3.1, CB3 glue audit), the
+                // daemon's too: membership and removal checks, unwrap, install
+                // (catch-up included), `MekRotated`, and the `MekTransferAck`
+                // whose key-confirmation tag proves the unwrap (P1.3, review
+                // S7m part 1). A refusal is a bare `ACK`: no tag, so the
+                // sender does not settle the transfer.
+                match state_helpers::host_governance(state) {
+                    Ok(host) => host
+                        .receive_mek_transfer(&transfer)
+                        .unwrap_or_else(|refusal| {
+                            tracing::warn!(
+                                call_id = %call_id,
+                                reason = refusal.reason(),
+                                "MEK transfer refused — replying bare ACK"
+                            );
+                            b"ACK".to_vec()
+                        }),
+                    Err(e) => {
+                        tracing::warn!(call_id = %call_id, error = %e, "MEK transfer while locked — replying bare ACK");
+                        b"ACK".to_vec()
+                    }
                 }
-                (Err(error), _) => {
-                    tracing::warn!(
-                        call_id = %call_id,
-                        error = %error,
-                        "failed to handle incoming MEK transfer — replying bare ACK"
-                    );
-                    b"ACK".to_vec()
-                }
-            }
             }
             Ok(Some(CommunityEnvelope::Control(
                 payload @ (ControlPayload::VoiceMediaKey { .. }

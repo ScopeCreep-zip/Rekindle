@@ -31,7 +31,6 @@ pub use gossip::{
     send_to_channel_peers, send_to_channel_peers_now, start_peer_reliability_flush,
 };
 pub use governance::write_entry;
-pub use mek_rotation::handle_incoming_mek_transfer;
 pub use mek_rotation_orchestrators::spawn_departure_rotations;
 pub use notifications::notify_stored_post;
 pub use presence::{current_presence_status, presence_poll_tick_public, write_our_presence};

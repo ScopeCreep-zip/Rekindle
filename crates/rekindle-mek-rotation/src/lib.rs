@@ -34,7 +34,6 @@ pub mod error;
 pub mod event;
 pub mod provider;
 pub(crate) mod pseudonym_hex;
-pub mod receive;
 pub mod rotate;
 
 pub use ack::{encode_mek_transfer_ack, is_mek_transfer_ack, ExpectedAck};
@@ -47,5 +46,4 @@ pub use election::{
 pub use error::MekRotationError;
 pub use event::MekRotationEvent;
 pub use provider::{MekHistory, MekKeyProvider};
-pub use receive::{handle_incoming_mek_transfer, mek_cache_has_generation, unwrap_received_mek};
 pub use rotate::{rotate_mek_on_request, rotate_text_mek_for_departure};
