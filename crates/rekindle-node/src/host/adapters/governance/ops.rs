@@ -161,6 +161,14 @@ impl HostGovernance {
         community_id: &str,
         op: &HeldOp,
     ) -> Result<(), GovernanceRuntimeError> {
+        // A community we no longer hold (left, or a join withdrawn: SU1) has
+        // no row for its ops: a late ring change or walk that read it before
+        // the forget stores nothing (IJ3).
+        if !self.ctx.communities.map().read().contains_key(community_id) {
+            return Err(GovernanceRuntimeError::CommunityNotFound(
+                community_id.to_owned(),
+            ));
+        }
         let (owner, db) = self.op_store()?;
         let community = community_id.to_owned();
         let author = hex::encode(op.author.0);

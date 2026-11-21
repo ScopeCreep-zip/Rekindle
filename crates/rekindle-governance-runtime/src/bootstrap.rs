@@ -59,6 +59,11 @@ pub enum BootstrapAnswer {
     /// backfilled, so we vouch for no frontier and merged nothing; the
     /// joiner asks another member (`crate::bootstrap_peers`).
     Partial(Vec<u8>),
+    /// `bootstrapRefused` (plan E3.2 join step 5, IJ2): our merge does not
+    /// admit the joiner's `MemberJoined`, for the typed reason it names
+    /// (`JoinRefusal`). The answer itself, so every host forwards it as is
+    /// and none can drop the reason to a bare NAK.
+    Refused(Vec<u8>),
 }
 
 /// Answer a joiner's `BootstrapRequest`: while we are partial, with
@@ -82,9 +87,18 @@ pub async fn answer_bootstrap_request<D: GovernanceRuntimeDeps>(
         };
         return encode_response(payload).map(BootstrapAnswer::Partial);
     }
-    build_bootstrap_response_v2(deps, anchor, joiner)
-        .await
-        .map(BootstrapAnswer::Frontier)
+    match build_bootstrap_response_v2(deps, anchor, joiner).await {
+        Ok(bytes) => Ok(BootstrapAnswer::Frontier(bytes)),
+        Err(GovernanceRuntimeError::JoinNotAdmitted(reason)) => {
+            tracing::warn!(
+                community = anchor,
+                %reason,
+                "bootstrap request refused: the merge does not admit the joiner"
+            );
+            encode_refusal(anchor, reason).map(BootstrapAnswer::Refused)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(

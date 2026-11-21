@@ -199,3 +199,27 @@ async fn a_kept_snapshot_whose_checkpoint_is_later_equivocated_is_not_used() {
     );
     host.shutdown().await.unwrap();
 }
+
+/// IJ3: a community we no longer hold (a join withdrawn, SU1's local-only
+/// forget) stores no op a late ring change or walk read before the forget:
+/// the store is refused as `CommunityNotFound`, never written.
+#[tokio::test]
+async fn an_op_for_a_community_no_longer_held_is_not_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let (key, ops, _, _) = community(&host).await;
+    let gov = host.governance();
+    let held = gov.governance_ops("c1").await.unwrap().len();
+    host.ctx.communities.map().write().remove("c1");
+    let late = signed(&key, ops.last().unwrap(), &[], meta("late"));
+    let stored = gov.store_governance_op("c1", &late).await;
+    assert!(
+        matches!(
+            stored,
+            Err(rekindle_governance_runtime::GovernanceRuntimeError::CommunityNotFound(_))
+        ),
+        "{stored:?}"
+    );
+    assert_eq!(gov.governance_ops("c1").await.unwrap().len(), held);
+    host.shutdown().await.unwrap();
+}

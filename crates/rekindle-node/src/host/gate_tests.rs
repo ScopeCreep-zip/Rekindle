@@ -80,7 +80,7 @@ async fn a_protected_delete_runs_once_on_its_passphrase() {
         intent_id: held.intent_id,
         proof: IntentProof::Passphrase(passphrase.to_string().into()),
     };
-    assert_eq!(code(&host.call(bus(1), commit("wrong")).await), Some(403));
+    assert_eq!(code(&host.call(bus(1), commit("wrong")).await), Some(401));
     assert_eq!(code(&host.call(bus(2), commit("pass")).await), Some(404));
     let ran = host.call(bus(1), commit("pass")).await;
     assert!(

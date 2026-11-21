@@ -10,20 +10,21 @@ use tauri::State;
 use crate::host_call;
 use crate::state::SharedState;
 
-/// Mint an invite (`IpcRequest::Community(CommunityRequest::InviteCreate)`);
-/// no `max_uses` is single-use, as the CLI's `invite create` (readers refuse
-/// one outside `1..=100`, plan E3.2 (d)).
+/// Mint an invite (`IpcRequest::Community(CommunityRequest::InviteCreate)`).
+/// `max_uses` is the form's explicit choice (IJ1: never an absent field
+/// read as a default); the Host refuses one outside `1..=100`, which every
+/// reader refuses (plan E3.2 (d), `invite_quota::check_max_uses_cap`).
 #[tauri::command]
 pub async fn create_community_invite(
     community_id: String,
-    max_uses: Option<u32>,
+    max_uses: u32,
     expires_in_seconds: Option<u64>,
     state: State<'_, SharedState>,
 ) -> Result<Done<CommunityInviteCreated>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::InviteCreate {
             community: community_id,
-            max_uses: invite_max_uses(max_uses),
+            max_uses,
             expires_seconds: expires_in_seconds,
         },
     ));
@@ -59,20 +60,4 @@ pub async fn list_community_invites(
         })),
     )
     .await
-}
-
-/// The redemptions a GUI invite allows: the form's empty field is one.
-fn invite_max_uses(asked: Option<u32>) -> u32 {
-    asked.unwrap_or(1)
-}
-
-#[cfg(test)]
-mod tests {
-    /// An empty "max uses" field mints a single-use invite, never 0 (which
-    /// every reader refuses).
-    #[test]
-    fn an_invite_without_max_uses_is_single_use() {
-        assert_eq!(super::invite_max_uses(None), 1);
-        assert_eq!(super::invite_max_uses(Some(7)), 7);
-    }
 }

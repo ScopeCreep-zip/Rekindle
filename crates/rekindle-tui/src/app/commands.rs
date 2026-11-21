@@ -391,8 +391,10 @@ impl App {
                         level: ToastLevel::Success,
                     });
                 }
+                // The gate's wrong-proof answer (401) shows the review again;
+                // an action's own refusal ends it (IJ3).
                 Err(rekindle_client::ClientError::Daemon {
-                    code: 403, message, ..
+                    code: 401, message, ..
                 }) => {
                     let _ = tx.send(Action::ShowToast {
                         message,

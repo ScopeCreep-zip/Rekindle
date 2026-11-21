@@ -35,6 +35,8 @@ pub async fn answer_bootstrap_request(
                 .await;
             Ok(response)
         }
-        BootstrapAnswer::Partial(response) => Ok(response),
+        // Partial, or the typed refusal (IJ2): the runtime's answer, sent
+        // as is so the joiner learns why.
+        BootstrapAnswer::Partial(response) | BootstrapAnswer::Refused(response) => Ok(response),
     }
 }

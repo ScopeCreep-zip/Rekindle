@@ -342,7 +342,11 @@ fn ran(
 fn gate_error(e: &GateError) -> IpcResponse {
     let code = match e {
         GateError::UnknownIntent => 404,
-        GateError::WrongProof => 403,
+        // 401, never 403 (IJ3): the proof did not authenticate the commit,
+        // and only this answer keeps a review open for another proof. An
+        // action's own refusal (403, a join not admitted) ends the review
+        // with its reason.
+        GateError::WrongProof => 401,
         GateError::Locked { .. } | GateError::TooManyPending => 429,
     };
     IpcResponse::error(code, e.to_string())

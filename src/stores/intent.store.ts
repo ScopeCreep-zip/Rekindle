@@ -67,7 +67,7 @@ function settle(): void {
 }
 
 /** Commit the open review with `proof`. A review whose facts changed comes
- *  back fresh and is shown again; a refused proof keeps the dialog open
+ *  back fresh and is shown again; a refused proof (401) keeps the dialog open
  *  with the reason; an expired or unknown review rejects the call. */
 export async function commitReview(proof: IntentProof): Promise<void> {
   const pending = queue[0];
@@ -86,7 +86,10 @@ export async function commitReview(proof: IntentProof): Promise<void> {
       setIntentState({ review: e.data, busy: false, error: null });
       return;
     }
-    if (isCommandError(e) && e.type === "failed" && e.data.code === 403) {
+    // Only the gate's wrong-proof answer (401) keeps the review open; an
+    // action's own refusal (a join not admitted, 403) closes it and the
+    // call rejects with its reason (IJ3).
+    if (isCommandError(e) && e.type === "failed" && e.data.code === 401) {
       setIntentState({ busy: false, error: errorMessage(e) });
       return;
     }

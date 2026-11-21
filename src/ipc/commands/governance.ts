@@ -67,8 +67,8 @@ export const governanceCommands = {
     hostInvoke<void>("reorder_channels", { communityId, channelIds }),
 
   // Community invites
-  createCommunityInvite: (communityId: string, maxUses?: number, expiresInSeconds?: number) =>
-    hostInvoke<InviteCreated>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
+  createCommunityInvite: (communityId: string, maxUses: number, expiresInSeconds?: number) =>
+    hostInvoke<InviteCreated>("create_community_invite", { communityId, maxUses, expiresInSeconds: expiresInSeconds ?? null }),
   revokeCommunityInvite: (communityId: string, inviteId: string) =>
     hostInvoke<unknown>("revoke_community_invite", { communityId, inviteId }),
   listCommunityInvites: (communityId: string) =>

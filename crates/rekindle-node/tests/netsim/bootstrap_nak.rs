@@ -1,7 +1,9 @@
 //! A join the merge does not admit answers the typed `bootstrapRefused
 //! {anchor, reason}` (plan E3.2 S10 Verify (3) and join step 5; the daemon
-//! track, `daemon/handler.rs` `BootstrapRequest`: `JoinNotAdmitted(reason)`
-//! → `encode_refusal`; any other build failure stays `CallResponse::Rejected`,
+//! track, `daemon/handler.rs` `BootstrapRequest`: the runtime's
+//! `BootstrapAnswer::Refused`, forwarded as is on both hosts (IJ2: the
+//! desktop's `network.rs` once NAKed it bare, so the joiner read
+//! `NotAdmitted`); any other build failure stays `CallResponse::Rejected`,
 //! the transport's `NAK`). An outsider who reaches a member sends a
 //! well-formed `BootstrapRequest` whose `MemberJoined` matches its `OpRef`
 //! and is signed by its pseudonym, but that the merge does not admit: the
@@ -117,6 +119,36 @@ async fn outsider_is_refused_and_not_stored(
             },
             sig: [0; 64],
         },
+    );
+    // The runtime's answer is itself the typed refusal (IJ2), so a host
+    // that forwards the answer (the desktop's `network.rs`, the daemon's
+    // `handler.rs`) carries the reason; an error a host maps on its own
+    // dropped it to a bare NAK, read as `NotAdmitted`.
+    let direct = rekindle_governance_runtime::answer_bootstrap_request(
+        &community.nodes[0].host.governance(),
+        &anchor,
+        &rekindle_governance_runtime::BootstrapJoiner {
+            pseudonym: hex::encode(author.0),
+            member_joined: OpRef {
+                op_hash: hash,
+                author: author.clone(),
+                author_record: record.clone(),
+                author_seq: 0,
+            },
+            member_joined_op: op.clone(),
+            route: Vec::new(),
+        },
+    )
+    .await;
+    let Ok(rekindle_governance_runtime::BootstrapAnswer::Refused(bytes)) = direct else {
+        panic!("the runtime answers the typed refusal, got {direct:?}");
+    };
+    assert!(
+        matches!(
+            rekindle_governance_runtime::bootstrap_peers::read_reply(&bytes, &anchor),
+            Err(rekindle_governance_runtime::GovernanceRuntimeError::BootstrapRefused(r)) if r == reason
+        ),
+        "the refusal names {reason}"
     );
     let request = encode_community_envelope(&CommunityEnvelope::Control(
         ControlPayload::BootstrapRequest {

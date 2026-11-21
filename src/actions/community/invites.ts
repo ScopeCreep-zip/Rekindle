@@ -5,7 +5,7 @@ import type { InviteCreated, InviteDto } from "../../ipc/commands/dto";
 
 export async function handleCreateCommunityInvite(
   communityId: string,
-  maxUses?: number,
+  maxUses: number,
   expiresInSeconds?: number,
 ): Promise<InviteCreated | null> {
   try {

@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use rekindle_codec::member_record::head_advanced::RELAYED_SUBKEYS;
 use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontiers};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX, ROUTES};
 
 use super::HostGovernance;
@@ -161,6 +162,14 @@ impl HostGovernance {
         .await
         {
             Ok(stored) => stored,
+            Err(GovernanceRuntimeError::CommunityNotFound(_)) => {
+                tracing::debug!(
+                    community,
+                    record,
+                    "ring change for a community we no longer hold: dropped"
+                );
+                0
+            }
             Err(error) => {
                 tracing::warn!(community, record, %error, "ring change: heads not stored");
                 0

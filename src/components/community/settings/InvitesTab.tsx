@@ -15,11 +15,19 @@ interface InvitesTabProps {
   canManage: boolean;
 }
 
+/** The redemptions an invite may allow (IJ1): explicit choices, never a
+ *  blank field. Every reader refuses an invite outside 1–100
+ *  (`invite_quota::check_max_uses_cap`: no unlimited invites), so 100 is
+ *  the most one allows. */
+const MAX_USES_CHOICES = [1, 5, 10, 25, 50, 100] as const;
+/** Single use, shown plainly (fail-closed for vulnerable communities). */
+const DEFAULT_MAX_USES = 1;
+
 const InvitesTab: Component<InvitesTabProps> = (props) => {
   const invites = (): InviteDto[] => communityState.communityInvites[props.communityId] ?? [];
   const [loaded, setLoaded] = createSignal(false);
   const [creatingInvite, setCreatingInvite] = createSignal(false);
-  const [maxUses, setMaxUses] = createSignal("");
+  const [maxUses, setMaxUses] = createSignal(DEFAULT_MAX_USES);
   const [expiresIn, setExpiresIn] = createSignal("604800");
   const [copiedHash, setCopiedHash] = createSignal<string | null>(null);
   const [revokingHash, setRevokingHash] = createSignal<string | null>(null);
@@ -51,14 +59,13 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   }
 
   async function submitInvite(): Promise<void> {
-    const parsedMaxUses = maxUses() !== "" ? parseInt(maxUses(), 10) : undefined;
     const parsedExpiresIn = expiresIn() !== "" ? parseInt(expiresIn(), 10) : undefined;
-    const result = await handleCreateCommunityInvite(props.communityId, parsedMaxUses, parsedExpiresIn);
+    const result = await handleCreateCommunityInvite(props.communityId, maxUses(), parsedExpiresIn);
     if (result) {
       setCreatedLink(result.url);
       await copyToClipboard(result.url);
       setCreatingInvite(false);
-      setMaxUses("");
+      setMaxUses(DEFAULT_MAX_USES);
       setExpiresIn("604800");
     }
   }
@@ -92,14 +99,15 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
           <div class="invite-create-form">
             <label class="invite-max-uses">
               <span class="form-field-label">Max uses</span>
-              <input
-                class="form-input"
-                type="number"
-                min="1"
-                placeholder="1"
-                value={maxUses()}
-                onInput={(e) => setMaxUses(e.currentTarget.value)}
-              />
+              <select
+                class="form-select"
+                value={String(maxUses())}
+                onChange={(e) => setMaxUses(parseInt(e.currentTarget.value, 10))}
+              >
+                <For each={MAX_USES_CHOICES}>
+                  {(n) => <option value={String(n)}>{n === 1 ? "1 use" : `${n} uses`}</option>}
+                </For>
+              </select>
             </label>
             <select
               class="form-select"
