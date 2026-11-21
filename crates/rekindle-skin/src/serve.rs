@@ -20,6 +20,7 @@ use rekindle_types::dto::skin::{
     SkinBase, SkinContrast, SkinError, SkinManifest, SkinRule, SkinVariant, TokenValue,
 };
 use rekindle_types::dto::skin_library::{SkinPaletteColour, SkinTileMask, SkinWindowFrame};
+use rekindle_types::dto::skin_tree::SkinShell;
 
 use crate::generate::tui_colours;
 use crate::output::tokens_css;
@@ -143,6 +144,8 @@ pub struct Stylesheet {
     pub images: Vec<String>,
     /// [`crate::generate::tui_colours`] of the active variant.
     pub palette: Vec<SkinPaletteColour>,
+    /// Each tree-laid window kind's shell outline (plan SK2-S2).
+    pub shells: Vec<SkinShell>,
 }
 
 /// The active variant of the read package `p` and its tokens after the
@@ -192,6 +195,11 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
         css,
         regions: m.regions.keys().cloned().collect(),
         palette: tui_colours(&resolved),
+        shells: m
+            .windows
+            .iter()
+            .filter_map(|(&w, l)| l.tree.as_ref().map(|t| t.shell(w)))
+            .collect(),
     })
 }
 

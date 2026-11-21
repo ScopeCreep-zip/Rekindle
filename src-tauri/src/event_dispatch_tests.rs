@@ -219,6 +219,7 @@ fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
             regions: Vec::new(),
             images: Vec::new(),
             palette: Vec::new(),
+            shells: Vec::new(),
         },
     }));
     assert_eq!(e.channel(), "skin-event");

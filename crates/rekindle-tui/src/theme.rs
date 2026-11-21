@@ -243,6 +243,7 @@ mod tests {
             regions: Vec::new(),
             images: Vec::new(),
             palette,
+            shells: Vec::new(),
         }
     }
 

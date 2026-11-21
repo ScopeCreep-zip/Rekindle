@@ -1,7 +1,9 @@
 import { subscribeBackendIntents } from "../handlers/intent.handlers";
-import { Component, onMount, onCleanup, createSignal, Show } from "solid-js";
+import { Component, JSX, onMount, onCleanup, createSignal, Show } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import SkinFrame from "../components/common/SkinFrame";
+import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
+import { skinShell } from "../hooks/useSkin";
 import Titlebar from "../components/titlebar/Titlebar";
 import MenuBar from "../components/buddy-list/MenuBar";
 import UserIdentityBar from "../components/buddy-list/UserIdentityBar";
@@ -59,6 +61,24 @@ function handleKeyboardShortcuts(e: KeyboardEvent): void {
     e.preventDefault();
     focusSearchInput();
   }
+}
+
+/** The buddy list's content: the shown tab's lists. The app's layout puts
+ *  it in `.window-main`, a skin's tree in its Friends view (plan SK2-S2). */
+function BuddyContent(): JSX.Element {
+  return (
+    <>
+      <Show when={buddyListUI.activeTab === "friends"}>
+        <PendingRequests />
+        <CoCreatorInvites />
+        <GroupDmList />
+        <BuddyList />
+      </Show>
+      <Show when={buddyListUI.activeTab === "communities"}>
+        <CommunityListCompact />
+      </Show>
+    </>
+  );
 }
 
 const BuddyListWindow: Component = () => {
@@ -132,31 +152,47 @@ const BuddyListWindow: Component = () => {
       <SkinFrame />
       {/* Architecture §32 a11y — keyboard skip link past menu/identity rail. */}
       <a href="#main-content" class="skip-link">Skip to buddy list</a>
-      <Titlebar title="Rekindle" hideOnClose />
-      <MenuBar />
-      <Show when={!networkAttached()}>
-        <div class="network-banner">Connecting to Veilid network...</div>
+      {/* A skin that lays this window as its component tree (plan SK2-S2)
+       *  draws it whole; without one (the built-in default) the app's own
+       *  layout stays. */}
+      <Show
+        keyed
+        when={skinShell("main")}
+        fallback={
+          <>
+            <Titlebar title="Rekindle" hideOnClose />
+            <MenuBar />
+            <Show when={!networkAttached()}>
+              <div class="network-banner">Connecting to Veilid network...</div>
+            </Show>
+            <UserIdentityBar />
+            <TabBar />
+            <SearchBar />
+            <PairingLinkNotice />
+            <div id="main-content" tabindex="-1" class="window-main">
+              <BuddyContent />
+            </div>
+            <BottomActionBar />
+            <div class="status-bar">
+              <StatusPicker currentStatus={authState.status} />
+              <NetworkIndicator />
+            </div>
+          </>
+        }
+      >
+        {(shell) => (
+          <SkinTreeWindow
+            shell={shell}
+            views={() => (
+              <>
+                <SearchBar />
+                <PairingLinkNotice />
+                <BuddyContent />
+              </>
+            )}
+          />
+        )}
       </Show>
-      <UserIdentityBar />
-      <TabBar />
-      <SearchBar />
-      <PairingLinkNotice />
-      <div id="main-content" tabindex="-1" class="window-main">
-        <Show when={buddyListUI.activeTab === "friends"}>
-          <PendingRequests />
-          <CoCreatorInvites />
-          <GroupDmList />
-          <BuddyList />
-        </Show>
-        <Show when={buddyListUI.activeTab === "communities"}>
-          <CommunityListCompact />
-        </Show>
-      </div>
-      <BottomActionBar />
-      <div class="status-bar">
-        <StatusPicker currentStatus={authState.status} />
-        <NetworkIndicator />
-      </div>
       <AddFriendModal />
       <NewChatModal />
       <CreateCommunityModal

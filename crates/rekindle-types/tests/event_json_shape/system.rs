@@ -99,6 +99,7 @@ fn sync() -> Vec<Sample> {
                         role: "accent.primary".into(),
                         rgb: [0x34, 0x91, 0xd8],
                     }],
+                    shells: Vec::new(),
                 },
             },
         ),

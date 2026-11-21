@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::skin::{Insets, RegionState};
+use super::skin_layout::SkinWindow;
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
 pub use super::skin_tree_role::{ActionKey, Edge, LampKey, MenuKey, NodeRole, ViewKey};
 
@@ -251,5 +252,51 @@ impl SkinTree {
             walk(n, pack, &mut out);
         }
         out
+    }
+}
+
+/// One node of a window's shell outline (plan SK2-S2): what the webview
+/// binds into each `div[data-skin-node]`. It carries no box: every
+/// position comes from the Host's emitted rules (design §5), so the shell
+/// only nests the divs in the pack's document order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ShellNode {
+    pub id: String,
+    pub role: NodeRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shows_with: Option<ViewKey>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<ShellNode>,
+}
+
+/// A window kind's shell outline: the served tree's nodes, roles and
+/// nesting, for the window whose `data-skin-window` names `window`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkinShell {
+    pub window: SkinWindow,
+    pub root: Vec<ShellNode>,
+}
+
+impl SkinNode {
+    fn shell(&self) -> ShellNode {
+        ShellNode {
+            id: self.id.clone(),
+            role: self.role,
+            shows_with: self.shows_with,
+            children: self.children.iter().map(Self::shell).collect(),
+        }
+    }
+}
+
+impl SkinTree {
+    /// The tree's outline for `window`'s shell: ids, roles and nesting.
+    #[must_use]
+    pub fn shell(&self, window: SkinWindow) -> SkinShell {
+        SkinShell {
+            window,
+            root: self.root.iter().map(SkinNode::shell).collect(),
+        }
     }
 }

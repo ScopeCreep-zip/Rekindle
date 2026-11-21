@@ -74,6 +74,11 @@ pub struct SkinApplied {
     /// TUI applies the palette subset from the same DTO"), mapped by the
     /// generator's TUI table, so a terminal never parses CSS.
     pub palette: Vec<SkinPaletteColour>,
+    /// The outline of each window kind the skin lays as a component tree
+    /// (plan SK2-S2): the webview nests one `div[data-skin-node]` per node
+    /// and binds each role; a window kind absent here keeps its own layout.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shells: Vec<crate::dto::skin_tree::SkinShell>,
 }
 
 /// One TUI colour role and its opaque sRGB value (a translucent token is

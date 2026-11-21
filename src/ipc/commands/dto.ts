@@ -1,3 +1,4 @@
+import type { SkinShell } from "./dto_skin_tree";
 // Backend payload shapes — DTOs, not store state.
 //
 // This file was `src/stores/types.ts`, and every export in it is a wire
@@ -520,6 +521,9 @@ export interface SkinApplied {
   images: string[];
   /// The TUI's palette subset (the webview reads the stylesheet instead).
   palette: SkinPaletteColour[];
+  /// Each tree-laid window kind's outline (plan SK2-S2); absent when the
+  /// skin lays none (the built-in default keeps the app's own layout).
+  shells?: SkinShell[];
 }
 
 /** The member-list group the Host put a member in (Tier 1 `MemberGroup`):

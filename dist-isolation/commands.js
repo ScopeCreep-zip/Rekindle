@@ -189,6 +189,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "plugin:window|internal_toggle_maximize",
   "plugin:window|minimize",
   "plugin:window|start_dragging",
+  "plugin:window|start_resize_dragging",
   "plugin:window|toggle_maximize",
   "pqxdh_bundle_info",
   "publish_community_successor",

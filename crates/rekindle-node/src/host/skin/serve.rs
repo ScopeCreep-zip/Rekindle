@@ -156,6 +156,7 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
         regions: applied.regions,
         images: applied.images,
         palette: applied.palette,
+        shells: applied.shells,
     })
 }
 

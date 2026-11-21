@@ -1,0 +1,108 @@
+/* The window as the skin's component tree (plan SK2-S2, design §3/§5,
+ * `components/skin-tree/`). Every node's box, stacking and art is the
+ * Host's served rule (`@layer shape`, `[data-skin-node]`); this file holds
+ * no positions, only what each bound role draws inside its box. */
+@layer components {
+  /* The pack's window; the served rule insets it by the skin's outsets. */
+  .skin-tree {
+    position: absolute;
+    inset: 0;
+    font-family: var(--font-family-xfire);
+    color: var(--color-xfire-text);
+  }
+
+  .skin-tree-button,
+  .skin-menu,
+  .skin-status-list {
+    padding: 0;
+    border: 0;
+    background-color: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: default;
+  }
+
+  .skin-tree-button:focus-visible,
+  .skin-menu:focus-visible,
+  .skin-status-list:focus-visible,
+  .skin-name-edit:focus-visible,
+  .skin-status-edit:focus-visible {
+    outline: 2px solid var(--color-xfire-focus-outline);
+    outline-offset: 1px;
+  }
+
+  /* N2: a menu title's label over the pack's menu art. */
+  .skin-menu {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .skin-menu-label {
+    position: relative;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* N1: the name, in the field's box. */
+  .skin-name {
+    display: flex;
+    align-items: center;
+  }
+  .skin-name-text {
+    position: relative;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-xfire-titlebar-text);
+  }
+  .skin-name-edit,
+  .skin-status-edit {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    padding: 0 3px;
+    border: 0;
+    background-color: var(--color-xfire-bg-input);
+    color: var(--color-xfire-text);
+    font: inherit;
+    font-size: 11px;
+  }
+
+  /* N3: the status edit fills its box over the pack's edit art. */
+  .skin-status-edit {
+    background-color: transparent;
+  }
+  .skin-status-edit::placeholder {
+    color: var(--color-xfire-text-dim);
+  }
+
+  /* N4: our banner of the slot's size (design §7.1). */
+  .skin-ad-banner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(90deg, var(--color-xfire-bg-dark), var(--color-xfire-accent), var(--color-xfire-bg-dark));
+    color: var(--color-xfire-accent-text);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    overflow: hidden;
+  }
+
+  /* The views node holds the buddy list as a flex column filling the
+   * shown view (Preserve Flex Layout: its one `flex: 1` child grows). */
+  .skin-tree-view-content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+}

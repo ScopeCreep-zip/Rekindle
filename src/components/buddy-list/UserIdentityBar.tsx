@@ -1,9 +1,7 @@
 import { Component, createSignal, Show } from "solid-js";
-import { authState, setAuthState } from "../../stores/auth.store";
+import { authState } from "../../stores/auth.store";
 import { handleCopyPublicKey } from "../../actions/buddy.actions";
-import { commands } from "../../ipc/commands";
-import { addToast } from "../../stores/toast.store";
-import { errorMessage } from "../../utils/error";
+import { handleSetDisplayName, handleSetStatusMessage } from "../../actions/auth.actions";
 import StatusDot from "../status/StatusDot";
 import Avatar from "../common/Avatar";
 import NotificationCenter from "./NotificationCenter";
@@ -26,18 +24,7 @@ const UserIdentityBar: Component = () => {
   }
 
   async function commitEdit(): Promise<void> {
-    const name = editValue().trim();
-    if (name && name !== authState.displayName) {
-      const oldName = authState.displayName;
-      setAuthState("displayName", name);
-      try {
-        await commands.setNickname(name);
-      } catch (e) {
-        // Revert, and say why (walk 23 B12: a refusal was only logged).
-        setAuthState("displayName", oldName);
-        addToast(`Name not changed: ${errorMessage(e)}`, "error");
-      }
-    }
+    await handleSetDisplayName(editValue());
     setEditing(false);
   }
 
@@ -55,17 +42,7 @@ const UserIdentityBar: Component = () => {
   }
 
   async function commitStatusEdit(): Promise<void> {
-    const msg = statusEditValue().trim();
-    const oldMsg = authState.statusMessage;
-    if (msg !== (oldMsg ?? "")) {
-      setAuthState("statusMessage", msg || null);
-      try {
-        await commands.setStatusMessage(msg);
-      } catch (e) {
-        console.error("Failed to set status message:", e);
-        setAuthState("statusMessage", oldMsg);
-      }
-    }
+    await handleSetStatusMessage(statusEditValue());
     setEditingStatus(false);
   }
 

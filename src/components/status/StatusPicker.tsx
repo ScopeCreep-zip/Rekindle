@@ -12,7 +12,7 @@ interface StatusOption {
   label: string;
 }
 
-const statusOptions: StatusOption[] = [
+export const statusOptions: StatusOption[] = [
   { value: "online", label: "Online" },
   { value: "away", label: "Away" },
   { value: "busy", label: "Busy" },
@@ -24,15 +24,16 @@ interface StatusPickerProps {
   currentStatus: UserStatus;
 }
 
+/** Choose our status. The Host owns it: show what it answers, and its
+ *  refusal (the label keeps the status it still holds). */
+export function handleSelectStatus(value: string): void {
+  void commands
+    .setStatus(value as Exclude<UserStatus, "offline">)
+    .then((view) => setAuthState("status", view.status))
+    .catch((e: unknown) => addToast(`Status not changed: ${errorMessage(e)}`, "error"));
+}
+
 const StatusPicker: Component<StatusPickerProps> = (props) => {
-  function handleSelect(value: string): void {
-    // The Host owns our status: show what it answers, and its refusal
-    // (the label keeps the status it still holds).
-    void commands
-      .setStatus(value as Exclude<UserStatus, "offline">)
-      .then((view) => setAuthState("status", view.status))
-      .catch((e: unknown) => addToast(`Status not changed: ${errorMessage(e)}`, "error"));
-  }
 
   return (
     <DropdownMenu placement="top-start">
@@ -46,7 +47,7 @@ const StatusPicker: Component<StatusPickerProps> = (props) => {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="context-menu status-picker-dropdown">
-          <DropdownMenu.RadioGroup value={props.currentStatus} onChange={handleSelect}>
+          <DropdownMenu.RadioGroup value={props.currentStatus} onChange={handleSelectStatus}>
             <For each={statusOptions}>
               {(option) => (
                 // A radio item keeps its menu open by default (Kobalte

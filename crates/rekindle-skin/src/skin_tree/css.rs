@@ -289,7 +289,13 @@ pub fn tree_css(
         live,
         stack: Stack::new(&tree.root),
     };
-    let mut out = String::new();
+    // The shell's tree container (`.skin-tree`) is the pack's window: the
+    // whole window less the outsets every root node is laid in.
+    let to = tree.outsets;
+    let mut out = format!(
+        "  {root} > .skin-tree {{\n    display: block; position: absolute; top: {}px; right: {}px; bottom: {}px; left: {}px;\n  }}\n",
+        to.top, to.right, to.bottom, to.left
+    );
     for n in &tree.root {
         node(&mut out, n, &ctx)?;
     }

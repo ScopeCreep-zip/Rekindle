@@ -29,21 +29,21 @@ function menuDebug(menu: string, what: string): void {
   });
 }
 
-function openSettingsTab(tab: SettingsTab): void {
+export function openSettingsTab(tab: SettingsTab): void {
   commands.openSettingsWindow(tab);
 }
 
 /** Quit the app, as the tray's Quit does; closing this window only hides
  *  it in the tray. */
-function handleQuit(): void {
+export function handleQuit(): void {
   void commands.quitApp();
 }
 
-function handleOpenDocs(): void {
+export function handleOpenDocs(): void {
   void commands.openExternalUrl(`${REPO_URL}/tree/main/docs`);
 }
 
-function handleReportBug(): void {
+export function handleReportBug(): void {
   void commands.openExternalUrl(`${REPO_URL}/issues/new`);
 }
 

@@ -7,15 +7,15 @@ import { canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stor
 import { ICON_NEW_CHAT, ICON_ADD_FRIEND, ICON_PLUS, ICON_COMMUNITIES, ICON_LOGOUT, ICON_KEYBOARD } from "../../icons";
 import { setShortcutsHelpOpen } from "../../stores/shortcuts_help.store";
 
-function handleToggleNewChat(): void {
+export function handleToggleNewChat(): void {
   setFriendsState("showNewChat", (prev) => !prev);
 }
 
-function handleToggleCreateCommunity(): void {
+export function handleToggleCreateCommunity(): void {
   setBuddyListUI("showCreateCommunity", (prev) => !prev);
 }
 
-function handleToggleJoinCommunity(): void {
+export function handleToggleJoinCommunity(): void {
   setBuddyListUI("showJoinCommunity", (prev) => !prev);
 }
 

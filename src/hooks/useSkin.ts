@@ -1,7 +1,18 @@
-import { onCleanup } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import { commands } from "../ipc/commands";
 import { subscribeSkinEvents } from "../ipc/channels";
 import type { SkinApplied } from "../ipc/commands/dto";
+import type { SkinShell } from "../ipc/commands/dto_skin_tree";
+
+/// The shown skin's window outlines (plan SK2-S2): set with the sheet that
+/// places their nodes, so the nested divs and their rules always belong to
+/// the same skin.
+const [skinShells, setSkinShells] = createSignal<SkinShell[]>([]);
+
+/** The shown skin's outline for `window`, if it lays that window as a tree. */
+export function skinShell(window: SkinShell["window"]): SkinShell | undefined {
+  return skinShells().find((s) => s.window === window);
+}
 
 /// The one `<link>` each window swaps (plan E7.7.2 "Apply").
 const LINK_ID = "rekindle-skin";
@@ -57,6 +68,7 @@ export function applySkin(skin: SkinApplied): void {
   const shown = document.getElementById(LINK_ID) as HTMLLinkElement | null;
   if (shown?.getAttribute("href") === skin.tokensHref) {
     document.documentElement.dataset.skinBase = skin.base;
+    setSkinShells(skin.shells ?? []);
     return;
   }
   // Held until the swap, so the decoded images stay in this document's cache.
@@ -86,6 +98,7 @@ function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]):
     document.getElementById(LINK_ID)?.remove();
     next.id = LINK_ID;
     document.documentElement.dataset.skinBase = skin.base;
+    setSkinShells(skin.shells ?? []);
     images.length = 0;
   });
   next.addEventListener("error", () => {
