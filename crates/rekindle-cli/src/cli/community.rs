@@ -31,6 +31,34 @@ pub enum CommunityCmd {
         /// even by an administrator.
         #[arg(long)]
         approval_required: bool,
+        /// A friend's identity key to name a co-creator (repeatable): the
+        /// genesis waits for each to accept, decline or be removed.
+        #[arg(long = "co-creator")]
+        co_creators: Vec<String>,
+    },
+
+    /// Stop waiting on a co-creator of a pending creation that has not
+    /// answered.
+    CreatorRemove {
+        /// The pending community's anchor key.
+        anchor: String,
+        /// The co-creator's identity key.
+        identity: String,
+    },
+
+    /// Cancel a pending creation: its co-creators are told.
+    CreateCancel {
+        /// The pending community's anchor key.
+        anchor: String,
+    },
+
+    /// Answer a held co-creator invite.
+    CreatorAnswer {
+        /// The invite's anchor key.
+        anchor: String,
+        /// Decline instead of accepting.
+        #[arg(long)]
+        decline: bool,
     },
 
     /// Join via invite code or anchor key.

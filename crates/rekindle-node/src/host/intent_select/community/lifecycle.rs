@@ -12,12 +12,37 @@ pub(super) fn selection(
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     match request {
-        LifecycleRequest::CommunityCreate { name, .. } => {
+        LifecycleRequest::CommunityCreate {
+            name, co_creators, ..
+        } => {
             s.subject = Subject::Community {
                 id: String::new(),
                 name: name.clone(),
             };
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
+            // Named co-creators are told and hold creator rights from the
+            // genesis (plan E3.2 S7s.3); the review counts them.
+            if !co_creators.is_empty() {
+                s.notifies =
+                    Notifies::Members(u32::try_from(co_creators.len()).unwrap_or(u32::MAX));
+            }
+        }
+        LifecycleRequest::CreatorRemove { anchor, .. }
+        | LifecycleRequest::CommunityCreateCancel { anchor } => {
+            // A pending creation has no community to name yet: its anchor.
+            s.subject = Subject::Named {
+                name: anchor.clone(),
+            };
+            s.reversibility = Reversibility::Never;
+            s.notifies = Notifies::Subject;
+        }
+        LifecycleRequest::CreatorInviteAnswer { anchor, .. } => {
+            s.subject = Subject::Named {
+                name: anchor.clone(),
+            };
+            s.facts.push(Fact::PresenceVisible);
+            s.reversibility = Reversibility::NeedsOthers;
+            s.notifies = Notifies::Subject;
         }
         LifecycleRequest::CommunityJoin { invite } => {
             // The invite names a record key, not a community we know: the

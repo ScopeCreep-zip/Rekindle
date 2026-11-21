@@ -128,6 +128,8 @@ pub enum IntentKind {
     RotateFriendToken,
     // Consequential: Membership
     LeaveCommunity,
+    RemoveCoCreator,
+    CancelCommunityCreate,
     /// Create a group DM: an invite goes to every member (plan E2.6).
     CreateGroupDm,
     /// Leave a group DM: every other member rotates its key.
@@ -186,6 +188,7 @@ pub enum IntentKind {
     ConfirmDeepLink,
     CreateCommunity,
     JoinCommunity,
+    AnswerCreatorInvite,
     // TrustChanging: Key trust
     AcceptSessionReset,
     AcceptIdentityRotation,
@@ -384,6 +387,8 @@ impl IntentKind {
             | Self::RemoveFriend
             | Self::RotateFriendToken
             | Self::LeaveCommunity
+            | Self::RemoveCoCreator
+            | Self::CancelCommunityCreate
             | Self::CreateGroupDm
             | Self::LeaveGroupDm
             | Self::SetDisappearingTimer
@@ -431,6 +436,7 @@ impl IntentKind {
             | Self::ConfirmDeepLink
             | Self::CreateCommunity
             | Self::JoinCommunity
+            | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
             | Self::ResetSignalSession

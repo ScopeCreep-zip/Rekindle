@@ -14,6 +14,14 @@ import type {
 } from "./types";
 import type { CommunityBanView, MemberGroup, TargetModeration } from "./dto";
 
+/** `CommunityCreated` (rekindle-types `dto::community`). */
+export interface CommunityCreated {
+  anchor: string;
+  registryKey: string;
+  name: string;
+  pendingCoCreators: string[];
+}
+
 export const communityCommands = {
   // Community
   getCommunities: () =>
@@ -107,9 +115,20 @@ export const communityCommands = {
     bannerRef,
   }),
   createCommunity: (name: string) =>
-    hostInvoke<{ anchor: string; registryKey: string; name: string }>(
+    hostInvoke<CommunityCreated>(
       "create_community", { name },
     ).then((created) => created.anchor),
+  /// Creates with friends named co-creators (plan E3.2 S7s.3): the
+  /// genesis waits for each to accept, decline or be removed, so the
+  /// result lists the co-creators still pending.
+  createCommunityWithCoCreators: (name: string, coCreators: string[]) =>
+    hostInvoke<CommunityCreated>("create_community", { name, coCreators }),
+  removeCoCreator: (communityId: string, identity: string) =>
+    hostInvoke<void>("remove_co_creator", { communityId, identity }),
+  cancelCommunityCreate: (communityId: string) =>
+    hostInvoke<void>("cancel_community_create", { communityId }),
+  answerCreatorInvite: (communityId: string, accept: boolean) =>
+    hostInvoke<void>("answer_creator_invite", { communityId, accept }),
   /// Joins through the Host's review of the invite (its record-key
   /// fingerprint); returns the joined community's id.
   joinCommunity: (inviteUrl: string) =>

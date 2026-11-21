@@ -106,7 +106,9 @@ pub use membership_events::{
 };
 pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
 pub use origin::{create_community, finish_community};
-pub use origin_reserve::{release_reserved, reserve_community, CreatorAccept, ReservedCommunity};
+pub use origin_reserve::{
+    release_reserved, reserve_community, CoCreatorAcceptance, ReservedCommunity,
+};
 pub use overflow::{
     partition_into_pages, read_governance_with_overflow, read_my_chain, MAX_OVERFLOW_PAGES,
     OVERFLOW_PAGE_BUDGET, PRIMARY_PAGE_BUDGET,

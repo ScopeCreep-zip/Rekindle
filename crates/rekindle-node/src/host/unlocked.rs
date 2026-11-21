@@ -142,6 +142,7 @@ pub(crate) async fn release(ctx: &DaemonContext) {
     // the profile and prekey leases (their pool ends with the unlock).
     *ctx.friend_store.write() = None;
     ctx.friend_stores.clear();
+    ctx.pending_creations.clear();
     *ctx.own_profile_lease.lock() = None;
     *ctx.own_prekey_lease.lock() = None;
     if let Some(transport) = ctx.transport.read().as_ref() {

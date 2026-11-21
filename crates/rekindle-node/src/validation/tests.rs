@@ -8,7 +8,6 @@ use rekindle_ipc::protocol::{
 };
 use rekindle_types::key_format::{MAX_DESCRIPTION_LEN, MAX_NOTE_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
-
 const B64: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
 const HEX64: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a";
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
@@ -257,6 +256,7 @@ fn status_and_description_caps() {
                 name: "Rekindle".into(),
                 description,
                 approval_required: false,
+                co_creators: Vec::new(),
             },
         ))
     };
@@ -307,6 +307,7 @@ fn governance_bounds_keep_their_error_texts() {
             name: "Rekindle".into(),
             description: "bell\u{7}".into(),
             approval_required: false,
+            co_creators: Vec::new(),
         },
     ));
     assert!(message_of(&community).starts_with("invalid description: "));

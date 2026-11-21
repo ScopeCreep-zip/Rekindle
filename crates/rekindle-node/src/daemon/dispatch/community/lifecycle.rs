@@ -11,6 +11,7 @@ pub(crate) async fn handle_create(
     name: &str,
     description: &str,
     approval_required: bool,
+    co_creators: &[String],
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -36,12 +37,16 @@ pub(crate) async fn handle_create(
     } else {
         rekindle_types::governance::AdmissionMode::Open
     };
-    let created = match adapter(ctx).create(&name, description, admission).await {
-        Ok(created) => created,
-        Err(e) => return IpcResponse::error(500, e),
-    };
-    // The shell starts its own community services on `CommunityCreated`.
-    if ctx.shell.is_none() {
+    // The creator-set round's stages are a large future: boxed off the
+    // dispatch path.
+    let created =
+        match Box::pin(adapter(ctx).create(&name, description, admission, co_creators)).await {
+            Ok(created) => created,
+            Err(e) => return IpcResponse::error(500, e),
+        };
+    // The shell starts its own community services on `CommunityCreated`;
+    // a creation waiting on co-creators has no community yet.
+    if ctx.shell.is_none() && created.pending_co_creators.is_empty() {
         let membership = ctx
             .session
             .read()
@@ -72,6 +77,40 @@ pub(crate) async fn activate_community(
         broadcast.register_mesh(&community_id);
     }
     tracing::info!(community = %community_id, "community activated");
+}
+
+/// A creator-set round request of plan E3.2 S7s.3.
+pub(crate) enum CreatorRound {
+    Remove { anchor: String, identity: String },
+    Cancel { anchor: String },
+    Answer { anchor: String, accept: bool },
+}
+
+pub(crate) async fn handle_creator_round(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    round: CreatorRound,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let governance = adapter(ctx);
+    let done = Box::pin(async {
+        match round {
+            CreatorRound::Remove { anchor, identity } => {
+                governance.remove_co_creator(&anchor, &identity).await
+            }
+            CreatorRound::Cancel { anchor } => governance.cancel_creation(&anchor).await,
+            CreatorRound::Answer { anchor, accept } => {
+                governance.answer_creator_invite(&anchor, accept).await
+            }
+        }
+    })
+    .await;
+    match done {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({})),
+        Err(e) => IpcResponse::error(409, e),
+    }
 }
 
 pub(crate) async fn handle_join(

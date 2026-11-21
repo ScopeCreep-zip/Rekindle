@@ -92,7 +92,10 @@ impl CreatorFrame {
     }
 }
 
-fn is_friend(host: &dyn FriendHost, peer: &str) -> bool {
+/// Whether `peer` is an accepted friend, the only peer a creator-set
+/// frame goes to or is taken from.
+#[must_use]
+pub fn is_accepted_friend(host: &dyn FriendHost, peer: &str) -> bool {
     state::friend(host, peer).map(|f| f.friendship_state) == Some(FriendshipState::Accepted)
 }
 
@@ -106,7 +109,7 @@ pub async fn send(
     peer: &str,
     frame: &CreatorFrame,
 ) -> Result<String, FriendError> {
-    if !is_friend(host, peer) {
+    if !is_accepted_friend(host, peer) {
         return Err(FriendError::NotFound(format!(
             "{peer} is not an accepted friend"
         )));
@@ -121,7 +124,7 @@ pub(crate) async fn on_frame(host: &dyn FriendHost, sender: &str, body: &DirectB
     let Some(frame) = CreatorFrame::of(body) else {
         return true;
     };
-    if !is_friend(host, sender) {
+    if !is_accepted_friend(host, sender) {
         tracing::warn!(from = %sender, kind = ?body.type_id(), "creator-set frame from a non-friend refused");
         return true;
     }

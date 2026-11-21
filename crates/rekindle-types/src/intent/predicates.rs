@@ -117,6 +117,8 @@ impl IntentKind {
             | Self::RemoveFriend
             | Self::RotateFriendToken
             | Self::LeaveCommunity
+            | Self::RemoveCoCreator
+            | Self::CancelCommunityCreate
             | Self::CreateGroupDm
             | Self::LeaveGroupDm
             | Self::SetDisappearingTimer
@@ -158,6 +160,7 @@ impl IntentKind {
             | Self::ConfirmDeepLink
             | Self::CreateCommunity
             | Self::JoinCommunity
+            | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
             | Self::ResetSignalSession
@@ -317,6 +320,8 @@ impl IntentKind {
             | Self::RemoveFriend
             | Self::RotateFriendToken
             | Self::LeaveCommunity
+            | Self::RemoveCoCreator
+            | Self::CancelCommunityCreate
             | Self::CreateGroupDm
             | Self::LeaveGroupDm
             | Self::SetDisappearingTimer
@@ -361,6 +366,7 @@ impl IntentKind {
             | Self::ConfirmDeepLink
             | Self::CreateCommunity
             | Self::JoinCommunity
+            | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
             | Self::ResetSignalSession

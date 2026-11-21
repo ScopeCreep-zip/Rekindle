@@ -256,6 +256,9 @@ pub struct DaemonContext {
     /// The 1:1 replay guard and session-reset state of the unlocked
     /// identity (plan E2.1), cleared at lock.
     pub friend_stores: rekindle_transport::operations::friend::FriendStores,
+    /// Our creations waiting on their co-creators (plan E3.2 S7s.3),
+    /// memory only (ADR 0011), dropped at lock.
+    pub(crate) pending_creations: crate::host::adapters::governance::PendingCreations,
     /// The unlocked identity's outbox (plan E2.5, D22).
     pub(crate) outbox: crate::host::adapters::outbox::OutboxSlot,
     /// One lock per community a join is in flight for (review RV7 M3).

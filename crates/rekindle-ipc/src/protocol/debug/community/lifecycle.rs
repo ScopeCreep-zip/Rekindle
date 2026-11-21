@@ -10,11 +10,27 @@ impl std::fmt::Debug for LifecycleRequest {
                 name,
                 description,
                 approval_required,
+                co_creators,
             } => f
                 .debug_struct("CommunityCreate")
                 .field("name", name)
                 .field("description", description)
                 .field("approval_required", approval_required)
+                .field("co_creators", co_creators)
+                .finish(),
+            Self::CreatorRemove { anchor, identity } => f
+                .debug_struct("CreatorRemove")
+                .field("anchor", anchor)
+                .field("identity", identity)
+                .finish(),
+            Self::CommunityCreateCancel { anchor } => f
+                .debug_struct("CommunityCreateCancel")
+                .field("anchor", anchor)
+                .finish(),
+            Self::CreatorInviteAnswer { anchor, accept } => f
+                .debug_struct("CreatorInviteAnswer")
+                .field("anchor", anchor)
+                .field("accept", accept)
                 .finish(),
             Self::CommunityJoin { invite } => f
                 .debug_struct("CommunityJoin")

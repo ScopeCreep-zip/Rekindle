@@ -19,7 +19,7 @@ use crate::origin::{create_records, timed_out, OriginRecords, CREATE_DEADLINE};
 /// its pseudonym for the new anchor and that pseudonym's signature over
 /// [`creator_accept_signing_bytes`](rekindle_governance::genesis::creator_accept_signing_bytes).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreatorAccept {
+pub struct CoCreatorAcceptance {
     pub pseudonym: PseudonymKey,
     pub signature: [u8; 64],
 }
@@ -107,7 +107,7 @@ pub async fn release_reserved<D: GovernanceRuntimeDeps>(deps: &D, reserved: Rese
 /// verified, in the order given.
 pub(crate) fn verified_creators(
     anchor: &str,
-    accepted: &[CreatorAccept],
+    accepted: &[CoCreatorAcceptance],
 ) -> Result<Vec<PseudonymKey>, GovernanceRuntimeError> {
     accepted
         .iter()
@@ -131,13 +131,13 @@ mod tests {
 
     use super::*;
 
-    fn accept(seed: u8, anchor: &str) -> CreatorAccept {
+    fn accept(seed: u8, anchor: &str) -> CoCreatorAcceptance {
         let key = SigningKey::from_bytes(&[seed; 32]);
         let pseudonym = PseudonymKey(key.verifying_key().to_bytes());
         let signature = key
             .sign(&creator_accept_signing_bytes(anchor, &pseudonym))
             .to_bytes();
-        CreatorAccept {
+        CoCreatorAcceptance {
             pseudonym,
             signature,
         }

@@ -105,11 +105,17 @@ LifecycleRequest::CommunityCreate {
             name: community_name,
             description,
             approval_required: _,
+            co_creators,
         } => {
             name(community_name, "community")?;
+            co_creators.iter().try_for_each(|k| super::public_key(k, "co-creator key"))?;
             bounds::description(description)
                 .map(drop)
                 .map_err(|e| reject("description", &e))
+        }
+LifecycleRequest::CreatorRemove { anchor, identity } => {
+            community(anchor)?;
+            super::public_key(identity, "co-creator key")
         }
 LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
             IpcResponse::error(
@@ -120,7 +126,7 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 ),
             )
         }),
-LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } => community(anchor),
+LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } => community(anchor),
 LifecycleRequest::CommunityUpdateInfo {
             anchor,
             name: community_name,

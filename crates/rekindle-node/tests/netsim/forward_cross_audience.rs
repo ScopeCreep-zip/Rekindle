@@ -23,6 +23,7 @@ async fn a_forward_to_another_membership_is_held_with_both_counts() {
                 name: "Elsewhere".into(),
                 description: String::new(),
                 approval_required: false,
+                co_creators: Vec::new(),
             },
         )))
         .await["anchor"]

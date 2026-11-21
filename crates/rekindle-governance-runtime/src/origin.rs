@@ -32,7 +32,7 @@ use crate::op_log;
 use rekindle_records::lease::CommunityLeases;
 
 use crate::origin_reserve::{
-    reserve_community, verified_creators, CreatorAccept, ReservedCommunity,
+    reserve_community, verified_creators, CoCreatorAcceptance, ReservedCommunity,
 };
 
 const CREATOR_SLOT: u32 = 0;
@@ -155,7 +155,7 @@ pub async fn finish_community<D: GovernanceRuntimeDeps>(
     reserved: ReservedCommunity,
     name: &str,
     admission: AdmissionMode,
-    accepted: &[CreatorAccept],
+    accepted: &[CoCreatorAcceptance],
 ) -> Result<String, GovernanceRuntimeError> {
     let deadline = tokio::time::Instant::now() + CREATE_DEADLINE;
     let ReservedCommunity { slot_seed, records } = reserved;

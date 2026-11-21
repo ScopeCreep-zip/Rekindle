@@ -21,7 +21,22 @@ pub enum LifecycleRequest {
         /// be changed later by anyone holding `MANAGE_COMMUNITY`.
         #[serde(default)]
         approval_required: bool,
+        /// Friends (identity keys) named co-creators (plan E3.2 S7s.3):
+        /// each is invited and the genesis lists those that accept.
+        #[serde(default)]
+        co_creators: Vec<String>,
     },
+
+    /// Stop waiting on `identity`, a co-creator of our pending creation
+    /// of `anchor` that has not answered; it is told (plan E3.2 S7s.3).
+    CreatorRemove { anchor: String, identity: String },
+
+    /// Cancel our pending creation of `anchor`: the records are released
+    /// and every co-creator is told (plan E3.2 S7s.3).
+    CommunityCreateCancel { anchor: String },
+
+    /// Answer a held co-creator invite to `anchor` (plan E3.2 S7s.3).
+    CreatorInviteAnswer { anchor: String, accept: bool },
 
     /// Join a community via anchor key or invite code.
     CommunityJoin { invite: String },
@@ -107,6 +122,9 @@ impl LifecycleRequest {
         use SecurityLevel::Authenticated;
         match self {
             Self::CommunityCreate { .. } => ("CommunityCreate", Write, Authenticated),
+            Self::CreatorRemove { .. } => ("CreatorRemove", Write, Authenticated),
+            Self::CommunityCreateCancel { .. } => ("CommunityCreateCancel", Write, Authenticated),
+            Self::CreatorInviteAnswer { .. } => ("CreatorInviteAnswer", Write, Authenticated),
             Self::CommunityJoin { .. } => ("CommunityJoin", Write, Authenticated),
             Self::CommunityLeave { .. } => ("CommunityLeave", Write, Authenticated),
             Self::CommunityForget { .. } => ("CommunityForget", Write, Authenticated),
@@ -142,6 +160,9 @@ impl LifecycleRequest {
             | Self::CommunityPendingMembers { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
+            | Self::CreatorRemove { .. }
+            | Self::CommunityCreateCancel { .. }
+            | Self::CreatorInviteAnswer { .. }
             | Self::CommunityJoin { .. }
             | Self::CommunityLeave { .. }
             | Self::CommunityForget { .. }

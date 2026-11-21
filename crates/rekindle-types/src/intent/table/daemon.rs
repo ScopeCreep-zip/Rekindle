@@ -62,6 +62,12 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ),
     ("CommunityCreate", Some(IntentKind::CreateCommunity)),
     ("CommunityJoin", Some(IntentKind::JoinCommunity)),
+    ("CreatorRemove", Some(IntentKind::RemoveCoCreator)),
+    (
+        "CommunityCreateCancel",
+        Some(IntentKind::CancelCommunityCreate),
+    ),
+    ("CreatorInviteAnswer", Some(IntentKind::AnswerCreatorInvite)),
     ("CommunityLeave", Some(IntentKind::LeaveCommunity)),
     ("CommunityForget", Some(IntentKind::ForgetCommunity)),
     ("CommunityList", None),

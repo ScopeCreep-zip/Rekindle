@@ -19,6 +19,7 @@ pub async fn dispatch(
             name,
             description,
             approval_required,
+            co_creators,
             ..
         } => {
             let validated_name = helpers::validate_name(name, "Community")?;
@@ -29,23 +30,43 @@ pub async fn dispatch(
                         name: validated_name,
                         description: description.clone().unwrap_or_default(),
                         approval_required: *approval_required,
+                        co_creators: co_creators.clone(),
                     },
                 )),
             )
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::Join { invite, .. } => {
-            let value = helpers::send(
+        CommunityCmd::CreatorRemove { anchor, identity } => {
+            let (anchor, identity) = (anchor.clone(), identity.clone());
+            lifecycle(
                 client,
-                IpcRequest::Community(CommunityRequest::Lifecycle(
-                    LifecycleRequest::CommunityJoin {
-                        invite: invite.clone(),
-                    },
-                )),
+                mode,
+                LifecycleRequest::CreatorRemove { anchor, identity },
             )
-            .await?;
-            format::print_structured(&value, mode)
+            .await
+        }
+        CommunityCmd::CreateCancel { anchor } => {
+            let anchor = anchor.clone();
+            lifecycle(
+                client,
+                mode,
+                LifecycleRequest::CommunityCreateCancel { anchor },
+            )
+            .await
+        }
+        CommunityCmd::CreatorAnswer { anchor, decline } => {
+            let (anchor, accept) = (anchor.clone(), !*decline);
+            lifecycle(
+                client,
+                mode,
+                LifecycleRequest::CreatorInviteAnswer { anchor, accept },
+            )
+            .await
+        }
+        CommunityCmd::Join { invite, .. } => {
+            let invite = invite.clone();
+            lifecycle(client, mode, LifecycleRequest::CommunityJoin { invite }).await
         }
         CommunityCmd::Leave { community } => {
             let value = helpers::send(
@@ -370,6 +391,21 @@ fn removal_text(removed: Option<&serde_json::Value>) -> String {
         Some(reason) => format!("{standing}: {reason}"),
         None => standing,
     }
+}
+
+/// Send a lifecycle `request` and print its answer (the creator-set
+/// round's commands, plan E3.2 S7s.3).
+async fn lifecycle(
+    client: &DaemonClient,
+    mode: OutputMode,
+    request: LifecycleRequest,
+) -> anyhow::Result<()> {
+    let value = helpers::send(
+        client,
+        IpcRequest::Community(CommunityRequest::Lifecycle(request)),
+    )
+    .await?;
+    format::print_structured(&value, mode)
 }
 
 #[cfg(test)]

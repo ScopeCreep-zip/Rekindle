@@ -44,6 +44,7 @@ pub async fn get_community_details(
 pub async fn create_community(
     name: String,
     approval_required: Option<bool>,
+    co_creators: Option<Vec<String>>,
     state: State<'_, SharedState>,
 ) -> Result<Done<CommunityCreated>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Lifecycle(
@@ -51,6 +52,55 @@ pub async fn create_community(
             name,
             description: String::new(),
             approval_required: approval_required.unwrap_or(false),
+            co_creators: co_creators.unwrap_or_default(),
+        },
+    ));
+    host_call::call(&state, request).await
+}
+
+/// Stop waiting on a co-creator of our pending creation that has not
+/// answered (`LifecycleRequest::CreatorRemove`, plan E3.2 S7s.3).
+#[tauri::command]
+pub async fn remove_co_creator(
+    community_id: String,
+    identity: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CreatorRemove {
+            anchor: community_id,
+            identity,
+        },
+    ));
+    host_call::call(&state, request).await
+}
+
+/// Cancel our pending creation (`LifecycleRequest::CommunityCreateCancel`).
+#[tauri::command]
+pub async fn cancel_community_create(
+    community_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityCreateCancel {
+            anchor: community_id,
+        },
+    ));
+    host_call::call(&state, request).await
+}
+
+/// Accept or decline a held co-creator invite
+/// (`LifecycleRequest::CreatorInviteAnswer`).
+#[tauri::command]
+pub async fn answer_creator_invite(
+    community_id: String,
+    accept: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CreatorInviteAnswer {
+            anchor: community_id,
+            accept,
         },
     ));
     host_call::call(&state, request).await

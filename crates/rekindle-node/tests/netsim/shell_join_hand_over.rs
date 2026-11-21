@@ -81,6 +81,7 @@ async fn a_shell_join_hands_the_records_to_the_shell() {
                 name: COMMUNITY_NAME.into(),
                 description: String::new(),
                 approval_required: false,
+                co_creators: Vec::new(),
             },
         )))
         .await;

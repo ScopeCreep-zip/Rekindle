@@ -51,6 +51,11 @@ pub struct CommunityCreated {
     pub anchor: String,
     pub registry_key: String,
     pub name: String,
+    /// The co-creators the creation still waits on (plan E3.2 S7s.3):
+    /// non-empty while the records are reserved and the genesis is not
+    /// written yet (`registry_key` is then empty).
+    #[serde(default)]
+    pub pending_co_creators: Vec<String>,
 }
 
 /// A community this identity just joined from an invite (plan E3.1 D2).

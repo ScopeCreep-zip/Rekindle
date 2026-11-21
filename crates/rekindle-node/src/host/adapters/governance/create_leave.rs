@@ -26,7 +26,9 @@ const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SES
 
 impl HostGovernance {
     /// Create `name` with the genesis `admission`; `description` is written
-    /// as metadata after genesis.
+    /// as metadata after genesis. Named `co_creators` (friends) make it a
+    /// creator-set round (plan E3.2 S7s.3): the records are reserved and the
+    /// genesis waits for their answers (`co_create.rs`).
     ///
     /// # Errors
     /// The creation, or storing its rows, failed.
@@ -35,13 +37,33 @@ impl HostGovernance {
         name: &str,
         description: &str,
         admission: AdmissionMode,
+        co_creators: &[String],
     ) -> Result<CommunityCreated, String> {
+        if !co_creators.is_empty() {
+            return self
+                .create_with_co_creators(name, description, admission, co_creators)
+                .await;
+        }
         if !self.transport().is_ok_and(|node| node.is_ready()) {
             return Err(NOT_CONNECTED.into());
         }
         let id = rekindle_governance_runtime::create_community(self, name, admission)
             .await
             .map_err(|e| format!("community create failed: {e}"))?;
+        self.store_created(id, name, description).await
+    }
+
+    /// What a written genesis leaves to store: the description, the
+    /// snapshot and our member row.
+    ///
+    /// # Errors
+    /// A write failed (the community exists).
+    pub(super) async fn store_created(
+        &self,
+        id: String,
+        name: &str,
+        description: &str,
+    ) -> Result<CommunityCreated, String> {
         if !description.is_empty() {
             rekindle_governance_runtime::apply::write_entry(
                 self,
@@ -97,7 +119,22 @@ impl HostGovernance {
             anchor: id,
             registry_key,
             name: name.to_owned(),
+            pending_co_creators: Vec::new(),
         })
+    }
+
+    /// On the daemon, bring a community created or joined off the request
+    /// path up as `dispatch::community` does (the shell starts its own on
+    /// the records hand-over).
+    pub(crate) async fn activate_created(&self, community_id: &str) {
+        if self.ctx.shell.is_none() {
+            let membership =
+                (self.ctx.session.read().as_ref()).and_then(|s| s.community(community_id).cloned());
+            if let Some(membership) = membership {
+                crate::daemon::dispatch::community::activate_community(&self.ctx, &membership)
+                    .await;
+            }
+        }
     }
 
     /// Leave `membership`'s community.

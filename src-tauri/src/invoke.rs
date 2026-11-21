@@ -115,6 +115,9 @@ macro_rules! friends_commands {
 macro_rules! community_commands {
     ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::community::create_community,
+        commands::community::remove_co_creator,
+        commands::community::cancel_community_create,
+        commands::community::answer_creator_invite,
         commands::community::join_community,
         commands::community::create_channel,
         commands::community::create_category,

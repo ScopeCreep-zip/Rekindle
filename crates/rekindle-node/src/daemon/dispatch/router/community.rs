@@ -48,7 +48,38 @@ pub(super) async fn route_lifecycle(
             name,
             description,
             approval_required,
-        } => community::handle_create(ctx, state, &name, &description, approval_required).await,
+            co_creators,
+        } => {
+            community::handle_create(
+                ctx,
+                state,
+                &name,
+                &description,
+                approval_required,
+                &co_creators,
+            )
+            .await
+        }
+        LifecycleRequest::CreatorRemove { anchor, identity } => {
+            community::handle_creator_round(
+                ctx,
+                state,
+                community::CreatorRound::Remove { anchor, identity },
+            )
+            .await
+        }
+        LifecycleRequest::CommunityCreateCancel { anchor } => {
+            community::handle_creator_round(ctx, state, community::CreatorRound::Cancel { anchor })
+                .await
+        }
+        LifecycleRequest::CreatorInviteAnswer { anchor, accept } => {
+            community::handle_creator_round(
+                ctx,
+                state,
+                community::CreatorRound::Answer { anchor, accept },
+            )
+            .await
+        }
         LifecycleRequest::CommunityJoin { invite } => {
             community::handle_join(ctx, state, &invite).await
         }

@@ -20,6 +20,7 @@ fn create(name: &str) -> IpcRequest {
             name: name.into(),
             description: String::new(),
             approval_required: false,
+            co_creators: Vec::new(),
         },
     ))
 }

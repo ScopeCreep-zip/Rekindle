@@ -282,6 +282,7 @@ impl Host {
             this: this.clone(),
             friend_store: RwLock::new(None),
             friend_stores: rekindle_transport::operations::friend::FriendStores::default(),
+            pending_creations: super::adapters::governance::PendingCreations::default(),
             outbox: crate::host::adapters::outbox::OutboxSlot::default(),
             community_joins: super::adapters::governance::JoinLocks::default(),
             friend_watches: super::adapters::friends::FriendWatches::default(),

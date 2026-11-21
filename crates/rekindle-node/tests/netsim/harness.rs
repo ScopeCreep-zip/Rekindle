@@ -349,6 +349,7 @@ impl Community {
                     name: COMMUNITY_NAME.into(),
                     description: String::new(),
                     approval_required: false,
+                    co_creators: Vec::new(),
                 },
             )))
             .await;

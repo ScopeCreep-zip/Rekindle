@@ -174,6 +174,26 @@ pub fn remove_pending(
     )? > 0)
 }
 
+/// `co_creator` answered our creation of `anchor`: its row stays (a
+/// creation that dies before its genesis still withdraws it at the next
+/// unlock, decision (20)) but no second answer counts. Whether the
+/// creation waited on it.
+///
+/// # Errors
+/// The write failed.
+pub fn answer_pending(
+    conn: &Connection,
+    owner_key: &str,
+    anchor: &str,
+    co_creator: &str,
+) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE pending_creations SET answered = 1 WHERE owner_key = ?1 AND anchor = ?2 \
+         AND co_creator = ?3 AND answered = 0",
+        params![owner_key, anchor, co_creator],
+    )? > 0)
+}
+
 /// Forget our creation of `anchor` (its genesis is written or it was
 /// cancelled).
 ///

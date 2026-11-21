@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS pending_creations (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     anchor TEXT NOT NULL CHECK(length(anchor) > 0),
     co_creator TEXT NOT NULL CHECK(length(co_creator) = 64),
+    answered INTEGER NOT NULL DEFAULT 0 CHECK(answered IN (0, 1)),
     PRIMARY KEY (owner_key, anchor, co_creator)
 );
 

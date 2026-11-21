@@ -29,6 +29,7 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
                 name: "Second".into(),
                 description: String::new(),
                 approval_required: false,
+                co_creators: Vec::new(),
             },
         )))
         .await;

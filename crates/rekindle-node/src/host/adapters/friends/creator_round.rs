@@ -18,7 +18,7 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 use super::HostFriends;
 use crate::host::adapters::governance::HostGovernance;
 
-fn status(host: &HostFriends, peer: &str, anchor: &str, status: &str) {
+pub(crate) fn status(host: &HostFriends, peer: &str, anchor: &str, status: &str) {
     host.publish(SubscriptionEvent::Friend(FriendEvent::CoCreatorStatus {
         peer_key: peer.to_owned(),
         anchor: anchor.to_owned(),
@@ -126,7 +126,7 @@ async fn answer(
     };
     let (a, from) = (anchor.clone(), sender.to_owned());
     match db
-        .call(move |c| rekindle_db::repo::creator_round::remove_pending(c, &owner, &a, &from))
+        .call(move |c| rekindle_db::repo::creator_round::answer_pending(c, &owner, &a, &from))
         .await
     {
         Ok(true) => {
@@ -144,6 +144,8 @@ async fn answer(
                 &anchor,
                 if accepted { "accepted" } else { "declined" },
             );
+            let governance = HostGovernance::new(Arc::clone(&host.ctx));
+            Box::pin(governance.co_creator_settled(&anchor, sender)).await;
             true
         }
         Ok(false) => {
@@ -168,8 +170,9 @@ async fn join(host: &HostFriends, anchor: &str, invite: &str) {
         }
     };
     let governance = HostGovernance::new(Arc::clone(&host.ctx));
-    if let Err(e) = governance.join(&link).await {
-        tracing::warn!(community = %anchor, error = ?e, "co-creator join failed");
+    match Box::pin(governance.join(&link)).await {
+        Ok(_) => governance.activate_created(anchor).await,
+        Err(e) => tracing::warn!(community = %anchor, error = ?e, "co-creator join failed"),
     }
 }
 

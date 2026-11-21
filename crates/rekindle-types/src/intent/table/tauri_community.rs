@@ -6,6 +6,15 @@ use crate::intent::IntentKind;
 pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("create_community", Some(IntentKind::CreateCommunity)),
     ("join_community", Some(IntentKind::JoinCommunity)),
+    ("remove_co_creator", Some(IntentKind::RemoveCoCreator)),
+    (
+        "cancel_community_create",
+        Some(IntentKind::CancelCommunityCreate),
+    ),
+    (
+        "answer_creator_invite",
+        Some(IntentKind::AnswerCreatorInvite),
+    ),
     ("create_channel", Some(IntentKind::CreateChannel)),
     ("create_category", Some(IntentKind::CreateCategory)),
     ("delete_category", Some(IntentKind::DeleteCategory)),
