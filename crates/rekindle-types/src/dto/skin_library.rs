@@ -98,7 +98,7 @@ pub struct SkinServed {
     pub bytes: Vec<u8>,
 }
 
-/// One frame tile's 1-bit mask (plan SK0 S3): rows of `ceil(width / 8)`
+/// One frame tile's or tree node art's 1-bit mask (plan SK0 S3, SK2-S1r): rows of `ceil(width / 8)`
 /// bytes, most significant bit first, a set bit an opaque pixel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +108,9 @@ pub struct SkinTileMask {
     pub bits: Vec<u8>,
 }
 
-/// One window kind's frame layout and its tiles' masks, in tile order.
+/// One window kind's frame layout and its masks: its tiles', in tile order,
+/// then the normal art's of each tree node in the outline (plan SK2-S1r,
+/// `rekindle_skin::shape::outline_nodes`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkinWindowFrame {

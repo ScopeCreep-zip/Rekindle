@@ -103,41 +103,46 @@ impl Mask {
 }
 
 /// Each tile's mask, decoded from its image in `images` (the package's
-/// canonical images); `field` names the layout in errors.
+/// canonical images), then the normal art's mask of each node of the
+/// layout's tree that joins the outline ([`super::outline_nodes`]), in
+/// that order; `field` names the layout in errors.
 ///
 /// # Errors
-/// A tile whose image is missing, does not decode, or is not the tile's
-/// declared size.
+/// A tile or node whose image is missing or does not decode, or a tile
+/// image that is not the tile's declared size.
 pub fn of_layout(
     field: &str,
     layout: &WindowLayout,
     images: &BTreeMap<String, Vec<u8>>,
 ) -> Result<Vec<Mask>, SkinError> {
-    layout
-        .tiles
-        .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let field = format!("{field}.tiles.{i}");
-            let bytes = images.get(&t.image).ok_or_else(|| {
-                SkinError::new(
-                    t.image.as_str(),
-                    SkinRule::MissingEntry {
-                        field: field.clone(),
-                    },
-                )
-            })?;
-            let img = decode_png(bytes).map_err(|rule| SkinError::new(t.image.as_str(), rule))?;
-            if img.dimensions() != (u32::from(t.width), u32::from(t.height)) {
-                return Err(SkinError::new(
-                    field.as_str(),
-                    SkinRule::BadValue {
-                        field: field.clone(),
-                        expected: "the image's width and height".to_owned(),
-                    },
-                ));
+    let decode = |image: &str, field: String| -> Result<RgbaImage, SkinError> {
+        let bytes = images
+            .get(image)
+            .ok_or_else(|| SkinError::new(image, SkinRule::MissingEntry { field }))?;
+        decode_png(bytes).map_err(|rule| SkinError::new(image, rule))
+    };
+    let mut out = Vec::new();
+    for (i, t) in layout.tiles.iter().enumerate() {
+        let field = format!("{field}.tiles.{i}");
+        let img = decode(&t.image, field.clone())?;
+        if img.dimensions() != (u32::from(t.width), u32::from(t.height)) {
+            return Err(SkinError::new(
+                field.as_str(),
+                SkinRule::BadValue {
+                    field: field.clone(),
+                    expected: "the image's width and height".to_owned(),
+                },
+            ));
+        }
+        out.push(Mask::of(&img));
+    }
+    if let Some(tree) = &layout.tree {
+        for (n, _) in super::outline_nodes(tree, 0, 0) {
+            if let Some(art) = &n.art {
+                let img = decode(&art.image, format!("{field}.tree.{}", n.id))?;
+                out.push(Mask::of(&img));
             }
-            Ok(Mask::of(&img))
-        })
-        .collect()
+        }
+    }
+    Ok(out)
 }

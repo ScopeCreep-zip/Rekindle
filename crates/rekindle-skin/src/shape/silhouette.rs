@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use rekindle_types::dto::skin::{TileAxis, WindowLayout};
 
-use super::{Mask, ShapeError, MAX_RECTS};
+use super::{outline_nodes, Mask, ShapeError, MAX_RECTS};
 
 /// The device-pixel ratio of 1.0, in thousandths (`scale` is per mille so
 /// the result is integer arithmetic and the same on every platform).
@@ -88,7 +88,11 @@ pub(super) fn placed(layout: &WindowLayout, width: u32, height: u32) -> Vec<(usi
 }
 
 fn fits(layout: &WindowLayout, masks: &[Mask]) -> Result<(), ShapeError> {
-    if masks.len() != layout.tiles.len() {
+    let nodes = layout
+        .tree
+        .as_ref()
+        .map_or(0, |t| outline_nodes(t, 0, 0).len());
+    if masks.len() != layout.tiles.len() + nodes {
         return Err(ShapeError::Mask {
             tile: masks.len().min(layout.tiles.len()),
         });
@@ -99,6 +103,50 @@ fn fits(layout: &WindowLayout, masks: &[Mask]) -> Result<(), ShapeError> {
         }
     }
     Ok(())
+}
+
+/// Each outline node's laid art in a `width × height` window: its mask's
+/// index and the drawn part of its image (x, y, width, height), its box's
+/// top left at the image's own size, clipped to the box.
+fn laid_art(layout: &WindowLayout, masks: &[Mask], width: u32, height: u32) -> Vec<(usize, Area)> {
+    let Some(tree) = &layout.tree else {
+        return Vec::new();
+    };
+    let side = |v: u32| i32::try_from(v).unwrap_or(i32::MAX);
+    outline_nodes(tree, side(width), side(height))
+        .into_iter()
+        .enumerate()
+        .filter_map(|(k, (_, b))| {
+            let i = layout.tiles.len() + k;
+            let m = masks.get(i)?;
+            let w = i64::from(b[2]).min(i64::from(m.width()));
+            let h = i64::from(b[3]).min(i64::from(m.height()));
+            (w > 0 && h > 0).then_some((i, (i64::from(b[0]), i64::from(b[1]), w, h)))
+        })
+        .collect()
+}
+
+/// Adds scanline `y`'s opaque runs of the laid node art to `row`.
+fn art_runs(
+    art: &[(usize, Area)],
+    runs_of: &[Vec<Vec<(u32, u32)>>],
+    y: i64,
+    w: i64,
+    row: &mut Vec<(i64, i64)>,
+) {
+    for &(i, (x, top, aw, ah)) in art {
+        if y < top || y >= top + ah {
+            continue;
+        }
+        let src = usize::try_from(y - top).unwrap_or(usize::MAX);
+        for &(a, b) in runs_of[i].get(src).map_or(&[][..], Vec::as_slice) {
+            let (a, b) = (x + i64::from(a), x + i64::from(b).min(aw));
+            let (a, b) = (a.max(0), b.min(w));
+            if a < b {
+                row.push((a, b));
+            }
+        }
+    }
 }
 
 /// Sorted, merged `[start, end)` runs.
@@ -120,8 +168,10 @@ fn device(v: i64, scale: u32) -> u32 {
 
 /// The opaque region of a `width × height` (logical px) window laid by
 /// `layout` with `masks` (one per tile, [`super::of_layout`]), as rectangles in device pixels at `scale` (per mille, see
-/// [`SCALE_ONE`]): the content rectangle, whole, and every tile's opaque
-/// pixels where the pack lays it, clipped to the window. Equal consecutive
+/// [`SCALE_ONE`]): the content rectangle, whole, every tile's opaque
+/// pixels where the pack lays it, and every outline node's opaque art
+/// (after the tile masks, [`super::outline_nodes`]) at its box, clipped to
+/// the window. Equal consecutive
 /// scanlines merge into one rectangle; the rectangles are disjoint and
 /// sorted top to bottom, left to right, so the result is deterministic.
 ///
@@ -153,6 +203,7 @@ pub fn silhouette(
         })
         .collect();
     let w = i64::from(width);
+    let art = laid_art(layout, masks, width, height);
     let mut cache: HashMap<Vec<(usize, usize)>, Vec<(i64, i64)>> = HashMap::new();
     let mut logical: Vec<(i64, i64, i64, i64)> = Vec::new();
     let mut open: Vec<(i64, i64)> = Vec::new();
@@ -191,6 +242,7 @@ pub fn silhouette(
                     merge(runs)
                 })
                 .clone();
+            art_runs(&art, &runs_of, y, w, &mut row);
             if in_content {
                 row.push((content.0.max(0), (content.0 + content.2).min(w)));
             }

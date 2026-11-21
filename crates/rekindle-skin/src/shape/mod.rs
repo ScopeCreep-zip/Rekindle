@@ -17,9 +17,12 @@ mod build;
 mod check;
 pub mod css;
 mod mask;
+mod nodes;
 mod silhouette;
 pub mod title;
 
+#[cfg(test)]
+mod nodes_tests;
 #[cfg(test)]
 mod tests;
 
@@ -28,13 +31,15 @@ pub use build::{from_nine, tile, tile_path};
 pub use check::{check, MAX_RECTS, MAX_WINDOW_HEIGHT, MAX_WINDOW_WIDTH};
 pub use css::{frame_css, MAX_FRAME_TILES};
 pub use mask::{of_layout, Mask, ALPHA_OPAQUE};
+pub use nodes::outline_nodes;
 pub use silhouette::{content_area, silhouette, Area, Rect, SCALE_ONE};
 
 /// A layout that does not compose (a mask that does not decode, or a
 /// silhouette past [`MAX_RECTS`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShapeError {
-    /// Tile `tile` has no mask, or one that is not its size.
+    /// Tile `tile` has no mask, or one that is not its size; or the masks
+    /// are not one per tile and one per outline node ([`outline_nodes`]).
     Mask { tile: usize },
     /// More rectangles than [`MAX_RECTS`].
     TooManyRects { count: usize },

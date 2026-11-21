@@ -35,11 +35,12 @@ pub const fn frame_of(kind: WindowKind) -> Option<SkinWindow> {
     }
 }
 
-/// Decode the Host's answer; a mask whose bits do not match its size
+/// Decode the Host's answer (tile masks, then outline node art masks); a
+/// mask whose bits do not match its size
 /// refuses the whole answer.
 ///
 /// # Errors
-/// A tile mask is malformed.
+/// A mask is malformed.
 pub fn decode(frames: SkinFrames) -> Result<SkinFrameMap, String> {
     frames
         .windows
@@ -50,7 +51,7 @@ pub fn decode(frames: SkinFrames) -> Result<SkinFrameMap, String> {
                 .into_iter()
                 .map(|m| Mask::from_bits(m.width, m.height, m.bits))
                 .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| format!("malformed tile mask in {:?}", w.window))?;
+                .ok_or_else(|| format!("malformed mask in {:?}", w.window))?;
             Ok((w.window, (w.layout, masks)))
         })
         .collect()
