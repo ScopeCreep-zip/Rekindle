@@ -335,7 +335,11 @@ fn governance(event: &GovernanceEvent) -> String {
         }
         GovernanceEvent::GovernanceRebuilt { .. } => "governance rebuilt".into(),
         GovernanceEvent::GovernanceOpQuarantined {
-            op, author, reason, ..
+            op,
+            author,
+            reason,
+            cause,
+            ..
         } => {
             let why = match reason {
                 OpQuarantineReason::AfterAuthorRemoval => "after its author's removal",
@@ -344,6 +348,9 @@ fn governance(event: &GovernanceEvent) -> String {
                 }
                 OpQuarantineReason::CheckpointEquivocation => "checkpoint equivocation",
                 OpQuarantineReason::RecordClaimed => "member record already claimed by another member",
+                OpQuarantineReason::AuthorityQuarantined => {
+                    "quarantined because the op its authority came from was"
+                }
                 OpQuarantineReason::UnknownOpKind => {
                     "a kind of change this version cannot read; the community is quarantined"
                 }
@@ -351,7 +358,10 @@ fn governance(event: &GovernanceEvent) -> String {
                     "a newer version's change this version cannot read; the community is quarantined"
                 }
             };
-            format!("op {op} by {author} quarantined: {why}")
+            match cause {
+                Some(cause) => format!("op {op} by {author} quarantined: {why} (cause {cause})"),
+                None => format!("op {op} by {author} quarantined: {why}"),
+            }
         }
         GovernanceEvent::CheckpointSnapshotMismatch { height, digest, .. } => format!(
             "checkpoint {} at height {height} endorsed a false state snapshot",

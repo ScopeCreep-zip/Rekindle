@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 
-use super::{resolve, resolve_stable, Round};
+use super::{ancestry, resolve, Round};
 use crate::checkpoint::{CutIndex, CutOp};
 use crate::op::VerifiedOp;
 use crate::power::{class_of, removal_target, target_seq_frontier, OpClass};
@@ -17,10 +17,13 @@ use crate::state::GovernanceState;
 #[must_use]
 pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState, CutIndex) {
     let set = resolve::prepare(cut_ops);
-    let (round, _, _, _) = resolve_stable(cert, &set);
+    let (round, _, _, _) = ancestry::settle(cert, &set).settled;
+    // A forked op is ancestry only (ADR 0022 rule 5): the cut index counts
+    // the merged ops, and `forks` names the fork.
+    let merged = |i: &usize| !set.forked[*i];
     let mut authors: BTreeMap<[u8; 32], (u64, OpHash)> = BTreeMap::new();
     let mut lamports: BTreeMap<[u8; 32], u64> = BTreeMap::new();
-    for op in &set.ops {
+    for op in (0..set.ops.len()).filter(merged).map(|i| set.ops[i]) {
         let entry = (op.op().seq, op.hash());
         if authors.get(&op.author().0).is_none_or(|held| *held < entry) {
             authors.insert(op.author().0, entry);
@@ -29,7 +32,7 @@ pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState
     }
     let n = set.ops.len();
     let is_power = |i: usize| class_of(set.ops[i].body()) == OpClass::Power;
-    let power_idx: Vec<usize> = (0..n).filter(|&i| is_power(i)).collect();
+    let power_idx: Vec<usize> = (0..n).filter(merged).filter(|&i| is_power(i)).collect();
     let power = power_idx
         .iter()
         .map(|&i| (CutOp::of(set.ops[i]), round.applied[i]))
@@ -41,6 +44,7 @@ pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState
         .collect();
     power_heads.sort_unstable();
     let mainline_max = (0..n)
+        .filter(merged)
         .filter(|&i| !is_power(i))
         .map(|i| (set.ops[i].op().issued_at, set.ops[i].hash()))
         .max();

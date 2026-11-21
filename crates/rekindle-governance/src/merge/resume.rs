@@ -65,6 +65,12 @@ pub enum NotOnTop {
     /// greatest, a previous checkpoint in the cut that the cut index does
     /// not list among its applied checkpoints).
     Undecidable(OpHash),
+    /// `author` forked at `seq`, in the cut or above it: its ops from there
+    /// on stay ancestry and every op with one in its causal past is judged
+    /// by the counted and final rounds (ADR 0022 rule 5, `ancestry`), over
+    /// the whole op set, which the snapshot does not carry.
+    /// `author` is the pseudonym's bytes (the error stays `Copy`).
+    Forked { author: [u8; 32], seq: u64 },
 }
 
 /// Where an op's dep is.
@@ -241,9 +247,10 @@ fn context<'a>(
     })
 }
 
-/// `rest` in stamp order, deduplicated, with every author forked in the
-/// cut or among `rest`'s own ops dropped from the fork on (as
-/// `resolve::prepare` does over the whole set), each op's deps
+/// `rest` in stamp order, deduplicated, refused (`NotOnTop::Forked`) when
+/// an author forked in the cut or among `rest`'s own ops (`resolve::prepare`
+/// keeps its ops from the fork on as ancestry over the whole set), each
+/// op's deps
 /// resolved, (c) and (a′) checked.
 fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSet<'a>, NotOnTop> {
     let cut_seq = |author: &PseudonymKey| snap.cut.authors.get(&author.0).map(|(s, _)| *s);
@@ -269,6 +276,12 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
             *slot = (*slot).min(pair[0].0);
         }
     }
+    if let Some((author, seq)) = fork_at.iter().next() {
+        return Err(NotOnTop::Forked {
+            author: *author,
+            seq: *seq,
+        });
+    }
     let head_bit: HashMap<OpHash, u64> = (snap.heads.iter().enumerate())
         .map(|(k, h)| (*h, 1u64 << k))
         .collect();
@@ -286,12 +299,6 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
     };
     let mut masks: Vec<u64> = Vec::new();
     for op in sorted {
-        if fork_at
-            .get(&op.author().0)
-            .is_some_and(|s| op.op().seq >= *s)
-        {
-            continue;
-        }
         let mut deps = Vec::new();
         let mut mask = 0u64;
         let complete = op.op().deps.iter().all(|d| {

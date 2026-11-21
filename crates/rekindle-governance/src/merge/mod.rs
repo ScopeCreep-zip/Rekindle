@@ -98,6 +98,12 @@ pub enum QuarantineReason {
     /// record gate, ADR 0011: one member per record). The claimant learns
     /// why its join did not take (D15 "visible reason").
     RecordClaimed { holder: PseudonymKey },
+    /// "quarantined because <cause> was": its authority (a role grant, an
+    /// invite, a channel or a ban it acts on) came from `cause`, an op
+    /// quarantined after its author's fork, and fails without it (ADR 0022
+    /// rule 5, plan E3.2 S7d-keys.2a); with several, the lowest
+    /// `(lamport, op_hash)`.
+    AuthorityQuarantined { cause: OpHash },
 }
 
 impl QuarantineReason {
@@ -108,7 +114,8 @@ impl QuarantineReason {
         match self {
             Self::AfterAuthorRemoval { cause }
             | Self::TwoCheckpointEndorsementsInOneRound { cause }
-            | Self::CheckpointEquivocation { cause } => Some(*cause),
+            | Self::CheckpointEquivocation { cause }
+            | Self::AuthorityQuarantined { cause } => Some(*cause),
             Self::RecordClaimed { .. } => None,
         }
     }
@@ -118,25 +125,30 @@ impl QuarantineReason {
 #[must_use]
 pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
     let set = resolve::prepare(ops);
-    resolve_stable(cert, &set).0.state
+    ancestry::settle(cert, &set).settled.0.state
 }
 
 /// [`merge`], with the fate of every op.
 #[must_use]
 pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     let set = resolve::prepare(ops);
-    let (round, masked_by, invite_refusals, record_refusals) = resolve_stable(cert, &set);
+    let ancestry::Settlement { settled, cascade } = ancestry::settle(cert, &set);
+    let (round, masked_by, invite_refusals, record_refusals) = settled;
+    // A forked op is reported once, by `equivocators` (D15); a cascade
+    // victim once, quarantined with its cause.
+    let shown = |i: usize| !set.forked[i] && !cascade.contains_key(&i);
     let join_refusals = (invite_refusals.into_iter())
-        .filter(|&(i, _)| !round.applied[i] && masked_by[i].is_none())
+        .filter(|&(i, _)| shown(i) && !round.applied[i] && masked_by[i].is_none())
         .map(|(i, r)| (set.ops[i].hash(), r))
         .collect();
     let mut applied: Vec<OpHash> = round.order.iter().map(|&i| set.ops[i].hash()).collect();
     let refused = (0..set.ops.len())
-        .filter(|&i| !round.applied[i] && masked_by[i].is_none())
+        .filter(|&i| shown(i) && !round.applied[i] && masked_by[i].is_none())
         .filter(|i| !record_refusals.contains_key(i))
         .map(|i| set.ops[i].hash())
         .collect();
     let mut quarantined: Vec<(OpHash, QuarantineReason)> = (0..set.ops.len())
+        .filter(|&i| shown(i))
         .filter_map(|i| {
             let cause = set.ops[masked_by[i]?].hash();
             Some((
@@ -147,7 +159,7 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
         .collect();
     quarantined.extend(
         (record_refusals.iter())
-            .filter(|&(&i, _)| !round.applied[i] && masked_by[i].is_none())
+            .filter(|&(&i, _)| shown(i) && !round.applied[i] && masked_by[i].is_none())
             .map(|(&i, holder)| {
                 (
                     set.ops[i].hash(),
@@ -157,6 +169,13 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
                 )
             }),
     );
+    quarantined.extend(cascade.iter().map(|(&i, &q)| {
+        let cause = set.ops[q].hash();
+        (
+            set.ops[i].hash(),
+            QuarantineReason::AuthorityQuarantined { cause },
+        )
+    }));
     let counted: HashSet<OpHash> = applied.iter().copied().collect();
     let hints = checkpoint::hints(cert, ops, |h| counted.contains(h));
     let faulted: HashSet<OpHash> = hints.faults.iter().map(|(h, _)| *h).collect();
@@ -196,9 +215,14 @@ type Settled = (
     BTreeMap<usize, PseudonymKey>,
 );
 
-fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> Settled {
+/// `exclude`: ops every round leaves out besides the gates' (the forked
+/// ops and the refusals kept, `ancestry`).
+fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>, exclude: &[bool]) -> Settled {
+    let skip = |invalid: &[bool]| -> Vec<bool> {
+        invalid.iter().zip(exclude).map(|(a, b)| *a || *b).collect()
+    };
     let mut invalid = vec![false; set.ops.len()];
-    let mut round = resolve_round(cert, set, &invalid);
+    let mut round = resolve_round(cert, set, &skip(&invalid));
     let mut passes = 0;
     loop {
         let gated = gates::invalidated(cert, set, &round);
@@ -215,7 +239,7 @@ fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> Settled {
             );
         }
         invalid = gated.invalid;
-        round = resolve_round(cert, set, &invalid);
+        round = resolve_round(cert, set, &skip(&invalid));
     }
 }
 
@@ -469,6 +493,7 @@ fn apply(
     }
 }
 
+mod ancestry;
 mod channels;
 mod community;
 mod cut;
@@ -483,6 +508,8 @@ mod resume;
 mod resume_gates;
 mod roles;
 
+#[cfg(test)]
+mod ancestry_tests;
 #[cfg(test)]
 mod checkpoint_tests;
 #[cfg(test)]

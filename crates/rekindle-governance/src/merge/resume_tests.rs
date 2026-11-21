@@ -333,8 +333,10 @@ proptest! {
             let dated = class_of(o.body()) == OpClass::Power || Some((o.op().issued_at, o.hash())) > cut_index.mainline_max;
             whole && above && dated
         });
-        // Beside (a′), (c) and (d), only an undecidable gate answers no.
-        let decided = !matches!(answer, Err(NotOnTop::Undecidable(_)));
+        // Beside (a′), (c) and (d), only an undecidable gate or a fork (its
+        // ops stay ancestry and the full merge re-judges what they carry,
+        // ADR 0022 rule 5) answers no.
+        let decided = !matches!(answer, Err(NotOnTop::Undecidable(_) | NotOnTop::Forked { .. }));
         prop_assert!(!on_top || !decided || answer.is_ok(), "on top but {:?}", answer.err());
     }
 

@@ -251,6 +251,7 @@ export type OpQuarantineReason =
   | "afterAuthorRemoval"
   | "twoCheckpointEndorsementsInOneRound"
   | "recordClaimed"
+  | "authorityQuarantined"
   | "checkpointEquivocation"
   | "unknownOpKind"
   | "unknownOpVersion";

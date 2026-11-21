@@ -185,6 +185,11 @@ pub enum OpQuarantineReason {
     /// record); `cause` is `None`. The claimant's own refused join tells
     /// it to enrol again with a record of its own.
     RecordClaimed,
+    /// "quarantined because <cause> was": its authority (a role grant, an
+    /// invite, a channel or a ban it acts on) came from `cause`, an op
+    /// quarantined after its author's fork, and fails without it (ADR 0022
+    /// rule 5, plan E3.2 S7d-keys.2a).
+    AuthorityQuarantined,
     /// A validly signed op of a kind this reader's schema does not have
     /// (D15): the community is quarantined, likely by a newer version's
     /// op; `cause` is `None`.

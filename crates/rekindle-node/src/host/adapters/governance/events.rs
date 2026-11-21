@@ -38,6 +38,9 @@ fn op_quarantined(
                 OpQuarantineReason::CheckpointEquivocation
             }
             QuarantineReason::RecordClaimed { .. } => OpQuarantineReason::RecordClaimed,
+            QuarantineReason::AuthorityQuarantined { .. } => {
+                OpQuarantineReason::AuthorityQuarantined
+            }
         },
         cause: reason.cause().map(|cause| hex::encode(cause.0)),
     }

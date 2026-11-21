@@ -10,12 +10,21 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::op::VerifiedOp;
 
-/// The op set `merge` resolves: complete (every dep present), free of
-/// equivocating forks, in stamp order (which is causal: a dep's lamport is
-/// below its dependant's), with each op's causal past.
+/// The op set `merge` resolves: complete (every dep present), in stamp
+/// order (which is causal: a dep's lamport is below its dependant's), with
+/// each op's causal past. An equivocating author's ops from its fork on stay
+/// in the set as ancestry only (`forked`, ADR 0022 rule 5): they resolve
+/// their dependants' deps and are never applied.
 pub(super) struct OpSet<'a> {
     pub ops: Vec<&'a VerifiedOp>,
     pub past: Ancestry,
+    /// Per op: its author forked at or below its seq (quarantined, kept as
+    /// ancestry).
+    pub forked: Vec<bool>,
+    /// Per forked op, its quarantine cause: the lowest-stamp other op of
+    /// its author at the fork seq outside its own causal past (the op a
+    /// reader must hold to have seen the fork).
+    pub fork_cause: Vec<Option<usize>>,
     /// Ops whose deps are missing from the set (`pending_deps`).
     pub pending: Vec<OpHash>,
     /// Authors that signed two different ops at one seq, each with the
@@ -125,7 +134,8 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
     sorted.dedup_by_key(|op| op.hash());
 
     // Equivocation: two ops at one (author, seq). Every op of that author
-    // from the fork on is dropped, on every reader alike.
+    // from the fork on is quarantined, on every reader alike, and kept as
+    // ancestry (ADR 0022 rule 5).
     // Sorted by (seq, author, hash), two ops at one (author, seq) with
     // different hashes sit next to each other; seq leads the key because
     // it is a cheap compare that settles most pairs.
@@ -148,15 +158,11 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
     let mut past = Ancestry::with_capacity(sorted.len());
     let mut deps: Vec<usize> = Vec::new();
     let mut pending = Vec::new();
+    let mut forked = Vec::with_capacity(sorted.len());
     for op in sorted {
-        // An out-of-bounds op stays in the DAG (validation refuses it), so
-        // the ops that cite it are not held pending forever.
-        if fork_at
-            .get(&op.author().0)
-            .is_some_and(|seq| op.op().seq >= *seq)
-        {
-            continue;
-        }
+        // An out-of-bounds or forked op stays in the DAG (validation
+        // refuses the one, `forked` leaves the other out of every round),
+        // so the ops that cite it are not held pending forever.
         deps.clear();
         let complete = op.op().deps.iter().all(|d| {
             index
@@ -169,17 +175,53 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
             continue;
         }
         index.insert(IndexKey(op.hash()), kept.len());
+        forked.push(
+            fork_at
+                .get(&op.author().0)
+                .is_some_and(|seq| op.op().seq >= *seq),
+        );
         kept.push(op);
         past.push(&deps);
     }
+    let fork_cause = fork_causes(&kept, &past, &forked, &fork_at);
     OpSet {
         ops: kept,
         past,
+        forked,
+        fork_cause,
         pending,
         equivocators: (fork_at.into_iter())
             .map(|(author, seq)| (PseudonymKey(author), seq))
             .collect(),
     }
+}
+
+/// Each forked op's cause (`OpSet::fork_cause`): among its author's ops at
+/// the fork seq, the lowest in stamp order that is not the op and not in
+/// its causal past; the lowest other one when its past holds them all.
+fn fork_causes(
+    ops: &[&VerifiedOp],
+    past: &Ancestry,
+    forked: &[bool],
+    fork_at: &BTreeMap<[u8; 32], u64>,
+) -> Vec<Option<usize>> {
+    let at_fork: Vec<usize> = (0..ops.len())
+        .filter(|&j| fork_at.get(&ops[j].author().0) == Some(&ops[j].op().seq))
+        .collect();
+    (0..ops.len())
+        .map(|i| {
+            if !forked[i] {
+                return None;
+            }
+            let siblings = || {
+                (at_fork.iter().copied())
+                    .filter(move |&j| j != i && ops[j].author() == ops[i].author())
+            };
+            siblings()
+                .find(|&j| !past.contains(i, j))
+                .or_else(|| siblings().next())
+        })
+        .collect()
 }
 
 #[cfg(test)]
