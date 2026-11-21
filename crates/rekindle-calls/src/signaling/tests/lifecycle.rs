@@ -7,8 +7,8 @@ use rekindle_codec::capnp_codec::direct::{CallClosed, DirectBody};
 use super::mocks::{peer_x25519_pub_bytes, seed_call, seed_outgoing_call, MockDeps};
 use crate::signaling::event::CallSignalEvent;
 use crate::signaling::lifecycle::{
-    check_consent, ConsentCheck, CALL_END_DEADLINE_MS, CONNECTION_LOST, CONSENT_TIMEOUT_MS,
-    SUPERSEDED,
+    check_consent, ConsentCheck, CALL_END_DEADLINE_MS, CALL_SUPERSEDED, CONNECTION_LOST,
+    CONSENT_TIMEOUT_MS,
 };
 use crate::signaling::registry::CallRegistry;
 use crate::state::{CallKind, CallStatus};
@@ -184,7 +184,7 @@ async fn a_new_invite_from_our_call_peer_supersedes_the_stale_call() {
     invite(&deps, &peer, "new").await;
     assert_eq!(
         ended(&deps),
-        vec![("old".to_string(), SUPERSEDED.to_string())]
+        vec![("old".to_string(), CALL_SUPERSEDED.to_string())]
     );
     assert!(!deps.registry.contains("old"));
     assert_eq!(incoming(&deps), vec!["new".to_string()]);

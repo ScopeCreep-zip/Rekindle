@@ -49,8 +49,8 @@ pub use handlers::{
     handle_ringing_received, IncomingInvite,
 };
 pub use lifecycle::{
-    check_consent, ConsentCheck, CALL_END_DEADLINE_MS, CONNECTION_LOST, CONSENT_TIMEOUT_MS,
-    SUPERSEDED,
+    check_consent, ConsentCheck, CALL_END_DEADLINE_MS, CALL_SUPERSEDED, CONNECTION_LOST,
+    CONSENT_TIMEOUT_MS,
 };
 pub use outbound::{
     accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_all_calls,

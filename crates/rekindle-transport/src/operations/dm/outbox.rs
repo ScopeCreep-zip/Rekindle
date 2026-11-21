@@ -70,9 +70,8 @@ pub trait DmOutbox: Send + Sync {
         client_id: String,
         payload: Vec<u8>,
     ) -> Result<i64, FriendError>;
-    /// [`Self::enqueue_handshake`] for a frame worth nothing after
-    /// `deadline_ms` (ms since the epoch; a call's `CallEnd`, plan CE1
-    /// decision 22): the row fails at that deadline, not at the horizon.
+    /// [`Self::enqueue_handshake`] for a frame worth nothing after `deadline_ms`
+    /// (epoch ms; a `CallEnd`, plan CE1 (22)): it fails then, not at the horizon.
     ///
     /// # Errors
     /// The storage failed; nothing was committed.

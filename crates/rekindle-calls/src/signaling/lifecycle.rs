@@ -34,7 +34,7 @@ pub const CALL_END_DEADLINE_MS: u64 = 120_000;
 pub const CONNECTION_LOST: &str = "connection-lost";
 
 /// The reason a stale call ended by its peer's new invite carries.
-pub const SUPERSEDED: &str = "superseded-by-new-call";
+pub const CALL_SUPERSEDED: &str = "superseded-by-new-call";
 
 /// End `call_id` here: remove it, emit `CallEnded` (which retires the call
 /// window), tear voice down if it was up, then commit `CallEnd` to the peer

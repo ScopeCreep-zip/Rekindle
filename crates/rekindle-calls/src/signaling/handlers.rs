@@ -345,7 +345,7 @@ async fn make_room_for_invite<D: CallSignalingDeps + ?Sized>(
                 crate::signaling::lifecycle::end_locally(
                     deps,
                     &call.call_id,
-                    crate::signaling::lifecycle::SUPERSEDED,
+                    crate::signaling::lifecycle::CALL_SUPERSEDED,
                 )
                 .await;
             }
