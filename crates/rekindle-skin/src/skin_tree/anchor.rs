@@ -360,9 +360,14 @@ pub(super) fn client_inset(
 /// The client box of a tile laid at `span` with `inset`: its edges moved in,
 /// for the names its children see ([`outer_for`]).
 pub(super) fn client_box(span: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportError> {
+    // A boxless tile (no art, no declared size) has no client box: its
+    // indents inset nothing (Total Chaos's, xSLIMFIRE's art-less wrappers).
     let NodeSpan::Fixed { at, size } = span else {
         return Ok(span);
     };
+    if size == 0 {
+        return Ok(span);
+    }
     let at = match at {
         Anchor::Start(o) => Anchor::Start(i16_of(i32::from(o) + s)?),
         Anchor::End(o) => Anchor::End(i16_of(i32::from(o) + e)?),
@@ -408,7 +413,7 @@ pub(super) fn to_tile(
         let NodeSpan::Fixed { size, .. } = span else {
             continue;
         };
-        if (s, e) == (0, 0) {
+        if (s, e) == (0, 0) || size == 0 {
             continue;
         }
         for n in &mut children {
