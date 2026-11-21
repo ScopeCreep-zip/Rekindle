@@ -65,6 +65,15 @@ fn button(k: &str) -> Option<ActionKey> {
         .find_map(|(keys, a)| keys.iter().any(|p| k.starts_with(p)).then_some(a))
 }
 
+/// A tab outside a tab strip: Classic's `TabNormalText`/`TabNormalButton`
+/// pairs in Onyx's menu bar and Alloy's tab bar, Symbiosis's
+/// `ButtonNotificationsTab` beside the name, XGlow's `[Friends]`.
+fn tab(k: &str) -> Option<()> {
+    let paired = (k.starts_with("tab") && (k.ends_with("text") || k.ends_with("button")))
+        || (k.starts_with("button") && k.ends_with("tab"));
+    (paired || matches!(k, "friends" | "servers" | "downloads" | "files")).then_some(())
+}
+
 fn resize(k: &str) -> Option<NodeRole> {
     let rest = k
         .strip_prefix("mainresizegripper")
@@ -103,7 +112,19 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         "menubar" | "menubackground" | "menubg" => Some(R::MenuBar),
         "statusedit" | "status" => Some(R::StatusText),
         "downarrow" | "statusbtn" | "buttonstatuschanger" => Some(R::StatusList),
-        "adarea" | "adbar" => Some(R::AdArea),
+        // The ad's container and its view: the inner one is its part
+        // (Symbiosis's `AdViewContainer` > `AdView`, Total Chaos's
+        // `AdBar` > `AdArea`).
+        "adarea" | "adbar" | "adview" | "adviewcontainer" | "adareabg" | "adbg" => Some(R::AdArea),
+        // Window art (design §1 rows 2, 5, 18, 41): the frame and its decor.
+        "topleft" | "top" | "topright" | "leftedge" | "rightedge" | "bottomleft" | "bottom"
+        | "bottomright" | "innerbevel" | "topbevel" | "middlebevel" | "bottombevel"
+        | "leftouteredge" | "rightouteredge" | "topouteredge" | "bottomouteredge"
+        | "mainrightouteredge" | "mainleftouteredge" | "middle" | "mainbg" | "outerframe"
+        | "left" | "right" | "maintoprow" | "mainleftside" | "mainbackground" | "mainrightside"
+        | "mainbottomrow" | "mainbackgroundcol" | "leftdetail" | "rightdetail" | "vent"
+        | "divider" | "partnergraphic" | "partnerframe" | "agear" | "igear" | "sclogo" | "thex"
+        | "thexcover" => Some(R::Decor),
         "tabheader" | "tabs" | "tabbuttonbar" => Some(R::TabStrip),
         "tabcontrol" if f.children.iter().any(|c| key(c) == "knob") => Some(R::TabStrip),
         "buddyview" | "xfireview" => Some(R::View(ViewKey::Friends)),
@@ -155,9 +176,28 @@ pub fn role(
     use NodeRole as R;
     let comp = component.map(key);
     let name_k = key(name);
+    // Onyx's bottom `Logo2` is decor, not a second logo (the digits the
+    // key drops are its name here).
+    if name.trim().eq_ignore_ascii_case("logo2") {
+        return Some(R::Decor);
+    }
     // A tab control holding the buddy list is the views; one holding
     // button rows is the button bar (Classic names both `TabbedControl`).
-    if comp.as_deref() == Some("tabbedcontrol") || name_k == "maintabbedarea" {
+    // An INI `Class=TabControl` is the same control. One named for a button
+    // (SimpleX's `TabAddButton`: `AddButton`/`AddServerButton`/`SearchFiles`)
+    // is one slot of the button row, swapping its button with the tab: a
+    // group of buttons. One holding knobs is Combat's rotary tab strip.
+    let tabbed_class = f.class.is_some_and(|c| {
+        let c = c.trim();
+        c.eq_ignore_ascii_case("TabControl") || c.eq_ignore_ascii_case("TabbedControl")
+    });
+    if f.children.iter().any(|c| key(c) == "knob") && tabbed_class {
+        return Some(R::TabStrip);
+    }
+    if comp.as_deref() == Some("tabbedcontrol") || name_k == "maintabbedarea" || tabbed_class {
+        if button(&name_k).is_some() {
+            return Some(R::Group);
+        }
         let rows = f.children.iter().any(|c| key(c).contains("button"));
         return Some(if rows { R::ButtonBar } else { R::Views });
     }
@@ -171,7 +211,14 @@ pub fn role(
                     .trim_start_matches(|c: char| !c.is_ascii_digit())
                     .parse()
                     .ok()?;
-                KNOBS.get(n.checked_sub(1)?).map(|v| R::Knob(*v))
+                // Combat's four knob rotations share one place
+                // (`combat.ini` `[TabControl]`, all at X15 Y36) for three
+                // tabs: the fourth is a piece of the strip's art.
+                Some(
+                    KNOBS
+                        .get(n.checked_sub(1)?)
+                        .map_or(R::Part, |v| R::Knob(*v)),
+                )
             }
             Some(R::TabStrip) => view(name).map(R::Tab),
             Some(R::ButtonRow(_) | R::ButtonBar | R::Group) => button(&name_k)
@@ -179,6 +226,7 @@ pub fn role(
                 .map(R::Button),
             _ => None,
         })
+        .or_else(|| tab(&name_k).and_then(|()| view(name)).map(R::Tab))
         .or_else(|| resize(&name_k))
         .or_else(|| comp.as_deref().and_then(resize));
     let found = match found {

@@ -395,9 +395,11 @@ impl Walk<'_> {
         let mut sibs: BTreeMap<String, Placed> = BTreeMap::new();
         for tile in node.children_named("Tile") {
             // A tile whose art the tree lacks (Classic's `%partnergraphic%`
-            // ad) has no known size: its edges do not resolve.
+            // ad, Space Cowboy's undefined `MENUBARNORMAL`) has no known
+            // size: its edges do not resolve (SK0: an undefined bitmap lays
+            // nothing).
             let img = match self.image(tile) {
-                Err(ImportError::MissingFile { .. }) => None,
+                Err(ImportError::MissingFile { .. } | ImportError::UndefinedBitmap { .. }) => None,
                 other => other?,
             };
             let size = img.as_ref().map(|i| {

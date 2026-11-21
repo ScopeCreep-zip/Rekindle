@@ -63,9 +63,8 @@ interface Box {
 interface Cut {
   alphaOpaque: number;
   rects: Box[] | null;
-  /** The layout's content rectangle and header region (plan SK0-L1), logical px; null without a frame / header region. */
+  /** The layout's content rectangle (SK2: the views node's box), logical px; null without a frame. */
   content: Box | null;
-  header: Box | null;
 }
 
 /** Where `a` and `b` differ by more than 1 px on any edge, as text; empty when they agree. */
@@ -75,11 +74,11 @@ function offBy(a: Box, b: Box): string {
 }
 
 /**
- * The content box of the window's `.app-frame` (its rect less its padding), its profile header's rect, logical px, and
+ * The content box of the window's `.app-frame` (its rect less its padding), logical px, and
  * how many `.buddy-item` rows show inside the content box (a row's centre inside it, and the element drawn at that
  * centre is the row's own: a collapsed or clipped list shows none).
  */
-async function pageBoxes(): Promise<{ content: Box; header: Box | null; rows: number }> {
+async function pageBoxes(): Promise<{ content: Box; rows: number }> {
   return (await browser.execute(() => {
     const root = document.querySelector(".app-frame") as HTMLElement;
     const r = root.getBoundingClientRect();
@@ -91,8 +90,6 @@ async function pageBoxes(): Promise<{ content: Box; header: Box | null; rows: nu
       width: r.width - p("padding-left") - p("padding-right"),
       height: r.height - p("padding-top") - p("padding-bottom"),
     };
-    const bar = root.querySelector(":scope > .identity-bar");
-    const h = bar ? bar.getBoundingClientRect() : null;
     const rows = Array.from(root.querySelectorAll(".buddy-item")).filter((row) => {
       const b = row.getBoundingClientRect();
       const cx = b.left + b.width / 2;
@@ -101,8 +98,8 @@ async function pageBoxes(): Promise<{ content: Box; header: Box | null; rows: nu
       const hit = document.elementFromPoint(cx, cy);
       return b.width > 0 && b.height > 0 && inside && hit !== null && row.contains(hit);
     }).length;
-    return { content, header: h ? { x: h.left, y: h.top, width: h.width, height: h.height } : null, rows };
-  })) as { content: Box; header: Box | null; rows: number };
+    return { content, rows };
+  })) as { content: Box; rows: number };
 }
 
 /** The silhouette `pack`'s `frame` cuts a `width × height` window to at `scale` per mille. */
@@ -208,9 +205,10 @@ describe("a skinned window is the skin's shape", function () {
     const where = `${file} ${viewport.width}x${viewport.height}`;
     const cutOff = disagreements(img, cut);
     if (cutOff.outsideDrawn + cutOff.insideClear !== 0) found[`${where} at ${scale}‰`] = cutOff;
-    // The content box is the pack's content region exactly; the profile
-    // header sits in the pack's header region when it lays one, else in
-    // the content box (plan SK0-L1).
+    // The content box is the pack's content region exactly. The profile
+    // header checks are gone: SK2 withdrew SK0-L1's header region
+    // (`LayoutRegion`); the pack's own components (name field, status
+    // field) replace that row, laid from the component tree in SK2-S2.
     if (cut.content) {
       const page = await pageBoxes();
       const content = offBy(page.content, cut.content);
@@ -218,16 +216,6 @@ describe("a skinned window is the skin's shape", function () {
       if (frame === "main") {
         // The friends list shows: a collapsed content box hides every row (SK0, Alloy and XGlow 2026-11-20).
         if (page.rows < 1) found[`${where} friends list`] = "no .buddy-item row shows inside the content box";
-        if (!page.header) found[`${where} header`] = "no .identity-bar in the buddy list";
-        else if (cut.header) {
-          const header = offBy(page.header, cut.header);
-          if (header) found[`${where} header region`] = header;
-        } else {
-          const c = cut.content;
-          const h = page.header;
-          const inside = h.x >= c.x - 1 && h.y >= c.y - 1 && h.x + h.width <= c.x + c.width + 1 && h.y + h.height <= c.y + c.height + 1;
-          if (!inside) found[`${where} header in content`] = `${JSON.stringify(h)} is not inside ${JSON.stringify(c)}`;
-        }
       }
     }
     return found;

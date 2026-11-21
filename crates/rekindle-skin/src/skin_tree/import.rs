@@ -72,10 +72,13 @@ const Y: Axis = Axis {
     end_just: "BOTTOM",
 };
 
-/// An edge's position: from the parent's start edge or from its end edge.
+/// An edge's position: from the parent's start edge, from its end edge, or
+/// from its centre (an edge of a centred sibling: Combat's `JoinPlayTab`
+/// `X="CenterConsole.RIGHT"`).
 enum At {
     Start(i32),
     End(i32),
+    Centre(i32),
 }
 
 type Sibs = BTreeMap<String, (Span, Span)>;
@@ -167,11 +170,14 @@ fn edge(v: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError> {
         (Span::Stretch { start, .. }, false) => At::Start(i32::from(start) + n),
         (
             Span::Fixed {
-                at: Anchor::Centre(_),
-                ..
+                at: Anchor::Centre(c),
+                size,
             },
-            _,
-        ) => return Err(bad(format!("{v}: {name} is centred"))),
+            far,
+        ) => {
+            let left = i32::from(c) - i32::from(size) / 2;
+            At::Centre(if far { left + i32::from(size) } else { left } + n)
+        }
     }))
 }
 
@@ -179,42 +185,171 @@ fn i16_of(v: i32) -> Result<i16, ImportError> {
     i16::try_from(v).map_err(|_| bad(format!("{v} px is out of range")))
 }
 
-fn axis(tile: &Node, a: &Axis, size: u16, sibs: &Sibs) -> Result<Span, ImportError> {
+/// A position: a number (from the parent's start edge, or its far edge
+/// under `Just*=RIGHT/BOTTOM`), or a sibling's edge (a point).
+enum Pos {
+    Num(i32),
+    Ref(At),
+}
+
+/// A stretching tile from a point measured from the parent's far edge (its
+/// far end `end` from that edge too) is fixed: xSLIMFIRE's tabs
+/// (`X="TabNormalButton.RIGHT+12" ResizeX="100"`).
+fn from_far(e: i32, start_in: i32, end: i32, axis: &Axis) -> Result<Span, ImportError> {
+    let size = u16::try_from(e - start_in - end)
+        .map_err(|_| bad(format!("{}: a stretch ending before it starts", axis.pos)))?;
+    Ok(Span::Fixed {
+        at: Anchor::End(i16_of(end)?),
+        size,
+    })
+}
+
+/// A stretch capped by its component's `MaxWidth`/`MaxHeight`: Xfire grows
+/// the tile with its parent up to that size (xSLIMFIRE's
+/// `TabNormalButton` `MaxWidth="65"`), so at every window it is that size.
+fn capped(span: Span, max: Option<u16>, at_end: bool) -> Span {
+    match (span, max) {
+        (Span::Stretch { start, end }, Some(size)) => Span::Fixed {
+            at: if at_end {
+                Anchor::End(end)
+            } else {
+                Anchor::Start(start)
+            },
+            size,
+        },
+        (Span::Fixed { at, size }, Some(m)) => Span::Fixed {
+            at,
+            size: size.min(m),
+        },
+        (s, None) => s,
+    }
+}
+
+fn axis(
+    tile: &Node,
+    a: &Axis,
+    size: u16,
+    max: Option<u16>,
+    sibs: &Sibs,
+) -> Result<Span, ImportError> {
     let just = tile.attr_ci(a.just).map(str::trim).unwrap_or("");
     let at_end = just.eq_ignore_ascii_case(a.end_just);
     let centred = just.eq_ignore_ascii_case("CENTER") || just.eq_ignore_ascii_case("CENTRE");
-    let raw = tile.attr_ci(a.pos);
-    let pos = match raw {
+    let pos = match tile.attr_ci(a.pos) {
         Some(v) => match edge(v, sibs, a)? {
-            Some(at) => at,
-            None => At::Start(expr(Some(v), sibs, a)?),
+            Some(at) => Pos::Ref(at),
+            None => Pos::Num(expr(Some(v), sibs, a)?),
         },
-        None => At::Start(0),
+        None => Pos::Num(0),
     };
     let ind = |k| expr(tile.attr_ci(k), sibs, a);
-    let (ind_s, ind_e) = (ind(a.indent[0])?, ind(a.indent[1])?);
-    let (out_s, out_e) = (ind(a.outdent[0])?, ind(a.outdent[1])?);
+    let start_in = ind(a.indent[0])? - ind(a.outdent[0])?;
+    let end_in = ind(a.indent[1])? - ind(a.outdent[1])?;
     if tile.attr_ci(a.resize).is_some_and(|r| r.trim() == "100") {
         let (start, end) = match (pos, at_end) {
-            (At::Start(p), true) => (ind_s - out_s, p + ind_e - out_e),
-            (At::Start(p), false) => (p + ind_s - out_s, ind_e - out_e),
-            (At::End(_), _) => return Err(bad(format!("{}: a stretch from a far edge", a.pos))),
+            (Pos::Num(p), true) => (start_in, p + end_in),
+            (Pos::Num(p) | Pos::Ref(At::Start(p)), false) => (p + start_in, end_in),
+            (Pos::Ref(At::End(e)), false) => {
+                return Ok(capped(from_far(e, start_in, end_in, a)?, max, at_end))
+            }
+            (Pos::Ref(At::Centre(_)), false) | (Pos::Ref(_), true) => {
+                return Err(bad(format!(
+                    "{}: a stretch from an edge and a far side",
+                    a.pos
+                )))
+            }
         };
-        return Ok(Span::Stretch {
+        let span = Span::Stretch {
             start: i16_of(start)?,
             end: i16_of(end)?,
-        });
+        };
+        return Ok(capped(span, max, at_end));
     }
     let s = i32::from(size);
+    // A sibling's edge is a point: `Just*=RIGHT/BOTTOM` puts the tile's far
+    // edge on it (StealthX's `WndMax` `JustX=RIGHT X="WndClose.LEFT-3"`).
     let at = match (pos, at_end, centred) {
-        (At::Start(p), _, true) => Anchor::Centre(i16_of(p)?),
-        (At::Start(p), true, _) => Anchor::End(i16_of(p)?),
-        (At::Start(p), false, _) if p < 0 => Anchor::End(i16_of(-p - s)?),
-        (At::Start(p), false, _) => Anchor::Start(i16_of(p)?),
-        (At::End(e), false, _) => Anchor::End(i16_of(e - s)?),
-        (At::End(_), true, _) => return Err(bad(format!("{}: a far edge from a far edge", a.pos))),
+        (Pos::Num(p), _, true) => Anchor::Centre(i16_of(p)?),
+        (Pos::Num(p), true, _) => Anchor::End(i16_of(p)?),
+        (Pos::Num(p), false, _) if p < 0 => Anchor::End(i16_of(-p - s)?),
+        (Pos::Num(p), false, _) => Anchor::Start(i16_of(p)?),
+        (Pos::Ref(At::Start(p)), true, _) => Anchor::Start(i16_of(p - s)?),
+        (Pos::Ref(At::Start(p)), false, _) => Anchor::Start(i16_of(p)?),
+        (Pos::Ref(At::End(e)), true, _) => Anchor::End(i16_of(e)?),
+        (Pos::Ref(At::End(e)), false, _) => Anchor::End(i16_of(e - s)?),
+        (Pos::Ref(At::Centre(p)), true, _) => Anchor::Centre(i16_of(p - s / 2)?),
+        (Pos::Ref(At::Centre(p)), false, _) => Anchor::Centre(i16_of(p + s / 2)?),
     };
-    Ok(Span::Fixed { at, size })
+    Ok(capped(Span::Fixed { at, size }, max, at_end))
+}
+
+/// `span` (in a parent's frame) in the frame of a child laid at `inner`,
+/// when its edges are known there.
+fn shift(span: Span, inner: Span) -> Option<Span> {
+    let (start, end) = match inner {
+        Span::Fixed {
+            at: Anchor::Start(o),
+            ..
+        } => (Some(o), None),
+        Span::Fixed {
+            at: Anchor::End(o), ..
+        } => (None, Some(o)),
+        Span::Stretch { start, end } => (Some(start), Some(end)),
+        Span::Fixed {
+            at: Anchor::Centre(_),
+            ..
+        } => (None, None),
+    };
+    let by = |v: i16, o: Option<i16>| o.and_then(|o| v.checked_sub(o));
+    Some(match span {
+        Span::Fixed {
+            at: Anchor::Start(o),
+            size,
+        } => Span::Fixed {
+            at: Anchor::Start(by(o, start)?),
+            size,
+        },
+        Span::Fixed {
+            at: Anchor::End(o),
+            size,
+        } => Span::Fixed {
+            at: Anchor::End(by(o, end)?),
+            size,
+        },
+        Span::Stretch { start: s, end: e } => Span::Stretch {
+            start: by(s, start)?,
+            end: by(e, end)?,
+        },
+        Span::Fixed {
+            at: Anchor::Centre(_),
+            ..
+        } => return None,
+    })
+}
+
+/// The names a child of a tile laid at `(x, y)` sees: its parent's
+/// siblings and their outer names (Total Chaos's `AdArea`
+/// `Y="MainTitleBar.BOTTOM"` inside `AdBar`), in the child's frame.
+fn outer_for(names: &Sibs, x: Span, y: Span) -> Sibs {
+    names
+        .iter()
+        .filter_map(|(k, (sx, sy))| Some((k.clone(), (shift(*sx, x)?, shift(*sy, y)?))))
+        .collect()
+}
+
+/// A component's `MaxWidth`/`MaxHeight`.
+fn max_of(component: Option<&Node>, key: &str) -> Option<u16> {
+    component?.attr_ci(key)?.trim().parse().ok()
+}
+
+/// A tile read but not yet placed.
+struct Read<'n> {
+    tile: &'n Node,
+    id: String,
+    role: NodeRole,
+    img: Option<RgbaImage>,
+    wh: (u16, u16),
+    max: (Option<u16>, Option<u16>),
 }
 
 struct Walk<'a> {
@@ -280,76 +415,121 @@ impl Walk<'_> {
         Ok(Some(NodeArt { image, states }))
     }
 
+    /// One tile's id, role and art, before it is placed.
+    fn read<'n>(&self, tile: &'n Node, parent: Option<NodeRole>) -> Result<Read<'n>, ImportError> {
+        let component = tile.attr_ci("Component");
+        let id = tile
+            .attr_ci("Name")
+            .or(component)
+            .ok_or_else(|| bad("a tile with neither a name nor a component"))?
+            .trim()
+            .to_owned();
+        let img = self.image(tile, "Normal")?;
+        let size = |v: u32| u16::try_from(v).map_err(|_| bad(format!("{id}: art too large")));
+        let wh = match &img {
+            Some(i) => (size(i.width())?, size(i.height())?),
+            None => (0, 0),
+        };
+        let children: Vec<String> = tile
+            .children_named("Tile")
+            .filter_map(|t| {
+                t.attr_ci("Name")
+                    .or(t.attr_ci("Component"))
+                    .map(str::to_owned)
+            })
+            .collect();
+        let comp = component.and_then(|c| self.by_name.get(&c.to_ascii_lowercase()).copied());
+        let facts = Facts {
+            has_art: img.is_some(),
+            class: comp.and_then(|c| c.attr_ci("Class")),
+            children: &children,
+        };
+        let role = role(&id, component, parent, &facts).ok_or_else(|| {
+            bad(format!(
+                "{id}: component {} has no role",
+                component.unwrap_or("-")
+            ))
+        })?;
+        let max = (max_of(comp, "MaxWidth"), max_of(comp, "MaxHeight"));
+        Ok(Read {
+            tile,
+            id,
+            role,
+            img,
+            wh,
+            max,
+        })
+    }
+
+    /// `node`'s tiles: placed in as many passes as their references need
+    /// (Symbiosis's `ResizeTop` names `ResizeGripperTR`, the next tile),
+    /// each against its siblings and `outer`, the names its parent sees.
     fn walk(
         &mut self,
         node: &Node,
         parent: Option<NodeRole>,
+        outer: &Sibs,
     ) -> Result<Vec<SkinNode>, ImportError> {
-        let mut sibs = Sibs::new();
+        let tiles = node
+            .children_named("Tile")
+            .map(|t| self.read(t, parent))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut names = outer.clone();
+        let mut placed: Vec<Option<(Span, Span)>> = vec![None; tiles.len()];
+        loop {
+            let mut progress = false;
+            let mut first_err = None;
+            for (i, t) in tiles.iter().enumerate() {
+                if placed[i].is_some() {
+                    continue;
+                }
+                let xy = axis(t.tile, &X, t.wh.0, t.max.0, &names)
+                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, &names)?)));
+                match xy {
+                    Ok(xy) => {
+                        names.insert(t.id.to_ascii_lowercase(), xy);
+                        placed[i] = Some(xy);
+                        progress = true;
+                    }
+                    Err(e) => {
+                        first_err.get_or_insert_with(|| bad(format!("{}: {e}", t.id)));
+                    }
+                }
+            }
+            match first_err {
+                None => break,
+                Some(e) if !progress => return Err(e),
+                Some(_) => {}
+            }
+        }
         let mut out = Vec::new();
-        for tile in node.children_named("Tile") {
-            let component = tile.attr_ci("Component");
-            let id = tile
-                .attr_ci("Name")
-                .or(component)
-                .ok_or_else(|| bad("a tile with neither a name nor a component"))?
-                .trim()
-                .to_owned();
-            let img = self.image(tile, "Normal")?;
-            let size = |v: u32| u16::try_from(v).map_err(|_| bad(format!("{id}: art too large")));
-            let (w, h) = match &img {
-                Some(i) => (size(i.width())?, size(i.height())?),
-                None => (0, 0),
-            };
-            let children: Vec<String> = tile
-                .children_named("Tile")
-                .filter_map(|t| {
-                    t.attr_ci("Name")
-                        .or(t.attr_ci("Component"))
-                        .map(str::to_owned)
-                })
-                .collect();
-            let class = component
-                .and_then(|c| self.by_name.get(&c.to_ascii_lowercase()))
-                .and_then(|c| c.attr_ci("Class"));
-            let facts = Facts {
-                has_art: img.is_some(),
-                class,
-                children: &children,
-            };
-            let r = role(&id, component, parent, &facts).ok_or_else(|| {
-                bad(format!(
-                    "{id}: component {} has no role",
-                    component.unwrap_or("-")
-                ))
-            })?;
-            let x = axis(tile, &X, w, &sibs).map_err(|e| bad(format!("{id}: {e}")))?;
-            let y = axis(tile, &Y, h, &sibs).map_err(|e| bad(format!("{id}: {e}")))?;
-            sibs.insert(id.to_ascii_lowercase(), (x, y));
-            let art = match (&img, r.interactive()) {
-                (Some(i), true) => self.art(&id, tile, i)?,
+        for (t, xy) in tiles.into_iter().zip(placed) {
+            let (x, y) = xy.ok_or_else(|| bad(format!("{}: not placed", t.id)))?;
+            let art = match (&t.img, t.role.interactive()) {
+                (Some(i), true) => self.art(&t.id, t.tile, i)?,
                 _ => None,
             };
-            let z = tile.attr_ci("Z").map_or(Ok(0), |z| {
+            let z = t.tile.attr_ci("Z").map_or(Ok(0), |z| {
                 z.trim()
                     .parse::<i16>()
-                    .map_err(|_| bad(format!("{id}: Z={z}")))
+                    .map_err(|_| bad(format!("{}: Z={z}", t.id)))
             })?;
-            let shows_with = match r {
+            let shows_with = match t.role {
                 NodeRole::View(v) | NodeRole::ButtonRow(v) => Some(v),
                 _ => None,
             };
-            let kids = self.walk(tile, Some(r))?;
+            let inner = outer_for(&names, x, y);
+            let children = self.walk(t.tile, Some(t.role), &inner)?;
             out.push(SkinNode {
-                id,
-                role: r,
+                id: t.id,
+                role: t.role,
                 x,
                 y,
                 z,
                 art,
                 text: None,
                 shows_with,
-                children: kids,
+                children,
             });
         }
         Ok(out)
@@ -409,7 +589,7 @@ pub fn add(
         files: Files::new(),
     };
     let tree = SkinTree {
-        root: walk.walk(layout, None)?,
+        root: walk.walk(layout, None, &Sibs::new())?,
     };
     if tree
         .boxes(0, 0)

@@ -8,6 +8,7 @@ use rekindle_types::dto::skin_tree::{
     ActionKey, Anchor, NodeArt, NodeRole, SkinNode, SkinTree, Span, ViewKey,
 };
 
+use super::roles::{role, Facts};
 use super::{css, import, validate};
 use crate::import::tree::parse;
 
@@ -256,8 +257,15 @@ fn piece(path: &str, _: Option<&str>) -> Result<RgbaImage, crate::import::Import
 }
 
 fn imported(xml: &[u8]) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
+    imported_with(xml, PARTS)
+}
+
+fn imported_with(
+    xml: &[u8],
+    parts: &[u8],
+) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
     let main = parse("main.xml", xml).unwrap();
-    let parts = parse("parts.xml", PARTS).unwrap();
+    let parts = parse("parts.xml", parts).unwrap();
     let mut built = (layout(None), BTreeMap::new());
     import::add(
         SkinWindow::Main,
@@ -330,4 +338,131 @@ fn css_lays_one_rule_per_node_with_a_hit_area() {
         "{out}"
     );
     assert!(!out.contains("[data-skin-node=\"Views\"]::before"), "{out}");
+}
+
+fn root_of(xml: &[u8]) -> Vec<SkinNode> {
+    imported(xml).unwrap().1.root
+}
+
+/// Symbiosis's `ResizeTop` `IndentRight="ResizeGripperTR.Width+13"` names
+/// the tile after it: tiles are placed in as many passes as they need.
+#[test]
+fn a_reference_to_a_later_sibling_resolves() {
+    let kids = root_of(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="MainTitleBar" ResizeX="100" IndentRight="CloseBox.WIDTH+2" Component="MainTitleBar"/>
+<Tile Name="CloseBox" JustX="RIGHT" X="4" Component="CloseBox"/></Tile>"#,
+    );
+    assert_eq!(kids[0].x, Span::Stretch { start: 0, end: 20 });
+}
+
+/// StealthX's `WndMax` `JustX="RIGHT" X="WndClose.LEFT-3"`: the sibling's
+/// edge is a point, and the tile's far edge sits on it.
+#[test]
+fn a_right_justified_tile_ends_on_a_siblings_edge() {
+    let kids = root_of(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="CloseBox" JustX="RIGHT" X="4" Component="CloseBox"/>
+<Tile Name="XfireLogo" JustX="RIGHT" X="CloseBox.LEFT-3" Component="XfireLogo"/></Tile>"#,
+    );
+    let at = Span::Fixed {
+        at: Anchor::End(25),
+        size: 40,
+    };
+    assert_eq!(kids[1].x, at);
+}
+
+/// Combat's `JoinPlayTab` `X="CenterConsole.RIGHT"`: an edge of a centred
+/// sibling places the tile from the centre too (at 200 px: 111 both ways).
+#[test]
+fn a_tile_beside_a_centred_sibling_is_centred() {
+    let kids = root_of(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="CloseBox" JustX="CENTER" X="0" Component="CloseBox"/>
+<Tile Name="XfireLogo" X="CloseBox.RIGHT+2" Component="XfireLogo"/></Tile>"#,
+    );
+    let at = Span::Fixed {
+        at: Anchor::Centre(31),
+        size: 40,
+    };
+    assert_eq!(kids[1].x, at);
+}
+
+/// Total Chaos's `AdArea` `Y="MainTitleBar.BOTTOM"` inside `AdBar`, itself
+/// at `MainTitleBar.BOTTOM`: a name of the parent's siblings, in the
+/// child's frame.
+#[test]
+fn a_child_sees_its_parents_siblings_in_its_own_frame() {
+    let kids = root_of(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="MainTitleBar" ResizeX="100" Component="MainTitleBar"/>
+<Tile Name="AdBar" Y="MainTitleBar.BOTTOM" ResizeX="100" Component="AdBar">
+<Tile Name="AdArea" Y="MainTitleBar.BOTTOM" JustX="CENTER" Component="AdArea"/></Tile></Tile>"#,
+    );
+    assert_eq!(kids[1].y, fixed(50, 0));
+    assert_eq!(kids[1].children[0].y, fixed(0, 0));
+    assert_eq!(kids[1].children[0].role, NodeRole::Part);
+}
+
+/// xSLIMFIRE's tabs stretch (`ResizeX="100"`) up to their component's
+/// `MaxWidth="65"`, each 12 px after the last.
+#[test]
+fn a_stretch_is_capped_by_its_components_max_width() {
+    let parts = br#"<Components>
+<Component Name="TabNormalButton" Class="PushButton" MaxWidth="65" MaxHeight="19"/>
+<Component Name="TabServerButton" Class="PushButton" MaxWidth="65" MaxHeight="19"/>
+</Components>"#;
+    let xml = br#"<Tile Name="TabHeader" X="23" ResizeX="100" IndentRight="23" Component="TabHeader">
+<Tile Name="TabNormalButton" ResizeX="100" ResizeY="100" Component="TabNormalButton"/>
+<Tile Name="TabServerButton" X="TabNormalButton.RIGHT+12" Y="1" ResizeX="100" ResizeY="100" Component="TabServerButton"/>
+</Tile>"#;
+    let tree = imported_with(xml, parts).unwrap().1;
+    let [normal, server] = &tree.root[..] else {
+        panic!("{:?}", tree.root)
+    };
+    assert_eq!(normal.role, NodeRole::Tab(ViewKey::Friends));
+    assert_eq!((normal.x, normal.y), (fixed(0, 65), fixed(0, 19)));
+    assert_eq!((server.x, server.y), (fixed(77, 65), fixed(1, 19)));
+}
+
+/// SimpleX's `[TabAddButton]` `Class=TabControl` holds `AddButton`,
+/// `AddServerButton` and `SearchFiles`: one slot of the button row, a
+/// group of buttons; Combat's knob control is the tab strip.
+#[test]
+fn an_ini_tab_control_slot_is_a_group_of_buttons() {
+    let kids = ["AddButton".to_owned(), "SearchFiles".to_owned()];
+    let facts = Facts {
+        has_art: false,
+        class: Some("TabControl"),
+        children: &kids,
+    };
+    let slot = role(
+        "TabAddButton",
+        Some("TabAddButton"),
+        Some(NodeRole::Group),
+        &facts,
+    );
+    assert_eq!(slot, Some(NodeRole::Group));
+    let plain = Facts {
+        has_art: true,
+        class: Some("PushButton"),
+        children: &[],
+    };
+    let search = role("SearchFiles", Some("SearchFiles"), slot, &plain);
+    assert_eq!(search, Some(NodeRole::Button(ActionKey::Find)));
+    let knobs = ["Knob01".to_owned(), "Knob04".to_owned()];
+    let strip = Facts {
+        has_art: false,
+        class: Some("TabControl"),
+        children: &knobs,
+    };
+    let tc = role(
+        "TabControl",
+        Some("TabControl"),
+        Some(NodeRole::Group),
+        &strip,
+    );
+    assert_eq!(tc, Some(NodeRole::TabStrip));
+    let fourth = role("Knob04", Some("Knob04"), tc, &plain);
+    assert_eq!(fourth, Some(NodeRole::Part));
 }
