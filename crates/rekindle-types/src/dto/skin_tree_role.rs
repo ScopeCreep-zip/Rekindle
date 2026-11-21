@@ -122,6 +122,9 @@ pub enum NodeRole {
     InfoToggle,
     /// The InfoView pane.
     InfoView,
+    /// Symbiosis's chat-room name edit (`RoomEdit` in `ChatRoomsButtonBar`),
+    /// bound to the group DM's name (plan SK2 lead decision 1).
+    RoomName,
     /// StealthX's MENU rail (`MenuButton` → `MainMenuWindow`).
     SideRail,
     /// A resize edge or corner grip.
@@ -165,6 +168,7 @@ impl NodeRole {
                 | Self::Button(_)
                 | Self::InfoToggle
                 | Self::SideRail
+                | Self::RoomName
                 | Self::Resize(_)
                 | Self::PackLink
                 | Self::SystemMenu

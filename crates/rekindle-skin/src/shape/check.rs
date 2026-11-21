@@ -6,7 +6,12 @@
 //! 1. each tile's mask is its image's alpha (≥ [`super::ALPHA_OPAQUE`]),
 //!    derived from the image, never declared: the shape is what is drawn;
 //! 2. no frame tile reaches into the content rectangle (security surfaces
-//!    live there, `@layer sec`); a decoration (a pack tile above the frame
+//!    live there, `@layer sec`), in a layout without a component tree. Under
+//!    SK2 (lead decision 3, 2026-11-20) the pack's tree is the window: its
+//!    background art may lie under any component, the views included, and
+//!    the views node draws opaque instead (`skin_tree::css`), so a tree-laid
+//!    layout skips this rule and rule 3 and its fills need not lie beside the
+//!    content; a decoration (a pack tile above the frame
 //!    band, `FrameTile::decoration`) may, because it draws beneath the
 //!    content's interactive layer and the content stays opaque under it.
 //!    A fill tile (`FrameTile::fill`, the pack's centre art) is allowed
@@ -95,7 +100,8 @@ fn fill_band(
         let opaque = (0..u32::from(t.height))
             .all(|my| (0..u32::from(t.width)).all(|mx| masks[i].get(mx, my)));
         let in_frame = x >= f.0 && y >= f.1 && x + tw <= f.0 + f.2 && y + th <= f.1 + f.3;
-        let beside = (x + tw <= c.0 || x >= c.0 + c.2) && y >= c.1 && y + th <= c.1 + c.3;
+        let beside = layout.tree.is_some()
+            || ((x + tw <= c.0 || x >= c.0 + c.2) && y >= c.1 && y + th <= c.1 + c.3);
         if t.overhang || t.decoration.is_some() || !opaque || !in_frame || !beside {
             return Err(bad(
                 &format!("windows.{w}.tiles.{i}"),
@@ -122,7 +128,8 @@ fn closed(
         let (y0, y1) = (y.max(c.1), (y + th).min(c.1 + c.3));
         // A decoration draws beneath the content's interactive layer and
         // the content stays opaque under it (lead decision, plan SK0 S1c).
-        if x0 >= x1 || y0 >= y1 || layout.tiles[i].decoration.is_some() {
+        // A tree-laid window's views node draws opaque over its art (rule 2).
+        if x0 >= x1 || y0 >= y1 || layout.tiles[i].decoration.is_some() || layout.tree.is_some() {
             continue;
         }
         if !layout.tiles[i].overhang {

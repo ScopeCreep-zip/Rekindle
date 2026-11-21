@@ -436,3 +436,35 @@ fn total_chaos_lays_its_content_region() {
     let c = main.content;
     assert_eq!((c.top, c.right, c.bottom, c.left), (181, 50, 66, 50));
 }
+
+/// Lead decision 3 (plan SK2, 2026-11-20): under the pack's component tree
+/// the window's art may lie under any component, the views included (the
+/// views node draws opaque); without a tree SK0's rule 2 still refuses it.
+#[test]
+fn a_tree_laid_window_may_draw_its_art_under_the_views() {
+    let mut plaque = solid(4, 4);
+    plaque.put_pixel(1, 1, OFF);
+    let lay = |l: &mut WindowLayout, files: &mut BTreeMap<String, Vec<u8>>| {
+        let (t, png) = tile(
+            SkinWindow::Chat,
+            "plaque",
+            &plaque,
+            (TileAxis::Centre, TileAxis::Centre),
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        files.insert(t.image.clone(), png);
+        l.tiles.push(t);
+    };
+    let got = checked_with(&nine(), lay);
+    assert!(
+        matches!(got, Err(SkinRule::ShapeIntrudes { .. })),
+        "{got:?}"
+    );
+    let got = checked_with(&nine(), |l, files| {
+        lay(l, files);
+        l.tree = Some(rekindle_types::dto::skin_tree::SkinTree { root: Vec::new() });
+    });
+    assert_eq!(got, Ok(()));
+}

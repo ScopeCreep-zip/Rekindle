@@ -39,12 +39,20 @@ fn view(name: &str) -> Option<ViewKey> {
 const KNOBS: [ViewKey; 3] = [ViewKey::Friends, ViewKey::Servers, ViewKey::Files];
 
 fn button(k: &str) -> Option<ActionKey> {
-    let rows: [(&[&str], ActionKey); 16] = [
+    let rows: [(&[&str], ActionKey); 20] = [
         (&["addserver", "addfav", "favorite"], ActionKey::AddServer),
         (&["startdownload"], ActionKey::StartDownload),
         (&["stopdownload"], ActionKey::StopDownload),
+        // Combat's `ChatRefreshStopTab` on the Files tab (lead decision 1).
+        (&["stop"], ActionKey::StopDownload),
+        // Symbiosis's `ButtonViewPictures`: open the selected shared file.
+        (&["viewpicture", "viewvideo"], ActionKey::OpenDownload),
         (&["executedownload", "openfile"], ActionKey::OpenDownload),
         (&["downloadinfo"], ActionKey::DownloadInfo),
+        // Symbiosis's Pictures/Videos rows: a shared file's info, and
+        // sharing one (the attachment upload) (lead decision 1).
+        (&["infopicture", "infovideo"], ActionKey::DownloadInfo),
+        (&["upload"], ActionKey::Browse),
         (&["bigbrowsefile", "browse"], ActionKey::Browse),
         (&["find", "search"], ActionKey::Find),
         (&["roomenter", "enterroom", "enter"], ActionKey::EnterRoom),
@@ -130,14 +138,20 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         "buddyview" | "xfireview" => Some(R::View(ViewKey::Friends)),
         "serverview" => Some(R::View(ViewKey::Servers)),
         "downloadview" => Some(R::View(ViewKey::Files)),
-        "buttonrow" | "friendsbuttonbar" | "serversbuttonbar" | "filesbuttonbar"
-        | "chatroomsbuttonbar" | "picturesbuttonbar" | "videosbuttonbar" => {
-            Some(R::ButtonRow(ViewKey::Friends))
-        }
+        "buttonrow"
+        | "friendsbuttonbar"
+        | "serversbuttonbar"
+        | "filesbuttonbar"
+        | "chatroomsbuttonbar"
+        | "picturesbuttonbar"
+        | "videosbuttonbar"
+        | "notificationsbuttonbar" => Some(R::ButtonRow(ViewKey::Friends)),
         "infoviewbutton" | "expandbutton" | "infoviewswitch" | "ivbuttonholder" | "viewinfo"
         | "buttonmaininfoout" => Some(R::InfoToggle),
         "menubutton" => Some(R::SideRail),
         "consoletext" => Some(R::ConsoleLabel),
+        // Symbiosis's chat-room name edit: the group DM's name (lead decision 1).
+        "roomedit" => Some(R::RoomName),
         "downloadblink" => Some(R::Lamp(LampKey::Files)),
         "tclink" => Some(R::PackLink),
         "gamelogo" => Some(R::GameLogo),
@@ -193,6 +207,12 @@ pub fn role(
     });
     if f.children.iter().any(|c| key(c) == "knob") && tabbed_class {
         return Some(R::TabStrip);
+    }
+    // Combat's `[ConsoleText]` is `Class=TabControl` but holds the console
+    // plate's per-tab texts (`BuddyText`/`ServerText`/`DownloadText`, the
+    // label's parts, lead decision 1), not views.
+    if name_k == "consoletext" || comp.as_deref() == Some("consoletext") {
+        return Some(R::ConsoleLabel);
     }
     if comp.as_deref() == Some("tabbedcontrol") || name_k == "maintabbedarea" || tabbed_class {
         if button(&name_k).is_some() {

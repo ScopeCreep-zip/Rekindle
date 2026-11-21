@@ -12,7 +12,14 @@
 //! MinimizeBox` `X=1` `Y=1`). A state's pieces (`Graphics.*`, `Hover.*`,
 //! `BtnDown.*`) are an `<Images State=…>` set with its `ColorGroup` as the
 //! set's `Color`; `Text.font/size/bold/color` is a `<Text>`. Repeated keys
-//! read the first (as [`super::ini`] does); a tile names no section it is
+//! read the first (as [`super::ini`] does), except a position key set to a
+//! sibling's edge and then to a number: the number is the offset from that
+//! edge (XGlow's `Window49.Y=Bottom.BOTTOM` `Window49.Y=-52` is
+//! `Bottom.BOTTOM-52`; its four buttons `X=ButtonDivider.LEFT` then
+//! `-104/-52/0/62` stand side by side as in `skinref/xglow`, and
+//! `Window40.Y=Middle.BOTTOM` `Y=0` keeps `Bottom` at the window's bottom
+//! as the original draws it, where a last-wins `Y=0` would lay it at the
+//! top; plan SK2 lead decision 4). A tile names no section it is
 //! already inside, and the depth is capped.
 
 use std::collections::BTreeMap;
@@ -79,12 +86,29 @@ fn windows(section: &Section) -> BTreeMap<u32, BTreeMap<String, String>> {
         ) else {
             continue;
         };
+        let value = e.value.trim();
         out.entry(n)
             .or_default()
             .entry((*attr).to_owned())
-            .or_insert_with(|| e.value.trim().to_owned());
+            .and_modify(|first: &mut String| {
+                if let Some(joined) = offset_of(attr, first, value) {
+                    *first = joined;
+                }
+            })
+            .or_insert_with(|| value.to_owned());
     }
     out
+}
+
+/// A repeated `X`/`Y` whose first value is a sibling's edge
+/// (`Bottom.BOTTOM`) and whose second is a number: the edge plus it.
+fn offset_of(attr: &str, first: &str, value: &str) -> Option<String> {
+    let n: i32 = value.parse().ok()?;
+    let edge = (attr == "X" || attr == "Y")
+        && first.contains('.')
+        && !first.contains(['+', '-'])
+        && first.parse::<i32>().is_err();
+    edge.then(|| format!("{first}{n:+}"))
 }
 
 fn tiles(ini: &Ini, section: &Section, path: &mut Vec<String>) -> Vec<Node> {
@@ -179,4 +203,28 @@ pub fn tree(skin: &Ini) -> Option<(Node, Node)> {
         skin.sections.iter().map(component).collect(),
     );
     Some((layout, components))
+}
+
+#[cfg(test)]
+mod offset_tests {
+    use super::offset_of;
+
+    /// Plan SK2 lead decision 4: XGlow's repeated position keys.
+    #[test]
+    fn a_repeated_position_key_is_an_offset_from_the_first_edge() {
+        assert_eq!(
+            offset_of("Y", "Bottom.BOTTOM", "-52").as_deref(),
+            Some("Bottom.BOTTOM-52")
+        );
+        assert_eq!(
+            offset_of("X", "ButtonDivider.LEFT", "62").as_deref(),
+            Some("ButtonDivider.LEFT+62")
+        );
+        assert_eq!(
+            offset_of("Y", "Middle.BOTTOM", "0").as_deref(),
+            Some("Middle.BOTTOM+0")
+        );
+        assert_eq!(offset_of("Y", "12", "0"), None);
+        assert_eq!(offset_of("Z", "Bottom.BOTTOM", "1"), None);
+    }
 }

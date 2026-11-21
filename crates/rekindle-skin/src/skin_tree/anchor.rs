@@ -61,13 +61,18 @@ enum At {
 
 pub(super) type Sibs = BTreeMap<String, (NodeSpan, NodeSpan)>;
 
+/// Each sibling's art size, known before it is placed: XGlow's `Middle`
+/// ends `Bottom.height` above the bottom while `Bottom` sits on
+/// `Middle.BOTTOM`, a cycle only in position, never in size.
+pub(super) type Sizes = BTreeMap<String, (u16, u16)>;
+
 fn span_of(sibs: &Sibs, name: &str, axis: &Axis) -> Option<NodeSpan> {
     sibs.get(&name.to_ascii_lowercase())
         .map(|s| if axis.pos == "X" { s.0 } else { s.1 })
 }
 
 /// A sum of signed terms, each a number or a sibling's `width`/`height`.
-fn expr(v: Option<&str>, sibs: &Sibs, axis: &Axis) -> Result<i32, ImportError> {
+fn expr(v: Option<&str>, (sibs, sizes): (&Sibs, &Sizes), axis: &Axis) -> Result<i32, ImportError> {
     let Some(v) = v else { return Ok(0) };
     let mut total = 0i32;
     let mut rest = v.trim();
@@ -89,8 +94,12 @@ fn expr(v: Option<&str>, sibs: &Sibs, axis: &Axis) -> Result<i32, ImportError> {
             if !field.eq_ignore_ascii_case(axis.size) {
                 return Err(bad(format!("{v}: {field} is not this axis's size")));
             }
-            match span_of(sibs, name, axis) {
-                Some(NodeSpan::Fixed { size, .. }) => i32::from(size),
+            let art = sizes
+                .get(&name.to_ascii_lowercase())
+                .map(|wh| if axis.pos == "X" { wh.0 } else { wh.1 })
+                .filter(|s| *s > 0);
+            match (span_of(sibs, name, axis), art) {
+                (Some(NodeSpan::Fixed { size, .. }), _) | (None, Some(size)) => i32::from(size),
                 _ => return Err(bad(format!("{v}: {name} has no fixed size"))),
             }
         };
@@ -208,7 +217,7 @@ pub(super) fn axis(
     ax: &Axis,
     size: u16,
     max: Option<u16>,
-    sibs: &Sibs,
+    (sibs, sizes): (&Sibs, &Sizes),
 ) -> Result<NodeSpan, ImportError> {
     let just = tile.attr_ci(ax.just).map_or("", str::trim);
     let at_end = just.eq_ignore_ascii_case(ax.end_just);
@@ -216,11 +225,11 @@ pub(super) fn axis(
     let pos = match tile.attr_ci(ax.pos) {
         Some(v) => match edge(v, sibs, ax)? {
             Some(at) => Pos::Ref(at),
-            None => Pos::Num(expr(Some(v), sibs, ax)?),
+            None => Pos::Num(expr(Some(v), (sibs, sizes), ax)?),
         },
         None => Pos::Num(0),
     };
-    let ind = |k| expr(tile.attr_ci(k), sibs, ax);
+    let ind = |k| expr(tile.attr_ci(k), (sibs, sizes), ax);
     let start_in = ind(ax.indent[0])? - ind(ax.outdent[0])?;
     let end_in = ind(ax.indent[1])? - ind(ax.outdent[1])?;
     if tile.attr_ci(ax.resize).is_some_and(|r| r.trim() == "100") {

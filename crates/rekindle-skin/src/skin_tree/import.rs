@@ -19,7 +19,7 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, RegionState, SkinWindow, TileAxis, WindowLayout};
 use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree};
 
-use super::anchor::{axis, outer_for, Sibs, X, Y};
+use super::anchor::{axis, outer_for, Sibs, Sizes, X, Y};
 use super::roles::{role, Facts};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_image, Decode};
@@ -174,6 +174,10 @@ impl Walk<'_> {
             .map(|t| self.read(t, parent))
             .collect::<Result<Vec<_>, _>>()?;
         let mut names = outer.clone();
+        let sizes: Sizes = tiles
+            .iter()
+            .map(|t| (t.id.to_ascii_lowercase(), t.wh))
+            .collect();
         let mut placed: Vec<Option<(NodeSpan, NodeSpan)>> = vec![None; tiles.len()];
         loop {
             let mut progress = false;
@@ -182,8 +186,9 @@ impl Walk<'_> {
                 if placed[i].is_some() {
                     continue;
                 }
-                let xy = axis(t.tile, &X, t.wh.0, t.max.0, &names)
-                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, &names)?)));
+                let refs = (&names, &sizes);
+                let xy = axis(t.tile, &X, t.wh.0, t.max.0, refs)
+                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, refs)?)));
                 match xy {
                     Ok(xy) => {
                         names.insert(t.id.to_ascii_lowercase(), xy);
