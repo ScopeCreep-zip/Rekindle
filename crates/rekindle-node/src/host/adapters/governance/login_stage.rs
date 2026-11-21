@@ -4,7 +4,8 @@
 //! leases, watches and keepalive; the shell's per-community loops through
 //! `ShellHooks::community_records_ready`), its member state hydrated, the
 //! heads it lacks fetched from the members' frontiers, its governance
-//! rebuilt and its history catch-up scheduled; then our active
+//! rebuilt, its own sealed op pages held again for warming, and its
+//! history catch-up scheduled; then our active
 //! records are republished. It is a task of the unlock's `SessionScope`, so
 //! a lock cancels it, and its DHT work is record-pool calls, which the
 //! lock's drain releases (plan C7.6g).
@@ -152,6 +153,9 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
         Err(error) => tracing::warn!(community = community_id, %error, "frontier catch-up failed"),
     }
     dht_hydration::rebuild_governance(governance, community_id).await;
+    // Our own op pages beyond the checkpoint the rebuild applied, held
+    // again from our local op log (plan E3.2 S7 record warming).
+    governance.rewarm_own_op_pages(community_id).await;
     if stop.is_cancelled() {
         return;
     }

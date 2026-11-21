@@ -4,7 +4,7 @@
 //! slot heads are (`own_head_at` reads our own head the same way), so a
 //! round trip never lets ops arriving meanwhile into its causal past.
 
-use super::{local_value, own_head_at, page, ChainEntry, ChainError};
+use super::{local_value, own_head_at, page, ChainEntry, ChainError, PagePointer};
 use crate::port::{OpenIntent, RecordPort};
 
 /// The newest entry of the log whose head is `record`/`head_subkey`, from
@@ -36,4 +36,44 @@ pub async fn local_newest_entry(
         seq: pointer.last_seq,
         ciphertext,
     }))
+}
+
+/// The pages of the log whose head is `record`/`head_subkey` holding an
+/// entry above `floor`, newest first, from our local copies only (plan
+/// E3.2 S7 record warming: a writer re-learns its own sealed op pages at
+/// unlock, nothing persisted). The walk follows each page's `prev` down
+/// from our own `HEAD` and stops at the first page at or below `floor`, or
+/// at one not held here (a page another device of ours wrote and we never
+/// read); a local read never goes to the network (`own_head_at`).
+///
+/// # Errors
+/// A local read failed, or a value is malformed.
+pub async fn local_pages_after(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+    floor: u64,
+) -> Result<Vec<PagePointer>, ChainError> {
+    let mut pages = Vec::new();
+    let mut next = own_head_at(port, record, head_subkey)
+        .await?
+        .map(|head| head.newest);
+    // Each page's previous page ends right before it (`decode_page`), so
+    // the walk moves strictly down and ends.
+    while let Some(pointer) = next.take() {
+        if pointer.last_seq <= floor {
+            break;
+        }
+        let lease = port
+            .acquire(&pointer.page_key, None, OpenIntent::Check)
+            .await?;
+        let held = local_value(port, lease, 0).await;
+        port.release(lease).await;
+        let Some(value) = held? else {
+            break;
+        };
+        next = page::decode_page(&value.data, &pointer)?.prev;
+        pages.push(pointer);
+    }
+    Ok(pages)
 }

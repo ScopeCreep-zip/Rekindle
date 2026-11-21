@@ -43,6 +43,7 @@ fn the_warm_set_is_the_latest_directory_and_own_pages_beyond_its_cut() {
     let dir1 = vec!["d1a".to_string(), "d1b".to_string()];
     pages.checkpoint(1, &dir1, &[head(&me, 5), head(&other, 40)], Some(&me));
     assert_eq!(keys(&pages), ["d1a", "d1b", "own4", "own7"]);
+    assert_eq!(pages.own_floor(), 5);
     assert!(pages.records().iter().all(|r| r.immutable));
 
     // Height 2: 300 members = 3 pages; our head is seq 9: all ours folded.
@@ -54,6 +55,7 @@ fn the_warm_set_is_the_latest_directory_and_own_pages_beyond_its_cut() {
     // A height-1 checkpoint seen late changes nothing.
     pages.checkpoint(1, &dir1, &[head(&me, 12)], Some(&me));
     assert_eq!(keys(&pages), ["d2a", "d2b", "d2c", "own10"]);
+    assert_eq!(pages.own_floor(), 9);
 }
 
 /// A cut without a head of ours folds none of our pages.

@@ -78,6 +78,7 @@ mod on_screen;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_map;
 mod ops;
+mod own_pages;
 mod own_removal;
 mod permission_events;
 pub(crate) mod pins;

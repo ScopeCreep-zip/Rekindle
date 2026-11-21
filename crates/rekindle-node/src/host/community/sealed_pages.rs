@@ -23,7 +23,8 @@ use rekindle_types::id::PseudonymKey;
 use super::state::CommunityState;
 
 /// The sealed pages one community keeps warm. Nothing is persisted: own
-/// pages are learned from our appends.
+/// pages are learned from our appends, and at unlock from our own op
+/// log's local copies above [`SealedPages::own_floor`] (`own_pages.rs`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SealedPages {
     /// The checkpoint height whose directory pages are held.
@@ -32,6 +33,8 @@ pub struct SealedPages {
     /// Our own op pages beyond that checkpoint's cut: first seq → (last
     /// seq, page key).
     own_ops: BTreeMap<u64, (u64, String)>,
+    /// Our highest seq any held checkpoint's cut folds (0: none).
+    folded: u64,
 }
 
 impl SealedPages {
@@ -56,8 +59,16 @@ impl SealedPages {
             .map(|head| head.author_seq)
             .max();
         if let Some(folded) = folded {
+            self.folded = self.folded.max(folded);
             self.own_ops.retain(|_, (last, _)| *last > folded);
         }
+    }
+
+    /// Our highest seq the held checkpoints fold: only our op pages
+    /// holding an op above it are kept warm.
+    #[must_use]
+    pub fn own_floor(&self) -> u64 {
+        self.folded
     }
 
     /// One of our own op pages, just sealed by an append.

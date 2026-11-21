@@ -4,7 +4,7 @@
 use rekindle_codec::capnp_codec::chain::{encode_chain_page, ChainHead, ChainPage};
 use rekindle_types::dht_layout::dm_participant;
 
-use super::{append, head, read_after, retire_through, ChainError, PagePointer};
+use super::{append, head, local_pages_after, read_after, retire_through, ChainError, PagePointer};
 use crate::port::{PortError, RecordPort};
 use crate::schema;
 
@@ -294,4 +294,29 @@ async fn an_append_superseded_by_a_newer_head_chains_onto_it() {
     assert_eq!(head(&port, &key).await.unwrap(), Some(appended));
     let read = read_after(&port, &key, 0).await.unwrap();
     assert_eq!(seqs(&read), vec![1, 2, 3, 4, 5]);
+}
+
+/// S7 record warming: a writer re-learns its own pages above a floor from
+/// its local copies, newest first, without asking the network.
+#[tokio::test]
+async fn a_writer_lists_its_own_pages_above_a_floor_locally() {
+    let (port, key, owner) = participant().await;
+    let mut written = Vec::new();
+    for run in [1..=2, 3..=5, 6..=6] {
+        written.push(append(&port, &key, &owner, &entries(run)).await.unwrap());
+    }
+    port.stall_network(true);
+    let reads = port.network_reads();
+    let above = |floor| local_pages_after(&port, &key, dm_participant::HEAD, floor);
+    let all = tokio::time::timeout(std::time::Duration::from_secs(5), above(0))
+        .await
+        .expect("the walk never waits on the network")
+        .unwrap();
+    assert_eq!(all, written.iter().rev().cloned().collect::<Vec<_>>());
+    assert_eq!(
+        above(4).await.unwrap(),
+        vec![written[2].clone(), written[1].clone()]
+    );
+    assert_eq!(above(6).await.unwrap(), Vec::<PagePointer>::new());
+    assert_eq!(port.network_reads(), reads);
 }
