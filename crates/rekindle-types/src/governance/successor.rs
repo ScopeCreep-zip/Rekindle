@@ -85,9 +85,7 @@ impl CommunitySuccessor {
         let shape = match (self.reason, fields) {
             (SuccessorReason::Recreate, (true, false, false, false)) => SuccessorShape::Successor,
             (SuccessorReason::Transfer, (false, true, true, false)) => SuccessorShape::Offer,
-            (SuccessorReason::Transfer, (false, false, false, false)) => {
-                SuccessorShape::Withdrawal
-            }
+            (SuccessorReason::Transfer, (false, false, false, false)) => SuccessorShape::Withdrawal,
             (SuccessorReason::Transfer, (true, false, true, true)) => SuccessorShape::Acceptance,
             _ => return None,
         };

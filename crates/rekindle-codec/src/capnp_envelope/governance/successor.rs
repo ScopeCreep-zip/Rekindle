@@ -73,19 +73,13 @@ pub(super) fn write_community_successor(
 fn fixed(get: Result<&[u8], capnp::Error>, what: &str) -> Result<[u8; 32], CodecError> {
     let bytes = get.map_err(|e| capnp_err(&e))?;
     bytes.try_into().map_err(|_| {
-        CodecError::Deserialization(format!(
-            "successor {what} is {} bytes, not 32",
-            bytes.len()
-        ))
+        CodecError::Deserialization(format!("successor {what} is {} bytes, not 32", bytes.len()))
     })
 }
 
 /// An optional 32-byte field: empty is unset, any other length but 32 is
 /// refused.
-fn optional(
-    get: Result<&[u8], capnp::Error>,
-    what: &str,
-) -> Result<Option<[u8; 32]>, CodecError> {
+fn optional(get: Result<&[u8], capnp::Error>, what: &str) -> Result<Option<[u8; 32]>, CodecError> {
     let bytes = get.map_err(|e| capnp_err(&e))?;
     if bytes.is_empty() {
         return Ok(None);

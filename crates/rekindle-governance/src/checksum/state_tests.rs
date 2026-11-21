@@ -402,7 +402,8 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                     },
                     stamp: s(),
                 };
-                g.successors.insert(rekindle_types::governance::OpHash([4; 32]), row);
+                g.successors
+                    .insert(rekindle_types::governance::OpHash([4; 32]), row);
             }),
         ),
     ]

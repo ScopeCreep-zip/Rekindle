@@ -110,7 +110,13 @@ fn a_successor_in_no_shape_is_refused() {
         unreachable!("an offer")
     };
     bad.new_anchor = Some("VLD0:new".into());
-    let malformed = op(&pk(1), 6, &[c5], 53, GovernanceEntry::CommunitySuccessor(bad));
+    let malformed = op(
+        &pk(1),
+        6,
+        &[c5],
+        53,
+        GovernanceEntry::CommunitySuccessor(bad),
+    );
     let mut all = ops.clone();
     all.push(malformed.clone());
     assert!(!kept(&all, &malformed), "the creator's malformed body too");
@@ -123,7 +129,13 @@ fn an_acceptance_without_the_offer_in_its_deps_is_refused() {
     let o1 = op(&pk(1), 6, &[&c5], 60, offer(4, &[4, 1]));
     let m = op(&pk(1), 7, &[&o1], 61, meta("after"));
     let past_only = op(&pk(4), 1, &[&m, &d0], 62, acceptance(&o1, &[4, 1], &[1, 4]));
-    let in_deps = op(&pk(4), 1, &[&m, &o1, &d0], 63, acceptance(&o1, &[4, 1], &[1, 4]));
+    let in_deps = op(
+        &pk(4),
+        1,
+        &[&m, &o1, &d0],
+        63,
+        acceptance(&o1, &[4, 1], &[1, 4]),
+    );
     ops.extend([o1, m]);
     let mut all = ops.clone();
     all.push(past_only.clone());
@@ -136,17 +148,51 @@ fn an_acceptance_without_the_offer_in_its_deps_is_refused() {
 #[test]
 fn an_acceptance_from_another_member_or_with_another_creator_set_is_refused() {
     let mut ops = community();
-    let (b0, d0, c5) = (at(&ops, 3).clone(), at(&ops, 4).clone(), at(&ops, 8).clone());
+    let (b0, d0, c5) = (
+        at(&ops, 3).clone(),
+        at(&ops, 4).clone(),
+        at(&ops, 8).clone(),
+    );
     let o1 = op(&pk(1), 6, &[&c5], 70, offer(4, &[4, 1]));
     let cases = [
         // pk(3) is not the offer's transferTo.
-        (op(&pk(3), 1, &[&o1, &b0], 71, acceptance(&o1, &[4, 1], &[1, 4])), false),
+        (
+            op(
+                &pk(3),
+                1,
+                &[&o1, &b0],
+                71,
+                acceptance(&o1, &[4, 1], &[1, 4]),
+            ),
+            false,
+        ),
         // Links naming another set than the offer's hash.
-        (op(&pk(4), 1, &[&o1, &d0], 72, acceptance(&o1, &[4, 1], &[4, 2])), false),
+        (
+            op(
+                &pk(4),
+                1,
+                &[&o1, &d0],
+                72,
+                acceptance(&o1, &[4, 1], &[4, 2]),
+            ),
+            false,
+        ),
         // Another hash than the offer's, matching its own links.
-        (op(&pk(4), 1, &[&o1, &d0], 73, acceptance(&o1, &[4], &[4])), false),
+        (
+            op(&pk(4), 1, &[&o1, &d0], 73, acceptance(&o1, &[4], &[4])),
+            false,
+        ),
         // A set without transferTo, hashing to the offer's.
-        (op(&pk(4), 1, &[&o1, &d0], 74, acceptance(&o1, &[4, 1], &[4, 1])), true),
+        (
+            op(
+                &pk(4),
+                1,
+                &[&o1, &d0],
+                74,
+                acceptance(&o1, &[4, 1], &[4, 1]),
+            ),
+            true,
+        ),
     ];
     ops.push(o1);
     for (acc, stands) in cases {
@@ -167,10 +213,16 @@ fn a_superseded_offer_cannot_be_accepted() {
         let beside = op(&pk(4), 1, &[&o1, &d0], 83, acceptance(&o1, &[4], &[4]));
         let mut all = ops.clone();
         all.extend([o1.clone(), w.clone(), after.clone()]);
-        assert!(!kept(&all, &after), "the signer's later offer or withdrawal in its past");
+        assert!(
+            !kept(&all, &after),
+            "the signer's later offer or withdrawal in its past"
+        );
         all = ops.clone();
         all.extend([o1.clone(), w, beside.clone()]);
-        assert!(kept(&all, &beside), "concurrent with the withdrawal: not in its past");
+        assert!(
+            kept(&all, &beside),
+            "concurrent with the withdrawal: not in its past"
+        );
     }
 }
 

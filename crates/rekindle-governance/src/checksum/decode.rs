@@ -14,7 +14,6 @@ use rekindle_types::governance::OpHash;
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
 
 use crate::op::OpStamp;
-use crate::successor::SuccessorState;
 use crate::state::{
     AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelState,
     CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
@@ -22,6 +21,7 @@ use crate::state::{
     PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
     WelcomeScreenState,
 };
+use crate::successor::SuccessorState;
 
 /// A cursor over canonical bytes.
 pub(crate) struct CanonReader<'a> {
