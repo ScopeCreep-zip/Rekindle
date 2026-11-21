@@ -30,43 +30,67 @@ export function useSkin(): void {
   });
 }
 
-/// The `<link>` of the newest apply still loading, if any: a newer apply
-/// drops it, so a slow sheet can never land over a later choice.
-let pending: HTMLLinkElement | null = null;
+/// Each apply's number: an apply a newer one superseded does nothing more,
+/// so a slow sheet or image can never land over a later choice.
+let generation = 0;
+
+/// The `<link>` of the newest apply still loading, if any.
+let loading: HTMLLinkElement | null = null;
 
 /**
- * Apply `skin` to this window. The new sheet loads in its own `<link>`
- * beside the shown one: WebKit keeps a link's old `.sheet` until a changed
- * `href` finishes loading, so swapping in place would show the previous
- * skin while the link already names the new one. On `load` the new link
- * takes the id, the old one is removed and `data-skin-base` follows, so the
- * id, the sheet and the base always belong to the same skin. A link a
- * newer apply superseded is dropped; on `error` the shown skin stays and
- * the error is reported.
+ * Apply `skin` to this window, showing it only once it can be drawn
+ * whole. First every image the sheet draws (`skin.images`) is decoded: a
+ * frame tile or region still loading paints nothing, so the window would
+ * be see-through inside the shaper's cut, which already follows the new
+ * skin. Then the sheet loads in its own `<link>` beside the shown one
+ * (WebKit keeps a link's old `.sheet` until a changed `href` finishes
+ * loading, so swapping in place would show the previous skin while the
+ * link already names the new one). On `load` the new link takes the id,
+ * the old one is removed and `data-skin-base` follows, so the id, the
+ * sheet and the base always belong to the same skin. On any failure the
+ * shown skin stays and the error is reported.
  */
 export function applySkin(skin: SkinApplied): void {
+  const mine = ++generation;
+  loading?.remove();
+  loading = null;
   const shown = document.getElementById(LINK_ID) as HTMLLinkElement | null;
-  if (pending !== null) {
-    pending.remove();
-    pending = null;
-  }
   if (shown?.getAttribute("href") === skin.tokensHref) {
     document.documentElement.dataset.skinBase = skin.base;
     return;
   }
+  // Held until the swap, so the decoded images stay in this document's cache.
+  const images = skin.images.map((href) => {
+    const img = new Image();
+    img.src = href;
+    return img;
+  });
+  Promise.all(images.map((img) => img.decode())).then(
+    () => {
+      if (mine === generation) linkSheet(skin, mine, images);
+    },
+    (err: unknown) => {
+      if (mine === generation) console.error(`skin ${skin.id}: an image failed to decode — the shown skin stays`, err);
+    },
+  );
+}
+
+/** Load `skin`'s sheet beside the shown one and swap on `load` (apply `mine`). */
+function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]): void {
   const next = document.createElement("link");
   next.rel = "stylesheet";
-  pending = next;
+  loading = next;
   next.addEventListener("load", () => {
-    if (pending !== next) return;
-    pending = null;
+    if (mine !== generation) return;
+    loading = null;
     document.getElementById(LINK_ID)?.remove();
     next.id = LINK_ID;
     document.documentElement.dataset.skinBase = skin.base;
+    images.length = 0;
   });
   next.addEventListener("error", () => {
-    if (pending !== next) return;
-    pending = null;
+    if (mine !== generation) return;
+    loading = null;
     next.remove();
     console.error(`skin sheet ${skin.tokensHref} failed to load — the shown skin stays`);
   });

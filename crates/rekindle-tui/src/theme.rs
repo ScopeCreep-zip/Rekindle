@@ -241,6 +241,7 @@ mod tests {
             base,
             tokens_href: String::new(),
             regions: Vec::new(),
+            images: Vec::new(),
             palette,
         }
     }

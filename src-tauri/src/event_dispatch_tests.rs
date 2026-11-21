@@ -217,6 +217,7 @@ fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
             base: rekindle_types::dto::skin::SkinBase::Dark,
             tokens_href: "skin://localhost/a/tokens.css".into(),
             regions: Vec::new(),
+            images: Vec::new(),
             palette: Vec::new(),
         },
     }));

@@ -139,6 +139,8 @@ pub struct Stylesheet {
     pub base: SkinBase,
     pub css: String,
     pub regions: Vec<String>,
+    /// [`sheet_images`] of `css`: every image href the stylesheet draws.
+    pub images: Vec<String>,
     /// [`crate::generate::tui_colours`] of the active variant.
     pub palette: Vec<SkinPaletteColour>,
 }
@@ -186,10 +188,25 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
     css.push_str(&frame_css(&m, &images, &base).ok_or_else(|| unreadable("frame"))?);
     Ok(Stylesheet {
         base: v.base,
+        images: sheet_images(&css, &base),
         css,
         regions: m.regions.keys().cloned().collect(),
         palette: tui_colours(&resolved),
     })
+}
+
+/// Every distinct image href under `base` that `css` draws, in order: read
+/// from the emitted stylesheet itself, so the list can never miss a rule
+/// (the region, title, label and frame emitters each write `url("…")`).
+fn sheet_images(css: &str, base: &str) -> Vec<String> {
+    let prefix = format!("{base}/");
+    let mut seen = std::collections::BTreeSet::new();
+    css.split("url(\"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .filter(|href| href.starts_with(&prefix) && seen.insert(*href))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// The window frames of the canonical package `bytes`: each window kind's
@@ -307,6 +324,28 @@ mod tests {
             String::new(),
         ] {
             assert_eq!(parse_path(&bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn every_builtin_lists_each_image_its_stylesheet_draws_once() {
+        for pack in &builtin::PACKS {
+            let c = validate::run(pack.bytes).unwrap();
+            let a = c.address();
+            let applied = stylesheet(&c.bytes, &a).unwrap();
+            assert!(!applied.images.is_empty(), "{}", pack.id);
+            let listed: std::collections::BTreeSet<&str> =
+                applied.images.iter().map(String::as_str).collect();
+            assert_eq!(listed.len(), applied.images.len(), "{} twice", pack.id);
+            for href in &applied.images {
+                let path = href.strip_prefix(origin()).expect("under the origin");
+                assert!(parse_path(path).is_some(), "{href} is no served file");
+                assert!(applied.css.contains(&format!("url(\"{href}\")")), "{href}");
+            }
+            for drawn in applied.css.split("url(\"").skip(1) {
+                let href = drawn.split('"').next().unwrap();
+                assert!(listed.contains(href), "{} draws {href} unlisted", pack.id);
+            }
         }
     }
 

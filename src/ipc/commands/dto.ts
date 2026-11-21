@@ -515,6 +515,9 @@ export interface SkinApplied {
   tokensHref: string;
   /// The region slots the skin paints.
   regions: string[];
+  /// The `skin://` href of every image the stylesheet draws: a window
+  /// decodes them all before it shows the sheet.
+  images: string[];
   /// The TUI's palette subset (the webview reads the stylesheet instead).
   palette: SkinPaletteColour[];
 }

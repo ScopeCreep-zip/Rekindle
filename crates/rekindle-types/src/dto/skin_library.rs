@@ -66,6 +66,10 @@ pub struct SkinApplied {
     pub base: crate::dto::skin::SkinBase,
     pub tokens_href: String,
     pub regions: Vec<String>,
+    /// The `skin://` href of every image the stylesheet draws, so a window
+    /// can decode them before it shows the sheet (plan SK0: a frame tile
+    /// not yet loaded paints nothing inside the shaper's cut).
+    pub images: Vec<String>,
     /// The skin's resolved colours for the TUI's roles (plan E7.7.2 "the
     /// TUI applies the palette subset from the same DTO"), mapped by the
     /// generator's TUI table, so a terminal never parses CSS.
