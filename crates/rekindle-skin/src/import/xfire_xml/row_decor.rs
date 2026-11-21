@@ -258,7 +258,13 @@ mod tests {
         };
         let mut built = shape::from_nine(SkinWindow::Main, &pieces).unwrap();
         assert!(matches!(
-            apply(SkinWindow::Main, &layout, &[components], missing, &mut built),
+            apply(
+                SkinWindow::Main,
+                &layout,
+                &[components],
+                missing,
+                &mut built
+            ),
             Err(ImportError::MissingFile { .. })
         ));
     }
