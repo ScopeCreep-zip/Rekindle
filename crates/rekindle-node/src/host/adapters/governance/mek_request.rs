@@ -165,12 +165,75 @@ impl HostGovernance {
             .cache()
             .current(community_id, KeyScope::Community)
             .ok_or_else(|| format!("no community key for {community_id}"))?;
+        let queued = self
+            .queue_sealed_key(deps, community_id, &joiner.pseudonym, &joiner.route, &mek)
+            .await?;
+        if queued {
+            tracing::info!(community = community_id, joiner = %joiner.pseudonym, "community key queued for the joiner (D16)");
+        }
+        Ok(())
+    }
+
+    /// A confirmed rotation raised `community_id`'s key (ADR 0018: the
+    /// cache takes a generation only once it is the one to send under):
+    /// every member whose `mek_transfer` row still holds an older
+    /// generation, and who still reads keys, gets one row at the current
+    /// one, to the route its row held; the older row then settles
+    /// superseded when the sender reaches it (review S7m part 1 F2, D22).
+    pub(crate) async fn requeue_key_transfers(&self, community_id: &str) {
+        let deps =
+            crate::daemon::mek_rotation::DaemonMekAdapter::new(std::sync::Arc::clone(&self.ctx));
+        let Some(mek) = deps.cache().current(community_id, KeyScope::Community) else {
+            return;
+        };
+        let Some(transfers) = self.ctx.outbox.mek_transfers() else {
+            return;
+        };
+        let behind = match transfers
+            .behind(community_id, KeyScope::Community, mek.generation())
+            .await
+        {
+            Ok(behind) => behind,
+            Err(error) => {
+                tracing::warn!(community = %community_id, %error, "queued key transfers not read");
+                return;
+            }
+        };
+        for (member, route) in behind {
+            if !self.member_reads_keys(community_id, &member) {
+                continue;
+            }
+            match self
+                .queue_sealed_key(&deps, community_id, &member, &route, &mek)
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(community = %community_id, %member, generation = mek.generation(), "key transfer requeued at the rotated generation")
+                }
+                Err(error) => {
+                    tracing::warn!(community = %community_id, %member, %error, "key transfer not requeued")
+                }
+            }
+        }
+    }
+
+    /// Seal `mek` to `member` and commit it on the member's
+    /// `mek_transfer` stream, one row per (member, generation); `false`
+    /// when that row is already kept.
+    async fn queue_sealed_key<D: MekDistributeDeps + Sync + ?Sized>(
+        &self,
+        deps: &D,
+        community_id: &str,
+        member: &str,
+        route: &[u8],
+        mek: &MediaEncryptionKey,
+    ) -> Result<bool, String> {
         let sealed = rekindle_mek_rotation::seal_mek_transfer(
             deps,
             community_id,
             KeyScope::Community,
-            &mek,
-            &joiner.pseudonym,
+            mek,
+            member,
         )
         .map_err(|e| e.to_string())?;
         let transfers = self
@@ -180,25 +243,22 @@ impl HostGovernance {
             .ok_or("no identity is unlocked")?;
         // One row per (member, generation): a joiner's repeated
         // bootstrap does not queue the key twice.
-        let client_id = format!(
-            "MekTransfer:{community_id}:{}:{}",
-            joiner.pseudonym,
-            mek.generation()
-        );
-        let queued = transfers
-            .queue(
-                community_id,
-                &joiner.pseudonym,
-                &client_id,
-                &joiner.route,
-                &sealed,
-            )
+        let client_id = format!("MekTransfer:{community_id}:{member}:{}", mek.generation());
+        transfers
+            .queue(community_id, member, &client_id, route, &sealed)
             .await
-            .map_err(|e| e.to_string())?;
-        if queued {
-            tracing::info!(community = community_id, joiner = %joiner.pseudonym, "community key queued for the joiner (D16)");
-        }
-        Ok(())
+            .map_err(|e| e.to_string())
+    }
+
+    /// The generation of the `scope` key we send under in `community_id`.
+    pub(crate) fn current_key_generation(
+        &self,
+        community_id: &str,
+        scope: KeyScope,
+    ) -> Option<u64> {
+        (self.ctx.mek_cache.read())
+            .current(community_id, scope)
+            .map(MediaEncryptionKey::generation)
     }
 
     /// Whether `member_hex` is a key reader of `community_id`

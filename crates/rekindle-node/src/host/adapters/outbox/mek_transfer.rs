@@ -8,13 +8,18 @@
 //! settles the row `delivered`; anything else is tried again until the
 //! deadline. A member who is no longer a key reader settles its row
 //! unsent, and the member's departure, or ours, discards the stream.
+//! A row whose key a newer held generation replaced settles unsent too
+//! (D22 per-kind supersession, as `media_key`): the confirmed rotation
+//! that raised the generation (ADR 0018) queued one row at the new one
+//! for every member still owed a key (`HostGovernance::
+//! requeue_key_transfers`, review S7m part 1 F2).
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_outbox::{
-    AttemptOutcome, Deadline, Entry, Outbox, OutboxError, OutboxRow, StreamKind,
+    AttemptOutcome, Deadline, Entry, Outbox, OutboxDeps as _, OutboxError, OutboxRow, StreamKind,
 };
 use rekindle_types::channel_keys::KeyScope;
 
@@ -24,6 +29,9 @@ use crate::host::adapters::governance::HostGovernance;
 
 /// The reason a row whose member departed settles with.
 pub const DEPARTED: &str = "departed";
+
+/// The reason a row whose key a newer held generation replaced settles with.
+pub const SUPERSEDED: &str = "a newer key";
 
 fn scope(community: &str, member: &str) -> String {
     format!("{community}:{member}")
@@ -62,7 +70,8 @@ fn sealed_key(sealed: &[u8]) -> Option<SealedKey> {
     }
 }
 
-struct MekTransferSender(HostGovernance);
+/// Sends one `mek_transfer` row (the stream's [`StreamSender`]).
+pub(crate) struct MekTransferSender(pub(crate) HostGovernance);
 
 #[async_trait]
 impl StreamSender for MekTransferSender {
@@ -83,6 +92,11 @@ impl StreamSender for MekTransferSender {
         let generation = sealed_key.generation;
         if !self.0.member_reads_keys(community, member) {
             return AttemptOutcome::Superseded(DEPARTED.to_owned());
+        }
+        if (self.0.current_key_generation(community, sealed_key.scope))
+            .is_some_and(|current| current > generation)
+        {
+            return AttemptOutcome::Superseded(SUPERSEDED.to_owned());
         }
         // The ack's tag is checked under our own copy of the sealed key.
         let Some(key) = self.0.held_key(community, sealed_key.scope, generation) else {
@@ -112,6 +126,17 @@ impl StreamSender for MekTransferSender {
         };
         match call {
             Ok(reply) if rekindle_mek_rotation::is_mek_transfer_ack(&expected, &reply) => {
+                // A removal that merged while the call was out cannot
+                // recall the bytes (review S7m part 1 F3): its generation
+                // is the one the departure rotation retires (ADR 0018).
+                if !self.0.member_reads_keys(community, member) {
+                    tracing::warn!(
+                        community,
+                        member,
+                        generation,
+                        "a key delivery crossed the member's removal"
+                    );
+                }
                 tracing::info!(
                     community,
                     member,
@@ -164,6 +189,43 @@ impl MekTransfers {
             self.0.wake();
         }
         Ok(queued)
+    }
+
+    /// The unsettled rows of `community`'s streams, every member's.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn rows(&self, community: &str) -> Result<Vec<OutboxRow>, OutboxError> {
+        (self.0.deps())
+            .prefix_rows(&StreamKind::MekTransfer.stream(&scope(community, "")))
+            .await
+    }
+
+    /// The (member, route) of every row of `community` whose sealed key
+    /// is of `key_scope` and older than `generation`: the members a
+    /// rotation to `generation` still owes a key.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn behind(
+        &self,
+        community: &str,
+        key_scope: KeyScope,
+        generation: u64,
+    ) -> Result<Vec<(String, Vec<u8>)>, OutboxError> {
+        let prefix = format!("mek_transfer:{community}:");
+        Ok(self
+            .rows(community)
+            .await?
+            .iter()
+            .filter_map(|row| {
+                let member = row.stream.strip_prefix(&prefix)?;
+                let (route, sealed) = decode(&row.payload)?;
+                let key = sealed_key(sealed)?;
+                (key.scope == key_scope && key.generation < generation)
+                    .then(|| (member.to_owned(), route.to_vec()))
+            })
+            .collect())
     }
 
     /// `member` departed `community`: discard its rows; how many.

@@ -44,7 +44,7 @@ impl HostGovernance {
                 route_blob.as_deref(),
             ),
             ControlPayload::MemberLeave { pseudonym_key } if pseudonym_key == sender_pseudonym => {
-                self.forget_member(community_id, pseudonym_key);
+                self.forget_member(community_id, pseudonym_key).await;
             }
             ControlPayload::MemberJoined { .. } | ControlPayload::MemberLeave { .. } => {
                 tracing::debug!(community = %community_id, sender = %sender_pseudonym, "membership announcement about another member dropped");

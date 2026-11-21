@@ -270,7 +270,7 @@ impl HostGovernance {
             target_pseudonym: target.to_owned(),
         });
         self.send_to_mesh(community_id, &notice)?;
-        self.forget_member(community_id, target);
+        self.forget_member(community_id, target).await;
         tracing::info!(community = %community_id, member = %target, "removed community member");
         Ok(())
     }

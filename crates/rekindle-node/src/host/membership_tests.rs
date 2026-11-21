@@ -138,16 +138,11 @@ async fn the_joiner_s_key_is_a_committed_row_until_the_joiner_departs() {
         "the row holds the sealed key, never the key"
     );
 
-    governance.forget_member("c1", &joiner);
-    let mut left = queued.len();
-    for _ in 0..50 {
-        left = rows().await.len();
-        if left == 0 {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    assert_eq!(left, 0, "the joiner's departure discards its row");
+    governance.forget_member("c1", &joiner).await;
+    assert!(
+        rows().await.is_empty(),
+        "the joiner's departure discards its row"
+    );
     host.shutdown().await.unwrap();
 }
 

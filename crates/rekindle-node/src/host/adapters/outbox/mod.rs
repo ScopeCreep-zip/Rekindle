@@ -11,7 +11,7 @@ mod dm;
 mod governance_op;
 mod governance_publication;
 mod media_key;
-mod mek_transfer;
+pub(crate) mod mek_transfer;
 mod senders;
 #[cfg(test)]
 mod tests;

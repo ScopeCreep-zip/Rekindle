@@ -215,8 +215,16 @@ impl HostGovernance {
         for lease in leases.all().chain(ring_leases) {
             rekindle_transport::broadcast::dht_writes::release(transport, lease).await;
         }
+        self.forget_left_community(id).await
+    }
+
+    /// The local half of [`Self::forget_community`], once its records are
+    /// released: keys, queued key transfers (awaited, so none is attempted
+    /// after the leave), bootstrap answers, waiting posts, store entry and
+    /// stored membership.
+    pub(crate) async fn forget_left_community(&self, id: &str) -> Result<(), String> {
         self.forget_keys(id);
-        self.discard_key_transfers(id, None);
+        self.discard_key_transfers(id, None).await;
         self.discard_bootstrap(id);
         crate::host::adapters::channel::discard_waiting_posts(self, id);
         self.ctx.communities.remove(id);

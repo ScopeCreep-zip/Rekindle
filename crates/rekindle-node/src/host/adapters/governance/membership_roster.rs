@@ -61,12 +61,15 @@ impl HostGovernance {
     }
 
     /// A member departed (left, or was kicked or banned): forgotten in the
-    /// store, its roster row deleted and the departure recorded.
-    pub fn forget_member(&self, community_id: &str, pseudonym_hex: &str) {
+    /// store, its queued key transfers discarded before this returns (no
+    /// attempt after the departure can carry a key, review S7m part 1 F3),
+    /// its roster row deleted and the departure recorded.
+    pub async fn forget_member(&self, community_id: &str, pseudonym_hex: &str) {
         self.ctx
             .communities
             .forget_member(community_id, pseudonym_hex);
-        self.discard_key_transfers(community_id, Some(pseudonym_hex));
+        self.discard_key_transfers(community_id, Some(pseudonym_hex))
+            .await;
         let Some((owner, db)) = self.owner_and_db() else {
             return;
         };
@@ -80,22 +83,19 @@ impl HostGovernance {
 
     /// The `mek_transfer` rows still queued for `member` of
     /// `community_id` (D16), or for every member when we left: a key
-    /// never reaches one who departed.
-    pub(crate) fn discard_key_transfers(&self, community_id: &str, member: Option<&str>) {
+    /// never reaches one who departed. Awaited, never spawned: a spawned
+    /// discard left the rows to further attempts until it ran.
+    pub(crate) async fn discard_key_transfers(&self, community_id: &str, member: Option<&str>) {
         let Some(transfers) = self.ctx.outbox.mek_transfers() else {
             return;
         };
-        let (community, member) = (community_id.to_owned(), member.map(str::to_owned));
-        self.scope()
-            .spawn_or_drop("key transfers discarded", async move {
-                let discarded = match &member {
-                    Some(member) => transfers.discard_member(&community, member).await,
-                    None => transfers.discard_community(&community).await,
-                };
-                if let Err(error) = discarded {
-                    tracing::warn!(community = %community, %error, "key transfers not discarded");
-                }
-            });
+        let discarded = match member {
+            Some(member) => transfers.discard_member(community_id, member).await,
+            None => transfers.discard_community(community_id).await,
+        };
+        if let Err(error) = discarded {
+            tracing::warn!(community = %community_id, %error, "key transfers not discarded");
+        }
     }
 
     /// Announce our join to the community's mesh once its first peers have

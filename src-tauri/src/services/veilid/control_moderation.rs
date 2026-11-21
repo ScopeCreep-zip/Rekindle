@@ -145,9 +145,14 @@ fn remove_member_from_local_state(
         }
     }
     match state.host.current() {
-        Some(host) => host
-            .governance()
-            .forget_member(community_id, &target_pseudonym),
+        // The gossip dispatcher stays sync; the Host's departure awaits its
+        // own key-transfer discard (review S7m part 1 F3).
+        Some(host) => {
+            let (community, member) = (community_id.to_owned(), target_pseudonym.clone());
+            tauri::async_runtime::spawn(async move {
+                host.governance().forget_member(&community, &member).await;
+            });
+        }
         None => {
             tracing::debug!(community = %community_id, "{label}: the Host is not up, the roster row stays");
         }

@@ -10,6 +10,8 @@ use rekindle_transport::crypto::mek::Mek;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::ChannelId;
 
+use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+
 use super::HostGovernance;
 
 /// A channel id as the governance runtime passes it (32 hex), as a scope.
@@ -124,6 +126,15 @@ impl HostGovernance {
         // The outbox entries a joiner held back for want of a key are read
         // now (`channel/outbox_read.rs`).
         self.spawn_outbox_catchup(community_id);
+        // A joiner still owed an older generation is owed this one now
+        // (review S7m part 1 F2).
+        if scope == KeyScope::Community {
+            let (host, community) = (self.clone(), community_id.to_owned());
+            self.scope()
+                .spawn_or_drop("key transfers requeued", async move {
+                    host.requeue_key_transfers(&community).await;
+                });
+        }
         true
     }
 
