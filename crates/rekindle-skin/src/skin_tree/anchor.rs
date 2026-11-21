@@ -194,10 +194,16 @@ fn from_far(e: i32, start_in: i32, end: i32, axis: &Axis) -> Result<NodeSpan, Im
 /// A stretch capped by its component's `MaxWidth`/`MaxHeight`: Xfire grows
 /// the tile with its parent up to that size (xSLIMFIRE's
 /// `TabNormalButton` `MaxWidth="65"`), so at every window it is that size.
-fn capped(span: NodeSpan, max: Option<u16>, at_end: bool) -> NodeSpan {
+/// `Just*=CENTER` centres it in the span it would stretch over (Simple X's
+/// `AdArea`: `JustX=CENTER ResizeX=100 OutdentLeft=7 IndentRight=7` under
+/// `MaxWidth=240`, `SimpleX.ini:121-127,729-732`: the ad box centred over
+/// the frame left of the 13 px info strip, as the original shows).
+fn capped(span: NodeSpan, max: Option<u16>, (at_end, centred): (bool, bool)) -> NodeSpan {
     match (span, max) {
         (NodeSpan::Stretch { start, end }, Some(size)) => NodeSpan::Fixed {
-            at: if at_end {
+            at: if centred {
+                Anchor::Centre((start - end).div_euclid(2))
+            } else if at_end {
                 Anchor::End(end)
             } else {
                 Anchor::Start(start)
@@ -237,7 +243,11 @@ pub(super) fn axis(
             (Pos::Num(p), true) => (start_in, p + end_in),
             (Pos::Num(p) | Pos::Ref(At::Start(p)), false) => (p + start_in, end_in),
             (Pos::Ref(At::End(far_at)), false) => {
-                return Ok(capped(from_far(far_at, start_in, end_in, ax)?, max, at_end))
+                return Ok(capped(
+                    from_far(far_at, start_in, end_in, ax)?,
+                    max,
+                    (at_end, centred),
+                ))
             }
             (Pos::Ref(At::Centre(_)), false) | (Pos::Ref(_), true) => {
                 return Err(bad(format!(
@@ -250,7 +260,7 @@ pub(super) fn axis(
             start: i16_of(start)?,
             end: i16_of(end)?,
         };
-        return Ok(capped(span, max, at_end));
+        return Ok(capped(span, max, (at_end, centred)));
     }
     let own = i32::from(size);
     // A sibling's edge is a point: `Just*=RIGHT/BOTTOM` puts the tile's far
@@ -266,7 +276,7 @@ pub(super) fn axis(
         (Pos::Ref(At::Centre(p)), true, _) => Anchor::Centre(i16_of(p - own / 2)?),
         (Pos::Ref(At::Centre(p)), false, _) => Anchor::Centre(i16_of(p + own / 2)?),
     };
-    Ok(capped(NodeSpan::Fixed { at, size }, max, at_end))
+    Ok(capped(NodeSpan::Fixed { at, size }, max, (at_end, centred)))
 }
 
 /// `span` (in a parent's frame) in the frame of a child laid at `inner`,

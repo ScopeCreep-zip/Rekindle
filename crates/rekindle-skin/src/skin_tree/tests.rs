@@ -513,6 +513,43 @@ fn a_stretch_is_capped_by_its_components_max_width() {
     assert_eq!((server.x, server.y), (fixed(77, 65), fixed(1, 19)));
 }
 
+/// Simple X's `AdArea` (`SimpleX.ini:121-127`, `[AdArea]` `MaxWidth=240`):
+/// a centred stretch under its component's cap is centred over the span it
+/// would stretch across, never pinned to that span's start.
+#[test]
+fn a_centred_capped_stretch_is_centred_in_its_span() {
+    let parts =
+        br#"<Components><Component Name="AdArea" Class="Tile" MaxWidth="240"/></Components>"#;
+    let xml = br#"<Tile Name="MainWindow" ResizeX="100" ResizeY="100">
+<Tile Name="AdArea" JustX="CENTER" Y="29" ResizeX="100" OutdentLeft="7" IndentRight="7" Component="AdArea"/>
+</Tile>"#;
+    let tree = imported_with(xml, parts).unwrap().1;
+    let [ad] = &tree.root[..] else {
+        panic!("{:?}", tree.root)
+    };
+    let want = NodeSpan::Fixed {
+        at: Anchor::Centre(-7),
+        size: 240,
+    };
+    assert_eq!(ad.x, want);
+}
+
+/// A `Title` names the user only as text: Combat's `[Title]` is
+/// `Class=Text` (`combat.ini:541-544`), Total Chaos's is the "T.C" plaque,
+/// `Class="Tile"` art (`components.xml:451-460`).
+#[test]
+fn a_title_is_the_name_field_only_as_text() {
+    let facts = |class, has_art| Facts {
+        has_art,
+        class: Some(class),
+        children: &[],
+    };
+    let text = role("Title", Some("Title"), None, &facts("Text", false));
+    assert_eq!(text, Some(NodeRole::NameField));
+    let plaque = role("Title", Some("Title"), None, &facts("Tile", true));
+    assert_eq!(plaque, Some(NodeRole::Decor));
+}
+
 /// SimpleX's `[TabAddButton]` `Class=TabControl` holds `AddButton`,
 /// `AddServerButton` and `SearchFiles`: one slot of the button row, a
 /// group of buttons; Combat's knob control is the tab strip.

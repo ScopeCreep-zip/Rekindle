@@ -107,6 +107,18 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
     match k {
         "maintitlebar" | "windowdragger" | "combatdragbar" => Some(R::Drag),
         "xfirelogo" | "logo" | "logox" | "wndxfire" => Some(R::Logo),
+        // A `Title` is the user's name only as text (Combat's `[Title]`
+        // `Class=Text Text.text=%displayuser%`, `combat.ini:541-544`; Onyx's
+        // and Space Cowboy's `Class="Text"`); Total Chaos's `Title` is the
+        // "T.C" plaque, `Class="Tile"` art (`components.xml:451-460`), and its
+        // original shows no name: classless art, so decor.
+        "title" | "chattitle"
+            if !f
+                .class
+                .is_some_and(|c| c.trim().eq_ignore_ascii_case("Text")) =>
+        {
+            None
+        }
         "userfield" | "usernamefield" | "title" | "chattitle" | "usernamecontainer"
         | "username" => Some(R::NameField),
         "minimizebox" | "minimize" | "buttonminimize" | "wndmin" | "minimizebutton" => {
