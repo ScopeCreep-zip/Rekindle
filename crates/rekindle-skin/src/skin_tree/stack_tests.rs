@@ -207,3 +207,30 @@ fn a_single_views_control_is_one_view_per_tab() {
         ]
     );
 }
+
+/// A button bar is a tab control showing one child at a time: StealthX's
+/// `ChatTab` lays `HostChatButton`, `JoinChatButton` and `LeaveChatButton`
+/// in one place and shows one by chat state (`GroupMessage(0/1/2)`,
+/// `components.xml:705-712`), so none covers another. The same buttons in
+/// a plain group stay refused.
+#[test]
+fn rule_4_a_button_bars_pages_are_never_shown_together() {
+    let bar = |role| {
+        let mut b = n("ChatTab", role, fixed(20, 110), fixed(60, 21));
+        b.children = [
+            ("HostChatButton", ActionKey::HostChat),
+            ("JoinChatButton", ActionKey::JoinChat),
+            ("LeaveChatButton", ActionKey::LeaveChat),
+        ]
+        .into_iter()
+        .map(|(id, a)| n(id, NodeRole::Button(a), fixed(0, 110), fixed(0, 21)))
+        .collect();
+        b
+    };
+    let mut t = good();
+    t.push(bar(NodeRole::ButtonBar));
+    assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
+    let mut t = good();
+    t.push(bar(NodeRole::Group));
+    refused(t, "rule 4");
+}

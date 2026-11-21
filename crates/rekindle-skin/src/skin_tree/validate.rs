@@ -13,7 +13,11 @@
 //!    above, a child above its parent), as Xfire drew; an interactive node
 //!    is refused only when one later-stacked interactive node covers its
 //!    whole box (it could never be reached), unless the two show with
-//!    different views (a button row per tab); an edge grip yields to the
+//!    different views (a button row per tab) or lie on different pages of
+//!    one button bar (a `Class=TabControl` shows one child at a time:
+//!    StealthX's `ChatTab` pages `HostChatButton`/`JoinChatButton`/
+//!    `LeaveChatButton` by chat state, `GroupMessage(0/1/2)`,
+//!    `components.xml:705-712`); an edge grip yields to the
 //!    interactive nodes above it in the window's global order (lead
 //!    decision 10: effective z through the parent chain, [`Stack::yields`]):
 //!    it stacks below its siblings at its `Z` ([`stack_z`]), its own box
@@ -235,6 +239,30 @@ fn views_of<'a>(
     }
 }
 
+/// Each node's pages: for every button bar above it, the bar's id and the
+/// index of the bar's child it lies under. A button bar is a tab control
+/// (the importer makes one only from `Class=TabControl`/`TabbedControl`
+/// or from INI slots grouped per view) and shows one child at a time.
+fn pages_of<'a>(
+    nodes: &'a [SkinNode],
+    inherited: &[(&'a str, usize)],
+    out: &mut BTreeMap<&'a str, Vec<(&'a str, usize)>>,
+) {
+    for n in nodes {
+        out.insert(n.id.as_str(), inherited.to_vec());
+        let mut below = inherited.to_vec();
+        if n.role == NodeRole::ButtonBar {
+            for (i, c) in n.children.iter().enumerate() {
+                below.push((n.id.as_str(), i));
+                pages_of(std::slice::from_ref(c), &below, out);
+                below.pop();
+            }
+        } else {
+            pages_of(&n.children, &below, out);
+        }
+    }
+}
+
 /// Refuses `tree` (laid in `layout`) when it breaks a rule above.
 ///
 /// # Errors
@@ -282,9 +310,21 @@ pub fn check(
     }
     let mut shown = BTreeMap::new();
     views_of(&tree.root, None, &mut shown);
-    let apart = |a: &str, b: &str| match (shown.get(a), shown.get(b)) {
-        (Some(Some(x)), Some(Some(y))) => x != y,
-        _ => false,
+    let mut pages = BTreeMap::new();
+    pages_of(&tree.root, &[], &mut pages);
+    let other_page = |a: &str, b: &str| {
+        let (Some(pa), Some(pb)) = (pages.get(a), pages.get(b)) else {
+            return false;
+        };
+        pa.iter()
+            .any(|(bar, i)| pb.iter().any(|(bar2, j)| bar == bar2 && i != j))
+    };
+    let apart = |a: &str, b: &str| {
+        other_page(a, b)
+            || match (shown.get(a), shown.get(b)) {
+                (Some(Some(x)), Some(Some(y))) => x != y,
+                _ => false,
+            }
     };
     let stack = Stack::new(&tree.root);
     // A grip covers a node only when it does not yield to it (lead
