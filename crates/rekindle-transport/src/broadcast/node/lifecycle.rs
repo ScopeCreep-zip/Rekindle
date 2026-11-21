@@ -186,17 +186,25 @@ impl TransportNode {
         session: SharedSession,
     ) {
         let (ra_tx, ra_rx) = mpsc::channel(1);
-        let (offers, offered) = tokio::sync::watch::channel(None);
+        // One watch per follower task: a tokio watch wakes its waiters in
+        // an order drawn from the runtime's own RNG (tokio 1.54
+        // `sync/watch.rs` `BigNotify::notified`, `thread_rng_n(8)`), not
+        // the seed, so two tasks on one watch drew from the liveness RNG
+        // in either order (RK1). Each gets its own, offered in turn.
+        let (offer, offered) = tokio::sync::watch::channel(None);
+        let mut offers = vec![offer];
         self.liveness_handles.push(tokio::spawn(
             crate::liveness::owner::run_publisher(
                 Arc::clone(&self.liveness),
-                offered.clone(),
+                offered,
                 session,
                 Arc::clone(&self.shared_state),
             )
             .in_current_span(),
         ));
         if self.liveness.self_tests() {
+            let (offer, offered) = tokio::sync::watch::channel(None);
+            offers.push(offer);
             self.liveness_handles.push(tokio::spawn(
                 crate::liveness::owner::run_self_tests(Arc::clone(&self.liveness), offered)
                     .in_current_span(),

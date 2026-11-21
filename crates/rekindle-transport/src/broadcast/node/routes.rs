@@ -134,7 +134,7 @@ pub(super) async fn run_route_publisher(
     routes: Arc<dyn RoutePort>,
     watchdog_secs: u64,
     mut shutdown_rx: mpsc::Receiver<()>,
-    offers: tokio::sync::watch::Sender<Option<Vec<u8>>>,
+    offers: Vec<tokio::sync::watch::Sender<Option<Vec<u8>>>>,
 ) {
     let mut general = routes.own_state(RouteClass::General);
     let mut media = routes.own_state(RouteClass::Media);
@@ -161,7 +161,11 @@ pub(super) async fn run_route_publisher(
                     on_change().await;
                 }
                 if let RouteState::Available { blob } = state {
-                    offers.send_replace(Some(blob));
+                    // The publisher's first, then the self-tests': one
+                    // order every run (RK1).
+                    for offer in &offers {
+                        offer.send_replace(Some(blob.clone()));
+                    }
                 }
             }
             changed = media.changed() => {
