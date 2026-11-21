@@ -58,7 +58,7 @@ pub(crate) fn signed(anchor: &str, key: &SigningKey, mut op: GovernanceOp) -> (V
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_lamport_zero_entry_never_becomes_the_creator() {
     let mut community = Community::create(2, 41).await;
-    let creator = community.info(0).await["owner_pseudonym"].clone();
+    let creator = community.info(0).await["creator_pseudonyms"].clone();
     let name = community.info(0).await["name"].clone();
     community.join(1).await;
     community.invite().await;
@@ -144,7 +144,7 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
         );
         let view = community.info(i).await;
         assert_eq!(
-            view["owner_pseudonym"], creator,
+            view["creator_pseudonyms"], creator,
             "node {i}: the creator stays the genesis author"
         );
         assert_eq!(view["name"], name, "node {i}: the name is unchanged");

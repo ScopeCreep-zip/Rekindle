@@ -149,9 +149,11 @@ pub struct GovernanceState {
     /// later writes overwrite earlier ones for the same attachment_id.
     pub attachment_pin_stamps: HashMap<[u8; 16], OpStamp>,
 
-    /// The `GenesisCert`'s `creator_pseudonym` (MSC4289): set from the
-    /// pinned cert, never from an op.
-    pub creator: Option<PseudonymKey>,
+    /// The `GenesisCert`'s creator set (MSC4289, Q3, ADR 0011): its
+    /// `creator_pseudonym` and `additional_creators`, set from the pinned
+    /// cert, never from an op; ordered by bytes, so a merge, checkpoint and
+    /// checksum see it in one order.
+    pub creators: BTreeSet<PseudonymKey>,
 
     /// AutoMod rules (LWW per rule_id).
     pub automod_rules: HashMap<[u8; 16], AutoModRuleState>,
@@ -354,35 +356,39 @@ impl GovernanceState {
             .or_else(|| self.op_log_records.get(author).cloned())
     }
 
-    /// Whether the merge counts `member` as a member now: the author of an
-    /// admitted `MemberJoined`, or the cert's creator (MSC4289), and not
-    /// departed (finding I1). Every member list is built from this alone:
-    /// a record, beat, gossip announce or presence row of a key the merge
-    /// never admitted (a joiner past the invite's `max_uses`, a pending
-    /// joiner) never makes it one.
+    /// Whether `member` is one of the cert's creators (plan E3.2 S7s): each
+    /// creator of the set holds creator rights from genesis.
+    #[must_use]
+    pub fn is_creator(&self, member: &PseudonymKey) -> bool {
+        self.creators.contains(member)
+    }
+
+    /// Whether the merge counts `member` as a member now: an admitted
+    /// member, and not departed (finding I1). The primary creator is
+    /// admitted at genesis (the cert names its member record); every other
+    /// member, a further creator included (plan E3.2 S7s, lead decision
+    /// (17)), by its own admitted `MemberJoined`. Every member list is
+    /// built from this alone: a record, beat, gossip announce or presence
+    /// row of a key the merge never admitted (a joiner past the invite's
+    /// `max_uses`, a pending joiner, a further creator that has not joined)
+    /// never makes it one.
     #[must_use]
     pub fn is_counted_member(&self, member: &PseudonymKey) -> bool {
-        (self.members.contains_key(member) || self.creator.as_ref() == Some(member))
-            && !self.is_departed(member)
+        self.members.contains_key(member) && !self.is_departed(member)
     }
 
     /// Every member the merge counts ([`Self::is_counted_member`]), each
     /// once.
     pub fn counted_members(&self) -> impl Iterator<Item = &PseudonymKey> {
-        let creator = (self.creator.as_ref()).filter(|c| !self.members.contains_key(*c));
-        (self.members.keys())
-            .chain(creator)
-            .filter(|p| self.is_counted_member(p))
+        (self.members.keys()).filter(|p| self.is_counted_member(p))
     }
 
-    /// How many members the merge counts: every admitted `MemberJoined`
-    /// author, and the cert's creator (MSC4289: no op makes it one) unless
-    /// it departed.
+    /// How many members the merge counts: every admitted member (the
+    /// primary creator from genesis, everyone else, a further creator
+    /// included, from its admitted `MemberJoined`).
     #[must_use]
     pub fn member_count(&self) -> usize {
-        let creator = (self.creator.as_ref())
-            .filter(|c| !self.members.contains_key(*c) && !self.is_departed(c));
-        self.members.len() + usize::from(creator.is_some())
+        self.members.len()
     }
 
     /// Whether `member` has departed: banned, or once joined (it has an op

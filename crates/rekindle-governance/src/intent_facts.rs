@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn the_last_admin_and_the_sole_member_are_told() {
         let mut state = GovernanceState {
-            creator: Some(key(1)),
+            creators: std::collections::BTreeSet::from([key(1)]),
             ..GovernanceState::default()
         };
         let members = [key(1), key(2)];
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn a_channel_with_history_or_readers_is_not_empty() {
         let state = GovernanceState {
-            creator: Some(key(1)),
+            creators: std::collections::BTreeSet::from([key(1)]),
             ..GovernanceState::default()
         };
         let channel = ChannelId([3; 16]);
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn a_forward_to_other_readers_names_both_audiences() {
         let mut state = GovernanceState {
-            creator: Some(key(1)),
+            creators: std::collections::BTreeSet::from([key(1)]),
             ..GovernanceState::default()
         };
         let channel = ChannelId([3; 16]);

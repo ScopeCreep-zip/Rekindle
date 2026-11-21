@@ -69,7 +69,7 @@ pub struct CommunityLeaveNotification {
 // and every peer validates on merge. The last four (CreateRole,
 // UpdateRole, DeleteRole, TransferOwnership) had no sender at all;
 // ownership in particular could not mean anything, since
-// `GovernanceState.creator` is fixed at genesis.
+// `GovernanceState.creators` is fixed at genesis.
 
 // ── Inbound call dispatch ───────────────────────────────────────────────
 

@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 /// Community-specific Ed25519 public key identifying a member.
 /// Derived via HKDF from the member's master secret + community ID.
 /// Unlinkable across communities.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Ordered by its bytes (a `BTreeSet` of creators is the sorted creator set).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PseudonymKey(pub [u8; 32]);
 
 impl PseudonymKey {

@@ -8,8 +8,8 @@ fn empty_merge() {
     assert!(state.channels.is_empty());
     assert!(state.roles.is_empty());
     assert_eq!(
-        state.creator,
-        Some(pseudo(1)),
+        state.creators,
+        std::collections::BTreeSet::from([pseudo(1)]),
         "the creator comes from the cert alone"
     );
 }
@@ -27,7 +27,7 @@ fn genesis_sets_creator() {
         },
     )];
     let state = merge_entries(&creator, &[(creator.clone(), entries)]);
-    assert_eq!(state.creator, Some(creator));
+    assert_eq!(state.creators, std::collections::BTreeSet::from([creator]));
     assert_eq!(state.metadata.unwrap().name, "Test");
 }
 

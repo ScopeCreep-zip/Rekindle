@@ -21,7 +21,7 @@ pub fn eligible_set(
     prev_cut_state: Option<&GovernanceState>,
 ) -> Vec<PseudonymKey> {
     let mut set: Vec<PseudonymKey> = match prev_cut_state {
-        None => vec![cert.creator_pseudonym.clone()],
+        None => cert.creator_set().into_iter().collect(),
         Some(state) => (state.members.keys())
             .filter(|m| !state.is_departed(m))
             .cloned()

@@ -49,7 +49,7 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
         admin_deletes,
         pinned_attachments,
         attachment_pin_stamps,
-        creator,
+        creators,
         automod_rules,
         onboarding,
         welcome_screen,
@@ -67,7 +67,7 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
     put!(out; removal_reasons, pending_members, admitted, &Json(admission_mode));
     put!(out; timeouts, mek_generation, metadata, notification_default, categories);
     put!(out; overwrites, threads, events, event_rsvps, expressions, admin_deletes);
-    put!(out; pinned_attachments, attachment_pin_stamps, creator, automod_rules);
+    put!(out; pinned_attachments, attachment_pin_stamps, creators, automod_rules);
     put!(out; onboarding, welcome_screen, ban_stamps, segments);
     put!(out; invites, expression_remove_stamps, community_policy, mod_reports);
     std::mem::take(out)

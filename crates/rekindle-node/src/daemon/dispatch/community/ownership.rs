@@ -8,7 +8,7 @@ use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 /// Give another member administrative control.
 ///
 /// Named `TransferOwnership` on the wire, but under flat governance
-/// there is no owner to move: `GovernanceState.creator` is fixed by the
+/// there is no owner to move: `GovernanceState.creators` is fixed by the
 /// genesis entries and holds `ALL` permanently. See
 /// `rekindle_governance_runtime::ownership` for why that is deliberate
 /// and what Matrix concluded about the same question.

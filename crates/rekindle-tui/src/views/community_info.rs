@@ -63,7 +63,10 @@ impl CommunityInfoView {
     /// Render the metadata section.
     fn render_metadata(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
         let gov_short = helpers::abbreviate_key(&detail.anchor);
-        let owner_short = helpers::abbreviate_key(&detail.owner_pseudonym);
+        let owner_short = (detail.creator_pseudonyms.iter())
+            .map(|c| helpers::abbreviate_key(c))
+            .collect::<Vec<_>>()
+            .join(", ");
         let created = helpers::format_timestamp(detail.created_at);
         let our_key = helpers::abbreviate_key(&detail.our_pseudonym);
         let roles_str = if detail.our_roles.is_empty() {

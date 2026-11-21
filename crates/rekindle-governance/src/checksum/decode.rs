@@ -388,7 +388,7 @@ decanon_struct!(GovernanceState {
     admin_deletes,
     pinned_attachments,
     attachment_pin_stamps,
-    creator,
+    creators,
     automod_rules,
     onboarding,
     welcome_screen,

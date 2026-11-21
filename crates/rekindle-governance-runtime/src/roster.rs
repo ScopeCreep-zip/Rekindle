@@ -125,7 +125,7 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
 /// would lock them out of their own community on the first merge.
 fn is_admitted(gov_state: &GovernanceState, pseudonym_hex: &str) -> bool {
     let key = rekindle_types::id::PseudonymKey::from_hex_lossy(pseudonym_hex);
-    if gov_state.creator.as_ref() == Some(&key) {
+    if gov_state.is_creator(&key) {
         return true;
     }
     gov_state
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn the_creator_is_admitted_without_a_decision() {
         let state = GovernanceState {
-            creator: Some(key(9)),
+            creators: std::collections::BTreeSet::from([key(9)]),
             ..Default::default()
         };
         assert!(state.admitted.is_empty());

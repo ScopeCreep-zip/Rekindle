@@ -66,7 +66,7 @@ pub fn well_formed(
         // Only the `GenesisCert` creator joins without an invite proof.
         GovernanceEntry::MemberJoined {
             invite_proof: None, ..
-        } if state.creator.as_ref() != Some(writer) => {
+        } if !state.is_creator(writer) => {
             return false;
         }
         // Invite caps are ceilings on the protocol, not a permission the
@@ -121,7 +121,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
     }
 
     // Creator always passes validation
-    if state.creator.as_ref() == Some(writer) {
+    if state.is_creator(writer) {
         return true;
     }
 
@@ -198,7 +198,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
             // unassigned by the creator themselves. Defense-in-depth on
             // top of the rank check; even if an attacker somehow climbs
             // above the creator's rank, this still blocks them.
-            if state.creator.as_ref() == Some(target) && writer != target {
+            if state.is_creator(target) && writer != target {
                 return false;
             }
             // Self-unassign always allowed (you can step down).

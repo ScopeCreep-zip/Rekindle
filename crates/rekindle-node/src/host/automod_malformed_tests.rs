@@ -22,7 +22,7 @@ async fn an_uncompilable_automod_rule_is_refused_with_400_and_not_written() {
     seed_registry_community(&host, &owner).await;
     load_membership(&host);
     let creator = GovernanceState {
-        creator: Some(PseudonymKey([0xcd; 32])),
+        creators: std::collections::BTreeSet::from([PseudonymKey([0xcd; 32])]),
         ..GovernanceState::default()
     };
     {

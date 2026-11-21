@@ -41,7 +41,7 @@ fn role(name: &str, permissions: u64, position: u32) -> RoleState {
 /// @everyone.
 fn community() -> GovernanceState {
     GovernanceState {
-        creator: Some(key(1)),
+        creators: std::collections::BTreeSet::from([key(1)]),
         roles: HashMap::from([
             (RoleId([0; 16]), role("everyone", DEFAULT_EVERYONE, 0)),
             (MODERATOR_ROLE, role("moderator", MANAGE_MESSAGES, 1)),

@@ -109,3 +109,21 @@ pub struct GenesisCert {
     /// The anchor of the community this one succeeds, or `None`.
     pub predecessor: Option<String>,
 }
+
+impl GenesisCert {
+    /// The creator set (Q3, ADR 0011): `creator_pseudonym` and the
+    /// `additional_creators`, ordered by bytes.
+    #[must_use]
+    pub fn creator_set(&self) -> std::collections::BTreeSet<PseudonymKey> {
+        std::iter::once(&self.creator_pseudonym)
+            .chain(&self.additional_creators)
+            .cloned()
+            .collect()
+    }
+
+    /// Whether `member` is in [`Self::creator_set`].
+    #[must_use]
+    pub fn is_creator(&self, member: &PseudonymKey) -> bool {
+        self.creator_pseudonym == *member || self.additional_creators.contains(member)
+    }
+}

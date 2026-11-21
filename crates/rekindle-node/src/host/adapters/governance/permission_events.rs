@@ -50,7 +50,7 @@ pub(super) fn permission_transitions(
         .members
         .keys()
         .chain(prev.members.keys())
-        .chain(next.creator.iter())
+        .chain(next.creators.iter())
         .collect();
     members.sort_by_key(|p| p.0);
     members.dedup();

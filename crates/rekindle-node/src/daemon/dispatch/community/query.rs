@@ -71,11 +71,7 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
                 rekindle_transport::CommunityMetaSummary {
                     name: meta.name.clone(),
                     description: meta.description.clone().unwrap_or_default(),
-                    creator_pseudonym: gov
-                        .creator
-                        .as_ref()
-                        .map(|c| hex::encode(c.0))
-                        .unwrap_or_default(),
+                    creator_pseudonyms: gov.creators.iter().map(|c| hex::encode(c.0)).collect(),
                     created_at: 0,
                 },
             ))
@@ -120,11 +116,7 @@ pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str)
                 .as_ref()
                 .and_then(|m| m.description.clone())
                 .unwrap_or_default(),
-            creator_pseudonym: gov
-                .creator
-                .as_ref()
-                .map(|c| hex::encode(c.0))
-                .unwrap_or_default(),
+            creator_pseudonyms: gov.creators.iter().map(|c| hex::encode(c.0)).collect(),
             created_at: 0,
         })
         .unwrap_or_default();

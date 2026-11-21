@@ -147,9 +147,9 @@ pub fn permitted(
         }
         ModerationAction::Remove => {
             let perms = rekindle_governance::permissions::compute_permissions(me, None, state, now);
-            state.creator.as_ref() == Some(me)
+            state.is_creator(me)
                 || (perms & KICK_MEMBERS != 0
-                    && state.creator.as_ref() != Some(&target)
+                    && !state.is_creator(&target)
                     && state.member_max_position(&target) < state.member_max_position(me))
         }
     };

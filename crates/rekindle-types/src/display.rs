@@ -49,7 +49,8 @@ pub struct CommunityDetail {
     pub anchor: String,
     pub name: String,
     pub description: String,
-    pub owner_pseudonym: String,
+    /// The community's creator set (hex pseudonyms, byte order).
+    pub creator_pseudonyms: Vec<String>,
     pub created_at: u64,
     pub member_count: u32,
     pub channels: Vec<ChannelOverviewDisplay>,

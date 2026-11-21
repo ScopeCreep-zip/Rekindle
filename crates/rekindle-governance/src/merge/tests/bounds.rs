@@ -194,7 +194,10 @@ fn out_of_bounds_lowest_lamport_entry_is_not_the_genesis() {
     for attempt in genesis_attempts {
         let ops = ops_in_order(&[(attacker.clone(), vec![attempt]), (creator.clone(), base())]);
         let state = merge(&cert(&creator, AdmissionMode::default()), &ops);
-        assert_eq!(state.creator, Some(creator.clone()));
+        assert_eq!(
+            state.creators,
+            std::collections::BTreeSet::from([creator.clone()])
+        );
         let creators_meta = ops
             .iter()
             .find(|o| {

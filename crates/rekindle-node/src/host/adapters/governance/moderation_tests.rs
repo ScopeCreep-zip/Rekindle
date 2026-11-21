@@ -14,7 +14,7 @@ fn key(byte: u8) -> PseudonymKey {
 /// members holding no role.
 fn community() -> GovernanceState {
     GovernanceState {
-        creator: Some(key(1)),
+        creators: std::collections::BTreeSet::from([key(1)]),
         ..GovernanceState::default()
     }
 }

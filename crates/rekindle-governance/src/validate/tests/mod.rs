@@ -50,7 +50,7 @@ fn state_with_creator_and_roles() -> GovernanceState {
     assignments.insert(pseudo(5), admin_roles); // pseudo(5) is admin
 
     GovernanceState {
-        creator: Some(pseudo(1)),
+        creators: std::collections::BTreeSet::from([pseudo(1)]),
         roles,
         role_assignments: assignments,
         ..Default::default()

@@ -42,7 +42,7 @@ pub(super) fn acts_on_lower(
     state: &GovernanceState,
 ) -> bool {
     has(perms, bit)
-        && state.creator.as_ref() != Some(target)
+        && !state.is_creator(target)
         && state.member_max_position(target) < state.member_max_position(writer)
 }
 
@@ -60,7 +60,7 @@ pub(super) fn acts_on_post_of(
     state: &GovernanceState,
 ) -> bool {
     has(perms, bit)
-        && state.creator.as_ref() != Some(author)
+        && !state.is_creator(author)
         && state.member_max_position(author) <= state.member_max_position(writer)
 }
 
@@ -74,7 +74,7 @@ pub fn may_moderate(
     action: TargetAction,
     state: &GovernanceState,
 ) -> bool {
-    if state.creator.as_ref() == Some(writer) {
+    if state.is_creator(writer) {
         return true;
     }
     if state.bans.contains(writer) {
@@ -93,10 +93,10 @@ pub fn outranks(writer: &PseudonymKey, target: &PseudonymKey, state: &Governance
     if writer == target {
         return false;
     }
-    if state.creator.as_ref() == Some(writer) {
+    if state.is_creator(writer) {
         return true;
     }
-    state.creator.as_ref() != Some(target)
+    !state.is_creator(target)
         && !state.bans.contains(writer)
         && state.member_max_position(target) < state.member_max_position(writer)
 }

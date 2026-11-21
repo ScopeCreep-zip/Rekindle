@@ -26,7 +26,7 @@ fn holds_member(community: &Community, i: usize, pseudonym: &str) -> bool {
 /// The only member is away (detached for `away`) when the joiner joins.
 async fn join_while_alone(seed: u64, away: Duration) {
     let mut community = Community::create(2, seed).await;
-    let creator = community.info(0).await["owner_pseudonym"].clone();
+    let creator = community.info(0).await["creator_pseudonyms"].clone();
     let link = community.invite().await;
     community.sim.quiesce().await;
     community.sim.fault(Fault::Detach {
@@ -48,7 +48,7 @@ async fn join_while_alone(seed: u64, away: Duration) {
         .await,
         "the joiner's merge admits it with nobody online"
     );
-    assert_eq!(community.info(1).await["owner_pseudonym"], creator);
+    assert_eq!(community.info(1).await["creator_pseudonyms"], creator);
 
     community.sim.fault(Fault::Detach {
         node: 0,

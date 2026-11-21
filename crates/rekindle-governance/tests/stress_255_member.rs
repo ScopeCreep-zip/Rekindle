@@ -130,8 +130,8 @@ fn stress_255_members_50_writers_merge_within_budget() {
             "@everyone role must survive merge"
         );
         assert_eq!(
-            state.creator.as_ref(),
-            Some(&creator),
+            state.creators,
+            std::collections::BTreeSet::from([creator.clone()]),
             "creator should be the genesis writer"
         );
 

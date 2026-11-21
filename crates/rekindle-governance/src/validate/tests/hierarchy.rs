@@ -75,7 +75,7 @@ pub(super) fn state_with_three_tier_hierarchy() -> GovernanceState {
     assignments.insert(pseudo(6), mod_role);
 
     GovernanceState {
-        creator: Some(pseudo(1)),
+        creators: std::collections::BTreeSet::from([pseudo(1)]),
         roles,
         role_assignments: assignments,
         ..Default::default()

@@ -44,7 +44,7 @@ pub fn compute_permissions(
     now_unix: u64,
 ) -> u64 {
     // Step 0: Creator always has all permissions
-    if state.creator.as_ref() == Some(member) {
+    if state.is_creator(member) {
         return ALL;
     }
 
@@ -207,7 +207,7 @@ mod tests {
         roles.insert(rid(0), everyone_role);
 
         GovernanceState {
-            creator: Some(pseudo(1)),
+            creators: std::collections::BTreeSet::from([pseudo(1)]),
             roles,
             ..Default::default()
         }

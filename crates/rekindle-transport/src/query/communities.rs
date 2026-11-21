@@ -39,10 +39,10 @@ use super::{ChannelOverviewDisplay, CommunityDetail, CommunityOverview, RoleDisp
 pub struct CommunityMetaSummary {
     pub name: String,
     pub description: String,
-    /// `GovernanceState.creator` — the genesis author. There is no
-    /// transferable "owner" under flat governance; see
+    /// `GovernanceState.creators` — the cert's creator set, hex, in byte
+    /// order. There is no transferable "owner" under flat governance; see
     /// `rekindle_governance_runtime::ownership`.
-    pub creator_pseudonym: String,
+    pub creator_pseudonyms: Vec<String>,
     /// Wall-clock creation time, if the caller has one.
     ///
     /// The CRDT does not carry it: entries are ordered by Lamport clock,
@@ -108,7 +108,7 @@ pub fn community_detail(
         anchor: membership.anchor.clone(),
         name: meta.name,
         description: meta.description,
-        owner_pseudonym: meta.creator_pseudonym,
+        creator_pseudonyms: meta.creator_pseudonyms,
         created_at: meta.created_at,
         member_count,
         channels,

@@ -25,8 +25,9 @@
 //! (its concurrent ops stay masked), and masking is transitive —
 //! resolution reruns until the invalidated set is stable.
 //!
-//! **The creator** is the cert's `creator_pseudonym` (MSC4289): no op at
-//! any lamport becomes the creator. The creator is a member from the start,
+//! **The creators** are the cert's creator set, `creator_pseudonym` and
+//! `additional_creators` (MSC4289, Q3): no op at any lamport adds or
+//! removes one. The primary creator is a member from the start,
 //! bound to the cert's `creator_member_record` and its owner: the cert, not
 //! a `MemberJoined`, carries the creator's binding (the genesis ops are
 //! meta, roles, the owner assignment and `#general`), so a `MemberLeft`
@@ -231,10 +232,13 @@ pub(super) struct Round {
     pub anchor: Vec<Option<usize>>,
 }
 
-/// The state before any op: the cert's creator, policy and MEK generation.
+/// The state before any op: the cert's creator set, policy and MEK
+/// generation, with the primary creator admitted (the cert names its member
+/// record; a further creator is admitted by its own `MemberJoined`, plan
+/// E3.2 S7s decision (17)).
 fn genesis_state(cert: &GenesisCert) -> GovernanceState {
     let mut state = GovernanceState {
-        creator: Some(cert.creator_pseudonym.clone()),
+        creators: cert.creator_set(),
         admission_mode: Some(cert.policy),
         mek_generation: crate::state::GENESIS_MEK_GENERATION,
         ..GovernanceState::default()

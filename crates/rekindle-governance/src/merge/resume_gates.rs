@@ -150,7 +150,7 @@ fn approval_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &
                 .and_then(|d| d.iter().rev().find(|(at, _)| *at <= anchor))
                 .is_some_and(|(_, approved)| *approved)
         });
-        if op.author() != &ctx.cert.creator_pseudonym && !self_membership && !approved {
+        if !ctx.cert.is_creator(op.author()) && !self_membership && !approved {
             invalid[o] = true;
         }
     }

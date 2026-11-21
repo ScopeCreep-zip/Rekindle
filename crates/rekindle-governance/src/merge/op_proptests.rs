@@ -567,7 +567,7 @@ proptest! {
         let mut set = vec![forged.clone()];
         set.extend(ops);
         let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &set);
-        prop_assert_eq!(outcome.state.creator, Some(pk(1)));
+        prop_assert_eq!(outcome.state.creators, std::collections::BTreeSet::from([pk(1)]));
         prop_assert!(!outcome.applied.contains(&forged.hash()));
     }
 

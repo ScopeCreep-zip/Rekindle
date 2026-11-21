@@ -286,7 +286,12 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
             "attachment_pin_stamps",
             Box::new(move |g| _ = g.attachment_pin_stamps.insert(id, s())),
         ),
-        ("creator", Box::new(|g| g.creator = Some(pk()))),
+        (
+            "creator",
+            Box::new(|g| {
+                g.creators.insert(pk());
+            }),
+        ),
         (
             "automod_rules",
             Box::new(move |g| {

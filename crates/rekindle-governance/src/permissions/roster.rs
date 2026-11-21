@@ -65,7 +65,7 @@ mod tests {
 
     fn state() -> GovernanceState {
         let mut state = GovernanceState {
-            creator: Some(key(1)),
+            creators: std::collections::BTreeSet::from([key(1)]),
             ..GovernanceState::default()
         };
         state.roles.insert(RoleId([0; 16]), role(DEFAULT_EVERYONE));

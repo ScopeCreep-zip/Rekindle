@@ -72,7 +72,7 @@ fn hierarchy() -> rekindle_governance::state::GovernanceState {
         stamp: rekindle_governance::fixture::stamp(1),
     };
     let mut gov = rekindle_governance::state::GovernanceState {
-        creator: Some(PseudonymKey([1; 32])),
+        creators: std::collections::BTreeSet::from([PseudonymKey([1; 32])]),
         ..Default::default()
     };
     gov.roles.insert(RoleId([5; 16]), role(ADMINISTRATOR, 5));

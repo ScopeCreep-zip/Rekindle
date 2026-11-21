@@ -132,7 +132,7 @@ fn approval_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &m
                 .and_then(|d| d.iter().rev().find(|(at, _)| *at <= anchor))
                 .is_some_and(|(_, approved)| *approved)
         });
-        if op.author() != &cert.creator_pseudonym && !self_membership && !approved {
+        if !cert.is_creator(op.author()) && !self_membership && !approved {
             invalid[o] = true;
         }
     }

@@ -35,7 +35,7 @@ pub(super) fn apply_membership(
             };
             let needs_approval = state.effective_admission_mode()
                 == AdmissionMode::ApprovalRequired
-                && state.creator.as_ref() != Some(author);
+                && !state.is_creator(author);
             match state.admitted.get(author).map(|d| d.approved) {
                 _ if !needs_approval => {
                     state.members.insert(author.clone(), member);
