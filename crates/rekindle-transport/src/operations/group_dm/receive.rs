@@ -7,7 +7,15 @@
 //! `GroupDmAccept`, which diffs again. An opened message is a `group_dm`
 //! `messages` row under the group's id with the member as its sender.
 //!
-//! The triggers mirror the DM chain's: a member's hint ([`on_hint`]), its
+//! A member's hint ([`on_hint`]) is their entry itself, sent before its
+//! chain append lands (E2.5: no DHT write precedes the hint): its content
+//! is stored on receipt, as the DM path stores a 1:1 frame, and the
+//! chain's copy is then a duplicate the cursor passes (finding G3: a hint
+//! that only diffed read the chain before the append and applied nothing
+//! until the chain's watch fired, 15 s later). Both copies store under
+//! the author's outbox stream seq ([`super::content::Inner::stream_seq`]).
+//!
+//! The diff's triggers mirror the DM chain's: a member's hint, its
 //! chain's watch ([`on_watch_change`], opened by [`watch_all`] at unlock and
 //! [`watch_member`] when a chain is announced) and [`catch_up_all`] at
 //! unlock. A member who left has no chain or key held (their removal
@@ -24,7 +32,7 @@ use rekindle_types::subscription_events::{
     GroupDmEvent, GroupDmMember, SubscriptionEvent, TypingContext,
 };
 
-use super::content::{parse_inner, stream_name};
+use super::content::{parse_inner, stream_name, Inner};
 use crate::operations::dm::client_id_text;
 use crate::operations::friend::inbox::records;
 use crate::operations::friend::{state, FriendHost};
@@ -55,15 +63,19 @@ fn typing_context(group_id: &GroupId) -> TypingContext {
 }
 
 /// A member's hint over their pairwise session: typing is shown (never
-/// stored); any other entry makes us diff their chain, which is where
-/// content is read from. Whether it applied.
+/// stored); any other entry is stored at once and makes us diff their
+/// chain (for entries whose hint was lost). Whether it applied.
 pub async fn on_hint(host: &dyn FriendHost, sender: &str, content: &GroupContent) -> bool {
     let Ok(deps) = host.group_dm() else {
         return false;
     };
     match rekindle_dm::open_received(deps.as_ref(), sender, content).await {
         Ok(plain) => {
-            if let Ok((DirectBody::Typing(t), _)) = parse_inner(&plain) {
+            if let Ok(Inner {
+                body: DirectBody::Typing(t),
+                ..
+            }) = parse_inner(&plain)
+            {
                 let ctx = typing_context(&content.group_id);
                 if t.typing {
                     typing::started(host, ctx, sender, TYPING_TTL_MS);
@@ -71,6 +83,11 @@ pub async fn on_hint(host: &dyn FriendHost, sender: &str, content: &GroupContent
                     typing::stopped(host, &ctx, sender);
                 }
                 return true;
+            }
+            let sink = GroupSink::new(host, content.group_id);
+            if let Err(e) = sink.store(sender, &plain).await {
+                // The chain diff below reads the entry again.
+                tracing::debug!(from = %sender, error = %e, "group hint not stored");
             }
             spawn_diff(host, &content.group_id, sender);
             true
@@ -234,9 +251,14 @@ impl GroupSink<'_> {
         .map_err(sink_error)
     }
 
-    /// Store `writer`'s opened entry `seq`; a replay finds it held.
-    async fn store(&self, writer: &str, plain: &[u8], seq: u64) -> Result<(), SinkError> {
-        let (body, sent_at_ms) = match parse_inner(plain) {
+    /// Store `writer`'s opened entry (its hint, or its chain copy); a
+    /// replay or the other copy finds it held.
+    async fn store(&self, writer: &str, plain: &[u8]) -> Result<(), SinkError> {
+        let Inner {
+            body,
+            sent_at_ms,
+            stream_seq,
+        } = match parse_inner(plain) {
             Ok(parsed) => parsed,
             Err(e) => {
                 tracing::info!(from = %writer, error = %e, "group entry unreadable; skipped");
@@ -259,7 +281,7 @@ impl GroupSink<'_> {
             message_id.clone(),
             reply_to.clone(),
         );
-        let stream_seq = i64::try_from(seq).ok();
+        let stream_seq = i64::try_from(stream_seq).ok().filter(|s| *s >= 1);
         // Its timer starts when the group window displays it (plan E7.1).
         let expire_seconds = text.expire_seconds;
         let received_at = self.host.clock().now_ms_i64();
@@ -341,7 +363,7 @@ impl StreamSink for GroupSink<'_> {
         };
         let deps = self.host.group_dm().map_err(sink_error)?;
         match rekindle_dm::open_received(deps.as_ref(), writer, &content).await {
-            Ok(plain) => self.store(writer, &plain, entry.seq).await?,
+            Ok(plain) => self.store(writer, &plain).await?,
             Err(e @ (DmError::KeyMissing { .. } | DmError::Storage(_))) => {
                 return Err(sink_error(e));
             }

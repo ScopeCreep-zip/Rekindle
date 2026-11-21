@@ -1,10 +1,11 @@
 //! Our group content (plan E2.6 G2c). A message to a group is one row of
 //! the `group_dm:<group_id>` outbox stream committed with its local echo
 //! (a `group_dm` `messages` row under the group's id). Each attempt seals
-//! it under our current sending key, appends the `GroupContent` to our
-//! group chain (the chain is authoritative, D23) and only then sends the
-//! same entry to every other member as a best-effort hint over their
-//! pairwise session (no row per hint). The row settles `sent` once the
+//! it under our current sending key, sends the entry at once to every
+//! other member as a best-effort hint over their pairwise session (no row
+//! per hint; E2.5: no DHT write precedes the hint) and hands it to our
+//! group chain's appender (the chain is authoritative, D23). A member
+//! stores a hint's content on receipt (`receive::on_hint`, finding G3). The row settles `sent` once the
 //! entry landed: a group has no `DmAck` or `ReadUpTo`, so never
 //! `delivered` or `read`. Typing is a hint only, never on the chain.
 
@@ -47,17 +48,33 @@ pub fn inner(body: &DirectBody, sent_at_ms: u64, stream_seq: u64) -> Vec<u8> {
     out
 }
 
-/// [`inner`] read back: the body and the author's clock.
+/// An [`inner`] read back.
+#[derive(Debug)]
+pub struct Inner {
+    pub body: DirectBody,
+    /// The author's clock when the message was written.
+    pub sent_at_ms: u64,
+    /// The author's outbox stream seq of the group (0: typing, no row):
+    /// the one order of their messages whether the entry came as a hint or
+    /// from their chain (whose seq restarts when the chain is made again).
+    pub stream_seq: u64,
+}
+
+/// [`inner`] read back.
 ///
 /// # Errors
 /// Not an [`inner`] of an allocated kind.
-pub fn parse_inner(plain: &[u8]) -> Result<(DirectBody, u64), String> {
+pub fn parse_inner(plain: &[u8]) -> Result<Inner, String> {
     let (id, rest) = plain.split_at_checked(2).ok_or("entry too short")?;
     let raw = u16::from_be_bytes([id[0], id[1]]);
     let type_id = DmTypeId::from_u16(raw).ok_or_else(|| format!("typeId {raw:#06x}"))?;
     let content = DmContent::decode(rest).map_err(|e| e.to_string())?;
     let body = DirectBody::decode(type_id, &content.payload).map_err(|e| e.to_string())?;
-    Ok((body, content.sent_at_ms))
+    Ok(Inner {
+        body,
+        sent_at_ms: content.sent_at_ms,
+        stream_seq: content.stream_seq,
+    })
 }
 
 async fn held(host: &dyn FriendHost, id: &GroupId) -> Result<GroupState, FriendError> {

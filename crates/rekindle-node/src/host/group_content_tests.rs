@@ -2,7 +2,8 @@
 //! our send is one `group_dm` row with its echo and is not sent until its
 //! chain entry lands; a member's chain entries open and store in order
 //! under the group's conversation, an older epoch is refused and a newer
-//! one waits; typing is a hint only.
+//! one waits; typing is a hint only; a text hint stores at once and its
+//! chain copy is a duplicate (finding G3).
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmText, GroupContent, GroupId, Typing};
 use rekindle_dm::sender_key;
@@ -195,4 +196,48 @@ async fn typing_is_a_hint_and_never_stored() {
         !seen.iter().any(|f| f.contains("Message {")),
         "typing is never stored: {seen:?}"
     );
+}
+
+/// Finding G3: the hint is sent before the chain append lands, so a hint
+/// that only diffed applied nothing until the chain's watch fired. Its
+/// content stores on receipt; the chain's copy later passes as a duplicate
+/// (no second row or event) and moves the cursor.
+#[tokio::test]
+async fn a_text_hint_stores_at_once_and_its_chain_copy_is_a_duplicate() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let key = group(&friends, owner).await;
+    let me = hex::encode(owner);
+    let mut events = host.ctx.journal.subscribe(None);
+    // No chain of Bob's is held: nothing but the hint can store it.
+    let hint = sealed(&key, &text(7, "now"), 7);
+    assert!(receive::on_hint(&friends, &bob(), &hint).await);
+    assert_eq!(
+        conversation(&friends, &me, 7).await,
+        Some((hex::encode(GID), ConversationType::GroupDm)),
+        "the hint's content is stored on receipt"
+    );
+    let (sink, stream) = (
+        GroupSink::new(&friends, GID),
+        stream_name(&hex::encode(GID)),
+    );
+    for n in 1..=7 {
+        sink.apply(&stream, &bob(), &entry(&key, n)).await.unwrap();
+    }
+    assert_eq!(sink.cursor(&stream, &bob()).await.unwrap(), 7);
+    let mut stored = 0;
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        let f = format!("{frame:?}");
+        if f.contains("Message {")
+            && f.contains(&rekindle_transport::operations::dm::client_id_text(
+                &[7; 16],
+            ))
+        {
+            stored += 1;
+        }
+    }
+    assert_eq!(stored, 1, "the chain copy is a duplicate");
 }
