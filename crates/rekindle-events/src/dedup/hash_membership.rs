@@ -290,6 +290,36 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(&game_id.to_le_bytes());
             h.update(server.as_str().as_bytes());
         }
+        FriendEvent::CreatorInvited {
+            peer_key,
+            anchor,
+            community_name,
+        } => {
+            h.update(b"creator_invited|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(anchor.as_bytes());
+            h.update(b"|");
+            h.update(community_name.as_bytes());
+        }
+        FriendEvent::CreatorInviteWithdrawn { peer_key, anchor } => {
+            h.update(b"creator_withdrawn|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(anchor.as_bytes());
+        }
+        FriendEvent::CoCreatorStatus {
+            peer_key,
+            anchor,
+            status,
+        } => {
+            h.update(b"co_creator|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(anchor.as_bytes());
+            h.update(b"|");
+            h.update(status.as_bytes());
+        }
         FriendEvent::BlockChanged { peer_key, blocked } => {
             h.update(b"blocked|");
             h.update(peer_key.as_bytes());

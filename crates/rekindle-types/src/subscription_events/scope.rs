@@ -205,7 +205,10 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::IdentityPinRestored { peer_key }
         | FriendEvent::VerificationChanged { peer_key, .. }
         | FriendEvent::BlockChanged { peer_key, .. }
-        | FriendEvent::GameInvite { peer_key, .. } => peer_key,
+        | FriendEvent::GameInvite { peer_key, .. }
+        | FriendEvent::CreatorInvited { peer_key, .. }
+        | FriendEvent::CreatorInviteWithdrawn { peer_key, .. }
+        | FriendEvent::CoCreatorStatus { peer_key, .. } => peer_key,
     }
 }
 

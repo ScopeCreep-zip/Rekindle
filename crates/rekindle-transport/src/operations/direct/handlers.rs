@@ -209,6 +209,15 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         | DirectBody::GroupContent(_) => {
             applied = crate::operations::group_dm::apply(host, sender, &opened.body).await;
         }
+        DirectBody::CreatorInvite(_)
+        | DirectBody::CreatorAccept(_)
+        | DirectBody::CreatorDecline(_)
+        | DirectBody::CreatorWithdrawn(_)
+        | DirectBody::CreatorJoin(_) => {
+            applied =
+                crate::operations::friend::creator_round::on_frame(host, sender, &opened.body)
+                    .await;
+        }
         DirectBody::RelayEnvelope(_)
         | DirectBody::RelayOffer(_)
         | DirectBody::RelayWithdraw(_)

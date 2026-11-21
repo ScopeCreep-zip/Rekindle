@@ -418,6 +418,9 @@ impl App {
                 | FriendEvent::IdentityPinRestored { .. }
                 | FriendEvent::BlockChanged { .. }
                 | FriendEvent::GameInvite { .. }
+                | FriendEvent::CreatorInvited { .. }
+                | FriendEvent::CreatorInviteWithdrawn { .. }
+                | FriendEvent::CoCreatorStatus { .. }
                 | FriendEvent::GroupChanged { .. }
                 | FriendEvent::NicknameChanged { .. }
                 | FriendEvent::DisplayNameChanged { .. }

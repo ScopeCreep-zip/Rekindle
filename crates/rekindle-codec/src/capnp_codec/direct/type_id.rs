@@ -134,6 +134,19 @@ type_ids! {
     ProfileBio = 0x0171 => Ratchet,
     /// Our game totals (plan E7.2), sent only while we share them.
     GameTotals = 0x0172 => Ratchet,
+    /// The creator names a friend a co-creator of a reserved community
+    /// (plan E3.2 S7s.3, decision (16)).
+    CreatorInvite = 0x0190 => Ratchet,
+    /// The co-creator's pseudonym for the anchor, signed by it.
+    CreatorAccept = 0x0191 => Ratchet,
+    /// The co-creator declines.
+    CreatorDecline = 0x0192 => Ratchet,
+    /// The creator removed the co-creator or abandoned the creation
+    /// (decision (20)).
+    CreatorWithdrawn = 0x0193 => Ratchet,
+    /// The genesis lists the co-creator: the invite link it joins with
+    /// (decision (17)).
+    CreatorJoin = 0x0194 => Ratchet,
     /// Call signaling, moved unchanged (obsolete at E4.2).
     CallInvite = 0x0200 => Ratchet,
     /// Call signaling, moved unchanged (obsolete at E4.2).
@@ -250,7 +263,7 @@ mod tests {
     fn unallocated_ids_are_not_kinds() {
         for id in [
             // 0x0102 is FriendReject, retired (LV23 review L2).
-            0x0000, 0x0102, 0x0109, 0x0125, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
+            0x0000, 0x0102, 0x0109, 0x0125, 0x0150, 0x0195, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }

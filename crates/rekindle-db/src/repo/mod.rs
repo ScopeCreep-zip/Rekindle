@@ -18,6 +18,7 @@ pub mod communities;
 pub mod community_blocks;
 pub mod community_events;
 pub mod community_invites;
+pub mod creator_round;
 pub mod disappearing;
 pub mod favourite_servers;
 pub mod friend_game_totals;

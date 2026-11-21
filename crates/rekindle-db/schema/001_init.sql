@@ -156,6 +156,30 @@ CREATE TABLE IF NOT EXISTS group_dm_invites (
     PRIMARY KEY (owner_key, group_id)
 );
 
+-- The creator-set round (plan E3.2 S7s.3, decision (20)). On a co-creator:
+-- a friend's `CreatorInvite` (0x0190) we have not answered, kept across a
+-- restart so it can be answered or dismissed (no secret). On the creator:
+-- each co-creator a reserved creation still waits on, one row per
+-- co-creator; the anchor's one-time key is never stored (ADR 0011), so a
+-- row found at unlock means the creation died: each is sent
+-- `CreatorWithdrawn` (0x0193) and the rows are deleted.
+CREATE TABLE IF NOT EXISTS creator_invites (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    anchor TEXT NOT NULL CHECK(length(anchor) > 0),
+    inviter_key TEXT NOT NULL CHECK(length(inviter_key) = 64),
+    community_name TEXT NOT NULL CHECK(length(community_name) > 0),
+    received_at INTEGER NOT NULL,
+    accepted INTEGER NOT NULL DEFAULT 0 CHECK(accepted IN (0, 1)),
+    PRIMARY KEY (owner_key, anchor)
+);
+
+CREATE TABLE IF NOT EXISTS pending_creations (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    anchor TEXT NOT NULL CHECK(length(anchor) > 0),
+    co_creator TEXT NOT NULL CHECK(length(co_creator) = 64),
+    PRIMARY KEY (owner_key, anchor, co_creator)
+);
+
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,

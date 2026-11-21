@@ -445,3 +445,37 @@ struct DmVideoFragment {
   timestamp @6 :UInt32;
   chunk @7 :Data;
 }
+
+# 0x0190 (E3.2 S7s.3, decision (16)), inside the ratchet, to a friend:
+# the creator reserved `anchor` and names us a co-creator of
+# `communityName`; we derive our pseudonym for that anchor to answer.
+struct CreatorInvite {
+  anchor @0 :Text;
+  communityName @1 :Text;
+}
+
+# 0x0191: we accept: our pseudonym for `anchor` and its signature over
+# `rekindle-gov-creator-accept-v1 ‖ anchor ‖ pseudonym`.
+struct CreatorAccept {
+  anchor @0 :Text;
+  pseudonym @1 :Data;                   # 32
+  signature @2 :Data;                   # 64
+}
+
+# 0x0192: we decline the co-creator invite for `anchor`.
+struct CreatorDecline {
+  anchor @0 :Text;
+}
+
+# 0x0193: the creator removed us from, or abandoned, the creation of
+# `anchor` (decision (20): also sent after a restart before genesis).
+struct CreatorWithdrawn {
+  anchor @0 :Text;
+}
+
+# 0x0194: the genesis of `anchor` is written and lists us: `invite` is the
+# invite link we join it with through the normal join path (decision (17)).
+struct CreatorJoin {
+  anchor @0 :Text;
+  invite @1 :Text;
+}

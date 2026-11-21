@@ -34,10 +34,19 @@ pub enum BackendHold {
     SessionReinitiate { peer: String },
 }
 
+/// A co-creator's answer: its verified `(pseudonym, signature)`, or
+/// `None` for a decline (plan E3.2 S7s.3).
+pub type CreatorAnswer = Option<([u8; 32], [u8; 64])>;
+
 /// The 1:1 receive and handshake state the Host keeps for the unlocked
 /// identity, cleared at lock.
 #[derive(Default)]
 pub struct FriendStores {
+    /// The co-creators' answers to our reserved creations (plan E3.2
+    /// S7s.3), by anchor then co-creator: `Some((pseudonym, signature))`
+    /// for a verified accept, `None` for a decline. Memory only, like the
+    /// anchor's one-time key the round finishes with (ADR 0011).
+    pub creator_answers: Mutex<HashMap<String, HashMap<String, CreatorAnswer>>>,
     /// Pre-session frames already accepted, so a replayed copy is dropped.
     pub replay: Mutex<ReplayGuard>,
     /// Each friend's pending reset request, until the user answers it (one
@@ -130,6 +139,7 @@ impl FriendStores {
     /// Forget everything (lock).
     pub fn clear(&self) {
         self.replay.lock().clear();
+        self.creator_answers.lock().clear();
         self.incoming_resets.lock().clear();
         self.first_contacts.lock().clear();
         self.group_first_contacts.lock().clear();
@@ -230,6 +240,15 @@ pub trait FriendHost: Send + Sync {
         &self,
         group_id: &str,
     ) -> Result<Option<crate::operations::dm::stream::ParticipantWriter>, FriendError>;
+    /// Apply an accepted friend's creator-set frame (plan E3.2 S7s.3):
+    /// a co-creator invite is held for the user's answer, an answer goes to
+    /// our pending creation, a withdrawal closes the held invite, a join
+    /// link joins. Whether it was handled (false keeps it for the replay).
+    async fn on_creator_round(
+        &self,
+        sender: &str,
+        frame: super::creator_round::CreatorFrame,
+    ) -> bool;
     /// Whether our own status is Invisible (receipts are held meanwhile).
     fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).

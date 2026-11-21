@@ -174,6 +174,26 @@ fn samples() -> Vec<DirectBody> {
         DirectBody::GameInvite(body::game_invite_sample()),
         DirectBody::ProfileBio(body::profile_bio_sample()),
         DirectBody::GameTotals(body::game_totals_sample()),
+        DirectBody::CreatorInvite(CreatorInvite {
+            anchor: dht_key(),
+            community_name: s("LAN Party"),
+        }),
+        DirectBody::CreatorAccept(CreatorAccept {
+            anchor: dht_key(),
+            pseudonym: [0x5A; 32],
+            signature: [0xC3; 64],
+        }),
+        DirectBody::CreatorDecline(CreatorDecline { anchor: dht_key() }),
+        DirectBody::CreatorWithdrawn(CreatorWithdrawn { anchor: dht_key() }),
+        DirectBody::CreatorJoin(CreatorJoin {
+            anchor: dht_key(),
+            invite: format!(
+                "rekindle://invite/{}/{}/{}",
+                dht_key(),
+                dht_key(),
+                "ab".repeat(16)
+            ),
+        }),
         DirectBody::CallInvite(CallInvite {
             call_id: "0a".repeat(16),
             offer_kind: 1,

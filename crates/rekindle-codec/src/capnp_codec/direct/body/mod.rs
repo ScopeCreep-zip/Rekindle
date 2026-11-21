@@ -8,10 +8,12 @@
 //! a semantic change. The friendship and content kinds are E2.3's own
 //! definitions. Unfriended, UnfriendedAck and
 //! SessionResetAccept have an empty body. The group-DM kinds (0x0120-0x0124)
-//! are E2.6's sender-key bodies.
+//! are E2.6's sender-key bodies. The creator-set kinds (0x0190-0x0194) are
+//! E3.2 S7s.3's.
 
 mod calls;
 mod content;
+mod creator;
 mod friend;
 mod game;
 mod group;
@@ -27,6 +29,7 @@ pub use content::{
     DisappearingTimer, DmAck, DmDelete, DmEdit, DmReaction, DmText, ReadUpTo, Typing,
     MAX_DM_ACK_SEQS,
 };
+pub use creator::{CreatorAccept, CreatorDecline, CreatorInvite, CreatorJoin, CreatorWithdrawn};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StreamRecord,
@@ -148,6 +151,11 @@ direct_bodies! {
         GameInvite(GameInvite) = game_invite,
         ProfileBio(ProfileBio) = profile_bio,
         GameTotals(GameTotals) = game_totals,
+        CreatorInvite(CreatorInvite) = creator_invite,
+        CreatorAccept(CreatorAccept) = creator_accept,
+        CreatorDecline(CreatorDecline) = creator_decline,
+        CreatorWithdrawn(CreatorWithdrawn) = creator_withdrawn,
+        CreatorJoin(CreatorJoin) = creator_join,
         CallInvite(CallInvite) = call_invite,
         CallRinging(CallRinging) = call_ringing,
         CallAccept(CallAccept) = call_accept,

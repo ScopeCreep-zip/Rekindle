@@ -25,6 +25,9 @@ pub const NAMES: &[&str] = &[
     "verificationChanged",
     "blockChanged",
     "gameInvite",
+    "creatorInvited",
+    "creatorInviteWithdrawn",
+    "coCreatorStatus",
 ];
 
 pub fn variant_name(e: &FriendEvent) -> &'static str {
@@ -49,6 +52,9 @@ pub fn variant_name(e: &FriendEvent) -> &'static str {
         FriendEvent::VerificationChanged { .. } => "verificationChanged",
         FriendEvent::BlockChanged { .. } => "blockChanged",
         FriendEvent::GameInvite { .. } => "gameInvite",
+        FriendEvent::CreatorInvited { .. } => "creatorInvited",
+        FriendEvent::CreatorInviteWithdrawn { .. } => "creatorInviteWithdrawn",
+        FriendEvent::CoCreatorStatus { .. } => "coCreatorStatus",
     }
 }
 
@@ -179,6 +185,29 @@ pub fn samples() -> Vec<Sample> {
                 game_id: 4181,
                 server: rekindle_types::game_server::ServerAddress::parse("203.0.113.7:27015")
                     .unwrap(),
+            },
+        ),
+        ev(
+            "creatorInvited",
+            FriendEvent::CreatorInvited {
+                peer_key: pk('b'),
+                anchor: rk('a'),
+                community_name: text("LAN Party"),
+            },
+        ),
+        ev(
+            "creatorInviteWithdrawn",
+            FriendEvent::CreatorInviteWithdrawn {
+                peer_key: pk('b'),
+                anchor: rk('a'),
+            },
+        ),
+        ev(
+            "coCreatorStatus",
+            FriendEvent::CoCreatorStatus {
+                peer_key: pk('b'),
+                anchor: rk('a'),
+                status: text("accepted"),
             },
         ),
     ]

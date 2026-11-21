@@ -9,6 +9,7 @@ mod answer;
 pub mod bio;
 mod blocked;
 pub mod code;
+pub mod creator_round;
 mod edit;
 mod error;
 pub mod game_invite;

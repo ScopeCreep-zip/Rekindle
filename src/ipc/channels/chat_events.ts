@@ -151,7 +151,10 @@ export type FriendEvent =
   | { blockChanged: { peerKey: string; blocked: boolean } }
   /** An accepted friend invites us to their game server (plan E7.2);
    *  `server` is the Host-parsed host:port. Joining is reviewed. */
-  | { gameInvite: { peerKey: string; gameId: number; server: string } };
+  | { gameInvite: { peerKey: string; gameId: number; server: string } }
+  | { creatorInvited: { peerKey: string; anchor: string; communityName: string } }
+  | { creatorInviteWithdrawn: { peerKey: string; anchor: string } }
+  | { coCreatorStatus: { peerKey: string; anchor: string; status: string } };
 
 /** Peer on the other end of a direct call; absent for a group call. */
 export interface DirectCallInfo {

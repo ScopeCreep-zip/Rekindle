@@ -354,6 +354,32 @@
       }
     }
   },
+  "friend.coCreatorStatus": {
+    "friend": {
+      "coCreatorStatus": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "status": "accepted"
+      }
+    }
+  },
+  "friend.creatorInviteWithdrawn": {
+    "friend": {
+      "creatorInviteWithdrawn": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.creatorInvited": {
+    "friend": {
+      "creatorInvited": {
+        "anchor": "VLD0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "communityName": "LAN Party",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
   "friend.displayNameChanged": {
     "friend": {
       "displayNameChanged": {

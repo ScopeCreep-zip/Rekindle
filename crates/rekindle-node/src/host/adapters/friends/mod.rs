@@ -3,6 +3,7 @@
 //! [`DaemonContext`], used by both hosts. The friend presence adapter
 //! (`presence`) and the maintenance task (`maintenance`) run over it too.
 
+pub(crate) mod creator_round;
 mod inbox_watch;
 mod maintenance;
 mod participant;
@@ -154,6 +155,14 @@ impl FriendHost for HostFriends {
     ) -> Result<Option<rekindle_transport::operations::dm::stream::ParticipantWriter>, FriendError>
     {
         super::group_dm::chain::held(self, group_id)
+    }
+
+    async fn on_creator_round(
+        &self,
+        sender: &str,
+        frame: rekindle_transport::operations::friend::creator_round::CreatorFrame,
+    ) -> bool {
+        creator_round::apply(self, sender, frame).await
     }
 
     fn invisible(&self) -> bool {

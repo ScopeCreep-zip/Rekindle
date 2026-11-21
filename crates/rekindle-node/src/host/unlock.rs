@@ -194,6 +194,13 @@ pub(crate) async fn run(
         .await;
     }
     super::adapters::friends::watch_friends(ctx, &scope);
+    // 3c'''. The creator-set round (plan E3.2 S7s.3, decision (20)): a
+    // creation that died before its genesis withdraws its co-creators, and
+    // held co-creator invites are shown again.
+    let creators = super::adapters::friends::HostFriends::of(ctx);
+    scope.spawn_or_drop("creator round sweep", async move {
+        super::adapters::friends::creator_round::sweep(&creators).await;
+    });
     // 3c''. Disappearing messages (plan E7.1): the expiry task, woken at
     // the earliest `expire_at`.
     let expiry = super::adapters::friends::HostFriends::of(ctx);

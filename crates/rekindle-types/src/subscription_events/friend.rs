@@ -133,4 +133,26 @@ pub enum FriendEvent {
         game_id: u32,
         server: crate::game_server::ServerAddress,
     },
+    /// An accepted friend names us a co-creator of `community_name`,
+    /// reserved at `anchor` (plan E3.2 S7s.3); held until we answer or the
+    /// friend withdraws it. Triggered by: an inbound `CreatorInvite`
+    /// (0x0190), and replayed from `creator_invites` at unlock.
+    CreatorInvited {
+        peer_key: String,
+        anchor: String,
+        community_name: String,
+    },
+    /// The friend withdrew its co-creator invite to `anchor` (removed us,
+    /// or its creation died before its genesis, decision (20)).
+    /// Triggered by: an inbound `CreatorWithdrawn` (0x0193).
+    CreatorInviteWithdrawn { peer_key: String, anchor: String },
+    /// A co-creator's state in our creation of `anchor` (plan E3.2 S7s.3):
+    /// `pending`, `accepted`, `declined`, `removed` or `withdrawn`.
+    /// Triggered by: our create naming it, its `CreatorAccept` (0x0191) or
+    /// `CreatorDecline` (0x0192), our removal, or the unlock sweep.
+    CoCreatorStatus {
+        peer_key: String,
+        anchor: String,
+        status: String,
+    },
 }

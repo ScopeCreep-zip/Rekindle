@@ -14,6 +14,8 @@ mod bio_tests;
 pub mod bus_key;
 pub mod community;
 #[cfg(test)]
+mod creator_round_tests;
+#[cfg(test)]
 mod direct_call_tests;
 #[cfg(test)]
 mod direct_deadline_tests;
