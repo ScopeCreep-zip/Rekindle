@@ -11,7 +11,7 @@ use rekindle_types::id::PseudonymKey;
 use super::{judge_op, DeviceView, KeyJudgement, KeyPending, KeyRefusal};
 use crate::device::{device_set_hash, endorsement_signing_bytes, retirement_signing_bytes};
 
-const ANCHOR: &str = "VLD0:community";
+const ANCHOR: &str = "VLD0:anchor";
 const RECORD: &str = "VLD0:member";
 
 fn p(seed: u8) -> SigningKey {

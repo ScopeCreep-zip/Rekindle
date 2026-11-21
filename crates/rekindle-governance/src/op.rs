@@ -243,7 +243,7 @@ impl VerifiedOp {
     /// checked; `lamport` and `hash` are taken as given.
     #[cfg(any(test, feature = "fixture"))]
     pub(crate) fn assume_verified(op: GovernanceOp, hash: OpHash, lamport: u64) -> Self {
-        let anchor = crate::fixture::ANCHOR.to_owned();
+        let anchor = crate::fixture::FIXTURE_ANCHOR.to_owned();
         Self {
             op,
             hash,

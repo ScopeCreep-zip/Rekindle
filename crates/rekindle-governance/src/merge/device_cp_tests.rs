@@ -14,7 +14,7 @@ use super::{merge, merge_cut};
 use crate::checkpoint::{state_preimage, state_root_of, CutSnapshot};
 use crate::checksum::canonical_state;
 use crate::device::{device_set_hash, endorsement_signing_bytes, retirement_signing_bytes};
-use crate::fixture::{cert, op, ANCHOR};
+use crate::fixture::{cert, op, FIXTURE_ANCHOR as ANCHOR};
 use crate::op::VerifiedOp;
 
 fn signer(a: u8) -> SigningKey {
