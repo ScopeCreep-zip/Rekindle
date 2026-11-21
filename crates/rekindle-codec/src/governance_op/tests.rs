@@ -299,6 +299,18 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
             eligible_set_hash: [23; 32],
             pages: vec![s("VLD0:page0"), s("VLD0:page1")],
         }),
+        E::CommunitySuccessor(rekindle_types::governance::CommunitySuccessor {
+            new_anchor: Some(s("VLD0:new")),
+            reason: rekindle_types::governance::SuccessorReason::Transfer,
+            transfer_to: None,
+            creator_set_hash: Some([24; 32]),
+            accepts: Some(op_ref(25)),
+            links: vec![rekindle_types::governance::CreatorLink {
+                old: PseudonymKey([26; 32]),
+                new: PseudonymKey([27; 32]),
+                sig: vec![28; 64],
+            }],
+        }),
     ]
 }
 
@@ -350,6 +362,7 @@ fn arm_index(entry: &GovernanceEntry) -> usize {
         E::AttachmentPinned { .. } => 40,
         E::CommunityPolicy { .. } => 41,
         E::Checkpoint(_) => 42,
+        E::CommunitySuccessor(_) => 43,
     }
 }
 
@@ -380,7 +393,7 @@ fn every_body_arm_round_trips() {
     let bodies = every_body();
     let arms: std::collections::BTreeSet<usize> = bodies.iter().map(arm_index).collect();
     assert_eq!(arms.len(), bodies.len(), "one value per arm");
-    assert_eq!(arms.len(), 43, "every live arm");
+    assert_eq!(arms.len(), 44, "every live arm");
     for body in bodies {
         let original = op(body, vec![op_ref(1), op_ref(2)]);
         let decoded = decode_op(&encode_op(&original).unwrap()).unwrap();

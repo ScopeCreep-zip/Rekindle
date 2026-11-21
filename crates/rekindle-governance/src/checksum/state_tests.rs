@@ -387,6 +387,24 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                 g.mod_reports.insert(id, r);
             }),
         ),
+        (
+            "successors",
+            Box::new(|g| {
+                let row = crate::successor::SuccessorState {
+                    author: pk(),
+                    successor: rekindle_types::governance::CommunitySuccessor {
+                        new_anchor: Some("VLD0:n".into()),
+                        reason: rekindle_types::governance::SuccessorReason::Recreate,
+                        transfer_to: None,
+                        creator_set_hash: None,
+                        accepts: None,
+                        links: Vec::new(),
+                    },
+                    stamp: s(),
+                };
+                g.successors.insert(rekindle_types::governance::OpHash([4; 32]), row);
+            }),
+        ),
     ]
 }
 
@@ -397,7 +415,7 @@ fn the_state_root_covers_every_governance_state_field() {
     let base = canonical_state(&GovernanceState::default());
     let mut seen = HashSet::from([base]);
     let all = mutations();
-    assert_eq!(all.len(), 36, "one mutation per GovernanceState field");
+    assert_eq!(all.len(), 37, "one mutation per GovernanceState field");
     for (field, mutate) in all {
         let mut state = GovernanceState::default();
         mutate(&mut state);

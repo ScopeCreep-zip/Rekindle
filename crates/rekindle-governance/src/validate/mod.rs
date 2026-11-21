@@ -11,7 +11,7 @@
 //!
 //! See architecture doc §9.3 for the enforcement model.
 
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{GovernanceEntry, SuccessorShape};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::{
     ADMINISTRATOR, BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, KICK_MEMBERS,
@@ -90,6 +90,8 @@ pub fn well_formed(
         {
             return false;
         }
+        // A successor body in none of its four shapes (S7s.3e).
+        GovernanceEntry::CommunitySuccessor(s) if s.shape().is_none() => return false,
         // Value bounds (plan E3.0): an out-of-range slowmode, timeout or
         // description is malformed whoever wrote it, the creator included.
         _ if !bounds::entry_within_bounds(entry) => return false,
@@ -120,6 +122,20 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         return state.members.contains_key(writer) && !state.is_departed(writer);
     }
 
+    // A successor, an offer and a withdrawal are creator-only acts: a
+    // `MANAGE_COMMUNITY` holder is refused (ADR 0011, MSC4289:145-151). An
+    // acceptance is a counted member's; whether it is the `transferTo` of
+    // an applied, unsuperseded offer in its deps is causal
+    // (`merge::gates::successor_gate`, plan E3.2 S7s.3e).
+    if let GovernanceEntry::CommunitySuccessor(s) = entry {
+        let acceptance = s.shape() == Some(SuccessorShape::Acceptance);
+        return state.is_creator(writer)
+            || (acceptance
+                && state.members.contains_key(writer)
+                && !state.is_departed(writer)
+                && !state.bans.contains(writer));
+    }
+
     // Creator always passes validation
     if state.is_creator(writer) {
         return true;
@@ -148,7 +164,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         | GovernanceEntry::MemberLeft { .. } => true,
 
         // Decided above, before the creator bypass.
-        GovernanceEntry::Checkpoint(_) => true,
+        GovernanceEntry::Checkpoint(_) | GovernanceEntry::CommunitySuccessor(_) => true,
 
         // The durable kick: the same authority and hierarchy as a ban,
         // and the creator cannot be removed (MSC4289).

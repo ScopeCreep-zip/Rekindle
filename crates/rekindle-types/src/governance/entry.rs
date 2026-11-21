@@ -525,6 +525,11 @@ pub enum GovernanceEntry {
     /// A governance checkpoint (plan E3.2 S7c.3): an acceleration hint
     /// over a causal cut, endorsed by the op's author. It changes no state.
     Checkpoint(super::checkpoint::Checkpoint),
+
+    /// A successor community, a transfer offer or its acceptance (ADR 0011,
+    /// plan E3.2 S7s.3e): creator-signed, an acceptance by the offer's
+    /// `transferTo` only.
+    CommunitySuccessor(super::successor::CommunitySuccessor),
 }
 
 /// The exact value of a member's slot in one channel record, as a

@@ -71,7 +71,9 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         | G::AttachmentPinned { .. }
         | G::CommunityPolicy { .. }
         // It changes no state (plan E3.2 S7c.3).
-        | G::Checkpoint(_) => OpClass::NonPower,
+        | G::Checkpoint(_)
+        // It changes no permission: it names another community (S7s.3e).
+        | G::CommunitySuccessor(_) => OpClass::NonPower,
     }
 }
 

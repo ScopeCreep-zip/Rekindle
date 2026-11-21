@@ -59,6 +59,7 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
         expression_remove_stamps,
         community_policy,
         mod_reports,
+        successors,
     } = state;
     let out = &mut Vec::new();
     // The roster sections first, in D15's original order.
@@ -70,7 +71,19 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
     put!(out; pinned_attachments, attachment_pin_stamps, creators, automod_rules);
     put!(out; onboarding, welcome_screen, ban_stamps, segments);
     put!(out; invites, expression_remove_stamps, community_policy, mod_reports);
+    put!(out; successors);
     std::mem::take(out)
+}
+
+impl Canon for crate::successor::SuccessorState {
+    fn put(&self, out: &mut Vec<u8>) {
+        let Self {
+            author,
+            successor,
+            stamp,
+        } = self;
+        put!(out; author, &Json(successor), stamp);
+    }
 }
 
 impl Canon for MemberState {

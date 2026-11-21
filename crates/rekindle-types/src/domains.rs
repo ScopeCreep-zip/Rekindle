@@ -214,6 +214,10 @@ labels! {
     /// label ‖ anchor ‖ pseudonym, so the creator lists only a pseudonym
     /// whose holder accepted.
     GOV_CREATOR_ACCEPT = "rekindle-gov-creator-accept-v1";
+    /// BLAKE3 `derive_key` context: a transfer offer's `creatorSetHash` over
+    /// the old pseudonyms of the new creator set, sorted (plan E3.2 S7s.3e,
+    /// lead decision (24)).
+    GOV_SUCCESSOR_SET = "rekindle-gov-successor-set-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// BLAKE3 `derive_key` context: a `MekTransferAck`'s key-confirmation

@@ -25,6 +25,7 @@ pub mod permissions;
 pub mod power;
 pub mod raid_detection;
 pub mod state;
+pub mod successor;
 pub mod validate;
 
 pub use raid_detection::{observe_join, resolve_thresholds, RaidAlert};

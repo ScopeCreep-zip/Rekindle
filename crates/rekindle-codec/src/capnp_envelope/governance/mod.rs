@@ -42,6 +42,7 @@ mod moderation;
 mod onboarding;
 mod roles;
 mod shared;
+mod successor;
 
 use channels::{
     read_category_archived, read_category_created, read_category_updated, read_channel_archived,
@@ -109,6 +110,9 @@ pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::MemberLeft(p) => read_member_left(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRemoved(p) => read_member_removed(p.map_err(|e| capnp_err(&e))?),
         Which::Checkpoint(p) => read_checkpoint(p.map_err(|e| capnp_err(&e))?),
+        Which::CommunitySuccessor(p) => {
+            successor::read_community_successor(p.map_err(|e| capnp_err(&e))?)
+        }
         Which::ChannelCreated(p) => read_channel_created(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelArchived(p) => read_channel_archived(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelUpdated(p) => read_channel_updated(p.map_err(|e| capnp_err(&e))?),

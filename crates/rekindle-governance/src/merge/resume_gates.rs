@@ -2,7 +2,8 @@
 //! asks of a `rest` op what the full merge asks of it; under (a′) every
 //! cut op is in its causal past, so what the gate reads from the cut comes
 //! from the snapshot: strong-removal masks, the admission decisions among
-//! the cut's power ops, record holders, invite codes and `uses`.
+//! the cut's power ops, record holders, invite codes and `uses`, and the
+//! applied successor offers (`successors`, S7s.3e).
 
 use rekindle_types::join_refusal::JoinRefusal;
 use std::collections::{BTreeMap, HashMap};
@@ -12,6 +13,7 @@ use rekindle_types::id::PseudonymKey;
 
 use super::resume::{Ctx, Dep, NotOnTop, RestRound, RestSet};
 use crate::power::{removal_target, target_seq_frontier};
+use crate::successor::accepts_offer;
 
 /// What the gates decided from one pass.
 pub(super) struct Gated {
@@ -39,6 +41,7 @@ pub(super) fn invalidated(
     let mut record_refusals = BTreeMap::new();
     record_gate(ctx, set, round, &mut invalid, &mut record_refusals)?;
     checkpoint_gate(ctx, set, round, &mut invalid)?;
+    successor_gate(ctx, set, round, &mut invalid)?;
     beside_revoke_gate(ctx, set, round)?;
     let mut invite_refusals = BTreeMap::new();
     let uses = invite_gate(ctx, set, round, &mut invalid, &mut invite_refusals)?;
@@ -445,4 +448,61 @@ fn beside_revoke_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound) -> Re
 /// here has the cut's joins in its past (`beside_revoke_gate`).
 fn live_uses(state: &crate::state::GovernanceState, invite_id: [u8; 16]) -> u32 {
     state.invites.get(&invite_id).map_or(0, |i| i.uses)
+}
+
+/// `gates::successor_gate` for a `rest` acceptance. An offer in the cut is
+/// read from the snapshot's `successors` (the cut's applied successor
+/// ops); a later offer or withdrawal of its author there supersedes it, as
+/// every cut op is in a `rest` op's past (a′). For an op beside the cut,
+/// whose past may hold only part of the cut, such a later one is
+/// undecidable.
+fn successor_gate(
+    ctx: &Ctx<'_>,
+    set: &RestSet<'_>,
+    round: &RestRound,
+    invalid: &mut [bool],
+) -> Result<(), NotOnTop> {
+    let cut = &ctx.snap.state.successors;
+    for (o, op) in set.ops.iter().enumerate() {
+        let GovernanceEntry::CommunitySuccessor(acc) = op.body() else {
+            continue;
+        };
+        let Some(accepts) = &acc.accepts else {
+            continue;
+        };
+        let in_deps = op.op().deps.iter().any(|r| r == accepts);
+        let later_in_rest = |offerer: &PseudonymKey, p: Option<usize>| {
+            (0..set.ops.len()).any(|c| {
+                Some(c) != p
+                    && round.applied[c]
+                    && set.ops[c].author() == offerer
+                    && set.past.contains(o, c)
+                    && p.is_none_or(|p| set.past.contains(c, p))
+                    && matches!(set.ops[c].body(),
+                        GovernanceEntry::CommunitySuccessor(s) if s.is_offer_or_withdrawal())
+            })
+        };
+        let holds = if let Some(&p) = set.index.get(&accepts.op_hash) {
+            round.applied[p]
+                && !later_in_rest(set.ops[p].author(), Some(p))
+                && matches!(set.ops[p].body(), GovernanceEntry::CommunitySuccessor(offer)
+                    if accepts_offer(op.author(), acc, offer))
+        } else if let Some(row) = cut.get(&accepts.op_hash) {
+            let later_in_cut = cut.values().any(|s| {
+                s.author == row.author
+                    && s.stamp.lamport > row.stamp.lamport
+                    && s.successor.is_offer_or_withdrawal()
+            });
+            if later_in_cut && set.reach[o].is_some() {
+                return Err(NotOnTop::Undecidable(op.hash()));
+            }
+            !later_in_cut
+                && !later_in_rest(&row.author, None)
+                && accepts_offer(op.author(), acc, &row.successor)
+        } else {
+            false
+        };
+        invalid[o] |= !in_deps || !holds;
+    }
+    Ok(())
 }

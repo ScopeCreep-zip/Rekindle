@@ -14,6 +14,7 @@ mod onboarding;
 mod op;
 mod payload;
 mod role_edit;
+mod successor;
 
 #[cfg(test)]
 mod tests;
@@ -34,3 +35,4 @@ pub use op::{
 };
 pub use payload::GovernanceSubkeyPayload;
 pub use role_edit::ExclusionGroupEdit;
+pub use successor::{CommunitySuccessor, CreatorLink, SuccessorReason, SuccessorShape};

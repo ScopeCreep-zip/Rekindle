@@ -238,6 +238,10 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::Checkpoint(c) => {
             super::checkpoint::write_checkpoint(b.reborrow().init_checkpoint(), c);
         }
+        GovernanceEntry::CommunitySuccessor(s) => super::successor::write_community_successor(
+            b.reborrow().init_community_successor(),
+            s,
+        ),
         GovernanceEntry::MemberApproved { target } => {
             write_member_approved(b.reborrow().init_member_approved(), target);
         }

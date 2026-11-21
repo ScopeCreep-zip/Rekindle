@@ -3,7 +3,8 @@
 //! under `ApprovalRequired` (Q6) at the op's anchor, invite proofs
 //! against the `InviteCreated`
 //! set and its `max_uses` cap, joins backdated before their own deps
-//! (SEC-3), and one member per member record.
+//! (SEC-3), one member per member record, and successor acceptances
+//! against their offers (S7s.3e).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -15,6 +16,7 @@ use super::resolve::{Ancestry, OpSet};
 use super::Round;
 use crate::op::VerifiedOp;
 use crate::power::{removal_target, target_seq_frontier};
+use crate::successor::accepts_offer;
 
 /// Joins counted per invite id by `invite_gate`.
 pub(super) type InviteUses = BTreeMap<[u8; 16], u32>;
@@ -44,6 +46,7 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
     let mut record_refusals = BTreeMap::new();
     record_gate(cert, set, round, &mut invalid, &mut record_refusals);
     checkpoint_gate(set, round, &mut invalid);
+    successor_gate(set, round, &mut invalid);
     let mut invite_refusals = BTreeMap::new();
     let uses = invite_gate(set, round, &mut invalid, &mut invite_refusals);
     Gated {
@@ -350,5 +353,42 @@ fn checkpoint_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
                         && pc.cut.iter().all(|r| at(&r.op_hash).is_some_and(covered)))
         });
         invalid[o] |= heads.len() != c.cut.len() || !holds;
+    }
+}
+
+/// A `CommunitySuccessor` acceptance needs the offer it `accepts` among
+/// its deps, applied, by an author whose later offer or withdrawal in the
+/// acceptance's causal past does not supersede it (lead decision (26)),
+/// and to match it ([`accepts_offer`]: written by its `transferTo`, the
+/// same `creatorSetHash`, links naming exactly that set). Plan E3.2
+/// S7s.3e, decision (24); the deps check is here, not in `permitted`,
+/// because only the op knows its deps (S7c.3a).
+fn successor_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
+    for (o, op) in set.ops.iter().enumerate() {
+        let GovernanceEntry::CommunitySuccessor(acc) = op.body() else {
+            continue;
+        };
+        let Some(accepts) = &acc.accepts else {
+            continue;
+        };
+        let in_deps = op.op().deps.iter().any(|r| r == accepts);
+        let offer = (0..set.ops.len()).find(|&p| set.ops[p].hash() == accepts.op_hash);
+        let holds = offer.is_some_and(|p| {
+            let offerer = set.ops[p].author();
+            let superseded = (0..set.ops.len()).any(|c| {
+                c != p
+                    && round.applied[c]
+                    && set.ops[c].author() == offerer
+                    && set.past.contains(o, c)
+                    && set.past.contains(c, p)
+                    && matches!(set.ops[c].body(),
+                        GovernanceEntry::CommunitySuccessor(s) if s.is_offer_or_withdrawal())
+            });
+            round.applied[p]
+                && !superseded
+                && matches!(set.ops[p].body(), GovernanceEntry::CommunitySuccessor(offer)
+                    if accepts_offer(op.author(), acc, offer))
+        });
+        invalid[o] |= !in_deps || !holds;
     }
 }

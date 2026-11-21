@@ -85,16 +85,9 @@ pub struct GovernanceState {
     /// the merge must converge regardless of delivery order.
     pub admitted: HashMap<PseudonymKey, AdmissionDecision>,
 
-    /// Whether the community admits freely or by approval.
-    ///
-    /// `None` until the creator sets it, and settable exactly once — see
-    /// `validate_write`. That is the immutability guarantee: not "must be
-    /// the literal first entry" (a creator writes several genesis
-    /// entries, so only one could ever qualify), but "only the creator,
-    /// and only while unset". Same effect as Jami fixing the mode in the
-    /// initial commit, without depending on write ordering.
-    ///
-    /// Read through [`Self::effective_admission_mode`].
+    /// Whether the community admits freely or by approval: settable once,
+    /// by the creator only (`validate_write`), like Jami fixing the mode in
+    /// the initial commit. Read through [`Self::effective_admission_mode`].
     pub admission_mode: Option<AdmissionMode>,
 
     /// Currently timed-out members with expiry info.
@@ -188,6 +181,9 @@ pub struct GovernanceState {
     /// `GovernanceEntry::ModReport`, by report id. Readers show it to
     /// members holding `MANAGE_MESSAGES` only.
     pub mod_reports: BTreeMap<[u8; 16], ModReportState>,
+
+    /// Every applied `CommunitySuccessor` op by op hash (plan E3.2 S7s.3e).
+    pub successors: BTreeMap<rekindle_types::governance::OpHash, crate::successor::SuccessorState>,
 }
 
 // ── Sub-states ──

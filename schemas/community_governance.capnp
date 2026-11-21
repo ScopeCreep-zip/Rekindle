@@ -256,6 +256,35 @@ struct CheckpointEntry {
     stateSize            @12 :UInt32;       # bytes of the stateRoot preimage (S7c.4a)
 }
 
+# A successor community, a transfer offer, its withdrawal or its acceptance
+# (ADR 0011, plan E3.2 S7s.3e, lead decisions (24)-(26)). A successor sets
+# `newAnchor` (reason `recreate`); an offer sets `transferTo` and
+# `creatorSetHash`; a withdrawal sets neither; an acceptance sets
+# `newAnchor`, `creatorSetHash`, `accepts` (among the op's deps) and one
+# link per new creator. ADR 0022 rule 8's `cut`, `forkEvidence` and
+# `pseudonymSig` append at @6 onward (S7d-keys K8).
+struct CommunitySuccessorEntry {
+    newAnchor            @0 :Text;            # empty in an offer or withdrawal
+    reason               @1 :SuccessorReason;
+    transferTo           @2 :Data;            # 32 bytes in an offer, else empty
+    creatorSetHash       @3 :Data;            # 32 bytes in an offer or acceptance
+    accepts              @4 :Op.OpRef;        # set in an acceptance only
+    links                @5 :List(CreatorLink);
+}
+
+enum SuccessorReason {
+    recreate             @0;
+    transfer             @1;
+}
+
+# A creator's old pseudonym bound to its new one, signed by `old` under
+# `rekindle-gov-successor-link-v1` over old anchor || new anchor || `new`.
+struct CreatorLink {
+    old                  @0 :Data;            # 32 bytes
+    new                  @1 :Data;            # 32 bytes
+    sig                  @2 :Data;            # 64 bytes
+}
+
 # A member's request for a checkpoint's state snapshot (plan E3.2 S7c.3),
 # carried in ControlPayload `checkpointStateRequest @77`: the bytes at
 # `offset` of `canonical_state ‖ canonical_cut` at the cut of the checkpoint
@@ -682,5 +711,6 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         memberLeft                    @43 :MemberLeftPayload;
         memberRemoved                 @44 :MemberRemovedPayload;
         checkpoint                    @45 :CheckpointEntry;
+        communitySuccessor            @46 :CommunitySuccessorEntry;
     }
 }

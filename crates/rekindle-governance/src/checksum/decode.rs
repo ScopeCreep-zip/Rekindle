@@ -14,6 +14,7 @@ use rekindle_types::governance::OpHash;
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
 
 use crate::op::OpStamp;
+use crate::successor::SuccessorState;
 use crate::state::{
     AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelState,
     CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
@@ -360,6 +361,11 @@ decanon_struct!(ModReportState {
     reason,
     stamp
 });
+decanon_struct!(SuccessorState {
+    author,
+    successor: json,
+    stamp
+});
 // `canonical_state`'s section order.
 decanon_struct!(GovernanceState {
     members,
@@ -397,5 +403,6 @@ decanon_struct!(GovernanceState {
     invites,
     expression_remove_stamps,
     community_policy,
-    mod_reports
+    mod_reports,
+    successors
 });

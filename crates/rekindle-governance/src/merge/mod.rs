@@ -490,6 +490,16 @@ fn apply(
         | G::RoleArchived { .. } => apply_roles(entry, stamp, state),
         // A hint over a cut: it changes no state (plan E3.2 S7c.3).
         G::Checkpoint(_) => {}
+        // Kept whole: the gates judge acceptances against applied offers,
+        // and readers show every successor (plan E3.2 S7s.3e).
+        G::CommunitySuccessor(successor) => {
+            let row = crate::successor::SuccessorState {
+                author: author.clone(),
+                successor: successor.clone(),
+                stamp,
+            };
+            state.successors.insert(stamp.hash, row);
+        }
     }
 }
 
