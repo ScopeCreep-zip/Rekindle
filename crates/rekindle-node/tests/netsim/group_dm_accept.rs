@@ -184,3 +184,73 @@ async fn a_lost_invite_is_sent_again_until_received() {
         "Ann reads Bea's post"
     );
 }
+
+/// Finding GA1 (round 15): Bea's accept goes to Cat, who is not her
+/// friend, over a session opened from Cat's prekey record. Bea's DHT goes
+/// offline the moment her chain is stored, so Cat's record cannot be read
+/// when the accept is framed: the accept is still committed (no "cannot
+/// be opened yet" refusal), and Cat reads Bea once the record reads.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_accept_waits_for_a_members_unreadable_prekeys() {
+    let (sim, mut nodes) = start(3, 99).await;
+    for (node, name) in nodes.iter_mut().zip(["Ann", "Bea", "Cat"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[1], &nodes[0]).await;
+    befriend(&sim, &nodes[2], &nodes[0]).await;
+    let gid: String = serde_json::from_value(
+        nodes[0]
+            .ok(IpcRequest::GroupDmCreate {
+                name: "raid night".to_string(),
+                members: vec![key(&nodes[1]), key(&nodes[2])],
+            })
+            .await,
+    )
+    .expect("the group is created");
+    for node in &nodes[1..] {
+        assert!(
+            eventually(&sim, LIMIT, || async {
+                view(node, &gid).await.is_some_and(|v| v.pending)
+            })
+            .await,
+            "node {} holds the invite",
+            node.index
+        );
+    }
+    nodes[2]
+        .ok(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        })
+        .await;
+    let offline_once_chained = async {
+        while own_chain(&nodes[1], &gid).is_none() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        sim.fault(Fault::DhtOffline {
+            node: 1,
+            offline: true,
+        });
+    };
+    let (accepted, ()) = tokio::join!(
+        nodes[1].call(IpcRequest::GroupDmAccept {
+            group_id: gid.clone(),
+        }),
+        offline_once_chained
+    );
+    let refused = accepted.err().map(|r| (r.code, r.message));
+    assert_eq!(
+        refused, None,
+        "the accept is committed, never refused for not yet"
+    );
+    assert!(
+        view(&nodes[1], &gid).await.is_some_and(|v| !v.pending),
+        "Bea is a member at once"
+    );
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    sim.fault(Fault::Heal);
+    send(&nodes[1], &gid, "from Bea").await;
+    assert!(
+        eventually(&sim, LIMIT * 2, || reads(&nodes[2], &gid, "from Bea")).await,
+        "Cat reads Bea once her waiting accept lands"
+    );
+}

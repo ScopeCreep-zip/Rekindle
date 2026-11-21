@@ -4,7 +4,7 @@
 //!
 //! Every lifecycle step returns a frame and the members it goes to; each
 //! goes over that member's pairwise session as a `friend_handshake` outbox
-//! row ([`crate::operations::dm::handshake::enqueue`]), so it is sent
+//! row ([`crate::operations::dm::handshake::enqueue_when_ready`]), sent
 //! until it settles and survives a restart. The keys inside are never
 //! printed.
 
@@ -71,8 +71,12 @@ pub fn parse_group_id(text: &str) -> Result<GroupId, FriendError> {
 }
 
 /// Commit `out`'s frame to every member it names, one handshake row each.
-/// A member whose row could not be framed or stored does not stop the
-/// rest; the first such error is returned once all were tried.
+/// A member whose session cannot be opened yet (their prekey record not
+/// readable) gets the frame committed to wait for it
+/// ([`handshake::enqueue_when_ready`], finding GA1): the step is committed
+/// at once and sent when the session opens. A member whose row could not
+/// be framed or stored does not stop the rest; the first such error is
+/// returned once all were tried.
 ///
 /// # Errors
 /// A row to some member could not be framed or stored.
@@ -84,7 +88,7 @@ pub(crate) async fn send_pairwise<F>(
     let body = wrap(out.frame);
     let mut first_error = None;
     for to in &out.to {
-        if let Err(e) = handshake::enqueue(host, to, &body).await {
+        if let Err(e) = handshake::enqueue_when_ready(host, to, &body).await {
             tracing::warn!(to = %to, kind = ?body.type_id(), error = %e,
                 "group frame not committed to this member");
             first_error.get_or_insert(e);

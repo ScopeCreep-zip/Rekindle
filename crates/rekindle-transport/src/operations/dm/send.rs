@@ -56,6 +56,15 @@ pub enum Framed {
         #[serde(with = "rekindle_types::base64_bytes")]
         frame: Vec<u8>,
     },
+    /// A group control frame to a member whose session cannot be opened
+    /// yet (their prekey record not readable; plan E2.6, finding GA1): its
+    /// body, framed at an attempt once the session opens and committed
+    /// then as its own row (`handshake::enqueue_when_ready`).
+    Pending {
+        type_id: u16,
+        #[serde(with = "rekindle_types::base64_bytes")]
+        body: Vec<u8>,
+    },
 }
 
 /// The D24 content hint of a kind: a text message may be resent from the
@@ -506,9 +515,11 @@ pub(super) fn datagram_of(
             let datagram = frame::wire(&frame::sealed_frame(host, to, &body, *nonce)?)?;
             Ok((datagram, type_id))
         }
-        Framed::Inbox { .. } | Framed::FirstContact { .. } => Err(FriendError::Invalid(
-            "an inbox write or a waiting first contact is not sent over a route".into(),
-        )),
+        Framed::Inbox { .. } | Framed::FirstContact { .. } | Framed::Pending { .. } => {
+            Err(FriendError::Invalid(
+                "an inbox write or a frame waiting for its session is not sent over a route".into(),
+            ))
+        }
     }
 }
 
@@ -526,6 +537,10 @@ mod tests {
                 type_id: DmTypeId::SessionResetDecline.as_u16(),
                 body: Vec::new(),
                 nonce: [9; 16],
+            },
+            Framed::Pending {
+                type_id: DmTypeId::GroupDmAccept.as_u16(),
+                body: vec![4, 5, 6],
             },
         ] {
             let row = serde_json::to_string(&queued).unwrap();
