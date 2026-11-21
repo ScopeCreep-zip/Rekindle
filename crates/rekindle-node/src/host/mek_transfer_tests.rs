@@ -43,7 +43,7 @@ fn held(host: &Host) -> Option<u64> {
         .mek_cache
         .read()
         .current("c1", KeyScope::Community)
-        .map(|key| key.generation())
+        .map(Mek::generation)
 }
 
 #[tokio::test]
