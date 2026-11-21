@@ -86,6 +86,29 @@ pub async fn enqueue(
     commit(host, to, client_id(host, body.type_id()), payload).await
 }
 
+/// [`enqueue`] for a frame worth nothing after `deadline_ms` (ms since the
+/// epoch): a call's `CallEnd` (plan CE1, decision 22) is retried while its
+/// peer is unreachable, brought forward when they are reachable again
+/// ([`super::route::reachable_again`]), and fails at the deadline. It
+/// returns once the row is stored.
+///
+/// # Errors
+/// The frame could not be built, or the row could not be stored.
+pub async fn enqueue_until(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    deadline_ms: i64,
+) -> Result<String, FriendError> {
+    let payload = payload(host, to, body).await?;
+    let client_id = client_id(host, body.type_id());
+    host.outbox()?
+        .enqueue_handshake_until(to, client_id.clone(), payload, deadline_ms)
+        .await?;
+    tracing::debug!(to = %to, %client_id, deadline_ms, "deadlined handshake frame committed");
+    Ok(client_id)
+}
+
 /// [`enqueue`], except that a frame whose session cannot be opened yet
 /// (`NotReady`: the member's prekey record not readable, plan E2.6 finding
 /// GA1) is committed to wait as its body ([`Framed::Pending`]), framed at

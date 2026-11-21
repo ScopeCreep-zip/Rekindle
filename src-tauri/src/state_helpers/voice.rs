@@ -102,9 +102,7 @@ pub fn voice_media(
 /// feedback stays on the roster.
 pub fn note_media_live(state: &AppState, peer_hex: &str) {
     if let Some(handle) = state.voice_engine.lock().as_ref() {
-        handle
-            .media_liveness
-            .note(peer_hex, rekindle_utils::timestamp_ms());
+        handle.media_liveness.note(peer_hex, state.clock.now_ms());
     }
 }
 

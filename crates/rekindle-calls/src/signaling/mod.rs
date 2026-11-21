@@ -21,6 +21,7 @@ pub mod deps;
 pub mod event;
 pub mod group_handlers; // Phase 14.e — group call signaling handlers.
 pub mod handlers; // Phase 14.c — 1:1 call signaling handlers (invite/accept/decline/ringing).
+pub mod lifecycle; // Plan CE1 — local end first, durable CallEnd, consent.
 pub mod outbound; // Phase 14.n — caller-side entry points (start_dm_call, etc.).
 pub mod registry;
 
@@ -46,6 +47,10 @@ pub use group_handlers::{
 pub use handlers::{
     handle_accept_received, handle_decline_received, handle_incoming_invite,
     handle_ringing_received, IncomingInvite,
+};
+pub use lifecycle::{
+    check_consent, ConsentCheck, CALL_END_DEADLINE_MS, CONNECTION_LOST, CONSENT_TIMEOUT_MS,
+    SUPERSEDED,
 };
 pub use outbound::{
     accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_all_calls,

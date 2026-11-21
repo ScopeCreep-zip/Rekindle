@@ -52,6 +52,18 @@ impl CallSignalingDeps for EmptyNameDeps {
     async fn send_to_peer(&self, p: &str, body: DirectBody) -> Result<(), CallError> {
         self.0.send_to_peer(p, body).await
     }
+    async fn commit_call_end(&self, p: &str, body: DirectBody, d: u64) -> Result<(), CallError> {
+        self.0.commit_call_end(p, body, d).await
+    }
+    fn now_ms(&self) -> u64 {
+        self.0.now_ms()
+    }
+    fn last_inbound_media_ms(&self) -> Option<u64> {
+        self.0.last_inbound_media_ms()
+    }
+    fn spawn_consent_watch(&self, c: String, since: u64) {
+        self.0.spawn_consent_watch(c, since);
+    }
     async fn start_voice_session(&self, c: &str, p: &str, kind: CallKind) -> Result<(), CallError> {
         self.0.start_voice_session(c, p, kind).await
     }

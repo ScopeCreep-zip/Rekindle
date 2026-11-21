@@ -70,6 +70,19 @@ pub trait DmOutbox: Send + Sync {
         client_id: String,
         payload: Vec<u8>,
     ) -> Result<i64, FriendError>;
+    /// [`Self::enqueue_handshake`] for a frame worth nothing after
+    /// `deadline_ms` (ms since the epoch; a call's `CallEnd`, plan CE1
+    /// decision 22): the row fails at that deadline, not at the horizon.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_handshake_until(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+        deadline_ms: i64,
+    ) -> Result<i64, FriendError>;
     /// Mark `to` removing, fail our pending messages to them and commit our
     /// `Unfriended` frame to them and the friend list's row (`list`), in one
     /// transaction (plan audit D-1, review RV5 items 3 and 5); the failed rows, for [`Self::echo_failed`].

@@ -37,6 +37,17 @@ pub(super) struct MockState {
     call_log: Vec<MockEvent>,
     emitted: Vec<CallSignalEvent>,
     start_voice_session_result: Result<(), CallError>,
+    /// Every body handed to `send_to_peer`, with its peer.
+    pub(super) sent: Vec<(String, DirectBody)>,
+    /// Every `CallEnd` committed to the outbox: (peer, body, deadline).
+    pub(super) committed: Vec<(String, DirectBody, u64)>,
+    /// When set, `commit_call_end` never completes (a send that hangs).
+    pub(super) commit_hangs: bool,
+    pub(super) shutdowns: usize,
+    pub(super) now_ms: u64,
+    pub(super) last_inbound_ms: Option<u64>,
+    /// `spawn_consent_watch` calls: (call id, since).
+    pub(super) consent_watches: Vec<(String, u64)>,
 }
 
 impl Default for MockState {
@@ -45,6 +56,13 @@ impl Default for MockState {
             call_log: Vec::new(),
             emitted: Vec::new(),
             start_voice_session_result: Ok(()),
+            sent: Vec::new(),
+            committed: Vec::new(),
+            commit_hangs: false,
+            shutdowns: 0,
+            now_ms: 1_000_000,
+            last_inbound_ms: None,
+            consent_watches: Vec::new(),
         }
     }
 }
@@ -154,6 +172,10 @@ impl MockDeps {
     pub(super) fn emitted_events(&self) -> Vec<CallSignalEvent> {
         self.state.lock().emitted.clone()
     }
+    /// The mock's whole state, to set inputs and read what it recorded.
+    pub(super) fn with<R>(&self, f: impl FnOnce(&mut MockState) -> R) -> R {
+        f(&mut self.state.lock())
+    }
 }
 
 #[async_trait]
@@ -179,8 +201,34 @@ impl CallSignalingDeps for MockDeps {
     fn local_video_decode_codecs(&self) -> Vec<String> {
         vec!["vp9".to_string()]
     }
-    async fn send_to_peer(&self, _peer: &str, _body: DirectBody) -> Result<(), CallError> {
+    async fn send_to_peer(&self, peer: &str, body: DirectBody) -> Result<(), CallError> {
+        self.state.lock().sent.push((peer.to_string(), body));
         Ok(())
+    }
+    async fn commit_call_end(
+        &self,
+        peer: &str,
+        body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError> {
+        let hangs = {
+            let mut s = self.state.lock();
+            s.committed.push((peer.to_string(), body, deadline_ms));
+            s.commit_hangs
+        };
+        if hangs {
+            std::future::pending::<()>().await;
+        }
+        Ok(())
+    }
+    fn now_ms(&self) -> u64 {
+        self.state.lock().now_ms
+    }
+    fn last_inbound_media_ms(&self) -> Option<u64> {
+        self.state.lock().last_inbound_ms
+    }
+    fn spawn_consent_watch(&self, call_id: String, since_ms: u64) {
+        self.state.lock().consent_watches.push((call_id, since_ms));
     }
     async fn start_voice_session(
         &self,
@@ -195,7 +243,9 @@ impl CallSignalingDeps for MockDeps {
         });
         std::mem::replace(&mut s.start_voice_session_result, Ok(()))
     }
-    async fn shutdown_voice_session(&self) {}
+    async fn shutdown_voice_session(&self) {
+        self.state.lock().shutdowns += 1;
+    }
     fn voice_active(&self) -> bool {
         false
     }
@@ -256,6 +306,14 @@ impl CallSignalingDeps for MockDeps {
         // Mock no-op; existing regression tests don't exercise the
         // outbound (caller-side) flow yet.
     }
+}
+
+/// Set up a CallState in `status` with `peer_hex`.
+pub(super) fn seed_call(deps: &MockDeps, call_id: &str, peer_hex: &str, status: CallStatus) {
+    seed_outgoing_call(deps, call_id, peer_hex, CallKind::Audio);
+    let mut call = deps.registry.get(call_id).expect("seeded");
+    call.status = status;
+    deps.registry.insert(call);
 }
 
 /// Set up an Outgoing CallState in the registry — what `start_dm_call`

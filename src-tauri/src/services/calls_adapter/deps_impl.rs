@@ -74,6 +74,58 @@ impl CallSignalingDeps for CallsAdapter {
             .map_err(|e| CallError::Transport(e.to_string()))
     }
 
+    async fn commit_call_end(
+        &self,
+        peer_pubkey_hex: &str,
+        body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError> {
+        let host = crate::state_helpers::friend_host(&self.state).map_err(CallError::Transport)?;
+        let deadline = i64::try_from(deadline_ms).unwrap_or(i64::MAX);
+        rekindle_transport::operations::dm::handshake::enqueue_until(
+            host.as_ref(),
+            peer_pubkey_hex,
+            &body,
+            deadline,
+        )
+        .await
+        .map(drop)
+        .map_err(|e| CallError::Transport(e.to_string()))
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.state.clock.now_ms()
+    }
+
+    fn last_inbound_media_ms(&self) -> Option<u64> {
+        let engine = self.state.voice_engine.lock();
+        engine.as_ref().and_then(|h| h.media_liveness.latest())
+    }
+
+    fn spawn_consent_watch(&self, call_id: String, since_ms: u64) {
+        // Plan CE1 (b): RFC 7675 consent, checked against the clock port
+        // each time the 30 s window from the last proof of life runs out.
+        let watcher = super::CallsAdapter::new(
+            Arc::clone(&self.state),
+            self.app_handle.clone(),
+            self.pool.clone(),
+        );
+        state_helpers::spawn_in_login_with_token(&self.state, "call consent", |stop| async move {
+            loop {
+                let check =
+                    rekindle_calls::signaling::check_consent(watcher.as_ref(), &call_id, since_ms)
+                        .await;
+                let rekindle_calls::signaling::ConsentCheck::Live { recheck_in_ms } = check else {
+                    return;
+                };
+                let wait = tokio::time::sleep(std::time::Duration::from_millis(recheck_in_ms));
+                if stop.run_until_cancelled(wait).await.is_none() {
+                    return;
+                }
+            }
+        });
+    }
+
     async fn start_voice_session(
         &self,
         _call_id: &str,

@@ -68,6 +68,33 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// CallEnd, CallMediaState, CallReaction, and every GroupCall* kind).
     async fn send_to_peer(&self, peer_pubkey_hex: &str, body: DirectBody) -> Result<(), CallError>;
 
+    /// Commit a `CallEnd` (`body`) to `peer_pubkey_hex` through the outbox,
+    /// retried until it leaves or `deadline_ms` (ms since the epoch) passes
+    /// (plan CE1, decision 22). Returns once the row is stored.
+    async fn commit_call_end(
+        &self,
+        peer_pubkey_hex: &str,
+        body: DirectBody,
+        deadline_ms: u64,
+    ) -> Result<(), CallError>;
+
+    // --- Clock and media liveness (RFC 7675 consent, plan CE1) ---
+
+    /// Now, ms since the epoch, from the host's clock port.
+    fn now_ms(&self) -> u64;
+
+    /// The latest media-plane proof of life (a voice packet or a verified
+    /// receiver report) of the running 1:1 voice session, on the clock
+    /// [`Self::now_ms`] reads; `None` before any arrived or with no session.
+    fn last_inbound_media_ms(&self) -> Option<u64>;
+
+    /// Watch an Active call's consent: run
+    /// [`crate::signaling::lifecycle::check_consent`] with `since_ms`
+    /// until it answers other than `Live`, waiting its `recheck_in_ms`
+    /// between checks. Spawned by the adapter (the task cannot borrow
+    /// `&self`).
+    fn spawn_consent_watch(&self, call_id: String, since_ms: u64);
+
     // --- Voice integration ---
 
     /// Start the voice session for an accepted call. The call's media

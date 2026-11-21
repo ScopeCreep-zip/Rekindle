@@ -419,6 +419,21 @@ impl DmOutbox for DmStream {
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
     }
 
+    async fn enqueue_handshake_until(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+        deadline_ms: i64,
+    ) -> Result<i64, FriendError> {
+        let entry = Entry {
+            deadline: Deadline::At(deadline_ms),
+            ..handshake_entry(to, client_id, payload)
+        };
+        let enqueued = self.0.enqueue(entry, None).await;
+        enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
+    }
+
     async fn enqueue_removal(
         &self,
         to: &str,

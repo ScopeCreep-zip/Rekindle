@@ -182,6 +182,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
         call.status = CallStatus::Active;
         registry.insert(call);
     }
+    deps.spawn_consent_watch(call_id.to_string(), deps.now_ms());
 
     deps.emit_event(CallSignalEvent::CallConnected {
         call_id: call_id.to_string(),
@@ -231,52 +232,22 @@ pub async fn decline_dm_call<D: CallSignalingDeps + ?Sized>(
     Ok(())
 }
 
-/// Hangup (or cancel-while-dialing). Removes CallState, fires
-/// CallEnd to peer, tears down voice if it was up, emits CallEnded.
-/// Works in any state (Outgoing / Incoming / Connecting / Active).
+/// Hangup (or cancel-while-dialing), in any state (Outgoing / Incoming /
+/// Connecting / Active). The local end comes first and never waits on the
+/// network (plan CE1, decision 22 (d)): the call leaves the registry,
+/// `CallEnded` retires the call window, voice stops; then `CallEnd` is
+/// committed to the outbox, which delivers it once the peer is reachable
+/// ([`crate::signaling::lifecycle`]).
 pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
 ) -> Result<(), CallError> {
-    let removed = deps
-        .registry()
-        .remove(call_id)
-        .ok_or_else(|| CallError::CallNotFound(call_id.to_string()))?;
-    let was_voice_up = matches!(removed.status, CallStatus::Active | CallStatus::Connecting);
-    let reason_str = reason.unwrap_or_default();
-
-    let peer_pubkey = removed.peer_pubkey.clone();
-    drop(removed); // Release Drop+Zeroize on the removed CallState now.
-
-    if let Err(e) = deps
-        .send_to_peer(
-            &peer_pubkey,
-            DirectBody::CallEnd(CallClosed {
-                call_id: call_id.to_string(),
-                reason: reason_str.clone(),
-            }),
-        )
+    let reason = reason.unwrap_or_default();
+    crate::signaling::lifecycle::end_locally(deps, call_id, &reason)
         .await
-    {
-        tracing::info!(call = %call_id, peer = %peer_pubkey, error = %e,
-            "CallEnd send failed; their state will GC on their own timeout");
-    }
-
-    // W15.2 — tear down voice so mic/speaker/loops actually stop.
-    // Skip if voice was never up (Outgoing/Incoming status only).
-    if was_voice_up {
-        deps.shutdown_voice_session().await;
-    }
-
-    deps.emit_event(CallSignalEvent::CallEnded {
-        call_id: call_id.to_string(),
-        peer_public_key: peer_pubkey,
-        reason: reason_str,
-        voice_was_up: was_voice_up,
-    });
-
-    Ok(())
+        .map(drop)
+        .ok_or_else(|| CallError::CallNotFound(call_id.to_string()))
 }
 
 // ── Group calls (W12.9 / W13.13) ─────────────────────────────────────

@@ -19,3 +19,4 @@ mod mocks;
 mod display_name;
 mod end_all;
 mod handlers;
+mod lifecycle;

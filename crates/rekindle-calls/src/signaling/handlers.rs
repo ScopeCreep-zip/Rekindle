@@ -88,9 +88,13 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
         return;
     }
 
+    let registry = deps.registry();
+    if !make_room_for_invite(deps, sender_hex, call_id).await {
+        return;
+    }
+
     // W13.15 glare resolution.
     let our_pubkey = deps.owner_key().unwrap_or_default();
-    let registry = deps.registry();
     if let Some(outgoing) = registry.outgoing_to_peer(sender_hex) {
         let we_win = our_pubkey.as_str() < sender_hex;
         if we_win {
@@ -233,11 +237,8 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
     if let Err(e) = deps.start_voice_session(call_id, &peer_pubkey, kind).await {
         registry.remove(call_id);
         deps.shutdown_voice_session().await;
-        let hangup = DirectBody::CallEnd(CallClosed {
-            call_id: call_id.to_string(),
-            reason: format!("voice session failed: {e}"),
-        });
-        let _ = deps.send_to_peer(&peer_pubkey, hangup).await;
+        let reason = format!("voice session failed: {e}");
+        crate::signaling::lifecycle::commit_end(deps, &peer_pubkey, call_id, &reason).await;
         deps.emit_event(CallSignalEvent::CallEnded {
             call_id: call_id.to_string(),
             peer_public_key: peer_pubkey,
@@ -252,6 +253,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         call.status = CallStatus::Active;
         registry.insert(call);
     }
+    deps.spawn_consent_watch(call_id.to_string(), deps.now_ms());
     deps.emit_event(CallSignalEvent::CallConnected {
         call_id: call_id.to_string(),
         peer_public_key: peer_pubkey.clone(),
@@ -318,6 +320,46 @@ pub fn handle_ringing_received<D: CallSignalingDeps + ?Sized>(
     });
 }
 
+/// Plan CE1, decision 22 (c): whether an invite for `call_id` from
+/// `sender_hex` may ring. A repeated invite for a call we hold does not
+/// ring again. A call with the same peer under another call id (Incoming,
+/// Connecting or Active) is stale, since the peer has left it, and is ended
+/// here first. A Connecting or Active call with another peer answers this
+/// invite busy. Our own Outgoing call to the sender is glare's, after this.
+async fn make_room_for_invite<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    sender_hex: &str,
+    call_id: &str,
+) -> bool {
+    let registry = deps.registry();
+    if registry.contains(call_id) {
+        tracing::debug!(call = %call_id, "repeated CallInvite for a call we hold; not ringing again");
+        return false;
+    }
+    for call in registry.list_all() {
+        let up = matches!(call.status, CallStatus::Active | CallStatus::Connecting);
+        if call.peer_pubkey == sender_hex {
+            if !matches!(call.status, CallStatus::Outgoing) {
+                tracing::info!(stale = %call.call_id, new = %call_id,
+                    "the peer's new invite supersedes our stale call with them");
+                crate::signaling::lifecycle::end_locally(
+                    deps,
+                    &call.call_id,
+                    crate::signaling::lifecycle::SUPERSEDED,
+                )
+                .await;
+            }
+        } else if up {
+            send_decline(deps, sender_hex, call_id, BUSY).await;
+            return false;
+        }
+    }
+    true
+}
+
+/// The decline reason an invite gets while we are in another call.
+pub const BUSY: &str = "busy";
+
 /// Helper — fire a `CallDecline` at a peer without inserting any
 /// CallState (used for malformed-invite + temp-mute rejections).
 async fn send_decline<D: CallSignalingDeps + ?Sized>(
@@ -354,13 +396,8 @@ async fn cancel_outgoing_for_glare<D: CallSignalingDeps + ?Sized>(
     if was_voice_up {
         deps.shutdown_voice_session().await;
     }
-    let payload = DirectBody::CallEnd(CallClosed {
-        call_id: call_id.to_string(),
-        reason: "glare-resolved-we-lost".into(),
-    });
-    if let Err(e) = deps.send_to_peer(peer_pubkey, payload).await {
-        tracing::debug!(call = %call_id, error = %e, "CallEnd (glare) send failed");
-    }
+    crate::signaling::lifecycle::commit_end(deps, peer_pubkey, call_id, "glare-resolved-we-lost")
+        .await;
     deps.emit_event(CallSignalEvent::CallEnded {
         call_id: call_id.to_string(),
         peer_public_key: peer_pubkey.to_string(),

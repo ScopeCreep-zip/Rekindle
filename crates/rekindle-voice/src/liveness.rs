@@ -63,6 +63,13 @@ impl MediaLiveness {
         map.insert(pseudonym_hex.to_string(), now_ms);
     }
 
+    /// The latest media-plane evidence from any peer, if any: a 1:1
+    /// call's consent check (plan CE1, RFC 7675 §5.1), where the one
+    /// remote is the peer.
+    pub fn latest(&self) -> Option<u64> {
+        self.last_seen_ms.lock().values().copied().max()
+    }
+
     /// Peers with media-plane evidence within the last `window_ms`.
     ///
     /// `saturating_sub` makes an entry stamped slightly ahead of
@@ -79,6 +86,16 @@ impl MediaLiveness {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn latest_is_the_newest_evidence_from_any_peer() {
+        let ledger = super::MediaLiveness::default();
+        assert_eq!(ledger.latest(), None);
+        ledger.note("a", 1_000);
+        ledger.note("b", 3_000);
+        ledger.note("a", 2_000);
+        assert_eq!(ledger.latest(), Some(3_000));
+    }
+
     use super::*;
 
     #[test]

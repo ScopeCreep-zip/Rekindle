@@ -41,6 +41,15 @@ impl DmOutbox for Rows {
     async fn enqueue_handshake(&self, _: &str, _: String, _: Vec<u8>) -> Result<i64, FriendError> {
         Err(unused())
     }
+    async fn enqueue_handshake_until(
+        &self,
+        _: &str,
+        _: String,
+        _: Vec<u8>,
+        _: i64,
+    ) -> Result<i64, FriendError> {
+        Err(unused())
+    }
     async fn enqueue_removal(
         &self,
         _: &str,
