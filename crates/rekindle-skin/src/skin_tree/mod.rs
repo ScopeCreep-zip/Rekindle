@@ -12,6 +12,8 @@ pub mod roles;
 pub mod validate;
 
 #[cfg(test)]
+mod anchor_tests;
+#[cfg(test)]
 mod fit_tests;
 #[cfg(test)]
 mod golden_tests;
