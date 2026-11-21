@@ -36,7 +36,7 @@ pub(super) type Images = BTreeMap<String, RgbaImage>;
 /// What the tree's art is cropped from and re-encoded into.
 pub(super) struct Art<'a> {
     pub window: SkinWindow,
-    pub images: &'a Images,
+    pub images: &'a mut Images,
     pub files: &'a mut BTreeMap<String, Vec<u8>>,
 }
 

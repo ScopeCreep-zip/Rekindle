@@ -26,6 +26,7 @@ use rekindle_types::dto::skin_tree::{
 use super::anchor::{axis, client_box, client_inset, outer_for, to_tile, Sibs, Sizes, X, Y};
 use super::clip::{clip, Art, Images};
 use super::fit::fit;
+use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::rail;
 use super::roles::{role, Facts};
@@ -538,9 +539,10 @@ pub fn add(
     qualify(&mut tree.root);
     let mut art = Art {
         window,
-        images: &walk.images,
+        images: &mut walk.images,
         files: &mut walk.files,
     };
+    outdent::clip_window(&mut tree.root, &mut art)?;
     clip(&mut tree.root, (None, None), &mut art)?;
     let window = layout.attr_ci("Component").unwrap_or("MainWindow");
     let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();

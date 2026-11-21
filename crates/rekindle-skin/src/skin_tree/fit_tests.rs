@@ -50,8 +50,9 @@ fn imported_art(
 }
 
 /// Total Chaos's `MainTitleBar` `OutdentLeft="1"` (a frame row) and a logo
-/// wider than the frame's smallest size: the window holds the outdent, the
-/// frame rectangle starts where the row does (lead decision 14), the window
+/// wider than the frame's smallest size: the outdent never grows the window
+/// (lead decision 29, replacing 14), the row's art is cut at the window's
+/// edge, its middle repeat starting a column later (no start cap), the window
 /// grows to the declared `MinWidth`/`MinHeight` and then until the logo
 /// fits, and every node then lies inside it (rule 3). The bar and the logo
 /// carry their art (lead decision 18: every imaged node does), so the tree
@@ -70,10 +71,12 @@ fn the_window_fits_the_tree_and_its_overhang() {
 </Components>"#,
         &["MainTitleBar"],
     );
-    assert_eq!(tree.outsets.left, 1);
+    assert_eq!(tree.outsets.left, 0);
     assert_eq!(l.outsets.left, 0);
-    // The frame rectangle holds the outdent: the logo's 174 px plus 1.
-    assert_eq!((l.min_width, l.min_height), (175, 119));
+    // The logo's 174 px; the outdent's column is cut, not added.
+    assert_eq!((l.min_width, l.min_height), (174, 119));
+    let bar = tree.root.iter().find(|n| n.id == "MainTitleBar").unwrap();
+    assert_eq!(bar.x, NodeSpan::Stretch { start: 0, end: 0 });
     let full = (i32::from(l.min_width), i32::from(l.min_height));
     let boxes = tree.boxes(full.0, full.1);
     assert_eq!(boxes[0].1, [0, 0, full.0, 50]);
@@ -85,8 +88,10 @@ fn the_window_fits_the_tree_and_its_overhang() {
 
 /// Plan SK2 lead decision 27 (correcting 14): Total Chaos's frame rows
 /// (`mainwindow.xml:2-37`), each `OutdentLeft="1"`, the `BottomBar` 66 px
-/// tall under a `Content` `IndentBottom="61"`: the window holds the 1 px
-/// outdent but not the 5 px the bottom row reaches past the box; the row is
+/// tall under a `Content` `IndentBottom="61"`: the window holds neither the
+/// 1 px outdent (lead decision 29: each row's left cap loses its first
+/// column, the original 470 px wide) nor the 5 px the bottom row reaches
+/// past the box; a centred child keeps its place; the row is
 /// clipped on its fixed axis to its top 61 rows at the window's bottom edge
 /// (the original, `skinref/total-chaos/buddy-list-1.png`), and its one-row
 /// set is trimmed piece by piece, each kept in its slot.
@@ -96,16 +101,20 @@ fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
         br#"<Tile Name="W" Component="MainWindow">
 <Tile Name="MainTitleBar" X="0" OutdentLeft="1" Y="0" ResizeX="100" Component="MainTitleBar"/>
 <Tile Name="Content" X="0" OutdentLeft="1" Y="MainTitleBar.BOTTOM" IndentBottom="61" ResizeX="100" ResizeY="100" Component="Content"/>
-<Tile Name="BottomBar" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar"/>
+<Tile Name="BottomBar" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar">
+<Tile Name="BottomCenter" JustX="CENTER" X="0" Y="0" Component="BottomCenter"/>
+</Tile>
 </Tile>"#,
         br#"<Components>
 <Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-10x52</Image></Images></Component>
+<Component Name="Content"><Images State="Normal"><Image Type="Middle">ct-10x10</Image></Images></Component>
+<Component Name="BottomCenter"><Images State="Normal"><Image Type="Middle">bc-40x20</Image></Images></Component>
 <Component Name="BottomBar"><Images State="Normal"><Image Type="left">bl-161x66</Image><Image Type="middle">bm-37x66</Image><Image Type="right">br-161x66</Image></Images></Component>
 </Components>"#,
         &["MainTitleBar", "Content", "BottomBar"],
     );
     let o = |i: Insets| (i.left, i.top, i.right, i.bottom);
-    assert_eq!(o(tree.outsets), (1, 0, 0, 0));
+    assert_eq!(o(tree.outsets), (0, 0, 0, 0));
     assert_eq!(o(l.outsets), (0, 0, 0, 0));
     let (w, h) = (i32::from(l.min_width), i32::from(l.min_height));
     let boxes = tree.boxes(w, h);
@@ -113,6 +122,13 @@ fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
     // bottom edge.
     assert_eq!(boxes[0].1, [0, 0, w, 52]);
     assert_eq!(boxes[2].1, [0, h - 61, w, 61]);
+    // Centred in the 1 + w px box from −1: (w + 1 − 40) / 2 − 1.
+    let centre = boxes
+        .iter()
+        .find(|(n, _)| n.id == "BottomCenter")
+        .unwrap()
+        .1;
+    assert_eq!(centre[0], (w + 1 - 40).div_euclid(2) - 1, "w = {w}");
     let bottom = tree.root.iter().find(|n| n.id == "BottomBar").unwrap();
     let set = &bottom.art.as_ref().unwrap().normal;
     let dims = |p: &str| {
@@ -128,7 +144,7 @@ fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
     assert_eq!(
         got,
         [
-            (S::Left, 161, 61, (161, 61)),
+            (S::Left, 160, 61, (160, 61)),
             (S::Middle, 37, 61, (37, 61)),
             (S::Right, 161, 61, (161, 61)),
         ]
