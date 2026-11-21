@@ -64,6 +64,53 @@ pub fn advance(
     Ok(changed > 0)
 }
 
+/// The writer's outbox stream seq of the entry the cursor of `writer` on
+/// `stream` was committed on (plan E2.6 G4; 0: none known).
+///
+/// # Errors
+/// The query failed.
+pub fn stream_seq(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    writer: &str,
+) -> rusqlite::Result<u64> {
+    let seq: Option<i64> = conn
+        .query_row(
+            "SELECT stream_seq FROM stream_cursors \
+             WHERE owner_key = ?1 AND stream = ?2 AND writer = ?3",
+            params![owner_key, stream, writer],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(seq.and_then(|s| u64::try_from(s).ok()).unwrap_or(0))
+}
+
+/// [`advance`] past the applied chain entry `seq`, whose outbox stream seq
+/// is `stream_seq` (plan E2.6 G4), and record that stream seq when the
+/// cursor stands on the entry. A cursor that absorbed remembered seqs
+/// past it keeps the stream seq it held: lower than its entry's, so a
+/// later retired stretch needs more held, never less. Whether it moved.
+///
+/// # Errors
+/// A seq does not fit a row, or the write failed.
+pub fn advance_entry(
+    conn: &Connection,
+    (owner_key, stream, writer): (&str, &str, &str),
+    (seq, stream_seq): (u64, u64),
+    now: i64,
+) -> rusqlite::Result<bool> {
+    let moved = advance(conn, owner_key, stream, writer, seq, now)?;
+    let to_row =
+        |v: u64| i64::try_from(v).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()));
+    conn.execute(
+        "UPDATE stream_cursors SET stream_seq = ?5 \
+         WHERE owner_key = ?1 AND stream = ?2 AND writer = ?3 AND seq = ?4",
+        params![owner_key, stream, writer, to_row(seq)?, to_row(stream_seq)?],
+    )?;
+    Ok(moved)
+}
+
 /// The highest seq reached from `from` through the remembered applied
 /// seqs contiguous with it (`from` itself when none follows it).
 fn contiguous_top(
@@ -198,6 +245,23 @@ mod tests {
         crate::repo::friends::forget(&conn, OWNER, "w").unwrap();
         assert_eq!(get(&conn, OWNER, "dm", "w").unwrap(), 0);
         assert_eq!(get(&conn, OWNER, "other", "w").unwrap(), 2);
+    }
+
+    /// G4: the cursor records its entry's stream seq; a cursor that
+    /// absorbed a remembered seq past the entry keeps the older one.
+    #[test]
+    fn a_cursor_records_its_entrys_stream_seq() {
+        let conn = fixture::conn();
+        let at = (OWNER, "group_dm:g", "w");
+        assert_eq!(stream_seq(&conn, OWNER, at.1, at.2).unwrap(), 0);
+        assert!(advance_entry(&conn, at, (1, 4), 1).unwrap());
+        assert_eq!(stream_seq(&conn, OWNER, at.1, at.2).unwrap(), 4);
+        step(&conn, OWNER, at.1, at.2, 3, 1).unwrap();
+        assert!(advance_entry(&conn, at, (2, 5), 1).unwrap());
+        assert_eq!(get(&conn, OWNER, at.1, at.2).unwrap(), 3);
+        assert_eq!(stream_seq(&conn, OWNER, at.1, at.2).unwrap(), 4);
+        assert!(!advance_entry(&conn, at, (3, 6), 2).unwrap());
+        assert_eq!(stream_seq(&conn, OWNER, at.1, at.2).unwrap(), 6);
     }
 
     fn friend(conn: &Connection) {

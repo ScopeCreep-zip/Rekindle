@@ -56,6 +56,7 @@ mod governance_queued;
 mod governance_warm_restore;
 mod group_dm;
 mod group_dm_accept;
+mod group_dm_hint_stretch;
 mod harness;
 mod host_shutdown;
 mod hung_call;

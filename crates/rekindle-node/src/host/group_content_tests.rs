@@ -3,7 +3,8 @@
 //! chain entry lands; a member's chain entries open and store in order
 //! under the group's conversation, an older epoch is refused and a newer
 //! one waits; typing is a hint only; a text hint stores at once and its
-//! chain copy is a duplicate (finding G3).
+//! chain copy is a duplicate (finding G3); a retired stretch is a history
+//! gap only when one of its entries is not held by hint (G4).
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmText, GroupContent, GroupId, Typing};
 use rekindle_dm::sender_key;
@@ -240,4 +241,99 @@ async fn a_text_hint_stores_at_once_and_its_chain_copy_is_a_duplicate() {
         }
     }
     assert_eq!(stored, 1, "the chain copy is a duplicate");
+}
+
+/// G4: Bob's hints `held` are stored (each by its outbox stream seq, the
+/// cursor unmoved), then his chain retires entries 1–3 before our diff
+/// reads it, handing the sink entry 4 (`next`) or none. Whether a gap was
+/// shown, and the cursor after.
+async fn retired_stretch(held: &[u8], next: bool) -> (bool, u64) {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let key = group(&friends, owner).await;
+    let mut events = host.ctx.journal.subscribe(None);
+    for &n in held {
+        let hint = sealed(&key, &text(n, "hint"), u64::from(n));
+        assert!(receive::on_hint(&friends, &bob(), &hint).await);
+    }
+    let (sink, stream) = (
+        GroupSink::new(&friends, GID),
+        stream_name(&hex::encode(GID)),
+    );
+    assert_eq!(
+        sink.cursor(&stream, &bob()).await.unwrap(),
+        0,
+        "hints never move it"
+    );
+    let after = next.then(|| entry(&key, 4));
+    sink.history_gap(&stream, &bob(), 3, after.as_ref())
+        .await
+        .unwrap();
+    let mut shown = false;
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        shown |= format!("{frame:?}").contains("HistoryGap");
+    }
+    (shown, sink.cursor(&stream, &bob()).await.unwrap())
+}
+
+#[tokio::test]
+async fn a_retired_stretch_held_by_hints_is_no_gap() {
+    assert_eq!(retired_stretch(&[1, 2, 3], true).await, (false, 3));
+}
+
+#[tokio::test]
+async fn a_retired_stretch_missing_a_hint_is_a_gap() {
+    assert_eq!(retired_stretch(&[1, 3], true).await, (true, 3));
+}
+
+#[tokio::test]
+async fn a_retired_stretch_with_no_entry_after_the_mark_is_a_gap() {
+    assert_eq!(retired_stretch(&[1, 2, 3], false).await, (true, 3));
+}
+
+/// G4: an applied chain entry records its outbox stream seq at the
+/// cursor, and a later stretch is judged from it, not from the stream's
+/// start: Bob's chain was made again (its seq restarts, the stream seq
+/// does not), so his entries 1–2 carry stream seqs 5–6 and nothing of 1–4
+/// is stored here; hint 7 is stored, then chain entry 3 retires before the
+/// chain is read, and entry 4 carries stream seq 8.
+#[tokio::test]
+async fn a_stretch_after_applied_entries_is_judged_from_the_cursors_stream_seq() {
+    fn entry_at(key: &GroupSenderKey, seq: u64, stream_seq: u8) -> ChainEntry {
+        let content = sealed(key, &text(stream_seq, "hi"), u64::from(stream_seq));
+        ChainEntry {
+            seq,
+            ciphertext: DirectBody::GroupContent(content).encode(),
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let key = group(&friends, owner).await;
+    let (sink, stream) = (
+        GroupSink::new(&friends, GID),
+        stream_name(&hex::encode(GID)),
+    );
+    for (seq, stream_seq) in [(1, 5), (2, 6)] {
+        sink.apply(&stream, &bob(), &entry_at(&key, seq, stream_seq))
+            .await
+            .unwrap();
+    }
+    let hint = sealed(&key, &text(7, "hint"), 7);
+    assert!(receive::on_hint(&friends, &bob(), &hint).await);
+    let mut events = host.ctx.journal.subscribe(None);
+    sink.history_gap(&stream, &bob(), 3, Some(&entry_at(&key, 4, 8)))
+        .await
+        .unwrap();
+    let mut shown = false;
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        shown |= format!("{frame:?}").contains("HistoryGap");
+    }
+    assert!(!shown, "6 at the cursor, 7 held by hint");
+    assert_eq!(sink.cursor(&stream, &bob()).await.unwrap(), 3);
 }

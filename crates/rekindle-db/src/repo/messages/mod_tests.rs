@@ -271,3 +271,30 @@ fn a_message_names_its_conversation_and_type() {
     );
     assert_eq!(super::conversation_of(&conn, OWNER, "none").unwrap(), None);
 }
+
+/// G4: a retired stretch is held only when every stream seq strictly
+/// between the cursor's and the next entry's is a stored message of the
+/// writer in the conversation; a gap marker or another writer's row
+/// never counts, and a next at or below the cursor's holds nothing.
+#[test]
+fn a_retired_stretch_is_held_only_when_every_stream_seq_is_stored() {
+    let conn = fixture::conn();
+    let group = ("g", rekindle_types::message::ConversationType::GroupDm);
+    let stored = |sender: &str, seq: i64, id: &str| {
+        let mut row = dm("g", sender, seq, ("hi", id), None);
+        row.conversation_type = group.1;
+        row.stream_seq = Some(seq);
+        insert_dm(&conn, &row).unwrap();
+    };
+    stored("ann", 3, "a3");
+    stored("ann", 4, "a4");
+    stored("bea", 5, "b5");
+    history_gap::insert(&conn, OWNER, group, "ann", 5, 1).unwrap();
+    let held = |after, next| history_gap::stretch_held(&conn, OWNER, group, "ann", (after, next));
+    assert!(held(2, 5).unwrap(), "3 and 4 are stored");
+    assert!(held(4, 5).unwrap(), "nothing between");
+    assert!(!held(1, 5).unwrap(), "2 is missing");
+    assert!(!held(2, 6).unwrap(), "5 is another writer's");
+    assert!(!held(5, 5).unwrap(), "a next at the cursor's holds nothing");
+    assert!(!held(6, 5).unwrap(), "nor one below it");
+}

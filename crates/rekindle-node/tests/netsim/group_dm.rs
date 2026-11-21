@@ -28,7 +28,7 @@ pub(crate) async fn view(node: &SimNode, group_id: &str) -> Option<GroupDmView> 
 }
 
 /// `node`'s stored history of the group, oldest first.
-async fn history(node: &SimNode, group_id: &str) -> Vec<DmMessage> {
+pub(crate) async fn history(node: &SimNode, group_id: &str) -> Vec<DmMessage> {
     serde_json::from_value(
         node.ok(IpcRequest::GroupDmMessages {
             group_id: group_id.to_string(),
@@ -81,7 +81,7 @@ async fn epoch(node: &SimNode, group_id: &str) -> u32 {
 /// Ann (node 0) befriends Bea and Cat, who are not friends; Ann creates
 /// the group, both accept, and every member holds the others' keys once
 /// each has read a message of each other member. Returns the group id.
-async fn three_members(sim: &Netsim, nodes: &mut [SimNode]) -> String {
+pub(crate) async fn three_members(sim: &Netsim, nodes: &mut [SimNode]) -> String {
     for (node, name) in nodes.iter_mut().zip(["Ann", "Bea", "Cat"]) {
         node.unlock_new_identity(name).await;
     }

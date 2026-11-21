@@ -1079,12 +1079,17 @@ CREATE TABLE IF NOT EXISTS outbox_streams (
 -- Per-writer stream cursors (plan E2.5, D23): the highest sequence number
 -- of `writer`'s chain on `stream` this identity has applied (or passed as
 -- a duplicate, or skipped as retired). Committed only after the entry's
--- effect commits.
+-- effect commits. `stream_seq` (plan E2.6 G4) is the writer's outbox stream
+-- seq of the entry the cursor was committed on (0: none known): a group member's hints are stored by stream seq
+-- without moving the cursor, so a retired stretch is a history gap only
+-- when a stream seq between this one and the first entry after the retire
+-- mark is not held.
 CREATE TABLE IF NOT EXISTS stream_cursors (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     stream TEXT NOT NULL,
     writer TEXT NOT NULL,
     seq INTEGER NOT NULL CHECK(seq >= 0),
+    stream_seq INTEGER NOT NULL DEFAULT 0 CHECK(stream_seq >= 0),
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, stream, writer)
 );

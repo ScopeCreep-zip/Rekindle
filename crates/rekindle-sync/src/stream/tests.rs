@@ -1,7 +1,7 @@
 use parking_lot::Mutex;
 use rekindle_records::chain::ChainEntry;
 
-use super::{classify, Held, Rule, SinkError, StreamEngine, StreamError, StreamSink};
+use super::{after_mark, classify, Held, Rule, SinkError, StreamEngine, StreamError, StreamSink};
 
 #[test]
 fn the_receive_rule_applies_the_next_passes_older_and_holds_a_gap() {
@@ -53,7 +53,13 @@ impl StreamSink for Sink {
         *self.cursor.lock() = entry.seq;
         Ok(Held::Stored)
     }
-    async fn history_gap(&self, _: &str, _: &str, through: u64) -> Result<(), SinkError> {
+    async fn history_gap(
+        &self,
+        _: &str,
+        _: &str,
+        through: u64,
+        _: Option<&ChainEntry>,
+    ) -> Result<(), SinkError> {
         *self.cursor.lock() = through;
         Ok(())
     }
@@ -163,4 +169,15 @@ async fn a_failed_pass_drops_a_trigger_that_landed_during_it() {
         engine.claim(&key),
         "the stream is released, the trigger dropped"
     );
+}
+
+/// G4: the sink is handed the first entry after the retire mark, the one at
+/// `through + 1`; a read that holds none, or starts past it, hands none.
+#[test]
+fn a_gap_is_handed_the_entry_right_after_the_mark() {
+    let read = entries(5..=7);
+    assert_eq!(after_mark(&read, 4).map(|e| e.seq), Some(5));
+    assert_eq!(after_mark(&read, 3), None, "6 is not right after 3");
+    assert_eq!(after_mark(&[], 4), None, "nothing after the mark");
+    assert_eq!(after_mark(&read, u64::MAX), None);
 }

@@ -499,10 +499,15 @@ impl StreamSink for DmSink<'_> {
         _stream: &str,
         writer: &str,
         through: u64,
+        _next: Option<&ChainEntry>,
     ) -> Result<(), SinkError> {
         // D23: the gap is a stored row of the conversation, so it survives
         // a reload; a failed insert keeps the cursor, and the gap is seen
-        // again on the next diff.
+        // again on the next diff. The entry after the mark is not needed
+        // (plan E2.6 G4): a 1:1 hint carries its chain seq and steps this
+        // cursor when it stores (`ack.rs` `stream_cursors::step`), so a
+        // stretch held by hints is already passed and a mark past the
+        // cursor retired only entries we never stored.
         let owner = state::owner(self.host).map_err(|e| SinkError(e.to_string()))?;
         let (peer, now) = (writer.to_string(), self.host.clock().now_ms_i64());
         state::db_call!(self.host, "store dm history gap", move |conn| {

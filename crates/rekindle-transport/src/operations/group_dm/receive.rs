@@ -251,9 +251,104 @@ impl GroupSink<'_> {
         .map_err(sink_error)
     }
 
+    /// [`advance`](Self::advance) past the applied entry `seq`, recording
+    /// its outbox stream seq at the cursor (plan E2.6 G4).
+    async fn advance_entry(
+        &self,
+        stream: &str,
+        writer: &str,
+        (seq, stream_seq): (u64, u64),
+    ) -> Result<(), SinkError> {
+        let owner = state::owner(self.host).map_err(sink_error)?;
+        let (stream, writer, now) = (
+            stream.to_string(),
+            writer.to_string(),
+            self.host.clock().now_ms_i64(),
+        );
+        state::db_call!(self.host, "commit group cursor", move |conn| {
+            rekindle_db::repo::stream_cursors::advance_entry(
+                conn,
+                (&owner, &stream, &writer),
+                (seq, stream_seq),
+                now,
+            )
+        })
+        .await
+        .map(|_| ())
+        .map_err(sink_error)
+    }
+
+    /// The outbox stream seq of `writer`'s entry `next` (the first after a
+    /// retire mark), or `None` when it is not this group's or does not
+    /// open (refused, unreadable): then nothing is known from it. A key
+    /// not held yet or our storage failing is an error: the cursor stays
+    /// and the next diff judges the mark again.
+    async fn next_stream_seq(
+        &self,
+        writer: &str,
+        next: &ChainEntry,
+    ) -> Result<Option<u64>, SinkError> {
+        let Ok(DirectBody::GroupContent(content)) =
+            DirectBody::decode(DmTypeId::GroupContent, &next.ciphertext)
+        else {
+            return Ok(None);
+        };
+        if content.group_id != self.group_id {
+            return Ok(None);
+        }
+        let deps = self.host.group_dm().map_err(sink_error)?;
+        match rekindle_dm::open_received(deps.as_ref(), writer, &content).await {
+            Ok(plain) => Ok(parse_inner(&plain)
+                .ok()
+                .map(|inner| inner.stream_seq)
+                .filter(|s| *s >= 1)),
+            Err(e @ (DmError::KeyMissing { .. } | DmError::Storage(_))) => Err(sink_error(e)),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Whether we hold every entry of `writer`'s stretch retired before
+    /// `next` (plan E2.6 G4): each outbox stream seq strictly between the
+    /// cursor's and `next`'s is a stored message, as their hints store
+    /// them. Without `next`, or one that tells no stream seq, we cannot
+    /// know, and a hidden real gap is worse than a false one: not held.
+    async fn stretch_held(
+        &self,
+        stream: &str,
+        writer: &str,
+        next: Option<&ChainEntry>,
+    ) -> Result<bool, SinkError> {
+        let Some(next) = next else {
+            return Ok(false);
+        };
+        let Some(next_seq) = self.next_stream_seq(writer, next).await? else {
+            return Ok(false);
+        };
+        let owner = state::owner(self.host).map_err(sink_error)?;
+        let (group, stream, member) = (
+            group_id_hex(&self.group_id),
+            stream.to_string(),
+            writer.to_string(),
+        );
+        state::db_call!(self.host, "check retired group stretch", move |conn| {
+            let after =
+                rekindle_db::repo::stream_cursors::stream_seq(conn, &owner, &stream, &member)?;
+            rekindle_db::repo::history_gap::stretch_held(
+                conn,
+                &owner,
+                (&group, ConversationType::GroupDm),
+                &member,
+                (after, next_seq),
+            )
+        })
+        .await
+        .map_err(sink_error)
+    }
+
     /// Store `writer`'s opened entry (its hint, or its chain copy); a
-    /// replay or the other copy finds it held.
-    async fn store(&self, writer: &str, plain: &[u8]) -> Result<(), SinkError> {
+    /// replay or the other copy finds it held. Its outbox stream seq (0:
+    /// unreadable, or none).
+    async fn store(&self, writer: &str, plain: &[u8]) -> Result<u64, SinkError> {
         let GroupContentInner {
             body,
             sent_at_ms,
@@ -262,12 +357,12 @@ impl GroupSink<'_> {
             Ok(parsed) => parsed,
             Err(e) => {
                 tracing::info!(from = %writer, error = %e, "group entry unreadable; skipped");
-                return Ok(());
+                return Ok(0);
             }
         };
         let DirectBody::DmText(text) = body else {
             tracing::debug!(from = %writer, kind = ?body.type_id(), "group kind not stored");
-            return Ok(());
+            return Ok(stream_seq);
         };
         let owner = state::owner(self.host).map_err(sink_error)?;
         let gid = group_id_hex(&self.group_id);
@@ -281,6 +376,7 @@ impl GroupSink<'_> {
             message_id.clone(),
             reply_to.clone(),
         );
+        let entry_seq = stream_seq;
         let stream_seq = i64::try_from(stream_seq).ok().filter(|s| *s >= 1);
         // Its timer starts when the group window displays it (plan E7.1).
         let expire_seconds = text.expire_seconds;
@@ -310,7 +406,7 @@ impl GroupSink<'_> {
         .await
         .map_err(sink_error)?;
         if !stored.inserted {
-            return Ok(());
+            return Ok(entry_seq);
         }
         typing::stopped(self.host, &typing_context(&self.group_id), writer);
         let deps = self.host.group_dm().map_err(sink_error)?;
@@ -326,7 +422,7 @@ impl GroupSink<'_> {
                 timestamp,
                 reply_to,
             }));
-        Ok(())
+        Ok(entry_seq)
     }
 }
 
@@ -362,16 +458,17 @@ impl StreamSink for GroupSink<'_> {
             }
         };
         let deps = self.host.group_dm().map_err(sink_error)?;
-        match rekindle_dm::open_received(deps.as_ref(), writer, &content).await {
+        let stream_seq = match rekindle_dm::open_received(deps.as_ref(), writer, &content).await {
             Ok(plain) => self.store(writer, &plain).await?,
             Err(e @ (DmError::KeyMissing { .. } | DmError::Storage(_))) => {
                 return Err(sink_error(e));
             }
             Err(e) => {
                 tracing::info!(from = %writer, seq = entry.seq, error = %e, "group entry refused");
+                0
             }
-        }
-        self.advance(stream, writer, entry.seq)
+        };
+        self.advance_entry(stream, writer, (entry.seq, stream_seq))
             .await
             .map(|()| Held::Stored)
     }
@@ -380,8 +477,21 @@ impl StreamSink for GroupSink<'_> {
     /// retires by age, `content::retire`): the gap is a stored row of the
     /// group's history, in the 1:1 marker's shape, so it survives a reload
     /// and renders as the DM one does; a failed insert keeps the cursor,
-    /// and the gap is seen again on the next diff.
-    async fn history_gap(&self, stream: &str, writer: &str, through: u64) -> Result<(), SinkError> {
+    /// and the gap is seen again on the next diff. A stretch whose every
+    /// entry we hold by hint (plan E2.6 G4: hints store without moving the
+    /// cursor) is no gap: the cursor passes it with no row or event.
+    async fn history_gap(
+        &self,
+        stream: &str,
+        writer: &str,
+        through: u64,
+        next: Option<&ChainEntry>,
+    ) -> Result<(), SinkError> {
+        if self.stretch_held(stream, writer, next).await? {
+            tracing::info!(from = %writer, through,
+                "group chain retired past our cursor; every entry held by hint, no gap");
+            return self.advance(stream, writer, through).await;
+        }
         let owner = state::owner(self.host).map_err(sink_error)?;
         let gid = group_id_hex(&self.group_id);
         let (group, member, now) = (

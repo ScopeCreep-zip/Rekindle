@@ -66,3 +66,41 @@ pub fn close(
         params![owner_key, kind.as_str(), writer, reached],
     )
 }
+
+/// Whether `writer`'s stored messages of `conversation` hold every outbox
+/// stream seq strictly between `after` (the stream seq at our cursor) and
+/// `next` (the first entry's after a retire mark), plan E2.6 G4: a
+/// retired stretch whose every entry came as a hint is no gap of ours.
+/// Only stored rows count, never the stream seqs alone (a hidden real gap
+/// is worse than a false one): a `next` at or below `after` holds nothing.
+///
+/// # Errors
+/// A seq does not fit a row, or the query failed.
+pub fn stretch_held(
+    conn: &Connection,
+    owner_key: &str,
+    conversation: (&str, rekindle_types::message::ConversationType),
+    writer: &str,
+    (after, next): (u64, u64),
+) -> rusqlite::Result<bool> {
+    let Some(between) = next.checked_sub(after).and_then(|d| d.checked_sub(1)) else {
+        return Ok(false);
+    };
+    let to_row =
+        |v: u64| i64::try_from(v).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()));
+    let held: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT stream_seq) FROM messages WHERE owner_key = ?1 \
+         AND conversation_id = ?2 AND conversation_type = ?3 AND sender_key = ?4 \
+         AND history_gap_through IS NULL AND stream_seq > ?5 AND stream_seq < ?6",
+        params![
+            owner_key,
+            conversation.0,
+            conversation.1.as_str(),
+            writer,
+            to_row(after)?,
+            to_row(next)?
+        ],
+        |row| row.get(0),
+    )?;
+    Ok(u64::try_from(held).is_ok_and(|h| h == between))
+}

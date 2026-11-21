@@ -134,8 +134,15 @@ impl StreamSink for OutboxSink<'_> {
             .map(|()| Held::Stored)
     }
 
-    /// An outbox is never retired, so its read reports no gap.
-    async fn history_gap(&self, stream: &str, writer: &str, through: u64) -> Result<(), SinkError> {
+    /// An outbox is never retired, so its read reports no gap (nor an
+    /// entry after one to judge it by).
+    async fn history_gap(
+        &self,
+        stream: &str,
+        writer: &str,
+        through: u64,
+        _next: Option<&ChainEntry>,
+    ) -> Result<(), SinkError> {
         tracing::warn!(
             stream,
             writer,

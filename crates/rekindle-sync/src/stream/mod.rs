@@ -18,7 +18,8 @@
 //!   prefix of entries held; a head read past it never moves it.
 //! - **Gap**: when the writer's retire mark overtook the cursor, the sink
 //!   stores and shows a `HistoryGap` and the cursor moves past it. Loss is
-//!   never silent.
+//!   never silent; the sink is handed the first entry after the mark, so
+//!   one that holds the retired entries by another path can tell.
 //! - **Caught up**: each diff that drains its stream reports `CaughtUp`.
 //!
 //! It is Veilid-free: the chain is read through `&dyn RecordPort`.
@@ -99,9 +100,20 @@ pub trait StreamSink: Send + Sync {
         writer: &str,
         entry: &ChainEntry,
     ) -> Result<Held, SinkError>;
-    /// The entries up to `through` are retired unread: store and show the
-    /// gap, then commit the cursor to `through`.
-    async fn history_gap(&self, stream: &str, writer: &str, through: u64) -> Result<(), SinkError>;
+    /// The entries after the cursor up to `through` are retired unread:
+    /// store and show the gap, then commit the cursor to `through`. `next`
+    /// is the first entry after the retire mark (`through + 1`), if the
+    /// read holds it: a sink whose entries also arrive another way (a group
+    /// member's hints, stored by their outbox stream seq without moving
+    /// the cursor, plan E2.6 G4) may find every retired entry held from it
+    /// and commit the cursor with no gap; with no `next` it cannot know.
+    async fn history_gap(
+        &self,
+        stream: &str,
+        writer: &str,
+        through: u64,
+        next: Option<&ChainEntry>,
+    ) -> Result<(), SinkError>;
     /// The stream drained.
     async fn caught_up(&self, stream: &str, writer: &str);
 }
@@ -148,6 +160,14 @@ impl Chain {
             Self::Log { at_least, .. } => at_least,
         }
     }
+}
+
+/// The first entry after a retire mark at `through` among `entries` (read
+/// after it, in order): the one at `through + 1`, if the read holds it.
+fn after_mark(entries: &[ChainEntry], through: u64) -> Option<&ChainEntry> {
+    entries
+        .first()
+        .filter(|e| Some(e.seq) == through.checked_add(1))
 }
 
 impl StreamEngine {
@@ -301,7 +321,8 @@ impl StreamEngine {
         let unreached = (read.last_seq < source.at_least()).then(|| source.at_least());
         let mut gap_through = None;
         if let Some(through) = read.retired_gap {
-            sink.history_gap(stream, writer, through).await?;
+            let next = after_mark(&read.entries, through);
+            sink.history_gap(stream, writer, through, next).await?;
             cursor = through;
             gap_through = Some(through);
         }
