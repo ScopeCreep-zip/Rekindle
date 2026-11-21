@@ -19,6 +19,12 @@ import path from "node:path";
 
 /** Commands at or past this many milliseconds are printed. */
 const SLOW_MS = 2_000;
+/**
+ * The driver's default script bound, which round 15's stalls passed: a
+ * command this slow prints the processes even now that the bound is larger
+ * (base.conf.ts), so a stall the larger bound absorbs is still seen.
+ */
+const STALL_MS = 30_000;
 /** Wrappers that wait by design (they poll other commands, which are timed themselves). */
 const WAITS = /^(waitUntil|waitFor|pause$)/;
 
@@ -43,8 +49,9 @@ export function timingAfter(command: string, error: unknown): void {
   const timedOut = error instanceof Error && /timed out/i.test(error.message);
   if (ms < SLOW_MS && !timedOut) return;
   const load = os.loadavg().map((n) => n.toFixed(1)).join(" ");
-  console.log(`[timing] ${test} | ${command} ${ms} ms | load ${load}${timedOut ? " | TIMED OUT" : ""}`);
-  if (timedOut) console.log(`[timing] processes: ${processes()}`);
+  const stalled = ms >= STALL_MS;
+  console.log(`[timing] ${test} | ${command} ${ms} ms | load ${load}${timedOut ? " | TIMED OUT" : stalled ? " | PAST 30 s" : ""}`);
+  if (timedOut || stalled) console.log(`[timing] processes: ${processes()}`);
 }
 
 /** The six busiest processes, then every WebKit and app process: CPU %, state, name. */

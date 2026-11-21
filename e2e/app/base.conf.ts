@@ -11,6 +11,9 @@ import { keepDir } from "./keep.ts";
 import { RekindleAppLauncher } from "./launcher.ts";
 import { timingAfter, timingBefore, timingTest } from "./timing.ts";
 
+/** The driver's script bound per session (see `before`). */
+const SCRIPT_TIMEOUT_MS = 90_000;
+
 /** Failure evidence, in the run's folder beside its app logs (keep.ts). */
 const KEEP_DIR = keepDir();
 
@@ -51,6 +54,22 @@ export const base = {
   logLevel: "warn",
   waitforTimeout: 10_000,
   connectionRetryCount: 1,
+  // The driver's bound on one script, screenshot or element command
+  // (tauri-plugin-wdio-webdriver: 30 s by default, set per session by W3C
+  // Set Timeouts; New Session ignores a `timeouts` capability). Sized from
+  // the timing run under load (2026-11-21, load 56.8): the slowest command,
+  // an axe/geometry execute, took 29.2 s, and round 15 timed out on such
+  // calls three times. 90 s is about three times that, and stays under
+  // webdriverio's 120 s `connectionRetryTimeout`, so the driver's own timeout
+  // is the one reported. A command past the old 30 s still prints the
+  // processes (timing.ts), so a stall this absorbs is not hidden.
+  async before() {
+    for (const [name, b] of sessions()) {
+      await b.setTimeout({ script: SCRIPT_TIMEOUT_MS });
+      const { script } = await b.getTimeouts();
+      if (script !== SCRIPT_TIMEOUT_MS) throw new Error(`${name}: the driver kept a script timeout of ${script} ms`);
+    }
+  },
   // Each command's duration, printed when slow or timed out (timing.ts).
   beforeTest(test: { title: string }) {
     timingTest(test.title);
