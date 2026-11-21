@@ -128,7 +128,7 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 ),
             )
         }),
-LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } => community(anchor),
+LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } | LifecycleRequest::CommunityPublishSuccessor { anchor } | LifecycleRequest::CommunitySuccessors { anchor } => community(anchor),
 LifecycleRequest::CommunityUpdateInfo {
             anchor,
             name: community_name,
@@ -162,8 +162,6 @@ LifecycleRequest::CommunityReject {
             pseudonym(member_pseudonym, "member pseudonym")?;
             text(reason, MAX_NOTE_LEN, "reason")
         }
-LifecycleRequest::CommunityPublishSuccessor { anchor }
-        | LifecycleRequest::CommunitySuccessors { anchor } => community(anchor),
 LifecycleRequest::CommunityFollowSuccessor {
             anchor,
             new_anchor,
