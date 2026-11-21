@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy, openAddFriend, setValue, submitJoin } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
@@ -124,7 +124,7 @@ export async function seesMessage(b: Browser, who: User, text: string): Promise<
 async function whenConnected(b: Browser): Promise<void> {
   await inBuddy(b);
   await waitUntil(
-    async () => (await (await b.$(".network-indicator span")).getText()).trim() === "Connected",
+    async () => (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
     NET_WAIT_MS,
     "the network indicator never said Connected",
   );

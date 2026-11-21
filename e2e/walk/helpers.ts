@@ -11,6 +11,16 @@ type El = Awaited<ReturnType<Browser["$"]>>;
 export const WAIT_MS = 10_000;
 export const NET_WAIT_MS = 120_000;
 
+/**
+ * The network indicator's state label ("Connected", NetworkIndicator.tsx).
+ * Not `.network-indicator span`: while the media route is pending a second
+ * span, `.network-voice-note`, shows beside it ("Voice connecting..."), and
+ * webdriverio's strict `$` then throws, which a waitUntil swallows, so a
+ * wait for "Connected" also waited for the voice note to go (VI1; a likely
+ * part of the slow community starts).
+ */
+export const NETWORK_LABEL = ".network-indicator > span:not(.network-voice-note)";
+
 export class Skip extends Error {}
 
 /** OwnRecordsWait.tsx's text while our identity's records are pending (plan E2.5 FC3). */

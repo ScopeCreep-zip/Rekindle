@@ -8,7 +8,7 @@
 import type { Browser } from "webdriverio";
 import type { App } from "./launch.ts";
 import {
-  Key, MOD_KEY, NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, identityBarState,
+  Key, MOD_KEY, NETWORK_LABEL, NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, identityBarState,
   present, press, resolveIntent, shown, sleep, switchTo, typeInto, untilPublished, waitForHandle, waitUntil, within,
 } from "./helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu, openAddFriend } from "./nav.ts";
@@ -343,7 +343,7 @@ const BASE_ROWS: Row[] = [
       // indicator's "Connected" (NetworkIndicator.tsx:66, public internet
       // ready and a route).
       await waitUntil(
-        async () => (await (await b.$(".network-indicator span")).getText()).trim() === "Connected",
+        async () => (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
         NET_WAIT_MS,
         "the network indicator never said Connected",
       );
