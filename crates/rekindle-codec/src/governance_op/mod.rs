@@ -14,6 +14,8 @@
 
 mod device;
 #[cfg(test)]
+mod device_bound_tests;
+#[cfg(test)]
 mod device_tests;
 pub mod genesis;
 #[cfg(test)]

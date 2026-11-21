@@ -128,29 +128,18 @@ fn the_op_signature_covers_the_first_device() {
     assert_ne!(op_unsigned_bytes(&op(joined(Some(changed)))), base);
 }
 
-/// The full element list and full-length texts still fit one op.
+/// The full element list fits an op and reads back; one element more
+/// still fits the bytes here and the reader refuses it by count.
 #[test]
 fn an_endorsement_with_the_largest_extended_set_fits_one_op() {
     let mut e = endorsement(5);
-    e.extends_elements = (0..MAX_DEVICE_SET_ELEMENTS)
-        .map(|i| {
-            DeviceSetElement::new(
-                DeviceSetElementKind::Endorsement,
-                [u8::try_from(i).unwrap(); 32],
-                1,
-            )
-        })
-        .collect();
+    e.extends_elements = super::device_bound_tests::elements(MAX_DEVICE_SET_ELEMENTS);
     let original = op(GovernanceEntry::DeviceKey(e.clone()));
     assert_eq!(
         decode_op(&encode_op(&original).unwrap()).unwrap().op,
         original
     );
-    e.extends_elements.push(DeviceSetElement::new(
-        DeviceSetElementKind::Retirement,
-        [0; 32],
-        1,
-    ));
+    e.extends_elements = super::device_bound_tests::elements(MAX_DEVICE_SET_ELEMENTS + 1);
     let over = op(GovernanceEntry::DeviceKey(e));
     assert!(decode_op(&encode_op(&over).unwrap()).is_err());
 }

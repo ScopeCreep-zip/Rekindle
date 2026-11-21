@@ -9,11 +9,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::PseudonymKey;
 
-/// At most this many element ids travel with one endorsement: the deps cap
-/// (`member_record::MAX_FRONTIER_REFS`, 64), so an endorsement never
-/// outgrows the op it rides in. Six live keys (rule 6) plus every retired
-/// one stay far below it.
-pub const MAX_DEVICE_SET_ELEMENTS: usize = 64;
+/// At most this many element ids travel with one endorsement: exactly what
+/// fits one `DeviceKey` op in the subkey it is published to, every other
+/// field at its largest (plan E3.2 S7d-keys, lead decision (40)). ADR 0022
+/// caps *live* keys at six (rule 6), but the extended set also holds every
+/// retired element, which accumulate, so the cap is the carrier's.
+///
+/// - The carrier: an op is one member-record subkey,
+///   `GOVERNANCE_OP_MAX_BYTES` = `member_record::MAX_SUBKEY_VALUE_LEN` =
+///   `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / 8)` = 32,768 bytes
+///   (veilid-core 0.5.8 `veilid_api/types/dht/mod.rs:36,38`,
+///   `veilid_api/types/dht/derivation.rs:144-147`).
+/// - What is measured against it: the codec seals an op by reading its
+///   canonical unsigned segment of `W` words in literal packed framing,
+///   `10 + 8W + 2⌈W/256⌉` bytes (`rekindle-codec` `governance_op::seal_op`).
+/// - The rest of the op at its largest is 1,602 words: 64 deps
+///   (`GOVERNANCE_OP_MAX_DEPS`) naming full-length record keys, full-length
+///   device record and owner texts, every fixed field set.
+/// - One element is 7 words: its 3-word struct (the kind's word, the
+///   incarnation, the key's pointer) and the 32-byte key's 4 words.
+///
+/// `W = 1,602 + 7n`; n = 355 gives `W` = 4,087 and 32,738 bytes, n = 356
+/// gives 32,794 > 32,768. `rekindle-codec`'s `device_bound_tests` hold both
+/// terms and both sides of the bound.
+pub const MAX_DEVICE_SET_ELEMENTS: usize = 355;
 
 /// What an element of a member's endorsement set is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
