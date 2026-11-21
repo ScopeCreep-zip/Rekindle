@@ -253,6 +253,7 @@ pub fn main_window(
     main: &Node,
     components: &[Node],
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError> + Copy,
+    colours: &[super::ColourRow],
     windows: &mut Windows,
 ) -> Result<(), ImportError> {
     let w = SkinWindow::Main;
@@ -272,7 +273,7 @@ pub fn main_window(
     };
     if let Some(mut built) = built {
         apply(w, main, components, piece, &mut built)?;
-        super::title::add(w, main, components, piece, &mut built)?;
+        super::title::add(w, main, components, colours, piece, &mut built)?;
         windows.insert(w, built);
     }
     Ok(())

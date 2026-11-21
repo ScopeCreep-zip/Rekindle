@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{RegionState, SkinManifest, SkinWindow, TileAxis};
-use rekindle_types::dto::skin_title::{TitleLayout, TitlePart, TitleRole, TitleText};
+use rekindle_types::dto::skin_title::{TitleLayout, TitlePart, TitleRole, TitleSlices, TitleText};
 
 use super::*;
 use crate::{builtin, images, manifest, package};
@@ -39,6 +39,7 @@ fn button(
             .filter(|(s, _)| *s != RegionState::Disabled)
             .collect(),
         text: None,
+        slices: None,
     }
 }
 
@@ -55,7 +56,10 @@ fn name() -> TitlePart {
             font: "Arial".to_owned(),
             size: 12,
             bold: true,
+            colour: Some("#ffcc00".to_owned()),
+            inset: [0, 0],
         }),
+        slices: None,
     }
 }
 
@@ -180,6 +184,7 @@ fn a_logo_not_in_the_package_or_not_its_size_is_refused() {
         image: Some(image.to_owned()),
         states: BTreeMap::new(),
         text: None,
+        slices: None,
     };
     let e = refused(|t, _| t.parts.push(logo("assets/none.png", 13)));
     assert_eq!(e, "windows.main.title.parts.3.image");
@@ -195,6 +200,8 @@ fn a_name_face_that_could_escape_css_or_is_out_of_range_is_refused() {
                 font: font.to_owned(),
                 size,
                 bold: false,
+                colour: None,
+                inset: [0, 0],
             });
         }
     };
@@ -211,4 +218,69 @@ fn a_name_face_that_could_escape_css_or_is_out_of_range_is_refused() {
         refused(|t, _| t.parts[2].text = None),
         "windows.main.title.parts.2.text"
     );
+}
+
+#[test]
+fn a_name_colour_that_is_not_hex_rgb_is_refused() {
+    let colour = |c: &'static str| {
+        move |t: &mut TitleLayout, _: &BTreeMap<String, Vec<u8>>| {
+            t.parts[2].text.as_mut().unwrap().colour = Some(c.to_owned());
+        }
+    };
+    assert_eq!(
+        refused(colour("red; } * { x")),
+        "windows.main.title.parts.2.text"
+    );
+    assert_eq!(refused(colour("#ffcc0")), "windows.main.title.parts.2.text");
+}
+
+#[test]
+fn name_slices_not_at_the_part_height_are_refused() {
+    let e = refused(|t, _| {
+        t.parts[2].slices = Some(TitleSlices {
+            left: "assets/frame/main/top-left.png".to_owned(),
+            middle: "assets/frame/main/top-left.png".to_owned(),
+            right: "assets/none.png".to_owned(),
+        });
+    });
+    assert_eq!(e, "windows.main.title.parts.2.slices");
+}
+
+#[test]
+fn the_name_field_draws_its_pack_colour_and_slices() {
+    let (mut m, files) = laid();
+    let (w, h) = dimensions("assets/frame/main/top-left.png", &files).unwrap();
+    let title = m
+        .windows
+        .get_mut(&SkinWindow::Main)
+        .unwrap()
+        .title
+        .as_mut()
+        .unwrap();
+    let p = &mut title.parts[2];
+    p.height = u16::try_from(h).unwrap();
+    let art = "assets/frame/main/top-left.png".to_owned();
+    p.slices = Some(TitleSlices {
+        left: art.clone(),
+        middle: art.clone(),
+        right: art,
+    });
+    p.text.as_mut().unwrap().inset = [u16::try_from(w).unwrap() + 3, 0];
+    title.bottom = title.bottom.max(10 + u16::try_from(h).unwrap());
+    crate::shape::title::check(&m, &files).unwrap();
+    let css = crate::shape::title::title_css(
+        ".app-frame",
+        m.windows[&SkinWindow::Main].title.as_ref().unwrap(),
+        0,
+        &files,
+        "skin://x/",
+    )
+    .unwrap();
+    assert!(css.contains("color: #ffcc00;"), "{css}");
+    assert!(
+        css.contains(&format!("border-width: 0 {w}px 0 {w}px;")),
+        "{css}"
+    );
+    assert!(css.contains("padding: 0 0px 0 3px;"), "{css}");
+    assert!(css.contains("repeat-x padding-box padding-box"), "{css}");
 }

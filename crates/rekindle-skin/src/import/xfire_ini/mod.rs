@@ -40,6 +40,7 @@ pub mod controls;
 pub mod frame;
 pub mod ini;
 mod notice;
+pub mod title;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -56,7 +57,8 @@ use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
 use super::xfire_xml::controls::StateTally;
 use super::xfire_xml::refs::{self, Ref};
 use super::xfire_xml::surfaces::Window;
-use super::xfire_xml::ColourRow;
+use super::xfire_xml::title as xtitle;
+use super::xfire_xml::{bitmap, ColourRow};
 use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
@@ -87,6 +89,9 @@ pub struct Read {
     pub colours: Vec<ColourRow>,
     pub tokens: BTreeMap<String, TokenValue>,
     pub frame: Option<Frame>,
+    /// The buddy list's layout from the frame, with the title strip the
+    /// skin file lays ([`title`]), and its package images.
+    pub main: Option<(WindowLayout, BTreeMap<String, Vec<u8>>)>,
     pub dropped: BTreeMap<&'static str, usize>,
     /// Files of the tree that were not read.
     pub unread: Vec<String>,
@@ -302,6 +307,28 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         files: std::cell::RefCell::default(),
     };
     let (mut controls, mut tally, control_sections) = controls::read(&skin, &images)?;
+    let mut main_layout = frame.as_ref().map(frame::main_layout).transpose()?;
+    if let (Some(built), Some((layout, components))) = (main_layout.as_mut(), title::tree(&skin)) {
+        let decode = |value: &str, group: Option<&str>| {
+            let (file, bytes) = resolve(tree, value, &aliases)?;
+            images.files.borrow_mut().insert(file.to_owned());
+            let mut img = bitmap::decode(file, bytes)?;
+            let by = group
+                .and_then(|c| colours.iter().find(|r| r.name == c))
+                .map_or([0; 3], |r| r.value);
+            bitmap::shift(&mut img, by);
+            Ok(img)
+        };
+        let components = std::slice::from_ref(&components);
+        xtitle::add(
+            SkinWindow::Main,
+            &layout,
+            components,
+            &colours,
+            decode,
+            built,
+        )?;
+    }
     count_dropped(&skin, (frame.as_ref(), &control_sections), &mut dropped);
     let mut read_files = vec![version_key, skin_key, theme_key];
     let mut found = Vec::new();
@@ -357,6 +384,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         colours,
         tokens,
         frame,
+        main: main_layout,
         dropped,
         unread,
         repeated,
@@ -482,8 +510,8 @@ pub fn import(
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
     // The skin file is the main window's (`MainSkin`); its frame is the
     // buddy list's outline (plan SK0 S1).
-    let main = read.frame.as_ref().map(frame::main_layout).transpose()?;
-    let layout = main.as_ref().map(|(l, _)| l);
+    let main = read.main.as_ref();
+    let layout = main.map(|(l, _)| l);
     let manifest = manifest(id, &read, (&source, tree), skin_base, credit, layout);
     let manifest_json = serde_json::to_vec(&manifest).map_err(|e| ImportError::Format {
         file: MANIFEST.to_owned(),
@@ -491,7 +519,7 @@ pub fn import(
     })?;
     let mut files = BTreeMap::from([(MANIFEST.to_owned(), manifest_json)]);
     if let Some((_, tiles)) = main {
-        files.extend(tiles);
+        files.extend(tiles.clone());
     }
     for (state, img) in read.frame.iter().flat_map(|f| &f.images) {
         let path = frame_image(*state);

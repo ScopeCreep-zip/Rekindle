@@ -95,24 +95,19 @@ Dropped
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (137):
+  files not read (119):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
     CombatInGamePopUpSkin.ini
     CombatInfoSkin.ini
-    blink_white.gif
-    c_background.gif
-    c_bottom_middle.gif
     c_button_add_off.gif
     c_button_add_server_down.gif
     c_button_add_server_hover.gif
-    c_button_add_server_norm.gif
     c_button_add_server_off.gif
     c_button_arrow_off.gif
     c_button_chat_down.gif
     c_button_chat_hover.gif
-    c_button_chat_norm.gif
     c_button_chat_off.gif
     c_button_close_down.gif
     c_button_close_hover.gif
@@ -120,15 +115,12 @@ Dropped
     c_button_close_off.gif
     c_button_download_down.gif
     c_button_download_hover.gif
-    c_button_download_norm.gif
     c_button_download_off.gif
     c_button_game_down.gif
     c_button_game_hover.gif
-    c_button_game_norm.gif
     c_button_game_off.gif
     c_button_launch_down.gif
     c_button_launch_hover.gif
-    c_button_launch_norm.gif
     c_button_launch_off.gif
     c_button_maximize_down.gif
     c_button_maximize_hover.gif
@@ -140,11 +132,9 @@ Dropped
     c_button_minimize_off.gif
     c_button_profile_down.gif
     c_button_profile_hover.gif
-    c_button_profile_norm.gif
     c_button_profile_off.gif
     c_button_refresh_down.gif
     c_button_refresh_hover.gif
-    c_button_refresh_norm.gif
     c_button_refresh_off.gif
     c_button_restore_down.gif
     c_button_restore_hover.gif
@@ -152,19 +142,13 @@ Dropped
     c_button_restore_off.gif
     c_button_stop_down.gif
     c_button_stop_hover.gif
-    c_button_stop_norm.gif
     c_button_stop_off.gif
     c_close_down.gif
     c_close_hover.gif
     c_header_arrow_down.gif
     c_header_arrow_up.gif
     c_infoview_in_hover.gif
-    c_infoview_in_norm.gif
     c_infoview_out_hover.gif
-    c_infoview_out_norm.gif
-    c_knob_01.gif
-    c_knob_02.gif
-    c_knob_03.gif
     c_menu_down.gif
     c_menu_down_top.gif
     c_menu_hover.gif
@@ -177,7 +161,6 @@ Dropped
     c_top_right_off.gif
     c_white_background.gif
     c_xfire_logo_hover.gif
-    c_xfire_logo_norm.gif
     chat/c_chat_bottom_left.gif
     chat/c_chat_bottom_middle.gif
     chat/c_chat_bottom_right.gif
@@ -200,7 +183,6 @@ Dropped
     chat/c_chat_top_right.gif
     chat/c_chat_x_hover.gif
     chat/c_chat_x_norm.gif
-    file_download_blink.gif
     infoview/c_infoview_bottomleft.gif
     infoview/c_infoview_bottommiddle.gif
     infoview/c_infoview_bottomright.gif

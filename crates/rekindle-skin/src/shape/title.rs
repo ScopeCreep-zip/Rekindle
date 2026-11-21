@@ -23,7 +23,9 @@
 //!    size (never stretched); a button's hover and down images too, and
 //!    nothing else has state images;
 //! 5. the name field has a face: a font name of letters, digits, spaces
-//!    and hyphens (it is written into CSS), 8–32 px.
+//!    and hyphens (it is written into CSS), 8–32 px, a colour (when set)
+//!    of `#rrggbb`, and its 3-slice art (when set) three package images
+//!    at the part's height.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -102,8 +104,12 @@ fn check_part(
         }
         return Ok(());
     }
+    let hex = |c: &str| {
+        c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|d| d.is_ascii_hexdigit())
+    };
     let face_ok = p.text.as_ref().is_some_and(|t| {
-        (8..=32).contains(&t.size)
+        t.colour.as_deref().is_none_or(hex)
+            && (8..=32).contains(&t.size)
             && !t.font.trim().is_empty()
             && t.font.len() <= MAX_FONT
             && t.font
@@ -113,7 +119,18 @@ fn check_part(
     if p.image.is_some() || !face_ok {
         return Err(bad(
             at("text"),
-            "a font of letters, digits, spaces and hyphens, 8-32 px",
+            "a font of letters, digits, spaces and hyphens, 8-32 px, a #rrggbb colour",
+        ));
+    }
+    let slices_ok = p.slices.as_ref().is_none_or(|s| {
+        [&s.left, &s.middle, &s.right].into_iter().all(|path| {
+            dimensions(path, images).is_some_and(|(w, h)| w > 0 && h == u32::from(p.height))
+        })
+    });
+    if !slices_ok {
+        return Err(bad(
+            at("slices"),
+            "three package images at the part's height",
         ));
     }
     Ok(())
@@ -197,6 +214,52 @@ fn button(
     Some(())
 }
 
+/// The name field: its face, its pack colour, and its 3-slice art (the
+/// ends in the transparent side borders at their own size, the middle
+/// repeated in the padding box between them, never under the ends).
+fn name(
+    out: &mut String,
+    root: &str,
+    p: &TitlePart,
+    images: &BTreeMap<String, Vec<u8>>,
+    base: &str,
+) -> Option<()> {
+    let t = p.text.as_ref()?;
+    let weight = if t.bold { "bold" } else { "normal" };
+    let colour = t
+        .colour
+        .as_deref()
+        .map_or(String::new(), |c| format!(" color: {c};"));
+    let mut art = String::new();
+    let [mut pad_l, mut pad_r] = t.inset;
+    if let Some(s) = &p.slices {
+        let (lw, _) = dimensions(&s.left, images)?;
+        let (rw, _) = dimensions(&s.right, images)?;
+        let (mw, _) = dimensions(&s.middle, images)?;
+        let (left, middle, right) = (
+            href(base, &s.left, images)?,
+            href(base, &s.middle, images)?,
+            href(base, &s.right, images)?,
+        );
+        let height = p.height;
+        pad_l = pad_l.saturating_sub(u16::try_from(lw).ok()?);
+        pad_r = pad_r.saturating_sub(u16::try_from(rw).ok()?);
+        let _ = write!(
+            art,
+            " border-style: solid; border-color: transparent; border-width: 0 {rw}px 0 {lw}px; background: url(\"{left}\") left top / {lw}px {height}px no-repeat border-box border-box, url(\"{right}\") right top / {rw}px {height}px no-repeat border-box border-box, url(\"{middle}\") 0 0 / {mw}px {height}px repeat-x padding-box padding-box;"
+        );
+    }
+    let _ = writeln!(
+        out,
+        "  {root} .xfire-titlebar-text {{\n    {} box-sizing: border-box; padding: 0 {pad_r}px 0 {pad_l}px; font-family: \"{}\"; font-size: {}px; font-weight: {weight}; line-height: {}px;{colour}{art} white-space: nowrap; overflow: hidden; text-overflow: ellipsis;\n  }}",
+        placed(p),
+        t.font.trim(),
+        t.size,
+        p.height
+    );
+    Some(())
+}
+
 /// The rules laying `title` in every window `root` selects. `top` is the
 /// content's top edge in the window (the strip row above it is the drag
 /// region). `None` for an image `images` lacks (never for a validated
@@ -227,18 +290,7 @@ pub fn title_css(
                     p.height
                 );
             }
-            TitleRole::Name => {
-                let t = p.text.as_ref()?;
-                let weight = if t.bold { "bold" } else { "normal" };
-                let _ = writeln!(
-                    out,
-                    "  {root} .xfire-titlebar-text {{\n    {} font-family: \"{}\"; font-size: {}px; font-weight: {weight}; line-height: {}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;\n  }}",
-                    placed(p),
-                    t.font.trim(),
-                    t.size,
-                    p.height
-                );
-            }
+            TitleRole::Name => name(&mut out, root, p, images, base)?,
             _ => button(&mut out, root, p, images, base)?,
         }
     }

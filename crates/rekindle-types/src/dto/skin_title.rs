@@ -57,6 +57,29 @@ pub struct TitleText {
     pub size: u8,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub bold: bool,
+    /// The text colour the pack's colour group gives (`Color="UserNameCG"`,
+    /// INI `Text.color=UserNameCG`), `#rrggbb`; `None` keeps the app's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colour: Option<String>,
+    /// The text's left and right inset inside the field, px (Classic v3's
+    /// `UserNameText X="13" IndentRight="13"` in `UserNameField`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub inset: [u16; 2],
+}
+
+const fn is_zero(v: &[u16; 2]) -> bool {
+    v[0] == 0 && v[1] == 0
+}
+
+/// The name field's 3-slice art (Classic v3's `name-background-left /
+/// -middle / -right.gif`, INI `Graphics.left/middle/right`): the ends at
+/// their own size, the middle repeated between them, all one height.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TitleSlices {
+    pub left: String,
+    pub middle: String,
+    pub right: String,
 }
 
 /// One placed part, in window coordinates: `x` is `Start`, `End` or (a
@@ -79,6 +102,9 @@ pub struct TitlePart {
     /// The name field's face.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<TitleText>,
+    /// The name field's 3-slice art, when the pack draws one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slices: Option<TitleSlices>,
 }
 
 /// The title strip: its bottom edge in window px (the strip is the drag

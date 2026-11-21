@@ -39,7 +39,7 @@ mod stack;
 pub mod surfaces;
 pub mod tiles;
 use sources::{component_files, count_dropped};
-mod title;
+pub(crate) mod title;
 mod title_rows;
 pub mod v3;
 
@@ -354,7 +354,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         title_rows::crop(&main, &mut controls, &tally.sources);
         let bitmaps = bitmaps(theme);
         let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, &colours, name, shift);
-        decor::main_window(&main, &components, decode, &mut windows)?;
+        decor::main_window(&main, &components, decode, &colours, &mut windows)?;
     }
     if let Some(pieces) = &chat {
         windows.insert(

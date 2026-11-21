@@ -104,7 +104,7 @@ Dropped
     Xglow.ini: [BuddyView] Text.color_header (line 363)
     Xglow.ini: [ExecuteDownload] Action.click (line 654)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
-  files not read (160):
+  files not read (138):
     ChatSkin.ini
     InGameMainSkin.ini
     InGameSkin.ini
@@ -112,33 +112,23 @@ Dropped
     buttons/Thumbs.db
     buttons/add-down.gif
     buttons/add-hover.gif
-    buttons/add.gif
     buttons/browse-down.gif
     buttons/browse-hover.gif
-    buttons/browse.gif
     buttons/chat-down.gif
     buttons/chat-hover.gif
-    buttons/chat.gif
     buttons/downloads-down.gif
     buttons/downloads-hover.gif
-    buttons/downloads.gif
     buttons/file-hover.gif
-    buttons/file.gif
     buttons/friends-down.gif
     buttons/friends-hover.gif
-    buttons/friends.gif
-    buttons/gripper.gif
     buttons/gripper1.gif
     buttons/header_arrow_down.gif
     buttons/header_arrow_up.gif
     buttons/help-hover.gif
-    buttons/help.gif
     buttons/info-down.gif
     buttons/info-hover.gif
-    buttons/info.gif
     buttons/join-down.gif
     buttons/join-hover.gif
-    buttons/join.gif
     buttons/noadd.gif
     buttons/nobrowse.gif
     buttons/nochat.gif
@@ -150,27 +140,17 @@ Dropped
     buttons/nostop.gif
     buttons/open-down.gif
     buttons/open-hover.gif
-    buttons/open.gif
     buttons/refresh-down.gif
     buttons/refresh-hover.gif
-    buttons/refresh.gif
     buttons/servers-down.gif
     buttons/servers-hover.gif
-    buttons/servers.gif
     buttons/start-down.gif
     buttons/start-hover.gif
-    buttons/start.gif
-    buttons/status-middle.gif
-    buttons/status-right.gif
     buttons/stop-down.gif
     buttons/stop-hover.gif
-    buttons/stop.gif
     buttons/tools-hover.gif
-    buttons/tools.gif
-    buttons/viewinfo.gif
     buttons/viewout.gif
     buttons/xfire-hover.gif
-    buttons/xfire.gif
     chatskin/Thumbs.db
     chatskin/bb.gif
     chatskin/blc.gif
@@ -259,9 +239,7 @@ Dropped
     ingamegraphics/ingame-top-middle.gif
     ingamegraphics/ingame-top-right.gif
     main/Thumbs.db
-    main/buttondivider.gif
     main/leftarrow.gif
-    main/mm.gif
     main/rightarrow.gif
     scrollbar/Thumbs.db
     strings.ini
