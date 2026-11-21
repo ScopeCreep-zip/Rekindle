@@ -141,7 +141,10 @@ async fn dispatch_event<H: InboundHandler>(
                     }
                     return;
                 }
+                // Another's probe: a peer's suspect round, its report that
+                // our route failed it (plan LF6): test the route now.
                 ProbeAnswer::Refuse => {
+                    routes.liveness.route_reported();
                     reply_nak(messages, call_id).await;
                     return;
                 }

@@ -179,3 +179,60 @@ fn six_rounds_make_the_peer_unreachable_and_hearing_it_resets() {
     assert!(!peer.unreachable());
     assert!(peer.fast_path_allowed(at(start, 493)));
 }
+
+/// Plan LF6 (lead decision 39): an ungated route (General, Sending) is
+/// tested each period however much arrives over it.
+#[test]
+fn an_ungated_route_is_tested_each_period_while_inbound_arrives() {
+    let start = Instant::now();
+    let mut route = InboundLiveness::ungated(start, NO_JITTER);
+    let mut tests = 0;
+    for second in 0..=200 {
+        let now = at(start, second);
+        route.heard(now);
+        if route.should_test(now, true, || NO_JITTER) {
+            tests += 1;
+            assert_eq!(
+                route.tested(now, true, NO_JITTER, NO_JITTER),
+                SelfTest::Healthy
+            );
+        }
+    }
+    assert_eq!(tests, 5, "tested at 40, 80, 120, 160 and 200 s");
+    route.route_replaced(at(start, 201), NO_JITTER);
+    route.heard(at(start, 241));
+    assert!(
+        route.should_test(at(start, 241), false, || NO_JITTER),
+        "a replacement keeps the route ungated"
+    );
+}
+
+/// Plan LF6: a peer's report brings the next test forward at once, at most
+/// once per [`REPORT_TEST_GAP`], and never past a scheduled retest.
+#[test]
+fn a_peer_report_tests_at_once_at_most_once_per_gap() {
+    let start = Instant::now();
+    let mut route = InboundLiveness::ungated(start, NO_JITTER);
+    assert!(!route.should_test(at(start, 5), false, || NO_JITTER));
+    assert!(route.reported(at(start, 5)));
+    assert!(route.should_test(at(start, 5), false, || NO_JITTER));
+    assert_eq!(
+        route.tested(at(start, 6), true, NO_JITTER, NO_JITTER),
+        SelfTest::Healthy
+    );
+    assert!(
+        !route.reported(at(start, 14)),
+        "a second report inside the gap"
+    );
+    assert!(!route.should_test(at(start, 14), false, || NO_JITTER));
+    assert!(route.reported(at(start, 15)));
+    assert!(route.should_test(at(start, 15), false, || NO_JITTER));
+    assert_eq!(
+        route.tested(at(start, 16), false, NO_JITTER, NO_JITTER),
+        SelfTest::Retry
+    );
+    assert!(
+        !route.reported(at(start, 30)),
+        "a failing route keeps its retest schedule"
+    );
+}

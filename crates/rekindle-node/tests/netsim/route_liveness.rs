@@ -31,8 +31,7 @@ async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
 }
 
 /// Ada's self-tests of her General route, the one Bo's sends arrive over
-/// (plan RT1: her `Sending` route is self-tested too, on its own schedule,
-/// and is not the route this file's busy/idle rule is about).
+/// (plan RT1: her `Sending` route is self-tested too, on its own schedule).
 fn general_probes(sim: &rekindle_netsim::Netsim) -> u64 {
     sim.own_calls(0, RouteClass::General)
 }
@@ -167,8 +166,13 @@ async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute
     );
 }
 
+/// Plan LF6 (lead decision 39; Linux round 20): inbound does not prove a
+/// route. Ada's General route kept passing some `app_message`s while every
+/// peer's `app_call` to it timed out, and the idle gate skipped each of her
+/// self-tests. Now her General route is self-tested each period, 40 s +
+/// U(0, 13.3 s), however busy, like her `Sending` route.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_healthy_busy_route_is_never_probed_and_an_idle_one_is() {
+async fn a_busy_general_route_is_still_self_tested_each_period() {
     let (sim, nodes) = friends(124).await;
     let ada = key(&nodes[0]);
     let probes = general_probes(&sim);
@@ -176,18 +180,11 @@ async fn a_healthy_busy_route_is_never_probed_and_an_idle_one_is() {
         send(&nodes[1], &ada, &format!("busy {i}")).await;
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
-    assert_eq!(general_probes(&sim), probes, "a busy route is never probed");
-    // Within its period of the last inbound (plan RH1r-c O1): a test that
-    // falls due inside the 40 s idle gate is skipped and rescheduled one
-    // period on, 40 s + U(0, 13.3 s), so the first idle test comes at most
-    // 40 + 40 + 13.3 s after the last arrival, which was 10 s before here.
+    // 300 s of traffic: one test per 40-53.3 s, all passing (no retests).
+    let tested = general_probes(&sim) - probes;
     assert!(
-        eventually(&sim, Duration::from_secs(90), || {
-            let now = general_probes(&sim);
-            async move { now > probes }
-        })
-        .await,
-        "an idle route is tested within its period"
+        (5..=8).contains(&tested),
+        "a busy General route was self-tested each period ({tested} tests in 300 s)"
     );
     assert!(eventually(&sim, LIMIT, || delivered(&nodes[1], &ada, "busy 29")).await);
 }

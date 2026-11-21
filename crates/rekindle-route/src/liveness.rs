@@ -38,6 +38,11 @@ pub const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 pub const RETEST_MIN: Duration = Duration::from_secs(10);
 /// The retest jitter's bound, ms.
 pub const RETEST_JITTER_MS: u64 = 10_000;
+/// The least gap between two self-tests run on a peer's report that our
+/// route failed it (plan LF6, lead decision 39): the report is evidence,
+/// not a verdict, so it only brings the test forward, at most once per
+/// retest interval, whoever sends it.
+pub const REPORT_TEST_GAP: Duration = RETEST_MIN;
 /// Consecutive failed self-tests that declare a route dead (I2P
 /// `MAX_CONSECUTIVE_TEST_FAILURES`, `TunnelCreatorConfig.java#L62`).
 pub const DEAD_AFTER_FAILURES: u32 = 3;
@@ -105,11 +110,17 @@ pub struct InboundLiveness {
     /// The next test follows a network change: one failure is death (O5).
     after_change: bool,
     last_publish: Option<Instant>,
+    /// Whether inbound over the route skips its scheduled test (the idle
+    /// gate). Media keeps it; General and Sending do not (plan LF6).
+    idle_gated: bool,
+    /// When the last test brought forward by a peer's report fell due.
+    last_report: Option<Instant>,
 }
 
 impl InboundLiveness {
     /// A route that came up at `now`; its first test is a period plus
-    /// `jitter` away.
+    /// `jitter` away. Inbound over it skips a scheduled test (the idle
+    /// gate, I2P `TestJob.java#L84-92`).
     #[must_use]
     pub fn new(now: Instant, jitter: Duration) -> Self {
         Self {
@@ -119,15 +130,53 @@ impl InboundLiveness {
             failures: 0,
             after_change: false,
             last_publish: None,
+            idle_gated: true,
+            last_report: None,
+        }
+    }
+
+    /// As [`Self::new`], but tested every period whatever arrives over it
+    /// (plan LF6, lead decision 39): inbound does not prove a route. On
+    /// Linux round 20 the General route kept passing some `app_message`s
+    /// while every peer's `app_call` to it timed out for ~3.5 min, and the
+    /// idle gate skipped each test. Veilid's own gate has the same blind
+    /// spot: any question or statement received marks the route valid
+    /// (0.5.8 `route_stats.rs:475-485`) and a valid route is not
+    /// loopback-tested for 30 s (`route_stats.rs:144-157`).
+    #[must_use]
+    pub fn ungated(now: Instant, jitter: Duration) -> Self {
+        Self {
+            idle_gated: false,
+            ..Self::new(now, jitter)
         }
     }
 
     /// A new route replaced the old one at `now`: its tests start over;
-    /// the publish pacing carries on.
+    /// the publish pacing and the gating carry on.
     pub fn route_replaced(&mut self, now: Instant, jitter: Duration) {
         let last_publish = self.last_publish;
+        let idle_gated = self.idle_gated;
         *self = Self::new(now, jitter);
         self.last_publish = last_publish;
+        self.idle_gated = idle_gated;
+    }
+
+    /// A peer reported at `now` that our route failed it (its suspect
+    /// round's probe reached us, plan RH1r-c S2): the next test falls due
+    /// at once, unless a retest is already scheduled or a report brought
+    /// one forward less than [`REPORT_TEST_GAP`] ago. Returns whether it
+    /// did.
+    pub fn reported(&mut self, now: Instant) -> bool {
+        if self.failures > 0
+            || self
+                .last_report
+                .is_some_and(|at| now.duration_since(at) < REPORT_TEST_GAP)
+        {
+            return false;
+        }
+        self.last_report = Some(now);
+        self.next_test = self.next_test.min(now);
+        true
     }
 
     /// Inbound arrived over the route.
@@ -165,7 +214,8 @@ impl InboundLiveness {
         if now < self.next_test {
             return false;
         }
-        if self.failures == 0
+        if self.idle_gated
+            && self.failures == 0
             && !self.after_change
             && now.duration_since(self.last_inbound) < IDLE_GATE
         {

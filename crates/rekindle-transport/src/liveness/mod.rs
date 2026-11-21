@@ -47,6 +47,13 @@ use tokio::time::Instant;
 /// Offline (`ping_validator.rs:666-690`). One 17-byte probe per 40-53.3 s
 /// per class when healthy; after a failure, retests 10-20 s apart, three
 /// failures and the route is replaced.
+///
+/// General and Sending are tested each period whatever arrives over them
+/// (plan LF6, lead decision 39; [`InboundLiveness::ungated`]); Media keeps
+/// the idle gate, being tested only while a call uses it. A peer's suspect
+/// round probes our General route (S2), so a foreign probe that reaches us
+/// is that peer's report that our route failed it: it brings General's
+/// test forward ([`Liveness::route_reported`]).
 const TESTED: [RouteClass; 3] = [RouteClass::General, RouteClass::Media, RouteClass::Sending];
 
 /// The answer to an inbound call that may be a liveness probe.
@@ -175,6 +182,24 @@ impl Liveness {
         self.network_changed.notify_one();
     }
 
+    /// A peer reported our route failed it: its suspect round's probe
+    /// reached us (S2). The General route's next self-test falls due at once
+    /// (at most once per `REPORT_TEST_GAP`); the test, not the report,
+    /// decides whether the route is dead. Returns whether a test was
+    /// brought forward.
+    pub fn route_reported(&self) -> bool {
+        let brought = self
+            .classes
+            .lock()
+            .get_mut(&RouteClass::General)
+            .is_some_and(|s| s.rules.reported(Instant::now()));
+        if brought {
+            tracing::info!("a peer's probe reported our route; self-testing it now");
+            self.network_changed.notify_one();
+        }
+        brought
+    }
+
     /// Whether any peer should be answering us now (O2): a send to them
     /// awaits its answer.
     fn expecting(&self) -> bool {
@@ -188,7 +213,11 @@ impl Liveness {
         let mut classes = self.classes.lock();
         let state = classes.entry(class).or_insert_with(|| ClassState {
             id: None,
-            rules: InboundLiveness::new(now, Duration::ZERO),
+            rules: if class == RouteClass::Media {
+                InboundLiveness::new(now, Duration::ZERO)
+            } else {
+                InboundLiveness::ungated(now, Duration::ZERO)
+            },
             heard: None,
         });
         if state.id != id {
