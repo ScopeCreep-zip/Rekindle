@@ -27,7 +27,9 @@ pub async fn own(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
     .ok_or(FriendError::Locked)?;
     let token = key_format::friend_request_token(&token)
         .map_err(|e| FriendError::store("friend token", e))?;
-    view(&own, token)
+    let code = view(&own, token)?;
+    tracing::info!("friend code issued");
+    Ok(code)
 }
 
 /// Mint a new friend-request token and store it: codes carrying the old

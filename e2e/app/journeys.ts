@@ -50,7 +50,16 @@ export async function friendCode(b: Browser): Promise<string> {
   await inBuddy(b);
   await openAddFriend(b);
   await (await byText(b, ".form-tab", "Public Key")).click();
-  const code = (await (await shown(b, "output.sec-friend-code-url", NET_WAIT_MS)).getText()).trim();
+  // FC1: a first attach can outlast the Host's 30 s publish wait; the tab
+  // then shows the NotReady error with Try again, which a user presses.
+  const deadline = Date.now() + NET_WAIT_MS;
+  while (!(await present(b, "output.sec-friend-code-url"))) {
+    if (Date.now() >= deadline) throw new Error("output.sec-friend-code-url not displayed");
+    const retry = await b.$(".add-friend-code-status button");
+    if ((await retry.isExisting()) && (await retry.isDisplayed())) await retry.click();
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  const code = (await (await shown(b, "output.sec-friend-code-url")).getText()).trim();
   await closeAddFriend(b);
   return code;
 }

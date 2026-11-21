@@ -21,11 +21,17 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
   const [message, setMessage] = createSignal("Hey, add me!");
   const [error, setError] = createSignal<string | null>(null);
 
-  onMount(async () => {
+  // The Host answers NotReady when our profile is not published within its
+  // wait (a slow first attach, FC1); the error stays on screen with a retry,
+  // never a blank card.
+  async function load(): Promise<void> {
+    setCodeError(null);
     const result = await handleGetFriendCode();
     if (typeof result === "string") setCodeError(result);
     else setOurs(result);
-  });
+  }
+
+  onMount(() => void load());
 
   async function rotate(): Promise<void> {
     setRotating(true);
@@ -51,7 +57,19 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
 
   return (
     <div class="add-friend-section">
-      <Show when={ours()} fallback={<div class="add-friend-code-status" role="status">{codeError() ?? "Reading your friend code…"}</div>}>
+      <Show
+        when={ours()}
+        fallback={
+          <div class="add-friend-code-status" role="status">
+            {codeError() ?? "Reading your friend code…"}
+            <Show when={codeError()}>
+              <button class="form-btn-primary" type="button" onClick={() => void load()}>
+                Try again
+              </button>
+            </Show>
+          </div>
+        }
+      >
         {(view) => <FriendCodeCard view={view()} rotating={rotating()} onRotate={() => void rotate()} />}
       </Show>
       <Show when={ours() && codeError()}>
