@@ -65,8 +65,10 @@ pub struct MergeOutcome {
     pub quarantined: Vec<(OpHash, QuarantineReason)>,
     /// Ops whose deps are missing from the set.
     pub pending: Vec<OpHash>,
-    /// Authors caught signing two ops at one seq.
-    pub equivocators: Vec<PseudonymKey>,
+    /// Authors caught signing two ops at one seq, each with its fork seq
+    /// (the lowest seq it signed twice): its ops from there on are
+    /// dropped, its earlier ones merged as any other (D15).
+    pub equivocators: Vec<(PseudonymKey, u64)>,
     /// The checkpoint hints the applied `Checkpoint` ops carry (plan E3.2
     /// S7c.4); the ones that count for nothing are quarantined above.
     pub hints: Hints,

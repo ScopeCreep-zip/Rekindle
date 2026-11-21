@@ -245,11 +245,29 @@ fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_sta
         ],
     );
     let outcome = merge::merge_outcome(&cert, &set.ops);
-    assert_eq!(outcome.equivocators, vec![first.author().clone()]);
+    assert_eq!(outcome.equivocators, vec![(first.author().clone(), 1)]);
     let verdicts = fates(&set, &outcome);
     let of = |hash| verdicts.iter().find(|v| v.hash == hash).unwrap().fate;
     assert_eq!(of(first.hash()), OpFate::Applied);
     assert_eq!(of(left.hash()), OpFate::Equivocation);
+    assert_eq!(of(right.hash()), OpFate::Equivocation);
+
+    // Review S7m part 5: an equivocator's pre-fork op the merge refused or
+    // holds for a dep keeps that fate; only its ops from the fork on are
+    // `Equivocation`.
+    let mut refused = outcome.clone();
+    refused.applied.retain(|hash| *hash != first.hash());
+    refused.refused.push(first.hash());
+    let verdicts = fates(&set, &refused);
+    let of = |hash| verdicts.iter().find(|v| v.hash == hash).unwrap().fate;
+    assert_eq!(of(first.hash()), OpFate::Quarantined);
+    assert_eq!(of(left.hash()), OpFate::Equivocation);
+    let mut pending = outcome;
+    pending.applied.retain(|hash| *hash != first.hash());
+    pending.pending.push(first.hash());
+    let verdicts = fates(&set, &pending);
+    let of = |hash| verdicts.iter().find(|v| v.hash == hash).unwrap().fate;
+    assert_eq!(of(first.hash()), OpFate::PendingDeps);
     assert_eq!(of(right.hash()), OpFate::Equivocation);
 }
 

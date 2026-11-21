@@ -84,7 +84,7 @@ pub(super) struct RestSet<'a> {
     pub deps: Vec<Vec<Dep>>,
     pub index: HashMap<OpHash, usize>,
     pub pending: Vec<OpHash>,
-    pub equivocators: Vec<PseudonymKey>,
+    pub equivocators: Vec<(PseudonymKey, u64)>,
     /// Per op beside the cut, each author's highest cut seq its deps (and
     /// its `rest` ancestors' deps) cite; `None` for an op with every cut
     /// head in its past.
@@ -266,7 +266,9 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
         deps: Vec::new(),
         index: HashMap::new(),
         pending: Vec::new(),
-        equivocators: fork_at.keys().map(|k| PseudonymKey(*k)).collect(),
+        equivocators: (fork_at.iter())
+            .map(|(author, seq)| (PseudonymKey(*author), *seq))
+            .collect(),
         reach: Vec::new(),
     };
     let mut masks: Vec<u64> = Vec::new();

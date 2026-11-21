@@ -11,8 +11,11 @@
 use std::time::Duration;
 
 use rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD;
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+use rekindle_governance_runtime::op_log::OpFate;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_netsim::Fault;
+use rekindle_types::governance::OpHash;
 
 use crate::harness::{eventually, Community, PASSPHRASE};
 
@@ -106,31 +109,44 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
         );
     }
 
-    // The fork's ops are dropped at one seq on each member; charlie, the
-    // equivocator's next op, must reach them and be dropped there too
-    // (its own WARN at the seq after the fork), not merely be missing.
-    let before: Vec<Vec<(String, u64)>> = (1..3).map(dropped).collect();
+    // The fork as each member stored it: the creator's two ops at one seq,
+    // both held as `Equivocation` (D15), and its earlier ops not.
+    let creator = community.pseudonym(0).await;
+    let before: Vec<Vec<Held>> = creator_ops(&community, &creator).await;
     let fork: Vec<u64> = before
         .iter()
         .enumerate()
-        .map(|(k, ops)| {
-            let seq = ops.iter().map(|(_, seq)| *seq).min();
-            seq.unwrap_or_else(|| panic!("member {} drops the fork's ops", k + 1))
-        })
+        .map(|(k, ops)| fork_seq(ops).unwrap_or_else(|| panic!("member {} stores the fork", k + 1)))
         .collect();
+    for (k, ops) in before.iter().enumerate() {
+        for op in ops {
+            assert_eq!(
+                op.fate == OpFate::Equivocation,
+                op.seq >= fork[k],
+                "member {}: only the creator's ops from the fork on are equivocation: {op:?}",
+                k + 1
+            );
+        }
+    }
+    // Charlie is the creator's next op after the fork (nothing intervenes),
+    // so its seq is the fork's plus one; it must reach each member and be
+    // stored there as `Equivocation`, not merely be missing.
     create_role(&community, 0, "charlie").await;
     let quarantined = eventually(&community.sim, SWEEP_PERIOD * 2 + SEEN, || async {
-        (1..3).all(|i| {
-            dropped(i).iter().any(|(op, seq)| {
-                *seq == fork[i - 1] + 1 && !before[i - 1].iter().any(|(held, _)| held == op)
+        let now = creator_ops(&community, &creator).await;
+        now.iter().enumerate().all(|(k, ops)| {
+            ops.iter().any(|op| {
+                op.seq == fork[k] + 1
+                    && op.fate == OpFate::Equivocation
+                    && !before[k].iter().any(|held| held.hash == op.hash)
             })
         })
     })
     .await;
     assert!(
         quarantined,
-        "each member holds and drops charlie, the equivocator's later op: {:#?}",
-        crate::logs::warned(DROPPED)
+        "each member holds charlie, the equivocator's later op, as equivocation: {:#?}",
+        creator_ops(&community, &creator).await
     );
     for i in 1..3 {
         assert!(
@@ -140,22 +156,41 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
     }
 }
 
-/// `op_log::rebuild_ops`'s WARN for an op it newly drops for its author's
-/// equivocation.
-const DROPPED: &str = "an op of an equivocating author is dropped";
+/// One of the creator's ops as a member's op store holds it.
+#[derive(Debug)]
+struct Held {
+    hash: OpHash,
+    seq: u64,
+    fate: OpFate,
+}
 
-/// The ops member `i` dropped for equivocation, as (op hash hex, seq).
-fn dropped(i: usize) -> Vec<(String, u64)> {
-    let node = format!("node Some({i})");
-    crate::logs::warned(DROPPED)
-        .iter()
-        .filter(|line| line.starts_with(&node))
-        .filter_map(|line| {
-            let field = |name: &str| {
-                line.split_whitespace()
-                    .find_map(|t| t.strip_prefix(name).map(str::to_owned))
-            };
-            Some((field("op=")?, field("seq=")?.parse().ok()?))
-        })
-        .collect()
+/// The creator's (`author`, hex) ops each member (1 and 2) stores.
+async fn creator_ops(community: &Community, author: &str) -> Vec<Vec<Held>> {
+    let mut out = Vec::new();
+    for i in 1..3 {
+        let held = (community.nodes[i].host.governance())
+            .governance_ops(&community.anchor)
+            .await
+            .unwrap_or_default();
+        out.push(
+            held.into_iter()
+                .filter(|op| hex::encode(op.author.0) == author)
+                .map(|op| Held {
+                    hash: op.hash,
+                    seq: op.seq,
+                    fate: op.fate,
+                })
+                .collect(),
+        );
+    }
+    out
+}
+
+/// The fork seq in a member's record: the lowest seq at which it holds two
+/// different ops of the author.
+fn fork_seq(ops: &[Held]) -> Option<u64> {
+    ops.iter()
+        .filter(|a| ops.iter().any(|b| b.seq == a.seq && b.hash != a.hash))
+        .map(|op| op.seq)
+        .min()
 }

@@ -18,8 +18,9 @@ pub(super) struct OpSet<'a> {
     pub past: Ancestry,
     /// Ops whose deps are missing from the set (`pending_deps`).
     pub pending: Vec<OpHash>,
-    /// Authors that signed two different ops at one seq, by key bytes.
-    pub equivocators: Vec<PseudonymKey>,
+    /// Authors that signed two different ops at one seq, each with the
+    /// lowest such seq (its fork).
+    pub equivocators: Vec<(PseudonymKey, u64)>,
 }
 
 /// `past.contains(i, j)`: op `j` is in op `i`'s causal past.
@@ -175,7 +176,9 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
         ops: kept,
         past,
         pending,
-        equivocators: fork_at.into_keys().map(PseudonymKey).collect(),
+        equivocators: (fork_at.into_iter())
+            .map(|(author, seq)| (PseudonymKey(author), seq))
+            .collect(),
     }
 }
 
