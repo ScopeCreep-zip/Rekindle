@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
 import { pageLog, recordPage } from "./probe.ts";
+import { keepIfFailed } from "./kept.ts";
 import { launch, openSession, renewSession, type App } from "./launch.ts";
 import { BUDDY, inBuddy, openAddFriend } from "./nav.ts";
 import { createIdentity, type Row, type WalkState } from "./rows.ts";
@@ -25,7 +26,7 @@ export async function stopPeer(): Promise<void> {
   const p = peer;
   peer = null;
   if (p.app.alive()) await p.b.deleteSession().catch(() => undefined);
-  await p.app.stop();
+  await p.app.stop(keepIfFailed("peer"));
 }
 
 /** A new session on the peer app: a cancelled row's old `p.b` stops working. */

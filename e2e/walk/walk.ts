@@ -14,6 +14,7 @@ import type { Browser } from "webdriverio";
 import { Skip, settleAnimations } from "./helpers.ts";
 import { OUT_DIR, build, launch, openSession, renewSession, type App } from "./launch.ts";
 import { allRows, type RowContext, type WalkState } from "./rows.ts";
+import { keepIfFailed, keptRun, markRowFailed, pruneFailedRuns } from "./kept.ts";
 import { renewPeerSession, stopPeer } from "./rows-peer.ts";
 
 type Status = "pass" | "fail" | "skip";
@@ -86,6 +87,7 @@ async function walk(app: App): Promise<Result[]> {
         note = (await withDeadline(row.run(ctx), ROW_TIMEOUT_MS, new RowTimeout(`row timed out after ${ROW_TIMEOUT_MS} ms`))) ?? "";
       } catch (err) {
         status = err instanceof Skip ? "skip" : "fail";
+        if (status === "fail") markRowFailed();
         note = message(err);
         // A row past its deadline is still running: end the sessions it
         // holds so its next command fails instead of driving the app while
@@ -124,14 +126,17 @@ function printTable(results: Result[]): void {
 async function main(): Promise<number> {
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });
+  pruneFailedRuns();
   if (!process.argv.includes("--no-build")) build();
   const app = await launch();
   let results: Result[] = [];
   try {
     results = await walk(app);
   } finally {
-    await app.stop();
+    await app.stop(keepIfFailed("app"));
   }
+  const kept = keptRun();
+  if (kept) console.log(`[walk] a row failed: each app's data root and log are kept in ${kept}`);
   writeFileSync(
     path.join(OUT_DIR, "report.json"),
     JSON.stringify({ date: new Date().toISOString(), platform: process.platform, results }, null, 2),

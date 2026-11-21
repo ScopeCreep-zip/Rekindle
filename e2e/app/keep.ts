@@ -11,7 +11,7 @@ const RUN_ENV = "REKINDLE_APP_RUN";
 const OUT = path.join(import.meta.dirname, "out");
 
 /** How many earlier runs each evidence folder keeps. */
-const KEEP_RUNS = 5;
+export const KEEP_RUNS = 5;
 
 export function keepDir(): string {
   process.env[RUN_ENV] ??= new Date().toISOString().replace(/[:.]/g, "-");
@@ -22,7 +22,7 @@ export function keepDir(): string {
 const RUN_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 
 /** In `dir`, all but the newest `keep` run folders go; anything not named as a run stays. */
-function pruneRuns(dir: string, keep: number): void {
+export function pruneRuns(dir: string, keep: number): void {
   if (!existsSync(dir)) return;
   const runs = readdirSync(dir)
     .filter((name) => RUN_NAME.test(name) && statSync(path.join(dir, name)).isDirectory())
