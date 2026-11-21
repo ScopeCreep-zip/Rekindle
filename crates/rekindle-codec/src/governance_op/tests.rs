@@ -376,6 +376,7 @@ fn arm_index(entry: &GovernanceEntry) -> usize {
 fn op_ref(b: u8) -> OpRef {
     OpRef {
         op_hash: OpHash([b; 32]),
+        device_key: pk(b).0,
         author: pk(b),
         // A full-length DHT key: `VLD0:` and 43 base64url characters.
         author_record: format!("VLD0:{}", "A".repeat(43)),
@@ -385,6 +386,7 @@ fn op_ref(b: u8) -> OpRef {
 
 fn op(body: GovernanceEntry, deps: Vec<OpRef>) -> GovernanceOp {
     GovernanceOp {
+        device_key: pk(0xA0).0,
         author: pk(0xA0),
         seq: 4,
         prev: Some(OpHash([0xB0; 32])),
@@ -444,6 +446,7 @@ fn unknown_and_retired_body_arms_are_reported() {
     let mut builder = capnp::message::Builder::new_default();
     let mut root = builder.init_root::<governance_op::Builder<'_>>();
     root.set_author(&[1; 32]);
+    root.set_device_key(&[1; 32]);
     root.set_sig(&[2; 64]);
     root.reborrow().init_body().init_obsolete_join_requested();
     let bytes = crate::capnp_codec::pack(&builder);
@@ -457,6 +460,7 @@ fn unknown_and_retired_body_arms_are_reported() {
     let mut builder = capnp::message::Builder::new_default();
     let mut root = builder.init_root::<governance_op::Builder<'_>>();
     root.set_author(&[1; 32]);
+    root.set_device_key(&[1; 32]);
     root.set_sig(&[2; 64]);
     root.reborrow().init_body().init_member_left();
     let mut raw = capnp::serialize::write_message_to_words(&builder);
@@ -526,6 +530,7 @@ fn a_full_frontier_round_trips_under_the_subkey_cap() {
     let heads: Vec<OpRef> = (0..MAX_FRONTIER_REFS)
         .map(|i| OpRef {
             op_hash: OpHash([0xA5; 32]),
+            device_key: pk(u8::try_from(i).unwrap()).0,
             author: pk(u8::try_from(i).unwrap()),
             author_record: "VLD0:".to_string() + &"x".repeat(43) + ":" + &"y".repeat(43),
             author_seq: u64::MAX - i as u64,
@@ -555,6 +560,7 @@ fn a_frontier_carries_its_roster_checksum() {
         fork_refs: Vec::new(),
         heads: vec![OpRef {
             op_hash: OpHash([1; 32]),
+            device_key: pk(2).0,
             author: pk(2),
             author_record: "VLD0:m".into(),
             author_seq: 3,

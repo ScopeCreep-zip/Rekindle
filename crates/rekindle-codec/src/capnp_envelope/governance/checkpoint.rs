@@ -87,6 +87,7 @@ mod tests {
     fn op_ref(n: u8) -> OpRef {
         OpRef {
             op_hash: OpHash([n; 32]),
+            device_key: [n; 32],
             author: PseudonymKey([n; 32]),
             author_record: format!("VLD0:{}", "r".repeat(43)),
             author_seq: u64::from(n) << 40,
@@ -143,6 +144,7 @@ mod tests {
         };
         c.cut = deps[1..].to_vec();
         rekindle_types::governance::GovernanceOp {
+            device_key: [0xA0; 32],
             author: PseudonymKey([0xA0; 32]),
             seq: u64::MAX,
             prev: Some(OpHash([0xB0; 32])),

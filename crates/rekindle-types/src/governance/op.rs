@@ -1,6 +1,6 @@
 //! Governance ops (plan E3.2, ADR 0011): each [`GovernanceEntry`] travels
 //! inside a [`GovernanceOp`] that its author pseudonym signs and appends to
-//! its own member record. Ops form a DAG through `deps`; the op's Lamport
+//! its own member record, signed by its device key (ADR 0022). Ops form a DAG through `deps`; the op's Lamport
 //! value is derived from it (`1 + max(dep lamports)`), never carried.
 //!
 //! Wire form: `schemas/governance_op.capnp`.
@@ -26,6 +26,8 @@ pub struct OpRef {
     /// DHT key of the author's member record.
     pub author_record: String,
     pub author_seq: u64,
+    /// The device key that signed the op (ADR 0022 rule 1).
+    pub device_key: [u8; 32],
 }
 
 /// BLAKE3 over the canonical encoding of a merged state's roster and role
@@ -68,8 +70,11 @@ pub struct GovernanceOp {
     /// trusted for authority).
     pub issued_at: u64,
     pub body: GovernanceEntry,
-    /// Ed25519 by `author` over `GOV_OP ‖ anchor ‖ canonical unsigned bytes`.
+    /// Ed25519 by `device_key` over `GOV_OP ‖ anchor ‖ canonical unsigned bytes`.
     pub sig: [u8; 64],
+    /// The author's device key for this community, which signs the op
+    /// (ADR 0022 rule 1); `author` stays the pseudonym.
+    pub device_key: [u8; 32],
 }
 
 /// A joiner's proof that it holds an invite code (plan E3.2 S10): the

@@ -52,6 +52,7 @@ pub(super) fn readmit(b: u8) -> DeviceReadmit {
 
 fn op(body: GovernanceEntry) -> GovernanceOp {
     GovernanceOp {
+        device_key: [0xA0; 32],
         author: PseudonymKey([0xA0; 32]),
         seq: 0,
         prev: None,

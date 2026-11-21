@@ -43,6 +43,7 @@ async fn author(port: &dyn RecordPort, seed: u8, first_deps: &[OpRef]) -> OpRef 
     let mut last: Option<OpRef> = None;
     for seq in 0..2 {
         let mut op = GovernanceOp {
+            device_key: author.0,
             author: author.clone(),
             seq,
             prev: last.as_ref().map(|r| r.op_hash),
@@ -65,6 +66,7 @@ async fn author(port: &dyn RecordPort, seed: u8, first_deps: &[OpRef]) -> OpRef 
         entries.push(encode_op(&op).expect("encode"));
         last = Some(OpRef {
             op_hash: op_hash(&unsigned, &op.sig),
+            device_key: author.0,
             author: author.clone(),
             author_record: record.clone(),
             author_seq: seq,

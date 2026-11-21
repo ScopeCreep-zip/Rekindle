@@ -86,8 +86,11 @@ pub(crate) fn held_ops(ops: Vec<StoredOp>, heads: &[DeviceHead]) -> Result<Vec<H
                 .ok_or_else(|| format!("op device key {} has no head", op.device_key))?;
             let author = pseudonym_of(&op.author)
                 .ok_or_else(|| format!("op author {:?} is not a pseudonym", op.author))?;
+            let device_key = <[u8; 32]>::try_from(hex::decode(&op.device_key).unwrap_or_default())
+                .map_err(|_| format!("op device key {:?} is not a key", op.device_key))?;
             Ok(HeldOp {
                 hash: OpHash(op.op_hash),
+                device_key,
                 author,
                 author_record: (*record).to_owned(),
                 seq: op.device_seq,
@@ -175,11 +178,8 @@ impl HostGovernance {
         let (owner, db) = self.op_store()?;
         let community = community_id.to_owned();
         let author = hex::encode(op.author.0);
-        // The key that signed the op. Until S7d-keys.1 puts
-        // `GovernanceOp.deviceKey` on the wire, ops are verified against
-        // their author (`rekindle_governance::op::VerifiedOp::verify`), so the
-        // signing key is the pseudonym itself.
-        let device_key = author.clone();
+        // The key that signed the op (`GovernanceOp.deviceKey`, ADR 0022 rule 1).
+        let device_key = hex::encode(op.device_key);
         let stored = StoredOp {
             op_hash: op.hash.0,
             author: author.clone(),

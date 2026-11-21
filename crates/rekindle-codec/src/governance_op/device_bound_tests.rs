@@ -44,12 +44,14 @@ pub(super) fn elements(n: usize) -> Vec<DeviceSetElement> {
 fn worst_case_device_op(n: usize) -> GovernanceOp {
     let extends_elements = elements(n);
     GovernanceOp {
+        device_key: noise(1),
         author: PseudonymKey(noise(1)),
         seq: u64::MAX,
         prev: Some(OpHash(noise(2))),
         deps: (0..GOVERNANCE_OP_MAX_DEPS)
             .map(|i| OpRef {
                 op_hash: OpHash(noise(10 + i)),
+                device_key: noise(100 + i),
                 author: PseudonymKey(noise(100 + i)),
                 author_record: record_text('r'),
                 author_seq: u64::MAX - i as u64,
@@ -92,14 +94,14 @@ fn the_extended_set_bound_is_what_fits_one_op() {
 }
 
 /// The derivation's two terms (`MAX_DEVICE_SET_ELEMENTS`' doc) are the
-/// encoding's: the rest of the op is 1,602 words, each element 7.
+/// encoding's: the rest of the op is 1,928 words, each element 7.
 #[test]
 fn the_bounds_derivation_matches_the_encoding() {
     let words = |n| op_unsigned_bytes(&worst_case_device_op(n)).len() / 8;
-    assert_eq!(words(0), 1_602);
+    assert_eq!(words(0), 1_928);
     assert_eq!(words(2) - words(1), 7);
     assert_eq!(
         words(MAX_DEVICE_SET_ELEMENTS),
-        1_602 + 7 * MAX_DEVICE_SET_ELEMENTS
+        1_928 + 7 * MAX_DEVICE_SET_ELEMENTS
     );
 }

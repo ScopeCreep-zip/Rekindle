@@ -44,6 +44,7 @@ fn newer_kind_op(world: &mut World, author: &Member, signer: &Member) -> HeldOp 
     let (unsigned, sig, wire) = newer_kind_wire(&op_unsigned_bytes(op.op()), 0x7fff, signer);
     let op_ref = OpRef {
         op_hash: op_hash(&unsigned, &sig),
+        device_key: author.author().0,
         author: author.author(),
         author_record: author.record(),
         author_seq: op.op().seq,

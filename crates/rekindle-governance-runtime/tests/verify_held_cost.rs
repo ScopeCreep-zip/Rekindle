@@ -46,6 +46,7 @@ fn chain(len: u64) -> Vec<HeldOp> {
     let mut last: Option<OpRef> = None;
     for seq in 0..len {
         let mut op = GovernanceOp {
+            device_key: author.0,
             author: author.clone(),
             seq,
             prev: last.as_ref().map(|r| r.op_hash),
@@ -58,6 +59,7 @@ fn chain(len: u64) -> Vec<HeldOp> {
         op.sig = key.sign(&op_signing_bytes(ANCHOR, &unsigned)).to_bytes();
         let op_ref = OpRef {
             op_hash: op_hash(&unsigned, &op.sig),
+            device_key: author.0,
             author: author.clone(),
             author_record: RECORD.to_owned(),
             author_seq: seq,

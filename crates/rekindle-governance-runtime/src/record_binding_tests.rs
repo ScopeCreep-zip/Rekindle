@@ -86,6 +86,7 @@ fn signed(
         .map(|o| o.op_ref(&author_record(cert, &state, o.author()).unwrap()))
         .collect();
     let mut op = GovernanceOp {
+        device_key: author.0,
         author,
         seq,
         prev,
@@ -98,6 +99,7 @@ fn signed(
     op.sig = key.sign(&op_signing_bytes(ANCHOR, &unsigned)).to_bytes();
     HeldOp {
         hash: op_hash(&unsigned, &op.sig),
+        device_key: op.device_key,
         author: op.author.clone(),
         author_record: String::new(),
         seq,

@@ -50,6 +50,8 @@ pub enum OpFate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeldOp {
     pub hash: OpHash,
+    /// The device key that signed the op (ADR 0022 rule 1).
+    pub device_key: [u8; 32],
     pub author: PseudonymKey,
     /// The author's member record (the chain the op lives in).
     pub author_record: String,
@@ -259,6 +261,7 @@ pub fn build_op(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut op = GovernanceOp {
+        device_key: author.0,
         author,
         seq,
         prev,
@@ -302,6 +305,7 @@ fn cited(
 pub fn held(op: &VerifiedOp, author_record: String, encoded: Vec<u8>, fate: OpFate) -> HeldOp {
     HeldOp {
         hash: op.hash(),
+        device_key: op.op().device_key,
         author: op.author().clone(),
         author_record,
         seq: op.op().seq,
@@ -527,6 +531,7 @@ pub fn fit_fork_proof(mut frontier: Frontier) -> Frontier {
 fn op_ref_of(op: &HeldOp) -> OpRef {
     OpRef {
         op_hash: op.hash,
+        device_key: op.device_key,
         author: op.author.clone(),
         author_record: op.author_record.clone(),
         author_seq: op.seq,

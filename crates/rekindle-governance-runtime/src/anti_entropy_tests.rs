@@ -17,6 +17,7 @@ fn frontier() -> Vec<u8> {
         fork_refs: Vec::new(),
         heads: vec![OpRef {
             op_hash: OpHash([7; 32]),
+            device_key: [1; 32],
             author: PseudonymKey([1; 32]),
             author_record: "VLD0:m".into(),
             author_seq: 0,
@@ -65,6 +66,7 @@ async fn a_head_that_did_not_fetch_leaves_the_frontier_unread() {
 /// checks the hash, not the signature) and the frontier naming it.
 fn fetchable() -> (Vec<u8>, Vec<u8>) {
     let op = rekindle_types::governance::GovernanceOp {
+        device_key: [1; 32],
         author: PseudonymKey([1; 32]),
         seq: 0,
         prev: None,
@@ -86,6 +88,7 @@ fn fetchable() -> (Vec<u8>, Vec<u8>) {
         fork_refs: Vec::new(),
         heads: vec![OpRef {
             op_hash: hash,
+            device_key: [1; 32],
             author: PseudonymKey([1; 32]),
             author_record: "VLD0:m".into(),
             author_seq: 0,

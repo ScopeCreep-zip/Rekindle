@@ -106,6 +106,7 @@ async fn the_joiner_s_key_is_a_committed_row_until_the_joiner_departs() {
         pseudonym: joiner.clone(),
         member_joined: rekindle_types::governance::OpRef {
             op_hash: OpStamp::MIN.hash,
+            device_key: PseudonymKey::from_hex_lossy(&joiner).0,
             author: PseudonymKey::from_hex_lossy(&joiner),
             author_record: "r".into(),
             author_seq: 1,

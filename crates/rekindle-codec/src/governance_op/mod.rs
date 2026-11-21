@@ -70,6 +70,8 @@ pub enum Uninterpretable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownOp {
     pub author: PseudonymKey,
+    /// The device key whose signature `sig` is (ADR 0022 rule 1).
+    pub device_key: [u8; 32],
     pub seq: u64,
     pub issued_at: u64,
     pub sig: [u8; 64],
@@ -191,11 +193,13 @@ pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
         Some(OpHash(fixed(prev, "governance op prev")?))
     };
     let author = PseudonymKey(fixed(data_field(r.get_author())?, "governance op author")?);
+    let device_key = fixed(data_field(r.get_device_key())?, "governance op device key")?;
     let sig = fixed(data_field(r.get_sig())?, "governance op sig")?;
     let unsigned = received_unsigned(r).map_err(|e| capnp_err(&e))?;
     let unknown = |what| {
         Ok(ReadOp::Unknown(UnknownOp {
             author: author.clone(),
+            device_key,
             seq: r.get_seq(),
             issued_at: r.get_issued_at(),
             sig,
@@ -221,6 +225,7 @@ pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
         issued_at: r.get_issued_at(),
         body,
         sig,
+        device_key,
     };
     if op_unsigned_bytes(&op) != unsigned {
         return unknown(Uninterpretable::Version);
@@ -354,6 +359,7 @@ fn build(op: &GovernanceOp) -> capnp::message::Builder<capnp::message::HeapAlloc
         write_op_ref(deps.reborrow().get(i), dep);
     }
     b.set_issued_at(op.issued_at);
+    b.set_device_key(&op.device_key);
     write_governance_entry(b.reborrow().init_body(), &op.body);
     builder
 }
@@ -363,6 +369,7 @@ pub(crate) fn write_op_ref(mut b: op_ref::Builder<'_>, r: &OpRef) {
     b.set_author(&r.author.0);
     b.set_author_record(r.author_record.as_str());
     b.set_author_seq(r.author_seq);
+    b.set_device_key(&r.device_key);
 }
 
 pub(crate) fn read_op_ref(r: op_ref::Reader<'_>) -> Result<OpRef, CodecError> {
@@ -371,6 +378,7 @@ pub(crate) fn read_op_ref(r: op_ref::Reader<'_>) -> Result<OpRef, CodecError> {
         author: PseudonymKey(fixed(data_field(r.get_author())?, "op ref author")?),
         author_record: text_to_string(r.get_author_record().map_err(|e| capnp_err(&e))?)?,
         author_seq: r.get_author_seq(),
+        device_key: fixed(data_field(r.get_device_key())?, "op ref device key")?,
     })
 }
 

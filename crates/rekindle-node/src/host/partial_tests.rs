@@ -113,6 +113,7 @@ async fn a_partial_community_answers_bootstrap_partial() {
         pseudonym: "00".repeat(32),
         member_joined: OpRef {
             op_hash: ops[0].hash,
+            device_key: ops[0].device_key,
             author: ops[0].author.clone(),
             author_record: CREATOR_RECORD.into(),
             author_seq: 0,

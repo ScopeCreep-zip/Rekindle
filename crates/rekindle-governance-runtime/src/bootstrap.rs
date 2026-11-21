@@ -405,6 +405,7 @@ mod tests {
     fn op_ref(i: u8) -> OpRef {
         OpRef {
             op_hash: OpHash([i; 32]),
+            device_key: [i.wrapping_add(1); 32],
             author: PseudonymKey([i.wrapping_add(1); 32]),
             author_record: record_key(i),
             author_seq: u64::MAX,
@@ -437,6 +438,7 @@ mod tests {
     /// A re-join `MemberJoined` (seq 2) by `author`, as held.
     fn rejoin(author: PseudonymKey) -> (HeldOp, OpRef) {
         let op = rekindle_types::governance::GovernanceOp {
+            device_key: author.0,
             author: author.clone(),
             seq: 2,
             prev: None,
@@ -453,6 +455,7 @@ mod tests {
         };
         let held = HeldOp {
             hash: OpHash([9; 32]),
+            device_key: author.0,
             author: author.clone(),
             author_record: record_key(7),
             seq: 2,
@@ -463,6 +466,7 @@ mod tests {
         };
         let op_ref = OpRef {
             op_hash: held.hash,
+            device_key: author.0,
             author,
             author_record: record_key(7),
             author_seq: 2,

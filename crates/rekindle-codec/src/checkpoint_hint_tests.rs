@@ -25,6 +25,7 @@ fn request(key: &SigningKey, invite_code: Option<&str>) -> CheckpointHintRequest
 fn op_ref(i: u8) -> OpRef {
     OpRef {
         op_hash: OpHash([i; 32]),
+        device_key: [i.wrapping_add(1); 32],
         author: PseudonymKey([i.wrapping_add(1); 32]),
         author_record: format!("VLD0:{}:{}", "A".repeat(43), "b".repeat(43)),
         author_seq: u64::MAX,

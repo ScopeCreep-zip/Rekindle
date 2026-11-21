@@ -44,6 +44,7 @@ fn partial() -> Vec<u8> {
 fn head() -> OpRef {
     OpRef {
         op_hash: OpHash([7; 32]),
+        device_key: [8; 32],
         author: PseudonymKey([8; 32]),
         author_record: "VLD0:head".into(),
         author_seq: 3,

@@ -76,18 +76,18 @@ pub fn op_signing_bytes(anchor: &str, unsigned: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Whether `sig` is `author`'s signature over op `unsigned` of community
-/// `anchor`: an op's authenticity alone, for one this reader cannot
+/// Whether `sig` is `device_key`'s signature over op `unsigned` of community
+/// `anchor` (ADR 0022 rule 1: a device key signs every op): an op's authenticity alone, for one this reader cannot
 /// interpret and so cannot verify further (D15: it quarantines the
 /// community only when its author signed it).
 #[must_use]
 pub fn op_signature_holds(
     anchor: &str,
-    author: &PseudonymKey,
+    device_key: &[u8; 32],
     unsigned: &[u8],
     sig: &[u8; 64],
 ) -> bool {
-    verify_signature(&author.0, &op_signing_bytes(anchor, unsigned), sig).is_ok()
+    verify_signature(device_key, &op_signing_bytes(anchor, unsigned), sig).is_ok()
 }
 
 /// The bytes of a joiner's invite proof (plan E3.2 S10): `INVITE_PROOF ‖
@@ -120,6 +120,7 @@ pub fn invite_proof_bytes(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DepFacts<'a> {
     pub author: &'a PseudonymKey,
+    pub device_key: &'a [u8; 32],
     pub seq: u64,
     pub lamport: u64,
 }
@@ -146,7 +147,7 @@ impl VerifiedOp {
         unsigned: &[u8],
         known: impl Fn(&OpHash) -> Option<DepFacts<'a>>,
     ) -> Result<Self, OpRejection> {
-        verify_signature(&op.author.0, &op_signing_bytes(anchor, unsigned), &op.sig)
+        verify_signature(&op.device_key, &op_signing_bytes(anchor, unsigned), &op.sig)
             .map_err(|_| OpRejection::BadSignature)?;
         check_invite_proof(anchor, &op)?;
         check_owner_proof(anchor, &op)?;
@@ -154,7 +155,10 @@ impl VerifiedOp {
         let mut lamport = 0;
         for dep in &op.deps {
             let found = known(&dep.op_hash).ok_or(OpRejection::MissingDep(dep.op_hash))?;
-            if *found.author != dep.author || found.seq != dep.author_seq {
+            if *found.author != dep.author
+                || found.seq != dep.author_seq
+                || *found.device_key != dep.device_key
+            {
                 return Err(OpRejection::DepMismatch(dep.op_hash));
             }
             lamport = lamport.max(found.lamport);
@@ -173,6 +177,7 @@ impl VerifiedOp {
     pub fn facts(&self) -> DepFacts<'_> {
         DepFacts {
             author: &self.op.author,
+            device_key: &self.op.device_key,
             seq: self.op.seq,
             lamport: self.lamport,
         }
@@ -220,6 +225,7 @@ impl VerifiedOp {
             author: self.op.author.clone(),
             author_record: author_record.to_owned(),
             author_seq: self.op.seq,
+            device_key: self.op.device_key,
         }
     }
 

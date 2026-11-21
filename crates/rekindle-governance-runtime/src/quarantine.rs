@@ -63,7 +63,7 @@ pub fn newly_uninterpretable(
             };
             let authentic = op_hash(&op.unsigned, &op.sig) == h.hash
                 && op.author == h.author
-                && op_signature_holds(community_id, &op.author, &op.unsigned, &op.sig);
+                && op_signature_holds(community_id, &op.device_key, &op.unsigned, &op.sig);
             if !authentic || !state.members.contains_key(&op.author) {
                 tracing::warn!(
                     community = community_id,

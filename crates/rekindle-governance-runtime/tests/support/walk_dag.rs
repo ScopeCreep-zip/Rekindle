@@ -40,6 +40,7 @@ fn chain(seed: u8, record: &str, len: u64, first_deps: &[OpRef]) -> (Vec<Vec<u8>
             .clone()
             .map_or_else(|| first_deps.to_vec(), |prev| vec![prev]);
         let mut op = GovernanceOp {
+            device_key: author.0,
             author: author.clone(),
             seq,
             prev: last.as_ref().map(|r| r.op_hash),
@@ -54,6 +55,7 @@ fn chain(seed: u8, record: &str, len: u64, first_deps: &[OpRef]) -> (Vec<Vec<u8>
         log.push(encode_op(&op).unwrap());
         last = Some(OpRef {
             op_hash: hash,
+            device_key: author.0,
             author: author.clone(),
             author_record: record.to_owned(),
             author_seq: seq,

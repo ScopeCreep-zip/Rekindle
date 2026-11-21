@@ -105,6 +105,7 @@ async fn a_walk_level_holds_at_most_sixteen_fetches_in_flight() {
 fn held_at(author: u8, record: &str, hash: u8) -> HeldOp {
     HeldOp {
         hash: OpHash([hash; 32]),
+        device_key: rekindle_types::id::PseudonymKey([author; 32]).0,
         author: rekindle_types::id::PseudonymKey([author; 32]),
         author_record: record.into(),
         seq: 1,
@@ -122,6 +123,7 @@ fn held_at(author: u8, record: &str, hash: u8) -> HeldOp {
 fn a_missing_op_is_looked_for_at_every_record_of_its_author() {
     let wanted = OpRef {
         op_hash: OpHash([9; 32]),
+        device_key: [1; 32],
         author: rekindle_types::id::PseudonymKey([1; 32]),
         author_record: "first".into(),
         author_seq: 0,

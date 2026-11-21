@@ -113,6 +113,7 @@ mod tests {
     fn accepted() -> OpRef {
         OpRef {
             op_hash: OpHash([9; 32]),
+            device_key: [10; 32],
             author: PseudonymKey([10; 32]),
             author_record: format!("VLD0:{}", "r".repeat(43)),
             author_seq: 3,

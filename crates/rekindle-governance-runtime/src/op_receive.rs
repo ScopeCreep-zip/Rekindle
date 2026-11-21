@@ -30,6 +30,7 @@ pub fn held_from_encoded(op_ref: &OpRef, encoded: Vec<u8>) -> Option<HeldOp> {
 struct OpEnvelope {
     hash: OpHash,
     author: PseudonymKey,
+    device_key: [u8; 32],
     seq: u64,
     issued_at: u64,
 }
@@ -40,12 +41,14 @@ impl OpEnvelope {
             ReadOp::Known(d) => Self {
                 hash: op_hash(&d.unsigned, &d.op.sig),
                 author: d.op.author,
+                device_key: d.op.device_key,
                 seq: d.op.seq,
                 issued_at: d.op.issued_at,
             },
             ReadOp::Unknown(u) => Self {
                 hash: op_hash(&u.unsigned, &u.sig),
                 author: u.author,
+                device_key: u.device_key,
                 seq: u.seq,
                 issued_at: u.issued_at,
             },
@@ -55,6 +58,7 @@ impl OpEnvelope {
     fn held(self, author_record: String, encoded: Vec<u8>) -> HeldOp {
         HeldOp {
             hash: self.hash,
+            device_key: self.device_key,
             author: self.author,
             author_record,
             seq: self.seq,
@@ -136,6 +140,7 @@ pub async fn store_received_op<D: GovernanceRuntimeDeps>(
     }
     let mut op = HeldOp {
         hash,
+        device_key: decoded.op.device_key,
         author: decoded.op.author.clone(),
         author_record,
         seq: decoded.op.seq,

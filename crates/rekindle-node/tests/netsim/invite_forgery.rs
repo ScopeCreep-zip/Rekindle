@@ -35,6 +35,7 @@ async fn invite_ref(community: &Community, code_hash: &str) -> OpRef {
         })
         .map(|h| OpRef {
             op_hash: h.hash,
+            device_key: h.device_key,
             author: h.author.clone(),
             author_record: h.author_record.clone(),
             author_seq: h.seq,
@@ -70,6 +71,7 @@ async fn an_op_log_reader_without_the_code_is_admitted_nowhere() {
     let record = vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT));
     let proof = invite_proof_bytes(&anchor, &author, &record, &code_hash);
     let joined = GovernanceOp {
+        device_key: author.0,
         author: author.clone(),
         seq: 0,
         prev: None,

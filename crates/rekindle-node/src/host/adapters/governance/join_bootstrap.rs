@@ -173,6 +173,7 @@ impl HostGovernance {
             pseudonym: hex::encode(joined.author.0),
             member_joined: OpRef {
                 op_hash: joined.hash,
+                device_key: joined.device_key,
                 author: joined.author.clone(),
                 author_record: joined.author_record.clone(),
                 author_seq: joined.seq,

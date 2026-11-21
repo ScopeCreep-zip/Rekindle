@@ -148,6 +148,7 @@ fn a_refused_op_is_quarantined_and_a_verified_op_carries_its_lamport() {
 
 fn joined(key: &SigningKey, code_hash: Option<&str>) -> GovernanceOp {
     GovernanceOp {
+        device_key: key.verifying_key().to_bytes(),
         author: PseudonymKey(key.verifying_key().to_bytes()),
         seq: 0,
         prev: None,
@@ -423,6 +424,7 @@ fn a_fork_proof_too_large_for_the_subkey_keeps_what_fits() {
     use rekindle_types::dht_layout::member_record::MAX_SUBKEY_VALUE_LEN;
     let op_ref = |b: u8| OpRef {
         op_hash: OpHash([b; 32]),
+        device_key: [3; 32],
         author: PseudonymKey([3; 32]),
         author_record: "VLD0:m".into(),
         author_seq: 6,

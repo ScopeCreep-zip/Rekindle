@@ -1,7 +1,8 @@
 @0xccf28eb901c53531;
 
 # A signed governance op (ADR 0011, plan E3.2): one entry in its author's
-# op chain, citing the ops it causally follows. The author pseudonym signs
+# op chain, citing the ops it causally follows. The device key `deviceKey`
+# (ADR 0022 rule 1; `author` stays the pseudonym) signs
 # `rekindle-gov-op-v1 ‖ community ‖ unsigned`, where `unsigned` is this
 # message re-encoded canonically (packed, fields in schema order) with
 # `sig` unset; the op hash is BLAKE3 derive_key(rekindle-gov-op-hash-v1)
@@ -16,6 +17,7 @@ struct OpRef {
   author @1 :Data;             # the author pseudonym, 32 bytes
   authorRecord @2 :Text;       # DHT key of the author's member record
   authorSeq @3 :UInt64;
+  deviceKey @4 :Data;          # the device key that signed the op, 32 bytes (ADR 0022 rule 1)
 }
 
 # A member record's subkey 3 (`member_record::FRONTIER`): the heads of the
@@ -45,6 +47,7 @@ struct GovernanceOp {
   issuedAt @4 :UInt64;         # author's seconds at issue; a tie-break only
   body @5 :Gov.GovernanceEntry;
   sig @6 :Data;                # Ed25519, 64 bytes; unset in the unsigned form
+  deviceKey @7 :Data;          # the author's device key that signs the op, 32 bytes (ADR 0022 rule 1)
 }
 
 # The community's genesis certificate, the anchor's subkey 0 (plan E3.2,

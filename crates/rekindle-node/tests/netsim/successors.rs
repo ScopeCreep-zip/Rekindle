@@ -42,6 +42,7 @@ async fn held_ref(community: &Community, pick: impl Fn(&GovernanceEntry) -> bool
                 let at = d.op.issued_at;
                 let r = OpRef {
                     op_hash: h.hash,
+                    device_key: h.device_key,
                     author: h.author.clone(),
                     author_record: h.author_record.clone(),
                     author_seq: h.seq,
@@ -94,6 +95,7 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
         .to_bytes();
     let record = vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT));
     let joined = GovernanceOp {
+        device_key: author.0,
         author: author.clone(),
         seq: 0,
         prev: None,
@@ -162,6 +164,7 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
     // The manager names a successor at a causal position where it holds
     // MANAGE_COMMUNITY.
     let successor = GovernanceOp {
+        device_key: author.0,
         author: author.clone(),
         seq: 1,
         prev: Some(joined_hash),
@@ -169,6 +172,7 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
         deps: vec![
             OpRef {
                 op_hash: joined_hash,
+                device_key: author.0,
                 author: author.clone(),
                 author_record: record.clone(),
                 author_seq: 0,

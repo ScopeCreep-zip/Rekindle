@@ -105,6 +105,7 @@ async fn outsider_is_refused_and_not_stored(
         &anchor,
         &joiner,
         GovernanceOp {
+            device_key: author.0,
             author: author.clone(),
             seq: 0,
             prev: None,
@@ -132,6 +133,7 @@ async fn outsider_is_refused_and_not_stored(
             pseudonym: hex::encode(author.0),
             member_joined: OpRef {
                 op_hash: hash,
+                device_key: author.0,
                 author: author.clone(),
                 author_record: record.clone(),
                 author_seq: 0,
@@ -157,6 +159,7 @@ async fn outsider_is_refused_and_not_stored(
             anchor: anchor.clone(),
             member_joined: OpRef {
                 op_hash: hash,
+                device_key: author.0,
                 author: author.clone(),
                 author_record: record,
                 author_seq: 0,

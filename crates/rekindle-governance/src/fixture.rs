@@ -96,6 +96,7 @@ pub fn op(
     hasher.update(&tag.to_le_bytes());
     let hash = OpHash(*hasher.finalize().as_bytes());
     let op = GovernanceOp {
+        device_key: author.0,
         author: author.clone(),
         seq,
         prev,

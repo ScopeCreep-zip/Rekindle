@@ -130,6 +130,9 @@ impl CutIndex {
         }
         Some(crate::op::DepFacts {
             author: &r.author,
+            // The op hash matched above covers the op's device key, so the
+            // locator's is the op's.
+            device_key: &r.device_key,
             seq: *seq,
             lamport: *self.lamports.get(&r.author.0)?,
         })

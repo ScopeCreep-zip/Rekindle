@@ -38,6 +38,7 @@ fn body(height: u64, prev: Option<OpRef>, electorate: &[PseudonymKey]) -> Checkp
 /// unsigned bytes (the signature covers exactly those bytes), verified.
 fn endorse(signer: u8, seq: u64, body: &Checkpoint) -> SignedEndorsement {
     let mut op = GovernanceOp {
+        device_key: pk(signer).0,
         author: pk(signer),
         seq,
         prev: None,
@@ -81,6 +82,7 @@ fn a_hint_chain_is_checked_down_to_the_genesis_cert() {
     let electorate = [pk(1), pk(2), pk(3)];
     let prev = OpRef {
         op_hash: one.hash,
+        device_key: pk(1).0,
         author: pk(1),
         author_record: "VLD0:creator-record".into(),
         author_seq: 1,
@@ -116,6 +118,7 @@ fn a_hint_chain_is_checked_down_to_the_genesis_cert() {
 fn an_endorsement_whose_signature_fails_is_refused() {
     let e = endorse(1, 1, &body(1, None, &[pk(1)]));
     let op = GovernanceOp {
+        device_key: pk(1).0,
         author: pk(1),
         seq: 1,
         prev: None,

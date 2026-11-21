@@ -78,6 +78,7 @@ fn acceptance(rn: &PseudonymKey, cn: &PseudonymKey) -> SuccessorState {
             creator_set_hash: Some([9; 32]),
             accepts: Some(rekindle_types::governance::OpRef {
                 op_hash: OpHash([7; 32]),
+                device_key: pk(&key(1)).0,
                 author: pk(&key(1)),
                 author_record: "VLD0:rec".into(),
                 author_seq: 1,

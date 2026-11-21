@@ -29,8 +29,10 @@ pub const CHECKPOINT_HINT_REQUEST_MAX_BYTES: usize = 512;
 /// answered, and the joiner replays in full.
 pub const MAX_HINT_ENDORSEMENTS: usize = 128;
 
-/// Largest encoded answer.
-pub const CHECKPOINT_HINT_RESPONSE_MAX_BYTES: usize = 30_000;
+/// Largest encoded answer: [`MAX_HINT_ENDORSEMENTS`] + 1 longest locators,
+/// each naming its op's 32-byte device key (ADR 0022 rule 1), within the
+/// `app_call` cap with the envelope around it.
+pub const CHECKPOINT_HINT_RESPONSE_MAX_BYTES: usize = 31_000;
 
 /// A community id (an anchor record key) at its longest text form, with room.
 const MAX_COMMUNITY: usize = 160;

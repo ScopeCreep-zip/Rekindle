@@ -27,6 +27,7 @@ use crate::host::Host;
 fn locator(op: &HeldOp) -> OpRef {
     OpRef {
         op_hash: op.hash,
+        device_key: op.device_key,
         author: op.author.clone(),
         author_record: CREATOR_RECORD.into(),
         author_seq: op.seq,
@@ -39,6 +40,7 @@ fn signed(key: &SigningKey, prev: &HeldOp, deps: &[&HeldOp], body: GovernanceEnt
     let author = PseudonymKey(key.verifying_key().to_bytes());
     let seq = prev.seq + 1;
     let mut op = GovernanceOp {
+        device_key: author.0,
         author: author.clone(),
         seq,
         prev: Some(prev.hash),
@@ -51,6 +53,7 @@ fn signed(key: &SigningKey, prev: &HeldOp, deps: &[&HeldOp], body: GovernanceEnt
     op.sig = rekindle_secrets::derive::sign_with_pseudonym(key, &op_signing_bytes("c1", &unsigned));
     HeldOp {
         hash: op_hash(&unsigned, &op.sig),
+        device_key: author.0,
         author,
         author_record: CREATOR_RECORD.into(),
         seq,

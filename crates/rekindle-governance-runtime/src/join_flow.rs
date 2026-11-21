@@ -367,6 +367,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     );
     let invite_ref = rekindle_types::governance::OpRef {
         op_hash: link.invite_op,
+        device_key: inviter_pseudonym.0,
         author: inviter_pseudonym.clone(),
         author_record: invite.inviter_member_record.clone(),
         author_seq: link.invite_op_seq,

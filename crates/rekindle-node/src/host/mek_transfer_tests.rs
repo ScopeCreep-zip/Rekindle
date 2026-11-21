@@ -165,6 +165,7 @@ async fn deliver(host: &Host, joiner: &str) {
         pseudonym: joiner.to_owned(),
         member_joined: rekindle_types::governance::OpRef {
             op_hash: OpStamp::MIN.hash,
+            device_key: PseudonymKey::from_hex_lossy(joiner).0,
             author: PseudonymKey::from_hex_lossy(joiner),
             author_record: "r".into(),
             author_seq: 1,

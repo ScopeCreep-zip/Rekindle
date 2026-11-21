@@ -10,6 +10,7 @@ use super::SealedPages;
 fn head(author: &PseudonymKey, seq: u64) -> OpRef {
     OpRef {
         op_hash: OpHash(*blake3::hash(&seq.to_le_bytes()).as_bytes()),
+        device_key: author.0,
         author: author.clone(),
         author_record: "M".into(),
         author_seq: seq,

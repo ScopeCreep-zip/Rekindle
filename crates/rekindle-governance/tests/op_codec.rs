@@ -14,6 +14,7 @@ const ANCHOR: &str = "VLD0:anchor";
 fn signed_op() -> GovernanceOp {
     let key = SigningKey::from_bytes(&[7; 32]);
     let mut op = GovernanceOp {
+        device_key: key.verifying_key().to_bytes(),
         author: PseudonymKey(key.verifying_key().to_bytes()),
         seq: 0,
         prev: None,

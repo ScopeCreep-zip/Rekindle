@@ -23,16 +23,18 @@ use crate::id::PseudonymKey;
 /// - What is measured against it: the codec seals an op by reading its
 ///   canonical unsigned segment of `W` words in literal packed framing,
 ///   `10 + 8W + 2⌈W/256⌉` bytes (`rekindle-codec` `governance_op::seal_op`).
-/// - The rest of the op at its largest is 1,602 words: 64 deps
-///   (`GOVERNANCE_OP_MAX_DEPS`) naming full-length record keys, full-length
+/// - The rest of the op at its largest is 1,928 words: 64 deps
+///   (`GOVERNANCE_OP_MAX_DEPS`) naming full-length record keys and their
+///   ops' 32-byte device keys, the op's own device key, full-length
 ///   device record and owner texts, every fixed field set.
 /// - One element is 7 words: its 3-word struct (the kind's word, the
 ///   incarnation, the key's pointer) and the 32-byte key's 4 words.
 ///
-/// `W = 1,602 + 7n`; n = 355 gives `W` = 4,087 and 32,738 bytes, n = 356
-/// gives 32,794 > 32,768. `rekindle-codec`'s `device_bound_tests` hold both
+/// `W = 1,928 + 7n`; n = 308 gives `W` = 4,084 and 32,714 bytes, n = 309
+/// gives 32,770 > 32,768 (S7d-keys K4a: the device keys on `GovernanceOp`
+/// and `OpRef` took 326 words from 355). `rekindle-codec`'s `device_bound_tests` hold both
 /// terms and both sides of the bound.
-pub const MAX_DEVICE_SET_ELEMENTS: usize = 355;
+pub const MAX_DEVICE_SET_ELEMENTS: usize = 308;
 
 /// What an element of a member's endorsement set is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

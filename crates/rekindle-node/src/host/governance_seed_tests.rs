@@ -36,12 +36,14 @@ pub(super) fn signed_chain(
     for (seq, body) in (0u64..).zip(bodies) {
         let prev = out.last().map(|p| (p.hash, p.seq));
         let mut op = GovernanceOp {
+            device_key: author.0,
             author: author.clone(),
             seq,
             prev: prev.map(|(hash, _)| hash),
             deps: prev
                 .map(|(op_hash, author_seq)| OpRef {
                     op_hash,
+                    device_key: author.0,
                     author: author.clone(),
                     author_record: record.into(),
                     author_seq,
@@ -59,6 +61,7 @@ pub(super) fn signed_chain(
         );
         out.push(rekindle_governance_runtime::op_log::HeldOp {
             hash: op_hash(&unsigned, &op.sig),
+            device_key: author.0,
             author: author.clone(),
             author_record: record.into(),
             seq,

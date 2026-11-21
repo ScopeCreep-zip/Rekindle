@@ -155,19 +155,22 @@ where
     }
 }
 
-/// What a dependant's verification reads of a fetched cut op: its author,
-/// seq and lamport (module doc: a top's from the cut index, any other's
+/// what a dependant's verification reads of a fetched cut op: its author,
+/// device key, seq and lamport (module doc: a top's from the cut index, any other's
 /// the greatest top lamport).
 #[derive(Debug, Default, Clone)]
-pub struct CutFacts(HashMap<OpHash, (PseudonymKey, u64, u64)>);
+pub struct CutFacts(HashMap<OpHash, (PseudonymKey, [u8; 32], u64, u64)>);
 
 impl CutFacts {
     fn get(&self, hash: &OpHash) -> Option<DepFacts<'_>> {
-        self.0.get(hash).map(|(author, seq, lamport)| DepFacts {
-            author,
-            seq: *seq,
-            lamport: *lamport,
-        })
+        self.0
+            .get(hash)
+            .map(|(author, device_key, seq, lamport)| DepFacts {
+                author,
+                device_key,
+                seq: *seq,
+                lamport: *lamport,
+            })
     }
 
     /// The hashes of the cut ops these facts hold.
@@ -187,7 +190,7 @@ pub fn cut_fact(
     snap: &CutSnapshot,
     r: &OpRef,
     held: &HeldOp,
-) -> Option<(OpHash, (PseudonymKey, u64, u64))> {
+) -> Option<(OpHash, (PseudonymKey, [u8; 32], u64, u64))> {
     let decoded = decode_op(&held.encoded).ok()?;
     let op = &decoded.op;
     let hash = op_hash(&decoded.unsigned, &op.sig);
@@ -209,7 +212,7 @@ pub fn cut_fact(
     } else {
         snap.cut.lamports.values().copied().max()?
     };
-    Some((hash, (op.author.clone(), op.seq, lamport)))
+    Some((hash, (op.author.clone(), op.device_key, op.seq, lamport)))
 }
 
 /// Verify `held` (post-cut ops, or the cut's power ops) of community
@@ -309,7 +312,7 @@ where
     let Some((exact, below)) = exact_lamports(anchor, snap, &roots, &fetch).await? else {
         return Ok(None);
     };
-    for (hash, (_, _, lamport)) in &mut facts.0 {
+    for (hash, (_, _, _, lamport)) in &mut facts.0 {
         if let Some(l) = exact.get(hash) {
             *lamport = *l;
         }

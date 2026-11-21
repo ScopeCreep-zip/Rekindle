@@ -70,6 +70,7 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
         prev: None,
         cut: vec![OpRef {
             op_hash: first[0].hash,
+            device_key: creator.0,
             author: creator.clone(),
             author_record: CREATOR_RECORD.into(),
             author_seq: 0,

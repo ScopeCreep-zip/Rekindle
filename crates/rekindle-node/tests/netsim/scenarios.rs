@@ -87,6 +87,7 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
         member_record::SUBKEY_COUNT,
     ));
     let joined = GovernanceOp {
+        device_key: author.0,
         author: author.clone(),
         seq: 0,
         prev: None,
@@ -111,6 +112,7 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
     };
     let (joined, joined_hash) = signed(&anchor, &forger, joined);
     let renamed = GovernanceOp {
+        device_key: author.0,
         author: author.clone(),
         seq: 1,
         prev: Some(joined_hash),

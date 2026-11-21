@@ -10,6 +10,7 @@ use crate::CodecError;
 
 fn left_op() -> GovernanceOp {
     GovernanceOp {
+        device_key: [7; 32],
         author: PseudonymKey([7; 32]),
         seq: 3,
         prev: None,
