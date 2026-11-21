@@ -51,13 +51,37 @@ function keysOf(found: Record<string, unknown>): string[] {
  * fails and so does a fixed one (drop its key in the fix's merge). Taken
  * from a run, never widened silently; re-baselined against the SK0 round.
  * Taken from round 10 + S5 on macOS (four runs, the same keys apart from
- * UNSETTLED):
+ * UNSETTLED), and from round 12 on Linux (x11):
+ * - `window flex contract`: Simple X's buddy list (both).
+ * - `ellipsized text …`: SpaceCowboy at min size (both).
  * - `axe color-contrast`: Combat and Alloy (the light bases), buddy list
- *   and community window.
- * - `window flex contract`: Simple X's buddy list.
- * - `ellipsized text …`: SpaceCowboy at min size.
+ *   and community window, on macOS only. The holds are per platform
+ *   (the lead's ruling, 2026-11-21), each exact.
+ *
+ * Why the contrast keys differ (probe 2026-11-21, macOS): axe flags the
+ * menubar's "Calls" and "Help" (#8fb9d7 on #e6e6e6, 1.66:1) and the buddy
+ * tabs (Communities #8fb9d7 on #ffffff, 2.08:1; the active Friends #3491d8
+ * on #ffffff, 3.39:1). Those foregrounds are the elements' own computed
+ * `color`, the dark base's text tokens, unchanged under the light skins:
+ * the same CSS on either engine. So macOS's result is the true one, an
+ * app finding (the menubar and buddy tabs do not take the light skins'
+ * text colours). WebKitGTK's axe returns none of them; the likeliest
+ * reason is that it cannot resolve a solid background behind them and
+ * files them "incomplete", as macOS does for the titlebar and identity
+ * bar (`bgGradient`). Linux's incomplete list would confirm it.
  */
-const KNOWN: Record<string, string[]> = {
+const KNOWN_ON: Record<"darwin" | "linux", Record<string, string[]>> = { darwin: {}, linux: {} };
+const KNOWN_BOTH: Record<string, string[]> = {
+  "spacecowboy": [
+    "buddy-list min: ellipsized text showing fewer than 4 letters or digits",
+    "community min: ellipsized text showing fewer than 4 letters or digits",
+  ],
+  "simple-x": [
+    "buddy-list default: window flex contract",
+    "buddy-list large: window flex contract",
+  ],
+};
+const KNOWN_DARWIN_ONLY: Record<string, string[]> = {
   "combat": [
     "buddy-list default: axe color-contrast",
     "buddy-list large: axe color-contrast",
@@ -65,10 +89,6 @@ const KNOWN: Record<string, string[]> = {
     "community default: axe color-contrast",
     "community large: axe color-contrast",
     "community min: axe color-contrast",
-  ],
-  "spacecowboy": [
-    "buddy-list min: ellipsized text showing fewer than 4 letters or digits",
-    "community min: ellipsized text showing fewer than 4 letters or digits",
   ],
   "alloy": [
     "buddy-list default: axe color-contrast",
@@ -78,11 +98,15 @@ const KNOWN: Record<string, string[]> = {
     "community large: axe color-contrast",
     "community min: axe color-contrast",
   ],
-  "simple-x": [
-    "buddy-list default: window flex contract",
-    "buddy-list large: window flex contract",
-  ],
 };
+for (const [file, keys] of Object.entries(KNOWN_BOTH)) {
+  KNOWN_ON.darwin[file] = [...keys];
+  KNOWN_ON.linux[file] = [...keys];
+}
+for (const [file, keys] of Object.entries(KNOWN_DARWIN_ONLY)) KNOWN_ON.darwin[file] = [...(KNOWN_ON.darwin[file] ?? []), ...keys].sort();
+
+/** This platform's holds; a platform without a list of its own holds nothing. */
+const KNOWN: Record<string, string[]> = process.platform === "darwin" || process.platform === "linux" ? KNOWN_ON[process.platform] : {};
 
 /**
  * Findings that come and go between runs of one build, so neither a pass
