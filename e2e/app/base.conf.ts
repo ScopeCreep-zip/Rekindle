@@ -9,6 +9,7 @@ import { browser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { keepDir } from "./keep.ts";
 import { RekindleAppLauncher } from "./launcher.ts";
+import { timingAfter, timingBefore, timingTest } from "./timing.ts";
 
 /** Failure evidence, in the run's folder beside its app logs (keep.ts). */
 const KEEP_DIR = keepDir();
@@ -50,6 +51,16 @@ export const base = {
   logLevel: "warn",
   waitforTimeout: 10_000,
   connectionRetryCount: 1,
+  // Each command's duration, printed when slow or timed out (timing.ts).
+  beforeTest(test: { title: string }) {
+    timingTest(test.title);
+  },
+  beforeCommand(commandName: string) {
+    timingBefore(commandName);
+  },
+  afterCommand(commandName: string, _args: unknown[], _result: unknown, error?: Error) {
+    timingAfter(commandName, error);
+  },
   async afterTest(test: { title: string }, _context: unknown, result: { passed: boolean }) {
     if (!result.passed) await recordFailure(test.title);
   },
