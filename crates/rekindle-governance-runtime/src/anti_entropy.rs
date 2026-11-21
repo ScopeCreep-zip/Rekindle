@@ -283,7 +283,24 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
     let Some(cert) = deps.genesis_cert(community_id) else {
         return Ok(());
     };
-    let held = deps.governance_ops(community_id).await?;
+    // The op set and the installed state as one pair, read under the lock
+    // every installer holds from its op-set read to its install (local
+    // writes, the origin's genesis, rebuilds): unlocked, a state installed
+    // just after our op-set read looks like a lag, and the rebuild it
+    // claims spends the op set's one rebuild on nothing.
+    let (held, installed) = {
+        let lock = deps.rebuild_lock(community_id);
+        let _installing = lock.lock().await;
+        let held = deps.governance_ops(community_id).await?;
+        let installed = deps
+            .governance_state(community_id)
+            .map(|state| roster_checksum(&state));
+        (held, installed)
+    };
+    // No installed state: not a community we hold, nothing lags.
+    let Some(installed) = installed else {
+        return Ok(());
+    };
     let digest = op_set_digest(held.iter().map(|op| &op.hash));
     let ours = if let Some(view) = seen.merged(&digest) {
         view
@@ -298,10 +315,7 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
         seen.cache_merged(digest, view.clone());
         view
     };
-    let installed = deps
-        .governance_state(community_id)
-        .map(|state| roster_checksum(&state));
-    if installed != Some(ours.checksum) {
+    if installed != ours.checksum {
         if seen.claim_lag_rebuild(digest) {
             tracing::info!(
                 community = community_id,

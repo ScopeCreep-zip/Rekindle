@@ -400,12 +400,23 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         member_record_owner_keypair: k_m_text,
         member_hpke_secret: hpke_secret.clone(),
     };
-    deps.insert_community(insert);
+    // The installed genesis state and the genesis ops it merges land as
+    // one step under the rebuild lock (D15: the state is the merge of the
+    // ops held), the ops after the row they reference: a convergence check
+    // reading between them would take the installed state for a lag and
+    // rebuild it from the ops stored so far, dropping the rest.
+    {
+        let lock = deps.rebuild_lock(&anchor_key);
+        let _installing = lock.lock().await;
+        deps.insert_community(insert);
+        for op in &genesis_ops {
+            deps.store_governance_op(&anchor_key, op).await?;
+        }
+    }
 
     // M(p) in §4.4's order: the card first (the record is openable), the
-    // genesis ops into the op store (after the row they reference) and onto
-    // the governance-op stream, which appends them to M/2 and writes M/3,
-    // then the beat.
+    // genesis ops onto the governance-op stream, which appends them to M/2
+    // and writes M/3, then the beat.
     let port = deps.record_port()?;
     let own = crate::member_card::OwnRecord {
         community_id: &anchor_key,
@@ -425,9 +436,6 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     };
     let publish_ops = async {
         for op in genesis_ops {
-            deps.store_governance_op(&anchor_key, &op)
-                .await
-                .map_err(|e| e.to_string())?;
             deps.gossip_governance_op(&anchor_key, &op.encoded);
             deps.publish_governance_op(
                 &anchor_key,
