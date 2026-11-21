@@ -23,6 +23,7 @@
 import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Capabilities, Services } from "@wdio/types";
+import { SevereServiceError } from "webdriverio";
 import { build, launch, type App } from "../walk/launch.ts";
 import { keepDir, pruneKept } from "./keep.ts";
 
@@ -110,7 +111,17 @@ export class RekindleAppLauncher implements Services.ServiceInstance {
     // Cap the earlier runs' evidence, then name this run's folder before any worker forks (keep.ts).
     pruneKept();
     keepDir();
-    if (process.env.REKINDLE_APP_NO_BUILD !== "1") build();
+    if (process.env.REKINDLE_APP_NO_BUILD === "1") return;
+    try {
+      build();
+    } catch (err) {
+      // An error thrown from onPrepare is logged and the run goes on, on
+      // whatever binaries the last build left (round 14: rekindle-node did not
+      // compile, and the fleet ran a CLI and daemon of different builds);
+      // only a SevereServiceError stops it (@wdio/cli 10.2.0 build/index.js
+      // runServiceHook: any other error is logged with "Continue...").
+      throw new SevereServiceError(`the app build failed, so nothing is run: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
