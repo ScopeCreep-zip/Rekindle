@@ -589,6 +589,13 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
         let (tx, rx) = oneshot::channel();
         let result = self.window.with_webview(move |webview| {
             let webview = webview.inner().clone();
+            // Make the WebView its own window's focus widget first, so the
+            // key reaches it: GTK hands a toplevel's key events to its focus
+            // widget. `grab_focus` changes focus inside the window only; it
+            // never raises the window or takes the desktop's keyboard focus
+            // (no `present`), which would take the owner's (Linux run at
+            // 04a631399: the key was "sent" but no keydown reached the page).
+            gtk::prelude::WidgetExt::grab_focus(&webview);
             let _ = tx.send(gtk::test_widget_send_key(&webview, keyval, modifiers));
         });
         if let Err(e) = result {

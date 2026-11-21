@@ -41,6 +41,10 @@ return document.activeElement === first ? first.textContent.trim() : null;`)) as
       if (after.keys.length > 0 && after.focused !== start) break;
       await new Promise((r) => setTimeout(r, 100));
     }
+    if (after.keys.length === 0) {
+      const hasFocus = (await browser.execute("return document.hasFocus();")) as boolean;
+      throw new Error(`the driver reported the Tab sent, but no keydown reached the page in 2 s (document.hasFocus() is ${hasFocus})`);
+    }
     expect(after.keys[0]).toEqual({ key: "Tab", trusted: true });
     expect(after.focused).not.toBe(start);
   });
