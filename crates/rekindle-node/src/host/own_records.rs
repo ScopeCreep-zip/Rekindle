@@ -37,7 +37,7 @@ pub(crate) struct OwnRecords {
     pub session: Arc<RwLock<Option<Session>>>,
     /// Where the stage's outcome is told (plan E2.5 FC1): the friend
     /// operations naming our profile and mailbox wait on it.
-    pub outcome: tokio::sync::watch::Sender<OwnRecordsStage>,
+    pub outcome: rekindle_transport::operations::friend::OwnRecordsWatch,
     pub shell: Option<Arc<dyn ShellHooks>>,
     /// The Host's generator (C9.2): this device's id is minted with it
     /// (the prekeys are the prekey maintenance's, plan E2.4).

@@ -52,6 +52,17 @@ struct Inner<T> {
     followers: Vec<watch::Sender<T>>,
 }
 
+impl<T: Default> Default for OrderedWatch<T> {
+    fn default() -> Self {
+        Self {
+            inner: Mutex::new(Inner {
+                value: T::default(),
+                followers: Vec::new(),
+            }),
+        }
+    }
+}
+
 impl<T: Clone> OrderedWatch<T> {
     /// A fan-out holding `value`, with no followers yet.
     pub fn new(value: T) -> Self {

@@ -78,9 +78,14 @@ pub struct FriendStores {
     pub expiry: tokio::sync::Notify,
     /// How this unlock's own-records stage ended (plan E2.5 FC1): what an
     /// operation naming our profile and mailbox (a friend code, an invite,
-    /// a request, a first message) waits on instead of a timer.
-    pub own_records: tokio::sync::watch::Sender<OwnRecordsStage>,
+    /// a request, a first message) waits on instead of a timer. A watch
+    /// per waiter, woken in the order they subscribed (RK1): each woken
+    /// operation draws ids and sends.
+    pub own_records: OwnRecordsWatch,
 }
+
+/// [`FriendStores::own_records`]: the stage, a watch per waiter (RK1).
+pub type OwnRecordsWatch = Arc<rekindle_route::ordered_watch::OrderedWatch<OwnRecordsStage>>;
 
 /// The own-records stage's outcome for the unlocked identity.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

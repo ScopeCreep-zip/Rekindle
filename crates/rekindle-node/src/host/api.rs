@@ -14,7 +14,7 @@ impl super::Host {
     /// `NetworkEvent::OwnRecordsChanged`.
     #[must_use]
     pub fn own_records_stage(&self) -> rekindle_transport::operations::friend::OwnRecordsStage {
-        self.ctx.friend_stores.own_records.borrow().clone()
+        self.ctx.friend_stores.own_records.get()
     }
 
     /// Journal `event` as one of the session's standing events (plan E7.1:
