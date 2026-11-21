@@ -195,6 +195,16 @@ impl DataRoot {
         self.state.join(format!("{public_key}.vault"))
     }
 
+    /// An identity's device vault on this device, `state/{pk}.device.vault`
+    /// (plan E3.2 S7d-keys.7, ADR 0022 rule 4): the per-device secrets
+    /// (governance device keys, the prekey record's owner, card HPKE
+    /// secrets) that identity export never reads. Its random key lives in
+    /// the identity vault (`VaultKey::DeviceVaultSecret`), so it has no header.
+    #[must_use]
+    pub fn device_vault(&self, public_key: &str) -> PathBuf {
+        self.state.join(format!("{public_key}.device.vault"))
+    }
+
     /// An identity's file cache, `state/{pk}.files/` (plan E3.0a): every
     /// directory below it has a keyed-hash name
     /// (`rekindle_files::cache::scope_root`), so before unlock it shows only

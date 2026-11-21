@@ -39,11 +39,14 @@ fn seeded() -> Connection {
          platform, record_keys_json, created_at) VALUES (?1, 'r', 't', 'self', '[]', 0)",
         "INSERT INTO voice_session_events (owner_key, community_id, channel_id, member_pseudonym, \
          event_type, occurred_at) VALUES (?1, 'c', 'ch', 'p', 'join', 0)",
-        "INSERT INTO governance_ops (owner_key, community_id, op_hash, author, author_seq, \
-         lamport, issued_at, op, state) VALUES (?1, 'c', zeroblob(32), 'a', 0, 1, 0, x'00', \
-         'applied')",
-        "INSERT INTO governance_heads (owner_key, community_id, author, member_record, head_seq, \
-         frontier_hash) VALUES (?1, 'c', 'a', 'm', 0, zeroblob(32))",
+        "INSERT INTO governance_ops (owner_key, community_id, op_hash, author, device_key, \
+         device_seq, lamport, issued_at, op, state, signed_here) VALUES (?1, 'c', zeroblob(32), \
+         'a', 'a', 0, 1, 0, x'00', 'applied', 0)",
+        "INSERT INTO governance_heads (owner_key, community_id, device_key, author, member_record, \
+         head_seq, frontier_hash) VALUES (?1, 'c', 'a', 'a', 'm', 0, zeroblob(32))",
+        "INSERT INTO governance_devices (owner_key, community_id, member, device_key, \
+         incarnation, device_record, state, fork_evidence) VALUES (?1, 'c', 'p', 'd', 0, 'm', \
+         'effective', NULL)",
         "INSERT INTO governance_checkpoints (owner_key, community_id, height, round, digest, \
          op_hash, dir_size, state) VALUES (?1, 'c', 1, 0, zeroblob(32), zeroblob(32), 0, \
          'usable')",
@@ -99,11 +102,15 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("voice_session_events", "event_type", "'mute'"),
     ("governance_ops", "state", "'merged'"),
     ("governance_ops", "op_hash", "x'00'"),
-    ("governance_ops", "author_seq", "-1"),
+    ("governance_ops", "device_seq", "-1"),
+    ("governance_ops", "signed_here", "2"),
     ("governance_ops", "lamport", "-1"),
     ("governance_ops", "issued_at", "-1"),
     ("governance_heads", "head_seq", "-1"),
     ("governance_heads", "frontier_hash", "zeroblob(31)"),
+    ("governance_devices", "state", "'active'"),
+    ("governance_devices", "incarnation", "-1"),
+    ("governance_devices", "fork_evidence", "x'00'"),
     ("governance_checkpoints", "state", "'adopted'"),
     ("governance_checkpoints", "height", "0"),
     ("governance_checkpoints", "round", "-1"),

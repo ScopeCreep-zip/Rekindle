@@ -193,11 +193,13 @@ fn install(
     }
 }
 
-/// Remove an identity's files: vault, header, database (+ WAL and SHM),
-/// and its file cache. A rotation removes the old key's cache too: its
-/// names are keyed by the old secret, so the new one cannot find them.
+/// Remove an identity's files: vault, header, this device's vault (plan
+/// E3.2 S7d-keys.7), database (+ WAL and SHM), and its file cache. A
+/// rotation removes the old key's cache too: its names are keyed by the old
+/// secret, so the new one cannot find them.
 fn remove_files(root: &DataRoot, public_key: &str) -> Result<(), IdentityError> {
     VaultStore::delete_files(&root.identity_vault(public_key))?;
+    VaultStore::delete_files(&root.device_vault(public_key))?;
     let db = root.identity_db(public_key);
     for suffix in ["", "-wal", "-shm"] {
         let mut p = db.as_os_str().to_owned();

@@ -407,7 +407,15 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         op: &HeldOp,
     ) -> Result<(), GovernanceRuntimeError> {
-        self.store_governance_op_impl(community_id, op).await
+        self.store_governance_op_impl(community_id, op, false).await
+    }
+
+    async fn store_signed_governance_op(
+        &self,
+        community_id: &str,
+        op: &HeldOp,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.store_governance_op_impl(community_id, op, true).await
     }
 
     async fn set_governance_op_fates(

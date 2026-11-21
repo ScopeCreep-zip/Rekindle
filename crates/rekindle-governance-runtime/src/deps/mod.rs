@@ -430,9 +430,20 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         &self,
         community_id: &str,
     ) -> Result<Vec<crate::op_log::HeldOp>, GovernanceRuntimeError>;
-    /// Store an op (an op already held keeps its row) and advance its
-    /// author's `governance_heads` row.
+    /// Store an op ingested from anywhere but our own signer (gossip, the
+    /// DAG fetch, a bootstrap or the barrier's walk; an op already held
+    /// keeps its row) and advance its device key's `governance_heads` row.
+    /// Never marks the op `signed_here`.
     async fn store_governance_op(
+        &self,
+        community_id: &str,
+        op: &crate::op_log::HeldOp,
+    ) -> Result<(), GovernanceRuntimeError>;
+    /// Store an op this device just signed, marked `signed_here`: the local
+    /// signed log self-detection checks every ingested op of our device key
+    /// against (ADR 0022 rule 4, plan S7d-keys.3/.9). Only the local signer
+    /// calls it.
+    async fn store_signed_governance_op(
         &self,
         community_id: &str,
         op: &crate::op_log::HeldOp,

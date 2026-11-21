@@ -63,6 +63,8 @@ mod partial;
 mod quick_wipe;
 #[path = "shell_hooks_tests.rs"]
 mod shell_hooks_tests;
+#[path = "signed_here_tests.rs"]
+mod signed_here;
 #[cfg(unix)]
 #[path = "skin_draft_tests.rs"]
 mod skin_draft;

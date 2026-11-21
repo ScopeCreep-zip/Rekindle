@@ -321,6 +321,11 @@ labels! {
     /// HPKE info: MEK transfer — Rekindle-owned, never Veilid's
     /// `veilid-hpke/1`. Renamed by E3.5's signed v2 wrap.
     HPKE_MEK_INFO = "rekindle-mek/1";
+    /// BLAKE3 `derive_key` context: the device vault's SQLCipher key, from
+    /// its random 32-byte key (plan E3.2 S7d-keys.7, ADR 0022 rule 4).
+    DEVICE_VAULT_SQLCIPHER_KEY = "rekindle-device-vault-sqlcipher-v1";
+    /// BLAKE3 `derive_key` context: the device vault's per-entry AEAD key.
+    DEVICE_VAULT_ENTRY_KEY = "rekindle-device-vault-entry-v1";
 }
 
 /// Every prefix an identity key (Ed25519) signs under. One key signs all

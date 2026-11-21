@@ -1,6 +1,8 @@
 //! `governance_ops` and `governance_heads` (plan E3.2, ADR 0011): every
 //! signed governance op this identity holds for a community, with its fate
-//! in the last merge, and each author's newest op. One repo for both
+//! in the last merge, and each device key's newest op (ADR 0022: ops are
+//! signed by per-community device keys, one chain and one member record
+//! per key). One repo for both
 //! tracks (D1): `rebuild_governance` re-merges the op set from here, and
 //! the unlock's warm load reads it before the network answers.
 //!
@@ -58,17 +60,27 @@ pub struct StoredOp {
     pub op_hash: [u8; 32],
     /// The author pseudonym, hex.
     pub author: String,
-    pub author_seq: u64,
+    /// The key that signed the op, hex (ADR 0022 rule 1).
+    pub device_key: String,
+    /// The op's seq in `device_key`'s chain.
+    pub device_seq: u64,
     pub lamport: u64,
     pub issued_at: u64,
     pub op: Vec<u8>,
     pub state: OpState,
+    /// This device signed the op (the local signed log, plan S7d-keys.9);
+    /// never set for an op ingested by gossip, the DAG fetch or the
+    /// barrier's walk.
+    pub signed_here: bool,
 }
 
-/// An author's newest op seen, and the member record its chain lives in.
+/// A device key's newest op seen, and the member record its chain lives
+/// in (ADR 0022 rule 3: one record per device key).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthorHead {
-    /// The author pseudonym, hex.
+pub struct DeviceHead {
+    /// The device key, hex.
+    pub device_key: String,
+    /// The pseudonym the key signs for, hex.
     pub author: String,
     pub member_record: String,
     pub head_seq: u64,
@@ -90,18 +102,26 @@ pub(crate) fn hash32(row: &Row<'_>, column: &str) -> rusqlite::Result<[u8; 32]> 
     })
 }
 
-const OP_COLUMNS: &str = "op_hash, author, author_seq, lamport, issued_at, op, state";
+const OP_COLUMNS: &str =
+    "op_hash, author, device_key, device_seq, lamport, issued_at, op, state, signed_here";
 
-fn op_row(row: &Row<'_>) -> rusqlite::Result<StoredOp> {
+/// The op whose columns start at `at` ([`OP_COLUMNS`] order).
+fn op_at(row: &Row<'_>, at: usize) -> rusqlite::Result<StoredOp> {
     Ok(StoredOp {
         op_hash: hash32(row, "op_hash")?,
         author: get(row, "author")?,
-        author_seq: get_u64(row, 2)?,
-        lamport: get_u64(row, 3)?,
-        issued_at: get_u64(row, 4)?,
+        device_key: get(row, "device_key")?,
+        device_seq: get_u64(row, at + 3)?,
+        lamport: get_u64(row, at + 4)?,
+        issued_at: get_u64(row, at + 5)?,
         op: get(row, "op")?,
         state: get_enum(row, "state")?,
+        signed_here: get(row, "signed_here")?,
     })
+}
+
+fn op_row(row: &Row<'_>) -> rusqlite::Result<StoredOp> {
+    op_at(row, 0)
 }
 
 /// Store `op` for `community_id`. An op already held keeps its row (its
@@ -116,19 +136,22 @@ pub fn insert(
     op: &StoredOp,
 ) -> rusqlite::Result<bool> {
     let changed = conn.execute(
-        "INSERT INTO governance_ops (owner_key, community_id, op_hash, author, author_seq, \
-         lamport, issued_at, op, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+        "INSERT INTO governance_ops (owner_key, community_id, op_hash, author, device_key, \
+         device_seq, lamport, issued_at, op, state, signed_here) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
          ON CONFLICT(owner_key, community_id, op_hash) DO NOTHING",
         params![
             owner_key,
             community_id,
             op.op_hash.as_slice(),
             op.author,
-            int(op.author_seq)?,
+            op.device_key,
+            int(op.device_seq)?,
             int(op.lamport)?,
             int(op.issued_at)?,
             op.op,
             op.state.as_str(),
+            op.signed_here,
         ],
     )?;
     Ok(changed == 1)
@@ -189,18 +212,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<(Str
     ))?;
     let rows = stmt.query_map(params![owner_key], |row| {
         let community: String = get(row, "community_id")?;
-        Ok((
-            community,
-            StoredOp {
-                op_hash: hash32(row, "op_hash")?,
-                author: get(row, "author")?,
-                author_seq: get_u64(row, 3)?,
-                lamport: get_u64(row, 4)?,
-                issued_at: get_u64(row, 5)?,
-                op: get(row, "op")?,
-                state: get_enum(row, "state")?,
-            },
-        ))
+        Ok((community, op_at(row, 1)?))
     })?;
     rows.collect()
 }
@@ -234,7 +246,7 @@ pub fn set_state(
     Ok(())
 }
 
-/// Every author's head in `community_id`, by author.
+/// Every device key's head in `community_id`, by device key.
 ///
 /// # Errors
 /// The query failed or a row is corrupt.
@@ -242,23 +254,24 @@ pub fn heads(
     conn: &Connection,
     owner_key: &str,
     community_id: &str,
-) -> rusqlite::Result<Vec<AuthorHead>> {
+) -> rusqlite::Result<Vec<DeviceHead>> {
     let mut stmt = conn.prepare(
-        "SELECT author, member_record, head_seq, frontier_hash FROM governance_heads \
-         WHERE owner_key = ?1 AND community_id = ?2 ORDER BY author",
+        "SELECT device_key, author, member_record, head_seq, frontier_hash FROM governance_heads \
+         WHERE owner_key = ?1 AND community_id = ?2 ORDER BY device_key",
     )?;
     let rows = stmt.query_map(params![owner_key, community_id], |row| {
-        Ok(AuthorHead {
+        Ok(DeviceHead {
+            device_key: get(row, "device_key")?,
             author: get(row, "author")?,
             member_record: get(row, "member_record")?,
-            head_seq: get_u64(row, 2)?,
+            head_seq: get_u64(row, 3)?,
             frontier_hash: hash32(row, "frontier_hash")?,
         })
     })?;
     rows.collect()
 }
 
-/// Write `head` as its author's head in `community_id`.
+/// Write `head` as its device key's head in `community_id`.
 ///
 /// # Errors
 /// The write failed.
@@ -266,17 +279,18 @@ pub fn set_head(
     conn: &Connection,
     owner_key: &str,
     community_id: &str,
-    head: &AuthorHead,
+    head: &DeviceHead,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO governance_heads (owner_key, community_id, author, member_record, head_seq, \
-         frontier_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
-         ON CONFLICT(owner_key, community_id, author) DO UPDATE SET \
-         member_record = excluded.member_record, head_seq = excluded.head_seq, \
-         frontier_hash = excluded.frontier_hash",
+        "INSERT INTO governance_heads (owner_key, community_id, device_key, author, \
+         member_record, head_seq, frontier_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+         ON CONFLICT(owner_key, community_id, device_key) DO UPDATE SET \
+         author = excluded.author, member_record = excluded.member_record, \
+         head_seq = excluded.head_seq, frontier_hash = excluded.frontier_hash",
         params![
             owner_key,
             community_id,
+            head.device_key,
             head.author,
             head.member_record,
             int(head.head_seq)?,
@@ -295,11 +309,13 @@ mod tests {
         StoredOp {
             op_hash: [byte; 32],
             author: "aa".into(),
-            author_seq: u64::from(byte),
+            device_key: "dd".into(),
+            device_seq: u64::from(byte),
             lamport,
             issued_at: 7,
             op: vec![byte],
             state,
+            signed_here: false,
         }
     }
 
@@ -335,17 +351,45 @@ mod tests {
     }
 
     #[test]
-    fn a_head_is_replaced_per_author() {
+    fn a_head_is_replaced_per_device_key() {
         let conn = fixture::conn();
         fixture::community(&conn, "c1");
-        let head = |seq| AuthorHead {
+        let head = |device: &str, record: &str, seq| DeviceHead {
+            device_key: device.into(),
             author: "aa".into(),
-            member_record: "VLD0:m".into(),
+            member_record: record.into(),
             head_seq: seq,
             frontier_hash: [3; 32],
         };
-        set_head(&conn, OWNER, "c1", &head(1)).unwrap();
-        set_head(&conn, OWNER, "c1", &head(4)).unwrap();
-        assert_eq!(heads(&conn, OWNER, "c1").unwrap(), vec![head(4)]);
+        set_head(&conn, OWNER, "c1", &head("d1", "VLD0:m1", 1)).unwrap();
+        set_head(&conn, OWNER, "c1", &head("d1", "VLD0:m1", 4)).unwrap();
+        // A second device of the same author keeps its own head and record
+        // (ADR 0022 rule 3).
+        set_head(&conn, OWNER, "c1", &head("d2", "VLD0:m2", 0)).unwrap();
+        assert_eq!(
+            heads(&conn, OWNER, "c1").unwrap(),
+            vec![head("d1", "VLD0:m1", 4), head("d2", "VLD0:m2", 0)]
+        );
+    }
+
+    #[test]
+    fn signed_here_is_stored_and_a_re_insert_never_changes_it() {
+        let conn = fixture::conn();
+        fixture::community(&conn, "c1");
+        let mine = StoredOp {
+            signed_here: true,
+            ..op(1, 1, OpState::Applied)
+        };
+        assert!(insert(&conn, OWNER, "c1", &mine).unwrap());
+        // The same op back by gossip keeps the local signer's flag.
+        assert!(!insert(&conn, OWNER, "c1", &op(1, 1, OpState::Applied)).unwrap());
+        assert_eq!(get_op(&conn, OWNER, "c1", &[1; 32]).unwrap(), Some(mine));
+        insert(&conn, OWNER, "c1", &op(2, 2, OpState::Applied)).unwrap();
+        let loaded: Vec<bool> = load_all(&conn, OWNER)
+            .unwrap()
+            .into_iter()
+            .map(|(_, op)| op.signed_here)
+            .collect();
+        assert_eq!(loaded, vec![true, false]);
     }
 }

@@ -79,6 +79,17 @@ pub enum VaultKey {
         community: String,
     },
 
+    /// The random 32-byte key of this identity's device vault on this
+    /// device (plan E3.2 S7d-keys.7) — `("identity", "device_vault_key")`.
+    /// Held here so one Argon2 unlock opens both vaults.
+    DeviceVaultSecret,
+    /// Device vault only: our governance device key in a community, its
+    /// member record's owner `K_M(p,d)` and our seq head (ADR 0022 rules 1,
+    /// 3, 4) — `("device", "device_op_key_{community}")`. Never exported.
+    DeviceOpKey {
+        community: String,
+    },
+
     /// Audit chain MAC key — `("audit", "mac_key")`.
     AuditMacKey,
     /// Audit chain tail anchor — `("audit", "tail")`.
@@ -128,6 +139,7 @@ impl VaultKey {
             | Self::AccountOwnerKeypair
             | Self::PersonalSyncOwnerKeypair
             | Self::PrekeyRecordOwnerKeypair
+            | Self::DeviceVaultSecret
             | Self::RequestInboxOwnerKeypair { .. }
             | Self::DmParticipantOwner { .. }
             | Self::PendingRotation => "identity",
@@ -143,6 +155,7 @@ impl VaultKey {
             | Self::MemberRecordOwner { .. }
             | Self::MemberHpkeSecret { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
+            Self::DeviceOpKey { .. } => "device",
             Self::ClientKey { .. } => "clients",
         }
     }
@@ -195,6 +208,8 @@ impl VaultKey {
             Self::SlotSeed { community } => ("slot_seed", vec![s(community)]),
             Self::MemberRecordOwner { community } => ("member_record_owner", vec![s(community)]),
             Self::MemberHpkeSecret { community } => ("member_hpke_secret", vec![s(community)]),
+            Self::DeviceVaultSecret => ("device_vault_key", vec![]),
+            Self::DeviceOpKey { community } => ("device_op_key", vec![s(community)]),
             Self::AuditMacKey => ("mac_key", vec![]),
             Self::AuditTail => ("tail", vec![]),
             Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
@@ -276,6 +291,10 @@ impl VaultKey {
             ("member_hpke_secret", [c]) => Self::MemberHpkeSecret {
                 community: c.clone(),
             },
+            ("device_vault_key", []) => Self::DeviceVaultSecret,
+            ("device_op_key", [c]) => Self::DeviceOpKey {
+                community: c.clone(),
+            },
             ("mac_key", []) => Self::AuditMacKey,
             ("tail", []) => Self::AuditTail,
             ("client", [k]) => Self::ClientKey {
@@ -346,6 +365,8 @@ mod tests {
             VaultKey::SlotSeed { community: c() },
             VaultKey::MemberRecordOwner { community: c() },
             VaultKey::MemberHpkeSecret { community: c() },
+            VaultKey::DeviceVaultSecret,
+            VaultKey::DeviceOpKey { community: c() },
             VaultKey::AuditMacKey,
             VaultKey::AuditTail,
             VaultKey::ClientKey {

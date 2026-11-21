@@ -987,17 +987,23 @@ CREATE TABLE IF NOT EXISTS pending_pairings (
 -- for a community, with its fate in the last merge. The member records are
 -- the source of truth; this is the op set `rebuild_governance` re-merges,
 -- so a login has the community's state before the network answers.
--- `governance_heads` is each author's newest op seen and its member record.
+-- `governance_heads` is each device key's newest op seen and its member
+-- record (ADR 0022 rule 3: one record per device key). `device_key` is the
+-- key that signed the op and `device_seq` its seq in that key's chain;
+-- `signed_here` is 1 only for an op this device signed (the local signed
+-- log self-detection trusts, plan S7d-keys.9), never for an ingested one.
 CREATE TABLE IF NOT EXISTS governance_ops (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     op_hash BLOB NOT NULL CHECK(length(op_hash) = 32),
     author TEXT NOT NULL,
-    author_seq INTEGER NOT NULL CHECK(author_seq >= 0),
+    device_key TEXT NOT NULL,
+    device_seq INTEGER NOT NULL CHECK(device_seq >= 0),
     lamport INTEGER NOT NULL CHECK(lamport >= 0),
     issued_at INTEGER NOT NULL CHECK(issued_at >= 0),
     op BLOB NOT NULL,
     state TEXT NOT NULL CHECK(state IN ('applied','pending_deps','quarantined','equivocation')),
+    signed_here INTEGER NOT NULL CHECK(signed_here IN (0,1)),
     PRIMARY KEY (owner_key, community_id, op_hash),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
@@ -1007,13 +1013,36 @@ CREATE INDEX IF NOT EXISTS idx_governance_ops_state
 CREATE TABLE IF NOT EXISTS governance_heads (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
+    device_key TEXT NOT NULL,
     author TEXT NOT NULL,
     member_record TEXT NOT NULL,
     head_seq INTEGER NOT NULL CHECK(head_seq >= 0),
     frontier_hash BLOB NOT NULL CHECK(length(frontier_hash) = 32),
-    PRIMARY KEY (owner_key, community_id, author),
+    PRIMARY KEY (owner_key, community_id, device_key),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
+
+-- Each member's device-key set (ADR 0022 rules 2, 6, 7; plan E3.2
+-- S7d-keys.3): one row per endorsed `(member, device_key, incarnation)`,
+-- with its device record and its standing in the last merge. `state` is
+-- `pending` while the endorsement's extended set is not fully held,
+-- `inert` above the cap of 6, `retired` once a `DeviceRetired` or fork
+-- evidence names the key (permanent, rule 2). `fork_evidence` is the
+-- fork-evidence hash the endorsement answers, NULL when it answers none.
+CREATE TABLE IF NOT EXISTS governance_devices (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    member TEXT NOT NULL,
+    device_key TEXT NOT NULL,
+    incarnation INTEGER NOT NULL CHECK(incarnation >= 0),
+    device_record TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('pending','effective','inert','retired')),
+    fork_evidence BLOB CHECK(fork_evidence IS NULL OR length(fork_evidence) = 32),
+    PRIMARY KEY (owner_key, community_id, device_key, incarnation),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_governance_devices_member
+    ON governance_devices(owner_key, community_id, member);
 
 -- Checkpoint hints (plan E3.2 S7c.6): every (height, round, digest) a held
 -- `Checkpoint` op carries, written after each rebuild. `op_hash` is the

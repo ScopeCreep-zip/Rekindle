@@ -27,6 +27,7 @@ pub mod friends;
 pub mod game_servers;
 pub mod game_sessions;
 pub mod governance_checkpoints;
+pub mod governance_devices;
 pub mod governance_ops;
 pub mod governance_partial;
 pub mod group_dm_invites;

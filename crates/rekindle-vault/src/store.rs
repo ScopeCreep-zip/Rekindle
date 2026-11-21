@@ -104,8 +104,55 @@ impl VaultStore {
         if duress {
             return Err(VaultError::Duress);
         }
+        Ok((Self::keyed(path, &keys.sqlcipher, keys.entry)?, keys.app_db))
+    }
+
+    /// Open (or, with `create`, make) the store at `path` under keys that
+    /// need no KDF: the device vault, whose random 32-byte key the identity
+    /// vault holds (plan E3.2 S7d-keys.7, [`crate::device`]).
+    pub(crate) fn open_raw(path: &Path, key: &[u8; 32], create: bool) -> Result<Self, VaultError> {
+        if create && path.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        if !create && !path.exists() {
+            return Err(VaultError::NotFound);
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let sqlcipher =
+            Zeroizing::new(blake3::derive_key(domains::DEVICE_VAULT_SQLCIPHER_KEY, key));
+        let entry = LockedBox::new_with(|buf| {
+            let mut hasher = blake3::Hasher::new_derive_key(domains::DEVICE_VAULT_ENTRY_KEY);
+            hasher.update(key);
+            hasher.finalize_xof().fill(buf);
+        });
+        let opened = Self::keyed(path, &sqlcipher, entry);
+        if create {
+            match &opened {
+                Ok(_) => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+                    }
+                }
+                Err(_) => {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+        opened
+    }
+
+    /// Key the SQLCipher connection at `path` and read it once.
+    fn keyed(
+        path: &Path,
+        sqlcipher: &[u8; 32],
+        entry_key: LockedBox<32>,
+    ) -> Result<Self, VaultError> {
         let conn = Connection::open(path)?;
-        let key_pragma = format!("x'{}'", hex::encode(*keys.sqlcipher));
+        let key_pragma = format!("x'{}'", hex::encode(sqlcipher));
         // Keying, then the first read, which makes SQLCipher decrypt the
         // header. A key that does not decrypt it surfaces as NOMEM or
         // NOTADB (`VaultError::WrongPassphrase` says why).
@@ -119,14 +166,11 @@ impl VaultStore {
             .map_err(VaultError::Sqlite)
             .and_then(|_| schema::ensure(&conn))
             .map_err(wrong_key_or)?;
-        Ok((
-            Self {
-                conn: Mutex::new(conn),
-                entry_key: keys.entry,
-                path: path.to_path_buf(),
-            },
-            keys.app_db,
-        ))
+        Ok(Self {
+            conn: Mutex::new(conn),
+            entry_key,
+            path: path.to_path_buf(),
+        })
     }
 
     /// Remove the vault at `path` and its header. Missing files are not an

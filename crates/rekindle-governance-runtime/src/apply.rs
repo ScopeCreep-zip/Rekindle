@@ -273,7 +273,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         op_deps,
         deps.clock().now_secs(),
     )?;
-    deps.store_governance_op(
+    deps.store_signed_governance_op(
         community_id,
         &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
     )

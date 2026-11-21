@@ -80,16 +80,16 @@ pub struct CommunityLoad {
     /// The threads held at receipt, `(community_id, thread_id)`.
     pub held_threads: Vec<(String, String)>,
     /// Each community with a pinned `GenesisCert`: its id, the cert's
-    /// bytes, and its op authors' heads (the member records their ops
-    /// live in), by community (plan E3.2).
+    /// bytes, and its device keys' heads (the member records their ops
+    /// live in), by community (plan E3.2, ADR 0022).
     pub pinned: Vec<PinnedGovernance>,
 }
 
-/// A community's pinned cert and its op authors' heads.
+/// A community's pinned cert and its device keys' heads.
 pub struct PinnedGovernance {
     pub community_id: String,
     pub genesis_cert: Vec<u8>,
-    pub heads: Vec<governance_ops::AuthorHead>,
+    pub heads: Vec<governance_ops::DeviceHead>,
 }
 
 fn pinned(

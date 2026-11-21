@@ -8,7 +8,7 @@
 use rekindle_records::port::OpenIntent;
 use std::collections::BTreeMap;
 
-use rekindle_db::repo::governance_ops::{self as repo, AuthorHead, OpState, StoredOp};
+use rekindle_db::repo::governance_ops::{self as repo, DeviceHead, OpState, StoredOp};
 use rekindle_governance_runtime::deps::DhtRecordInfo;
 use rekindle_governance_runtime::op_log::{self, HeldOp, OpFate, OpVerdict};
 use rekindle_governance_runtime::GovernanceRuntimeError;
@@ -69,28 +69,28 @@ pub(super) fn pseudonym_of(hex_key: &str) -> Option<PseudonymKey> {
 }
 
 /// The held form of the stored `ops`, each with the member record its
-/// author's head names.
+/// device key's head names (ADR 0022 rule 3: one record per device key).
 ///
 /// # Errors
-/// An op's author has no head or is not a pseudonym (the store writes the
-/// head with the op, so either is a corrupt store).
-pub(crate) fn held_ops(ops: Vec<StoredOp>, heads: &[AuthorHead]) -> Result<Vec<HeldOp>, String> {
+/// An op's device key has no head or its author is not a pseudonym (the
+/// store writes the head with the op, so either is a corrupt store).
+pub(crate) fn held_ops(ops: Vec<StoredOp>, heads: &[DeviceHead]) -> Result<Vec<HeldOp>, String> {
     let records: BTreeMap<&str, &str> = heads
         .iter()
-        .map(|h| (h.author.as_str(), h.member_record.as_str()))
+        .map(|h| (h.device_key.as_str(), h.member_record.as_str()))
         .collect();
     ops.into_iter()
         .map(|op| {
             let record = records
-                .get(op.author.as_str())
-                .ok_or_else(|| format!("op author {} has no head", op.author))?;
+                .get(op.device_key.as_str())
+                .ok_or_else(|| format!("op device key {} has no head", op.device_key))?;
             let author = pseudonym_of(&op.author)
                 .ok_or_else(|| format!("op author {:?} is not a pseudonym", op.author))?;
             Ok(HeldOp {
                 hash: OpHash(op.op_hash),
                 author,
                 author_record: (*record).to_owned(),
-                seq: op.author_seq,
+                seq: op.device_seq,
                 lamport: op.lamport,
                 issued_at: op.issued_at,
                 encoded: op.op,
@@ -143,7 +143,7 @@ impl HostGovernance {
     ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
         let (owner, db) = self.op_store()?;
         let community = community_id.to_owned();
-        let (ops, heads): (Vec<StoredOp>, Vec<AuthorHead>) = db
+        let (ops, heads): (Vec<StoredOp>, Vec<DeviceHead>) = db
             .call(move |conn| {
                 Ok((
                     repo::list(conn, &owner, &community, None)?,
@@ -155,11 +155,14 @@ impl HostGovernance {
         held_ops(ops, &heads).map_err(GovernanceRuntimeError::Adapter)
     }
 
-    /// Store `op` and advance its author's head when it is newer.
+    /// Store `op` and advance its device key's head when it is newer;
+    /// `signed_here` only from the local signer
+    /// (`GovernanceRuntimeDeps::store_signed_governance_op`).
     pub(super) async fn store_governance_op_impl(
         &self,
         community_id: &str,
         op: &HeldOp,
+        signed_here: bool,
     ) -> Result<(), GovernanceRuntimeError> {
         // A community we no longer hold (left, or a join withdrawn: SU1) has
         // no row for its ops: a late ring change or walk that read it before
@@ -172,16 +175,24 @@ impl HostGovernance {
         let (owner, db) = self.op_store()?;
         let community = community_id.to_owned();
         let author = hex::encode(op.author.0);
+        // The key that signed the op. Until S7d-keys.1 puts
+        // `GovernanceOp.deviceKey` on the wire, ops are verified against
+        // their author (`rekindle_governance::op::VerifiedOp::verify`), so the
+        // signing key is the pseudonym itself.
+        let device_key = author.clone();
         let stored = StoredOp {
             op_hash: op.hash.0,
             author: author.clone(),
-            author_seq: op.seq,
+            device_key: device_key.clone(),
+            device_seq: op.seq,
             lamport: op.lamport,
             issued_at: op.issued_at,
             op: op.encoded.clone(),
             state: state_of(op.fate),
+            signed_here,
         };
-        let head = AuthorHead {
+        let head = DeviceHead {
+            device_key,
             author,
             member_record: op.author_record.clone(),
             head_seq: op.seq,
@@ -192,7 +203,7 @@ impl HostGovernance {
             repo::insert(&tx, &owner, &community, &stored)?;
             let newer = repo::heads(&tx, &owner, &community)?
                 .iter()
-                .find(|h| h.author == head.author)
+                .find(|h| h.device_key == head.device_key)
                 .is_none_or(|h| h.head_seq < head.head_seq);
             if newer {
                 repo::set_head(&tx, &owner, &community, &head)?;
