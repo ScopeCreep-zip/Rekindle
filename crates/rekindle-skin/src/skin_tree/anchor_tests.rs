@@ -28,9 +28,9 @@ const CLASSIC: &[u8] = br#"<Tile Name="XfireMainWindow" Component="MainWindow">
 </Tile>"#;
 
 const PARTS: &[u8] = br#"<Components>
-<Component Name="MainTitleBar"><Images State="Normal"><Image>bar-300x50</Image></Images></Component>
-<Component Name="XfireLogo"><Images State="Normal"><Image>logo-40x30</Image></Images></Component>
-<Component Name="CloseBox"><Images State="Normal"><Image>close-18x16</Image></Images></Component>
+<Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-300x50</Image></Images></Component>
+<Component Name="XfireLogo"><Images State="Normal"><Image Type="Middle">logo-40x30</Image></Images></Component>
+<Component Name="CloseBox"><Images State="Normal"><Image Type="Middle">close-18x16</Image></Images></Component>
 </Components>"#;
 
 fn piece(path: &str) -> RgbaImage {

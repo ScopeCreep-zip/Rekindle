@@ -8,7 +8,7 @@
 //! `ResizeX/Y="100"` with `Indent*`/`Outdent*` (stretched), and an INI
 //! negative offset (from the far edge: XGlow's `XfireLogo` `X=-80`).
 //! The size of a fixed tile is its component's normal art (SK1-S1's
-//! [`component_image`]). An anchor that does not resolve refuses the pack
+//! [`component_pieces`], its piece set's natural size, spec A6). An anchor that does not resolve refuses the pack
 //! (rule 2); a component the table lacks refuses it (rule 1) unless it is
 //! classless art (Decor). The views node's box is the layout's content
 //! rectangle.
@@ -19,7 +19,9 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, RegionState, SkinWindow, TileAxis, WindowLayout};
 
 pub use super::fit::views_content;
-use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{
+    NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
+};
 
 use super::anchor::{axis, client_box, client_inset, outer_for, to_tile, Sibs, Sizes, X, Y};
 use super::clip::{clip, Art, Images};
@@ -28,7 +30,7 @@ use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::rail;
 use super::roles::{role, Facts};
 use crate::import::tree::Node;
-use crate::import::xfire_xml::title::{component_image, Decode};
+use crate::import::xfire_xml::title::{component_pieces, Decode};
 use crate::import::ImportError;
 use crate::shape;
 
@@ -47,12 +49,40 @@ fn limit_of(component: Option<&Node>, key: &str) -> Option<u16> {
     component?.attr_ci(key)?.trim().parse().ok()
 }
 
+/// A state's pieces as decoded, in the pack's order.
+type Pieces = Vec<(PieceSlot, RgbaImage)>;
+
+/// The natural size of decoded `pieces` (spec A6 `ToContent`); `None`
+/// for no pieces.
+fn natural_of(pieces: &Pieces) -> Option<(u32, u32)> {
+    if pieces.is_empty() {
+        return None;
+    }
+    let set: NodePieces = pieces
+        .iter()
+        .map(|(s, i)| {
+            let side = |v: u32| u16::try_from(v).unwrap_or(u16::MAX);
+            (
+                *s,
+                NodePiece {
+                    image: String::new(),
+                    width: side(i.width()),
+                    height: side(i.height()),
+                },
+            )
+        })
+        .collect();
+    let (w, h) = super::pieces::natural(&set);
+    Some((u32::try_from(w).unwrap_or(0), u32::try_from(h).unwrap_or(0)))
+}
+
 /// A tile read but not yet placed.
 struct Read<'n> {
     tile: &'n Node,
     id: String,
     role: NodeRole,
-    img: Option<RgbaImage>,
+    /// The component's normal piece set (spec A7).
+    pieces: Pieces,
     wh: (u16, u16),
     max: (Option<u16>, Option<u16>),
     /// The component's `ControlGroupId` (INI tab controls that switch
@@ -73,11 +103,8 @@ struct Walk<'a> {
 }
 
 impl Walk<'_> {
-    fn image(&self, tile: &Node, state: &str) -> Result<Option<RgbaImage>, ImportError> {
-        match component_image(&self.by_name, self.piece, tile, state) {
-            Err(ImportError::MissingFile { .. } | ImportError::UndefinedBitmap { .. }) => Ok(None),
-            other => other,
-        }
+    fn pieces(&self, tile: &Node, state: &str) -> Result<Pieces, ImportError> {
+        component_pieces(&self.by_name, self.piece, tile, state)
     }
 
     fn encode(&mut self, piece: &str, img: &RgbaImage) -> Result<Option<String>, ImportError> {
@@ -98,16 +125,15 @@ impl Walk<'_> {
     fn content_size(&self, tile: &Node) -> Result<(u16, u16), ImportError> {
         let mut wh = (0u16, 0u16);
         for c in tile.children_named("Tile") {
-            let normal = self.image(c, "Normal")?;
-            let img = if normal.is_some() {
-                normal
-            } else {
-                self.image(c, "Hover")?
+            let normal = natural_of(&self.pieces(c, "Normal")?);
+            let img = match normal {
+                Some(n) => Some(n),
+                None => natural_of(&self.pieces(c, "Hover")?),
             };
-            let (cw, ch) = if let Some(i) = img {
+            let (cw, ch) = if let Some((w, h)) = img {
                 (
-                    u16::try_from(i.width()).unwrap_or(u16::MAX),
-                    u16::try_from(i.height()).unwrap_or(u16::MAX),
+                    u16::try_from(w).unwrap_or(u16::MAX),
+                    u16::try_from(h).unwrap_or(u16::MAX),
                 )
             } else {
                 self.content_size(c)?
@@ -123,12 +149,39 @@ impl Walk<'_> {
         Ok(wh)
     }
 
-    /// A node's normal, hover and down art at one size.
+    /// `pieces` encoded as package images named after `name` (a lone
+    /// `middle` keeps the bare name), with their natural sizes.
+    fn encode_set(&mut self, name: &str, pieces: &Pieces) -> Result<NodePieces, ImportError> {
+        let mut set = NodePieces::new();
+        for (slot, img) in pieces {
+            let file = if *slot == PieceSlot::Middle && pieces.len() == 1 {
+                name.to_owned()
+            } else {
+                format!("{name}-{}", slot.key())
+            };
+            if let Some(image) = self.encode(&file, img)? {
+                let side = |v: u32| u16::try_from(v).unwrap_or(u16::MAX);
+                set.insert(
+                    *slot,
+                    NodePiece {
+                        image,
+                        width: side(img.width()),
+                        height: side(img.height()),
+                    },
+                );
+            }
+        }
+        Ok(set)
+    }
+
+    /// A node's normal, hover, down and disabled piece sets (spec A10:
+    /// each state is its own set drawn at the box, whatever its pieces'
+    /// sizes).
     fn art(
         &mut self,
         id: &str,
         tile: &Node,
-        img: &RgbaImage,
+        pieces: &Pieces,
     ) -> Result<Option<NodeArt>, ImportError> {
         let slug: String = id
             .chars()
@@ -140,25 +193,23 @@ impl Walk<'_> {
                 }
             })
             .collect();
-        let Some(image) = self.encode(&format!("node-{slug}"), img)? else {
+        let normal = self.encode_set(&format!("node-{slug}"), pieces)?;
+        if normal.is_empty() {
             return Ok(None);
-        };
+        }
         let mut states = BTreeMap::new();
         for (state, set) in [
             (RegionState::Hover, "Hover"),
             (RegionState::Down, "Down"),
             (RegionState::Disabled, "Disabled"),
         ] {
-            let Some(other) = self.image(tile, set)? else {
-                continue;
-            };
-            if other.dimensions() == img.dimensions() {
-                if let Some(path) = self.encode(&format!("node-{slug}--{}", state.key()), &other)? {
-                    states.insert(state, path);
-                }
+            let other = self.pieces(tile, set)?;
+            let encoded = self.encode_set(&format!("node-{slug}--{}", state.key()), &other)?;
+            if !encoded.is_empty() {
+                states.insert(state, encoded);
             }
         }
-        Ok(Some(NodeArt { image, states }))
+        Ok(Some(NodeArt { normal, states }))
     }
 
     /// One tile's id, role and art, before it is placed.
@@ -170,20 +221,20 @@ impl Walk<'_> {
             .ok_or_else(|| bad("a tile with neither a name nor a component"))?
             .trim()
             .to_owned();
-        let img = self.image(tile, "Normal")?;
+        let pieces = self.pieces(tile, "Normal")?;
         let comp = component.and_then(|c| self.by_name.get(&c.to_ascii_lowercase()).copied());
         let size = |v: u32| u16::try_from(v).map_err(|_| bad(format!("{id}: art too large")));
         // A tile with no art is its component's declared size: Classic's
         // `ResizeUp` `MinHeight="5"` (`xfirecomponents.xml:121`), Symbiosis's
         // grippers `MinWidth="10" MinHeight="10"` (`Components/MainWindow.xml:62`).
-        let wh = match &img {
-            Some(i) => (size(i.width())?, size(i.height())?),
+        let wh = match natural_of(&pieces) {
+            Some((w, h)) => (size(w)?, size(h)?),
             // Art only on hover: the button's normal look is baked in the
             // art under it, and its hover image is its size (Total Chaos's
             // `TCLink`, `components.xml:507-519`).
             None => {
-                if let Some(h) = self.image(tile, "Hover")? {
-                    (size(h.width())?, size(h.height())?)
+                if let Some((w, h)) = natural_of(&self.pieces(tile, "Hover")?) {
+                    (size(w)?, size(h)?)
                 } else {
                     let declared = (
                         limit_of(comp, "MinWidth").unwrap_or(0),
@@ -218,7 +269,7 @@ impl Walk<'_> {
             })
             .collect();
         let facts = Facts {
-            has_art: img.is_some(),
+            has_art: !pieces.is_empty(),
             class: comp.and_then(|c| c.attr_ci("Class")),
             children: &children,
         };
@@ -237,7 +288,7 @@ impl Walk<'_> {
             tile,
             id,
             role,
-            img,
+            pieces,
             wh,
             max,
             group,
@@ -302,9 +353,10 @@ impl Walk<'_> {
             // Every tile's art is the node's (SK0: the art is the window's
             // shape; plan SK2-S1r): a decor band, logo or ad ground draws and
             // joins the outline like a button does.
-            let art = match &t.img {
-                Some(i) => self.art(&t.id, t.tile, i)?,
-                None => None,
+            let art = if t.pieces.is_empty() {
+                None
+            } else {
+                self.art(&t.id, t.tile, &t.pieces)?
             };
             let z = t.tile.attr_ci("Z").map_or(Ok(0), |z| {
                 z.trim()

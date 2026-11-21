@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use rekindle_types::dto::skin::{TileAxis, WindowLayout};
 
 use super::{outline_nodes, Mask, ShapeError, MAX_RECTS};
+use crate::skin_tree::pieces;
 
 /// The device-pixel ratio of 1.0, in thousandths (`scale` is per mille so
 /// the result is integer arithmetic and the same on every platform).
@@ -88,10 +89,12 @@ pub(super) fn placed(layout: &WindowLayout, width: u32, height: u32) -> Vec<(usi
 }
 
 fn fits(layout: &WindowLayout, masks: &[Mask]) -> Result<(), ShapeError> {
-    let nodes = layout
-        .tree
-        .as_ref()
-        .map_or(0, |t| outline_nodes(t, 0, 0).len());
+    let nodes: usize = layout.tree.as_ref().map_or(0, |t| {
+        outline_nodes(t, 0, 0)
+            .iter()
+            .map(|(n, _)| n.art.as_ref().map_or(0, |a| a.normal.len()))
+            .sum()
+    });
     if masks.len() != layout.tiles.len() + nodes {
         return Err(ShapeError::Mask {
             tile: masks.len().min(layout.tiles.len()),
@@ -105,47 +108,103 @@ fn fits(layout: &WindowLayout, masks: &[Mask]) -> Result<(), ShapeError> {
     Ok(())
 }
 
-/// Each outline node's laid art in a `width × height` window: its mask's
-/// index and the drawn part of its image (x, y, width, height), its box's
-/// top left at the image's own size, clipped to the box.
-fn laid_art(layout: &WindowLayout, masks: &[Mask], width: u32, height: u32) -> Vec<(usize, Area)> {
+/// One node piece laid in the window: its mask's index, its node box's
+/// top left, the piece's width and height and how it lays
+/// ([`pieces::lay`]).
+type Laid = (usize, (i64, i64), (i64, i64), pieces::Lay);
+
+/// Each outline node's laid art in a `width × height` window: every normal
+/// piece as [`pieces::lay`] lays it in the node's box (the one geometry the
+/// stylesheet reads), masks in [`super::of_layout`] order.
+fn laid_art(layout: &WindowLayout, masks: &[Mask], width: u32, height: u32) -> Vec<Laid> {
     let Some(tree) = &layout.tree else {
         return Vec::new();
     };
     let side = |v: u32| i32::try_from(v).unwrap_or(i32::MAX);
-    outline_nodes(tree, side(width), side(height))
-        .into_iter()
-        .enumerate()
-        .filter_map(|(k, (_, b))| {
-            let i = layout.tiles.len() + k;
-            let m = masks.get(i)?;
-            let w = i64::from(b[2]).min(i64::from(m.width()));
-            let h = i64::from(b[3]).min(i64::from(m.height()));
-            (w > 0 && h > 0).then_some((i, (i64::from(b[0]), i64::from(b[1]), w, h)))
-        })
-        .collect()
-}
-
-/// Adds scanline `y`'s opaque runs of the laid node art to `row`.
-fn art_runs(
-    art: &[(usize, Area)],
-    runs_of: &[Vec<Vec<(u32, u32)>>],
-    y: i64,
-    w: i64,
-    row: &mut Vec<(i64, i64)>,
-) {
-    for &(i, (x, top, aw, ah)) in art {
-        if y < top || y >= top + ah {
+    let mut next = layout.tiles.len();
+    let mut out = Vec::new();
+    for (n, b) in outline_nodes(tree, side(width), side(height)) {
+        let Some(art) = &n.art else {
             continue;
-        }
-        let src = usize::try_from(y - top).unwrap_or(usize::MAX);
-        for &(a, b) in runs_of[i].get(src).map_or(&[][..], Vec::as_slice) {
-            let (a, b) = (x + i64::from(a), x + i64::from(b).min(aw));
-            let (a, b) = (a.max(0), b.min(w));
-            if a < b {
-                row.push((a, b));
+        };
+        for (k, l) in pieces::lay(&art.normal, b[2], b[3]).into_iter().enumerate() {
+            if let Some(m) = masks.get(next + k) {
+                let origin = (i64::from(b[0]), i64::from(b[1]));
+                out.push((
+                    next + k,
+                    origin,
+                    (i64::from(m.width()), i64::from(m.height())),
+                    l,
+                ));
             }
         }
+        next += art.normal.len();
+    }
+    out
+}
+
+/// Adds scanline `y`'s opaque runs of the laid node art to `row`: in each
+/// piece's band, the copy under `y` and that source row's runs at every
+/// copy across, clipped to the band. A piece's runs across depend only on
+/// its source row, so `cache` keeps them by (piece, source row).
+fn art_runs(
+    art: &[Laid],
+    runs_of: &[Vec<Vec<(u32, u32)>>],
+    (scan, width): (i64, i64),
+    cache: &mut HashMap<(usize, usize), Vec<(i64, i64)>>,
+    row: &mut Vec<(i64, i64)>,
+) {
+    for (n, (i, (ox, oy), (pw, ph), laid)) in art.iter().enumerate() {
+        let band = laid.band.map(i64::from);
+        let (top, left) = (oy + band[1], ox + band[0]);
+        if scan < top || scan >= top + band[3] {
+            continue;
+        }
+        let k = laid
+            .ys
+            .partition_point(|start| oy + i64::from(*start) + ph <= scan);
+        let Some(start) = laid
+            .ys
+            .get(k)
+            .map(|start| oy + i64::from(*start))
+            .filter(|start| *start <= scan)
+        else {
+            continue;
+        };
+        let src = usize::try_from(scan - start).unwrap_or(usize::MAX);
+        if let Some(done) = cache.get(&(n, src)) {
+            row.extend_from_slice(done);
+            continue;
+        }
+        let mut out = Vec::new();
+        let runs = runs_of[*i].get(src).map_or(&[][..], Vec::as_slice);
+        // A row opaque across the whole piece joins its copies into one run
+        // (the copies abut: [`pieces::lay`] steps by the piece'start width).
+        if let ([(0, b)], Some(first), Some(last)) = (runs, laid.xs.first(), laid.xs.last()) {
+            if i64::from(*b) == *pw {
+                let a = (ox + i64::from(*first)).max(left).max(0);
+                let b = (ox + i64::from(*last) + pw).min(left + band[2]).min(width);
+                if a < b {
+                    out.push((a, b));
+                }
+                row.extend_from_slice(&out);
+                cache.insert((n, src), out);
+                continue;
+            }
+        }
+        for x in &laid.xs {
+            let x = ox + i64::from(*x);
+            for &(a, b) in runs {
+                let a = (x + i64::from(a)).max(left).max(0);
+                let b = (x + i64::from(b)).min(left + band[2]).min(width);
+                if a < b {
+                    out.push((a, b));
+                }
+            }
+        }
+        let out = merge(out);
+        row.extend_from_slice(&out);
+        cache.insert((n, src), out);
     }
 }
 
@@ -204,6 +263,7 @@ pub fn silhouette(
         .collect();
     let w = i64::from(width);
     let art = laid_art(layout, masks, width, height);
+    let mut art_cache = HashMap::new();
     let mut cache: HashMap<Vec<(usize, usize)>, Vec<(i64, i64)>> = HashMap::new();
     let mut logical: Vec<(i64, i64, i64, i64)> = Vec::new();
     let mut open: Vec<(i64, i64)> = Vec::new();
@@ -242,7 +302,7 @@ pub fn silhouette(
                     merge(runs)
                 })
                 .clone();
-            art_runs(&art, &runs_of, y, w, &mut row);
+            art_runs(&art, &runs_of, (y, w), &mut art_cache, &mut row);
             if in_content {
                 row.push((content.0.max(0), (content.0 + content.2).min(w)));
             }

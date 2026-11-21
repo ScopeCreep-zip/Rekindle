@@ -248,7 +248,6 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
 
     use rekindle_types::dto::skin_tree::{ActionKey, Anchor, NodeArt, NodeRole, NodeSpan, ViewKey};
 
@@ -365,10 +364,7 @@ mod tests {
             size: 37,
         };
         let mut slot = n("Slot", NodeRole::Group, span, fixed(0, 20));
-        slot.art = Some(NodeArt {
-            image: "slot.png".into(),
-            states: BTreeMap::new(),
-        });
+        slot.art = Some(NodeArt::middle("slot.png".into(), 37, 20));
         let mut b = n(
             "ChatButton",
             NodeRole::Button(ActionKey::Chat),
@@ -380,7 +376,11 @@ mod tests {
         let mut root = vec![slot];
         rows_by_view(&mut root).unwrap();
         let w = &root[0].children[0];
-        let art = w.art.as_ref().map(|a| a.image.as_str());
+        let art = w
+            .art
+            .as_ref()
+            .and_then(|a| a.images().next())
+            .map(String::as_str);
         assert_eq!((w.id.as_str(), w.x, art), ("Slot", span, Some("slot.png")));
         assert_eq!(
             (w.children[0].id.as_str(), w.children[0].x),

@@ -49,8 +49,7 @@ fn entry_of(region: &str, bytes: &[u8]) -> String {
 fn tree_art<'a>(nodes: &'a [SkinNode], out: &mut Vec<&'a String>) {
     for n in nodes {
         if let Some(a) = &n.art {
-            out.push(&a.image);
-            out.extend(a.states.values());
+            out.extend(a.images());
         }
         tree_art(&n.children, out);
     }

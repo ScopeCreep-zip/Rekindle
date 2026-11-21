@@ -61,14 +61,112 @@ impl NodeSpan {
     }
 }
 
-/// A node's art: its normal image (or 3-slice), drawn at its own size and
-/// never stretched, and its other states' images of the same size.
+/// Where one piece of a component's image set draws in its tile's box
+/// (Xfire's `Image Type=`, spec A7; the engine's table, `Xfire.exe` UTF-16
+/// strings at 0x2b4234-0x2b42bc): the corners once at their natural size,
+/// `top`/`bottom` repeated across between the corner columns, `left`/`right`
+/// repeated down between the corner rows, `middle` repeated both ways in
+/// the rest. A type outside the table (Total Chaos's `center`) is no piece.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PieceSlot {
+    TopLeft,
+    Top,
+    TopRight,
+    Left,
+    Middle,
+    Right,
+    BottomLeft,
+    Bottom,
+    BottomRight,
+}
+
+impl PieceSlot {
+    /// Every slot, in drawing-table order.
+    pub const ALL: [Self; 9] = [
+        Self::TopLeft,
+        Self::Top,
+        Self::TopRight,
+        Self::Left,
+        Self::Middle,
+        Self::Right,
+        Self::BottomLeft,
+        Self::Bottom,
+        Self::BottomRight,
+    ];
+
+    /// The slot an Xfire `Image Type=` names, case-insensitively.
+    #[must_use]
+    pub fn of_type(t: &str) -> Option<Self> {
+        let t = t.trim();
+        Self::ALL
+            .into_iter()
+            .find(|s| s.key().eq_ignore_ascii_case(t))
+    }
+
+    /// The pack's (lower-case) type word.
+    #[must_use]
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::TopLeft => "topleft",
+            Self::Top => "top",
+            Self::TopRight => "topright",
+            Self::Left => "left",
+            Self::Middle => "middle",
+            Self::Right => "right",
+            Self::BottomLeft => "bottomleft",
+            Self::Bottom => "bottom",
+            Self::BottomRight => "bottomright",
+        }
+    }
+}
+
+/// One piece: its package image at its natural size, px.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NodePiece {
+    pub image: String,
+    pub width: u16,
+    pub height: u16,
+}
+
+/// One state's piece set (spec A7, A10): each state is a whole set drawn at
+/// the tile's box size, so its pieces need not match the normal set's.
+pub type NodePieces = BTreeMap<PieceSlot, NodePiece>;
+
+/// A node's art: its normal piece set and its other states' sets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NodeArt {
-    pub image: String,
+    pub normal: NodePieces,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub states: BTreeMap<RegionState, String>,
+    pub states: BTreeMap<RegionState, NodePieces>,
+}
+
+impl NodeArt {
+    /// Art of one `middle` piece `width × height` and no other state.
+    #[must_use]
+    pub fn middle(image: String, width: u16, height: u16) -> Self {
+        Self {
+            normal: NodePieces::from([(
+                PieceSlot::Middle,
+                NodePiece {
+                    image,
+                    width,
+                    height,
+                },
+            )]),
+            states: BTreeMap::new(),
+        }
+    }
+
+    /// Every package image the art names, normal set first.
+    pub fn images(&self) -> impl Iterator<Item = &String> {
+        self.normal
+            .values()
+            .chain(self.states.values().flat_map(BTreeMap::values))
+            .map(|p| &p.image)
+    }
 }
 
 /// One component of the pack's tree.

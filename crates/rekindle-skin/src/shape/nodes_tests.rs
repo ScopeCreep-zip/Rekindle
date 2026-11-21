@@ -1,7 +1,5 @@
 //! Tree-node art in the outline (plan SK2-S1r).
 
-use std::collections::BTreeMap;
-
 use rekindle_image::{encode_png, DynamicImage, Rgba, RgbaImage};
 use rekindle_types::dto::skin::{Insets, SkinWindow};
 use rekindle_types::dto::skin_tree::{
@@ -42,10 +40,7 @@ fn node(id: &str, role: NodeRole, (x, y, w, h): (i16, i16, u16, u16)) -> SkinNod
             size: h,
         },
         z: 0,
-        art: Some(NodeArt {
-            image: format!("assets/tree/{id}.png"),
-            states: BTreeMap::new(),
-        }),
+        art: Some(NodeArt::middle(format!("assets/tree/{id}.png"), w, h)),
         text: None,
         shows_with: None,
         children: Vec::new(),
@@ -68,10 +63,7 @@ fn shown_node_art_joins_the_outline_where_it_is_opaque() {
     let band = RgbaImage::from_fn(2, 4, |x, y| if (x, y) == (1, 0) { OFF } else { ON });
     let tall = RgbaImage::from_pixel(2, 4, ON);
     let mut servers = node("servers", NodeRole::View(ViewKey::Servers), (0, 10, 2, 2));
-    servers.art = Some(NodeArt {
-        image: "assets/tree/tall.png".to_owned(),
-        states: BTreeMap::new(),
-    });
+    servers.art = Some(NodeArt::middle("assets/tree/tall.png".to_owned(), 2, 4));
     let mut bar = node("bar", NodeRole::ButtonBar, (0, 0, 22, 20));
     bar.art = None;
     let mut first = node("first", NodeRole::Group, (0, 0, 22, 20));

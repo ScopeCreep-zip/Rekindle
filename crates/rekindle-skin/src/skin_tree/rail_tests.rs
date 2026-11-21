@@ -40,7 +40,7 @@ fn stealthxs_rail_ground_is_laid_as_decoration() {
         format!(
             r#"<Components>
 <Component Name="MainWindow" MinWidth="300" MinHeight="400"/>
-<Component Name="MenuButton" Class="SkinLauncher"><Images State="Normal"><Image>menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
+<Component Name="MenuButton" Class="SkinLauncher"><Images State="Normal"><Image Type="Middle">menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
 <Component Name="MainMenuWindow" Class="Tile" DefaultWidth="114" MinWidth="114" MinHeight="360" BindX="false" BindY="true" ResizeY="100"/>
 <Component Name="MenuBackground" Class="Tile"><Images>{images}</Images></Component>
 </Components>"#

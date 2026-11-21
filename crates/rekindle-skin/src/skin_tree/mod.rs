@@ -10,6 +10,7 @@ pub mod css;
 mod fit;
 pub mod import;
 mod passes;
+pub mod pieces;
 mod rail;
 pub mod roles;
 pub mod validate;

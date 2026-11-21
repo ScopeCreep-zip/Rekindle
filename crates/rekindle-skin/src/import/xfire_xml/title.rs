@@ -41,6 +41,7 @@ use std::collections::BTreeMap;
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{RegionState, SkinWindow, TileAxis, WindowLayout};
 use rekindle_types::dto::skin_title::{TitleLayout, TitlePart, TitleRole, TitleSlices, TitleText};
+use rekindle_types::dto::skin_tree::PieceSlot;
 
 use super::super::tree::Node;
 use super::super::ImportError;
@@ -462,6 +463,49 @@ pub(crate) fn component_image(
         .or_else(|| set.children_named("Image").next());
     img.map(|i| piece(&i.text, set.attr_ci("Color")))
         .transpose()
+}
+
+/// `tile`'s component's `state` set as its frame pieces (spec A7: the
+/// engine resolves each piece type per state, `Xfire.exe` 0x2bbb18 "No
+/// images found for type %ws of state %ws of %ws"): each `Image Type=` the
+/// piece table names, the first of a type; a type outside the table
+/// (Total Chaos's `center`) and a piece whose bitmap is not in the pack
+/// (spec A8, SK0: an undefined bitmap lays nothing) draw nothing.
+///
+/// # Errors
+/// What `piece` returns for a bitmap that is there but does not decode.
+pub(crate) fn component_pieces(
+    by_name: &BTreeMap<String, &Node>,
+    piece: Decode<'_>,
+    tile: &Node,
+    state: &str,
+) -> Result<Vec<(PieceSlot, RgbaImage)>, ImportError> {
+    let component = tile
+        .attr_ci("Component")
+        .and_then(|c| by_name.get(&c.to_ascii_lowercase()));
+    let set = component.and_then(|c| {
+        if eq(state, "Normal") {
+            normal_set(c)
+        } else {
+            c.children_named("Images")
+                .find(|i| i.attr_ci("State").is_some_and(|s| eq(s, state)))
+        }
+    });
+    let mut out: Vec<(PieceSlot, RgbaImage)> = Vec::new();
+    for i in set.iter().flat_map(|s| s.children_named("Image")) {
+        let Some(slot) = i.attr_ci("Type").and_then(PieceSlot::of_type) else {
+            continue;
+        };
+        if out.iter().any(|(s, _)| *s == slot) {
+            continue;
+        }
+        match piece(&i.text, set.and_then(|s| s.attr_ci("Color"))) {
+            Ok(img) => out.push((slot, img)),
+            Err(ImportError::MissingFile { .. } | ImportError::UndefinedBitmap { .. }) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(out)
 }
 
 /// Adds the strip `layout` (the window's layout file) lays to `built`.

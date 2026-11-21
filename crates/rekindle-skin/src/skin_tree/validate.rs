@@ -45,7 +45,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::dto::skin::{SkinError, SkinRule, WindowLayout};
-use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
+use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
 
 /// The most nodes a tree may hold.
 pub const MAX_NODES: usize = 512;
@@ -229,9 +229,7 @@ fn contains(outer: [i32; 4], inner: [i32; 4]) -> bool {
 }
 
 fn art_paths(n: &SkinNode) -> impl Iterator<Item = &String> {
-    n.art
-        .iter()
-        .flat_map(|a| std::iter::once(&a.image).chain(a.states.values()))
+    n.art.iter().flat_map(NodeArt::images)
 }
 
 /// Each node's view: the `shows_with` of it or its nearest ancestor. Two

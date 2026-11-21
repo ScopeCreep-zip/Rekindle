@@ -1,7 +1,8 @@
 //! One stylesheet rule per tree node (plan SK2, design §5 "CSS emission"):
 //! `[data-skin-node="<id>"]` placed absolutely in its parent's node by its
-//! resolved spans, at its `Z`, with its art at its own size and its hover,
-//! down and disabled art; an interactive node smaller than 24×24 gets a
+//! resolved spans, at its `Z`, with its art's piece sets ([`layers`]: caps
+//! at their own size, edges and middle tiled from the caps' end edges) for
+//! its normal, hover, down and disabled states; an interactive node smaller than 24×24 gets a
 //! 24×24 hit area (`::before`, centred, shifted inward at the window's
 //! edges as [`hit_area`] lays it; an edge grip's yields to the interactive
 //! nodes it overlaps, [`grip_area`], lead decision 6); every node is
@@ -16,7 +17,9 @@ use std::fmt::Write as _;
 
 use rekindle_types::dto::skin::RegionState;
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, NodePieces, NodeRole, NodeSpan, SkinNode, SkinTree};
+
+use super::pieces::{self, Band};
 
 use super::validate::{grip_area, hit_area, stack_z, text_sized, Stack, HIT};
 use crate::regions::css::href;
@@ -111,6 +114,89 @@ fn hit_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
     );
 }
 
+/// One state's background layers on the node itself and on its `::after`
+/// (the row band, spec A7), as declarations; `None` for an image `images`
+/// lacks. The node's own boxes are its border box (the whole box) and, when
+/// a side piece needs it, its content box inset by the corner rows (the
+/// column band); the `::after` is laid at the row band and inset by the
+/// corner rows, so its content box is the middle band. Every layer is laid
+/// from its band's start or end ([`pieces::cell`]) and clipped to the band,
+/// exactly as [`pieces::draw`] lays it for the outline.
+fn layers(
+    set: &NodePieces,
+    images: &BTreeMap<String, Vec<u8>>,
+    base: &str,
+) -> Option<(String, Option<String>)> {
+    let [left, right, top, bottom] = pieces::insets(set);
+    let has = |band: Band| set.keys().any(|s| pieces::cell(*s).band == band);
+    let after = (left > 0 || right > 0) && (has(Band::Row) || has(Band::Middle));
+    let padded = (top > 0 || bottom > 0)
+        && (has(Band::Column) || (has(Band::Middle) && left == 0 && right == 0));
+    let (mut own, mut over): (Vec<[String; 4]>, Vec<[String; 4]>) = (Vec::new(), Vec::new());
+    for (slot, piece) in set {
+        let c = pieces::cell(*slot);
+        let h = href(base, &piece.image, images)?;
+        let pos = format!(
+            "{} {}",
+            if c.end.0 { "100%" } else { "0" },
+            if c.end.1 { "100%" } else { "0" }
+        );
+        let rep = match c.repeat {
+            (true, true) => "repeat",
+            (true, false) => "repeat-x",
+            (false, true) => "repeat-y",
+            (false, false) => "no-repeat",
+        };
+        let inner = if padded { "content-box" } else { "border-box" };
+        let (list, area) = match c.band {
+            Band::Row if after => (&mut over, "padding-box"),
+            Band::Middle if after => (&mut over, "content-box"),
+            Band::Box | Band::Row => (&mut own, "border-box"),
+            Band::Column | Band::Middle => (&mut own, inner),
+        };
+        list.push([
+            format!("url(\"{h}\")"),
+            pos,
+            rep.to_owned(),
+            area.to_owned(),
+        ]);
+    }
+    let decls = |list: &[[String; 4]]| {
+        let col = |i: usize| {
+            list.iter()
+                .map(|x| x[i].as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "background-image: {}; background-position: {}; background-repeat: {}; background-origin: {}; background-clip: {};",
+            col(0),
+            col(1),
+            col(2),
+            col(3),
+            col(3)
+        )
+    };
+    let mut main = if own.is_empty() {
+        "background-image: none;".to_owned()
+    } else {
+        decls(&own)
+    };
+    let _ = write!(
+        main,
+        " box-sizing: border-box; padding: {}px 0 {}px 0;",
+        if padded { top } else { 0 },
+        if padded { bottom } else { 0 }
+    );
+    let over = after.then(|| {
+        format!(
+            "content: \"\"; position: absolute; z-index: -1; pointer-events: none; box-sizing: border-box; left: {left}px; right: {right}px; top: 0; bottom: 0; padding: {top}px 0 {bottom}px 0; {}",
+            decls(&over)
+        )
+    });
+    Some((main, over))
+}
+
 fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
@@ -127,23 +213,38 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     if matches!(n.role, NodeRole::Resize(_)) {
         decls.push_str(" pointer-events: none;");
     }
+    let mut after = None;
     if let Some(art) = &n.art {
-        let h = href(base, &art.image, images)?;
-        let _ = write!(decls, " background: url(\"{h}\") 0 0 no-repeat;");
+        let (main, over) = layers(&art.normal, images, base)?;
+        let _ = write!(decls, " {main}");
+        after = over;
     }
     let _ = writeln!(out, "  {sel} {{\n    {decls}\n  }}");
-    for (state, path) in n.art.iter().flat_map(|a| a.states.iter()) {
+    let normal_after = after.is_some();
+    if let Some(over) = after {
+        let _ = writeln!(out, "  {sel}::after {{\n    {over}\n  }}");
+    }
+    for (state, set) in n.art.iter().flat_map(|a| a.states.iter()) {
         let pseudo = match state {
             RegionState::Hover => ":hover",
             RegionState::Down => ":active",
             RegionState::Disabled => "[aria-disabled=\"true\"]",
             _ => continue,
         };
-        let h = href(base, path, images)?;
-        let _ = writeln!(
-            out,
-            "  {sel}{pseudo} {{\n    background-image: url(\"{h}\");\n  }}"
-        );
+        let (main, over) = layers(set, images, base)?;
+        let _ = writeln!(out, "  {sel}{pseudo} {{\n    {main}\n  }}");
+        match over {
+            Some(over) => {
+                let _ = writeln!(out, "  {sel}{pseudo}::after {{\n    {over}\n  }}");
+            }
+            None if normal_after => {
+                let _ = writeln!(
+                    out,
+                    "  {sel}{pseudo}::after {{\n    background-image: none;\n  }}"
+                );
+            }
+            None => {}
+        }
     }
     hit_rule(out, &sel, n, ctx);
     for c in &n.children {

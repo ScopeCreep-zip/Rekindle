@@ -103,8 +103,8 @@ impl Mask {
 }
 
 /// Each tile's mask, decoded from its image in `images` (the package's
-/// canonical images), then the normal art's mask of each node of the
-/// layout's tree that joins the outline ([`super::outline_nodes`]), in
+/// canonical images), then the mask of each normal piece (in slot order)
+/// of each node of the layout's tree that joins the outline ([`super::outline_nodes`]), in
 /// that order; `field` names the layout in errors.
 ///
 /// # Errors
@@ -138,8 +138,11 @@ pub fn of_layout(
     }
     if let Some(tree) = &layout.tree {
         for (n, _) in super::outline_nodes(tree, 0, 0) {
-            if let Some(art) = &n.art {
-                let img = decode(&art.image, format!("{field}.tree.{}", n.id))?;
+            for (slot, piece) in n.art.iter().flat_map(|a| a.normal.iter()) {
+                let img = decode(
+                    &piece.image,
+                    format!("{field}.tree.{}.{}", n.id, slot.key()),
+                )?;
                 out.push(Mask::of(&img));
             }
         }

@@ -14,7 +14,11 @@ use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{SkinWindow, TileAxis};
-use rekindle_types::dto::skin_tree::{Anchor, NodeArt, NodeSpan, SkinNode};
+use rekindle_types::dto::skin_tree::{
+    Anchor, NodeArt, NodePiece, NodePieces, NodeSpan, PieceSlot, SkinNode,
+};
+
+use super::pieces;
 
 use crate::import::ImportError;
 use crate::shape;
@@ -111,18 +115,49 @@ fn shifted(span: NodeSpan, (b, a): (u16, u16), len: u16) -> NodeSpan {
     }
 }
 
-/// The package image `path` cropped to `[x0, x0 + w) × [y0, y0 + h)` and
-/// re-encoded at the same path; `None` when nothing of it is left to show.
+/// The set `p` drawn in a `wh` box ([`super::pieces::draw`], the one
+/// geometry the stylesheet and the outline read); `None` when one of its
+/// images is not among those the tree encoded.
+fn composed(images: &Images, p: &NodePieces, (w, h): (u16, u16)) -> Option<RgbaImage> {
+    let mut canvas = RgbaImage::new(u32::from(w), u32::from(h));
+    for c in pieces::draw(p, i32::from(w), i32::from(h)) {
+        let img = images.get(&p.get(&c.slot)?.image)?;
+        let (sx, sy) = (u32::try_from(c.src.0).ok()?, u32::try_from(c.src.1).ok()?);
+        let (ax, ay) = (u32::try_from(c.at[0]).ok()?, u32::try_from(c.at[1]).ok()?);
+        for dy in 0..u32::try_from(c.at[3]).ok()? {
+            for dx in 0..u32::try_from(c.at[2]).ok()? {
+                canvas.put_pixel(ax + dx, ay + dy, *img.get_pixel(sx + dx, sy + dy));
+            }
+        }
+    }
+    Some(canvas)
+}
+
+/// The set `p`, drawn at its fixed box `full`, cropped to `[x0, x0 + w) ×
+/// [y0, y0 + h)` and re-encoded as one `middle` piece the cropped box's size
+/// (a fixed box draws it exactly once); `None` when nothing of it is left
+/// to show.
 fn crop(
     art: &mut Art<'_>,
-    path: &str,
+    p: NodePieces,
+    full: (u16, u16),
     xy: (u16, u16),
     wh: (u16, u16),
-) -> Result<Option<String>, ImportError> {
-    let Some(img) = art.images.get(path) else {
-        return Ok(Some(path.to_owned()));
+) -> Result<Option<NodePieces>, ImportError> {
+    let Some(name) = p
+        .get(&PieceSlot::Middle)
+        .or_else(|| p.values().next())
+        .map(|x| x.image.clone())
+    else {
+        return Ok(None);
     };
-    let part = rekindle_image::DynamicImage::ImageRgba8(img.clone())
+    let Some(img) = composed(art.images, &p, full) else {
+        return Ok(Some(p));
+    };
+    for x in p.values() {
+        art.files.remove(&x.image);
+    }
+    let part = rekindle_image::DynamicImage::ImageRgba8(img)
         .crop_imm(
             u32::from(xy.0),
             u32::from(xy.1),
@@ -130,22 +165,28 @@ fn crop(
             u32::from(wh.1),
         )
         .to_rgba8();
-    let piece = path
+    let piece = name
         .rsplit_once('/')
-        .map_or(path, |(_, f)| f)
+        .map_or(name.as_str(), |(_, f)| f)
         .trim_end_matches(".png");
     let axes = (TileAxis::Start { offset: 0 }, TileAxis::Start { offset: 0 });
-    art.files.remove(path);
     Ok(
         shape::tile(art.window, piece, &part, axes, true)?.map(|(t, png)| {
             art.files.insert(t.image.clone(), png);
-            t.image
+            NodePieces::from([(
+                PieceSlot::Middle,
+                NodePiece {
+                    image: t.image,
+                    width: wh.0,
+                    height: wh.1,
+                },
+            )])
         }),
     )
 }
 
-/// `node`'s art cropped by `(x cut, y cut)`; `None` when its normal image
-/// has nothing left to show.
+/// `node`'s art cropped by `(x cut, y cut)` to `wh`; `None` when its
+/// normal set has nothing left to show.
 fn crop_art(
     art: &mut Art<'_>,
     a: NodeArt,
@@ -153,19 +194,20 @@ fn crop_art(
     wh: (u16, u16),
 ) -> Result<Option<NodeArt>, ImportError> {
     let at = (cuts[0].0, cuts[1].0);
-    let Some(image) = crop(art, &a.image, at, wh)? else {
-        for p in a.states.values() {
-            art.files.remove(p);
+    let full = (wh.0 + cuts[0].0 + cuts[0].1, wh.1 + cuts[1].0 + cuts[1].1);
+    let Some(normal) = crop(art, a.normal, full, at, wh)? else {
+        for p in a.states.values().flat_map(|s| s.values()) {
+            art.files.remove(&p.image);
         }
         return Ok(None);
     };
     let mut states = BTreeMap::new();
     for (k, p) in a.states {
-        if let Some(p) = crop(art, &p, at, wh)? {
+        if let Some(p) = crop(art, p, full, at, wh)? {
             states.insert(k, p);
         }
     }
-    Ok(Some(NodeArt { image, states }))
+    Ok(Some(NodeArt { normal, states }))
 }
 
 /// Clips each of `nodes` (in a parent `(w, h)` px, or `None` on an axis

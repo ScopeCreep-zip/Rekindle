@@ -65,8 +65,8 @@ fn the_window_fits_the_tree_and_its_overhang() {
 </Tile>"#,
         br#"<Components>
 <Component Name="MainWindow" MinWidth="100" MinHeight="90"/>
-<Component Name="MainTitleBar"><Images State="Normal"><Image>bar-10x50</Image></Images></Component>
-<Component Name="SCLogo"><Images State="Normal"><Image>logo-174x59</Image></Images></Component>
+<Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-10x50</Image></Images></Component>
+<Component Name="SCLogo"><Images State="Normal"><Image Type="Middle">logo-174x59</Image></Images></Component>
 </Components>"#,
         &["MainTitleBar"],
     );
@@ -98,8 +98,8 @@ fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
 <Tile Name="BottomBar" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar"/>
 </Tile>"#,
         br#"<Components>
-<Component Name="MainTitleBar"><Images State="Normal"><Image>bar-10x52</Image></Images></Component>
-<Component Name="BottomBar"><Images State="Normal"><Image>bottom-10x66</Image></Images></Component>
+<Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-10x52</Image></Images></Component>
+<Component Name="BottomBar"><Images State="Normal"><Image Type="Middle">bottom-10x66</Image></Images></Component>
 </Components>"#,
         &["MainTitleBar", "Content", "BottomBar"],
     );
@@ -168,7 +168,7 @@ fn a_repeated_name_is_scoped_by_its_parent() {
 <Tile Name="BuddyView" ResizeX="100" ResizeY="100" Component="BuddyView"><Tile Name="BvBk" Component="BvBk"/></Tile>
 <Tile Name="ServerView" ResizeX="100" ResizeY="100" Component="ServerView"><Tile Name="BvBk" Component="BvBk"/></Tile>
 </Tile></Tile>"#,
-        br#"<Components><Component Name="BvBk"><Images State="Normal"><Image>bk-4x4</Image></Images></Component></Components>"#,
+        br#"<Components><Component Name="BvBk"><Images State="Normal"><Image Type="Middle">bk-4x4</Image></Images></Component></Components>"#,
     );
     let ids: Vec<&str> = tree
         .boxes(400, 400)
@@ -298,17 +298,17 @@ fn stealthxs_menu_button_launches_the_side_rail() {
         "components.xml",
         br#"<Components>
 <Component Name="MainWindow" MinWidth="300" MinHeight="400"/>
-<Component Name="MenuButton" Class="SkinLauncher"><Images State="Normal"><Image>menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
+<Component Name="MenuButton" Class="SkinLauncher"><Images State="Normal"><Image Type="Middle">menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
 <Component Name="MainMenuWindow" Class="Tile" DefaultWidth="114" MinWidth="114" MinHeight="360" BindX="false" BindY="true" ResizeY="100"/>
 <Component Name="MenuBackground" Class="Tile"><Images><Image Type="middle">ground-10x10</Image></Images></Component>
 <Component Name="MenuBar" Class="Tile" MinWidth="110" MinHeight="67"/>
-<Component Name="XfireMenuText" Class="Menu"><Images State="Normal"><Image>xfire-80x20</Image></Images></Component>
+<Component Name="XfireMenuText" Class="Menu"><Images State="Normal"><Image Type="Middle">xfire-80x20</Image></Images></Component>
 <Component Name="TabHeader" Class="Tile" MinWidth="110" MinHeight="63"/>
-<Component Name="TabNormalText" Class="Tab"><Images State="Normal"><Image>friends-80x20</Image></Images></Component>
+<Component Name="TabNormalText" Class="Tab"><Images State="Normal"><Image Type="Middle">friends-80x20</Image></Images></Component>
 <Component Name="ButtonRow" Class="Tile" MinWidth="110" MinHeight="84"/>
-<Component Name="AddFriendButton" Class="PushButton"><Images State="Normal"><Image>add-100x20</Image></Images></Component>
+<Component Name="AddFriendButton" Class="PushButton"><Images State="Normal"><Image Type="Middle">add-100x20</Image></Images></Component>
 <Component Name="ChatTab" Class="TabControl" MinWidth="110" MinHeight="21" ControlGroupId="5"/>
-<Component Name="HostChatButton" Class="PushButton"><Images State="Normal"><Image>host-100x20</Image></Images></Component>
+<Component Name="HostChatButton" Class="PushButton"><Images State="Normal"><Image Type="Middle">host-100x20</Image></Images></Component>
 </Components>"#,
     )
     .unwrap();
@@ -392,9 +392,9 @@ fn a_fixed_tiles_indent_is_its_client_inset() {
 <Tile Name="FileMenu" X="0" Y="-4" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="FileMenu"/>
 </Tile></Tile></Tile>"#,
         br#"<Components>
-<Component Name="MenuBar"><Images State="Normal"><Image>bar-110x60</Image></Images></Component>
-<Component Name="XfireMenuText"><Images State="Normal"><Image>text-80x16</Image></Images></Component>
-<Component Name="FileMenu"><Images State="Normal"><Image>menu-80x20</Image></Images></Component>
+<Component Name="MenuBar"><Images State="Normal"><Image Type="Middle">bar-110x60</Image></Images></Component>
+<Component Name="XfireMenuText"><Images State="Normal"><Image Type="Middle">text-80x16</Image></Images></Component>
+<Component Name="FileMenu"><Images State="Normal"><Image Type="Middle">menu-80x20</Image></Images></Component>
 </Components>"#,
     );
     assert_eq!(tree.outsets.left, 0);
@@ -445,10 +445,10 @@ fn a_fixed_tile_is_clipped_to_its_parent() {
     let parts = parse(
         "parts.xml",
         br#"<Components>
-<Component Name="Top"><Images State="Normal"><Image>top-10x20</Image></Images></Component>
-<Component Name="Grip"><Images State="Normal"><Image>grip-34x30</Image></Images></Component>
-<Component Name="Close"><Images State="Normal"><Image>close-16x12</Image></Images>
-<Images State="Hover"><Image>closeh-16x12</Image></Images></Component>
+<Component Name="Top"><Images State="Normal"><Image Type="Middle">top-10x20</Image></Images></Component>
+<Component Name="Grip"><Images State="Normal"><Image Type="Middle">grip-34x30</Image></Images></Component>
+<Component Name="Close"><Images State="Normal"><Image Type="Middle">close-16x12</Image></Images>
+<Images State="Hover"><Image Type="Middle">closeh-16x12</Image></Images></Component>
 </Components>"#,
     )
     .unwrap();
@@ -477,9 +477,15 @@ fn a_fixed_tile_is_clipped_to_its_parent() {
         let png = &built.1[p];
         u32::from_be_bytes(png[16..20].try_into().unwrap())
     };
-    assert_eq!(width(&art.image), 10);
+    let image = |set: &rekindle_types::dto::skin_tree::NodePieces| {
+        set.values().next().unwrap().image.clone()
+    };
+    assert_eq!(width(&image(&art.normal)), 10);
     assert_eq!(
-        art.states.values().map(|p| width(p)).collect::<Vec<_>>(),
+        art.states
+            .values()
+            .map(|s| width(&image(s)))
+            .collect::<Vec<_>>(),
         [10]
     );
 }

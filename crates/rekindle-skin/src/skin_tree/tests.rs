@@ -278,10 +278,7 @@ fn rule_8_a_button_row_has_its_view() {
 #[test]
 fn rule_9_art_is_in_the_package() {
     let mut t = good();
-    t[0].art = Some(NodeArt {
-        image: "images/node-closebox.png".to_owned(),
-        states: BTreeMap::new(),
-    });
+    t[0].art = Some(NodeArt::middle("images/node-closebox.png".to_owned(), 1, 1));
     refused(t.clone(), "rule 9");
     let images = BTreeMap::from([("images/node-closebox.png".to_owned(), vec![0u8])]);
     assert_eq!(checked(t, &images), Ok(()));
