@@ -1,6 +1,5 @@
 //! A thread's control messages from the mesh (plan E3.1 E3f), on both
-//! modes: a `ThreadCreated` stores the thread's row, a `ThreadArchived`
-//! its archive state, and a `ThreadMessageReceived` the reply, whose body
+//! modes: a `ThreadMessageReceived` stores the reply, whose body
 //! is opened from the thread record exactly as the thread view reads it.
 //! The notification carries the sealed body but not the subkey and
 //! Lamport position its AAD binds, so the reply is read from the record
@@ -9,6 +8,12 @@
 //! M76): the mesh never echoes a frame to its sender, so without it the
 //! author's own window never showed the reply (Signal, Discord: the
 //! author's view changes at once).
+//!
+//! A thread's row and its archive state change only from signed
+//! governance ops (`ThreadCreated` / `ThreadArchived` entries, merged and
+//! projected by `governance/thread_events.rs`), never from an unsigned
+//! gossip frame (threat model: unsigned frames never change state; plan
+//! E3.2 S8-E).
 
 use rekindle_codec::community::envelope::ControlPayload;
 use rekindle_db::repo::threads::{self, ThreadMessageRow};
@@ -34,30 +39,6 @@ impl HostChannel {
         let (owner, db) = self.owner_and_db().ok()?;
         let community = community_id.to_string();
         let event = match payload {
-            ControlPayload::ThreadCreated { thread } => {
-                let (c, row) = (community.clone(), thread.clone());
-                db.call(move |conn| threads::upsert(conn, &owner, &c, &row))
-                    .await
-                    .ok()?;
-                SocialEvent::ThreadCreated {
-                    community,
-                    thread: Box::new(thread.clone()),
-                }
-            }
-            ControlPayload::ThreadArchived {
-                thread_id,
-                archived,
-            } => {
-                let (c, t, a) = (community.clone(), thread_id.clone(), *archived);
-                db.call(move |conn| threads::set_archived(conn, &owner, &c, &t, a))
-                    .await
-                    .ok()?;
-                SocialEvent::ThreadArchiveChanged {
-                    community,
-                    thread_id: thread_id.clone(),
-                    archived: *archived,
-                }
-            }
             ControlPayload::ThreadMessageReceived {
                 thread_id,
                 message_id,

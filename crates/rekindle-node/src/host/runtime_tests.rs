@@ -35,6 +35,8 @@ mod checkpoint_state;
 mod community_info;
 #[path = "expression_upload_tests.rs"]
 mod expression_upload_tests;
+#[path = "forged_thread_frame_tests.rs"]
+mod forged_thread_frame;
 #[path = "friend_code_wait_tests.rs"]
 mod friend_code_wait;
 #[path = "governance_seed_tests.rs"]
