@@ -85,12 +85,20 @@ async fn no_invite_link_until_its_op_is_on_the_dht() {
                 .collect()
         })
     };
+    // The join took the fresh invite's one use, so the inviter revoked it
+    // at that admission (plan E3.2 SU1, revoke at last use): neither
+    // invite is listed by the inviter, and the joiner, walking both
+    // revokes from the DHT, lists the same.
     let ours = ids(community.nodes[0].ok(invite_list(&community)).await);
+    assert!(ours.is_empty(), "both invites are revoked: {ours:?}");
+    let agree = eventually(&community.sim, Duration::from_secs(300), || async {
+        ids(community.nodes[1].ok(invite_list(&community)).await) == ours
+    })
+    .await;
     let theirs = ids(community.nodes[1].ok(invite_list(&community)).await);
-    assert_eq!(ours.len(), 1, "only the join's invite: {ours:?}");
-    assert_eq!(
-        ours, theirs,
-        "the refused invite is revoked for the joiner too"
+    assert!(
+        agree,
+        "the refused invite and the used one are revoked for the joiner too: {ours:?} / {theirs:?}"
     );
 }
 

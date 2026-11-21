@@ -184,10 +184,15 @@ async fn kick_removes_member_and_refuses_its_key_request() {
         )))
         .await;
     community.sim.quiesce().await;
-    assert_eq!(
-        held_keys(&community, 1).await,
-        held_before,
-        "no responder answers the kicked member's RequestMEK"
+    // Its own removal's teardown drops its in-memory keys (plan E3.2 S9
+    // own removal), so the keys it holds may shrink; a key it did not
+    // hold, or a later generation, would be an answer.
+    let held_after = held_keys(&community, 1).await;
+    let newest = |keys: &[(Value, Value)]| keys.iter().filter_map(|k| k.1.as_u64()).max();
+    assert!(
+        held_after.iter().all(|k| held_before.contains(k))
+            && newest(&held_after) <= newest(&held_before),
+        "no responder answers the kicked member's RequestMEK: {held_before:?} -> {held_after:?}"
     );
     assert!(
         listed(&community, 2, &bea).await.is_none(),
