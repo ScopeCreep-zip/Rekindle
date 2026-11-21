@@ -114,7 +114,7 @@ Dropped
     Alloy.ini: [MainWindow] Window6.IndentRight (line 58)
     Alloy.ini: [StatusEdit] Text.bold (line 304)
     Alloy.ini: [SearchFiles] Cursor (line 734)
-  files not read (116):
+  files not read (103):
     AlloyScroll/Thumbs.db
     AlloyScroll/scroll-gripper-grips-horz.gif
     AlloyScroll/scroll-gripper-grips-vert.gif
@@ -124,31 +124,18 @@ Dropped
     InGameMainSkin.ini
     InGameSkin.ini
     Infoskin.ini
-    buttons/SearchFiles-click.gif
-    buttons/SearchFiles-hover.gif
     buttons/Thumbs.db
-    buttons/button-afav-click.gif
     buttons/button-afav-disabled.gif
-    buttons/button-afav-hover.gif
     buttons/button-chat-Send-click.gif
     buttons/button-chat-Send-disabled.gif
     buttons/button-chat-Send-hover.gif
     buttons/button-chat-Send-norm.gif
-    buttons/button-game-click.gif
     buttons/button-game-disabled.gif
-    buttons/button-game-hover.gif
-    buttons/button-im-click.gif
     buttons/button-im-disabled.gif
-    buttons/button-im-hover.gif
-    buttons/button-info-hover.gif
     buttons/button-info-retract-hover.gif
     buttons/button-info-retract.gif
-    buttons/button-profile-click.gif
     buttons/button-profile-disabled.gif
-    buttons/button-profile-hover.gif
-    buttons/button-refresh-click.gif
     buttons/button-refresh-disabled.gif
-    buttons/button-refresh-hover.gif
     buttons/info-join-click.gif
     buttons/info-join-disabled.gif
     buttons/info-join-hover.gif

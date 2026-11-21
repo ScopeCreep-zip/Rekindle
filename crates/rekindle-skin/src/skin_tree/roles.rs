@@ -235,6 +235,13 @@ pub fn role(
     if name_k == "downloadblink" {
         return Some(R::Lamp(LampKey::Files));
     }
+    // The info view switch is a tab control too (Combat's `[InfoViewSwitch]`
+    // `Class=TabControl`, `combat.ini:786-794`): its two windows
+    // (`InfoViewSwitchIn`/`InfoviewSwitchOut`) are the toggle's two states,
+    // one shown at a time, so they are its parts, not two buttons in one place.
+    if tabbed_class && named(&name_k, f) == Some(R::InfoToggle) {
+        return Some(R::InfoToggle);
+    }
     if comp.as_deref() == Some("tabbedcontrol") || name_k == "maintabbedarea" || tabbed_class {
         if button(&name_k).is_some() {
             return Some(R::Group);

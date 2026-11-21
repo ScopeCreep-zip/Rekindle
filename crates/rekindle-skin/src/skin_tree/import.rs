@@ -299,8 +299,11 @@ impl Walk<'_> {
                     .parse::<i16>()
                     .map_err(|_| bad(format!("{}: Z={z}", t.id)))
             })?;
+            // A knob rotation shows only while its tab is selected (Combat's
+            // `Knob01`-`Knob03`, one place for three tabs, `combat.ini`
+            // `[TabControl]`): one shows at a time, like the views.
             let shows_with = match t.role {
-                NodeRole::View(v) | NodeRole::ButtonRow(v) => Some(v),
+                NodeRole::View(v) | NodeRole::ButtonRow(v) | NodeRole::Knob(v) => Some(v),
                 _ => None,
             };
             let inner = outer_for(&names, x, y);

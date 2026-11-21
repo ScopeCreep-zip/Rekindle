@@ -52,83 +52,31 @@ Regions
 
 Dropped
   images with no region slot: 106
-  other keys (classes, sizes, cursors, sounds): 144
+  other keys (classes, sizes, cursors, sounds): 146
   other skin files (chat, group chat, in-game): 3
   text styles: 47
   triggers: 32
-  window layout: 175
-  lines Windows reads no value from (46):
+  window layout: 214
+  lines Windows reads no value from (5):
     version.ini: [Version] (line 2): no '=', no value
-    Xglow.ini: [MainWindow] Window4.X (line 33)
-    Xglow.ini: [MainWindow] Window4.Y (line 35)
-    Xglow.ini: [MainWindow] Window5.X (line 40)
-    Xglow.ini: [MainWindow] Window5.Y (line 42)
-    Xglow.ini: [MainWindow] Window6.X (line 47)
-    Xglow.ini: [MainWindow] Window6.Y (line 49)
-    Xglow.ini: [MainWindow] Window7.X (line 54)
-    Xglow.ini: [MainWindow] Window7.Y (line 56)
-    Xglow.ini: [MainWindow] Window8.X (line 61)
-    Xglow.ini: [MainWindow] Window8.Y (line 63)
-    Xglow.ini: [MainWindow] Window20.Y (line 73)
-    Xglow.ini: [MainWindow] window22.Y (line 83)
-    Xglow.ini: [MainWindow] Window21.Y (line 93)
-    Xglow.ini: [MainWindow] Window40.Y (line 115)
-    Xglow.ini: [MainWindow] Window49.Y (line 124)
-    Xglow.ini: [MainWindow] Window45.X (line 131)
-    Xglow.ini: [MainWindow] Window45.Y (line 133)
-    Xglow.ini: [MainWindow] Window46.X (line 138)
-    Xglow.ini: [MainWindow] Window46.Y (line 140)
-    Xglow.ini: [MainWindow] Window47.X (line 145)
-    Xglow.ini: [MainWindow] Window47.Y (line 147)
-    Xglow.ini: [MainWindow] Window48.X (line 152)
-    Xglow.ini: [MainWindow] Window48.Y (line 154)
-    Xglow.ini: [MainWindow] Window50.X (line 159)
-    Xglow.ini: [MainWindow] Window50.Y (line 161)
-    Xglow.ini: [MainWindow] Window51.X (line 167)
-    Xglow.ini: [MainWindow] Window51.Y (line 169)
-    Xglow.ini: [MainWindow] Window52.X (line 174)
-    Xglow.ini: [MainWindow] Window52.Y (line 176)
-    Xglow.ini: [MainWindow] Window53.Y (line 184)
-    Xglow.ini: [MainWindow] Window54.Y (line 190)
-    Xglow.ini: [MainWindow] Window55.Y (line 196)
-    Xglow.ini: [MainWindow] window56.X (line 201)
-    Xglow.ini: [MainWindow] Window56.Y (line 203)
-    Xglow.ini: [MainWindow] Window57.Y (line 211)
-    Xglow.ini: [MainWindow] Window58.X (line 215)
-    Xglow.ini: [MainWindow] Window58.Y (line 217)
-    Xglow.ini: [MainWindow] Window59.X (line 224)
-    Xglow.ini: [MainWindow] Window59.Y (line 226)
-    Xglow.ini: [MainWindow] Window60.X (line 232)
-    Xglow.ini: [MainWindow] Window60.Y (line 234)
     Xglow.ini: [BuddyView] Text.color_selected (line 359)
     Xglow.ini: [BuddyView] Text.color_header (line 363)
     Xglow.ini: [ExecuteDownload] Action.click (line 654)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
-  files not read (138):
+  files not read (117):
     ChatSkin.ini
     InGameMainSkin.ini
     InGameSkin.ini
     XGlowInfoSkin.ini
     buttons/Thumbs.db
-    buttons/add-down.gif
-    buttons/add-hover.gif
-    buttons/browse-down.gif
-    buttons/browse-hover.gif
     buttons/chat-down.gif
-    buttons/chat-hover.gif
-    buttons/downloads-down.gif
     buttons/downloads-hover.gif
-    buttons/file-hover.gif
-    buttons/friends-down.gif
     buttons/friends-hover.gif
     buttons/gripper1.gif
     buttons/header_arrow_down.gif
     buttons/header_arrow_up.gif
-    buttons/help-hover.gif
     buttons/info-down.gif
-    buttons/info-hover.gif
     buttons/join-down.gif
-    buttons/join-hover.gif
     buttons/noadd.gif
     buttons/nobrowse.gif
     buttons/nochat.gif
@@ -138,19 +86,9 @@ Dropped
     buttons/norefresh.gif
     buttons/nostart.gif
     buttons/nostop.gif
-    buttons/open-down.gif
-    buttons/open-hover.gif
     buttons/refresh-down.gif
-    buttons/refresh-hover.gif
-    buttons/servers-down.gif
     buttons/servers-hover.gif
-    buttons/start-down.gif
-    buttons/start-hover.gif
-    buttons/stop-down.gif
-    buttons/stop-hover.gif
-    buttons/tools-hover.gif
     buttons/viewout.gif
-    buttons/xfire-hover.gif
     chatskin/Thumbs.db
     chatskin/bb.gif
     chatskin/blc.gif

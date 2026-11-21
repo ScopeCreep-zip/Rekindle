@@ -72,13 +72,8 @@ Dropped
   other skin files (chat, group chat, in-game): 4
   text styles: 92
   triggers: 83
-  window layout: 589
-  lines Windows reads no value from (21):
-    combat.ini: [MainWindow] Window4.X (line 34)
-    combat.ini: [MainWindow] Window5.X (line 40)
-    combat.ini: [MainWindow] Window14.Y (line 96)
-    combat.ini: [MainWindow] Window16.X (line 104)
-    combat.ini: [MainWindow] Window17.X (line 109)
+  window layout: 615
+  lines Windows reads no value from (16):
     combat.ini: [Knob01] Action.lbtndown (line 351)
     combat.ini: [Knob01] Action.doubleclick (line 354)
     combat.ini: [Knob02] Action.lbtndown (line 367)
@@ -95,32 +90,22 @@ Dropped
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (119):
+  files not read (101):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
     CombatInGamePopUpSkin.ini
     CombatInfoSkin.ini
     c_button_add_off.gif
-    c_button_add_server_down.gif
-    c_button_add_server_hover.gif
     c_button_add_server_off.gif
     c_button_arrow_off.gif
-    c_button_chat_down.gif
-    c_button_chat_hover.gif
     c_button_chat_off.gif
     c_button_close_down.gif
     c_button_close_hover.gif
     c_button_close_norm.gif
     c_button_close_off.gif
-    c_button_download_down.gif
-    c_button_download_hover.gif
     c_button_download_off.gif
-    c_button_game_down.gif
-    c_button_game_hover.gif
     c_button_game_off.gif
-    c_button_launch_down.gif
-    c_button_launch_hover.gif
     c_button_launch_off.gif
     c_button_maximize_down.gif
     c_button_maximize_hover.gif
@@ -130,18 +115,12 @@ Dropped
     c_button_minimize_hover.gif
     c_button_minimize_norm.gif
     c_button_minimize_off.gif
-    c_button_profile_down.gif
-    c_button_profile_hover.gif
     c_button_profile_off.gif
-    c_button_refresh_down.gif
-    c_button_refresh_hover.gif
     c_button_refresh_off.gif
     c_button_restore_down.gif
     c_button_restore_hover.gif
     c_button_restore_norm.gif
     c_button_restore_off.gif
-    c_button_stop_down.gif
-    c_button_stop_hover.gif
     c_button_stop_off.gif
     c_close_down.gif
     c_close_hover.gif
@@ -151,11 +130,9 @@ Dropped
     c_infoview_out_hover.gif
     c_menu_down.gif
     c_menu_down_top.gif
-    c_menu_hover.gif
     c_menu_hover_top.gif
     c_minimize_down.gif
     c_minimize_hover.gif
-    c_resize_hover.gif
     c_top_left_off.gif
     c_top_middle_off.gif
     c_top_right_off.gif

@@ -108,21 +108,17 @@ Dropped
   other skin files (chat, group chat, in-game): 4
   text styles: 77
   triggers: 33
-  window layout: 279
-  lines Windows reads no value from (12):
+  window layout: 283
+  lines Windows reads no value from (8):
     SimpleX.ini: [MainWindow] Window4.IndentRight (line 45)
     SimpleX.ini: [MainWindow] Window5.IndentRight (line 54)
     SimpleX.ini: [MainWindow] Window6.IndentRight (line 63)
     SimpleX.ini: [MainWindow] Window12.IndentRight (line 102)
     SimpleX.ini: [MainWindow] Window13.IndentRight (line 110)
-    SimpleX.ini: [MenuBar] Window2.X (line 208)
-    SimpleX.ini: [MenuBar] Window3.X (line 214)
     SimpleX.ini: [StatusEdit] Text.bold (line 348)
     SimpleX.ini: [InfoViewButton] Skin.X (line 458)
-    SimpleX.ini: [TabHeader] Window2.X (line 593)
-    SimpleX.ini: [TabHeader] Window3.X (line 599)
     SimpleX.ini: [SearchFiles] Cursor (line 825)
-  files not read (106):
+  files not read (94):
     CScroll/Thumbs.db
     CScroll/scroll-gripper-grips-horz.gif
     CScroll/scroll-gripper-grips-vert.gif
@@ -133,28 +129,17 @@ Dropped
     InGameSkin.ini
     Infoskin.ini
     buttons/Thumbs.db
-    buttons/button-afav-click.gif
     buttons/button-afav-disabled.gif
-    buttons/button-afav-hover.gif
     buttons/button-chat-Send-click.gif
     buttons/button-chat-Send-disabled.gif
     buttons/button-chat-Send-hover.gif
     buttons/button-chat-Send-norm.gif
-    buttons/button-game-click.gif
     buttons/button-game-disabled.gif
-    buttons/button-game-hover.gif
-    buttons/button-im-click.gif
     buttons/button-im-disabled.gif
-    buttons/button-im-hover.gif
-    buttons/button-info-hover.gif
     buttons/button-info-retract-hover.gif
     buttons/button-info-retract.gif
-    buttons/button-profile-click.gif
     buttons/button-profile-disabled.gif
-    buttons/button-profile-hover.gif
-    buttons/button-refresh-click.gif
     buttons/button-refresh-disabled.gif
-    buttons/button-refresh-hover.gif
     buttons/info-join-click.gif
     buttons/info-join-disabled.gif
     buttons/info-join-hover.gif
@@ -226,7 +211,6 @@ Dropped
     mainskin/listview-header-arrowdown.gif
     mainskin/listview-header-arrowup.gif
     mainskin/mainbg.gif
-    mainskin/menubar-middle.gif
     mainskin/toolbar.gif
     strings.ini
 
