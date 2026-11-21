@@ -6,10 +6,17 @@
 // Mod+/ in any window. Each opener is focused, then activated, as a keyboard
 // user does (WebKit on macOS does not focus a button on a mouse click).
 //
-// Tab and Shift+Tab staying inside each dialog need the engine's own focus
-// move, which only native key input gives (native-key.ts): on a platform
-// without it (macOS) that test is skipped with the driver's reason, and
-// the focus trap is an owed manual check there.
+// Owed manual checks, on both platforms: Tab and Shift+Tab staying inside
+// each dialog (and the other rows that need the engine's own focus move:
+// the buddy list's single tab stop, the channel list's roving tabindex).
+// The driver's keys are synthetic, and no browser moves focus for an
+// untrusted Tab. Native input cannot be added without new unsafe code:
+// on macOS the session's NSWindow cannot be found safely (objc2-web-kit
+// 0.3.2 WKWebView::URL/title are unsafe fn); on Linux gtk's safe
+// test_widget_send_key goes through XTEST to the display's focus window,
+// never this unraised window (round 12, 9f76094e3: "sent", no keydown),
+// and a hand-built GdkEventKey needs unsafe gdk-sys setters. The
+// lead's ruling, 2026-11-21.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -17,7 +24,6 @@ import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
-import { nativeKey } from "../../native-key.ts";
 
 const SHORTCUTS_RS = path.join(import.meta.dirname, "..", "..", "..", "..", "src-tauri", "src", "shortcuts.rs");
 
@@ -130,31 +136,5 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
     await browser.keys(["Escape"]);
     await gone(browser, '[role="dialog"]', NET_WAIT_MS);
     await waitUntil(() => focused(composer), NET_WAIT_MS, "focus did not return to the composer");
-  });
-
-  it("Tab and Shift+Tab stay inside a dialog (native keys)", async function () {
-    await switchTo(browser, BUDDY);
-    await (await shown(browser, '.buddy-tab[title^="Friends"]')).click();
-    const el = await shown(browser, '[aria-label="Add Friend"]', NET_WAIT_MS);
-    await browser.execute((node: HTMLElement) => node.focus(), el as unknown as HTMLElement);
-    await press(browser, el);
-    const dialog = '[role="dialog"]';
-    await shown(browser, dialog, NET_WAIT_MS);
-    await waitUntil(() => focusInside(dialog), NET_WAIT_MS, "the dialog never took focus");
-    const first = await nativeKey(browser, "Tab");
-    if (first !== "sent") {
-      await browser.keys(["Escape"]);
-      console.log(`[skip] native keys are not available here: ${first.unsupported}`);
-      this.skip();
-    }
-    const escaped: string[] = [];
-    for (const shift of [false, true]) {
-      for (let i = 0; i < 14; i++) {
-        if (i > 0 || shift) await nativeKey(browser, "Tab", shift);
-        if (!(await focusInside(dialog))) escaped.push(`${shift ? "Shift+Tab" : "Tab"} #${i + 1}`);
-      }
-    }
-    await browser.keys(["Escape"]);
-    expect(escaped).toEqual([]);
   });
 });

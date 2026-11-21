@@ -565,48 +565,4 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
             Err(_) => Err(WebDriverErrorResponse::script_timeout()),
         }
     }
-
-    // =========================================================================
-    // Native key input
-    // =========================================================================
-
-    async fn send_native_key(&self, key: &str, shift: bool) -> Result<(), WebDriverErrorResponse> {
-        // GTK's own key simulation on the WebView widget
-        // (`gtk_test_widget_send_key`, safe in gtk-rs 0.18): WebKitGTK takes
-        // it as native input, so the page sees a trusted event and the key's
-        // default action runs. Plan E7.14 S5 (trusted Tab for focus traps).
-        let keyval = *gtk::gdk::keys::Key::from_name(key);
-        if keyval == *gtk::gdk::keys::constants::VoidSymbol {
-            return Err(WebDriverErrorResponse::invalid_argument(&format!(
-                "{key:?} is not a GDK key name"
-            )));
-        }
-        let modifiers = if shift {
-            gtk::gdk::ModifierType::SHIFT_MASK
-        } else {
-            gtk::gdk::ModifierType::empty()
-        };
-        let (tx, rx) = oneshot::channel();
-        let result = self.window.with_webview(move |webview| {
-            let webview = webview.inner().clone();
-            // Make the WebView its own window's focus widget first, so the
-            // key reaches it: GTK hands a toplevel's key events to its focus
-            // widget. `grab_focus` changes focus inside the window only; it
-            // never raises the window or takes the desktop's keyboard focus
-            // (no `present`), which would take the owner's (Linux run at
-            // 04a631399: the key was "sent" but no keydown reached the page).
-            gtk::prelude::WidgetExt::grab_focus(&webview);
-            let _ = tx.send(gtk::test_widget_send_key(&webview, keyval, modifiers));
-        });
-        if let Err(e) = result {
-            return Err(WebDriverErrorResponse::unknown_error(&e.to_string()));
-        }
-        match rx.await {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(WebDriverErrorResponse::unsupported_operation(
-                "GTK could not simulate the key on this display (gtk_test_widget_send_key returned false)",
-            )),
-            Err(_) => Err(WebDriverErrorResponse::unknown_error("Channel closed")),
-        }
-    }
 }

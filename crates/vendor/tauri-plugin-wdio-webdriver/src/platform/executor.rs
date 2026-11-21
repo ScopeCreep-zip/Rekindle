@@ -272,15 +272,4 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
 
     /// Print page to PDF, returns base64-encoded PDF
     async fn print_page(&self, options: PrintOptions) -> Result<String, WebDriverErrorResponse>;
-
-    // =========================================================================
-    // Native key input (Rekindle, plan E7.14 S5)
-    // =========================================================================
-
-    /// Press and release `key` (a GDK key name such as `Tab`), with Shift
-    /// held when `shift`, as native input the engine treats as the user's:
-    /// the page sees a trusted event and the engine performs the key's
-    /// default action (Tab moves focus). The W3C key actions dispatch
-    /// synthetic `KeyboardEvent`s, which never get a default action.
-    async fn send_native_key(&self, key: &str, shift: bool) -> Result<(), WebDriverErrorResponse>;
 }

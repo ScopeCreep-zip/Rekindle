@@ -173,11 +173,6 @@ fn element_routes<R: Runtime + 'static>() -> Router<Arc<AppState<R>>> {
 /// Screenshots, document, windows, frames, actions, cookies, alerts and print
 fn context_routes<R: Runtime + 'static>() -> Router<Arc<AppState<R>>> {
     Router::new()
-        // Rekindle: a key pressed as native input (handlers/native_key.rs)
-        .route(
-            "/session/{session_id}/rekindle/key",
-            post(handlers::native_key::send::<R>),
-        )
         // Screenshot
         .route(
             "/session/{session_id}/screenshot",
