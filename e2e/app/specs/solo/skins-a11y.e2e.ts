@@ -12,9 +12,9 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { switchTo } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
-import { violations } from "../../axe.ts";
+import { type Violation, violations } from "../../axe.ts";
 import { checkGeometry } from "../../geometry.ts";
 import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 import { builtinPacks, type SkinPack } from "../../skin-pack.ts";
@@ -27,6 +27,78 @@ const PACKS = builtinPacks();
 function longName(prefix: string, n = 64): string {
   return (prefix + "W".repeat(n)).slice(0, n);
 }
+
+/**
+ * One finding as a key: the window, its size and the check, with axe split
+ * by rule and the focus check by element ("buddy-list min: axe
+ * color-contrast", "buddy-list min: focus button.menu-bar-item \"Rekindle\"
+ * no indicator"). The size's pixels are left out: the name says which.
+ */
+function keysOf(found: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  for (const [key, value] of Object.entries(found)) {
+    const [where, check] = [key.slice(0, key.indexOf(": ")).replace(/ \d+x\d+$/, ""), key.slice(key.indexOf(": ") + 2)];
+    if (check === "axe") for (const v of value as Violation[]) keys.push(`${where}: axe ${v.rule}`);
+    else if (check === "focus indicators") for (const f of value as { el: string; why: string }[]) keys.push(`${where}: focus ${f.el} ${f.why}`);
+    else keys.push(`${where}: ${check}`);
+  }
+  return keys.sort();
+}
+
+/**
+ * Known failures, held strictly (plan E7.14 S5, the lead's ruling
+ * 2026-11-20): each skin's findings must be exactly these, so a new one
+ * fails and so does a fixed one (drop its key in the fix's merge). Taken
+ * from a run, never widened silently; re-baselined against the SK0 round.
+ * Taken from round 10 + S5 on macOS (four runs, the same keys apart from
+ * UNSETTLED):
+ * - `axe color-contrast`: Combat and Alloy (the light bases), buddy list
+ *   and community window.
+ * - `window flex contract`: Simple X's buddy list.
+ * - `ellipsized text …`: SpaceCowboy at min size.
+ */
+const KNOWN: Record<string, string[]> = {
+  "combat": [
+    "buddy-list default: axe color-contrast",
+    "buddy-list large: axe color-contrast",
+    "buddy-list min: axe color-contrast",
+    "community default: axe color-contrast",
+    "community large: axe color-contrast",
+    "community min: axe color-contrast",
+  ],
+  "spacecowboy": [
+    "buddy-list min: ellipsized text showing fewer than 4 letters or digits",
+    "community min: ellipsized text showing fewer than 4 letters or digits",
+  ],
+  "alloy": [
+    "buddy-list default: axe color-contrast",
+    "buddy-list large: axe color-contrast",
+    "buddy-list min: axe color-contrast",
+    "community default: axe color-contrast",
+    "community large: axe color-contrast",
+    "community min: axe color-contrast",
+  ],
+  "simple-x": [
+    "buddy-list default: window flex contract",
+    "buddy-list large: window flex contract",
+  ],
+};
+
+/**
+ * Findings that come and go between runs of one build, so neither a pass
+ * nor a hold can be strict; passed over by exact text, and logged each
+ * run. After Settings opens from the buddy list's menubar (its only
+ * route), the Rekindle trigger may keep focus and Kobalte's
+ * data-highlighted and take a moved focus back once (present in two runs,
+ * absent in two). Owed the owner's by-hand check (mouse and keyboard →
+ * Settings → back to the buddy list → Tab); it decides whether these
+ * become a fix or go.
+ */
+const UNSETTLED = new Set(
+  ["min", "default", "large"]
+    .map((size) => `buddy-list ${size}: focus button.menu-bar-item "Rekindle" no indicator`)
+    .concat([`buddy-list min: focus button.xfire-titlebar-btn.xfire-titlebar-btn-minimize "\u2014" not focusable`]),
+);
 
 const LONG_URL = `https://example.com/${"averyveryverylongpathsegment".repeat(12)}?q=${"x".repeat(80)}`;
 
@@ -50,7 +122,7 @@ describe("every built-in skin keeps the app accessible and laid out", function (
   });
 
   /** Axe and geometry findings in the window `browser` is in, at each of `w`'s sizes, keyed by window and size. */
-  async function audit(pack: SkinPack, w: WindowCase, withData: boolean, allow: string[] = []): Promise<Record<string, unknown>> {
+  async function audit(pack: SkinPack, w: WindowCase, withData: boolean): Promise<Record<string, unknown>> {
     const found: Record<string, unknown> = {};
     const dir = path.join(OUT, pack.file);
     mkdirSync(dir, { recursive: true });
@@ -63,7 +135,6 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       const geometry = await checkGeometry(browser, ".app-frame", {
         spacing: withData ? [...w.spacing, ...(w.spacingWithData ?? [])] : w.spacing,
         panes: withData ? (w.panes ?? []) : [],
-        allow,
         overlapAllow: w.overlapAllow,
       });
       for (const [check, value] of Object.entries(geometry)) found[`${where}: ${check}`] = value;
@@ -71,43 +142,22 @@ describe("every built-in skin keeps the app accessible and laid out", function (
     return found;
   }
 
-  /**
-   * Settings is opened from the buddy list's menubar, which returns focus
-   * to its trigger when the menu closes (WAI-ARIA menubar pattern). Kobalte
-   * then keeps that trigger highlighted (`data-highlighted`,
-   * `data-pointer-type="mouse"`) until a real pointer leaves it, and the
-   * driver's synthetic pointer never does: a dispatched `pointerleave`
-   * does not clear it (probes 2026-11-20). So the focus check would read
-   * the trigger already showing its highlight and report "no indicator",
-   * and a focus moved elsewhere at once is taken back. Wait until focus
-   * stays put, then blur; the focus check passes over the trigger only
-   * while it carries that highlight (`MENUBAR_HELD`), and checks every
-   * other control.
-   */
-  async function leaveMenubar(): Promise<void> {
-    await waitUntil(
-      async () =>
-        (await browser.execute(`if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
-return new Promise(function (done) { setTimeout(function () { done(document.activeElement === document.body); }, 200); });`)) as boolean,
-      WAIT_MS,
-      "focus kept returning to the menubar trigger",
-    );
-  }
-
-  /** The menubar trigger the driver's pointer left highlighted (`leaveMenubar`). */
-  const MENUBAR_HELD = ["button.menu-bar-item[data-highlighted]"];
-
   for (const pack of PACKS) {
-    it(`${pack.name}: axe and geometry hold in the buddy list, Appearance and a community window`, async () => {
+    const held = (KNOWN[pack.file] ?? []).length;
+    it(`${pack.name}: axe and geometry hold in the buddy list, Appearance and a community window${held ? ` (${held} known failure${held === 1 ? "" : "s"})` : ""}`, async () => {
       await applySkin(browser, me, pack.name);
       const found: Record<string, unknown> = {};
       Object.assign(found, await audit(pack, SETTINGS_APPEARANCE, true));
       await switchTo(browser, BUDDY);
-      await leaveMenubar();
-      Object.assign(found, await audit(pack, BUDDY_LIST, false, MENUBAR_HELD));
+      Object.assign(found, await audit(pack, BUDDY_LIST, false));
       await browser.switchToWindow(communityHandle);
       Object.assign(found, await audit(pack, COMMUNITY, true));
-      expect(found).toEqual({});
+      const all = keysOf(found);
+      // The run's findings as keys, to re-baseline from (no silent widening: a changed hold is a reviewed edit).
+      console.log(`[keys] ${pack.file} ${JSON.stringify(all)}`);
+      const unsettled = all.filter((k) => UNSETTLED.has(k));
+      if (unsettled.length > 0) console.log(`[unsettled] ${pack.file} ${JSON.stringify(unsettled)}`);
+      expect(all.filter((k) => !UNSETTLED.has(k))).toEqual(KNOWN[pack.file] ?? []);
     });
   }
 });
