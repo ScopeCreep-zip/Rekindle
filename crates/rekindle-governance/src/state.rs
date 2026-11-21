@@ -383,9 +383,7 @@ impl GovernanceState {
         (self.members.keys()).filter(|p| self.is_counted_member(p))
     }
 
-    /// How many members the merge counts: every admitted member (the
-    /// primary creator from genesis, everyone else, a further creator
-    /// included, from its admitted `MemberJoined`).
+    /// How many members the merge counts: every admitted member.
     #[must_use]
     pub fn member_count(&self) -> usize {
         self.members.len()
