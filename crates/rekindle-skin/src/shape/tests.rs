@@ -264,8 +264,15 @@ fn builtin_silhouettes_match_their_goldens() {
     // reference outline pixel at alpha 106-126 (under the 128 cut) save
     // Alloy's two right corner tips, (339, 0) and (338, 499), one opaque
     // pixel more in the reference's art than in its pieces.
+    // Classic is 501x549 (its original at 0.75, 376x412), SK2-P4; with its
+    // frame drawn only by the tree's rows (SK2-P5 fix 1) its opacity XOR
+    // is 2,656/154,912 px: x 366-375 (window x 488-500) y 50-188 and
+    // 222-349, 2,554 px, the 13 px strip right of `MainRightOuterEdge`
+    // where the original draws its Infoview tab (spec: the strip the root
+    // `IndentRight="13+14"` leaves), and 102 px in 26 regions under 30 px
+    // along the outline, the original's 0.75 resampling.
     let got: Vec<_> = [
-        ("builtin:xfire-classic", (605, 412)),
+        ("builtin:xfire-classic", (501, 549)),
         ("builtin:spacecowboy", (365, 549)),
         ("builtin:symbiosis", (399, 555)),
         ("builtin:total-chaos", (471, 553)),
@@ -284,8 +291,8 @@ fn builtin_silhouettes_match_their_goldens() {
         (
             "builtin:xfire-classic",
             (
-                113,
-                vec![r(69, 0, 467, 1), r(62, 1, 481, 1), r(56, 2, 493, 1)],
+                126,
+                vec![r(83, 0, 322, 1), r(76, 1, 336, 1), r(70, 2, 348, 1)],
             ),
         ),
         (

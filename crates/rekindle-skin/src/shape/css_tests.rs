@@ -44,19 +44,15 @@ fn slots(id: &str, window: SkinWindow) -> Vec<String> {
     out
 }
 
+/// Plan SK2-P5 fix 1: Classic's frame pieces are its tree's `MainTitleBar`,
+/// `MiddleBevel` and `BaseBoard` art, drawn once by those nodes where the
+/// pack lays them (14…W−27, inside `InnerBevel`, 10…W−25); the frame layer
+/// lays none of them again at the window's edges (it laid the title bar's
+/// caps at 0 and W−70 over the tree's at 14 and W−97).
 #[test]
 fn xfire_classic_main_golden() {
-    let want = [
-        "display: block; left: 0px; width: 70px; top: 0px; height: 47px; background: url(\"node-maintitlebar-topleft.png\") 0 0 / 70px 47px no-repeat;",
-        "display: block; left: 70px; right: 70px; top: 0px; height: 46px; background: url(\"node-maintitlebar-top.png\") 0 0 / 100px 46px repeat-x;",
-        "display: block; right: 0px; width: 70px; top: 0px; height: 47px; background: url(\"node-maintitlebar-topright.png\") 0 0 / 70px 47px no-repeat;",
-        "display: block; left: 0px; width: 7px; top: 47px; bottom: 62px; background: url(\"left.png\") 0 0 / 7px 236px repeat-y;",
-        "display: block; right: 0px; width: 6px; top: 47px; bottom: 62px; background: url(\"node-middlebevel-right.png\") 0 0 / 6px 241px repeat-y;",
-        "display: block; left: 0px; width: 117px; bottom: 0px; height: 62px; background: url(\"bottom-left.png\") 0 0 / 117px 62px no-repeat;",
-        "display: block; left: 117px; right: 115px; bottom: 0px; height: 63px; background: url(\"bottom.png\") 0 0 / 100px 63px repeat-x;",
-        "display: block; right: 0px; width: 115px; bottom: 0px; height: 62px; background: url(\"bottom-right.png\") 0 0 / 115px 62px no-repeat;",
-    ];
-    assert_eq!(slots("builtin:xfire-classic", SkinWindow::Main), want);
+    let got = slots("builtin:xfire-classic", SkinWindow::Main);
+    assert!(got.is_empty(), "{got:#?}");
 }
 
 #[test]

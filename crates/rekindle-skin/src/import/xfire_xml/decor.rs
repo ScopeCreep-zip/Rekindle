@@ -26,7 +26,7 @@ use rekindle_types::dto::skin::{FrameTile, SkinWindow, TileAxis, WindowLayout};
 use super::super::tree::Node;
 use super::super::views;
 use super::super::ImportError;
-use super::tiles::normal_set;
+use super::tiles::{normal_set, Shape};
 use super::{descendants, nine_piece_in, row_decor, stack, tiles, Windows};
 use crate::shape;
 
@@ -243,6 +243,40 @@ fn views_insets(main: &Node, components: &[Node]) -> Option<(u32, u32)> {
     Some((u32::try_from(left).ok()?, u32::try_from(right).ok()?))
 }
 
+/// The frame piece tiles [`shape::from_nine`] lays, by package path (the
+/// centre is never a tile).
+fn frame_piece_paths(window: SkinWindow) -> [String; 8] {
+    [
+        "top-left",
+        "top",
+        "top-right",
+        "left",
+        "right",
+        "bottom-left",
+        "bottom",
+        "bottom-right",
+    ]
+    .map(|p| shape::tile_path(window, p))
+}
+
+/// Removes the nine-piece frame's tiles and images from `built`: Xfire
+/// draws each tile once, in its own box (skin spec "a set is a frame drawn
+/// in the tile's box"). [`Shape::Rows`] reads its pieces from three tiles the
+/// component tree lays where the pack lays them (Classic v3's
+/// `MainTitleBar` 14…W−27, `MiddleBevel` inside `InnerBevel`, `BaseBoard`
+/// 10…W−25, `v3/xfiremainwindow.xml:2,16,54-57`), none in the window's box,
+/// so the frame layer draws none of them again at the window's edges.
+fn drop_frame_pieces(window: SkinWindow, built: &mut (WindowLayout, BTreeMap<String, Vec<u8>>)) {
+    let paths = frame_piece_paths(window);
+    built
+        .0
+        .tiles
+        .retain(|t| t.decoration.is_some() || !paths.contains(&t.image));
+    for p in &paths {
+        built.1.remove(p);
+    }
+}
+
 /// The buddy list's layout from its layout file `main`: the frame pieces
 /// (a nine-piece shape, else a row stack), then the decorations and
 /// outsets; `None` when no frame is found.
@@ -257,8 +291,9 @@ pub fn main_window(
     windows: &mut Windows,
 ) -> Result<(), ImportError> {
     let w = SkinWindow::Main;
-    let built = if let Some((mut pieces, _, frame_tiles)) = tiles::pieces(main, components, piece)?
-    {
+    let found = tiles::pieces(main, components, piece)?;
+    let carried = found.as_ref().is_some_and(|(_, s, _)| *s == Shape::Rows);
+    let built = if let Some((mut pieces, _, frame_tiles)) = found {
         let insets = views_insets(main, components);
         if let Some(insets) = insets {
             let [_, _, _, l, _, r, _, _, _] = &mut pieces;
@@ -283,6 +318,9 @@ pub fn main_window(
         let mut with_popups = components.to_vec();
         with_popups.extend_from_slice(popups);
         crate::skin_tree::import::add(w, main, &with_popups, piece, &rows, &mut built)?;
+        if carried {
+            drop_frame_pieces(w, &mut built);
+        }
         windows.insert(w, built);
     }
     Ok(())
@@ -412,5 +450,61 @@ mod tests {
         )
         .unwrap();
         assert_eq!(views_insets(&classic, &[nine]), None);
+    }
+
+    /// Plan SK2-P5 fix 1: Classic v3's frame rows are its tree's tiles
+    /// (`MainTitleBar` 14…W−27, `MiddleBevel`, `BaseBoard` 10…W−25), so no
+    /// nine-piece frame tile also draws their pieces at the window's edges;
+    /// every image is drawn once, by its tree node in its own box.
+    #[test]
+    fn a_frame_read_from_the_trees_rows_is_drawn_only_by_the_tree() {
+        let main = parse(
+            "MainWindow.xml",
+            br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="MainTitleBar" Z="4" X="0" Y="0" IndentLeft="14" IndentRight="27" ResizeX="100" Component="MainTitleBar"/>
+<Tile Name="MiddleBevel" Z="4" X="9" Y="40" IndentRight="20" IndentBottom="60" ResizeX="100" ResizeY="100" Component="MiddleBevel"/>
+<Tile Name="BaseBoard" Z="4" X="0" Y="0" JustY="BOTTOM" IndentLeft="10" IndentRight="25" ResizeX="100" Component="BaseBoard"/>
+</Tile>"#,
+        )
+        .unwrap();
+        let components = parse(
+            "Components/MainWindow.xml",
+            br#"<Components>
+<Component Name="MainWindow" MinWidth="200" MinHeight="200"/>
+<Component Name="MainTitleBar"><Images State="Normal"><Image Type="topleft">tl-30x47</Image><Image Type="top">t-8x47</Image><Image Type="topright">tr-30x47</Image></Images></Component>
+<Component Name="MiddleBevel"><Images><Image Type="left">l-6x8</Image><Image Type="right">r-6x8</Image></Images></Component>
+<Component Name="BaseBoard"><Images><Image Type="bottomleft">bl-30x60</Image><Image Type="bottom">b-8x60</Image><Image Type="bottomright">br-30x60</Image></Images></Component>
+</Components>"#,
+        )
+        .unwrap();
+        let mut windows = Windows::new();
+        main_window(
+            &main,
+            (std::slice::from_ref(&components), &[]),
+            |name, _| {
+                let (w, h) = name.rsplit_once('-').unwrap().1.split_once('x').unwrap();
+                let (w, h) = (w.parse().unwrap(), h.parse().unwrap());
+                Ok(RgbaImage::from_pixel(
+                    w,
+                    h,
+                    rekindle_image::Rgba([9, 9, 9, 255]),
+                ))
+            },
+            &[],
+            &mut windows,
+        )
+        .unwrap();
+        let (layout, files) = &windows[&SkinWindow::Main];
+        let frame: Vec<&str> = layout.tiles.iter().map(|t| t.image.as_str()).collect();
+        assert!(frame.is_empty(), "the frame layer draws {frame:?}");
+        let tree = layout.tree.as_ref().unwrap();
+        let drawn = tree.root.iter().filter(|n| n.art.is_some()).count();
+        assert_eq!(drawn, 3, "each row drawn once by its tree node");
+        let pieces = frame_piece_paths(SkinWindow::Main);
+        assert!(
+            files.keys().all(|k| !pieces.contains(k)),
+            "{:?}",
+            files.keys()
+        );
     }
 }
