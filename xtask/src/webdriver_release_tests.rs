@@ -1,6 +1,6 @@
 use super::{
     feature_problems, graph_problems, has_feature_release_guard, has_release_guard,
-    workspace_names_driver, CRATE,
+    release_binary_problems, workspace_names_driver, CRATE, EVAL_ROUTE,
 };
 
 #[test]
@@ -64,4 +64,27 @@ fn nothing_in_the_workspace_reaches_the_driver() {
     let host = host.parse::<toml_edit::DocumentMut>().unwrap();
     let problems = feature_problems(&meta, &host);
     assert!(problems.is_empty(), "{problems:?}");
+}
+
+/// A release build of this gate holds the route as its needle and is not a
+/// problem; a shipped binary holding it is.
+#[test]
+fn the_release_scan_skips_its_own_binary_only() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let meta = crate::cargo_meta::Metadata::load(&root).unwrap();
+    let fake = std::env::temp_dir().join(format!("xtask-wdio-scan-{}", std::process::id()));
+    let release = fake.join("target").join("release");
+    std::fs::create_dir_all(&release).unwrap();
+    let mut held = b"prefix".to_vec();
+    held.extend_from_slice(EVAL_ROUTE);
+    std::fs::write(release.join("xtask"), &held).unwrap();
+    let own_only = release_binary_problems(&fake, &meta);
+    std::fs::write(release.join("rekindle-desktop"), &held).unwrap();
+    let shipped = release_binary_problems(&fake, &meta);
+    std::fs::remove_dir_all(&fake).unwrap();
+    assert!(own_only.is_empty(), "{own_only:?}");
+    assert_eq!(
+        shipped,
+        vec!["target/release/rekindle-desktop holds /wdio/eval".to_owned()]
+    );
 }

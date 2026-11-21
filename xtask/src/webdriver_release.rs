@@ -16,7 +16,7 @@
 //! - in the graph `cargo metadata` resolves, nothing depends on it and no
 //!   release binary's build graph reaches it;
 //! - no release binary already built under `target/release` holds
-//!   `/wdio/eval`.
+//!   `/wdio/eval` (this gate's own binary aside: the route is its needle).
 
 use std::path::Path;
 
@@ -140,9 +140,15 @@ fn graph_problems(meta: &crate::cargo_meta::Metadata) -> Vec<String> {
 }
 
 /// Release binaries under `target/release` that hold the eval route.
+///
+/// This gate's own binary is not scanned: it holds [`EVAL_ROUTE`] as the
+/// needle it searches for, so a release build of it (`cargo run --release
+/// -p xtask`, as a skin re-import does) would always match. It is a
+/// development tool no bundle ships.
 fn release_binary_problems(root: &Path, meta: &crate::cargo_meta::Metadata) -> Vec<String> {
     let release = root.join("target").join("release");
     meta.members()
+        .filter(|m| m.name != env!("CARGO_PKG_NAME"))
         .flat_map(|m| m.targets.iter())
         .filter(|t| t.kind.iter().any(|k| k == "bin"))
         .filter_map(|t| {
