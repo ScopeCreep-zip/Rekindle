@@ -47,11 +47,11 @@ fn slots(id: &str, window: SkinWindow) -> Vec<String> {
 #[test]
 fn xfire_classic_main_golden() {
     let want = [
-        "display: block; left: 0px; width: 70px; top: 0px; height: 47px; background: url(\"top-left.png\") 0 0 / 70px 47px no-repeat;",
-        "display: block; left: 70px; right: 70px; top: 0px; height: 46px; background: url(\"top.png\") 0 0 / 100px 46px repeat-x;",
-        "display: block; right: 0px; width: 70px; top: 0px; height: 47px; background: url(\"top-right.png\") 0 0 / 70px 47px no-repeat;",
+        "display: block; left: 0px; width: 70px; top: 0px; height: 47px; background: url(\"node-maintitlebar-topleft.png\") 0 0 / 70px 47px no-repeat;",
+        "display: block; left: 70px; right: 70px; top: 0px; height: 46px; background: url(\"node-maintitlebar-top.png\") 0 0 / 100px 46px repeat-x;",
+        "display: block; right: 0px; width: 70px; top: 0px; height: 47px; background: url(\"node-maintitlebar-topright.png\") 0 0 / 70px 47px no-repeat;",
         "display: block; left: 0px; width: 7px; top: 47px; bottom: 62px; background: url(\"left.png\") 0 0 / 7px 236px repeat-y;",
-        "display: block; right: 0px; width: 6px; top: 47px; bottom: 62px; background: url(\"right.png\") 0 0 / 6px 241px repeat-y;",
+        "display: block; right: 0px; width: 6px; top: 47px; bottom: 62px; background: url(\"node-middlebevel-right.png\") 0 0 / 6px 241px repeat-y;",
         "display: block; left: 0px; width: 117px; bottom: 0px; height: 62px; background: url(\"bottom-left.png\") 0 0 / 117px 62px no-repeat;",
         "display: block; left: 117px; right: 115px; bottom: 0px; height: 63px; background: url(\"bottom.png\") 0 0 / 100px 63px repeat-x;",
         "display: block; right: 0px; width: 115px; bottom: 0px; height: 62px; background: url(\"bottom-right.png\") 0 0 / 115px 62px no-repeat;",
@@ -65,8 +65,8 @@ fn total_chaos_main_golden() {
     assert_eq!(got.len(), 15);
     // The row stack: left/right pieces at the edges, middles repeating
     // between them at source size.
-    assert_eq!(got[0], "display: block; left: 0px; width: 75px; top: 0px; height: 52px; background: url(\"row0-left.png\") 0 0 / 75px 52px no-repeat;");
-    assert_eq!(got[1], "display: block; left: 75px; right: 75px; top: 0px; height: 52px; background: url(\"node-maintitlebar.png\") 0 0 / 8px 52px repeat-x;");
+    assert_eq!(got[0], "display: block; left: 0px; width: 75px; top: 0px; height: 52px; background: url(\"node-maintitlebar-left.png\") 0 0 / 75px 52px no-repeat;");
+    assert_eq!(got[1], "display: block; left: 75px; right: 75px; top: 0px; height: 52px; background: url(\"node-maintitlebar-middle.png\") 0 0 / 8px 52px repeat-x;");
     // The T.C plaque: centred on the window (an overhang), floored to a
     // whole pixel like the silhouette, painted over row 0's middle.
     assert_eq!(got[3], "display: block; left: calc(0px + round(down, calc((100% - 206px) / 2), 1px)); width: 206px; top: 0px; height: 52px; background: url(\"node-title.png\") 0 0 / 206px 52px no-repeat;");
