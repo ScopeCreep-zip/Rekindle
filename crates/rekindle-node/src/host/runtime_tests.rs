@@ -18,9 +18,9 @@ mod audit_export;
 #[path = "automod_malformed_tests.rs"]
 mod automod_malformed;
 #[path = "channel_change_tests.rs"]
-mod channel_change_tests;
+pub(crate) mod channel_change_tests;
 #[path = "channel_gap_tests.rs"]
-mod channel_gap_tests;
+pub(crate) mod channel_gap_tests;
 #[path = "channel_held_tests.rs"]
 mod channel_held_tests;
 #[path = "channel_ingest_tests.rs"]
@@ -70,7 +70,7 @@ mod skin_trial;
 #[path = "withdrawal_tests.rs"]
 mod withdrawal;
 
-async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
+pub(crate) async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     offline_host_with(dir, None).await
 }
 
@@ -100,7 +100,7 @@ fn status_of(response: &IpcResponse) -> Option<u32> {
 }
 
 /// Create Ann through the window, which unlocks her.
-async fn create_ann(host: &Host) -> rekindle_types::dto::identity::IdentityView {
+pub(crate) async fn create_ann(host: &Host) -> rekindle_types::dto::identity::IdentityView {
     let answer = host
         .call(
             Caller::shell(),
@@ -238,7 +238,7 @@ async fn an_own_governance_op_lands_in_the_op_store() {
 }
 
 /// Ann's community `c1` in the store with a member registry, and its row.
-async fn seed_registry_community(host: &Host, owner: &str) {
+pub(crate) async fn seed_registry_community(host: &Host, owner: &str) {
     host.ctx.communities.map().write().insert(
         "c1".into(),
         crate::host::community::CommunityState {

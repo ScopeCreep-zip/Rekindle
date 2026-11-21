@@ -596,3 +596,5 @@ impl HostChannel {
             .await;
     }
 }
+#[cfg(test)]
+mod tests;

@@ -596,4 +596,4 @@ async fn shutdown_transport(ctx: &Arc<DaemonContext>) {
 
 #[cfg(test)]
 #[path = "runtime_tests.rs"]
-mod tests;
+pub(crate) mod tests;

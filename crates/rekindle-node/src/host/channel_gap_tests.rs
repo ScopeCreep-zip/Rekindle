@@ -13,7 +13,7 @@ use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
 /// The merged state of `c1` with its one text channel.
-fn with_channel() -> GovernanceState {
+pub(crate) fn with_channel() -> GovernanceState {
     let mut gov = GovernanceState::default();
     gov.channels.insert(
         ChannelId::from_hex(EDIT_CHANNEL).expect("channel id"),

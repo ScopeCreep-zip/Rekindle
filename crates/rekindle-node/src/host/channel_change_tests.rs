@@ -17,8 +17,8 @@ use crate::host::adapters::channel::changes::ChangeSource;
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
-pub(super) const EDIT_CHANNEL: &str = "fedcba9876543210fedcba9876543210";
-pub(super) const TEXT_KEY: [u8; 32] = [7; 32];
+pub(crate) const EDIT_CHANNEL: &str = "fedcba9876543210fedcba9876543210";
+pub(crate) const TEXT_KEY: [u8; 32] = [7; 32];
 pub(super) const AUTHOR: PseudonymKey = PseudonymKey([1; 32]);
 const OTHER_AUTHOR: PseudonymKey = PseudonymKey([2; 32]);
 
