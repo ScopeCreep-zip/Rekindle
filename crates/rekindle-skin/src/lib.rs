@@ -71,7 +71,7 @@ pub mod limits {
     /// Zip entries, directories included.
     pub const MAX_ENTRIES: u64 = 512;
     /// `manifest.json`.
-    pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+    pub const MAX_MANIFEST_BYTES: u64 = 128 * 1024;
     /// An image's longest side, px (≤ 2048²).
     pub const MAX_IMAGE_SIDE: u32 = 2048;
     /// An image's pixels (≤ 4 Mpx).

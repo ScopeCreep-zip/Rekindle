@@ -13,12 +13,13 @@
 //! classless art (Decor). The views node's box is the layout's content
 //! rectangle.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, RegionState, SkinWindow, TileAxis, WindowLayout};
 
 pub use super::fit::views_content;
+use rekindle_types::dto::skin_action::NodeTrigger;
 use rekindle_types::dto::skin_tree::{
     NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
 };
@@ -30,6 +31,7 @@ use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::rail;
 use super::roles::{role, Facts};
+use super::triggers::{self, Pack};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_pieces, Decode};
 use crate::import::ImportError;
@@ -115,6 +117,8 @@ struct Read<'n> {
     /// The component's `ControlGroupId` (INI tab controls that switch
     /// together).
     group: Option<String>,
+    /// The tile's then its component's triggers (decision 36).
+    triggers: Vec<NodeTrigger>,
 }
 
 struct Walk<'a> {
@@ -127,6 +131,10 @@ struct Walk<'a> {
     images: Images,
     /// Each tab control's path of child indices and its `ControlGroupId`.
     groups: Vec<(Vec<usize>, String)>,
+    /// The pack's `<Popups>` tile names, lowercased.
+    popups: BTreeSet<String>,
+    /// Every control group id the pack's components declare.
+    group_ids: BTreeSet<u16>,
 }
 
 impl Walk<'_> {
@@ -319,6 +327,11 @@ impl Walk<'_> {
             .and_then(|c| c.attr_ci("ControlGroupId"))
             .or(tile.attr_ci("ControlGroupId"))
             .map(|g| g.trim().to_owned());
+        let pack = Pack {
+            popups: &self.popups,
+            groups: &self.group_ids,
+        };
+        let triggers = triggers::read(tile, comp, &id, &pack)?;
         Ok(Read {
             tile,
             id,
@@ -328,6 +341,7 @@ impl Walk<'_> {
             max,
             layer: layer_of(comp),
             group,
+            triggers,
         })
     }
 
@@ -428,6 +442,7 @@ impl Walk<'_> {
                 art,
                 text: None,
                 shows_with,
+                triggers: t.triggers,
                 children,
             });
         }
@@ -515,6 +530,19 @@ pub fn add(
         }
     }
     let laid = with_rail(layout, components, &by_name);
+    let popups = components
+        .iter()
+        .filter(|n| n.name.eq_ignore_ascii_case("Popups"))
+        .flat_map(|p| p.children_named("Tile"))
+        .filter_map(|t| t.attr_ci("Name"))
+        .map(|n| n.trim().to_ascii_lowercase())
+        .collect();
+    let group_ids = by_name
+        .values()
+        .flat_map(|c| [c.attr_ci("GroupId"), c.attr_ci("ControlGroupId")])
+        .flatten()
+        .filter_map(|g| g.trim().parse().ok())
+        .collect();
     let mut walk = Walk {
         window,
         by_name,
@@ -522,6 +550,8 @@ pub fn add(
         files: Files::new(),
         images: Images::new(),
         groups: Vec::new(),
+        popups,
+        group_ids,
     };
     let mut tree = SkinTree {
         outsets: Insets {

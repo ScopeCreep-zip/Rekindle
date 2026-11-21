@@ -103,11 +103,10 @@ Regions
   scrollbar.corner: [DefaultScrollbar], 10x10 px, Stretch; states normal
 
 Dropped
-  images with no region slot: 130
+  images with no region slot: 120
   other keys (classes, sizes, cursors, sounds): 203
   other skin files (chat, group chat, in-game): 4
   text styles: 77
-  triggers: 33
   window layout: 283
   lines Windows reads no value from (8):
     SimpleX.ini: [MainWindow] Window4.IndentRight (line 45)

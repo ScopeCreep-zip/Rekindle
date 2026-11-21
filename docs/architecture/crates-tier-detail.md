@@ -272,7 +272,7 @@ rule }` and nothing is partly applied.
   `assets/`, `sounds/` and `icons/`, duplicate names, names that collide by
   case or NFC (Pidgin CVE-2014-3697), overlapping entries, > 512 entries, a
   missing manifest.
-- `manifest::parse(&Package) -> Result<SkinManifest, SkinError>`: ≤ 64 KiB.
+- `manifest::parse(&Package) -> Result<SkinManifest, SkinError>`: ≤ 128 KiB (raised from 64 KiB in SK2-A2: the tree carries each node's triggers; Symbiosis's main window alone is 65,968 bytes).
   The format major is read first, so an unknown major is refused before any
   other key; then `deny_unknown_fields`. Text rules: `name` ≤ 64 scalars,
   `description` ≤ 280, both NFC with no control or bidi characters;

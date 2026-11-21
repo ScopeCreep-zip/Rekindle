@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::skin::{Insets, RegionState};
+use super::skin_action::NodeTrigger;
 use super::skin_layout::SkinWindow;
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
 pub use super::skin_tree_role::{ActionKey, Edge, LampKey, MenuKey, NodeRole, ViewKey};
@@ -211,6 +212,10 @@ pub struct SkinNode {
     /// The tab whose view shows this node (a view's button row).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
+    /// The pack's `(event, action)` pairs (plan SK2-A, decision 36): the
+    /// tile's own, then its component's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<NodeTrigger>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<SkinNode>,
 }
@@ -267,6 +272,8 @@ pub struct ShellNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<NodeTrigger>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<ShellNode>,
 }
 
@@ -285,6 +292,7 @@ impl SkinNode {
             id: self.id.clone(),
             role: self.role,
             shows_with: self.shows_with,
+            triggers: self.triggers.clone(),
             children: self.children.iter().map(Self::shell).collect(),
         }
     }

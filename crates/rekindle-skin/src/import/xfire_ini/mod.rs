@@ -31,7 +31,7 @@
 //!   `BtnDown` down) with all eight pieces becomes that state's image, each
 //!   piece shifted by its section's `<State>.ColorGroup` (DoiDD hover +30,
 //!   pressed −30) and keyed (`#FF00FF` → alpha), as item 1's bitmaps.
-//! * Window layout, triggers, text styles, other images and sounds are
+//! * Window layout, text styles, other images and sounds are
 //!   dropped and counted in the `NOTICE`; the package goes through
 //!   [`super::conclude`] (a draft names every failing pair).
 
@@ -233,7 +233,8 @@ fn count_dropped(
     dropped: &mut BTreeMap<&'static str, usize>,
 ) {
     let used = |sec: &str, key: &str| {
-        control_sections.contains(&sec.to_ascii_lowercase()) && controls::is_read(key)
+        title::is_trigger_key(key)
+            || control_sections.contains(&sec.to_ascii_lowercase()) && controls::is_read(key)
             || frame.is_some_and(|f| {
                 STATES
                     .iter()
@@ -253,8 +254,6 @@ fn count_dropped(
             let kind =
                 if k.starts_with("Window") && k[6..].starts_with(|c: char| c.is_ascii_digit()) {
                     "window layout"
-                } else if k.starts_with("Action.") {
-                    "triggers"
                 } else if k.starts_with("Text.") {
                     "text styles"
                 } else if STATES

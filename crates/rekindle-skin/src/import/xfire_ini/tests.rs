@@ -153,7 +153,8 @@ fn imports_validates_and_is_byte_identical() {
     assert!(a
         .notice
         .contains("BuddyViewBG RGBA(16,16,16,0) -> token bg.primary"));
-    assert!(a.notice.contains("triggers: 4"));
+    // The triggers are read into the tree now (plan SK2-A2): no NOTICE count.
+    assert!(!a.notice.contains("triggers:"));
     assert!(a.notice.contains("    Fix chatskin.ini\n"));
     assert!(a.notice.contains("    Thumbs.db\n"));
     assert!(a

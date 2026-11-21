@@ -61,6 +61,15 @@ pub enum ImportError {
     Format { file: String, detail: String },
     #[error("{file}: missing from the tree")]
     MissingFile { file: String },
+    /// A trigger names an event or action outside the engine's closed
+    /// vocabulary (`rekindle_types::dto::skin_action`; plan SK2-A, decision
+    /// 36): the pack is refused, never a trigger dropped.
+    #[error("{file}: {tile}: unknown trigger event or action {name}")]
+    UnknownAction {
+        file: String,
+        tile: String,
+        name: String,
+    },
     /// A component names a bitmap the theme never defines and no file of
     /// the tree is called (xSLIMFIRE's `AdArea` names `ADBARLEFT`): Xfire
     /// lays nothing for it, so a reader whose piece is optional skips it.

@@ -22,7 +22,7 @@
 //!   2026-10-15 ruling (Xfire is defunct); any other author's is
 //!   third-party work published without a licence. Both say Rekindle's MIT
 //!   licence does not cover the pack.
-//! * Triggers, layout tiles, other bitmaps, sounds, strings and HTML
+//! * Layout tiles, other bitmaps, sounds, strings and HTML
 //!   templates are dropped and counted in the `NOTICE`.
 //! * The package then goes through [`crate::validate::run`]; a failing
 //!   pair is settled by [`super::walk::settle`], each change recorded.

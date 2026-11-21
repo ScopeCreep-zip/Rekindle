@@ -98,7 +98,8 @@ fn imports_validates_and_is_byte_identical() {
     assert!(a
         .notice
         .contains("XIGCaretCG RGBA(255,255,255,0) -> dropped"));
-    assert!(a.notice.contains("triggers: 1"));
+    // The triggers are read into the tree now (plan SK2-A2): no NOTICE count.
+    assert!(!a.notice.contains("triggers:"));
 }
 
 #[test]

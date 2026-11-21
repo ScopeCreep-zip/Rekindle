@@ -209,7 +209,6 @@ Dropped
   HTML templates: 0
   layout components: 128
   layout tiles: 0
-  triggers: 123
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
 Contrast changes (minimal Oklab-lightness walk) (8 made)
@@ -220,4 +219,4 @@ Contrast changes (minimal Oklab-lightness walk) (8 made)
   accent.text: #2d80d2 -> #3184d6 (1.4.3 .action-bar-btn hovered accent.text on accent.fill 15% over bg.dark: 4.30:1 -> passes, required 4.50:1)
   accent.text: #3184d6 -> #388bdd (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.13:1 -> passes, required 4.50:1)
   bg.primary: #0d0d0d -> #0d0d0c (1.4.3 .channel-voice-join-btn text.on-fill on status.online tint.fill over bg.dark: 4.49:1 -> passes, required 4.50:1)
-  danger.text: #ff5955 -> #ff5d58 (1.4.3 .raid-alert-banner danger.text on status.busy 30% over bg.dark: 4.40:1 -> passes, required 4.50:1)
+  danger.text: #ff5955 -> #ff5d58 (1.4.3 .removal-banner danger.text on status.busy 30% over bg.dark: 4.40:1 -> passes, required 4.50:1)

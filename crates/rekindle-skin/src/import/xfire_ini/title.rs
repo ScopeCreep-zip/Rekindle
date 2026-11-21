@@ -133,6 +133,63 @@ fn tiles(ini: &Ini, section: &Section, path: &mut Vec<String>) -> Vec<Node> {
     out
 }
 
+/// The INI state name a `<state>.Trigger=` key selects, as the XML
+/// `State(...)` argument: `Graphics`/`Text` are the normal look, `BtnDown`
+/// the pressed one. Any other name passes through and the tree's trigger
+/// reader refuses it (`ImportError::UnknownAction`).
+fn state_of(prefix: &str) -> &str {
+    if prefix.eq_ignore_ascii_case("Graphics") || prefix.eq_ignore_ascii_case("Text") {
+        "Normal"
+    } else if prefix.eq_ignore_ascii_case("BtnDown") {
+        "Down"
+    } else {
+        prefix
+    }
+}
+
+/// Whether `key` is a trigger key: `Action.<event>` or `<state>.Trigger`.
+pub(super) fn is_trigger_key(key: &str) -> bool {
+    key.split_once('.')
+        .is_some_and(|(p, k)| p.eq_ignore_ascii_case("Action") || k.eq_ignore_ascii_case("Trigger"))
+}
+
+/// `section`'s `Action.<event>=A` and `<state>.Trigger=<signal>` keys as
+/// the XML era's `<Triggers>` (plan SK2-A, decision 36), in the file's
+/// order: every duplicate key is kept (Combat's `[InfoViewSwitchIn]`
+/// runs `GroupMessage(1)` then `LaunchSkin`, its own comment says in that
+/// order, `combat.ini:804-807`).
+fn triggers(section: &Section) -> Option<Node> {
+    let trigger = |event: String, action: String| Node {
+        name: "Trigger".to_owned(),
+        attrs: BTreeMap::from([("Type".to_owned(), event)]),
+        text: action,
+        children: Vec::new(),
+    };
+    let on = |e: &str| {
+        let rest = if e.len() > 2 && e[..2].eq_ignore_ascii_case("on") {
+            &e[2..]
+        } else {
+            e
+        };
+        format!("On{rest}")
+    };
+    let list: Vec<Node> = section
+        .entries
+        .iter()
+        .filter(|e| is_trigger_key(&e.key))
+        .filter_map(|e| {
+            let (p, k) = e.key.split_once('.')?;
+            let v = e.value.trim().to_owned();
+            Some(if p.eq_ignore_ascii_case("Action") {
+                trigger(on(k.trim()), v)
+            } else {
+                trigger(on(&v), format!("State({})", state_of(p.trim())))
+            })
+        })
+        .collect();
+    (!list.is_empty()).then(|| node("Triggers", BTreeMap::new(), list))
+}
+
 fn component(section: &Section) -> Node {
     let mut children = Vec::new();
     for (prefix, state) in SETS {
@@ -182,6 +239,19 @@ fn component(section: &Section) -> Node {
     if text.contains_key("Font") {
         children.push(node("Text", text, Vec::new()));
     }
+    if let Some(t) = triggers(section) {
+        children.push(t);
+    }
+    // A `SkinLauncher`'s `Skin.Name=` is the popup its `LaunchSkin` opens
+    // (`Skin.Name=Infoskin`, SimpleX's `[InfoViewButton]`).
+    if let Some(skin) = section.get("Skin.Name").or(section.get("Skin")) {
+        children.push(Node {
+            name: "Popup".to_owned(),
+            attrs: BTreeMap::new(),
+            text: skin.trim().to_owned(),
+            children: Vec::new(),
+        });
+    }
     let mut attrs = BTreeMap::from([("Name".to_owned(), section.name.clone())]);
     if let Some(class) = section.get("Class") {
         attrs.insert("Class".to_owned(), class.trim().to_owned());
@@ -194,6 +264,7 @@ fn component(section: &Section) -> Node {
         "MaxWidth",
         "MaxHeight",
         "ControlGroupId",
+        "GroupId",
     ] {
         if let Some(v) = section.get(key) {
             attrs.insert(key.to_owned(), v.trim().to_owned());

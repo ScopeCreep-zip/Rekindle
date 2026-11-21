@@ -67,11 +67,10 @@ Regions
   dropped [CombatDragBar (community.sidebar-header)] Disabled: the slot has no such state
 
 Dropped
-  images with no region slot: 233
+  images with no region slot: 213
   other keys (classes, sizes, cursors, sounds): 433
   other skin files (chat, group chat, in-game): 4
-  text styles: 92
-  triggers: 83
+  text styles: 90
   window layout: 615
   lines Windows reads no value from (16):
     combat.ini: [Knob01] Action.lbtndown (line 351)

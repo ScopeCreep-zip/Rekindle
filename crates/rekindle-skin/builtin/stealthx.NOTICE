@@ -159,7 +159,6 @@ Dropped
   HTML templates: 0
   layout components: 116
   layout tiles: 0
-  triggers: 130
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
 Contrast changes (minimal Oklab-lightness walk) (10 made)

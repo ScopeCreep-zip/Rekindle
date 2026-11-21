@@ -143,6 +143,7 @@ pub(super) fn tab_views(root: &mut [SkinNode]) {
                         art: None,
                         text: None,
                         shows_with: Some(*v),
+                        triggers: Vec::new(),
                         children: Vec::new(),
                     });
                 }
@@ -212,6 +213,7 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
             } else {
                 let w = SkinNode {
                     shows_with: Some(v),
+                    triggers: Vec::new(),
                     children: vec![b.clone()],
                     ..slot.clone()
                 };
@@ -232,6 +234,7 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
                     art: None,
                     text: None,
                     shows_with: Some(v),
+                    triggers: Vec::new(),
                     children: Vec::new(),
                 });
                 rows.len() - 1

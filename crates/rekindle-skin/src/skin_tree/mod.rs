@@ -14,6 +14,7 @@ mod passes;
 pub mod pieces;
 mod rail;
 pub mod roles;
+mod triggers;
 pub mod validate;
 
 #[cfg(test)]
@@ -30,3 +31,5 @@ mod stack_tests;
 mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod triggers_tests;

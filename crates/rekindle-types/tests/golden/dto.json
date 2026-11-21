@@ -491,6 +491,306 @@
     "status": "busy",
     "statusMessage": "fragging"
   },
+  "skin.action.all": [
+    {
+      "kind": "dragWindow"
+    },
+    {
+      "kind": "minimize"
+    },
+    {
+      "kind": "maximize"
+    },
+    {
+      "kind": "close"
+    },
+    {
+      "arg": "bottomRight",
+      "kind": "resize"
+    },
+    {
+      "arg": "file",
+      "kind": "menu"
+    },
+    {
+      "arg": "sys",
+      "kind": "contextMenu"
+    },
+    {
+      "arg": "friends",
+      "kind": "showView"
+    },
+    {
+      "arg": {
+        "group": 4,
+        "page": 1
+      },
+      "kind": "groupPage"
+    },
+    {
+      "arg": {
+        "kind": "this"
+      },
+      "kind": "showTile"
+    },
+    {
+      "arg": {
+        "kind": "named",
+        "name": "Lamp"
+      },
+      "kind": "hideTile"
+    },
+    {
+      "arg": {
+        "popup": "MainInfoViewPopup"
+      },
+      "kind": "launchPopup"
+    },
+    {
+      "arg": {
+        "action": 1,
+        "delay": 4
+      },
+      "kind": "animate"
+    },
+    {
+      "kind": "animateStop"
+    },
+    {
+      "arg": {
+        "group": 100,
+        "spec": {
+          "action": 1,
+          "delay": 4
+        }
+      },
+      "kind": "animationStart"
+    },
+    {
+      "arg": {
+        "group": 100
+      },
+      "kind": "animationStop"
+    },
+    {
+      "arg": "disabled",
+      "kind": "setState"
+    },
+    {
+      "kind": "addFriend"
+    },
+    {
+      "kind": "chatFriend"
+    },
+    {
+      "kind": "profileFriend"
+    },
+    {
+      "kind": "viewProfile"
+    },
+    {
+      "kind": "joinFriend"
+    },
+    {
+      "kind": "sendMessage"
+    },
+    {
+      "kind": "voiceChat"
+    },
+    {
+      "kind": "hostVoiceChat"
+    },
+    {
+      "kind": "leaveVoiceChat"
+    },
+    {
+      "kind": "groupVoiceChat"
+    },
+    {
+      "kind": "hostGroupVoiceChat"
+    },
+    {
+      "kind": "leaveGroupVoiceChat"
+    },
+    {
+      "kind": "cancelVoiceChat"
+    },
+    {
+      "kind": "endVoiceChat"
+    },
+    {
+      "kind": "muteSelf"
+    },
+    {
+      "kind": "unmuteSelf"
+    },
+    {
+      "kind": "showVoiceWindow"
+    },
+    {
+      "kind": "hostGameLobby"
+    },
+    {
+      "kind": "joinGameLobby"
+    },
+    {
+      "kind": "leaveGameLobby"
+    },
+    {
+      "kind": "launchGameLobby"
+    },
+    {
+      "kind": "addServer"
+    },
+    {
+      "kind": "refreshServer"
+    },
+    {
+      "kind": "startDownload"
+    },
+    {
+      "kind": "stopDownload"
+    },
+    {
+      "kind": "openDownload"
+    },
+    {
+      "kind": "downloadInfo"
+    },
+    {
+      "kind": "newRoom"
+    },
+    {
+      "kind": "createRoom"
+    },
+    {
+      "kind": "enterRoom"
+    },
+    {
+      "kind": "enterAttachedRoom"
+    },
+    {
+      "kind": "joinRoom"
+    },
+    {
+      "kind": "inviteUsersToRoom"
+    },
+    {
+      "kind": "deleteSelected"
+    },
+    {
+      "kind": "openSelected"
+    },
+    {
+      "kind": "uploadSelected"
+    },
+    {
+      "kind": "searchFor"
+    },
+    {
+      "arg": {
+        "url": "http://www.xfire.com/"
+      },
+      "kind": "launchUrl"
+    },
+    {
+      "arg": {
+        "sound": "OfflineSound"
+      },
+      "kind": "playSound"
+    },
+    {
+      "kind": "showWindow"
+    },
+    {
+      "kind": "hideWindow"
+    },
+    {
+      "kind": "dialogOk"
+    },
+    {
+      "kind": "dialogCancel"
+    },
+    {
+      "arg": "fps",
+      "kind": "enableOverlay"
+    },
+    {
+      "arg": "webCam",
+      "kind": "disableOverlay"
+    },
+    {
+      "kind": "updateClock"
+    },
+    {
+      "kind": "tackWindow"
+    },
+    {
+      "kind": "untackWindow"
+    },
+    {
+      "kind": "openOverlayOptions"
+    },
+    {
+      "kind": "attachedClose"
+    },
+    {
+      "kind": "browseBack"
+    },
+    {
+      "kind": "browseForward"
+    },
+    {
+      "kind": "newChat"
+    },
+    {
+      "kind": "newGroup"
+    },
+    {
+      "kind": "createCommunity"
+    },
+    {
+      "kind": "joinCommunity"
+    },
+    {
+      "arg": "appearance",
+      "kind": "showSettings"
+    },
+    {
+      "kind": "showShortcuts"
+    },
+    {
+      "kind": "reportBug"
+    },
+    {
+      "arg": "invisible",
+      "kind": "setStatus"
+    },
+    {
+      "kind": "logOff"
+    },
+    {
+      "kind": "quit"
+    },
+    {
+      "kind": "copyKey"
+    },
+    {
+      "kind": "editName"
+    },
+    {
+      "kind": "showSafetyNumber"
+    },
+    {
+      "kind": "showGameInvite"
+    },
+    {
+      "kind": "videoChat"
+    },
+    {
+      "kind": "openNotifications"
+    }
+  ],
   "skin.entry.builtin": {
     "credits": {
       "authors": [
@@ -524,5 +824,274 @@
     "id": "pkg:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "importedAt": 1760000000001,
     "name": "Plain"
+  },
+  "skin.event.samples": [
+    {
+      "kind": "click"
+    },
+    {
+      "kind": "leftDown"
+    },
+    {
+      "arg": "servers",
+      "kind": "show"
+    },
+    {
+      "arg": {
+        "arg": "join",
+        "kind": "can"
+      },
+      "kind": "app"
+    },
+    {
+      "arg": {
+        "arg": "voiceChat",
+        "kind": "cannot"
+      },
+      "kind": "app"
+    },
+    {
+      "arg": {
+        "arg": "clock",
+        "kind": "prefEnabled"
+      },
+      "kind": "app"
+    },
+    {
+      "arg": {
+        "kind": "disconnected"
+      },
+      "kind": "app"
+    }
+  ],
+  "skin.menuRegistry": {
+    "menus": [
+      {
+        "items": [
+          {
+            "label": "Add Friend…",
+            "run": {
+              "kind": "addFriend"
+            }
+          },
+          {
+            "label": "New Chat…",
+            "run": {
+              "kind": "newChat"
+            }
+          },
+          {
+            "label": "New Group…",
+            "run": {
+              "kind": "newGroup"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Create Community…",
+            "run": {
+              "kind": "createCommunity"
+            }
+          },
+          {
+            "label": "Join Community…",
+            "run": {
+              "kind": "joinCommunity"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Profile",
+            "run": {
+              "arg": "profile",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Privacy",
+            "run": {
+              "arg": "privacy",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "About",
+            "run": {
+              "arg": "about",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Log Off",
+            "run": {
+              "kind": "logOff"
+            }
+          },
+          {
+            "danger": true,
+            "label": "Exit",
+            "run": {
+              "kind": "quit"
+            }
+          }
+        ],
+        "menu": "file"
+      },
+      {
+        "items": [
+          {
+            "label": "Options",
+            "run": {
+              "arg": "application",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Notifications",
+            "run": {
+              "arg": "notifications",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Audio",
+            "run": {
+              "arg": "audio",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "label": "Skins",
+            "run": {
+              "arg": "appearance",
+              "kind": "showSettings"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Start Group Call…",
+            "run": {
+              "kind": "hostGroupVoiceChat"
+            }
+          },
+          {
+            "label": "Keyboard Shortcuts",
+            "run": {
+              "kind": "showShortcuts"
+            }
+          }
+        ],
+        "menu": "tool"
+      },
+      {
+        "items": [
+          {
+            "label": "Documentation",
+            "run": {
+              "arg": "help",
+              "kind": "showView"
+            }
+          },
+          {
+            "label": "Report Bug",
+            "run": {
+              "kind": "reportBug"
+            }
+          }
+        ],
+        "menu": "help"
+      },
+      {
+        "items": [
+          {
+            "label": "Online",
+            "run": {
+              "arg": "online",
+              "kind": "setStatus"
+            }
+          },
+          {
+            "label": "Away",
+            "run": {
+              "arg": "away",
+              "kind": "setStatus"
+            }
+          },
+          {
+            "label": "Busy",
+            "run": {
+              "arg": "busy",
+              "kind": "setStatus"
+            }
+          },
+          {
+            "label": "Appear Offline",
+            "run": {
+              "arg": "invisible",
+              "kind": "setStatus"
+            }
+          }
+        ],
+        "menu": "status"
+      },
+      {
+        "items": [
+          {
+            "label": "Minimize",
+            "run": {
+              "kind": "minimize"
+            }
+          },
+          {
+            "label": "Maximize",
+            "run": {
+              "kind": "maximize"
+            }
+          },
+          {
+            "apart": true,
+            "label": "Close",
+            "run": {
+              "kind": "close"
+            }
+          }
+        ],
+        "menu": "sys"
+      },
+      {
+        "items": [],
+        "menu": "cwActions"
+      },
+      {
+        "items": [],
+        "menu": "cwHelp"
+      },
+      {
+        "items": [],
+        "menu": "gcSystem"
+      },
+      {
+        "items": [],
+        "menu": "gcActions"
+      },
+      {
+        "items": [],
+        "menu": "gcHelp"
+      }
+    ]
+  },
+  "skin.trigger": {
+    "on": {
+      "arg": {
+        "arg": "chat",
+        "kind": "cannot"
+      },
+      "kind": "app"
+    },
+    "run": {
+      "arg": "disabled",
+      "kind": "setState"
+    }
   }
 }

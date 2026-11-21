@@ -51,11 +51,10 @@ Regions
   statusbar.arrow: [DownArrow], 17x17 px, Stretch; states normal, hover
 
 Dropped
-  images with no region slot: 106
+  images with no region slot: 86
   other keys (classes, sizes, cursors, sounds): 146
   other skin files (chat, group chat, in-game): 3
   text styles: 47
-  triggers: 32
   window layout: 214
   lines Windows reads no value from (5):
     version.ini: [Version] (line 2): no '=', no value

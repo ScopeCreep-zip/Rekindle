@@ -12,7 +12,6 @@ use super::{descendants, ends_with_ci, v3, xml};
 pub(super) fn count_dropped(tree: &Tree, components: &[Node]) -> BTreeMap<&'static str, usize> {
     let mut d = BTreeMap::new();
     let count = |name: &str| components.iter().map(|c| descendants(c, name).len()).sum();
-    d.insert("triggers", count("Trigger"));
     d.insert("layout components", count("Component"));
     d.insert("layout tiles", count("Tile"));
     let html = tree
