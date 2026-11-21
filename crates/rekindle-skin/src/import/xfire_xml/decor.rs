@@ -370,7 +370,10 @@ mod tests {
 </Tile></Tile></Tile>"#,
         )
         .unwrap();
-        assert_eq!(views_insets(&stealth, &[nine.clone()]), Some((26, 25)));
+        assert_eq!(
+            views_insets(&stealth, std::slice::from_ref(&nine)),
+            Some((26, 25))
+        );
         let symbiosis = parse(
             "MainWindow.xml",
             br#"<Tile Name="MainWindow" Component="MainWindow">
@@ -380,7 +383,10 @@ mod tests {
 </Tile>"#,
         )
         .unwrap();
-        assert_eq!(views_insets(&symbiosis, &[nine.clone()]), Some((5, 5)));
+        assert_eq!(
+            views_insets(&symbiosis, std::slice::from_ref(&nine)),
+            Some((5, 5))
+        );
         let classic = parse(
             "MainWindow.xml",
             br#"<Tile Name="W" Component="MainWindow">
