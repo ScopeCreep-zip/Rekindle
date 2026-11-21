@@ -11,5 +11,7 @@ import { APP_CAPABILITY, type AppCapability } from "./launcher.ts";
 export const config: WebdriverIO.Config = {
   ...base,
   specs: ["./specs/devices/**/*.e2e.ts"],
+  // Several users: wdio.devices-peers.conf.ts runs it.
+  exclude: ["./specs/devices/call-end.e2e.ts"],
   capabilities: [{ [APP_CAPABILITY]: { window: "login", display: "x11" } satisfies AppCapability } as WebdriverIO.Capabilities],
 };

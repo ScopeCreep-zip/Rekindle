@@ -52,7 +52,7 @@ const config: KnipConfig = {
   // Plan E7.14: knip's WebdriverIO plugin reads the real-app suite's
   // config, so the framework and reporters it names by short name
   // (@wdio/mocha-framework, @wdio/spec-reporter) count as used.
-  "webdriver-io": { config: ["e2e/app/wdio.conf.ts", "e2e/app/wdio.peers.conf.ts", "e2e/app/wdio.devices.conf.ts", "e2e/app/wdio.native.conf.ts"] },
+  "webdriver-io": { config: ["e2e/app/wdio.conf.ts", "e2e/app/wdio.peers.conf.ts", "e2e/app/wdio.devices.conf.ts", "e2e/app/wdio.devices-peers.conf.ts", "e2e/app/wdio.native.conf.ts"] },
   // SolidJS components register reactivity on import; treat default
   // exports of *.tsx files as in-use even if no static import reaches them.
   includeEntryExports: true,
