@@ -853,6 +853,13 @@
     }
   },
   "intent.escalation.visibleBeforeUnlock": "visibleBeforeUnlock",
+  "intent.fact.creatorsLeave": {
+    "creatorsLeave": {
+      "creators": [
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ]
+    }
+  },
   "intent.fact.fingerprint": {
     "fingerprint": {
       "fingerprint": "abcd 0123"
@@ -875,6 +882,14 @@
       "count": 1204
     }
   },
+  "intent.fact.newCreatorSet": {
+    "newCreatorSet": {
+      "creators": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+    }
+  },
+  "intent.fact.noHistoryCopied": "noHistoryCopied",
   "intent.fact.pendingMessagesDropped": "pendingMessagesDropped",
   "intent.fact.presenceVisible": "presenceVisible",
   "intent.fact.rejoinNeedsInvite": "rejoinNeedsInvite",
@@ -892,6 +907,11 @@
   "intent.fact.sessionDeleted": "sessionDeleted",
   "intent.fact.sessionKeptUntilReplaced": "sessionKeptUntilReplaced",
   "intent.fact.subjectNotTold": "subjectNotTold",
+  "intent.fact.successorLinked": {
+    "successorLinked": {
+      "signer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
   "intent.fact.unopenedMessagesLost": "unopenedMessagesLost",
   "intent.intentClass.consequential": "consequential",
   "intent.intentClass.destructive": "destructive",
