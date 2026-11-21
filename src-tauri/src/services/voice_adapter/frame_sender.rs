@@ -17,6 +17,19 @@ use rekindle_protocol::dht::route_imports::RouteImports;
 use rekindle_voice::{VoiceError, VoiceFrameSender};
 use veilid_core::{RoutingContext, Target, VeilidAPI, VeilidAPIError};
 
+/// Forget the peer's route in the shared importer only when the send's
+/// error shows **their** route unusable (`rekindle_protocol::ports::
+/// peer_route_unusable`, the DM send path's rule, plan C7.9e). Our own
+/// side's `NoConnection`/`InvalidTarget` (our safety route released at a
+/// call's teardown, its first hop down, our node info unpublished) keeps
+/// it: the importer is shared, so forgetting it there dropped the peer's
+/// DM route too (live finding CR3).
+fn forget_if_peer_side(e: &VeilidAPIError, forget: impl FnOnce()) {
+    if rekindle_protocol::ports::peer_route_unusable(e) {
+        forget();
+    }
+}
+
 pub struct VeilidVoiceFrameSender {
     routing_context: RoutingContext,
     route_imports: Arc<RouteImports>,
@@ -63,19 +76,45 @@ impl VoiceFrameSender for VeilidVoiceFrameSender {
         {
             Ok(()) => Ok(()),
             Err(e) => {
-                // `NoConnection` ("could not get remote private route")
-                // or `InvalidTarget`: the route is unusable. The importer
-                // forgets it, so the next frame re-imports
-                // fresh (Piece 4 mechanism A). Matched on the veilid
-                // variant — this is the sanctioned adapter layer.
-                if matches!(
-                    e,
-                    VeilidAPIError::NoConnection { .. } | VeilidAPIError::InvalidTarget { .. }
-                ) {
+                forget_if_peer_side(&e, || {
                     self.route_imports.invalidate_after_send_failure(&route_id);
-                }
+                });
                 Err(VoiceError::Transport(format!("app_message: {e}")))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use veilid_core::VeilidAPIError;
+
+    use super::forget_if_peer_side;
+
+    fn forgets(e: &VeilidAPIError) -> bool {
+        let forgot = Cell::new(false);
+        forget_if_peer_side(e, || forgot.set(true));
+        forgot.get()
+    }
+
+    /// Our released safety route at teardown answers `InvalidTarget`, our
+    /// first hop down `NoConnection` with another text: the peer's route
+    /// stays imported (live finding CR3).
+    #[test]
+    fn our_side_failure_at_teardown_keeps_the_peer_route() {
+        assert!(!forgets(&VeilidAPIError::invalid_target("route released")));
+        assert!(!forgets(&VeilidAPIError::no_connection(
+            "no routing domain"
+        )));
+    }
+
+    /// The peer's route not in Veilid's remote cache is theirs: forgotten.
+    #[test]
+    fn an_unresolved_remote_route_is_forgotten() {
+        assert!(forgets(&VeilidAPIError::no_connection(
+            "could not get remote private route"
+        )));
     }
 }
