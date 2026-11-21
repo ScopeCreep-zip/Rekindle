@@ -233,16 +233,16 @@ impl HostChannel {
         author: &PseudonymKey,
         member_record: &str,
         backfill: bool,
-    ) {
+    ) -> usize {
         if self.ctx().communities.own_removal(community_id).is_some() {
-            return;
+            return 0;
         }
         let engine = {
             let map = self.ctx().communities.map().read();
             map.get(community_id).map(|c| c.outbox_streams.clone())
         };
         let (Some(engine), Ok(port)) = (engine, self.records()) else {
-            return;
+            return 0;
         };
         let standing = self
             .standing(&*port, community_id, author, member_record)
@@ -270,13 +270,8 @@ impl HostChannel {
             )
             .await;
         // An entry waiting for its key leaves the read short of the head.
-        let waiting = matches!(
-            &diffed,
-            Ok(Diffed {
-                pending: Some(_),
-                ..
-            })
-        );
+        let waiting = diffed.as_ref().is_ok_and(|d| d.pending.is_some());
+        let applied = diffed.as_ref().map_or(0, |d| d.applied);
         match diffed {
             Ok(Diffed {
                 unreached: Some(head),
@@ -285,7 +280,7 @@ impl HostChannel {
             }) => {
                 tracing::warn!(community_id, author = %writer, head, applied, "channel outbox head a departure recorded is on no replica we reached: the history keeps the gap");
                 self.mark_outbox_gap(community_id, author, head).await;
-                return;
+                return applied;
             }
             Ok(diffed) if diffed.applied > 0 => {
                 tracing::info!(community_id, author = %writer, applied = diffed.applied, "channel outbox read");
@@ -293,26 +288,28 @@ impl HostChannel {
             Ok(_) => {}
             Err(error) => {
                 tracing::debug!(community_id, author = %writer, %error, "channel outbox not read yet");
-                return;
+                return 0;
             }
         }
         if waiting {
             tracing::debug!(community_id, author = %writer, "channel outbox entry waits for its key");
-            return;
+            return applied;
         }
         if known_head > 0 {
             self.close_outbox_gap(community_id, author, known_head)
                 .await;
         }
+        applied
     }
 
     /// Catch up every member's channel outbox in `community_id` (a load of
     /// the community; plan E3.3 "Cursor and authors"), and each departed
     /// author's whose departures recorded a head of it, so a member joining
-    /// later keeps what the author posted before it departed.
-    pub(crate) async fn catch_up_outboxes(&self, community_id: &str) {
+    /// later keeps what the author posted before it departed. Returns the
+    /// authors read and the entries applied.
+    pub(crate) async fn catch_up_outboxes(&self, community_id: &str) -> (usize, usize) {
         let Some(state) = self.governance_state(community_id) else {
-            return;
+            return (0, 0);
         };
         let departed = (state.departed_heads.iter()).filter_map(|(author, heads)| {
             let record = state.op_log_records.get(author)?;
@@ -325,10 +322,11 @@ impl HostChannel {
         // order the reads run (C9.2, one seed one trace).
         let mut authors: Vec<_> = members.chain(departed).collect();
         authors.sort_unstable_by_key(|(author, _)| author.0);
-        for (author, record) in authors {
-            self.read_author_outbox(community_id, author, record, true)
-                .await;
+        let mut applied = 0;
+        for (author, record) in &authors {
+            applied += (self.read_author_outbox(community_id, author, record, true)).await;
         }
+        (authors.len(), applied)
     }
 
     /// The highest head of `member_record`'s outbox a departure of

@@ -191,10 +191,16 @@ impl MekDistributeDeps for MekAdapter {
         scope: KeyScope,
         mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
     ) -> bool {
-        // Centralized downgrade-refuse + same-generation split-brain
-        // resolution (lowest election rank wins). Refused → don't touch
-        // generation state / media-ready either.
-        if !state_helpers::install_mek(&self.state, community_id, scope, mek.clone()) {
+        // The Host's one install (finding CB3): the convergence rule
+        // (downgrade refused, lowest election rank at an equal generation),
+        // the shell's live keys through `ShellHooks::on_mek_installed`, the
+        // vault, the waiting posts, and the outbox catch-up that reads the
+        // entries a joiner held back for want of this key. Refused → don't
+        // touch generation state / media-ready either.
+        let Ok(host) = state_helpers::host_governance(&self.state) else {
+            return false;
+        };
+        if !host.install_transferred_mek(community_id, scope, mek) {
             return false;
         }
         crate::services::community::mek_rotation_support::update_generation_state(
@@ -206,18 +212,15 @@ impl MekDistributeDeps for MekAdapter {
         true
     }
 
+    /// Already stored: the Host's install above wrote it to the vault the
+    /// shell shares with the Host (`AppState::keystore`, handed to the Host
+    /// as its vault), so a second write here would only repeat it.
     fn persist_received_mek(
         &self,
-        community_id: &str,
-        scope: KeyScope,
-        mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
+        _community_id: &str,
+        _scope: KeyScope,
+        _mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
     ) {
-        crate::services::community::mek_rotation_support::persist_mek(
-            &self.state,
-            community_id,
-            scope,
-            mek,
-        );
     }
 
     fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64) {

@@ -20,7 +20,6 @@
 
 use std::sync::Arc;
 
-use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 
@@ -70,22 +69,6 @@ pub(crate) fn emit_rotation_event(
             },
         ),
     );
-}
-
-pub(crate) fn persist_mek(
-    state: &Arc<AppState>,
-    community_id: &str,
-    scope: KeyScope,
-    mek: &MediaEncryptionKey,
-) {
-    let guard = state.keystore.lock();
-    let Some(ks) = guard.as_ref() else {
-        tracing::warn!(community = %community_id, %scope, "keystore locked — MEK not persisted");
-        return;
-    };
-    if let Err(e) = crate::keystore::persist_mek(ks, community_id, scope, mek) {
-        tracing::warn!(community = %community_id, %scope, error = %e, "MEK not persisted");
-    }
 }
 
 pub(crate) fn my_pseudonym_hex(state: &Arc<AppState>, community_id: &str) -> Option<String> {

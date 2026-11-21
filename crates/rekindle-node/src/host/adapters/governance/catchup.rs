@@ -16,7 +16,9 @@ impl HostGovernance {
         self.ctx.community_scope(community_id).spawn_or_drop(
             "channel outbox catch-up",
             async move {
-                channel.catch_up_outboxes(&community).await;
+                tracing::info!(community_id = %community, "channel outbox catch-up started");
+                let (authors, applied) = channel.catch_up_outboxes(&community).await;
+                tracing::info!(community_id = %community, authors, applied, "channel outbox catch-up ended");
             },
         );
     }

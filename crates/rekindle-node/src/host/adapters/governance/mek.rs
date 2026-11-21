@@ -90,8 +90,8 @@ impl HostGovernance {
 
     /// Cache the key and, when the cache takes it (the convergence rule may
     /// refuse a stale or outranked one), store it in the vault, so the next
-    /// unlock reloads it.
-    fn install(&self, community_id: &str, scope: KeyScope, mek: &MekSnapshot) {
+    /// unlock reloads it. Returns whether the cache took it.
+    fn install(&self, community_id: &str, scope: KeyScope, mek: &MekSnapshot) -> bool {
         let key = Mek::from_bytes(mek.key_bytes, mek.generation);
         let taken = rekindle_mek_rotation::ChannelMekCache::insert(
             &crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
@@ -102,7 +102,7 @@ impl HostGovernance {
             key.clone(),
         );
         if !taken {
-            return;
+            return false;
         }
         if let Some(shell) = &self.ctx.shell {
             shell.on_mek_installed(community_id, scope, mek.key_bytes, mek.generation);
@@ -110,7 +110,7 @@ impl HostGovernance {
         {
             let guard = self.ctx.vault.lock();
             let Some(vault) = guard.as_ref() else {
-                return;
+                return true;
             };
             if let Err(e) =
                 rekindle_vault::typed::mek::persist_mek(vault, community_id, scope, &key)
@@ -124,16 +124,26 @@ impl HostGovernance {
         // The outbox entries a joiner held back for want of a key are read
         // now (`channel/outbox_read.rs`).
         self.spawn_outbox_catchup(community_id);
+        true
     }
 
-    /// A key a rotator delivered (`MekTransfer`), installed as every other
-    /// key is: cached under the convergence rule, then stored in the vault.
-    pub(crate) fn install_transferred_mek(&self, community_id: &str, scope: KeyScope, mek: &Mek) {
+    /// A key a rotator or an inviter delivered (`MekTransfer`, D16),
+    /// installed as every other key is: cached under the convergence rule,
+    /// told to the shell, stored in the vault, and every outbox caught up
+    /// again. Both hosts' `MekTransfer` handlers install through here
+    /// (finding CB3: the desktop's own install started no catch-up).
+    /// Returns whether the cache took it.
+    pub fn install_transferred_mek(&self, community_id: &str, scope: KeyScope, mek: &Mek) -> bool {
+        let generation = mek.generation();
         let snapshot = MekSnapshot {
-            generation: mek.generation(),
+            generation,
             key_bytes: *mek.as_bytes(),
         };
-        self.install(community_id, scope, &snapshot);
+        let taken = self.install(community_id, scope, &snapshot);
+        if taken {
+            tracing::info!(community_id, %scope, generation, "transferred key installed");
+        }
+        taken
     }
 
     pub(super) fn insert_community_mek_impl(&self, community_id: &str, mek: &MekSnapshot) {
