@@ -229,7 +229,9 @@ pub(crate) async fn run(
     }
     // 3e'. The stored MEKs of those communities and their channels (plan
     // E3.1 C2c), so a post or a read after a restart has its key.
-    crate::daemon::dispatch::adapter(ctx).restore_stored_meks();
+    crate::daemon::dispatch::adapter(ctx)
+        .restore_stored_meks()
+        .await;
     // 3e''. The daemon's overlays (subscriptions, the gossip mesh) before
     // any stage that gossips (live R1-13).
     if ctx.mode == HostMode::Daemon {

@@ -250,6 +250,41 @@ async fn a_rotation_supersedes_a_queued_key_transfer() {
     host.shutdown().await.unwrap();
 }
 
+/// S7m-1b2 (D22, ADR 0018): the app stopped after a rotation's key was
+/// stored but before its requeue ran; the unlock restores the key at 4
+/// from the vault with no rotation event, and the joiner's row at 3 gets
+/// its replacement at 4 there.
+#[tokio::test]
+async fn a_key_restored_at_unlock_requeues_older_key_transfers() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    let joiner = queued_for_a_joiner(&host, &owner).await;
+    {
+        let guard = host.ctx.vault.lock();
+        let vault = guard.as_ref().expect("unlocked");
+        rekindle_vault::typed::mek::persist_mek(
+            vault,
+            "c1",
+            KeyScope::Community,
+            &Mek::from_bytes([8; 32], 4),
+        )
+        .expect("stored");
+    }
+    host.governance().restore_stored_meks().await;
+    assert_eq!(held(&host), Some(4), "the stored key is restored");
+    let ids: Vec<String> = rows(&host).await.into_iter().map(|r| r.client_id).collect();
+    assert_eq!(
+        ids,
+        [
+            format!("MekTransfer:c1:{joiner}:3"),
+            format!("MekTransfer:c1:{joiner}:4")
+        ],
+        "the restore queued the joiner's key at generation 4"
+    );
+    host.shutdown().await.unwrap();
+}
+
 /// Review S7m part 1 F3 (the kick race): a departure (the kick, ban and
 /// leave paths all end in `forget_member`) has discarded the member's row
 /// when it returns, and a later bootstrap of the member queues nothing.

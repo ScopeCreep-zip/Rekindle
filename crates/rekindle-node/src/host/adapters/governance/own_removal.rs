@@ -331,7 +331,7 @@ impl HostGovernance {
     /// brings each one up (records, watches, keepalive, hydration, the full
     /// anti-entropy sweep, rebuild, catch-up).
     async fn restore_unremoved(&self, community_id: &str) {
-        self.restore_stored_meks();
+        self.restore_stored_meks().await;
         if self.ctx.shell.is_none() {
             let membership =
                 (self.ctx.session.read().as_ref()).and_then(|s| s.community(community_id).cloned());

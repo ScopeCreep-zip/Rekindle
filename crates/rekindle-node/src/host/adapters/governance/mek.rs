@@ -28,8 +28,13 @@ impl HostGovernance {
     /// (`ShellHooks::on_mek_installed`, until E3.5). A key the vault lacks
     /// stays absent until a peer's `MekTransfer` brings it
     /// (`recover_behind_meks` asks only for a held key behind its
-    /// generation); minting one here would fork the community.
-    pub(crate) fn restore_stored_meks(&self) {
+    /// generation); minting one here would fork the community. Then every
+    /// joined community's queued key transfers behind the held key are
+    /// requeued at it, as an install requeues them: a restored key bypasses
+    /// [`Self::install`], so an app stop between a rotation's install and
+    /// its requeue would otherwise leave the older rows superseded with no
+    /// replacement (S7m-1b2, D22, ADR 0018).
+    pub(crate) async fn restore_stored_meks(&self) {
         let mut scopes: Vec<(String, KeyScope)> = self
             .ctx
             .communities
@@ -48,6 +53,8 @@ impl HostGovernance {
             .collect();
         // The store is a HashMap: a defined order for the shell's hooks.
         scopes.sort_by_cached_key(|(community, scope)| (community.clone(), scope.to_string()));
+        let mut communities: Vec<String> = scopes.iter().map(|(c, _)| c.clone()).collect();
+        communities.dedup();
         let stored: Vec<(String, KeyScope, Mek)> = {
             let guard = self.ctx.vault.lock();
             let Some(vault) = guard.as_ref() else {
@@ -87,6 +94,9 @@ impl HostGovernance {
         // release ran (plan E3.2 S7l).
         for community in keyed {
             crate::host::adapters::channel::release_waiting_posts(self, &community);
+        }
+        for community in communities {
+            self.requeue_key_transfers(&community).await;
         }
     }
 
