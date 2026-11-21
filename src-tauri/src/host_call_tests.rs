@@ -2,7 +2,9 @@
 //! its fields (threat model: no telemetry, no payload in logs).
 
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
@@ -15,7 +17,7 @@ struct Kept(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Kept {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.0.lock().extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -37,7 +39,7 @@ fn logged(request: &IpcRequest, response: &IpcResponse) -> String {
         Traced::new(request, "buddy-list", Instant::now())
             .finish(response, Duration::from_millis(7));
     });
-    let bytes = kept.0.lock().unwrap().clone();
+    let bytes = kept.0.lock().clone();
     String::from_utf8(bytes).unwrap()
 }
 
