@@ -12,7 +12,7 @@ use super::{
     fork_evidence_hash, readmit_body_bytes, retirement_holds, retirement_signing_bytes,
 };
 
-const COMMUNITY: &str = "VLD0:community";
+const DEVICE_TEST_ANCHOR: &str = "VLD0:community";
 const RECORD: &str = "VLD0:member";
 
 fn key() -> SigningKey {
@@ -23,19 +23,11 @@ fn pk() -> PseudonymKey {
     PseudonymKey(key().verifying_key().to_bytes())
 }
 
-fn element(kind: DeviceSetElementKind, b: u8, incarnation: u64) -> DeviceSetElement {
-    DeviceSetElement {
-        kind,
-        device_key: [b; 32],
-        incarnation,
-    }
-}
-
 /// A signed endorsement of `[9; 32]` extending one endorsed, retired key.
 fn endorsement() -> DeviceEndorsement {
     let elements = vec![
-        element(DeviceSetElementKind::Endorsement, 1, 1),
-        element(DeviceSetElementKind::Retirement, 1, 1),
+        DeviceSetElement::new(DeviceSetElementKind::Endorsement, [1; 32], 1),
+        DeviceSetElement::new(DeviceSetElementKind::Retirement, [1; 32], 1),
     ];
     let mut e = DeviceEndorsement {
         device_key: [9; 32],
@@ -48,7 +40,7 @@ fn endorsement() -> DeviceEndorsement {
         endorsement_sig: Vec::new(),
     };
     e.endorsement_sig = key()
-        .sign(&endorsement_signing_bytes(COMMUNITY, RECORD, &e))
+        .sign(&endorsement_signing_bytes(DEVICE_TEST_ANCHOR, RECORD, &e))
         .to_bytes()
         .to_vec();
     e
@@ -57,12 +49,17 @@ fn endorsement() -> DeviceEndorsement {
 #[test]
 fn a_signed_endorsement_holds_in_its_own_context_only() {
     let e = endorsement();
-    assert!(endorsement_holds(&pk(), COMMUNITY, RECORD, &e));
+    assert!(endorsement_holds(&pk(), DEVICE_TEST_ANCHOR, RECORD, &e));
     assert!(!endorsement_holds(&pk(), "VLD0:other", RECORD, &e));
-    assert!(!endorsement_holds(&pk(), COMMUNITY, "VLD0:other", &e));
+    assert!(!endorsement_holds(
+        &pk(),
+        DEVICE_TEST_ANCHOR,
+        "VLD0:other",
+        &e
+    ));
     assert!(!endorsement_holds(
         &PseudonymKey([3; 32]),
-        COMMUNITY,
+        DEVICE_TEST_ANCHOR,
         RECORD,
         &e
     ));
@@ -83,10 +80,10 @@ fn the_endorsement_signature_covers_every_rule_ten_field() {
     ];
     for (field, tamper) in tampers {
         let mut e = endorsement();
-        let base = endorsement_signing_bytes(COMMUNITY, RECORD, &e);
+        let base = endorsement_signing_bytes(DEVICE_TEST_ANCHOR, RECORD, &e);
         tamper(&mut e);
         assert_ne!(
-            endorsement_signing_bytes(COMMUNITY, RECORD, &e),
+            endorsement_signing_bytes(DEVICE_TEST_ANCHOR, RECORD, &e),
             base,
             "{field}"
         );
@@ -94,7 +91,7 @@ fn the_endorsement_signature_covers_every_rule_ten_field() {
         assert!(
             rekindle_secrets::sign::verify_signature(
                 &pk().0,
-                &endorsement_signing_bytes(COMMUNITY, RECORD, &e),
+                &endorsement_signing_bytes(DEVICE_TEST_ANCHOR, RECORD, &e),
                 &sig
             )
             .is_err(),
@@ -126,10 +123,10 @@ fn an_extended_set_must_hash_and_sit_below_the_incarnation() {
 
 #[test]
 fn the_set_hash_is_order_free_and_kind_bound() {
-    let a = element(DeviceSetElementKind::Endorsement, 1, 1);
-    let b = element(DeviceSetElementKind::Endorsement, 2, 1);
+    let a = DeviceSetElement::new(DeviceSetElementKind::Endorsement, [1; 32], 1);
+    let b = DeviceSetElement::new(DeviceSetElementKind::Endorsement, [2; 32], 1);
     assert_eq!(device_set_hash(&[a, b]), device_set_hash(&[b, a]));
-    let r = element(DeviceSetElementKind::Retirement, 1, 1);
+    let r = DeviceSetElement::new(DeviceSetElementKind::Retirement, [1; 32], 1);
     assert_ne!(device_set_hash(&[a]), device_set_hash(&[r]));
     assert_ne!(device_set_hash(&[]), device_set_hash(&[a]));
 }
@@ -143,12 +140,17 @@ fn the_retirement_signature_covers_every_rule_ten_field() {
         retirement_sig: Vec::new(),
     };
     r.retirement_sig = key()
-        .sign(&retirement_signing_bytes(COMMUNITY, RECORD, &r))
+        .sign(&retirement_signing_bytes(DEVICE_TEST_ANCHOR, RECORD, &r))
         .to_bytes()
         .to_vec();
-    assert!(retirement_holds(&pk(), COMMUNITY, RECORD, &r));
+    assert!(retirement_holds(&pk(), DEVICE_TEST_ANCHOR, RECORD, &r));
     assert!(!retirement_holds(&pk(), "VLD0:other", RECORD, &r));
-    assert!(!retirement_holds(&pk(), COMMUNITY, "VLD0:other", &r));
+    assert!(!retirement_holds(
+        &pk(),
+        DEVICE_TEST_ANCHOR,
+        "VLD0:other",
+        &r
+    ));
     type Tamper = fn(&mut DeviceRetired);
     let tampers: [Tamper; 3] = [
         |r| r.device_key[0] ^= 1,
@@ -158,7 +160,7 @@ fn the_retirement_signature_covers_every_rule_ten_field() {
     for tamper in tampers {
         let mut t = r.clone();
         tamper(&mut t);
-        assert!(!retirement_holds(&pk(), COMMUNITY, RECORD, &t));
+        assert!(!retirement_holds(&pk(), DEVICE_TEST_ANCHOR, RECORD, &t));
     }
 }
 
@@ -171,7 +173,7 @@ fn the_readmit_body_binds_every_rule_ten_field() {
         incarnation: 3,
         fork_evidence: [4; 32],
     };
-    let base = readmit_body_bytes(COMMUNITY, &r);
+    let base = readmit_body_bytes(DEVICE_TEST_ANCHOR, &r);
     assert_ne!(readmit_body_bytes("VLD0:other", &r), base);
     type Tamper = fn(&mut DeviceReadmit);
     let tampers: [Tamper; 4] = [
@@ -183,16 +185,25 @@ fn the_readmit_body_binds_every_rule_ten_field() {
     for tamper in tampers {
         let mut t = r.clone();
         tamper(&mut t);
-        assert_ne!(readmit_body_bytes(COMMUNITY, &t), base);
+        assert_ne!(readmit_body_bytes(DEVICE_TEST_ANCHOR, &t), base);
     }
 }
 
 #[test]
 fn fork_evidence_is_order_free_and_bound_to_key_and_seq() {
     let (a, b) = (OpHash([1; 32]), OpHash([2; 32]));
-    let h = fork_evidence_hash(COMMUNITY, &[9; 32], 4, [a, b]);
-    assert_eq!(fork_evidence_hash(COMMUNITY, &[9; 32], 4, [b, a]), h);
-    assert_ne!(fork_evidence_hash(COMMUNITY, &[9; 32], 5, [a, b]), h);
-    assert_ne!(fork_evidence_hash(COMMUNITY, &[8; 32], 4, [a, b]), h);
+    let h = fork_evidence_hash(DEVICE_TEST_ANCHOR, &[9; 32], 4, [a, b]);
+    assert_eq!(
+        fork_evidence_hash(DEVICE_TEST_ANCHOR, &[9; 32], 4, [b, a]),
+        h
+    );
+    assert_ne!(
+        fork_evidence_hash(DEVICE_TEST_ANCHOR, &[9; 32], 5, [a, b]),
+        h
+    );
+    assert_ne!(
+        fork_evidence_hash(DEVICE_TEST_ANCHOR, &[8; 32], 4, [a, b]),
+        h
+    );
     assert_ne!(fork_evidence_hash("VLD0:other", &[9; 32], 4, [a, b]), h);
 }

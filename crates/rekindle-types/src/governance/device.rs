@@ -33,6 +33,18 @@ pub struct DeviceSetElement {
     pub incarnation: u64,
 }
 
+impl DeviceSetElement {
+    /// The element id `(kind, device_key, incarnation)`.
+    #[must_use]
+    pub const fn new(kind: DeviceSetElementKind, device_key: [u8; 32], incarnation: u64) -> Self {
+        Self {
+            kind,
+            device_key,
+            incarnation,
+        }
+    }
+}
+
 /// `DeviceKey{…}`: the pseudonym `p` endorses `device_key` for this
 /// community and member record (rules 1, 2, 10). Also carried as
 /// `MemberJoined`'s first device and the `GenesisCert` creator's.

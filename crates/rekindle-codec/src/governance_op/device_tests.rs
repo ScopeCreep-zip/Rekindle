@@ -17,8 +17,12 @@ pub(super) fn endorsement(b: u8) -> DeviceEndorsement {
         incarnation: 3,
         extends_set: [b.wrapping_add(1); 32],
         extends_elements: vec![
-            element(DeviceSetElementKind::Endorsement, b.wrapping_add(2), 1),
-            element(DeviceSetElementKind::Retirement, b.wrapping_add(2), 1),
+            DeviceSetElement::new(
+                DeviceSetElementKind::Endorsement,
+                [b.wrapping_add(2); 32],
+                1,
+            ),
+            DeviceSetElement::new(DeviceSetElementKind::Retirement, [b.wrapping_add(2); 32], 1),
         ],
         device_record: format!("VLD0:{}", "d".repeat(43)),
         device_record_owner: format!("VLD0:{}", "o".repeat(43)),
@@ -43,14 +47,6 @@ pub(super) fn readmit(b: u8) -> DeviceReadmit {
         new_key: [b.wrapping_add(1); 32],
         incarnation: 4,
         fork_evidence: [b.wrapping_add(2); 32],
-    }
-}
-
-fn element(kind: DeviceSetElementKind, b: u8, incarnation: u64) -> DeviceSetElement {
-    DeviceSetElement {
-        kind,
-        device_key: [b; 32],
-        incarnation,
     }
 }
 
@@ -138,9 +134,9 @@ fn an_endorsement_with_the_largest_extended_set_fits_one_op() {
     let mut e = endorsement(5);
     e.extends_elements = (0..MAX_DEVICE_SET_ELEMENTS)
         .map(|i| {
-            element(
+            DeviceSetElement::new(
                 DeviceSetElementKind::Endorsement,
-                u8::try_from(i).unwrap(),
+                [u8::try_from(i).unwrap(); 32],
                 1,
             )
         })
@@ -150,8 +146,11 @@ fn an_endorsement_with_the_largest_extended_set_fits_one_op() {
         decode_op(&encode_op(&original).unwrap()).unwrap().op,
         original
     );
-    e.extends_elements
-        .push(element(DeviceSetElementKind::Retirement, 0, 1));
+    e.extends_elements.push(DeviceSetElement::new(
+        DeviceSetElementKind::Retirement,
+        [0; 32],
+        1,
+    ));
     let over = op(GovernanceEntry::DeviceKey(e));
     assert!(decode_op(&encode_op(&over).unwrap()).is_err());
 }

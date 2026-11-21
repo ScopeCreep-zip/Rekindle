@@ -2,13 +2,12 @@
 //! only from the cert, strong removal, re-join, admission, invite caps,
 //! equivocation and order independence.
 
-use proptest::prelude::*;
 use rekindle_types::governance::{AdmissionMode, GovernanceEntry, InviteProof, OpHash};
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions::{CREATE_INVITES, KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
 
 use super::{merge, merge_outcome, MergeOutcome, QuarantineReason};
-use crate::fixture::{cert, code_key, meta, op, op_at};
+use crate::fixture::{cert, code_key, meta, op};
 use crate::invite_quota::MAX_USES_PER_INVITE;
 use crate::op::VerifiedOp;
 use crate::power::{class_of, OpClass};
@@ -560,44 +559,11 @@ fn an_op_missing_a_dep_waits() {
     assert_eq!(outcome.pending, vec![waiting.hash()]);
 }
 
-proptest! {
-    /// S4: an op at any lamport, 0 included, never becomes the creator, and
-    /// a forger's power op is refused.
-    #[test]
-    fn no_op_at_any_lamport_becomes_the_creator(lamport in any::<u64>()) {
-        let ops = community();
-        let forged = op_at(&pk(9), 0, &[], 80, lamport, role(9, 100));
-        let mut set = vec![forged.clone()];
-        set.extend(ops);
-        let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &set);
-        prop_assert_eq!(outcome.state.creators, std::collections::BTreeSet::from([pk(1)]));
-        prop_assert!(!outcome.applied.contains(&forged.hash()));
-    }
-
-    /// S5/S6: two nodes holding one op set, received in any order, reach
-    /// equal state.
-    #[test]
-    fn one_op_set_one_state(seed in any::<u64>()) {
-        let mut ops = community();
-        let k2 = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(3, 1));
-        let k3 = op(&pk(3), 1, &[head(&ops), find(&ops, 3, 0)], 31, kick(4, 1));
-        let m = op(&pk(4), 1, &[head(&ops), find(&ops, 4, 0)], 32, meta("m"));
-        ops.extend([k2, k3, m]);
-        let mut shuffled = ops.clone();
-        let len = shuffled.len();
-        let mut x = seed | 1;
-        for i in (1..len).rev() {
-            x ^= x << 13; x ^= x >> 7; x ^= x << 17;
-            shuffled.swap(i, usize::try_from(x % (i as u64 + 1)).unwrap_or(0));
-        }
-        let cert = cert(&pk(1), AdmissionMode::Open);
-        prop_assert_eq!(merge(&cert, &ops), merge(&cert, &shuffled));
-    }
-}
-
 #[path = "departure_tests.rs"]
 mod departure_tests;
 #[path = "invite_revoke_tests.rs"]
 mod invite_revoke_tests;
+#[path = "order_props.rs"]
+mod order_props;
 #[path = "time_of_op_tests.rs"]
 mod time_of_op_tests;

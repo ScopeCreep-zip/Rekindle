@@ -28,14 +28,12 @@ pub(crate) fn read_device_key(
     let extends_elements = list
         .iter()
         .map(|e| {
-            Ok(DeviceSetElement {
-                kind: match e.get_kind().map_err(not_in_schema)? {
-                    WireKind::Endorsement => DeviceSetElementKind::Endorsement,
-                    WireKind::Retirement => DeviceSetElementKind::Retirement,
-                },
-                device_key: fixed(data_field(e.get_device_key())?, "device set element key")?,
-                incarnation: e.get_incarnation(),
-            })
+            let kind = match e.get_kind().map_err(not_in_schema)? {
+                WireKind::Endorsement => DeviceSetElementKind::Endorsement,
+                WireKind::Retirement => DeviceSetElementKind::Retirement,
+            };
+            let key = fixed(data_field(e.get_device_key())?, "device set element key")?;
+            Ok(DeviceSetElement::new(kind, key, e.get_incarnation()))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(DeviceEndorsement {
