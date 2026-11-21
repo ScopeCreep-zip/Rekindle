@@ -281,30 +281,9 @@ pub async fn dispatch(
                 .unwrap_or_default();
             table::print_table(&["Pseudonym", "Name", "Status"], &rows, mode)
         }
-        CommunityCmd::PublishSuccessor { community } => {
-            let request = LifecycleRequest::CommunityPublishSuccessor {
-                anchor: community.clone(),
-            };
-            lifecycle(client, mode, request).await
-        }
-        CommunityCmd::FollowSuccessor {
-            community,
-            new_anchor,
-            invite,
-        } => {
-            let request = LifecycleRequest::CommunityFollowSuccessor {
-                anchor: community.clone(),
-                new_anchor: new_anchor.clone(),
-                invite: invite.clone(),
-            };
-            lifecycle(client, mode, request).await
-        }
-        CommunityCmd::Successors { community } => {
-            let request = LifecycleRequest::CommunitySuccessors {
-                anchor: community.clone(),
-            };
-            lifecycle(client, mode, request).await
-        }
+        CommunityCmd::PublishSuccessor { .. }
+        | CommunityCmd::FollowSuccessor { .. }
+        | CommunityCmd::Successors { .. } => successor(cmd, client, mode).await,
         CommunityCmd::Transfer {
             community,
             new_owner,
@@ -415,6 +394,36 @@ fn removal_text(removed: Option<&serde_json::Value>) -> String {
         Some(reason) => format!("{standing}: {reason}"),
         None => standing,
     }
+}
+
+/// The successor commands (plan E3.2 S7s.4): publish this community's
+/// successor, follow one, or list the offers kept for the snapshot.
+async fn successor(
+    cmd: &CommunityCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
+        CommunityCmd::PublishSuccessor { community } => {
+            LifecycleRequest::CommunityPublishSuccessor {
+                anchor: community.clone(),
+            }
+        }
+        CommunityCmd::FollowSuccessor {
+            community,
+            new_anchor,
+            invite,
+        } => LifecycleRequest::CommunityFollowSuccessor {
+            anchor: community.clone(),
+            new_anchor: new_anchor.clone(),
+            invite: invite.clone(),
+        },
+        CommunityCmd::Successors { community } => LifecycleRequest::CommunitySuccessors {
+            anchor: community.clone(),
+        },
+        _ => anyhow::bail!("not a successor command"),
+    };
+    lifecycle(client, mode, request).await
 }
 
 /// Send a lifecycle `request` and print its answer (the creator-set
