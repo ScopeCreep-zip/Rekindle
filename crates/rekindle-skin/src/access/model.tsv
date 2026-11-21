@@ -687,6 +687,7 @@
 .sidebar-server-join-btn	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .sidebar-server-join-btn	text hovered	var(--color-xfire-accent-text)	--color-xfire-accent 15% over --color-xfire-bg-dark	1.0	false
 .sidebar-server-row	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.skin-ad-banner	text	var(--color-xfire-text-on-fill)	--color-xfire-accent	1.0	false
 .skin-badge	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-badge	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-credits	text	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
@@ -695,10 +696,29 @@
 .skin-credits-stated	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-credits-term	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-credits-term	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
+.skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-end	1.0	true
+.skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-start	1.0	true
+.skin-name-edit	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
+.skin-name-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
+.skin-name-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-end	1.0	true
+.skin-name-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-start	1.0	true
+.skin-name-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
+.skin-name-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
 .skin-pair	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-pair-apca	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-pair-rule	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.skin-status-edit	text	var(--color-xfire-text)	--color-xfire-bg-status	1.0	false
+.skin-status-edit::placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-status	1.0	false
+.skin-status-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
+.skin-status-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-status	1.0	true
+.skin-status-list:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
+.skin-status-list:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-status	1.0	true
 .skin-token-id	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.skin-tree	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.skin-tree-button:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
+.skin-tree-button:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-end	1.0	true
+.skin-tree-button:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-start	1.0	true
 .skip-link	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
 .skip-link:focus	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
 .soundboard-panel-clip	text	var(--color-xfire-text-primary)	--color-xfire-bg-input	1.0	false

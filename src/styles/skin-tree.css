@@ -65,10 +65,12 @@
     min-width: 0;
     padding: 0 3px;
     border: 0;
-    background-color: var(--color-xfire-bg-input);
     color: var(--color-xfire-text);
     font: inherit;
     font-size: 11px;
+  }
+  .skin-name-edit {
+    background-color: var(--color-xfire-bg-input);
   }
 
   /* N3: the status edit fills its box over the pack's edit art. */
@@ -86,8 +88,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(90deg, var(--color-xfire-bg-dark), var(--color-xfire-accent), var(--color-xfire-bg-dark));
-    color: var(--color-xfire-accent-text);
+    background-color: var(--color-xfire-accent);
+    color: var(--color-xfire-text-on-fill);
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.08em;

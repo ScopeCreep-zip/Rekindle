@@ -13,7 +13,6 @@
   ],
   "permissions": [
     "core:window:allow-start-dragging",
-    "core:window:allow-start-resize-dragging",
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-minimize",

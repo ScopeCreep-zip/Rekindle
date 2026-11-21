@@ -140,6 +140,16 @@
 '.skin-credits-term' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
 # The skin editor (plan E7.7.5) sits on the Settings window's `.app-frame`.
 '.skin-token-id' = { on = ["--color-xfire-bg-dark"] }
+# The tree-laid buddy list (plan SK2-S2, `skin-tree.css`): the views node's
+# ground is bg-dark (the served `[data-skin-node]` rule); the name is title
+# strip text (as `.xfire-titlebar-text`); the status edit is the status
+# ground's text (as `.status-bar`); the name edit and banner paint their own.
+'.skin-tree' = { on = ["--color-xfire-bg-dark"] }
+'.skin-name-text' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
+'.skin-name-edit' = { on = ["--color-xfire-bg-input"] }
+'.skin-status-edit' = { on = ["--color-xfire-bg-status"] }
+'.skin-status-edit::placeholder' = { on = ["--color-xfire-bg-status"] }
+'.skin-ad-banner' = { on = ["--color-xfire-accent"] }
 '.skin-pair' = { on = ["--color-xfire-bg-dark"] }
 '.skin-pair-rule' = { on = ["--color-xfire-bg-dark"] }
 '.skin-pair-apca' = { on = ["--color-xfire-bg-dark"] }
@@ -608,6 +618,13 @@
 # rows' inset ring sits (plan E7.3 "Focus visible").
 '*:focus-visible' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary", "--color-xfire-bg-secondary", "--color-xfire-bg-tertiary", "--color-xfire-bg-input", "--color-xfire-bg-status", "--color-xfire-overlay 5% over --color-xfire-bg-dark", "--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.skip-link:focus' = { on = ["--color-xfire-bg-dark"] }
+# The tree-laid buddy list's controls (plan SK2-S2): title-strip menus,
+# buttons and the status list beside the strip and the views' bg-dark.
+'.skin-tree-button:focus-visible' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end", "--color-xfire-bg-dark"] }
+'.skin-menu:focus-visible' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end", "--color-xfire-bg-dark"] }
+'.skin-status-list:focus-visible' = { on = ["--color-xfire-bg-status", "--color-xfire-bg-dark"] }
+'.skin-name-edit:focus-visible' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end", "--color-xfire-bg-dark"] }
+'.skin-status-edit:focus-visible' = { on = ["--color-xfire-bg-status", "--color-xfire-bg-dark"] }
 '.form-input' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-select' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.sec-btn-commit:focus-visible' = { on = ["--sec-focus-ground"] }
