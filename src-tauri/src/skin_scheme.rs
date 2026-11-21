@@ -8,6 +8,7 @@
 //! on Windows. The CSP names both (`tauri.conf.json`).
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::skin_library::SkinServed;
@@ -40,10 +41,28 @@ pub fn handle<R: Runtime>(
         return;
     };
     let path = request.uri().path().to_owned();
+    let window = ctx.webview_label().to_owned();
     tauri::async_runtime::spawn(async move {
-        let answer = host_call::call(&state, IpcRequest::SkinFile { path }).await;
-        responder.respond(response(answer));
+        let started = Instant::now();
+        let file = basename(&path).to_owned();
+        let answer = host_call::call_from(&state, &window, IpcRequest::SkinFile { path }).await;
+        let answered = response(answer);
+        tracing::debug!(
+            file,
+            window,
+            status = answered.status().as_u16(),
+            bytes = answered.body().len(),
+            took_ms = started.elapsed().as_millis(),
+            "skin file"
+        );
+        responder.respond(answered);
     });
+}
+
+/// The last segment of a `skin://` path: the file's name, without the
+/// package it came from (plan T2's debug line names no more than that).
+fn basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or_default()
 }
 
 /// An empty response with `status`, never cached.
@@ -99,6 +118,13 @@ mod tests {
 
     fn header_of(r: &Response<Vec<u8>>, name: header::HeaderName) -> &str {
         r.headers().get(name).unwrap().to_str().unwrap()
+    }
+
+    #[test]
+    fn the_skin_line_names_only_the_files_basename() {
+        assert_eq!(basename("/builtin:xfire/buddy-list.css"), "buddy-list.css");
+        assert_eq!(basename("/pack"), "pack");
+        assert_eq!(basename(""), "");
     }
 
     #[test]
