@@ -8,11 +8,12 @@
 //! 2. ids are unique (the importer refuses an anchor that does not resolve);
 //! 3. every node with a size lies inside the window (the frame grown by its
 //!    outsets: the overhangs) at its smallest size;
-//! 4. two interactive nodes never overlap at the same z;
+//! 4. two interactive nodes never overlap at the same z, unless they show
+//!    with different views (a button row per tab);
 //! 5. every interactive node has a box, and its 24×24 hit area (the
 //!    stylesheet's, grown about its centre and shifted inward at the window's
 //!    edges: lead decision 2, an edge grip's area stays in the window) lies
-//!    inside the window; a text-sized node (a menu or tab drawn as text, no
+//!    inside the window; a text-sized node (a menu, tab or edit field, no
 //!    art) is sized by its text at render, so its target is checked on the
 //!    rendered window, not on its 0 px import box;
 //! 6. each role appears at most once, except `Button`, `Decor`, `Resize`,
@@ -56,13 +57,18 @@ fn inside(b: [i32; 4], w: i32, h: i32) -> bool {
     b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= w && b[1] + b[3] <= h
 }
 
-/// A node sized by its text at render: a menu or tab drawn as text, with
-/// no art (its import box is 0 px on an axis).
+/// A node sized by its text at render: a menu or tab drawn as text, or a
+/// status or name edit field (a text box one line of its font tall: SimpleX's
+/// `[StatusEdit]` has no art and no size), with no art (its import box is
+/// 0 px on an axis).
 #[must_use]
 pub fn text_sized(n: &SkinNode) -> bool {
     let empty = |s: NodeSpan| matches!(s, NodeSpan::Fixed { size: 0, .. });
     n.art.is_none()
-        && matches!(n.role, NodeRole::Menu(_) | NodeRole::Tab(_))
+        && matches!(
+            n.role,
+            NodeRole::Menu(_) | NodeRole::Tab(_) | NodeRole::StatusText | NodeRole::NameField
+        )
         && (empty(n.x) || empty(n.y))
 }
 
@@ -83,6 +89,21 @@ fn art_paths(n: &SkinNode) -> impl Iterator<Item = &String> {
     n.art
         .iter()
         .flat_map(|a| std::iter::once(&a.image).chain(a.states.values()))
+}
+
+/// Each node's view: the `shows_with` of it or its nearest ancestor. Two
+/// rows of different views are never shown together (Classic's
+/// `GameButton1`/`GameButton2` share a place in the Friends and Servers rows).
+fn views_of<'a>(
+    nodes: &'a [SkinNode],
+    inherited: Option<ViewKey>,
+    out: &mut BTreeMap<&'a str, Option<ViewKey>>,
+) {
+    for n in nodes {
+        let v = n.shows_with.or(inherited);
+        out.insert(n.id.as_str(), v);
+        views_of(&n.children, v, out);
+    }
 }
 
 /// Refuses `tree` (laid in `layout`) when it breaks a rule above.
@@ -129,11 +150,17 @@ pub fn check(
             return Err(bad(&at, "rule 9: art in the package"));
         }
     }
+    let mut shown = BTreeMap::new();
+    views_of(&tree.root, None, &mut shown);
+    let apart = |a: &str, b: &str| match (shown.get(a), shown.get(b)) {
+        (Some(Some(x)), Some(Some(y))) => x != y,
+        _ => false,
+    };
     let live: Vec<_> = boxes.iter().filter(|(n, _)| n.role.interactive()).collect();
     for (i, (a, ab)) in live.iter().enumerate() {
         if live[i + 1..]
             .iter()
-            .any(|(b, bb)| a.z == b.z && overlap(*ab, *bb))
+            .any(|(b, bb)| a.z == b.z && overlap(*ab, *bb) && !apart(&a.id, &b.id))
         {
             return Err(bad(
                 &format!("{field}.{}", a.id),

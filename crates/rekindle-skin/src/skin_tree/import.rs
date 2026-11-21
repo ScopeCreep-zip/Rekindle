@@ -36,8 +36,8 @@ pub(super) fn bad(detail: impl Into<String>) -> ImportError {
     }
 }
 
-/// A component's `MaxWidth`/`MaxHeight`.
-fn max_of(component: Option<&Node>, key: &str) -> Option<u16> {
+/// A component's `MinWidth`/`MinHeight`/`MaxWidth`/`MaxHeight`.
+fn limit_of(component: Option<&Node>, key: &str) -> Option<u16> {
     component?.attr_ci(key)?.trim().parse().ok()
 }
 
@@ -124,10 +124,23 @@ impl Walk<'_> {
             .trim()
             .to_owned();
         let img = self.image(tile, "Normal")?;
+        let comp = component.and_then(|c| self.by_name.get(&c.to_ascii_lowercase()).copied());
         let size = |v: u32| u16::try_from(v).map_err(|_| bad(format!("{id}: art too large")));
+        // A tile with no art is its component's declared size: Classic's
+        // `ResizeUp` `MinHeight="5"` (`xfirecomponents.xml:121`), Symbiosis's
+        // grippers `MinWidth="10" MinHeight="10"` (`Components/MainWindow.xml:62`).
         let wh = match &img {
             Some(i) => (size(i.width())?, size(i.height())?),
-            None => (0, 0),
+            None => match self.image(tile, "Hover")? {
+                // Art only on hover: the button's normal look is baked in
+                // the art under it, and its hover image is its size (Total
+                // Chaos's `TCLink`, `components.xml:507-519`).
+                Some(h) => (size(h.width())?, size(h.height())?),
+                None => (
+                    limit_of(comp, "MinWidth").unwrap_or(0),
+                    limit_of(comp, "MinHeight").unwrap_or(0),
+                ),
+            },
         };
         let children: Vec<String> = tile
             .children_named("Tile")
@@ -137,7 +150,6 @@ impl Walk<'_> {
                     .map(str::to_owned)
             })
             .collect();
-        let comp = component.and_then(|c| self.by_name.get(&c.to_ascii_lowercase()).copied());
         let facts = Facts {
             has_art: img.is_some(),
             class: comp.and_then(|c| c.attr_ci("Class")),
@@ -149,7 +161,7 @@ impl Walk<'_> {
                 component.unwrap_or("-")
             ))
         })?;
-        let max = (max_of(comp, "MaxWidth"), max_of(comp, "MaxHeight"));
+        let max = (limit_of(comp, "MaxWidth"), limit_of(comp, "MaxHeight"));
         Ok(Read {
             tile,
             id,
@@ -240,6 +252,116 @@ impl Walk<'_> {
     }
 }
 
+/// Makes every id unique: Xfire scopes a tile's name to its parent (Alloy
+/// lays a `BvBk` in each of its three views), so a name the tree repeats
+/// becomes `Parent.Name`, prefixed again until it is unique.
+fn qualify(root: &mut [SkinNode]) {
+    fn count<'a>(nodes: &'a [SkinNode], seen: &mut BTreeMap<&'a str, usize>) {
+        for n in nodes {
+            *seen.entry(n.id.as_str()).or_default() += 1;
+            count(&n.children, seen);
+        }
+    }
+    fn rename(nodes: &mut [SkinNode], parent: &str, twice: &BTreeMap<String, usize>) -> bool {
+        let mut changed = false;
+        for n in nodes {
+            let own = n.id.clone();
+            if twice.get(&own).is_some_and(|c| *c > 1) && !parent.is_empty() {
+                n.id = format!("{parent}.{own}");
+                changed = true;
+            }
+            changed |= rename(&mut n.children, &n.id.clone(), twice);
+        }
+        changed
+    }
+    for _ in 0..8 {
+        let mut seen = BTreeMap::new();
+        count(root, &mut seen);
+        let twice: BTreeMap<String, usize> = seen
+            .into_iter()
+            .filter(|(_, c)| *c > 1)
+            .map(|(k, c)| (k.to_owned(), c))
+            .collect();
+        if twice.is_empty() || !rename(root, "", &twice) {
+            return;
+        }
+    }
+}
+
+/// The largest window the fit is searched in, px.
+const MOST: i32 = 4096;
+
+/// Whether every node of `tree` laid in a `w × h` window has a box (no
+/// negative length) and, when it has a size on an axis, lies inside.
+fn fits(tree: &SkinTree, w: i32, h: i32, x_axis: bool) -> bool {
+    tree.boxes(w, h).iter().all(|(_, b)| {
+        let (at, len, win) = if x_axis {
+            (b[0], b[2], w)
+        } else {
+            (b[1], b[3], h)
+        };
+        len >= 0 && (len == 0 || (at >= 0 && at + len <= win))
+    })
+}
+
+/// The pack's overhang: how far its nodes reach outside its own window
+/// (laid at the largest size, where only offsets lay a node outside).
+fn overhang(tree: &SkinTree) -> Insets {
+    let boxes = tree.boxes(MOST, MOST);
+    let reach = |f: &dyn Fn(&[i32; 4]) -> i32| {
+        boxes
+            .iter()
+            .filter(|(_, b)| b[2] > 0 && b[3] > 0)
+            .map(|(_, b)| f(b))
+            .max()
+            .map_or(0, |v| u16::try_from(v.max(0)).unwrap_or(u16::MAX))
+    };
+    Insets {
+        left: reach(&|b| -b[0]),
+        top: reach(&|b| -b[1]),
+        right: reach(&|b| b[0] + b[2] - MOST),
+        bottom: reach(&|b| b[1] + b[3] - MOST),
+    }
+}
+
+/// Sizes `built`'s window to the tree (plan SK2 decision 5): the tree's
+/// overhang joins the layout's outsets, and the smallest window is the
+/// pack's declared `MinWidth`/`MinHeight` (Combat `combat.ini:3-4`, Total
+/// Chaos `components.xml:4-5`), grown until every node lies inside it.
+fn fit(
+    tree: &mut SkinTree,
+    pack_min: (u16, u16),
+    layout: &mut WindowLayout,
+) -> Result<(), ImportError> {
+    let over = overhang(tree);
+    tree.outsets = over;
+    let o = &mut layout.outsets;
+    o.left = o.left.saturating_add(over.left);
+    o.top = o.top.saturating_add(over.top);
+    o.right = o.right.saturating_add(over.right);
+    o.bottom = o.bottom.saturating_add(over.bottom);
+    let (ow, oh) = (
+        i32::from(o.left) + i32::from(o.right),
+        i32::from(o.top) + i32::from(o.bottom),
+    );
+    let (tw, th) = (
+        i32::from(over.left) + i32::from(over.right),
+        i32::from(over.top) + i32::from(over.bottom),
+    );
+    let w0 = (i32::from(layout.min_width) + ow).max(i32::from(pack_min.0) + tw);
+    let h0 = (i32::from(layout.min_height) + oh).max(i32::from(pack_min.1) + th);
+    let w = (w0..=MOST)
+        .find(|&w| fits(tree, w, MOST, true))
+        .ok_or_else(|| bad("the tree fits no window width"))?;
+    let h = (h0..=MOST)
+        .find(|&h| fits(tree, w, h, false))
+        .ok_or_else(|| bad("the tree fits no window height"))?;
+    let frame = |v: i32| u16::try_from(v).map_err(|_| bad("window too large"));
+    layout.min_width = frame(w - ow)?;
+    layout.min_height = frame(h - oh)?;
+    Ok(())
+}
+
 /// The views node's box as insets from the frame rectangle: the same at
 /// the smallest window and one 100 px larger each way, else `None`.
 #[must_use]
@@ -292,9 +414,23 @@ pub fn add(
         piece: &piece,
         files: Files::new(),
     };
-    let tree = SkinTree {
+    let mut tree = SkinTree {
+        outsets: Insets {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+        },
         root: walk.walk(layout, None, &Sibs::new())?,
     };
+    qualify(&mut tree.root);
+    let window = layout.attr_ci("Component").unwrap_or("MainWindow");
+    let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();
+    let pack_min = (
+        limit_of(declared, "MinWidth").unwrap_or(0),
+        limit_of(declared, "MinHeight").unwrap_or(0),
+    );
+    fit(&mut tree, pack_min, &mut built.0)?;
     if tree
         .boxes(0, 0)
         .iter()

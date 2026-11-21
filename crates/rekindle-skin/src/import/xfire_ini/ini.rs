@@ -208,7 +208,7 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
         let (Dest::Last, Some(section)) = (&dest, sections.last_mut()) else {
             continue;
         };
-        if section.get(key).is_some() {
+        if section.get(key).is_some() && !position_key(key) {
             repeated.push(format!("[{}] {key} (line {n})", section.name));
             continue;
         }
@@ -223,6 +223,19 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
         repeated,
         comments,
     })
+}
+
+/// A layout position key, `WindowN.X`/`WindowN.Y`: Xfire reads one set
+/// twice as a sibling's edge then an offset from it (XGlow `Xglow.ini:53-56`
+/// `Window7.X=Top.RIGHT`, `Window7.X=-80`), so both entries are kept and
+/// `title::windows` joins them; any other repeated key is dropped.
+fn position_key(key: &str) -> bool {
+    key.get(..6)
+        .is_some_and(|p| p.eq_ignore_ascii_case("Window"))
+        && key[6..].split_once('.').is_some_and(|(n, attr)| {
+            n.parse::<u32>().is_ok()
+                && (attr.eq_ignore_ascii_case("X") || attr.eq_ignore_ascii_case("Y"))
+        })
 }
 
 #[cfg(test)]

@@ -464,7 +464,15 @@ fn a_tree_laid_window_may_draw_its_art_under_the_views() {
     );
     let got = checked_with(&nine(), |l, files| {
         lay(l, files);
-        l.tree = Some(rekindle_types::dto::skin_tree::SkinTree { root: Vec::new() });
+        l.tree = Some(rekindle_types::dto::skin_tree::SkinTree {
+            outsets: rekindle_types::dto::skin::Insets {
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+            },
+            root: Vec::new(),
+        });
     });
     assert_eq!(got, Ok(()));
 }

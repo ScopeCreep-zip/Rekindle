@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::skin::RegionState;
+use super::skin::{Insets, RegionState};
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
 pub use super::skin_tree_role::{ActionKey, Edge, LampKey, MenuKey, NodeRole, ViewKey};
 
@@ -94,11 +94,14 @@ pub struct SkinNode {
     pub children: Vec<SkinNode>,
 }
 
-/// The window's component tree: the root's children, laid in the whole
-/// window (the frame rectangle grown by the layout's outsets).
+/// The window's component tree: the root's children, laid in the pack's
+/// window: the whole window less `outsets`, the overhang of the nodes the
+/// pack lays outside its own window (Total Chaos's `MainTitleBar`
+/// `OutdentLeft="1"`), which the layout's outsets include.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkinTree {
+    pub outsets: Insets,
     pub root: Vec<SkinNode>,
 }
 
@@ -116,8 +119,16 @@ impl SkinTree {
             }
         }
         let mut out = Vec::new();
+        let over = self.outsets;
+        let (left, top) = (i32::from(over.left), i32::from(over.top));
+        let pack = [
+            l,
+            t,
+            w - l - i32::from(o.right),
+            h - t - i32::from(o.bottom),
+        ];
         for n in &self.root {
-            walk(n, [0, 0, w, h], &mut out);
+            walk(n, pack, &mut out);
         }
         out
     }

@@ -214,6 +214,11 @@ pub fn role(
     if name_k == "consoletext" || comp.as_deref() == Some("consoletext") {
         return Some(R::ConsoleLabel);
     }
+    // Combat's `DownloadBlink` is a tab control too (one blinker per state,
+    // `WhiteBlinkNoAnimation`/`RedBlinker`): the files lamp, not the views.
+    if name_k == "downloadblink" {
+        return Some(R::Lamp(LampKey::Files));
+    }
     if comp.as_deref() == Some("tabbedcontrol") || name_k == "maintabbedarea" || tabbed_class {
         if button(&name_k).is_some() {
             return Some(R::Group);

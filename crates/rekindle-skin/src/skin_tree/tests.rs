@@ -110,7 +110,15 @@ fn good() -> Vec<SkinNode> {
 }
 
 fn checked(root: Vec<SkinNode>, images: &BTreeMap<String, Vec<u8>>) -> Result<(), String> {
-    let tree = SkinTree { root };
+    let tree = SkinTree {
+        outsets: rekindle_types::dto::skin::Insets {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+        },
+        root,
+    };
     validate::check("t", &tree, &layout(Some(tree.clone())), images).map_err(|e| format!("{e:?}"))
 }
 
@@ -173,10 +181,26 @@ fn rule_5_an_interactive_node_has_a_hit_area_in_the_window() {
     let mut t = vec![n("Min", NodeRole::Minimize, fixed(0, 16), fixed(0, 16))];
     let mut small = layout(None);
     small.min_width = 20;
-    small.tree = Some(SkinTree { root: t.clone() });
+    small.tree = Some(SkinTree {
+        outsets: rekindle_types::dto::skin::Insets {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+        },
+        root: t.clone(),
+    });
     let e = validate::check(
         "main",
-        &SkinTree { root: t.clone() },
+        &SkinTree {
+            outsets: rekindle_types::dto::skin::Insets {
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+            },
+            root: t.clone(),
+        },
         &small,
         &BTreeMap::new(),
     )
@@ -212,7 +236,15 @@ fn rule_5_a_text_sized_menu_is_sized_at_render() {
     assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
     let out = css::tree_css(
         ".app-frame",
-        &SkinTree { root: t },
+        &SkinTree {
+            outsets: rekindle_types::dto::skin::Insets {
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+            },
+            root: t,
+        },
         &layout(None),
         &BTreeMap::new(),
         "x",
@@ -378,7 +410,15 @@ fn rule_2_an_anchor_that_does_not_resolve_is_refused() {
 
 #[test]
 fn css_lays_one_rule_per_node_with_a_hit_area() {
-    let tree = SkinTree { root: good() };
+    let tree = SkinTree {
+        outsets: rekindle_types::dto::skin::Insets {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+        },
+        root: good(),
+    };
     let out = css::tree_css(".app-frame", &tree, &layout(None), &BTreeMap::new(), "x").unwrap();
     assert_eq!(
         out.matches(" {\n    position: absolute;").count(),
