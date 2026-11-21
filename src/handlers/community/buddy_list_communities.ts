@@ -1,0 +1,21 @@
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { subscribeCommunityEvents } from "../../ipc/channels";
+import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
+import { reduceSubscriptionMembership } from "./dispatcher_members";
+
+/// The buddy list's community list (lead decision (41)): it hears each
+/// community's arrival from the Host, as the community windows do, so a
+/// community created or joined off this window's own request (a
+/// co-creation's genesis, a co-creator's `CreatorJoin`) is listed exactly
+/// as one this window asked for. The Host publishes the arrival
+/// (`GovernanceEvent::MetadataChanged`) from its one create and one join
+/// path; a community this window does not hold is re-read from the Host
+/// (`withCommunity`), and a held one takes the new name and images.
+export function subscribeBuddyListCommunityEvents(): Promise<UnlistenFn> {
+  return subscribeCommunityEvents((event) => {
+    if (isLegacyCommunityEvent(event)) return;
+    if ("governance" in event && "metadataChanged" in event.governance) {
+      reduceSubscriptionMembership(event);
+    }
+  });
+}

@@ -12,7 +12,7 @@ use rekindle_ipc::protocol::IpcRequest;
 use rekindle_ipc::protocol::{CommunityRequest, LifecycleRequest};
 use rekindle_netsim::Netsim;
 use rekindle_types::dto::community::{CoCreationSnapshot, CoCreatorState, HeldCreatorInvite};
-use rekindle_types::subscription_events::FriendEvent;
+use rekindle_types::subscription_events::{FriendEvent, GovernanceEvent};
 
 use crate::harness::{eventually, start, Events, SimNode, PASSPHRASE};
 use crate::pair::{befriend, key, LIMIT};
@@ -65,6 +65,36 @@ async fn info(node: &SimNode, anchor: &str) -> serde_json::Value {
         anchor: anchor.to_string(),
     }))
     .await
+}
+
+/// Whether `node` lists `anchor` through the query the GUI's community
+/// list reads (`get_community_details` → `CommunityViews`).
+async fn views(node: &SimNode, anchor: &str) -> bool {
+    node.call(lifecycle(LifecycleRequest::CommunityViews))
+        .await
+        .is_ok_and(|v| v.to_string().contains(anchor))
+}
+
+/// Whether `events` hold the community list's arrival event for `anchor`
+/// (`GovernanceEvent::MetadataChanged`, from `CommunityCreated` on a
+/// create and `CommunityJoined` on a join).
+fn arrived(events: &Events, anchor: &str) -> bool {
+    events.governance().iter().any(
+        |e| matches!(e, GovernanceEvent::MetadataChanged { community, .. } if community == anchor),
+    )
+}
+
+/// Lead decision (41): `node` lists `anchor` and heard its arrival, as a
+/// direct create or join leaves it.
+async fn listed_as_direct(sim: &Netsim, node: &SimNode, events: &Events, anchor: &str) {
+    assert!(
+        eventually(sim, Duration::from_secs(300), || views(node, anchor)).await,
+        "the community list's query lists the community"
+    );
+    assert!(
+        eventually(sim, LIMIT, || async { arrived(events, anchor) }).await,
+        "the community list heard the community arrive"
+    );
 }
 
 fn creators(info: &serde_json::Value) -> Vec<String> {
@@ -194,6 +224,34 @@ async fn an_accept_is_listed_a_decline_omitted_and_the_creation_waits_for_both()
         "Bob is a creator from genesis"
     );
     assert!(!lists(cat, &anchor).await, "Cat declined and is no member");
+    // Lead decision (41): the creator and the co-creator heard the same
+    // arrival a direct create and a direct join publish (below).
+    listed_as_direct(&sim, ann, &ann_seen, &anchor).await;
+    listed_as_direct(&sim, bob, &bob_seen, &anchor).await;
+    assert!(!arrived(&cat_seen, &anchor), "Cat heard no arrival");
+}
+
+/// Lead decision (41), the reference the co-created community is held
+/// to: a direct create and a direct join through a link publish the
+/// arrival the community list uses, and both list it through its query.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_direct_create_and_join_publish_the_arrival_a_co_creation_does() {
+    let (sim, nodes) = friends_of_zero(2, 9305).await;
+    let (ann, bob) = (&nodes[0], &nodes[1]);
+    let (ann_seen, bob_seen) = (ann.events().await, bob.events().await);
+    let anchor = create_with(ann, &[]).await;
+    listed_as_direct(&sim, ann, &ann_seen, &anchor).await;
+    let invite = ann
+        .ok(lifecycle(LifecycleRequest::InviteCreate {
+            community: anchor.clone(),
+            max_uses: 1,
+            expires_seconds: None,
+        }))
+        .await;
+    let link = invite["url"].as_str().expect("an invite link").to_string();
+    bob.ok(lifecycle(LifecycleRequest::CommunityJoin { invite: link }))
+        .await;
+    listed_as_direct(&sim, bob, &bob_seen, &anchor).await;
 }
 
 /// Decision (16): Bob never answers; Ann removes him, he is sent

@@ -43,8 +43,11 @@ pub enum GovernanceRuntimeEvent {
     /// `CommunityEvent::ChannelsUpdated`.
     ChannelsUpdated { community_id: String },
 
-    /// A community has been created locally (origin flow). Adapter emits
-    /// `CommunityEvent::CommunityCreated` and starts background services.
+    /// A community has been created locally (origin flow,
+    /// `seed_community`: every create, direct or co-created, lead
+    /// decision (41)). The adapter publishes
+    /// `GovernanceEvent::MetadataChanged`, the community list's arrival
+    /// event.
     CommunityCreated { community_id: String, name: String },
 
     /// A held op's fate moved to quarantined in a merge (plan E3.2 S7c.5):
@@ -109,8 +112,10 @@ pub enum GovernanceRuntimeEvent {
         status: JoinStageStatus,
     },
 
-    /// A join has succeeded — adapter emits
-    /// `CommunityEvent::CommunityJoined`.
+    /// A join has succeeded. Emitted by the Host's one join path
+    /// (`HostGovernance::join`, a link's join and a co-creator's
+    /// `CreatorJoin` alike, lead decision (41)); the adapter publishes
+    /// `GovernanceEvent::MetadataChanged`, as for [`Self::CommunityCreated`].
     CommunityJoined { community_id: String, name: String },
 
     /// Plate Gate: a new segment has been added. Adapter logs.

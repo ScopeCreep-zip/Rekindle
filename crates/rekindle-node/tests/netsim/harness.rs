@@ -15,7 +15,9 @@ use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_netsim::Netsim;
 use rekindle_node::host::{Host, ShellHooks};
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
-use rekindle_types::subscription_events::{FriendEvent, StreamFrame, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    FriendEvent, GovernanceEvent, StreamFrame, SubscriptionEvent,
+};
 use tracing::Instrument;
 
 /// Every simulated identity's passphrase.
@@ -263,6 +265,18 @@ impl SimNode {
 pub struct Events(Arc<parking_lot::Mutex<Vec<SubscriptionEvent>>>);
 
 impl Events {
+    /// The governance events, in order.
+    pub fn governance(&self) -> Vec<GovernanceEvent> {
+        self.0
+            .lock()
+            .iter()
+            .filter_map(|event| match event {
+                SubscriptionEvent::Governance(event) => Some(event.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The friend events, in order.
     pub fn friend(&self) -> Vec<FriendEvent> {
         self.0

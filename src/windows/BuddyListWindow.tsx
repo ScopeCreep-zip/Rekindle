@@ -31,6 +31,7 @@ import { handleGetGameStatus } from "../actions/settings.actions";
 import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
+import { subscribeBuddyListCommunityEvents } from "../handlers/community/buddy_list_communities";
 import { subscribePairingLinkHandler } from "../handlers/pairing-link.handler";
 import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
@@ -82,6 +83,8 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeBuddyListGroupDmEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
     unlisteners.push(subscribeBuddyListVoiceEvents());
+    // Each community's arrival, from the Host's one create and join path.
+    unlisteners.push(subscribeBuddyListCommunityEvents());
     unlisteners.push(subscribeNetworkStatus((event: NetworkStatusEvent) => {
       setNetworkAttached(event.isAttached);
     }));

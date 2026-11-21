@@ -161,6 +161,17 @@ impl HostGovernance {
         // from now on, and a departed author is on neither.
         self.spawn_outbox_catchup(&id);
         tracing::info!(community = %id, "joined community");
+        // Every join's arrival event, from this one path (lead decision
+        // (41)): a join from a link and a co-creator's `CreatorJoin` both
+        // come here, so every frontend's community list hears both alike,
+        // as `origin::seed_community`'s `CommunityCreated` serves every
+        // create, direct or co-created.
+        self.emit_event_impl(
+            &rekindle_governance_runtime::event::GovernanceRuntimeEvent::CommunityJoined {
+                community_id: id.clone(),
+                name: outcome.invite.community_name.clone(),
+            },
+        );
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
         // gossiped and queued, and the outbox lands it (S6b).
         Ok(CommunityJoined {
