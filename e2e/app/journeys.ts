@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, doubleClick, gone, present, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy, openAddFriend, submitJoin } from "../walk/nav.ts";
+import { BUDDY, LOGIN, SETTINGS, inBuddy, openAddFriend, setValue, submitJoin } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
 export interface User {
@@ -241,14 +241,17 @@ async function communitySettings(b: Browser, tab: string): Promise<void> {
 
 /**
  * In the open community window, `user` creates an invite good for `uses`
- * joins (Settings, Invites; the field's default is one use, and unlimited
+ * joins (Settings, Invites; the choice's default is one use, and unlimited
  * invites are forbidden, rekindle-governance invite_quota.rs); its link.
  */
 export async function createInvite(b: Browser, user: User, uses: number): Promise<string> {
   await communitySettings(b, "Invites");
   const before = (await b.$$(".invite-link-display")).length;
   await (await shown(b, ".modal-container .settings-content .form-btn-primary")).click();
-  await typeInto(await shown(b, ".invite-create-form input[type=number]"), String(uses));
+  // Max uses is a choice of 1, 5, 10, 25, 50 or 100 (IJ1; InvitesTab.tsx MAX_USES_CHOICES): the smallest that covers `uses`.
+  const choice = [1, 5, 10, 25, 50, 100].find((n) => n >= uses);
+  if (choice === undefined) throw new Error(`an invite holds at most 100 uses, asked ${uses}`);
+  await setValue(b, ".invite-create-form .invite-max-uses select", String(choice));
   await (await byText(b, ".modal-container .form-btn-primary", "Create")).click();
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 3000 });
   await waitUntil(async () => (await b.$$(".invite-link-display")).length > before, NET_WAIT_MS, "no new invite link shown");
