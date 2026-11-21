@@ -6,6 +6,7 @@ import {
   handleCancelInvite,
 } from "../../actions/buddy.actions";
 import { maskInviteUrl } from "../../utils/masking";
+import OwnRecordsWait from "../common/OwnRecordsWait";
 import { formatRelativeTime, formatTimeUntil } from "../../utils/time";
 
 interface InviteLinkTabProps {
@@ -17,6 +18,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
   const [generatedInvite, setGeneratedInvite] = createSignal("");
   const [currentInviteId, setCurrentInviteId] = createSignal<string | null>(null);
   const [generating, setGenerating] = createSignal(false);
+  const [adding, setAdding] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -75,7 +77,9 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
     const invite = inviteString().trim();
     if (!invite) return;
     setError(null);
+    setAdding(true);
     const err = await handleAddFriendFromInvite(invite);
+    setAdding(false);
     if (err) {
       setError(err);
     } else {
@@ -98,6 +102,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
         >
           {generating() ? "Generating..." : "Generate My Invite"}
         </button>
+        <OwnRecordsWait active={generating()} />
         <Show when={generatedInvite()}>
           <div class="add-friend-invite-result">
             <textarea
@@ -175,10 +180,11 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
           value={inviteString()}
           onInput={(e) => setInviteString(e.currentTarget.value)}
         />
+        <OwnRecordsWait active={adding()} />
         <Show when={error()}>
           <div class="form-error">{error()}</div>
         </Show>
-        <button class="form-btn-primary" type="submit" disabled={!inviteString().trim()}>
+        <button class="form-btn-primary" type="submit" disabled={adding() || !inviteString().trim()}>
           Add from Invite
         </button>
       </form>

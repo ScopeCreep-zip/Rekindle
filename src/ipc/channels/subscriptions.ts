@@ -14,6 +14,7 @@ import type { AnyCommunityEvent } from "./community_subscription_events";
 import type {
   NetworkStatusEvent,
   NetworkSubscriptionEvent,
+  OwnRecordsPhase,
   NotificationEvent,
   NotificationSubscriptionEvent,
 } from "./notification_events";
@@ -294,6 +295,22 @@ export function subscribeNetworkStrength(onBars: (bars: number) => void): Promis
     const inner = payload.network;
     if ("strength" in inner) {
       onBars(inner.strength.bars);
+    }
+  });
+}
+
+/**
+ * The Host's own-records stage (`NetworkEvent::OwnRecordsChanged`, plan
+ * E2.5 FC3): whether our identity is published yet, and why not if it
+ * failed.
+ */
+export function subscribeOwnRecords(
+  onStage: (phase: OwnRecordsPhase, error: string | null) => void,
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("ownRecordsChanged" in inner) {
+      onStage(inner.ownRecordsChanged.phase, inner.ownRecordsChanged.error);
     }
   });
 }

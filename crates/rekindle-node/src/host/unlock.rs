@@ -138,6 +138,11 @@ pub(crate) async fn run(
             public_key: installed.public_key.clone(),
             secret: installed.secret.clone(),
         };
+        let told = ctx.friend_stores.own_records.subscribe();
+        let friends = super::adapters::friends::HostFriends::of(ctx);
+        scope.spawn_with_token_or_drop("own records stage events", move |stop| {
+            super::own_records::tell_stage(told, friends, stop)
+        });
         if let Err(e) = scope.spawn_with_token("own records", |stop| stage.run(stop)) {
             return fail(
                 ctx,

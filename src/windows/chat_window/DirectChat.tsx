@@ -4,6 +4,7 @@ import { startEventStream } from "../../ipc/channels";
 import Titlebar from "../../components/titlebar/Titlebar";
 import MessageList from "../../components/chat/MessageList";
 import MessageInput from "../../components/chat/MessageInput";
+import OwnRecordsWait from "../../components/common/OwnRecordsWait";
 import TypingIndicator from "../../components/chat/TypingIndicator";
 import StatusDot from "../../components/status/StatusDot";
 import { chatState, setChatState, type Message } from "../../stores/chat.store";
@@ -244,6 +245,9 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
       {/* A connected call's controls (timer, mute, hangup, video) live in
        *  its own call window, which the backend opens on connect. */}
       <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
+      {/* A first message waits until our identity is published (plan E2.5
+       *  FC3); the composer says so while it is not. */}
+      <OwnRecordsWait active={true} />
       <MessageInput
         label={`Message ${peerName()}`}
         peerId={peerId}

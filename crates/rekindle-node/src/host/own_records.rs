@@ -67,6 +67,26 @@ pub(crate) struct OwnRecords {
     pub secret: Zeroizing<[u8; 32]>,
 }
 
+/// Tell every frontend where the own-records stage is (plan E2.5 FC3):
+/// its state now, then each change (`Held`, `Failed`, or `Pending` again
+/// at a lock), until `stop` (the unlock ends). The windows awaiting an
+/// invite, a friend request or a first message show the wait from it.
+pub(crate) async fn tell_stage(
+    mut stage: tokio::sync::watch::Receiver<OwnRecordsStage>,
+    friends: super::adapters::friends::HostFriends,
+    stop: CancellationToken,
+) {
+    use rekindle_transport::operations::friend::FriendHost;
+    loop {
+        let event = stage.borrow_and_update().event();
+        friends.publish(rekindle_types::subscription_events::SubscriptionEvent::Network(event));
+        let changed = stop.run_until_cancelled(stage.changed()).await;
+        if !matches!(changed, Some(Ok(()))) {
+            return;
+        }
+    }
+}
+
 /// The records' keys as the identity row and the vault hold them.
 pub(super) struct Stored {
     profile: StoredRecord,

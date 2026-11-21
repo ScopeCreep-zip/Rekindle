@@ -6,6 +6,7 @@ import {
   handleRotateFriendToken,
 } from "../../actions/buddy.actions";
 import FriendCodeCard from "./FriendCodeCard";
+import OwnRecordsWait from "../common/OwnRecordsWait";
 
 interface PublicKeyTabProps {
   onClose: () => void;
@@ -20,6 +21,7 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
   const [friendCode, setFriendCode] = createSignal("");
   const [message, setMessage] = createSignal("Hey, add me!");
   const [error, setError] = createSignal<string | null>(null);
+  const [sending, setSending] = createSignal(false);
 
   // The Host answers once our profile and mailbox are published, however
   // long the first attach takes (FC1): until then the tab says so. Only a
@@ -48,7 +50,9 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
     const key = friendCode().trim();
     if (!key) return;
     setError(null);
+    setSending(true);
     const err = await handleAddFriendFromCode(key, message().trim());
+    setSending(false);
     if (err) {
       setError(err);
     } else {
@@ -96,10 +100,11 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
           value={message()}
           onInput={(e) => setMessage(e.currentTarget.value)}
         />
+        <OwnRecordsWait active={sending()} />
         <Show when={error()}>
           <div class="form-error" role="alert">{error()}</div>
         </Show>
-        <button class="form-btn-primary" type="submit" disabled={!friendCode().trim()}>
+        <button class="form-btn-primary" type="submit" disabled={sending() || !friendCode().trim()}>
           Send Friend Request
         </button>
       </form>

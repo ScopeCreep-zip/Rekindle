@@ -1,6 +1,7 @@
 import { Component, createEffect, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
+import OwnRecordsWait from "./OwnRecordsWait";
 import { cancelReview, commitReview, intentState } from "../../stores/intent.store";
 import {
   commitLabel, escalationText, factText, kindPhrase, notifiesText, reversibilityText,
@@ -181,6 +182,9 @@ const IntentDialog: Component = () => {
                       </label>
                     </Match>
                   </Switch>
+                  {/* A committed invite, friend request or accept waits
+                   *  until our identity is published (plan E2.5 FC3). */}
+                  <OwnRecordsWait active={intentState.busy} />
                   <Show when={intentState.error !== null}>
                     <div class="form-error" role="alert">{intentState.error}</div>
                   </Show>

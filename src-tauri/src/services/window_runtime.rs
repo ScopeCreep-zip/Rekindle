@@ -7,10 +7,27 @@
 use crate::commands::window::NetworkStatus;
 use crate::state::SharedState;
 
+/// The own-records stage as the network status carries it (plan E2.5
+/// FC3); `pending` while no Host is unlocked.
+fn own_records(
+    state: &SharedState,
+) -> (
+    rekindle_types::subscription_events::OwnRecordsPhase,
+    Option<String>,
+) {
+    state
+        .host
+        .current()
+        .map(|host| host.own_records_stage())
+        .unwrap_or_default()
+        .phase()
+}
+
 pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
     let (has_route, media_route) = crate::services::veilid::route_status(state);
     let can_write = state.lifecycle.state().can_write();
     let bars = state.network_strength.shown();
+    let (own_records, own_records_error) = own_records(state);
     let node = state.node.read();
     match node.as_ref() {
         Some(handle) => NetworkStatus {
@@ -21,6 +38,8 @@ pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
             media_route,
             can_write,
             bars,
+            own_records,
+            own_records_error: own_records_error.clone(),
             profile_dht_key: handle.profile_dht_key.clone(),
             friend_list_dht_key: handle.friend_list_dht_key.clone(),
         },
@@ -32,6 +51,8 @@ pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
             media_route,
             can_write,
             bars,
+            own_records,
+            own_records_error,
             profile_dht_key: None,
             friend_list_dht_key: None,
         },

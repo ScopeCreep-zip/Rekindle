@@ -19,6 +19,21 @@ pub enum RouteAvailability {
     Failed,
 }
 
+/// Where the unlocked identity's own-records stage is (plan E2.5 FC3):
+/// whether our profile and mailbox are published yet. Inviting, adding or
+/// accepting a friend and a first message name them, so each waits for
+/// `Held`; a window shows the wait while it lasts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OwnRecordsPhase {
+    /// Still publishing (or not started since the unlock).
+    Pending,
+    /// Published: the operations that name them go ahead.
+    Held,
+    /// The stage ended without them; the event's `error` says why.
+    Failed,
+}
+
 /// Network infrastructure events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -54,6 +69,14 @@ pub enum NetworkEvent {
     /// the Host, so a short dip does not flicker the indicator and every
     /// frontend shows the same bars. Sent when the shown value changes.
     Strength { bars: u8 },
+    /// The own-records stage moved (plan E2.5 FC3): published at the
+    /// unlock (`Pending`) and when it ends (`Held` or `Failed` with the
+    /// reason). A window opened later reads it from the network status.
+    /// Triggered by: the Host's own-records stage.
+    OwnRecordsChanged {
+        phase: OwnRecordsPhase,
+        error: Option<String>,
+    },
     /// Our own allocated private routes died and need reallocation.
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_routes).
     LocalRoutesDied { count: usize },

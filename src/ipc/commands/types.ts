@@ -2,7 +2,7 @@
 // former monolithic commands.ts; re-exported by ../commands.ts so
 // existing `import { ... } from "../ipc/commands"` call sites work.
 
-import type { RouteAvailability } from "../channels/notification_events";
+import type { OwnRecordsPhase, RouteAvailability } from "../channels/notification_events";
 
 export type { IdentitySummary } from "./dto";
 
@@ -281,6 +281,10 @@ export interface NetworkStatus {
   canWrite: boolean;
   /** The indicator's bars as shown now, 0–5 (plan E7.2). */
   bars: number;
+  /** Where the own-records stage is (plan E2.5 FC3). */
+  ownRecords: OwnRecordsPhase;
+  /** Why the stage failed, when it did. */
+  ownRecordsError: string | null;
   profileDhtKey: string | null;
   friendListDhtKey: string | null;
 }

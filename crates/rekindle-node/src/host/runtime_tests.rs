@@ -53,6 +53,8 @@ mod membership;
 mod onboarding_bounds;
 #[path = "own_member_record_tests.rs"]
 mod own_member_record;
+#[path = "own_records_events_tests.rs"]
+mod own_records_events;
 #[path = "own_removal_tests.rs"]
 mod own_removal;
 #[path = "partial_tests.rs"]

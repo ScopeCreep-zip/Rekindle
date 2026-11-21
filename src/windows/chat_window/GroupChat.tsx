@@ -1,6 +1,7 @@
 import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { startEventStream } from "../../ipc/channels";
+import OwnRecordsWait from "../../components/common/OwnRecordsWait";
 import Titlebar from "../../components/titlebar/Titlebar";
 import MessageList from "../../components/chat/MessageList";
 import TypingIndicator from "../../components/chat/TypingIndicator";
@@ -115,6 +116,9 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           historyReady={historyReady()}
         />
         <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
+        {/* A group send waits until our identity is published (plan E2.5
+         *  FC3); the composer says so while it is not. */}
+        <OwnRecordsWait active={true} />
         <MessageInput
           label={`Message ${name()}`}
           peerId={groupId}

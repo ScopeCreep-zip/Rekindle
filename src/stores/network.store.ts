@@ -2,8 +2,8 @@ import { onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { handleGetNetworkStatus } from "../actions/settings.actions";
-import { subscribeNetworkStatus, subscribeNetworkStrength } from "../ipc/channels";
-import type { RouteAvailability } from "../ipc/channels/notification_events";
+import { subscribeNetworkStatus, subscribeNetworkStrength, subscribeOwnRecords } from "../ipc/channels";
+import type { OwnRecordsPhase, RouteAvailability } from "../ipc/channels/notification_events";
 
 /**
  * The node's network state, as the Host reports it: `get_network_status`
@@ -27,6 +27,14 @@ export interface NetworkState {
    * 5 s, plan E7.2).
    */
   bars: number;
+  /**
+   * Whether our identity (profile and mailbox) is published yet (plan E2.5
+   * FC3, `NetworkEvent::OwnRecordsChanged`): what an invite, a friend
+   * request or a first message waits for.
+   */
+  ownRecords: OwnRecordsPhase;
+  /** Why publishing failed, when it did. */
+  ownRecordsError: string | null;
 }
 
 const [networkState, setNetworkState] = createStore<NetworkState>({
@@ -37,6 +45,8 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
   mediaRoute: "idle",
   canWrite: false,
   bars: 0,
+  ownRecords: "pending",
+  ownRecordsError: null,
 });
 
 export { networkState };
@@ -95,6 +105,8 @@ async function readNetworkStatus(): Promise<void> {
       mediaRoute: status.mediaRoute,
       canWrite: status.canWrite,
       bars: status.bars,
+      ownRecords: status.ownRecords,
+      ownRecordsError: status.ownRecordsError,
     });
   }
 }
@@ -121,6 +133,11 @@ function start(): void {
     }),
   );
   keep(subscribeNetworkStrength((bars) => setNetworkState("bars", bars)));
+  keep(
+    subscribeOwnRecords((phase, error) =>
+      setNetworkState({ ownRecords: phase, ownRecordsError: error }),
+    ),
+  );
 }
 
 function stop(): void {

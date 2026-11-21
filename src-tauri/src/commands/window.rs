@@ -21,6 +21,12 @@ pub struct NetworkStatus {
     /// The indicator's bars as shown now (plan E7.2); later changes arrive
     /// as `NetworkEvent::Strength`.
     pub bars: u8,
+    /// Where the own-records stage is (plan E2.5 FC3): an invite, a friend
+    /// request or a first message waits for `held`; later changes arrive
+    /// as `NetworkEvent::OwnRecordsChanged`.
+    pub own_records: rekindle_types::subscription_events::OwnRecordsPhase,
+    /// Why the stage failed, when it did.
+    pub own_records_error: Option<String>,
     pub profile_dht_key: Option<String>,
     pub friend_list_dht_key: Option<String>,
 }

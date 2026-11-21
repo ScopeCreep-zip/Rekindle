@@ -95,6 +95,32 @@ pub enum OwnRecordsStage {
     Failed(String),
 }
 
+impl OwnRecordsStage {
+    /// The stage as a frontend shows it (plan E2.5 FC3): its phase and,
+    /// when it failed, why.
+    #[must_use]
+    pub fn phase(
+        &self,
+    ) -> (
+        rekindle_types::subscription_events::OwnRecordsPhase,
+        Option<String>,
+    ) {
+        use rekindle_types::subscription_events::OwnRecordsPhase;
+        match self {
+            Self::Pending => (OwnRecordsPhase::Pending, None),
+            Self::Held => (OwnRecordsPhase::Held, None),
+            Self::Failed(why) => (OwnRecordsPhase::Failed, Some(why.clone())),
+        }
+    }
+
+    /// The stage as every frontend is told it (plan E2.5 FC3).
+    #[must_use]
+    pub fn event(&self) -> rekindle_types::subscription_events::NetworkEvent {
+        let (phase, error) = self.phase();
+        rekindle_types::subscription_events::NetworkEvent::OwnRecordsChanged { phase, error }
+    }
+}
+
 impl FriendStores {
     /// Forget everything (lock).
     pub fn clear(&self) {

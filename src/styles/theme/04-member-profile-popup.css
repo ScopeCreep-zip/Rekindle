@@ -469,7 +469,8 @@
     cursor: pointer;
   }
 
-  /* The friend-code tab's line while our code is read or failed. */
+  /* The friend-code tab's line while our code is read or failed, and the
+   * "Publishing your identity…" wait (plan E2.5 FC3, `OwnRecordsWait`). */
   .add-friend-code-status {
     padding: 8px 0;
     font-size: 11px;

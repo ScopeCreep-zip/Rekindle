@@ -129,7 +129,8 @@ impl App {
             // Routed by the caller's other arms.
             NetworkEvent::LocalRoutesDied { .. }
             | NetworkEvent::RemoteRoutesDied { .. }
-            | NetworkEvent::ValueChanged { .. } => {}
+            | NetworkEvent::ValueChanged { .. }
+            | NetworkEvent::OwnRecordsChanged { .. } => {}
         }
         Action::Render
     }

@@ -9,6 +9,14 @@ use rekindle_ipc::{Caller, HostApi};
 use rekindle_types::subscription_events::Cursor;
 
 impl super::Host {
+    /// Where the unlocked identity's own-records stage is (plan E2.5 FC3),
+    /// for a window's first read; changes follow as
+    /// `NetworkEvent::OwnRecordsChanged`.
+    #[must_use]
+    pub fn own_records_stage(&self) -> rekindle_transport::operations::friend::OwnRecordsStage {
+        self.ctx.friend_stores.own_records.borrow().clone()
+    }
+
     /// Journal `event` as one of the session's standing events (plan E7.1:
     /// a security alert the shell raises at login): every window that opens
     /// later is handed it ([`Self::standing`]).

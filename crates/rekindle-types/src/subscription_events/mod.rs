@@ -31,7 +31,7 @@ pub use friend::FriendEvent;
 pub use governance::{GovernanceEvent, OpPublicationState, OpQuarantineReason};
 pub use group_dm::{GroupDmEvent, GroupDmMember};
 pub use membership::MembershipEvent;
-pub use network::{NetworkEvent, RouteAvailability};
+pub use network::{NetworkEvent, OwnRecordsPhase, RouteAvailability};
 pub use notification::{AlertSubject, NotificationEvent};
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use scope::EventScope;

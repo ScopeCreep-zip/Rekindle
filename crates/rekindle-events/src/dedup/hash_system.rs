@@ -33,6 +33,11 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
             h.update(b"strength|");
             h.update(&[*bars]);
         }
+        NetworkEvent::OwnRecordsChanged { phase, error } => {
+            h.update(b"own_records|");
+            h.update(&[*phase as u8]);
+            h.update(error.as_deref().unwrap_or_default().as_bytes());
+        }
         NetworkEvent::LocalRoutesDied { count } => {
             h.update(b"local_routes|");
             h.update(&(*count as u64).to_le_bytes());

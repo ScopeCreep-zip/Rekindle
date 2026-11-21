@@ -75,11 +75,18 @@ export type NetworkEvent =
       };
     }
   | { strength: { bars: number } }
+  | { ownRecordsChanged: { phase: OwnRecordsPhase; error: string | null } }
   | { localRoutesDied: { count: number } }
   | { remoteRoutesDied: { peerKeys: string[] } }
   | { valueChanged: { recordKey: string; changedSubkeys: number[] } };
 
 export type NetworkSubscriptionEvent = { network: NetworkEvent };
+
+/**
+ * Where our own-records stage is (Rust `OwnRecordsPhase`, plan E2.5 FC3):
+ * an invite, a friend request or a first message waits for `held`.
+ */
+export type OwnRecordsPhase = "pending" | "held" | "failed";
 
 /**
  * What one of our route classes is doing (Rust `RouteAvailability`).

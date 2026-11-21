@@ -1,6 +1,8 @@
 //! `NetworkEvent` samples, covering every `RouteAvailability`.
 
-use rekindle_types::subscription_events::{NetworkEvent, RouteAvailability, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    NetworkEvent, OwnRecordsPhase, RouteAvailability, SubscriptionEvent,
+};
 
 use crate::{pk, rk, text, Sample};
 
@@ -10,6 +12,7 @@ pub const NAMES: &[&str] = &[
     "localRoutesDied",
     "remoteRoutesDied",
     "valueChanged",
+    "ownRecordsChanged",
 ];
 
 pub const NESTED: &[&str] = &[
@@ -18,6 +21,9 @@ pub const NESTED: &[&str] = &[
     "RouteAvailability.available",
     "RouteAvailability.unavailable",
     "RouteAvailability.failed",
+    "OwnRecordsPhase.pending",
+    "OwnRecordsPhase.held",
+    "OwnRecordsPhase.failed",
 ];
 
 pub fn variant_name(e: &NetworkEvent) -> &'static str {
@@ -27,6 +33,7 @@ pub fn variant_name(e: &NetworkEvent) -> &'static str {
         NetworkEvent::LocalRoutesDied { .. } => "localRoutesDied",
         NetworkEvent::RemoteRoutesDied { .. } => "remoteRoutesDied",
         NetworkEvent::ValueChanged { .. } => "valueChanged",
+        NetworkEvent::OwnRecordsChanged { .. } => "ownRecordsChanged",
     }
 }
 
@@ -43,6 +50,11 @@ fn route_name(route: RouteAvailability) -> &'static str {
 pub fn nested_names(e: &NetworkEvent) -> Vec<&'static str> {
     match e {
         NetworkEvent::AttachmentChanged { media_route, .. } => vec![route_name(*media_route)],
+        NetworkEvent::OwnRecordsChanged { phase, .. } => vec![match phase {
+            OwnRecordsPhase::Pending => "OwnRecordsPhase.pending",
+            OwnRecordsPhase::Held => "OwnRecordsPhase.held",
+            OwnRecordsPhase::Failed => "OwnRecordsPhase.failed",
+        }],
         NetworkEvent::Strength { .. }
         | NetworkEvent::LocalRoutesDied { .. }
         | NetworkEvent::RemoteRoutesDied { .. }
@@ -108,6 +120,27 @@ pub fn samples() -> Vec<Sample> {
             RouteAvailability::Failed,
         ),
         ev("strength", NetworkEvent::Strength { bars: 3 }),
+        ev(
+            "ownRecordsChanged.pending",
+            NetworkEvent::OwnRecordsChanged {
+                phase: OwnRecordsPhase::Pending,
+                error: None,
+            },
+        ),
+        ev(
+            "ownRecordsChanged.held",
+            NetworkEvent::OwnRecordsChanged {
+                phase: OwnRecordsPhase::Held,
+                error: None,
+            },
+        ),
+        ev(
+            "ownRecordsChanged.failed",
+            NetworkEvent::OwnRecordsChanged {
+                phase: OwnRecordsPhase::Failed,
+                error: Some("no record pool".into()),
+            },
+        ),
         ev(
             "localRoutesDied",
             NetworkEvent::LocalRoutesDied { count: 2 },
