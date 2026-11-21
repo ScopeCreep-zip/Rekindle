@@ -12,22 +12,33 @@ TabbedControl Views
   ServerView View(Servers)
   DownloadView View(Files)
 Bottom Decor
-Add Group
-  AddFriend Button(AddFriend)
-  AddServer Button(AddServer)
-  StartDownload Button(StartDownload)
-Chat Group
-  ChatButton Button(Chat)
-  RefreshButton Button(Refresh)
-  StopDownloadButton Button(StopDownload)
-Join Group
-  JoinGame@Friends Button(Join)
-  JoinGame@Servers Button(Join)
-  ExecuteDownload Button(OpenDownload)
-Info Group
-  InfoButton Button(Profile)
-  InfoButton2 Button(Profile)
-  DownloadInfo Button(DownloadInfo)
+FriendsButtons ButtonRow(Friends)
+  FriendsButtons.Add Group
+    AddFriend Button(AddFriend)
+  FriendsButtons.Chat Group
+    ChatButton Button(Chat)
+  FriendsButtons.Join Group
+    JoinGame@Friends Button(Join)
+  FriendsButtons.Info Group
+    InfoButton Button(Profile)
+ServersButtons ButtonRow(Servers)
+  ServersButtons.Add Group
+    AddServer Button(AddServer)
+  ServersButtons.Chat Group
+    RefreshButton Button(Refresh)
+  ServersButtons.Join Group
+    JoinGame@Servers Button(Join)
+  ServersButtons.Info Group
+    InfoButton2 Button(Profile)
+FilesButtons ButtonRow(Files)
+  FilesButtons.Add Group
+    StartDownload Button(StartDownload)
+  FilesButtons.Chat Group
+    StopDownloadButton Button(StopDownload)
+  FilesButtons.Join Group
+    ExecuteDownload Button(OpenDownload)
+  FilesButtons.Info Group
+    DownloadInfo Button(DownloadInfo)
 ButtonDivider Decor
 Friends Tab(Friends)
 Servers Tab(Servers)

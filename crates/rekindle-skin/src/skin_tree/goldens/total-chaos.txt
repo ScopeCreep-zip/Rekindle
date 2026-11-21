@@ -2,7 +2,7 @@ MainTitleBar Drag
   TopLeft Decor
   TopRight Decor
   Logo Logo
-  Title NameField
+  Title Decor
   Minimize Minimize
   Maximize Maximize
   Close Close

@@ -35,21 +35,29 @@ TabHeader TabStrip
 Bottom Decor
 AdArea AdArea
   AdView Part
-ButtonHolder Group
-  TabAddButton Group
-    AddButton Button(AddFriend)
-    AddServerButton Button(AddServer)
-    SearchFiles Button(Find)
-      BigBrowseFileText Part
-  TabChatRefreshButton Group
-    ChatButton Button(Chat)
-    RefreshButton Button(Refresh)
-  TabGameDownloadButton Group
-    GameButton@Friends Button(Join)
-    GameButton@Servers Button(Join)
-  TabInfoButton Group
-    InfoButton@Friends Button(Profile)
-    InfoButton@Servers Button(Profile)
+ButtonHolder ButtonBar
+  FriendsButtons ButtonRow(Friends)
+    FriendsButtons.TabAddButton Group
+      AddButton Button(AddFriend)
+    FriendsButtons.TabChatRefreshButton Group
+      ChatButton Button(Chat)
+    FriendsButtons.TabGameDownloadButton Group
+      GameButton@Friends Button(Join)
+    FriendsButtons.TabInfoButton Group
+      InfoButton@Friends Button(Profile)
+  ServersButtons ButtonRow(Servers)
+    ServersButtons.TabAddButton Group
+      AddServerButton Button(AddServer)
+    ServersButtons.TabChatRefreshButton Group
+      RefreshButton Button(Refresh)
+    ServersButtons.TabGameDownloadButton Group
+      GameButton@Servers Button(Join)
+    ServersButtons.TabInfoButton Group
+      InfoButton@Servers Button(Profile)
+  FilesButtons ButtonRow(Files)
+    FilesButtons.TabAddButton Group
+      SearchFiles Button(Find)
+        BigBrowseFileText Part
 ResizeUp Resize(Top)
 ResizeLeft Resize(Left)
 ResizeRight Resize(Right)

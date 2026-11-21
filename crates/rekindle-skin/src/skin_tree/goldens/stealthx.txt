@@ -1,6 +1,6 @@
 MainBackground Decor
   MainBackgroundCol Decor
-  MenuButton SideRail
+  MenuButton SideRailToggle
   InfoViewButton InfoToggle
   ListBackground Decor
     TabbedControl Views
@@ -18,3 +18,54 @@ MainBackground Decor
   ResizeRight Resize(Right)
   ResizeBottom Resize(Bottom)
   ResizeBottomRight Resize(BottomRight)
+MainMenuPopup SideRail
+  MainMenuBackground Decor
+    MenuBar MenuBar
+      XfireMenuText Menu(First)
+        FileMenu Part
+      ToolsMenuText Menu(Tools)
+        ToolsMenu Part
+      HelpMenuText Menu(Help)
+        HelpMenu Part
+    TabHeader TabStrip
+      TabNormalText Tab(Friends)
+        TabNormalButton Part
+      TabServerText Tab(Servers)
+        TabServerButton Part
+      TabDownloadText Tab(Files)
+        TabDownloadButton Part
+    ButtonArea ButtonBar
+      FriendsButtons ButtonRow(Friends)
+        AddFriendButton Button(AddFriend)
+          AddFriendButtonText Part
+        ChatButton Button(Chat)
+          ChatButtonText Part
+        GameButton1 Button(Join)
+          GameButton1.GameButtonText Part
+        InfoButton1 Button(Profile)
+          InfoButton1.InfoButtonText Part
+      ServersButtons ButtonRow(Servers)
+        AddServerButton Button(AddServer)
+          AddServerButtonText Part
+        RefreshButton Button(Refresh)
+          RefreshButtonText Part
+        GameButton2 Button(Join)
+          GameButton2.GameButtonText Part
+        InfoButton2 Button(Profile)
+          InfoButton2.InfoButtonText Part
+      FilesButtons ButtonRow(Files)
+        FindButton Button(Find)
+          FindButtonText Part
+        DownloadButton Button(StartDownload)
+          DownloadButtonText Part
+        StopButton Button(StopDownload)
+          StopButtonText Part
+        ExecuteButton Button(OpenDownload)
+          ExecuteButtonText Part
+    InfoJoinChatTab ButtonBar
+      HostChatButton Button(HostChat)
+        HostChatButtonText Part
+      JoinChatButton Button(JoinChat)
+        JoinChatButtonText Part
+      LeaveChatButton Button(LeaveChat)
+        LeaveChatButtonText Part

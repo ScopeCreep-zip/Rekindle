@@ -313,7 +313,7 @@ fn stealthxs_menu_button_launches_the_side_rail() {
         (2, "ButtonArea", NodeRole::ButtonBar),
         (3, "FriendsButtons", NodeRole::ButtonRow(ViewKey::Friends)),
         (4, "AddFriendButton", NodeRole::Button(ActionKey::AddFriend)),
-        (2, "InfoJoinChatTab", NodeRole::Group),
+        (2, "InfoJoinChatTab", NodeRole::ButtonBar),
         (3, "HostChatButton", NodeRole::Button(ActionKey::HostChat)),
     ];
     assert_eq!(roles, want);

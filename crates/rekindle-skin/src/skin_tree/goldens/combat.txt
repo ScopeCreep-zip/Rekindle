@@ -30,22 +30,33 @@ MainTabbedArea Views
 Title NameField
 StatusEdit StatusText
 DownArrow StatusList
-JoinPlayTab Group
-  JoinButton@Friends Button(Join)
-  JoinButton@Servers Button(Join)
-  PlayButton Button(Join)
-ProfileBrowseTab Group
-  ProfileButton@Friends Button(Profile)
-  ProfileButton@Servers Button(Profile)
-  BrowseButton Button(Browse)
-ChatRefreshStopTab Group
-  ChatButton Button(Chat)
-  RefreshButton Button(Refresh)
-  StopButton Button(StopDownload)
-AddDownloadTab Group
-  AddFriendButton Button(AddFriend)
-  AddServerButton Button(AddServer)
-  StartDownloadButton Button(StartDownload)
+FriendsButtons ButtonRow(Friends)
+  FriendsButtons.JoinPlayTab Group
+    JoinButton@Friends Button(Join)
+  FriendsButtons.ProfileBrowseTab Group
+    ProfileButton@Friends Button(Profile)
+  FriendsButtons.ChatRefreshStopTab Group
+    ChatButton Button(Chat)
+  FriendsButtons.AddDownloadTab Group
+    AddFriendButton Button(AddFriend)
+ServersButtons ButtonRow(Servers)
+  ServersButtons.JoinPlayTab Group
+    JoinButton@Servers Button(Join)
+  ServersButtons.ProfileBrowseTab Group
+    ProfileButton@Servers Button(Profile)
+  ServersButtons.ChatRefreshStopTab Group
+    RefreshButton Button(Refresh)
+  ServersButtons.AddDownloadTab Group
+    AddServerButton Button(AddServer)
+FilesButtons ButtonRow(Files)
+  FilesButtons.JoinPlayTab Group
+    PlayButton Button(Join)
+  FilesButtons.ProfileBrowseTab Group
+    BrowseButton Button(Browse)
+  FilesButtons.ChatRefreshStopTab Group
+    StopButton Button(StopDownload)
+  FilesButtons.AddDownloadTab Group
+    StartDownloadButton Button(StartDownload)
 TopOuterEdge Decor
 LeftOuterEdge Decor
 BottomOuterEdge Decor
