@@ -23,7 +23,8 @@
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, EventScope, SubscriptionEvent, SystemEvent, TypingContext, TypingEvent,
+    ChannelMessageEvent, EventScope, NetworkEvent, SubscriptionEvent, SystemEvent, TypingContext,
+    TypingEvent,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -159,6 +160,12 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::Call(e) => buddy_list()
             .with_labels(labels::call_label_for(e.call_id()))
             .with_kinds(&[WindowKind::Chat]),
+        // Whether our own records are published gates what names them: the
+        // buddy list's invite and public-key tabs and intent dialog, and
+        // every chat window's composer (plan FC3). Each post-login window
+        // keeps it in its network store; the login window has nothing to
+        // gate.
+        SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { .. }) => Audience::post_auth(),
         _ => match event.scope() {
             EventScope::Device => Audience::post_auth(),
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),

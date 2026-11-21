@@ -89,6 +89,16 @@ pub(crate) async fn run(
     // prekey record is filled; with no transport it is dropped unsent.
     let (prekeys_ready, prekeys_filled) = tokio::sync::oneshot::channel();
 
+    // Every frontend hears the own-records stage from the unlock to the
+    // lock (plan E2.5 FC3): `Pending` now, then how the stage ended. With
+    // no transport the stage never runs and it stays `Pending`, as
+    // `Host::own_records_stage` answers.
+    let told = ctx.friend_stores.own_records.subscribe();
+    let friends = super::adapters::friends::HostFriends::of(ctx);
+    scope.spawn_with_token_or_drop("own records stage events", move |stop| {
+        super::own_records::tell_stage(told, friends, stop)
+    });
+
     // 2. The session's one record pool, with what the last lock left unsent.
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {
@@ -138,11 +148,6 @@ pub(crate) async fn run(
             public_key: installed.public_key.clone(),
             secret: installed.secret.clone(),
         };
-        let told = ctx.friend_stores.own_records.subscribe();
-        let friends = super::adapters::friends::HostFriends::of(ctx);
-        scope.spawn_with_token_or_drop("own records stage events", move |stop| {
-            super::own_records::tell_stage(told, friends, stop)
-        });
         if let Err(e) = scope.spawn_with_token("own records", |stop| stage.run(stop)) {
             return fail(
                 ctx,

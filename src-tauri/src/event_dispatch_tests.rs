@@ -137,6 +137,24 @@ fn calls_reach_their_window_and_conversation_windows() {
 }
 
 #[test]
+fn own_records_stage_reaches_every_post_login_window_on_network_status() {
+    use rekindle_types::subscription_events::{NetworkEvent, OwnRecordsPhase};
+    let e = SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged {
+        phase: OwnRecordsPhase::Failed,
+        error: Some("no route".into()),
+    });
+    let a = sub(e.clone());
+    // The gated surfaces: the buddy list's add-friend tabs and intent
+    // dialog, and the chat windows' composers.
+    assert!(a.includes("buddy-list"));
+    assert!(a.includes(&labels::peer_labels(PK)[0]));
+    assert!(a.includes(&labels::conversation_label(GROUP).unwrap()));
+    assert!(a.includes("settings"));
+    assert!(!a.includes("login"));
+    assert_eq!(WebviewEvent::Subscription(e).channel(), "network-status");
+}
+
+#[test]
 fn device_events_reach_every_post_login_window() {
     let a = sub(SubscriptionEvent::Presence(PresenceEvent::SelfChanged {
         public_key: PK.into(),
