@@ -6,6 +6,7 @@
 //! that lists them.
 
 use rekindle_governance::genesis::verify_creator_accept;
+use rekindle_records::lease::LeaseId;
 use rekindle_secrets::derive;
 use rekindle_secrets::keys::SlotSeed;
 use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
@@ -39,6 +40,19 @@ impl ReservedCommunity {
     #[must_use]
     pub fn anchor_key(&self) -> &str {
         &self.records.anchor.record_key
+    }
+
+    /// The reservation's record leases (`A`, `M(p)`, the registry), giving
+    /// it up: a lock releases them on the record pool directly (plan E3.2
+    /// S7s.3, decision (23)), as [`release_reserved`] does.
+    #[must_use]
+    pub fn into_leases(self) -> [LeaseId; 3] {
+        let OriginRecords {
+            anchor,
+            member,
+            registry,
+        } = self.records;
+        [anchor.lease, member.lease, registry.lease]
     }
 }
 
@@ -93,13 +107,8 @@ pub async fn reserve_community<D: GovernanceRuntimeDeps>(
 /// Give up a reserved community (the creator cancelled): every record is
 /// released and `A`'s owner key dropped, so it can never get a genesis.
 pub async fn release_reserved<D: GovernanceRuntimeDeps>(deps: &D, reserved: ReservedCommunity) {
-    let OriginRecords {
-        anchor,
-        member,
-        registry,
-    } = reserved.records;
-    for record in [anchor, member, registry] {
-        deps.release_record(record.lease).await;
+    for lease in reserved.into_leases() {
+        deps.release_record(lease).await;
     }
 }
 

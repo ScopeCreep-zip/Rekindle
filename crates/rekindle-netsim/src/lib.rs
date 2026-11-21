@@ -343,6 +343,14 @@ impl Netsim {
         self.net.inner.lock().owners.get(key).cloned()
     }
 
+    /// Whether `node` holds `key` open in its local store (Veilid's
+    /// `opened_records`): a lease the app released, or a pool that ended,
+    /// has closed it.
+    #[must_use]
+    pub fn is_open(&self, node: usize, key: &str) -> bool {
+        self.net.inner.lock().nodes[node].opened.contains_key(key)
+    }
+
     /// The node that created `key`: whose record it is (a chain's writer).
     #[must_use]
     pub fn creator(&self, key: &str) -> Option<usize> {

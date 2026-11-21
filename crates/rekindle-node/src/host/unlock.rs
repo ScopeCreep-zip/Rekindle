@@ -415,6 +415,13 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
         // hinted to its members, plan E3.4).
         transport.admit_records_teardown();
         ctx.own_presence.publish_offline().await;
+        // A creation still collecting its co-creators gives up its records
+        // here, on the pool (decision (23)); its rows withdraw its invites
+        // at the next unlock (decision (20)).
+        let released = ctx.pending_creations.release_all(&transport).await;
+        if released > 0 {
+            tracing::info!(released, "pending community creations released at lock");
+        }
         let unsent = transport.take_unsent();
         if !unsent.is_empty() {
             save_unsent(ctx, unsent).await;

@@ -15,6 +15,7 @@ use std::collections::{BTreeSet, HashMap};
 use rekindle_crypto::group::pseudonym::{derive_community_pseudonym, sign_with_pseudonym};
 use rekindle_governance_runtime::{CoCreatorAcceptance, ReservedCommunity};
 use rekindle_transport::operations::friend::creator_round::{self, CreatorFrame};
+use rekindle_transport::TransportNode;
 use rekindle_types::dto::community::CommunityCreated;
 use rekindle_types::governance::{AdmissionMode, MAX_ADDITIONAL_CREATORS};
 use rekindle_types::id::PseudonymKey;
@@ -36,7 +37,7 @@ pub(crate) struct PendingCreation {
     waiting: BTreeSet<String>,
 }
 
-/// Our reserved creations by anchor; memory only, dropped at lock (the
+/// Our reserved creations by anchor; memory only, released at lock (the
 /// rows left behind are withdrawn at the next unlock, decision (20)).
 #[derive(Default)]
 pub(crate) struct PendingCreations(parking_lot::Mutex<HashMap<String, PendingCreation>>);
@@ -45,6 +46,20 @@ impl PendingCreations {
     /// Drop every reservation (lock): their one-time keys go with them.
     pub(crate) fn clear(&self) {
         self.0.lock().clear();
+    }
+
+    /// Take every reservation out (lock) and release its record leases on
+    /// the record pool (decision (23)); `A`'s one-time key is dropped with
+    /// it. Returns how many reservations were released.
+    pub(crate) async fn release_all(&self, transport: &TransportNode) -> usize {
+        let taken: Vec<PendingCreation> = self.0.lock().drain().map(|(_, p)| p).collect();
+        let count = taken.len();
+        for pending in taken {
+            for lease in pending.reserved.into_leases() {
+                rekindle_transport::broadcast::dht_writes::release(transport, lease).await;
+            }
+        }
+        count
     }
 }
 
