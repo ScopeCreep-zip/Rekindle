@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
+use rekindle_route::ordered_watch::OrderedWatch;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -43,7 +44,9 @@ pub enum Resolve {
 }
 
 /// One flight: its result, `None` until it lands.
-type Flight = Arc<watch::Sender<Option<bool>>>;
+/// A watch per follower, sent in the order they joined (RK1): each
+/// woken follower sends.
+type Flight = Arc<OrderedWatch<Option<bool>>>;
 
 /// One peer's re-resolve state.
 #[derive(Default)]
@@ -155,7 +158,7 @@ impl ResolveFlights {
         if state.backoff_until.is_some_and(|until| now < until) {
             return Role::Refused;
         }
-        let flight = Arc::new(watch::channel(None).0);
+        let flight = Arc::new(OrderedWatch::new(None));
         state.flight = Some(Arc::clone(&flight));
         Role::Lead(flight)
     }
