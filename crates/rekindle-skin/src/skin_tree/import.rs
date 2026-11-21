@@ -433,8 +433,12 @@ pub fn views_content(tree: &SkinTree, layout: &WindowLayout) -> Option<Insets> {
 /// bottom, as the original shows). Other popups (the InfoView) are not
 /// read here.
 fn with_rail(layout: &Node, components: &[Node], by_name: &BTreeMap<String, &Node>) -> Node {
-    let launched: Vec<String> = by_name
-        .values()
+    // Only the popups this window's own tiles launch: the chat window's
+    // `MenuButton` launches its own rail (`popups.xml:112-140`).
+    let launched: Vec<String> = crate::import::xfire_xml::descendants(layout, "Tile")
+        .into_iter()
+        .filter_map(|t| t.attr_ci("Component"))
+        .filter_map(|c| by_name.get(&c.to_ascii_lowercase()))
         .flat_map(|c| c.children_named("Popup"))
         .map(|p| p.text.trim().to_ascii_lowercase())
         .collect();
