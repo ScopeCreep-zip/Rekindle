@@ -22,6 +22,7 @@ pub use super::fit::views_content;
 use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree};
 
 use super::anchor::{axis, client_box, client_inset, outer_for, to_tile, Sibs, Sizes, X, Y};
+use super::clip::{clip, Art, Images};
 use super::fit::fit;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::roles::{role, Facts};
@@ -63,6 +64,9 @@ struct Walk<'a> {
     by_name: BTreeMap<String, &'a Node>,
     piece: Decode<'a>,
     files: Files,
+    /// The images `files` were encoded from, by path (lead decision 15
+    /// crops them).
+    images: Images,
     /// Each tab control's path of child indices and its `ControlGroupId`.
     groups: Vec<(Vec<usize>, String)>,
 }
@@ -80,6 +84,7 @@ impl Walk<'_> {
         Ok(
             shape::tile(self.window, piece, img, axes, true)?.map(|(t, png)| {
                 self.files.insert(t.image.clone(), png);
+                self.images.insert(t.image.clone(), img.clone());
                 t.image
             }),
         )
@@ -418,6 +423,7 @@ pub fn add(
         by_name,
         piece: &piece,
         files: Files::new(),
+        images: Images::new(),
         groups: Vec::new(),
     };
     let mut tree = SkinTree {
@@ -434,6 +440,12 @@ pub fn add(
     by_view(&mut tree.root);
     rows_by_view(&mut tree.root)?;
     qualify(&mut tree.root);
+    let mut art = Art {
+        window,
+        images: &walk.images,
+        files: &mut walk.files,
+    };
+    clip(&mut tree.root, (None, None), &mut art)?;
     let window = layout.attr_ci("Component").unwrap_or("MainWindow");
     let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();
     let pack_min = (

@@ -440,3 +440,61 @@ fn a_frame_tile_inside_the_window_starts_the_frame_rectangle() {
     assert_eq!(o(l.content), (26, 35, 25, 101));
     assert_eq!(l.min_width, 400 - 112);
 }
+
+/// Plan SK2 lead decision 15 (XGlow's `Gripper`, `Xglow.ini:229-233`, 34×30
+/// art 14 px past the window's right and 10 px past its bottom; the original
+/// shows none of it): a fixed tile and its state images are clipped to its
+/// parent, the served art is the visible part, the node keeps its role, and
+/// the window no longer grows to hold what was clipped.
+#[test]
+fn a_fixed_tile_is_clipped_to_its_parent() {
+    let main = parse(
+        "main.xml",
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="Top" X="0" Y="0" ResizeX="100" Component="Top"/>
+<Tile Name="Gripper" JustX="RIGHT" X="-14" JustY="BOTTOM" Y="-10" Component="Grip"/>
+<Tile Name="CloseBox" JustX="RIGHT" X="-6" Y="2" Component="Close"/>
+</Tile>"#,
+    )
+    .unwrap();
+    let parts = parse(
+        "parts.xml",
+        br#"<Components>
+<Component Name="Top"><Images State="Normal"><Image>top-10x20</Image></Images></Component>
+<Component Name="Grip"><Images State="Normal"><Image>grip-34x30</Image></Images></Component>
+<Component Name="Close"><Images State="Normal"><Image>close-16x12</Image></Images>
+<Images State="Hover"><Image>closeh-16x12</Image></Images></Component>
+</Components>"#,
+    )
+    .unwrap();
+    let mut built = (frame(), BTreeMap::new());
+    import::add(
+        SkinWindow::Main,
+        &main,
+        std::slice::from_ref(&parts),
+        |path, _| Ok(piece(path)),
+        &[],
+        &mut built,
+    )
+    .unwrap();
+    let tree = built.0.tree.clone().unwrap();
+    assert_eq!(tree.outsets, Z);
+    let by = |id: &str| tree.root.iter().find(|n| n.id == id).unwrap();
+    let end = |size| NodeSpan::Fixed {
+        at: Anchor::End(0),
+        size,
+    };
+    assert_eq!((by("Gripper").x, by("Gripper").y), (end(20), end(20)));
+    let close = by("CloseBox");
+    assert_eq!(close.x, end(10));
+    let art = close.art.as_ref().unwrap();
+    let width = |p: &str| {
+        let png = &built.1[p];
+        u32::from_be_bytes(png[16..20].try_into().unwrap())
+    };
+    assert_eq!(width(&art.image), 10);
+    assert_eq!(
+        art.states.values().map(|p| width(p)).collect::<Vec<_>>(),
+        [10]
+    );
+}

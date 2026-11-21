@@ -5,6 +5,7 @@
 //! and the stylesheet's one rule per node. The shell renders it in SK2-S2.
 
 mod anchor;
+mod clip;
 pub mod css;
 mod fit;
 pub mod import;
