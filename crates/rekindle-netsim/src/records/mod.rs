@@ -70,6 +70,7 @@ mod replicas;
 mod report_tests;
 pub(crate) mod size;
 mod stores;
+mod traffic;
 #[cfg(test)]
 mod transaction_tests;
 #[cfg(test)]
