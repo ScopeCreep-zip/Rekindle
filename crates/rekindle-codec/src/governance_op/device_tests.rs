@@ -147,14 +147,38 @@ fn an_endorsement_with_the_largest_extended_set_fits_one_op() {
 
 #[test]
 fn a_short_device_key_is_refused() {
+    use crate::governance_op_capnp::governance_op;
+    // A well-formed DeviceRetired op that decodes ...
+    let well_formed = encode_op(&op(GovernanceEntry::DeviceRetired(DeviceRetired {
+        device_key: [1; 32],
+        incarnation: 1,
+        last_seq: 0,
+        retirement_sig: vec![2; 64],
+    })))
+    .unwrap();
+    assert!(decode_op(&well_formed).is_ok());
+    // ... and the same wire with only the retired key one byte short.
+    let read = capnp::serialize_packed::read_message(
+        &mut well_formed.as_slice(),
+        capnp::message::ReaderOptions::new(),
+    )
+    .unwrap();
     let mut builder = capnp::message::Builder::new_default();
-    let mut root = builder.init_root::<crate::governance_op_capnp::governance_op::Builder<'_>>();
-    root.set_author(&[0xA0; 32]);
-    root.set_sig(&[0xC0; 64]);
-    let mut d = root.init_body().init_device_retired();
+    builder
+        .set_root(read.get_root::<governance_op::Reader<'_>>().unwrap())
+        .unwrap();
+    let root = builder.get_root::<governance_op::Builder<'_>>().unwrap();
+    let crate::community_governance_capnp::governance_entry::Which::DeviceRetired(Ok(mut d)) =
+        root.get_body().unwrap().which().unwrap()
+    else {
+        panic!("not a DeviceRetired op");
+    };
     d.set_device_key(&[1; 31]);
-    d.set_retirement_sig(&[2; 64]);
-    assert!(decode_op(&crate::capnp_codec::pack(&builder)).is_err());
+    let err = decode_op(&crate::capnp_codec::pack(&builder)).unwrap_err();
+    assert!(
+        matches!(&err, crate::CodecError::Deserialization(m) if m.starts_with("retired device key is 31 bytes")),
+        "{err:?}"
+    );
 }
 
 fn cert(creator_device: Option<DeviceEndorsement>) -> GenesisCert {
