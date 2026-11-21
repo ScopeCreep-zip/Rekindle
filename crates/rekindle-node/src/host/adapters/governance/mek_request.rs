@@ -208,10 +208,10 @@ impl HostGovernance {
                 .await
             {
                 Ok(_) => {
-                    tracing::info!(community = %community_id, %member, generation = mek.generation(), "key transfer requeued at the rotated generation")
+                    tracing::info!(community = %community_id, %member, generation = mek.generation(), "key transfer requeued at the rotated generation");
                 }
                 Err(error) => {
-                    tracing::warn!(community = %community_id, %member, %error, "key transfer not requeued")
+                    tracing::warn!(community = %community_id, %member, %error, "key transfer not requeued");
                 }
             }
         }
