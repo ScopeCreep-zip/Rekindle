@@ -47,14 +47,21 @@ fn piece(path: &str) -> RgbaImage {
 }
 
 fn imported(xml: &[u8], parts: &[u8]) -> (WindowLayout, SkinTree) {
+    imported_rows(xml, parts, &[])
+}
+
+/// `xml` imported with its frame laid from the tiles `rows` (a row stack).
+fn imported_rows(xml: &[u8], parts: &[u8], rows: &[&str]) -> (WindowLayout, SkinTree) {
     let main = parse("main.xml", xml).unwrap();
     let parts = parse("parts.xml", parts).unwrap();
     let mut built = (frame(), BTreeMap::new());
+    let rows: Vec<String> = rows.iter().map(|r| (*r).to_owned()).collect();
     import::add(
         SkinWindow::Main,
         &main,
         std::slice::from_ref(&parts),
         |path, _| Ok(piece(path)),
+        &rows,
         &mut built,
     )
     .unwrap();
@@ -62,13 +69,14 @@ fn imported(xml: &[u8], parts: &[u8]) -> (WindowLayout, SkinTree) {
     (built.0, tree)
 }
 
-/// Total Chaos's `MainTitleBar` `OutdentLeft="1"` and a logo wider than the
-/// frame's smallest size: the overhang joins the outsets, the window grows
-/// to the declared `MinWidth`/`MinHeight` and then until the logo fits, and
-/// every node then lies inside it (rule 3).
+/// Total Chaos's `MainTitleBar` `OutdentLeft="1"` (a frame row) and a logo
+/// wider than the frame's smallest size: the window holds the outdent, the
+/// frame rectangle starts where the row does (lead decision 14), the window
+/// grows to the declared `MinWidth`/`MinHeight` and then until the logo
+/// fits, and every node then lies inside it (rule 3).
 #[test]
 fn the_window_fits_the_tree_and_its_overhang() {
-    let (l, tree) = imported(
+    let (l, tree) = imported_rows(
         br#"<Tile Name="W" Component="MainWindow">
 <Tile Name="MainTitleBar" X="0" OutdentLeft="1" Y="0" ResizeX="100" Component="MainTitleBar"/>
 <Tile Name="SCLogo" X="0" Y="60" Component="SCLogo"/>
@@ -78,14 +86,68 @@ fn the_window_fits_the_tree_and_its_overhang() {
 <Component Name="MainTitleBar"><Images State="Normal"><Image>bar-10x50</Image></Images></Component>
 <Component Name="SCLogo"><Images State="Normal"><Image>logo-174x59</Image></Images></Component>
 </Components>"#,
+        &["MainTitleBar"],
     );
     assert_eq!(tree.outsets.left, 1);
-    assert_eq!(l.outsets.left, 1);
-    assert_eq!((l.min_width, l.min_height), (174, 119));
-    let full = (i32::from(l.min_width) + 1, i32::from(l.min_height));
+    assert_eq!(l.outsets.left, 0);
+    // The frame rectangle holds the outdent: the logo's 174 px plus 1.
+    assert_eq!((l.min_width, l.min_height), (175, 119));
+    let full = (i32::from(l.min_width), i32::from(l.min_height));
     let boxes = tree.boxes(full.0, full.1);
     assert_eq!(boxes[0].1, [0, 0, full.0, 50]);
     assert!(validate::check("t", &tree, &l, &BTreeMap::new()).is_ok());
+}
+
+/// Plan SK2 lead decision 14: Total Chaos's frame rows (`components.xml`
+/// `mainwindow.xml:2-37`), each `OutdentLeft="1"`, the `BottomBar` 66 px
+/// tall under a `Content` `IndentBottom="61"`: the window holds the 1 px
+/// outdent and the 5 px the bottom row reaches past the box, and the frame
+/// rectangle is the rows' box (no outsets), so the frame art lies where the
+/// tree's rows do.
+#[test]
+fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
+    let (l, tree) = imported_rows(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="MainTitleBar" X="0" OutdentLeft="1" Y="0" ResizeX="100" Component="MainTitleBar"/>
+<Tile Name="Content" X="0" OutdentLeft="1" Y="MainTitleBar.BOTTOM" IndentBottom="61" ResizeX="100" ResizeY="100" Component="Content"/>
+<Tile Name="BottomBar" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar"/>
+</Tile>"#,
+        br#"<Components>
+<Component Name="MainTitleBar"><Images State="Normal"><Image>bar-10x52</Image></Images></Component>
+<Component Name="BottomBar"><Images State="Normal"><Image>bottom-10x66</Image></Images></Component>
+</Components>"#,
+        &["MainTitleBar", "Content", "BottomBar"],
+    );
+    let o = |i: Insets| (i.left, i.top, i.right, i.bottom);
+    assert_eq!(o(tree.outsets), (1, 0, 0, 5));
+    assert_eq!(o(l.outsets), (0, 0, 0, 0));
+    let (w, h) = (i32::from(l.min_width), i32::from(l.min_height));
+    let boxes = tree.boxes(w, h);
+    // The rows span the window, the bottom row ends at its bottom edge.
+    assert_eq!(boxes[0].1, [0, 0, w, 52]);
+    assert_eq!(boxes[2].1, [0, h - 66, w, 66]);
+}
+
+/// Plan SK2 lead decision 14: Classic's `StatusWrapper` (`X="32" Y="40"
+/// ResizeX="100" IndentRight="30"`, a `Group` with no art in the tree)
+/// laid past the window's bottom never grows the window.
+#[test]
+fn an_art_less_wrapper_never_grows_the_window() {
+    let (l, tree) = imported(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="ResizeDown" JustY="BOTTOM" ResizeX="100" Component="ResizeDown">
+<Tile Name="StatusWrapper" X="32" Y="40" ResizeX="100" IndentRight="30" Component="StatusWrapper"/>
+</Tile></Tile>"#,
+        br#"<Components>
+<Component Name="MainWindow" MinWidth="100" MinHeight="90"/>
+<Component Name="ResizeDown" Class="Tile" MinHeight="5"/>
+<Component Name="StatusWrapper" Class="Tile" MinHeight="8"/>
+</Components>"#,
+    );
+    assert_eq!(tree.outsets.bottom, 0);
+    assert_eq!((l.outsets.bottom, l.min_height), (0, 90));
+    let checked = validate::check("t", &tree, &l, &BTreeMap::new());
+    assert!(checked.is_ok(), "{checked:?}");
 }
 
 /// Classic's `ResizeUp` (`ResizeX="100"`, no art) is its component's
@@ -286,6 +348,7 @@ fn stealthxs_menu_button_launches_the_side_rail() {
         &main,
         &[parts, popups],
         |path, _| Ok(piece(path)),
+        &[],
         &mut built,
     )
     .unwrap();

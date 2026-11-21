@@ -22,6 +22,7 @@ use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, Skin
 use super::anchor::{axis, outer_for, Sibs, Sizes, X, Y};
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::roles::{role, Facts};
+use super::validate::shown;
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_image, Decode};
 use crate::import::ImportError;
@@ -328,61 +329,107 @@ impl Walk<'_> {
 const MOST: i32 = 4096;
 
 /// Whether every node of `tree` laid in a `w × h` window has a box (no
-/// negative length) and, when it has a size on an axis, lies inside.
+/// negative length) and, when it is shown and has a size on an axis, lies
+/// inside.
 fn fits(tree: &SkinTree, w: i32, h: i32, x_axis: bool) -> bool {
-    tree.boxes(w, h).iter().all(|(_, b)| {
+    tree.boxes(w, h).iter().all(|(n, b)| {
         let (at, len, win) = if x_axis {
             (b[0], b[2], w)
         } else {
             (b[1], b[3], h)
         };
-        len >= 0 && (len == 0 || (at >= 0 && at + len <= win))
+        len >= 0 && (len == 0 || !shown(n) || (at >= 0 && at + len <= win))
     })
 }
 
-/// The pack's overhang: how far its nodes reach outside its own window
-/// (laid at the largest size, where only offsets lay a node outside).
-fn overhang(tree: &SkinTree) -> Insets {
-    let boxes = tree.boxes(MOST, MOST);
-    let reach = |f: &dyn Fn(&[i32; 4]) -> i32| {
+/// How far the nodes of `tree` that `keep` picks reach outside its own
+/// window (laid at the largest size, where only offsets lay a node outside).
+fn reach(tree: &SkinTree, keep: impl Fn(&SkinNode) -> bool) -> Insets {
+    let boxes: Vec<[i32; 4]> = tree
+        .boxes(MOST, MOST)
+        .into_iter()
+        .filter(|(n, b)| b[2] > 0 && b[3] > 0 && keep(n))
+        .map(|(_, b)| b)
+        .collect();
+    let side = |f: &dyn Fn(&[i32; 4]) -> i32| {
         boxes
             .iter()
-            .filter(|(_, b)| b[2] > 0 && b[3] > 0)
-            .map(|(_, b)| f(b))
+            .map(f)
             .max()
             .map_or(0, |v| u16::try_from(v.max(0)).unwrap_or(u16::MAX))
     };
     Insets {
-        left: reach(&|b| -b[0]),
-        top: reach(&|b| -b[1]),
-        right: reach(&|b| b[0] + b[2] - MOST),
-        bottom: reach(&|b| b[1] + b[3] - MOST),
+        left: side(&|b| -b[0]),
+        top: side(&|b| -b[1]),
+        right: side(&|b| b[0] + b[2] - MOST),
+        bottom: side(&|b| b[1] + b[3] - MOST),
     }
 }
 
-/// Sizes `built`'s window to the tree (plan SK2 decision 5): the tree's
-/// overhang joins the layout's outsets, and the smallest window is the
-/// pack's declared `MinWidth`/`MinHeight` (Combat `combat.ini:3-4`, Total
-/// Chaos `components.xml:4-5`), grown until every node lies inside it.
+/// The pack's overhang (plan SK2 lead decision 14): how far the nodes that
+/// draw art or take input reach outside its window. An art-less wrapper
+/// never grows the window (Classic's `StatusWrapper` `ResizeX="100"
+/// IndentRight="30"`, a `Group` whose three slices are the title strip's).
+fn overhang(tree: &SkinTree) -> Insets {
+    reach(tree, shown)
+}
+
+/// Where the pack places the frame's own components, `rows` (a row stack's
+/// tiles, `stack::layout`), outside its window: the frame rectangle is
+/// their box, so the frame art and the tree agree (plan SK2 lead decision
+/// 14: Total Chaos's rows `OutdentLeft="1"`, its `BottomBar` 5 px past the
+/// box). The stack lays every row across the whole frame rectangle, so the
+/// rows must share one horizontal span.
+fn frame_reach(tree: &SkinTree, rows: &[String]) -> Result<Insets, ImportError> {
+    let spans: Vec<(i32, i32)> = tree
+        .boxes(MOST, MOST)
+        .into_iter()
+        .filter(|(n, _)| rows.contains(&n.id))
+        .map(|(_, b)| (b[0], b[2]))
+        .collect();
+    if spans.len() != rows.len() {
+        return Err(bad(format!("frame rows {rows:?} are not all in the tree")));
+    }
+    if spans.windows(2).any(|p| p[0] != p[1]) {
+        return Err(bad(format!(
+            "frame rows {rows:?} differ in horizontal span"
+        )));
+    }
+    Ok(reach(tree, |n| rows.contains(&n.id)))
+}
+
+/// Sizes `built`'s window to the tree (plan SK2 decision 5): the window
+/// holds the tree's overhang and the frame rows' reach, the frame
+/// rectangle (inset by the layout's outsets) lies where the pack places the
+/// frame's components, and the smallest window is the pack's declared
+/// `MinWidth`/`MinHeight` (Combat `combat.ini:3-4`, Total Chaos
+/// `components.xml:4-5`), grown until every node lies inside it.
 fn fit(
     tree: &mut SkinTree,
     pack_min: (u16, u16),
+    rows: &[String],
     layout: &mut WindowLayout,
 ) -> Result<(), ImportError> {
-    let over = overhang(tree);
-    tree.outsets = over;
+    let (over, frame) = (overhang(tree), frame_reach(tree, rows)?);
+    let out = Insets {
+        left: over.left.max(frame.left),
+        top: over.top.max(frame.top),
+        right: over.right.max(frame.right),
+        bottom: over.bottom.max(frame.bottom),
+    };
+    tree.outsets = out;
     let o = &mut layout.outsets;
-    o.left = o.left.saturating_add(over.left);
-    o.top = o.top.saturating_add(over.top);
-    o.right = o.right.saturating_add(over.right);
-    o.bottom = o.bottom.saturating_add(over.bottom);
+    o.left = o.left.saturating_add(out.left - frame.left);
+    o.top = o.top.saturating_add(out.top - frame.top);
+    o.right = o.right.saturating_add(out.right - frame.right);
+    o.bottom = o.bottom.saturating_add(out.bottom - frame.bottom);
     let (ow, oh) = (
         i32::from(o.left) + i32::from(o.right),
         i32::from(o.top) + i32::from(o.bottom),
     );
     let (tw, th) = (
-        i32::from(over.left) + i32::from(over.right),
-        i32::from(over.top) + i32::from(over.bottom),
+        i32::from(out.left) + i32::from(out.right),
+        i32::from(out.top) + i32::from(out.bottom),
     );
     let w0 = (i32::from(layout.min_width) + ow).max(i32::from(pack_min.0) + tw);
     let h0 = (i32::from(layout.min_height) + oh).max(i32::from(pack_min.1) + th);
@@ -477,7 +524,9 @@ fn with_rail(layout: &Node, components: &[Node], by_name: &BTreeMap<String, &Nod
 }
 
 /// Adds the component tree `layout` (the window's layout file) lays to
-/// `built`, and makes its views node's box the content rectangle.
+/// `built`, and makes its views node's box the content rectangle; `rows`
+/// are the tiles `built`'s frame is laid from (a row stack's, else none:
+/// the frame is the window component's own box).
 ///
 /// # Errors
 /// A tile the role table lacks, an anchor that does not resolve, a views
@@ -487,6 +536,7 @@ pub fn add(
     layout: &Node,
     components: &[Node],
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
+    rows: &[String],
     built: &mut (WindowLayout, BTreeMap<String, Vec<u8>>),
 ) -> Result<(), ImportError> {
     let mut by_name = BTreeMap::new();
@@ -526,7 +576,7 @@ pub fn add(
         limit_of(declared, "MinWidth").unwrap_or(0),
         limit_of(declared, "MinHeight").unwrap_or(0),
     );
-    fit(&mut tree, pack_min, &mut built.0)?;
+    fit(&mut tree, pack_min, rows, &mut built.0)?;
     if tree
         .boxes(0, 0)
         .iter()

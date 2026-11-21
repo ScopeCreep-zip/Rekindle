@@ -57,6 +57,7 @@ fn imported_with(
         &main,
         std::slice::from_ref(&parts),
         |path, _| Ok(piece(path)),
+        &[],
         &mut built,
     )?;
     let tree = built.0.tree.clone().unwrap();

@@ -71,6 +71,16 @@ fn inside(b: [i32; 4], w: i32, h: i32) -> bool {
     b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= w && b[1] + b[3] <= h
 }
 
+/// Whether the node is seen or touched (plan SK2 lead decision 14): it
+/// draws art, takes input, or is a part the shell renders. An art-less
+/// wrapper (`Group`) is a layout box only (Classic's `StatusWrapper`, whose
+/// slices the status strip draws): it never grows the window, and what of
+/// it lies outside is never seen.
+#[must_use]
+pub fn shown(n: &SkinNode) -> bool {
+    n.art.is_some() || n.role != NodeRole::Group
+}
+
 /// A node sized by its text at render: a menu or tab drawn as text, or a
 /// status or name edit field (a text box one line of its font tall: SimpleX's
 /// `[StatusEdit]` has no art and no size), with no art (its import box is
@@ -289,7 +299,7 @@ pub fn check(
         if !ids.insert(n.id.as_str()) {
             return Err(bad(&at, "rule 2: a unique id"));
         }
-        if b[2] > 0 && b[3] > 0 && !inside(*b, w, h) {
+        if shown(n) && b[2] > 0 && b[3] > 0 && !inside(*b, w, h) {
             return Err(bad(&at, "rule 3: a node inside the window"));
         }
         let sized = b[2] > 0 && b[3] > 0;

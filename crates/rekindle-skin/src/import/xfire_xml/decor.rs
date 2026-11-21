@@ -267,18 +267,19 @@ pub fn main_window(
         if let Some(insets) = insets {
             views::fill_band(w, &mut built, &pieces[4], insets)?;
         }
-        Some(built)
+        // The nine pieces are the window component's own: its box.
+        Some((built, Vec::new()))
     } else {
         stack::layout(w, main, components, piece)?
     };
-    if let Some(mut built) = built {
+    if let Some((mut built, rows)) = built {
         apply(w, main, components, piece, &mut built)?;
         super::title::add(w, main, components, colours, piece, &mut built)?;
         // The tree also reads the popups a component launches (StealthX's
         // rail); nothing else reads them.
         let mut with_popups = components.to_vec();
         with_popups.extend_from_slice(popups);
-        crate::skin_tree::import::add(w, main, &with_popups, piece, &mut built)?;
+        crate::skin_tree::import::add(w, main, &with_popups, piece, &rows, &mut built)?;
         windows.insert(w, built);
     }
     Ok(())

@@ -8,9 +8,12 @@
 //! left and right lie at its ends, its middle repeats between them at its
 //! source size, and its centre piece is laid centred on the whole window
 //! as an overhang (it sits over the title row's repeat, Xfire's
-//! `JustX="CENTER"`). The rows' `OutdentLeft="1"` moves the whole stack
-//! one pixel, so the frame rectangle is the rows' box and the outsets
-//! are zero. Read only when no nine-piece shape is complete
+//! `JustX="CENTER"`). The frame rectangle is the rows' box and the outsets
+//! are zero here: the rows' `OutdentLeft="1"` and a last row reaching past
+//! the window box (Total Chaos's `BottomBar`, 66 px under a `Content`
+//! `IndentBottom="61"`) are placed by the tree, which is handed the rows'
+//! names and lays the frame rectangle where the pack places them (plan SK2
+//! lead decision 14). Read only when no nine-piece shape is complete
 //! ([`super::tiles::pieces`]).
 //!
 //! The content rectangle is the pack's own content region (plan SK0-L1):
@@ -67,8 +70,9 @@ fn eq(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
 }
 
-/// `window`'s layout from the rows `layout` stacks, or `None` when it is
-/// not such a stack; `piece(bitmap, shift colour)` decodes a piece.
+/// `window`'s layout from the rows `layout` stacks and the rows' tile
+/// names, or `None` when it is not such a stack; `piece(bitmap, shift
+/// colour)` decodes a piece.
 ///
 /// # Errors
 /// What `piece` returns, or a piece that does not encode.
@@ -77,7 +81,7 @@ pub fn layout(
     layout: &Node,
     components: &[Node],
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
-) -> Result<Option<Built>, ImportError> {
+) -> Result<Option<(Built, Vec<String>)>, ImportError> {
     let by_name: BTreeMap<String, &Node> = components
         .iter()
         .flat_map(|n| descendants(n, "Component"))
@@ -130,7 +134,12 @@ pub fn layout(
             views::to_views_edge(l, r, insets);
         }
     }
-    build(window, &rows, content_row).map(Some)
+    let names = rows
+        .iter()
+        .filter_map(|r| r.tile.attr_ci("Name").or(r.tile.attr_ci("Component")))
+        .map(|n| n.trim().to_owned())
+        .collect();
+    build(window, &rows, content_row).map(|built| Some((built, names)))
 }
 
 fn height(row: &Row) -> u32 {
