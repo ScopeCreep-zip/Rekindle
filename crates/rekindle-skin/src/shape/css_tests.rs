@@ -96,13 +96,19 @@ fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
 
 #[test]
 fn xfire_classic_pads_the_content_to_its_side_edges() {
-    // S1f: the content insets are the side edge pieces (7 and 6 px), the
-    // titlebar band (47 px) and the console row (63 px), not the corners.
+    // SK2: the content is the views node's box (`TabbedControl`,
+    // `xfiremainwindow.xml:83`, inside `InnerBevel` at :53). Top: InnerBevel
+    // `Y="MainTitleBar.BOTTOM-6"` (main-left.gif 47 px) = 41, plus
+    // `Y="Divider.BOTTOM"` (MenuBar 8 + 19, AdArea 60, Divider at -4, 18 px:
+    // 101) and `IndentTop="TabHeader.height"` (tab_control_base.gif 16 px):
+    // 158. Right: 13 + MainRightOuterEdge 9 + 6 = 28. Bottom:
+    // `BaseBoard.height-6` (bottom-left.gif 62 px) + `BottomBevel.height-8`
+    // (35 px) = 83. Left: LeftOuterEdge 9 + 7 = 16.
     let (m, files) = pack("builtin:xfire-classic");
     let css = frame_css(&m, &files, BASE).unwrap();
     assert!(
         css.contains(
-            "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 47px 6px 63px 7px;\n"
+            "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 158px 28px 83px 16px;\n"
         ),
         "{css}"
     );
