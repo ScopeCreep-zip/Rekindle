@@ -12,6 +12,8 @@
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
 
+use rekindle_netsim::Fault;
+
 use crate::harness::Community;
 
 fn seeds() -> u64 {
@@ -50,5 +52,45 @@ async fn a_fresh_invite_is_known_to_an_immediate_join() {
     assert!(
         refused.is_empty(),
         "joins refused through a fresh invite: {refused:?}"
+    );
+}
+
+/// Decision (28)'s stale read (plan IV1b): the inviter and the joiner sit on
+/// two sides of a placement split (`Fault::Partition`, node 2 reached by both),
+/// so the inviter's `InviteCreated` and frontier land on the replicas beside
+/// its side and node 2's, while the joiner's forced frontier read (0.5.8
+/// `get_value.rs` `check_done`: done at `get_value_count` holders of the
+/// newest value it saw) can settle on the pre-invite frontier its closest
+/// replicas still agree on. The link names the op and the frontier seq it
+/// was minted at, so the join reads past the stale frontier; no seed may be
+/// refused `InviteUnknown`.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_stale_frontier_read_does_not_refuse_a_fresh_invite() {
+    let mut refused = Vec::new();
+    for seed in 0..seeds() {
+        let seed = 9_300 + seed;
+        let mut community = Community::create(5, seed).await;
+        community.sim.fault(Fault::Partition {
+            a: vec![0],
+            b: vec![1, 3, 4],
+        });
+        let link = community.invite().await;
+        let joined = community.nodes[1]
+            .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityJoin { invite: link },
+            )))
+            .await;
+        if let Err(refusal) = joined {
+            let hash = hex(&community.sim.trace().hash());
+            eprintln!(
+                "iv1b: seed {seed} refused {} {:?} trace {hash}",
+                refusal.code, refusal.message
+            );
+            refused.push((seed, refusal.code, refusal.message, hash));
+        }
+    }
+    assert!(
+        refused.is_empty(),
+        "joins refused across a placement split: {refused:?}"
     );
 }
