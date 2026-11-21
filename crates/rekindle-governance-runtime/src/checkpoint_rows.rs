@@ -79,3 +79,22 @@ pub fn checkpoint_facts(ops: &[VerifiedOp], outcome: &MergeOutcome) -> Vec<Check
 #[cfg(test)]
 #[path = "checkpoint_rows_tests.rs"]
 mod tests;
+
+/// Store a merge's checkpoint facts and keep the latest endorsed checkpoint's
+/// directory pages warm (plan E3.2 S7: record warming).
+///
+/// # Errors
+/// The deps' failure to store the facts.
+pub async fn record<D: crate::deps::GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    ops: &[VerifiedOp],
+    outcome: &MergeOutcome,
+) -> Result<(), crate::error::GovernanceRuntimeError> {
+    deps.record_governance_checkpoints(community_id, checkpoint_facts(ops, outcome))
+        .await?;
+    if let Some(latest) = outcome.hints.latest() {
+        deps.warm_checkpoint_pages(community_id, &latest.checkpoint);
+    }
+    Ok(())
+}
