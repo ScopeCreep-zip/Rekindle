@@ -33,7 +33,7 @@ fn lay(layout: &Node, components: &Node, colours: &[ColourRow]) -> Option<TitleL
         layout,
         std::slice::from_ref(components),
         colours,
-        sized,
+        |n, c| Ok(sized(n, c)),
         &mut built,
     )
     .unwrap();
