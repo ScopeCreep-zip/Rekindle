@@ -252,7 +252,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// stored at join/create (never read back from our merged membership).
 /// 149 (plan E2.6 G4): `stream_cursors.stream_seq`, the author's outbox stream seq of the
 /// entry the cursor was committed on (a retired group stretch held by hint is no gap).
-pub const SCHEMA_VERSION: i64 = 149;
+/// 150 (plan E3.2 S8-H/S8-I): `communities` drops `dht_owner_keypair`, `dht_record_key`,
+/// `manifest_key` and the never-advanced `lamport_clock`.
+pub const SCHEMA_VERSION: i64 = 150;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
