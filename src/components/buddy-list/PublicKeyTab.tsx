@@ -21,9 +21,10 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
   const [message, setMessage] = createSignal("Hey, add me!");
   const [error, setError] = createSignal<string | null>(null);
 
-  // The Host answers NotReady when our profile is not published within its
-  // wait (a slow first attach, FC1); the error stays on screen with a retry,
-  // never a blank card.
+  // The Host answers once our profile and mailbox are published, however
+  // long the first attach takes (FC1): until then the tab says so. Only a
+  // real failure (the records were not published) answers an error, which
+  // stays on screen with a retry, never a blank card.
   async function load(): Promise<void> {
     setCodeError(null);
     const result = await handleGetFriendCode();
@@ -61,7 +62,7 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
         when={ours()}
         fallback={
           <div class="add-friend-code-status" role="status">
-            {codeError() ?? "Reading your friend code…"}
+            {codeError() ?? "Publishing your identity…"}
             <Show when={codeError()}>
               <button class="form-btn-primary" type="button" onClick={() => void load()}>
                 Try again

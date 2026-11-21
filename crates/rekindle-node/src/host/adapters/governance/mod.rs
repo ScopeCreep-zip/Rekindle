@@ -54,7 +54,7 @@ pub(crate) mod channel_outbox;
 mod events;
 pub(crate) mod game_servers;
 mod invite_expiry;
-mod invites;
+pub(crate) mod invites;
 mod join;
 mod join_bootstrap;
 pub(crate) use join::JoinLocks;

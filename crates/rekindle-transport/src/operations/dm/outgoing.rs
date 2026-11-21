@@ -32,7 +32,8 @@ pub async fn send_friend_request(
 /// prekey record), carrying our records as its first payload.
 ///
 /// # Errors
-/// `NotReady` when our profile and mailbox are not held within 30 s; the
+/// `Failed` when our profile and mailbox were not published (waits while
+/// they are being published); the
 /// bundle is not `to`'s, the session could not be opened, or the send
 /// failed.
 pub async fn send_friend_accept(

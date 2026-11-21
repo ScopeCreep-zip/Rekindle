@@ -336,7 +336,7 @@ pub(crate) async fn handle_invite_create(
         .await
     {
         Ok(created) => IpcResponse::ok(&created),
-        Err(e) => IpcResponse::error(500, e),
+        Err(e) => IpcResponse::error(e.code(), e.to_string()),
     }
 }
 

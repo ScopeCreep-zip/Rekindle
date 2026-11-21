@@ -126,6 +126,7 @@ pub(crate) async fn run(
             db: Arc::clone(&ctx.db),
             vault: ctx.vault.clone(),
             session: Arc::clone(&ctx.session),
+            outcome: ctx.friend_stores.own_records.clone(),
             shell: ctx.shell.clone(),
             rng: Arc::clone(&ctx.rng),
             presence: ctx.own_presence.clone(),

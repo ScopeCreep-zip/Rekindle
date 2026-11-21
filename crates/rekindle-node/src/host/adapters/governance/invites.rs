@@ -3,6 +3,9 @@
 //! so its link can be shown again, list the live ones from merged
 //! governance with the uses the merge counts, and revoke one by its id.
 
+use std::fmt;
+
+use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dto::community::{CommunityInviteCreated, CommunityInviteView};
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
@@ -15,6 +18,46 @@ use super::HostGovernance;
 /// `None` when `anchor` is not a record key.
 pub(crate) fn invite_fingerprint(anchor: &str) -> Option<String> {
     rekindle_crypto::identity::record_key_fingerprint(anchor)
+}
+
+/// Why an invite was not minted.
+#[derive(Debug)]
+pub(crate) enum InviteRefusal {
+    /// The governance runtime refused it: an out-of-range `max_uses` or
+    /// expiry (`OutOfBounds`), a missing permission, or a failed write.
+    Runtime(GovernanceRuntimeError),
+    /// The minted invite's link or stored code failed.
+    Failed(String),
+}
+
+impl InviteRefusal {
+    /// The IPC status the refusal answers with: the request's own bounds
+    /// are the caller's error (400), not the daemon's (500).
+    #[must_use]
+    pub(crate) fn code(&self) -> u32 {
+        match self {
+            Self::Runtime(
+                GovernanceRuntimeError::OutOfBounds { .. } | GovernanceRuntimeError::Malformed,
+            ) => 400,
+            Self::Runtime(GovernanceRuntimeError::PermissionDenied) => 403,
+            Self::Runtime(_) | Self::Failed(_) => 500,
+        }
+    }
+}
+
+impl fmt::Display for InviteRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Runtime(e) => write!(f, "invite create: {e}"),
+            Self::Failed(why) => f.write_str(why),
+        }
+    }
+}
+
+impl From<String> for InviteRefusal {
+    fn from(why: String) -> Self {
+        Self::Failed(why)
+    }
 }
 
 /// The canonical link for an invite: all three parts the joiner needs.
@@ -34,13 +77,15 @@ impl HostGovernance {
     /// store its code as ours.
     ///
     /// # Errors
-    /// The mint or its governance write failed, or the code was not stored.
+    /// The runtime refused the mint (`max_uses` outside `1..=100` among
+    /// its bounds) or its governance write failed, or the code was not
+    /// stored.
     pub(crate) async fn create_invite(
         &self,
         community: &str,
         max_uses: u32,
         expires_seconds: Option<u64>,
-    ) -> Result<CommunityInviteCreated, String> {
+    ) -> Result<CommunityInviteCreated, InviteRefusal> {
         let invite = rekindle_governance_runtime::invites::create_invite(
             self,
             community,
@@ -48,12 +93,12 @@ impl HostGovernance {
             expires_seconds,
         )
         .await
-        .map_err(|e| format!("invite create: {e}"))?;
+        .map_err(InviteRefusal::Runtime)?;
         let url = invite_url(community, &invite.secrets_record_key, &invite.code)?;
         let owner = self
             .ctx
             .require_owner()
-            .map_err(|_| "no identity is unlocked")?;
+            .map_err(|_| InviteRefusal::Failed("no identity is unlocked".into()))?;
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let (cid, code, hash) = (
             community.to_owned(),

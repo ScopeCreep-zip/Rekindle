@@ -35,10 +35,14 @@ mod checkpoint_state;
 mod community_info;
 #[path = "expression_upload_tests.rs"]
 mod expression_upload_tests;
+#[path = "friend_code_wait_tests.rs"]
+mod friend_code_wait;
 #[path = "governance_seed_tests.rs"]
 mod governance_seed;
 #[path = "held_threads_tests.rs"]
 mod held_threads;
+#[path = "invite_bounds_tests.rs"]
+mod invite_bounds;
 #[path = "login_stage_tests.rs"]
 mod login_stage;
 #[path = "membership_tests.rs"]

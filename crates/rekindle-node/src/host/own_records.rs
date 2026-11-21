@@ -20,6 +20,7 @@ use rekindle_db::DbHandle;
 use rekindle_protocol::dht::{account, friends, mailbox, profile};
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{RecordPort, RouteClass};
+use rekindle_transport::operations::friend::OwnRecordsStage;
 use rekindle_transport::{Session, TransportNode};
 use rekindle_vault::VaultHandle;
 use tokio_util::sync::CancellationToken;
@@ -34,6 +35,9 @@ pub(crate) struct OwnRecords {
     pub db: Arc<DbHandle>,
     pub vault: VaultHandle,
     pub session: Arc<RwLock<Option<Session>>>,
+    /// Where the stage's outcome is told (plan E2.5 FC1): the friend
+    /// operations naming our profile and mailbox wait on it.
+    pub outcome: tokio::sync::watch::Sender<OwnRecordsStage>,
     pub shell: Option<Arc<dyn ShellHooks>>,
     /// The Host's generator (C9.2): this device's id is minted with it
     /// (the prekeys are the prekey maintenance's, plan E2.4).
@@ -74,26 +78,36 @@ pub(super) struct Stored {
 }
 
 impl OwnRecords {
-    /// Run the stage until it is done or `stop` (the unlock ends).
-    pub(crate) async fn run(mut self, stop: CancellationToken) {
+    /// Run the stage until it is done or `stop` (the unlock ends), and
+    /// tell its outcome; a stage cut short by the lock tells none (the
+    /// lock resets it, `FriendStores::clear`).
+    pub(crate) async fn run(self, stop: CancellationToken) {
+        let outcome = self.outcome.clone();
+        match self.hold(stop).await {
+            Some(Ok(())) => outcome.send_replace(OwnRecordsStage::Held),
+            Some(Err(why)) => outcome.send_replace(OwnRecordsStage::Failed(why)),
+            None => return,
+        };
+    }
+
+    /// The stage: `None` when `stop` fired first, else whether our
+    /// profile and mailbox are held.
+    async fn hold(mut self, stop: CancellationToken) -> Option<Result<(), String>> {
         // Readiness is the record port's own gate; the general route is
         // wanted from node-ready (C7.9b), so it is usually here already.
         let routes = self.transport.routes();
-        let Some(route_blob) = stop
+        let route_blob = stop
             .run_until_cancelled(routes.available_own(RouteClass::General))
-            .await
-        else {
-            return;
-        };
+            .await?;
         let Ok(pool) = self.transport.require_records() else {
             tracing::warn!("own records: no record pool");
-            return;
+            return Some(Err("no record pool".into()));
         };
         let stored = match self.stored().await {
             Ok(stored) => stored,
             Err(e) => {
                 tracing::error!(error = %e, "own records: the stored keys could not be read");
-                return;
+                return Some(Err(format!("the stored keys could not be read: {e}")));
             }
         };
         let identity = rekindle_crypto::Identity::from_secret_bytes(&self.secret);
@@ -103,9 +117,7 @@ impl OwnRecords {
         );
         // The name as it stands when the records are written; a rename
         // while they are is published once the profile is projected.
-        let Some(display_name) = self.display_name() else {
-            return;
-        };
+        let display_name = self.display_name()?;
         let name = display_name.as_str();
         let mut keys = OwnRecordKeys::default();
         let mut owners = (
@@ -163,9 +175,7 @@ impl OwnRecords {
                 )
             })
             .await;
-        let Some((mailbox, profile, friend_list)) = joined else {
-            return;
-        };
+        let (mailbox, profile, friend_list) = joined?;
         keys.mailbox = mailbox;
         if let Some((key, owner)) = profile {
             keys.profile = Some(key);
@@ -175,6 +185,7 @@ impl OwnRecords {
             keys.friend_list = Some(key);
             owners.1 = Some(owner);
         }
+        let held = keys.profile.is_some() && keys.mailbox.is_some();
         self.project(&keys, owners);
         // The status, now that the projection names the profile (a created
         // identity had none until this stage).
@@ -183,7 +194,12 @@ impl OwnRecords {
         if let Some(shell) = &self.shell {
             shell.own_records(&keys);
         }
+        if !held {
+            tracing::warn!("own records: the profile or the mailbox was not published");
+            return Some(Err("the profile or the mailbox could not be written".into()));
+        }
         tracing::info!("own records held");
+        Some(Ok(()))
     }
 
     async fn stored(&self) -> Result<Stored, String> {

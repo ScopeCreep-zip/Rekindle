@@ -4,70 +4,65 @@
 //! expires, when its inbox is dropped; and the invite a link we open
 //! carries.
 
-use std::time::Duration;
-
 use rekindle_codec::message::envelope::InviteBlob;
 use rekindle_types::dto::friends::{InviteCreated, OutgoingInvite};
 use rekindle_types::invite::FRIEND_INVITE_TTL_SECS;
 
 use super::error::FriendError;
-use super::host::FriendHost;
+use super::host::{FriendHost, OwnRecordsStage};
 use super::inbox;
 use super::state;
 
-/// How long making an invite or a friend request waits for our profile
-/// and mailbox to be published (right after
-/// unlock, while the own-records stage writes them).
-const PUBLISHED_WAIT: Duration = Duration::from_secs(30);
-/// How often that wait looks again.
-const PUBLISHED_POLL: Duration = Duration::from_millis(500);
-
-/// Our identity, once the own-records stage has published our profile and
-/// mailbox: an invite or a request names them, and one naming none leaves
-/// the peer no prekey record to open the session from.
-fn records_published(host: &dyn FriendHost) -> Option<state::OwnIdentity> {
-    let own = state::own_identity(host).ok()?;
-    (!own.profile_dht_key.is_empty() && !own.mailbox_dht_key.is_empty()).then_some(own)
-}
-
-/// What `ready` gives, waiting up to [`PUBLISHED_WAIT`] for it.
-async fn await_published<T>(
-    host: &dyn FriendHost,
-    ready: impl Fn(&dyn FriendHost) -> Option<T>,
-) -> Result<T, FriendError> {
-    tokio::time::timeout(PUBLISHED_WAIT, async {
-        loop {
-            match ready(host) {
-                Some(ready) => return ready,
-                None => tokio::time::sleep(PUBLISHED_POLL).await,
-            }
-        }
-    })
-    .await
-    .map_err(|_| {
-        FriendError::NotReady("Network not ready — please wait a moment and try again".to_string())
-    })
-}
-
-/// Our identity once our profile and mailbox are published, waiting up to
-/// 30 s (a friend added right after the first unlock).
+/// Our identity once the own-records stage has published our profile and
+/// mailbox: an invite, a request, a friend code or a first message names
+/// them, and one naming none leaves the peer no prekey record to open the
+/// session from. Waits on the stage itself (`FriendStores::own_records`),
+/// with no deadline of its own: records slow to publish (a cold DHT) are
+/// still answered the moment they are held, and the wait ends at lock.
 ///
 /// # Errors
-/// `NotReady` when they are not published in time.
+/// `Locked` (before or while waiting); `Failed` when the stage ended
+/// without our profile and mailbox.
 pub(crate) async fn published_identity(
     host: &dyn FriendHost,
 ) -> Result<state::OwnIdentity, FriendError> {
-    await_published(host, records_published).await
+    // Subscribed before the projection is read, so a stage that ends
+    // between the two is still seen.
+    let mut stage = host.stores().own_records.subscribe();
+    if let Some(own) = named(state::own_identity(host)?) {
+        return Ok(own);
+    }
+    let ended = host
+        .scope()
+        .token()
+        .run_until_cancelled(stage.wait_for(|stage| *stage != OwnRecordsStage::Pending))
+        .await
+        .ok_or(FriendError::Locked)?
+        .map_err(|_| FriendError::Locked)?
+        .clone();
+    if let OwnRecordsStage::Failed(why) = ended {
+        return Err(FriendError::Failed(format!(
+            "our profile and mailbox were not published: {why}"
+        )));
+    }
+    named(state::own_identity(host)?).ok_or_else(|| {
+        FriendError::Failed("the own records were held without a profile and mailbox".into())
+    })
+}
+
+/// `own` when it names our profile and mailbox.
+fn named(own: state::OwnIdentity) -> Option<state::OwnIdentity> {
+    (!own.profile_dht_key.is_empty() && !own.mailbox_dht_key.is_empty()).then_some(own)
 }
 
 /// Make a tracked friend invite.
 ///
 /// # Errors
-/// Our records are not published within 30 s, the inbox cannot be
+/// Our records were not published (see [`published_identity`]), the inbox cannot be
 /// created, or the invite cannot be stored.
 pub async fn create(host: &dyn FriendHost) -> Result<InviteCreated, FriendError> {
     let secret = host.identity_secret()?;
-    let own = await_published(host, records_published).await?;
+    let own = published_identity(host).await?;
 
     let id_bytes = rekindle_utils::random::id_bytes_16_from(host.rng());
     let invite_id = uuid::Builder::from_random_bytes(id_bytes)

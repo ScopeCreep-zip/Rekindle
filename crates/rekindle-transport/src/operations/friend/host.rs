@@ -76,6 +76,23 @@ pub struct FriendStores {
     /// Wakes the Host's disappearing-message expiry task (plan E7.1): a
     /// new `expire_at` may be the earliest.
     pub expiry: tokio::sync::Notify,
+    /// How this unlock's own-records stage ended (plan E2.5 FC1): what an
+    /// operation naming our profile and mailbox (a friend code, an invite,
+    /// a request, a first message) waits on instead of a timer.
+    pub own_records: tokio::sync::watch::Sender<OwnRecordsStage>,
+}
+
+/// The own-records stage's outcome for the unlocked identity.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum OwnRecordsStage {
+    /// Still writing (or not started): our profile and mailbox may not be
+    /// named yet.
+    #[default]
+    Pending,
+    /// Our profile and mailbox are held and in the session projection.
+    Held,
+    /// The stage ended without them: why.
+    Failed(String),
 }
 
 impl FriendStores {
@@ -92,6 +109,7 @@ impl FriendStores {
         self.participant_gates.lock().clear();
         self.watch_retries.lock().clear();
         self.held.lock().clear();
+        self.own_records.send_replace(OwnRecordsStage::Pending);
     }
 
     /// The gate around our participant record for `peer`.

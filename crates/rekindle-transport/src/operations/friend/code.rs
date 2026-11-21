@@ -15,7 +15,8 @@ use super::state::{self, OwnIdentity};
 /// Our friend code, once our profile is published (the code names it).
 ///
 /// # Errors
-/// `Locked`; `NotReady` while our profile is not published; the token
+/// `Locked`; `Failed` when our profile was not published (waits while it is
+/// being published); the token
 /// could not be read.
 pub async fn own(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
     let own = published_identity(host).await?;
@@ -36,7 +37,8 @@ pub async fn own(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
 /// one stop working. Answers the new code.
 ///
 /// # Errors
-/// `Locked`; `NotReady` while our profile is not published; the write
+/// `Locked`; `Failed` when our profile was not published (waits while it is
+/// being published); the write
 /// failed.
 pub async fn rotate_token(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
     let own = published_identity(host).await?;

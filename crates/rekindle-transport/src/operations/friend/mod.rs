@@ -42,7 +42,7 @@ pub use answer::{accept, cancel, expire_stale_requests, reject};
 pub use blocked::{block, is_blocked, list as blocked, unblock};
 pub use edit::{create_group, delete_group, move_to_group, rename_group, set_nickname};
 pub use error::FriendError;
-pub use host::{BackendHold, FriendHost, FriendStores};
+pub use host::{BackendHold, FriendHost, FriendStores, OwnRecordsStage};
 pub use invites::{
     cancel as cancel_invite, create as create_invite, expire_stale as expire_stale_invites,
     list as invites, open as open_invite,
