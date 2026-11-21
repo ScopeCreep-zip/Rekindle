@@ -1224,6 +1224,30 @@
       }
     }
   },
+  "network.ownRecordsChanged.failed": {
+    "network": {
+      "ownRecordsChanged": {
+        "error": "no record pool",
+        "phase": "failed"
+      }
+    }
+  },
+  "network.ownRecordsChanged.held": {
+    "network": {
+      "ownRecordsChanged": {
+        "error": null,
+        "phase": "held"
+      }
+    }
+  },
+  "network.ownRecordsChanged.pending": {
+    "network": {
+      "ownRecordsChanged": {
+        "error": null,
+        "phase": "pending"
+      }
+    }
+  },
   "network.remoteRoutesDied": {
     "network": {
       "remoteRoutesDied": {
