@@ -11,18 +11,18 @@ use super::rehydrate::pending;
 use super::stores::REMOTE_MAX_RECORDS;
 use crate::{Fault, Netsim, Node};
 
-fn dht(sim: &Netsim, node: &Node) -> SimDht {
+pub(super) fn dht(sim: &Netsim, node: &Node) -> SimDht {
     SimDht::new(node.index, Arc::clone(&sim.net), Arc::clone(&node.rng))
 }
 
 /// Run one storage-manager tick now.
-fn tick(sim: &Netsim) {
+pub(super) fn tick(sim: &Netsim) {
     sim.net.inner.lock().next_tick = Some(tokio::time::Instant::now());
     sim.net.deliver();
 }
 
 /// How many of `key`'s replicas hold a value at `subkey`.
-fn copies(sim: &Netsim, key: &str, subkey: usize) -> usize {
+pub(super) fn copies(sim: &Netsim, key: &str, subkey: usize) -> usize {
     sim.net.inner.lock().records[key]
         .replicas
         .iter()
@@ -31,7 +31,7 @@ fn copies(sim: &Netsim, key: &str, subkey: usize) -> usize {
 }
 
 /// The replicas lose every value of `key` (as on eviction everywhere).
-fn wipe(sim: &Netsim, key: &str) {
+pub(super) fn wipe(sim: &Netsim, key: &str) {
     for replica in &mut sim.net.inner.lock().records.get_mut(key).unwrap().replicas {
         replica.values.iter_mut().for_each(|v| *v = None);
     }

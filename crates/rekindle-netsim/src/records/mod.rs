@@ -68,6 +68,8 @@ mod rehydrate_tests;
 mod replicas;
 #[cfg(test)]
 mod report_tests;
+#[cfg(test)]
+mod restart_tests;
 pub(crate) mod size;
 mod stores;
 mod traffic;

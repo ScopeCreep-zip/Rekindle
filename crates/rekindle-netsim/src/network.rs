@@ -300,6 +300,14 @@ pub struct Network {
     pub(crate) woke: tokio::sync::watch::Sender<()>,
 }
 
+impl Inner {
+    /// Drop every event in flight to `node`: a process that ended hears
+    /// none of it ([`crate::restart`]).
+    pub(crate) fn drop_in_flight_to(&mut self, node: usize) {
+        self.pending.retain(|p| p.to != node);
+    }
+}
+
 impl Network {
     /// Count one network get `node`'s app sent for `key` (`app_gets`).
     pub(crate) fn count_app_get(&self, node: usize, key: &str) {

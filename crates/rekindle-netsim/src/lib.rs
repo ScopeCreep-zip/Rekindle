@@ -31,6 +31,7 @@ mod loopback;
 mod messages;
 mod network;
 mod records;
+mod restart;
 mod routes;
 mod sleep;
 mod trace;
@@ -89,6 +90,8 @@ pub struct Netsim {
     start: tokio::time::Instant,
     clocks: parking_lot::Mutex<Vec<Arc<SimClock>>>,
     idles: parking_lot::Mutex<Vec<Arc<SimIdle>>>,
+    /// Each node's generator, which a restarted node keeps drawing from.
+    rngs: parking_lot::Mutex<Vec<Arc<SimRandom>>>,
 }
 
 impl Netsim {
@@ -105,6 +108,7 @@ impl Netsim {
             start: tokio::time::Instant::now(),
             clocks: parking_lot::Mutex::new(Vec::new()),
             idles: parking_lot::Mutex::new(Vec::new()),
+            rngs: parking_lot::Mutex::new(Vec::new()),
         }
     }
 
@@ -127,16 +131,31 @@ impl Netsim {
             inner.nodes.len() - 1
         };
         let rng = Arc::new(SimRandom::new(self.seed, index));
+        self.rngs.lock().push(Arc::clone(&rng));
         let clock = Arc::new(SimClock::new(self.start));
         self.clocks.lock().push(Arc::clone(&clock));
         let idle = Arc::new(SimIdle::new(Arc::clone(&clock)));
         self.idles.lock().push(Arc::clone(&idle));
-        let own = OwnRoutes::new(FakeAllocator::new(index, Arc::clone(&self.net)), ready_rx);
-        let ports = PortSet {
+        let ports = self.ports(index, &rng, ready_rx);
+        Node {
+            index,
+            ports,
+            events,
+            clock,
+            rng,
+            idle,
+        }
+    }
+
+    /// Node `index`'s ports over the network, its route set following
+    /// `ready`.
+    fn ports(&self, index: usize, rng: &Arc<SimRandom>, ready: watch::Receiver<bool>) -> PortSet {
+        let own = OwnRoutes::new(FakeAllocator::new(index, Arc::clone(&self.net)), ready);
+        PortSet {
             records: Arc::new(FakeRecords::new(
                 index,
                 Arc::clone(&self.net),
-                Arc::clone(&rng),
+                Arc::clone(rng),
             )),
             routes: Arc::new(FakeRoutes::new(
                 index,
@@ -145,14 +164,6 @@ impl Netsim {
             )),
             messages: Arc::new(FakeMessages::new(index, Arc::clone(&self.net), own)),
             lifecycle: None,
-        };
-        Node {
-            index,
-            ports,
-            events,
-            clock,
-            rng,
-            idle,
         }
     }
 
