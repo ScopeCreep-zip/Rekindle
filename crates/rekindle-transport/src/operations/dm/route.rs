@@ -29,15 +29,21 @@ pub fn invalidate(node: &TransportNode, peer: &str) {
     node.peers().write().invalidate_route(peer);
 }
 
+/// Forget a peer's cached route only while it is still `blob` (the one
+/// that failed); one cached since stays (live finding CR2).
+pub fn invalidate_blob(node: &TransportNode, peer: &str, blob: &[u8]) {
+    node.peers().write().invalidate_route_blob(peer, blob);
+}
+
 /// Import `blob` through the node's one importer; a blob that does not
-/// import is the peer's no longer, so it is forgotten.
+/// import is the peer's no longer, so it is forgotten (that blob only).
 pub(crate) fn import(node: &TransportNode, peer: &str, blob: &[u8]) -> Option<PeerTarget> {
     match node.routes().import(blob) {
         Ok(target) => Some(target),
         Err(e) => {
             tracing::debug!(to = %peer, error = %e, blob_len = blob.len(),
                 "route import failed — invalidating cached route");
-            invalidate(node, peer);
+            invalidate_blob(node, peer, blob);
             None
         }
     }
@@ -45,8 +51,14 @@ pub(crate) fn import(node: &TransportNode, peer: &str, blob: &[u8]) -> Option<Pe
 
 /// The peer's imported cached route, if they have a fresh one.
 pub(crate) fn cached_target(node: &TransportNode, peer: &str) -> Option<PeerTarget> {
+    cached_route(node, peer).map(|(_, target)| target)
+}
+
+/// The peer's cached blob and its import, if they have a fresh one.
+pub(crate) fn cached_route(node: &TransportNode, peer: &str) -> Option<(Vec<u8>, PeerTarget)> {
     let blob = cached(node, peer)?;
-    import(node, peer, &blob)
+    let target = import(node, peer, &blob)?;
+    Some((blob, target))
 }
 
 /// Read a fresh route blob from the peer's profile record (subkey 6): a

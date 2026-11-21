@@ -199,8 +199,8 @@ pub(super) async fn route_send_datagram(
 ) -> Result<bool, FriendError> {
     let datagram = datagram.to_vec();
     let node = host.node()?;
-    let failure = match route::cached_target(&node, to) {
-        Some(target) => match node.sender().send_direct(&target, datagram.clone()).await {
+    let failure = match route::cached_route(&node, to) {
+        Some((blob, target)) => match node.sender().send_direct(&target, datagram.clone()).await {
             Ok(()) => {
                 tracing::debug!(to = %to, ?kind, "frame sent via veilid");
                 return Ok(true);
@@ -216,8 +216,10 @@ pub(super) async fn route_send_datagram(
                 // the next attempt fetches a fresh one; a send that failed
                 // for any other reason, our own safety route's included
                 // (plan VU5), keeps it.
+                // Only the blob that failed: one cached meanwhile stays
+                // (live finding CR2).
                 if matches!(e, crate::error::TransportError::RouteUnusable { .. }) {
-                    route::invalidate(&node, to);
+                    route::invalidate_blob(&node, to, &blob);
                 }
                 Some(e.to_string())
             }
