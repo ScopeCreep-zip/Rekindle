@@ -12,7 +12,9 @@ interface OwnRecordsWaitProps {
  * own-records stage (`NetworkEvent::OwnRecordsChanged`): an invite, a
  * friend request or a first message waits, with no deadline, until our
  * profile and mailbox are held, so the window says so rather than freezing.
- * A stage that failed shows its reason.
+ * A stage that failed shows its reason. Until the Host has said where the
+ * stage is (`unknown`, plan FC4) nothing shows: a stage already held must
+ * not flash a wait in a window that just opened.
  */
 const OwnRecordsWait: Component<OwnRecordsWaitProps> = (props) => {
   trackNetworkStatus();

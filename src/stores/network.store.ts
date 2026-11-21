@@ -2,13 +2,20 @@ import { onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { handleGetNetworkStatus } from "../actions/settings.actions";
-import { subscribeNetworkStatus, subscribeNetworkStrength, subscribeOwnRecords } from "../ipc/channels";
+import {
+  eventStreamLive,
+  subscribeNetworkStatus,
+  subscribeNetworkStrength,
+  subscribeOwnRecords,
+} from "../ipc/channels";
 import type { OwnRecordsPhase, RouteAvailability } from "../ipc/channels/notification_events";
 
 /**
- * The node's network state, as the Host reports it: `get_network_status`
- * once when the first tracker mounts, then only the `network-status` push
- * events (plan E7.2 deleted the 30 s poll). One store per window: the
+ * The node's network state, as the Host reports it: the `network-status`
+ * push events, subscribed when the first tracker mounts, and one
+ * `get_network_status` snapshot read once the window's stream is live, so
+ * nothing published before the subscription is lost (plan VI1; E7.2 deleted
+ * the 30 s poll). One store per window: the
  * buddy list's indicator reads it, and so does every action that needs
  * the network before it may start (plan E7.13: Create waits for
  * `canCreateCommunity`).
@@ -30,9 +37,11 @@ export interface NetworkState {
   /**
    * Whether our identity (profile and mailbox) is published yet (plan E2.5
    * FC3, `NetworkEvent::OwnRecordsChanged`): what an invite, a friend
-   * request or a first message waits for.
+   * request or a first message waits for. `unknown` until the snapshot or
+   * the first `OwnRecordsChanged` says (plan FC4): the window never shows
+   * a wait the Host did not report.
    */
-  ownRecords: OwnRecordsPhase;
+  ownRecords: OwnRecordsPhase | "unknown";
   /** Why publishing failed, when it did. */
   ownRecordsError: string | null;
 }
@@ -45,7 +54,7 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
   mediaRoute: "idle",
   canWrite: false,
   bars: 0,
-  ownRecords: "pending",
+  ownRecords: "unknown",
   ownRecordsError: null,
 });
 
@@ -93,10 +102,21 @@ export function networkLabel(): NetworkLabel {
 let users = 0;
 let unlisteners: UnlistenFn[] = [];
 
-/** The state when the first tracker mounts; the push events follow it. */
+/**
+ * How many push events of each kind this window applied. Each event carries
+ * its kind's whole state, read when it was sent, and the stream delivers in
+ * order, so an event that arrives while the snapshot is in flight is never
+ * older than the last change: the snapshot then leaves that kind alone
+ * rather than overwrite it with what may be older (plan VI1).
+ */
+const applied = { attachment: 0, strength: 0, ownRecords: 0 };
+
+/** The state when the stream went live; the push events follow it. */
 async function readNetworkStatus(): Promise<void> {
+  const before = { ...applied };
   const status = await handleGetNetworkStatus();
-  if (status) {
+  if (!status) return;
+  if (applied.attachment === before.attachment) {
     setNetworkState({
       attachmentState: status.attachmentState,
       isAttached: status.isAttached,
@@ -104,10 +124,11 @@ async function readNetworkStatus(): Promise<void> {
       hasRoute: status.hasRoute,
       mediaRoute: status.mediaRoute,
       canWrite: status.canWrite,
-      bars: status.bars,
-      ownRecords: status.ownRecords,
-      ownRecordsError: status.ownRecordsError,
     });
+  }
+  if (applied.strength === before.strength) setNetworkState("bars", status.bars);
+  if (applied.ownRecords === before.ownRecords) {
+    setNetworkState({ ownRecords: status.ownRecords, ownRecordsError: status.ownRecordsError });
   }
 }
 
@@ -118,10 +139,11 @@ function keep(subscription: Promise<UnlistenFn>): void {
   });
 }
 
+/** Subscribe first, then read the snapshot once the stream is live. */
 function start(): void {
-  void readNetworkStatus();
   keep(
     subscribeNetworkStatus((event) => {
+      applied.attachment += 1;
       setNetworkState({
         attachmentState: event.attachmentState,
         isAttached: event.isAttached,
@@ -132,12 +154,19 @@ function start(): void {
       });
     }),
   );
-  keep(subscribeNetworkStrength((bars) => setNetworkState("bars", bars)));
   keep(
-    subscribeOwnRecords((phase, error) =>
-      setNetworkState({ ownRecords: phase, ownRecordsError: error }),
-    ),
+    subscribeNetworkStrength((bars) => {
+      applied.strength += 1;
+      setNetworkState("bars", bars);
+    }),
   );
+  keep(
+    subscribeOwnRecords((phase, error) => {
+      applied.ownRecords += 1;
+      setNetworkState({ ownRecords: phase, ownRecordsError: error });
+    }),
+  );
+  void eventStreamLive().then(readNetworkStatus);
 }
 
 function stop(): void {
@@ -147,8 +176,9 @@ function stop(): void {
 
 /**
  * Keep the store current while the calling component is mounted. Several
- * components may track at once; the first reads the state and
- * subscribes, the last to unmount stops them.
+ * components may track at once; the first subscribes and reads the state
+ * once the window's stream is live (the window calls `startEventStream`),
+ * the last to unmount stops them.
  */
 export function trackNetworkStatus(): void {
   let mounted = false;

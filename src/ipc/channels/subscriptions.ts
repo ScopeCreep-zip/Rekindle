@@ -115,6 +115,22 @@ function writeCursor(cursor: Cursor | null): void {
 
 let stream: Promise<void> | null = null;
 
+/// Resolves once this window's stream is registered with the backend: from
+/// then on every event reaches the handlers, so a snapshot read after it
+/// misses none (an event published between an earlier snapshot read and
+/// the registration would be lost, plan VI1).
+let markLive: () => void = () => {};
+const live = new Promise<void>((resolve) => {
+  markLive = resolve;
+});
+
+/// Wait until this window's event stream is live ([`startEventStream`]
+/// resolved). A store that reads a snapshot reads it after this, so no
+/// change between the snapshot and the subscription is lost.
+export function eventStreamLive(): Promise<void> {
+  return live;
+}
+
 /// Open this window's event stream. Call it once the window has
 /// registered its handlers (end of its `onMount` subscriptions): a
 /// reloading window is sent what it missed immediately. `reload` reloads
@@ -149,7 +165,7 @@ export function startEventStream(reload?: () => void): Promise<void> {
     }
     dispatch(envelope.channel, envelope.payload);
   };
-  stream = invoke<void>("subscribe_events", { channel, from }).catch((err) => {
+  stream = invoke<void>("subscribe_events", { channel, from }).then(markLive, (err) => {
     stream = null;
     console.error("subscribe_events failed — this window receives no events", err);
   });
