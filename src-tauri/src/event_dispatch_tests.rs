@@ -219,9 +219,11 @@ fn a_skin_trial_reaches_the_settings_window_only() {
 #[test]
 fn system_events_ride_the_community_channel() {
     let e = WebviewEvent::Subscription(SubscriptionEvent::System(
-        rekindle_types::subscription_events::SystemEvent::RaidAlert {
+        rekindle_types::subscription_events::SystemEvent::RaidDetected {
             community: REC.into(),
-            active: true,
+            joins_in_window: 25,
+            max_joins_per_interval: 10,
+            join_interval_seconds: 60,
         },
     ));
     assert_eq!(e.channel(), "community-event");

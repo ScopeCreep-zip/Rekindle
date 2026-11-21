@@ -215,26 +215,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Architecture §17.4 — raid alert overlay rendered at the top of
-   * `CommunityWindow` while the backend's raid detector is firing.
-   * Higher visual weight than the plate-gate banner because the
-   * threat surface (join floods) is more time-sensitive. */
-  .raid-alert-banner {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
-    background: color-mix(in srgb, var(--color-xfire-busy) 30%, var(--color-xfire-bg-dark));
-    color: var(--color-xfire-danger-text);
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
-    font-size: 11px;
-  }
-
-  .raid-alert-banner-text {
-    flex: 1;
-    line-height: 1.4;
-  }
-
   /* ─── Own removal (plan E3.2 S9): the community is read-only history ─── */
   .removal-banner {
     display: flex;

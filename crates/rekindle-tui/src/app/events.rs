@@ -366,18 +366,6 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => Some(self.reskin(&event)),
-            SubscriptionEvent::System(SystemEvent::Announcement { ref body, .. }) => {
-                let preview = rekindle_utils::text::prefix(body, 80);
-                self.notifications
-                    .push(format!("Announcement: {preview}"), ToastLevel::Info);
-                Some(Action::Render)
-            }
-            SubscriptionEvent::System(SystemEvent::RaidAlert { active, .. }) => {
-                Some(self.raid_toast(active))
-            }
-            SubscriptionEvent::System(SystemEvent::ChannelLockdown { locked, .. }) => {
-                Some(self.lockdown_toast(locked))
-            }
             SubscriptionEvent::System(SystemEvent::QuickWipeChanged {
                 armed,
                 ref shortcut,
@@ -460,27 +448,6 @@ impl App {
             | SubscriptionEvent::Network(_)
             | SubscriptionEvent::System(_) => Some(Action::Render),
         }
-    }
-
-    /// A channel's lockdown began or ended.
-    fn raid_toast(&mut self, active: bool) -> Action {
-        let (msg, level) = if active {
-            ("Raid alert activated!", ToastLevel::Error)
-        } else {
-            ("Raid alert cleared", ToastLevel::Success)
-        };
-        self.notifications.push(msg.into(), level);
-        Action::Render
-    }
-
-    fn lockdown_toast(&mut self, locked: bool) -> Action {
-        let (msg, level) = if locked {
-            ("Channel locked down", ToastLevel::Warning)
-        } else {
-            ("Channel lockdown lifted", ToastLevel::Success)
-        };
-        self.notifications.push(msg.into(), level);
-        Action::Render
     }
 
     /// The quick wipe was armed or disarmed (plan E7.1). The TUI has no

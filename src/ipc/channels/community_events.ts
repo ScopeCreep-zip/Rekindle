@@ -318,28 +318,6 @@ export type CommunityEvent =
       data: { communityId: string; codeHash: string; newUseCount: number };
     }
   | {
-      type: "systemMessage";
-      data: {
-        communityId: string;
-        body: string;
-        timestamp: number;
-      };
-    }
-  | {
-      type: "raidAlert";
-      data: {
-        communityId: string;
-        active: boolean;
-      };
-    }
-  | {
-      type: "channelLockdown";
-      data: {
-        communityId: string;
-        locked: boolean;
-      };
-    }
-  | {
       type: "syncComplete";
       data: {
         communityId: string;

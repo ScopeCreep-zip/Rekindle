@@ -257,11 +257,8 @@ impl SubscriptionEvent {
                 | SocialEvent::GameServerRemoved { community, .. } => community,
             }),
             Self::System(e) => match e {
-                SystemEvent::Announcement { community, .. } => community.as_deref(),
-                SystemEvent::RaidAlert { community, .. }
-                | SystemEvent::RaidDetected { community, .. }
+                SystemEvent::RaidDetected { community, .. }
                 | SystemEvent::AutoModAlert { community, .. }
-                | SystemEvent::ChannelLockdown { community, .. }
                 | SystemEvent::BootstrapRequested { community, .. }
                 | SystemEvent::BootstrapReceived { community } => Some(community),
                 // Audit chain breakage is a local-device event, not community-scoped.

@@ -6,24 +6,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SystemEvent {
-    /// A system message (community-wide announcement from operator).
-    /// Triggered by: gossip `ControlPayload::SystemMessage`.
-    Announcement {
-        community: Option<String>,
-        body: String,
-        timestamp: u64,
-    },
-    /// A raid alert was activated or deactivated.
-    /// Triggered by: gossip `ControlPayload::RaidAlert`.
-    RaidAlert { community: String, active: bool },
-
     /// **This peer** observed the join rate crossing the community's
     /// policy threshold.
     ///
     /// Architecture §20.6: every peer runs the detector, so this is a
-    /// local observation rather than a broadcast — distinct from
-    /// [`Self::RaidAlert`], which is a moderator's decision gossiped to
-    /// everyone. The counts are carried so a client can say *how* far
+    /// local observation rather than a broadcast. The counts are carried so a client can say *how* far
     /// over the threshold it is rather than just that it happened.
     RaidDetected {
         community: String,
@@ -42,9 +29,6 @@ pub enum SystemEvent {
         message_id: String,
         rule_name: String,
     },
-    /// A channel was locked or unlocked (lockdown mode).
-    /// Triggered by: gossip `ControlPayload::ChannelLockdown`.
-    ChannelLockdown { community: String, locked: bool },
     /// A bootstrap request was received (operator processing a new joiner).
     /// Triggered by: gossip `ControlPayload::BootstrapRequest`.
     BootstrapRequested {

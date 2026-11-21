@@ -1742,15 +1742,6 @@
       }
     }
   },
-  "system.announcement": {
-    "system": {
-      "announcement": {
-        "body": "Server maintenance at midnight",
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "timestamp": 1760000000000
-      }
-    }
-  },
   "system.auditChainBroken": {
     "system": {
       "auditChainBroken": {
@@ -1783,27 +1774,11 @@
       }
     }
   },
-  "system.channelLockdown": {
-    "system": {
-      "channelLockdown": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "locked": true
-      }
-    }
-  },
   "system.quickWipeChanged": {
     "system": {
       "quickWipeChanged": {
         "armed": true,
         "shortcut": "CommandOrControl+Shift+F12"
-      }
-    }
-  },
-  "system.raidAlert": {
-    "system": {
-      "raidAlert": {
-        "active": true,
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
       }
     }
   },

@@ -74,11 +74,7 @@ export type MembershipEvent =
 
 /** System-level signals from the daemon vocabulary. */
 export type SystemEvent =
-  /** `community` is null for a device-wide announcement. */
-  | { announcement: { community: string | null; body: string; timestamp: number } }
-  /** A moderator's decision, gossiped to everyone. */
-  | { raidAlert: { community: string; active: boolean } }
-  /** **This peer's** own observation — see `raidAlert` for the decision. */
+  /** **This peer's** own observation of the join rate. */
   | {
       raidDetected: {
         community: string;
@@ -95,7 +91,6 @@ export type SystemEvent =
         ruleName: string;
       };
     }
-  | { channelLockdown: { community: string; locked: boolean } }
   | { bootstrapRequested: Record<string, unknown> }
   | { bootstrapReceived: Record<string, unknown> }
   | { auditChainBroken: { cursor: number } }

@@ -1,6 +1,5 @@
 import { Component, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
-import { setCommunityState } from "../stores/community.store";
 import { removalText } from "../utils/removal_text";
 import { useCommunityWindow } from "./community_window/useCommunityWindow";
 import CommunitySidebar from "./community_window/CommunitySidebar";
@@ -21,29 +20,6 @@ const CommunityWindow: Component = () => {
           rails; MessageList's container carries id="main-content". */}
       <a href="#main-content" class="skip-link">Skip to messages</a>
       <Titlebar title={vm.activeCommunity()?.name ?? "Community"} showMaximize />
-      {/* Architecture §17.4 / Plan §Failure 11 — raid alert banner stays
-          until a moderator dismisses; the detector re-trips if the
-          join-flood continues next interval. */}
-      <Show when={vm.activeCommunity()?.raidAlertActive}>
-        <div class="raid-alert-banner" role="alert">
-          <span class="raid-alert-banner-text">
-            <strong>Raid detected</strong> — slowmode and join-throttling are
-            active. Moderators can review recent joins and pause invites.
-          </span>
-          <button
-            type="button"
-            class="form-btn-secondary"
-            onClick={() => {
-              const id = vm.selectedCommunityId();
-              if (id) {
-                setCommunityState("communities", id, "raidAlertActive", false);
-              }
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
-      </Show>
       {/* Plan E3.2 S9 (A/B R5-2): our own removal, from the live event or
           the community's stored `removed` state, so it survives a restart. */}
       <Show when={vm.ownRemoval()}>

@@ -15,7 +15,6 @@ import { setTypingUsers, typingTimers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
 import { handleLoadChannelMessages } from "../../actions/community/messages";
-import { withCommunity } from "./community_reread";
 
 type NewChannelMessage = Extract<ChannelMessageEvent, { new: unknown }>["new"];
 
@@ -335,28 +334,11 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
 
 /// System-level community signals on the daemon vocabulary.
 ///
-/// Bodies moved from the `{ type, data }` cases they replaced;
-/// `SystemMessage` became `Announcement` and `SyncComplete` became
-/// `SyncReceived`, which Tier 1 already had.
+/// Only local observations remain: the gossiped raid alert, lockdown and
+/// announcement had no sender and were removed (plan E3.2 S8-E).
 export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): void {
   if (!("system" in event)) return;
   const s = event.system;
-
-  if ("announcement" in s) {
-    const { community, body, timestamp } = s.announcement;
-    const activeChannel = communityState.activeChannel;
-    if (activeChannel && community !== null && communityState.activeCommunity === community) {
-      const sysMsg: Message = {
-        id: Date.now(),
-        senderId: "__system__",
-        body,
-        timestamp,
-        isOwn: false,
-      };
-      setCommunityState("channelMessages", activeChannel, (prev) => [...(prev ?? []), sysMsg]);
-    }
-    return;
-  }
 
   if ("raidDetected" in s) {
     // Architecture §20.6 — this peer's sliding window tripped the
@@ -374,29 +356,6 @@ export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): voi
 
   if ("autoModAlert" in s) {
     addToast(`AutoMod alert: ${s.autoModAlert.ruleName}`, "info");
-    return;
-  }
-
-  if ("raidAlert" in s) {
-    // Architecture §17.4 — raid alert lives in store; CommunityWindow
-    // renders a banner overlay (`role="alert"`) for higher visibility
-    // than a transient toast. The flag persists until the backend
-    // emits `active: false` (or the user clears it client-side via
-    // `dismissRaidAlertLocal`).
-    const { community, active } = s.raidAlert;
-    withCommunity(community, () =>
-      setCommunityState("communities", community, "raidAlertActive", active),
-    );
-    return;
-  }
-
-  if ("channelLockdown" in s) {
-    const { community, locked } = s.channelLockdown;
-    const name = communityState.communities[community]?.name ?? community;
-    addToast(
-      locked ? `Channels locked in ${name}` : `Channel lockdown lifted in ${name}`,
-      "info",
-    );
   }
 }
 

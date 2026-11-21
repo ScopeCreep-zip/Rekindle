@@ -262,11 +262,6 @@ export interface Community {
   /** Which segment hosts our slot. 0 for the primary; 1..=MAX_SEGMENTS
    *  for expansion segments. */
   mySegmentIndex?: number;
-  /** Architecture §17.4 — raid alert flag toggled by the
-   *  `raidAlert` community-event. The CommunityWindow renders a
-   *  banner overlay while this is `true`; cleared by the matching
-   *  `raidAlert { active: false }` event from the backend. */
-  raidAlertActive?: boolean;
 }
 
 export interface SegmentInfo {

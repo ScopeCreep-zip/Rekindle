@@ -127,13 +127,8 @@ impl SubscriptionEvent {
             // A review is the identity's, whichever window or client acts.
             Self::Notification(_) | Self::Network(_) | Self::IntentPending(_) => EventScope::Device,
             Self::System(e) => match e {
-                SystemEvent::Announcement { community, .. } => community
-                    .clone()
-                    .map_or(EventScope::Device, EventScope::Community),
-                SystemEvent::RaidAlert { community, .. }
-                | SystemEvent::RaidDetected { community, .. }
+                SystemEvent::RaidDetected { community, .. }
                 | SystemEvent::AutoModAlert { community, .. }
-                | SystemEvent::ChannelLockdown { community, .. }
                 | SystemEvent::BootstrapRequested { community, .. }
                 | SystemEvent::BootstrapReceived { community } => {
                     EventScope::Community(community.clone())

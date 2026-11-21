@@ -5,11 +5,8 @@ use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 use crate::{channel, community, id, pk, text, Sample};
 
 pub const NAMES: &[&str] = &[
-    "announcement",
-    "raidAlert",
     "raidDetected",
     "autoModAlert",
-    "channelLockdown",
     "bootstrapRequested",
     "bootstrapReceived",
     "auditChainBroken",
@@ -20,11 +17,8 @@ pub const NAMES: &[&str] = &[
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
     match e {
-        SystemEvent::Announcement { .. } => "announcement",
-        SystemEvent::RaidAlert { .. } => "raidAlert",
         SystemEvent::RaidDetected { .. } => "raidDetected",
         SystemEvent::AutoModAlert { .. } => "autoModAlert",
-        SystemEvent::ChannelLockdown { .. } => "channelLockdown",
         SystemEvent::BootstrapRequested { .. } => "bootstrapRequested",
         SystemEvent::BootstrapReceived { .. } => "bootstrapReceived",
         SystemEvent::AuditChainBroken { .. } => "auditChainBroken",
@@ -47,21 +41,6 @@ pub fn samples() -> Vec<Sample> {
 fn alerts() -> Vec<Sample> {
     vec![
         ev(
-            "announcement",
-            SystemEvent::Announcement {
-                community: Some(community()),
-                body: text("Server maintenance at midnight"),
-                timestamp: 1_760_000_000_000,
-            },
-        ),
-        ev(
-            "raidAlert",
-            SystemEvent::RaidAlert {
-                community: community(),
-                active: true,
-            },
-        ),
-        ev(
             "raidDetected",
             SystemEvent::RaidDetected {
                 community: community(),
@@ -77,13 +56,6 @@ fn alerts() -> Vec<Sample> {
                 channel: channel(),
                 message_id: id("msg_", '1'),
                 rule_name: text("no-invite-links"),
-            },
-        ),
-        ev(
-            "channelLockdown",
-            SystemEvent::ChannelLockdown {
-                community: community(),
-                locked: true,
             },
         ),
     ]

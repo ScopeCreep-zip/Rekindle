@@ -65,24 +65,6 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
 pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) {
     let now_bucket = now_ms / 1000 / 10; // 10-second bucketing
     match s {
-        SystemEvent::Announcement {
-            community, body, ..
-        } => {
-            h.update(b"announce|");
-            h.update(community.as_deref().unwrap_or("global").as_bytes());
-            h.update(b"|");
-            // Hash the body content, not the full body (avoid length-based collisions)
-            let body_hash = blake3::hash(body.as_bytes());
-            h.update(body_hash.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
-        }
-        SystemEvent::RaidAlert { community, active } => {
-            h.update(b"raid|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(&[u8::from(*active)]);
-        }
         SystemEvent::RaidDetected {
             community,
             joins_in_window,
@@ -116,12 +98,6 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(message_id.as_bytes());
             h.update(b"|");
             h.update(rule_name.as_bytes());
-        }
-        SystemEvent::ChannelLockdown { community, locked } => {
-            h.update(b"lockdown|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(&[u8::from(*locked)]);
         }
         SystemEvent::BootstrapRequested {
             community,
