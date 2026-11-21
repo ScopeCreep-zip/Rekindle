@@ -1,11 +1,11 @@
 import { commands } from "../../ipc/commands";
 import { asImageKind } from "../../ipc/commands/system";
 import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
+import { onCommunityListed } from "../../handlers/community/community_listed";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import {
   transformAutoModRule,
-  transformCommunityDetail,
   transformExpression,
   transformMember,
 } from "../../utils/transformers";
@@ -14,53 +14,22 @@ import { handleUpdateCommunityPresence } from "./profile";
 
 /// Create a community. A refused create (a cancelled review, a node not
 /// yet attached) rejects with the Host's error, so the form that asked
-/// stays open and shows why (walk row B60).
+/// stays open and shows why (walk row B60). The community's row is not
+/// added here: the Host publishes its arrival (`MetadataChanged`, from
+/// `origin::seed_community`'s `CommunityCreated`) to every window, and the
+/// window that asked lists it from that event as any other does (lead
+/// decision (41): one path for community rows).
 export async function handleCreateCommunity(name: string): Promise<void> {
-  const id = await commands.createCommunity(name);
-  try {
-    // Fetch full community details from backend (includes pseudonym, MEK gen, channels, roles)
-    const details = await commands.getCommunityDetails();
-    const created = details.find((c) => c.id === id);
-    if (created) {
-      setCommunityState("communities", id, transformCommunityDetail(created));
-    } else {
-      setCommunityState("communities", id, {
-        id,
-        name,
-        description: null,
-        channels: [],
-        categories: [],
-        members: [],
-        roles: [],
-        myRoleIds: [],
-        myPermissions: "0",
-        myChannelPermissions: {},
-        myPseudonymKey: null,
-        mekGeneration: 0,
-        events: [],
-        expressions: [],
-        automodRules: [],
-      });
-    }
-    // Fetch members so the creator appears in the member list
-    try {
-      const members = await commands.getCommunityMembers(id);
-      setCommunityMembers(id, members.map(transformMember));
-    } catch (e) {
-      console.error("Failed to load community members after creation:", e);
-    }
-  } catch (e) {
-    console.error("Failed to load the created community:", e);
-    addToast(`Created, but failed to load it: ${errorMessage(e)}`, "error");
-  }
+  await commands.createCommunity(name);
 }
 
 /// Join a community from its invite link. The backend parses and
-/// validates the link; this only refreshes the stores afterwards.
+/// validates the link; the joined community's row arrives from the Host's
+/// event (decision (41)), and this selects it once it is listed.
 export async function handleJoinCommunity(inviteUrl: string): Promise<void> {
   try {
     const communityId = await commands.joinCommunity(inviteUrl);
-    await loadJoinedCommunity(communityId);
+    loadJoinedCommunity(communityId);
   } catch (e) {
     // Surface the backend's specific error string (banned / full / invalid invite / Stronghold locked /
     // a timed-out join phase / etc.) rather than swallowing it as a generic "Failed to join community" —
@@ -73,28 +42,13 @@ export async function handleJoinCommunity(inviteUrl: string): Promise<void> {
   }
 }
 
-/// Load a community the backend has just joined into the stores and
-/// select it (the join modal).
-export async function loadJoinedCommunity(communityId: string): Promise<void> {
-  // Re-fetch community details to get name, channels, pseudonym key, MEK generation, roles
-  const details = await commands.getCommunityDetails();
-  const joined = details.find((c) => c.id === communityId);
-  if (joined) {
-    setCommunityState("communities", communityId, transformCommunityDetail(joined));
-  }
-  // Fetch members for the newly joined community
-  try {
-    const members = await commands.getCommunityMembers(communityId);
-    setCommunityMembers(communityId, members.map(transformMember));
-  } catch (e) {
-    console.error("Failed to load community members after join:", e);
-  }
-  await handleLoadExpressions(communityId);
-  await handleLoadAutoModRules(communityId);
-
-  // Auto-select the newly joined community so it appears immediately
-  handleSelectCommunity(communityId);
+/// A community the backend has just joined: announce it and select it
+/// once its row is listed. The row comes only from the Host's
+/// `MetadataChanged` (`HostGovernance::join`'s `CommunityJoined`) or
+/// hydration, never from this reply (decision (41)).
+export function loadJoinedCommunity(communityId: string): void {
   addToast("Joined community!", "success");
+  onCommunityListed(communityId, () => handleSelectCommunity(communityId));
 }
 
 export function handleSelectCommunity(communityId: string): void {
