@@ -5,46 +5,15 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_image::{Rgba, RgbaImage};
 use rekindle_types::dto::skin::{Insets, SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_tree::{
     ActionKey, Anchor, LampKey, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
 };
 
 use super::roles::{role, Facts};
+use super::test_support::{frame, piece, Z};
 use super::{import, validate};
 use crate::import::tree::parse;
-
-const Z: Insets = Insets {
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-};
-
-fn frame() -> WindowLayout {
-    WindowLayout {
-        outsets: Z,
-        content: Z,
-        min_width: 30,
-        min_height: 20,
-        tiles: Vec::new(),
-        title: None,
-        tree: None,
-    }
-}
-
-fn piece(path: &str) -> RgbaImage {
-    let (w, h) = path
-        .rsplit_once('-')
-        .and_then(|(_, d)| d.split_once('x'))
-        .unwrap();
-    RgbaImage::from_pixel(
-        w.parse().unwrap(),
-        h.parse().unwrap(),
-        Rgba([10, 20, 30, 255]),
-    )
-}
 
 fn imported(xml: &[u8], parts: &[u8]) -> (WindowLayout, SkinTree) {
     imported_rows(xml, parts, &[])

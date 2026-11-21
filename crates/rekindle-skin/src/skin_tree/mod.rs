@@ -25,4 +25,6 @@ mod rail_tests;
 #[cfg(test)]
 mod stack_tests;
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
