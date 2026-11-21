@@ -16,7 +16,6 @@ pub struct CommunityRow {
     pub description: Option<String>,
     pub icon_hash: Option<String>,
     pub banner_hash: Option<String>,
-    pub dht_owner_keypair: Option<String>,
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,
     pub member_registry_key: Option<String>,
@@ -45,7 +44,7 @@ pub struct CommunityRow {
 pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<CommunityRow>> {
     let mut stmt = conn.prepare(
         "SELECT c.id, c.name, c.description, c.icon_hash, c.banner_hash, \
-         c.dht_owner_keypair, c.my_pseudonym_key, c.mek_generation, \
+         c.my_pseudonym_key, c.mek_generation, \
          c.member_registry_key, c.my_subkey_index, c.my_segment_index, \
          COALESCE(cm.onboarding_complete, 0), c.presence_policy, c.lamport_clock, \
          (SELECT COALESCE(MAX(m.lamport_ts), 0) FROM messages m \
@@ -68,18 +67,17 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
                 description: row.get(2)?,
                 icon_hash: row.get(3)?,
                 banner_hash: row.get(4)?,
-                dht_owner_keypair: row.get(5)?,
-                my_pseudonym_key: row.get(6)?,
-                mek_generation: crate::row::get_u64(row, 7)?,
-                member_registry_key: row.get(8)?,
-                my_subkey_index: row.get(9)?,
-                my_segment_index: row.get(10)?,
-                onboarding_complete: row.get::<_, i64>(11)? != 0,
+                my_pseudonym_key: row.get(5)?,
+                mek_generation: crate::row::get_u64(row, 6)?,
+                member_registry_key: row.get(7)?,
+                my_subkey_index: row.get(8)?,
+                my_segment_index: row.get(9)?,
+                onboarding_complete: row.get::<_, i64>(10)? != 0,
                 presence_policy: crate::row::get_json_opt(row, "presence_policy")?,
-                governance_clock: crate::row::get_u64(row, 13)?,
-                message_clock: crate::row::get_u64(row, 14)?,
-                removed_by_name: row.get(15)?,
-                my_member_record: row.get(16)?,
+                governance_clock: crate::row::get_u64(row, 12)?,
+                message_clock: crate::row::get_u64(row, 13)?,
+                removed_by_name: row.get(14)?,
+                my_member_record: row.get(15)?,
             })
         })?
         .collect();
@@ -92,7 +90,6 @@ pub struct NewCommunity<'a> {
     pub id: &'a str,
     pub name: &'a str,
     pub joined_at: i64,
-    pub dht_owner_keypair: Option<&'a str>,
     pub my_pseudonym_key: &'a str,
     pub mek_generation: i64,
     pub member_registry_key: Option<&'a str>,
@@ -109,16 +106,15 @@ fn insert_with(
     conn.execute(
         &format!(
             "{verb} INTO communities (owner_key, id, name, joined_at, \
-             dht_owner_keypair, my_pseudonym_key, mek_generation, member_registry_key, \
+             my_pseudonym_key, mek_generation, member_registry_key, \
              my_subkey_index, my_segment_index) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0){on_conflict}"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0){on_conflict}"
         ),
         params![
             owner_key,
             c.id,
             c.name,
             c.joined_at,
-            c.dht_owner_keypair,
             c.my_pseudonym_key,
             c.mek_generation,
             c.member_registry_key,
@@ -171,7 +167,6 @@ pub fn upsert_membership(
         "INSERT",
         " ON CONFLICT (owner_key, id) DO UPDATE SET \
          name = excluded.name, joined_at = excluded.joined_at, \
-         dht_owner_keypair = excluded.dht_owner_keypair, \
          my_pseudonym_key = excluded.my_pseudonym_key, \
          mek_generation = excluded.mek_generation, \
          member_registry_key = excluded.member_registry_key, \
@@ -204,7 +199,6 @@ pub enum Column {
     BannerHash,
     PresencePolicy,
     MemberRegistryKey,
-    DhtOwnerKeypair,
     MySubkeyIndex,
     MySegmentIndex,
     MekGeneration,
@@ -226,7 +220,6 @@ impl Column {
             Self::BannerHash => "banner_hash",
             Self::PresencePolicy => "presence_policy",
             Self::MemberRegistryKey => "member_registry_key",
-            Self::DhtOwnerKeypair => "dht_owner_keypair",
             Self::MySubkeyIndex => "my_subkey_index",
             Self::MySegmentIndex => "my_segment_index",
             Self::MekGeneration => "mek_generation",
@@ -361,7 +354,6 @@ mod tests {
             id,
             name,
             joined_at: 0,
-            dht_owner_keypair: None,
             my_pseudonym_key: "me",
             mek_generation: 3,
             member_registry_key: Some("registry"),

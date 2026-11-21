@@ -262,15 +262,12 @@ CREATE TABLE IF NOT EXISTS communities (
     banner_hash TEXT,
     joined_at INTEGER NOT NULL,
     last_synced INTEGER,
-    dht_record_key TEXT,
-    dht_owner_keypair TEXT,
     my_pseudonym_key TEXT,
     -- Our own member record's key (plan E3.2, ADR 0011), stored at join or
     -- create: never read back from the merged roster, which drops us once
     -- our own `MemberLeft` merges while our last writes are still owed.
     my_member_record TEXT,
     mek_generation INTEGER NOT NULL DEFAULT 0,
-    manifest_key TEXT,
     member_registry_key TEXT,
     my_subkey_index INTEGER,
     -- Plate Gate: which segment the user joined into. 0 = primary.
@@ -322,8 +319,8 @@ CREATE TABLE IF NOT EXISTS community_members (
     display_name TEXT,
     joined_at INTEGER NOT NULL,
     -- LOCAL slot within the segment's registry record (raw SMPL subkey
-    -- 0..254 — records are o_cnt:0, no owner offset). Written by the
-    -- registry scan and the JoinAccepted upsert; NULL until first
+    -- 0..254 — records are o_cnt:0, no owner offset). Written only by the
+    -- registry scan (`repo::members::upsert_discovered`); NULL until first
     -- discovered.
     subkey_index INTEGER,
     -- Plate Gate (architecture §15): which segment hosts this member's slot.

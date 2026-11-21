@@ -57,7 +57,6 @@ async fn writes_come_back_in_the_next_projection() {
         &communities,
         NewMembership {
             membership: membership(),
-            dht_owner_keypair: None,
             registry_keypair: Some("reg-kp".into()),
             member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
             member_record: None,
@@ -219,7 +218,6 @@ async fn a_rejoin_records_its_membership_over_the_kept_history() {
         crate::host::community::CommunityStore::new(crate::host::community::store::new_map());
     let joined = |membership: CommunityMembership, joined_at: i64| NewMembership {
         membership,
-        dht_owner_keypair: None,
         registry_keypair: None,
         member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
         member_record: None,

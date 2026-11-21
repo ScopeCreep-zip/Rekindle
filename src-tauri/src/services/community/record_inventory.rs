@@ -131,7 +131,6 @@ mod tests {
             categories: Vec::new(),
             my_role_ids: Vec::new(),
             roles: Vec::new(),
-            dht_owner_keypair: None,
             my_pseudonym_key: Some(hex::encode(my_pk.0)),
             mek_generation: 0,
             member_registry_key: Some("reg-key".to_string()),

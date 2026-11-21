@@ -33,7 +33,6 @@ pub struct CommunityMembership {
     pub my_segment_index: Option<u32>,
     pub slot_keypair: Option<String>,
     pub slot_seed_hex: Option<String>,
-    pub dht_owner_keypair: Option<String>,
     /// The community's governance clock.
     pub governance_clock: u64,
     pub channel_ids: Vec<String>,

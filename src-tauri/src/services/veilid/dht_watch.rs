@@ -134,9 +134,10 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
 
     let community_id_and_pseudonym = {
         let communities = state.communities.read();
+        // The anchor is never watched (`watch_community_records`): it is
+        // immutable, so no change of it reaches here.
         communities.values().find_map(|cs| {
-            let matched = cs.anchor.as_deref() == Some(record_key)
-                || cs.member_registry_key.as_deref() == Some(record_key)
+            let matched = cs.member_registry_key.as_deref() == Some(record_key)
                 || cs.governance_state.as_ref().is_some_and(|gov| {
                     gov.segments
                         .iter()

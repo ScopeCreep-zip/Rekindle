@@ -273,7 +273,7 @@ fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
 fn member_and_own_roles_follow_a_later_role_unassignment() {
     let store = CommunityStore::new(new_map());
     let (me, bob) = (PseudonymKey([1; 32]), PseudonymKey([2; 32]));
-    store.install_membership(&membership(&me), None, None);
+    store.install_membership(&membership(&me), None);
     let (everyone, moderator) = (RoleId::EVERYONE, RoleId([5; 16]));
     let assigned = |held: &[RoleId]| {
         let mut gov = GovernanceState::default();

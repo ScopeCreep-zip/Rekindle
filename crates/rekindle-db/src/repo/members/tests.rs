@@ -20,7 +20,6 @@ fn conn_with_community() -> Connection {
                 id: "c1",
                 name: "One",
                 joined_at: 0,
-                dht_owner_keypair: None,
                 my_pseudonym_key: "me",
                 mek_generation: 0,
                 member_registry_key: None,

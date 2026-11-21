@@ -77,10 +77,6 @@ impl HostGovernance {
             my_segment_index: membership.segment_index,
             slot_keypair,
             slot_seed_hex: membership.slot_seed.as_ref().map(hex::encode),
-            // The governance keypair is in the community's row
-            // (`communities.dht_owner_keypair`, creator only); under
-            // `o_cnt: 0` it grants no write, so it is not carried here.
-            dht_owner_keypair: None,
             governance_clock: membership.lamport_counter,
             channel_ids: self.channel_ids_impl(community_id),
             mek_generation: membership.mek_generation,

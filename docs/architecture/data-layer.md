@@ -132,7 +132,7 @@ groups them by concern.
 ### Communities
 
 - **`communities`** — joined communities. Tracks DHT record keys
-  (`manifest_key`, `member_registry_key`; the id is the anchor `A`'s key), our
+  (`member_registry_key`; the id is the anchor `A`'s key), our
   pseudonym, current MEK generation, plate-gate `my_segment_index`,
   `my_subkey_index`, `lamport_clock`, and `beat_seq` (our `M`/1 beat count,
   advanced and persisted before each beat; plan E3.4 S1).

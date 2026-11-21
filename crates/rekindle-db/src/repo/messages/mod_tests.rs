@@ -12,7 +12,6 @@ fn seed(conn: &Connection) {
             id: "c1",
             name: "C",
             joined_at: 1,
-            dht_owner_keypair: None,
             my_pseudonym_key: "p",
             mek_generation: 1,
             member_registry_key: None,

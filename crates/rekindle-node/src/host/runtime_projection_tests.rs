@@ -24,7 +24,6 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
                 id: "c1",
                 name: "C",
                 joined_at: 1,
-                dht_owner_keypair: None,
                 my_pseudonym_key: "",
                 mek_generation: 0,
                 member_registry_key: None,

@@ -61,9 +61,6 @@ pub struct CommunityState {
     pub my_role_ids: Vec<rekindle_types::id::RoleId>,
     /// Cached role definitions from merged governance state.
     pub roles: Vec<RoleDefinition>,
-    /// Owner keypair for the community DHT record (Veilid `KeyPair::to_string()` format).
-    /// Required to open the record with write access.
-    pub dht_owner_keypair: Option<String>,
     /// Our pseudonym pubkey hex for this community.
     pub my_pseudonym_key: Option<String>,
     /// Our own member record's key in this community (plan E3.2, ADR

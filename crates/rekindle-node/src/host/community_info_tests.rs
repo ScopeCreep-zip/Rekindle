@@ -89,7 +89,6 @@ async fn seed_keyed_community(host: &crate::host::Host, owner: &str, gov: Govern
                     id: KEYED_ANCHOR,
                     name: "C",
                     joined_at: 1,
-                    dht_owner_keypair: None,
                     my_pseudonym_key: "",
                     mek_generation: 0,
                     member_registry_key: Some("registry"),

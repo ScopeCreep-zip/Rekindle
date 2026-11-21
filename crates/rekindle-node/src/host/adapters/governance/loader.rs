@@ -191,7 +191,6 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
         // Laid down by the projection from the merged role assignments.
         my_role_ids: Vec::new(),
         roles: roles_of(id, &load.roles),
-        dht_owner_keypair: community.dht_owner_keypair.clone(),
         my_pseudonym_key: community.my_pseudonym_key.clone(),
         my_member_record: community.my_member_record.clone(),
         mek_generation: community.mek_generation,

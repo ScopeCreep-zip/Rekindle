@@ -83,7 +83,6 @@ impl HostGovernance {
             &self.ctx.communities,
             crate::host::session::NewMembership {
                 membership,
-                dht_owner_keypair: None,
                 registry_keypair: None,
                 member_record_owner: Some(outcome.member.owner_keypair.clone()),
                 member_record: Some(outcome.member.record_key.clone()),

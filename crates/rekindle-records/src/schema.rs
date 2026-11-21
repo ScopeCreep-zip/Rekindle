@@ -12,11 +12,6 @@ use rekindle_types::dht_layout as layout;
 
 use crate::port::{RecordSchema, SchemaMember};
 
-/// Maximum members per SMPL record segment.
-/// Veilid allows up to 1024 total subkeys. With m_cnt=1 per member,
-/// 255 members = 255 subkeys, well within limits.
-pub const MAX_MEMBERS_PER_SEGMENT: usize = 255;
-
 /// The universal community SMPL schema: no owner subkeys, one subkey per
 /// member, each member key a raw 32-byte Ed25519 public key (for VLD0 the
 /// member id is the key itself).

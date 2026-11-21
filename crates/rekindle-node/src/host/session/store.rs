@@ -213,12 +213,11 @@ pub async fn roster_name(
         .filter(|name| !name.is_empty())
 }
 
-/// What a new membership stores beside the projection: the owner keypairs
-/// a created community has (none for a joined one).
+/// What a new membership stores beside the projection: the registry owner
+/// keypair a created community has (none for a joined one) and our member
+/// record's secrets.
 pub struct NewMembership {
     pub membership: CommunityMembership,
-    /// The governance record's owner keypair (`communities.dht_owner_keypair`).
-    pub dht_owner_keypair: Option<String>,
     /// The registry's owner keypair (the vault's `RegistryKeypair`).
     pub registry_keypair: Option<String>,
     /// Our member record's owner keypair `K_M(p)` (the vault's
@@ -252,7 +251,6 @@ pub fn record_membership(
     let (owner, db) = owner_and_db(session, db).ok_or("no identity is unlocked")?;
     let NewMembership {
         membership,
-        dht_owner_keypair,
         registry_keypair,
         member_record_owner,
         member_record,
@@ -308,11 +306,7 @@ pub fn record_membership(
             .map_err(|e| format!("member hpke secret: {e}"))?;
         }
     }
-    communities.install_membership(
-        &membership,
-        dht_owner_keypair.as_deref(),
-        registry_keypair.as_deref(),
-    );
+    communities.install_membership(&membership, registry_keypair.as_deref());
     // The pinned cert every op of ours is built and published under.
     if let Some(decoded) = cert {
         communities.set_genesis_cert(&community, decoded.signed.cert);
@@ -329,7 +323,6 @@ pub fn record_membership(
                 id: &row.anchor,
                 name: &row.community_name,
                 joined_at,
-                dht_owner_keypair: dht_owner_keypair.as_deref(),
                 my_pseudonym_key: &row.pseudonym_key,
                 mek_generation: i64::try_from(row.mek_generation).unwrap_or(i64::MAX),
                 member_registry_key: Some(&row.registry_key),

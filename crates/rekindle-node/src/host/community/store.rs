@@ -428,14 +428,13 @@ impl CommunityStore {
 
     /// Install a recorded membership (plan E3.1 B2b): our pseudonym, slot,
     /// segment, slot seed, registry, roles, clock and MEK generation, and
-    /// the owner keypairs a created community has, so the governance
+    /// the registry owner keypair a created community has, so the governance
     /// adapter's readers find the community in the store the moment the
     /// create or join records it. Merges into an entry an earlier write
     /// (the governance cache) made.
     pub fn install_membership(
         &self,
         membership: &CommunityMembership,
-        dht_owner_keypair: Option<&str>,
         registry_owner_keypair: Option<&str>,
     ) {
         self.write(&membership.anchor, |c| {
@@ -448,9 +447,6 @@ impl CommunityStore {
             c.slot_seed = membership.slot_seed.as_ref().map(hex::encode);
             c.governance_clock = c.governance_clock.max(membership.lamport_counter);
             c.mek_generation = membership.mek_generation;
-            if let Some(keypair) = dht_owner_keypair {
-                c.dht_owner_keypair = Some(keypair.to_string());
-            }
             if let Some(keypair) = registry_owner_keypair {
                 c.registry_owner_keypair = Some(keypair.to_string());
             }
