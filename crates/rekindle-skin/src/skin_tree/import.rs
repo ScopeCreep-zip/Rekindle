@@ -422,6 +422,56 @@ pub fn views_content(tree: &SkinTree, layout: &WindowLayout) -> Option<Insets> {
     })
 }
 
+/// `layout` with the side rail its components launch laid as its last
+/// top-level tile (StealthX's `MenuButton` `<Popup SaveState="1">
+/// MainMenuPopup</Popup>`, `components.xml:549-562`; the popup tile
+/// `MainMenuPopup` `Component="MainMenuWindow"` `JustX="LEFT" X="0"
+/// IndentTop="29" IndentBottom="28"`, `popups.xml:2`, is laid against the
+/// window it launches from, resized as its window component says
+/// (`MainMenuWindow` `BindY="true" ResizeY="100"`, `components.xml:815`:
+/// the rail runs from 29 px below the window's top to 28 px above its
+/// bottom, as the original shows). Other popups (the InfoView) are not
+/// read here.
+fn with_rail(layout: &Node, components: &[Node], by_name: &BTreeMap<String, &Node>) -> Node {
+    let launched: Vec<String> = by_name
+        .values()
+        .flat_map(|c| c.children_named("Popup"))
+        .map(|p| p.text.trim().to_ascii_lowercase())
+        .collect();
+    let rail = |t: &&Node| {
+        let none = Facts {
+            has_art: false,
+            class: None,
+            children: &[],
+        };
+        let name = t.attr_ci("Name").unwrap_or_default();
+        launched.contains(&name.to_ascii_lowercase())
+            && role(name, t.attr_ci("Component"), None, &none) == Some(NodeRole::SideRail)
+    };
+    let mut laid = layout.clone();
+    laid.children.extend(
+        components
+            .iter()
+            .filter(|n| n.name.eq_ignore_ascii_case("Popups"))
+            .flat_map(|p| p.children_named("Tile"))
+            .filter(rail)
+            .map(|t| {
+                let mut t = t.clone();
+                let window = t
+                    .attr_ci("Component")
+                    .and_then(|c| by_name.get(&c.to_ascii_lowercase()));
+                for k in ["ResizeX", "ResizeY"] {
+                    let declared = window.and_then(|w| w.attr_ci(k)).map(str::to_owned);
+                    if let (None, Some(v)) = (t.attr_ci(k), declared) {
+                        t.attrs.insert(k.to_owned(), v);
+                    }
+                }
+                t
+            }),
+    );
+    laid
+}
+
 /// Adds the component tree `layout` (the window's layout file) lays to
 /// `built`, and makes its views node's box the content rectangle.
 ///
@@ -444,6 +494,7 @@ pub fn add(
             by_name.entry(name.to_ascii_lowercase()).or_insert(c);
         }
     }
+    let laid = with_rail(layout, components, &by_name);
     let mut walk = Walk {
         window,
         by_name,
@@ -458,7 +509,7 @@ pub fn add(
             bottom: 0,
             left: 0,
         },
-        root: walk.walk(layout, None, &Sibs::new(), &[])?,
+        root: walk.walk(&laid, None, &Sibs::new(), &[])?,
     };
     tab_views(&mut tree.root);
     pages(&mut tree.root, &walk.groups);

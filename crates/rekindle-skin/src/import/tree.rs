@@ -14,7 +14,7 @@ const MAX_DEPTH: usize = 64;
 const MAX_ELEMENTS: usize = 100_000;
 
 /// One element: its name, attributes, own text (trimmed) and children.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Node {
     pub name: String,
     pub attrs: BTreeMap<String, String>,

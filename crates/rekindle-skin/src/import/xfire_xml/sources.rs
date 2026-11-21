@@ -50,3 +50,22 @@ pub(super) fn component_files(tree: &Tree, included: &[String]) -> Result<Vec<No
     }
     Ok(components)
 }
+
+/// The included popup files (a `<Popups>` root: StealthX's `popups.xml`,
+/// `skin.xml` `<Include File="popups.xml" />`), whose tiles a component's
+/// `<Popup>` launches.
+///
+/// # Errors
+/// A malformed included file.
+pub(super) fn popup_files(tree: &Tree, included: &[String]) -> Result<Vec<Node>, ImportError> {
+    let mut popups = Vec::new();
+    for f in included {
+        if ends_with_ci(f, ".xml") && lookup(tree, f).is_ok() {
+            let root = xml(tree, f)?;
+            if root.name.eq_ignore_ascii_case("Popups") {
+                popups.push(root);
+            }
+        }
+    }
+    Ok(popups)
+}

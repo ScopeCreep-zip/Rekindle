@@ -354,7 +354,14 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         title_rows::crop(&main, &mut controls, &tally.sources);
         let bitmaps = bitmaps(theme);
         let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, &colours, name, shift);
-        decor::main_window(&main, &components, decode, &colours, &mut windows)?;
+        let popups = sources::popup_files(tree, &included)?;
+        decor::main_window(
+            &main,
+            (&components, &popups),
+            decode,
+            &colours,
+            &mut windows,
+        )?;
     }
     if let Some(pieces) = &chat {
         windows.insert(

@@ -251,7 +251,7 @@ fn views_insets(main: &Node, components: &[Node]) -> Option<(u32, u32)> {
 /// What `piece` returns, or pieces that do not compose.
 pub fn main_window(
     main: &Node,
-    components: &[Node],
+    (components, popups): (&[Node], &[Node]),
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError> + Copy,
     colours: &[super::ColourRow],
     windows: &mut Windows,
@@ -274,7 +274,11 @@ pub fn main_window(
     if let Some(mut built) = built {
         apply(w, main, components, piece, &mut built)?;
         super::title::add(w, main, components, colours, piece, &mut built)?;
-        crate::skin_tree::import::add(w, main, components, piece, &mut built)?;
+        // The tree also reads the popups a component launches (StealthX's
+        // rail); nothing else reads them.
+        let mut with_popups = components.to_vec();
+        with_popups.extend_from_slice(popups);
+        crate::skin_tree::import::add(w, main, &with_popups, piece, &mut built)?;
         windows.insert(w, built);
     }
     Ok(())

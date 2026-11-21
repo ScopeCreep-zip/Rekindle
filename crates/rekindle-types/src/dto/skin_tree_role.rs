@@ -53,6 +53,12 @@ pub enum ActionKey {
     CreateRoom,
     DeleteItem,
     Favorite,
+    /// StealthX's `HostChatButton`: a new group DM (design N16).
+    HostChat,
+    /// StealthX's `JoinChatButton`: join the group DM.
+    JoinChat,
+    /// StealthX's `LeaveChatButton`: leave the group DM.
+    LeaveChat,
 }
 
 /// A resize edge or corner (Xfire's `Resize*` strips and `Gripper*` art).
@@ -125,8 +131,13 @@ pub enum NodeRole {
     /// Symbiosis's chat-room name edit (`RoomEdit` in `ChatRoomsButtonBar`),
     /// bound to the group DM's name (plan SK2 lead decision 1).
     RoomName,
-    /// StealthX's MENU rail (`MenuButton` → `MainMenuWindow`).
+    /// StealthX's MENU rail: the launched `MainMenuWindow` popup
+    /// (`popups.xml:2-89`) holding the menus, tabs and button rows.
     SideRail,
+    /// The control that opens and closes the [`Self::SideRail`]
+    /// (StealthX's `MenuButton`, `Class="SkinLauncher"`, `<Popup
+    /// SaveState="1">MainMenuPopup</Popup>`).
+    SideRailToggle,
     /// A resize edge or corner grip.
     Resize(Edge),
     Lamp(LampKey),
@@ -167,7 +178,7 @@ impl NodeRole {
                 | Self::Knob(_)
                 | Self::Button(_)
                 | Self::InfoToggle
-                | Self::SideRail
+                | Self::SideRailToggle
                 | Self::RoomName
                 | Self::Resize(_)
                 | Self::PackLink

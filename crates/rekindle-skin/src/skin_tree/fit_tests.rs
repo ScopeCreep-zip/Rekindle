@@ -230,3 +230,102 @@ fn an_ini_repeated_position_key_is_kept() {
     let names = s.entries.iter().filter(|e| e.key == "Name").count();
     assert_eq!((xs, names), (2, 1));
 }
+
+/// Plan SK2 design §2.8 and N16: StealthX's `MenuButton` launches the
+/// popup tile `MainMenuPopup` (`components.xml:549-562`, `popups.xml:2-89`);
+/// the popup is the side rail, laid against the window, holding the menus,
+/// the tabs, the per-view button rows and the chat buttons; the button is
+/// its toggle.
+#[test]
+fn stealthxs_menu_button_launches_the_side_rail() {
+    let main = parse(
+        "main.xml",
+        br#"<Tile Name="W" ResizeX="100" ResizeY="100" Component="MainWindow">
+<Tile Name="MenuButton" X="2" JustY="CENTER" Z="50" Component="MenuButton"/>
+<Tile Name="TabbedControl" X="120" Y="10" IndentRight="10" IndentBottom="10" ResizeX="100" ResizeY="100" Component="TabbedControl">
+<Tile Name="BuddyView" ResizeX="100" ResizeY="100" Component="BuddyView"/></Tile>
+</Tile>"#,
+    )
+    .unwrap();
+    let parts = parse(
+        "components.xml",
+        br#"<Components>
+<Component Name="MainWindow" MinWidth="300" MinHeight="400"/>
+<Component Name="MenuButton" Class="SkinLauncher"><Images State="Normal"><Image>menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
+<Component Name="MainMenuWindow" Class="Tile" DefaultWidth="114" MinWidth="114" MinHeight="360" BindX="false" BindY="true" ResizeY="100"/>
+<Component Name="MenuBackground" Class="Tile"><Images><Image Type="middle">ground-10x10</Image></Images></Component>
+<Component Name="MenuBar" Class="Tile" MinWidth="110" MinHeight="67"/>
+<Component Name="XfireMenuText" Class="Menu"><Images State="Normal"><Image>xfire-80x20</Image></Images></Component>
+<Component Name="TabHeader" Class="Tile" MinWidth="110" MinHeight="63"/>
+<Component Name="TabNormalText" Class="Tab"><Images State="Normal"><Image>friends-80x20</Image></Images></Component>
+<Component Name="ButtonRow" Class="Tile" MinWidth="110" MinHeight="84"/>
+<Component Name="AddFriendButton" Class="PushButton"><Images State="Normal"><Image>add-100x20</Image></Images></Component>
+<Component Name="ChatTab" Class="TabControl" MinWidth="110" MinHeight="21" ControlGroupId="5"/>
+<Component Name="HostChatButton" Class="PushButton"><Images State="Normal"><Image>host-100x20</Image></Images></Component>
+</Components>"#,
+    )
+    .unwrap();
+    let popups = parse(
+        "popups.xml",
+        br#"<Popups>
+<Tile Name="MainMenuPopup" JustX="LEFT" X="0" Z="50" IndentTop="29" IndentBottom="28" Component="MainMenuWindow">
+<Tile Name="MainMenuBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Component="MenuBackground">
+<Tile Name="MenuBar" X="1" Y="10" Component="MenuBar"><Tile Name="XfireMenuText" X="1" Y="4" Component="XfireMenuText"/></Tile>
+<Tile Name="TabHeader" X="1" Y="MenuBar.BOTTOM+20" Component="TabHeader"><Tile Name="TabNormalText" X="1" Y="0" Component="TabNormalText"/></Tile>
+<Tile Name="ButtonArea" X="2" Y="TabHeader.BOTTOM+16" Component="TabbedControl">
+<Tile Name="FriendsButtons" Component="ButtonRow"><Tile Name="AddFriendButton" Component="AddFriendButton"/></Tile></Tile>
+<Tile Name="InfoJoinChatTab" X="2" Y="TabHeader.BOTTOM+100" Component="ChatTab"><Tile Name="HostChatButton" Component="HostChatButton"/></Tile>
+</Tile></Tile>
+<Tile Name="MainInfoViewPopup" JustX="LEFT" X="0" Component="MainInfoWindow"/>
+</Popups>"#,
+    )
+    .unwrap();
+    let mut built = (frame(), BTreeMap::new());
+    import::add(
+        SkinWindow::Main,
+        &main,
+        &[parts, popups],
+        |path, _| Ok(piece(path)),
+        &mut built,
+    )
+    .unwrap();
+    let tree = built.0.tree.unwrap();
+    let mut roles = Vec::new();
+    let mut stack: Vec<(&SkinNode, usize)> = tree.root.iter().rev().map(|n| (n, 0)).collect();
+    while let Some((n, d)) = stack.pop() {
+        roles.push((d, n.id.as_str(), n.role));
+        stack.extend(n.children.iter().rev().map(|c| (c, d + 1)));
+    }
+    let want = [
+        (0, "MenuButton", NodeRole::SideRailToggle),
+        (0, "TabbedControl", NodeRole::Views),
+        (1, "BuddyView", NodeRole::View(ViewKey::Friends)),
+        (0, "MainMenuPopup", NodeRole::SideRail),
+        (1, "MainMenuBackground", NodeRole::Decor),
+        (2, "MenuBar", NodeRole::MenuBar),
+        (
+            3,
+            "XfireMenuText",
+            NodeRole::Menu(rekindle_types::dto::skin_tree::MenuKey::First),
+        ),
+        (2, "TabHeader", NodeRole::TabStrip),
+        (3, "TabNormalText", NodeRole::Tab(ViewKey::Friends)),
+        (2, "ButtonArea", NodeRole::ButtonBar),
+        (3, "FriendsButtons", NodeRole::ButtonRow(ViewKey::Friends)),
+        (4, "AddFriendButton", NodeRole::Button(ActionKey::AddFriend)),
+        (2, "InfoJoinChatTab", NodeRole::Group),
+        (3, "HostChatButton", NodeRole::Button(ActionKey::HostChat)),
+    ];
+    assert_eq!(roles, want);
+    let rail = tree.root.iter().find(|n| n.id == "MainMenuPopup").unwrap();
+    assert_eq!(
+        (rail.x, rail.y),
+        (
+            NodeSpan::Fixed {
+                at: Anchor::Start(0),
+                size: 114
+            },
+            NodeSpan::Stretch { start: 29, end: 28 }
+        )
+    );
+}

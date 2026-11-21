@@ -39,7 +39,11 @@ fn view(name: &str) -> Option<ViewKey> {
 const KNOBS: [ViewKey; 3] = [ViewKey::Friends, ViewKey::Servers, ViewKey::Files];
 
 fn button(k: &str) -> Option<ActionKey> {
-    let rows: [(&[&str], ActionKey); 20] = [
+    let rows: [(&[&str], ActionKey); 25] = [
+        // StealthX's rail (`popups.xml:69-79`), ahead of "chat" and "join".
+        (&["hostchat"], ActionKey::HostChat),
+        (&["joinchat"], ActionKey::JoinChat),
+        (&["leavechat"], ActionKey::LeaveChat),
         (&["addserver", "addfav", "favorite"], ActionKey::AddServer),
         (&["startdownload"], ActionKey::StartDownload),
         (&["stopdownload"], ActionKey::StopDownload),
@@ -49,6 +53,10 @@ fn button(k: &str) -> Option<ActionKey> {
         (&["viewpicture", "viewvideo"], ActionKey::OpenDownload),
         (&["executedownload", "openfile"], ActionKey::OpenDownload),
         (&["downloadinfo"], ActionKey::DownloadInfo),
+        // StealthX's rail `DownloadButton` (`Tooltip="StartDownloadButtonTip"`)
+        // and `ExecuteButton` (`ExecuteDownloadButtonTip`).
+        (&["download"], ActionKey::StartDownload),
+        (&["execute"], ActionKey::OpenDownload),
         // Symbiosis's Pictures/Videos rows: a shared file's info, and
         // sharing one (the attachment upload) (lead decision 1).
         (&["infopicture", "infovideo"], ActionKey::DownloadInfo),
@@ -129,6 +137,8 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         "xfiremenutext" | "xfiremenu" | "filemenutext" | "filemenu" => menu(MenuKey::First),
         "toolsmenutext" | "toolsmenu" | "toolmenu" => menu(MenuKey::Tools),
         "helpmenutext" | "helpmenu" => menu(MenuKey::Help),
+        // StealthX's rail ground holds the menu bar: it is not the bar.
+        "menubackground" if f.children.iter().any(|c| key(c) == "menubar") => Some(R::Decor),
         "menubar" | "menubackground" | "menubg" => Some(R::MenuBar),
         "statusedit" | "status" => Some(R::StatusText),
         "downarrow" | "statusbtn" | "buttonstatuschanger" => Some(R::StatusList),
@@ -168,7 +178,8 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         | "notificationsbuttonbar" => Some(R::ButtonRow(ViewKey::Friends)),
         "infoviewbutton" | "expandbutton" | "infoviewswitch" | "ivbuttonholder" | "viewinfo"
         | "buttonmaininfoout" => Some(R::InfoToggle),
-        "menubutton" => Some(R::SideRail),
+        "menubutton" => Some(R::SideRailToggle),
+        "mainmenuwindow" => Some(R::SideRail),
         "consoletext" => Some(R::ConsoleLabel),
         // Symbiosis's chat-room name edit: the group DM's name (lead decision 1).
         "roomedit" => Some(R::RoomName),
