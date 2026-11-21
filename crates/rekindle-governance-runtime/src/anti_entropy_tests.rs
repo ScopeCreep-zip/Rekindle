@@ -180,6 +180,8 @@ fn converging_as(
         creator_member_record: "VLD0:m".into(),
         creator_member_record_owner: "o".into(),
         created_at: 1,
+        additional_creators: Vec::new(),
+        predecessor: None,
     };
     let state = rekindle_governance::state::GovernanceState::default();
     let (op, encoded) = op_log::build_op(
@@ -316,6 +318,8 @@ fn our_frontier_carries_the_checksum_of_its_heads_merge() {
         creator_member_record: "VLD0:m".into(),
         creator_member_record_owner: "o".into(),
         created_at: 1,
+        additional_creators: Vec::new(),
+        predecessor: None,
     };
     let (op, encoded) = op_log::build_op(
         "A",

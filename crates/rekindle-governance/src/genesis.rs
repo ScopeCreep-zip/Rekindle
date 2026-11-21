@@ -6,6 +6,7 @@
 
 use rekindle_secrets::sign::verify_signature;
 use rekindle_types::domains;
+use rekindle_types::governance::{GenesisCert, MAX_ADDITIONAL_CREATORS};
 use rekindle_types::id::PseudonymKey;
 
 /// Why a cert was refused.
@@ -15,6 +16,32 @@ pub enum GenesisRejection {
     BadAnchorSignature,
     /// The creator pseudonym's signature does not verify.
     BadCreatorSignature,
+    /// More than [`MAX_ADDITIONAL_CREATORS`] further creators.
+    TooManyCreators,
+    /// A further creator is repeated or is the primary creator.
+    RepeatedCreator,
+}
+
+/// Refuse a cert whose creator set (Q3, ADR 0011) is malformed: more than
+/// [`MAX_ADDITIONAL_CREATORS`] further creators, one named twice, or the
+/// primary creator named again. Checked before the cert is trusted.
+///
+/// # Errors
+/// The creator set is malformed.
+pub fn check_creator_set(cert: &GenesisCert) -> Result<(), GenesisRejection> {
+    if cert.additional_creators.len() > MAX_ADDITIONAL_CREATORS {
+        return Err(GenesisRejection::TooManyCreators);
+    }
+    let mut seen = std::collections::BTreeSet::from([&cert.creator_pseudonym.0]);
+    if cert
+        .additional_creators
+        .iter()
+        .all(|key| seen.insert(&key.0))
+    {
+        Ok(())
+    } else {
+        Err(GenesisRejection::RepeatedCreator)
+    }
 }
 
 /// The bytes both genesis signers sign: `GOV_GENESIS ‖ anchor ‖ unsigned`.
@@ -52,6 +79,36 @@ pub fn verify_genesis(
 mod tests {
     use super::*;
     use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+
+    fn cert_with(additional: &[u8]) -> GenesisCert {
+        let mut cert = crate::fixture::cert(
+            &PseudonymKey([1; 32]),
+            rekindle_types::governance::AdmissionMode::Open,
+        );
+        cert.additional_creators = additional.iter().map(|b| PseudonymKey([*b; 32])).collect();
+        cert
+    }
+
+    #[test]
+    fn a_creator_set_with_a_repeat_or_a_ninth_is_refused() {
+        assert_eq!(check_creator_set(&cert_with(&[2, 3])), Ok(()));
+        assert_eq!(
+            check_creator_set(&cert_with(&[2, 3, 4, 5, 6, 7, 8, 9])),
+            Ok(())
+        );
+        assert_eq!(
+            check_creator_set(&cert_with(&[2, 3, 4, 5, 6, 7, 8, 9, 10])),
+            Err(GenesisRejection::TooManyCreators)
+        );
+        assert_eq!(
+            check_creator_set(&cert_with(&[2, 3, 2])),
+            Err(GenesisRejection::RepeatedCreator)
+        );
+        assert_eq!(
+            check_creator_set(&cert_with(&[2, 1])),
+            Err(GenesisRejection::RepeatedCreator)
+        );
+    }
 
     #[test]
     fn both_signers_must_sign_the_same_bytes() {

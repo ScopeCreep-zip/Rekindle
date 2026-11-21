@@ -84,10 +84,15 @@ pub struct InviteProof {
     pub sig: Vec<u8>,
 }
 
+/// Most further creators a `GenesisCert` names (Q3, ADR 0011): with the
+/// primary creator, a creator set of at most 9.
+pub const MAX_ADDITIONAL_CREATORS: usize = 8;
+
 /// The community's genesis certificate, written once to the anchor record
 /// and pinned by every member (S5 creates and verifies it at origin). The
 /// creator is its `creator_pseudonym` — MSC4289's immutable creator — and no
-/// op at any lamport can take that place.
+/// op at any lamport can take that place; `additional_creators` complete the
+/// creator set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenesisCert {
     pub name: String,
@@ -97,4 +102,10 @@ pub struct GenesisCert {
     pub creator_member_record: String,
     pub creator_member_record_owner: String,
     pub created_at: u64,
+    /// The further creators (Q3, ADR 0011): at most 8 pseudonyms, none the
+    /// `creator_pseudonym` and none repeated, fixed at genesis; no op adds
+    /// or removes one.
+    pub additional_creators: Vec<PseudonymKey>,
+    /// The anchor of the community this one succeeds, or `None`.
+    pub predecessor: Option<String>,
 }

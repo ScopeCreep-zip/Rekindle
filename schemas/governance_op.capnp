@@ -52,6 +52,8 @@ struct GovernanceOp {
 # discarded after the write) and `creatorSig` (by the creator pseudonym) are
 # Ed25519 over `rekindle-gov-genesis-v1 ‖ anchor ‖ unsigned`, where
 # `unsigned` is this message re-encoded canonically with both sigs unset.
+# The creator set (Q3, ADR 0011) is `creatorPseudonym` plus
+# `additionalCreators`, fixed here and changed by no op.
 struct GenesisCert {
   name @0 :Text;
   policy @1 :Gov.AdmissionMode;
@@ -63,4 +65,6 @@ struct GenesisCert {
   anchorOwner @7 :Data;                # K_A's public key, 32 bytes
   anchorSig @8 :Data;                  # 64 bytes; unset in the unsigned form
   creatorSig @9 :Data;                 # 64 bytes; unset in the unsigned form
+  additionalCreators @10 :List(Data);  # <= 8 further creator pseudonyms, 32 bytes each (Q3)
+  predecessor @11 :Text;               # the anchor this community succeeds; unset if none
 }

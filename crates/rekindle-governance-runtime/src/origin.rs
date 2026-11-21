@@ -310,6 +310,8 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         creator_member_record: member_key.clone(),
         creator_member_record_owner: member_owner,
         created_at: deps.clock().now_secs(),
+        additional_creators: Vec::new(),
+        predecessor: None,
     };
     let (cert, cert_bytes) = write_genesis(deps, &anchor, cert, &pseudonym_signing).await?;
 

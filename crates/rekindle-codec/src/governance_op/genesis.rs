@@ -8,7 +8,7 @@
 //! bytes the signers signed however the writer laid out its message.
 
 use rekindle_types::dht_layout::member_record::MAX_SUBKEY_VALUE_LEN;
-use rekindle_types::governance::{AdmissionMode, GenesisCert};
+use rekindle_types::governance::{AdmissionMode, GenesisCert, MAX_ADDITIONAL_CREATORS};
 use rekindle_types::id::{PseudonymKey, RoleId};
 
 use super::{data_field, fixed};
@@ -48,6 +48,11 @@ pub fn encode_genesis(signed: &SignedGenesis) -> Result<Vec<u8>, CodecError> {
         signed.cert.initial_roles.len(),
         GENESIS_MAX_ROLES,
     )?;
+    check_len(
+        "genesis additional creators",
+        signed.cert.additional_creators.len(),
+        MAX_ADDITIONAL_CREATORS,
+    )?;
     let out = encode(&signed.cert, &signed.anchor_owner, Some(signed));
     check_len("genesis cert", out.len(), GENESIS_CERT_MAX_BYTES)?;
     Ok(out)
@@ -73,6 +78,29 @@ pub fn decode_genesis(data: &[u8]) -> Result<DecodedGenesis, CodecError> {
         .iter()
         .map(|role| Ok(RoleId(fixed(data_field(role)?, "genesis role id")?)))
         .collect::<Result<Vec<_>, CodecError>>()?;
+    let creators_r = r.get_additional_creators().map_err(|e| capnp_err(&e))?;
+    let creator_count = usize::try_from(creators_r.len()).unwrap_or(usize::MAX);
+    check_len(
+        "genesis additional creators",
+        creator_count,
+        MAX_ADDITIONAL_CREATORS,
+    )?;
+    let additional_creators = creators_r
+        .iter()
+        .map(|key| {
+            Ok(PseudonymKey(fixed(
+                data_field(key)?,
+                "genesis additional creator",
+            )?))
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let predecessor = if r.has_predecessor() {
+        Some(text_to_string(
+            r.get_predecessor().map_err(|e| capnp_err(&e))?,
+        )?)
+    } else {
+        None
+    };
     let policy = match r
         .get_policy()
         .map_err(|e| CodecError::Deserialization(format!("genesis policy: unknown arm {}", e.0)))?
@@ -96,6 +124,8 @@ pub fn decode_genesis(data: &[u8]) -> Result<DecodedGenesis, CodecError> {
                 .map_err(|e| capnp_err(&e))?,
         )?,
         created_at: r.get_created_at(),
+        additional_creators,
+        predecessor,
     };
     let anchor_owner = fixed(data_field(r.get_anchor_owner())?, "genesis anchor owner")?;
     let unsigned = genesis_unsigned_bytes(&cert, &anchor_owner);
@@ -127,6 +157,14 @@ fn encode(cert: &GenesisCert, anchor_owner: &[u8; 32], sigs: Option<&SignedGenes
     b.set_creator_member_record_owner(cert.creator_member_record_owner.as_str());
     b.set_created_at(cert.created_at);
     b.set_anchor_owner(anchor_owner);
+    let count = u32::try_from(cert.additional_creators.len()).unwrap_or(u32::MAX);
+    let mut creators = b.reborrow().init_additional_creators(count);
+    for (i, key) in (0..count).zip(&cert.additional_creators) {
+        creators.set(i, &key.0);
+    }
+    if let Some(predecessor) = &cert.predecessor {
+        b.set_predecessor(predecessor.as_str());
+    }
     if let Some(signed) = sigs {
         b.set_anchor_sig(&signed.anchor_sig);
         b.set_creator_sig(&signed.creator_sig);
@@ -148,6 +186,8 @@ mod tests {
                 creator_member_record: "VLD0:m".into(),
                 creator_member_record_owner: "VLD0:o".into(),
                 created_at: 7,
+                additional_creators: vec![PseudonymKey([5; 32]), PseudonymKey([6; 32])],
+                predecessor: Some("VLD0:old".into()),
             },
             anchor_owner: [2; 32],
             anchor_sig: [3; 64],
@@ -175,6 +215,41 @@ mod tests {
         b.set_anchor_sig(&[3; 10]);
         b.set_creator_sig(&[4; 64]);
         assert!(decode_genesis(&pack(&builder)).is_err());
+    }
+
+    #[test]
+    fn a_ninth_additional_creator_is_refused() {
+        let mut s = signed();
+        s.cert.additional_creators = (0..=MAX_ADDITIONAL_CREATORS)
+            .map(|i| PseudonymKey([u8::try_from(i).unwrap() + 10; 32]))
+            .collect();
+        assert!(encode_genesis(&s).is_err());
+        // A writer that skips the bound is refused at decode.
+        let mut builder = capnp::message::Builder::new_default();
+        let mut b = builder.init_root::<genesis_cert::Builder<'_>>();
+        b.set_creator_pseudonym(&[1; 32]);
+        b.set_anchor_owner(&[2; 32]);
+        b.set_anchor_sig(&[3; 64]);
+        b.set_creator_sig(&[4; 64]);
+        let mut list = b.init_additional_creators(9);
+        for i in 0..9 {
+            list.set(i, &[u8::try_from(i).unwrap() + 10; 32]);
+        }
+        assert!(decode_genesis(&pack(&builder)).is_err());
+        s.cert.additional_creators.pop();
+        assert!(decode_genesis(&encode_genesis(&s).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn the_unsigned_form_covers_the_creator_set_and_predecessor() {
+        let s = signed();
+        let base = genesis_unsigned_bytes(&s.cert, &s.anchor_owner);
+        let mut other = s.cert.clone();
+        other.additional_creators.pop();
+        assert_ne!(genesis_unsigned_bytes(&other, &s.anchor_owner), base);
+        let mut other = s.cert.clone();
+        other.predecessor = None;
+        assert_ne!(genesis_unsigned_bytes(&other, &s.anchor_owner), base);
     }
 
     #[test]

@@ -68,6 +68,8 @@ impl World {
             creator_member_record: creator.record(),
             creator_member_record_owner: creator.owner_text(),
             created_at: 1,
+            additional_creators: Vec::new(),
+            predecessor: None,
         };
         let mut world = Self {
             cert,

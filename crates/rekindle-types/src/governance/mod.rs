@@ -28,6 +28,9 @@ pub use onboarding::{
     MAX_ONBOARDING_ID_CHARS, MAX_ONBOARDING_OPTIONS_PER_QUESTION, MAX_ONBOARDING_QUESTIONS,
     MAX_ONBOARDING_TITLE_CHARS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
 };
-pub use op::{Frontier, GenesisCert, GovernanceOp, InviteProof, OpHash, OpRef, RosterChecksum};
+pub use op::{
+    Frontier, GenesisCert, GovernanceOp, InviteProof, OpHash, OpRef, RosterChecksum,
+    MAX_ADDITIONAL_CREATORS,
+};
 pub use payload::GovernanceSubkeyPayload;
 pub use role_edit::ExclusionGroupEdit;

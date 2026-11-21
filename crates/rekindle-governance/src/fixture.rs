@@ -56,6 +56,8 @@ pub fn cert(creator: &PseudonymKey, policy: AdmissionMode) -> GenesisCert {
         creator_member_record: "VLD0:creator-record".into(),
         creator_member_record_owner: "creator-owner".into(),
         created_at: 0,
+        additional_creators: Vec::new(),
+        predecessor: None,
     }
 }
 

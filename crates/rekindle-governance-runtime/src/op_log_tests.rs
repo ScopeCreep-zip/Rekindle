@@ -15,6 +15,8 @@ fn cert(key: &SigningKey) -> GenesisCert {
         creator_member_record: "VLD0:m".into(),
         creator_member_record_owner: "o".into(),
         created_at: 1,
+        additional_creators: Vec::new(),
+        predecessor: None,
     }
 }
 
