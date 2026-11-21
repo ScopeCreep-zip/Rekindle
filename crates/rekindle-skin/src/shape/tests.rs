@@ -253,12 +253,16 @@ fn builtin_silhouettes_match_their_goldens() {
     // Each at its reference's main window size; Onyx's MenuBar row
     // decoration fills y 110-127, Alloy's MAINBG the side band, and
     // Combat keeps the 7 px holes its reference shows (x 11-17, x 323-329).
+    // StealthX is 400 wide with its menu drawer (rightmost opaque column
+    // 399 in the reference's top and bottom rows, where no Infoview is
+    // attached); whole-window opacity XOR 196/222,000 px, all at the
+    // drawer's and the body's bottom-left corner cuts (y 527-555), SK2-P3.
     let got: Vec<_> = [
         ("builtin:xfire-classic", (605, 412)),
         ("builtin:spacecowboy", (365, 549)),
         ("builtin:symbiosis", (399, 555)),
         ("builtin:total-chaos", (471, 553)),
-        ("builtin:stealthx", (380, 555)),
+        ("builtin:stealthx", (400, 555)),
         ("builtin:xslimfire", (330, 492)),
         ("builtin:simple-x", (340, 430)),
         ("builtin:xglow", (350, 378)),
@@ -294,7 +298,10 @@ fn builtin_silhouettes_match_their_goldens() {
         ),
         (
             "builtin:stealthx",
-            (11, vec![r(6, 0, 368, 1), r(4, 1, 372, 1), r(3, 2, 374, 1)]),
+            (
+                13,
+                vec![r(118, 0, 276, 1), r(116, 1, 280, 1), r(115, 2, 282, 1)],
+            ),
         ),
         (
             "builtin:xslimfire",
