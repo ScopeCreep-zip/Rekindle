@@ -363,7 +363,7 @@ mod invite_link_tests {
             ),
             (
                 link(&k, &k, &format!("{CODE}/x")),
-                InviteLinkError::InviteOp,
+                InviteLinkError::ExtraPart,
             ),
             (
                 format!("rekindle://invite/{k}/{k}/{CODE}/{}/7/3", OP.to_uppercase()),

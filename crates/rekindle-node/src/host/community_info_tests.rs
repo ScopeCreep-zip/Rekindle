@@ -99,7 +99,7 @@ async fn seed_keyed_community(host: &crate::host::Host, owner: &str, gov: Govern
                 conn,
                 &owner,
                 KEYED_ANCHOR,
-                (OWN_CODE, "ours", "rekindle://invite/ours"),
+                (OWN_CODE, "ours", OWN_URL),
                 7,
             )
         })
@@ -109,6 +109,10 @@ async fn seed_keyed_community(host: &crate::host::Host, owner: &str, gov: Govern
 
 /// Our stored code of the invite `ours`: 32 hex, so its link is built.
 const OWN_CODE: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c";
+
+/// The link as minted for `ours` (plan IV1b): anchor, secrets record, code, the
+/// `InviteCreated` op by hash, its chain seq, and the inviter's frontier seq.
+const OWN_URL: &str = "rekindle://invite/VLD0:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA/VLD0:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA/3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c/5e0f9c2b7a1d3e4f6a8b0c2d4e6f8a0b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e2f/7/3";
 
 /// The list is merged governance in invite-id order, each invite with the
 /// use count the merge gates (`InviteState.uses`, plan E3.2 S8: the invite
