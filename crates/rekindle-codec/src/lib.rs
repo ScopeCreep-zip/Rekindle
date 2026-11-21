@@ -22,6 +22,7 @@ pub mod ingress;
 pub mod member_record;
 pub mod message;
 pub mod presence_row;
+pub mod successor_invites;
 
 pub use error::CodecError;
 

@@ -248,6 +248,10 @@ labels! {
     /// Ed25519 context: a creator pseudonym's own successor (ADR 0022 rule
     /// 10): label ‖ community ‖ cut ‖ new anchor ‖ fork evidence (S7d-keys K8).
     GOV_SUCCESSOR = "rekindle-gov-successor-v1";
+    /// HPKE info: a successor's invite sealed to a continuing member's card
+    /// `hpkeKey` (plan E3.2 SS3c, lead decision (34)); the AAD is
+    /// `old anchor ‖ 0x00 ‖ new anchor ‖ member`.
+    SUCCESSOR_INVITE = "rekindle-successor-invite-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// BLAKE3 `derive_key` context: a `MekTransferAck`'s key-confirmation

@@ -187,6 +187,7 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
             creator_set_hash: None,
             accepts: None,
             links: Vec::new(),
+            invites_record: Some(vld0(&[0x5B; 32])),
         }),
         sig: [0; 64],
     };

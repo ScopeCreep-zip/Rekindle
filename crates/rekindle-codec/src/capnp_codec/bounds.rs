@@ -120,6 +120,10 @@ pub const CHAIN_HEAD_BOUND: Bound = Bound::schema(64);
 /// `ChainPage` (`chain.capnp`): one DHT subkey of entries.
 pub const CHAIN_PAGE_BOUND: Bound = Bound::packed(MAX_SUBKEY_SIZE);
 
+/// A successor's sealed invites page (`schemas/community_governance.capnp`
+/// `SuccessorInvitesPage`), one DFLT(1) subkey.
+pub const SUCCESSOR_INVITES_BOUND: Bound = Bound::packed(MAX_SUBKEY_SIZE);
+
 /// `PresenceUpdate` and `GameStatus` (`presence.capnp`): one profile
 /// subkey.
 pub const PRESENCE_BOUND: Bound = Bound::packed(MAX_SUBKEY_SIZE);

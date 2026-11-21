@@ -260,13 +260,6 @@ struct CheckpointEntry {
     stateSize            @12 :UInt32;       # bytes of the stateRoot preimage (S7c.4a)
 }
 
-# A successor community, a transfer offer, its withdrawal or its acceptance
-# (ADR 0011, plan E3.2 S7s.3e, lead decisions (24)-(26)). A successor sets
-# `newAnchor` (reason `recreate`); an offer sets `transferTo` and
-# `creatorSetHash`; a withdrawal sets neither; an acceptance sets
-# `newAnchor`, `creatorSetHash`, `accepts` (among the op's deps) and one
-# link per new creator. ADR 0022 rule 8's `cut`, `forkEvidence` and
-# `pseudonymSig` append at @6 onward (S7d-keys K8).
 # One element id of a member's device endorsement set (ADR 0022 rule 10):
 # `(kind, deviceKey, incarnation)`.
 enum DeviceSetElementKind {
@@ -318,6 +311,16 @@ struct DeviceReadmitEntry {
     forkEvidence         @4 :Data;            # 32 bytes
 }
 
+# A successor community, a transfer offer, its withdrawal or its acceptance
+# (ADR 0011, plan E3.2 S7s.3e, lead decisions (24)-(26)). A successor sets
+# `newAnchor` (reason `recreate`); an offer sets `transferTo` and
+# `creatorSetHash`; a withdrawal sets neither; an acceptance sets
+# `newAnchor`, `creatorSetHash`, `accepts` (among the op's deps) and one
+# link per new creator. A successor also sets `invitesRecord` (lead decision
+# (34)): the first sealed DFLT(1) page of `SuccessorInvitesPage`s holding
+# each continuing member's invite to the new community, HPKE-sealed to its
+# card key. ADR 0022 rule 8's `cut`, `forkEvidence` and `pseudonymSig`
+# append at @7 onward (S7d-keys K8).
 struct CommunitySuccessorEntry {
     newAnchor            @0 :Text;            # empty in an offer or withdrawal
     reason               @1 :SuccessorReason;
@@ -325,6 +328,25 @@ struct CommunitySuccessorEntry {
     creatorSetHash       @3 :Data;            # 32 bytes in an offer or acceptance
     accepts              @4 :Op.OpRef;        # set in an acceptance only
     links                @5 :List(CreatorLink);
+    invitesRecord        @6 :Text;            # set in a successor only
+}
+
+# One sealed page of a successor's invites (lead decision (34)), DFLT(1)
+# written once, its owner key discarded (ADR 0011 "Sealed pages"). The first
+# page, at the op's `invitesRecord`, lists the keys of the others in `pages`.
+# Each entry is `HPKE Base` (RFC 9180, X25519/HKDF-SHA256/ChaCha20-Poly1305)
+# sealed to `member`'s card `hpkeKey` under info
+# `rekindle-successor-invite-v1` and AAD `old anchor || 0x00 || new anchor
+# || member`; the plaintext is the invite link's text.
+struct SuccessorInvitesPage {
+    pages                @0 :List(Text);      # first page only
+    entries              @1 :List(SealedInvite);
+}
+
+struct SealedInvite {
+    member               @0 :Data;            # 32 bytes, old-community pseudonym
+    enc                  @1 :Data;            # 32 bytes, HPKE encapsulated key
+    ciphertext           @2 :Data;
 }
 
 enum SuccessorReason {

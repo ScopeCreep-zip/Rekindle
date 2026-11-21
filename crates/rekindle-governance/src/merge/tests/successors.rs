@@ -22,6 +22,7 @@ fn successor() -> GovernanceEntry {
         creator_set_hash: None,
         accepts: None,
         links: Vec::new(),
+        invites_record: Some("VLD0:inv".into()),
     })
 }
 
@@ -38,6 +39,7 @@ fn offer(to: u8, set: &[u8]) -> GovernanceEntry {
         creator_set_hash: Some(hash_of(set)),
         accepts: None,
         links: Vec::new(),
+        invites_record: None,
     })
 }
 
@@ -49,6 +51,7 @@ fn withdrawal() -> GovernanceEntry {
         creator_set_hash: None,
         accepts: None,
         links: Vec::new(),
+        invites_record: None,
     })
 }
 
@@ -68,6 +71,7 @@ fn acceptance(offer: &VerifiedOp, set: &[u8], links: &[u8]) -> GovernanceEntry {
                 sig: vec![0; 64],
             })
             .collect(),
+        invites_record: None,
     })
 }
 

@@ -38,6 +38,10 @@ pub(super) fn read_community_successor(
         creator_set_hash: optional(p.get_creator_set_hash(), "creatorSetHash")?,
         accepts,
         links,
+        invites_record: {
+            let record = text_to_string(p.get_invites_record().map_err(|e| capnp_err(&e))?)?;
+            (!record.is_empty()).then_some(record)
+        },
     }))
 }
 
@@ -46,6 +50,7 @@ pub(super) fn write_community_successor(
     s: &CommunitySuccessor,
 ) {
     p.set_new_anchor(s.new_anchor.as_deref().unwrap_or_default());
+    p.set_invites_record(s.invites_record.as_deref().unwrap_or_default());
     p.set_reason(match s.reason {
         SuccessorReason::Recreate => Reason::Recreate,
         SuccessorReason::Transfer => Reason::Transfer,
@@ -104,6 +109,7 @@ mod tests {
         set: Option<[u8; 32]>,
         accepts: Option<OpRef>,
         links: u8,
+        invites: Option<String>,
     }
 
     fn anchor() -> String {
@@ -132,6 +138,7 @@ mod tests {
             transfer_to: parts.to,
             creator_set_hash: parts.set,
             accepts: parts.accepts,
+            invites_record: parts.invites,
             links: (0..parts.links)
                 .map(|i| CreatorLink {
                     old: PseudonymKey([i; 32]),
@@ -146,6 +153,7 @@ mod tests {
     fn successor() -> GovernanceEntry {
         body(Parts {
             anchor: Some(anchor()),
+            invites: Some(format!("VLD0:{}", "i".repeat(43))),
             ..Parts::default()
         })
     }

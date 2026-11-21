@@ -407,6 +407,7 @@ fn later_mutations() -> Vec<(&'static str, Mutation)> {
                         creator_set_hash: None,
                         accepts: None,
                         links: Vec::new(),
+                        invites_record: Some("VLD0:inv".into()),
                     },
                     stamp: s(),
                 };

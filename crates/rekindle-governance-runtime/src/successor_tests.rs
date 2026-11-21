@@ -29,6 +29,7 @@ fn successor(state: &mut GovernanceState, hash: u8, new_anchor: Option<&str>) {
             creator_set_hash: None,
             accepts: None,
             links: Vec::new(),
+            invites_record: new_anchor.map(|_| "VLD0:inv".to_owned()),
         },
         stamp: OpStamp {
             lamport: u64::from(hash),

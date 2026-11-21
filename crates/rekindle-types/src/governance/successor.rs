@@ -51,12 +51,18 @@ pub struct CommunitySuccessor {
     pub accepts: Option<OpRef>,
     /// An acceptance's creator links, one per member of the new set.
     pub links: Vec<CreatorLink>,
+    /// A successor's sealed invites record (lead decision (34)): the key of
+    /// the first DFLT(1) page holding one invite to the new community per
+    /// continuing member, each HPKE-sealed to that member's card key, so no
+    /// invite is readable in the op log itself. Set in a successor only.
+    pub invites_record: Option<String>,
 }
 
 /// The four well-formed shapes of a [`CommunitySuccessor`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SuccessorShape {
-    /// `newAnchor` only, reason `Recreate`: a creator's own successor.
+    /// `newAnchor` and `invitesRecord`, reason `Recreate`: a creator's own
+    /// successor.
     Successor,
     /// `transferTo` and `creatorSetHash`, reason `Transfer`.
     Offer,
@@ -98,7 +104,11 @@ impl CommunitySuccessor {
         } else {
             self.links.is_empty()
         };
-        links_ok.then_some(shape)
+        let invites_ok = match &self.invites_record {
+            Some(record) => shape == SuccessorShape::Successor && !record.is_empty(),
+            None => shape != SuccessorShape::Successor,
+        };
+        (links_ok && invites_ok).then_some(shape)
     }
 
     /// Whether the body is an offer or a withdrawal: the ops one signer's
@@ -109,5 +119,38 @@ impl CommunitySuccessor {
             self.shape(),
             Some(SuccessorShape::Offer | SuccessorShape::Withdrawal)
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn successor(invites: Option<&str>) -> CommunitySuccessor {
+        CommunitySuccessor {
+            new_anchor: Some("VLD0:new".into()),
+            reason: SuccessorReason::Recreate,
+            transfer_to: None,
+            creator_set_hash: None,
+            accepts: None,
+            links: Vec::new(),
+            invites_record: invites.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_successor_carries_its_invites_record_and_nothing_else_does() {
+        assert_eq!(
+            successor(Some("VLD0:inv")).shape(),
+            Some(SuccessorShape::Successor)
+        );
+        assert_eq!(successor(None).shape(), None);
+        assert_eq!(successor(Some("")).shape(), None);
+        let withdrawal = CommunitySuccessor {
+            new_anchor: None,
+            reason: SuccessorReason::Transfer,
+            ..successor(Some("VLD0:inv"))
+        };
+        assert_eq!(withdrawal.shape(), None);
     }
 }
