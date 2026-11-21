@@ -149,3 +149,52 @@ async fn an_accept_counts_only_for_a_waiting_creation_and_a_valid_signature() {
         "the verified accept is held for the finish"
     );
 }
+
+/// Decision (16): only accepted friends can be named, each once, never
+/// ourselves, at most `MAX_ADDITIONAL_CREATORS`; a valid list passes the
+/// checks (and then waits for the network this host lacks).
+#[tokio::test]
+async fn a_create_names_only_distinct_friends_other_than_us_up_to_the_cap() {
+    use std::sync::Arc;
+
+    use rekindle_types::governance::{AdmissionMode, MAX_ADDITIONAL_CREATORS};
+
+    use super::adapters::governance::HostGovernance;
+    use super::receive_tests::accepted;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let (bob, stranger) = ([7u8; 32], hex::encode([9u8; 32]));
+    accepted(&host, owner, bob).await;
+    let bob = hex::encode(bob);
+    let governance = HostGovernance::new(Arc::clone(&host.ctx));
+    let create = |co: Vec<String>| {
+        let governance = governance.clone();
+        async move {
+            governance
+                .create_with_co_creators("LAN", "", AdmissionMode::Open, &co)
+                .await
+                .map(|_| ())
+        }
+    };
+    // Past every check, a create on this offline host stops at the network.
+    let offline = |e: &str| e.starts_with("Not connected to the network");
+    let refused = |r: Result<(), String>, what: &str| {
+        let e = r.expect_err(what);
+        assert!(!offline(&e), "{what} passed the checks");
+        e
+    };
+    let e = refused(create(vec![stranger]).await, "a non-friend");
+    assert!(e.contains("not an accepted friend"), "{e}");
+    refused(create(vec![bob.clone(), bob.clone()]).await, "a repeat");
+    refused(create(vec![hex::encode(owner)]).await, "ourselves");
+    let too_many =
+        (0..=MAX_ADDITIONAL_CREATORS).map(|i| hex::encode([u8::try_from(i).unwrap(); 32]));
+    let e = refused(create(too_many.collect()).await, "too many");
+    assert!(e.contains("at most"), "{e}");
+    let passed = create(vec![bob]).await.expect_err("this host is offline");
+    assert!(
+        offline(&passed),
+        "a friend named once passes the checks: {passed}"
+    );
+}
