@@ -202,6 +202,40 @@ fn cut_art(
     Ok(Some(NodeArt { normal, states }))
 }
 
+/// Moves `n` inside its parent on each stretched axis an outdent lays past
+/// it: its art cut, its children shifted, and a child the shift lays past
+/// `n` (Total Chaos's `TabButtonArea` `X="0" ResizeX="100"` in the
+/// `BottomBar` row, `mainwindow.xml:37,43`) moved inside in turn, as Xfire
+/// clipped every tile to its parent.
+fn clip_node(n: &mut SkinNode, art: &mut Art<'_>) -> Result<(), ImportError> {
+    for x in [true, false] {
+        let o = outdent(if x { n.x } else { n.y });
+        if o == (0, 0) {
+            continue;
+        }
+        if x {
+            n.x = inside(n.x);
+        } else {
+            n.y = inside(n.y);
+        }
+        if let Some(a) = n.art.take() {
+            n.art = cut_art(art, a, x, o)?;
+        }
+        for c in &mut n.children {
+            let was = outdent(if x { c.x } else { c.y });
+            if x {
+                c.x = shift_child(c.x, o);
+            } else {
+                c.y = shift_child(c.y, o);
+            }
+            if outdent(if x { c.x } else { c.y }) != was {
+                clip_node(c, art)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Cuts the window's own art-carrying tiles `nodes` back inside the window
 /// on each stretched axis an outdent lays past it, before
 /// [`super::clip::clip`] trims their fixed axis.
@@ -210,27 +244,7 @@ fn cut_art(
 /// A cut image that does not encode, or art the tree did not encode.
 pub(super) fn clip_window(nodes: &mut [SkinNode], art: &mut Art<'_>) -> Result<(), ImportError> {
     for n in nodes.iter_mut().filter(|n| n.art.is_some()) {
-        for x in [true, false] {
-            let o = outdent(if x { n.x } else { n.y });
-            if o == (0, 0) {
-                continue;
-            }
-            if x {
-                n.x = inside(n.x);
-            } else {
-                n.y = inside(n.y);
-            }
-            if let Some(a) = n.art.take() {
-                n.art = cut_art(art, a, x, o)?;
-            }
-            for c in &mut n.children {
-                if x {
-                    c.x = shift_child(c.x, o);
-                } else {
-                    c.y = shift_child(c.y, o);
-                }
-            }
-        }
+        clip_node(n, art)?;
     }
     Ok(())
 }

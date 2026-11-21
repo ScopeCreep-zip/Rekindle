@@ -103,12 +103,14 @@ fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
 <Tile Name="Content" X="0" OutdentLeft="1" Y="MainTitleBar.BOTTOM" IndentBottom="61" ResizeX="100" ResizeY="100" Component="Content"/>
 <Tile Name="BottomBar" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar">
 <Tile Name="BottomCenter" JustX="CENTER" X="0" Y="0" Component="BottomCenter"/>
+<Tile Name="TabButtonArea" X="0" Y="0" ResizeX="100" Component="TabButtonArea"/>
 </Tile>
 </Tile>"#,
         br#"<Components>
 <Component Name="MainTitleBar"><Images State="Normal"><Image Type="Middle">bar-10x52</Image></Images></Component>
 <Component Name="Content"><Images State="Normal"><Image Type="Middle">ct-10x10</Image></Images></Component>
 <Component Name="BottomCenter"><Images State="Normal"><Image Type="Middle">bc-40x20</Image></Images></Component>
+<Component Name="TabButtonArea"><Images State="Normal"><Image Type="Middle">tb-10x20</Image></Images></Component>
 <Component Name="BottomBar"><Images State="Normal"><Image Type="left">bl-161x66</Image><Image Type="middle">bm-37x66</Image><Image Type="right">br-161x66</Image></Images></Component>
 </Components>"#,
         &["MainTitleBar", "Content", "BottomBar"],
@@ -129,6 +131,12 @@ fn the_frame_rectangle_is_where_the_pack_places_its_rows() {
         .unwrap()
         .1;
     assert_eq!(centre[0], (w + 1 - 40).div_euclid(2) - 1, "w = {w}");
+    // A stretched child flush with the row (`TabButtonArea`,
+    // `mainwindow.xml:43`) is clipped to the row in turn: it starts at the
+    // window's edge, not one column before it.
+    let area = boxes.iter().find(|(n, _)| n.id == "TabButtonArea").unwrap();
+    assert_eq!(area.0.x, NodeSpan::Stretch { start: 0, end: 0 });
+    assert_eq!((area.1[0], area.1[2]), (0, w));
     let bottom = tree.root.iter().find(|n| n.id == "BottomBar").unwrap();
     let set = &bottom.art.as_ref().unwrap().normal;
     let dims = |p: &str| {

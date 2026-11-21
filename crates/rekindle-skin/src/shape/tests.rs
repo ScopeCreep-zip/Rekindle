@@ -271,15 +271,26 @@ fn builtin_silhouettes_match_their_goldens() {
     // where the original draws its Infoview tab (spec: the strip the root
     // `IndentRight="13+14"` leaves), and 102 px in 26 regions under 30 px
     // along the outline, the original's 0.75 resampling.
+    // SK2-P8 (opacity XOR against the reference, the cut at alpha 128):
+    // Total Chaos is 470x555 (decision 29: the rows' `OutdentLeft` column
+    // is cut, not added; the reference is opaque down to row 554), 541 px:
+    // 530 at reference alpha 1-254 (its soft outline and the bottom band's
+    // shadow) and 11 at alpha 0, one column per row of the `BottomCenter`
+    // tab's left diagonal (x 170-180, y 543-554). Space Cowboy is the
+    // 380x555 window (`DefaultHeight`/`MinHeight` 555) whose screenshot
+    // lacks its top 6 rows (reference row y = window row y + 6): 7,930 px
+    // in x 360-379, the separate `InfoPopup` window (`popups.xml:2`), and
+    // 534 at reference alpha 1-127. Xglow is 348x379: 19 px, all at
+    // reference alpha 1-127 in the four corner cuts.
     let got: Vec<_> = [
         ("builtin:xfire-classic", (501, 549)),
-        ("builtin:spacecowboy", (365, 549)),
+        ("builtin:spacecowboy", (380, 555)),
         ("builtin:symbiosis", (399, 555)),
-        ("builtin:total-chaos", (471, 553)),
+        ("builtin:total-chaos", (470, 555)),
         ("builtin:stealthx", (400, 555)),
         ("builtin:xslimfire", (348, 492)),
         ("builtin:simple-x", (340, 430)),
-        ("builtin:xglow", (350, 378)),
+        ("builtin:xglow", (348, 379)),
         ("builtin:onyx", (380, 437)),
         ("builtin:alloy", (348, 500)),
         ("builtin:combat", (340, 489)),
@@ -297,7 +308,7 @@ fn builtin_silhouettes_match_their_goldens() {
         ),
         (
             "builtin:spacecowboy",
-            (314, vec![r(41, 6, 3, 1), r(40, 7, 5, 10), r(16, 17, 19, 1)]),
+            (308, vec![r(41, 6, 3, 1), r(40, 7, 5, 10), r(16, 17, 19, 1)]),
         ),
         (
             "builtin:symbiosis",
@@ -306,8 +317,8 @@ fn builtin_silhouettes_match_their_goldens() {
         (
             "builtin:total-chaos",
             (
-                87,
-                vec![r(199, 0, 72, 2), r(168, 2, 134, 1), r(167, 3, 136, 1)],
+                107,
+                vec![r(198, 0, 72, 2), r(167, 2, 134, 1), r(166, 3, 136, 1)],
             ),
         ),
         (
@@ -324,7 +335,7 @@ fn builtin_silhouettes_match_their_goldens() {
         ("builtin:simple-x", (1, vec![r(0, 0, 340, 430)])),
         (
             "builtin:xglow",
-            (13, vec![r(5, 0, 340, 1), r(4, 1, 342, 1), r(3, 2, 344, 1)]),
+            (13, vec![r(5, 0, 338, 1), r(4, 1, 340, 1), r(3, 2, 342, 1)]),
         ),
         (
             "builtin:onyx",
@@ -452,16 +463,16 @@ fn total_chaos_lays_its_content_region() {
     // SK2: the content is the views node's box. mainwindow.xml:22-31:
     // `Content` OutdentLeft="1" from `MenuBar.BOTTOM` (52 + 60 + 69 = 181)
     // to IndentBottom="61"; in it `TabbedControl` X="50" IndentRight="50"
-    // at `TabHeader.BOTTOM` (181 + 22 = 203). Lead decision 14: the frame
-    // rectangle is the rows' box (from the outdented left edge); lead
-    // decision 27: the `BottomBar` is clipped to the 61 px under `Content`
-    // at the window's bottom edge, so left 50 and bottom 61, the content
-    // row's 50 px side pieces and its `IndentBottom`.
+    // at `TabHeader.BOTTOM` (181 + 22 = 203). Lead decision 29: the row's
+    // outdented column is cut, so the row starts at the window's edge and
+    // `TabbedControl` keeps its place, x = -1 + 50 = 49; lead decision 27:
+    // the `BottomBar` is clipped to the 61 px under `Content` at the
+    // window's bottom edge, so bottom 61, the row's `IndentBottom`.
     let (_, b) = builtin::find("builtin:total-chaos").unwrap();
     let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
     let main = &m.windows[&SkinWindow::Main];
     let c = main.content;
-    assert_eq!((c.top, c.right, c.bottom, c.left), (203, 50, 61, 50));
+    assert_eq!((c.top, c.right, c.bottom, c.left), (203, 50, 61, 49));
 }
 
 /// Lead decision 3 (plan SK2, 2026-11-20): under the pack's component tree
