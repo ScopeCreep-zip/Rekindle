@@ -254,7 +254,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// entry the cursor was committed on (a retired group stretch held by hint is no gap).
 /// 150 (plan E3.2 S8-H/S8-I): `communities` drops `dht_owner_keypair`, `dht_record_key`,
 /// `manifest_key` and the never-advanced `lamport_clock`.
-pub const SCHEMA_VERSION: i64 = 150;
+/// 151 (plan E3.2 S7s.3 + S7d-keys K1): `creator_invites` and `pending_creations`
+/// (with `answered`); `governance_ops.{device_seq, device_key, signed_here}`, `governance_heads`
+/// keyed by device, `governance_devices`.
+pub const SCHEMA_VERSION: i64 = 151;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
