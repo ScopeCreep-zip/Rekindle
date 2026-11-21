@@ -257,17 +257,24 @@ fn builtin_silhouettes_match_their_goldens() {
     // 399 in the reference's top and bottom rows, where no Infoview is
     // attached); whole-window opacity XOR 196/222,000 px, all at the
     // drawer's and the body's bottom-left corner cuts (y 527-555), SK2-P3.
+    // xSLIMFIRE and Alloy are 348 wide: their top-right/bottom-right
+    // corner pieces' rightmost opaque columns sit at 347 in the reference's
+    // top and bottom rows (no Infoview attached there), SK2-P4. Opacity
+    // XOR: xSLIMFIRE 4/171,216 px, Alloy 44/174,000 px, every one a
+    // reference outline pixel at alpha 106-126 (under the 128 cut) save
+    // Alloy's two right corner tips, (339, 0) and (338, 499), one opaque
+    // pixel more in the reference's art than in its pieces.
     let got: Vec<_> = [
         ("builtin:xfire-classic", (605, 412)),
         ("builtin:spacecowboy", (365, 549)),
         ("builtin:symbiosis", (399, 555)),
         ("builtin:total-chaos", (471, 553)),
         ("builtin:stealthx", (400, 555)),
-        ("builtin:xslimfire", (330, 492)),
+        ("builtin:xslimfire", (348, 492)),
         ("builtin:simple-x", (340, 430)),
         ("builtin:xglow", (350, 378)),
         ("builtin:onyx", (380, 437)),
-        ("builtin:alloy", (330, 500)),
+        ("builtin:alloy", (348, 500)),
         ("builtin:combat", (340, 489)),
     ]
     .into_iter()
@@ -305,7 +312,7 @@ fn builtin_silhouettes_match_their_goldens() {
         ),
         (
             "builtin:xslimfire",
-            (11, vec![r(6, 0, 318, 1), r(4, 1, 322, 1), r(3, 2, 324, 1)]),
+            (11, vec![r(6, 0, 336, 1), r(4, 1, 340, 1), r(3, 2, 342, 1)]),
         ),
         ("builtin:simple-x", (1, vec![r(0, 0, 340, 430)])),
         (
@@ -318,7 +325,7 @@ fn builtin_silhouettes_match_their_goldens() {
         ),
         (
             "builtin:alloy",
-            (21, vec![r(10, 0, 311, 1), r(9, 1, 313, 1), r(8, 2, 315, 1)]),
+            (21, vec![r(10, 0, 329, 1), r(9, 1, 331, 1), r(8, 2, 333, 1)]),
         ),
         (
             "builtin:combat",
