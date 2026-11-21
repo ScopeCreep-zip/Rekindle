@@ -591,3 +591,27 @@ fn an_ini_tab_control_slot_is_a_group_of_buttons() {
     let fourth = role("Knob04", Some("Knob04"), tc, &plain);
     assert_eq!(fourth, Some(NodeRole::Part));
 }
+
+/// StealthX's rail `InfoJoinChatTab` (`Component="ChatTab"`,
+/// `Class="TabControl"`) holds one button per chat state (`popups.xml:75-81`):
+/// a button bar of pages, not a per-view slot (its name reads "info"/"chat").
+#[test]
+fn a_tab_control_of_chat_state_buttons_is_a_button_bar() {
+    let kids = [
+        "HostChatButton".to_owned(),
+        "JoinChatButton".to_owned(),
+        "LeaveChatButton".to_owned(),
+    ];
+    let facts = Facts {
+        has_art: false,
+        class: Some("TabControl"),
+        children: &kids,
+    };
+    let bar = role(
+        "InfoJoinChatTab",
+        Some("ChatTab"),
+        Some(NodeRole::Decor),
+        &facts,
+    );
+    assert_eq!(bar, Some(NodeRole::ButtonBar));
+}

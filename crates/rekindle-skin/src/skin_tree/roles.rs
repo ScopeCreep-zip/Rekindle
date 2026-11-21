@@ -81,6 +81,17 @@ fn button(k: &str) -> Option<ActionKey> {
         .find_map(|(keys, a)| keys.iter().any(|p| k.starts_with(p)).then_some(a))
 }
 
+/// Every child is a chat-state button (host, join, leave).
+fn chat_states(children: &[String]) -> bool {
+    !children.is_empty()
+        && children.iter().all(|c| {
+            matches!(
+                button(&key(c)),
+                Some(ActionKey::HostChat | ActionKey::JoinChat | ActionKey::LeaveChat)
+            )
+        })
+}
+
 /// A tab outside a tab strip: Classic's `TabNormalText`/`TabNormalButton`
 /// pairs in Onyx's menu bar and Alloy's tab bar, Symbiosis's
 /// `ButtonNotificationsTab` beside the name, XGlow's `[Friends]`.
@@ -266,6 +277,14 @@ pub fn role(
         return Some(R::InfoToggle);
     }
     if comp.as_deref() == Some("tabbedcontrol") || name_k == "maintabbedarea" || tabbed_class {
+        // StealthX's rail `InfoJoinChatTab` (`Component="ChatTab"`,
+        // `Class="TabControl"`, `components.xml:705`; `popups.xml:75-81`)
+        // holds `HostChatButton`/`JoinChatButton`/`LeaveChatButton`: one
+        // page per chat state, never shown together, so the button bar
+        // (its pages), not one view's slot as its "chat"/"info" name says.
+        if chat_states(f.children) {
+            return Some(R::ButtonBar);
+        }
         if button(&name_k).is_some() {
             return Some(R::Group);
         }
