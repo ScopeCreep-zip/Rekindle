@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy, openAddFriend, setValue, submitJoin } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
@@ -51,8 +51,16 @@ export async function friendCode(b: Browser): Promise<string> {
   await openAddFriend(b);
   await (await byText(b, ".form-tab", "Public Key")).click();
   // FC1: the Host answers the code once our records are held, however long
-  // the first attach takes; the tab shows it by itself, nothing is pressed.
-  const code = (await (await shown(b, "output.sec-friend-code-url", NET_WAIT_MS)).getText()).trim();
+  // the first attach takes; the tab shows it by itself, nothing is pressed,
+  // and says "Publishing your identity…" until then (FC3).
+  await untilPublished(b, "the Public Key tab's friend code");
+  let code: string;
+  try {
+    code = (await (await shown(b, "output.sec-friend-code-url", NET_WAIT_MS)).getText()).trim();
+  } catch (err) {
+    const status = await b.execute(() => document.querySelector(".add-friend-section .add-friend-code-status")?.textContent?.trim() ?? "");
+    throw new Error(`the Public Key tab showed no friend code${status ? `: "${status}"` : ""} (${err instanceof Error ? err.message : String(err)})`);
+  }
   await closeAddFriend(b);
   return code;
 }
@@ -64,8 +72,13 @@ export async function requestFriend(b: Browser, from: User, code: string, messag
   await (await byText(b, ".form-tab", "Public Key")).click();
   await typeInto(await shown(b, 'input[aria-label="Friend code"]'), code);
   await typeInto(await shown(b, 'input[aria-label="Message (optional)"]'), message);
-  await (await formSubmit(b, 'input[aria-label="Friend code"]')).click();
+  const submit = await formSubmit(b, 'input[aria-label="Friend code"]');
+  await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Send Friend Request stayed disabled" });
+  await submit.click();
   await resolveIntent(b, { passphrase: from.passphrase });
+  // The send is held, the button disabled and the form saying "Publishing
+  // your identity…", until our records are (FC3); the dialog then closes.
+  await untilPublished(b, "the friend request");
   await closeAddFriend(b).catch(() => undefined);
 }
 

@@ -6,7 +6,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "./helpers.ts";
 import { pageLog, recordPage } from "./probe.ts";
 import { keepIfFailed } from "./kept.ts";
 import { launch, openSession, renewSession, type App } from "./launch.ts";
@@ -43,6 +43,7 @@ export function needPeer(): Peer {
 async function friendCode(b: Browser): Promise<string> {
   await openAddFriend(b);
   await (await byText(b, ".form-tab", "Public Key")).click();
+  await untilPublished(b, "the peer's friend code");
   return (await (await shown(b, "output.sec-friend-code-url", NET_WAIT_MS)).getText()).trim();
 }
 
@@ -105,6 +106,8 @@ export const PEER_ROWS: Row[] = [
       await typeInto(await shown(b, 'input[aria-label="Message (optional)"]'), "hi from the walk");
       await (await b.$('.modal-container form button[type="submit"]')).click();
       await resolveIntent(b, { passphrase: s.passphrase });
+      // Held, saying "Publishing your identity…", until our records are (FC3).
+      await untilPublished(b, "the friend request");
       await shot();
       await closeAddFriend(b).catch(() => undefined);
       await switchTo(p.b, BUDDY);

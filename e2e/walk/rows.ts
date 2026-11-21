@@ -9,7 +9,7 @@ import type { Browser } from "webdriverio";
 import type { App } from "./launch.ts";
 import {
   Key, MOD_KEY, NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, identityBarState,
-  present, press, resolveIntent, shown, sleep, switchTo, typeInto, waitForHandle, waitUntil, within,
+  present, press, resolveIntent, shown, sleep, switchTo, typeInto, untilPublished, waitForHandle, waitUntil, within,
 } from "./helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu, openAddFriend } from "./nav.ts";
 import { pageLog, recordPage } from "./probe.ts";
@@ -87,6 +87,8 @@ async function generateInvite(ctx: RowContext): Promise<void> {
   await (await byText(b, ".form-tab", "Invite Link")).click();
   await (await shown(b, ".add-friend-generate .form-btn-primary")).click();
   await resolveIntent(b, { passphrase: s.passphrase });
+  // Held, the tab saying "Publishing your identity…", until our records are (FC3).
+  await untilPublished(b, "Generate My Invite");
   await shown(b, ".add-friend-invite-result", NET_WAIT_MS);
 }
 
@@ -304,6 +306,7 @@ const BASE_ROWS: Row[] = [
     async run({ b }) {
       await openAddFriend(b);
       await (await byText(b, ".form-tab", "Public Key")).click();
+      await untilPublished(b, "the Public Key tab's friend code");
       const url = await shown(b, "output.sec-friend-code-url", NET_WAIT_MS);
       if (!(await url.getText()).trim()) throw new Error("friend code is empty");
     },

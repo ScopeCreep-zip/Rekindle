@@ -13,6 +13,49 @@ export const NET_WAIT_MS = 120_000;
 
 export class Skip extends Error {}
 
+/** OwnRecordsWait.tsx's text while our identity's records are pending (plan E2.5 FC3). */
+const PUBLISHING = "Publishing your identity…";
+/** How OwnRecordsWait.tsx's alert starts when publishing failed. */
+const PUBLISH_FAILED = "Your identity could not be published";
+
+/**
+ * The own-records wait this window shows (FC3, OwnRecordsWait.tsx, and the
+ * Public Key tab's own "Publishing your identity…" before its code): the
+ * failure's text if publishing failed, else the wait's text while it
+ * shows, else "".
+ */
+async function ownRecordsNote(b: Browser): Promise<string> {
+  return (await b.execute(
+    (waitText: string, failed: string) => {
+      const visible = (e: Element) => (e as HTMLElement).offsetParent !== null;
+      const text = (e: Element) => (e.textContent ?? "").replace(/\s+/g, " ").trim();
+      const alert = Array.from(document.querySelectorAll('[role="alert"]')).find((e) => visible(e) && text(e).startsWith(failed));
+      if (alert) return text(alert);
+      const wait = Array.from(document.querySelectorAll('[role="status"]')).find((e) => visible(e) && text(e).startsWith(waitText));
+      return wait ? text(wait) : "";
+    },
+    PUBLISHING,
+    PUBLISH_FAILED,
+  )) as string;
+}
+
+/**
+ * Wait until this window no longer says our identity is being published
+ * (FC3: records are held ~15–25 s after a fresh start). A failed publish
+ * fails at once with its reason; a wait that outlasts the network bound
+ * fails quoting what the window still says. `what` names the step.
+ */
+export async function untilPublished(b: Browser, what: string): Promise<void> {
+  const deadline = Date.now() + NET_WAIT_MS;
+  for (;;) {
+    const note = await ownRecordsNote(b);
+    if (note.startsWith(PUBLISH_FAILED)) throw new Error(`${what}: ${note}`);
+    if (note === "") return;
+    if (Date.now() >= deadline) throw new Error(`${what}: after ${NET_WAIT_MS / 1000} s the window still says "${note}"`);
+    await sleep(250);
+  }
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -127,6 +170,9 @@ export async function typeInto(el: El, text: string): Promise<void> {
  * it once the send handler took the text).
  */
 export async function typeAndSend(b: Browser, selector: string, text: string): Promise<void> {
+  // A chat composer says "Publishing your identity…" above it while our
+  // records are pending (FC3): send once they are held.
+  await untilPublished(b, selector);
   const field = await shown(b, selector);
   await typeInto(field, text);
   await waitUntil(async () => (await field.getValue()) === text, WAIT_MS, `${selector} does not hold the typed text`);
@@ -203,12 +249,18 @@ export async function resolveIntent(
   await commit.click();
   // A committed logout closes the window the dialog is in; polling it then
   // fails with "No window could be found" (the hang in walk 2, after B1).
-  await waitUntil(
-    async () => !(await b.getWindowHandles()).includes(here) || !(await (await b.$(".intent-dialog")).isDisplayed()),
-    NET_WAIT_MS,
-    "intent dialog stayed open after commit",
-  );
-  return "committed";
+  // A committed invite, friend request or accept is held in the dialog,
+  // saying "Publishing your identity…", until our records are (FC3); the
+  // dialog then closes, or names a failed publish.
+  const closed = async () => !(await b.getWindowHandles()).includes(here) || !(await (await b.$(".intent-dialog")).isDisplayed());
+  const deadline = Date.now() + NET_WAIT_MS;
+  for (;;) {
+    if (await closed().catch(() => false)) return "committed";
+    const note = await ownRecordsNote(b).catch(() => "");
+    if (note.startsWith(PUBLISH_FAILED)) throw new Error(`intent dialog after commit: ${note}`);
+    if (Date.now() >= deadline) throw new Error(`intent dialog stayed open after commit${note ? ` saying "${note}"` : ""}`);
+    await sleep(250);
+  }
 }
 
 /** `work`, or a rejection with `msg` after `ms` (the work itself is not cancelled). */
