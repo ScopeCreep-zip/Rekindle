@@ -250,7 +250,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// member's `displayName`; rows of older builds lack it.
 /// 148 (plan E3.2 LV1): `communities.my_member_record`, our own member record's key
 /// stored at join/create (never read back from our merged membership).
-pub const SCHEMA_VERSION: i64 = 148;
+/// 149 (plan E2.6 G4): `stream_cursors.stream_seq`, the author's outbox stream seq of the
+/// entry the cursor was committed on (a retired group stretch held by hint is no gap).
+pub const SCHEMA_VERSION: i64 = 149;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
