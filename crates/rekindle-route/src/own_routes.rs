@@ -32,7 +32,7 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{RouteClass, RouteState};
 use tokio::sync::watch;
 
-use crate::fanout::Fanout;
+use crate::ordered_watch::OrderedWatch;
 use crate::route_death::{DeathCause, RouteDeath, TestTally};
 
 /// Why an allocation did not produce a route.
@@ -86,7 +86,7 @@ struct Slot<Id> {
     retiring: Mutex<Vec<Live<Id>>>,
     /// Followed by the route publisher, the member-routes loop and each
     /// [`OwnRoutes::available`] wait, each through its own watch (RK1).
-    state: Fanout<RouteState>,
+    state: OrderedWatch<RouteState>,
 }
 
 impl<Id> Slot<Id> {
@@ -99,7 +99,7 @@ impl<Id> Slot<Id> {
             current: Mutex::new(None),
             tally: Mutex::new(TestTally::default()),
             retiring: Mutex::new(Vec::new()),
-            state: Fanout::new(RouteState::Idle),
+            state: OrderedWatch::new(RouteState::Idle),
         }
     }
 }

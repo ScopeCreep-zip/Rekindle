@@ -56,7 +56,7 @@ pub struct SharedState {
     /// `public_internet_ready` as a watch per follower (the record pool's
     /// retry layer, own presence, the governance login stage), sent in
     /// subscription order so their wake order is one per seed (RK1).
-    ready: rekindle_route::fanout::Fanout<bool>,
+    ready: rekindle_route::ordered_watch::OrderedWatch<bool>,
     /// The unlocked session's record pool (plan C7.3), seen by the dispatch
     /// loop so dead watches reach their one owner.
     records: RwLock<Option<Arc<dyn RecordPort>>>,
@@ -77,7 +77,7 @@ impl SharedState {
             estimated_network_size: AtomicU64::new(0),
             median_latency_us: AtomicU64::new(0),
             started_at: Instant::now(),
-            ready: rekindle_route::fanout::Fanout::new(false),
+            ready: rekindle_route::ordered_watch::OrderedWatch::new(false),
             records: RwLock::new(None),
             subscribers: RwLock::new(Vec::new()),
         })

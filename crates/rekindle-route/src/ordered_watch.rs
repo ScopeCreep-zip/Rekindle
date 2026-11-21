@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use tokio::sync::watch;
 
 /// The value and one watch per follower ([module docs](self)).
-pub struct Fanout<T> {
+pub struct OrderedWatch<T> {
     inner: Mutex<Inner<T>>,
 }
 
@@ -21,7 +21,7 @@ struct Inner<T> {
     followers: Vec<watch::Sender<T>>,
 }
 
-impl<T: Clone> Fanout<T> {
+impl<T: Clone> OrderedWatch<T> {
     /// A fan-out holding `value`, with no followers yet.
     pub fn new(value: T) -> Self {
         Self {
@@ -74,15 +74,15 @@ impl<T: Clone> Fanout<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::Fanout;
+    use super::OrderedWatch;
 
     #[tokio::test(flavor = "current_thread")]
     async fn followers_are_sent_in_subscription_order() {
-        let fanout = Fanout::new(0u8);
+        let watch = OrderedWatch::new(0u8);
         let order = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
         let mut tasks = Vec::new();
         for i in 0..8 {
-            let mut rx = fanout.subscribe();
+            let mut rx = watch.subscribe();
             let order = std::sync::Arc::clone(&order);
             tasks.push(tokio::spawn(async move {
                 rx.changed().await.expect("sender alive");
@@ -90,12 +90,12 @@ mod tests {
             }));
         }
         tokio::task::yield_now().await;
-        fanout.send_replace(1);
+        watch.send_replace(1);
         for task in tasks {
             task.await.expect("a follower");
         }
         assert_eq!(*order.lock(), (0..8).collect::<Vec<_>>());
-        assert!(!fanout.send_if_changed(1));
-        assert_eq!(fanout.get(), 1);
+        assert!(!watch.send_if_changed(1));
+        assert_eq!(watch.get(), 1);
     }
 }

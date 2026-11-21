@@ -1,8 +1,8 @@
 pub mod cache;
 pub mod contexts;
-pub mod fanout;
 pub mod lifecycle;
 pub mod liveness;
+pub mod ordered_watch;
 pub mod own_routes;
 pub mod profile;
 pub mod relay;
