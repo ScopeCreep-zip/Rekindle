@@ -2,7 +2,7 @@
 
 use rekindle_types::dht_layout::member_record;
 
-use super::tests::{entries, MemPort};
+use super::mem_port::{entries, MemPort};
 use super::{append_at_unless_logged, read_log_after, LoggedAppend};
 use crate::port::RecordPort;
 use crate::schema;

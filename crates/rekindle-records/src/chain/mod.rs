@@ -28,6 +28,8 @@ mod create;
 mod local;
 #[cfg(test)]
 mod logged_tests;
+#[cfg(test)]
+mod mem_port;
 mod page;
 #[cfg(test)]
 mod tests;
