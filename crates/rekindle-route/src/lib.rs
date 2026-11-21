@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod contexts;
+pub mod fanout;
 pub mod lifecycle;
 pub mod liveness;
 pub mod own_routes;

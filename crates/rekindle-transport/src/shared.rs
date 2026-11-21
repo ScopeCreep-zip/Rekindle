@@ -53,8 +53,10 @@ pub struct SharedState {
     median_latency_us: AtomicU64,
     /// Timestamp when the node was started.
     started_at: Instant,
-    /// `public_internet_ready` as a watch, for the record pool's retry layer.
-    ready: tokio::sync::watch::Sender<bool>,
+    /// `public_internet_ready` as a watch per follower (the record pool's
+    /// retry layer, own presence, the governance login stage), sent in
+    /// subscription order so their wake order is one per seed (RK1).
+    ready: rekindle_route::fanout::Fanout<bool>,
     /// The unlocked session's record pool (plan C7.3), seen by the dispatch
     /// loop so dead watches reach their one owner.
     records: RwLock<Option<Arc<dyn RecordPort>>>,
@@ -75,7 +77,7 @@ impl SharedState {
             estimated_network_size: AtomicU64::new(0),
             median_latency_us: AtomicU64::new(0),
             started_at: Instant::now(),
-            ready: tokio::sync::watch::Sender::new(false),
+            ready: rekindle_route::fanout::Fanout::new(false),
             records: RwLock::new(None),
             subscribers: RwLock::new(Vec::new()),
         })
@@ -99,11 +101,7 @@ impl SharedState {
         let prev_state = self.attachment.swap(state as u8, Ordering::AcqRel);
         let prev_attached = self.is_attached.swap(attached, Ordering::AcqRel);
         let prev_pir = self.public_internet_ready.swap(pir, Ordering::AcqRel);
-        self.ready.send_if_modified(|ready| {
-            let changed = *ready != pir;
-            *ready = pir;
-            changed
-        });
+        self.ready.send_if_changed(pir);
         if prev_state == state as u8 && prev_attached == attached && prev_pir == pir {
             return false;
         }

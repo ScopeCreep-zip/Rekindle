@@ -32,6 +32,7 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{RouteClass, RouteState};
 use tokio::sync::watch;
 
+use crate::fanout::Fanout;
 use crate::route_death::{DeathCause, RouteDeath, TestTally};
 
 /// Why an allocation did not produce a route.
@@ -83,7 +84,9 @@ struct Slot<Id> {
     /// still hold: kept allocated until [`OwnRoutes::release_retired`]
     /// (plan RH1r-c O4).
     retiring: Mutex<Vec<Live<Id>>>,
-    state: watch::Sender<RouteState>,
+    /// Followed by the route publisher, the member-routes loop and each
+    /// [`OwnRoutes::available`] wait, each through its own watch (RK1).
+    state: Fanout<RouteState>,
 }
 
 impl<Id> Slot<Id> {
@@ -96,7 +99,7 @@ impl<Id> Slot<Id> {
             current: Mutex::new(None),
             tally: Mutex::new(TestTally::default()),
             retiring: Mutex::new(Vec::new()),
-            state: watch::channel(RouteState::Idle).0,
+            state: Fanout::new(RouteState::Idle),
         }
     }
 }
@@ -118,9 +121,9 @@ const CLASSES: [RouteClass; 3] = [RouteClass::General, RouteClass::Media, RouteC
 impl<A: RouteAllocator> std::fmt::Debug for OwnRoutes<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OwnRoutes")
-            .field("general", &*self.general.state.borrow())
-            .field("media", &*self.media.state.borrow())
-            .field("sending", &*self.sending.state.borrow())
+            .field("general", &self.general.state.get())
+            .field("media", &self.media.state.get())
+            .field("sending", &self.sending.state.get())
             .finish_non_exhaustive()
     }
 }

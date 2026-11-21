@@ -262,6 +262,35 @@ async fn restart(community: &Community, nodes: &[usize]) {
 /// and the re-join in order.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_restart_after_a_kick_and_rejoin_keeps_the_rejoiner() {
+    restart_after_rejoin().await;
+}
+
+/// One seed, one trace (ADR 0021, C9.3) through both liveness tasks of a
+/// node (`run_publisher` and `run_self_tests`): under one shared tokio
+/// watch they woke in an order tokio draws from the runtime's own RNG
+/// (`BigNotify::notified`, `thread_rng_n(8)`), so they took their liveness
+/// draws in either order and seed 347 gave two traces, one failing (RK1).
+/// Each run is a runtime of its own, so each draws another order.
+#[test]
+fn a_restart_after_a_kick_and_rejoin_has_one_trace_per_seed() {
+    fn run() -> [u8; 32] {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .expect("a runtime")
+            .block_on(restart_after_rejoin())
+    }
+    let first = run();
+    // Six runtimes, as the retired stretch's guard (`group_dm.rs`).
+    for _ in 0..5 {
+        assert_eq!(run(), first, "one seed, one trace");
+    }
+}
+
+/// [`a_restart_after_a_kick_and_rejoin_keeps_the_rejoiner`]'s run under seed
+/// 347; returns its trace hash.
+async fn restart_after_rejoin() -> [u8; 32] {
     let mut community = Community::create(3, 347).await;
     let bea = kick_and_rejoin(&mut community, &[]).await.bea;
     community.join(2).await;
@@ -297,6 +326,7 @@ async fn a_restart_after_a_kick_and_rejoin_keeps_the_rejoiner() {
             "node {i} reads the re-joiner's post after its restart"
         );
     }
+    community.sim.trace().hash()
 }
 
 /// A member that joined before bea and was cut off from her first join

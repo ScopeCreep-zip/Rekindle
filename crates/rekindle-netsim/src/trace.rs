@@ -55,3 +55,37 @@ impl Trace {
         *hasher.finalize().as_bytes()
     }
 }
+
+/// A failing run names its seed and trace hash, so a failure seen on one
+/// machine is replayed on another (C9.3: one seed, one trace). The lock is
+/// only tried: a panic raised under it must not hang the unwind.
+impl Drop for crate::Netsim {
+    fn drop(&mut self) {
+        use std::fmt::Write as _;
+        use std::io::Write as _;
+        if !std::thread::panicking() {
+            return;
+        }
+        // Written to the process's stderr, past the test harness's capture,
+        // so a failing run's seed shows in every runner's log.
+        let mut stderr = std::io::stderr();
+        let Some(inner) = self.net.inner.try_lock() else {
+            let _ = writeln!(
+                stderr,
+                "netsim: failed at seed {} (trace locked)",
+                self.seed
+            );
+            return;
+        };
+        let hash = inner.trace.hash().iter().fold(String::new(), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        });
+        let _ = writeln!(
+            stderr,
+            "netsim: failed at seed {}, trace {} entries, hash {hash}",
+            self.seed,
+            inner.trace.len()
+        );
+    }
+}
