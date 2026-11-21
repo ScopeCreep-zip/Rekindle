@@ -57,6 +57,7 @@ pub mod op_log;
 pub mod op_receive;
 pub mod op_walk;
 pub mod origin;
+pub mod origin_reserve;
 pub mod overflow;
 pub mod ownership;
 pub mod partial;
@@ -104,7 +105,8 @@ pub use membership_events::{
     process_member_roles_changed, process_onboarding_answers, MembershipEventDeps,
 };
 pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
-pub use origin::create_community;
+pub use origin::{create_community, finish_community};
+pub use origin_reserve::{release_reserved, reserve_community, CreatorAccept, ReservedCommunity};
 pub use overflow::{
     partition_into_pages, read_governance_with_overflow, read_my_chain, MAX_OVERFLOW_PAGES,
     OVERFLOW_PAGE_BUDGET, PRIMARY_PAGE_BUDGET,

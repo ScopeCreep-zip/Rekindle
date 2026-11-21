@@ -209,6 +209,11 @@ labels! {
     /// owner `K_A` and by the creator pseudonym over this label ‖ anchor ‖
     /// the canonical unsigned cert bytes (plan E3.2).
     GOV_GENESIS = "rekindle-gov-genesis-v1";
+    /// Ed25519 context: a co-creator's acceptance (plan E3.2 S7s.3,
+    /// decision (16)), signed by its pseudonym for the new anchor over this
+    /// label ‖ anchor ‖ pseudonym, so the creator lists only a pseudonym
+    /// whose holder accepted.
+    GOV_CREATOR_ACCEPT = "rekindle-gov-creator-accept-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// BLAKE3 `derive_key` context: a `MekTransferAck`'s key-confirmation

@@ -12,7 +12,6 @@ use rekindle_crypto::keypair_text;
 use rekindle_governance::genesis::genesis_signing_bytes;
 use rekindle_governance::merge;
 use rekindle_governance::state::GovernanceState;
-use rekindle_records::lease::LeaseId;
 use rekindle_records::schema;
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
@@ -32,7 +31,9 @@ use crate::event::GovernanceRuntimeEvent;
 use crate::op_log;
 use rekindle_records::lease::CommunityLeases;
 
-use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+use crate::origin_reserve::{
+    reserve_community, verified_creators, CreatorAccept, ReservedCommunity,
+};
 
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
@@ -120,66 +121,70 @@ pub(crate) fn genesis_entries(
 pub const CREATE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The records origin creates; every lease is released on a failure.
-struct OriginRecords {
-    anchor: DhtRecordInfo,
-    member: DhtRecordInfo,
-    registry: DhtRecordInfo,
+pub(crate) struct OriginRecords {
+    pub(crate) anchor: DhtRecordInfo,
+    pub(crate) member: DhtRecordInfo,
+    pub(crate) registry: DhtRecordInfo,
 }
 
-/// Create a new community (plan E3.2, ADR 0011): the anchor `A` with its
-/// `GenesisCert`, the creator's member record `M(p)`, the genesis ops, and
-/// (until E3.4 deletes it) the registry.
+/// Create a new community (plan E3.2, ADR 0011) with no co-creator: the
+/// anchor `A` with its `GenesisCert`, the creator's member record `M(p)`,
+/// the genesis ops, and (until E3.4 deletes it) the registry.
 /// Returns `A`'s record key, the community id.
 pub async fn create_community<D: GovernanceRuntimeDeps>(
     deps: &D,
     name: &str,
     admission: AdmissionMode,
 ) -> Result<String, GovernanceRuntimeError> {
+    let reserved = reserve_community(deps).await?;
+    finish_community(deps, reserved, name, admission, &[]).await
+}
+
+/// Write the genesis of a reserved community within [`CREATE_DEADLINE`]:
+/// the cert lists `accepted` as further creators (each signature
+/// verified, the set checked by [`check_creator_set`]), then the genesis
+/// ops, the registry row, the first MEK, the install and the records.
+/// On a failure every record is released and an installed community
+/// discarded.
+///
+/// # Errors
+/// An acceptance does not verify, the creator set is malformed, a write
+/// failed, or the deadline passed.
+pub async fn finish_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    reserved: ReservedCommunity,
+    name: &str,
+    admission: AdmissionMode,
+    accepted: &[CreatorAccept],
+) -> Result<String, GovernanceRuntimeError> {
     let deadline = tokio::time::Instant::now() + CREATE_DEADLINE;
-    let slot_seed = SlotSeed::generate_with(deps.rng().as_ref());
-    let mut member_pubkeys = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
-    for i in 0..SLOTS_PER_SEGMENT {
-        let sk = derive::derive_slot_keypair(&slot_seed.0, i).map_err(|e| {
-            GovernanceRuntimeError::Crypto(format!(
-                "slot keypair derivation failed at index {i}: {e}"
-            ))
-        })?;
-        member_pubkeys.push(sk.verifying_key().to_bytes());
-    }
-    // A, M(p), the registry; a failure or the deadline releases what exists.
-    let mut created: Vec<DhtRecordInfo> = Vec::with_capacity(3);
-    let made = tokio::time::timeout_at(
-        deadline,
-        create_records(deps, &member_pubkeys, &mut created),
-    )
-    .await
-    .unwrap_or_else(|_| Err(timed_out()));
-    if let Err(e) = made {
-        for record in created {
-            deps.release_record(record.lease).await;
-        }
-        return Err(e);
-    }
-    let leases: Vec<LeaseId> = created.iter().map(|r| r.lease).collect();
-    let mut it = created.into_iter();
-    let (Some(anchor), Some(member), Some(registry)) = (it.next(), it.next(), it.next()) else {
-        return Err(GovernanceRuntimeError::Adapter(
-            "origin: a record is missing".into(),
-        ));
-    };
-    let anchor_key = anchor.record_key.clone();
-    let records = OriginRecords {
-        anchor,
-        member,
-        registry,
-    };
+    let ReservedCommunity { slot_seed, records } = reserved;
+    let anchor_key = records.anchor.record_key.clone();
+    let leases = [
+        records.anchor.lease,
+        records.member.lease,
+        records.registry.lease,
+    ];
     let mut installed = false;
-    let seeded = tokio::time::timeout_at(
-        deadline,
-        seed_community(deps, name, admission, &slot_seed, records, &mut installed),
-    )
-    .await
-    .unwrap_or_else(|_| Err(timed_out()));
+    let seeded = match verified_creators(&anchor_key, accepted) {
+        Ok(further) => tokio::time::timeout_at(
+            deadline,
+            seed_community(
+                deps,
+                Genesis {
+                    name,
+                    admission,
+                    further,
+                },
+                &slot_seed,
+                records,
+                &mut installed,
+            ),
+        )
+        .await
+        .unwrap_or_else(|_| Err(timed_out())),
+        Err(e) => Err(e),
+    };
     match seeded {
         Ok(anchor) => Ok(anchor),
         Err(e) => {
@@ -194,14 +199,22 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     }
 }
 
+/// What the cert says beyond the records: the name, the admission mode
+/// and the further creators.
+struct Genesis<'a> {
+    name: &'a str,
+    admission: AdmissionMode,
+    further: Vec<PseudonymKey>,
+}
+
 /// The deadline error, naming the bound in seconds.
-fn timed_out() -> GovernanceRuntimeError {
+pub(crate) fn timed_out() -> GovernanceRuntimeError {
     GovernanceRuntimeError::CreateTimedOut(CREATE_DEADLINE.as_secs())
 }
 
 /// Create `A`, `M(p)` and the registry in that order, pushing each into
 /// `created` as it exists (the caller releases them on a failure).
-async fn create_records<D: GovernanceRuntimeDeps>(
+pub(crate) async fn create_records<D: GovernanceRuntimeDeps>(
     deps: &D,
     member_pubkeys: &[[u8; 32]],
     created: &mut Vec<DhtRecordInfo>,
@@ -269,12 +282,16 @@ async fn write_genesis<D: GovernanceRuntimeDeps>(
 /// is set just before it), and handing the records to the host.
 async fn seed_community<D: GovernanceRuntimeDeps>(
     deps: &D,
-    name: &str,
-    admission: AdmissionMode,
+    genesis: Genesis<'_>,
     slot_seed: &SlotSeed,
     records: OriginRecords,
     installed: &mut bool,
 ) -> Result<String, GovernanceRuntimeError> {
+    let Genesis {
+        name,
+        admission,
+        further,
+    } = genesis;
     let OriginRecords {
         anchor,
         member,
@@ -310,9 +327,12 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         creator_member_record: member_key.clone(),
         creator_member_record_owner: member_owner,
         created_at: deps.clock().now_secs(),
-        additional_creators: Vec::new(),
+        additional_creators: further,
         predecessor: None,
     };
+    rekindle_governance::genesis::check_creator_set(&cert).map_err(|e| {
+        GovernanceRuntimeError::Crypto(format!("origin: the creator set is refused: {e:?}"))
+    })?;
     let (cert, cert_bytes) = write_genesis(deps, &anchor, cert, &pseudonym_signing).await?;
 
     // The genesis ops: the creator's ops #0…n.
@@ -483,6 +503,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
 
     #[test]
     fn random_channel_id_is_16_bytes_and_random() {

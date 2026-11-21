@@ -54,6 +54,31 @@ pub fn genesis_signing_bytes(anchor: &str, unsigned: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The bytes a co-creator's pseudonym signs to accept a place in the
+/// creator set of `anchor` (plan E3.2 S7s.3, decision (16)):
+/// `GOV_CREATOR_ACCEPT ‖ anchor ‖ pseudonym`.
+#[must_use]
+pub fn creator_accept_signing_bytes(anchor: &str, pseudonym: &PseudonymKey) -> Vec<u8> {
+    let label = domains::GOV_CREATOR_ACCEPT.as_bytes();
+    let mut out = Vec::with_capacity(label.len() + anchor.len() + pseudonym.0.len());
+    out.extend_from_slice(label);
+    out.extend_from_slice(anchor.as_bytes());
+    out.extend_from_slice(&pseudonym.0);
+    out
+}
+
+/// Whether `signature` is `pseudonym`'s acceptance of a place in the
+/// creator set of `anchor`.
+#[must_use]
+pub fn verify_creator_accept(anchor: &str, pseudonym: &PseudonymKey, signature: &[u8; 64]) -> bool {
+    verify_signature(
+        &pseudonym.0,
+        &creator_accept_signing_bytes(anchor, pseudonym),
+        signature,
+    )
+    .is_ok()
+}
+
 /// Verify both signatures of the cert of community `anchor`. The caller
 /// pins `anchor_owner` to the anchor record's descriptor owner
 /// (`RecordPort::owner_of`) before trusting the cert.
@@ -131,5 +156,24 @@ mod tests {
             verify_genesis("VLD0:a", b"cert", &a_pub, &a_sig, &c_pub, &a_sig),
             Err(GenesisRejection::BadCreatorSignature)
         );
+    }
+
+    /// Decision (16): an acceptance verifies only for its own anchor and
+    /// pseudonym, under the creator-accept label.
+    #[test]
+    fn a_creator_accept_binds_its_anchor_and_pseudonym() {
+        let key = SigningKey::from_bytes(&[9; 32]);
+        let pseudo = PseudonymKey(key.verifying_key().to_bytes());
+        let sig = key
+            .sign(&creator_accept_signing_bytes("VLD0:a", &pseudo))
+            .to_bytes();
+        assert!(verify_creator_accept("VLD0:a", &pseudo, &sig));
+        assert!(!verify_creator_accept("VLD0:b", &pseudo, &sig));
+        let other = PseudonymKey(SigningKey::from_bytes(&[8; 32]).verifying_key().to_bytes());
+        assert!(!verify_creator_accept("VLD0:a", &other, &sig));
+        let genesis_sig = key
+            .sign(&genesis_signing_bytes("VLD0:a", &pseudo.0))
+            .to_bytes();
+        assert!(!verify_creator_accept("VLD0:a", &pseudo, &genesis_sig));
     }
 }
