@@ -208,7 +208,7 @@ pub fn frame(
     components: &[Node],
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
 ) -> Result<Option<(RgbaImage, Insets, Shape, [RgbaImage; 9])>, ImportError> {
-    let Some((pieces, shape)) = pieces(layout, components, piece)? else {
+    let Some((pieces, shape, _)) = pieces(layout, components, piece)? else {
         return Ok(None);
     };
     let (img, insets) = bitmap::compose("window layout", &pieces)?;
@@ -217,7 +217,9 @@ pub fn frame(
 
 /// The nine pieces (in [`bitmap::NINE`] order) of the frame `layout`
 /// lays, as [`frame`] reads them, uncomposed: a window's frame tiles
-/// (plan SK0 S1); `None` when no shape is complete.
+/// (plan SK0 S1), the shape, and the tile laying a nine-piece set (StealthX's
+/// `MainBackground`, the frame rows the tree places: plan SK2-S1o); `None`
+/// when no shape is complete.
 ///
 /// # Errors
 /// What `piece` returns.
@@ -225,7 +227,7 @@ pub fn pieces(
     layout: &Node,
     components: &[Node],
     piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
-) -> Result<Option<([RgbaImage; 9], Shape)>, ImportError> {
+) -> Result<Option<([RgbaImage; 9], Shape, Vec<String>)>, ImportError> {
     let mut by_name: BTreeMap<String, &Node> = BTreeMap::new();
     for c in components.iter().flat_map(|n| descendants(n, "Component")) {
         if let Some(name) = c.attr_ci("Name") {
@@ -242,15 +244,16 @@ pub fn pieces(
             })
         })
         .collect();
-    let nine = laid
-        .iter()
-        .find_map(|l| nine_piece_in([l.set]).map(|p| p.map(Some)));
+    let nine = laid.iter().find_map(|l| {
+        let name = l.tile.attr_ci("Name").or(l.tile.attr_ci("Component"));
+        nine_piece_in([l.set]).map(|p| (p.map(Some), name.map(|n| n.trim().to_owned())))
+    });
     let found = named(&laid)
-        .map(|p| (p, Shape::Named))
-        .or_else(|| sides(&laid).map(|p| (p, Shape::Sides)))
-        .or_else(|| nine.map(|p| (p, Shape::Nine)))
-        .or_else(|| rows(&laid).map(|p| (p, Shape::Rows)));
-    let Some((set, shape)) = found else {
+        .map(|p| (p, Shape::Named, Vec::new()))
+        .or_else(|| sides(&laid).map(|p| (p, Shape::Sides, Vec::new())))
+        .or_else(|| nine.map(|(p, n)| (p, Shape::Nine, n.into_iter().collect())))
+        .or_else(|| rows(&laid).map(|p| (p, Shape::Rows, Vec::new())));
+    let Some((set, shape, frame_tiles)) = found else {
         return Ok(None);
     };
     let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
@@ -263,7 +266,7 @@ pub fn pieces(
     let pieces: [RgbaImage; 9] = pieces.try_into().map_err(|_| ImportError::MissingFile {
         file: "frame pieces".to_owned(),
     })?;
-    Ok(Some((pieces, shape)))
+    Ok(Some((pieces, shape, frame_tiles)))
 }
 
 #[cfg(test)]
@@ -298,7 +301,7 @@ mod tests {
             Ok(RgbaImage::new(2, 2))
         })
         .unwrap()
-        .map(|(_, shape)| shape);
+        .map(|(_, shape, _)| shape);
         assert_eq!(got, Some(Shape::Sides));
         assert_eq!(
             names.into_inner(),

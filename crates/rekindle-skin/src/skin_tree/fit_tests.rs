@@ -392,3 +392,51 @@ fn stealthxs_menu_button_launches_the_side_rail() {
         )
     );
 }
+
+/// Plan SK2-S1o: StealthX's `XfireMenuText` (`X="1" Y="4"
+/// IndentLeft="27"`, fixed) holds `FileMenu` (`ResizeX="100"
+/// OutdentLeft="27"`), `popups.xml:5-6`: the fixed tile's indent is its
+/// client inset, so the menu art starts at the text tile's own left edge,
+/// never 25 px left of the window.
+#[test]
+fn a_fixed_tiles_indent_is_its_client_inset() {
+    let (l, tree) = imported(
+        br#"<Tile Name="W" Component="MainWindow">
+<Tile Name="MenuBar" X="1" Y="10" Component="MenuBar">
+<Tile Name="XfireMenuText" X="1" Y="4" IndentLeft="27" Component="XfireMenuText">
+<Tile Name="FileMenu" X="0" Y="-4" ResizeX="100" ResizeY="100" OutdentLeft="27" Component="FileMenu"/>
+</Tile></Tile></Tile>"#,
+        br#"<Components>
+<Component Name="MenuBar"><Images State="Normal"><Image>bar-110x60</Image></Images></Component>
+<Component Name="XfireMenuText"><Images State="Normal"><Image>text-80x16</Image></Images></Component>
+<Component Name="FileMenu"><Images State="Normal"><Image>menu-80x20</Image></Images></Component>
+</Components>"#,
+    );
+    assert_eq!(tree.outsets.left, 0);
+    let (w, h) = (i32::from(l.min_width), i32::from(l.min_height));
+    let boxes = tree.boxes(w, h);
+    assert_eq!(boxes[2].1, [2, 10, 80, 20]);
+}
+
+/// Plan SK2-S1o: StealthX's nine-piece frame is `MainBackground`'s set,
+/// laid at `X="112"` (`mainwindow.xml:2`) right of the rail: the frame
+/// rectangle starts there, so the frame art and the views content agree.
+#[test]
+fn a_frame_tile_inside_the_window_starts_the_frame_rectangle() {
+    let (l, tree) = imported_rows(
+        br#"<Tile Name="W" ResizeX="100" ResizeY="100" Component="MainWindow">
+<Tile Name="MainBackground" X="112" Y="0" ResizeX="100" ResizeY="100" Component="MainBackground">
+<Tile Name="TabbedControl" X="26" Y="35" IndentRight="25" IndentBottom="101" ResizeX="100" ResizeY="100" Component="TabbedControl">
+<Tile Name="BuddyView" ResizeX="100" ResizeY="100" Component="BuddyView"/></Tile>
+</Tile></Tile>"#,
+        br#"<Components>
+<Component Name="MainWindow" MinWidth="400" MinHeight="400"/>
+</Components>"#,
+        &["MainBackground"],
+    );
+    let o = |i: Insets| (i.left, i.top, i.right, i.bottom);
+    assert_eq!(o(tree.outsets), (0, 0, 0, 0));
+    assert_eq!(o(l.outsets), (112, 0, 0, 0));
+    assert_eq!(o(l.content), (26, 35, 25, 101));
+    assert_eq!(l.min_width, 400 - 112);
+}

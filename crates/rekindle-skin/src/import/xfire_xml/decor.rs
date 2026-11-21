@@ -257,7 +257,8 @@ pub fn main_window(
     windows: &mut Windows,
 ) -> Result<(), ImportError> {
     let w = SkinWindow::Main;
-    let built = if let Some((mut pieces, _)) = tiles::pieces(main, components, piece)? {
+    let built = if let Some((mut pieces, _, frame_tiles)) = tiles::pieces(main, components, piece)?
+    {
         let insets = views_insets(main, components);
         if let Some(insets) = insets {
             let [_, _, _, l, _, r, _, _, _] = &mut pieces;
@@ -267,8 +268,10 @@ pub fn main_window(
         if let Some(insets) = insets {
             views::fill_band(w, &mut built, &pieces[4], insets)?;
         }
-        // The nine pieces are the window component's own: its box.
-        Some((built, Vec::new()))
+        // The nine pieces are the window component's own (its box), or the
+        // tile laying them, placed where the pack places it (StealthX's
+        // `MainBackground` `X="112"`, the rail left of it).
+        Some((built, frame_tiles))
     } else {
         stack::layout(w, main, components, piece)?
     };
