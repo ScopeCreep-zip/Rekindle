@@ -53,7 +53,7 @@ mod tests;
 use std::sync::Arc;
 
 use rekindle_records::port::{PortEvent, PortSet, RecordValue};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
 pub use attach::ATTACH_STEP;
 pub use busy::{db_call, db_queued, on_sim_thread, DbCall};
@@ -71,6 +71,7 @@ pub use routes::{
 pub use trace::Trace;
 
 use network::{pair, NodeSlot, EVENT_QUEUE};
+use rekindle_route::ordered_watch::{Follow, OrderedWatch};
 use rekindle_route::own_routes::OwnRoutes;
 
 /// A simulated node's side: what a Host on it needs.
@@ -124,7 +125,8 @@ impl Netsim {
     #[must_use]
     pub fn add_node(&self) -> Node {
         let (events_tx, events) = mpsc::channel(EVENT_QUEUE);
-        let (ready, ready_rx) = watch::channel(false);
+        let ready = Arc::new(OrderedWatch::new(false));
+        let ready_rx = ready.follower();
         let index = {
             let mut inner = self.net.inner.lock();
             inner.nodes.push(NodeSlot::new(events_tx, ready));
@@ -149,7 +151,7 @@ impl Netsim {
 
     /// Node `index`'s ports over the network, its route set following
     /// `ready`.
-    fn ports(&self, index: usize, rng: &Arc<SimRandom>, ready: watch::Receiver<bool>) -> PortSet {
+    fn ports(&self, index: usize, rng: &Arc<SimRandom>, ready: Follow<bool>) -> PortSet {
         let own = OwnRoutes::new(FakeAllocator::new(index, Arc::clone(&self.net)), ready);
         PortSet {
             records: Arc::new(FakeRecords::new(

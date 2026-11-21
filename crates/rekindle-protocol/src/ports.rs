@@ -10,6 +10,7 @@ use rekindle_records::port::{
     check_message_len, AppCallId, AppMessagePort, NodeLifecycle, PeerTarget, PortError, PortEvent,
     PortSet, RecordPort, RecordStore, RouteClass, RoutePort, RouteState,
 };
+use rekindle_route::ordered_watch::Follow;
 use rekindle_route::own_routes::OwnRoutes;
 use rekindle_types::config::SafetyProfile;
 use tokio::sync::{mpsc, watch};
@@ -29,7 +30,7 @@ use crate::route_safety::{pinned_safety, statement_safety};
 pub struct VeilidRecords {
     api: VeilidAPI,
     profile: SafetyProfile,
-    ready: tokio::sync::watch::Receiver<bool>,
+    ready: Follow<bool>,
     closer: Arc<RecordCloser>,
 }
 
@@ -40,7 +41,7 @@ impl VeilidRecords {
     pub fn new(
         api: VeilidAPI,
         profile: SafetyProfile,
-        ready: tokio::sync::watch::Receiver<bool>,
+        ready: Follow<bool>,
         closer: Arc<RecordCloser>,
     ) -> Self {
         Self {
@@ -68,7 +69,7 @@ impl RecordStore for VeilidRecords {
         Ok(RecordPool::new(
             Arc::new(backend),
             scope,
-            self.ready.clone(),
+            self.ready.follow(),
             Arc::clone(&self.closer),
         ))
     }
@@ -442,7 +443,7 @@ impl VeilidPorts {
     pub async fn start(
         config: &NodeConfig,
         dht: SafetyProfile,
-        ready: watch::Receiver<bool>,
+        ready: Follow<bool>,
     ) -> Result<(PortSet, mpsc::Receiver<PortEvent>), ProtocolError> {
         let (event_tx, event_rx) = mpsc::channel::<PortEvent>(UPDATE_QUEUE);
         let api = startup(

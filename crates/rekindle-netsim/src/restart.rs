@@ -36,10 +36,11 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
 use crate::network::EVENT_QUEUE;
 use crate::{Netsim, Node};
+use rekindle_route::ordered_watch::OrderedWatch;
 
 impl Netsim {
     /// `node`'s process ends (its Host has shut down): its Veilid
@@ -57,7 +58,7 @@ impl Netsim {
         };
         // The ended process's channels go with it.
         slot.events = mpsc::channel(EVENT_QUEUE).0;
-        slot.ready = watch::channel(false).0;
+        slot.ready = Arc::new(OrderedWatch::new(false));
         slot.state = "detached";
         slot.public_ready = false;
         slot.opened.clear();
@@ -74,7 +75,8 @@ impl Netsim {
     #[must_use]
     pub fn start_node(&self, node: usize) -> Node {
         let (events_tx, events) = mpsc::channel(EVENT_QUEUE);
-        let (ready, ready_rx) = watch::channel(false);
+        let ready = Arc::new(OrderedWatch::new(false));
+        let ready_rx = ready.follower();
         {
             let mut inner = self.net.inner.lock();
             inner.faults.detached.remove(&node);

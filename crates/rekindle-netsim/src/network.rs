@@ -17,9 +17,10 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rekindle_record_pool::RecordPool;
 use rekindle_records::port::{PortEvent, RecordSchema, RecordValue, RouteClass};
-use tokio::sync::{mpsc, oneshot, watch, Notify};
+use tokio::sync::{mpsc, oneshot, Notify};
 
 use crate::busy::Busy;
+use rekindle_route::ordered_watch::OrderedWatch;
 
 use crate::latency::Latency;
 pub(crate) use crate::records::Replica;
@@ -137,7 +138,8 @@ impl Faults {
 /// Each node's side of the network.
 pub(crate) struct NodeSlot {
     pub events: mpsc::Sender<PortEvent>,
-    pub ready: watch::Sender<bool>,
+    /// Readiness, a watch per follower (RK1).
+    pub ready: Arc<OrderedWatch<bool>>,
     /// The node's local record copies, across its sessions (Veilid's
     /// local store).
     pub local: HashMap<(String, u32), RecordValue>,
@@ -217,7 +219,7 @@ pub(crate) struct NodeSlot {
 }
 
 impl NodeSlot {
-    pub(crate) fn new(events: mpsc::Sender<PortEvent>, ready: watch::Sender<bool>) -> Self {
+    pub(crate) fn new(events: mpsc::Sender<PortEvent>, ready: Arc<OrderedWatch<bool>>) -> Self {
         Self {
             events,
             ready,
@@ -478,8 +480,7 @@ impl Network {
                 } = &p.event
                 {
                     if let Some(slot) = inner.nodes.get(p.to) {
-                        slot.ready
-                            .send_if_modified(|ready| std::mem::replace(ready, *pir) != *pir);
+                        slot.ready.send_if_changed(*pir);
                     }
                     // A readiness that returned holds from the update that
                     // reports it, a round trip after the fault ([`crate::attach`]).

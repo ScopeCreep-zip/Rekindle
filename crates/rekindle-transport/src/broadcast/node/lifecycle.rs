@@ -58,7 +58,7 @@ impl TransportNode {
         let (ports, events) = rekindle_protocol::ports::VeilidPorts::start(
             &node_config,
             config.safety.dht.clone(),
-            shared_state.subscribe_ready(),
+            shared_state.follow_ready(),
         )
         .await?;
 

@@ -32,7 +32,7 @@ async fn states_until(node: &mut Node, last: &str) -> Vec<(String, bool, bool)> 
 }
 
 fn ready(sim: &Netsim, node: usize) -> bool {
-    *sim.net.inner.lock().nodes[node].ready.borrow()
+    sim.net.inner.lock().nodes[node].ready.get()
 }
 
 /// Node 1's general route, imported at node 0.

@@ -8,8 +8,39 @@
 //! each follower's watch has one waiter, and the sends run in one order,
 //! so the woken tasks are queued in that order every run.
 
+use std::sync::Arc;
+
 use parking_lot::Mutex;
 use tokio::sync::watch;
+
+/// Where each follower of a value gets a watch: a task that waits on the
+/// value takes one of its own ([`follow`](Self::follow)), so waiters on an
+/// [`OrderedWatch`] are woken in subscription order (RK1).
+pub struct Follow<T>(Arc<dyn Fn() -> watch::Receiver<T> + Send + Sync>);
+
+impl<T> Clone for Follow<T> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> Follow<T> {
+    /// Followers that all share `rx`'s one watch (a source with no
+    /// per-follower fan-out, e.g. the desktop's `network_ready`): tokio
+    /// wakes its waiters in an order of its own ([module docs](self)).
+    #[must_use]
+    pub fn shared(rx: watch::Receiver<T>) -> Self {
+        Self(Arc::new(move || rx.clone()))
+    }
+}
+
+impl<T> Follow<T> {
+    /// A watch of this follower's own.
+    #[must_use]
+    pub fn follow(&self) -> watch::Receiver<T> {
+        (self.0)()
+    }
+}
 
 /// The value and one watch per follower ([module docs](self)).
 pub struct OrderedWatch<T> {
@@ -40,6 +71,21 @@ impl<T: Clone> OrderedWatch<T> {
         let (tx, rx) = watch::channel(inner.value.clone());
         inner.followers.push(tx);
         rx
+    }
+
+    /// Followers of this value that do not keep it alive: once it is
+    /// dropped, a new follower's watch is closed (holding `T::default()`),
+    /// as a watch whose sender is gone.
+    #[must_use]
+    pub fn follower(self: &Arc<Self>) -> Follow<T>
+    where
+        T: Default + Send + Sync + 'static,
+    {
+        let weak = Arc::downgrade(self);
+        Follow(Arc::new(move || {
+            weak.upgrade()
+                .map_or_else(|| watch::channel(T::default()).1, |w| w.subscribe())
+        }))
     }
 
     /// The current value.
@@ -97,5 +143,17 @@ mod tests {
         assert_eq!(*order.lock(), (0..8).collect::<Vec<_>>());
         assert!(!watch.send_if_changed(1));
         assert_eq!(watch.get(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_follower_of_a_dropped_value_is_closed() {
+        let watch = std::sync::Arc::new(OrderedWatch::new(false));
+        let follow = watch.follower();
+        let mut live = follow.follow();
+        watch.send_replace(true);
+        assert!(*live.borrow_and_update());
+        drop(watch);
+        assert!(live.changed().await.is_err());
+        assert!(follow.follow().wait_for(|r| *r).await.is_err());
     }
 }

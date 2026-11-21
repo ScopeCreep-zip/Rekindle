@@ -32,7 +32,7 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{RouteClass, RouteState};
 use tokio::sync::watch;
 
-use crate::ordered_watch::OrderedWatch;
+use crate::ordered_watch::{Follow, OrderedWatch};
 use crate::route_death::{DeathCause, RouteDeath, TestTally};
 
 /// Why an allocation did not produce a route.
@@ -107,7 +107,8 @@ impl<Id> Slot<Id> {
 /// The node's own routes.
 pub struct OwnRoutes<A: RouteAllocator> {
     alloc: A,
-    ready: watch::Receiver<bool>,
+    /// Readiness, one watch per waiting class task (RK1).
+    ready: Follow<bool>,
     scope: Arc<SessionScope>,
     backoff_min: Duration,
     general: Slot<A::Id>,
@@ -132,11 +133,11 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     /// An owner over `alloc`, allocating once `ready` holds, on a scope of
     /// its own that lives as long as the node ([`shutdown`](Self::shutdown)).
     #[must_use]
-    pub fn new(alloc: A, ready: watch::Receiver<bool>) -> Arc<Self> {
+    pub fn new(alloc: A, ready: Follow<bool>) -> Arc<Self> {
         Self::with_backoff(alloc, ready, BACKOFF_MIN)
     }
 
-    fn with_backoff(alloc: A, ready: watch::Receiver<bool>, backoff_min: Duration) -> Arc<Self> {
+    fn with_backoff(alloc: A, ready: Follow<bool>, backoff_min: Duration) -> Arc<Self> {
         Arc::new(Self {
             alloc,
             ready,
@@ -279,7 +280,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             self.alloc.hop_count(class),
             old.at,
             tally,
-            *self.ready.borrow(),
+            *self.ready.follow().borrow(),
             tokio::time::Instant::now(),
         )
     }
@@ -394,7 +395,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     ) {
         let slot = self.slot(class);
         let mut backoff = self.backoff_min;
-        let mut ready = self.ready.clone();
+        let mut ready = self.ready.follow();
         while slot.wanted.load(Ordering::SeqCst) && slot.current.lock().is_none() {
             slot.state.send_replace(RouteState::Allocating);
             if stop

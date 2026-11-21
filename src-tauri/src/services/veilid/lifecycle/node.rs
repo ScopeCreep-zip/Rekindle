@@ -56,7 +56,7 @@ pub async fn initialize_node(
     // paired).
     let own_routes = rekindle_route::own_routes::OwnRoutes::new(
         rekindle_protocol::own_routes::VeilidRouteAllocator::new(api.clone()),
-        state.network_ready.subscribe(),
+        rekindle_route::ordered_watch::Follow::shared(state.network_ready.subscribe()),
     );
     // The process's one route importer (plan C7.3): routes are imported
     // before login too (invites, inbound app_message).
@@ -77,7 +77,7 @@ pub async fn initialize_node(
         records: Arc::new(rekindle_protocol::ports::VeilidRecords::new(
             api.clone(),
             transport_config.safety.dht.clone(),
-            state.network_ready.subscribe(),
+            rekindle_route::ordered_watch::Follow::shared(state.network_ready.subscribe()),
             rekindle_protocol::dht::pool::RecordCloser::new(),
         )),
         routes: Arc::new(rekindle_protocol::ports::VeilidRoutes::new(

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use super::*;
+use crate::ordered_watch::OrderedWatch;
 
 /// Scripted allocation results per call; records every release.
 struct Fake {
@@ -43,10 +44,11 @@ impl RouteAllocator for Arc<Fake> {
     }
 }
 
-fn owner(fake: &Arc<Fake>, ready: bool) -> (Arc<OwnRoutes<Arc<Fake>>>, watch::Sender<bool>) {
-    let (tx, rx) = watch::channel(ready);
-    let routes = OwnRoutes::with_backoff(Arc::clone(fake), rx, Duration::from_millis(1));
-    (routes, tx)
+fn owner(fake: &Arc<Fake>, ready: bool) -> (Arc<OwnRoutes<Arc<Fake>>>, Arc<OrderedWatch<bool>>) {
+    let ready = Arc::new(OrderedWatch::new(ready));
+    let routes =
+        OwnRoutes::with_backoff(Arc::clone(fake), ready.follower(), Duration::from_millis(1));
+    (routes, ready)
 }
 
 async fn settle() {
