@@ -15,6 +15,7 @@ pub mod document;
 pub mod element;
 pub mod element_find;
 pub mod frame;
+pub mod native_key;
 pub mod navigation;
 pub mod print;
 pub mod screenshot;

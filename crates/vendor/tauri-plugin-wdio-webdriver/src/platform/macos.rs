@@ -583,4 +583,23 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
         // Return base64 encoded PDF
         pdf_result.map(|bytes| BASE64_STANDARD.encode(&bytes))
     }
+
+    // =========================================================================
+    // Native key input
+    // =========================================================================
+
+    async fn send_native_key(
+        &self,
+        _key: &str,
+        _shift: bool,
+    ) -> Result<(), WebDriverErrorResponse> {
+        // Building and sending an NSEvent is safe in objc2-app-kit 0.3.2,
+        // but finding this session's NSWindow is not: Tauri gives no window
+        // number, WKWebView's URL and title are `unsafe fn` in objc2-web-kit
+        // 0.3.2, and window titles are not unique. The project adds no new
+        // `unsafe` (plan E7.14 S5, 2026-11-20), so this is unsupported here.
+        Err(WebDriverErrorResponse::unsupported_operation(
+            "native key input is not available on macOS: the session's NSWindow cannot be found without new unsafe code (objc2-web-kit 0.3.2 WKWebView::URL/title are unsafe fn)",
+        ))
+    }
 }
