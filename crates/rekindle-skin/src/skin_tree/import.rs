@@ -20,7 +20,7 @@ use rekindle_types::dto::skin::{Insets, RegionState, SkinWindow, TileAxis, Windo
 use rekindle_types::dto::skin_tree::{NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree};
 
 use super::anchor::{axis, outer_for, Sibs, Sizes, X, Y};
-use super::passes::{by_view, pages, qualify, tab_views};
+use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::roles::{role, Facts};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_image, Decode};
@@ -463,6 +463,7 @@ pub fn add(
     tab_views(&mut tree.root);
     pages(&mut tree.root, &walk.groups);
     by_view(&mut tree.root);
+    rows_by_view(&mut tree.root)?;
     qualify(&mut tree.root);
     let window = layout.attr_ci("Component").unwrap_or("MainWindow");
     let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();
