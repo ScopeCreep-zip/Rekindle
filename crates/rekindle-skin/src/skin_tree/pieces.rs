@@ -2,9 +2,13 @@
 //! geometry both the stylesheet ([`super::css`]) and the window outline
 //! ([`crate::shape::silhouette`]) read, so the two cannot disagree.
 //!
-//! The box is cut by four insets: the corner columns' widths (the widest of
-//! `topleft`/`left`/`bottomleft`, and of the right column) and the corner
-//! rows' heights. Each piece then draws in one band of the box:
+//! The box is cut by four insets: the corner columns' widths and the corner
+//! rows' heights. A corner row is as tall as its corners, a row with no
+//! corner as tall as its edge, and likewise for the columns. Classic's `AdArea` (`v3/xfirecomponents.xml:975`)
+//! lays 9 px `adbar-topleft` corners over a 60 px `black.gif` top edge, and
+//! the original shows the `adbar-left` edge down the whole area below the
+//! corner (`skinref/xfire`, x 14, y 54-99). Each piece then draws in one band
+//! of the box:
 //! - the corners in the whole box, once, at its corner;
 //! - `top`/`bottom` in the row band (between the corner columns, full
 //!   height) at its top/bottom, repeated across from the band's start;
@@ -63,44 +67,58 @@ pub fn cell(slot: PieceSlot) -> Cell {
     Cell { band, end, repeat }
 }
 
+/// The tallest (`f` = height) or widest piece of `p` in `slots`; 0 for none.
+fn most(p: &NodePieces, slots: &[PieceSlot], f: fn(&NodePiece) -> u16) -> i32 {
+    slots
+        .iter()
+        .filter_map(|s| p.get(s))
+        .map(|x| i32::from(f(x)))
+        .max()
+        .unwrap_or(0)
+}
+
+/// The size of a band's side on one axis: its `corners`' when it has one,
+/// else its `edge`'s (spec A7: corners draw at natural size, the edge
+/// between them is laid in the band the corners make).
+fn side(p: &NodePieces, corners: [PieceSlot; 2], edge: PieceSlot, f: fn(&NodePiece) -> u16) -> i32 {
+    if corners.iter().any(|c| p.contains_key(c)) {
+        most(p, &corners, f)
+    } else {
+        most(p, &[edge], f)
+    }
+}
+
 /// The insets `[left, right, top, bottom]`: the corner columns' widths and
 /// the corner rows' heights.
 #[must_use]
 pub fn insets(p: &NodePieces) -> [i32; 4] {
     use PieceSlot as S;
-    let most = |slots: [S; 3], f: fn(&NodePiece) -> u16| {
-        slots
-            .iter()
-            .filter_map(|s| p.get(s))
-            .map(|x| i32::from(f(x)))
-            .max()
-            .unwrap_or(0)
-    };
+    let (w, h): (fn(&NodePiece) -> u16, fn(&NodePiece) -> u16) = (|x| x.width, |x| x.height);
     [
-        most([S::TopLeft, S::Left, S::BottomLeft], |x| x.width),
-        most([S::TopRight, S::Right, S::BottomRight], |x| x.width),
-        most([S::TopLeft, S::Top, S::TopRight], |x| x.height),
-        most([S::BottomLeft, S::Bottom, S::BottomRight], |x| x.height),
+        side(p, [S::TopLeft, S::BottomLeft], S::Left, w),
+        side(p, [S::TopRight, S::BottomRight], S::Right, w),
+        side(p, [S::TopLeft, S::TopRight], S::Top, h),
+        side(p, [S::BottomLeft, S::BottomRight], S::Bottom, h),
     ]
 }
 
-/// The set's natural size (spec A6 `ToContent`): the corner columns and
-/// rows plus the widest middle-column piece and the tallest middle-row one.
+/// The set's natural size (spec A6 `ToContent`): the insets plus the
+/// middle column's and row's edges (`top`/`bottom` across, `left`/`right`
+/// down). The `middle` fills what the frame leaves and sizes an axis only
+/// when that axis has no edge: Classic's `AdArea` is 9 + 29 = 38 px tall by
+/// its frame, raised to its `MinHeight` 60, never 9 + its 60 px `black.gif`
+/// (the original's ad area is 60 px, 45 px at its 75 % scale, y 54-99).
 #[must_use]
 pub fn natural(set: &NodePieces) -> (i32, i32) {
     use PieceSlot as S;
     let [left, right, top, bottom] = insets(set);
-    let most = |slots: [S; 3], f: fn(&NodePiece) -> u16| {
-        slots
-            .iter()
-            .filter_map(|s| set.get(s))
-            .map(|x| i32::from(f(x)))
-            .max()
-            .unwrap_or(0)
+    let inner = |edges: [S; 2], f: fn(&NodePiece) -> u16| match most(set, &edges, f) {
+        0 => most(set, &[S::Middle], f),
+        n => n,
     };
     (
-        left + right + most([S::Top, S::Middle, S::Bottom], |x| x.width),
-        top + bottom + most([S::Left, S::Middle, S::Right], |x| x.height),
+        left + right + inner([S::Top, S::Bottom], |x| x.width),
+        top + bottom + inner([S::Left, S::Right], |x| x.height),
     )
 }
 

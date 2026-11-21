@@ -64,16 +64,19 @@ fn total_chaos_main_golden() {
     let got = slots("builtin:total-chaos", SkinWindow::Main);
     assert_eq!(got.len(), 15);
     // The row stack: left/right pieces at the edges, middles repeating
-    // between them at source size.
+    // between them at source size. Each node's art is named after its
+    // piece (spec A7, decision 21): `node-adbar-left` is the bytes of the
+    // old `row1-left`, `node-menubar-middle` of `row2-middle`,
+    // `node-bottombar-right` of `row4-right`; the geometry is unchanged.
     assert_eq!(got[0], "display: block; left: 0px; width: 75px; top: 0px; height: 52px; background: url(\"node-maintitlebar-left.png\") 0 0 / 75px 52px no-repeat;");
     assert_eq!(got[1], "display: block; left: 75px; right: 75px; top: 0px; height: 52px; background: url(\"node-maintitlebar-middle.png\") 0 0 / 8px 52px repeat-x;");
     // The T.C plaque: centred on the window (an overhang), floored to a
     // whole pixel like the silhouette, painted over row 0's middle.
     assert_eq!(got[3], "display: block; left: calc(0px + round(down, calc((100% - 206px) / 2), 1px)); width: 206px; top: 0px; height: 52px; background: url(\"node-title.png\") 0 0 / 206px 52px no-repeat;");
-    assert_eq!(got[4], "display: block; left: 0px; width: 59px; top: 52px; height: 60px; background: url(\"row1-left.png\") 0 0 / 59px 60px no-repeat;");
-    assert_eq!(got[8], "display: block; left: 83px; right: 83px; top: 112px; height: 69px; background: url(\"node-menubar.png\") 0 0 / 30px 69px repeat-x;");
+    assert_eq!(got[4], "display: block; left: 0px; width: 59px; top: 52px; height: 60px; background: url(\"node-adbar-left.png\") 0 0 / 59px 60px no-repeat;");
+    assert_eq!(got[8], "display: block; left: 83px; right: 83px; top: 112px; height: 69px; background: url(\"node-menubar-middle.png\") 0 0 / 30px 69px repeat-x;");
     assert_eq!(got[11], "display: block; right: 0px; width: 50px; top: 181px; bottom: 66px; background: url(\"row3-right.png\") 0 0 / 50px 37px repeat-y;");
-    assert_eq!(got[14], "display: block; right: 0px; width: 161px; bottom: 0px; height: 66px; background: url(\"row4-right.png\") 0 0 / 161px 66px no-repeat;");
+    assert_eq!(got[14], "display: block; right: 0px; width: 161px; bottom: 0px; height: 66px; background: url(\"node-bottombar-right.png\") 0 0 / 161px 66px no-repeat;");
 }
 
 #[test]
@@ -98,17 +101,19 @@ fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
 fn xfire_classic_pads_the_content_to_its_side_edges() {
     // SK2: the content is the views node's box (`TabbedControl`,
     // `xfiremainwindow.xml:83`, inside `InnerBevel` at :53). Top: InnerBevel
-    // `Y="MainTitleBar.BOTTOM-6"` (main-left.gif 47 px) = 41, plus
-    // `Y="Divider.BOTTOM"` (MenuBar 8 + 19, AdArea 60, Divider at -4, 18 px:
-    // 101) and `IndentTop="TabHeader.height"` (tab_control_base.gif 16 px):
-    // 158. Right: 13 + MainRightOuterEdge 9 + 6 = 28. Bottom:
-    // `BaseBoard.height-6` (bottom-left.gif 62 px) + `BottomBevel.height-8`
-    // (35 px) = 83. Left: LeftOuterEdge 9 + 7 = 16.
+    // `Y="MainTitleBar.BOTTOM-6"` (the title bar's `MinHeight` 51, spec A6)
+    // = 45, plus `Y="Divider.BOTTOM"` (MenuBar 8 + 19, AdArea 60: its frame
+    // is 9 + 29 px, raised to `MinHeight` 60, `xfirecomponents.xml:975`;
+    // Divider at -4, 18 px: 101) and `IndentTop="TabHeader.height"`
+    // (tab_control_base.gif 16 px): 162. Right: 13 + MainRightOuterEdge 9 +
+    // 6 = 28. Bottom: `BaseBoard.height-6` (`MinHeight` 68,
+    // `xfirecomponents.xml:225`: 62) + `BottomBevel.height-8` (35 px) = 89.
+    // Left: LeftOuterEdge 9 + 7 = 16.
     let (m, files) = pack("builtin:xfire-classic");
     let css = frame_css(&m, &files, BASE).unwrap();
     assert!(
         css.contains(
-            "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 158px 28px 83px 16px;\n"
+            "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 162px 28px 89px 16px;\n"
         ),
         "{css}"
     );

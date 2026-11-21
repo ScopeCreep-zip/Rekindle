@@ -102,3 +102,28 @@ fn a_box_smaller_than_its_caps_crops_them() {
     assert_eq!(of(&d, PieceSlot::Left), vec![([0, 0, 8, 4], (0, 0))]);
     assert_eq!(of(&d, PieceSlot::Right), vec![([0, 0, 8, 4], (2, 0))]);
 }
+
+/// Classic's `AdArea` (`v3/xfirecomponents.xml:975-986`): 9 px corners over
+/// a 60 px `black.gif` top edge and middle, 29 px side edges. The corner
+/// row is the corners' 9 px, so the sides run down the rest of the box
+/// (the top edge keeps the row band's full height), and the frame alone is 38 px tall (its
+/// `MinHeight` 60 then sizes the tile, as the original's 60 px ad area).
+#[test]
+fn a_corner_row_is_its_corners_height_and_the_middle_never_adds_to_the_frame() {
+    let p = set(&[
+        (PieceSlot::TopLeft, 16, 9),
+        (PieceSlot::Left, 16, 29),
+        (PieceSlot::Top, 210, 60),
+        (PieceSlot::Middle, 210, 60),
+        (PieceSlot::TopRight, 17, 9),
+        (PieceSlot::Right, 17, 29),
+    ]);
+    assert_eq!(insets(&p), [16, 17, 9, 0]);
+    assert_eq!(natural(&p), (243, 38));
+    let d = draw(&p, 300, 60);
+    assert_eq!(of(&d, PieceSlot::Top)[0], ([16, 0, 210, 60], (0, 0)));
+    assert_eq!(
+        of(&d, PieceSlot::Left),
+        vec![([0, 9, 16, 29], (0, 0)), ([0, 38, 16, 22], (0, 0))]
+    );
+}
