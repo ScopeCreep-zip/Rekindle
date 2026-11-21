@@ -44,7 +44,7 @@
 //! rewrites them every beat, and a stale one re-sent would claim a
 //! presence we no longer have.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -63,6 +63,8 @@ use super::{set_failed, RecordPool};
 const FIRST: Duration = Duration::from_secs(60);
 /// The longest wait between two re-sends.
 const CAP: Duration = Duration::from_secs(30 * 60);
+/// How far ahead a due record's other entries join its round.
+const JOIN: Duration = Duration::from_secs(60);
 /// How long after the write re-sends go on.
 const WINDOW: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -207,16 +209,28 @@ impl RecordPool {
     /// ours (OW2).
     async fn republish_due(&self) {
         let now = Instant::now();
-        let mut by_record: BTreeMap<String, Vec<Due>> = BTreeMap::new();
-        for ((key, subkey), e) in self.republish.entries.lock().iter() {
-            if e.due <= now {
-                by_record.entry(key.clone()).or_default().push(Due {
-                    subkey: *subkey,
-                    data: e.data.clone(),
-                    writer: e.writer.clone(),
-                });
+        let by_record = {
+            let entries = self.republish.entries.lock();
+            let records: BTreeSet<&str> = entries
+                .iter()
+                .filter(|(_, e)| e.due <= now)
+                .map(|((key, _), _)| key.as_str())
+                .collect();
+            // A due record's other entries falling due within [`JOIN`] join
+            // its round: a record written in batches (the prekey record's
+            // slots) costs one inspect per round, not one per batch.
+            let mut by_record: BTreeMap<String, Vec<Due>> = BTreeMap::new();
+            for ((key, subkey), e) in entries.iter() {
+                if records.contains(key.as_str()) && e.due <= now + JOIN {
+                    by_record.entry(key.clone()).or_default().push(Due {
+                        subkey: *subkey,
+                        data: e.data.clone(),
+                        writer: e.writer.clone(),
+                    });
+                }
             }
-        }
+            by_record
+        };
         let (mut records, mut resent) = (0usize, 0usize);
         for (key, due) in by_record {
             if self.repush_stop.is_cancelled() {

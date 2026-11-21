@@ -110,6 +110,7 @@ mod rejoin_after_kick;
 mod rejoin_after_leave;
 mod rejoin_by_gossip;
 mod removal_ack;
+mod republish_inspect;
 mod requester_route_bounds;
 mod requester_route_replaced;
 mod requester_route_stale;
