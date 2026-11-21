@@ -96,23 +96,42 @@ mod tests {
 
     use super::super::{decode_governance_entry, encode_governance_entry};
 
-    fn body(anchor: bool, to: bool, set: bool, accepts: bool, links: u8) -> GovernanceEntry {
+    /// The parts a successor body may carry, each present or not.
+    #[derive(Default)]
+    struct Parts {
+        anchor: Option<String>,
+        to: Option<PseudonymKey>,
+        set: Option<[u8; 32]>,
+        accepts: Option<OpRef>,
+        links: u8,
+    }
+
+    fn anchor() -> String {
+        format!("VLD0:{}", "a".repeat(43))
+    }
+
+    fn accepted() -> OpRef {
+        OpRef {
+            op_hash: OpHash([9; 32]),
+            author: PseudonymKey([10; 32]),
+            author_record: format!("VLD0:{}", "r".repeat(43)),
+            author_seq: 3,
+        }
+    }
+
+    fn body(parts: Parts) -> GovernanceEntry {
+        let reason = if parts.to.is_some() || parts.set.is_some() {
+            SuccessorReason::Transfer
+        } else {
+            SuccessorReason::Recreate
+        };
         GovernanceEntry::CommunitySuccessor(CommunitySuccessor {
-            new_anchor: anchor.then(|| format!("VLD0:{}", "a".repeat(43))),
-            reason: if to || set {
-                SuccessorReason::Transfer
-            } else {
-                SuccessorReason::Recreate
-            },
-            transfer_to: to.then_some(PseudonymKey([7; 32])),
-            creator_set_hash: set.then_some([8; 32]),
-            accepts: accepts.then(|| OpRef {
-                op_hash: OpHash([9; 32]),
-                author: PseudonymKey([10; 32]),
-                author_record: format!("VLD0:{}", "r".repeat(43)),
-                author_seq: 3,
-            }),
-            links: (0..links)
+            new_anchor: parts.anchor,
+            reason,
+            transfer_to: parts.to,
+            creator_set_hash: parts.set,
+            accepts: parts.accepts,
+            links: (0..parts.links)
                 .map(|i| CreatorLink {
                     old: PseudonymKey([i; 32]),
                     new: PseudonymKey([i + 100; 32]),
@@ -122,14 +141,42 @@ mod tests {
         })
     }
 
+    /// A recreate successor naming its new anchor.
+    fn successor() -> GovernanceEntry {
+        body(Parts {
+            anchor: Some(anchor()),
+            ..Parts::default()
+        })
+    }
+
+    /// A transfer offer to one member, over the current creator set.
+    fn offer() -> GovernanceEntry {
+        body(Parts {
+            to: Some(PseudonymKey([7; 32])),
+            set: Some([8; 32]),
+            ..Parts::default()
+        })
+    }
+
+    /// A withdrawal: no part at all.
+    fn withdrawal() -> GovernanceEntry {
+        body(Parts::default())
+    }
+
+    /// An acceptance of an offer, with its new anchor and `links` links.
+    fn acceptance(links: u8) -> GovernanceEntry {
+        body(Parts {
+            anchor: Some(anchor()),
+            set: Some([8; 32]),
+            accepts: Some(accepted()),
+            links,
+            ..Parts::default()
+        })
+    }
+
     #[test]
     fn community_successor_round_trips() {
-        let all = [
-            body(true, false, false, false, 0),
-            body(false, true, true, false, 0),
-            body(false, false, false, false, 0),
-            body(true, false, true, true, 9),
-        ];
+        let all = [successor(), offer(), withdrawal(), acceptance(9)];
         for entry in all {
             let bytes = encode_governance_entry(&entry);
             assert_eq!(decode_governance_entry(&bytes).expect("decodes"), entry);

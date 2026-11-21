@@ -106,8 +106,7 @@ type Mutation = Box<dyn Fn(&mut GovernanceState)>;
 
 /// One mutation per field of `GovernanceState`, in declaration order.
 fn mutations() -> Vec<(&'static str, Mutation)> {
-    let id = [3u8; 16];
-    vec![
+    let mut fields: Vec<(&'static str, Mutation)> = vec![
         (
             "channels",
             Box::new(|g| _ = g.channels.insert(ChannelId([1; 16]), channel())),
@@ -242,6 +241,15 @@ fn mutations() -> Vec<(&'static str, Mutation)> {
                 g.overwrites.insert((ChannelId([1; 16]), "t".into()), o);
             }),
         ),
+    ];
+    fields.extend(later_mutations());
+    fields
+}
+
+/// The rest of [`mutations`], split to keep each function short.
+fn later_mutations() -> Vec<(&'static str, Mutation)> {
+    let id = [3u8; 16];
+    vec![
         (
             "threads",
             Box::new(|g| _ = g.threads.insert(ThreadId([1; 16]), thread())),
