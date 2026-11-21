@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, ViewKey};
+use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, ViewKey};
 
 use super::import::bad;
 use crate::import::ImportError;
@@ -155,52 +155,6 @@ pub(super) fn tab_views(root: &mut [SkinNode]) {
     split(root, &keys);
 }
 
-/// `b`, a span inside a slot laid by `slot`, as the same span inside the
-/// slot's parent; `None` when no span says it exactly (a centred place
-/// whose rounding differs with the parent's length).
-fn compose(slot: NodeSpan, b: NodeSpan) -> Option<NodeSpan> {
-    let fixed = |at: Anchor, size: i32| {
-        Some(NodeSpan::Fixed {
-            at,
-            size: u16::try_from(size).ok()?,
-        })
-    };
-    let i = |v: i32| i16::try_from(v).ok();
-    match (slot, b) {
-        (NodeSpan::Fixed { at, size }, _) => {
-            let s = i32::from(size);
-            let (b0, bl) = b.place(s);
-            match at {
-                Anchor::Start(a) => fixed(Anchor::Start(i(i32::from(a) + b0)?), bl),
-                Anchor::End(a) => fixed(Anchor::End(i(i32::from(a) + s - b0 - bl)?), bl),
-                // ⌊(L−s)/2⌋ = ⌊(L−bl)/2⌋ − (s−bl)/2 only when s−bl is even.
-                Anchor::Centre(o) if (s - bl) % 2 == 0 => {
-                    fixed(Anchor::Centre(i(i32::from(o) + b0 - (s - bl) / 2)?), bl)
-                }
-                Anchor::Centre(_) => None,
-            }
-        }
-        (NodeSpan::Stretch { start, end }, NodeSpan::Fixed { at, size }) => {
-            let (st, en) = (i32::from(start), i32::from(end));
-            let at = match at {
-                Anchor::Start(a) => Anchor::Start(i(st + i32::from(a))?),
-                Anchor::End(a) => Anchor::End(i(en + i32::from(a))?),
-                Anchor::Centre(o) if (st + en) % 2 == 0 => {
-                    Anchor::Centre(i(i32::from(o) + (st - en) / 2)?)
-                }
-                Anchor::Centre(_) => return None,
-            };
-            fixed(at, i32::from(size))
-        }
-        (NodeSpan::Stretch { start, end }, NodeSpan::Stretch { start: a, end: c }) => {
-            Some(NodeSpan::Stretch {
-                start: i(i32::from(start) + i32::from(a))?,
-                end: i(i32::from(end) + i32::from(c))?,
-            })
-        }
-    }
-}
-
 /// A slot: a group whose every child is a button shown with one view.
 fn is_slot(n: &SkinNode) -> bool {
     n.role == NodeRole::Group
@@ -218,12 +172,15 @@ fn is_slot(n: &SkinNode) -> bool {
 /// round buttons). The XML packs lay them by view (Classic's `ButtonArea`
 /// > `FriendsButtons`/`ServersButtons`/`FilesButtons`,
 /// `xfiremainwindow.xml:20-42`). The slots of one parent become one
-/// `ButtonRow(view)` per view, stretched over that parent, each holding
-/// that view's buttons at their same places; a group holding only slots
-/// becomes the `ButtonBar`.
+/// `ButtonRow(view)` per view, stretched over that parent; lead decision
+/// 13: each slot stays in each of its views' rows as a wrapper (its id,
+/// span, z and art: the art Xfire drew behind the button, Combat's 37 px
+/// `ChatRefreshStopTab` plate under its 36 px buttons) holding that view's
+/// button at its own place in the slot, so every place stays exact. A
+/// group holding only slots becomes the `ButtonBar`.
 ///
 /// # Errors
-/// A button whose place in its slot has no exact place in the row.
+/// A slot's button shown with no view.
 pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError> {
     for n in nodes.iter_mut() {
         rows_by_view(&mut n.children)?;
@@ -245,18 +202,23 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
             kept.push(slot);
             continue;
         }
-        for mut b in slot.children {
+        let mut views: Vec<(ViewKey, SkinNode)> = Vec::new();
+        for b in &slot.children {
             let Some(v) = b.shows_with else {
                 return Err(bad(format!("{}: a slot's button with no view", b.id)));
             };
-            let placed = (compose(slot.x, b.x), compose(slot.y, b.y));
-            let (Some(x), Some(y)) = placed else {
-                return Err(bad(format!(
-                    "{}: its place in {} has no exact place in its row",
-                    b.id, slot.id
-                )));
-            };
-            (b.x, b.y) = (x, y);
+            if let Some((_, w)) = views.iter_mut().find(|(w, _)| *w == v) {
+                w.children.push(b.clone());
+            } else {
+                let w = SkinNode {
+                    shows_with: Some(v),
+                    children: vec![b.clone()],
+                    ..slot.clone()
+                };
+                views.push((v, w));
+            }
+        }
+        for (v, w) in views {
             let i = if let Some(i) = rows.iter().position(|r| r.role == NodeRole::ButtonRow(v)) {
                 i
             } else {
@@ -266,7 +228,7 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
                     role: NodeRole::ButtonRow(v),
                     x: fill,
                     y: fill,
-                    z: slot.z,
+                    z: w.z,
                     art: None,
                     text: None,
                     shows_with: Some(v),
@@ -275,8 +237,8 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
                 rows.len() - 1
             };
             let row = &mut rows[i];
-            row.z = row.z.max(slot.z);
-            row.children.push(b);
+            row.z = row.z.max(w.z);
+            row.children.push(w);
         }
     }
     kept.splice(first..first, rows);
@@ -286,7 +248,9 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
 
 #[cfg(test)]
 mod tests {
-    use rekindle_types::dto::skin_tree::{ActionKey, Anchor, NodeRole, NodeSpan, ViewKey};
+    use std::collections::BTreeMap;
+
+    use rekindle_types::dto::skin_tree::{ActionKey, Anchor, NodeArt, NodeRole, NodeSpan, ViewKey};
 
     use super::super::tests::{fixed, n};
     use super::rows_by_view;
@@ -335,61 +299,92 @@ mod tests {
         rows_by_view(&mut root).unwrap();
         let bar = &root[0];
         assert_eq!(bar.role, NodeRole::ButtonBar);
+        // Each row holds its views' slots as wrappers (id, span, z, art),
+        // each holding that view's button at its own place in the slot.
         let rows: Vec<_> = bar
             .children
             .iter()
             .map(|r| {
-                let kids: Vec<_> = r
+                let slots: Vec<_> = r
                     .children
                     .iter()
-                    .map(|c| (c.id.as_str(), c.x, c.y))
+                    .map(|w| {
+                        let kids: Vec<_> = w
+                            .children
+                            .iter()
+                            .map(|c| (c.id.as_str(), c.x, c.y))
+                            .collect();
+                        (w.id.as_str(), w.role, w.shows_with, w.x, w.y, kids)
+                    })
                     .collect();
-                (r.role, r.shows_with, kids)
+                (r.role, r.shows_with, slots)
             })
             .collect();
-        let at = |x: i16| (fixed(x, 40), fixed(3, 20));
+        let add_x = NodeSpan::Stretch { start: 7, end: 0 };
+        let own = (fixed(0, 40), fixed(0, 20));
+        let slot = |id, v, x, b| {
+            (
+                id,
+                NodeRole::Group,
+                Some(v),
+                x,
+                fixed(3, 20),
+                vec![(b, own.0, own.1)],
+            )
+        };
+        let (f, s) = (ViewKey::Friends, ViewKey::Servers);
         let want = vec![
             (
-                NodeRole::ButtonRow(ViewKey::Friends),
-                Some(ViewKey::Friends),
+                NodeRole::ButtonRow(f),
+                Some(f),
                 vec![
-                    ("AddButton", at(7).0, at(7).1),
-                    ("ChatButton", at(53).0, at(53).1),
+                    slot("TabAddButton", f, add_x, "AddButton"),
+                    slot("TabChatRefreshButton", f, fixed(53, 40), "ChatButton"),
                 ],
             ),
             (
-                NodeRole::ButtonRow(ViewKey::Servers),
-                Some(ViewKey::Servers),
+                NodeRole::ButtonRow(s),
+                Some(s),
                 vec![
-                    ("AddServerButton", at(7).0, at(7).1),
-                    ("RefreshButton", at(53).0, at(53).1),
+                    slot("TabAddButton", s, add_x, "AddServerButton"),
+                    slot("TabChatRefreshButton", s, fixed(53, 40), "RefreshButton"),
                 ],
             ),
         ];
         assert_eq!(rows, want);
     }
 
-    /// A centred slot whose button differs from it by an odd width has no
-    /// exact place in a row: the import refuses it rather than guess.
+    /// Lead decision 13: Combat's centred `ChatRefreshStopTab` (37 px art
+    /// over 36 px buttons) has no exact place for its button in the row,
+    /// so the slot stays a wrapper with its own span and art, and the
+    /// button keeps its place inside it.
     #[test]
-    fn a_button_with_no_exact_place_in_its_row_is_refused() {
-        let mut slot = n(
-            "Slot",
-            NodeRole::Group,
-            NodeSpan::Fixed {
-                at: Anchor::Centre(0),
-                size: 41,
-            },
-            fixed(0, 20),
-        );
+    fn a_centred_slot_stays_a_wrapper_with_its_art() {
+        let span = NodeSpan::Fixed {
+            at: Anchor::Centre(0),
+            size: 37,
+        };
+        let mut slot = n("Slot", NodeRole::Group, span, fixed(0, 20));
+        slot.art = Some(NodeArt {
+            image: "slot.png".into(),
+            states: BTreeMap::new(),
+        });
         let mut b = n(
-            "AddButton",
-            NodeRole::Button(ActionKey::AddFriend),
-            fixed(0, 40),
+            "ChatButton",
+            NodeRole::Button(ActionKey::Chat),
+            fixed(0, 36),
             fixed(0, 20),
         );
         b.shows_with = Some(ViewKey::Friends);
         slot.children = vec![b];
-        assert!(rows_by_view(&mut vec![slot]).is_err());
+        let mut root = vec![slot];
+        rows_by_view(&mut root).unwrap();
+        let w = &root[0].children[0];
+        let art = w.art.as_ref().map(|a| a.image.as_str());
+        assert_eq!((w.id.as_str(), w.x, art), ("Slot", span, Some("slot.png")));
+        assert_eq!(
+            (w.children[0].id.as_str(), w.children[0].x),
+            ("ChatButton", fixed(0, 36))
+        );
     }
 }
