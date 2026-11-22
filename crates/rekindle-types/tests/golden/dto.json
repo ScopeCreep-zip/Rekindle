@@ -376,6 +376,24 @@
     "displayName": "Ann",
     "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
+  "infoview.subject.community": {
+    "community": "VLD0:community",
+    "type": "community"
+  },
+  "infoview.subject.friend": {
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "type": "friend"
+  },
+  "infoview.subject.friendGroup": {
+    "groupId": null,
+    "type": "friendGroup"
+  },
+  "infoview.subject.own": {
+    "type": "own"
+  },
+  "infoview.subject.selection": {
+    "type": "selection"
+  },
   "onboarding.config.default": {
     "defaultChannels": [],
     "enabled": false,
@@ -1096,6 +1114,12 @@
       "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "kind": "friend"
+  },
+  "skin.selection.friendGroup": {
+    "arg": {
+      "groupId": 3
+    },
+    "kind": "friendGroup"
   },
   "skin.selection.group": {
     "arg": {

@@ -175,6 +175,12 @@ pub enum SkinSelection {
     Group {
         group_id: String,
     },
+    /// A friend group's header in the buddy list (`buddycat` /
+    /// `customgroup`, plan E7.15 IV5): its Infoview page. `None` is the
+    /// default group of friends in no group.
+    FriendGroup {
+        group_id: Option<i64>,
+    },
 }
 
 /// A window's current signal set (design §2.5).

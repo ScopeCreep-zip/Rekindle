@@ -23,6 +23,11 @@ use crate::friend::NotJoinableReason;
 pub const CLI_WINDOW: &str = "cli";
 
 /// What a window's Infoview shows: its selection, as the Host resolves it.
+///
+/// A pack's Info popup asks [`Selection`](Self::Selection) (plan E7.15,
+/// IV5): the page follows its launcher's selection, as Xfire's did. A view
+/// the Host answers or pushes always carries the resolved subject, never
+/// `Selection`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(
     rename_all = "camelCase",
@@ -39,6 +44,11 @@ pub enum InfoviewSubject {
     FriendGroup { group_id: Option<i64> },
     /// A joined community (`clan.tmpl`), by anchor or name.
     Community { community: String },
+    /// Whatever the asking window's launcher has selected (a popup's
+    /// launcher; a window that is not a popup is its own): a friend is
+    /// `Friend`, a friend group `FriendGroup`, anything else or nothing
+    /// `Own`. The Host composes the page again when that selection changes.
+    Selection,
 }
 
 /// One window's Infoview: its subject and its sections, in order.
