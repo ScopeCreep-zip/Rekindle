@@ -28,7 +28,10 @@
   .skin-name-edit:focus-visible,
   .skin-status-edit:focus-visible {
     outline: 2px solid var(--color-xfire-focus-outline);
-    outline-offset: 1px;
+    /* Inside the control: the pack places controls flush with the window's
+     * edge (Symbiosis's Infoview launcher, a tab at the strip's end), where
+     * a ring outside the box is cut by the window (WCAG 2.4.7). */
+    outline-offset: -2px;
   }
 
   /* N2: a menu title's label over the pack's menu art. */
