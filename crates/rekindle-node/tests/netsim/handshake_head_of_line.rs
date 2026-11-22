@@ -55,6 +55,7 @@ async fn a_lost_accept_answer_holds_back_only_the_frames_that_need_it() {
             .ok(IpcRequest::GroupDmCreate {
                 name: "raid night".to_string(),
                 members: vec![bea.clone(), key(&nodes[2])],
+                origin_peer: None,
             })
             .await,
     )

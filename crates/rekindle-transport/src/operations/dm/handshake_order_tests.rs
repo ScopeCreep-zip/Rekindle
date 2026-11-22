@@ -27,6 +27,14 @@ impl DmOutbox for Counting {
     async fn enqueue_group(&self, _: &str, _: OutgoingDm) -> Result<i64, FriendError> {
         Err(unused())
     }
+    async fn enqueue_group_control(
+        &self,
+        _: &str,
+        _: String,
+        _: Vec<u8>,
+    ) -> Result<i64, FriendError> {
+        Err(unused())
+    }
     async fn enqueue_control(&self, _: &str, _: String, _: Vec<u8>) -> Result<i64, FriendError> {
         Err(unused())
     }
