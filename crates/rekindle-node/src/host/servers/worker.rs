@@ -17,6 +17,7 @@ use tokio::time::Instant;
 
 use super::HeldInvite;
 use crate::daemon::dispatch::DaemonContext;
+use crate::host::coalesce::sleep_until;
 
 /// How long the worker gathers events before it composes again.
 pub(super) const COALESCE: Duration = Duration::from_millis(250);
@@ -101,12 +102,6 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
             Some(_) => {}
             None => return,
         }
-    }
-}
-
-async fn sleep_until(due: Option<Instant>) {
-    if let Some(due) = due {
-        tokio::time::sleep_until(due).await;
     }
 }
 

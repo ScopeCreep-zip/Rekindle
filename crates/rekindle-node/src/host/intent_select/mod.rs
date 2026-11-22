@@ -8,7 +8,7 @@
 //! E4.1/E5.1): none is a placeholder.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 use rekindle_types::intent::{
     Escalation, Fact, IntentKind, IrreversibleReason, Notifies, Recipient, Reversibility, Subject,
 };
@@ -152,7 +152,7 @@ pub(crate) async fn select(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
         // A forgotten server comes back only by visiting it again (plan E7.2 G3).
-        IpcRequest::RecentServerRemove { .. } => {
+        IpcRequest::Servers(ServersRequest::RecentRemove { .. }) => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::Never;
         }
@@ -262,7 +262,7 @@ pub(crate) async fn select(
         | IpcRequest::InfoviewGet { .. }
         | IpcRequest::InstalledGamesGet
         | IpcRequest::FavouriteServersGet
-        | IpcRequest::ServersView
+        | IpcRequest::Servers(ServersRequest::View)
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet
         | IpcRequest::FriendBioGet { .. }

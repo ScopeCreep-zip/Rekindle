@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{IpcRequest, ServersRequest};
 use rekindle_types::dto::servers::ServersView;
 
 use super::super::action::{Action, CommandResult};
@@ -15,7 +15,7 @@ use super::App;
 impl App {
     /// The Servers view, as the Host composes it.
     pub(crate) fn load_servers_view(&self) {
-        self.spawn_servers(IpcRequest::ServersView, "servers");
+        self.spawn_servers(IpcRequest::Servers(ServersRequest::View), "servers");
     }
 
     /// A request the Host answers with the Servers view.

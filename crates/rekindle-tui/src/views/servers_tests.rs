@@ -68,12 +68,12 @@ fn host_view() -> HostServersView {
     }
 }
 
-fn key(view: &mut ServersView, c: char) -> Option<Action> {
+fn key(view: &mut GameServersView, c: char) -> Option<Action> {
     view.handle_focused_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE))
 }
 
-fn loaded() -> ServersView {
-    let mut view = ServersView::new();
+fn loaded() -> GameServersView {
+    let mut view = GameServersView::new();
     view.on_command_result(CommandResult::ServersViewLoaded { view: host_view() })
         .unwrap();
     view

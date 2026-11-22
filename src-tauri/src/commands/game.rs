@@ -1,4 +1,5 @@
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::ServersRequest;
 use rekindle_types::dto::presence::{
     FavouriteServerView, GameTotalView, HiddenGameView, InstalledGameView, OwnGame, OwnPresenceView,
 };
@@ -123,7 +124,7 @@ pub async fn remove_favourite_server(
 pub async fn servers_view(
     state: State<'_, SharedState>,
 ) -> Result<Done<ServersView>, CommandError> {
-    host_call::call(&state, IpcRequest::ServersView).await
+    host_call::call(&state, IpcRequest::Servers(ServersRequest::View)).await
 }
 
 /// Forget a server we visited (`IpcRequest::RecentServerRemove`, plan E7.2
@@ -134,7 +135,11 @@ pub async fn recent_server_remove(
     server: rekindle_game_detect::launcher::ServerAddress,
     state: State<'_, SharedState>,
 ) -> Result<Done<ServersView>, CommandError> {
-    host_call::call(&state, IpcRequest::RecentServerRemove { game_id, server }).await
+    host_call::call(
+        &state,
+        IpcRequest::Servers(ServersRequest::RecentRemove { game_id, server }),
+    )
+    .await
 }
 
 /// Our time in each detected game, the most recent first

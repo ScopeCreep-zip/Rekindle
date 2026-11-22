@@ -14,7 +14,7 @@ use rekindle_types::key_format::{
 };
 
 use rekindle_ipc::noise_keys::validate_agent_name;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 
 /// Largest identity archive (base64) an import takes: the bus's whole
 /// application frame (`framing::MAX_APP_FRAME`, 16 MiB).
@@ -313,7 +313,7 @@ fn own(request: &IpcRequest) -> Checked {
         IpcRequest::GameHide { game_id }
         | IpcRequest::GameUnhide { game_id }
         | IpcRequest::FavouriteServerRemove { game_id, .. }
-        | IpcRequest::RecentServerRemove { game_id, .. } => {
+        | IpcRequest::Servers(ServersRequest::RecentRemove { game_id, .. }) => {
             if *game_id == 0 {
                 Err(IpcResponse::error(400, "invalid game id: 0"))
             } else {
@@ -381,7 +381,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::HiddenGamesGet
         | IpcRequest::InstalledGamesGet
         | IpcRequest::FavouriteServersGet
-        | IpcRequest::ServersView
+        | IpcRequest::Servers(ServersRequest::View)
         | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
@@ -489,7 +489,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GameUnhide { .. }
         | IpcRequest::FavouriteServerAdd { .. }
         | IpcRequest::FavouriteServerRemove { .. }
-        | IpcRequest::RecentServerRemove { .. }
+        | IpcRequest::Servers(ServersRequest::RecentRemove { .. })
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AuditExport { .. }
         | IpcRequest::LinkOpen { .. }

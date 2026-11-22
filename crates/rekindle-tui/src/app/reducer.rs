@@ -4,7 +4,7 @@ use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
-use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest};
+use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest, ServersRequest};
 use rekindle_types::subscription_events::SubscriptionEvent;
 
 impl App {
@@ -347,7 +347,7 @@ impl App {
                 self.load_servers_view();
             }
             Action::RemoveRecentServer { game_id, server } => self.spawn_servers(
-                IpcRequest::RecentServerRemove { game_id, server },
+                IpcRequest::Servers(ServersRequest::RecentRemove { game_id, server }),
                 "remove recent server",
             ),
             Action::LaunchGame {

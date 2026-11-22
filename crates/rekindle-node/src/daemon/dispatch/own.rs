@@ -65,9 +65,7 @@ pub(crate) async fn route(
         | IpcRequest::FavouriteServerRemove { .. }) => {
             super::own_favourite_servers::route(ctx, state, request).await
         }
-        request @ (IpcRequest::ServersView | IpcRequest::RecentServerRemove { .. }) => {
-            crate::host::servers::route(ctx, state, request).await
-        }
+        IpcRequest::Servers(request) => crate::host::servers::route(ctx, state, request).await,
         IpcRequest::ProfileSetAvatar { image, kind } => {
             handle_avatar(ctx, state, image, kind).await
         }

@@ -127,6 +127,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::IdentityClearVerification { .. } => self.fmt_friend(f),
             Self::Community(request) => std::fmt::Debug::fmt(request, f),
             Self::Transfer(request) => std::fmt::Debug::fmt(request, f),
+            Self::Servers(request) => std::fmt::Debug::fmt(request, f),
             Self::DmTyping { .. }
             | Self::DmInbox { .. }
             | Self::DmHistory { .. }
@@ -172,8 +173,6 @@ impl std::fmt::Debug for IpcRequest {
             | Self::FavouriteServersGet
             | Self::FavouriteServerAdd { .. }
             | Self::FavouriteServerRemove { .. }
-            | Self::ServersView
-            | Self::RecentServerRemove { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AvatarGet { .. }
             | Self::AuditVerify

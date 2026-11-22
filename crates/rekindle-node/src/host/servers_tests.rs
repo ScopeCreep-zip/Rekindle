@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 use rekindle_ipc::Caller;
 use rekindle_types::dto::servers::{
     Joinability, ServerCategoryKind as Kind, ServerRefusal, ServerRow, ServerVerdict, ServersView,
@@ -30,7 +30,7 @@ async fn call(host: &Host, request: IpcRequest) -> serde_json::Value {
 }
 
 async fn view(host: &Host) -> ServersView {
-    serde_json::from_value(call(host, IpcRequest::ServersView).await).unwrap()
+    serde_json::from_value(call(host, IpcRequest::Servers(ServersRequest::View)).await).unwrap()
 }
 
 async fn add_favourite(host: &Host) {
@@ -116,10 +116,10 @@ async fn the_view_composes_favourites_recent_and_friends_with_their_verdicts() {
     );
 
     // Forgetting the visit empties Recent, which is still sent.
-    let remove = IpcRequest::RecentServerRemove {
+    let remove = IpcRequest::Servers(ServersRequest::RecentRemove {
         game_id: CS2,
         server: ServerAddress::parse(FAV).unwrap(),
-    };
+    });
     let after: ServersView = serde_json::from_value(call(&host, remove).await).unwrap();
     let recent = after
         .categories

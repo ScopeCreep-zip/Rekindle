@@ -16,8 +16,6 @@ use serde::{Deserialize, Serialize};
 use super::message::AgentType;
 use rekindle_types::passphrase::Passphrase;
 
-// ── Subscription filter (re-exported from rekindle-types) ──────────────
-
 pub use rekindle_types::subscription_events::{
     EventCategory, SubscriptionFilter, MAX_FILTERS_PER_CONNECTION,
 };
@@ -421,16 +419,8 @@ pub enum IpcRequest {
         game_id: u32,
         server: rekindle_types::game_server::ServerAddress,
     },
-    /// The Servers view (plan E7.2 G3, SK2-G §3): our favourites, the
-    /// servers we recently visited, our friends' servers (presence and game
-    /// invites) and each community's list, every row with the Host's Join,
-    /// add-favourite and remove verdicts. Composed only from what we hold.
-    ServersView,
-    /// Forget a recently visited server (plan E7.2 G3). The view comes back.
-    RecentServerRemove {
-        game_id: u32,
-        server: rekindle_types::game_server::ServerAddress,
-    },
+    /// The Servers view (plan E7.2 G3): the view, and forgetting a visit.
+    Servers(ServersRequest),
     /// Invite an accepted friend to join us on a game server (plan E7.2): a
     /// ratchet-sealed `GameInvite` (0x0170) through the outbox. `server`
     /// is parsed on decode, so no unparsed address enters. Refused for a
@@ -591,6 +581,7 @@ mod community;
 mod debug;
 mod lane;
 mod response;
+mod servers;
 mod transfer;
 #[cfg(test)]
 mod variant_names;
@@ -603,6 +594,7 @@ pub use community::{
 };
 pub use lane::Lane;
 pub use rekindle_types::dto::infoview::InfoviewSubject;
+pub use servers::ServersRequest;
 pub use transfer::TransferRequest;
 
 pub use response::{BusPayload, IpcResponse};

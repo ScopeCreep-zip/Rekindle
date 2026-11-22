@@ -10,7 +10,7 @@ mod worker;
 use std::collections::VecDeque;
 
 use rekindle_db::repo::recent_servers::{self, RecentServer};
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcResponse, ServersRequest};
 use rekindle_types::game_server::ServerAddress;
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
@@ -77,15 +77,15 @@ impl ServersState {
 pub(crate) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: IpcRequest,
+    request: ServersRequest,
 ) -> IpcResponse {
     match request {
-        IpcRequest::ServersView => {
+        ServersRequest::View => {
             if !state.can_query() {
                 return state_error(state, "query");
             }
         }
-        IpcRequest::RecentServerRemove { game_id, server } => {
+        ServersRequest::RecentRemove { game_id, server } => {
             if !state.can_write() {
                 return state_error(state, "write");
             }
@@ -104,7 +104,6 @@ pub(crate) async fn route(
             }
             return answer_and_push(ctx).await;
         }
-        other => unreachable!("{} is not a servers request", other.name()),
     }
     match compose(ctx).await {
         Ok(view) => IpcResponse::ok(&view),

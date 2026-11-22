@@ -179,7 +179,7 @@ pub struct ViewRegistry {
     favourites: Option<favourites::FavouritesView>,
     activity: Option<activity::ActivityView>,
     installed_games: Option<installed_games::InstalledGamesView>,
-    servers: Option<servers::ServersView>,
+    servers: Option<servers::GameServersView>,
 }
 
 impl ViewRegistry {
@@ -295,7 +295,7 @@ impl ViewRegistry {
             }
             ViewKind::Servers => {
                 if self.servers.is_none() {
-                    self.servers = Some(servers::ServersView::new());
+                    self.servers = Some(servers::GameServersView::new());
                 }
             }
         }

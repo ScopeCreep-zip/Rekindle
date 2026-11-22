@@ -42,19 +42,19 @@ enum Item {
 }
 
 /// Servers view state.
-pub struct ServersView {
+pub struct GameServersView {
     focus: FocusRing,
     items: Vec<Item>,
     list_state: ListState,
 }
 
-impl Default for ServersView {
+impl Default for GameServersView {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ServersView {
+impl GameServersView {
     pub fn new() -> Self {
         Self {
             focus: FocusRing::new(vec![FocusId::DmList]),
@@ -253,7 +253,7 @@ pub(crate) fn row_line(r: &ServerRow) -> Line<'static> {
     ])
 }
 
-impl View for ServersView {
+impl View for GameServersView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _theme: &ThemeManager) -> Result<()> {
         let title = format!(
             " Servers ({}) · [Enter] join · [f] add to favourites · [x] remove · [r] reload ",

@@ -180,8 +180,7 @@ async fn route(
         | IpcRequest::FavouriteServersGet
         | IpcRequest::FavouriteServerAdd { .. }
         | IpcRequest::FavouriteServerRemove { .. }
-        | IpcRequest::ServersView
-        | IpcRequest::RecentServerRemove { .. }
+        | IpcRequest::Servers(_)
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::GamePresenceSet { .. }
