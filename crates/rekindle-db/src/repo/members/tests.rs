@@ -31,10 +31,9 @@ fn conn_with_community() -> Connection {
     conn
 }
 
-fn discovered(pseudonym_key: &str, name: &str, subkey: u32) -> DiscoveredMemberRow {
+fn discovered(pseudonym_key: &str, subkey: u32) -> DiscoveredMemberRow {
     DiscoveredMemberRow {
         pseudonym_key: pseudonym_key.into(),
-        display_name: Some(name.into()),
         subkey_index: subkey,
         segment_index: 0,
         bio: None,
@@ -49,7 +48,8 @@ fn discovered(pseudonym_key: &str, name: &str, subkey: u32) -> DiscoveredMemberR
 #[test]
 fn another_identitys_rows_are_never_read() {
     let conn = conn_with_community();
-    upsert_discovered(&conn, OTHER, "c1", &discovered("bob", "Bob", 3), 1).unwrap();
+    upsert_discovered(&conn, OTHER, "c1", &discovered("bob", 3), 1).unwrap();
+    set_card(&conn, OTHER, "c1", "bob", (Some("Bob"), None), 1).unwrap();
     assert_eq!(display_name(&conn, OWNER, "c1", "bob").unwrap(), None);
     assert!(display_names(&conn, OWNER, "c1").unwrap().is_empty());
     assert!(roster(&conn, OWNER, "c1").unwrap().is_empty());
@@ -62,8 +62,9 @@ fn another_identitys_rows_are_never_read() {
 #[test]
 fn a_rescan_updates_profile_fields_but_keeps_joined_at() {
     let conn = conn_with_community();
-    upsert_discovered(&conn, OWNER, "c1", &discovered("bob", "Bob", 3), 1).unwrap();
-    upsert_discovered(&conn, OWNER, "c1", &discovered("bob", "Robert", 4), 99).unwrap();
+    upsert_discovered(&conn, OWNER, "c1", &discovered("bob", 3), 1).unwrap();
+    set_card(&conn, OWNER, "c1", "bob", (Some("Robert"), None), 1).unwrap();
+    upsert_discovered(&conn, OWNER, "c1", &discovered("bob", 4), 99).unwrap();
     let subkey: u32 = conn
         .query_row(
             "SELECT subkey_index FROM community_members \
@@ -92,12 +93,12 @@ fn no_member_or_community_row_stores_role_ids() {
     // A member's roles, and ours, are the merged governance's role
     // assignments (plan E3.2, D15; review RV7 M1): no row caches them.
     let conn = conn_with_community();
-    insert_if_absent(&conn, OWNER, "c1", "bob", "Bob", 1).unwrap();
+    insert_if_absent(&conn, OWNER, "c1", "bob", 1).unwrap();
     assert_eq!(
         roster(&conn, OWNER, "c1").unwrap(),
         [RosterRow {
             pseudonym_key: "bob".into(),
-            display_name: Some("Bob".into()),
+            display_name: None,
         }]
     );
     for table in ["community_members", "communities"] {
@@ -118,9 +119,9 @@ fn no_member_or_community_row_stores_role_ids() {
 #[test]
 fn onboarding_from_another_device_marks_only_our_own_row() {
     let conn = conn_with_community();
-    insert_if_absent(&conn, OWNER, "c1", "me", "Me", 1).unwrap();
-    insert_if_absent(&conn, OWNER, "c1", "bob", "Bob", 1).unwrap();
-    insert_if_absent(&conn, OTHER, "c1", "me", "Me", 1).unwrap();
+    insert_if_absent(&conn, OWNER, "c1", "me", 1).unwrap();
+    insert_if_absent(&conn, OWNER, "c1", "bob", 1).unwrap();
+    insert_if_absent(&conn, OTHER, "c1", "me", 1).unwrap();
     set_my_onboarding_complete(&conn, OWNER, "c1").unwrap();
     let done = |owner: &str, pseudonym: &str| -> i64 {
         conn.query_row(
@@ -160,4 +161,41 @@ fn a_bootstrap_member_is_stored_once() {
     assert_eq!(roster(&conn, OWNER, "c1").unwrap().len(), 1);
     delete(&conn, OWNER, "c1", "bob").unwrap();
     assert!(load_profiles(&conn, OWNER).unwrap().is_empty());
+}
+
+/// A member's name and custom status are its verified card's alone (plan
+/// E3.4 S6): a join row, a registry rescan and a bootstrap list never
+/// name it, and a card write keeps the row's place.
+#[test]
+fn only_the_verified_card_names_a_member() {
+    let conn = conn_with_community();
+    insert_if_absent(&conn, OWNER, "c1", "bob", 1).unwrap();
+    upsert_discovered(&conn, OWNER, "c1", &discovered("bob", 3), 1).unwrap();
+    let carol = MemberInfo {
+        pseudonym_key: "carol".into(),
+        display_name: "Carol says so".into(),
+        role_ids: Vec::new(),
+        status: "online".into(),
+        route_blob: None,
+        bio: None,
+        pronouns: None,
+        theme_color: None,
+        badges: Vec::new(),
+        last_seen: 0,
+    };
+    insert_bootstrap_if_absent(&conn, OWNER, "c1", &carol, 1).unwrap();
+    assert!(display_names(&conn, OWNER, "c1").unwrap().is_empty());
+    set_card(&conn, OWNER, "c1", "bob", (Some("Bob"), Some("afk")), 9).unwrap();
+    upsert_discovered(&conn, OWNER, "c1", &discovered("bob", 4), 99).unwrap();
+    let bob = load_profiles(&conn, OWNER)
+        .unwrap()
+        .into_iter()
+        .find(|p| p.pseudonym_key == "bob")
+        .unwrap();
+    assert_eq!(
+        (bob.display_name.as_deref(), bob.custom_status.as_deref()),
+        (Some("Bob"), Some("afk"))
+    );
+    set_card(&conn, OWNER, "c1", "bob", (None, None), 10).unwrap();
+    assert_eq!(display_name(&conn, OWNER, "c1", "bob").unwrap(), None);
 }

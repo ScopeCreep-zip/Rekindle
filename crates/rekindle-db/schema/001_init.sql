@@ -344,7 +344,11 @@ CREATE TABLE IF NOT EXISTS community_members (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
+    -- The member's verified card (`M`/0, signed by its pseudonym, plan
+    -- E3.4 S6), ours included: written only by `repo::members::set_card`
+    -- from `read_card`; NULL until read. Never a peer-supplied name.
     display_name TEXT,
+    custom_status TEXT,
     joined_at INTEGER NOT NULL,
     -- LOCAL slot within the segment's registry record (raw SMPL subkey
     -- 0..254 — records are o_cnt:0, no owner offset). Written only by the

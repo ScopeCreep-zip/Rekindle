@@ -12,12 +12,15 @@ use crate::protocol::{AgentCapability, Lane};
 pub enum SettingsRequest {
     /// Our per-community profile: bio, pronouns, theme color, badges and
     /// the avatar and banner hashes. Published with our presence.
+    /// Every field is a change: absent keeps it, an empty value (`""`,
+    /// `[]`) clears it (plan E3.4 S6), so a partial update never wipes
+    /// another field.
     CommunityUpdateProfile {
         community: String,
         bio: Option<String>,
         pronouns: Option<String>,
         theme_color: Option<u32>,
-        badges: Vec<String>,
+        badges: Option<Vec<String>>,
         avatar_ref: Option<String>,
         banner_ref: Option<String>,
         /// Our card's custom status (plan E3.4 S6).

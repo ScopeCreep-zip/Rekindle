@@ -6,14 +6,19 @@
 //! reaches the leaver's own frontends and every other member as one
 //! `Left`, whether or not the departure gossip reached them. A join goes
 //! out at once with no name, and the joiner's verified card names it once
-//! read (plan E3.2 F9-2).
+//! read (plan E3.2 F9-2). A card names a member only with the name set for
+//! that community, never the identity's; unset, every surface shows the
+//! short pseudonym fingerprint, and the verified card cached on the roster
+//! row survives a restart (plan E3.4 S6).
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest, MemberRequest};
+use rekindle_ipc::protocol::{
+    CommunityRequest, IpcRequest, LifecycleRequest, MemberRequest, SettingsRequest,
+};
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
-use crate::harness::{eventually, Community, Events};
+use crate::harness::{eventually, Community, Events, PASSPHRASE};
 use crate::moderation::listed;
 
 /// Why the creator kicks the member.
@@ -125,14 +130,14 @@ async fn a_join_is_named_by_the_joiners_card_once_read() {
     let card = |e: &SubscriptionEvent| {
         matches!(e, SubscriptionEvent::Membership(MembershipEvent::MemberCardChanged {
             pseudonym, display_name, ..
-        }) if *pseudonym == bea && display_name == "member1")
+        }) if *pseudonym == bea && *display_name == short(&bea))
     };
     assert!(
         eventually(&community.sim, Duration::from_secs(180), || async {
             ann_events.any(card)
         })
         .await,
-        "the joiner's card names it on the creator"
+        "the joiner's unnamed card shows its short fingerprint on the creator"
     );
     tokio::time::sleep(Duration::from_secs(60)).await;
     community.sim.quiesce().await;
@@ -153,4 +158,219 @@ async fn a_join_is_named_by_the_joiners_card_once_read() {
         1,
         "the card's name is announced once"
     );
+}
+
+/// The short pseudonym fingerprint of `pseudonym_hex` (`"a1b2 c3d4"`).
+fn short(pseudonym_hex: &str) -> String {
+    let key = hex::decode(pseudonym_hex).expect("a hex pseudonym");
+    rekindle_crypto::identity::short_key_fingerprint(&key)
+}
+
+fn settings(request: SettingsRequest) -> IpcRequest {
+    IpcRequest::Community(CommunityRequest::Settings(request))
+}
+
+/// `node`'s `myDisplayName` and `myCardName` for the community.
+async fn my_names(community: &Community, i: usize) -> (String, Option<String>) {
+    let views = community.nodes[i]
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityViews,
+        )))
+        .await;
+    let view = (views.as_array().expect("views").iter())
+        .find(|v| v["id"].as_str() == Some(community.anchor.as_str()))
+        .cloned()
+        .expect("the community's view");
+    (
+        view["myDisplayName"].as_str().expect("a name").to_owned(),
+        view["myCardName"].as_str().map(str::to_owned),
+    )
+}
+
+/// Whether any event `events` holds carries an identity's name
+/// (`member0`, `member1`, the harness's identities).
+fn names_an_identity(events: &Events) -> bool {
+    events.any(|e| {
+        let json = serde_json::to_string(e).expect("an event");
+        json.contains("member0") || json.contains("member1")
+    })
+}
+
+/// Plan E3.4 S6: the cards written by the origin, the join and a profile
+/// update never carry the identity's name. Each member's `myDisplayName`
+/// and the other's member row are the short fingerprint, and the custom
+/// status reaches the other member.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn no_card_carries_the_identity_name() {
+    let mut community = Community::create(2, 722).await;
+    let ann_events = community.nodes[0].events().await;
+    let bea_events = community.nodes[1].events().await;
+    community.join(1).await;
+    let (ann, bea) = (community.pseudonym(0).await, community.pseudonym(1).await);
+    community.nodes[1]
+        .ok(settings(SettingsRequest::CommunityUpdateProfile {
+            community: community.anchor.clone(),
+            bio: None,
+            pronouns: None,
+            theme_color: None,
+            badges: None,
+            avatar_ref: None,
+            banner_ref: None,
+            custom_status: Some("afk".into()),
+        }))
+        .await;
+    let status_seen = |e: &SubscriptionEvent| {
+        matches!(e, SubscriptionEvent::Membership(MembershipEvent::MemberCardChanged {
+            pseudonym, display_name, custom_status, ..
+        }) if *pseudonym == bea && *display_name == short(&bea)
+            && custom_status.as_deref() == Some("afk"))
+    };
+    assert!(
+        eventually(&community.sim, Duration::from_secs(180), || async {
+            ann_events.any(status_seen)
+        })
+        .await,
+        "the updated card reaches the creator, unnamed"
+    );
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    community.sim.quiesce().await;
+    assert_eq!(my_names(&community, 0).await, (short(&ann), None));
+    assert_eq!(my_names(&community, 1).await, (short(&bea), None));
+    let row = listed(&community, 0, &bea)
+        .await
+        .expect("the joiner listed");
+    assert_eq!(row["displayName"].as_str(), Some(short(&bea).as_str()));
+    assert!(!names_an_identity(&ann_events), "the creator's events");
+    assert!(!names_an_identity(&bea_events), "the joiner's events");
+}
+
+/// Plan E3.4 S6: a name set for the community is our card's: the other
+/// member's events and row show it, our view reports it, and clearing it
+/// returns every surface to the short fingerprint.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_set_name_round_trips_through_the_card() {
+    let mut community = Community::create(2, 723).await;
+    let ann_events = community.nodes[0].events().await;
+    community.join(1).await;
+    let bea = community.pseudonym(1).await;
+    let set = |name: &str| {
+        settings(SettingsRequest::CommunitySetDisplayName {
+            community: community.anchor.clone(),
+            display_name: name.into(),
+        })
+    };
+    community.nodes[1].ok(set("Bea")).await;
+    assert_eq!(
+        my_names(&community, 1).await,
+        ("Bea".to_owned(), Some("Bea".to_owned()))
+    );
+    let named = |name: String| {
+        let bea = bea.clone();
+        move |e: &SubscriptionEvent| {
+            matches!(e, SubscriptionEvent::Membership(MembershipEvent::MemberCardChanged {
+                pseudonym, display_name, ..
+            }) if *pseudonym == bea && *display_name == name)
+        }
+    };
+    assert!(
+        eventually(&community.sim, Duration::from_secs(180), || async {
+            ann_events.any(named("Bea".into()))
+        })
+        .await,
+        "the name reaches the creator"
+    );
+    let row = listed(&community, 0, &bea)
+        .await
+        .expect("the joiner listed");
+    assert_eq!(row["displayName"].as_str(), Some("Bea"));
+    community.nodes[1].ok(set("")).await;
+    assert_eq!(my_names(&community, 1).await, (short(&bea), None));
+    assert!(
+        eventually(&community.sim, Duration::from_secs(180), || async {
+            ann_events.any(named(short(&bea)))
+        })
+        .await,
+        "the cleared name reaches the creator as the fingerprint"
+    );
+}
+
+/// A profile update of `bio` and `custom_status` alone (every other field
+/// kept).
+fn profile_update(
+    community: &Community,
+    bio: Option<&str>,
+    custom_status: Option<&str>,
+) -> IpcRequest {
+    settings(SettingsRequest::CommunityUpdateProfile {
+        community: community.anchor.clone(),
+        bio: bio.map(str::to_owned),
+        pronouns: None,
+        theme_color: None,
+        badges: None,
+        avatar_ref: None,
+        banner_ref: None,
+        custom_status: custom_status.map(str::to_owned),
+    })
+}
+
+/// `node`'s `(myBio, myCustomStatus)` for the community.
+async fn my_profile(community: &Community, i: usize) -> (Option<String>, Option<String>) {
+    let views = community.nodes[i]
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityViews,
+        )))
+        .await;
+    let view = (views.as_array().expect("views").iter())
+        .find(|v| v["id"].as_str() == Some(community.anchor.as_str()))
+        .cloned()
+        .expect("the community's view");
+    let text = |k: &str| view[k].as_str().map(str::to_owned);
+    (text("myBio"), text("myCustomStatus"))
+}
+
+/// Plan E3.4 S6: a status-only update keeps our bio, and our whole card
+/// (the name and status cached on our roster row when read back, the
+/// profile stored there) is ours at once after a restart, before any
+/// record is read.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn our_card_survives_a_restart() {
+    let mut community = Community::create(2, 724).await;
+    community.join(1).await;
+    community.nodes[1]
+        .ok(settings(SettingsRequest::CommunitySetDisplayName {
+            community: community.anchor.clone(),
+            display_name: "Bea".into(),
+        }))
+        .await;
+    community.nodes[1]
+        .ok(profile_update(&community, Some("hi"), None))
+        .await;
+    community.nodes[1]
+        .ok(profile_update(&community, None, Some("afk")))
+        .await;
+    let both = (Some("hi".to_owned()), Some("afk".to_owned()));
+    assert_eq!(
+        my_profile(&community, 1).await,
+        both,
+        "status-only keeps the bio"
+    );
+    community.sim.quiesce().await;
+    let key = community.nodes[1].public_key.clone().expect("an identity");
+    let restarted = community
+        .nodes
+        .remove(1)
+        .restart(&community.sim, Duration::from_secs(10))
+        .await;
+    community.nodes.insert(1, restarted);
+    community.nodes[1]
+        .ok(IpcRequest::Unlock {
+            identity: key,
+            passphrase: PASSPHRASE.into(),
+        })
+        .await;
+    assert_eq!(
+        my_names(&community, 1).await,
+        ("Bea".to_owned(), Some("Bea".to_owned()))
+    );
+    assert_eq!(my_profile(&community, 1).await, both, "after a restart");
 }

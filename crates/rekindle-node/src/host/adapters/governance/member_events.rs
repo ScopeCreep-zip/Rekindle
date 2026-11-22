@@ -117,23 +117,17 @@ impl HostGovernance {
             .collect()
     }
 
-    /// Store a roster row for each `Joined` in `events`, named by the
-    /// joiner's verified card when read (plan E3.2 F9-2), else unnamed
-    /// until its `MemberCardChanged`.
+    /// Store an unnamed roster row for each `Joined` in `events`: its name
+    /// is cached from the joiner's verified card alone (plan E3.4 S6).
     fn store_joined_rows(&self, events: &[MembershipEvent]) {
-        let joined: Vec<(String, String, String)> = events
+        let joined: Vec<(String, String)> = events
             .iter()
             .filter_map(|e| match e {
                 MembershipEvent::Joined {
                     community,
                     pseudonym,
-                    display_name,
                     ..
-                } => Some((
-                    community.clone(),
-                    pseudonym.clone(),
-                    display_name.clone().unwrap_or_default(),
-                )),
+                } => Some((community.clone(), pseudonym.clone())),
                 _ => None,
             })
             .collect();
@@ -145,9 +139,9 @@ impl HostGovernance {
         };
         let joined_at = self.ctx.clock.now_secs().cast_signed();
         db.fire("joined members", move |conn| {
-            for (community, pseudonym, name) in &joined {
+            for (community, pseudonym) in &joined {
                 rekindle_db::repo::members::insert_if_absent(
-                    conn, &owner, community, pseudonym, name, joined_at,
+                    conn, &owner, community, pseudonym, joined_at,
                 )?;
             }
             Ok(())

@@ -32,17 +32,12 @@ impl HostGovernance {
             }
             ControlPayload::MemberJoined {
                 pseudonym_key,
-                display_name,
                 status,
                 route_blob,
                 ..
-            } if pseudonym_key == sender_pseudonym => self.on_member_joined(
-                community_id,
-                pseudonym_key,
-                display_name,
-                status,
-                route_blob.as_deref(),
-            ),
+            } if pseudonym_key == sender_pseudonym => {
+                self.on_member_joined(community_id, pseudonym_key, status, route_blob.as_deref())
+            }
             ControlPayload::MemberLeave { pseudonym_key } if pseudonym_key == sender_pseudonym => {
                 self.forget_member(community_id, pseudonym_key).await;
             }

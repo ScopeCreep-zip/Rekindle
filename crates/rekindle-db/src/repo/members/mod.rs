@@ -14,7 +14,9 @@ use rekindle_types::member::MemberInfo;
 pub struct ProfileRow {
     pub community_id: String,
     pub pseudonym_key: String,
+    /// The member's verified card (`M`/0): written only by [`set_card`].
     pub display_name: Option<String>,
+    pub custom_status: Option<String>,
     pub bio: Option<String>,
     pub pronouns: Option<String>,
     pub theme_color: Option<u32>,
@@ -29,8 +31,8 @@ pub struct ProfileRow {
 /// The query failed.
 pub fn load_profiles(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<ProfileRow>> {
     let mut stmt = conn.prepare(
-        "SELECT community_id, pseudonym_key, display_name, bio, pronouns, theme_color, badges, \
-         avatar_ref, banner_ref FROM community_members WHERE owner_key = ?1",
+        "SELECT community_id, pseudonym_key, display_name, custom_status, bio, pronouns, \
+         theme_color, badges, avatar_ref, banner_ref FROM community_members WHERE owner_key = ?1",
     )?;
     let rows = stmt
         .query_map(params![owner_key], |row| {
@@ -38,12 +40,13 @@ pub fn load_profiles(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec
                 community_id: row.get(0)?,
                 pseudonym_key: row.get(1)?,
                 display_name: row.get(2)?,
-                bio: row.get(3)?,
-                pronouns: row.get(4)?,
-                theme_color: row.get(5)?,
+                custom_status: row.get(3)?,
+                bio: row.get(4)?,
+                pronouns: row.get(5)?,
+                theme_color: row.get(6)?,
                 badges: crate::row::get_json(row, "badges")?,
-                avatar_ref: row.get(7)?,
-                banner_ref: row.get(8)?,
+                avatar_ref: row.get(8)?,
+                banner_ref: row.get(9)?,
             })
         })?
         .collect();
@@ -82,7 +85,8 @@ pub fn roster(
 }
 
 /// Store a member unless already stored: a creator or joiner adding
-/// itself, or a peer's join announcement.
+/// itself, or a peer's join announcement. Unnamed: a member's name is its
+/// verified card's, stored by [`set_card`] alone (plan E3.4 S6).
 ///
 /// # Errors
 /// The write failed.
@@ -91,26 +95,96 @@ pub fn insert_if_absent(
     owner_key: &str,
     community_id: &str,
     pseudonym_key: &str,
-    display_name: &str,
     joined_at: i64,
 ) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, joined_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+         (owner_key, community_id, pseudonym_key, joined_at) \
+         VALUES (?1, ?2, ?3, ?4)",
+        params![owner_key, community_id, pseudonym_key, joined_at],
+    )?;
+    Ok(())
+}
+
+/// Cache what `pseudonym_key`'s verified card (`M`/0, read by
+/// `read_card`) says: the only writer of a member's `display_name` and
+/// `custom_status` (plan E3.4 S6). Stores the member when not yet stored.
+///
+/// # Errors
+/// The write failed.
+pub fn set_card(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    pseudonym_key: &str,
+    card: (Option<&str>, Option<&str>),
+    joined_at: i64,
+) -> rusqlite::Result<()> {
+    let (display_name, custom_status) = card;
+    conn.execute(
+        "INSERT INTO community_members \
+         (owner_key, community_id, pseudonym_key, display_name, custom_status, joined_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+         ON CONFLICT(owner_key, community_id, pseudonym_key) DO UPDATE SET \
+           display_name = excluded.display_name, custom_status = excluded.custom_status",
         params![
             owner_key,
             community_id,
             pseudonym_key,
             display_name,
+            custom_status,
             joined_at
         ],
     )?;
     Ok(())
 }
 
+/// Our own profile in one community, as the user set it (plan E3.4 S6).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnProfile {
+    pub bio: Option<String>,
+    pub pronouns: Option<String>,
+    pub theme_color: Option<u32>,
+    pub badges: Vec<String>,
+    pub avatar_ref: Option<String>,
+    pub banner_ref: Option<String>,
+}
+
+/// Store our own profile on our row (`pseudonym_key` is ours), so a
+/// restart keeps it.
+///
+/// # Errors
+/// The write failed.
+pub fn set_own_profile(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    pseudonym_key: &str,
+    profile: &OwnProfile,
+) -> rusqlite::Result<()> {
+    let badges = serde_json::to_string(&profile.badges)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    conn.execute(
+        "UPDATE community_members SET bio = ?4, pronouns = ?5, theme_color = ?6, badges = ?7, \
+         avatar_ref = ?8, banner_ref = ?9 \
+         WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
+        params![
+            owner_key,
+            community_id,
+            pseudonym_key,
+            profile.bio,
+            profile.pronouns,
+            profile.theme_color,
+            badges,
+            profile.avatar_ref,
+            profile.banner_ref,
+        ],
+    )?;
+    Ok(())
+}
+
 /// Store a member from a bootstrap peer's member list unless already
-/// stored.
+/// stored; never its peer-supplied name (plan E3.4 S6).
 ///
 /// # Errors
 /// The write failed.
@@ -125,14 +199,13 @@ pub fn insert_bootstrap_if_absent(
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     conn.execute(
         "INSERT OR IGNORE INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, joined_at, \
+         (owner_key, community_id, pseudonym_key, joined_at, \
           bio, pronouns, theme_color, badges) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             owner_key,
             community_id,
             member.pseudonym_key,
-            member.display_name,
             joined_at,
             member.bio,
             member.pronouns,
@@ -144,11 +217,11 @@ pub fn insert_bootstrap_if_absent(
 }
 
 /// A member found in the registry scan. `rekindle-presence` builds these
-/// from the signed presence rows it reads.
+/// from the signed presence rows it reads. No name: a member's name is its
+/// verified card's, never a presence row's (plan E3.4 S6).
 #[derive(Debug, Clone)]
 pub struct DiscoveredMemberRow {
     pub pseudonym_key: String,
-    pub display_name: Option<String>,
     pub subkey_index: u32,
     pub segment_index: u32,
     pub bio: Option<String>,
@@ -175,11 +248,10 @@ pub fn upsert_discovered(
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     conn.execute(
         "INSERT INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, joined_at, \
+         (owner_key, community_id, pseudonym_key, joined_at, \
           subkey_index, segment_index, bio, pronouns, theme_color, badges, avatar_ref, banner_ref) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
          ON CONFLICT(owner_key, community_id, pseudonym_key) DO UPDATE SET \
-           display_name = excluded.display_name, \
            subkey_index = excluded.subkey_index, segment_index = excluded.segment_index, \
            bio = excluded.bio, pronouns = excluded.pronouns, theme_color = excluded.theme_color, \
            badges = excluded.badges, avatar_ref = excluded.avatar_ref, banner_ref = excluded.banner_ref",
@@ -187,7 +259,6 @@ pub fn upsert_discovered(
             owner_key,
             community_id,
             member.pseudonym_key,
-            member.display_name,
             joined_at,
             member.subkey_index,
             member.segment_index,

@@ -265,7 +265,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 154 (plan E7.2 G7 + G12): `group_dms.origin_peer`, the friend whose chat the room was created
 /// from, and `group_dms.favourite`, our "Chat Rooms" flag; `transfers`, each download's state and
 /// resume checkpoint.
-pub const SCHEMA_VERSION: i64 = 154;
+/// 155 (plan E3.4 S6): `community_members.custom_status`; the row's `display_name` and
+/// `custom_status` are the member's verified card, written only from `read_card`.
+pub const SCHEMA_VERSION: i64 = 155;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

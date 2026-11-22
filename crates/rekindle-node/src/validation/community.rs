@@ -252,7 +252,7 @@ pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
             rekindle_types::presence::limits::validate_profile(
                 bio.as_deref(),
                 pronouns.as_deref(),
-                badges,
+                badges.as_deref().unwrap_or_default(),
                 avatar_ref.as_deref(),
                 banner_ref.as_deref(),
             )

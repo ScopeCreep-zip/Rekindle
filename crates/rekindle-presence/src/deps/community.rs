@@ -161,14 +161,9 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
 
     /// Fire a `MemberDiscovered` community event for a freshly-seen
     /// pseudonym. The adapter renders the matching src-tauri event
-    /// shape.
-    fn emit_member_discovered(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        display_name: &str,
-        subkey_index: u32,
-    );
+    /// shape; no presence row names the member (plan E3.4 S6: a name is
+    /// the member's verified card's).
+    fn emit_member_discovered(&self, community_id: &str, pseudonym_key: &str, subkey_index: u32);
 
     // === Outer-loop hook (21.h-REDO) ===
 

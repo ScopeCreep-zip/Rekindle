@@ -71,7 +71,7 @@ impl std::fmt::Debug for SettingsRequest {
                 .field("bio_len", &bio.as_ref().map(String::len))
                 .field("pronouns_len", &pronouns.as_ref().map(String::len))
                 .field("theme_color", theme_color)
-                .field("badges", &badges.len())
+                .field("badges", &badges.as_ref().map(Vec::len))
                 .field("avatar_ref", avatar_ref)
                 .field("banner_ref", banner_ref)
                 .field(

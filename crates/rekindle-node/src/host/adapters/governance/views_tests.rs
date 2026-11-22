@@ -1,6 +1,6 @@
 //! A community's window view (plan E3.1 D1b).
 
-use super::{community_view, moderation_of, role_view};
+use super::{community_view, moderation_of, own_card_view, role_view};
 use crate::host::community::{CommunityState, RoleDefinition};
 
 fn owner_role() -> RoleDefinition {

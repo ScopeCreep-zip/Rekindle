@@ -91,20 +91,13 @@ impl HostGovernance {
             .ctx
             .require_owner()
             .map_err(|_| "no identity is unlocked")?;
-        // No name (plan E3.4 S6), as the join's row.
-        let display_name = String::new();
+        // No name (plan E3.4 S6), as the join's row: our card's is cached
+        // when read back.
         let joined_at = self.ctx.clock.now_ms_i64();
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let cid = id.clone();
         db.call(move |conn| {
-            rekindle_db::repo::members::insert_if_absent(
-                conn,
-                &owner,
-                &cid,
-                &pseudonym,
-                &display_name,
-                joined_at,
-            )
+            rekindle_db::repo::members::insert_if_absent(conn, &owner, &cid, &pseudonym, joined_at)
         })
         .await
         .map_err(|e| format!("community created, member row not stored: {e}"))?;

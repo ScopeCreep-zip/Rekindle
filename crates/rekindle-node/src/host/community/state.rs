@@ -363,8 +363,6 @@ impl CommunityState {
 /// One member as last seen in the registry.
 #[derive(Debug, Clone, Default)]
 pub struct MemberRecord {
-    /// Peer-supplied. Untrusted display data — render escaped.
-    pub display_name: Option<String>,
     pub subkey_index: u32,
     pub segment_index: u32,
     pub bio: Option<String>,

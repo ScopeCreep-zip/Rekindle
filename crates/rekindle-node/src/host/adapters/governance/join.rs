@@ -420,19 +420,11 @@ impl HostGovernance {
             .require_owner()
             .map_err(|_| "no identity is unlocked")?;
         // Our row names nobody (plan E3.4 S6): our name in a community is
-        // our card's, set there; the identity's never reaches one.
-        let display_name = String::new();
+        // our card's, cached when read back; the identity's never reaches one.
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let (cid, pk) = (community.to_owned(), pseudonym.to_owned());
         db.call(move |conn| {
-            rekindle_db::repo::members::insert_if_absent(
-                conn,
-                &owner,
-                &cid,
-                &pk,
-                &display_name,
-                joined_at,
-            )
+            rekindle_db::repo::members::insert_if_absent(conn, &owner, &cid, &pk, joined_at)
         })
         .await
         .map_err(|e| format!("community joined, member row not stored: {e}"))

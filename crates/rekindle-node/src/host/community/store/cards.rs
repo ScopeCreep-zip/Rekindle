@@ -24,6 +24,17 @@ impl CommunityStore {
         self.member_card(community_id, pseudonym)?.display_name
     }
 
+    /// Replace every held card with `cards`, the ones cached on the
+    /// identity's `community_members` rows (a login's restore).
+    pub fn restore_member_cards(
+        &self,
+        cards: impl IntoIterator<Item = (String, PseudonymKey, CardText)>,
+    ) {
+        let mut held = self.member_cards.write();
+        held.clear();
+        held.extend(cards.into_iter().map(|(c, p, card)| ((c, p.0), card)));
+    }
+
     /// Remember what `pseudonym`'s verified card says: whether it is news,
     /// the first card held for the member or a changed one (the
     /// `MemberCardChanged` gate).

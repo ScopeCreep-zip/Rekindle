@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use rekindle_governance_runtime::deps::DiscoveredMember;
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 use rekindle_vault::typed::community_keys;
 
@@ -43,11 +44,15 @@ impl HostGovernance {
             .iter()
             .filter(|r| new.contains(&r.pseudonym_key) && listed.contains(&r.pseudonym_key))
         {
+            // Named by the verified card alone (plan E3.4 S6), else the
+            // short pseudonym fingerprint; never a presence row's word.
+            let key = PseudonymKey::from_hex_lossy(&row.pseudonym_key);
+            let card_name = self.ctx.communities.member_card_name(community_id, &key);
             self.ctx.publish_event(SubscriptionEvent::Membership(
                 MembershipEvent::MemberDiscovered {
                     community: community_id.to_string(),
                     pseudonym: row.pseudonym_key.clone(),
-                    display_name: row.display_name.clone().unwrap_or_default(),
+                    display_name: super::community_profile::shown_name(card_name, &key),
                     subkey_index: row.subkey_index,
                 },
             ));

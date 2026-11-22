@@ -21,13 +21,14 @@ use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
 use super::HostGovernance;
 
-/// Our profile in one community, as the user set it.
+/// A change to our profile in one community: each `None` keeps the field,
+/// an empty value clears it (plan E3.4 S6).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ProfileEdit {
     pub bio: Option<String>,
     pub pronouns: Option<String>,
     pub theme_color: Option<u32>,
-    pub badges: Vec<String>,
+    pub badges: Option<Vec<String>>,
     pub avatar_ref: Option<String>,
     pub banner_ref: Option<String>,
     /// Our card's custom status (plan E3.4 S6).
@@ -43,28 +44,57 @@ pub(crate) struct PolicyEdit {
 }
 
 impl HostGovernance {
-    /// Make `edit` our profile in `community`; its custom status goes to
-    /// our card.
+    /// Apply `edit` to our profile in `community`, field by field (a
+    /// partial update keeps the rest), and store it on our roster row so
+    /// it survives a restart; a custom status goes to our card.
     ///
     /// # Errors
-    /// The community is not joined, or the card write failed.
+    /// The community is not joined, or the store or card write failed.
     pub(crate) async fn update_profile(
         &self,
         community: &str,
         edit: ProfileEdit,
     ) -> Result<(), String> {
-        {
+        let set = |field: &mut Option<String>, value: Option<String>| {
+            if let Some(v) = value {
+                *field = (!v.is_empty()).then_some(v);
+            }
+        };
+        let (me, row) = {
             let mut map = self.ctx.communities.map().write();
             let c = map.get_mut(community).ok_or("unknown community")?;
-            c.my_bio = edit.bio;
-            c.my_pronouns = edit.pronouns;
-            c.my_theme_color = edit.theme_color;
-            c.my_badges = edit.badges;
-            c.my_avatar_ref = edit.avatar_ref;
-            c.my_banner_ref = edit.banner_ref;
-        }
+            set(&mut c.my_bio, edit.bio);
+            set(&mut c.my_pronouns, edit.pronouns);
+            set(&mut c.my_avatar_ref, edit.avatar_ref);
+            set(&mut c.my_banner_ref, edit.banner_ref);
+            if let Some(color) = edit.theme_color {
+                c.my_theme_color = Some(color);
+            }
+            if let Some(badges) = edit.badges {
+                c.my_badges = badges;
+            }
+            let row = rekindle_db::repo::members::OwnProfile {
+                bio: c.my_bio.clone(),
+                pronouns: c.my_pronouns.clone(),
+                theme_color: c.my_theme_color,
+                badges: c.my_badges.clone(),
+                avatar_ref: c.my_avatar_ref.clone(),
+                banner_ref: c.my_banner_ref.clone(),
+            };
+            (c.my_pseudonym_key.clone().ok_or("no pseudonym")?, row)
+        };
+        let (owner, db) = self.owner_and_db().ok_or("no identity is unlocked")?;
+        let cid = community.to_owned();
+        db.call(move |conn| {
+            rekindle_db::repo::members::set_own_profile(conn, &owner, &cid, &me, &row)
+        })
+        .await
+        .map_err(|e| format!("profile not stored: {e}"))?;
+        let Some(status) = edit.custom_status else {
+            return Ok(());
+        };
         let mut text = self.own_card_text(community);
-        text.custom_status = edit.custom_status.filter(|s| !s.is_empty());
+        text.custom_status = (!status.is_empty()).then_some(status);
         self.publish_own_card(community, &text).await
     }
 
@@ -106,7 +136,9 @@ impl HostGovernance {
         refresh_own_card(self, community).await
     }
 
-    /// Note a verified card; news goes to every frontend as
+    /// Note a verified card; news is cached on the member's
+    /// `community_members` row (the row's only name writer, so the name
+    /// survives a restart) and goes to every frontend as
     /// `MemberCardChanged` (plan E3.2 F9-2), its name never empty: the
     /// card's, else the short pseudonym fingerprint (plan E3.4 S6).
     pub(super) fn note_member_card_impl(
@@ -121,6 +153,21 @@ impl HostGovernance {
             .note_member_card(community, pseudonym, card.clone())
         {
             return;
+        }
+        if let Some((owner, db)) = self.owner_and_db() {
+            let (cid, pk) = (community.to_owned(), pseudonym.to_hex());
+            let (name, status) = (card.display_name.clone(), card.custom_status.clone());
+            let joined_at = self.ctx.clock.now_secs().cast_signed();
+            db.fire("member card", move |conn| {
+                rekindle_db::repo::members::set_card(
+                    conn,
+                    &owner,
+                    &cid,
+                    &pk,
+                    (name.as_deref(), status.as_deref()),
+                    joined_at,
+                )
+            });
         }
         self.ctx.publish_event(SubscriptionEvent::Membership(
             MembershipEvent::MemberCardChanged {

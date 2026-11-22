@@ -104,7 +104,7 @@ pub async fn update_community_profile(
     bio: Option<String>,
     pronouns: Option<String>,
     theme_color: Option<u32>,
-    badges: Vec<String>,
+    badges: Option<Vec<String>>,
     avatar_ref: Option<String>,
     banner_ref: Option<String>,
     custom_status: Option<String>,

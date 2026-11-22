@@ -386,12 +386,7 @@ pub fn persist_discovered_registry_members<D, S>(
 
     for row in &rows {
         if newly_discovered.contains(&row.pseudonym_key) {
-            deps.emit_member_discovered(
-                community_id,
-                &row.pseudonym_key,
-                row.display_name.as_deref().unwrap_or_default(),
-                row.subkey_index,
-            );
+            deps.emit_member_discovered(community_id, &row.pseudonym_key, row.subkey_index);
         }
     }
 
@@ -410,7 +405,6 @@ pub fn discovered_member_row(
 ) -> DiscoveredMemberRow {
     DiscoveredMemberRow {
         pseudonym_key: hex::encode(presence.pseudonym_key.0),
-        display_name: presence.display_name.clone(),
         subkey_index: subkey,
         segment_index,
         bio: presence.bio.clone(),
