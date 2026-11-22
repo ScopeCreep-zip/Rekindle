@@ -215,6 +215,56 @@ async fn sending_is_wanted_alone_and_released_alone() {
     );
 }
 
+/// Lead decision (60): the `Sending` route keeps a warm standby that a
+/// death promotes at once, with no allocation between, and a new standby
+/// is allocated behind it. Only `Sending` keeps one, and a release frees it.
+#[tokio::test]
+async fn a_sending_death_promotes_the_standby_at_once() {
+    let fake = Arc::new(Fake::new(vec![
+        Ok((1, b"g".to_vec())),
+        Ok((3, b"s".to_vec())),
+        Ok((4, b"standby".to_vec())),
+        Ok((5, b"next".to_vec())),
+    ]));
+    let (routes, _ready) = owner(&fake, true);
+    routes.want(RouteClass::General);
+    settle().await;
+    assert_eq!(
+        fake.calls.load(Ordering::SeqCst),
+        1,
+        "General keeps no standby"
+    );
+    routes.want(RouteClass::Sending);
+    settle().await;
+    assert_eq!(routes.id(RouteClass::Sending), Some(3));
+    assert_eq!(
+        fake.calls.load(Ordering::SeqCst),
+        3,
+        "the standby is allocated"
+    );
+    routes.on_dead(&[3]);
+    assert_eq!(routes.id(RouteClass::Sending), Some(4), "promoted at once");
+    assert_eq!(
+        *routes.state(RouteClass::Sending).borrow(),
+        RouteState::Available {
+            blob: b"standby".to_vec()
+        }
+    );
+    settle().await;
+    assert_eq!(
+        fake.calls.load(Ordering::SeqCst),
+        4,
+        "a new standby behind it"
+    );
+    assert_eq!(routes.id(RouteClass::Sending), Some(4));
+    routes.release(RouteClass::Sending);
+    assert_eq!(
+        *fake.released.lock(),
+        vec![4, 5],
+        "live and standby released"
+    );
+}
+
 /// Node shutdown with an allocation in flight (live A/B round 3 R3-6):
 /// the allocation is awaited, never cut, since Veilid logs ERROR for a
 /// dropped `new_custom_private_route` (0.5.8 `veilid_api/api.rs:812-842`,

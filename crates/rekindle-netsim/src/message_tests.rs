@@ -206,3 +206,64 @@ async fn a_statement_rides_our_sending_route_past_failing_pool_routes() {
     assert!(started.elapsed() >= call_timeout(&profile));
     pump.abort();
 }
+
+/// Lead decision (60): when Veilid kills our live `Sending` route mid-stream
+/// ([`Fault::RouteDead`]), the warm standby takes its place at once, so no
+/// statement of the stream fails for want of a route and every one arrives.
+/// Without a standby, the sends during the replacement's allocation and test
+/// fail "our Sending route is not available".
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_sending_death_mid_stream_loses_no_send() {
+    let (sim, mut nodes) = Netsim::nodes(2, 26);
+    let pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let blob = nodes[1]
+        .ports
+        .routes
+        .available_own(RouteClass::General)
+        .await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    crate::tests::sending(&nodes[0]).await;
+    // The standby's allocation and test land behind the live route.
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    let profile = SafetyProfile::default_dht();
+    let mut failed = Vec::new();
+    for i in 0u8..40 {
+        if i == 10 {
+            let live = nodes[0]
+                .ports
+                .routes
+                .own_id(RouteClass::Sending)
+                .expect("a live Sending route");
+            sim.fault(Fault::RouteDead { node: 0, id: live });
+            let dead = loop {
+                if let PortEvent::RouteChange { dead, .. } = recv(&mut nodes[0]).await {
+                    break dead;
+                }
+            };
+            // As the transport's dispatch has the owner do.
+            nodes[0].ports.routes.on_dead_own(&dead);
+        }
+        if let Err(e) = nodes[0]
+            .ports
+            .messages
+            .send(&target, &profile, vec![i])
+            .await
+        {
+            failed.push((i, e));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(failed.is_empty(), "sends failed: {failed:?}");
+    sim.quiesce().await;
+    let mut arrived = 0;
+    while let Ok(event) = nodes[1].events.try_recv() {
+        if matches!(event, PortEvent::AppMessage { .. }) {
+            arrived += 1;
+        }
+    }
+    assert_eq!(arrived, 40, "every statement of the stream arrived");
+    pump.abort();
+}

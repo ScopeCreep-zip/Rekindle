@@ -140,6 +140,12 @@ pub enum Fault {
         node: usize,
         class: rekindle_records::port::RouteClass,
     },
+    /// Veilid's evidence against the node's own route `id` crosses its
+    /// threshold now (a run of failed loopback tests or lost questions,
+    /// veilid-core 0.5.8 `route_stats.rs:19-29`, `:716-755`): Veilid releases
+    /// that one route and tells the owner in `RouteChange.dead_routes`; the
+    /// node's other routes, of its class too, are untouched.
+    RouteDead { node: usize, id: String },
     /// The node's network blocks UDP (or stops blocking it): it cannot
     /// allocate an Unordered route (no fallback to Ordered,
     /// [`routes`](crate::routes)), and its live Unordered routes fail end
@@ -355,6 +361,7 @@ impl Netsim {
                 );
             }
             Fault::LoopbackFailures { node, class } => self.net.break_route(node, class),
+            Fault::RouteDead { node, id } => self.net.kill_route(node, &id),
             Fault::UdpBlocked { node, blocked } => self.net.block_udp(node, blocked),
             Fault::Stall { node, ms } => self.stall(node, std::time::Duration::from_millis(ms)),
             Fault::Detach { node, detached } => self.detach(node, detached),

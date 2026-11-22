@@ -159,6 +159,32 @@ impl Network {
         }
     }
 
+    /// [`crate::Fault::RouteDead`]: Veilid releases `node`'s route `id`
+    /// and reports it to `node` alone as `dead_routes` (`route_stats.rs:716-755`).
+    pub(crate) fn kill_route(&self, node: usize, id: &str) {
+        {
+            let mut inner = self.inner.lock();
+            if inner.routes.get(id).is_none_or(|r| r.node != node) {
+                return;
+            }
+            inner.routes.remove(id);
+            inner.faults.loopback.remove(id);
+            if let Some(slot) = inner.nodes.get_mut(node) {
+                slot.lost.remove(id);
+            }
+        }
+        self.send(
+            node,
+            node,
+            "RouteChange",
+            PortEvent::RouteChange {
+                dead: vec![id.to_string()],
+                dead_remote: Vec::new(),
+            },
+            false,
+        );
+    }
+
     /// [`crate::Fault::RouteSilentDeath`]: `node`'s live route of `class`
     /// breaks now, and its online detector says Offline.
     pub(crate) fn silence_route(&self, node: usize, class: RouteClass) {
