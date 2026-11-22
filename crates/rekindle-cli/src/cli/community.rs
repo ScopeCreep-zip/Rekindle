@@ -83,6 +83,16 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Set our name in one community (our card, `M`/0); `""` clears it, and
+    /// the community shows our short pseudonym fingerprint instead. Our
+    /// identity name is never shown to a community.
+    SetName {
+        /// The community's anchor key.
+        community: String,
+        /// The name, at most 64 bytes; `""` clears it.
+        name: String,
+    },
+
     /// Forget a community you were removed from: its kept history and keys.
     Forget {
         /// Community name or anchor key.

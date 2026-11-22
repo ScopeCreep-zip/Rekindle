@@ -87,7 +87,6 @@ async fn member_beating(
     };
     write_routes(pool, &own, route, 1_000).await.unwrap();
     let profile = OwnProfile {
-        display_name: String::new(),
         status,
         beat_seq: 1,
         now_ms: beat_ms,

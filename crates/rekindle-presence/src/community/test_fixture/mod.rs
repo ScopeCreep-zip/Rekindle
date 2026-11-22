@@ -79,9 +79,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .initial_done
             .push(community_id.to_string());
     }
-    fn identity_display_name(&self) -> String {
-        "mock-user".to_string()
-    }
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot {
         self.state
             .lock()
@@ -185,17 +182,10 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .push((community_id.to_string(), candidates.len()));
         candidates
     }
-    fn emit_member_discovered(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        display_name: &str,
-        subkey_index: u32,
-    ) {
+    fn emit_member_discovered(&self, community_id: &str, pseudonym_key: &str, subkey_index: u32) {
         self.state.lock().calls_emit_discovered.push((
             community_id.to_string(),
             pseudonym_key.to_string(),
-            display_name.to_string(),
             subkey_index,
         ));
     }

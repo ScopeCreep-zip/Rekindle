@@ -9,6 +9,7 @@
 //! one [`CommunityState`].
 
 use rekindle_channel::held::HeldChanges;
+use rekindle_governance_runtime::CardText;
 
 use crate::host::adapters::channel::held_changes::HeldChange;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -50,7 +51,7 @@ pub struct CommunityStore {
     map: CommunityMap,
     /// The display names on members' verified cards (`M`/0), by community
     /// and pseudonym (plan E3.2).
-    member_cards: Arc<RwLock<BTreeMap<(String, [u8; 32]), String>>>,
+    member_cards: Arc<RwLock<BTreeMap<(String, [u8; 32]), CardText>>>,
     /// One lock per community serializing its watch-ring moves (plan E3.2
     /// S7): a move reads the merged member set and then awaits its opens
     /// and releases, so two concurrent moves (rebuilds from gossip, hints,

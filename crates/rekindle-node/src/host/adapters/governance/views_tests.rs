@@ -1,6 +1,6 @@
 //! A community's window view (plan E3.1 D1b).
 
-use super::{community_view, moderation_of, role_view};
+use super::{community_view, moderation_of, own_card_view, role_view};
 use crate::host::community::{CommunityState, RoleDefinition};
 
 fn owner_role() -> RoleDefinition {
@@ -40,7 +40,7 @@ fn the_view_names_our_role_and_carries_our_standing() {
     );
     crate::host::adapters::governance::projection::project_my_roles(&mut state, &gov);
     state.mek_generation = 3;
-    let view = community_view(&state, 0, None);
+    let view = community_view(&state, own_card_view(&state, None), 0, None);
     assert_eq!(view.name, "Raiders");
     assert_eq!(view.my_role.as_deref(), Some("Owner"));
     assert_eq!(view.my_role_ids, vec!["00".repeat(16)]);
@@ -194,7 +194,8 @@ fn roles_sharing_their_low_four_bytes_never_collide_in_the_view() {
     let mut state = CommunityState::new("gk");
     state.my_pseudonym_key = Some("ab".repeat(32));
     crate::host::adapters::governance::projection::project(&mut state, gov.clone());
-    let json = serde_json::to_value(community_view(&state, 0, None)).unwrap();
+    let json =
+        serde_json::to_value(community_view(&state, own_card_view(&state, None), 0, None)).unwrap();
     let id_of = |name: &str| {
         json["roles"]
             .as_array()
@@ -240,10 +241,10 @@ fn we_are_creator_is_false_after_we_leave() {
         &cert,
         &[(us.clone(), vec![at(5, joined.clone())])],
     ));
-    assert!(community_view(&state, 0, None).we_are_creator);
+    assert!(community_view(&state, own_card_view(&state, None), 0, None).we_are_creator);
     state.governance_state = Some(merge_entries_under(
         &cert,
         &[(us, vec![at(5, joined), at(6, left)])],
     ));
-    assert!(!community_view(&state, 0, None).we_are_creator);
+    assert!(!community_view(&state, own_card_view(&state, None), 0, None).we_are_creator);
 }

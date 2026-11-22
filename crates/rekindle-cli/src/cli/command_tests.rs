@@ -396,3 +396,19 @@ fn parse_activity_pages_and_settings_activity_log() {
         }))
     ));
 }
+
+/// Plan E3.4 S6: `community set-name <community> <name>`, `""` clearing it.
+#[test]
+fn parse_community_set_name() {
+    let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", "Bea"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref community, ref name }))
+            if community == "abcd" && name == "Bea"
+    ));
+    let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", ""]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref name, .. })) if name.is_empty()
+    ));
+}

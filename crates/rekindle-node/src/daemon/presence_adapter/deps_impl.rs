@@ -60,10 +60,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         Self::current_status_impl()
     }
 
-    fn identity_display_name(&self) -> String {
-        self.identity_display_name_impl()
-    }
-
     fn presence_credentials(&self, community_id: &str) -> Option<PresenceCredentials> {
         self.presence_credentials_impl(community_id)
     }
@@ -219,14 +215,8 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
 
     // ---------- Events emitted to IPC subscribers ----------
 
-    fn emit_member_discovered(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        display_name: &str,
-        _subkey_index: u32,
-    ) {
-        self.emit_member_discovered_impl(community_id, pseudonym_key, display_name);
+    fn emit_member_discovered(&self, community_id: &str, pseudonym_key: &str, _subkey_index: u32) {
+        self.emit_member_discovered_impl(community_id, pseudonym_key);
     }
 
     fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str) {

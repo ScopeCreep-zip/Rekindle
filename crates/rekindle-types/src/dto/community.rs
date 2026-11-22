@@ -160,6 +160,18 @@ pub struct CommunityView {
     pub my_theme_color: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub my_badges: Vec<String>,
+    /// Our name in this community as it renders, never empty (plan E3.4
+    /// S6): our card's name, else our short pseudonym fingerprint; never
+    /// the identity's name. Messages render with it before the member
+    /// list loads.
+    pub my_display_name: String,
+    /// Our card's name as we set it, absent when unset: the set-name
+    /// form's prefill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_card_name: Option<String>,
+    /// Our card's custom status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_custom_status: Option<String>,
     /// Set when we were removed (plan E3.2 S9 R3-5): the community is
     /// read-only history, and the window names who removed us.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -270,7 +282,15 @@ pub struct CommunityRoleView {
 #[serde(rename_all = "camelCase")]
 pub struct CommunityMemberView {
     pub pseudonym_key: String,
+    /// Never empty (plan E3.4 S6): the member's per-community card name,
+    /// else [`Self::fingerprint`]. Never an identity's name.
     pub display_name: String,
+    /// The member's short pseudonym fingerprint (`"a1b2 c3d4"`), stated by
+    /// the Host; a frontend never computes it.
+    pub fingerprint: String,
+    /// The custom status on the member's verified card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_status: Option<String>,
     pub role_ids: Vec<String>,
     pub display_role: String,
     /// `online`, `away`, `busy` or `offline`.
@@ -384,8 +404,15 @@ pub struct CommunityAuditEntry {
     pub action: String,
     /// The author's pseudonym, 64 lowercase hex.
     pub actor_pseudonym: String,
+    /// The Host's name for the author (plan E3.4 S6): its verified card's,
+    /// else its short pseudonym fingerprint; never empty, never a raw key.
+    pub actor_name: String,
     /// The subject of the entry (a member, channel, role, …), when it has one.
     pub target: Option<String>,
+    /// The Host's name for the target, named as the author is; absent when
+    /// the target is not a member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_name: Option<String>,
     /// The entry's other fields, when it carries any.
     pub details: Option<String>,
     /// The entry's Lamport time.

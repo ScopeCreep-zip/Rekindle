@@ -13,7 +13,14 @@ use rekindle_types::presence::SessionStatus;
 
 use rekindle_presence::community::{beat_is_live, BEAT_LIVENESS_MS};
 
-use super::{write_beat, write_card, OwnProfile, OwnRecord};
+use super::{write_beat, write_card, OwnCardText, OwnProfile, OwnRecord};
+
+fn ida() -> OwnCardText {
+    OwnCardText {
+        display_name: Some("Ida".into()),
+        custom_status: None,
+    }
+}
 
 #[tokio::test]
 async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
@@ -32,14 +39,13 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
         pseudonym: &pseudonym,
     };
     let profile = OwnProfile {
-        display_name: "Ida".into(),
         status: SessionStatus::Online,
         beat_seq: 1,
         now_ms: 1_000,
         route: Vec::new(),
     };
     dht.contest(Contest::Ours);
-    write_card(&*pool, &own, &profile, &[3; 32])
+    write_card(&*pool, &own, &ida(), &[3; 32])
         .await
         .expect("a card that settled on ours is stored");
     write_beat(&*pool, &own, &profile)
@@ -48,7 +54,7 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
     dht.contest(Contest::None);
     // A beat's padding is fresh at each encode, so the identical rewrite
     // is the card's.
-    write_card(&*pool, &own, &profile, &[3; 32])
+    write_card(&*pool, &own, &ida(), &[3; 32])
         .await
         .expect("an identical rewrite (Unchanged) is stored");
     assert!(dht.value(&record, member_record::CARD).is_some());
@@ -239,7 +245,6 @@ async fn an_invisible_member_publishes_its_record_without_a_beat() {
             pseudonym: &pseudonym,
         };
         let profile = OwnProfile {
-            display_name: String::new(),
             status,
             beat_seq: 1,
             now_ms: 1_000,

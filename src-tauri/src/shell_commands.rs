@@ -280,6 +280,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         HostCall::Request("CommunityUpdateProfile"),
     ),
     (
+        "set_community_display_name",
+        HostCall::Request("CommunitySetDisplayName"),
+    ),
+    (
         "get_community_avatar_data_url",
         HostCall::Request("CommunityAvatarGet"),
     ),

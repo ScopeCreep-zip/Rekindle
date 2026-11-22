@@ -22,6 +22,7 @@ use rekindle_db::repo::communities::CommunityRow;
 use rekindle_db::repo::governance_ops::StoredOp;
 use rekindle_db::repo::members::ProfileRow;
 use rekindle_transport::session::CommunityMembership;
+use rekindle_types::id::PseudonymKey;
 use rekindle_vault::typed::community_keys;
 
 use crate::daemon::dispatch::DaemonContext;
@@ -41,6 +42,29 @@ pub(crate) async fn restore(
 ) -> Result<(), String> {
     let db = ctx.db.current().map_err(|e| e.to_string())?;
     let states = load(&db, &ctx.vault, owner, secret).await?;
+    // The verified cards cached on the rows (plan E3.4 S6), ours among
+    // them, so every name survives a restart.
+    let o = owner.to_owned();
+    let profiles = db
+        .call(move |conn| rekindle_db::repo::members::load_profiles(conn, &o))
+        .await
+        .map_err(|e| format!("member cards: {e}"))?;
+    ctx.communities.restore_member_cards(
+        profiles
+            .into_iter()
+            .filter(|p| p.display_name.is_some() || p.custom_status.is_some())
+            .map(|p| {
+                let card = rekindle_governance_runtime::CardText {
+                    display_name: p.display_name,
+                    custom_status: p.custom_status,
+                };
+                (
+                    p.community_id,
+                    PseudonymKey::from_hex_lossy(&p.pseudonym_key),
+                    card,
+                )
+            }),
+    );
     let memberships: HashMap<String, CommunityMembership> = states
         .values()
         .map(|state| (state.id.clone(), membership(state)))
@@ -210,8 +234,30 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
         member_profiles: profiles_of(id, &load.members),
         // NULL column: the community never set a policy.
         presence_policy: community.presence_policy.clone().unwrap_or_default(),
-        ..CommunityState::new(id)
+        ..with_own_profile(CommunityState::new(id), community, &load.members)
     }
+}
+
+/// `state` with our own profile as our roster row stores it (plan E3.4
+/// S6), so a restart keeps it.
+fn with_own_profile(
+    mut state: CommunityState,
+    community: &CommunityRow,
+    rows: &[ProfileRow],
+) -> CommunityState {
+    let ours = rows.iter().find(|r| {
+        r.community_id == community.id
+            && Some(r.pseudonym_key.as_str()) == community.my_pseudonym_key.as_deref()
+    });
+    if let Some(row) = ours {
+        state.my_bio.clone_from(&row.bio);
+        state.my_pronouns.clone_from(&row.pronouns);
+        state.my_theme_color = row.theme_color;
+        state.my_badges.clone_from(&row.badges);
+        state.my_avatar_ref.clone_from(&row.avatar_ref);
+        state.my_banner_ref.clone_from(&row.banner_ref);
+    }
+    state
 }
 
 /// One community's channels.

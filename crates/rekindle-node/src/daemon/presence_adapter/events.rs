@@ -22,12 +22,7 @@ impl DaemonPresenceAdapter {
     /// which is a governance fact. This is "the scan noticed a member",
     /// which happens on every cold start for everyone already present
     /// and would otherwise announce a crowd of spurious joins.
-    pub(super) fn emit_member_discovered_impl(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        _display_name: &str,
-    ) {
+    pub(super) fn emit_member_discovered_impl(&self, community_id: &str, pseudonym_key: &str) {
         self.publish(SubscriptionEvent::Presence(
             PresenceEvent::CommunityMemberChanged {
                 community: community_id.to_string(),

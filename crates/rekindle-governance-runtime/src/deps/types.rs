@@ -157,3 +157,12 @@ pub enum OpOutcome {
     /// backend announces the landing.
     Pending,
 }
+
+/// What a member's verified card (`M`/0) says that the community renders
+/// (plan E3.4 S6): its per-community name (`None` = unset or empty; readers
+/// show the short pseudonym fingerprint) and its custom status.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CardText {
+    pub display_name: Option<String>,
+    pub custom_status: Option<String>,
+}

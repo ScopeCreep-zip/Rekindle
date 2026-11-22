@@ -194,7 +194,7 @@ async fn a_key_the_merge_never_admitted_is_never_on_the_member_list() {
             .current()
             .unwrap()
             .call(move |conn| {
-                rekindle_db::repo::members::insert_if_absent(conn, &owner, "c1", &key, "m", 1)
+                rekindle_db::repo::members::insert_if_absent(conn, &owner, "c1", &key, 1)
             })
             .await
             .unwrap();

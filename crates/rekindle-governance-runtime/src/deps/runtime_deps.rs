@@ -13,8 +13,8 @@ use rekindle_types::id::PseudonymKey;
 use super::op_store::GovernanceOpStore;
 use super::roles::RoleTable;
 use super::types::{
-    CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    MekSnapshot, OnlineMemberSnapshot, OpLanding, OpOutcome, UserStatusKind,
+    CardText, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
+    DiscoveredMember, MekSnapshot, OnlineMemberSnapshot, OpLanding, OpOutcome, UserStatusKind,
 };
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
@@ -110,7 +110,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         record: &str,
         owner: &str,
     ) -> Result<(), GovernanceRuntimeError>;
-    fn identity_display_name(&self) -> String;
     fn identity_status(&self) -> UserStatusKind;
     fn our_route_blob(&self) -> Vec<u8>;
 
@@ -448,12 +447,13 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// ([`crate::genesis::read_pinned`]).
     fn genesis_cert(&self, community_id: &str) -> Option<rekindle_types::governance::GenesisCert>;
     /// The display name on `pseudonym`'s verified member card (`M`/0), when
-    /// we hold one; never a field from an unverified peer payload.
+    /// we hold one and it names one; never a field from an unverified peer
+    /// payload.
     fn member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> Option<String>;
-    /// Remember the display name on `pseudonym`'s card, which
-    /// `crate::member_card::read_card` verified, or on our own card, which
-    /// says `identity_display_name` (`member_card::write_card`).
-    fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String);
+    /// Remember what `pseudonym`'s card says, which
+    /// `crate::member_card::read_card` verified (plan E3.4 S6: the card
+    /// cache is written only from a verified read).
+    fn note_member_card(&self, community_id: &str, pseudonym: &PseudonymKey, card: CardText);
     /// Our pseudonym in the community, `None` while we hold none.
     fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey>;
     /// Keep `checkpoint`'s sealed directory pages warm (plan E3.2 S7

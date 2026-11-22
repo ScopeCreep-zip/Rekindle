@@ -1,13 +1,64 @@
-//! The audit, game-server and automod field checks of the community
-//! requests (plan E3.1).
+//! The audit, game-server, automod, read-marker and block field checks of
+//! the community requests (plan E3.1).
 
-use super::{community, name, text, Checked};
+use super::{community, name, pseudonym, text, Checked};
 use crate::host::adapters::governance::audit::MAX_AUDIT_PAGE;
 use rekindle_governance_runtime::audit::NOTIFICATION_LEVELS;
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_ipc::protocol::MemberRequest;
-use rekindle_ipc::protocol::{ActivityRequest, AuditRequest};
+use rekindle_ipc::protocol::{ActivityRequest, AuditRequest, UnreadRequest};
 use rekindle_types::game_server;
+
+/// The longest channel or message id a read marker names.
+const MAX_UNREAD_ID_LEN: usize = 128;
+
+/// A read-marker or unread-count request (plan E3.1 G1).
+pub(super) fn unread_fields(request: &UnreadRequest) -> Checked {
+    match request {
+        UnreadRequest::ChannelMarkRead {
+            community: key,
+            channel,
+            up_to,
+        } => {
+            community(key)?;
+            text(channel, MAX_UNREAD_ID_LEN, "channel")?;
+            text(up_to, MAX_UNREAD_ID_LEN, "message id")
+        }
+        UnreadRequest::UnreadCounts { community: key } => community(key),
+        UnreadRequest::MembersOnScreen {
+            community: key,
+            members,
+        } => {
+            community(key)?;
+            if members.len() > rekindle_presence::community::MEMBERS_ON_SCREEN_MAX {
+                return Err(IpcResponse::error(
+                    400,
+                    "more members on screen than the Host inspects",
+                ));
+            }
+            members.iter().try_for_each(|m| pseudonym(m, "member"))
+        }
+    }
+}
+
+/// A community block request (plan E3.1 F3, D26).
+pub(super) fn block_fields(request: &MemberRequest) -> Checked {
+    match request {
+        MemberRequest::MemberBlock {
+            community: c,
+            target_pseudonym,
+        }
+        | MemberRequest::MemberUnblock {
+            community: c,
+            target_pseudonym,
+        } => {
+            community(c)?;
+            pseudonym(target_pseudonym, "target pseudonym")
+        }
+        MemberRequest::MemberBlockList { community: c } => community(c),
+        _ => Ok(()),
+    }
+}
 
 /// The audit-log page bound and the notification level (plan E3.1 F4).
 pub(super) fn audit_fields(request: &AuditRequest) -> Checked {

@@ -43,7 +43,7 @@ pub struct MockState {
     pub calls_write_registry: Vec<(String, u32, usize, String)>,
     pub calls_persist_rows: Vec<(String, usize, usize, i64)>,
     pub calls_extend_known: Vec<(String, usize)>,
-    pub calls_emit_discovered: Vec<(String, String, String, u32)>,
+    pub calls_emit_discovered: Vec<(String, String, u32)>,
     pub calls_run_tick: Vec<String>,
     pub calls_ensure_registry: Vec<String>,
     pub calls_presence_credentials: Vec<String>,

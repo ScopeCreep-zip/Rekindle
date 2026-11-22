@@ -24,7 +24,6 @@ use rekindle_events::typing::{Input, Lapse, TypingSessions};
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_secrets::channel_body::{channel_tag, CHANNEL_TAG_LEN};
-use rekindle_transport::operations::friend::short_key;
 use rekindle_transport::operations::friend::FriendHost;
 use rekindle_transport::operations::typing;
 use rekindle_types::channel_keys::current_key;
@@ -174,10 +173,9 @@ impl HostGovernance {
     /// card, else their key's short fingerprint. Never empty, never a raw
     /// key, never a name the frame carries.
     pub(crate) fn typist_name(&self, community_id: &str, sender: &str) -> String {
-        (self.ctx.communities)
-            .member_card_name(community_id, &PseudonymKey::from_hex_lossy(sender))
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| short_key(sender))
+        let pseudonym = PseudonymKey::from_hex_lossy(sender);
+        let card_name = (self.ctx.communities).member_card_name(community_id, &pseudonym);
+        super::community_profile::shown_name(card_name, &pseudonym)
     }
 
     /// `channel_id`'s tag under the current key of its text scope.

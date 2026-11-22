@@ -3,7 +3,8 @@
 
 use rekindle_governance::fixture;
 use rekindle_governance_runtime::member_card::{
-    publish_own_record, read_beat, read_card, write_card, MemberRecordRef, OwnProfile, OwnRecord,
+    publish_own_record, read_beat, read_card, write_card, MemberRecordRef, OwnCardText, OwnProfile,
+    OwnRecord,
 };
 use rekindle_records::port::RecordPort;
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -27,9 +28,15 @@ async fn record(port: &dyn RecordPort) -> (String, String, String) {
     (key, writer, owner)
 }
 
+fn joiner_card() -> OwnCardText {
+    OwnCardText {
+        display_name: Some("Joiner".into()),
+        custom_status: None,
+    }
+}
+
 fn profile() -> OwnProfile {
     OwnProfile {
-        display_name: "Joiner".into(),
         status: SessionStatus::Online,
         beat_seq: 1,
         now_ms: 1_000,
@@ -94,7 +101,9 @@ async fn the_card_lands_before_op_zero_and_the_beat_after() {
         owner: &owner,
     };
     let card = read_card(port, &member).await.unwrap().unwrap();
-    assert_eq!(card.card.display_name.as_deref(), Some("Joiner"));
+    // A new member's card names nobody (plan E3.4 S6): the identity name
+    // never reaches a community; a name is set later, per community.
+    assert_eq!(card.card.display_name, None);
     assert_eq!(
         card.card.hpke_key,
         rekindle_secrets::hpke::public_key(&[9; 32])
@@ -126,7 +135,9 @@ async fn a_card_under_another_owner_or_signer_is_refused() {
         writer: &forged_writer,
         pseudonym: &signing,
     };
-    write_card(port, &own, &profile(), &[9; 32]).await.unwrap();
+    write_card(port, &own, &joiner_card(), &[9; 32])
+        .await
+        .unwrap();
     let pinned_elsewhere = MemberRecordRef {
         community_id: JOINED_COMMUNITY,
         pseudonym: &pseudonym,
@@ -143,7 +154,7 @@ async fn a_card_under_another_owner_or_signer_is_refused() {
         writer: &own_writer,
         pseudonym: &other,
     };
-    write_card(port, &wrong_signer, &profile(), &[9; 32])
+    write_card(port, &wrong_signer, &joiner_card(), &[9; 32])
         .await
         .unwrap();
     let member = MemberRecordRef {

@@ -283,7 +283,6 @@ impl HostGovernance {
             pseudonym: &outcome.identity.pseudonym_signing,
         };
         let profile = OwnProfile {
-            display_name: self.ctx.identity_display_name(),
             status: self.identity_status(),
             beat_seq: self
                 .next_beat_seq(community)
@@ -418,18 +417,12 @@ impl HostGovernance {
             .ctx
             .require_owner()
             .map_err(|_| "no identity is unlocked")?;
-        let display_name = self.ctx.identity_display_name();
+        // Our row names nobody (plan E3.4 S6): our name in a community is
+        // our card's, cached when read back; the identity's never reaches one.
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let (cid, pk) = (community.to_owned(), pseudonym.to_owned());
         db.call(move |conn| {
-            rekindle_db::repo::members::insert_if_absent(
-                conn,
-                &owner,
-                &cid,
-                &pk,
-                &display_name,
-                joined_at,
-            )
+            rekindle_db::repo::members::insert_if_absent(conn, &owner, &cid, &pk, joined_at)
         })
         .await
         .map_err(|e| format!("community joined, member row not stored: {e}"))

@@ -136,7 +136,8 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
 
     let mut presence = MemberPresence {
         pseudonym_key: rekindle_types::id::PseudonymKey(pseudonym_bytes),
-        display_name: Some(deps.identity_display_name()),
+        // No name (plan E3.4 S6): a member's name is its card's.
+        display_name: None,
         status,
         route_blob: our_route_blob.unwrap_or_default(),
         last_heartbeat: deps.now_secs(),
@@ -385,15 +386,16 @@ pub fn persist_discovered_registry_members<D, S>(
 
     for row in &rows {
         if newly_discovered.contains(&row.pseudonym_key) {
-            deps.emit_member_discovered(
-                community_id,
-                &row.pseudonym_key,
-                row.display_name.as_deref().unwrap_or_default(),
-                row.subkey_index,
-            );
+            deps.emit_member_discovered(community_id, &row.pseudonym_key, row.subkey_index);
         }
     }
 
+    // Our own row is never the scan's: its card fields are the verified
+    // card cache's and its profile the Host's (plan E3.4 S6), so a
+    // presence row's copy never overwrites them.
+    let me = deps.my_pseudonym_for_community(community_id);
+    let rows: Vec<DiscoveredMemberRow> =
+        rows.into_iter().filter(|r| r.pseudonym_key != me).collect();
     let banned: Vec<String> = banned_members.iter().cloned().collect();
     let joined_at_secs = i64::try_from(deps.now_secs()).unwrap_or(0);
     deps.persist_discovered_member_rows(community_id, rows, banned, joined_at_secs);
@@ -409,7 +411,6 @@ pub fn discovered_member_row(
 ) -> DiscoveredMemberRow {
     DiscoveredMemberRow {
         pseudonym_key: hex::encode(presence.pseudonym_key.0),
-        display_name: presence.display_name.clone(),
         subkey_index: subkey,
         segment_index,
         bio: presence.bio.clone(),

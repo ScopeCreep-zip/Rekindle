@@ -23,7 +23,6 @@ impl HostGovernance {
         &self,
         community_id: &str,
         pseudonym_hex: &str,
-        display_name: &str,
         status: &str,
         route_blob: Option<&[u8]>,
     ) {
@@ -47,15 +46,13 @@ impl HostGovernance {
         let Some((owner, db)) = self.owner_and_db() else {
             return;
         };
-        let (community, pseudonym, name) = (
-            community_id.to_string(),
-            pseudonym_hex.to_string(),
-            display_name.to_string(),
-        );
+        // Unnamed (plan E3.4 S6): the announcement's name is the sender's
+        // word; the row's is cached from its verified card alone.
+        let (community, pseudonym) = (community_id.to_string(), pseudonym_hex.to_string());
         let joined_at = self.ctx.clock.now_secs().cast_signed();
         db.fire("member joined", move |conn| {
             rekindle_db::repo::members::insert_if_absent(
-                conn, &owner, &community, &pseudonym, &name, joined_at,
+                conn, &owner, &community, &pseudonym, joined_at,
             )
         });
     }
@@ -119,7 +116,8 @@ impl HostGovernance {
             let route = host.our_route_blob_impl();
             let joined = CommunityEnvelope::Control(ControlPayload::MemberJoined {
                 pseudonym_key,
-                display_name: host.identity_display_name_impl(),
+                // No name (plan E3.4 S6): a member's name is its card's.
+                display_name: String::new(),
                 role_ids: vec![rekindle_types::id::RoleId::EVERYONE],
                 status: status_str(host.ctx.own_presence.status()).to_string(),
                 route_blob: (!route.is_empty()).then_some(route),

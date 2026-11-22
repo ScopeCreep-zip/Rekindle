@@ -63,10 +63,6 @@ impl HostGovernance {
             .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
     }
 
-    pub(super) fn identity_display_name_impl(&self) -> String {
-        self.ctx.identity_display_name()
-    }
-
     /// Our status: the host's own presence (plan E1.1).
     pub(super) fn identity_status_impl(&self) -> UserStatusKind {
         self.ctx.own_presence.status()

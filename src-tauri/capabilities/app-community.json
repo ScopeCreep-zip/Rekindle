@@ -161,6 +161,7 @@
     "allow-update-community-info",
     "allow-update-community-presence",
     "allow-update-community-profile",
+    "allow-set-community-display-name",
     "allow-upload-attachment",
     "allow-upload-emoji",
     "allow-upload-soundboard-sound",

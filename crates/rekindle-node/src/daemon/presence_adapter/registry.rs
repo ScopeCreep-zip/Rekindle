@@ -151,7 +151,6 @@ impl DaemonPresenceAdapter {
             .into_iter()
             .map(|row| {
                 let record = MemberRecord {
-                    display_name: row.display_name,
                     subkey_index: row.subkey_index,
                     segment_index: row.segment_index,
                     bio: row.bio,

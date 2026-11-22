@@ -12,7 +12,7 @@ use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontier
 use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX, ROUTES};
+use rekindle_types::dht_layout::member_record::{BEAT, CARD, FRONTIER, GOV_HEAD, OUTBOX, ROUTES};
 
 #[cfg(test)]
 #[path = "watch_tests.rs"]
@@ -30,8 +30,9 @@ use super::HostGovernance;
 /// the channel outbox reader (plan E3.3, `read_channel_outbox`) and the
 /// `HeadAdvanced` relay; the beat (1) to the beat view (plan E3.4 S3,
 /// `ring_beat_moved`) and the relay; the routes (6) to the member route
-/// cache (plan E3.4 S4, `ring_route_moved`) and the relay; none of them ever rebuilds (register 2026-10-24, "S8 sequencing"). The card (0), the history ad
-/// (5) and the reserved subkeys have no ring consumer.
+/// cache (plan E3.4 S4, `ring_route_moved`) and the relay; none of them ever rebuilds (register 2026-10-24, "S8 sequencing"). The card (0)
+/// goes to the card cache (plan E3.4 "Card", `ring_card_moved`), never
+/// relayed; the history ad (5) and the reserved subkeys have no ring consumer.
 pub(crate) fn rebuilds_on(subkeys: &[u32]) -> bool {
     subkeys.contains(&FRONTIER)
 }
@@ -58,6 +59,11 @@ impl HostGovernance {
         // change opens nothing (plan E3.2 S9, R3-1).
         if self.ctx.communities.own_removal(&community).is_some() {
             return true;
+        }
+        // The card (0) is read by its watchers alone, never relayed (plan
+        // E3.4 "Card"; `RELAYED_SUBKEYS` keeps refusing 0).
+        if subkeys.contains(&CARD) {
+            self.ring_card_moved(&community, record).await;
         }
         if !subkeys.iter().any(|s| RELAYED_SUBKEYS.contains(s)) {
             tracing::debug!(%community, record, ?subkeys, "ring member record changed, nothing relayed or rebuilt");

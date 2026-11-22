@@ -118,6 +118,7 @@ fn joining() -> Vec<Sample> {
                 community: community(),
                 pseudonym: pk('e'),
                 display_name: text("Eve"),
+                custom_status: Some(text("brb")),
             },
         ),
         ev(

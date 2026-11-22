@@ -149,6 +149,7 @@ fn membership(event: &MembershipEvent) -> (&str, String) {
             community,
             pseudonym,
             display_name,
+            ..
         } => (
             community,
             format!(
@@ -459,6 +460,7 @@ mod tests {
             community: "c".repeat(64),
             pseudonym: "p".repeat(64),
             display_name: "Ann".into(),
+            custom_status: None,
         });
         let line = render(&card).expect("a card name is a community event");
         assert!(

@@ -75,10 +75,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::state_reads::mark_initial_sync_done(&self.state, community_id);
     }
 
-    fn identity_display_name(&self) -> String {
-        state_helpers::identity_display_name(&self.state)
-    }
-
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot {
         let communities = self.state.communities.read();
         let Some(community) = communities.get(community_id) else {
@@ -254,19 +250,16 @@ impl CommunityPresenceDeps for PresenceAdapter {
             .collect()
     }
 
-    fn emit_member_discovered(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        display_name: &str,
-        subkey_index: u32,
-    ) {
+    fn emit_member_discovered(&self, community_id: &str, pseudonym_key: &str, subkey_index: u32) {
+        let key = rekindle_types::id::PseudonymKey::from_hex_lossy(pseudonym_key);
         crate::event_dispatch::emit_membership(
             &self.app_handle,
             rekindle_types::subscription_events::MembershipEvent::MemberDiscovered {
                 community: community_id.to_string(),
                 pseudonym: pseudonym_key.to_string(),
-                display_name: display_name.to_string(),
+                // No presence row names a member (plan E3.4 S6): the short
+                // pseudonym fingerprint until its verified card is read.
+                display_name: rekindle_crypto::identity::short_key_fingerprint(&key.0),
                 subkey_index,
             },
         );

@@ -270,6 +270,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "set_community_avatar",
   "set_community_banner",
   "set_community_default_notification_level",
+  "set_community_display_name",
   "set_community_policy",
   "set_deafen",
   "set_do_not_disturb",

@@ -15,10 +15,6 @@ impl DaemonPresenceAdapter {
         self.ctx.my_pseudonym(community_id)
     }
 
-    pub(super) fn identity_display_name_impl(&self) -> String {
-        self.ctx.identity_display_name()
-    }
-
     pub(super) fn our_route_blob_impl(&self) -> Option<Vec<u8>> {
         let node = self.transport()?;
         let blob = node.personal_route_blob()?;

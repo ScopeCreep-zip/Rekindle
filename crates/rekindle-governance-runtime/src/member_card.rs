@@ -67,9 +67,10 @@ impl OwnRecord<'_> {
     }
 }
 
-/// What our first card and beat say.
+/// What our first beat says, and our first route (plan E3.4 S6: the
+/// first card says no name; the identity's name is never written to a
+/// community).
 pub struct OwnProfile {
-    pub display_name: String,
     pub status: SessionStatus,
     /// Our beat's `seq`: the next of `communities.beat_seq`, persisted
     /// before the write (`GovernanceRuntimeDeps::next_beat_seq`).
@@ -82,17 +83,26 @@ pub struct OwnProfile {
     pub route: Vec<u8>,
 }
 
-/// Our card: the identity's display name and the HPKE key, cross-signed.
-fn own_card(profile: &OwnProfile, hpke_secret: &[u8; 32]) -> MemberCard {
+/// The text our card carries in one community (plan E3.4 S6): the name we
+/// set there, never the identity's (`None` = unset; readers show the short
+/// pseudonym fingerprint), and our custom status there.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnCardText {
+    pub display_name: Option<String>,
+    pub custom_status: Option<String>,
+}
+
+/// Our card: `text` and the HPKE key, cross-signed.
+fn own_card(text: &OwnCardText, hpke_secret: &[u8; 32]) -> MemberCard {
     MemberCard {
-        display_name: Some(profile.display_name.clone()),
+        display_name: text.display_name.clone(),
         bio: None,
         avatar_ref: None,
         banner_ref: None,
         pronouns: None,
         theme_color: None,
         badges: Vec::new(),
-        custom_status: None,
+        custom_status: text.custom_status.clone(),
         game: None,
         hpke_key: rekindle_secrets::hpke::public_key(hpke_secret),
     }
@@ -157,17 +167,17 @@ async fn write_subkey_seq(
     stored
 }
 
-/// Write our card (`M`/0).
+/// Write our card (`M`/0) saying `text`.
 ///
 /// # Errors
 /// The card does not encode, or the write did not land.
 pub async fn write_card(
     port: &dyn RecordPort,
     own: &OwnRecord<'_>,
-    profile: &OwnProfile,
+    text: &OwnCardText,
     hpke_secret: &[u8; 32],
 ) -> Result<(), String> {
-    let bytes = own_card(profile, hpke_secret)
+    let bytes = own_card(text, hpke_secret)
         .encode(own.scope(), own.pseudonym)
         .map_err(|e| format!("member card: {e}"))?;
     write_subkey(port, own, member_record::CARD, bytes).await
@@ -242,7 +252,9 @@ pub async fn publish_own_record<F>(
 where
     F: Future<Output = Result<(), String>>,
 {
-    write_card(port, own, profile, hpke_secret).await?;
+    // A new member's card names nobody (plan E3.4 S6): a name is set per
+    // community, later, with `CommunitySetDisplayName`.
+    write_card(port, own, &OwnCardText::default(), hpke_secret).await?;
     if !profile.route.is_empty() {
         crate::member_routes::write_routes(port, own, &profile.route, profile.now_ms).await?;
     }
@@ -343,7 +355,7 @@ pub async fn read_beat(
 /// Read and remember the verified card of every pending or admitted member
 /// whose card name we do not hold yet: the admission queue's names and the
 /// name a `Joined` lacked (plan E3.2 F9-2; the deps announce a name they
-/// did not hold, `GovernanceRuntimeDeps::note_member_card_name`). Pending
+/// did not hold, `GovernanceRuntimeDeps::note_member_card`). Pending
 /// members first, oldest first, then members by join stamp. A card that
 /// does not verify is not remembered.
 ///
@@ -362,15 +374,10 @@ pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
     let Ok(port) = deps.record_port() else {
         return;
     };
-    // Our own card says our identity's name (`write_card`): a joiner's
-    // first rebuild runs before it publishes the card, and a forced read of
-    // the unwritten subkey is a fanout to its 10 s timeout (S7c.9).
+    // Our own card is never read here: we noted it when we wrote it, and a
+    // joiner's first rebuild runs before it publishes the card (a forced
+    // read of the unwritten subkey is a fanout to its 10 s timeout, S7c.9).
     let own = deps.my_pseudonym(community_id);
-    if let Some(own) = &own {
-        if deps.member_card_name(community_id, own).is_none() {
-            deps.note_member_card_name(community_id, own, deps.identity_display_name());
-        }
-    }
     let unnamed = cards_to_read(&state, community_id, own.as_ref(), |p| {
         deps.member_card_name(community_id, p).is_some()
     });
@@ -382,16 +389,57 @@ pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
     let read = read_each(reads).await;
     for (pseudonym, card) in read {
         match card {
-            Ok(Some(signed)) => {
-                if let Some(name) = signed.card.display_name {
-                    deps.note_member_card_name(community_id, pseudonym, name);
-                }
-            }
+            Ok(Some(signed)) => deps.note_member_card(community_id, pseudonym, card_of(&signed)),
             Ok(None) => {}
             Err(error) => {
                 tracing::debug!(community = community_id, %error, "member card refused");
             }
         }
+    }
+}
+
+/// Read our own card back (`M`/0, owner pinned to our roster entry) and
+/// remember what it says: after we rewrite it, the card cache holds what a
+/// verified read returns, never what we meant to write (plan E3.4 S6).
+///
+/// # Errors
+/// We hold no pseudonym or roster entry there, or the read or its
+/// verification failed.
+pub async fn refresh_own_card<D: crate::deps::GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<(), String> {
+    let state = deps
+        .governance_state(community_id)
+        .ok_or("no governance state")?;
+    let me = deps
+        .my_pseudonym(community_id)
+        .ok_or("no pseudonym of ours")?;
+    let (record, owner) = (state.members.get(&me))
+        .map(|m| (&m.member_record, &m.member_record_owner))
+        .or_else(|| {
+            (state.pending_members.get(&me)).map(|m| (&m.member_record, &m.member_record_owner))
+        })
+        .ok_or("we are not in the roster")?;
+    let port = deps.record_port().map_err(|e| e.to_string())?;
+    let at = MemberRecordRef {
+        community_id,
+        pseudonym: &me,
+        record,
+        owner,
+    };
+    if let Some(signed) = read_card(&*port, &at).await? {
+        deps.note_member_card(community_id, &me, card_of(&signed));
+    }
+    Ok(())
+}
+
+/// What a verified card says that the community renders.
+#[must_use]
+pub fn card_of(signed: &SignedMemberCard) -> crate::deps::CardText {
+    crate::deps::CardText {
+        display_name: signed.card.display_name.clone().filter(|n| !n.is_empty()),
+        custom_status: signed.card.custom_status.clone(),
     }
 }
 

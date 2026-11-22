@@ -76,6 +76,8 @@ mod tests {
         CommunityMemberView {
             pseudonym_key: name.to_owned(),
             display_name: name.to_owned(),
+            fingerprint: String::new(),
+            custom_status: None,
             role_ids: role_ids.iter().map(|&b| RoleId([b; 16]).to_hex()).collect(),
             display_role: String::new(),
             status: status.to_owned(),

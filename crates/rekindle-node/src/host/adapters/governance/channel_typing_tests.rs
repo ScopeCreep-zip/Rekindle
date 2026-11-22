@@ -10,7 +10,6 @@ use rekindle_transport::operations::typing;
 use rekindle_types::subscription_events::TypingContext;
 
 use rekindle_secrets::channel_body::channel_tag;
-use rekindle_transport::operations::friend::short_key;
 use rekindle_types::channel_keys::KeyScope;
 
 use super::{context, decide, Draft, CHANNEL_TYPING_TTL_MS};
@@ -271,7 +270,10 @@ async fn an_unlisted_typist_is_named_by_the_fingerprint() {
     let (_dir, host, mut events) = seeded().await;
     let gov = HostGovernance::new(host.ctx.clone());
     let bob = typist_key(9);
-    let fingerprint = short_key(&bob);
+    let fingerprint = crate::host::adapters::governance::community_profile::shown_name(
+        None,
+        &rekindle_types::id::PseudonymKey::from_hex_lossy(&bob),
+    );
     assert!(!fingerprint.is_empty() && fingerprint != bob);
     assert_eq!(gov.typist_name("c1", &bob), fingerprint);
     let tag = channel_tag(&TEXT_KEY, EDIT_CHANNEL);
@@ -284,10 +286,13 @@ async fn an_unlisted_typist_is_named_by_the_fingerprint() {
         "{started}"
     );
     let carol = typist_key(11);
-    let noted = (host.ctx.communities).note_member_card_name(
+    let noted = (host.ctx.communities).note_member_card(
         "c1",
         &rekindle_types::id::PseudonymKey::from_hex_lossy(&carol),
-        "Carol".into(),
+        rekindle_governance_runtime::CardText {
+            display_name: Some("Carol".into()),
+            custom_status: None,
+        },
     );
     assert!(noted);
     assert_eq!(gov.typist_name("c1", &carol), "Carol");

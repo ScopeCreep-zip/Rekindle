@@ -87,8 +87,9 @@ pub use bootstrap::{
     answer_bootstrap_request, encode_refusal, request_bootstrap, BootstrapAnswer, BootstrapJoiner,
 };
 pub use deps::{
-    CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, OpLanding, OpOutcome, UserStatusKind,
+    CardText, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
+    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, OpLanding,
+    OpOutcome, UserStatusKind,
 };
 pub use dht_hydration::{
     hydrate_one_community, open_and_track_one_community, rebuild_governance,
