@@ -26,18 +26,6 @@ pub struct OpSigner<'a> {
     pub device: &'a SigningKey,
 }
 
-/// Before K5 every op was signed by its author: a test building ops for a
-/// member that has no device key yet names one key for both.
-#[cfg(test)]
-impl<'a> From<&'a SigningKey> for OpSigner<'a> {
-    fn from(key: &'a SigningKey) -> Self {
-        Self {
-            author: PseudonymKey(key.verifying_key().to_bytes()),
-            device: key,
-        }
-    }
-}
-
 /// This device's op key for `community`. Minted and stored when this
 /// device holds none and `first_op` (the op being written is this
 /// device's first in the community); otherwise refused.
@@ -78,41 +66,34 @@ fn held_key(
     }
 }
 
-/// `body` carrying this device's first endorsement when it is a
+/// Put this device's first endorsement into `body` when it is a
 /// `MemberJoined` without one (rule 3: a self-admitted joiner's first op
-/// is its join); any other body as it is.
+/// is its join); any other body stays as it is.
 ///
 /// # Errors
 /// As [`first_endorsement`].
 pub fn carry_first_device(
-    body: rekindle_types::governance::GovernanceEntry,
+    body: &mut rekindle_types::governance::GovernanceEntry,
     p: &SigningKey,
     community: &str,
     d: &SigningKey,
-) -> Result<rekindle_types::governance::GovernanceEntry, GovernanceRuntimeError> {
-    use rekindle_types::governance::GovernanceEntry::MemberJoined;
-    match body {
-        MemberJoined {
+) -> Result<(), GovernanceRuntimeError> {
+    if let rekindle_types::governance::GovernanceEntry::MemberJoined {
+        member_record,
+        member_record_owner,
+        first_device: first @ None,
+        ..
+    } = body
+    {
+        *first = Some(first_endorsement(
+            p,
+            community,
+            d,
             member_record,
             member_record_owner,
-            invite_proof,
-            owner_proof,
-            first_device: None,
-        } => Ok(MemberJoined {
-            first_device: Some(first_endorsement(
-                p,
-                community,
-                d,
-                &member_record,
-                &member_record_owner,
-            )?),
-            member_record,
-            member_record_owner,
-            invite_proof,
-            owner_proof,
-        }),
-        other => Ok(other),
+        )?);
     }
+    Ok(())
 }
 
 /// `p`'s endorsement of this device's first key `d` in `community` for

@@ -33,7 +33,7 @@ fn our_ops_chain_verify_and_replay_by_frontier() {
         &cert,
         &state,
         &empty,
-        &key,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
         meta("a"),
         Deps::Frontier,
         5,
@@ -47,8 +47,17 @@ fn our_ops_chain_verify_and_replay_by_frontier() {
     let held_first = held(&first, record.clone(), first_bytes, OpFate::Applied);
     let set = verify_held("A", std::slice::from_ref(&held_first));
     assert_eq!(set.ops, vec![first.clone()]);
-    let (second, second_bytes) =
-        build_op("A", &cert, &state, &set, &key, meta("b"), Deps::Frontier, 6).unwrap();
+    let (second, second_bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &set,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
+        meta("b"),
+        Deps::Frontier,
+        6,
+    )
+    .unwrap();
     assert_eq!(second.op().seq, 1);
     assert_eq!(second.op().prev, Some(first.hash()));
     assert_eq!(second.op().deps, vec![first.op_ref(&record)]);
@@ -76,7 +85,7 @@ fn a_held_op_whose_dep_is_absent_is_pending_and_its_dep_is_missing() {
         &cert,
         &state,
         &VerifiedSet::default(),
-        &key,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
         meta("a"),
         Deps::Frontier,
         5,
@@ -86,8 +95,17 @@ fn a_held_op_whose_dep_is_absent_is_pending_and_its_dep_is_missing() {
         "A",
         &[held(&first, "m".into(), first_bytes, OpFate::Applied)],
     );
-    let (second, bytes) =
-        build_op("A", &cert, &state, &set, &key, meta("b"), Deps::Frontier, 6).unwrap();
+    let (second, bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &set,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
+        meta("b"),
+        Deps::Frontier,
+        6,
+    )
+    .unwrap();
     let alone = verify_held("A", &[held(&second, "m".into(), bytes, OpFate::Applied)]);
     assert_eq!(alone.pending, vec![second.hash()]);
     assert_eq!(alone.missing.len(), 1);
@@ -106,7 +124,7 @@ fn a_refused_op_is_quarantined_and_a_verified_op_carries_its_lamport() {
         &cert,
         &state,
         &empty,
-        &creator,
+        crate::test_member::signer(&creator, &crate::test_member::device_of(&creator)),
         meta("a"),
         Deps::Frontier,
         5,
@@ -118,7 +136,7 @@ fn a_refused_op_is_quarantined_and_a_verified_op_carries_its_lamport() {
         &cert,
         &state,
         &empty,
-        &stranger,
+        crate::test_member::signer(&stranger, &crate::test_member::device_of(&stranger)),
         meta("b"),
         Deps::Frontier,
         5,
@@ -210,7 +228,7 @@ fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_sta
         &cert,
         &state,
         &VerifiedSet::default(),
-        &key,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
         meta("a"),
         Deps::Frontier,
         5,
@@ -224,7 +242,7 @@ fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_sta
         &cert,
         &state,
         &base,
-        &key,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
         meta("b"),
         Deps::Frontier,
         6,
@@ -235,7 +253,7 @@ fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_sta
         &cert,
         &state,
         &base,
-        &key,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
         meta("c"),
         Deps::Frontier,
         7,
@@ -290,7 +308,7 @@ fn a_masked_op_is_held_quarantined() {
         &cert,
         &state,
         &empty,
-        &key,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
         meta("a"),
         Deps::Frontier,
         5,
@@ -323,7 +341,7 @@ fn a_quarantined_op_raises_one_governance_op_quarantined_event() {
         &cert,
         &state,
         &empty,
-        &key,
+        crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
         meta("a"),
         Deps::Frontier,
         5,
@@ -374,7 +392,7 @@ fn our_own_fork_goes_out_as_the_frontiers_fork_proof() {
             &cert,
             &state,
             set,
-            &key,
+            crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
             meta(name),
             Deps::Frontier,
             at,

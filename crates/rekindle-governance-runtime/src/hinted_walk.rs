@@ -182,7 +182,7 @@ impl CutFacts {
 
 /// The facts of the cut op `held`, fetched for the locator `r` of
 /// community `anchor`: `None` unless it decodes with `r`'s hash, its
-/// author's signature verifies, its author and seq are `r`'s, and its seq
+/// device key's signature verifies, its author and seq are `r`'s, and its seq
 /// is at or below its author's highest merged seq in the cut.
 #[must_use]
 pub fn cut_fact(
@@ -197,8 +197,9 @@ pub fn cut_fact(
     if hash != r.op_hash || op.author != r.author || op.seq != r.author_seq {
         return None;
     }
+    // The op's device key signs it (ADR 0022 rule 1), never its author.
     verify_signature(
-        &op.author.0,
+        &op.device_key,
         &op_signing_bytes(anchor, &decoded.unsigned),
         &op.sig,
     )

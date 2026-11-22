@@ -34,7 +34,7 @@ fn chain(len: usize) -> Vec<HeldOp> {
             &cert,
             &state,
             &set,
-            &key,
+            crate::test_member::signer(&key, &crate::test_member::device_of(&key)),
             meta(&format!("m{i}")),
             Deps::Frontier,
             5,

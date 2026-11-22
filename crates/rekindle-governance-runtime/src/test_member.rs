@@ -7,18 +7,46 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::member_record::dflt_opaque_record_key;
 use rekindle_types::id::PseudonymKey;
 
-/// A member's keys: its pseudonym and its record owner `K_M`.
+use crate::device_signer::OpSigner;
+
+/// A member's keys: its pseudonym, its record owner `K_M` and the op key
+/// `d` of its device (ADR 0022 rule 1: `d` signs, the pseudonym authors).
 pub(crate) struct Member {
     pub(crate) pseudonym: SigningKey,
     pub(crate) owner: SigningKey,
+    pub(crate) device: SigningKey,
+}
+
+/// The op key of `p`'s device in these tests: its own key, never `p`
+/// (ADR 0022 rule 1), fixed per pseudonym so a test's ops are stable.
+pub(crate) fn device_of(p: &SigningKey) -> SigningKey {
+    let mut h = blake3::Hasher::new();
+    h.update(b"rekindle-test-device-op-key");
+    h.update(p.as_bytes());
+    SigningKey::from_bytes(h.finalize().as_bytes())
+}
+
+/// `p` authors, `device` signs.
+pub(crate) fn signer<'a>(p: &SigningKey, device: &'a SigningKey) -> OpSigner<'a> {
+    OpSigner {
+        author: PseudonymKey(p.verifying_key().to_bytes()),
+        device,
+    }
 }
 
 impl Member {
     pub(crate) fn new(seed: u8) -> Self {
+        let pseudonym = SigningKey::from_bytes(&[seed; 32]);
         Self {
-            pseudonym: SigningKey::from_bytes(&[seed; 32]),
+            device: device_of(&pseudonym),
+            pseudonym,
             owner: SigningKey::from_bytes(&[seed.wrapping_add(100); 32]),
         }
+    }
+
+    /// This member's op signer: its pseudonym authors, its device signs.
+    pub(crate) fn signer(&self) -> OpSigner<'_> {
+        signer(&self.pseudonym, &self.device)
     }
 
     pub(crate) fn author(&self) -> PseudonymKey {

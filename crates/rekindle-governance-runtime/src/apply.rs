@@ -3,10 +3,13 @@
 //! (`op_log`), the state re-merged, and the UI snapshot events emitted.
 //! All side effects flow through the `GovernanceRuntimeDeps` trait.
 
+use rekindle_governance::op::VerifiedOp;
+use rekindle_governance::state::GovernanceState;
 use rekindle_governance::{merge, validate};
 use rekindle_secrets::derive;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{GenesisCert, GovernanceEntry};
 use rekindle_types::id::PseudonymKey;
+use zeroize::Zeroizing;
 
 use crate::deps::{GovernanceRuntimeDeps, OpLanding, OpOutcome};
 use crate::device_signer;
@@ -231,7 +234,7 @@ async fn write<D: GovernanceRuntimeDeps>(
 async fn write_with<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    entry: GovernanceEntry,
+    mut entry: GovernanceEntry,
     landing: OpLanding,
     op_deps: op_log::Deps,
     not_admitted: NotAdmitted,
@@ -273,34 +276,19 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_string()))?;
-    let identity_secret = deps
-        .identity_secret()
-        .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
-    let key = derive::derive_community_pseudonym(&identity_secret, community_id);
-    // ADR 0022: this device's op key signs, `p` stays the author. A
-    // `MemberJoined` is this device's first op here and carries its
-    // endorsement (rule 3); any other write needs the stored key.
-    let first_op = matches!(entry, GovernanceEntry::MemberJoined { .. });
-    let device = device_signer::device_op_key(deps, community_id, first_op)?;
-    let entry = device_signer::carry_first_device(entry.clone(), &key, community_id, &device)?;
     let set = op_log::verify_held_with(
         deps,
         community_id,
         &deps.governance_ops(community_id).await?,
     );
-    let (op, encoded) = op_log::build_op(
+    let ours = Ours {
         community_id,
-        &cert,
-        &gov_state,
-        &set,
-        device_signer::OpSigner {
-            author: pseudo.clone(),
-            device: &device,
-        },
-        entry.clone(),
-        op_deps,
-        deps.clock().now_secs(),
-    )?;
+        cert: &cert,
+        state: &gov_state,
+        set: &set,
+        author: pseudo,
+    };
+    let (op, encoded) = sign_ours(deps, ours, &mut entry, op_deps)?;
     deps.store_signed_governance_op(
         community_id,
         &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
@@ -348,6 +336,55 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     deps.publish_governance_op(community_id, encoded, landing)
         .await
         .map(Written::Op)
+}
+
+/// What our op is built on: the community, its pinned cert, the locked
+/// state and the verified op set, and our pseudonym `p` (its author).
+struct Ours<'a> {
+    community_id: &'a str,
+    cert: &'a GenesisCert,
+    state: &'a GovernanceState,
+    set: &'a op_log::VerifiedSet,
+    author: PseudonymKey,
+}
+
+/// Our op for `entry`, signed by this device's op key under `p` (ADR 0022
+/// rule 1); a `MemberJoined`, this device's first op here, gets `p`'s
+/// endorsement of the key written into `entry` (rule 3). Kept off
+/// the async path: the device key and `p`'s secret never live across an
+/// await, so `write_with`'s future holds neither.
+///
+/// # Errors
+/// No identity secret, no stored device key for a later op, or
+/// [`op_log::build_op`]'s.
+fn sign_ours<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    ours: Ours<'_>,
+    entry: &mut GovernanceEntry,
+    op_deps: op_log::Deps,
+) -> Result<(VerifiedOp, Vec<u8>), GovernanceRuntimeError> {
+    let identity_secret = Zeroizing::new(
+        deps.identity_secret()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?,
+    );
+    let key = derive::derive_community_pseudonym(&identity_secret, ours.community_id);
+    let first_op = matches!(entry, GovernanceEntry::MemberJoined { .. });
+    let device = device_signer::device_op_key(deps, ours.community_id, first_op)?;
+    device_signer::carry_first_device(entry, &key, ours.community_id, &device)?;
+    let signer = device_signer::OpSigner {
+        author: ours.author,
+        device: &device,
+    };
+    op_log::build_op(
+        ours.community_id,
+        ours.cert,
+        ours.state,
+        ours.set,
+        signer,
+        entry.clone(),
+        op_deps,
+        deps.clock().now_secs(),
+    )
 }
 
 /// Every reader drops an entry outside its value bounds (plan E3.0), so the

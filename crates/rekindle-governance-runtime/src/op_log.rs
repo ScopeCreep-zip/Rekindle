@@ -222,12 +222,12 @@ pub enum Deps {
 /// # Errors
 /// A dep's author has no member record in `state`, a join dep is not in
 /// `set`, the op does not encode, or it fails verification.
-pub fn build_op<'a>(
+pub fn build_op(
     anchor: &str,
     cert: &GenesisCert,
     state: &GovernanceState,
     set: &VerifiedSet,
-    signer: impl Into<OpSigner<'a>>,
+    signer: OpSigner<'_>,
     body: GovernanceEntry,
     deps: Deps,
     issued_at: u64,
@@ -235,7 +235,7 @@ pub fn build_op<'a>(
     let OpSigner {
         author,
         device: key,
-    } = signer.into();
+    } = signer;
     let device_key = key.verifying_key().to_bytes();
     let last = set
         .ops

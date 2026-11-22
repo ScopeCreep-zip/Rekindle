@@ -29,7 +29,7 @@ fn newer_kind_wire(unsigned: &[u8], arm: u16, signer: &Member) -> (Vec<u8>, [u8;
     let body_at = pointee(root_at + root_data + 3).0;
     let mut patched = unsigned.to_vec();
     patched[body_at * 8..body_at * 8 + 2].copy_from_slice(&arm.to_le_bytes());
-    let sig = (signer.pseudonym)
+    let sig = (signer.device)
         .sign(&op_signing_bytes(ANCHOR, &patched))
         .to_bytes();
     let wire = seal_op(&patched, &sig).expect("the codec seals the patched op");
@@ -44,7 +44,7 @@ fn newer_kind_op(world: &mut World, author: &Member, signer: &Member) -> HeldOp 
     let (unsigned, sig, wire) = newer_kind_wire(&op_unsigned_bytes(op.op()), 0x7fff, signer);
     let op_ref = OpRef {
         op_hash: op_hash(&unsigned, &sig),
-        device_key: author.author().0,
+        device_key: author.device.verifying_key().to_bytes(),
         author: author.author(),
         author_record: author.record(),
         author_seq: op.op().seq,

@@ -113,7 +113,7 @@ impl World {
             cert,
             state,
             set,
-            &member.pseudonym,
+            member.signer(),
             body,
             deps,
             self.clock,

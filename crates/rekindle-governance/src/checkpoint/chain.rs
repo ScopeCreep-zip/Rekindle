@@ -29,11 +29,12 @@ pub struct SignedEndorsement {
 
 impl SignedEndorsement {
     /// `op` (decoded from `unsigned` and its signature) of community
-    /// `anchor`, when its author's signature verifies, its shape is a
+    /// `anchor`, when its device key's signature verifies (ADR 0022 rule
+    /// 1: the device key signs, the author is named), its shape is a
     /// checkpoint's, and its body is a `Checkpoint`.
     #[must_use]
     pub fn verify(anchor: &str, op: &GovernanceOp, unsigned: &[u8]) -> Option<Self> {
-        verify_signature(&op.author.0, &op_signing_bytes(anchor, unsigned), &op.sig).ok()?;
+        verify_signature(&op.device_key, &op_signing_bytes(anchor, unsigned), &op.sig).ok()?;
         check_shape(op).ok()?;
         let GovernanceEntry::Checkpoint(body) = &op.body else {
             return None;

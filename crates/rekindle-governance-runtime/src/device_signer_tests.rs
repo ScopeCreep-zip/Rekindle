@@ -86,3 +86,19 @@ fn a_lost_device_key_is_refused_never_minted_again() {
     let key = held_key(Some(held), ANCHOR, false).unwrap().unwrap();
     assert_eq!(key.to_bytes(), [5; 32]);
 }
+
+/// A checkpoint endorsement is signed by its author's device key (ADR 0022
+/// rule 1): the chain reads it as an endorsement only when it verifies
+/// under that key, not under the author's pseudonym.
+#[test]
+fn a_device_signed_checkpoint_endorsement_verifies_under_the_device_key() {
+    use rekindle_governance::checkpoint::SignedEndorsement;
+    let creator = crate::test_member::Member::new(1);
+    let mut world = crate::test_world::World::new(&creator);
+    let body = world.checkpoint_body();
+    let op = world.endorse(&creator, body);
+    assert_ne!(op.op().device_key, creator.author().0);
+    let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(op.op());
+    let read = SignedEndorsement::verify(crate::test_world::ANCHOR, op.op(), &unsigned);
+    assert_eq!(read.map(|e| e.author), Some(creator.author()));
+}

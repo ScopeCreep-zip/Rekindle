@@ -415,16 +415,20 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     }
 
     let (member, member_owner) = create_member_record(deps).await?;
-    let device = device_signer::device_op_key(deps, anchor, true)?;
-    let joined = joined_op(
-        anchor,
-        &cert,
-        &walked,
-        (&identity.pseudonym_signing, &device),
-        (&member, member_owner),
-        (link.invite_code.as_str(), &inviter),
-        now,
-    )?;
+    // This device's first op key here, minted and dropped in this block:
+    // it never lives across an await of the join.
+    let joined = {
+        let device = device_signer::device_op_key(deps, anchor, true)?;
+        joined_op(
+            anchor,
+            &cert,
+            &walked,
+            (&identity.pseudonym_signing, &device),
+            (&member, member_owner),
+            (link.invite_code.as_str(), &inviter),
+            now,
+        )?
+    };
 
     // The registry slot, as before E3.4. A claim is not an access-control
     // point (`o_cnt: 0`): readers count only members whose `MemberJoined`
