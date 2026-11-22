@@ -38,7 +38,7 @@ use crate::import::ImportError;
 use crate::shape;
 
 /// The package images the tree adds, by path.
-type Files = BTreeMap<String, Vec<u8>>;
+pub(super) type Files = BTreeMap<String, Vec<u8>>;
 
 pub(super) fn bad(detail: impl Into<String>) -> ImportError {
     ImportError::Format {
@@ -48,7 +48,7 @@ pub(super) fn bad(detail: impl Into<String>) -> ImportError {
 }
 
 /// A component's `MinWidth`/`MinHeight`/`MaxWidth`/`MaxHeight`.
-fn limit_of(component: Option<&Node>, key: &str) -> Option<u16> {
+pub(super) fn limit_of(component: Option<&Node>, key: &str) -> Option<u16> {
     component?.attr_ci(key)?.trim().parse().ok()
 }
 
@@ -121,20 +121,22 @@ struct Read<'n> {
     triggers: Vec<NodeTrigger>,
 }
 
-struct Walk<'a> {
-    window: SkinWindow,
-    by_name: BTreeMap<String, &'a Node>,
-    piece: Decode<'a>,
-    files: Files,
+pub(super) struct Walk<'a> {
+    pub(super) window: SkinWindow,
+    pub(super) by_name: BTreeMap<String, &'a Node>,
+    pub(super) piece: Decode<'a>,
+    pub(super) files: Files,
     /// The images `files` were encoded from, by path (lead decision 15
     /// crops them).
-    images: Images,
+    pub(super) images: Images,
     /// Each tab control's path of child indices and its `ControlGroupId`.
-    groups: Vec<(Vec<usize>, String)>,
+    pub(super) groups: Vec<(Vec<usize>, String)>,
     /// The pack's `<Popups>` tile names, lowercased.
-    popups: BTreeSet<String>,
+    pub(super) popups: BTreeSet<String>,
     /// Every control group id the pack's components declare.
-    group_ids: BTreeSet<u16>,
+    pub(super) group_ids: BTreeSet<u16>,
+    /// The art file prefix: a popup's name, so its art never meets the window's.
+    pub(super) prefix: String,
 }
 
 impl Walk<'_> {
@@ -228,7 +230,7 @@ impl Walk<'_> {
                 }
             })
             .collect();
-        let normal = self.encode_set(&format!("node-{slug}"), pieces)?;
+        let normal = self.encode_set(&format!("node-{}{slug}", self.prefix), pieces)?;
         if normal.is_empty() {
             return Ok(None);
         }
@@ -239,7 +241,10 @@ impl Walk<'_> {
             (RegionState::Disabled, "Disabled"),
         ] {
             let other = self.pieces(tile, set)?;
-            let encoded = self.encode_set(&format!("node-{slug}--{}", state.key()), &other)?;
+            let encoded = self.encode_set(
+                &format!("node-{}{slug}--{}", self.prefix, state.key()),
+                &other,
+            )?;
             if !encoded.is_empty() {
                 states.insert(state, encoded);
             }
@@ -277,18 +282,8 @@ impl Walk<'_> {
                     );
                     if declared.0 == 0 || declared.1 == 0 {
                         let content = self.content_size(tile)?;
-                        (
-                            if declared.0 == 0 {
-                                content.0
-                            } else {
-                                declared.0
-                            },
-                            if declared.1 == 0 {
-                                content.1
-                            } else {
-                                declared.1
-                            },
-                        )
+                        let pick = |d: u16, c: u16| if d == 0 { c } else { d };
+                        (pick(declared.0, content.0), pick(declared.1, content.1))
                     } else {
                         declared
                     }
@@ -349,7 +344,7 @@ impl Walk<'_> {
     /// `node`'s tiles: placed in as many passes as their references need
     /// (Symbiosis's `ResizeTop` names `ResizeGripperTR`, the next tile),
     /// each against its siblings and `outer`, the names its parent sees.
-    fn walk(
+    pub(super) fn walk(
         &mut self,
         node: &Node,
         parent: Option<&Role>,
@@ -468,8 +463,7 @@ impl Walk<'_> {
 /// window it launches from, resized as its window component says
 /// (`MainMenuWindow` `BindY="true" ResizeY="100"`, `components.xml:815`:
 /// the rail runs from 29 px below the window's top to 28 px above its
-/// bottom, as the original shows). Other popups (the InfoView) are not
-/// read here.
+/// bottom, as the original shows); [`super::popup`] lays each popup.
 fn with_rail(layout: &Node, components: &[Node], by_name: &BTreeMap<String, &Node>) -> Node {
     // Only the popups this window's own tiles launch: the chat window's
     // `MenuButton` launches its own rail (`popups.xml:112-140`).
@@ -563,6 +557,7 @@ pub fn add(
         groups: Vec::new(),
         popups,
         group_ids,
+        prefix: String::new(),
     };
     let mut tree = SkinTree {
         outsets: Insets {
@@ -602,6 +597,7 @@ pub fn add(
             bad("the views node is not a box inset from the frame on all four sides")
         })?;
     }
+    super::popup::add(&walk, (&laid, components), &tree, built)?;
     built.1.extend(walk.files);
     built.0.tree = Some(tree);
     Ok(())

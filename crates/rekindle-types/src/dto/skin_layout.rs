@@ -1,6 +1,8 @@
 //! A window's frame layout (plan SK0 S1, SK0-L1): the window kinds a skin
 //! frames, the tiles that lay the frame and the pack's component tree. Re-exported from [`super::skin`], whose manifest carries them.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::skin::Insets;
@@ -75,4 +77,42 @@ pub struct WindowLayout {
     /// The pack's component tree (plan SK2); `content` is its views node's box.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree: Option<super::skin_tree::SkinTree>,
+    /// The popups the window's tiles launch (`LaunchSkin`), keyed by the
+    /// pack's popup tile name (Symbiosis's `MainInfoViewPopup`,
+    /// `Popups.xml:10`; StealthX's `MainMenuPopup`, `popups.xml:2`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub popups: BTreeMap<String, PopupLayout>,
+}
+
+/// The edge of the launching window a popup's left side is measured from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PopupEdge {
+    Left,
+    Right,
+}
+
+/// Where a popup's left side sits: `offset` px from the launching window's
+/// `edge` (Symbiosis's `X="MainWindow.Right-13"` is `Right`, -13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PopupAnchor {
+    pub edge: PopupEdge,
+    pub offset: i16,
+}
+
+/// A popup a window launches (plan SK2 P1): its own box beside the window
+/// and its component tree, laid by the same model as the window's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PopupLayout {
+    pub anchor: PopupAnchor,
+    /// The popup component's `DefaultWidth` (else its `MinWidth`), px.
+    pub width: u16,
+    pub min_width: u16,
+    pub min_height: u16,
+    /// Its vertical span in the launching window's height (Symbiosis's
+    /// `ResizeY="100" IndentTop="23" IndentBottom="23"`).
+    pub y: super::skin_tree::NodeSpan,
+    pub tree: super::skin_tree::SkinTree,
 }

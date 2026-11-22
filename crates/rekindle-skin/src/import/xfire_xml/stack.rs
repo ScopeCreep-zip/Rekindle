@@ -239,6 +239,7 @@ fn build(window: SkinWindow, rows: &[Stacked], content_row: usize) -> Result<Bui
             tiles,
             tree: None,
             title: None,
+            popups: std::collections::BTreeMap::new(),
         },
         files,
     ))

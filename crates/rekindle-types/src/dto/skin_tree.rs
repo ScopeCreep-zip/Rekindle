@@ -291,6 +291,10 @@ pub struct ShellNode {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkinShell {
     pub window: SkinWindow,
+    /// The popup this outline is (its key in the window's `popups`), else
+    /// the window's own tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub popup: Option<String>,
     pub root: Vec<ShellNode>,
     /// Rekindle's items for each engine menu the pack's buttons open
     /// (design §2.6), so the shell draws a pressed menu from the same
@@ -350,8 +354,18 @@ impl SkinTree {
     pub fn shell(&self, window: SkinWindow) -> SkinShell {
         SkinShell {
             window,
+            popup: None,
             root: self.root.iter().map(SkinNode::shell).collect(),
             menus: super::skin_action::MenuRegistry::rekindle(),
+        }
+    }
+
+    /// The tree's outline as `window`'s popup `name`.
+    #[must_use]
+    pub fn popup_shell(&self, window: SkinWindow, name: &str) -> SkinShell {
+        SkinShell {
+            popup: Some(name.to_owned()),
+            ..self.shell(window)
         }
     }
 }

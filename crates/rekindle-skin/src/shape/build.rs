@@ -159,6 +159,7 @@ pub fn from_nine(
             tiles,
             tree: None,
             title: None,
+            popups: std::collections::BTreeMap::new(),
         },
         files,
     ))

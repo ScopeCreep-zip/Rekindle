@@ -44,6 +44,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                 }],
                 tree: None,
                 title: None,
+                popups: std::collections::BTreeMap::new(),
             },
             masks: vec![SkinTileMask {
                 width: 4,

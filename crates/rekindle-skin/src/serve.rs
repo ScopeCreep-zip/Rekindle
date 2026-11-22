@@ -198,7 +198,10 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
         shells: m
             .windows
             .iter()
-            .filter_map(|(&w, l)| l.tree.as_ref().map(|t| t.shell(w)))
+            .flat_map(|(&w, l)| {
+                let popups = l.popups.iter().map(move |(n, p)| p.tree.popup_shell(w, n));
+                l.tree.iter().map(move |t| t.shell(w)).chain(popups)
+            })
             .collect(),
     })
 }

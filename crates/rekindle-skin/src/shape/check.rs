@@ -205,6 +205,7 @@ pub fn check(manifest: &SkinManifest, images: &BTreeMap<String, Vec<u8>>) -> Res
             let field = format!("windows.{}.tree", name(window));
             crate::skin_tree::validate::check(&field, tree, layout, images)?;
         }
+        crate::skin_tree::popup::check(&format!("windows.{}", name(window)), layout, images)?;
         silhouette(
             layout,
             &masks,

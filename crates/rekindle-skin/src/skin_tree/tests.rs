@@ -28,6 +28,7 @@ pub(super) fn layout(tree: Option<SkinTree>) -> WindowLayout {
         tiles: Vec::new(),
         title: None,
         tree,
+        popups: std::collections::BTreeMap::new(),
     }
 }
 

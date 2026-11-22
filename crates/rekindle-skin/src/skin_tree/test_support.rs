@@ -22,6 +22,7 @@ pub(super) fn frame() -> WindowLayout {
         tiles: Vec::new(),
         title: None,
         tree: None,
+        popups: std::collections::BTreeMap::new(),
     }
 }
 

@@ -206,6 +206,19 @@ pub fn frame_css(
         out.push_str(&crate::skin_tree::css::tree_css(
             &root, tree, layout, images, base,
         )?);
+        // Each popup the window launches: its frame carries
+        // `data-skin-popup="<name>"` (plan SK2 P1).
+        for (name, popup) in &layout.popups {
+            let root = format!(".app-frame[data-skin-popup=\"{name}\"]");
+            let frame = crate::skin_tree::popup::frame(popup);
+            out.push_str(&crate::skin_tree::css::tree_css(
+                &root,
+                &popup.tree,
+                &frame,
+                images,
+                base,
+            )?);
+        }
     }
     out.push_str("}\n");
     Some(out)
