@@ -210,16 +210,18 @@ function applyPinned(channel: string, messageId: string, pinned: boolean): void 
 }
 
 /// A post the Host stored and published (`ChannelMessageEvent::New`, every
-/// read path: the outbox read and the slot reads) joins the list of a
-/// channel this window holds, as the Host gave it. Our own posts are the
-/// send path's (`handleSendMessage` holds them from the send); a list not
-/// loaded yet reads the post with the channel's history (IB2).
+/// read path: the outbox read and the slot reads, and our own send) joins
+/// the list of a channel this window holds, as the Host gave it, once per
+/// message id. Our own posts are shown only from here (plan CP1): the Host
+/// publishes our `New` at its local commit, and the send inserts nothing, so
+/// a post is one row from the Host's word, its state from `ChannelSendStatus`.
+/// A list not loaded yet reads the post with the channel's history (IB2).
 function applyNew(post: NewChannelMessage): void {
   const msgs = communityState.channelMessages[post.channel];
   if (!msgs) return;
-  const me = communityState.communities[post.community]?.myPseudonymKey;
-  if (me && me.toLowerCase() === post.senderPseudonym.toLowerCase()) return;
   if (msgs.some((m) => m.serverMessageId === post.messageId)) return;
+  const me = communityState.communities[post.community]?.myPseudonymKey;
+  const own = !!me && me.toLowerCase() === post.senderPseudonym.toLowerCase();
   const message: Message = {
     id: Date.now(),
     senderId: post.senderPseudonym,
@@ -227,7 +229,7 @@ function applyNew(post: NewChannelMessage): void {
     decryptionFailed: post.body === null,
     automodBlurred: post.automodBlurred,
     timestamp: post.timestamp,
-    isOwn: false,
+    isOwn: own,
     serverMessageId: post.messageId,
     replyToId: post.replyToMessageId ?? undefined,
   };
