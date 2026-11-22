@@ -125,6 +125,19 @@
     color: var(--color-xfire-danger-text);
   }
 
+  /* A menu item the Host says cannot run now stays listed, with why. */
+  .context-menu-item[data-disabled] {
+    color: var(--color-xfire-text-dim);
+    cursor: default;
+  }
+  .context-menu-item[data-disabled]:hover {
+    background: transparent;
+  }
+  .context-menu-item-reason {
+    margin-left: 6px;
+    color: var(--color-xfire-text-dim);
+  }
+
   /* A danger item's hover is its own tint: the accent hover under red text
    * reads 3.86:1 (plan E7.7.0b). */
   .context-menu-item-danger:hover {

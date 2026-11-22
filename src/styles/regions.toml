@@ -122,6 +122,8 @@
 '.status-bar' = { on = ["--color-xfire-bg-status"] }
 '.context-menu-item' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 30% over --color-xfire-bg-panel"] }
 '.context-menu-item-danger' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-busy 12% over --color-xfire-bg-panel"] }
+'.context-menu-item[data-disabled]' = { on = ["--color-xfire-bg-panel"] }
+'.context-menu-item-reason' = { on = ["--color-xfire-bg-panel"] }
 '.login-title' = { on = ["--color-xfire-bg-dark"] }
 '.login-subtitle' = { on = ["--color-xfire-bg-dark"] }
 '.account-picker-subtitle' = { on = ["--color-xfire-bg-dark"] }
