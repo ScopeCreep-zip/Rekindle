@@ -130,7 +130,9 @@ function stateEvent(t: NodeTrigger): boolean {
 
 /**
  * Apply one tree operation, run for `node`, to `state`; `false` when the
- * action is not a tree operation (the caller dispatches it).
+ * Host must also see it (the caller dispatches it): an action that is not
+ * a tree operation, or a view switch this tree keeps only for its own art
+ * (a popup with no views, whose launcher the Host addresses, SK2-N4).
  */
 export function applyTreeOp(state: TreeState, node: string, run: SkinAction, root: ShellNode[]): boolean {
   switch (run.kind) {
@@ -144,30 +146,27 @@ export function applyTreeOp(state: TreeState, node: string, run: SkinAction, roo
       return true;
     }
     case "groupPage": {
-      // A group no node of this tree pages (StealthX's popup rail paging
-      // its launcher's views, group 1) is the Host's to address (SK2-N4).
-      if (!holdsGroup(root, run.arg.group)) return false;
       state.pages[run.arg.group] = run.arg.page;
       const page = pageNode(root, run.arg.group, run.arg.page);
       if (page && page.role.kind === "view") state.view = page.role.key;
-      return true;
+      // A tree with no views (StealthX's popup rail paging its launcher's
+      // views, group 1; a pack's control groups are skin-wide, so the rail's
+      // own `ButtonArea` pages with them): kept here for the rail's own
+      // art, and the Host addresses it to the launcher too (SK2-N4).
+      return holdsViews(root);
     }
     case "showView": {
       const v = viewOf(run.arg);
-      // A tree with no views (a popup) has none to show: the Host
-      // addresses the switch to its launcher (SK2-N4).
-      if (v === undefined || !holdsViews(root)) return false;
+      if (v === undefined) return false;
+      // A tree with no views (a popup) keeps the view for its rail's
+      // highlight (`Show(view)` triggers), and the Host addresses the
+      // switch to its launcher too (SK2-N4).
       state.view = v;
-      return true;
+      return holdsViews(root);
     }
     default:
       return false;
   }
-}
-
-/** Whether a node of `list` pages control group `group`. */
-function holdsGroup(list: ShellNode[], group: number): boolean {
-  return list.some((n) => n.controlGroup === group || holdsGroup(n.children ?? [], group));
 }
 
 /** Whether `list` holds the views node. */

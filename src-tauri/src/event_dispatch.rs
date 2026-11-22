@@ -160,18 +160,16 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
             buddy_list().with_kinds(&[WindowKind::Chat])
         }
-        // A window's Infoview goes to that window alone (ADR 0013): the
-        // label it asked with is its own (`commands::infoview`).
-        SubscriptionEvent::System(SystemEvent::Infoview(InfoviewEvent::Updated {
-            window, ..
-        })) => Audience::labels([window.clone()]),
-        // A skin window's signals go to that window only, by label (plan
-        // SK2-A4 step 3, lead decision 48): another chat window's set
-        // names another friend's capabilities.
-        // A view switch pressed in a popup goes to its launcher alone
-        // (plan SK2-N4): the Host addressed it.
+        // Each goes to the one window it names, by label (ADR 0013):
+        // - a window's Infoview, asked with its own label (`commands::infoview`);
+        // - a skin window's signals (plan SK2-A4 step 3, lead decision 48):
+        //   another chat window's set names another friend's capabilities;
+        // - a view switch pressed in a popup, addressed by the Host to its
+        //   launcher (plan SK2-N4).
         SubscriptionEvent::System(
-            SystemEvent::SkinSignals { window, .. } | SystemEvent::SkinShell { window, .. },
+            SystemEvent::Infoview(InfoviewEvent::Updated { window, .. })
+            | SystemEvent::SkinSignals { window, .. }
+            | SystemEvent::SkinShell { window, .. },
         ) => Audience::labels([window.clone()]),
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them. So does the Downloads

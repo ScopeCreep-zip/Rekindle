@@ -197,3 +197,40 @@ fn a_pack_with_no_tab_or_knob_gets_a_host_tab() {
         assert_eq!(l, before);
     }
 }
+
+/// StealthX's popup rail tab (plan SK2-N4): its press is the launcher's
+/// view switch, `ShowView(Communities)` and the main tree's views page,
+/// and the popup holds no views, so the window keeps both for its own art
+/// (its `ButtonArea` pages with group 1: a pack's groups are skin-wide)
+/// and the Host addresses both to the launcher (`applyTreeOp`'s
+/// `holdsViews`).
+#[test]
+fn stealthx_popup_tab_is_its_launchers_view_switch() {
+    let stealth = served_main("stealthx");
+    let main_root = &stealth.tree.as_ref().unwrap().root;
+    let (group, page) = views_page(main_root);
+    let group = group.expect("StealthX's views page as group 1");
+    let popup = stealth
+        .popups
+        .values()
+        .find(|p| {
+            let mut n = Vec::new();
+            all(&p.tree.root, &mut n);
+            n.iter().any(|n| n.role == NodeRole::Tab(C))
+        })
+        .expect("the rail popup");
+    let mut nodes = Vec::new();
+    all(&popup.tree.root, &mut nodes);
+    let tab = nodes.iter().find(|n| n.role == NodeRole::Tab(C)).unwrap();
+    let presses: Vec<&SkinAction> = tab
+        .triggers
+        .iter()
+        .filter(|t| t.presses())
+        .map(|t| &t.run)
+        .collect();
+    assert!(presses.contains(&&SkinAction::ShowView(EngineView::Communities)));
+    let page = u16::try_from(page).unwrap();
+    assert!(presses.contains(&&SkinAction::GroupPage { group, page }));
+    assert!(nodes.iter().all(|n| n.role != NodeRole::Views));
+    assert!(nodes.iter().any(|n| n.control_group == Some(group)));
+}
