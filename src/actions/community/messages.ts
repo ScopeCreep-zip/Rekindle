@@ -1,10 +1,11 @@
 import { commands } from "../../ipc/commands";
 import { setCommunityState, communityState } from "../../stores/community.store";
-import { authState } from "../../stores/auth.store";
 import { addToast } from "../../stores/toast.store";
-import type { Message } from "../../stores/chat.store";
 import { clearBulkSelection } from "../../stores/chat.store";
 import { transformMessages } from "../../utils/transformers";
+import { mergeRead } from "../../utils/message_merge";
+import { isCommandError } from "../../ipc/commands/dto";
+import { errorMessage } from "../../utils/error";
 
 export async function handleSendChannelMessage(
   channelId: string,
@@ -12,48 +13,21 @@ export async function handleSendChannelMessage(
   replyToId?: string,
 ): Promise<void> {
   if (!body.trim()) return;
-  const trimmed = body.trim();
-
-  const tempId = Date.now();
-
-  // Optimistic insert with "sending" status — use pseudonym key as senderId (matches what Rust emits)
-  const community = communityState.communities[communityState.activeCommunity ?? ""];
-  const message: Message = {
-    id: tempId,
-    senderId: community?.myPseudonymKey ?? authState.publicKey ?? "",
-    body: trimmed,
-    timestamp: Date.now(),
-    isOwn: true,
-    status: "sending",
-    replyToId,
-  };
-
-  const existing = communityState.channelMessages[channelId];
-  if (existing) {
-    setCommunityState("channelMessages", channelId, (msgs) => [
-      ...msgs,
-      message,
-    ]);
-  } else {
-    setCommunityState("channelMessages", channelId, [message]);
-  }
-
+  // Our post is rendered from the Host's `New`, published at its local
+  // commit before any network send (plan CP1): the window inserts nothing
+  // here, and the row's state is the Host's (`ChannelSendStatus`, and the
+  // send's own answer by message id).
   try {
-    const result = await commands.sendChannelMessage(channelId, trimmed, replyToId);
+    const result = await commands.sendChannelMessage(channelId, body.trim(), replyToId);
     const status = result.status;
     setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status, serverMessageId: result.messageId } : m)),
+      (msgs ?? []).map((m) => (m.serverMessageId === result.messageId ? { ...m, status } : m)),
     );
     if (result.status === "queued") {
       addToast("Message queued: it will be delivered when the network is back", "info");
     }
   } catch (e) {
-    console.error("Failed to send channel message:", e);
-    addToast("Failed to send message", "error");
-    // Update status to failed
-    setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
-    );
+    if (!(isCommandError(e) && e.type === "cancelled")) addToast(`Message not sent: ${errorMessage(e)}`, "error");
   }
 }
 
@@ -148,10 +122,7 @@ export async function handleLoadChannelMessages(
   try {
     const messages = await commands.getChannelMessages(channelId, limit);
     const mapped = transformMessages(messages);
-    const existing = communityState.channelMessages[channelId];
-    if (mapped.length > 0 || !existing || existing.length === 0) {
-      setCommunityState("channelMessages", channelId, mapped);
-    }
+    setCommunityState("channelMessages", channelId, (existing) => mergeRead(existing ?? [], mapped));
   } catch (e) {
     console.error("Failed to load channel messages:", e);
     addToast("Failed to load messages", "error");

@@ -74,17 +74,28 @@ function handleKeyboardShortcuts(e: KeyboardEvent): void {
   }
 }
 
-/** The buddy list's content: the shown tab's lists. The app's layout puts
- *  it in `.window-main`, a skin's tree in its Friends view (plan SK2-S2). */
+/** The Friends lists: a skin's tree shows them in its Friends view (plan
+ *  SK2-S2), the app's own layout under its Friends tab. */
+function FriendsContent(): JSX.Element {
+  return (
+    <>
+      <PendingRequests />
+      <CoCreatorInvites />
+      <SuccessorOffers />
+      <GroupDmList />
+      <BuddyList />
+    </>
+  );
+}
+
+/** The app's own layout (no skin tree): the shown tab's lists in
+ *  `.window-main`. A tree switches its Friends and Communities views itself
+ *  (the Host's ShowView, plan SK2-N4). */
 function BuddyContent(): JSX.Element {
   return (
     <>
       <Show when={buddyListUI.activeTab === "friends"}>
-        <PendingRequests />
-        <CoCreatorInvites />
-        <SuccessorOffers />
-        <GroupDmList />
-        <BuddyList />
+        <FriendsContent />
       </Show>
       <Show when={buddyListUI.activeTab === "communities"}>
         <CommunityListCompact />
@@ -255,7 +266,7 @@ const BuddyListWindow: Component = () => {
               <>
                 <SearchBar />
                 <PairingLinkNotice />
-                <BuddyContent />
+                <FriendsContent />
               </>
             )}
             communities={() => <CommunityListCompact />}

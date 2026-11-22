@@ -6,6 +6,7 @@ import type { SessionStatus } from "./dto";
 
 export type ViewKey =
   | "friends"
+  | "communities"
   | "servers"
   | "files"
   | "chatRooms"
@@ -71,6 +72,7 @@ export type EngineMenu =
 export type EngineView =
   | "home"
   | "friends"
+  | "communities"
   | "chats"
   | "chatRooms"
   | "servers"

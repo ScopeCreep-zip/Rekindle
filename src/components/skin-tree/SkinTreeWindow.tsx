@@ -15,7 +15,7 @@ import FilesView from "./FilesView";
 /** What every node of one window's tree reads. */
 interface Tree {
   views: () => JSX.Element;
-  /** The Communities view's content (plan SK2-P1 rule N4: the Host places the view). */
+  /** What the Communities view shows (plan SK2-N4); null where a window has none. */
   communities: () => JSX.Element;
   hasFriendsView: boolean;
   state: TreeState;

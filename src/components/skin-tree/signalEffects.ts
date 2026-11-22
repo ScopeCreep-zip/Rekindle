@@ -35,6 +35,7 @@ export function initialTreeState(): TreeState {
 function viewOf(v: EngineView): ViewKey | undefined {
   switch (v) {
     case "friends":
+    case "communities":
     case "chatRooms":
     case "servers":
     case "files":
