@@ -301,13 +301,24 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     // The state every reader merges from the op set with this op in it.
     let mut ops = set.ops;
     ops.push(op);
-    deps.set_governance_state(community_id, merge::merge(&cert, &ops));
+    // The successors this state applies are judged as the rebuild judges
+    // them (`op_log::rebuild_ops`), so our own `CommunitySuccessor` is
+    // offered here without waiting for a peer's op; once per op
+    // (`SuccessorJudgements`), run below outside the install lock. Boxed
+    // with the state it reads, scoped so neither sits in every writer's
+    // future.
+    let announce_successors = {
+        let installed = merge::merge(&cert, &ops);
+        deps.set_governance_state(community_id, installed.clone());
+        Box::pin(async move { crate::successor::announce(deps, community_id, &installed).await })
+    };
     drop(installing);
 
     deps.emit_event(GovernanceRuntimeEvent::GovernanceEntryApplied {
         community_id: community_id.to_string(),
         entry: Box::new(entry.clone()),
     });
+    announce_successors.await;
 
     let affects = classify_entry(&entry);
     if affects.roles {

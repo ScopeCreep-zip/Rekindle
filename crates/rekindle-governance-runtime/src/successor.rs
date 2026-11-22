@@ -6,7 +6,9 @@
 //! ([`offered_creators`]: `predecessor` names this community and, for a
 //! transfer acceptance, the creator links hold and are the cert's creator
 //! set). It runs after each merge of the rebuild (`op_log::rebuild_ops`)
-//! for every applied successor not yet judged ([`SuccessorJudgements`]).
+//! and of our own write (`apply::write_with`, so a creator is offered its
+//! own successor at once) for every applied successor not yet judged
+//! ([`SuccessorJudgements`]).
 //!
 //! Decision (31): a far cert that cannot be read yet (the record or its
 //! subkey unreadable, or not there yet) leaves the offer pending, re-read on

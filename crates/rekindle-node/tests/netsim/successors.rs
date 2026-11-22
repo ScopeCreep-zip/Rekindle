@@ -385,3 +385,29 @@ async fn a_member_the_publisher_left_out_has_no_sealed_invite() {
         "the continued member follows with its sealed invite"
     );
 }
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_publisher_is_offered_its_own_successor_once_at_once() {
+    let community = Community::of(2, 469).await;
+    let events = community.nodes[0].events().await;
+    let new_anchor = publish(&community).await;
+    // Our own write judges it as a rebuild does: offered when the publish
+    // answers, without waiting for a peer's op to trigger a rebuild.
+    let offers = offered_to(&community.nodes[0], &community.anchor).await;
+    assert_eq!(offers.len(), 1, "the publisher's own offer: {offers:?}");
+    assert_eq!(offers[0]["newAnchor"], new_anchor.as_str());
+    let announced = |events: &crate::harness::Events| {
+        events.matching(|e| {
+            let shown = format!("{e:?}");
+            shown.contains("CommunitySuccessorOffered") && shown.contains(&new_anchor)
+        })
+    };
+    assert_eq!(announced(&events), 1, "announced on the publishing device");
+    // The member is offered it too, and the later rebuilds on the publisher
+    // never announce the judged op again.
+    offered_to_members(&community, std::slice::from_ref(&new_anchor)).await;
+    community.sim.quiesce().await;
+    assert_eq!(announced(&events), 1, "announced once per op");
+    let offers = offered_to(&community.nodes[0], &community.anchor).await;
+    assert_eq!(offers.len(), 1, "still one offer: {offers:?}");
+}
