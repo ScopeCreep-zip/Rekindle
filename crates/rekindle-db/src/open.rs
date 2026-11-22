@@ -308,6 +308,7 @@ fn sqlite(context: &'static str) -> impl FnOnce(rusqlite::Error) -> DbError {
 /// [`DbError::WrongKey`] when `key` does not decrypt it,
 /// [`DbError::VersionMismatch`], or the SQLite step that failed.
 pub fn open(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
+    rekindle_asql::init_sqlite();
     let conn = Connection::open(path).map_err(sqlite("open database"))?;
     conn.pragma_update(None, "key", format!("x'{}'", hex_lower(key)))
         .map_err(sqlite("key database"))?;

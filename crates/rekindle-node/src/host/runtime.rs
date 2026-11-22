@@ -43,10 +43,15 @@ impl ClaimedRoot {
 
 /// Take `root`'s node lock and run the layout check under it, before any
 /// store opens (plan D1): a root laid out for another version is reset.
+/// First, SQLite's initialization runs to completion
+/// ([`rekindle_db::init_sqlite`], finding DB1b), so neither the Veilid
+/// node's store nor a keyed open can be the process's first and race the
+/// other; every host claims its root before it starts a node.
 ///
 /// # Errors
 /// Another process holds the root, or the layout check failed.
 pub fn claim(root: DataRoot) -> anyhow::Result<ClaimedRoot> {
+    rekindle_db::init_sqlite();
     root.create_dirs()?;
     let lock = NodeLock::acquire(&root.data)?;
     rekindle_db::reset::apply(&root)?;

@@ -9,7 +9,9 @@
 //! [`Connection::call_detached`] and the call watch (below), neither of which
 //! changes how a call runs. One fix: a successful close disconnects the queue
 //! before it resolves, so every later call sees the closed connection
-//! (finding AQ1; upstream 0.7.0 resolved first). Our
+//! (finding AQ1; upstream 0.7.0 resolved first). Another: dropping the last
+//! handle waits for the thread to close the database (finding DB1; upstream
+//! left it detached, racing SQLCipher's exit handler). Our
 //! crates depend on it under the name `tokio_rusqlite` via a Cargo
 //! `package`-rename, so no call-sites change.
 //!
@@ -125,17 +127,22 @@
     unreachable_pub
 )]
 
+mod init;
 #[cfg(test)]
 mod tests;
+mod worker;
 
 use crossbeam_channel::{Receiver, Sender};
 use std::{
     fmt::{self, Debug, Display},
     path::Path,
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
     thread,
 };
 use tokio::sync::oneshot::{self};
+use worker::Worker;
+
+pub use init::{init_sqlite, sqlite_initialized};
 
 pub use rusqlite::{self, *};
 
@@ -236,9 +243,21 @@ enum Message {
 }
 
 /// A handle to call functions in background thread.
+///
+/// Dropping the last handle (finding DB1) waits for the background thread
+/// to finish the calls queued before it and close the SQLite connection,
+/// as dropping a `rusqlite::Connection` closes it before returning.
+/// Upstream left the thread detached, so a process could exit while it
+/// was still closing: SQLCipher's exit handler (`sqlcipher_extra_shutdown`,
+/// run by `atexit` and the image's terminator) frees its mutexes, private
+/// heap and crypto provider under a close still using them, and the
+/// process died after its last test had passed.
 #[derive(Clone)]
 pub struct Connection {
+    // Declared before `_worker` (held only for its drop), so the last handle disconnects the queue
+    // before it waits for the thread the disconnect stops.
     sender: Sender<Message>,
+    _worker: Arc<Worker>,
 }
 
 impl Connection {
@@ -485,9 +504,12 @@ impl Debug for Connection {
 impl From<rusqlite::Connection> for Connection {
     fn from(conn: rusqlite::Connection) -> Self {
         let (sender, receiver) = crossbeam_channel::unbounded::<Message>();
-        thread::spawn(move || event_loop(conn, receiver));
+        let worker = Worker::new(thread::spawn(move || event_loop(conn, receiver)));
 
-        Self { sender }
+        Self {
+            sender,
+            _worker: worker,
+        }
     }
 }
 
@@ -499,7 +521,7 @@ where
     let (result_sender, result_receiver) = oneshot::channel();
     let token = begin();
 
-    thread::spawn(move || {
+    let thread = thread::spawn(move || {
         let conn = match open() {
             Ok(c) => c,
             Err(e) => {
@@ -517,12 +539,13 @@ where
 
         event_loop(conn, receiver);
     });
+    let worker = Worker::new(thread);
     queued();
 
-    result_receiver
-        .await
-        .expect(BUG_TEXT)
-        .map(|()| Connection { sender })
+    result_receiver.await.expect(BUG_TEXT).map(|()| Connection {
+        sender,
+        _worker: worker,
+    })
 }
 
 // The receiver is owned for the whole thread lifetime, not borrowed:

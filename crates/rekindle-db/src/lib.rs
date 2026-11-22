@@ -37,4 +37,4 @@ pub use open::{open, DbError, SCHEMA, SCHEMA_VERSION};
 pub use rekindle_asql::Error as CallError;
 /// The database thread's call watch (`rekindle-asql`): a simulator
 /// installs one so its paused clock sees database work (plan E2.B S8).
-pub use rekindle_asql::{watch_calls, CallToken, CallWatch};
+pub use rekindle_asql::{init_sqlite, sqlite_initialized, watch_calls, CallToken, CallWatch};

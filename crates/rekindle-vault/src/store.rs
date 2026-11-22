@@ -151,6 +151,9 @@ impl VaultStore {
         sqlcipher: &[u8; 32],
         entry_key: LockedBox<32>,
     ) -> Result<Self, VaultError> {
+        // A concurrent first open could key before SQLCipher's own
+        // initialization ends (finding DB1b; `rekindle_asql::init_sqlite`).
+        rekindle_asql::init_sqlite();
         let conn = Connection::open(path)?;
         let key_pragma = format!("x'{}'", hex::encode(sqlcipher));
         // Keying, then the first read, which makes SQLCipher decrypt the
