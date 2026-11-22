@@ -36,11 +36,14 @@ impl TransportNode {
 /// missed (the liveness publisher retries it, plan RH1r-c O3). Without an
 /// unlocked session, or before its own-records stage has the keys, there
 /// is nothing to write to (`None`): that stage publishes the then-current
-/// blob itself (`rekindle_node::host::own_records`).
+/// blob itself (`rekindle_node::host::own_records`). `route_id` is the
+/// General route's id while `blob` is still its blob, for the trace line
+/// (`crate::route_trace`, plan RD2).
 pub(crate) async fn publish_personal_route(
     session: &Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
     shared: &Arc<SharedState>,
     blob: &[u8],
+    route_id: Option<&str>,
 ) -> Option<bool> {
     let (profile_key, mailbox_key) = {
         let guard = session.read();
@@ -102,7 +105,7 @@ pub(crate) async fn publish_personal_route(
             }
         }
     }
-    tracing::info!(blob_len = blob.len(), landed, "personal route republished");
+    crate::route_trace::published(RouteClass::General, route_id, blob, landed);
     Some(landed)
 }
 

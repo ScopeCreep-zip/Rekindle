@@ -21,7 +21,7 @@ use rekindle_protocol::dht::{account, friends, mailbox, profile};
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{RecordPort, RouteClass};
 use rekindle_transport::operations::friend::OwnRecordsStage;
-use rekindle_transport::{Session, TransportNode};
+use rekindle_transport::{route_trace, Session, TransportNode};
 use rekindle_vault::VaultHandle;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
@@ -206,6 +206,8 @@ impl OwnRecords {
             owners.1 = Some(owner);
         }
         let held = keys.profile.is_some() && keys.mailbox.is_some();
+        let route_id = route_trace::own_route_id(routes.as_ref(), RouteClass::General, &route_blob);
+        route_trace::published(RouteClass::General, route_id.as_deref(), &route_blob, held);
         self.project(&keys, owners);
         // The status, now that the projection names the profile (a created
         // identity had none until this stage).

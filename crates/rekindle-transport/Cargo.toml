@@ -19,7 +19,9 @@ rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-route = { path = "../rekindle-route" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
-rekindle-utils = { path = "../rekindle-utils", features = [ "retry" ] }
+# `log-scrub`: the route trace lines (`route_trace`) tag through the
+# scrubber's own key, as every log sink already does.
+rekindle-utils = { path = "../rekindle-utils", features = [ "retry", "log-scrub" ] }
 # Tier-5 gossip primitives. rekindle-gossip is transport-agnostic pure
 # logic ("does not call app_message itself; the integration layer plumbs
 # the broadcast helpers into Veilid") and this crate is that integration
@@ -88,4 +90,6 @@ tracing = { workspace = true }
 # The frame size tests build real bundles over a temporary database.
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 proptest = "1"
+# The route trace test reads its lines through a real fmt subscriber.
+tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

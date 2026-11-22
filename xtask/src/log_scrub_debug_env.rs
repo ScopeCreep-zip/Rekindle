@@ -1,5 +1,6 @@
 //! The third `check-log-scrub` check: a debug-only environment variable
-//! (the real-app suite's switches, plan RV1) is named only inside an item
+//! (the real-app suite's switches, plan RV1; the shared scrubber key,
+//! plan RD2) is named only inside an item
 //! under `#[cfg(debug_assertions)]`, so no release build reads it (the
 //! compiler then rejects any release path that uses the gated name).
 //! Items under `#[cfg(test)]` or a test attribute are skipped, and so are
@@ -11,7 +12,8 @@ use syn::visit::Visit;
 use super::is_test_attr;
 
 /// Every variable only a debug build may read.
-pub(super) const DEBUG_ONLY_VARS: &[&str] = &["REKINDLE_ROUTE_BUDGET_CAPACITY"];
+pub(super) const DEBUG_ONLY_VARS: &[&str] =
+    &["REKINDLE_ROUTE_BUDGET_CAPACITY", "REKINDLE_LOG_SCRUB_KEY"];
 
 fn is_debug_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
@@ -157,5 +159,26 @@ mod tests {
             }
         "#;
         assert!(scan("crates/x/src/lib.rs", good).is_empty());
+    }
+
+    /// RD2's shared scrubber key, the same assertions as its own check had.
+    #[test]
+    fn the_shared_key_is_named_only_in_debug_builds() {
+        let gated = r#"
+        #[cfg(debug_assertions)]
+        const SHARED_KEY_VAR: &str = "REKINDLE_LOG_SCRUB_KEY";
+        #[cfg(debug_assertions)]
+        fn draw() { let _ = std::env::var("REKINDLE_LOG_SCRUB_KEY"); }
+    "#;
+        assert!(scan("f.rs", gated).is_empty());
+        let open = r#"
+        const SHARED_KEY_VAR: &str = "REKINDLE_LOG_SCRUB_KEY";
+        #[cfg(not(debug_assertions))]
+        fn draw() { let _ = std::env::var("REKINDLE_LOG_SCRUB_KEY"); }
+        fn say() { println!("REKINDLE_LOG_SCRUB_KEY"); }
+    "#;
+        let hits = scan("f.rs", open);
+        assert_eq!(hits.len(), 3, "{hits:?}");
+        assert!(hits[0].starts_with("f.rs:2 "), "{hits:?}");
     }
 }

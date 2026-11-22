@@ -36,6 +36,7 @@ pub mod liveness;
 pub mod operations;
 pub mod payload;
 pub mod query;
+pub mod route_trace;
 pub mod session;
 pub mod shared;
 
