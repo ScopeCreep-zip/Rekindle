@@ -16,6 +16,7 @@ CenterConsole Group
     Knob02 Knob(Servers)
     Knob03 Knob(Files)
     Knob04 Part
+    Knob03.Communities Knob(Communities)
   DownloadBlink Lamp(Files)
     WhiteBlinkNoAnimation Part
     RedBlinker Part
@@ -27,6 +28,7 @@ MainTabbedArea Views
   BuddyView View(Friends)
   ServerView View(Servers)
   DownloadView View(Files)
+  MainTabbedArea.Communities View(Communities)
 Title NameField
 StatusEdit StatusText
 DownArrow StatusList

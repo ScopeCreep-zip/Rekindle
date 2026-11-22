@@ -26,6 +26,8 @@ TabHeader TabStrip
     TabServerButton Part
   TabDownloadText Tab(Files)
     TabDownloadButton Part
+  TabDownloadText.Communities Tab(Communities)
+    TabDownloadButton.Communities Part
 TopButtonBar Group
   Minimize Button
   Maximize Button
@@ -45,6 +47,7 @@ TabbedControl Views
     ServerView.BvBk Part
   DownloadView View(Files)
     DownloadView.BvBk Part
+  TabbedControl.Communities View(Communities)
 TabButtonArea ButtonBar
   FriendsButtons ButtonRow(Friends)
     AddButton Button

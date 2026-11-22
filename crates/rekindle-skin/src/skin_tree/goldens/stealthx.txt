@@ -7,6 +7,7 @@ MainBackground Decor
       BuddyView View(Friends)
       ServerView View(Servers)
       DownloadView View(Files)
+      TabbedControl.Communities View(Communities)
   AdArea AdArea
     AdView Part
   WndClose Button
@@ -38,6 +39,8 @@ popup MainMenuPopup
         TabServerButton Part
       TabDownloadText Tab(Files)
         TabDownloadButton Part
+      TabDownloadText.Communities Tab(Communities)
+        TabDownloadButton.Communities Part
     ButtonArea ButtonBar
       FriendsButtons ButtonRow(Friends)
         AddFriendButton Button

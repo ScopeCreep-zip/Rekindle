@@ -19,6 +19,9 @@ pub enum ViewKey {
     Pictures,
     Videos,
     Notifications,
+    /// Rekindle's communities list (plan SK2-P1 rule N4): the Host places
+    /// it in every main-window tree beside `Friends`.
+    Communities,
 }
 
 /// A resize edge or corner (Xfire's `Resize*` strips and `Gripper*` art).

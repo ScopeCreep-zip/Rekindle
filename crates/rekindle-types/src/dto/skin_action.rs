@@ -68,6 +68,8 @@ pub enum EngineView {
     Options,
     Help,
     InviteUsersToRoom,
+    /// Rekindle's communities list (plan SK2-P1 rule N4).
+    Communities,
 }
 
 /// A tile an action shows or hides: the engine's argument-less

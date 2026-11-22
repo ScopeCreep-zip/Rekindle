@@ -39,6 +39,7 @@ TabsContainer Decor
   ButtonPicturesTab Tab(Pictures)
   TabSeparator5 Decor
   ButtonVideosTab Tab(Videos)
+  ButtonVideosTab.Communities Tab(Communities)
   TabSeparator6 Decor
 ButtonNotificationsTab Tab(Notifications)
   ButtonNotificationsTabControl ButtonBar
@@ -52,6 +53,7 @@ XfireView Views
   XfireView.Pictures View(Pictures)
   XfireView.Videos View(Videos)
   XfireView.Notifications View(Notifications)
+  XfireView.Communities View(Communities)
 TabsButtonsContainer ButtonBar
   FriendsButtonBar ButtonRow(Friends)
     FriendChatButton Button

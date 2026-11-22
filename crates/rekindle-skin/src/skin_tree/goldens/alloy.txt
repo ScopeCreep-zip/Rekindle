@@ -23,11 +23,13 @@ TabbedControl Views
     ServerView.BvBk Part
   DownloadView View(Files)
     DownloadView.BvBk Part
+  TabbedControl.Communities View(Communities)
 TabHeader TabStrip
   TabButtonBar Part
     TabNormalButton Tab(Friends)
     TabServerButton Tab(Servers)
     TabDownloadButton Tab(Files)
+    TabDownloadButton.Communities Tab(Communities)
 Bottom Decor
 AdArea AdArea
   AdView Part

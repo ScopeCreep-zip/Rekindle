@@ -11,7 +11,8 @@ export type ViewKey =
   | "chatRooms"
   | "pictures"
   | "videos"
-  | "notifications";
+  | "notifications"
+  | "communities";
 
 export type Edge =
   | "top"
@@ -79,7 +80,8 @@ export type EngineView =
   | "notifications"
   | "options"
   | "help"
-  | "inviteUsersToRoom";
+  | "inviteUsersToRoom"
+  | "communities";
 
 /** `OverlayPart`. */
 export type OverlayPart =

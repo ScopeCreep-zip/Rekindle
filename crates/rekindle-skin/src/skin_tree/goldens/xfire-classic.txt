@@ -53,6 +53,8 @@ InnerBevel Decor
       TabServerButton Part
     TabDownloadText Tab(Files)
       TabDownloadButton Part
+    TabDownloadText.Communities Tab(Communities)
+      TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)
       BvBk1 Part
@@ -60,6 +62,7 @@ InnerBevel Decor
       BvBk2 Part
     DownloadView View(Files)
       BvBk3 Part
+    TabbedControl.Communities View(Communities)
 BottomBar Group
   PartnerGraphic Decor
     PartnerFrame Decor

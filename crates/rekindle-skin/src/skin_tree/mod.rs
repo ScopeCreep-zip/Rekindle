@@ -12,6 +12,7 @@ pub mod import;
 mod outdent;
 mod passes;
 pub mod pieces;
+pub mod place;
 pub mod popup;
 pub mod roles;
 mod triggers;
@@ -25,6 +26,8 @@ mod fit_tests;
 mod golden_tests;
 #[cfg(test)]
 mod grip_tests;
+#[cfg(test)]
+mod place_tests;
 #[cfg(test)]
 mod rail_tests;
 #[cfg(test)]

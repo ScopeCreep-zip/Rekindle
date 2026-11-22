@@ -42,7 +42,7 @@ const SkinPopupWindow: Component = () => {
   return (
     <div class="app-frame" data-skin-popup={name}>
       <Show when={skinPopupShell(name)} keyed>
-        {(shell) => <SkinTreeWindow shell={shell} views={() => null} />}
+        {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} />}
       </Show>
     </div>
   );

@@ -47,6 +47,7 @@ TabHeader TabStrip
   TabNormalButton Tab(Friends)
   TabServerButton Tab(Servers)
   TabDownloadButton Tab(Files)
+  TabDownloadButton.Communities Tab(Communities)
 TabbedControl Views
   BuddyView View(Friends)
     BvBk1 Part
@@ -54,6 +55,7 @@ TabbedControl Views
     BvBk2 Part
   DownloadView View(Files)
     BvBk3 Part
+  TabbedControl.Communities View(Communities)
 InfoViewButton Button
 popup MainInfoViewPopup
   InfoTopRow Decor

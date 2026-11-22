@@ -258,6 +258,7 @@ const BuddyListWindow: Component = () => {
                 <BuddyContent />
               </>
             )}
+            communities={() => <CommunityListCompact />}
           />
         )}
       </Show>

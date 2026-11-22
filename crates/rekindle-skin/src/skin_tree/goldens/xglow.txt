@@ -11,6 +11,7 @@ TabbedControl Views
   BuddyView View(Friends)
   ServerView View(Servers)
   DownloadView View(Files)
+  TabbedControl.Communities View(Communities)
 Bottom Decor
 FriendsButtons ButtonRow(Friends)
   FriendsButtons.Add Group
@@ -43,6 +44,7 @@ ButtonDivider Decor
 Friends Tab(Friends)
 Servers Tab(Servers)
 Downloads Tab(Files)
+Downloads.Communities Tab(Communities)
 AdArea AdArea
 UserName NameField
 DownArrow StatusList

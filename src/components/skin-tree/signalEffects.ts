@@ -40,6 +40,7 @@ function viewOf(v: EngineView): ViewKey | undefined {
     case "files":
     case "videos":
     case "notifications":
+    case "communities":
       return v;
     case "screenshots":
       return "pictures";

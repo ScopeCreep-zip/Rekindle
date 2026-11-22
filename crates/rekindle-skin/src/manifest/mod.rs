@@ -94,10 +94,18 @@ pub fn parse(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
     }
     let probe: FormatProbe = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
     check_format(&probe.format)?;
-    let manifest: SkinManifest = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
+    let mut manifest: SkinManifest = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
     check_fields(&manifest)?;
     check_variants(package, &manifest)?;
     check_keys(&manifest)?;
+    // Rule N4 (plan SK2-P1): the Host places the Communities view and its
+    // control in the main window's tree, whatever the pack laid.
+    if let Some(main) = manifest
+        .windows
+        .get_mut(&rekindle_types::dto::skin::SkinWindow::Main)
+    {
+        crate::skin_tree::place::communities(main);
+    }
     Ok(manifest)
 }
 

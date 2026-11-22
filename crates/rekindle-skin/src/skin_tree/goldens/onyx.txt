@@ -41,6 +41,8 @@ MenuBar MenuBar
     TabServerButton Part
   TabDownloadText Tab(Files)
     TabDownloadButton Part
+  TabDownloadText.Communities Tab(Communities)
+    TabDownloadButton.Communities Part
   MenuDiv4 Decor
   MenuDiv5 Decor
   MenuDiv6 Decor
@@ -55,6 +57,7 @@ TabbedControl Views
     ServerView.BvBk Part
   DownloadView View(Files)
     DownloadView.BvBk Part
+  TabbedControl.Communities View(Communities)
 BottomBar Group
   TabButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)

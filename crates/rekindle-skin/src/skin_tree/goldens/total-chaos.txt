@@ -19,10 +19,12 @@ Content Group
     TabNormalButton Tab(Friends)
     TabServerButton Tab(Servers)
     TabDownloadButton Tab(Files)
+    TabDownloadButton.Communities Tab(Communities)
   TabbedControl Views
     BuddyView View(Friends)
     ServerView View(Servers)
     DownloadView View(Files)
+    TabbedControl.Communities View(Communities)
 BottomBar Group
   BottomLeft Decor
   BottomRight Decor
