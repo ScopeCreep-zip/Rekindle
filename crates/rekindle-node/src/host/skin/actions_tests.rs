@@ -7,7 +7,7 @@ use rekindle_types::dto::skin_action::{EngineMenu, PackUrl, SkinAction as A, Ski
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::presence::SessionStatus;
 
-use super::actions::{map, resolve, Mapped, Selections};
+use super::actions::{map, resolve, Mapped, Resolved, Selections};
 use super::rooms::{Room, Rooms};
 
 const SELECTED_FRIEND_KEY: &str = "bobkey";
@@ -153,7 +153,10 @@ fn resolve_takes_the_selection_from_the_host() {
     );
     assert!(matches!(
         resolve(&selections, &Rooms::default(), chat()),
-        Ok(IpcRequest::RunSkinAction { .. })
+        Ok(Resolved::Run {
+            request: IpcRequest::RunSkinAction { .. },
+            ..
+        })
     ));
     let logoff = IpcRequest::RunSkinAction {
         window: "buddy-list".into(),
@@ -162,7 +165,7 @@ fn resolve_takes_the_selection_from_the_host() {
     };
     assert!(matches!(
         resolve(&selections, &Rooms::default(), logoff),
-        Ok(IpcRequest::Logout)
+        Ok(Resolved::Request(IpcRequest::Logout))
     ));
 }
 

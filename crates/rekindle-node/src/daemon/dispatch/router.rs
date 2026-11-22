@@ -188,12 +188,7 @@ async fn route(
 
         // ── Skins (plan E7.7.2) ──────────────────────────────────
         request @ (IpcRequest::RunSkinAction { .. } | IpcRequest::SkinSelectionSet { .. }) => {
-            let rooms =
-                match crate::host::skin::rooms::load(ctx, &ctx.skin.selection, &request).await {
-                    Ok(rooms) => rooms,
-                    Err(refused) => return refused,
-                };
-            let answer = crate::host::skin::actions::answer(&ctx.skin.selection, &rooms, request);
+            let answer = crate::host::skin::actions::answer(&ctx.skin.selection, request);
             ctx.skin.signals.poke();
             answer
         }

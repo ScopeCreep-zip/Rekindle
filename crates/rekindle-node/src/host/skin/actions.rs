@@ -199,36 +199,41 @@ fn gap(action: &A) -> Mapped {
     })
 }
 
-/// `RunSkinAction` in `HostApi::call`, before clearance: a request action
+/// What [`resolve`] made of a request.
+#[derive(Debug)]
+pub(crate) enum Resolved {
+    /// Not a skin action, or a request action's own request.
+    Request(IpcRequest),
+    /// A `RunSkinAction` that is no request, with its answer: the request
+    /// still meets its clearance and the gate, and `HostApi::call` answers
+    /// with `run` once they admit it.
+    Run { request: IpcRequest, run: SkinRun },
+}
+
+/// `RunSkinAction` in `HostApi::call`, before clearance: the one place an
+/// action is resolved (with the [`rooms::load`] it reads). A request action
 /// becomes its request (which then meets its own clearance and the intent
-/// gate); any other stays `RunSkinAction`, answered by [`answer`].
+/// gate); any other stays `RunSkinAction` with its run.
 pub(crate) fn resolve(
     selections: &Selections,
     rooms: &Rooms,
     request: IpcRequest,
-) -> Result<IpcRequest, IpcResponse> {
+) -> Result<Resolved, IpcResponse> {
     let IpcRequest::RunSkinAction { window, action, .. } = &request else {
-        return Ok(request);
+        return Ok(Resolved::Request(request));
     };
     match map(action, selections.friend(window).as_deref(), rooms)? {
-        Mapped::Request(mapped) => Ok(*mapped),
-        Mapped::Run(_) => Ok(request),
+        Mapped::Request(mapped) => Ok(Resolved::Request(*mapped)),
+        Mapped::Run(run) => Ok(Resolved::Run { request, run }),
     }
 }
 
-/// The router's answer to a `RunSkinAction` that is not a request, and to
+/// The router's answer to an admitted `RunSkinAction` (its run was
+/// resolved by [`resolve`]; `HostApi::call` answers with it), and to
 /// `SkinSelectionSet`.
-pub(crate) fn answer(selections: &Selections, rooms: &Rooms, request: IpcRequest) -> IpcResponse {
+pub(crate) fn answer(selections: &Selections, request: IpcRequest) -> IpcResponse {
     match request {
-        IpcRequest::RunSkinAction { window, action, .. } => {
-            match map(&action, selections.friend(&window).as_deref(), rooms) {
-                Ok(Mapped::Run(run)) => IpcResponse::ok(&run),
-                Ok(Mapped::Request(r)) => {
-                    IpcResponse::error(500, format!("{} reached the router unresolved", r.name()))
-                }
-                Err(refused) => refused,
-            }
-        }
+        IpcRequest::RunSkinAction { .. } => IpcResponse::ok(&()),
         IpcRequest::SkinSelectionSet { window, selection } => {
             selections.set(&window, selection);
             IpcResponse::ok(&())

@@ -8,6 +8,7 @@ use rekindle_transport::{Session, TransportNode};
 
 use crate::daemon::DaemonState;
 use crate::host::gate::Acknowledged;
+use crate::host::skin::actions::Resolved;
 use rekindle_ipc::protocol::{BusPayload, IpcRequest, IpcResponse, Lane};
 
 use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
@@ -267,9 +268,12 @@ impl DaemonContext {
             Ok(rooms) => rooms,
             Err(refused) => return refused,
         };
-        let request =
+        // The action resolves here only (with its rooms read once): a run
+        // is the answer once the request is admitted.
+        let (request, run) =
             match crate::host::skin::actions::resolve(&self.skin.selection, &rooms, request) {
-                Ok(request) => request,
+                Ok(Resolved::Request(request)) => (request, None),
+                Ok(Resolved::Run { request, run }) => (request, Some(run)),
                 Err(refused) => return refused,
             };
         let required = request.required_clearance();
@@ -306,7 +310,11 @@ impl DaemonContext {
         }
         // Then `validate_request`, the shell's refusals and the intent gate
         // (plan D3.3), which dispatches what may run.
-        crate::host::gate::run(self, request, caller).await
+        let answered = crate::host::gate::run(self, request, caller).await;
+        match (run, &answered) {
+            (Some(run), IpcResponse::Ok { .. }) => IpcResponse::ok(&run),
+            _ => answered,
+        }
     }
 
     /// Why `caller` lacks `required` (plan D1). A client's clearance lasts
