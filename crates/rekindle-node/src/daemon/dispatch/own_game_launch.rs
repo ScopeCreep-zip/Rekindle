@@ -33,7 +33,12 @@ pub(super) async fn route(
             if !state.can_write() {
                 return state_error(state, "write");
             }
-            launch(ctx.root.apps.clone(), game_id, server).await
+            let answer = launch(ctx.root.apps.clone(), game_id, server.clone()).await;
+            // A launch to a server is a visit (plan E7.2 G3: `recent_servers`).
+            if let (true, Some(server)) = (matches!(answer, IpcResponse::Ok { .. }), server) {
+                crate::host::servers::visited(ctx, game_id, &server).await;
+            }
+            answer
         }
         other => unreachable!("{} is not a game launch request", other.name()),
     }

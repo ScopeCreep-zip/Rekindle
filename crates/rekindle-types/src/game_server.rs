@@ -225,6 +225,9 @@ pub enum JoinSource {
     Installed,
     /// One of our own favourite servers (`favourite_servers`).
     Favourite,
+    /// A server we ourselves played on or launched to (`recent_servers`,
+    /// plan E7.2 G3): our IP address already went there, so it is ours.
+    Recent,
     /// A friend's or community member's presence: the server they play on.
     FriendPresence,
     /// A friend's game invite.

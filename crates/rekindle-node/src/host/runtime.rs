@@ -299,6 +299,7 @@ impl Host {
             game: crate::host::game_stage::GameControl::default(),
             network_strength: strength,
             infoview: crate::host::infoview::OpenViews::default(),
+            servers: crate::host::servers::ServersState::default(),
             skin: crate::host::skin::SkinState::default(),
             transfers: Arc::default(),
             mode,
@@ -388,6 +389,7 @@ impl Host {
         workers.spawn(crate::host::activity::run_worker(Arc::clone(&ctx)).in_current_span());
         // So does the Infoview's push (plan E7.15, IV4).
         workers.spawn(crate::host::infoview::run_worker(Arc::clone(&ctx)).in_current_span());
+        workers.spawn(crate::host::servers::run_worker(Arc::clone(&ctx)).in_current_span());
         workers.spawn(crate::host::skin::signals::run_worker(Arc::clone(&ctx)).in_current_span());
         workers.spawn(crate::daemon::shutdown::announce_when_requested(
             Arc::clone(&ctx),

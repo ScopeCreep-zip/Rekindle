@@ -312,7 +312,8 @@ fn own(request: &IpcRequest) -> Checked {
         }
         IpcRequest::GameHide { game_id }
         | IpcRequest::GameUnhide { game_id }
-        | IpcRequest::FavouriteServerRemove { game_id, .. } => {
+        | IpcRequest::FavouriteServerRemove { game_id, .. }
+        | IpcRequest::RecentServerRemove { game_id, .. } => {
             if *game_id == 0 {
                 Err(IpcResponse::error(400, "invalid game id: 0"))
             } else {
@@ -380,6 +381,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::HiddenGamesGet
         | IpcRequest::InstalledGamesGet
         | IpcRequest::FavouriteServersGet
+        | IpcRequest::ServersView
         | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
@@ -487,6 +489,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GameUnhide { .. }
         | IpcRequest::FavouriteServerAdd { .. }
         | IpcRequest::FavouriteServerRemove { .. }
+        | IpcRequest::RecentServerRemove { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AuditExport { .. }
         | IpcRequest::LinkOpen { .. }

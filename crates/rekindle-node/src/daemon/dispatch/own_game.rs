@@ -43,6 +43,10 @@ async fn handle_detection(ctx: &DaemonContext, state: DaemonState, enabled: bool
     let saved = db
         .call(move |conn| {
             rekindle_db::repo::preferences::set_game_detection_enabled(conn, &write, enabled)?;
+            // The same off-switch forgets the servers we visited (plan E7.2 G3).
+            if !enabled {
+                rekindle_db::repo::recent_servers::clear(conn, &write)?;
+            }
             rekindle_db::repo::preferences::load(conn, &write)
         })
         .await;

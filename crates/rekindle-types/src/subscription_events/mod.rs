@@ -278,6 +278,7 @@ impl SubscriptionEvent {
                 | SystemEvent::ActivityAppended { .. }
                 | SystemEvent::Infoview(_)
                 | SystemEvent::FavouriteServerAdded { .. }
+                | SystemEvent::ServersViewChanged { .. }
                 | SystemEvent::SkinSignals { .. } => None,
             },
             // Not community-scoped: a friend event, a network state

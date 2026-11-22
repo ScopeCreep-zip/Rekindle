@@ -172,6 +172,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::FavouriteServersGet
             | Self::FavouriteServerAdd { .. }
             | Self::FavouriteServerRemove { .. }
+            | Self::ServersView
+            | Self::RecentServerRemove { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AvatarGet { .. }
             | Self::AuditVerify

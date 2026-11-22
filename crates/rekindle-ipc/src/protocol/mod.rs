@@ -421,6 +421,16 @@ pub enum IpcRequest {
         game_id: u32,
         server: rekindle_types::game_server::ServerAddress,
     },
+    /// The Servers view (plan E7.2 G3, SK2-G §3): our favourites, the
+    /// servers we recently visited, our friends' servers (presence and game
+    /// invites) and each community's list, every row with the Host's Join,
+    /// add-favourite and remove verdicts. Composed only from what we hold.
+    ServersView,
+    /// Forget a recently visited server (plan E7.2 G3). The view comes back.
+    RecentServerRemove {
+        game_id: u32,
+        server: rekindle_types::game_server::ServerAddress,
+    },
     /// Invite an accepted friend to join us on a game server (plan E7.2): a
     /// ratchet-sealed `GameInvite` (0x0170) through the outbox. `server`
     /// is parsed on decode, so no unparsed address enters. Refused for a

@@ -151,6 +151,11 @@ pub(crate) async fn select(
             // Local only: setting it back reverses it (plan E7.2).
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
+        // A forgotten server comes back only by visiting it again (plan E7.2 G3).
+        IpcRequest::RecentServerRemove { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::Never;
+        }
         IpcRequest::SetKeepActivityLog { enabled } => {
             s.subject = unlocked_identity(ctx);
             // Local only. Turning it on is set back by turning it off;
@@ -257,6 +262,7 @@ pub(crate) async fn select(
         | IpcRequest::InfoviewGet { .. }
         | IpcRequest::InstalledGamesGet
         | IpcRequest::FavouriteServersGet
+        | IpcRequest::ServersView
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet
         | IpcRequest::FriendBioGet { .. }

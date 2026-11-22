@@ -13,6 +13,7 @@ pub mod infoview;
 pub mod member_groups;
 pub mod onboarding;
 pub mod presence;
+pub mod servers;
 pub mod skin;
 pub mod skin_action;
 pub mod skin_draft;
