@@ -114,6 +114,7 @@ export interface Role {
 
 // Declared once in the IPC layer, which mirrors the Rust contract.
 import type { SoundboardMeta } from "../ipc/commands/types";
+import type { DeviceStatus } from "../ipc/commands/community";
 export type { SoundboardMeta };
 
 export interface Expression {
@@ -242,6 +243,8 @@ export interface Community {
   onboardingComplete?: boolean;
   /** We hold a creator seat, as the Host states it (`CommunityView::we_are_creator`). */
   weAreCreator: boolean;
+  /** Whether this device may write here, as the Host states it (`CommunityView::device_status`). */
+  deviceStatus: DeviceStatus;
   expressions: Expression[];
   automodRules: AutoModRule[];
   /** Our per-community profile bio (≤190 chars). Local-only; resets to undefined on restart. */

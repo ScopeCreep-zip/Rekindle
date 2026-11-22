@@ -226,6 +226,8 @@
 .community-channel-header	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .community-channel-header-icon	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .community-description-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.community-device-notice	text	var(--color-xfire-danger-text)	--color-xfire-bg	1.0	false
+.community-device-notice	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
 .community-icon	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
 .community-item	text	var(--color-xfire-text)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
 .community-item	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false

@@ -476,8 +476,20 @@
     color: var(--color-xfire-text-dim);
   }
 
-  .governance-publication-failed {
+  .governance-publication-failed,
+  .community-device-notice {
     color: var(--color-xfire-danger-text);
+  }
+
+  /* This device's standing (CommunityDeviceStatus.tsx, ADR 0022 rule 4):
+   * the notice and its action on one line, wrapping when narrow. */
+  .community-device-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 10px;
   }
 
 }
