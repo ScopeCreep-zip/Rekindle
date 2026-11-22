@@ -144,6 +144,10 @@ fn an_accepted_offer_stands_no_more() {
     );
     assert_eq!(accepted_successor(&s, &pk(2)), Some(NEW));
     assert_eq!(accepted_successor(&s, &pk(4)), None);
+    // The repeat accept's review (lead decision (55)): nothing missing,
+    // not refused; one who accepted nothing is still refused.
+    assert_eq!(links_missing(&s, OLD, &pk(2)).ok(), Some(Vec::new()));
+    assert!(links_missing(&s, OLD, &pk(4)).is_err());
 }
 
 #[test]

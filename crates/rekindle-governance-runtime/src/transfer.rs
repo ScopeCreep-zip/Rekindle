@@ -387,16 +387,23 @@ pub fn collected_links(
 
 /// The offer's other creators who have not linked into the successor of
 /// our latest request for the standing offer to `me` (all of them before
-/// any request): the accept review's list (decision (25)).
+/// any request): the accept review's list (decision (25)). Once our
+/// acceptance is applied the offer stands no more and no creator is
+/// missing: a repeat accept answers the successor already created (lead
+/// decision (55)), so its review must not refuse it.
 ///
 /// # Errors
-/// As [`transfer_round`].
+/// As [`transfer_round`], when we have accepted no offer either.
 pub fn links_missing(
     state: &GovernanceState,
     old_anchor: &str,
     me: &PseudonymKey,
 ) -> Result<Vec<PseudonymKey>, GovernanceRuntimeError> {
-    let round = transfer_round(state, me)?;
+    let round = match transfer_round(state, me) {
+        Ok(round) => round,
+        Err(_) if accepted_successor(state, me).is_some() => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
     let latest = requests_for(state, me, &round.offer).max_by_key(|(_, row, _)| row.stamp);
     Ok(match latest {
         Some((_, _, r)) => collected_links(state, old_anchor, &round, me, &r.new_anchor)
