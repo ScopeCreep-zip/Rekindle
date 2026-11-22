@@ -20,6 +20,7 @@ import type {
 } from "./notification_events";
 import type { IntentReview, LifecycleState, SkinApplied, SkinTrial } from "../commands/dto";
 import type { ActivityListItem, SettingsTab } from "../commands/types";
+import type { InfoviewView } from "../commands/dto_infoview";
 
 /// Where this window is in the host's event stream
 /// (`rekindle_types::subscription_events::Cursor`, plan D3.2).
@@ -267,6 +268,19 @@ export function subscribeActivity(
   return on<{ system: { activityAppended: { entries: ActivityListItem[] } } }>(
     "activity-event",
     (payload) => onAppended(payload.system.activityAppended.entries),
+  );
+}
+
+/**
+ * Subscribe to this window's Infoview pushes (`SystemEvent::Infoview`,
+ * plan E7.15 IV4): `infoview-event`, delivered to the asking window only.
+ */
+export function subscribeInfoview(
+  onUpdated: (view: InfoviewView) => void,
+): Promise<UnlistenFn> {
+  return on<{ system: { infoview: { updated: { window: string; view: InfoviewView } } } }>(
+    "infoview-event",
+    (payload) => onUpdated(payload.system.infoview.updated.view),
   );
 }
 

@@ -353,6 +353,17 @@ pub enum IpcRequest {
     /// order (`Vec<activity::ActivityListItem>`), each friend's names as
     /// the Host holds them now.
     ActivityList { before: Option<i64>, limit: u16 },
+    /// A subject's Infoview (plan E7.15, IV4; design §2.2:
+    /// `dto::infoview::InfoviewView`), composed by the Host from what this
+    /// identity already holds. `window` now shows `subject`, and the Host
+    /// pushes its view again as it changes (`InfoviewEvent::Updated`, to
+    /// that window only). The desktop shell fills `window` from the calling
+    /// webview's own label, never from the page (lead decision (48)); the
+    /// CLI and TUI send their fixed labels.
+    InfoviewGet {
+        subject: crate::protocol::InfoviewSubject,
+        window: String,
+    },
     /// The games on the hide list (plan E7.2,
     /// `Vec<dto::presence::HiddenGameView>`).
     HiddenGamesGet,
@@ -520,5 +531,6 @@ pub use community::{
     UnreadRequest,
 };
 pub use lane::Lane;
+pub use rekindle_types::dto::infoview::InfoviewSubject;
 
 pub use response::{BusPayload, IpcResponse};

@@ -15,6 +15,7 @@ pub(crate) use lifecycle::{
     handle_leave, handle_update_info, CreatorRound,
 };
 pub(crate) use membership::{handle_approve, handle_pending_members, handle_reject};
+pub(crate) use query::overviews;
 pub(crate) use query::{
     handle_co_creation, handle_info, handle_list, handle_members, handle_views,
 };

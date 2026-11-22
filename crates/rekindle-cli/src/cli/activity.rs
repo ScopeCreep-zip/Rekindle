@@ -12,3 +12,32 @@ pub struct ActivityArgs {
     #[arg(long, default_value_t = 20)]
     pub limit: u16,
 }
+
+/// A subject's Infoview (plan E7.15, IV4): our own page, a friend's or a
+/// community's.
+#[derive(Args)]
+pub struct InfoviewArgs {
+    /// A friend's page, by public key (hex).
+    #[arg(long, conflicts_with = "community")]
+    pub friend: Option<String>,
+    /// A community's page, by anchor or name.
+    #[arg(long)]
+    pub community: Option<String>,
+}
+
+impl InfoviewArgs {
+    /// The subject the flags name; none is our own page.
+    #[must_use]
+    pub fn subject(&self) -> rekindle_ipc::protocol::InfoviewSubject {
+        use rekindle_ipc::protocol::InfoviewSubject;
+        match (&self.friend, &self.community) {
+            (Some(public_key), _) => InfoviewSubject::Friend {
+                public_key: public_key.clone(),
+            },
+            (None, Some(community)) => InfoviewSubject::Community {
+                community: community.clone(),
+            },
+            (None, None) => InfoviewSubject::Own,
+        }
+    }
+}

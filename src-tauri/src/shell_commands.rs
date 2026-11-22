@@ -107,6 +107,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "get_favourite_servers",
         HostCall::Request("FavouriteServersGet"),
     ),
+    ("get_infoview", HostCall::Request("InfoviewGet")),
     (
         "add_favourite_server",
         HostCall::Request("FavouriteServerAdd"),

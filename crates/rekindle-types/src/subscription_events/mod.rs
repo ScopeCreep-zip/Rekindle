@@ -268,6 +268,7 @@ impl SubscriptionEvent {
                 | SystemEvent::SkinTrialChanged { .. }
                 | SystemEvent::QuickWipeChanged { .. }
                 | SystemEvent::ActivityAppended { .. }
+                | SystemEvent::Infoview(_)
                 | SystemEvent::FavouriteServerAdded { .. } => None,
             },
             // Not community-scoped: a friend event, a network state

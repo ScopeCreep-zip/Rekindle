@@ -143,6 +143,17 @@ impl BeatView {
             .is_none_or(|e| e.shown.is_present())
     }
 
+    /// How many members the view shows present (online, away or busy):
+    /// the community's online count (Infoview design §2.8, "online member
+    /// count, from beats"). A member with no beat yet is not counted.
+    #[must_use]
+    pub fn present_count(&self) -> usize {
+        self.members
+            .values()
+            .filter(|e| e.shown.is_present())
+            .count()
+    }
+
     /// Turn every member whose beat went stale by `now_ms` offline; the
     /// members turned.
     pub fn expire(&mut self, now_ms: u64) -> Vec<String> {

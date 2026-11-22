@@ -204,6 +204,14 @@ async fn dispatch_command(
             .await?;
             output::format::print_structured(&value, mode)
         }
+        Command::Infoview(args) => {
+            let request = rekindle_ipc::protocol::IpcRequest::InfoviewGet {
+                subject: args.subject(),
+                window: rekindle_types::dto::infoview::CLI_WINDOW.to_owned(),
+            };
+            let value = helpers::send(client, request).await?;
+            output::format::print_structured(&value, mode)
+        }
         Command::Audit(cmd) => presence::dispatch_audit(&cmd, client, mode).await,
         Command::Undo { id } => presence::undo(&id, client, mode).await,
         Command::Export(cmd) => identity::dispatch_export(&cmd, client, mode).await,

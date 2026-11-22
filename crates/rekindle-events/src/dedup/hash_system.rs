@@ -1,5 +1,6 @@
 //! Content hashers for network transport and system-level events.
 
+use rekindle_types::dto::infoview::InfoviewEvent;
 use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, NotificationEvent, SystemEvent,
 };
@@ -161,6 +162,14 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             for entry in entries {
                 h.update(&entry.id.to_le_bytes());
             }
+        }
+        SystemEvent::Infoview(InfoviewEvent::Updated { window, view }) => {
+            // Each push is a fresh composition: never a replay of the last.
+            h.update(b"infoview|");
+            h.update(window.as_bytes());
+            h.update(b"|");
+            h.update(&(view.sections.len() as u64).to_le_bytes());
+            h.update(&now_ms.to_le_bytes());
         }
     }
 }

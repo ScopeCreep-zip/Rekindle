@@ -267,6 +267,27 @@ fn own(request: &IpcRequest) -> Checked {
         | IpcRequest::SetGameDetection { .. }
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::SetKeepActivityLog { .. } => Ok(()),
+        // A window label is the shell's own short name; a subject names a
+        // friend by key, a group by id, a community by anchor or name.
+        IpcRequest::InfoviewGet { subject, window } => {
+            if window.is_empty() || window.len() > crate::host::infoview::MAX_WINDOW_LABEL {
+                return Err(IpcResponse::error(400, "invalid window label"));
+            }
+            match subject {
+                rekindle_ipc::protocol::InfoviewSubject::Friend { public_key }
+                    if public_key.len() != 64
+                        || !public_key.bytes().all(|b| b.is_ascii_hexdigit()) =>
+                {
+                    Err(IpcResponse::error(400, "invalid public key"))
+                }
+                rekindle_ipc::protocol::InfoviewSubject::Community { community }
+                    if community.is_empty() || community.len() > 256 =>
+                {
+                    Err(IpcResponse::error(400, "invalid community"))
+                }
+                _ => Ok(()),
+            }
+        }
         // A page is 1–100 entries (the feed keeps at most 500); any row id
         // is a cursor, one no longer stored answers nothing.
         IpcRequest::ActivityList { limit, .. } => {
@@ -437,6 +458,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::SetKeepActivityLog { .. }
         | IpcRequest::ActivityList { .. }
+        | IpcRequest::InfoviewGet { .. }
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }
         | IpcRequest::FavouriteServerAdd { .. }

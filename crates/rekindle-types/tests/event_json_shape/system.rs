@@ -29,6 +29,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::QuickWipeChanged { .. } => "quickWipeChanged",
         SystemEvent::ActivityAppended { .. } => "activityAppended",
         SystemEvent::FavouriteServerAdded { .. } => "favouriteServerAdded",
+        SystemEvent::Infoview(_) => "infoview",
     }
 }
 
@@ -133,6 +134,16 @@ fn sync() -> Vec<Sample> {
                     identity_pin_mismatch: false,
                 }],
             },
+        ),
+        ev(
+            "infoview",
+            SystemEvent::Infoview(rekindle_types::dto::infoview::InfoviewEvent::Updated {
+                window: "main".into(),
+                view: rekindle_types::dto::infoview::InfoviewView {
+                    subject: rekindle_types::dto::infoview::InfoviewSubject::Own,
+                    sections: Vec::new(),
+                },
+            }),
         ),
         ev(
             "favouriteServerAdded",

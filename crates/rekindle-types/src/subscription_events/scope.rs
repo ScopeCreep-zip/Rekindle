@@ -142,6 +142,7 @@ impl SubscriptionEvent {
                 | SystemEvent::SkinTrialChanged { .. }
                 | SystemEvent::QuickWipeChanged { .. }
                 | SystemEvent::ActivityAppended { .. }
+                | SystemEvent::Infoview(_)
                 | SystemEvent::FavouriteServerAdded { .. } => EventScope::Device,
             },
             Self::UnreadChanged { context, .. } => match context {

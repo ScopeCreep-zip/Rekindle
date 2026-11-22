@@ -21,6 +21,17 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
     if !state.can_query() {
         return state_error(state, "query");
     }
+    match overviews(ctx) {
+        Ok(overviews) => IpcResponse::ok(&overviews),
+        Err(e) => e,
+    }
+}
+
+/// The joined communities as `CommunityList` answers them (also the
+/// Infoview's, plan E7.15 IV4).
+pub(crate) fn overviews(
+    ctx: &DaemonContext,
+) -> Result<Vec<rekindle_types::display::CommunityOverview>, IpcResponse> {
     let memberships = match ctx.require_session(|session| {
         session
             .communities
@@ -29,7 +40,7 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
             .collect::<Vec<rekindle_transport::CommunityMembership>>()
     }) {
         Ok(m) => m,
-        Err(e) => return e,
+        Err(e) => return Err(e),
     };
 
     // From the roster the presence poll materialised, not from a DHT
@@ -88,7 +99,7 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         overview.removed =
             crate::host::adapters::governance::removal_display(&ctx.communities, &overview.anchor);
     }
-    IpcResponse::ok(&overviews)
+    Ok(overviews)
 }
 
 pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str) -> IpcResponse {

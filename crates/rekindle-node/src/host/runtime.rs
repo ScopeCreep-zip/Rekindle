@@ -296,6 +296,7 @@ impl Host {
             skin_helper: std::sync::OnceLock::new(),
             skin_trial: crate::host::skin::TrialSlot::default(),
             skin_grounds: crate::host::skin::ShownGrounds::default(),
+            infoview: crate::host::infoview::OpenViews::default(),
             mode,
             read_markers: super::read_markers::PendingMarkers::default(),
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(
@@ -380,6 +381,8 @@ impl Host {
         // The activity feed folds the Host's journal on both modes (lead
         // decision (51)).
         workers.spawn(crate::host::activity::run_worker(Arc::clone(&ctx)).in_current_span());
+        // So does the Infoview's push (plan E7.15, IV4).
+        workers.spawn(crate::host::infoview::run_worker(Arc::clone(&ctx)).in_current_span());
         workers.spawn(crate::daemon::shutdown::announce_when_requested(
             Arc::clone(&ctx),
         ));

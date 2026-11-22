@@ -168,6 +168,7 @@ async fn route(
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::SetKeepActivityLog { .. }
         | IpcRequest::ActivityList { .. }
+        | IpcRequest::InfoviewGet { .. }
         | IpcRequest::HiddenGamesGet
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }

@@ -54,6 +54,9 @@ mod history_order_tests;
 mod horizon_tests;
 pub mod identity;
 mod idle;
+pub(crate) mod infoview;
+#[cfg(test)]
+mod infoview_tests;
 mod intent_select;
 pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;

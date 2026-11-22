@@ -22,7 +22,7 @@ mod skin;
 mod social;
 
 // Re-export all types so callers use `cli::Cli`, `cli::Command`, etc.
-pub use activity::ActivityArgs;
+pub use activity::{ActivityArgs, InfoviewArgs};
 pub use channel::{ChannelCmd, VoiceCmd};
 pub use community::{CommunityCmd, InviteCmd, ModerateCmd, RoleCmd};
 pub use config::{ConfigCmd, ExportCmd, ImportCmd};
@@ -191,6 +191,8 @@ pub enum Command {
 
     /// The activity feed, newest first.
     Activity(ActivityArgs),
+    /// A subject's Infoview: our own page, or a friend's or community's.
+    Infoview(InfoviewArgs),
 
     /// The tamper-evident audit log.
     #[command(subcommand)]

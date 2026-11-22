@@ -40,6 +40,7 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ),
     ("send_game_invite", Some(IntentKind::SendDmMessage)),
     ("get_favourite_servers", None),
+    ("get_infoview", None),
     ("add_favourite_server", Some(IntentKind::SetPreferences)),
     ("remove_favourite_server", Some(IntentKind::SetPreferences)),
     ("volunteer_relay", Some(IntentKind::VolunteerRelay)),

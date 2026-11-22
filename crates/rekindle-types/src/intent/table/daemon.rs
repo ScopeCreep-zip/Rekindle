@@ -206,6 +206,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("SetShareCurrentGame", Some(IntentKind::ShareCurrentGame)),
     ("SetKeepActivityLog", Some(IntentKind::SetPreferences)),
     ("ActivityList", None),
+    ("InfoviewGet", None),
     ("HiddenGamesGet", None),
     ("GameHide", Some(IntentKind::SetPreferences)),
     ("GameUnhide", Some(IntentKind::ShareCurrentGame)),

@@ -244,6 +244,7 @@ pub(crate) async fn select(
         | IpcRequest::GameTotalsGet
         | IpcRequest::HiddenGamesGet
         | IpcRequest::ActivityList { .. }
+        | IpcRequest::InfoviewGet { .. }
         | IpcRequest::FavouriteServersGet
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet

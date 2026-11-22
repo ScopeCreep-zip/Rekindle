@@ -51,6 +51,12 @@ pub(crate) async fn route(
         request @ (IpcRequest::SetKeepActivityLog { .. } | IpcRequest::ActivityList { .. }) => {
             super::own_activity::route(ctx, state, request).await
         }
+        IpcRequest::InfoviewGet { subject, window } => {
+            if !state.can_query() {
+                return super::state_error(state, "query");
+            }
+            crate::host::infoview::get(ctx, subject, window).await
+        }
         request @ (IpcRequest::FavouriteServersGet
         | IpcRequest::FavouriteServerAdd { .. }
         | IpcRequest::FavouriteServerRemove { .. }) => {

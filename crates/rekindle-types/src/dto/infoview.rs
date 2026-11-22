@@ -1,0 +1,173 @@
+//! The Infoview (plan E7.15, IV4; Infoview design §2.2–§2.8): what the
+//! Host answers `InfoviewGet` and pushes as `InfoviewEvent::Updated`. One
+//! view for the desktop, the TUI and the CLI: the Host owns the subject,
+//! the section list and its order, and the actions (memory: backend owns
+//! policy). Every section holds only data already delivered to this
+//! identity (design §3.1).
+//!
+//! A friend's view never lists communities (threat model I8, I11: no
+//! mutual communities), and a community's rows never name which friends are
+//! members (design §3.4).
+
+use serde::{Deserialize, Serialize};
+
+use crate::activity::ActivityListItem;
+use crate::display::CommunityRemovalDisplay;
+use crate::dto::community::PinnedMessageView;
+use crate::dto::friends::Friend;
+use crate::event::EventInfo;
+
+/// The window label the CLI asks `InfoviewGet` with (the desktop shell
+/// sends each webview's own label).
+pub const CLI_WINDOW: &str = "cli";
+
+/// What a window's Infoview shows: its selection, as the Host resolves it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
+pub enum InfoviewSubject {
+    /// Nothing selected: our own page (Xfire's "your activity report").
+    Own,
+    /// A friend (`user.tmpl`), by public key (hex).
+    Friend { public_key: String },
+    /// A friend group's header (`buddycat` / `customgroup`); `None` is the
+    /// default group of friends in no group.
+    FriendGroup { group_id: Option<i64> },
+    /// A joined community (`clan.tmpl`), by anchor or name.
+    Community { community: String },
+}
+
+/// One window's Infoview: its subject and its sections, in order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfoviewView {
+    pub subject: InfoviewSubject,
+    pub sections: Vec<InfoviewSection>,
+}
+
+/// What a row's link does. Each one is a request (or a shell operation) the
+/// frontend sends like any other action, so it passes the ADR 0019 intent
+/// gate there: the Infoview never acts by itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
+pub enum InfoviewAction {
+    /// Open the community's window.
+    OpenCommunity { community: String },
+    /// Launch the game to the server (`host:port`).
+    JoinServer { game_id: u32, server: String },
+    /// Open the 1:1 chat with the friend.
+    OpenChat { public_key: String },
+    /// Open the friend's profile.
+    OpenProfile { public_key: String },
+    /// The feed's next page (`ActivityList` after row `before`).
+    ActivityMore { before: i64 },
+}
+
+/// A joined community on our own page (design §2.4): the per-channel unread
+/// counts summed by the Host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfoviewCommunityRow {
+    pub anchor: String,
+    pub name: String,
+    pub unread: u32,
+    pub mentions: u32,
+    /// The next event not yet ended, when one is planned.
+    pub next_event: Option<EventInfo>,
+    pub action: InfoviewAction,
+}
+
+/// A friend playing now (design §2.5): the friend's buddy-list view, with
+/// `Join` when they shared a server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfoviewPlayingRow {
+    pub friend: Friend,
+    pub game_id: u32,
+    pub game_name: String,
+    pub icon_key: Option<String>,
+    pub elapsed_seconds: u32,
+    /// The server label the friend shared, when they did.
+    pub server_info: Option<String>,
+    /// `JoinServer`, present only when a server address was shared.
+    pub join: Option<InfoviewAction>,
+}
+
+/// A community's game server (design §2.8, Xfire's "Favorite Servers").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfoviewServerRow {
+    pub label: String,
+    pub address: String,
+    pub game_id: String,
+    /// `JoinServer`, present when the game id is a known numeric id.
+    pub join: Option<InfoviewAction>,
+}
+
+/// One section of a view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "type"
+)]
+pub enum InfoviewSection {
+    /// The local activity feed, newest first (design §2.3); `more` is
+    /// `ActivityMore` when older entries may follow.
+    Activity {
+        entries: Vec<ActivityListItem>,
+        more: Option<InfoviewAction>,
+    },
+    /// Our communities with their unread counts (design §2.4).
+    Communities { rows: Vec<InfoviewCommunityRow> },
+    /// Friends in game, one row each (design §2.5, §2.7).
+    NowPlaying { rows: Vec<InfoviewPlayingRow> },
+    /// A friend's header (design §2.7): their buddy-list view, whether we
+    /// block them, and the chat and profile links.
+    FriendHeader {
+        friend: Friend,
+        blocked: bool,
+        actions: Vec<InfoviewAction>,
+    },
+    /// A friend's bio, as they sent it.
+    Bio { text: String },
+    /// A friend group's members (design §2.8).
+    GroupMembers {
+        label: String,
+        online: Vec<Friend>,
+        offline: Vec<Friend>,
+    },
+    /// A community's header.
+    CommunityHeader {
+        anchor: String,
+        name: String,
+        description: String,
+        member_count: u32,
+        /// The members whose beats show them present now.
+        online_count: u32,
+        removed: Option<CommunityRemovalDisplay>,
+    },
+    /// A community's pinned messages, newest pin first (Xfire's clan
+    /// "News", design §2.8), across the channels we may view.
+    Pinned { pins: Vec<PinnedMessageView> },
+    /// A community's events not yet ended, soonest first.
+    Events { events: Vec<EventInfo> },
+    /// A community's game servers.
+    GameServers { servers: Vec<InfoviewServerRow> },
+}
+
+/// The Infoview's push (ADR 0013: to the one window it is for).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum InfoviewEvent {
+    /// `window`'s view, composed again after the events it shows changed,
+    /// at most once per window per coalescing period.
+    Updated { window: String, view: InfoviewView },
+}

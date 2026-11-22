@@ -6,6 +6,7 @@
     "chat-*"
   ],
   "permissions": [
+    "allow-get-infoview",
     "allow-get-message-history",
     "allow-mark-read",
     "allow-open-external-url",

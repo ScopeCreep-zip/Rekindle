@@ -20,6 +20,7 @@
 //! the local queue and never replayed; a reloading window reads that
 //! history through `hydrateState()`.
 
+use rekindle_types::dto::infoview::InfoviewEvent;
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
@@ -153,6 +154,11 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
             buddy_list().with_kinds(&[WindowKind::Chat])
         }
+        // A window's Infoview goes to that window alone (ADR 0013): the
+        // label it asked with is its own (`commands::infoview`).
+        SubscriptionEvent::System(SystemEvent::Infoview(InfoviewEvent::Updated {
+            window, ..
+        })) => Audience::labels([window.clone()]),
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them.
         SubscriptionEvent::Notification(_)
@@ -207,6 +213,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(SystemEvent::SkinTrialChanged { .. }) => "skin-trial-event",
         SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
+        SubscriptionEvent::System(SystemEvent::Infoview(_)) => "infoview-event",
         SubscriptionEvent::Voice(_) => "voice-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the

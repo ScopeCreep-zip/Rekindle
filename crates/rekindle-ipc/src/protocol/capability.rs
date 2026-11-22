@@ -93,6 +93,13 @@ impl IpcRequest {
     pub fn agent_capability(&self) -> Option<AgentCapability> {
         use AgentCapability as C;
         match self {
+            // A community's page reads the community; every other subject
+            // reads our friends (design §2.2).
+            Self::InfoviewGet {
+                subject: crate::protocol::InfoviewSubject::Community { .. },
+                ..
+            } => Some(C::CommunitiesRead),
+            Self::InfoviewGet { .. } => Some(C::FriendsRead),
             Self::IdentityShow
             | Self::PresenceGet
             | Self::GameTotalsGet

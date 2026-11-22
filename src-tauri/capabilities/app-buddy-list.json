@@ -6,6 +6,7 @@
     "buddy-list"
   ],
   "permissions": [
+    "allow-get-infoview",
     "allow-open-external-url",
     "allow-quit-app",
     "allow-accept-request",

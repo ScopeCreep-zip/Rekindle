@@ -8,6 +8,7 @@ import type {
   SkinApplied, SkinEntry, SkinLibrary,
 } from "./dto";
 import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
+import type { InfoviewSubject, InfoviewView } from "./dto_infoview";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
 /// serialized as its MIME type).
@@ -84,6 +85,8 @@ export const systemCommands = {
   sendGameInvite: (publicKey: string, gameId: number, server: string) =>
     hostInvoke<string>("send_game_invite", { publicKey, gameId, server }),
   getFavouriteServers: () => hostInvoke<FavouriteServerView[]>("get_favourite_servers"),
+  /// The calling window's Infoview of `subject`; Rust names the window.
+  getInfoview: (subject: InfoviewSubject) => hostInvoke<InfoviewView>("get_infoview", { subject }),
   addFavouriteServer: (gameId: number, server: string, label: string) =>
     hostInvoke<FavouriteServerView[]>("add_favourite_server", { gameId, server, label }),
   removeFavouriteServer: (gameId: number, server: string) =>

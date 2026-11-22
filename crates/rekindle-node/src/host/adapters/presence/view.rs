@@ -56,6 +56,16 @@ pub(crate) fn shown(ctx: &DaemonContext, community: &str, member: &str) -> BeatS
         .map_or(BeatState::Offline, |c| c.beat_view.shown(member))
 }
 
+/// How many members of `community` its beats show present now (plan
+/// E7.15 IV4, the Infoview's online count).
+pub(crate) fn present_count(ctx: &DaemonContext, community: &str) -> usize {
+    ctx.communities
+        .map()
+        .read()
+        .get(community)
+        .map_or(0, |c| c.beat_view.present_count())
+}
+
 /// Whether `member` (pseudonym hex) may be present in `community`: no beat
 /// of theirs reached us yet, or it shows them present
 /// ([`rekindle_presence::community::BeatView::may_be_present`]).

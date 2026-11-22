@@ -85,4 +85,10 @@ pub enum SystemEvent {
         server: String,
         label: String,
     },
+    /// A window's Infoview composed again (plan E7.15, IV4; design §2.2),
+    /// delivered to that window only (ADR 0013).
+    /// Triggered by: the Host's Infoview worker, folding the journal events
+    /// its subject shows (a friend's presence, name, bio or friendship, a
+    /// feed entry, an unread or membership change), coalesced per window.
+    Infoview(crate::dto::infoview::InfoviewEvent),
 }
