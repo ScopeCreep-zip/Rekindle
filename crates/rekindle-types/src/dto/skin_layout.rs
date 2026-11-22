@@ -116,3 +116,21 @@ pub struct PopupLayout {
     pub y: super::skin_tree::NodeSpan,
     pub tree: super::skin_tree::SkinTree,
 }
+
+impl PopupLayout {
+    /// The popup's outline as `window`'s popup `name`, with its placement.
+    #[must_use]
+    pub fn shell(&self, window: SkinWindow, name: &str) -> super::skin_tree::SkinShell {
+        super::skin_tree::SkinShell {
+            popup: Some(super::skin_tree::ShellPopup {
+                name: name.to_owned(),
+                anchor: self.anchor,
+                width: self.width,
+                min_width: self.min_width,
+                min_height: self.min_height,
+                y: self.y,
+            }),
+            ..self.tree.shell(window)
+        }
+    }
+}

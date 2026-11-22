@@ -117,7 +117,7 @@ Dropped
     SimpleX.ini: [StatusEdit] Text.bold (line 348)
     SimpleX.ini: [InfoViewButton] Skin.X (line 458)
     SimpleX.ini: [SearchFiles] Cursor (line 825)
-  files not read (94):
+  files not read (73):
     CScroll/Thumbs.db
     CScroll/scroll-gripper-grips-horz.gif
     CScroll/scroll-gripper-grips-vert.gif
@@ -126,7 +126,6 @@ Dropped
     Groupchatskin.ini
     InGameMainSkin.ini
     InGameSkin.ini
-    Infoskin.ini
     buttons/Thumbs.db
     buttons/button-afav-disabled.gif
     buttons/button-chat-Send-click.gif
@@ -135,19 +134,10 @@ Dropped
     buttons/button-chat-Send-norm.gif
     buttons/button-game-disabled.gif
     buttons/button-im-disabled.gif
-    buttons/button-info-retract-hover.gif
-    buttons/button-info-retract.gif
     buttons/button-profile-disabled.gif
     buttons/button-refresh-disabled.gif
-    buttons/info-join-click.gif
     buttons/info-join-disabled.gif
-    buttons/info-join-hover.gif
-    buttons/info-join-norm.gif
-    buttons/info-voice-click.gif
     buttons/info-voice-disabled.gif
-    buttons/info-voice-hover.gif
-    buttons/info-voice-norm.gif
-    buttons/info-voice-trans.gif
     chatskin/ChatLogo-down.gif
     chatskin/ChatLogo-hover.gif
     chatskin/ChatLogo.gif
@@ -169,17 +159,6 @@ Dropped
     infoskin/icon_speaker_green.gif
     infoskin/icon_speaker_grey.gif
     infoskin/icon_voice_server.gif
-    infoskin/info-bottom-left.gif
-    infoskin/info-bottom-middle.gif
-    infoskin/info-bottom-right.gif
-    infoskin/info-buttonbase.gif
-    infoskin/info-middle-left.gif
-    infoskin/info-middle-middle.gif
-    infoskin/info-middle-right.gif
-    infoskin/info-top-left.gif
-    infoskin/info-top-middle.gif
-    infoskin/info-top-right.gif
-    infoskin/infovbg.gif
     ingamegraphics/Thumbs.db
     ingamegraphics/ig_chatwindow_left.gif
     ingamegraphics/ig_chatwindow_middle.gif

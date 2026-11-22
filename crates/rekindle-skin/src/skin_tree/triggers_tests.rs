@@ -146,7 +146,7 @@ fn an_ini_packs_action_click_imports() {
 Disabled.Trigger=AppCannotChat\n",
     )
     .unwrap();
-    let (layout, components) = crate::import::xfire_ini::title::tree(&skin).unwrap();
+    let (layout, components) = crate::import::xfire_ini::title::tree(&skin, "MainWindow").unwrap();
     let mut built = (frame(), BTreeMap::new());
     import::add(
         SkinWindow::Main,

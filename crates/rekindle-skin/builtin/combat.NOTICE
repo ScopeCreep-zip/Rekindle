@@ -89,12 +89,11 @@ Dropped
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (97):
+  files not read (96):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
     CombatInGamePopUpSkin.ini
-    CombatInfoSkin.ini
     c_button_add_off.gif
     c_button_add_server_off.gif
     c_button_arrow_off.gif

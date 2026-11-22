@@ -118,9 +118,10 @@ fn button(k: &str) -> Option<SkinAction> {
     use SkinAction as A;
     let rows: [(&[&str], SkinAction); 25] = [
         // StealthX's rail (`popups.xml:69-79`), ahead of "chat" and "join".
-        (&["hostchat"], A::HostVoiceChat),
-        (&["joinchat"], A::VoiceChat),
-        (&["leavechat"], A::LeaveVoiceChat),
+        // Classic's info popup spells them `InfoHostChatButton` … (`xfirepopups.xml:8-10`).
+        (&["hostchat", "infohostchat"], A::HostVoiceChat),
+        (&["joinchat", "infojoinchat"], A::VoiceChat),
+        (&["leavechat", "infoleavechat"], A::LeaveVoiceChat),
         (&["addserver", "addfav", "favorite"], A::AddServer),
         (&["startdownload"], A::StartDownload),
         (&["stopdownload"], A::StopDownload),
@@ -184,6 +185,13 @@ fn tab(k: &str) -> Option<()> {
 /// `GripperTopLeft`, `BRGripper`), `None` for a key that names no grip.
 fn grip(k: &str) -> Option<&str> {
     k.strip_prefix("mainresizegripper")
+        .or_else(|| k.strip_prefix("popupresizegripper"))
+        // The info popup's grips: Classic's `InfoInfoResizeRight` on its
+        // `InfoResizeRight` tile (`xfirepopups.xml`), Combat's
+        // `[InfoGripperTR]`/`[InfoGripperBR]` (`CombatInfoSkin.ini:111,117`).
+        .or_else(|| k.strip_prefix("infoinforesize"))
+        .or_else(|| k.strip_prefix("inforesize"))
+        .or_else(|| k.strip_prefix("infogripper"))
         .or_else(|| k.strip_prefix("resizegripper"))
         .or_else(|| k.strip_prefix("resize"))
         .or_else(|| k.strip_prefix("gripper"))
@@ -191,8 +199,8 @@ fn grip(k: &str) -> Option<&str> {
 }
 
 /// The closed table of edge spellings the packs use (Symbiosis's
-/// `MainResizeGripperBL`/`TL`/`TR`/`L`/`R`, Classic's `ResizeUp`, XGlow's
-/// `[ResizeTop]`): an edge outside it is an import error
+/// `MainResizeGripperBL`/`TL`/`TR`/`L`/`R` and popup `PopupResizeGripperR`
+/// (Symbiosis `Popups.xml:16`), Classic's `ResizeUp`, XGlow's `[ResizeTop]`): an edge outside it is an import error
 /// ([`check_grip`]), never a guessed corner.
 fn edge(rest: &str) -> Option<Edge> {
     Some(match rest {
@@ -266,6 +274,15 @@ fn named(k: &str, f: &Facts<'_>) -> Option<Role> {
             SkinEvent::LeftDown,
             A::ContextMenu(EngineMenu::Sys),
         )),
+        // The info popup's join button: the selected friend's game
+        // (Classic's `InfoJoinGameButton`, Space Cowboy's and Onyx's
+        // `JoinButton`, Total Chaos's `InfoJoinButton`).
+        "joinbutton" | "infojoingamebutton" | "infojoinbutton" | "joingamebutton" => {
+            Some(click(A::JoinFriend))
+        }
+        // XGlow's popup `[Voice]` runs the pack's `Action.click=AppVoiceChat`
+        // (`XGlowInfoSkin.ini:168-181`).
+        "voice" => Some(Role::Acts(R::Button, None)),
         "adddownloadtab" => Some(click(A::AddFriend)),
         "chatrefreshstoptab" => Some(click(A::ChatFriend)),
         "joinplaytab" => Some(click(A::JoinFriend)),
@@ -281,7 +298,16 @@ fn named(k: &str, f: &Facts<'_>) -> Option<Role> {
 fn info_toggle(k: &str) -> bool {
     matches!(
         k,
-        "infoviewbutton" | "expandbutton" | "infoviewswitch" | "viewinfo" | "buttonmaininfoout"
+        "infoviewbutton"
+            | "expandbutton"
+            | "infoviewswitch"
+            | "viewinfo"
+            | "buttonmaininfoout"
+            // Inside the popup, the toggle that closes it: Symbiosis's
+            // `ButtonMainInfoIn` (`Popups.xml:26`), Total Chaos's and Onyx's
+            // `CloseInfoView` (`Class="SkinLauncher"`, TC `components.xml:825`).
+            | "buttonmaininfoin"
+            | "closeinfoview"
     )
 }
 
@@ -349,6 +375,10 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         "roomedit" => Some(R::RoomName),
         "downloadblink" => Some(R::Lamp(LampKey::Files)),
         "gamelogo" => Some(R::GameLogo),
+        // The popup's info pane (Space Cowboy's, Total Chaos's and Onyx's
+        // `InfoView` component, StealthX's `InfoViewTile`; Classic's
+        // `InfoInfoView` component on its `InfoView` tile).
+        "infoview" | "infoviewtile" => Some(R::InfoView),
         "topbuttonbar"
         | "baseboard"
         | "buttonarea"

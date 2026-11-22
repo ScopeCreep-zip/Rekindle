@@ -92,14 +92,26 @@ fn anchor_of(name: &str, x: NodeSpan) -> Result<PopupAnchor, ImportError> {
 /// Lays popup tile `tile` beside the window `parent` walked.
 fn lay(
     parent: &Walk<'_>,
-    (tile, window_name): (&Node, &str),
+    (tile, own, window_name): (&Node, Option<&Node>, &str),
     (outsets, sibs): (Insets, &Sibs),
     built: &mut (WindowLayout, Files),
 ) -> Result<(String, PopupLayout), ImportError> {
     let name = tile.attr_ci("Name").unwrap_or_default().trim().to_owned();
+    let by_name = own.map_or_else(
+        || parent.by_name.clone(),
+        |c| {
+            let mut m = std::collections::BTreeMap::new();
+            for n in crate::import::xfire_xml::descendants(c, "Component") {
+                if let Some(k) = n.attr_ci("Name") {
+                    m.entry(k.to_ascii_lowercase()).or_insert(n);
+                }
+            }
+            m
+        },
+    );
     let comp = tile
         .attr_ci("Component")
-        .and_then(|c| parent.by_name.get(&c.to_ascii_lowercase()).copied());
+        .and_then(|c| by_name.get(&c.to_ascii_lowercase()).copied());
     let min_width = limit_of(comp, "MinWidth").unwrap_or(0);
     let width = limit_of(comp, "DefaultWidth").unwrap_or(min_width);
     if width == 0 {
@@ -138,7 +150,7 @@ fn lay(
     );
     let mut walk = Walk {
         window: parent.window,
-        by_name: parent.by_name.clone(),
+        by_name,
         piece: parent.piece,
         files: Files::new(),
         images: Images::new(),
@@ -196,33 +208,49 @@ pub(super) fn add(
         .collect();
     let window_name = layout.attr_ci("Component").unwrap_or("MainWindow");
     for name in names {
-        let tile = popup_tile(components, &name).ok_or_else(|| {
+        let (tile, own) = popup_tile(components, &name).ok_or_else(|| {
             bad(format!(
                 "{name}: launched, not a tile of the pack's <Popups>"
             ))
         })?;
-        let (key, popup) = lay(parent, (tile, window_name), (tree.outsets, &sibs), built)?;
+        let (key, popup) = lay(
+            parent,
+            (tile, own, window_name),
+            (tree.outsets, &sibs),
+            built,
+        )?;
         built.0.popups.insert(key, popup);
     }
     Ok(())
 }
 
-/// The `<Popups>` tile named `name` among the pack's `components`.
-fn popup_tile<'a>(components: &'a [Node], name: &str) -> Option<&'a Node> {
+/// The `<Popups>` tile named `name` among the pack's `components`, and the
+/// components of its own `<Popups>` when it carries them (an INI popup is
+/// its own file, its sections its own components: [`crate::import::
+/// xfire_ini::title::popup`]); `None` there means the pack's components.
+fn popup_tile<'a>(components: &'a [Node], name: &str) -> Option<(&'a Node, Option<&'a Node>)> {
     components
         .iter()
         .filter(|n| n.name.eq_ignore_ascii_case("Popups"))
-        .flat_map(|p| p.children_named("Tile"))
-        .find(|t| {
-            t.attr_ci("Name")
-                .is_some_and(|n| n.trim().eq_ignore_ascii_case(name))
+        .find_map(|p| {
+            let tile = p.children_named("Tile").find(|t| {
+                t.attr_ci("Name")
+                    .is_some_and(|n| n.trim().eq_ignore_ascii_case(name))
+            })?;
+            Some((tile, p.children_named("Components").next()))
         })
 }
 
 /// The frame a popup's tree is laid and checked in: its own box at its
-/// smallest, no frame tiles.
+/// smallest, no frame tiles. Its height is its `y` span in the launching
+/// window at that window's smallest (`window_min_height`), never below the
+/// popup's own `MinHeight`: the popup stretches with its window
+/// (`ResizeY="100"`), so SimpleX's `[Infoskin]` `MinHeight=100` never
+/// holds its 126 px top row alone (`Infoskin.ini:5,69-76`).
 #[must_use]
-pub fn frame(popup: &PopupLayout) -> WindowLayout {
+pub fn frame(popup: &PopupLayout, window_min_height: u16) -> WindowLayout {
+    let spanned = popup.y.place(i32::from(window_min_height)).1;
+    let min_height = u16::try_from(spanned).unwrap_or(0).max(popup.min_height);
     let none = Insets {
         top: 0,
         right: 0,
@@ -233,7 +261,7 @@ pub fn frame(popup: &PopupLayout) -> WindowLayout {
         outsets: none,
         content: none,
         min_width: popup.width,
-        min_height: popup.min_height,
+        min_height,
         tiles: Vec::new(),
         title: None,
         tree: None,
@@ -267,7 +295,7 @@ pub fn check(
     }
     for (name, popup) in &layout.popups {
         let at = format!("{field}.popups.{name}.tree");
-        super::validate::check(&at, &popup.tree, &frame(popup), images)?;
+        super::validate::check(&at, &popup.tree, &frame(popup, layout.min_height), images)?;
     }
     Ok(())
 }

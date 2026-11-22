@@ -210,7 +210,7 @@ pub fn frame_css(
         // `data-skin-popup="<name>"` (plan SK2 P1).
         for (name, popup) in &layout.popups {
             let root = format!(".app-frame[data-skin-popup=\"{name}\"]");
-            let frame = crate::skin_tree::popup::frame(popup);
+            let frame = crate::skin_tree::popup::frame(popup, layout.min_height);
             out.push_str(&crate::skin_tree::css::tree_css(
                 &root,
                 &popup.tree,

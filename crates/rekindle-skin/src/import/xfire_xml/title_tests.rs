@@ -151,7 +151,7 @@ Window1.Name=MinimizeBox\nWindow1.X=1\nWindow1.Y=1\nWindow3.Name=CloseBox\nWindo
 [MinimizeBox]\nClass=PushButton\nGraphics.middle=17x16.gif\n",
     )
     .unwrap();
-    let (layout, components) = ini_title::tree(&skin).unwrap();
+    let (layout, components) = ini_title::tree(&skin, "MainWindow").unwrap();
     let t = lay(&layout, &components, &user_name_cg()).unwrap();
     // The bar's right edge is 7 from the window's, 56 wide: its left edge
     // is 63 from the right, the close box's 63 - 37 = 26, so its right

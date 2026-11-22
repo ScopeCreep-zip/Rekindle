@@ -291,15 +291,30 @@ pub struct ShellNode {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkinShell {
     pub window: SkinWindow,
-    /// The popup this outline is (its key in the window's `popups`), else
-    /// the window's own tree.
+    /// The popup this outline is and where it sits, else the window's own
+    /// tree.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub popup: Option<String>,
+    pub popup: Option<ShellPopup>,
     pub root: Vec<ShellNode>,
     /// Rekindle's items for each engine menu the pack's buttons open
     /// (design §2.6), so the shell draws a pressed menu from the same
     /// answer that laid its button.
     pub menus: super::skin_action::MenuRegistry,
+}
+
+/// A popup outline's name (its key in the window's `popups`) and its
+/// placement beside the launching window, served on the shell so a
+/// frontend places the popup from the shell alone (plan SK2-P1c): the
+/// window's [`super::skin_layout::PopupLayout`] less its tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ShellPopup {
+    pub name: String,
+    pub anchor: super::skin_layout::PopupAnchor,
+    pub width: u16,
+    pub min_width: u16,
+    pub min_height: u16,
+    pub y: NodeSpan,
 }
 
 impl SkinNode {
@@ -357,15 +372,6 @@ impl SkinTree {
             popup: None,
             root: self.root.iter().map(SkinNode::shell).collect(),
             menus: super::skin_action::MenuRegistry::rekindle(),
-        }
-    }
-
-    /// The tree's outline as `window`'s popup `name`.
-    #[must_use]
-    pub fn popup_shell(&self, window: SkinWindow, name: &str) -> SkinShell {
-        SkinShell {
-            popup: Some(name.to_owned()),
-            ..self.shell(window)
         }
     }
 }

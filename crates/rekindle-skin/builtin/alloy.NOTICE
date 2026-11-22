@@ -113,7 +113,7 @@ Dropped
     Alloy.ini: [MainWindow] Window6.IndentRight (line 58)
     Alloy.ini: [StatusEdit] Text.bold (line 304)
     Alloy.ini: [SearchFiles] Cursor (line 734)
-  files not read (103):
+  files not read (81):
     AlloyScroll/Thumbs.db
     AlloyScroll/scroll-gripper-grips-horz.gif
     AlloyScroll/scroll-gripper-grips-vert.gif
@@ -122,7 +122,6 @@ Dropped
     Groupchatskin.ini
     InGameMainSkin.ini
     InGameSkin.ini
-    Infoskin.ini
     buttons/Thumbs.db
     buttons/button-afav-disabled.gif
     buttons/button-chat-Send-click.gif
@@ -131,19 +130,10 @@ Dropped
     buttons/button-chat-Send-norm.gif
     buttons/button-game-disabled.gif
     buttons/button-im-disabled.gif
-    buttons/button-info-retract-hover.gif
-    buttons/button-info-retract.gif
     buttons/button-profile-disabled.gif
     buttons/button-refresh-disabled.gif
-    buttons/info-join-click.gif
     buttons/info-join-disabled.gif
-    buttons/info-join-hover.gif
-    buttons/info-join-norm.gif
-    buttons/info-voice-click.gif
     buttons/info-voice-disabled.gif
-    buttons/info-voice-hover.gif
-    buttons/info-voice-norm.gif
-    buttons/info-voice-trans.gif
     chatskin/ChatLogo.gif
     chatskin/Thumbs.db
     chatskin/chat-bottomleft.gif
@@ -167,18 +157,6 @@ Dropped
     infoskin/icon_speaker_green.gif
     infoskin/icon_speaker_grey.gif
     infoskin/icon_voice_server.gif
-    infoskin/info-bottom-left.gif
-    infoskin/info-bottom-middle.gif
-    infoskin/info-bottom-right.gif
-    infoskin/info-buttonbase.gif
-    infoskin/info-middle-left.gif
-    infoskin/info-middle-middle.gif
-    infoskin/info-middle-right.gif
-    infoskin/info-top-left.gif
-    infoskin/info-top-middle.gif
-    infoskin/info-top-right.gif
-    infoskin/infovbg.gif
-    infoskin/xf-info-logo.gif
     ingamegraphics/Logo1.gif
     ingamegraphics/Logo1a.gif
     ingamegraphics/Logo2 copy.gif

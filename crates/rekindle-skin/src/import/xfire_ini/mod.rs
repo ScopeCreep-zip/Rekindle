@@ -154,6 +154,36 @@ fn parse_file<'t>(tree: &'t Tree, name: &str) -> Result<(&'t str, Ini), ImportEr
     Ok((key, ini::parse(key, bytes)?))
 }
 
+/// The `<Popups>` node of every popup file a section of `skin` launches
+/// (`Skin.Name=`, [`title::popup`]) and the files read: the first launcher
+/// of a name places it (repeated keys read the first, [`ini`]). A launched
+/// file the pack lacks, or one without its root section, refuses the pack.
+fn popups<'t>(
+    tree: &'t Tree,
+    skin_key: &str,
+    skin: &Ini,
+) -> Result<(Vec<crate::import::tree::Node>, Vec<&'t str>), ImportError> {
+    let mut seen = BTreeSet::new();
+    let (mut nodes, mut keys) = (Vec::new(), Vec::new());
+    for s in &skin.sections {
+        let Some(name) = s.get("Skin.Name").or(s.get("Skin")).map(str::trim) else {
+            continue;
+        };
+        if !seen.insert(name.to_ascii_lowercase()) {
+            continue;
+        }
+        let (key, file) = parse_file(tree, &file_name(skin_key, "Skin.Name", name)?)?;
+        nodes.push(
+            title::popup(s, name, &file).ok_or_else(|| ImportError::Format {
+                file: key.to_owned(),
+                detail: format!("no [{name}]"),
+            })?,
+        );
+        keys.push(key);
+    }
+    Ok((nodes, keys))
+}
+
 fn section<'i>(ini: &'i Ini, file: &str, name: &str) -> Result<&'i Section, ImportError> {
     ini.section(name).ok_or_else(|| ImportError::Format {
         file: file.to_owned(),
@@ -307,7 +337,10 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     };
     let (mut controls, mut tally, control_sections) = controls::read(&skin, &images)?;
     let mut main_layout = frame.as_ref().map(frame::main_layout).transpose()?;
-    if let (Some(built), Some((layout, components))) = (main_layout.as_mut(), title::tree(&skin)) {
+    let (popup_nodes, popup_keys) = popups(tree, skin_key, &skin)?;
+    if let (Some(built), Some((layout, components))) =
+        (main_layout.as_mut(), title::tree(&skin, "MainWindow"))
+    {
         let decode = |value: &str, group: Option<&str>| {
             let (file, bytes) = resolve(tree, value, &aliases)?;
             images.files.borrow_mut().insert(file.to_owned());
@@ -318,7 +351,9 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
             bitmap::shift(&mut img, by);
             Ok(img)
         };
-        let components = std::slice::from_ref(&components);
+        let mut all = vec![components];
+        all.extend(popup_nodes);
+        let components = all.as_slice();
         xtitle::add(
             SkinWindow::Main,
             &layout,
@@ -332,6 +367,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     }
     count_dropped(&skin, (frame.as_ref(), &control_sections), &mut dropped);
     let mut read_files = vec![version_key, skin_key, theme_key];
+    read_files.extend(popup_keys);
     let mut found = Vec::new();
     ini_refs(&skin, &mut found);
     for (key, window) in [

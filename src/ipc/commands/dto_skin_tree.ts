@@ -322,9 +322,37 @@ export interface MenuRegistry {
 
 export interface SkinShell {
   window: "main" | "chat";
-  /** The popup this outline is (its frame carries `data-skin-popup`), else the window's own tree. */
-  popup?: string;
+  /** The popup this outline is (its frame carries `data-skin-popup="<name>"`) and where it sits, else the window's own tree. */
+  popup?: ShellPopup;
   root: ShellNode[];
   /** The items of every engine menu the shell's buttons open. */
   menus: MenuRegistry;
+}
+
+/** `Anchor` (serde `tag = "kind"`, `content = "offset"`). */
+export type NodeAnchor =
+  | { kind: "start"; offset: number }
+  | { kind: "end"; offset: number }
+  | { kind: "centre"; offset: { by: number; before: number; after: number } };
+
+/** `NodeSpan` (serde `tag = "kind"`): one axis of a box, px. */
+export type NodeSpan =
+  | { kind: "fixed"; at: NodeAnchor; size: number }
+  | { kind: "stretch"; start: number; end: number };
+
+/** `PopupAnchor`: the popup's left side `offset` px from the launching window's `edge`. */
+export interface PopupAnchor {
+  edge: "left" | "right";
+  offset: number;
+}
+
+/** `ShellPopup`: a popup's name and its placement beside the launching window. */
+export interface ShellPopup {
+  name: string;
+  anchor: PopupAnchor;
+  width: number;
+  minWidth: number;
+  minHeight: number;
+  /** Its vertical span in the launching window's height. */
+  y: NodeSpan;
 }

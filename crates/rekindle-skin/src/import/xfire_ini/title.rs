@@ -86,18 +86,22 @@ fn windows(section: &Section) -> BTreeMap<u32, BTreeMap<String, String>> {
         ) else {
             continue;
         };
-        let value = e.value.trim();
-        out.entry(n)
-            .or_default()
-            .entry((*attr).to_owned())
-            .and_modify(|first: &mut String| {
-                if let Some(joined) = offset_of(attr, first, value) {
-                    *first = joined;
-                }
-            })
-            .or_insert_with(|| value.to_owned());
+        put(out.entry(n).or_default(), attr, e.value.trim());
     }
     out
+}
+
+/// Sets `attr` to `value` in `attrs`: the first value wins, except a
+/// sibling's edge then a number ([`offset_of`]).
+fn put(attrs: &mut BTreeMap<String, String>, attr: &str, value: &str) {
+    attrs
+        .entry(attr.to_owned())
+        .and_modify(|first: &mut String| {
+            if let Some(joined) = offset_of(attr, first, value) {
+                *first = joined;
+            }
+        })
+        .or_insert_with(|| value.to_owned());
 }
 
 /// A repeated `X`/`Y` whose first value is a sibling's edge
@@ -258,7 +262,10 @@ fn component(section: &Section) -> Node {
     }
     // `ControlGroupId`: the tab controls that switch together (plan SK2
     // lead decision 6: XGlow's `[Join]` pages show with the views).
+    // `DefaultWidth`: a popup's width (`[Infoskin]` `DefaultWidth=150`,
+    // SimpleX `Infoskin.ini:3`), as the XML era's component attribute.
     for key in [
+        "DefaultWidth",
         "MinWidth",
         "MinHeight",
         "MaxWidth",
@@ -273,12 +280,13 @@ fn component(section: &Section) -> Node {
     node("Component", attrs, children)
 }
 
-/// The main window's tile tree (rooted at `[MainWindow]`) and every
-/// section as a component, as [`super::super::xfire_xml::title::add`]
-/// reads them; `None` without a `[MainWindow]`.
+/// The tile tree rooted at section `root` (`[MainWindow]` for the main
+/// window, `[Infoskin]` for SimpleX's popup file) and every section of
+/// `skin` as a component, as [`super::super::xfire_xml::title::add`] reads
+/// them; `None` without a `[root]`.
 #[must_use]
-pub fn tree(skin: &Ini) -> Option<(Node, Node)> {
-    let main = skin.section("MainWindow")?;
+pub fn tree(skin: &Ini, root: &str) -> Option<(Node, Node)> {
+    let main = skin.section(root)?;
     let mut path = vec![main.name.clone()];
     let layout = node("Tile", BTreeMap::new(), tiles(skin, main, &mut path));
     let components = node(
@@ -287,6 +295,41 @@ pub fn tree(skin: &Ini) -> Option<(Node, Node)> {
         skin.sections.iter().map(component).collect(),
     );
     Some((layout, components))
+}
+
+/// The `<Popups>` node of the popup file `file` that `launcher`'s
+/// `Skin.Name=name` opens (INI popups are separate files: SimpleX's
+/// `[InfoViewButton]` `Skin.Name=Infoskin`, `SimpleX.ini:453`, opens
+/// `Infoskin.ini`, rooted at its `[Infoskin]`): one tile named `name`,
+/// placed by the launcher's `Skin.<attr>` keys as a `Window<n>.<attr>`
+/// (`Skin.X=Middle.RIGHT` `Skin.X=-8` is `Middle.RIGHT-8`,
+/// `SimpleX.ini:457-458`) and stretched by the root section's `ResizeY`,
+/// beside the file's sections as the popup's own components (XGlow's
+/// popup `[Top]`, `XGlowInfoSkin.ini:98`, is not its main window's `[Top]`);
+/// `None` without a `[name]`.
+#[must_use]
+pub fn popup(launcher: &Section, name: &str, file: &Ini) -> Option<Node> {
+    let root = file.section(name)?;
+    let (mut layout, components) = tree(file, name)?;
+    for e in &launcher.entries {
+        let Some((p, attr)) = e.key.split_once('.') else {
+            continue;
+        };
+        let known = TILE_ATTRS
+            .iter()
+            .find(|a| a.eq_ignore_ascii_case(attr) && **a != "Name");
+        if let (true, Some(attr)) = (p.eq_ignore_ascii_case("Skin"), known) {
+            put(&mut layout.attrs, attr, e.value.trim());
+        }
+    }
+    if let Some(v) = root.get("ResizeY") {
+        put(&mut layout.attrs, "ResizeY", v.trim());
+    }
+    layout.attrs.insert("Name".to_owned(), name.to_owned());
+    layout
+        .attrs
+        .insert("Component".to_owned(), root.name.clone());
+    Some(node("Popups", BTreeMap::new(), vec![layout, components]))
 }
 
 #[cfg(test)]
