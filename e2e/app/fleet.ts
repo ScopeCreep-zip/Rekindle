@@ -18,7 +18,7 @@
 
 import { execFile, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, chownSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, chownSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { NET_WAIT_MS, waitUntil } from "../walk/helpers.ts";
@@ -88,6 +88,47 @@ function keepLogs(home: string, displayName: string): void {
 /** The CLI beside the app the suite launches: the same cargo target directory (launch.ts). */
 function cliPath(): string {
   return path.join(cargoTargetDir(), "debug", "rekindle");
+}
+
+/**
+ * The live rekindled this HOME's node lock names, else null. rekindle-db
+ * lock.rs writes `std::process::id()` into `DataRoot.data/node.lock`
+ * (`~/Library/Application Support/com.rekindle.app` on macOS,
+ * `<XDG_DATA_HOME>/com.rekindle.app` elsewhere, rekindle-utils paths.rs).
+ */
+function lockHolder(home: string): number | null {
+  const data = process.platform === "darwin"
+    ? path.join(home, "Library", "Application Support", "com.rekindle.app")
+    : path.join(home, ".local", "share", "com.rekindle.app");
+  const lock = path.join(data, "node.lock");
+  if (!existsSync(lock)) return null;
+  const pid = Number.parseInt(readFileSync(lock, "utf8").trim(), 10);
+  if (!Number.isInteger(pid) || pid <= 1) return null;
+  const comm = spawnSync("ps", ["-p", String(pid), "-o", "comm="], { encoding: "utf8" }).stdout.trim();
+  return path.basename(comm) === "rekindled" ? pid : null;
+}
+
+/**
+ * A daemon that never opened its bus does not hear `node stop`, and its
+ * HOME must not go while it still writes there. On macOS a 10 s stack
+ * sample of it (`sample`, which only reads the process) goes beside its
+ * kept logs, showing where its startup waits; then SIGTERM, and SIGKILL if
+ * it has not exited 30 s later. Only the rekindled this HOME's own lock
+ * names is signalled. True once no daemon holds the HOME.
+ */
+async function endStray(home: string, displayName: string): Promise<boolean> {
+  const pid = lockHolder(home);
+  if (pid === null) return true;
+  const keep = path.join(KEEP_LOGS, displayName.slice(0, 24));
+  mkdirSync(keep, { recursive: true });
+  if (process.platform === "darwin") {
+    await run("sample", [String(pid), "10", "-file", path.join(keep, "rekindled.sample.txt")]).catch(() => undefined);
+  }
+  const gone = async (): Promise<boolean> => lockHolder(home) !== pid;
+  process.kill(pid, "SIGTERM");
+  if (await waitUntil(gone, 30_000, "").then(() => true, () => false)) return true;
+  process.kill(pid, "SIGKILL");
+  return waitUntil(gone, 10_000, "").then(() => true, () => false);
 }
 
 function peerEnv(home: string): NodeJS.ProcessEnv {
@@ -163,7 +204,9 @@ async function startPeer(displayName: string): Promise<Peer> {
       // `node stop` only starts the shutdown; the daemon writes into its HOME
       // until it has exited, so the HOME goes once status says so.
       await waitUntil(async () => !(await daemonRunning()), 30_000, `peer ${displayName} did not stop`).catch(() => undefined);
+      const ended = await endStray(home, displayName);
       keepLogs(home, displayName);
+      if (!ended) throw new Error(`peer ${displayName}: rekindled ${lockHolder(home)} outlived SIGKILL; its HOME ${home} is kept`);
       rmSync(home, { recursive: true, force: true });
     },
     stopSync() {
@@ -175,6 +218,13 @@ async function startPeer(displayName: string): Promise<Peer> {
       while (Date.now() < deadline) {
         const status = spawnSync(exe, ["--format", "json", "--no-input", "status"], { env, encoding: "utf8", timeout: 5_000 });
         if (/"daemon":\s*"not running"/.test(status.stdout ?? "")) break;
+      }
+      // Here only synchronous work runs: a daemon still holding the lock is
+      // sent SIGTERM and its HOME left for the next run's sweep.
+      const pid = lockHolder(home);
+      if (pid !== null) {
+        process.kill(pid, "SIGTERM");
+        return;
       }
       rmSync(home, { recursive: true, force: true });
     },
