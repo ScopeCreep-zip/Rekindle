@@ -103,6 +103,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "get_game_totals",
   "get_hidden_games",
   "get_identity",
+  "get_infoview",
   "get_link_previews_enabled",
   "get_message_history",
   "get_missed_calls",
