@@ -15,13 +15,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState};
 use ratatui::Frame;
 
-use rekindle_types::activity::{ActivityKind, ActivityListItem};
+use rekindle_types::activity::ActivityListItem;
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use super::View;
 use crate::action::{Action, CommandResult};
 use crate::focus::{FocusId, FocusRing};
-use crate::helpers;
 use crate::theme::ThemeManager;
 
 /// One page of the feed, the CLI's `rekindle activity` default.
@@ -105,69 +104,6 @@ impl ActivityView {
     }
 }
 
-/// An entry's row: its time, its kind's name, then its fields as the DTO
-/// carries them (a friend by the names the Host gave and their key).
-pub(crate) fn row(e: &ActivityListItem) -> String {
-    let at = u64::try_from(e.at).map_or_else(|_| e.at.to_string(), helpers::format_timestamp);
-    let who = e.kind.friend().map(|key| friend_label(e, key));
-    let fields = fields(&e.kind);
-    let mut row = format!("{at}  {}", e.kind.name());
-    for part in [who, fields].into_iter().flatten() {
-        row.push_str("  ");
-        row.push_str(&part);
-    }
-    row
-}
-
-fn friend_label(e: &ActivityListItem, key: &str) -> String {
-    let mut label = String::new();
-    for name in [e.nickname.as_deref(), e.display_name.as_deref()]
-        .into_iter()
-        .flatten()
-    {
-        label.push_str(&helpers::sanitize_for_display(name));
-        label.push(' ');
-    }
-    label.push('(');
-    label.push_str(&helpers::abbreviate_key(key));
-    label.push(')');
-    if e.identity_pin_mismatch {
-        label.push_str(" [identity pin mismatch]");
-    }
-    label
-}
-
-fn fields(kind: &ActivityKind) -> Option<String> {
-    let text = |s: &str| helpers::sanitize_for_display(s);
-    match kind {
-        ActivityKind::StartedGame {
-            game_id, server, ..
-        } => Some(match server {
-            Some(server) => format!("game {game_id}  {}", text(server)),
-            None => format!("game {game_id}"),
-        }),
-        ActivityKind::StoppedGame {
-            game_id, seconds, ..
-        } => Some(format!("game {game_id}  {seconds}s")),
-        ActivityKind::FirstPlayed { game_id, .. } => Some(format!("game {game_id}")),
-        ActivityKind::RenamedSelf { from, to, .. } => {
-            Some(format!("\"{}\" -> \"{}\"", text(from), text(to)))
-        }
-        ActivityKind::StatusMessage { text: message, .. } => Some(format!("\"{}\"", text(message))),
-        ActivityKind::BioChanged { .. } | ActivityKind::NowFriends { .. } => None,
-        ActivityKind::FavouriteAdded {
-            game_id,
-            address,
-            label,
-        } => Some(format!(
-            "game {game_id}  {}  \"{}\"",
-            text(address),
-            text(label)
-        )),
-        ActivityKind::JoinedCommunity { community } => Some(helpers::abbreviate_key(community)),
-    }
-}
-
 impl View for ActivityView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _theme: &ThemeManager) -> Result<()> {
         let title = format!(
@@ -177,7 +113,7 @@ impl View for ActivityView {
         let items: Vec<ListItem<'static>> = self
             .entries
             .iter()
-            .map(|e| ListItem::new(Line::from(Span::raw(row(e)))))
+            .map(|e| ListItem::new(Line::from(Span::raw(rekindle_client::infoview::activity_row(e)))))
             .collect();
         let list = List::new(items)
             .block(
@@ -244,6 +180,7 @@ impl View for ActivityView {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use rekindle_types::activity::ActivityKind;
 
     fn entry(id: i64, text: &str) -> ActivityListItem {
         ActivityListItem {
@@ -288,14 +225,5 @@ mod tests {
         })
         .unwrap();
         assert_eq!(view.entries.len(), 1);
-    }
-
-    /// A row is the time, the kind's name, the Host's names and key, and
-    /// the entry's own text.
-    #[test]
-    fn a_row_shows_the_kind_and_the_entry_text_as_given() {
-        let row = row(&entry(1, "afk"));
-        assert!(row.contains("statusMessage  Ann (ab12"), "{row}");
-        assert!(row.ends_with("\"afk\""), "{row}");
     }
 }

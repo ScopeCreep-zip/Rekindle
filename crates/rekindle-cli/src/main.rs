@@ -27,6 +27,7 @@ mod friends;
 mod governance;
 mod group_dm;
 mod identity;
+mod infoview;
 mod keys;
 mod network;
 mod presence;
@@ -208,14 +209,7 @@ async fn dispatch_command(
             .await?;
             output::format::print_structured(&value, mode)
         }
-        Command::Infoview(args) => {
-            let request = rekindle_ipc::protocol::IpcRequest::InfoviewGet {
-                subject: args.subject(),
-                window: rekindle_types::dto::infoview::CLI_WINDOW.to_owned(),
-            };
-            let value = helpers::send(client, request).await?;
-            output::format::print_structured(&value, mode)
-        }
+        Command::Infoview { subject } => infoview::dispatch(subject.as_ref(), client, mode).await,
         Command::Audit(cmd) => presence::dispatch_audit(&cmd, client, mode).await,
         Command::Undo { id } => presence::undo(&id, client, mode).await,
         Command::Export(cmd) => identity::dispatch_export(&cmd, client, mode).await,
