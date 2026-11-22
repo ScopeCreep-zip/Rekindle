@@ -7,6 +7,15 @@
 //! another author is dropped. A departed author's entries count only up to
 //! the highest head its departures recorded of the outbox (what the reader
 //! keeps, `outbox_read.rs` "Standing").
+//!
+//! A lookup's read reaches the network, so it stores what it read as our
+//! local copy of the author's outbox; Veilid then reports no change for
+//! that value (a watched value not newer than the local copy is dropped,
+//! 0.5.8 `watch_value.rs:2080-2263`, and a change inspection compares the
+//! network with the local copy, `:1433-1516`). A read that saw entries past
+//! our cursor of that author is therefore a trigger of the author's diff,
+//! as the watch report it absorbed would have been (finding RK3: a history
+//! read that started before a post and answered after it hid the post).
 
 use rekindle_channel::deps::OutboxItem;
 use rekindle_channel::outbox_seal::stream_of_tag;
@@ -45,19 +54,50 @@ impl HostChannel {
         let mut entries = Vec::new();
         for (author, record, through) in authors {
             match read_log_after(&*port, &record, OUTBOX, 0).await {
-                Ok(read) => entries.extend(
-                    (read.entries.iter())
-                        .filter(|e| e.seq <= through)
-                        .filter_map(|e| {
-                            self.entry_of_channel(community_id, channel_id, &author, e)
-                        }),
-                ),
+                Ok(read) => {
+                    entries.extend(
+                        (read.entries.iter())
+                            .filter(|e| e.seq <= through)
+                            .filter_map(|e| {
+                                self.entry_of_channel(community_id, channel_id, &author, e)
+                            }),
+                    );
+                    if self
+                        .cursor_behind(community_id, &author, &record, read.last_seq)
+                        .await
+                    {
+                        self.read_author_outbox(community_id, &author, &record, false)
+                            .await;
+                    }
+                }
                 Err(error) => {
                     tracing::debug!(community_id, record, %error, "channel outbox not read for a lookup");
                 }
             }
         }
         entries
+    }
+
+    /// Whether our cursor of `author`'s outbox at `member_record` is below
+    /// `last_seq`, the head a lookup just read (D23 `stream_cursors`).
+    async fn cursor_behind(
+        &self,
+        community_id: &str,
+        author: &PseudonymKey,
+        member_record: &str,
+        last_seq: u64,
+    ) -> bool {
+        let Ok((owner, db)) = self.owner_and_db() else {
+            return false;
+        };
+        let stream = super::outbox_read::outbox_stream(community_id);
+        let writer = format!("{}:{member_record}", hex::encode(author.0));
+        let cursor = db
+            .call(move |conn| {
+                rekindle_db::repo::stream_cursors::get(conn, &owner, &stream, &writer)
+            })
+            .await;
+        cursor.is_ok_and(|cursor| cursor < last_seq)
     }
 
     /// `entry` of `author`'s chain, when it verifies and its tag is that of
