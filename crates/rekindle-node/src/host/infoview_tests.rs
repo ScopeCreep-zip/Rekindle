@@ -59,6 +59,8 @@ async fn ann_and_bob() -> (Vec<tempfile::TempDir>, std::sync::Arc<Host>, String,
         elapsed_seconds: 30,
         server_address: Some("203.0.113.7:27015".into()),
         icon_key: None,
+        joinable: true,
+        joinable_reason: None,
     });
     host.ctx
         .session

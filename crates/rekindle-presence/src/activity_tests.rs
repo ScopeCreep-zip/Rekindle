@@ -22,6 +22,10 @@ fn game(game_id: u32, elapsed_seconds: u32, server: Option<&str>) -> GameInfoSta
         elapsed_seconds,
         server_address: server.map(str::to_string),
         icon_key: None,
+        joinable: server.is_some(),
+        joinable_reason: server
+            .is_none()
+            .then_some(rekindle_types::friend::NotJoinableReason::NoServer),
     }
 }
 

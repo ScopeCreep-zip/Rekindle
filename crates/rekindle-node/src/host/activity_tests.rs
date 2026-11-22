@@ -47,6 +47,8 @@ fn game(id: u32) -> GameInfoState {
         elapsed_seconds: 30,
         icon_key: None,
         server_address: None,
+        joinable: false,
+        joinable_reason: Some(rekindle_types::friend::NotJoinableReason::NoServer),
     }
 }
 
