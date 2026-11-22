@@ -18,6 +18,7 @@ use rekindle_transport::{crypto::mek::MekCache, Session, TransportConfig, Transp
 use rekindle_vault::VaultHandle;
 use tracing::Instrument as _;
 
+use super::transport_config::apply_policy;
 use super::{policy, signals, watchdog, ConfigFault};
 use crate::daemon::dispatch::DaemonContext;
 use crate::daemon::handler::DaemonHandler;
@@ -525,46 +526,6 @@ impl Host {
         tracing::info!(?reason, "host stopped");
         Ok(reason)
     }
-}
-
-/// Apply the admin policy's ceilings and floors to the transport config.
-/// `min_hop_count` is a floor on the safety-route length, beside the
-/// transport's own `ANONYMITY_HOP_FLOOR`: an administrator can raise it,
-/// never lower it.
-fn apply_policy(mut config: TransportConfig, policy: &policy::PolicyConfig) -> TransportConfig {
-    if let Some(ceiling) = policy.max_gossip_ttl {
-        if config.gossip_ttl > ceiling {
-            tracing::info!(gossip_ttl = ceiling, "admin policy capped the gossip TTL");
-            config.gossip_ttl = ceiling;
-        }
-    }
-    if let Some(floor) = policy.min_hop_count {
-        for profile in [
-            &mut config.safety.text,
-            &mut config.safety.voice,
-            &mut config.safety.dht,
-            &mut config.safety.rpc,
-        ] {
-            profile.hop_count = profile.hop_count.max(floor);
-        }
-        tracing::info!(
-            min_hop_count = floor,
-            "admin policy raised the safety-route floor"
-        );
-    }
-    config
-}
-
-/// The `[network]` section of the layered `config.toml`, the file and schema
-/// `rekindle config validate` checks: `rekindled`'s transport config.
-///
-/// # Errors
-/// The file does not parse or validate (`ConfigFault`, `EX_CONFIG`).
-pub fn user_transport_config() -> anyhow::Result<TransportConfig> {
-    let user_config: rekindle_types::config::user::UserConfig =
-        rekindle_utils::config_layers::load(None).map_err(|e| ConfigFault(e.into()))?;
-    user_config.validate().map_err(|e| ConfigFault(e.into()))?;
-    Ok(user_config.network)
 }
 
 /// Move the lifecycle during shutdown, logging an edge the FSM refuses

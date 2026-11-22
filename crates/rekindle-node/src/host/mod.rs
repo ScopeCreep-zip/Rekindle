@@ -72,6 +72,7 @@ mod reinitiate_tests;
 mod rotation_tests;
 pub mod runtime;
 mod serve;
+mod transport_config;
 pub mod session;
 pub mod shell_hooks;
 pub(crate) mod skin;
@@ -89,10 +90,8 @@ pub mod wipe;
 
 use rekindle_db::paths::DataRoot;
 
-pub use runtime::{
-    claim, user_transport_config, ClaimedRoot, Host, HostConfig, HostMode, HostStores,
-    TransportSource,
-};
+pub use runtime::{claim, ClaimedRoot, Host, HostConfig, HostMode, HostStores, TransportSource};
+pub use transport_config::user_transport_config;
 pub use shell_hooks::{EndReason, OwnRecordKeys, ShellHooks, UnlockedView};
 
 /// `rekindled`'s command line. The host takes no options yet; parsing still
