@@ -113,7 +113,12 @@ fn a_selection_action_is_refused_while_nothing_is_selected() {
 
 #[test]
 fn gap_actions_yield_not_built_yet() {
-    for action in [A::JoinFriend, A::AddServer, A::InviteUsersToRoom, A::SearchFor] {
+    for action in [
+        A::JoinFriend,
+        A::AddServer,
+        A::InviteUsersToRoom,
+        A::SearchFor,
+    ] {
         assert_eq!(
             run(&action),
             SkinRun::NotBuiltYet {
@@ -238,7 +243,9 @@ fn each_download_action_reaches_its_transfer_request() {
     assert_eq!(reached(&A::StopDownload), "TransferStop");
     assert_eq!(reached(&A::OpenDownload), "TransferOpen");
     assert_eq!(reached(&A::DownloadInfo), "TransferList");
-    let Ok(Mapped::Request(start)) = map(&A::StartDownload, None, Some(&selected), &Rooms::default()) else {
+    let Ok(Mapped::Request(start)) =
+        map(&A::StartDownload, None, Some(&selected), &Rooms::default())
+    else {
         unreachable!()
     };
     // The shell asks where to save, then sends the destination.
@@ -247,7 +254,8 @@ fn each_download_action_reaches_its_transfer_request() {
         IpcRequest::Transfer(T::Start { ref attachment_id, ref target, dest: None })
             if attachment_id == id && *target == selected.1
     ));
-    let Ok(Mapped::Request(stop)) = map(&A::StopDownload, None, Some(&selected), &Rooms::default()) else {
+    let Ok(Mapped::Request(stop)) = map(&A::StopDownload, None, Some(&selected), &Rooms::default())
+    else {
         unreachable!()
     };
     assert!(matches!(
@@ -255,7 +263,8 @@ fn each_download_action_reaches_its_transfer_request() {
         IpcRequest::Transfer(T::Stop { ref attachment_id }) if attachment_id == id
     ));
     for action in [A::StartDownload, A::StopDownload, A::OpenDownload] {
-        let refused = map(&action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default()).expect_err("no transfer");
+        let refused = map(&action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default())
+            .expect_err("no transfer");
         assert!(
             matches!(refused, IpcResponse::Error { code: 409, .. }),
             "{action:?}"
