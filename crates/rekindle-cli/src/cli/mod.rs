@@ -182,13 +182,11 @@ pub enum Command {
     /// The game we show.
     #[command(subcommand)]
     Game(GameCmd),
-
-    /// The activity feed: what friends did, newest first.
+    /// The activity feed, newest first: `--before <id>` pages on from the
+    /// last id a page printed, `--limit` 1–100 entries.
     Activity {
-        /// Only the entries after this entry id (the last id a page printed).
         #[arg(long)]
         before: Option<i64>,
-        /// How many entries, 1–100.
         #[arg(long, default_value_t = 20)]
         limit: u16,
     },

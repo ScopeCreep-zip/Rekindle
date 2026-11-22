@@ -122,7 +122,7 @@ fn sync() -> Vec<Sample> {
                     id: 42,
                     at: 1_700_000_000_000,
                     kind: rekindle_types::activity::ActivityKind::StartedGame {
-                        friend: pk(),
+                        friend: pk('a'),
                         game_id: 4_100,
                         server: Some("203.0.113.7:27015".into()),
                     },

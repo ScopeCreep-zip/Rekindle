@@ -1827,6 +1827,29 @@
       }
     }
   },
+  "system.activityAppended": {
+    "system": {
+      "activityAppended": {
+        "entries": [
+          {
+            "at": 1700000000000,
+            "displayName": "Alice",
+            "id": 42,
+            "identityPinMismatch": false,
+            "kind": {
+              "data": {
+                "friend": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "gameId": 4100,
+                "server": "203.0.113.7:27015"
+              },
+              "type": "startedGame"
+            },
+            "nickname": "Al"
+          }
+        ]
+      }
+    }
+  },
   "system.auditChainBroken": {
     "system": {
       "auditChainBroken": {
