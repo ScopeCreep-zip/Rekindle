@@ -263,15 +263,18 @@ fn held_key(
 
 /// Put this device's first endorsement into `body` when it is a
 /// `MemberJoined` without one (rule 3: a self-admitted joiner's first op
-/// is its join); any other body stays as it is.
+/// is its join); any other body stays as it is. `state` is the one the op
+/// is written over: a re-join's endorsement takes an incarnation above the
+/// member's elements it holds ([`member_first_endorsement`]).
 ///
 /// # Errors
-/// As [`first_endorsement`].
+/// Never (a first device's set always extends).
 pub fn carry_first_device(
     body: &mut rekindle_types::governance::GovernanceEntry,
     p: &SigningKey,
     community: &str,
     d: &SigningKey,
+    state: &GovernanceState,
 ) -> Result<(), GovernanceRuntimeError> {
     if let rekindle_types::governance::GovernanceEntry::MemberJoined {
         member_record,
@@ -280,20 +283,21 @@ pub fn carry_first_device(
         ..
     } = body
     {
-        *first = Some(first_endorsement(
+        *first = Some(member_first_endorsement(
             p,
             community,
             d,
-            member_record,
-            member_record_owner,
-        )?);
+            (member_record, member_record_owner),
+            state,
+        ));
     }
     Ok(())
 }
 
 /// `p`'s endorsement of this device's first key `d` in `community` for
-/// member record `record` (owner text `owner`): the first device's record
-/// is `M(p)` itself (rule 3), and it extends an empty set.
+/// member record `record` (owner text `owner`) of a member new to the
+/// community: the first device's record is `M(p)` itself (rule 3), and it
+/// extends an empty set.
 ///
 /// # Errors
 /// Never for a first device (an empty set always extends).
@@ -304,19 +308,43 @@ pub fn first_endorsement(
     record: &str,
     owner: &str,
 ) -> Result<DeviceEndorsement, GovernanceRuntimeError> {
-    device_writer::endorse(
+    Ok(device_writer::endorse_first(
         p,
         community,
-        record,
         None,
         d.verifying_key().to_bytes(),
         DeviceRecord {
             record: record.to_owned(),
             owner: owner.to_owned(),
         },
-        [0; 32],
+    ))
+}
+
+/// [`first_endorsement`] for a `MemberJoined` written over `state`: when
+/// `state` holds elements of `p` from an ended membership (a re-join, lead
+/// decision 63, whose device keeps its key), the endorsement of the new
+/// `M(p)` takes an incarnation above them (rule 2's `(device key,
+/// incarnation)` ids), so it is held beside the ended record's and binds
+/// the new record ([`own_op_record`]).
+#[must_use]
+pub fn member_first_endorsement(
+    p: &SigningKey,
+    community: &str,
+    d: &SigningKey,
+    (record, owner): (&str, &str),
+    state: &GovernanceState,
+) -> DeviceEndorsement {
+    let author = PseudonymKey(p.verifying_key().to_bytes());
+    device_writer::endorse_first(
+        p,
+        community,
+        state.devices.member(&author),
+        d.verifying_key().to_bytes(),
+        DeviceRecord {
+            record: record.to_owned(),
+            owner: owner.to_owned(),
+        },
     )
-    .map_err(|e| GovernanceRuntimeError::Crypto(format!("device endorsement: {e:?}")))
 }
 
 #[cfg(test)]

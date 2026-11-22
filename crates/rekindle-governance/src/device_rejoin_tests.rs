@@ -9,7 +9,7 @@ use rekindle_types::id::PseudonymKey;
 
 use super::enrol_tests::{enrol_op, held, joined_view, op, p, record, ANCHOR, M_P};
 use super::DeviceView;
-use crate::device_writer::endorse;
+use crate::device_writer::{endorse, endorse_first};
 
 /// The re-join's new member record.
 const M_P2: &str = "VLD0:member-2";
@@ -84,4 +84,36 @@ fn a_fresh_key_enrolled_for_the_new_record_is_taken() {
     assert!(held(&view)
         .endorsement_for(&pk(), ANCHOR, M_P2, &[13; 32])
         .is_some());
+}
+
+/// The re-joining device keeps its key (`[10; 32]`, the first membership's
+/// first device): its endorsement of the new `M(p)` takes an incarnation
+/// above the ended membership's, so the set (keyed by `(incarnation, device
+/// key)`, rule 2) holds both and the key binds the new record, in either
+/// absorb order.
+#[test]
+fn a_rejoin_that_keeps_its_key_binds_the_new_record() {
+    let view = joined_view();
+    let again = endorse_first(&p(1), ANCHOR, Some(held(&view)), [10; 32], record(M_P2));
+    let rejoin = op(
+        9,
+        10,
+        GovernanceEntry::MemberJoined {
+            member_record: M_P2.into(),
+            member_record_owner: "VLD0:owner-2".into(),
+            invite_proof: None,
+            owner_proof: vec![0; 64],
+            first_device: Some(again),
+        },
+    );
+    let mut after = view.clone();
+    after.absorb(ANCHOR, &rejoin);
+    let mut before = DeviceView::default();
+    before.absorb(ANCHOR, &rejoin);
+    before.union(&view);
+    for view in [&after, &before] {
+        let md = held(view);
+        assert!(md.endorsement_for(&pk(), ANCHOR, M_P2, &[10; 32]).is_some());
+        assert!(md.endorsement_for(&pk(), ANCHOR, M_P, &[10; 32]).is_some());
+    }
 }

@@ -312,9 +312,13 @@ fn joined_op(
         member_record_owner: owner.clone(),
         invite_proof: Some(InviteProof { code_hash, sig }),
         owner_proof: owner_proof.to_vec(),
-        first_device: Some(device_signer::first_endorsement(
-            key, anchor, device, record, &owner,
-        )?),
+        first_device: Some(device_signer::member_first_endorsement(
+            key,
+            anchor,
+            device,
+            (record, &owner),
+            &walked.merged.state,
+        )),
     };
     let (set, outcome) = (&walked.set, &walked.merged);
     let hint = walked.hint.as_ref();

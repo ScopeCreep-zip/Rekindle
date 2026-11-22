@@ -84,6 +84,45 @@ pub fn endorse(
     Ok(e)
 }
 
+/// `p`'s endorsement of a member's first device `device_key` for the
+/// member record `member_record` it binds (rule 3), extending an empty set
+/// (a new member record starts its own set, lead decision 63) at an
+/// incarnation above every element of `prior`, the member's elements this
+/// device holds from an ended membership (`None` for a member new to the
+/// community). Rule 2 keys the set by `(device key, incarnation)`, so a
+/// re-joining device that keeps its key endorses it under a fresh
+/// incarnation: the new record's element never shares an id with the one
+/// signed for the ended record, which a union would keep only one of.
+#[must_use]
+pub fn endorse_first(
+    p: &SigningKey,
+    community: &str,
+    prior: Option<&MemberDevices>,
+    device_key: [u8; 32],
+    record: DeviceRecord,
+) -> DeviceEndorsement {
+    let above = (prior
+        .map(MemberDevices::elements)
+        .unwrap_or_default()
+        .iter())
+    .map(|e| e.incarnation)
+    .max()
+    .unwrap_or(0);
+    let mut e = DeviceEndorsement {
+        device_key,
+        incarnation: above + 1,
+        extends_set: device_set_hash(&[]),
+        extends_elements: Vec::new(),
+        device_record: record.record,
+        device_record_owner: record.owner,
+        fork_evidence: [0; 32],
+        endorsement_sig: Vec::new(),
+    };
+    let bytes = endorsement_signing_bytes(community, &e.device_record, &e);
+    e.endorsement_sig = p.sign(&bytes).to_bytes().to_vec();
+    e
+}
+
 /// `p`'s retirement of `device_key` above `last_seq` (rules 4, 5, 10), at
 /// the incarnation `held` endorsed it at.
 ///
