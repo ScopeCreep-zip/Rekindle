@@ -54,7 +54,7 @@ const RowButton: Component<{ label: string; refused: string | null; onPress: () 
   </button>
 );
 
-const verdictText = (v: ServerVerdict): string | null => (v.allowed ? null : REFUSAL_TEXT[v.reason ?? "notRemovable"]);
+const verdictText = (v: ServerVerdict): string | null => (v.allowed ? null : REFUSAL_TEXT[v.reason]);
 
 const ServersView: Component = () => {
   const [view, setView] = createSignal<View | null>(null);
@@ -144,7 +144,7 @@ const ServersView: Component = () => {
                     <span class="servers-view-actions">
                       <RowButton
                         label="Join"
-                        refused={r.join.joinable ? null : notJoinableText(r.join) || "can't be joined"}
+                        refused={r.join.joinable ? null : notJoinableText(r.join)}
                         onPress={() => join(r)}
                       />
                       <RowButton label="Add to Favorites" refused={verdictText(r.addFavourite)} onPress={() => addFavourite(r)} />

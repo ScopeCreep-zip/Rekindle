@@ -8,19 +8,16 @@ import type { JoinSource, NotJoinableReason } from "./types";
 export type ServerRefusal = "alreadyFavourite" | "noNumericGame" | "badAddress" | "notRemovable";
 
 /** One of a row's actions, as the Host allows it (`ServerVerdict`). */
-export interface ServerVerdict {
-  allowed: boolean;
-  reason: ServerRefusal | null;
-}
+/** The reason is present exactly when refused. */
+export type ServerVerdict = { allowed: true } | { allowed: false; reason: ServerRefusal };
 
-/** A row's Join: sent as `launch_game{gameId, server, source: launchSource}` when joinable. */
-export interface ServerJoin {
+/** A row's Join: sent as `launch_game{gameId, server, source: launchSource}` when
+ *  joinable; `joinableReason` is present exactly when it is not. */
+export type ServerJoin = {
   gameId: number | null;
   server: string | null;
-  launchSource: JoinSource;
-  joinable: boolean;
-  joinableReason: NotJoinableReason | null;
-}
+  launchSource: Exclude<JoinSource, "installed">;
+} & ({ joinable: true } | { joinable: false; joinableReason: NotJoinableReason });
 
 export interface ServerRow {
   /** null: a community entry whose game id is not numeric. */
