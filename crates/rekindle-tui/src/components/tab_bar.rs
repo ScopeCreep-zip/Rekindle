@@ -112,6 +112,7 @@ impl TabBarState {
             | ViewKind::CommunityInfo { .. }
             | ViewKind::VoiceSession { .. } => "communities",
             ViewKind::Activity => "activity",
+            ViewKind::Servers => "servers",
         };
         self.select_by_id(tab_id);
     }

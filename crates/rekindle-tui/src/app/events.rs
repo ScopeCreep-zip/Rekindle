@@ -207,9 +207,14 @@ impl App {
                 | VoiceEvent::PacketsDropped { .. }
                 | VoiceEvent::ConnectionQuality { .. },
             )
-            // New feed entries (plan E7.15): the open Activity view adds
-            // them as the Host named them, without asking again.
-            | SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
+            | SubscriptionEvent::System(
+                // New feed entries (plan E7.15): the open Activity view
+                // adds them as the Host named them, without asking again.
+                SystemEvent::ActivityAppended { .. }
+                // The Servers view composed again (plan E7.2 G3): the open
+                // Servers view shows it as the Host pushed it.
+                | SystemEvent::ServersViewChanged { .. },
+            ) => {
                 let _ = self
                     .action_tx
                     .send(Action::SubscriptionEvent(Box::new(event)));

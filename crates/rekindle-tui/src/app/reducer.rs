@@ -196,6 +196,8 @@ impl App {
             Action::LoadActivity { before } => self.load_activity(before),
             action @ (Action::ShowFavourites
             | Action::ShowInstalledGames
+            | Action::ShowServers
+            | Action::RemoveRecentServer { .. }
             | Action::LaunchGame { .. }
             | Action::AddFavourite { .. }
             | Action::RemoveFavourite { .. }) => self.process_game_action(action),
@@ -339,6 +341,15 @@ impl App {
                     .navigate(ViewKind::InstalledGames, self.theme.use_unicode());
                 self.load_installed_games();
             }
+            Action::ShowServers => {
+                self.nav
+                    .navigate(ViewKind::Servers, self.theme.use_unicode());
+                self.load_servers_view();
+            }
+            Action::RemoveRecentServer { game_id, server } => self.spawn_servers(
+                IpcRequest::RecentServerRemove { game_id, server },
+                "remove recent server",
+            ),
             Action::LaunchGame {
                 game_id,
                 server,

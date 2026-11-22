@@ -155,17 +155,15 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(SystemEvent::SkinApplyFailed { window, .. }) => {
             Audience::labels([window.clone()]).with_kinds(&[WindowKind::Settings])
         }
-        // The Infoview shows the feed: the buddy list's and each chat
-        // window's (plan E7.15, design §2.1).
-        SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
-            buddy_list().with_kinds(&[WindowKind::Chat])
-        }
-        // The Servers view (plan E7.2 G3): the buddy list's Servers tab
-        // (`EngineView::Servers`) and every chat window's skin tree, the
-        // windows the Infoview's feed reaches.
-        SubscriptionEvent::System(SystemEvent::ServersViewChanged { .. }) => {
-            buddy_list().with_kinds(&[WindowKind::Chat])
-        }
+        SubscriptionEvent::System(
+            // The Infoview shows the feed: the buddy list's and each chat
+            // window's (plan E7.15, design §2.1).
+            SystemEvent::ActivityAppended { .. }
+            // The Servers view (plan E7.2 G3): the buddy list's Servers tab
+            // (`EngineView::Servers`) and every chat window's skin tree, the
+            // windows the Infoview's feed reaches.
+            | SystemEvent::ServersViewChanged { .. },
+        ) => buddy_list().with_kinds(&[WindowKind::Chat]),
         // A window's Infoview goes to that window alone (ADR 0013): the
         // label it asked with is its own (`commands::infoview`).
         SubscriptionEvent::System(SystemEvent::Infoview(InfoviewEvent::Updated {
