@@ -43,8 +43,16 @@ describe("a chosen imported skin is on trial until kept, and reverts when the tr
     await createIdentity(browser, me);
     await openSettings(browser, "Appearance");
     await shown(browser, ".skin-row-shown .skin-name", NET_WAIT_MS);
-    stored = (await browser.execute(SHEET)) as string;
-    expect(stored.startsWith("skin://")).toBe(true);
+    // The window links its first sheet once every image it lists has
+    // decoded (useSkin.ts), which can be seconds after the list shows.
+    await waitUntil(
+      async () => {
+        stored = (await browser.execute(SHEET)) as string;
+        return stored.startsWith("skin://");
+      },
+      NET_WAIT_MS,
+      "Settings never linked the stored skin's sheet",
+    );
     await pickNextFile(browser, "onyx.rkskin", "application/octet-stream", readFileSync(PACKAGE).toString("base64"));
     await (await byText(browser, "button.form-btn-secondary", "Import skin")).click();
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 3000 });

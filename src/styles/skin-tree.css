@@ -48,8 +48,11 @@
     display: flex;
     align-items: center;
   }
+  /* A flex item shrinks below its text only with min-width: 0, so a long
+   * name ellipsizes inside the pack's name box instead of running off. */
   .skin-name-text {
     position: relative;
+    min-width: 0;
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;

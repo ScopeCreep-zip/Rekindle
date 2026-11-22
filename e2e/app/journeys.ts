@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
@@ -98,11 +98,23 @@ export async function acceptRequest(b: Browser, user: User, message: string): Pr
   await resolveIntent(b, { passphrase: user.passphrase });
 }
 
+/**
+ * The Friends list on screen: under a skin's tree, its Friends view (the
+ * tree may still show the Communities view a community journey left it
+ * on); otherwise the app's Friends tab.
+ */
+async function friendsView(b: Browser): Promise<void> {
+  if (await underTree(b)) {
+    if (!(await skinViewShown(b, "friends"))) await showSkinView(b, "friends");
+  } else {
+    await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  }
+}
+
 /** The Friends tab's row for `name`, once listed. */
 export async function friendRow(b: Browser, name: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
   await inBuddy(b);
-  // A skin's tree shows its Friends view first; the app's bar has a tab.
-  if (!(await underTree(b))) await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  await friendsView(b);
   return byText(b, ".buddy-item", name, NET_WAIT_MS);
 }
 
@@ -270,7 +282,7 @@ export async function createGroup(b: Browser, user: User, name: string, members:
 /** Open group `name`'s chat window from the buddy list (double-click its row) and switch to it. */
 export async function openGroup(b: Browser, name: string): Promise<void> {
   await inBuddy(b);
-  if (!(await underTree(b))) await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  await friendsView(b);
   const before = await b.getWindowHandles();
   await doubleClick(b, await byText(b, ".group-dm-row", name.slice(0, 24), NET_WAIT_MS));
   await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("chat-g") && !before.includes(h), NET_WAIT_MS));
@@ -360,7 +372,13 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
   await (await byText(b, ".form-tab", "Appearance")).click();
   await shown(b, ".skin-row-shown .skin-name", NET_WAIT_MS);
   const inUse = async (): Promise<string> => (await (await b.$(".skin-row-shown .skin-name")).getText()).trim();
+  const linked = async (): Promise<string> => (await b.execute(LINKED_SHEET)) as string;
+  // The sheet shown before the change: the new one links only after every
+  // image it lists has decoded (useSkin.ts), seconds after the row says
+  // "in use", so any skin:// sheet before then is the old skin's.
+  let before = "";
   if ((await inUse()) !== name) {
+    before = await linked();
     let found = false;
     for (const row of await b.$$(".skin-row")) {
       if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
@@ -375,14 +393,17 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
   let href = "";
   await waitUntil(
     async () => {
-      href = (await b.execute('var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";')) as string;
-      return href.startsWith("skin://");
+      href = await linked();
+      return href.startsWith("skin://") && href !== before;
     },
     NET_WAIT_MS,
-    "Settings never linked the skin's sheet",
+    `Settings never linked ${name}'s sheet`,
   );
   return href;
 }
+
+/** The href of the window's linked, loaded skin sheet (useSkin.ts LINK_ID), or "". */
+export const LINKED_SHEET = 'var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";';
 
 /** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
 export async function setLoginSkin(b: Browser, user: User, name: string): Promise<void> {
@@ -421,4 +442,49 @@ export async function unlock(b: Browser, user: User): Promise<void> {
   await submit.click();
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
   await inBuddy(b);
+}
+
+/** Whether the skin tree's `view` node is shown (not under a hidden page, with a box). */
+export async function skinViewShown(b: Browser, view: string): Promise<boolean> {
+  return (await b.execute((v: string) => {
+    const n = document.querySelector<HTMLElement>(`[data-skin-role="view:${v}"]`);
+    return !!n && n.closest("[hidden]") === null && n.getBoundingClientRect().height > 0;
+  }, view)) as boolean;
+}
+
+/** The first visible skin node matching `selector` in `b`'s window, or "". */
+async function visibleSkinNode(b: Browser, selector: string): Promise<string> {
+  return (await b.execute(
+    (sel: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>(sel)).find((n) => n.getBoundingClientRect().width > 0)?.dataset.skinNode ?? "",
+    selector,
+  )) as string;
+}
+
+/**
+ * Under a skin's tree, press the pack's control for `view` wherever the Host
+ * placed it (plan SK2-N4) and wait for the view: a tab or knob node; a knob
+ * whose stops share one box (Combat), pressed round to the view; or a control
+ * in a pack popup (StealthX's MainMenuPopup rail), pressed in the popup.
+ */
+export async function showSkinView(b: Browser, view: string): Promise<void> {
+  await switchTo(b, BUDDY);
+  const control = await visibleSkinNode(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`);
+  if (control) {
+    await press(b, await b.$(`[data-skin-node="${control}"]`));
+  } else if (await visibleSkinNode(b, '[data-skin-role^="knob:"]')) {
+    for (let i = 0; i < 4 && !(await skinViewShown(b, view)); i++) {
+      await press(b, await b.$(`[data-skin-node="${await visibleSkinNode(b, '[data-skin-role^="knob:"]')}"]`));
+      await sleep(600);
+    }
+  } else {
+    const launcher = await visibleSkinNode(b, '[data-skin-action^="launchPopup"]');
+    if (!launcher) throw new Error(`no control for ${view} in the main window, a knob or a popup`);
+    const before = await b.getWindowHandles();
+    await press(b, await b.$(`[data-skin-node="${launcher}"]`));
+    await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("popup-") && !before.includes(h), 10_000));
+    await press(b, await shown(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`));
+    await switchTo(b, BUDDY);
+  }
+  await waitUntil(() => skinViewShown(b, view), 10_000, `the ${view} view did not show`);
 }

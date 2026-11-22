@@ -343,6 +343,13 @@ export interface SkinShell {
   root: ShellNode[];
   /** The items of every engine menu the shell's buttons open. */
   menus: MenuRegistry;
+  /** The tree-laid window's served minimum, logical px, the frame's outsets included
+   *  (plan SK4): what the desktop's fit holds the window to. */
+  minWidth: number;
+  minHeight: number;
+  /** The `skin://` hrefs this tree's own rules draw beyond the shared sheet's
+   *  (`SkinApplied.images`), decoded only by a window laying this tree. */
+  images: string[];
 }
 
 /** `Anchor` (serde `tag = "kind"`, `content = "offset"`). */

@@ -21,8 +21,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY } from "../../../walk/nav.ts";
+import { NET_WAIT_MS, byText, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { BUDDY, underTree } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 
 const SHORTCUTS_RS = path.join(import.meta.dirname, "..", "..", "..", "..", "src-tauri", "src", "shortcuts.rs");
@@ -56,6 +56,17 @@ async function focused(opener: string): Promise<boolean> {
  * Focus `opener` and activate it; the dialog `dialog` opens with focus
  * inside; Esc closes it and focus returns to `opener`.
  */
+/** The first shown skin node matching `selector`, by id. */
+async function visibleSkinNode(selector: string): Promise<string> {
+  const id = (await browser.execute(
+    (sel: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>(sel)).find((n) => n.getBoundingClientRect().width > 0)?.dataset.skinNode ?? "",
+    selector,
+  )) as string;
+  if (!id) throw new Error(`no shown node for ${selector}`);
+  return id;
+}
+
 async function escReturnsFocus(opener: string, dialog: string): Promise<void> {
   // Exists, not shown: a message's action bar is collapsed until hover or
   // focus within it (10-thread-list-panel.css), and focusing reveals it.
@@ -98,17 +109,31 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
 
   it("Add Friend (a shared Modal): focus in, Esc closes it, focus back on Add Friend", async () => {
     await switchTo(browser, BUDDY);
+    if (await underTree(browser)) {
+      // A skin's tree draws the pack's own Add Friend control (the Host's
+      // addFriend action); a hidden page may hold another, so the shown one.
+      await escReturnsFocus(`[data-skin-node="${await visibleSkinNode('[data-skin-action="addFriend"]')}"]`, '[role="dialog"]');
+      return;
+    }
     // Add Friend shows on the Friends tab only (BottomActionBar.tsx).
     await (await shown(browser, '.buddy-tab[title^="Friends"]')).click();
     await escReturnsFocus('[aria-label="Add Friend"]', '[role="dialog"]');
   });
 
-  it("the action bar opens the shortcuts, which list the global chords; Esc gives focus back", async () => {
+  it("the shortcuts list the global chords; Esc gives focus back to their opener", async () => {
     await switchTo(browser, BUDDY);
-    const opener = '[aria-label="Keyboard shortcuts"]';
+    // The app's action bar has a Keyboard shortcuts button; a skin's tree
+    // opens them from the pack's Tools menu (the Host's MenuRegistry), and
+    // focus comes back to that menu's title.
+    const tree = await underTree(browser);
+    const opener = tree ? '[data-skin-action="menu:tool"]' : '[aria-label="Keyboard shortcuts"]';
     const el = await shown(browser, opener, NET_WAIT_MS);
     await browser.execute((node: HTMLElement) => node.focus(), el as unknown as HTMLElement);
     await press(browser, el);
+    if (tree) {
+      await shown(browser, ".menu-dropdown", NET_WAIT_MS);
+      await press(browser, await byText(browser, ".menu-dropdown-item", "Keyboard Shortcuts"));
+    }
     const dialog = '[role="dialog"]';
     await shown(browser, dialog, NET_WAIT_MS);
     const listed = (await browser.execute(

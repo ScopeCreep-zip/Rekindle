@@ -10,7 +10,8 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Browser } from "webdriverio";
 import { WAIT_MS, sleep, waitUntil } from "../walk/helpers.ts";
-import { type Findings, checkGeometry } from "./geometry.ts";
+import { type Findings, checkGeometry, treeFitIn } from "./geometry.ts";
+import type { TreeFit } from "./geometry-page.ts";
 
 export interface Size {
   width: number;
@@ -24,6 +25,9 @@ export interface WindowCase {
   max?: Size;
   /** Containers whose declared gaps must sit on the spacing grid. */
   spacing: string[];
+  /** Under a skin's tree, which draws none of the app's bars: the containers
+   *  the app itself draws inside the tree, in place of `spacing`. */
+  treeSpacing?: string[];
   /** More such containers, rendered only when the window has data. */
   spacingWithData?: string[];
   /** Content panes, rendered when the window has data, that must never scroll sideways. */
@@ -47,6 +51,7 @@ export const BUDDY_LIST: WindowCase = {
   min: { width: 300, height: 500 },
   max: { width: 400, height: 900 },
   spacing: [".xfire-titlebar", ".status-bar", ".menu-bar"],
+  treeSpacing: [".skin-tree-view-content"],
   spacingWithData: [".buddy-group-header"],
   panes: [".buddy-list"],
   // The bell's count badge sits on the glyph's corner by design (lead
@@ -158,6 +163,74 @@ export function sizes(w: WindowCase): [string, Size][] {
   return [["min", w.min], ["default", w.def], ["large", large]];
 }
 
+/**
+ * The minimum the Host serves the window's skin tree (plan SK4
+ * `SkinShell.minWidth/minHeight`, the frame's outsets included), or
+ * undefined when the window lays no tree. The desktop holds the window to
+ * it (`set_min_size`), but WebDriver's Set Window Rect goes below a
+ * window's minimum on macOS, so a spec asks for it rather than trusting the
+ * OS to refuse a smaller size.
+ */
+export async function treeMinimum(b: Browser): Promise<Size | undefined> {
+  type Got = { width: number; height: number } | { none: true } | { error: string };
+  const got = (await b.execute((): Promise<Got> => {
+    const frame = document.querySelector(".app-frame");
+    if (!frame || !frame.querySelector(".skin-tree")) return Promise.resolve({ none: true });
+    const kind = frame.getAttribute("data-skin-window");
+    const popup = frame.getAttribute("data-skin-popup");
+    const w = window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> } };
+    return w.__TAURI_INTERNALS__.invoke("get_skin", { id: null }).then(
+      (skin): Got => {
+        type Shell = { window: string; popup?: { name: string }; minWidth: number; minHeight: number };
+        const shell = (skin as { shells?: Shell[] }).shells?.find((s) => (popup ? s.popup?.name === popup : s.window === kind && !s.popup));
+        return shell ? { width: shell.minWidth, height: shell.minHeight } : { error: `no served shell for ${popup ?? kind ?? "this window"}` };
+      },
+      (e: unknown): Got => ({ error: `get_skin failed: ${String(e)}` }),
+    );
+  })) as Got;
+  if ("error" in got) throw new Error(got.error);
+  return "none" in got ? undefined : got;
+}
+
+/**
+ * `w`'s sizes for the window `b` is in: a tree-laid window is measured from
+ * the minimum its skin serves upward (no axis below it; a size equal to an
+ * earlier one is measured once), any other at its kind's sizes.
+ */
+export async function sizesIn(b: Browser, w: WindowCase): Promise<[string, Size][]> {
+  const min = await treeMinimum(b);
+  if (!min) return sizes(w);
+  const out: [string, Size][] = [];
+  for (const [name, s] of sizes(w)) {
+    const size = { width: Math.max(s.width, min.width), height: Math.max(s.height, min.height) };
+    if (!out.some(([, o]) => o.width === size.width && o.height === size.height)) out.push([name, size]);
+  }
+  return out;
+}
+
+/** The spacing containers of `w` in a window with or without a skin tree (`treeSpacing` under one). */
+export function spacingOf(w: WindowCase, tree: boolean, withData: boolean): string[] {
+  return [...(tree ? (w.treeSpacing ?? []) : w.spacing), ...(withData ? (w.spacingWithData ?? []) : [])];
+}
+
+/**
+ * Whether a skin's tree grew with its window across `fits` (one per size):
+ * the window's width and height beyond the tree's, and its height beyond
+ * the views node's, stay the same, so content fills the window and its
+ * foot stays down at every size. A finding per changed gap, else none.
+ */
+export function treeGrowth(fits: [string, TreeFit][]): string[] {
+  const out: string[] = [];
+  const first = fits[0];
+  if (!first) return out;
+  for (const [name, fit] of fits.slice(1)) {
+    for (const key of ["gapWidth", "gapHeight", "viewsGapHeight"] as const) {
+      if (fit[key] !== first[1][key]) out.push(`${key} ${String(first[1][key])} at ${first[0]}, ${String(fit[key])} at ${name}`);
+    }
+  }
+  return out;
+}
+
 async function innerSize(b: Browser): Promise<Size> {
   return b.execute(() => ({ width: window.innerWidth, height: window.innerHeight }));
 }
@@ -227,16 +300,21 @@ const OUT_DIR = path.join(import.meta.dirname, "out", "layout");
 export async function checkWindow(b: Browser, w: WindowCase, opts: { withData: boolean; allow?: string[] }): Promise<Findings> {
   mkdirSync(OUT_DIR, { recursive: true });
   const found: Findings = {};
-  for (const [sizeName, size] of sizes(w)) {
+  const fits: [string, TreeFit][] = [];
+  for (const [sizeName, size] of await sizesIn(b, w)) {
     await sizeWindow(b, size);
     await b.saveScreenshot(path.join(OUT_DIR, `${w.name}-${sizeName}-${opts.withData ? "data" : "empty"}.png`));
+    const fit = await treeFitIn(b, ".app-frame");
+    if (fit) fits.push([`${sizeName} ${size.width}x${size.height}`, fit]);
     const findings = await checkGeometry(b, ".app-frame", {
-      spacing: opts.withData ? [...w.spacing, ...(w.spacingWithData ?? [])] : w.spacing,
+      spacing: spacingOf(w, fit !== null, opts.withData),
       panes: opts.withData ? (w.panes ?? []) : [],
       allow: opts.allow,
       overlapAllow: w.overlapAllow,
     });
     for (const [check, value] of Object.entries(findings)) found[`${sizeName} ${size.width}x${size.height}: ${check}`] = value;
   }
+  const growth = treeGrowth(fits);
+  if (growth.length > 0) found["tree does not grow with the window"] = growth;
   return found;
 }

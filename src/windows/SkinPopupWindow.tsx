@@ -1,16 +1,11 @@
 import { Component, Show, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
-import { skinPopupShell } from "../hooks/useSkin";
+import { popupName, skinPopupShell } from "../hooks/useSkin";
 import { startEventStream, subscribeSkinSignals } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner } from "../actions/skin.actions";
 import { handleClose } from "../actions/titlebar.actions";
-
-/** The popup this window shows: `/popup/<name>`. */
-function popupName(): string {
-  return decodeURIComponent(window.location.pathname.replace(/^\/popup\//, ""));
-}
 
 /**
  * A pack popup (plan SK2-P1b; `LaunchSkin`'s `<Popup>`: Xfire's Infoview
