@@ -776,6 +776,7 @@
 .skin-status-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-status	1.0	true
 .skin-status-list:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
 .skin-status-list:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-status	1.0	true
+.skin-status-paused-text	text	var(--color-xfire-danger-text)	--color-xfire-danger 30% over --color-xfire-bg-dark	1.0	false
 .skin-token-id	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-tree	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-tree-button:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true

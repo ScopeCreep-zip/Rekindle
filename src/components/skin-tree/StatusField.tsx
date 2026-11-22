@@ -1,8 +1,8 @@
-import { Component, For, JSX, createEffect, createSignal } from "solid-js";
+import { Component, For, JSX, Show, createEffect, createSignal } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 import { authState } from "../../stores/auth.store";
 import { handleSetStatusMessage } from "../../actions/auth.actions";
-import { isNetworkConnected, networkLabel, trackNetworkStatus } from "../../stores/network.store";
+import { isNetworkConnected, networkLabel, networkState, routePausedText, trackNetworkStatus } from "../../stores/network.store";
 import StatusDot from "../status/StatusDot";
 import { handleSelectStatus, statusOptions } from "../status/StatusPicker";
 
@@ -10,7 +10,10 @@ import { handleSelectStatus, statusOptions } from "../status/StatusPicker";
  * N3 (design §3), the pack's `StatusEdit`: type an away message and press
  * Enter to set it. While the node is detached from the network the field
  * says so ("Connecting...", Xfire showed connecting in the status field),
- * which replaces the network banner.
+ * which replaces the network banner. While the Host says our inbound route
+ * is paused (owner decision 65, plan RV1) the field says that instead, in
+ * the app layout's status line words and ground, with no dismiss, until the
+ * Host lifts it: the pack's status field is the tree's status area.
  */
 export const StatusText: Component<{ attrs: Record<string, unknown> }> = (props) => {
   trackNetworkStatus();
@@ -22,7 +25,13 @@ export const StatusText: Component<{ attrs: Record<string, unknown> }> = (props)
       : networkLabel();
   return (
     <div {...props.attrs} class="skin-status">
+      <Show when={networkState.routePaused}>
+        <div class="skin-status-paused" role="alert" title={routePausedText(networkState.routePauseCause)}>
+          <span class="skin-status-paused-text">{routePausedText(networkState.routePauseCause)}</span>
+        </div>
+      </Show>
       <input
+        hidden={networkState.routePaused || undefined}
         class="skin-status-edit"
         aria-label="Status message"
         placeholder={shown()}

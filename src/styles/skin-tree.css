@@ -79,6 +79,26 @@
     color: var(--color-xfire-text-dim);
   }
 
+  /* RV1 in the tree: the paused route fills the pack's status field, on the
+   * app layout's status-line ground (.route-paused-status), ellipsized in
+   * the box; the whole line is its alert text and tooltip. */
+  .skin-status-paused {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 3px;
+    background-color: color-mix(in srgb, var(--color-xfire-danger) 30%, var(--color-xfire-bg-dark));
+    font-size: 11px;
+  }
+  .skin-status-paused-text {
+    min-width: 0;
+    color: var(--color-xfire-danger-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* N4: our banner of the slot's size (design §7.1). */
   .skin-ad-banner {
     position: absolute;
