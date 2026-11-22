@@ -4,6 +4,8 @@
 //! owns policy); this only names them. Every peer-supplied string passes
 //! `sanitize_for_display`.
 
+use std::fmt::Write as _;
+
 use rekindle_types::activity::{ActivityKind, ActivityListItem};
 use rekindle_types::dto::friends::Friend;
 use rekindle_types::dto::infoview::{InfoviewAction, InfoviewSection, InfoviewView};
@@ -54,7 +56,7 @@ fn section_lines(section: &InfoviewSection, out: &mut Vec<InfoviewLine>) {
                     c.mentions
                 );
                 if let Some(e) = &c.next_event {
-                    r.push_str(&format!("  next: {}", event(e)));
+                    let _ = write!(r, "  next: {}", event(e));
                 }
                 row(out, r);
             }
@@ -69,7 +71,7 @@ fn section_lines(section: &InfoviewSection, out: &mut Vec<InfoviewLine>) {
                     p.elapsed_seconds / 60
                 );
                 if let Some(server) = &p.server_info {
-                    r.push_str(&format!("  {}", sanitize_for_display(server)));
+                    let _ = write!(r, "  {}", sanitize_for_display(server));
                 }
                 r.push_str(&join(&p.join));
                 row(out, r);
@@ -99,7 +101,11 @@ fn section_lines(section: &InfoviewSection, out: &mut Vec<InfoviewLine>) {
         } => {
             heading(
                 out,
-                format!("{} ({})", sanitize_for_display(label), online.len() + offline.len()),
+                format!(
+                    "{} ({})",
+                    sanitize_for_display(label),
+                    online.len() + offline.len()
+                ),
             );
             for f in online {
                 row(out, format!("online  {}", friend_label(f)));
@@ -120,15 +126,18 @@ fn section_lines(section: &InfoviewSection, out: &mut Vec<InfoviewLine>) {
             if !description.is_empty() {
                 row(out, sanitize_for_display(description));
             }
-            row(out, format!("{member_count} members, {online_count} online"));
+            row(
+                out,
+                format!("{member_count} members, {online_count} online"),
+            );
             if let Some(removed) = removed {
                 let what = if removed.banned { "banned" } else { "removed" };
                 let mut r = format!("You were {what}");
                 if let Some(by) = removed.by_name.as_deref().or(removed.by.as_deref()) {
-                    r.push_str(&format!(" by {}", sanitize_for_display(by)));
+                    let _ = write!(r, " by {}", sanitize_for_display(by));
                 }
                 if let Some(reason) = &removed.reason {
-                    r.push_str(&format!(": {}", sanitize_for_display(reason)));
+                    let _ = write!(r, ": {}", sanitize_for_display(reason));
                 }
                 row(out, r);
             }
@@ -205,7 +214,7 @@ fn friend_label(f: &Friend) -> String {
         label.push(' ');
     }
     label.push_str(&sanitize_for_display(&f.display_name));
-    label.push_str(&format!(" ({})", abbreviate_key(&f.public_key)));
+    let _ = write!(label, " ({})", abbreviate_key(&f.public_key));
     if f.identity_pin_mismatch {
         label.push_str(" [identity pin mismatch]");
     }

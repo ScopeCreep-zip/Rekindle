@@ -113,7 +113,11 @@ impl View for ActivityView {
         let items: Vec<ListItem<'static>> = self
             .entries
             .iter()
-            .map(|e| ListItem::new(Line::from(Span::raw(rekindle_client::infoview::activity_row(e)))))
+            .map(|e| {
+                ListItem::new(Line::from(Span::raw(
+                    rekindle_client::infoview::activity_row(e),
+                )))
+            })
             .collect();
         let list = List::new(items)
             .block(

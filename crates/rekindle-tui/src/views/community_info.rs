@@ -297,6 +297,12 @@ impl View for CommunityInfoView {
                 self.selected_channel = self.selected_channel.saturating_sub(1);
                 None
             }
+            // This community's Infoview (plan E7.15 IV7).
+            KeyCode::Char('i') => Some(Action::ShowInfoview {
+                subject: rekindle_types::dto::infoview::InfoviewSubject::Community {
+                    community: self.community.clone(),
+                },
+            }),
             KeyCode::Enter | KeyCode::Char('l') => {
                 if let Some(ref detail) = self.detail {
                     if let Some(ch) = detail.channels.get(self.selected_channel) {

@@ -194,6 +194,13 @@ impl App {
                 self.load_activity(None);
             }
             Action::LoadActivity { before } => self.load_activity(before),
+            Action::ShowInfoview { subject } => {
+                let kind = ViewKind::Infoview {
+                    subject: subject.clone(),
+                };
+                self.nav.navigate(kind, self.theme.use_unicode());
+                self.load_infoview(subject);
+            }
             action @ (Action::ShowFavourites
             | Action::ShowInstalledGames
             | Action::ShowServers

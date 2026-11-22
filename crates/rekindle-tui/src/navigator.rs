@@ -321,7 +321,7 @@ impl Navigator {
             // Dashboard quick shortcuts: d=DMs, f=Friends, g=Groups,
             // p=our profile, s=favourite servers (plan E7.2), a=activity
             // (plan E7.15), I=installed games (plan E7.15 IV3), S=servers
-            // (plan E7.2 G3)
+            // (plan E7.2 G3), i=our Infoview (plan E7.15 IV7)
             KeyCode::Char('d') => Some(KeyResolution::Action(Action::ShowDmInbox)),
             KeyCode::Char('f') => Some(KeyResolution::Action(Action::ShowFriendList)),
             KeyCode::Char('g') => Some(KeyResolution::Action(Action::ShowGroupDms)),
@@ -333,6 +333,9 @@ impl Navigator {
             KeyCode::Char('a') => Some(KeyResolution::Action(Action::ShowActivity)),
             KeyCode::Char('I') => Some(KeyResolution::Action(Action::ShowInstalledGames)),
             KeyCode::Char('S') => Some(KeyResolution::Action(Action::ShowServers)),
+            KeyCode::Char('i') => Some(KeyResolution::Action(Action::ShowInfoview {
+                subject: rekindle_types::dto::infoview::InfoviewSubject::Own,
+            })),
             // All other keys fall through to global keymap
             _ => None,
         }

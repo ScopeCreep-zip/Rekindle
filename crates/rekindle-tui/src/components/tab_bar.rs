@@ -99,18 +99,29 @@ impl TabBarState {
     /// which tab is highlighted. Called by App after every view transition.
     pub fn sync_to_view(&mut self, view: &crate::views::ViewKind) {
         use crate::views::ViewKind;
+        use rekindle_types::dto::infoview::InfoviewSubject;
         let tab_id = match view {
             ViewKind::Dashboard
             | ViewKind::Doctor
             | ViewKind::IdentitySettings
             | ViewKind::Favourites
             | ViewKind::InstalledGames
-            | ViewKind::Profile { peer_key: None, .. } => "dashboard",
+            | ViewKind::Profile { peer_key: None, .. }
+            | ViewKind::Infoview {
+                subject: InfoviewSubject::Own | InfoviewSubject::Selection,
+            } => "dashboard",
             ViewKind::DmInbox | ViewKind::DmThread { .. } | ViewKind::GroupDms => "dms",
-            ViewKind::FriendList | ViewKind::Profile { .. } => "friends",
+            ViewKind::FriendList
+            | ViewKind::Profile { .. }
+            | ViewKind::Infoview {
+                subject: InfoviewSubject::Friend { .. } | InfoviewSubject::FriendGroup { .. },
+            } => "friends",
             ViewKind::ChannelWatch { .. }
             | ViewKind::CommunityInfo { .. }
-            | ViewKind::VoiceSession { .. } => "communities",
+            | ViewKind::VoiceSession { .. }
+            | ViewKind::Infoview {
+                subject: InfoviewSubject::Community { .. },
+            } => "communities",
             ViewKind::Activity => "activity",
             ViewKind::Servers => "servers",
         };
