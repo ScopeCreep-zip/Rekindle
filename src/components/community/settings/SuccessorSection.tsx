@@ -6,7 +6,6 @@ import FormField from "../../common/FormField";
 
 interface SuccessorSectionProps {
   communityId: string;
-  canManage: boolean;
 }
 
 /**
@@ -14,8 +13,9 @@ interface SuccessorSectionProps {
  * S7s.4): "Re-create community…" publishes a successor with us as its sole
  * creator and an invite sealed to every current member (lead decision
  * (34)), through the Host's Destructive intent review (ADR 0019), which
- * states the new creator set and who leaves it. Only a creator may; the
- * Host checks and its refusal is shown as given. Below it, the successors
+ * states the new creator set and who leaves it. Only a creator may: the
+ * action is enabled while the Host states we hold a creator seat
+ * (`weAreCreator`), and says why otherwise. Below it, the successors
  * the Host offered for this community (lead decision (33)), so a publish
  * shows as pending here once the Host announces it.
  */
@@ -25,6 +25,7 @@ const SuccessorSection: Component<SuccessorSectionProps> = (props) => {
   // Offers made before this window opened (lead decision (33)).
   createEffect(() => trackSuccessors(props.communityId));
   const offers = () => successorsOf(props.communityId);
+  const creator = (): boolean => communityState.communities[props.communityId]?.weAreCreator === true;
   const reasonText = (reason: string): string => (reason === "transfer" ? "Handed over" : "Re-created");
   const heldText = (anchor: string): string =>
     communityState.communities[anchor] ? "you are a member" : "not joined here";
@@ -39,17 +40,21 @@ const SuccessorSection: Component<SuccessorSectionProps> = (props) => {
 
   return (
     <FormField label="Successor">
-      <Show when={props.canManage}>
-        <div class="form-field-row">
-          <button
-            type="button"
-            class="form-btn-danger"
-            disabled={busy()}
-            aria-label="Re-create community under a new anchor and invite every member"
-            onClick={() => void publish()}
-          >
-            {busy() ? "Re-creating..." : "Re-create community…"}
-          </button>
+      <div class="form-field-row">
+        <button
+          type="button"
+          class="form-btn-danger"
+          disabled={busy() || !creator()}
+          aria-describedby={creator() ? undefined : "successor-creator-only"}
+          aria-label="Re-create community under a new anchor and invite every member"
+          onClick={() => void publish()}
+        >
+          {busy() ? "Re-creating..." : "Re-create community…"}
+        </button>
+      </div>
+      <Show when={!creator()}>
+        <div class="settings-hint" id="successor-creator-only">
+          Only a creator of this community can re-create it.
         </div>
       </Show>
       <Show when={error()}>

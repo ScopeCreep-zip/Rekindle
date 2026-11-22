@@ -411,6 +411,8 @@ function applyGovernance(g: GovernanceEvent): void {
           "myChannelPermissions",
           detail.myChannelPermissions,
         );
+        // A creator seat gained or lost names us here too.
+        setCommunityState("communities", community, "weAreCreator", detail.weAreCreator);
       })
       .catch(() => {});
     return;

@@ -86,7 +86,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
           </button>
         </div>
       </FormField>
-      <SuccessorSection communityId={props.community.id} canManage={props.canManage} />
+      <SuccessorSection communityId={props.community.id} />
       <Show when={props.canManage}>
         <div class="settings-actions-sticky">
           <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>
