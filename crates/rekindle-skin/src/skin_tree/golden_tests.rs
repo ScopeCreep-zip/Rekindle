@@ -21,7 +21,7 @@ fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
 fn main_layout(id: &str) -> WindowLayout {
     let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
     let package = package::read(b.bytes).unwrap();
-    let mut m = manifest::parse(&package).unwrap();
+    let mut m = manifest::served(&package).unwrap();
     images::validate(&package, &m).unwrap();
     m.windows.remove(&SkinWindow::Main).unwrap()
 }

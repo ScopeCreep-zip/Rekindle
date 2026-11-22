@@ -94,19 +94,36 @@ pub fn parse(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
     }
     let probe: FormatProbe = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
     check_format(&probe.format)?;
-    let mut manifest: SkinManifest = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
+    let manifest: SkinManifest = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
     check_fields(&manifest)?;
     check_variants(package, &manifest)?;
     check_keys(&manifest)?;
-    // Rule N4 (plan SK2-P1): the Host places the Communities view and its
-    // control in the main window's tree, whatever the pack laid.
+    Ok(manifest)
+}
+
+/// The manifest as the Host serves and validates it: [`parse`]'s, the
+/// author's own, plus the Host's placements (rule N4, plan SK2-P1: the
+/// Communities view and its control in the main window's tree). The
+/// placements are never written into a package: the canonical bytes, a
+/// draft export and the login copy stay the author's (design `sk2a` §3:
+/// "the Host places"), and every read of a package places again.
+///
+/// # Errors
+/// As [`parse`].
+pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
+    let mut manifest = parse(package)?;
+    place(&mut manifest);
+    Ok(manifest)
+}
+
+/// The Host's placements in `manifest` (see [`served`]).
+pub fn place(manifest: &mut SkinManifest) {
     if let Some(main) = manifest
         .windows
         .get_mut(&rekindle_types::dto::skin::SkinWindow::Main)
     {
         crate::skin_tree::place::communities(main);
     }
-    Ok(manifest)
 }
 
 /// Every `icons` key an icon slot and every `sounds` key a sound cue of

@@ -66,7 +66,7 @@ fn shown_after(
 
 fn served_main(id: &str) -> WindowLayout {
     let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
-    let mut m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
+    let mut m = manifest::served(&package::read(b.bytes).unwrap()).unwrap();
     m.windows.remove(&SkinWindow::Main).unwrap()
 }
 

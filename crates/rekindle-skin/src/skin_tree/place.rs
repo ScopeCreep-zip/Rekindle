@@ -1,9 +1,10 @@
 //! Rule N4 (plan SK2-P1, design `sk2a/design.md` §3 "Rekindle's
 //! placements"): the Host places the Communities view and the control that
 //! opens it in every main-window tree, so no pack leaves Communities
-//! unreachable. Applied by [`crate::manifest::parse`], the one path every
-//! package (built-in, imported, library, draft) is read and served
-//! through; a tree that already holds `View(Communities)` is left as is.
+//! unreachable. Applied by [`crate::manifest::served`], the one path every
+//! package (built-in, imported, library, draft) is validated and served
+//! through, and never written into a package; a tree that already holds
+//! `View(Communities)` is left as is.
 //!
 //! - `View(Communities)` is a sibling view of `View(Friends)`, filling the
 //!   views node as every view does; a views node with no views (a pack
@@ -11,7 +12,14 @@
 //! - The control, searched in the main tree and then in the popups it
 //!   launches (StealthX's `MainMenuPopup` rail holds its tabs):
 //!   - with tabs: a `Tab(Communities)` cloned from the last tab beside
-//!     `Tab(Friends)` (its art and parts), one tab pitch further on;
+//!     `Tab(Friends)` (its art and parts), one tab pitch further on, down
+//!     a rail whose tabs stack; when
+//!     the strip stretches with the window and the clone runs past it
+//!     (Symbiosis's six tabs fill its `TabsContainer`), the window's
+//!     minimum width grows by the overrun, the pack's tabs and art as laid;
+//!     a row spread over a fixed bar (Alloy's start/centre/end tabs) has
+//!     no slot after its last tab, so its tabs pack edge to edge from the
+//!     bar's start and the bar, and the window, widen to hold them;
 //!   - with Combat's knob: a `Knob(Communities)` stop after the last
 //!     stop, which now turns to it, and which turns on where the last
 //!     stop turned;
@@ -167,21 +175,101 @@ fn step(last: NodeSpan, prev: Option<NodeSpan>) -> NodeSpan {
     NodeSpan::Fixed { at, size }
 }
 
-/// A `Tab(Communities)` cloned from the last tab of `strip`.
-fn clone_tab(strip: &mut Vec<SkinNode>, at: Target) {
+/// A `Tab(Communities)` cloned from the last tab of `strip`; its id.
+fn clone_tab(strip: &mut Vec<SkinNode>, at: Target) -> Option<String> {
     let tabs: Vec<usize> = (0..strip.len())
         .filter(|&i| matches!(strip[i].role, NodeRole::Tab(_)))
         .collect();
-    let Some(&last) = tabs.last() else { return };
-    let prev = tabs.len().checked_sub(2).map(|i| strip[tabs[i]].x);
+    let &last = tabs.last()?;
+    let prev = tabs.len().checked_sub(2).map(|i| &strip[tabs[i]]);
     let mut tab = strip[last].clone();
     suffix_ids(&mut tab);
     tab.role = NodeRole::Tab(C);
     tab.shows_with = None;
-    tab.x = step(tab.x, prev);
+    // A rail stacks its tabs (StealthX's `TabHeader`: one x, 21 px apart).
+    match prev {
+        Some(p) if p.x == tab.x && p.y != tab.y => tab.y = step(tab.y, Some(p.y)),
+        _ => tab.x = step(tab.x, prev.map(|p| p.x)),
+    }
     retarget(&mut tab, at.group);
     tab.triggers.extend(at.press());
+    let id = tab.id.clone();
     strip.insert(last + 1, tab);
+    Some(id)
+}
+
+/// A row spread over its strip: the last tab flush with the strip's end
+/// and the one before it not (Alloy's `TabButtonBar`: start, centre, end),
+/// so no slot follows the last tab.
+fn spread(strip: &[SkinNode]) -> bool {
+    let anchor = |n: &SkinNode| match n.x {
+        NodeSpan::Fixed { at, .. } => Some(at),
+        NodeSpan::Stretch { .. } => None,
+    };
+    let mut tabs = strip.iter().filter(|n| matches!(n.role, NodeRole::Tab(_)));
+    match (tabs.next_back(), tabs.next_back()) {
+        (Some(last), Some(prev)) => {
+            matches!(anchor(last), Some(Anchor::End(_)))
+                && !matches!(anchor(prev), Some(Anchor::End(_)))
+        }
+        _ => false,
+    }
+}
+
+/// Lays a spread row's tabs edge to edge from the strip's start, each at
+/// its own width, and a fixed strip as wide as the row.
+fn pack_row(strip: &mut SkinNode) {
+    let mut at: u16 = 0;
+    for tab in strip
+        .children
+        .iter_mut()
+        .filter(|n| matches!(n.role, NodeRole::Tab(_)))
+    {
+        if let NodeSpan::Fixed { size, .. } = tab.x {
+            let start = i16::try_from(at).unwrap_or(i16::MAX);
+            tab.x = NodeSpan::Fixed {
+                at: Anchor::Start(start),
+                size,
+            };
+            at = at.saturating_add(size);
+        }
+    }
+    if let NodeSpan::Fixed { at: anchor, .. } = strip.x {
+        strip.x = NodeSpan::Fixed {
+            at: anchor,
+            size: at,
+        };
+    }
+}
+
+/// Grows the window's minimum width by the run of the node `id` past its
+/// strip on either side, when the strip stretches with the window (or is
+/// the window), so the node sits in the strip at the minimum size. A fixed
+/// strip is left as laid, and validation judges it (rule 3).
+fn widen(layout: &mut WindowLayout, id: &str) {
+    let Some(tree) = layout.tree.as_ref() else {
+        return;
+    };
+    let out = layout.outsets;
+    let w = i32::from(layout.min_width) + i32::from(out.left) + i32::from(out.right);
+    let h = i32::from(layout.min_height) + i32::from(out.top) + i32::from(out.bottom);
+    let boxes = tree.boxes(w, h);
+    let Some(tab) = boxes.iter().find(|(n, _)| n.id == id).map(|b| b.1) else {
+        return;
+    };
+    let strip = boxes
+        .iter()
+        .find(|(n, _)| n.children.iter().any(|c| c.id == id));
+    let end = match strip {
+        None => w,
+        Some((n, b)) if matches!(n.x, NodeSpan::Stretch { .. }) => b[0] + b[2],
+        Some(_) => return,
+    };
+    let start = strip.map_or(0, |(_, b)| b[0]);
+    let run = (tab[0] + tab[2] - end).max(0) + (start - tab[0]).max(0);
+    if let Ok(run) = u16::try_from(run) {
+        layout.min_width = layout.min_width.saturating_add(run);
+    }
 }
 
 /// A `Knob(Communities)` stop after the last stop of `knob`.
@@ -213,7 +301,7 @@ fn add_knob(knob: &mut Vec<SkinNode>, knob_group: Option<u16>, at: Target) {
             .triggers
             .iter()
             .filter(|t| t.presses())
-            .map(|t| t.on.clone())
+            .map(|t| t.on)
             .collect();
         for on in presses {
             knob[last].triggers.push(NodeTrigger {
@@ -273,16 +361,27 @@ pub fn communities(layout: &mut WindowLayout) {
     let roots =
         std::iter::once(&mut tree.root).chain(layout.popups.values_mut().map(|p| &mut p.tree.root));
     let mut roots: Vec<&mut Vec<SkinNode>> = roots.collect();
-    for root in &mut roots {
+    for (i, root) in roots.iter_mut().enumerate() {
         // XGlow lays its tabs at the window's root (`Xglow.ini` `[Friends]`).
-        if root.iter().any(|n| is_tab(n.role)) {
-            clone_tab(root, at);
-            return;
+        let (id, packed) = if root.iter().any(|n| is_tab(n.role)) {
+            (clone_tab(root, at), None)
+        } else if let Some(strip) = find_mut(root.as_mut_slice(), &|n| holds(n, &is_tab)) {
+            let packed = spread(&strip.children).then(|| strip.id.clone());
+            let id = clone_tab(&mut strip.children, at);
+            if packed.is_some() {
+                pack_row(strip);
+            }
+            (id, packed)
+        } else {
+            continue;
+        };
+        // A popup's rail (StealthX) keeps its own size.
+        if let (0, Some(id)) = (i, id) {
+            for id in packed.iter().chain([&id]) {
+                widen(layout, id);
+            }
         }
-        if let Some(strip) = find_mut(root.as_mut_slice(), &|n| holds(n, &is_tab)) {
-            clone_tab(&mut strip.children, at);
-            return;
-        }
+        return;
     }
     for root in &mut roots {
         if let Some(knob) = find_mut(root.as_mut_slice(), &|n| holds(n, &is_knob)) {

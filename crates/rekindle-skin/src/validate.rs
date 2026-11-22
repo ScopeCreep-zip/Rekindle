@@ -44,14 +44,19 @@ pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
     }
     let images = images::validate(&package, &manifest)?;
     let sounds = sounds::validate(&package, &manifest)?;
-    shape::check(&manifest, &images)?;
+    // The served form is what is checked: a pack whose tree leaves no room
+    // for the Host's placements is refused (design `sk2a` §3). What is
+    // written is the author's manifest, so the package stays its own.
+    let mut served = manifest.clone();
+    manifest::place(&mut served);
+    shape::check(&served, &images)?;
     for v in &manifest.variants {
         let skin = parsed.get(&v.tokens).ok_or_else(|| missing(&v.tokens))?;
         let base = Base::of(v.base, v.contrast);
         let resolved = resolve(ENTRIES, base, skin);
         access::validate(&v.tokens, base, &resolved)?;
-        regions::validate(&manifest, &images, &resolved)?;
-        access::icons::validate(&manifest, &images, base, &resolved)?;
+        regions::validate(&served, &images, &resolved)?;
+        access::icons::validate(&served, &images, base, &resolved)?;
     }
     output::package(&manifest, &parsed, &images, &sounds)
 }

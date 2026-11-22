@@ -180,7 +180,7 @@ fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
 /// not emit (never for a package the helper returned).
 pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> {
     let p = package::read(bytes)?;
-    let m = manifest::parse(&p)?;
+    let m = manifest::served(&p)?;
     let (v, resolved) = active_resolved(&p, &m)?;
     let mut css = tokens_css(&resolved).ok_or_else(|| unreadable("tokens do not emit"))?;
     let base = format!("{}/{address}", origin());
@@ -229,7 +229,7 @@ fn sheet_images(css: &str, base: &str) -> Vec<String> {
 /// decode at its declared size (never for a package the helper returned).
 pub fn frames(bytes: &[u8]) -> Result<Vec<SkinWindowFrame>, SkinError> {
     let p = package::read(bytes)?;
-    let m = manifest::parse(&p)?;
+    let m = manifest::served(&p)?;
     let images = files(&p);
     m.windows
         .iter()
