@@ -32,6 +32,11 @@
 .active-call-status-busy	text	var(--color-xfire-danger-text)	--color-xfire-bg-secondary 92% over --color-xfire-bg-dark	1.0	false
 .active-call-status-offline	text	var(--color-xfire-offline-text)	--color-xfire-bg-secondary 92% over --color-xfire-bg-dark	1.0	false
 .active-call-status-online	text	var(--color-xfire-online-text)	--color-xfire-bg-secondary 92% over --color-xfire-bg-dark	1.0	false
+.activity-feed-empty	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.activity-feed-mismatch	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
+.activity-feed-text	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.activity-feed-time	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.activity-feed-title	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .add-friend-cancel-btn	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-panel	1.0	false
 .add-friend-cancel-btn	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false
 .add-friend-copy-btn	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
@@ -241,6 +246,8 @@
 .context-menu-item-danger	icon hovered	var(--color-xfire-danger-text)	--color-xfire-busy 12% over --color-xfire-bg-panel	0.7	true
 .context-menu-item-danger	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
 .context-menu-item-danger	text hovered	var(--color-xfire-danger-text)	--color-xfire-busy 12% over --color-xfire-bg-panel	1.0	false
+.context-menu-item-reason	text	var(--color-xfire-text-disabled)	--color-xfire-bg-panel	1.0	false
+.context-menu-item[data-disabled]	text	var(--color-xfire-text-disabled)	--color-xfire-bg-panel	1.0	false
 .dm-history-gap	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .dm-timer-notice	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .edit-indicator	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
@@ -410,6 +417,12 @@
 .incoming-call-display-name	text	var(--color-xfire-text-primary)	--color-xfire-bg-panel	1.0	false
 .incoming-call-timer	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
 .incoming-call-title	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
+.infoview-empty	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.infoview-link	text	var(--color-xfire-link)	--color-xfire-bg-panel	1.0	false
+.infoview-link[aria-disabled="true"]	text	var(--color-xfire-text-disabled)	--color-xfire-bg-panel	1.0	false
+.infoview-meta	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.infoview-section-title	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.infoview-text	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .invite-cancel-btn	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-panel	1.0	false
 .invite-cancel-btn	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false
 .invite-copy-btn	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
@@ -607,6 +620,8 @@
 .profile-popup-game-server	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .profile-popup-join-btn	text	var(--color-xfire-bg)	--color-xfire-ingame	1.0	false
 .profile-popup-join-btn	text hovered	var(--color-xfire-bg)	--color-xfire-ingame 85% over --color-xfire-overlay	1.0	false
+.profile-popup-join-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-primary	1.0	false
+.profile-popup-join-reason	text	var(--color-xfire-text-disabled)	--color-xfire-bg-primary	1.0	false
 .profile-popup-key	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .profile-popup-lastseen	text	var(--color-xfire-text-secondary)	--color-xfire-bg-primary	1.0	false
 .profile-popup-name	text	var(--color-xfire-text-primary)	--color-xfire-bg-primary	1.0	false

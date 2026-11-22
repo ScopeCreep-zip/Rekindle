@@ -425,6 +425,8 @@ macro_rules! settings_commands {
         commands::settings::set_share_game_totals,
         commands::settings::set_game_detection,
         commands::settings::set_share_current_game,
+        commands::activity::activity_list,
+        commands::activity::set_keep_activity_log,
         commands::settings::quick_wipe_arm,
         commands::settings::quick_wipe_disarm,
         commands::settings::check_for_updates,

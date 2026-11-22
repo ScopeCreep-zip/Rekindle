@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { subscribeChatEvents } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
+import { handleLaunchGame } from "../../actions/game.actions";
 
 interface Invite {
   gameId: number;
@@ -32,8 +33,7 @@ const GameInviteList: Component<{ peerId: string; peerName: string }> = (props) 
 
   const dismiss = (invite: Invite) => setInvites((list) => list.filter((i) => i !== invite));
   const join = async (invite: Invite) => {
-    await commands.launchGame(invite.gameId, invite.server, "invite");
-    dismiss(invite);
+    if (await handleLaunchGame(invite.gameId, invite.server, "invite")) dismiss(invite);
   };
 
   return (

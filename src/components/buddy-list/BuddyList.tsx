@@ -20,6 +20,8 @@ import {
 } from "../../actions/relay.actions";
 import { handleStartDmCall } from "../../actions/calls.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
+import { handleLaunchGame } from "../../actions/game.actions";
+import { notJoinableText } from "../../utils/joinable_text";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";
 import ScrollArea from "../common/ScrollArea";
@@ -34,6 +36,14 @@ function matchesSearch(friend: Friend, query: string): boolean {
   if (friend.displayName.toLowerCase().includes(q)) return true;
   if (friend.nickname && friend.nickname.toLowerCase().includes(q)) return true;
   return false;
+}
+
+
+/** Join the friend's game server through the Host's review; a refusal is shown. */
+async function joinFriendGame(friend: Friend): Promise<void> {
+  const game = friend.gameInfo;
+  if (!game?.joinable || game.gameId === null || game.serverAddress === null) return;
+  await handleLaunchGame(game.gameId, game.serverAddress, "friendPresence");
 }
 
 const BuddyList: Component = () => {
@@ -179,20 +189,19 @@ const BuddyList: Component = () => {
             View Profile
           </ContextMenu.Item>
 
-          <Show when={friend.gameInfo?.serverAddress && friend.gameInfo?.gameId}>
-            <ContextMenu.Item
-              class="context-menu-item"
-              onSelect={() =>
-                commands.launchGame(
-                  friend.gameInfo!.gameId!,
-                  friend.gameInfo!.serverAddress!,
-                  "friendPresence",
-                )
-              }
-            >
-              Join Game
-            </ContextMenu.Item>
-          </Show>
+          {/* Always shown (owner: no button is hidden); enabled only while
+           *  the Host states the friend's game is joinable (IV3c), and
+           *  otherwise says why. A refused launch is shown, never dropped. */}
+          <ContextMenu.Item
+            class="context-menu-item"
+            disabled={friend.gameInfo?.joinable !== true}
+            onSelect={() => void joinFriendGame(friend)}
+          >
+            Join Game
+            <Show when={friend.gameInfo?.joinable !== true}>
+              <span class="context-menu-item-reason">{notJoinableText(friend.gameInfo)}</span>
+            </Show>
+          </ContextMenu.Item>
 
           <ContextMenu.Sub>
             <ContextMenu.SubTrigger class="context-menu-item">

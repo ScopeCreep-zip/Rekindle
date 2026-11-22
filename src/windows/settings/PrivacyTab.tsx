@@ -18,12 +18,14 @@ const PrivacyTab: Component = () => {
   const [readReceipts, setReadReceipts] = createSignal<boolean | null>(null);
   const [shareGameTotals, setShareGameTotals] = createSignal<boolean | null>(null);
   const [shareCurrentGame, setShareCurrentGame] = createSignal<boolean | null>(null);
+  const [keepActivity, setKeepActivity] = createSignal<boolean | null>(null);
 
   onMount(() => {
     commands.getPreferences().then((p) => {
       setReadReceipts(p.readReceiptsEnabled);
       setShareGameTotals(p.shareGameTotals);
       setShareCurrentGame(p.shareCurrentGame);
+      setKeepActivity(p.keepActivityLog);
     }).catch((e) => {
       console.error("Failed to load the privacy settings:", e);
     });
@@ -66,6 +68,19 @@ const PrivacyTab: Component = () => {
       setShareCurrentGame(prefs.shareCurrentGame);
     } catch (e) {
       setError(`Current game sharing not changed: ${String(e)}`);
+    }
+  }
+
+  // The Host's review; off clears the feed and writes nothing until on again.
+  async function handleToggleKeepActivity(): Promise<void> {
+    const current = keepActivity();
+    if (current === null) return;
+    setError(null);
+    try {
+      const prefs = await commands.setKeepActivityLog(!current);
+      setKeepActivity(prefs.keepActivityLog);
+    } catch (e) {
+      setError(`Activity feed not changed: ${String(e)}`);
     }
   }
 
@@ -143,6 +158,20 @@ const PrivacyTab: Component = () => {
         Friends see how long you have played each game, sent to them
         end-to-end encrypted. Turning it off stops new totals; friends keep
         what they last received until you are no longer friends.
+      </div>
+      <div class="settings-section-title">Activity Feed</div>
+      <label class="settings-option">
+        <input
+          type="checkbox"
+          checked={keepActivity() === true}
+          disabled={keepActivity() === null}
+          onChange={() => void handleToggleKeepActivity()}
+        />
+        <span class="buddy-name">Keep an activity feed of my friends</span>
+      </label>
+      <div class="settings-hint">
+        Your friends' games, name and status changes, kept on this device
+        only and never sent anywhere. Turning it off clears the feed.
       </div>
       <div class="settings-section-title">Identity</div>
       <div class="form-field-row">

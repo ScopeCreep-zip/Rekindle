@@ -454,4 +454,21 @@
     min-width: 0;
   }
 
+  .co-create-status-list,
+  .infoview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .forum-channel-tags,
+  .infoview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
 }

@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "allow-get-infoview",
+    "allow-activity-list",
     "allow-get-message-history",
     "allow-mark-read",
     "allow-open-external-url",

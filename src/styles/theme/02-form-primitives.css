@@ -370,6 +370,24 @@
     background: color-mix(in srgb, var(--color-xfire-ingame) 85%, var(--color-xfire-overlay));
   }
 
+  /* Join Game the Host says cannot run now: still shown, with why. */
+  .profile-popup-join-btn:disabled {
+    background: transparent;
+    color: var(--color-xfire-text-disabled);
+    box-shadow: inset 0 0 0 1px var(--color-xfire-text-disabled);
+    cursor: default;
+  }
+  .profile-popup-join-reason {
+    display: inline-block;
+    font-size: 10px;
+    color: var(--color-xfire-text-disabled);
+  }
+
+  /* The Host's reason (utils/joinable_text.ts) begins the sentence here. */
+  .profile-popup-join-reason::first-letter {
+    text-transform: uppercase;
+  }
+
   .member-game-info {
     font-size: 0.65rem;
     color: var(--color-xfire-ingame-text);

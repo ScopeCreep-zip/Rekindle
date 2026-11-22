@@ -100,6 +100,11 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("quick_wipe_arm", HostCall::Request("QuickWipeArm")),
     ("quick_wipe_disarm", HostCall::Request("QuickWipeDisarm")),
     ("get_hidden_games", HostCall::Request("HiddenGamesGet")),
+    ("activity_list", HostCall::Request("ActivityList")),
+    (
+        "set_keep_activity_log",
+        HostCall::Request("SetKeepActivityLog"),
+    ),
     ("hide_game", HostCall::Request("GameHide")),
     ("unhide_game", HostCall::Request("GameUnhide")),
     ("launch_game", HostCall::Request("GameLaunch")),
@@ -554,46 +559,5 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
 mod invoke_commands;
 
 #[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use super::invoke_commands;
-    use super::*;
-
-    /// Every registered command is in exactly one table, every table row is
-    /// a registered command, and every Host-call request is one the command
-    /// table classifies.
-    #[test]
-    fn every_command_is_in_exactly_one_table() {
-        let registered = invoke_commands::parse(include_str!("invoke.rs")).unwrap();
-        let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
-        for name in HOST_CALLS
-            .iter()
-            .map(|(n, _)| *n)
-            .chain(SHELL_LOCAL.iter().copied())
-            .chain(PENDING_PORT.iter().map(|(n, _)| *n))
-        {
-            *seen.entry(name).or_default() += 1;
-        }
-        for command in &registered {
-            assert_eq!(
-                seen.remove(command.name()),
-                Some(1),
-                "{} must be in exactly one table",
-                command.name()
-            );
-        }
-        assert!(seen.is_empty(), "not registered in invoke.rs: {seen:?}");
-
-        for (command, HostCall::Request(request)) in HOST_CALLS {
-            assert!(
-                rekindle_types::intent::kind_of(request).is_some(),
-                "{command}: {request} is not in COMMAND_TABLE"
-            );
-            assert!(
-                request.starts_with(|c: char| c.is_ascii_uppercase()),
-                "{command}: {request} is not an IpcRequest name"
-            );
-        }
-    }
-}
+#[path = "shell_commands_tests.rs"]
+mod tests;

@@ -4,11 +4,14 @@ import { colorIntToHex, parseColorHex } from "../../utils/color";
 import { Popover } from "@kobalte/core/popover";
 import LoadingButton from "../common/LoadingButton";
 import type { Member, Role } from "../../stores/community.store";
+import type { GameInfo } from "../../ipc/commands/dto";
 import { EVERYONE_ROLE_ID, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
+import { handleLaunchGame } from "../../actions/game.actions";
+import { notJoinableText } from "../../utils/joinable_text";
 import {
   handleSelfAssignRole,
   handleSelfUnassignRole,
@@ -59,6 +62,12 @@ function formatLastSeen(secs: number): string {
  * the member row. Floating UI handles flip / shift / collision detection;
  * Esc + click-outside dismissal are built in.
  */
+/** Join a member's game server through the Host's review; a refusal is shown. */
+async function joinMemberGame(info: GameInfo): Promise<void> {
+  if (!info.joinable || info.gameId === null || info.serverAddress === null) return;
+  await handleLaunchGame(info.gameId, info.serverAddress, "friendPresence");
+}
+
 const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const [updatingRoleId, setUpdatingRoleId] = createSignal<string | null>(null);
   const [editing, setEditing] = createSignal(false);
@@ -265,26 +274,37 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
             </For>
           </div>
         </Show>
-        <Show when={props.member.gameInfo}>
-          {(info) => (
-            <div class="profile-popup-game">
-              <span class="profile-popup-game-name">{info().gameName}</span>
-              <Show when={info().serverAddress}>
-                <span class="profile-popup-game-server">{info().serverAddress}</span>
-              </Show>
-              <Show when={info().joinable}>
-                <button
-                  class="profile-popup-join-btn"
-                  onClick={() =>
-                    void commands.launchGame(info().gameId!, info().serverAddress!, "friendPresence")
-                  }
-                >
-                  Join Game
-                </button>
-              </Show>
-            </div>
-          )}
-        </Show>
+        {/* The member's game, and Join Game always listed (owner: no button
+         *  is hidden): enabled only while the Host states the game joinable,
+         *  otherwise saying why, "Not in a game" included. */}
+        <div class="profile-popup-game">
+          <Show when={props.member.gameInfo}>
+            {(info) => (
+              <>
+                <span class="profile-popup-game-name">{info().gameName}</span>
+                <Show when={info().serverAddress}>
+                  <span class="profile-popup-game-server">{info().serverAddress}</span>
+                </Show>
+              </>
+            )}
+          </Show>
+          <button
+            class="profile-popup-join-btn"
+            disabled={props.member.gameInfo?.joinable !== true}
+            aria-describedby={props.member.gameInfo?.joinable === true ? undefined : "profile-popup-join-reason"}
+            onClick={() => {
+              const info = props.member.gameInfo;
+              if (info) void joinMemberGame(info);
+            }}
+          >
+            Join Game
+          </button>
+          <Show when={props.member.gameInfo?.joinable !== true}>
+            <span class="profile-popup-join-reason" id="profile-popup-join-reason">
+              {notJoinableText(props.member.gameInfo)}
+            </span>
+          </Show>
+        </div>
         <Show when={memberRoles().length > 0}>
           <div class="profile-popup-roles">
             <For each={memberRoles()}>

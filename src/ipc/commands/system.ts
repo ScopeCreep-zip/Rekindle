@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  FavouriteServerView, HiddenGameView, InstalledGameView, JoinSource, NetworkStatus, Preferences, QuickWipeState, SettingsTab,
+  ActivityListItem, FavouriteServerView, HiddenGameView, InstalledGameView, JoinSource, NetworkStatus, Preferences, QuickWipeState, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, OnboardingConfigEdit, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
@@ -116,6 +116,12 @@ export const systemCommands = {
     hostInvoke<Preferences>("set_share_game_totals", { enabled }),
   setGameDetection: (enabled: boolean) =>
     hostInvoke<Preferences>("set_game_detection", { enabled }),
+  // The local activity feed (plan E7.15): one page, newest first, after
+  // row `before`; keeping it or not (off clears it). Host calls.
+  activityList: (before: number | null, limit: number) =>
+    hostInvoke<ActivityListItem[]>("activity_list", { before, limit }),
+  setKeepActivityLog: (enabled: boolean) =>
+    hostInvoke<Preferences>("set_keep_activity_log", { enabled }),
   setShareCurrentGame: (enabled: boolean) =>
     hostInvoke<Preferences>("set_share_current_game", { enabled }),
   // The quick wipe (plan E7.1): Protected intents the Host reviews.

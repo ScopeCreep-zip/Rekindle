@@ -107,6 +107,17 @@
 '.buddy-last-seen' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-handshake-error' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-identity-mismatch' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.activity-feed-title' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-empty' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-text' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-time' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-mismatch' = { on = ["--color-xfire-bg-panel"] }
+'.infoview-section-title' = { on = ["--color-xfire-bg-panel"] }
+'.infoview-empty' = { on = ["--color-xfire-bg-panel"] }
+'.infoview-meta' = { on = ["--color-xfire-bg-panel"] }
+'.infoview-text' = { on = ["--color-xfire-bg-panel"] }
+'.infoview-link' = { on = ["--color-xfire-bg-panel"] }
+'.infoview-link[aria-disabled="true"]' = { on = ["--color-xfire-bg-panel"] }
 '.buddy-handshake-retrying' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-group-pending .buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-group-pending .buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
@@ -122,6 +133,8 @@
 '.status-bar' = { on = ["--color-xfire-bg-status"] }
 '.context-menu-item' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 30% over --color-xfire-bg-panel"] }
 '.context-menu-item-danger' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-busy 12% over --color-xfire-bg-panel"] }
+'.context-menu-item[data-disabled]' = { on = ["--color-xfire-bg-panel"] }
+'.context-menu-item-reason' = { on = ["--color-xfire-bg-panel"] }
 '.login-title' = { on = ["--color-xfire-bg-dark"] }
 '.login-subtitle' = { on = ["--color-xfire-bg-dark"] }
 '.account-picker-subtitle' = { on = ["--color-xfire-bg-dark"] }
@@ -200,7 +213,9 @@
 '.profile-popup-timeout' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-game-name' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-game-server' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-join-reason' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-join-btn' = { on = ["--color-xfire-ingame"], on_hover = ["--color-xfire-ingame 85% over --color-xfire-overlay"] }
+'.profile-popup-join-btn:disabled' = { on = ["--color-xfire-bg-primary"] }
 '.member-game-info' = { on = ["--color-xfire-bg-dark"] }
 '.member-game-server' = { on = ["--color-xfire-bg-dark"] }
 '.avatar' = { on = ["--color-xfire-accent"] }
