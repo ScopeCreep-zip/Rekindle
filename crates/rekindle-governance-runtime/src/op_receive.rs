@@ -19,11 +19,20 @@ use crate::op_log::{verify_held_with, HeldOp, OpFate};
 /// its hash is `op_ref`'s; `None` otherwise.
 #[must_use]
 pub fn held_from_encoded(op_ref: &OpRef, encoded: Vec<u8>) -> Option<HeldOp> {
+    held_at(op_ref.op_hash, &op_ref.author_record, encoded)
+}
+
+/// The op `encoded`, found on `author_record`, when it reads and hashes to
+/// `op_hash`: its signing device key, author and seq come from the op
+/// itself (ADR 0022 rule 1), which a locator without an `OpRef` (an invite
+/// link's op hash and seq) does not carry.
+#[must_use]
+pub fn held_at(op_hash: OpHash, author_record: &str, encoded: Vec<u8>) -> Option<HeldOp> {
     let envelope = OpEnvelope::read(&encoded)?;
-    if envelope.hash != op_ref.op_hash {
+    if envelope.hash != op_hash {
         return None;
     }
-    Some(envelope.held(op_ref.author_record.clone(), encoded))
+    Some(envelope.held(author_record.to_owned(), encoded))
 }
 
 /// What the op store needs of a received op, interpretable or not.

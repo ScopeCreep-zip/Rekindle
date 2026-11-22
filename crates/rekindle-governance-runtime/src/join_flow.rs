@@ -378,14 +378,9 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         frontier = %read.short_hash,
         "join: the inviter's frontier read"
     );
-    let invite_ref = rekindle_types::governance::OpRef {
-        op_hash: link.invite_op,
-        device_key: inviter_pseudonym.0,
-        author: inviter_pseudonym.clone(),
-        author_record: invite.inviter_member_record.clone(),
-        author_seq: link.invite_op_seq,
-    };
-    let seed = crate::join_frontier::invite_op_seed(deps, link, invite_ref, &read).await?;
+    let seed =
+        crate::join_frontier::invite_op_seed(deps, link, &invite.inviter_member_record, &read)
+            .await?;
     let frontier = read.frontier;
     let inviter_route = resolve_inviter_route(deps, anchor, &invite, &inviter_pseudonym).await;
     let asker = Asker {

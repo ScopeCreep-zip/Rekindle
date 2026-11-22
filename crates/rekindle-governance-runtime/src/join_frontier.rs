@@ -18,7 +18,7 @@
 
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::member_record;
-use rekindle_types::governance::{Frontier, OpRef};
+use rekindle_types::governance::Frontier;
 use rekindle_types::invite::InviteLink;
 
 use crate::deps::GovernanceRuntimeDeps;
@@ -59,8 +59,10 @@ pub async fn read_frontier<D: GovernanceRuntimeDeps>(
 }
 
 /// The ops the join's walk starts holding beside the frontier's heads: the
-/// link's `InviteCreated`, fetched by its ref, when `read` is older than the
-/// frontier seq the link was minted at; nothing when it met that minimum.
+/// link's `InviteCreated`, fetched by its hash and seq from the inviter's op
+/// record `inviter_record`, when `read` is older than the frontier seq the
+/// link was minted at; nothing when it met that minimum. The link names no
+/// signing device key, so the held op takes the one the op carries.
 ///
 /// # Errors
 /// The frontier is older than the link's and the op is not on the
@@ -68,17 +70,17 @@ pub async fn read_frontier<D: GovernanceRuntimeDeps>(
 pub async fn invite_op_seed<D: GovernanceRuntimeDeps>(
     deps: &D,
     link: &InviteLink,
-    inviter: OpRef,
+    inviter_record: &str,
     read: &FrontierRead,
 ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
     if read.seq >= u64::from(link.frontier_seq) {
         return Ok(Vec::new());
     }
     let port = deps.record_port()?;
-    let seq = inviter.author_seq;
+    let seq = link.invite_op_seq;
     let log = rekindle_records::chain::read_log_reaching(
         &*port,
-        &inviter.author_record,
+        inviter_record,
         member_record::GOV_HEAD,
         seq,
         seq + 1,
@@ -87,7 +89,9 @@ pub async fn invite_op_seed<D: GovernanceRuntimeDeps>(
     .map_err(|e| GovernanceRuntimeError::Adapter(format!("read the inviter's op log: {e}")))?;
     let op = (log.entries.into_iter())
         .find(|entry| entry.seq == seq + 1)
-        .and_then(|entry| crate::op_receive::held_from_encoded(&inviter, entry.ciphertext));
+        .and_then(|entry| {
+            crate::op_receive::held_at(link.invite_op, inviter_record, entry.ciphertext)
+        });
     tracing::info!(
         community = %link.anchor.as_str(),
         frontier_seq = read.seq,
