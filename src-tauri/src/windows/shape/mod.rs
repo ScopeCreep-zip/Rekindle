@@ -24,6 +24,10 @@
 //! `ScaleFactorChanged`, and a skin change ([`refresh`] from
 //! `rebind::follow_event` on `SystemEvent::SkinChanged`, which refetches
 //! the frames and reshapes every window).
+//!
+//! A framed window is also held to its skin's size ([`fit`], plan SK2-N4):
+//! its minimum is the frame's served `min_*` plus outsets, and a smaller
+//! window grows to it, when shaped and on every skin change.
 
 mod geometry;
 #[cfg(target_os = "linux")]
@@ -40,7 +44,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use rekindle_types::dto::skin::SkinWindow;
-use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
+use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow, WindowEvent};
 
 pub use geometry::{ShapeRect, Silhouette};
 pub use skin::{frame_of, refresh};
@@ -215,6 +219,43 @@ pub fn reshape(window: &WebviewWindow) {
     }
 }
 
+/// Hold `window` to the shown skin's size for its frame (plan SK2-N4): its
+/// minimum is the frame's served `min_*` grown by the outsets
+/// ([`skin::min_window`]), and a window smaller than that grows to it (a
+/// user's larger window is never shrunk); a kind the skin does not frame
+/// keeps its kind's own minimum (`windows::size`). Run when a window is
+/// shaped and on every skin change, not on each resize, so it never fights
+/// a drag.
+pub fn fit(window: &WebviewWindow) {
+    let shaped = ensure(window, None);
+    let Some(frame) = *shaped.frame.lock() else {
+        return;
+    };
+    let frames = Arc::clone(&registry(window.app_handle()).frames.lock());
+    let served = skin::min_window(&frames, Some(frame));
+    let min = served.unwrap_or_else(|| super::size(skin::kind_of(frame)).min);
+    if let Err(e) = window.set_min_size(Some(LogicalSize::new(min.0, min.1))) {
+        tracing::warn!(error = %e, label = window.label(), "window minimum not set");
+    }
+    if served.is_none() {
+        return;
+    }
+    let current = window
+        .inner_size()
+        .and_then(|size| Ok(size.to_logical::<f64>(window.scale_factor()?)))
+        .map(|s| (s.width, s.height));
+    match current {
+        Ok(current) => {
+            if let Some((w, h)) = skin::grown(current, min) {
+                if let Err(e) = window.set_size(LogicalSize::new(w, h)) {
+                    tracing::warn!(error = %e, label = window.label(), "window not grown to its skin");
+                }
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, label = window.label(), "window size unread"),
+    }
+}
+
 /// Shape a new window wearing `frame` ([`frame_of`] its kind) and keep it
 /// shaped: resize (and so maximize/unmaximize) and scale changes recompute
 /// it; destruction drops it and stops its tracker. The first window asks
@@ -235,6 +276,7 @@ pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
         _ => {}
     });
     reshape(window);
+    fit(window);
 }
 
 /// Drop `window`'s entry and stop its tracker.
@@ -269,6 +311,17 @@ fn set_frames(app: &AppHandle, generation: u64, frames: skin::SkinFrameMap) {
         *held = Arc::new(frames);
     }
     reshape_all(app);
+    fit_all(app);
+}
+
+/// Hold every shaped window to the frames held ([`fit`]).
+fn fit_all(app: &AppHandle) {
+    let labels: Vec<String> = registry(app).windows.lock().keys().cloned().collect();
+    for label in labels {
+        if let Some(window) = app.get_webview_window(&label) {
+            fit(&window);
+        }
+    }
 }
 
 /// Recompute every shaped window from the frames held.

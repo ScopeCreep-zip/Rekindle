@@ -36,6 +36,39 @@ pub const fn frame_of(kind: WindowKind) -> Option<SkinWindow> {
     }
 }
 
+/// The window kind wearing `frame` (the inverse of [`frame_of`]).
+#[must_use]
+pub const fn kind_of(frame: SkinWindow) -> WindowKind {
+    match frame {
+        SkinWindow::Main => WindowKind::BuddyList,
+        SkinWindow::Chat => WindowKind::Chat,
+    }
+}
+
+/// The smallest window (logical px) that holds `frame` of `frames`: the
+/// layout's `min_*` (the smallest frame its tiles fit, plan SK0 S1) grown by
+/// its `outsets`, as the window is the frame grown by them. `None` when the
+/// skin lays no frame for that kind.
+#[must_use]
+pub fn min_window(frames: &SkinFrameMap, frame: Option<SkinWindow>) -> Option<(f64, f64)> {
+    let (layout, _) = frame.and_then(|f| frames.get(&f))?;
+    let o = &layout.outsets;
+    Some((
+        f64::from(layout.min_width) + f64::from(o.left) + f64::from(o.right),
+        f64::from(layout.min_height) + f64::from(o.top) + f64::from(o.bottom),
+    ))
+}
+
+/// The size (logical px) to grow a window of `current` to so it holds
+/// `min`; `None` when it already does. A larger window is never shrunk.
+#[must_use]
+pub fn grown(current: (f64, f64), min: (f64, f64)) -> Option<(f64, f64)> {
+    if current.0 >= min.0 && current.1 >= min.1 {
+        return None;
+    }
+    Some((current.0.max(min.0), current.1.max(min.1)))
+}
+
 /// Decode the Host's answer (tile masks, then outline node art masks); a
 /// mask whose bits do not match its size
 /// refuses the whole answer.

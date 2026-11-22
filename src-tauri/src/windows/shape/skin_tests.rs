@@ -6,7 +6,7 @@ use rekindle_types::dto::skin::{FrameTile, Insets, SkinWindow, TileAxis, WindowL
 use rekindle_types::dto::skin_library::{SkinFrames, SkinTileMask, SkinWindowFrame};
 use tauri::PhysicalSize;
 
-use super::{compute, decode, frame_of};
+use super::{compute, decode, frame_of, grown, kind_of, min_window};
 use crate::window_labels::WindowKind;
 use crate::windows::shape::{ShapeRect, Silhouette};
 
@@ -99,4 +99,40 @@ fn a_window_the_skin_does_not_frame_keeps_its_rectangle() {
 fn a_mask_whose_bits_do_not_match_its_size_refuses_the_answer() {
     assert!(decode(frames(vec![0b0110_0000, 0])).is_err());
     assert!(decode(frames(Vec::new())).is_err());
+}
+
+/// The window a frame needs is the frame's served minimum grown by its
+/// outsets (plan SK2-N4); a kind the skin does not frame has none.
+#[test]
+fn a_framed_window_needs_the_frames_minimum_plus_its_outsets() {
+    let mut served = frames(vec![0b0110_0000]);
+    served.windows[0].layout.min_width = 300;
+    served.windows[0].layout.min_height = 500;
+    served.windows[0].layout.outsets = Insets {
+        top: 2,
+        right: 6,
+        bottom: 4,
+        left: 8,
+    };
+    let decoded = decode(served).unwrap();
+    assert_eq!(
+        min_window(&decoded, frame_of(WindowKind::BuddyList)),
+        Some((314.0, 506.0))
+    );
+    // The skin lays no chat frame; a login window wears none.
+    assert_eq!(min_window(&decoded, frame_of(WindowKind::Chat)), None);
+    assert_eq!(min_window(&decoded, frame_of(WindowKind::Login)), None);
+    assert_eq!(kind_of(SkinWindow::Main), WindowKind::BuddyList);
+    assert_eq!(kind_of(SkinWindow::Chat), WindowKind::Chat);
+}
+
+/// A window smaller than its skin's minimum grows on the short axis only;
+/// one that holds it (a user's larger window) is never shrunk.
+#[test]
+fn a_window_grows_to_its_skin_and_never_shrinks() {
+    let min = (348.0, 500.0);
+    assert_eq!(grown((320.0, 650.0), min), Some((348.0, 650.0)));
+    assert_eq!(grown((320.0, 400.0), min), Some((348.0, 500.0)));
+    assert_eq!(grown((348.0, 500.0), min), None);
+    assert_eq!(grown((900.0, 900.0), min), None);
 }
