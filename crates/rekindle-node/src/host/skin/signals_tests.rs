@@ -3,7 +3,9 @@
 use rekindle_types::dto::skin_action::Capability;
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserStatus};
-use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    CallEvent, NetworkEvent, OwnRecordsPhase, SubscriptionEvent,
+};
 
 use super::actions::Selections;
 use super::capability::{Selected, SkinWorld};
@@ -30,16 +32,15 @@ fn friend(status: UserStatus, server: Option<&str>) -> FriendState {
 }
 
 fn can(f: &FriendState, capability: Capability) -> bool {
+    can_in(&SkinWorld::default(), f, capability)
+}
+
+fn can_in(world: &SkinWorld, f: &FriendState, capability: Capability) -> bool {
     let selected = Selected::Friend {
         key: SELECTED_KEY,
         friend: Some(f),
     };
-    let set = compute(
-        "buddy-list",
-        &Inputs::default(),
-        &SkinWorld::default(),
-        selected,
-    );
+    let set = compute("buddy-list", &Inputs::default(), world, selected);
     assert_ne!(
         set.can.contains(&capability),
         set.cannot.contains(&capability)
@@ -58,7 +59,68 @@ fn capabilities_follow_the_selected_friend_offline_online_in_game() {
     assert!(!can(&online, Capability::Join));
     let in_game = friend(UserStatus::Online, Some("10.0.0.1:27960"));
     assert!(can(&in_game, Capability::Join));
-    assert!(!can(&in_game, Capability::AddFriend));
+    // Plan SKC1: Add Friend holds with a friend selected, in game, while
+    // our records are published (it was `cannot` for any friend before).
+    let held = SkinWorld {
+        records_held: true,
+        ..SkinWorld::default()
+    };
+    assert!(can_in(&held, &in_game, Capability::AddFriend));
+}
+
+/// Plan SKC1: Add Friend follows the own-records stage alone, never the
+/// selection: Xfire's button works at any time while signed in.
+#[test]
+fn add_friend_follows_the_published_records_not_the_selection() {
+    let held = SkinWorld {
+        records_held: true,
+        ..SkinWorld::default()
+    };
+    let unheld = SkinWorld::default();
+    let in_game = friend(UserStatus::Online, Some("10.0.0.1:27960"));
+    let offline = friend(UserStatus::Offline, None);
+    let selections = [
+        Selected::Nothing,
+        Selected::Friend {
+            key: SELECTED_KEY,
+            friend: Some(&in_game),
+        },
+        Selected::Friend {
+            key: SELECTED_KEY,
+            friend: Some(&offline),
+        },
+        Selected::Friend {
+            key: SELECTED_KEY,
+            friend: None,
+        },
+        Selected::Server {
+            game_id: TF2,
+            address: "10.0.0.1:27960",
+        },
+    ];
+    for selected in selections {
+        let inputs = Inputs::default();
+        let set = compute("buddy-list", &inputs, &held, selected);
+        assert!(set.can.contains(&Capability::AddFriend), "{selected:?}");
+        let set = compute("buddy-list", &inputs, &unheld, selected);
+        assert!(set.cannot.contains(&Capability::AddFriend), "{selected:?}");
+    }
+}
+
+/// Plan SKC1: every own-records stage change on the stream recomputes
+/// the signals, so the change of `records_held` is pushed.
+#[test]
+fn an_own_records_stage_event_recomputes_the_signals() {
+    let mut inputs = Inputs::default();
+    for phase in [
+        OwnRecordsPhase::Pending,
+        OwnRecordsPhase::Held,
+        OwnRecordsPhase::Failed,
+    ] {
+        let event =
+            SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { phase, error: None });
+        assert!(inputs.fold(&event), "{phase:?}");
+    }
 }
 
 #[test]
@@ -74,7 +136,6 @@ fn no_selection_cannot_the_friend_capabilities_only() {
         Capability::Profile,
         Capability::Join,
         Capability::VoiceChat,
-        Capability::AddFriend,
     ] {
         assert!(set.cannot.contains(&c), "{c:?}");
     }

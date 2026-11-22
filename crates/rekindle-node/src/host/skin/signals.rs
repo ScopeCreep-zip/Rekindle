@@ -121,8 +121,11 @@ impl Inputs {
                     .collect();
                 true
             }
-            // A transfer's state is read from `transfers` (`load_world`).
-            SubscriptionEvent::Presence(_)
+            // A transfer's state is read from `transfers`, and the
+            // own-records stage from `FriendStores::own_records`
+            // (`load_world`).
+            SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { .. })
+            | SubscriptionEvent::Presence(_)
             | SubscriptionEvent::Friend(_)
             | SubscriptionEvent::Transfer(_) => true,
             _ => false,
@@ -247,8 +250,8 @@ pub(crate) fn window_sets(
 }
 
 /// The state the capabilities read besides the selection and the stream:
-/// the session's friends and communities, our shown game, and our
-/// favourite servers, groups and group invites in the database.
+/// the session's friends and communities, our shown game, the
+/// own-records stage, and our favourite servers, groups and group invites in the database.
 pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
     let mut world = SkinWorld::default();
     if let Some(session) = ctx.session.read().as_ref() {
@@ -262,6 +265,8 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
         world.communities = session.communities.len();
     }
     world.own_game = ctx.own_presence.view().game.map(|g| g.game_id);
+    world.records_held = ctx.friend_stores.own_records.get()
+        == rekindle_transport::operations::friend::OwnRecordsStage::Held;
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
         return world;
     };
