@@ -66,6 +66,34 @@ impl MemberDevices {
         endorsed.chain(retired).collect()
     }
 
+    /// The member records `p`'s endorsements may be signed for (rule 10):
+    /// the first `M(p)` and every record a first device's endorsement binds
+    /// in its own context (a re-join's new `M(p)`, lead decision 63),
+    /// derived from the set alone so the view stays a grow-only union.
+    #[must_use]
+    pub fn member_records(&self, p: &PseudonymKey, anchor: &str) -> BTreeSet<String> {
+        let firsts = (self.endorsements.values())
+            .filter(|e| endorsement_holds(p, anchor, &e.device_record, e))
+            .map(|e| e.device_record.clone());
+        self.member_record.iter().cloned().chain(firsts).collect()
+    }
+
+    /// `p`'s endorsement of `key` signed for member record `record` (rules
+    /// 1 and 10), the lowest incarnation's: `None` when no endorsement of
+    /// the key binds that record, so a key endorsed only under an ended
+    /// membership is unendorsed for the current one (lead decision 63).
+    #[must_use]
+    pub fn endorsement_for(
+        &self,
+        p: &PseudonymKey,
+        anchor: &str,
+        record: &str,
+        key: &[u8; 32],
+    ) -> Option<&DeviceEndorsement> {
+        (self.endorsements.values())
+            .find(|e| e.device_key == *key && endorsement_holds(p, anchor, record, e))
+    }
+
     /// The lowest seq above which `key` signs nothing valid: its lowest
     /// retirement `lastSeq` + 1 or its fork seq, whichever is lower.
     fn void_from(&self, key: &[u8; 32]) -> Option<u64> {
@@ -154,8 +182,15 @@ impl DeviceView {
                 let md = self.members.entry(p.clone()).or_default();
                 md.member_record
                     .get_or_insert_with(|| member_record.clone());
+                // A first device's endorsement is signed for the record its
+                // own `MemberJoined` names (rules 3 and 10), a re-join's new
+                // `M(p)` included (lead decision 63).
                 if let Some(e) = first_device {
-                    take_endorsement(md, p, anchor, e);
+                    if endorsement_holds(p, anchor, member_record, e) {
+                        (md.endorsements)
+                            .entry((e.incarnation, e.device_key))
+                            .or_insert_with(|| e.clone());
+                    }
                 }
             }
             GovernanceEntry::DeviceKey(e) => {
@@ -190,7 +225,7 @@ impl DeviceView {
 }
 
 fn take_endorsement(md: &mut MemberDevices, p: &PseudonymKey, anchor: &str, e: &DeviceEndorsement) {
-    let held = (md.member_record.as_deref()).is_some_and(|r| endorsement_holds(p, anchor, r, e));
+    let held = (md.member_records(p, anchor).iter()).any(|r| endorsement_holds(p, anchor, r, e));
     if held {
         (md.endorsements)
             .entry((e.incarnation, e.device_key))
@@ -319,3 +354,7 @@ mod tests;
 #[cfg(test)]
 #[path = "device_enrol_tests.rs"]
 mod enrol_tests;
+
+#[cfg(test)]
+#[path = "device_rejoin_tests.rs"]
+mod rejoin_tests;

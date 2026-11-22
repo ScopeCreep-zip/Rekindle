@@ -49,6 +49,20 @@ impl HostGovernance {
             .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
     }
 
+    pub(super) fn store_device_record_impl(
+        &self,
+        community: &str,
+        record: &str,
+        owner: &str,
+    ) -> Result<(), GovernanceRuntimeError> {
+        let guard = self.ctx.device_vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+        rekindle_vault::typed::device_keys::store_device_record(vault, community, record, owner)
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
+    }
+
     pub(super) fn identity_display_name_impl(&self) -> String {
         self.ctx.identity_display_name()
     }

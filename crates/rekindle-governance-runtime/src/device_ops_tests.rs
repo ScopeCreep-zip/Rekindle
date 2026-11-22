@@ -80,3 +80,48 @@ fn a_key_with_held_ops_at_seqs_zero_to_n_retires_above_n() {
     };
     assert_eq!(last_seq_of(&on, key), n + 1);
 }
+
+/// Rule 3 at the enrolling writer (plan K5k): the member record is the
+/// first device's, a key the set endorses is never endorsed again, and a
+/// record another key binds is taken; a fresh key on a fresh record goes.
+#[test]
+fn enrol_refuses_an_endorsed_key_and_a_taken_record() {
+    use rekindle_governance::device_judge::MemberDevices;
+    use rekindle_governance::device_writer::{endorse, DeviceRecord};
+    use rekindle_secrets::ed25519_dalek::SigningKey;
+
+    use super::refuse_taken;
+    let p = SigningKey::from_bytes(&[1; 32]);
+    let bound = endorse(
+        &p,
+        "VLD0:anchor",
+        "VLD0:m",
+        None,
+        [7; 32],
+        DeviceRecord {
+            record: "VLD0:mpd".into(),
+            owner: "o".into(),
+        },
+        [0; 32],
+    )
+    .unwrap();
+    let mut md = MemberDevices::default();
+    md.endorsements.insert((1, [7; 32]), bound);
+    let refused = |r: Result<(), GovernanceRuntimeError>| {
+        matches!(r, Err(GovernanceRuntimeError::DeviceActRefused(_)))
+    };
+    assert!(refused(refuse_taken(None, [8; 32], "VLD0:m", "VLD0:m")));
+    assert!(refused(refuse_taken(
+        Some(&md),
+        [7; 32],
+        "VLD0:new",
+        "VLD0:m"
+    )));
+    assert!(refused(refuse_taken(
+        Some(&md),
+        [8; 32],
+        "VLD0:mpd",
+        "VLD0:m"
+    )));
+    assert!(refuse_taken(Some(&md), [8; 32], "VLD0:new", "VLD0:m").is_ok());
+}

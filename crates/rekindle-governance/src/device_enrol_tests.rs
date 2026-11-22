@@ -10,22 +10,22 @@ use rekindle_types::id::PseudonymKey;
 use super::{judge_op, DeviceView, KeyJudgement, KeyPending, KeyRefusal, MemberDevices};
 use crate::device_writer::{endorse, DeviceRecord};
 
-const ANCHOR: &str = "VLD0:anchor";
+pub(super) const ANCHOR: &str = "VLD0:anchor";
 /// `M(p)`, the first device's record (rule 3).
-const M_P: &str = "VLD0:member";
+pub(super) const M_P: &str = "VLD0:member";
 
-fn p(seed: u8) -> SigningKey {
+pub(super) fn p(seed: u8) -> SigningKey {
     SigningKey::from_bytes(&[seed; 32])
 }
 
-fn record(name: &str) -> DeviceRecord {
+pub(super) fn record(name: &str) -> DeviceRecord {
     DeviceRecord {
         record: name.to_owned(),
         owner: format!("{name}-owner"),
     }
 }
 
-fn op(seq: u64, device_key: u8, body: GovernanceEntry) -> GovernanceOp {
+pub(super) fn op(seq: u64, device_key: u8, body: GovernanceEntry) -> GovernanceOp {
     GovernanceOp {
         author: PseudonymKey(p(1).verifying_key().to_bytes()),
         seq,
@@ -39,7 +39,7 @@ fn op(seq: u64, device_key: u8, body: GovernanceEntry) -> GovernanceOp {
 }
 
 /// Member `p(1)` joined with first device `[10; 32]`, whose record is `M(p)`.
-fn joined_view() -> DeviceView {
+pub(super) fn joined_view() -> DeviceView {
     let first = endorse(&p(1), ANCHOR, M_P, None, [10; 32], record(M_P), [0; 32]).unwrap();
     let mut view = DeviceView::default();
     view.absorb(
@@ -59,7 +59,7 @@ fn joined_view() -> DeviceView {
     view
 }
 
-fn held(view: &DeviceView) -> &MemberDevices {
+pub(super) fn held(view: &DeviceView) -> &MemberDevices {
     view.member(&PseudonymKey(p(1).verifying_key().to_bytes()))
         .unwrap()
 }
@@ -79,7 +79,7 @@ fn enrolment(view: &DeviceView, signer: u8, key: u8, rec: &str) -> DeviceEndorse
 }
 
 /// The new key's own seq-0 op carrying its endorsement.
-fn enrol_op(e: DeviceEndorsement) -> GovernanceOp {
+pub(super) fn enrol_op(e: DeviceEndorsement) -> GovernanceOp {
     let key = e.device_key[0];
     op(0, key, GovernanceEntry::DeviceKey(e))
 }

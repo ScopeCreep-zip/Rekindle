@@ -329,8 +329,13 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     // `MemberJoined`, the device's first op, carries its own endorsement
     // of the record it names; any later op lands on the record our key's
     // endorsement binds in the state ([`device_signer::own_op_record`]).
+    // Our `DeviceKey` endorsing our own fresh key is that key's first op
+    // (rule 3): it lands on the `M(p,d)` it binds.
     let record = match &entry {
         GovernanceEntry::MemberJoined { member_record, .. } => member_record.clone(),
+        GovernanceEntry::DeviceKey(e) if device_signer::is_own_key(deps, community_id, e)? => {
+            e.device_record.clone()
+        }
         _ => device_signer::own_op_record(deps, community_id, &gov_state)?,
     };
 

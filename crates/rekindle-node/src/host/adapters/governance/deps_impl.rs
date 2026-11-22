@@ -58,6 +58,15 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.store_device_op_key_impl(community_id, secret)
     }
 
+    fn store_device_record(
+        &self,
+        community_id: &str,
+        record: &str,
+        owner: &str,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.store_device_record_impl(community_id, record, owner)
+    }
+
     fn identity_display_name(&self) -> String {
         self.identity_display_name_impl()
     }

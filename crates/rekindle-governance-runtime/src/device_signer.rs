@@ -85,38 +85,95 @@ pub fn own_op_record<D: GovernanceRuntimeDeps>(
 ) -> Result<String, GovernanceRuntimeError> {
     let me = crate::op_log::own_member(deps, community, state)?;
     let device = device_op_key(deps, community, false)?;
-    match op_record_of(state, &me.pseudonym, &device.verifying_key().to_bytes()) {
+    let member =
+        (me.record).ok_or_else(|| GovernanceRuntimeError::MemberRecordMissing(me.hex.clone()))?;
+    // Lead decision 63: only an endorsement signed for the current member
+    // record binds; a key endorsed under an ended membership (before a
+    // re-join) writes nothing until this device re-enrols.
+    let endorsement = (state.devices.member(&me.pseudonym)).and_then(|md| {
+        md.endorsement_for(
+            &me.pseudonym,
+            community,
+            &member,
+            &device.verifying_key().to_bytes(),
+        )
+    });
+    match endorsement {
         None => Err(GovernanceRuntimeError::DeviceUnendorsed(
             community.to_string(),
         )),
-        Some(OpRecord::Member) => me
-            .record
-            .ok_or(GovernanceRuntimeError::MemberRecordMissing(me.hex)),
-        Some(OpRecord::Device(record)) => Ok(record),
+        Some(e) if e.device_record == member => Ok(member),
+        Some(e) => Ok(e.device_record.clone()),
     }
 }
 
-/// Where the endorsement of one device key binds its op chain.
-#[derive(Debug, PartialEq, Eq)]
-pub enum OpRecord {
-    /// The member's first device: `M(p)`, the member record.
-    Member,
-    /// Any other device: its own `M(p,d)`.
-    Device(String),
+/// Whether this device may write in `community` (ADR 0022 rule 4, lead
+/// decision 63): its key is endorsed for the current member record, or it
+/// must (re-)enrol: no key held, or a key whose endorsement binds no
+/// current record (a fresh device, or one whose person re-joined).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnDevice {
+    /// Our key is endorsed for the current member record.
+    Endorsed,
+    /// Our ops are refused until this device enrols a fresh key.
+    NeedsEnrol,
 }
 
-/// Where `p`'s endorsement of device key `key` in `state` binds its ops,
-/// by the lowest incarnation's endorsement (rule 6's order; rule 3 gives
-/// a key one record); `None` when `state` holds no endorsement of it.
-#[must_use]
-pub fn op_record_of(state: &GovernanceState, p: &PseudonymKey, key: &[u8; 32]) -> Option<OpRecord> {
-    let md = state.devices.member(p)?;
-    let (_, e) = md.endorsements.iter().find(|((_, k), _)| k == key)?;
-    Some(if md.member_record.as_ref() == Some(&e.device_record) {
-        OpRecord::Member
-    } else {
-        OpRecord::Device(e.device_record.clone())
-    })
+/// [`OwnDevice`] for `community` against `state`.
+///
+/// # Errors
+/// As [`own_op_record`] except its two unendorsed refusals
+/// (`DeviceUnendorsed`, `DeviceOpKeyMissing`), which are
+/// [`OwnDevice::NeedsEnrol`].
+pub fn own_device<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    state: &GovernanceState,
+) -> Result<OwnDevice, GovernanceRuntimeError> {
+    match own_op_record(deps, community, state) {
+        Ok(_) => Ok(OwnDevice::Endorsed),
+        Err(
+            GovernanceRuntimeError::DeviceUnendorsed(_)
+            | GovernanceRuntimeError::DeviceOpKeyMissing(_),
+        ) => Ok(OwnDevice::NeedsEnrol),
+        Err(e) => Err(e),
+    }
+}
+
+/// The unlock catch-up's device check (ADR 0022 rule 4, lead decision 63):
+/// when our held key no longer binds the current member record, the stale
+/// `M(p,d)` binding is dropped (the entry keeps the key alone, which
+/// [`own_op_record`] still refuses as `DeviceUnendorsed`), so no write
+/// ever lands on a record of an ended membership. Answers our standing.
+///
+/// # Errors
+/// As [`own_device`], or the device vault's.
+pub fn catch_up_own_device<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    state: &GovernanceState,
+) -> Result<OwnDevice, GovernanceRuntimeError> {
+    let standing = own_device(deps, community, state)?;
+    if standing == OwnDevice::NeedsEnrol {
+        if let Some(held) = deps.device_op_key(community)? {
+            deps.store_device_op_key(community, &held)?;
+        }
+    }
+    Ok(standing)
+}
+
+/// Whether `e` endorses this device's held key in `community`.
+///
+/// # Errors
+/// The device vault's.
+pub fn is_own_key<D: GovernanceRuntimeDeps + ?Sized>(
+    deps: &D,
+    community: &str,
+    e: &DeviceEndorsement,
+) -> Result<bool, GovernanceRuntimeError> {
+    Ok(deps.device_op_key(community)?.is_some_and(|held| {
+        SigningKey::from_bytes(&held).verifying_key().to_bytes() == e.device_key
+    }))
 }
 
 /// The stored key, `None` when one may be minted (this device's first op

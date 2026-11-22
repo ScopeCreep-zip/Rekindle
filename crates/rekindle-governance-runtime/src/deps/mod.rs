@@ -105,6 +105,18 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         secret: &[u8; 32],
     ) -> Result<(), GovernanceRuntimeError>;
+    /// Bind `record` (`M(p,d)`) and its owner keypair text `owner`
+    /// (`K_M(p,d)`) to this device's held key for `community_id` (ADR 0022
+    /// rules 3 and 4): an enrolled device's op record.
+    ///
+    /// # Errors
+    /// Locked, no key held, or the device vault cannot be written.
+    fn store_device_record(
+        &self,
+        community_id: &str,
+        record: &str,
+        owner: &str,
+    ) -> Result<(), GovernanceRuntimeError>;
     fn identity_display_name(&self) -> String;
     fn identity_status(&self) -> UserStatusKind;
     fn our_route_blob(&self) -> Vec<u8>;
