@@ -117,6 +117,35 @@ fn a_later_offer_supersedes_an_earlier_one() {
     assert!(transfer_round(&s, &pk(4)).is_ok());
 }
 
+/// Lead decision (55): an offer stops standing once its acceptance is
+/// applied, so a second accept finds no round (the Host reserves nothing)
+/// and learns the successor already created.
+#[test]
+fn an_accepted_offer_stands_no_more() {
+    let mut s = state();
+    let e = offer_entry(&s, &pk(1), &pk(2)).unwrap();
+    apply(&mut s, 1, 5, e);
+    let round = transfer_round(&s, &pk(2)).expect("the offer stands");
+    let offer = OpRef {
+        op_hash: round.offer,
+        author: pk(1),
+        author_record: "VLD0:m1".into(),
+        author_seq: 5,
+    };
+    let accepted = acceptance_entry(offer, round.set_hash, NEW, Vec::new(), "VLD0:inv");
+    apply(&mut s, 2, 6, accepted);
+    assert!(
+        standing_offers(&s).is_empty(),
+        "the accepted offer stands no more"
+    );
+    assert!(
+        transfer_round(&s, &pk(2)).is_err(),
+        "a second accept has no round"
+    );
+    assert_eq!(accepted_successor(&s, &pk(2)), Some(NEW));
+    assert_eq!(accepted_successor(&s, &pk(4)), None);
+}
+
 #[test]
 fn a_withdrawn_offer_cannot_be_accepted() {
     let mut s = state();

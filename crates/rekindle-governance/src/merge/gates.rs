@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry, OpHash};
+use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry, OpHash, OpRef};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::join_refusal::JoinRefusal;
 
@@ -422,8 +422,26 @@ fn successor_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
                     if fits_offer(op.author(), op.body(), offer))
         });
         let linked = acceptance_links_cited(op.author(), op.body(), &op.op().deps, &round.state);
-        invalid[o] |= !in_deps || !holds || !linked;
+        // Lead decision (55): an offer is accepted once. Only its
+        // `transferTo` accepts it, and an author's applied ops form one
+        // chain (a forked author's are quarantined), so an earlier
+        // acceptance of the same offer is always in this one's past.
+        let again = matches!(op.body(), GovernanceEntry::CommunitySuccessor(_))
+            && (0..set.ops.len()).any(|c| {
+                c != o
+                    && round.applied[c]
+                    && set.past.contains(o, c)
+                    && accepts_same(set.ops[c].body(), accepts)
+            });
+        invalid[o] |= !in_deps || !holds || !linked || again;
     }
+}
+
+/// Whether `body` is an acceptance of the offer `offer` names (lead
+/// decision (55)).
+pub(super) fn accepts_same(body: &GovernanceEntry, offer: &OpRef) -> bool {
+    matches!(body, GovernanceEntry::CommunitySuccessor(s)
+        if s.accepts.as_ref().is_some_and(|r| r.op_hash == offer.op_hash))
 }
 
 /// A `SuccessorLink` needs the request it answers among its deps, applied,

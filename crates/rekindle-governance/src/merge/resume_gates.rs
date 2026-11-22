@@ -516,7 +516,23 @@ fn successor_gate(
             false
         };
         let linked = acceptance_links_cited(op.author(), op.body(), &op.op().deps, &round.state);
-        invalid[o] |= !in_deps || !holds || !linked;
+        // Lead decision (55), as `gates::successor_gate`: an acceptance of
+        // the same offer in the cut (the snapshot's `successors`) is the
+        // same author's earlier op, so in this one's past; one in the rest
+        // counts when it is in its past.
+        let again = matches!(op.body(), GovernanceEntry::CommunitySuccessor(_))
+            && (cut.values().any(|s| {
+                s.successor
+                    .accepts
+                    .as_ref()
+                    .is_some_and(|r| r.op_hash == accepts.op_hash)
+            }) || (0..set.ops.len()).any(|c| {
+                c != o
+                    && round.applied[c]
+                    && set.past.contains(o, c)
+                    && super::gates::accepts_same(set.ops[c].body(), accepts)
+            }));
+        invalid[o] |= !in_deps || !holds || !linked || again;
     }
     Ok(())
 }

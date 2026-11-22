@@ -73,15 +73,22 @@ impl HostGovernance {
     /// invites (decision (34); the co-creators follow through theirs) and
     /// publishes the acceptance citing the offer and the link ops. With no
     /// other creator the first call finishes at once. The round removes no
-    /// one (decision (25)).
+    /// one (decision (25)). Once our acceptance is applied the offer stands
+    /// no more: a later call names the successor already created and
+    /// reserves nothing (lead decision (55)).
     ///
     /// # Errors
     /// No standing offer names us (or the set changed), a continuing
     /// member's card cannot be read, or the reservation, the request or
     /// the successor's creation failed.
     pub(crate) async fn accept_transfer(&self, anchor: &str) -> Result<CommunityCreated, String> {
-        let (round, me_old) =
-            transfer::round_for(self, anchor).map_err(|e| format!("transfer not accepted: {e}"))?;
+        let (round, me_old) = match transfer::round_for(self, anchor) {
+            Ok(found) => found,
+            Err(e) => {
+                return (self.already_accepted(anchor))
+                    .ok_or_else(|| format!("transfer not accepted: {e}"));
+            }
+        };
         if let Some(new_anchor) = self.pending_transfer(anchor, &round) {
             return Box::pin(self.collect_or_finish(anchor, &new_anchor, &round, &me_old)).await;
         }
@@ -118,6 +125,25 @@ impl HostGovernance {
         Ok(CommunityCreated {
             pending_co_creators: others.iter().map(PseudonymKey::to_hex).collect(),
             ..created
+        })
+    }
+
+    /// The successor we created when we accepted an offer of `anchor` that
+    /// stands no more (lead decision (55)).
+    fn already_accepted(&self, anchor: &str) -> Option<CommunityCreated> {
+        let state = self.governance_state(anchor)?;
+        let me = (self.community_membership(anchor)?.my_pseudonym_hex)
+            .map(|hex| PseudonymKey::from_hex_lossy(&hex))?;
+        let new_anchor = transfer::accepted_successor(&state, &me)?.to_owned();
+        let registry_key = (self.ctx.session.read().as_ref())
+            .and_then(|s| s.community(&new_anchor))
+            .map(|m| m.registry_key.clone())
+            .unwrap_or_default();
+        Some(CommunityCreated {
+            anchor: new_anchor,
+            registry_key,
+            name: state.metadata.map(|m| m.name).unwrap_or_default(),
+            pending_co_creators: Vec::new(),
         })
     }
 

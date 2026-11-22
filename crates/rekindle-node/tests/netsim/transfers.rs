@@ -54,6 +54,14 @@ async fn a_transfer_completes_and_members_follow_the_successor() {
         .as_str()
         .expect("the successor")
         .to_owned();
+    // Lead decision (55): accepting again names the successor already
+    // created and reserves nothing new.
+    let again = community.nodes[1].ok(accept(&community)).await;
+    assert_eq!(
+        again["anchor"].as_str(),
+        Some(new_anchor.as_str()),
+        "a second accept names the successor already created"
+    );
     let offered = eventually(&community.sim, Duration::from_secs(300), || async {
         let request = lifecycle(LifecycleRequest::CommunitySuccessors {
             anchor: community.anchor.clone(),

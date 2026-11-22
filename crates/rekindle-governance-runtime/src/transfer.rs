@@ -90,9 +90,14 @@ pub fn withdrawal_entry() -> GovernanceEntry {
 }
 
 /// Each signer's standing offer: its latest offer or withdrawal by merge
-/// order, kept when it is an offer (decision (26)).
+/// order, kept when it is an offer (decision (26)) not yet accepted in the
+/// merged state (lead decision (55)).
 #[must_use]
 pub fn standing_offers(state: &GovernanceState) -> Vec<(&OpHash, &SuccessorState)> {
+    let accepted: BTreeSet<&OpHash> = (state.successors.values())
+        .filter_map(|row| row.successor.accepts.as_ref())
+        .map(|offer| &offer.op_hash)
+        .collect();
     let mut latest: std::collections::BTreeMap<&PseudonymKey, (&OpHash, &SuccessorState)> =
         std::collections::BTreeMap::new();
     for (hash, row) in &state.successors {
@@ -107,8 +112,21 @@ pub fn standing_offers(state: &GovernanceState) -> Vec<(&OpHash, &SuccessorState
         }
     }
     (latest.into_values())
-        .filter(|(_, row)| row.successor.shape() == Some(SuccessorShape::Offer))
+        .filter(|(hash, row)| {
+            row.successor.shape() == Some(SuccessorShape::Offer) && !accepted.contains(hash)
+        })
         .collect()
+}
+
+/// The successor our latest applied acceptance (by merge order) created,
+/// if any: what an accept of an offer already accepted names (lead
+/// decision (55)).
+#[must_use]
+pub fn accepted_successor<'a>(state: &'a GovernanceState, me: &PseudonymKey) -> Option<&'a str> {
+    (state.successors.values())
+        .filter(|row| row.author == *me && row.successor.accepts.is_some())
+        .max_by_key(|row| row.stamp)
+        .and_then(|row| row.successor.new_anchor.as_deref())
 }
 
 /// What the recipient's round needs: the standing offer to `me` (the

@@ -376,3 +376,28 @@ fn a_resumed_merge_judges_an_acceptance_citing_cut_links_alike() {
         assert_eq!(kept(&all, &acc), stands, "the full merge alike");
     }
 }
+
+/// Lead decision (55): an offer accepted once is accepted no more; a
+/// second acceptance of it is refused by the full merge, and the resumed
+/// merge agrees whether the first acceptance is in the cut or the rest.
+#[test]
+fn a_second_acceptance_of_one_offer_is_refused() {
+    let ops = community();
+    let (d0, c5) = (at(&ops, 4).clone(), at(&ops, 8).clone());
+    let o1 = op(&pk(1), 6, &[&c5], 120, offer(4, &[4]));
+    let first = op(&pk(4), 1, &[&o1, &d0], 121, acceptance(&o1, &[4], &[4]));
+    let second = op(&pk(4), 2, &[&o1, &first], 122, acceptance(&o1, &[4], &[4]));
+    let cert = cert(&pk(1), AdmissionMode::Open);
+    let mut all = ops;
+    all.extend([o1.clone(), first.clone(), second.clone()]);
+    assert!(kept(&all, &first), "the first acceptance stands");
+    assert!(!kept(&all, &second), "a second acceptance is refused");
+    for cut in [&o1, &first] {
+        let out = resume(&cert, &all, &[cut]).expect("on top");
+        assert!(out.state.successors.contains_key(&first.hash()));
+        assert!(
+            !out.state.successors.contains_key(&second.hash()),
+            "the resumed merge refuses it too"
+        );
+    }
+}
