@@ -86,7 +86,7 @@ pub async fn write_entry_citing<D: GovernanceRuntimeDeps>(
     write(
         deps,
         community_id,
-        entry,
+        WriteEntry::Ready(Box::new(entry)),
         OpLanding::FirstAttempt,
         op_log::Deps::FrontierAnd(extra),
     )
