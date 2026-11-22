@@ -134,15 +134,14 @@ impl Default for RateLimiter {
 
 /// Per-community gossip overlay state.
 ///
-/// Tracks online members, selected gossip peers, and provides methods
-/// for peer selection and broadcast target computation.
+/// Tracks the members heard from, the Lamport clock and the inbound rate
+/// floor. The fan-out targets are not here: the Host picks them from the
+/// roster's live beats and their `M`/6 routes (plan E3.4 S5).
 pub struct GossipMesh {
     /// Community ID this mesh belongs to.
     pub community_id: String,
     /// All known online members: pseudonym_key → route blob.
     pub online_members: HashMap<String, OnlineMember>,
-    /// Selected gossip peers (subset of online_members, size = fanout degree).
-    pub peers: HashMap<String, OnlineMember>,
     /// Lamport clock for outgoing messages.
     pub clock: LamportClock,
     /// Rate limiter for inbound messages.
@@ -165,40 +164,15 @@ impl GossipMesh {
         Self {
             community_id,
             online_members: HashMap::new(),
-            peers: HashMap::new(),
             clock: LamportClock::default(),
             rate_limiter: RateLimiter::default(),
-        }
-    }
-
-    /// Update the peer set from the current online members.
-    ///
-    /// Selects up to `fanout_degree(online_count)` peers, preferring
-    /// those with the most recent `last_seen` timestamps.
-    pub fn refresh_peer_set(&mut self, my_pseudonym: &str) {
-        let degree = fanout_degree(self.online_members.len());
-
-        let mut candidates: Vec<(&String, &OnlineMember)> = self
-            .online_members
-            .iter()
-            .filter(|(key, _)| *key != my_pseudonym)
-            .collect();
-
-        // Sort by last_seen descending (most recently seen first)
-        candidates.sort_by(|a, b| b.1.last_seen.cmp(&a.1.last_seen));
-        candidates.truncate(degree);
-
-        self.peers.clear();
-        for (key, member) in candidates {
-            self.peers.insert(key.clone(), member.clone());
         }
     }
 
     /// Add or update an online member.
     ///
     /// The `last_seen` timestamp is clamped to the current time to prevent
-    /// malicious peers from claiming future timestamps to dominate peer
-    /// selection in `refresh_peer_set`. `now` is the caller's clock
+    /// malicious peers from claiming future timestamps. `now` is the caller's clock
     /// reading in seconds.
     pub fn upsert_member(&mut self, pseudonym: String, mut member: OnlineMember, now: u64) {
         if member.last_seen > now {
@@ -210,7 +184,6 @@ impl GossipMesh {
     /// Remove a member from the online set and peer set.
     pub fn remove_member(&mut self, pseudonym: &str) {
         self.online_members.remove(pseudonym);
-        self.peers.remove(pseudonym);
         self.rate_limiter.remove_sender(pseudonym);
     }
 
@@ -251,7 +224,6 @@ impl GossipMesh {
     pub fn evict_stale(&mut self, now_secs: u64, ttl_secs: u64) {
         let cutoff = now_secs.saturating_sub(ttl_secs);
         self.online_members.retain(|_, m| m.last_seen >= cutoff);
-        self.peers.retain(|_, m| m.last_seen >= cutoff);
     }
 }
 

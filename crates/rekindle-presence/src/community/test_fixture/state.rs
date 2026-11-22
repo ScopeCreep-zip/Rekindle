@@ -4,38 +4,24 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
-
-use crate::community::GossipOverlaySnapshot;
-use crate::deps::{OnlineMember, PresenceCredentials, RowWrite, SegmentDescriptor};
+use crate::deps::{PresenceCredentials, RowWrite, SegmentDescriptor};
 
 #[derive(Default)]
 pub struct MockState {
     // ---- Read-side data ----
     pub my_pk: String,
     pub our_route: Option<Vec<u8>>,
-    pub status: String,
     // ---- Programmable behaviour ----
     pub registry_open_result: Option<String>,
     pub presence_credentials: Option<PresenceCredentials>,
     pub bans: HashSet<String>,
     pub segments: Vec<SegmentDescriptor>,
     pub segment_raw: HashMap<String, Vec<(u32, Vec<u8>)>>,
-    pub offline_diff: Vec<String>,
-    pub gossip_snapshot: GossipOverlaySnapshot,
     /// Outcomes `write_presence_to_registry_subkey` returns in order;
     /// `RowWrite::Stored` once exhausted.
     pub write_outcomes: VecDeque<RowWrite>,
-    /// Peers the mock's `extend_online_with_recent_gossip` should
-    /// inject into the orchestrator's `online_members` map — drives
-    /// the `online_count > 0` gate that controls the stale-sync
-    /// retry block.
-    pub inject_online: HashMap<String, OnlineMember>,
     // ---- Call-recording side ----
-    pub sent_envelopes: Vec<(String, CommunityEnvelope)>,
-    pub initial_done: Vec<String>,
     pub calls_my_pseudonym: Vec<String>,
-    pub calls_status_str: Vec<String>,
     pub calls_self_snapshot: Vec<String>,
     pub calls_encrypt_history: Vec<(String, usize)>,
     pub calls_compute_history: Vec<String>,
@@ -53,12 +39,6 @@ pub struct MockState {
     pub calls_apply_member_state: Vec<(String, usize)>,
     pub calls_read_profiles: Vec<String>,
     pub calls_apply_profiles: Vec<(String, usize, bool)>,
-    pub calls_extend_online: Vec<(String, usize, String, u64)>,
-    pub calls_offline_diff: Vec<(String, usize, String)>,
-    pub calls_read_gossip: Vec<String>,
-    pub calls_apply_gossip: Vec<(String, usize, usize)>,
-    pub calls_send_raw: Vec<(String, SignedEnvelope)>,
-    pub calls_emit_offline: Vec<(String, String)>,
     pub calls_auto_expand: Vec<String>,
     pub active_voice_channel: Option<String>,
     pub calls_reconcile_voice_roster: Vec<(String, Vec<crate::deps::VoicePresenceRow>)>,

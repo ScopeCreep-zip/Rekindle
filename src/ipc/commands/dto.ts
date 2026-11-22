@@ -216,7 +216,6 @@ export interface GossipDiagnostics {
   gossipPeerCount: number;
   onlineMemberCount: number;
   knownMemberCount: number;
-  needsInitialSync: boolean;
   messageClock: number;
   hasRouteBlob: boolean;
   myPseudonymKey: string | null;

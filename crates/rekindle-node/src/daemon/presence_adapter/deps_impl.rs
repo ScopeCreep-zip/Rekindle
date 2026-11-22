@@ -9,12 +9,9 @@ use rekindle_records::port::OpenIntent;
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
-use rekindle_presence::community::{
-    GossipOverlayPlan, GossipOverlaySnapshot, MemberProfileSnapshot,
-};
+use rekindle_presence::community::MemberProfileSnapshot;
 use rekindle_presence::deps::{
-    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
+    CommunityPresenceDeps, DiscoveredMemberRow, PresenceCredentials, PresenceError,
     SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
 };
 use rekindle_types::presence::{
@@ -28,10 +25,6 @@ use super::DaemonPresenceAdapter;
 impl CommunityPresenceDeps for DaemonPresenceAdapter {
     fn now_secs(&self) -> u64 {
         self.ctx.clock.now_secs()
-    }
-
-    fn rng(&self) -> &dyn rekindle_utils::RandomSource {
-        self.ctx.rng.as_ref()
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
@@ -54,10 +47,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
                 .available_own(rekindle_records::port::RouteClass::General)
                 .await;
         }
-    }
-
-    fn current_presence_status_str(&self, _community_id: &str) -> String {
-        Self::current_status_impl()
     }
 
     fn presence_credentials(&self, community_id: &str) -> Option<PresenceCredentials> {
@@ -169,58 +158,10 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         // reader derives (`CommunityStore::member_role_ids`, plan E3.2 D15).
     }
 
-    // ---------- Gossip overlay ----------
-
-    fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
-        self.send_to_mesh_impl(community_id, &envelope);
-    }
-
-    fn send_to_mesh_raw(&self, _community_id: &str, envelope: SignedEnvelope) {
-        // A held broadcast is already signed: the worker fans it out
-        // unchanged, as a relay, never signing it twice.
-        crate::daemon::gossip::forward(&self.ctx.gossip_tx, envelope);
-    }
-
-    fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
-        self.take_gossip_snapshot_impl(community_id)
-    }
-
-    fn apply_gossip_rebuild_plan(&self, community_id: &str, plan: GossipOverlayPlan) {
-        self.apply_gossip_plan_impl(community_id, plan);
-    }
-
-    fn extend_online_with_recent_gossip(
-        &self,
-        community_id: &str,
-        online_members: &mut HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-        eviction_threshold_secs: u64,
-    ) {
-        self.extend_online_impl(
-            community_id,
-            online_members,
-            my_pseudonym,
-            eviction_threshold_secs,
-        );
-    }
-
-    fn gossip_offline_diff(
-        &self,
-        community_id: &str,
-        online_members: &HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-    ) -> Vec<String> {
-        self.gossip_offline_diff_impl(community_id, online_members, my_pseudonym)
-    }
-
     // ---------- Events emitted to IPC subscribers ----------
 
     fn emit_member_discovered(&self, community_id: &str, pseudonym_key: &str, _subkey_index: u32) {
         self.emit_member_discovered_impl(community_id, pseudonym_key);
-    }
-
-    fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str) {
-        self.emit_presence_offline_impl(community_id, pseudonym_key);
     }
 
     // ---------- Presence row composition ----------
@@ -289,10 +230,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         // fetch from members that do. This closes when the daemon moves
         // to SMPL channel segments (2.6c).
         Vec::new()
-    }
-
-    fn mark_initial_sync_done(&self, community_id: &str) {
-        self.ctx.communities.mark_channel_synced(community_id, "");
     }
 
     // ---------- Capability gaps: no profile store, no voice engine ----------

@@ -9,10 +9,9 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use rekindle_presence::{
-    CommunityPresenceDeps, DiscoveredMemberRow, GossipOverlayPlan, GossipOverlaySnapshot,
-    OnlineMember, PresenceCredentials, PresenceError, SegmentDescriptor, SelfPresenceSnapshot,
+    CommunityPresenceDeps, DiscoveredMemberRow, PresenceCredentials, PresenceError,
+    SegmentDescriptor, SelfPresenceSnapshot,
 };
 
 use crate::services::presence_adapter::PresenceAdapter;
@@ -22,10 +21,6 @@ use crate::state_helpers;
 impl CommunityPresenceDeps for PresenceAdapter {
     fn now_secs(&self) -> u64 {
         rekindle_utils::timestamp_secs()
-    }
-
-    fn rng(&self) -> &dyn rekindle_utils::RandomSource {
-        &rekindle_utils::OsRandom
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
@@ -46,33 +41,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
                 .available(rekindle_records::port::RouteClass::General)
                 .await;
         }
-    }
-
-    fn current_presence_status_str(&self, community_id: &str) -> String {
-        // Delegate to the src-tauri helper so the wire-string
-        // mapping lives in exactly one place. The helper is the
-        // wire-up point for per-community `MemberPresence.custom_status`
-        // (architecture spec line 754); a future commit can resolve
-        // `community.my_custom_status` first inside the helper and
-        // the adapter automatically picks it up.
-        crate::services::community::current_presence_status(&self.state, community_id).to_string()
-    }
-
-    fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
-        if let Err(error) = crate::state_helpers::host_governance(&self.state)
-            .map(|host| host.send_to_mesh_impl(community_id, &envelope))
-            .map_err(|e| e.to_string())
-        {
-            tracing::debug!(
-                community = %community_id,
-                %error,
-                "send_to_mesh from community-presence deps failed",
-            );
-        }
-    }
-
-    fn mark_initial_sync_done(&self, community_id: &str) {
-        super::state_reads::mark_initial_sync_done(&self.state, community_id);
     }
 
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot {
@@ -331,59 +299,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
             community_id,
             updates,
             emit_refreshed,
-        );
-    }
-
-    fn extend_online_with_recent_gossip(
-        &self,
-        community_id: &str,
-        online_members: &mut HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-        eviction_threshold_secs: u64,
-    ) {
-        super::gossip_overlay::extend_online_with_recent_gossip(
-            &self.state,
-            community_id,
-            online_members,
-            my_pseudonym,
-            eviction_threshold_secs,
-        );
-    }
-
-    fn gossip_offline_diff(
-        &self,
-        community_id: &str,
-        online_members: &HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-    ) -> Vec<String> {
-        super::gossip_overlay::gossip_offline_diff(
-            &self.state,
-            community_id,
-            online_members,
-            my_pseudonym,
-        )
-    }
-
-    fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
-        super::gossip_overlay::read_gossip_snapshot(&self.state, community_id)
-    }
-
-    fn apply_gossip_rebuild_plan(&self, community_id: &str, plan: GossipOverlayPlan) {
-        super::gossip_overlay::apply_gossip_rebuild_plan(&self.state, community_id, plan);
-    }
-
-    fn send_to_mesh_raw(&self, _community_id: &str, envelope: SignedEnvelope) {
-        // Held broadcasts go to the Host's mesh unchanged (plan E3.4 S5).
-        if let Ok(host) = crate::state_helpers::host_governance(&self.state) {
-            host.forward_signed(envelope);
-        }
-    }
-
-    fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str) {
-        super::gossip_overlay::emit_member_presence_offline(
-            &self.state,
-            community_id,
-            pseudonym_key,
         );
     }
 

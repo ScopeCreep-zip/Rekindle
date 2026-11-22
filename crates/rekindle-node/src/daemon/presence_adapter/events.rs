@@ -34,15 +34,4 @@ impl DaemonPresenceAdapter {
             },
         ));
     }
-
-    /// A member the overlay had online has gone quiet.
-    pub(super) fn emit_presence_offline_impl(&self, community_id: &str, pseudonym_key: &str) {
-        self.publish(SubscriptionEvent::Presence(
-            PresenceEvent::CommunityMemberChanged {
-                community: community_id.to_string(),
-                pseudonym: pseudonym_key.to_string(),
-                snapshot: rekindle_types::subscription_events::PresenceSnapshot::status("offline"),
-            },
-        ));
-    }
 }

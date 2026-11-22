@@ -1,11 +1,13 @@
 //! The sync loop's community phase (plan E3.1 C2b), one task per unlock on
-//! both modes, moved from the desktop's `sync_service`. Every tick (three
-//! at [`FIRST_TICK`], so peers found on the mesh soon after login hear us,
-//! then every [`TICK`]) it re-announces our presence and route to each
-//! community's gossip mesh. Its first tick with a route also asks for every
-//! community key we hold behind ([`HostGovernance::recover_behind_meks`]);
+//! both modes, moved from the desktop's `sync_service`. Its first tick with
+//! a route (three ticks at [`FIRST_TICK`], then every [`TICK`]) asks for
+//! every community key we hold behind ([`HostGovernance::recover_behind_meks`]);
 //! every later tick asks again for a key still behind, at the next cascade
 //! index ([`HostGovernance::repair_behind_meks`], plan E3.2 S7m item 1c).
+//!
+//! It announces nothing: our presence is our `M`/1 beat and our route our
+//! `M`/6 (plan E3.4 S2, S4), so the gossip `PresenceUpdate` re-announce
+//! is gone (plan E3.4 S5).
 //!
 //! It reads no record (D4): a channel or governance record's change arrives
 //! by its watch, so the desktop's per-tick inspect of every channel record
@@ -16,9 +18,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_governance_runtime::GovernanceRuntimeDeps;
-use rekindle_types::presence::SessionStatus;
 use tokio_util::sync::CancellationToken;
 
 use super::HostGovernance;
@@ -78,8 +77,7 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
         }
         let route = host.our_route_blob_impl();
         // While our status hides presence the whole phase is silent: a
-        // member that quit sends no presence and no key
-        // request, and an Invisible one must not be told apart from it.
+        // member that quit sends no key request, and an Invisible one must not be told apart from it.
         // The first tick after un-hiding runs the normal catch-up.
         if route.is_empty() || rekindle_presence::hides_presence(host.ctx.own_presence.status()) {
             continue;
@@ -90,37 +88,6 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
             host.recover_behind_meks();
             recovered = true;
         }
-        for community_id in host.sync_targets() {
-            if stop.is_cancelled() {
-                return;
-            }
-            host.sync_community(&community_id, &route);
-        }
-    }
-}
-
-/// The wire form of our status in a community `PresenceUpdate` or
-/// `MemberJoined`.
-/// The re-announce of our presence and route, for a shown status.
-fn presence_announce(
-    status: SessionStatus,
-    pseudonym_key: String,
-    route: &[u8],
-) -> CommunityEnvelope {
-    CommunityEnvelope::PresenceUpdate {
-        pseudonym_key,
-        status: status_str(status).to_string(),
-        game_info: None,
-        route_blob: Some(route.to_vec()),
-    }
-}
-
-pub(super) fn status_str(status: SessionStatus) -> &'static str {
-    match status {
-        SessionStatus::Online => "online",
-        SessionStatus::Away => "away",
-        SessionStatus::Busy => "busy",
-        SessionStatus::Offline | SessionStatus::Invisible => "offline",
     }
 }
 
@@ -142,24 +109,5 @@ impl HostGovernance {
             .collect();
         targets.sort_unstable();
         targets
-    }
-
-    /// One community's phase: our presence and route. Nothing at all while
-    /// our status hides presence ([`rekindle_presence::hides_presence`]).
-    pub(crate) fn sync_community(&self, community_id: &str, route: &[u8]) {
-        let status = self.ctx.own_presence.status();
-        if rekindle_presence::hides_presence(status) {
-            return;
-        }
-        let Some(pseudonym) = (self.ctx.communities.map().read())
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-        else {
-            return;
-        };
-        let presence = presence_announce(status, pseudonym, route);
-        if let Err(e) = self.send_to_mesh(community_id, &presence) {
-            tracing::debug!(community = %community_id, error = %e, "presence re-announce not sent");
-        }
     }
 }

@@ -9,12 +9,22 @@ use std::time::Duration;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
 
-use super::community_sync::status_str;
 use super::HostGovernance;
 use crate::host::community::OnlineMember;
 
 /// How long a join waits for its first gossip peers before announcing.
 const JOIN_SETTLE: Duration = Duration::from_secs(5);
+
+/// The wire form of our status in the `MemberJoined` hint.
+fn status_str(status: rekindle_types::presence::SessionStatus) -> &'static str {
+    use rekindle_types::presence::SessionStatus;
+    match status {
+        SessionStatus::Online => "online",
+        SessionStatus::Away => "away",
+        SessionStatus::Busy => "busy",
+        SessionStatus::Offline | SessionStatus::Invisible => "offline",
+    }
+}
 
 impl HostGovernance {
     /// A member announced its own join: known, a gossip peer when online

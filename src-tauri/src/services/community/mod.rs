@@ -33,6 +33,6 @@ pub use gossip::{
 pub use governance::write_entry;
 pub use mek_rotation_orchestrators::spawn_departure_rotations;
 pub use notifications::notify_stored_post;
-pub use presence::{current_presence_status, presence_poll_tick_public, write_our_presence};
+pub use presence::{presence_poll_tick_public, write_our_presence};
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use watch::mark_watch_inactive;

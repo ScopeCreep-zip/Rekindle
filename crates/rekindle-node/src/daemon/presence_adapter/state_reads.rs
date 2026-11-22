@@ -23,13 +23,6 @@ impl DaemonPresenceAdapter {
         (!blob.is_empty()).then_some(blob)
     }
 
-    /// The daemon has no tray or status selector, so presence is
-    /// "online" whenever it is running. `presence::set_status` writes
-    /// the profile record directly and does not route through here.
-    pub(super) fn current_status_impl() -> String {
-        "online".to_string()
-    }
-
     pub(super) fn presence_credentials_impl(
         &self,
         community_id: &str,

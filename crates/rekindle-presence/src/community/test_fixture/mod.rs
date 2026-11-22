@@ -1,5 +1,5 @@
 //! Shared `MockCommunityDeps` test fixture for community-presence
-//! orchestrators (sync, poll, etc).
+//! orchestrators (poll, registry, etc).
 //!
 //! Decomposed per Invariant 1 (≤500 LoC per file): `state.rs`
 //! holds the `MockState` struct (~80 LoC of fields); this module
@@ -14,11 +14,9 @@ use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
-use crate::community::{GossipOverlayPlan, GossipOverlaySnapshot};
 use crate::deps::{
-    CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
+    CommunityPresenceDeps, DiscoveredMemberRow, PresenceCredentials, PresenceError,
     SegmentDescriptor, SelfPresenceSnapshot,
 };
 
@@ -46,9 +44,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn now_secs(&self) -> u64 {
         1_700_000_000
     }
-    fn rng(&self) -> &dyn rekindle_utils::RandomSource {
-        &rekindle_utils::OsRandom
-    }
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         std::sync::Arc::clone(&self.scope)
     }
@@ -62,23 +57,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     }
     /// The fixture's route is whatever its state holds: no wait.
     async fn own_route_available(&self) {}
-    fn current_presence_status_str(&self, community_id: &str) -> String {
-        let mut st = self.state.lock();
-        st.calls_status_str.push(community_id.to_string());
-        st.status.clone()
-    }
-    fn send_to_mesh(&self, community_id: &str, envelope: CommunityEnvelope) {
-        self.state
-            .lock()
-            .sent_envelopes
-            .push((community_id.to_string(), envelope));
-    }
-    fn mark_initial_sync_done(&self, community_id: &str) {
-        self.state
-            .lock()
-            .initial_done
-            .push(community_id.to_string());
-    }
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot {
         self.state
             .lock()
@@ -266,66 +244,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             updates.len(),
             emit_refreshed,
         ));
-    }
-    fn extend_online_with_recent_gossip(
-        &self,
-        community_id: &str,
-        online_members: &mut HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-        eviction_threshold_secs: u64,
-    ) {
-        let st = self.state.lock();
-        let prior_len = online_members.len();
-        for (key, snapshot) in &st.inject_online {
-            online_members
-                .entry(key.clone())
-                .or_insert_with(|| snapshot.clone());
-        }
-        drop(st);
-        self.state.lock().calls_extend_online.push((
-            community_id.to_string(),
-            prior_len,
-            my_pseudonym.to_string(),
-            eviction_threshold_secs,
-        ));
-    }
-    fn gossip_offline_diff(
-        &self,
-        community_id: &str,
-        online_members: &HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-    ) -> Vec<String> {
-        let mut st = self.state.lock();
-        st.calls_offline_diff.push((
-            community_id.to_string(),
-            online_members.len(),
-            my_pseudonym.to_string(),
-        ));
-        st.offline_diff.clone()
-    }
-    fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
-        let mut st = self.state.lock();
-        st.calls_read_gossip.push(community_id.to_string());
-        st.gossip_snapshot.clone()
-    }
-    fn apply_gossip_rebuild_plan(&self, community_id: &str, plan: GossipOverlayPlan) {
-        self.state.lock().calls_apply_gossip.push((
-            community_id.to_string(),
-            plan.peers.len(),
-            plan.online_members.len(),
-        ));
-    }
-    fn send_to_mesh_raw(&self, community_id: &str, envelope: SignedEnvelope) {
-        self.state
-            .lock()
-            .calls_send_raw
-            .push((community_id.to_string(), envelope));
-    }
-    fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str) {
-        self.state
-            .lock()
-            .calls_emit_offline
-            .push((community_id.to_string(), pseudonym_key.to_string()));
     }
     fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
         self.state.lock().active_voice_channel.clone()
