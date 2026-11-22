@@ -387,8 +387,15 @@ pub struct CommunityAuditEntry {
     pub action: String,
     /// The author's pseudonym, 64 lowercase hex.
     pub actor_pseudonym: String,
+    /// The Host's name for the author (plan E3.4 S6): its verified card's,
+    /// else its short pseudonym fingerprint; never empty, never a raw key.
+    pub actor_name: String,
     /// The subject of the entry (a member, channel, role, …), when it has one.
     pub target: Option<String>,
+    /// The Host's name for the target, named as the author is; absent when
+    /// the target is not a member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_name: Option<String>,
     /// The entry's other fields, when it carries any.
     pub details: Option<String>,
     /// The entry's Lamport time.

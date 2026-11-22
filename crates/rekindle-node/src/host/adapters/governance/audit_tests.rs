@@ -2,10 +2,11 @@
 
 use rekindle_governance::fixture::{at, stamp, Stamped};
 use rekindle_governance::state::{GovernanceState, NotificationDefaultState};
+use rekindle_types::dto::community::CommunityAuditEntry;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{PseudonymKey, RoleId};
 
-use super::{audit_page, notification_default, MAX_AUDIT_PAGE};
+use super::{audit_page, notification_default, AuditNames, MAX_AUDIT_PAGE};
 
 fn key(byte: u8) -> PseudonymKey {
     PseudonymKey([byte; 32])
@@ -36,9 +37,39 @@ fn authored() -> Vec<(PseudonymKey, Vec<Stamped>)> {
     )]
 }
 
+/// `key(2)` is a member whose card names it "Bea"; `key(1)`, the author,
+/// has no card; `key(3)`, banned, is no member.
+fn with_names(
+    page: impl FnOnce(&AuditNames<'_>) -> Vec<CommunityAuditEntry>,
+) -> Vec<CommunityAuditEntry> {
+    let card_name = |p: &PseudonymKey| (*p == key(2)).then(|| "Bea".to_owned());
+    page(&AuditNames {
+        members: [key(1), key(2)].iter().map(|k| hex::encode(k.0)).collect(),
+        card_name: &card_name,
+    })
+}
+
+fn page(before: Option<u64>, limit: u32) -> Vec<CommunityAuditEntry> {
+    with_names(|names| audit_page(authored(), before, limit, names))
+}
+
+/// Each row names its author and member target as the member list does
+/// (plan E3.4 S6): an author with no card is its short fingerprint, never
+/// empty or a raw key; a member target is its card's name; a target that
+/// is no member is not named.
+#[test]
+fn an_author_without_a_card_is_named_by_its_fingerprint() {
+    let rows = page(None, 50);
+    let fingerprint = rekindle_crypto::identity::short_key_fingerprint(&[1; 32]);
+    assert!(rows.iter().all(|r| r.actor_name == fingerprint), "{rows:?}");
+    assert_eq!(rows[0].action, "member_banned");
+    assert_eq!(rows[0].target_name, None, "a banned key is no member");
+    assert_eq!(rows[1].target_name.as_deref(), Some("Bea"));
+}
+
 #[test]
 fn a_ban_and_a_role_grant_are_rows_newest_first() {
-    let rows = audit_page(authored(), None, 50);
+    let rows = page(None, 50);
     let actions: Vec<&str> = rows.iter().map(|r| r.action.as_str()).collect();
     assert_eq!(actions, ["member_banned", "role_assigned"]);
     let ban = &rows[0];
@@ -54,19 +85,15 @@ fn a_ban_and_a_role_grant_are_rows_newest_first() {
 
 #[test]
 fn a_page_is_older_than_its_cursor_and_bounded() {
-    let older = audit_page(authored(), Some(5), 50);
+    let older = page(Some(5), 50);
     assert_eq!(older.len(), 1);
     assert_eq!(older[0].action, "role_assigned");
-    assert_eq!(
-        audit_page(authored(), None, 0).len(),
-        1,
-        "a page holds a row"
-    );
+    assert_eq!(page(None, 0).len(), 1, "a page holds a row");
     let many: Vec<Stamped> = (0..u64::from(MAX_AUDIT_PAGE) + 10)
         .map(|lamport| at(lamport, GovernanceEntry::UnbanEntry { target: key(3) }))
         .collect();
     assert_eq!(
-        audit_page(vec![(key(1), many)], None, u32::MAX).len(),
+        with_names(|names| audit_page(vec![(key(1), many)], None, u32::MAX, names)).len(),
         usize::try_from(MAX_AUDIT_PAGE).unwrap()
     );
 }

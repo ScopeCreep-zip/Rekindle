@@ -250,12 +250,12 @@ fn with_own_profile(
             && Some(r.pseudonym_key.as_str()) == community.my_pseudonym_key.as_deref()
     });
     if let Some(row) = ours {
-        state.my_bio = row.bio.clone();
-        state.my_pronouns = row.pronouns.clone();
+        state.my_bio.clone_from(&row.bio);
+        state.my_pronouns.clone_from(&row.pronouns);
         state.my_theme_color = row.theme_color;
-        state.my_badges = row.badges.clone();
-        state.my_avatar_ref = row.avatar_ref.clone();
-        state.my_banner_ref = row.banner_ref.clone();
+        state.my_badges.clone_from(&row.badges);
+        state.my_avatar_ref.clone_from(&row.avatar_ref);
+        state.my_banner_ref.clone_from(&row.banner_ref);
     }
     state
 }

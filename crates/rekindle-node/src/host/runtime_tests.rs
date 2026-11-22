@@ -314,42 +314,76 @@ async fn hydration_recovers_the_stored_registry_keypair() {
 }
 
 /// The members a join discovered are stored (plan E3.1 B2d): known to the
-/// community and in its `community_members` rows with their roles.
+/// community and in its `community_members` rows with their profiles,
+/// unnamed (a name is the verified card's alone). Our own row is never the
+/// scan's (plan E3.4 S6): its card fields stay what `set_card` wrote and its
+/// profile what `set_own_profile` wrote, whatever the registry says of us.
 #[tokio::test]
 async fn discovered_registry_members_are_persisted() {
+    use rekindle_db::repo::members;
     use rekindle_governance_runtime::{DiscoveredMember, GovernanceRuntimeDeps};
+    use rekindle_types::presence::MemberPresence;
 
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
-    let bea = rekindle_types::presence::MemberPresence {
+    let me = host.governance().me_in("c1").unwrap();
+    let me_hex = hex::encode(me.0);
+    let (o, m) = (owner.clone(), me_hex.clone());
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            members::set_card(conn, &o, "c1", &m, (Some("Ann"), Some("here")), 1)?;
+            let profile = members::OwnProfile {
+                bio: Some("mine".into()),
+                ..Default::default()
+            };
+            members::set_own_profile(conn, &o, "c1", &m, &profile)
+        })
+        .await
+        .unwrap();
+    let bea = MemberPresence {
         pseudonym_key: rekindle_types::id::PseudonymKey([7; 32]),
         display_name: Some("Bea".into()),
+        bio: Some("Bea's bio".into()),
         ..Default::default()
     };
-    host.governance().persist_discovered_registry_members(
-        "c1",
-        vec![DiscoveredMember {
-            segment_index: 0,
-            slot_index: 3,
-            presence: bea,
-        }],
-    );
+    let stale_me = MemberPresence {
+        pseudonym_key: me,
+        display_name: Some("Old".into()),
+        bio: Some("stale".into()),
+        ..Default::default()
+    };
+    let found = |slot_index, presence| DiscoveredMember {
+        segment_index: 0,
+        slot_index,
+        presence,
+    };
+    host.governance()
+        .persist_discovered_registry_members("c1", vec![found(3, bea), found(4, stale_me)]);
 
     let bea_hex = hex::encode([7; 32]);
     assert!(host.ctx.communities.known_members("c1").contains(&bea_hex));
-    let roster = host
+    let rows = host
         .ctx
         .db
         .current()
         .unwrap()
-        .call(move |conn| rekindle_db::repo::members::roster(conn, &owner, "c1"))
+        .call(move |conn| members::load_profiles(conn, &owner))
         .await
         .unwrap();
-    assert_eq!(roster.len(), 1);
-    assert_eq!(roster[0].pseudonym_key, bea_hex);
-    assert_eq!(roster[0].display_name.as_deref(), Some("Bea"));
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    let row = |key: &str| rows.iter().find(|r| r.pseudonym_key == key).unwrap();
+    let bea_row = row(&bea_hex);
+    assert_eq!(bea_row.bio.as_deref(), Some("Bea's bio"));
+    assert_eq!(bea_row.display_name, None, "the registry names nobody");
+    let mine = row(&me_hex);
+    assert_eq!(mine.display_name.as_deref(), Some("Ann"));
+    assert_eq!(mine.custom_status.as_deref(), Some("here"));
+    assert_eq!(mine.bio.as_deref(), Some("mine"));
     host.shutdown().await.unwrap();
 }
 

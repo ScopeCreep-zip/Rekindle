@@ -123,9 +123,11 @@
   },
   "community.auditEntry": {
     "action": "member_banned",
+    "actorName": "aaaa aaaa",
     "actorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "details": "spam",
     "target": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "targetName": "Bea",
     "timestamp": 7
   },
   "community.banView": {
@@ -155,8 +157,10 @@
       "kick": true,
       "timeout": true
     },
+    "customStatus": "brb",
     "displayName": "Bea",
     "displayRole": "Shooters",
+    "fingerprint": "bbbb bbbb",
     "group": {
       "id": "05050505050505050505050505050505",
       "kind": "role",

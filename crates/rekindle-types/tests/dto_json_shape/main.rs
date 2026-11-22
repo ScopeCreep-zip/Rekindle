@@ -490,7 +490,9 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
         to(CommunityAuditEntry {
             action: "member_banned".into(),
             actor_pseudonym: pk('a'),
+            actor_name: "aaaa aaaa".into(),
             target: Some(pk('b')),
+            target_name: Some("Bea".into()),
             details: Some("spam".into()),
             timestamp: 7,
         }),

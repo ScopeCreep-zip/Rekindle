@@ -101,7 +101,9 @@ async fn the_card_lands_before_op_zero_and_the_beat_after() {
         owner: &owner,
     };
     let card = read_card(port, &member).await.unwrap().unwrap();
-    assert_eq!(card.card.display_name.as_deref(), Some("Joiner"));
+    // A new member's card names nobody (plan E3.4 S6): the identity name
+    // never reaches a community; a name is set later, per community.
+    assert_eq!(card.card.display_name, None);
     assert_eq!(
         card.card.hpke_key,
         rekindle_secrets::hpke::public_key(&[9; 32])

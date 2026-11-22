@@ -22,65 +22,16 @@ const MAX_EXCLUSION_GROUP_LEN: usize = 32;
 /// The longest community policy text, in characters (architecture §10.7).
 const MAX_POLICY_TEXT_CHARS: usize = 4096;
 
-/// The longest channel or message id a read marker names.
-const MAX_UNREAD_ID_LEN: usize = 128;
-
 use crate::host::adapters::governance::community_pictures::{
     is_picture_hash, MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
 };
 
-use super::community_fields::{audit_fields, automod_fields, game_server_fields, role_id_field};
+use super::community_fields::{
+    audit_fields, automod_fields, block_fields, game_server_fields, role_id_field, unread_fields,
+};
 use super::{community, key_scope, name, opt, pseudonym, public_key, reject, text, Checked};
 
 /// A community request's fields.
-/// A read-marker or unread-count request (plan E3.1 G1).
-fn unread_fields(request: &UnreadRequest) -> Checked {
-    match request {
-        UnreadRequest::ChannelMarkRead {
-            community: key,
-            channel,
-            up_to,
-        } => {
-            community(key)?;
-            text(channel, MAX_UNREAD_ID_LEN, "channel")?;
-            text(up_to, MAX_UNREAD_ID_LEN, "message id")
-        }
-        UnreadRequest::UnreadCounts { community: key } => community(key),
-        UnreadRequest::MembersOnScreen {
-            community: key,
-            members,
-        } => {
-            community(key)?;
-            if members.len() > rekindle_presence::community::MEMBERS_ON_SCREEN_MAX {
-                return Err(IpcResponse::error(
-                    400,
-                    "more members on screen than the Host inspects",
-                ));
-            }
-            members.iter().try_for_each(|m| pseudonym(m, "member"))
-        }
-    }
-}
-
-/// A community block request (plan E3.1 F3, D26).
-fn block_fields(request: &MemberRequest) -> Checked {
-    match request {
-        MemberRequest::MemberBlock {
-            community: c,
-            target_pseudonym,
-        }
-        | MemberRequest::MemberUnblock {
-            community: c,
-            target_pseudonym,
-        } => {
-            community(c)?;
-            pseudonym(target_pseudonym, "target pseudonym")
-        }
-        MemberRequest::MemberBlockList { community: c } => community(c),
-        _ => Ok(()),
-    }
-}
-
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::Lifecycle(request) => check_lifecycle(request),
