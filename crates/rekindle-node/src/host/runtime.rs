@@ -14,8 +14,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rekindle_db::{lock::NodeLock, paths::DataRoot, DbHandle};
 use rekindle_idempotency::attempts::AttemptLimiter;
-use rekindle_transport::crypto::mek::MekCache;
-use rekindle_transport::{Session, TransportConfig, TransportNode};
+use rekindle_transport::{crypto::mek::MekCache, Session, TransportConfig, TransportNode};
 use rekindle_vault::VaultHandle;
 use tracing::Instrument as _;
 

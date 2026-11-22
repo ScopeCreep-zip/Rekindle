@@ -81,6 +81,20 @@ pub fn resumed_across(before_ms: u64, after_ms: u64, bound: Duration) -> bool {
     Duration::from_millis(after_ms.saturating_sub(before_ms)) > bound + RESUME_GAP
 }
 
+/// Whether a self-test that the monotonic clock saw take `waited`, and the
+/// wall clock saw run from `before_ms` to `after_ms`, says nothing about
+/// its route and is discarded, never counted toward death (plan LF7, lead
+/// decision 45): it spanned a resume ([`resumed_across`] its `bound`), or
+/// the wall clock lagged the monotonic one by more than [`RESUME_GAP`],
+/// one that did not run while the test waited (held by a suspend the test
+/// is still inside, or set back). A pause-truncated test measured the
+/// pause, not the route; the test after the resume decides.
+#[must_use]
+pub fn test_discarded(before_ms: u64, after_ms: u64, waited: Duration, bound: Duration) -> bool {
+    let wall = Duration::from_millis(after_ms.saturating_sub(before_ms));
+    resumed_across(before_ms, after_ms, bound) || waited > wall + RESUME_GAP
+}
+
 /// The ack deadline on a route that has answered before (I2P
 /// `RATCHET_REPLY_TIMEOUT_MS_MIN`, `OutboundClientMessageOneShotJob.java`
 /// `#L1199-1201`; batch 12 S1).

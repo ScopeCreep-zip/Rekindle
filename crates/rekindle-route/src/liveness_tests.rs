@@ -251,3 +251,28 @@ fn a_wall_clock_jump_past_the_step_is_a_resume() {
     assert!(!resumed_across(0, 25_000, PROBE_TIMEOUT));
     assert!(resumed_across(0, 25_001, PROBE_TIMEOUT));
 }
+
+/// Plan LF7, lead decision 45: a self-test whose window spans a suspend is
+/// discarded: one that resumed across its deadline, or one whose wall clock
+/// stood still while its deadline ran out; an ordinary test is counted.
+#[test]
+fn a_self_test_across_a_suspend_is_discarded() {
+    let waited = PROBE_TIMEOUT;
+    assert!(!test_discarded(0, 15_000, waited, PROBE_TIMEOUT));
+    assert!(!test_discarded(
+        0,
+        300,
+        Duration::from_millis(300),
+        PROBE_TIMEOUT
+    ));
+    assert!(test_discarded(0, 151_000, waited, PROBE_TIMEOUT));
+    // The wall clock held across the whole 15 s deadline.
+    assert!(test_discarded(7_000, 7_000, waited, PROBE_TIMEOUT));
+    assert!(!test_discarded(7_000, 12_000, waited, PROBE_TIMEOUT));
+    assert!(test_discarded(
+        7_000,
+        11_999,
+        Duration::from_secs(22),
+        PROBE_TIMEOUT
+    ));
+}

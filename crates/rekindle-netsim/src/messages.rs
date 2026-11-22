@@ -362,3 +362,28 @@ impl AppMessagePort for FakeMessages {
         }
     }
 }
+
+/// A node's self-test counters (plan RH1r-c O1, LF7).
+impl crate::Netsim {
+    /// How many of those were node `node`'s calls to its own `class` route
+    /// (its liveness self-tests), counted as [`app_calls`](Self::app_calls).
+    #[must_use]
+    pub fn own_calls(&self, node: usize, class: rekindle_records::port::RouteClass) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .own_calls
+            .get(&class)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Of those, the ones from outside (`OwnPath::Outside`, plan LF7): our
+    /// route's blob over the pool's safety route, as a peer's call.
+    #[must_use]
+    pub fn outside_calls(&self, node: usize, class: rekindle_records::port::RouteClass) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .outside_calls
+            .get(&class)
+            .copied()
+            .unwrap_or(0)
+    }
+}

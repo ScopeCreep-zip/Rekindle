@@ -236,7 +236,8 @@ async fn a_silently_dead_sending_route_is_found_by_its_self_test_and_replaced() 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_resume_tests_the_general_route_from_outside_at_once() {
     let (sim, _nodes) = friends(126).await;
-    assert!(!sim.route_blobs(0).is_empty());
+    let before = sim.route_blobs(0);
+    assert!(!before.is_empty());
     assert_eq!(sim.outside_calls(0, RouteClass::General), 0);
     sim.fault(Fault::Sleep {
         node: 0,
@@ -255,4 +256,7 @@ async fn a_resume_tests_the_general_route_from_outside_at_once() {
         .await,
         "the resume tested General from outside within 20 s"
     );
+    // The outside test passed: the healthy route is kept, not replaced.
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    assert_eq!(sim.route_blobs(0), before, "the healthy route is kept");
 }

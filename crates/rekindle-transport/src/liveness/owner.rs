@@ -8,8 +8,8 @@ use std::sync::Arc;
 use rekindle_records::port::OwnPath;
 use rekindle_records::port::RouteClass;
 use rekindle_route::liveness::{
-    resumed_across, SelfTest, PROBE_TIMEOUT, PUBLISH_RETRY_JITTER_MS, PUBLISH_RETRY_MIN,
-    RETEST_JITTER_MS, SELF_TEST_JITTER_MS, SILENCE_TRIGGER,
+    resumed_across, test_discarded, SelfTest, PROBE_TIMEOUT, PUBLISH_RETRY_JITTER_MS,
+    PUBLISH_RETRY_MIN, RETEST_JITTER_MS, SELF_TEST_JITTER_MS, SILENCE_TRIGGER,
 };
 use tokio::sync::watch;
 use tokio::time::Instant;
@@ -25,8 +25,10 @@ pub(crate) type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::S
 
 impl Liveness {
     /// One round trip through our route of `class` (O1, O6): `true` when
-    /// our own probe came back within [`PROBE_TIMEOUT`].
-    pub(crate) async fn self_test(&self, class: RouteClass) -> bool {
+    /// our own probe came back within [`PROBE_TIMEOUT`]; `None` when the
+    /// test spanned a suspend and is discarded, never counted (LF7, lead
+    /// decision 45): the test after the resume decides.
+    pub(crate) async fn self_test(&self, class: RouteClass) -> Option<bool> {
         let (nonce, datagram) = self.probe();
         self.outstanding.lock().insert(nonce);
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
@@ -41,6 +43,7 @@ impl Liveness {
             OwnPath::Loopback
         };
         let before = self.wall_ms();
+        let started = Instant::now();
         let answer = tokio::time::timeout(
             PROBE_TIMEOUT,
             self.messages
@@ -49,12 +52,27 @@ impl Liveness {
         .await;
         self.outstanding.lock().remove(&nonce);
         let ok = matches!(&answer, Ok(Ok(reply)) if *reply == datagram);
-        tracing::debug!(?class, ?path, ok, "own route self-test");
-        if resumed_across(before, self.wall_ms(), PROBE_TIMEOUT) {
+        let after = self.wall_ms();
+        if resumed_across(before, after, PROBE_TIMEOUT) {
             self.resumed();
         }
+        if test_discarded(before, after, started.elapsed(), PROBE_TIMEOUT) {
+            tracing::info!(
+                ?class,
+                ?path,
+                ok,
+                "own route self-test spanned a suspend; discarded"
+            );
+            if path == OwnPath::Outside {
+                // The outside test is still owed (LF7).
+                self.outside_next
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            return None;
+        }
+        tracing::debug!(?class, ?path, ok, "own route self-test");
         self.routes.self_tested_own(class, ok);
-        ok
+        Some(ok)
     }
 
     /// Whether `class` is due a self-test at `now`.
@@ -118,18 +136,25 @@ pub(crate) async fn run_self_tests(live: Arc<Liveness>, mut offers: Offers) {
             if class != RouteClass::General && healing.remove(&class) {
                 // The Media or Sending replacement is live: test it, then
                 // release the old one (no record names either route).
-                if live.self_test(class).await {
-                    live.routes.release_retired_own(class);
-                } else {
-                    live.routes.replace_own_class(class);
-                    healing.insert(class);
+                match live.self_test(class).await {
+                    Some(true) => live.routes.release_retired_own(class),
+                    Some(false) => {
+                        live.routes.replace_own_class(class);
+                        healing.insert(class);
+                    }
+                    // Discarded: test the replacement again (LF7).
+                    None => {
+                        healing.insert(class);
+                    }
                 }
                 continue;
             }
             if !live.due(class, now) {
                 continue;
             }
-            let ok = live.self_test(class).await;
+            let Some(ok) = live.self_test(class).await else {
+                continue;
+            };
             match live.record(class, Instant::now(), ok) {
                 SelfTest::Dead => {
                     tracing::warn!(?class, "own route failed its self-tests; replacing it");
@@ -170,7 +195,18 @@ pub(crate) async fn run_publisher(
             continue;
         };
         let heal = live.heal_pending.lock().remove(&RouteClass::General);
-        if heal && live.self_tests && !live.self_test(RouteClass::General).await {
+        let tested = if heal && live.self_tests {
+            live.self_test(RouteClass::General).await
+        } else {
+            Some(true)
+        };
+        if tested.is_none() {
+            // Discarded across a suspend (LF7): test this blob again.
+            live.heal_pending.lock().insert(RouteClass::General);
+            offers.mark_changed();
+            continue;
+        }
+        if tested == Some(false) {
             tracing::warn!("replacement route failed its self-test; replacing it again");
             live.heal_pending.lock().insert(RouteClass::General);
             live.routes.replace_own_class(RouteClass::General);
