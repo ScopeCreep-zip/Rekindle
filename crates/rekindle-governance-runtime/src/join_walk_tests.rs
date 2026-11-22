@@ -30,7 +30,7 @@ fn device_key() -> [u8; 32] {
 /// A state whose device set holds `p`'s endorsement of `DEVICE`'s key.
 fn endorsed_state() -> GovernanceState {
     let device = SigningKey::from_bytes(&DEVICE);
-    let e = first_endorsement(&p(), ANCHOR, &device, "VLD0:m", "o").unwrap();
+    let e = first_endorsement(&p(), ANCHOR, &device, "VLD0:m", "o");
     let mut state = GovernanceState::default();
     state.devices.absorb(
         ANCHOR,

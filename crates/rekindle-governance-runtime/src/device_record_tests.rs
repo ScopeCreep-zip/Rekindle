@@ -45,7 +45,7 @@ fn two_device_state() -> (GenesisCert, GovernanceState) {
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
-        creator_device: Some(first_endorsement(&p, HELD_IN, &first, MEMBER_RECORD, "o").unwrap()),
+        creator_device: Some(first_endorsement(&p, HELD_IN, &first, MEMBER_RECORD, "o")),
     };
     // A held genesis op seeds the cert's device in a merge; with none
     // held, the fixture seeds it as that merge would.
@@ -255,14 +255,14 @@ fn a_member_joined_routes_under_the_endorsement_it_carries() {
     let p = derive::derive_community_pseudonym(&SECRET, HELD_IN);
     let ours = SigningKey::from_bytes(&FIRST_DEVICE);
     let rejoin = "VLD0:mp2";
-    let e = first_endorsement(&p, HELD_IN, &ours, rejoin, "o2").unwrap();
+    let e = first_endorsement(&p, HELD_IN, &ours, rejoin, "o2");
     let routed = op_record_of(&deps, HELD_IN, &state, &joined(rejoin, Some(e)));
     assert_eq!(routed.unwrap(), rejoin);
 
     let forger = SigningKey::from_bytes(&[3; 32]);
-    let forged = first_endorsement(&forger, HELD_IN, &ours, rejoin, "o2").unwrap();
+    let forged = first_endorsement(&forger, HELD_IN, &ours, rejoin, "o2");
     let theirs = SigningKey::from_bytes(&[5; 32]);
-    let other_key = first_endorsement(&p, HELD_IN, &theirs, rejoin, "o2").unwrap();
+    let other_key = first_endorsement(&p, HELD_IN, &theirs, rejoin, "o2");
     for refused in [Some(forged), Some(other_key), None] {
         let routed = op_record_of(&deps, HELD_IN, &state, &joined(rejoin, refused));
         assert!(

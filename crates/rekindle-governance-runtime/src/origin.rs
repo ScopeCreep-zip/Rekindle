@@ -374,7 +374,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         &device,
         &member.record_key,
         &member_owner,
-    )?;
+    );
     let member_key = member.record_key.clone();
     deps.release_record(member.lease).await;
     let writer = k_m_text.clone();

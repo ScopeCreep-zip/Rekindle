@@ -266,16 +266,13 @@ fn held_key(
 /// is its join); any other body stays as it is. `state` is the one the op
 /// is written over: a re-join's endorsement takes an incarnation above the
 /// member's elements it holds ([`member_first_endorsement`]).
-///
-/// # Errors
-/// Never (a first device's set always extends).
 pub fn carry_first_device(
     body: &mut rekindle_types::governance::GovernanceEntry,
     p: &SigningKey,
     community: &str,
     d: &SigningKey,
     state: &GovernanceState,
-) -> Result<(), GovernanceRuntimeError> {
+) {
     if let rekindle_types::governance::GovernanceEntry::MemberJoined {
         member_record,
         member_record_owner,
@@ -291,24 +288,21 @@ pub fn carry_first_device(
             state,
         ));
     }
-    Ok(())
 }
 
 /// `p`'s endorsement of this device's first key `d` in `community` for
 /// member record `record` (owner text `owner`) of a member new to the
 /// community: the first device's record is `M(p)` itself (rule 3), and it
 /// extends an empty set.
-///
-/// # Errors
-/// Never for a first device (an empty set always extends).
+#[must_use]
 pub fn first_endorsement(
     p: &SigningKey,
     community: &str,
     d: &SigningKey,
     record: &str,
     owner: &str,
-) -> Result<DeviceEndorsement, GovernanceRuntimeError> {
-    Ok(device_writer::endorse_first(
+) -> DeviceEndorsement {
+    device_writer::endorse_first(
         p,
         community,
         None,
@@ -317,7 +311,7 @@ pub fn first_endorsement(
             record: record.to_owned(),
             owner: owner.to_owned(),
         },
-    ))
+    )
 }
 
 /// [`first_endorsement`] for a `MemberJoined` written over `state`: when

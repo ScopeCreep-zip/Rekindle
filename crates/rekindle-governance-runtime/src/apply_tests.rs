@@ -207,9 +207,9 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
-        creator_device: Some(
-            device_signer::first_endorsement(&p, COMMUNITY, &d, record, owner).unwrap(),
-        ),
+        creator_device: Some(device_signer::first_endorsement(
+            &p, COMMUNITY, &d, record, owner,
+        )),
     };
     // A held genesis op seeds the cert's device in a merge (the write
     // lands on the record that endorsement binds); with none held, the

@@ -26,7 +26,7 @@ fn cert(p: &SigningKey, d: &SigningKey) -> GenesisCert {
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
-        creator_device: Some(first_endorsement(p, ANCHOR, d, record, owner).unwrap()),
+        creator_device: Some(first_endorsement(p, ANCHOR, d, record, owner)),
     }
 }
 

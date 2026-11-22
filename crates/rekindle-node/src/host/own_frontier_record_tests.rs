@@ -34,8 +34,7 @@ fn two_device_state() -> (PseudonymKey, GenesisCert, GovernanceState) {
     let p = derive::derive_community_pseudonym(&PERSON_SECRET, FRONTIER_COMMUNITY);
     let author = PseudonymKey(p.verifying_key().to_bytes());
     let laptop = SigningKey::from_bytes(&LAPTOP_KEY);
-    let creator_device = first_endorsement(&p, FRONTIER_COMMUNITY, &laptop, PERSON_RECORD, "o")
-        .expect("endorse laptop");
+    let creator_device = first_endorsement(&p, FRONTIER_COMMUNITY, &laptop, PERSON_RECORD, "o");
     let cert = GenesisCert {
         name: "c".into(),
         policy: rekindle_types::governance::AdmissionMode::Open,
