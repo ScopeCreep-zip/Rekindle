@@ -53,6 +53,9 @@ pub(super) fn selection(
         SettingsRequest::OnboardingSubmit {
             community: target, ..
         }
+        | SettingsRequest::CommunitySetPresencePolicy {
+            community: target, ..
+        }
         | SettingsRequest::OnboardingComplete { community: target } => {
             let (id, name) = community(ctx, target)?;
             s.subject = Subject::Community { id, name };

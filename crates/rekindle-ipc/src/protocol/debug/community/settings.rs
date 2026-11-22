@@ -87,6 +87,11 @@ impl std::fmt::Debug for SettingsRequest {
                 .field("community", community)
                 .field("display_name_len", &display_name.len())
                 .finish(),
+            Self::CommunitySetPresencePolicy { community, policy } => f
+                .debug_struct("CommunitySetPresencePolicy")
+                .field("community", community)
+                .field("policy", policy)
+                .finish(),
             Self::CommunityAvatarGet { community, hash } => f
                 .debug_struct("CommunityAvatarGet")
                 .field("community", community)

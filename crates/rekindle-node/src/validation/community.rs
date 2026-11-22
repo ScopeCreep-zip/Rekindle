@@ -222,6 +222,7 @@ pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
                 .map_err(|e| IpcResponse::error(400, format!("display name: {e}")))
                 .map(drop)
         }
+        SettingsRequest::CommunitySetPresencePolicy { community: key, .. } => community(key),
         SettingsRequest::CommunitySetAvatar {
             community: key,
             image,

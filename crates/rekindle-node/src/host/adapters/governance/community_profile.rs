@@ -21,7 +21,7 @@ use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions;
-use rekindle_types::presence::GameInfo;
+use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
 use rekindle_types::subscription_events::{
     GameActivity, MembershipEvent, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
 };
@@ -145,6 +145,36 @@ impl HostGovernance {
             &self.ctx.own_presence.view(),
             &policy,
         )
+    }
+
+    /// Make `policy` our presence sharing consent in `community` (local
+    /// only, never published; architecture §10 / §16.3), kept on the
+    /// community and its row, and wake the card's game writer: the game our
+    /// card shares follows the consent, so hiding it reaches the card within
+    /// [`CARD_GAME_SETTLE`](crate::host::adapters::presence::card_game::CARD_GAME_SETTLE)
+    /// with no presence change (plan E3.4 S6).
+    ///
+    /// # Errors
+    /// The community is not joined, or the policy does not serialize.
+    pub fn set_presence_policy(
+        &self,
+        community: &str,
+        policy: PresenceSharingPolicy,
+    ) -> Result<(), String> {
+        let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
+        {
+            let mut map = self.ctx.communities.map().write();
+            let state = map.get_mut(community).ok_or("unknown community")?;
+            state.presence_policy = policy;
+        }
+        crate::host::session::record_presence_policy(
+            &self.ctx.session,
+            &self.ctx.db,
+            community,
+            policy_json,
+        );
+        self.ctx.own_presence.card_game.notify_one();
+        Ok(())
     }
 
     /// Rewrite our card in every community we beat in whose card cache

@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::services::community_presence_runtime::{
-    get_presence_policy_inner, set_presence_policy_inner, update_community_presence_inner,
+    get_presence_policy_inner, update_community_presence_inner,
 };
 use crate::state::SharedState;
 
@@ -69,14 +69,26 @@ pub async fn set_active_channel(
     crate::host_call::call(&state, request).await
 }
 
+/// Our presence sharing consent in a community, kept by the Host
+/// (`SettingsRequest::CommunitySetPresencePolicy`): the game our card
+/// shares follows it within `CARD_GAME_SETTLE` (plan E3.4 S6).
 #[tauri::command]
 pub async fn set_presence_policy(
     community_id: String,
     policy: rekindle_types::presence::PresenceSharingPolicy,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    set_presence_policy_inner(state.inner(), &pool, community_id, policy).await
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunitySetPresencePolicy {
+            community: community_id.clone(),
+            policy,
+        },
+    ));
+    let done = crate::host_call::call(&state, request).await?;
+    // The registry row's redaction follows the consent now, not at the
+    // next heartbeat tick.
+    crate::services::community::write_our_presence(state.inner(), &community_id).await;
+    Ok(done)
 }
 
 #[tauri::command]

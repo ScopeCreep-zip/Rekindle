@@ -176,6 +176,29 @@ pub fn record_removed_by_name(
     }
 }
 
+/// Keep our presence sharing consent for the community
+/// (`communities.presence_policy`, JSON), so a restart loads it
+/// (`governance::loader`).
+pub fn record_presence_policy(
+    session: &RwLock<Option<Session>>,
+    db: &DbHandle,
+    community_id: &str,
+    policy_json: String,
+) {
+    if let Some((owner, db)) = owner_and_db(session, db) {
+        let community = community_id.to_string();
+        db.fire("presence policy", move |conn| {
+            repo::communities::set(
+                conn,
+                &owner,
+                &community,
+                repo::communities::Column::PresencePolicy,
+                policy_json,
+            )
+        });
+    }
+}
+
 /// The next `seq` of our beat in `community_id`, persisted before it is
 /// returned (`communities.beat_seq`, plan E3.4 S1). The row is written by
 /// [`record_membership`] on the same connection, which runs its calls in

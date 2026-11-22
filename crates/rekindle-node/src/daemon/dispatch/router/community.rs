@@ -190,6 +190,7 @@ pub(super) async fn route_settings(
         // ── Profile, pictures and policy (plan E3.1 D4) ──────────
         request @ (SettingsRequest::CommunityUpdateProfile { .. }
         | SettingsRequest::CommunitySetDisplayName { .. }
+        | SettingsRequest::CommunitySetPresencePolicy { .. }
         | SettingsRequest::CommunitySetAvatar { .. }
         | SettingsRequest::CommunitySetBanner { .. }
         | SettingsRequest::CommunityAvatarGet { .. }

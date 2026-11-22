@@ -5,10 +5,8 @@
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
 
-use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
-use rekindle_db::Db;
 
 pub async fn update_community_presence_inner(
     state: &SharedState,
@@ -42,44 +40,6 @@ pub async fn update_community_presence_inner(
         .map_err(|e| e.to_string());
     crate::services::community::write_our_presence(state, &community_id).await;
     gossip_result
-}
-
-/// Update the local presence sharing consent (default-deny), persist it
-/// to SQLite, and republish immediately so the new redaction takes effect
-/// now. The policy is local-only — never written to the registry; it only
-/// gates what `write_our_presence` publishes and what the roster reads.
-pub async fn set_presence_policy_inner(
-    state: &SharedState,
-    pool: &Db,
-    community_id: String,
-    policy: rekindle_types::presence::PresenceSharingPolicy,
-) -> Result<(), String> {
-    let owner_key = state_helpers::current_owner_key(state)?;
-    {
-        let mut communities = state.communities.write();
-        let community = communities
-            .get_mut(&community_id)
-            .ok_or_else(|| "unknown community".to_string())?;
-        community.presence_policy = policy.clone();
-    }
-
-    let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
-    let cid_for_db = community_id.clone();
-    db_call(pool, move |conn| {
-        rekindle_db::repo::communities::set(
-            conn,
-            &owner_key,
-            &cid_for_db,
-            rekindle_db::repo::communities::Column::PresencePolicy,
-            policy_json,
-        )
-    })
-    .await?;
-
-    // Republish now so opting out of a signal redacts it immediately
-    // rather than on the next heartbeat tick.
-    crate::services::community::write_our_presence(state, &community_id).await;
-    Ok(())
 }
 
 /// Read the local presence sharing consent so the settings panel can bind
