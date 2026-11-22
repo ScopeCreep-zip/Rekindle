@@ -30,9 +30,12 @@ pub enum CommunityEnvelope {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         route_blob: Option<Vec<u8>>,
     },
-    /// Typing indicator (ephemeral, not stored).
+    /// Typing indicator (ephemeral, not stored; plan E3.4 S9): a start
+    /// lasting `ttl_ms`, or the stop when `ttl_ms` is 0, in the channel
+    /// whose tag under the current text key of its scope is `channel_tag`.
     TypingIndicator {
-        channel_id: String,
+        channel_tag: [u8; 16],
+        ttl_ms: u32,
         pseudonym_key: String,
     },
     /// Watch Relay (architecture §14.3 / §11.7): a member with an active

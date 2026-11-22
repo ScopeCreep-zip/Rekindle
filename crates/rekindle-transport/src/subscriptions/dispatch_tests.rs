@@ -144,8 +144,13 @@ fn signed(ttl: u8) -> SignedEnvelope {
 fn signed_as(message_id: [u8; 16], channel: &str, ttl: u8) -> SignedEnvelope {
     let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
     let pseudonym = hex::encode(key.verifying_key().to_bytes());
+    let mut channel_tag = [0u8; 16];
+    for (slot, byte) in channel_tag.iter_mut().zip(channel.bytes()) {
+        *slot = byte;
+    }
     let inner = CommunityEnvelope::TypingIndicator {
-        channel_id: channel.to_string(),
+        channel_tag,
+        ttl_ms: 6_000,
         pseudonym_key: pseudonym.clone(),
     };
     let bytes = encode_community_envelope(&inner).unwrap();

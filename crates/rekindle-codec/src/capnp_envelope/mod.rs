@@ -147,11 +147,13 @@ fn write_community_envelope(
             }
         }
         CommunityEnvelope::TypingIndicator {
-            channel_id,
+            channel_tag,
+            ttl_ms,
             pseudonym_key,
         } => {
             let mut t = builder.init_typing_indicator();
-            t.set_channel_id(channel_id);
+            t.set_channel_tag(channel_tag);
+            t.set_ttl_ms(*ttl_ms);
             t.set_pseudonym_key(pseudonym_key);
         }
         CommunityEnvelope::WatchRelay {
@@ -207,8 +209,14 @@ fn read_community_envelope(
         }
         Which::TypingIndicator(t) => {
             let t = t.map_err(|e| capnp_err(&e))?;
+            let channel_tag = (t.get_channel_tag().map_err(|e| capnp_err(&e))?)
+                .try_into()
+                .map_err(|_| {
+                    CodecError::Deserialization("typing channel tag is not 16 bytes".into())
+                })?;
             Ok(CommunityEnvelope::TypingIndicator {
-                channel_id: text_to_string(t.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+                channel_tag,
+                ttl_ms: t.get_ttl_ms(),
                 pseudonym_key: text_to_string(t.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
             })
         }
@@ -258,17 +266,20 @@ mod tests {
     #[test]
     fn typing_indicator_roundtrip() {
         let env = CommunityEnvelope::TypingIndicator {
-            channel_id: "ch_01".into(),
+            channel_tag: [7; 16],
+            ttl_ms: 6_000,
             pseudonym_key: "abcd".into(),
         };
         let bytes = encode_community_envelope(&env).unwrap();
         let back = decode_community_envelope(&bytes).unwrap();
         match back {
             CommunityEnvelope::TypingIndicator {
-                channel_id,
+                channel_tag,
+                ttl_ms,
                 pseudonym_key,
             } => {
-                assert_eq!(channel_id, "ch_01");
+                assert_eq!(channel_tag, [7; 16]);
+                assert_eq!(ttl_ms, 6_000);
                 assert_eq!(pseudonym_key, "abcd");
             }
             _ => panic!("wrong variant"),
@@ -456,7 +467,8 @@ mod tests {
     #[test]
     fn try_decode_returns_ok_for_known_variant() {
         let env = CommunityEnvelope::TypingIndicator {
-            channel_id: "ch".into(),
+            channel_tag: [1; 16],
+            ttl_ms: 0,
             pseudonym_key: "abc".into(),
         };
         let bytes = encode_community_envelope(&env).unwrap();

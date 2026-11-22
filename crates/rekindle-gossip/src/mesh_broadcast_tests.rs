@@ -261,7 +261,8 @@ async fn channel_peers_send_reaches_every_peer_with_ttl_zero() {
         })
         .collect();
     let envelope = CommunityEnvelope::TypingIndicator {
-        channel_id: "ch1".to_string(),
+        channel_tag: [1; 16],
+        ttl_ms: 6_000,
         pseudonym_key: "me".to_string(),
     };
 
@@ -295,7 +296,8 @@ async fn channel_peers_send_reaches_every_peer_with_ttl_zero() {
 async fn channel_peers_send_with_empty_roster_drops_instead_of_queueing() {
     let deps = Arc::new(MockDeps::new());
     let envelope = CommunityEnvelope::TypingIndicator {
-        channel_id: "ch1".to_string(),
+        channel_tag: [1; 16],
+        ttl_ms: 6_000,
         pseudonym_key: "me".to_string(),
     };
     send_to_channel_peers(Arc::clone(&deps), "c1", &envelope, Vec::new())
@@ -316,7 +318,8 @@ async fn channel_peers_send_with_empty_roster_drops_instead_of_queueing() {
 fn each_send_of_the_same_content_gets_a_fresh_message_id() {
     let deps = Arc::new(MockDeps::new());
     let envelope = CommunityEnvelope::TypingIndicator {
-        channel_id: "ch1".to_string(),
+        channel_tag: [1; 16],
+        ttl_ms: 6_000,
         pseudonym_key: "me".to_string(),
     };
     let first = sign_and_record(&deps, "c1", &envelope).expect("signs");

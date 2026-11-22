@@ -12,7 +12,8 @@ fn sign_and_verify_roundtrip() {
     let pseudonym_hex = hex::encode(verifying_key.to_bytes());
 
     let envelope = CommunityEnvelope::TypingIndicator {
-        channel_id: "ch_01".into(),
+        channel_tag: [1; 16],
+        ttl_ms: 6_000,
         pseudonym_key: pseudonym_hex.clone(),
     };
     // Wire-format encoding matches the live gossip path (Cap'n

@@ -195,6 +195,17 @@ impl HostChannel {
                 automod_blurred: blurred,
             },
         ));
+        // The typist's message ends their typing here (plan E3.4 S9).
+        if !own {
+            rekindle_transport::operations::typing::stopped(
+                &crate::host::adapters::friends::HostFriends::of(self.ctx()),
+                &rekindle_types::subscription_events::TypingContext::Channel {
+                    community: post.community_id.clone(),
+                    channel: post.channel_id.clone(),
+                },
+                &post.message.sender_pseudonym,
+            );
+        }
         if let Err(e) = self
             .gov
             .publish_channel_unread(community, &post.channel_id)

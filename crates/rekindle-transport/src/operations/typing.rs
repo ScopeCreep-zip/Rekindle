@@ -15,6 +15,22 @@ use rekindle_types::subscription_events::{SubscriptionEvent, TypingContext, Typi
 
 use crate::operations::friend::FriendHost;
 
+/// The longest a channel typing start lasts at the receiver, whatever the
+/// sender's `ttlMs` says (plan E3.4 S9: arrival + min(ttl, 10 s)).
+pub const CHANNEL_TYPING_TTL_CAP_MS: u64 = 10_000;
+
+/// A channel typing frame from `who` (plan E3.4 S9): `ttl_ms` 0 is their
+/// stop; any other start lapses at arrival + min(`ttl_ms`,
+/// [`CHANNEL_TYPING_TTL_CAP_MS`]) unless it is re-sent.
+pub fn channel_frame(host: &dyn FriendHost, context: TypingContext, who: &str, ttl_ms: u32) {
+    if ttl_ms == 0 {
+        stopped(host, &context, who);
+    } else {
+        let ttl = u64::from(ttl_ms).min(CHANNEL_TYPING_TTL_CAP_MS);
+        started(host, context, who, ttl);
+    }
+}
+
 /// `who` is typing in `context`; the start lapses `ttl_ms` from now unless
 /// it is refreshed. Only a new start is published.
 pub fn started(host: &dyn FriendHost, context: TypingContext, who: &str, ttl_ms: u64) {

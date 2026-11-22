@@ -73,10 +73,15 @@ impl std::fmt::Debug for ChannelMessageRequest {
                 .field("messages", &message_ids.len())
                 .field("has_reason", &reason.is_some())
                 .finish(),
-            Self::ChannelTyping { community, channel } => f
+            Self::ChannelTyping {
+                community,
+                channel,
+                typing,
+            } => f
                 .debug_struct("ChannelTyping")
                 .field("community", community)
                 .field("channel", channel)
+                .field("typing", typing)
                 .finish(),
             Self::ChannelSetActive {
                 community,

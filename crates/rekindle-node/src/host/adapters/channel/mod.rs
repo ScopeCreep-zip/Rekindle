@@ -112,7 +112,11 @@ impl HostChannel {
         reply_to: Option<String>,
     ) -> Result<ChannelSendResult, ChannelError> {
         self.refuse_removed(community_id)?;
-        rekindle_channel::send_channel_message(self, community_id, channel_id, body, reply_to).await
+        let sent =
+            rekindle_channel::send_channel_message(self, community_id, channel_id, body, reply_to)
+                .await?;
+        self.gov.end_channel_typing(community_id, channel_id);
+        Ok(sent)
     }
 
     /// Refuse a write to a community we were removed from: it is read-only

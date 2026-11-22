@@ -64,8 +64,13 @@ pub enum ChannelMessageRequest {
         reason: Option<String>,
     },
 
-    /// Tell the community's mesh we are typing in `channel`.
-    ChannelTyping { community: String, channel: String },
+    /// The composer of `channel` changed: `typing` is whether it holds
+    /// text. The Host decides the starts, re-sends and stop (plan E3.4 S9).
+    ChannelTyping {
+        community: String,
+        channel: String,
+        typing: bool,
+    },
 
     /// The channel we are in (`kind` "voice" or "text"), or none, which our
     /// presence carries.

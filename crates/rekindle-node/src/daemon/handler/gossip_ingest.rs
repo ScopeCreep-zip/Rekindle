@@ -37,6 +37,30 @@ impl DaemonHandler {
             return;
         }
 
+        // Channel typing (plan E3.4 S9) is the Host's: it names the channel
+        // behind the tag and lapses the start. Metered like all gossip; a
+        // frame naming someone other than its signer is dropped.
+        if let CommunityEnvelope::TypingIndicator {
+            channel_tag,
+            ttl_ms,
+            ref pseudonym_key,
+        } = envelope
+        {
+            let admitted = (self.subscriptions.read().as_ref())
+                .is_none_or(|sub| sub.admit(community_id, sender_pseudonym, lamport_ts));
+            if admitted && pseudonym_key == sender_pseudonym {
+                if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                    crate::host::adapters::governance::HostGovernance::new(ctx).on_channel_typing(
+                        community_id,
+                        sender_pseudonym,
+                        &channel_tag,
+                        ttl_ms,
+                    );
+                }
+            }
+            return;
+        }
+
         // A kick rotates the keys the kicked member holds (plan D20). The
         // worker checks the sender's authority before acting.
         if let CommunityEnvelope::Control(ControlPayload::Kick {

@@ -56,6 +56,7 @@ pub(crate) mod channel_admin;
 pub(crate) mod channel_message_ops;
 pub(crate) mod channel_messages;
 pub(crate) mod channel_outbox;
+pub(crate) mod channel_typing;
 mod events;
 pub(crate) mod game_servers;
 mod invite_expiry;

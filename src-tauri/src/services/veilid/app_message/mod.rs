@@ -353,27 +353,10 @@ async fn handle_relayed_envelope(
     let community_id = signed.community_id.clone();
 
     match envelope {
-        CommunityEnvelope::TypingIndicator {
-            channel_id,
-            pseudonym_key,
-        } => {
-            // Only `Started`: the protocol sends a keystroke ping with
-            // no explicit stop, and the frontend expires it on a 5 s
-            // timer. Synthesising a `Stopped` here would be inventing
-            // an event the peer never sent.
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Typing(
-                    rekindle_types::subscription_events::TypingEvent::Started {
-                        context: rekindle_types::subscription_events::TypingContext::Channel {
-                            community: community_id,
-                            channel: channel_id,
-                        },
-                        who: pseudonym_key,
-                    },
-                ),
-            );
-        }
+        // Channel typing is the Host's (plan E3.4 S9): the frame names its
+        // channel by a tag under the text key only the Host holds, and the
+        // Host lapses the start, so this relay surfaces nothing.
+        CommunityEnvelope::TypingIndicator { .. } => {}
         CommunityEnvelope::PresenceUpdate {
             pseudonym_key,
             status,

@@ -16,10 +16,8 @@
 //! (the shell's own until presence moves at E3.4, `rekindled`'s presence
 //! adapter otherwise).
 
-use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::validate::validate_write;
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey};
@@ -221,28 +219,6 @@ impl HostGovernance {
             tracing::warn!(community = %community_id, error = %e, "admin delete: stored row kept");
         }
         Ok(())
-    }
-
-    /// Tell the community's mesh we are typing in `channel_id`.
-    ///
-    /// # Errors
-    /// We hold no pseudonym here, or the notice did not reach the mesh.
-    pub fn send_typing(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Result<(), GovernanceRuntimeError> {
-        let pseudonym_key = self
-            .community_membership_impl(community_id)
-            .and_then(|m| m.my_pseudonym_hex)
-            .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_owned()))?;
-        self.send_to_mesh(
-            community_id,
-            &CommunityEnvelope::TypingIndicator {
-                channel_id: channel_id.to_owned(),
-                pseudonym_key,
-            },
-        )
     }
 
     /// We are in `channel_id` (a voice channel when `voice`), or in none:
