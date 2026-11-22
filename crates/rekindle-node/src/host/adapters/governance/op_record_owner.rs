@@ -63,17 +63,17 @@ impl HostGovernance {
 mod tests {
     use super::*;
 
-    fn bound(record: &str) -> Option<DeviceRecordKeys> {
-        Some(DeviceRecordKeys {
+    fn bound(record: &str) -> DeviceRecordKeys {
+        DeviceRecordKeys {
             record: record.into(),
             owner: Zeroizing::new("K_M(p,d)".into()),
-        })
+        }
     }
 
     /// A second device publishes its op on `M(p,d)` with `K_M(p,d)`.
     #[test]
     fn a_bound_record_is_written_with_its_own_owner() {
-        let Ok(OpRecordOwner::Device(owner)) = op_record_owner("VLD0:mpd", bound("VLD0:mpd"))
+        let Ok(OpRecordOwner::Device(owner)) = op_record_owner("VLD0:mpd", Some(bound("VLD0:mpd")))
         else {
             panic!("M(p,d) is owned by K_M(p,d)");
         };
@@ -92,6 +92,6 @@ mod tests {
     /// A device bound to `M(p,d)` never writes `M(p)` with `K_M(p)`.
     #[test]
     fn a_bound_device_never_writes_another_record() {
-        assert!(op_record_owner("VLD0:mp", bound("VLD0:mpd")).is_err());
+        assert!(op_record_owner("VLD0:mp", Some(bound("VLD0:mpd"))).is_err());
     }
 }
