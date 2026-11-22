@@ -2,8 +2,8 @@
 
 use rekindle_types::dto::skin_action::Capability;
 use rekindle_types::dto::skin_run::SkinSelection;
-use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserStatus};
+use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
 
 use super::actions::Selections;
 use super::signals::{compute, window_sets, Inputs};

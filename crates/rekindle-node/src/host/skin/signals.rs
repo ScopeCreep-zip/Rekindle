@@ -377,7 +377,9 @@ impl crate::host::Host {
     pub fn skin_window_closed(&self, window: &str) {
         self.ctx.skin_signals.inputs.lock().close(window);
         self.ctx.skin_selection.set(window, None);
-        self.ctx.journal.clear_state(&format!("skin-signals:{window}"));
+        self.ctx
+            .journal
+            .clear_state(&format!("skin-signals:{window}"));
         self.ctx.skin_signals.poke();
     }
 

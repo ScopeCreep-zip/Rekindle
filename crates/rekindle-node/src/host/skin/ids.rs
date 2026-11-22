@@ -59,7 +59,10 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
         IpcRequest::RunSkinAction { window, .. } | IpcRequest::SkinSelectionSet { window, .. }
             if window.is_empty() || window.len() > 64 =>
         {
-            Err(IpcResponse::error(400, "skin window label not 1 to 64 bytes"))
+            Err(IpcResponse::error(
+                400,
+                "skin window label not 1 to 64 bytes",
+            ))
         }
         IpcRequest::SkinSelectionSet {
             selection: Some(rekindle_types::dto::skin_run::SkinSelection::Friend { public_key }),

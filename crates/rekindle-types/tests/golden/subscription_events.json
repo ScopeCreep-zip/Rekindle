@@ -2018,6 +2018,28 @@
       }
     }
   },
+  "system.skinSignals": {
+    "system": {
+      "skinSignals": {
+        "set": {
+          "can": [
+            "chat",
+            "profile"
+          ],
+          "cannot": [
+            "join"
+          ],
+          "disconnected": false,
+          "focused": true,
+          "newNotification": true,
+          "talking": false,
+          "userTyping": true,
+          "voiceRinging": false
+        },
+        "window": "chat-0123456789abcdef"
+      }
+    }
+  },
   "system.skinTrialChanged": {
     "system": {
       "skinTrialChanged": {

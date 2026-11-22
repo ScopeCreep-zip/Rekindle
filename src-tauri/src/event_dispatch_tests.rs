@@ -291,3 +291,17 @@ fn a_stored_post_reaches_the_community_window_as_new() {
     assert_eq!(post["body"], "hello");
     assert_eq!(post["automodBlurred"], false);
 }
+
+#[test]
+fn a_window_s_skin_signals_reach_that_window_only() {
+    let e = WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinSignals {
+        window: "chat-0123456789ab".into(),
+        set: rekindle_types::dto::skin_signals::SkinSignalSet::default(),
+    }));
+    assert_eq!(e.channel(), "skin-signals-event");
+    let audience = e.audience();
+    assert!(audience.includes("chat-0123456789ab"));
+    for label in ["chat-fedcba987654", "buddy-list", "settings", "login"] {
+        assert!(!audience.includes(label), "{label}");
+    }
+}
