@@ -49,9 +49,10 @@ import {
   subscribeNetworkStatus,
   subscribeProfileUpdates,
   subscribeSkinSignals,
+  subscribeSkinShell,
 } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
-import { registerShellRunner } from "../actions/skin.actions";
+import { registerShellRunner, runAddressedShellOp } from "../actions/skin.actions";
 import type { ShellOp } from "../ipc/commands/dto_skin_run";
 import { handleHide } from "../actions/titlebar.actions";
 import { handleToggleAddFriend } from "../actions/buddy.actions";
@@ -186,6 +187,7 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     // This window's skin signals: the tree applies the triggers they fire.
     unlisteners.push(subscribeSkinSignals(setSkinSignals));
+    unlisteners.push(subscribeSkinShell(runAddressedShellOp));
     // The skin operations only the buddy list runs (plan SK2-A5): Close
     // hides it in the tray, and its dialogs.
     unlisteners.push(Promise.resolve(registerShellRunner(runBuddyListOp)));

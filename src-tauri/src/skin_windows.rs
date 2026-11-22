@@ -39,9 +39,15 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     }
 }
 
-/// A skin window opened showing `selection` (a chat window: its peer).
-pub fn opened<R: Runtime>(app: &AppHandle<R>, label: &str, selection: Option<SkinSelection>) {
+/// A skin window opened showing `selection` (a chat window: its peer);
+/// `launcher` is the window that launched it when it is a pack popup.
+pub fn opened<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    launcher: Option<&str>,
+    selection: Option<SkinSelection>,
+) {
     if let Some(host) = host(app) {
-        host.skin_window_opened(label, selection);
+        host.skin_window_opened(label, launcher, selection);
     }
 }

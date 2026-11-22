@@ -86,4 +86,8 @@ export type ShellOp =
 
 export type SkinRun =
   | { kind: "shell"; arg: ShellOp }
-  | { kind: "notBuiltYet"; arg: { action: SkinAction } };
+  | { kind: "notBuiltYet"; arg: { action: SkinAction } }
+  /** The operation ran in the window labelled `window` (a view switch
+   *  pressed in a popup runs in its launcher, plan SK2-N4); this window
+   *  runs nothing. */
+  | { kind: "launcher"; arg: { window: string } };

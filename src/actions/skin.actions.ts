@@ -131,10 +131,17 @@ function runShellOp(op: ShellOp, node: string): void {
   addToast(`${op.kind} has no handler in this window`, "error");
 }
 
+/** An operation the Host addressed to this window from a press in a
+ *  window it launched (`subscribeSkinShell`, plan SK2-N4), run as this
+ *  window's own press's answer. */
+export function runAddressedShellOp(op: ShellOp): void {
+  runShellOp(op, "");
+}
+
 function isSkinRun(value: unknown): value is SkinRun {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
   const kind = (value as { kind: unknown }).kind;
-  return (kind === "shell" || kind === "notBuiltYet") && "arg" in value;
+  return (kind === "shell" || kind === "notBuiltYet" || kind === "launcher") && "arg" in value;
 }
 
 /**
@@ -155,7 +162,7 @@ export async function dispatchSkinAction(node: string, action: SkinAction): Prom
   }
   // A feature action answered with its request's value; a feature with
   // no Rekindle operation yet (its plan G row) runs nothing.
-  if (!isSkinRun(answer) || answer.kind === "notBuiltYet") return;
+  if (!isSkinRun(answer) || answer.kind !== "shell") return;
   runShellOp(answer.arg, node);
 }
 

@@ -18,6 +18,7 @@ pub const NAMES: &[&str] = &[
     "favouriteServerAdded",
     "infoview",
     "skinSignals",
+    "skinShell",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
@@ -35,6 +36,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::FavouriteServerAdded { .. } => "favouriteServerAdded",
         SystemEvent::Infoview(_) => "infoview",
         SystemEvent::SkinSignals { .. } => "skinSignals",
+        SystemEvent::SkinShell { .. } => "skinShell",
     }
 }
 
@@ -204,6 +206,15 @@ fn sync() -> Vec<Sample> {
                     disconnected: false,
                     new_notification: true,
                 },
+            },
+        ),
+        ev(
+            "skinShell",
+            SystemEvent::SkinShell {
+                window: "buddy-list".into(),
+                op: rekindle_types::dto::skin_run::ShellOp::ShowView(
+                    rekindle_types::dto::skin_action::EngineView::Communities,
+                ),
             },
         ),
     ]

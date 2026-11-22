@@ -2051,6 +2051,17 @@
       }
     }
   },
+  "system.skinShell": {
+    "system": {
+      "skinShell": {
+        "op": {
+          "arg": "communities",
+          "kind": "showView"
+        },
+        "window": "buddy-list"
+      }
+    }
+  },
   "system.skinSignals": {
     "system": {
       "skinSignals": {

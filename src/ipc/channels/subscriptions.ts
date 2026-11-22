@@ -1,5 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import type { ShellOp } from "../commands/dto_skin_run";
 import { invoke } from "../invoke";
 import type { TransferEvent } from "../commands/dto_transfer";
 import type { ChatEvent, GroupDmEvent } from "./chat_events";
@@ -242,6 +243,17 @@ export function subscribeSkinEvents(onSkin: (skin: SkinApplied) => void): Promis
   return on<{ system: { skinChanged: { skin: SkinApplied } } }>("skin-event", (payload) => {
     onSkin(payload.system.skinChanged.skin);
   });
+}
+
+/**
+ * Subscribe to the shell operations the Host addresses to this window from
+ * a press in another (`SystemEvent::SkinShell`, plan SK2-N4: a view switch
+ * pressed in a popup this window launched), on `skin-shell-event`.
+ */
+export function subscribeSkinShell(onOp: (op: ShellOp) => void): Promise<UnlistenFn> {
+  return on<{ system: { skinShell: { window: string; op: ShellOp } } }>("skin-shell-event", (payload) =>
+    onOp(payload.system.skinShell.op),
+  );
 }
 
 /**

@@ -278,7 +278,8 @@ impl SubscriptionEvent {
                 | SystemEvent::ActivityAppended { .. }
                 | SystemEvent::Infoview(_)
                 | SystemEvent::FavouriteServerAdded { .. }
-                | SystemEvent::SkinSignals { .. } => None,
+                | SystemEvent::SkinSignals { .. }
+                | SystemEvent::SkinShell { .. } => None,
             },
             // Not community-scoped: a friend event, a network state
             // change and an unread bump all belong to the device, not

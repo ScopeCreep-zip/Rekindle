@@ -152,7 +152,8 @@ impl SubscriptionEvent {
                 | SystemEvent::ActivityAppended { .. }
                 | SystemEvent::Infoview(_)
                 | SystemEvent::FavouriteServerAdded { .. }
-                | SystemEvent::SkinSignals { .. } => EventScope::Device,
+                | SystemEvent::SkinSignals { .. }
+                | SystemEvent::SkinShell { .. } => EventScope::Device,
             },
             Self::UnreadChanged { context, .. } => match context {
                 UnreadContext::Channel { community, .. } => {

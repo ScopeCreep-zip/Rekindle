@@ -135,6 +135,13 @@ pub enum SkinRun {
     NotBuiltYet {
         action: SkinAction,
     },
+    /// The operation is the window labelled `window`'s, which the Host
+    /// handed it on that window's channel (`SystemEvent::SkinShell`): a
+    /// view switch pressed in a popup runs in its launcher (plan SK2-N4).
+    /// The window pressed runs nothing.
+    Launcher {
+        window: String,
+    },
 }
 
 /// What a window has selected, kept by the Host (design §2.2).

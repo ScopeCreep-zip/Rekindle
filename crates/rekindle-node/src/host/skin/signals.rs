@@ -389,13 +389,17 @@ impl crate::host::Host {
         self.ctx.skin.signals.set_focus(window, focused);
     }
 
-    /// The shell opened a skin window; `selection` is what it shows from
-    /// the start (a chat window's own peer, lead decision 48).
+    /// The shell opened a skin window; `launcher` is the window that
+    /// launched it when it is a pack popup (its view switches are the
+    /// launcher's, plan SK2-N4), and `selection` what it shows from the
+    /// start (a chat window's own peer, lead decision 48).
     pub fn skin_window_opened(
         &self,
         window: &str,
+        launcher: Option<&str>,
         selection: Option<rekindle_types::dto::skin_run::SkinSelection>,
     ) {
+        self.ctx.skin.launchers.set(window, launcher);
         self.ctx.skin.signals.inputs.lock().open(window);
         self.ctx.skin.selection.set(window, selection);
         self.ctx.skin.signals.poke();
@@ -405,6 +409,7 @@ impl crate::host::Host {
     pub fn skin_window_closed(&self, window: &str) {
         self.ctx.skin.signals.inputs.lock().close(window);
         self.ctx.skin.selection.set(window, None);
+        self.ctx.skin.launchers.set(window, None);
         self.ctx
             .journal
             .clear_state(&format!("skin-signals:{window}"));

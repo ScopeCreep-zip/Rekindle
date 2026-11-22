@@ -120,7 +120,7 @@ pub fn open(
             tracing::debug!(error = %e, "could not hand focus back to a popup's launcher");
         }
     }
-    crate::skin_windows::opened(app, &label, None);
+    crate::skin_windows::opened(app, &label, Some(launcher.label()), None);
     Ok(())
 }
 

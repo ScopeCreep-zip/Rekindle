@@ -168,9 +168,11 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         // A skin window's signals go to that window only, by label (plan
         // SK2-A4 step 3, lead decision 48): another chat window's set
         // names another friend's capabilities.
-        SubscriptionEvent::System(SystemEvent::SkinSignals { window, .. }) => {
-            Audience::labels([window.clone()])
-        }
+        // A view switch pressed in a popup goes to its launcher alone
+        // (plan SK2-N4): the Host addressed it.
+        SubscriptionEvent::System(
+            SystemEvent::SkinSignals { window, .. } | SystemEvent::SkinShell { window, .. },
+        ) => Audience::labels([window.clone()]),
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them. So does the Downloads
         // view (`EngineView::Files`), where its skin's download capabilities
@@ -236,6 +238,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
         SubscriptionEvent::System(SystemEvent::Infoview(_)) => "infoview-event",
         SubscriptionEvent::System(SystemEvent::SkinSignals { .. }) => "skin-signals-event",
+        SubscriptionEvent::System(SystemEvent::SkinShell { .. }) => "skin-shell-event",
         SubscriptionEvent::Voice(_) => "voice-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the

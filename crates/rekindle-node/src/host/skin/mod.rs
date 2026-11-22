@@ -55,6 +55,8 @@ pub(crate) struct SkinState {
     pub(crate) grounds: ShownGrounds,
     /// Each skin window's selection (plan SK2-A4).
     pub(crate) selection: actions::Selections,
+    /// Each open popup's launcher (plan SK2-N4).
+    pub(crate) launchers: actions::Launchers,
     /// Each skin window's state signals (plan SK2-A4 step 3).
     pub(crate) signals: signals::SignalState,
     /// The apply failures already told, so N windows failing one skin the

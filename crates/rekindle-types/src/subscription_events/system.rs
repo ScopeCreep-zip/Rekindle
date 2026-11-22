@@ -112,4 +112,14 @@ pub enum SystemEvent {
         window: String,
         set: crate::dto::skin_signals::SkinSignalSet,
     },
+    /// A shell operation for the skin window labelled `window`, pressed in
+    /// another (plan SK2-N4): a view switch (`ShowView`, `GroupPage`)
+    /// pressed in a popup is its launcher's, since only the launcher holds
+    /// the views. Triggered by: the Host admitting that `RunSkinAction`
+    /// from a popup it saw open (`Host::skin_window_opened`). Only that
+    /// window runs it, as it runs its own press's answer.
+    SkinShell {
+        window: String,
+        op: crate::dto::skin_run::ShellOp,
+    },
 }

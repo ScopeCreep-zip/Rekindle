@@ -347,6 +347,28 @@ fn a_window_s_skin_signals_reach_that_window_only() {
     }
 }
 
+/// A view switch pressed in a popup reaches its launcher alone (plan
+/// SK2-N4), never the popup that was pressed.
+#[test]
+fn a_popup_s_view_switch_reaches_its_launcher_only() {
+    let e = WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinShell {
+        window: "buddy-list".into(),
+        op: rekindle_types::dto::skin_run::ShellOp::ShowView(
+            rekindle_types::dto::skin_action::EngineView::Communities,
+        ),
+    }));
+    assert_eq!(e.channel(), "skin-shell-event");
+    let audience = e.audience();
+    assert!(audience.includes("buddy-list"));
+    for label in [
+        "popup-buddy-list-MainMenuPopup",
+        "chat-fedcba987654",
+        "settings",
+    ] {
+        assert!(!audience.includes(label), "{label}");
+    }
+}
+
 /// The Downloads view is the buddy list's (plan E7.2 G12): a transfer's
 /// progress reaches it, on its own channel, and no other window.
 #[test]

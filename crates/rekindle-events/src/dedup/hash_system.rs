@@ -194,6 +194,13 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(b"|");
             h.update(&(view.sections.len() as u64).to_le_bytes());
         }
+        SystemEvent::SkinShell { window, op } => {
+            // A press is its own fact: the same switch pressed twice runs twice.
+            h.update(b"skin_shell|");
+            h.update(window.as_bytes());
+            h.update(format!("|{op:?}|").as_bytes());
+            h.update(&now_ms.to_le_bytes());
+        }
         SystemEvent::SkinSignals { window, set } => {
             // A window's signals can return to an earlier set (focus in,
             // out, in again): each change is its own fact.

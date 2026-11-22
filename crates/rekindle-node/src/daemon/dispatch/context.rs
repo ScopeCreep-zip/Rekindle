@@ -10,6 +10,7 @@ use crate::daemon::DaemonState;
 use crate::host::gate::Acknowledged;
 use crate::host::skin::actions::Resolved;
 use rekindle_ipc::protocol::{BusPayload, IpcRequest, IpcResponse, Lane};
+use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
 
@@ -276,6 +277,10 @@ impl DaemonContext {
                 Ok(Resolved::Run { request, run }) => (request, Some(run)),
                 Err(refused) => return refused,
             };
+        let pressed_in = match &request {
+            IpcRequest::RunSkinAction { window, .. } => Some(window.clone()),
+            _ => None,
+        };
         let required = request.required_clearance();
         if caller.clearance < required {
             return self.clearance_refusal(&request, required, caller);
@@ -311,8 +316,18 @@ impl DaemonContext {
         // Then `validate_request`, the shell's refusals and the intent gate
         // (plan D3.3), which dispatches what may run.
         let answered = crate::host::gate::run(self, request, caller).await;
-        match (run, &answered) {
-            (Some(run), IpcResponse::Ok { .. }) => IpcResponse::ok(&run),
+        match (run, pressed_in, &answered) {
+            (Some(run), Some(window), IpcResponse::Ok { .. }) => {
+                let (run, elsewhere) =
+                    crate::host::skin::actions::addressed(&self.skin.launchers, &window, run);
+                if let Some((window, op)) = elsewhere {
+                    self.publish_event(SubscriptionEvent::System(SystemEvent::SkinShell {
+                        window,
+                        op,
+                    }));
+                }
+                IpcResponse::ok(&run)
+            }
             _ => answered,
         }
     }

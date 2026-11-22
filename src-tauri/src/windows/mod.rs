@@ -284,7 +284,7 @@ pub async fn open_chat_window(
     };
     let builder = base_builder(app, WindowKind::Chat, &label, path)?.title(title);
     finish(builder, WindowKind::Chat)?;
-    crate::skin_windows::opened(app, &label, selection);
+    crate::skin_windows::opened(app, &label, None, selection);
     Ok(())
 }
 

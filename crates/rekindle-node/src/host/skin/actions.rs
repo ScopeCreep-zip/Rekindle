@@ -74,6 +74,45 @@ impl Selections {
     }
 }
 
+/// Each open popup's launcher, by popup label (plan SK2-N4), as the shell
+/// said when it opened the popup (`Host::skin_window_opened`).
+#[derive(Debug, Default)]
+pub(crate) struct Launchers(parking_lot::Mutex<BTreeMap<String, String>>);
+
+impl Launchers {
+    pub(crate) fn set(&self, popup: &str, launcher: Option<&str>) {
+        let mut all = self.0.lock();
+        match launcher {
+            Some(l) => all.insert(popup.to_owned(), l.to_owned()),
+            None => all.remove(popup),
+        };
+    }
+
+    /// The window that launched `popup`, when it is an open popup.
+    pub(crate) fn of(&self, popup: &str) -> Option<String> {
+        self.0.lock().get(popup).cloned()
+    }
+}
+
+/// Where an admitted run is run (plan SK2-N4): a view switch pressed in a
+/// popup is its launcher's, since a popup holds no views (rule N4 places
+/// the Communities view in the main tree only; StealthX's `MainMenuPopup`
+/// rail switches the main window's views); that window's answer is
+/// [`ShellOp`] on its own channel, and the popup is answered
+/// [`SkinRun::Launcher`]. Every other run answers the window pressed.
+pub(crate) fn addressed(
+    launchers: &Launchers,
+    window: &str,
+    run: SkinRun,
+) -> (SkinRun, Option<(String, ShellOp)>) {
+    match (run, launchers.of(window)) {
+        (SkinRun::Shell(op @ (ShellOp::ShowView(_) | ShellOp::GroupPage { .. })), Some(to)) => {
+            (SkinRun::Launcher { window: to.clone() }, Some((to, op)))
+        }
+        (run, _) => (run, None),
+    }
+}
+
 /// Where an action goes.
 #[derive(Debug, Clone)]
 pub(crate) enum Mapped {

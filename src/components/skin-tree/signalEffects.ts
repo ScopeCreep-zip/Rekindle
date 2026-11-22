@@ -144,6 +144,9 @@ export function applyTreeOp(state: TreeState, node: string, run: SkinAction, roo
       return true;
     }
     case "groupPage": {
+      // A group no node of this tree pages (StealthX's popup rail paging
+      // its launcher's views, group 1) is the Host's to address (SK2-N4).
+      if (!holdsGroup(root, run.arg.group)) return false;
       state.pages[run.arg.group] = run.arg.page;
       const page = pageNode(root, run.arg.group, run.arg.page);
       if (page && page.role.kind === "view") state.view = page.role.key;
@@ -151,13 +154,25 @@ export function applyTreeOp(state: TreeState, node: string, run: SkinAction, roo
     }
     case "showView": {
       const v = viewOf(run.arg);
-      if (v === undefined) return false;
+      // A tree with no views (a popup) has none to show: the Host
+      // addresses the switch to its launcher (SK2-N4).
+      if (v === undefined || !holdsViews(root)) return false;
       state.view = v;
       return true;
     }
     default:
       return false;
   }
+}
+
+/** Whether a node of `list` pages control group `group`. */
+function holdsGroup(list: ShellNode[], group: number): boolean {
+  return list.some((n) => n.controlGroup === group || holdsGroup(n.children ?? [], group));
+}
+
+/** Whether `list` holds the views node. */
+function holdsViews(list: ShellNode[]): boolean {
+  return list.some((n) => n.role.kind === "views" || holdsViews(n.children ?? []));
 }
 
 /** The view a `GroupPage{group, page}` shows, if its page is a view. */

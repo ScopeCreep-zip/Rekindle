@@ -3,11 +3,13 @@
 //! Host's selection, and a feature gap `NotBuiltYet`.
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
-use rekindle_types::dto::skin_action::{EngineMenu, PackUrl, SkinAction as A, SkinSettingsTab};
+use rekindle_types::dto::skin_action::{
+    EngineMenu, EngineView, PackUrl, SkinAction as A, SkinSettingsTab,
+};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::presence::SessionStatus;
 
-use super::actions::{map, resolve, Mapped, Resolved, Selected, Selections};
+use super::actions::{addressed, map, resolve, Launchers, Mapped, Resolved, Selected, Selections};
 use super::reads::Reads;
 use super::rooms::{Room, Rooms};
 
@@ -407,4 +409,39 @@ fn add_server_and_delete_room_reach_their_requests() {
         map(&A::DeleteSelected, Selected::default(), &joined),
         Ok(Mapped::Request(r)) if matches!(&*r, IpcRequest::GroupDmLeave { group_id } if *group_id == g)
     ));
+}
+
+/// A view switch pressed in a popup is its launcher's (plan SK2-N4): the
+/// switch is addressed to the launcher and the popup runs nothing; a
+/// window with no launcher, and a popup's other operations, keep theirs.
+#[test]
+fn a_popups_view_switch_is_addressed_to_its_launcher() {
+    let launchers = Launchers::default();
+    let popup = "popup-buddy-list-MainMenuPopup";
+    let show = || SkinRun::Shell(ShellOp::ShowView(EngineView::Communities));
+    let page = || SkinRun::Shell(ShellOp::GroupPage { group: 1, page: 3 });
+    assert_eq!(addressed(&launchers, popup, show()), (show(), None));
+    launchers.set(popup, Some("buddy-list"));
+    for op in [show(), page()] {
+        let SkinRun::Shell(sent) = op.clone() else {
+            unreachable!()
+        };
+        assert_eq!(
+            addressed(&launchers, popup, op),
+            (
+                SkinRun::Launcher {
+                    window: "buddy-list".into()
+                },
+                Some(("buddy-list".to_owned(), sent))
+            )
+        );
+    }
+    assert_eq!(addressed(&launchers, "buddy-list", show()), (show(), None));
+    let minimize = SkinRun::Shell(ShellOp::Minimize);
+    assert_eq!(
+        addressed(&launchers, popup, minimize.clone()),
+        (minimize, None)
+    );
+    launchers.set(popup, None);
+    assert_eq!(addressed(&launchers, popup, show()), (show(), None));
 }
