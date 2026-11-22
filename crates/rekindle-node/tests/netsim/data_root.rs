@@ -62,3 +62,21 @@ pub fn restore(sim: &rekindle_netsim::Netsim, node: &SimNode, backup: &Backup) {
     copy_tree(backup.dir.path(), node.root_dir());
     sim.restore_local_store(node.index, backup.store.clone());
 }
+
+/// Put `backup` on another node as a second device of the same person, as
+/// a Rekindle backup restored on a new machine is (the node must be
+/// locked): the data root and Veilid's local record store, without the
+/// identity's device vault, which ADR 0022 rule 4 keeps out of every
+/// backup and export (`DataRoot::device_vault`). Its first unlock mints an
+/// empty device vault (`rekindle_vault::device::open`): a device new to the
+/// identity, holding no device key in any community.
+pub fn restore_as_new_device(
+    sim: &rekindle_netsim::Netsim,
+    node: &SimNode,
+    backup: &Backup,
+    public_key: &str,
+) {
+    restore(sim, node, backup);
+    let vault = rekindle_db::paths::DataRoot::under(node.root_dir()).device_vault(public_key);
+    fs::remove_file(&vault).expect("the backup holds the identity's device vault");
+}
