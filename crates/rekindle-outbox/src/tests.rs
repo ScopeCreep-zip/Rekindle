@@ -587,23 +587,10 @@ mod deadline;
 
 mod ack_order;
 
+mod depends;
 mod fake_acks;
 mod forward;
 mod independence;
 
 mod mek_transfer;
 mod settle_landed;
-
-/// Finding 70 refined: a request cancelled right after it was queued and
-/// attempted (its first send wedged it) leaves no handshake row.
-#[tokio::test]
-async fn a_request_cancelled_after_its_first_attempt_leaves_no_row() {
-    let o = outbox();
-    script(&o, [AttemptOutcome::Wedged("no bundle".into())]);
-    let fh = StreamKind::FriendHandshake;
-    o.enqueue(entry(fh, "bob", "req"), ()).await.unwrap();
-    o.pump().await.unwrap();
-    assert_eq!(state_of(&o, "req"), Some(SendState::Failed));
-    assert_eq!(o.discard_streams(fh, "bob", "cancelled").await.unwrap(), 1);
-    assert_eq!(state_of(&o, "req"), None);
-}

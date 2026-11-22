@@ -100,9 +100,11 @@ fn the_stream_head_blocks_the_rows_behind_it() {
     };
     update(&conn, OWNER, "a", &failed).unwrap();
     assert_eq!(ids(10), ["b", "c"]);
-    // ... while any other stream's failed head blocks until it is discarded.
-    enqueue_with_echo(&conn, &row("friend_handshake:dan", "d", 50), None).unwrap();
-    enqueue_with_echo(&conn, &row("friend_handshake:dan", "e", 0), None).unwrap();
+    // ... while any other ordered stream's failed head blocks until it is
+    // discarded (a `friend_handshake` row waits only for the row it names,
+    // plan HOL1: `a_handshake_row_waits_for_its_named_dependency_...`).
+    enqueue_with_echo(&conn, &row("media_key:dan", "d", 50), None).unwrap();
+    enqueue_with_echo(&conn, &row("media_key:dan", "e", 0), None).unwrap();
     update(&conn, OWNER, "d", &failed).unwrap();
     assert_eq!(ids(10), ["b", "c"]);
     settle(&conn, OWNER, "d", SendState::Failed).unwrap();
@@ -486,4 +488,51 @@ fn a_hand_off_never_lowers_a_landed_row() {
         own_dm(&conn, OWNER, "a").unwrap().unwrap().row.send_state,
         SendState::Sent
     );
+}
+
+/// Plan HOL1 (lead decision 47): a `friend_handshake` row is due once the
+/// row it names left the table, whatever stands before it, and a failed
+/// dependency holds it; a `dm` row still waits behind an earlier row not
+/// yet due.
+#[test]
+fn a_handshake_row_waits_for_its_named_dependency_and_a_dm_row_for_its_place() {
+    let conn = fixture::conn();
+    let fh = "friend_handshake:bob";
+    let dependent = |id: &'static str, on: &'static str| NewRow {
+        depends_on: Some(on),
+        ..row(fh, id, 0)
+    };
+    for new in [
+        row(fh, "FriendAccept:1", 500),
+        dependent("FriendsKey:1", "FriendAccept:1"),
+        row(fh, "GroupDmInvite:1", 0),
+        row(fh, "FriendAccept:2", 0),
+        dependent("FriendsKey:2", "FriendAccept:2"),
+        row("dm:bob", "a", 500),
+        row("dm:bob", "b", 0),
+    ] {
+        enqueue_with_echo(&conn, &new, None).unwrap();
+    }
+    let failed = Update {
+        state: SendState::Failed,
+        attempts: 1,
+        next_at: 0,
+        deadline: 1_000,
+        wedge_reason: Some("prekey_rejected"),
+    };
+    assert!(update(&conn, OWNER, "FriendAccept:2", &failed)
+        .unwrap()
+        .is_some());
+    let due_ids = |conn: &Connection| -> Vec<String> {
+        due(conn, OWNER, 100)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.client_id)
+            .collect()
+    };
+    assert_eq!(due_ids(&conn), ["GroupDmInvite:1"]);
+    assert!(settle(&conn, OWNER, "FriendAccept:1", SendState::Delivered).unwrap());
+    let mut now_due = due_ids(&conn);
+    now_due.sort();
+    assert_eq!(now_due, ["FriendsKey:1", "GroupDmInvite:1"]);
 }

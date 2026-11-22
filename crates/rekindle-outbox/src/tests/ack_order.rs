@@ -144,8 +144,9 @@ async fn a_read_up_to_before_the_landing_waits_for_it() {
 }
 
 /// Live A/B finding 56: a request whose receipts were all lost, answered
-/// by the peer's accept, settles `delivered` as its receipt would, and the
-/// row it held back behind it goes.
+/// by the peer's accept, settles `delivered` as its receipt would. Plan
+/// HOL1 (lead decision 47): the presence key queued after it names no
+/// dependency, so the request's lost receipt no longer holds it.
 #[tokio::test]
 async fn an_answer_receipts_the_rows_it_proves_and_frees_the_stream() {
     let o = outbox();
@@ -157,29 +158,25 @@ async fn an_answer_receipts_the_rows_it_proves_and_frees_the_stream() {
     o.enqueue(entry(kind, "bob", "FriendsKey:02"), ())
         .await
         .unwrap();
-    // The request's receipt is lost: it stays at the head, the key behind.
-    script(&o, [AttemptOutcome::Deferred]);
+    // The request's receipt is lost: it stays queued; the key goes past it.
+    script(&o, [AttemptOutcome::Deferred, AttemptOutcome::Receipted]);
     o.pump().await.unwrap();
-    assert_eq!(state_of(&o, "FriendsKey:02"), Some(SendState::Queued));
-    assert!(settled(&o).is_empty(), "the head holds its stream");
+    assert_eq!(state_of(&o, "FriendRequest:01"), Some(SendState::Queued));
+    assert_eq!(
+        settled(&o),
+        [("FriendsKey:02".to_owned(), SendState::Delivered)],
+        "the key is not held behind the request"
+    );
     assert_eq!(
         o.receipt_rows(&at.stream, "FriendRequest:").await.unwrap(),
         1
     );
     assert_eq!(
-        settled(&o),
-        [("FriendRequest:01".to_owned(), SendState::Delivered)]
+        settled(&o).last(),
+        Some(&("FriendRequest:01".to_owned(), SendState::Delivered))
     );
     assert_eq!(
         o.receipt_rows(&at.stream, "FriendRequest:").await.unwrap(),
         0
-    );
-    script(&o, [AttemptOutcome::Receipted]);
-    advance(&o, 600_000);
-    o.pump().await.unwrap();
-    assert_eq!(
-        settled(&o).last(),
-        Some(&("FriendsKey:02".to_owned(), SendState::Delivered)),
-        "the key behind the request left"
     );
 }
