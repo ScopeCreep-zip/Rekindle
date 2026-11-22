@@ -11,8 +11,16 @@
 //! `RunEvent::ExitRequested { code: Some(0) }`, which the run loop does not
 //! prevent (only `code: None`, the last window closing, keeps the tray
 //! alive), then `RunEvent::Exit`, which runs `shutdown::handle_exit` once.
+//!
+//! That shutdown awaits the Host's teardown and Veilid's flush with no cap
+//! of its own (`shutdown::handle_exit`, plan C7.16), so a signal also arms
+//! [`STOP_DEADLINE`]: past it the process ends, whatever the shutdown still
+//! awaits (IC2). The deadline runs on its own OS thread, never on the
+//! runtime: a runtime whose workers are busy (IC1) or a shutdown blocked on
+//! one cannot hold it off.
 
 use std::future::Future;
+use std::time::Duration;
 
 use rekindle_node::host::signals::StopSignals;
 
@@ -29,6 +37,14 @@ impl StopSource for StopSignals {
     }
 }
 
+/// How long a stop signal's graceful shutdown may run before the process
+/// ends anyway. Past the session's own stop (`SESSION_STOP_DEADLINE`, 12 s)
+/// and Veilid's wait for its in-flight calls (each up to
+/// `LONGEST_VEILID_CALL`, 10 s, with no cancellation, veilid #516), and
+/// inside systemd's default `TimeoutStopSec=` of 90 s (`systemd.service(5)`),
+/// so the end is ours and logged, not the session manager's SIGKILL.
+pub(crate) const STOP_DEADLINE: Duration = Duration::from_secs(60);
+
 /// Install the stop-signal handlers and quit the app on the first signal.
 /// Called once from setup, before the Host starts, so a locked app quits
 /// cleanly too.
@@ -43,25 +59,54 @@ pub(crate) fn install(app: &tauri::AppHandle) -> Result<(), String> {
         StopSignals::register().map_err(|e| format!("{e:#}"))?
     };
     let app = app.clone();
-    tauri::async_runtime::spawn(quit_on_stop(signals, move || app.exit(0)));
+    tauri::async_runtime::spawn(quit_on_stop(
+        signals,
+        move || app.exit(0),
+        STOP_DEADLINE,
+        || std::process::exit(1),
+    ));
     Ok(())
 }
 
-/// Wait for the first stop signal and `quit` once. Later signals (a second
+/// Wait for the first stop signal and `quit` once, and `force` the end if
+/// the process still runs `deadline` later. Later signals (a second
 /// Ctrl-C, systemd repeating SIGTERM) arrive while the graceful shutdown
 /// runs: they are logged and read, never a second quit, and the installed
 /// handler keeps them from killing the process mid-shutdown.
-pub(crate) async fn quit_on_stop<S, Q>(mut source: S, quit: Q)
+pub(crate) async fn quit_on_stop<S, Q, F>(mut source: S, quit: Q, deadline: Duration, force: F)
 where
     S: StopSource,
     Q: FnOnce() + Send + 'static,
+    F: FnOnce() + Send + 'static,
 {
     let signal = source.next().await;
     tracing::info!(signal, "shutdown signal received");
+    arm_deadline(deadline, force);
     quit();
     loop {
         let signal = source.next().await;
         tracing::info!(signal, "shutdown signal received while quitting");
+    }
+}
+
+/// End the process with `force` once `deadline` has passed, on an OS
+/// thread of its own.
+fn arm_deadline<F>(deadline: Duration, force: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let armed = std::thread::Builder::new()
+        .name("rekindle-stop-deadline".into())
+        .spawn(move || {
+            std::thread::sleep(deadline);
+            tracing::error!(
+                deadline_secs = deadline.as_secs(),
+                "graceful shutdown passed its deadline; the process ends now"
+            );
+            force();
+        });
+    if let Err(e) = armed {
+        tracing::error!(error = %e, "stop deadline not armed: the shutdown is unbounded");
     }
 }
 
@@ -119,6 +164,8 @@ mod tests {
             move || {
                 counted.fetch_add(1, Ordering::SeqCst);
             },
+            Duration::from_secs(3600),
+            || panic!("no forced end inside the deadline"),
         ));
 
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -135,6 +182,33 @@ mod tests {
             "one quit for three signals"
         );
         assert!(!task.is_finished(), "the handler keeps reading");
+        task.abort();
+    }
+
+    /// A stop signal ends the process once the deadline passes, even when
+    /// the graceful shutdown never finishes (IC2); no signal, no end.
+    #[tokio::test]
+    async fn a_stop_signal_ends_the_process_after_the_deadline() {
+        let (tx, signals) = mpsc::unbounded_channel();
+        let forced = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&forced);
+        let task = tokio::spawn(quit_on_stop(
+            Fed {
+                signals,
+                read: Arc::new(AtomicUsize::new(0)),
+            },
+            || {},
+            Duration::from_millis(50),
+            move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+            },
+        ));
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(forced.load(Ordering::SeqCst), 0, "no signal, no forced end");
+
+        tx.send("SIGTERM").expect("send");
+        until("the forced end", || forced.load(Ordering::SeqCst) == 1).await;
         task.abort();
     }
 }
