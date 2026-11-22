@@ -214,7 +214,9 @@ export type CallEvent =
       };
     }
   | { participantJoined: { callId: string; participantPubkey: string } }
-  | { participantLeft: { callId: string; participantPubkey: string; reason: string } };
+  | { participantLeft: { callId: string; participantPubkey: string; reason: string } }
+  /** Our own mute changed; names no call (lead decision 58). */
+  | { selfMuteChanged: { muted: boolean; timestampMs: number } };
 
 /** What an unread count belongs to (`subscription_events::UnreadContext`). */
 export type UnreadContext =

@@ -393,7 +393,7 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
     let public_key = crate::state_helpers::owner_key_or_default(state);
 
     if let Some(new_muted) = state.toggle_voice_mute() {
-        crate::skin_windows::self_muted(state, new_muted);
+        crate::event_dispatch::emit_self_muted(state, new_muted);
         // Only meaningful inside a call: muting with no session running
         // has no scope to report against, and `toggle_voice_mute`
         // already returns `None` in that case.

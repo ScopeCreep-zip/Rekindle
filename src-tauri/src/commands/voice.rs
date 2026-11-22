@@ -51,7 +51,7 @@ pub async fn set_mute(
 ) -> Result<(), String> {
     let deps = build_voice_session_deps(&app, state.inner())?;
     rekindle_voice::session::set_local_mute(&deps, muted);
-    crate::skin_windows::self_muted(state.inner(), muted);
+    crate::event_dispatch::emit_self_muted(state.inner(), muted);
     Ok(())
 }
 

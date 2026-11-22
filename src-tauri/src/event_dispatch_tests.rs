@@ -168,6 +168,20 @@ fn calls_reach_their_window_and_conversation_windows() {
     assert!(voice.includes("call-0123456789ab"));
 }
 
+/// Lead decision 58: our own mute names no call, so it reaches the buddy
+/// list and every call and chat window, and no community window.
+#[test]
+fn our_own_mute_reaches_the_buddy_list_call_and_chat_windows() {
+    let a = sub(SubscriptionEvent::Call(CallEvent::SelfMuteChanged {
+        muted: true,
+        timestamp_ms: 1,
+    }));
+    assert!(a.includes("buddy-list"));
+    assert!(a.includes("call-0123456789ab"));
+    assert!(a.includes("chat-3f1a9c0b7e2d4f6a"));
+    assert!(!a.includes("community-browser"));
+}
+
 #[test]
 fn own_records_stage_reaches_every_post_login_window_on_network_status() {
     use rekindle_types::subscription_events::{NetworkEvent, OwnRecordsPhase};

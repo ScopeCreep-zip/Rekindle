@@ -44,8 +44,9 @@ pub(crate) struct Inputs {
     typing: BTreeSet<String>,
     calls: BTreeMap<String, Call>,
     speaking: BTreeSet<String>,
-    /// Our microphone mute in the call (the desktop call engine's until
-    /// E4.1); cleared when no call is left.
+    /// Our microphone mute in the call, folded from
+    /// `CallEvent::SelfMuteChanged` on the stream (lead decision 58);
+    /// cleared when no call is left.
     self_muted: bool,
     disconnected: bool,
     unseen_notification: BTreeSet<String>,
@@ -76,11 +77,6 @@ impl Inputs {
         self.windows.remove(window);
         self.focused.remove(window);
         self.unseen_notification.remove(window);
-    }
-
-    /// Our microphone mute in the call.
-    pub(crate) fn set_self_muted(&mut self, muted: bool) {
-        self.self_muted = muted;
     }
 
     pub(crate) fn in_call(&self) -> bool {
@@ -186,6 +182,12 @@ impl Inputs {
                 if self.calls.is_empty() {
                     self.self_muted = false;
                 }
+            }
+            CallEvent::SelfMuteChanged { muted, .. } => {
+                if self.self_muted == *muted {
+                    return false;
+                }
+                self.self_muted = *muted;
             }
             _ => return false,
         }
@@ -409,14 +411,6 @@ impl crate::host::Host {
         self.ctx
             .journal
             .clear_state(&format!("skin-signals:{window}"));
-        self.ctx.skin.signals.poke();
-    }
-
-    /// Our microphone mute in the call, from the desktop call engine
-    /// (until E4.1 moves calls into the Host): `OnAppCanMuteSelf` /
-    /// `OnAppCanUnmuteSelf`.
-    pub fn skin_self_muted(&self, muted: bool) {
-        self.ctx.skin.signals.inputs.lock().set_self_muted(muted);
         self.ctx.skin.signals.poke();
     }
 }

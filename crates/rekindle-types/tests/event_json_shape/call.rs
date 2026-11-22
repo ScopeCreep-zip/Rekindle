@@ -19,6 +19,7 @@ pub const NAMES: &[&str] = &[
     "reactionReceived",
     "participantJoined",
     "participantLeft",
+    "selfMuteChanged",
 ];
 
 pub fn variant_name(e: &CallEvent) -> &'static str {
@@ -35,6 +36,7 @@ pub fn variant_name(e: &CallEvent) -> &'static str {
         CallEvent::ReactionReceived { .. } => "reactionReceived",
         CallEvent::ParticipantJoined { .. } => "participantJoined",
         CallEvent::ParticipantLeft { .. } => "participantLeft",
+        CallEvent::SelfMuteChanged { .. } => "selfMuteChanged",
     }
 }
 
@@ -155,6 +157,13 @@ fn in_call() -> Vec<Sample> {
                 call_id: call_id(),
                 participant_pubkey: pk('c'),
                 reason: text("left"),
+            },
+        ),
+        ev(
+            "selfMuteChanged",
+            CallEvent::SelfMuteChanged {
+                muted: true,
+                timestamp_ms: 1_760_000_042_000,
             },
         ),
     ]

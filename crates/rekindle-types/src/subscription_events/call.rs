@@ -129,13 +129,21 @@ pub enum CallEvent {
         participant_pubkey: String,
         reason: String,
     },
+
+    /// Our own microphone mute in the call or voice session changed (the
+    /// mute button or the mute shortcut). It names no call: the desktop
+    /// call engine holds the mute for whatever session is live, and the
+    /// Host's skin signals fold it into `MuteSelf`/`UnmuteSelf` (lead
+    /// decision 58).
+    SelfMuteChanged { muted: bool, timestamp_ms: u64 },
 }
 
 impl CallEvent {
-    /// The call this event belongs to. Every variant has one.
+    /// The call this event belongs to; `None` only for
+    /// [`CallEvent::SelfMuteChanged`], which is ours, not a call's.
     #[must_use]
-    pub fn call_id(&self) -> &str {
-        match self {
+    pub fn call_id(&self) -> Option<&str> {
+        let id = match self {
             Self::Incoming { call_id, .. }
             | Self::Ringing { call_id }
             | Self::Started { call_id, .. }
@@ -148,7 +156,9 @@ impl CallEvent {
             | Self::ReactionReceived { call_id, .. }
             | Self::ParticipantJoined { call_id, .. }
             | Self::ParticipantLeft { call_id, .. } => call_id,
-        }
+            Self::SelfMuteChanged { .. } => return None,
+        };
+        Some(id)
     }
 }
 
@@ -171,8 +181,8 @@ mod tests {
                 expected_local_camera: true,
             }),
         };
-        assert_eq!(group.call_id(), "c1");
-        assert_eq!(one_to_one.call_id(), "c2");
+        assert_eq!(group.call_id(), Some("c1"));
+        assert_eq!(one_to_one.call_id(), Some("c2"));
         // The four direct-call facts travel together or not at all —
         // there is no state where the peer key is known but the kind
         // is not.
@@ -182,10 +192,14 @@ mod tests {
     #[test]
     fn every_variant_reports_its_call_id() {
         for event in sample_events() {
-            assert!(
-                !event.call_id().is_empty(),
-                "every call event names its call"
-            );
+            if matches!(event, CallEvent::SelfMuteChanged { .. }) {
+                assert_eq!(event.call_id(), None, "our own mute names no call");
+            } else {
+                assert!(
+                    event.call_id().is_some_and(|id| !id.is_empty()),
+                    "every call event names its call"
+                );
+            }
         }
     }
 
@@ -288,6 +302,10 @@ mod tests {
                 call_id: "c".into(),
                 participant_pubkey: "pk".into(),
                 reason: "left".into(),
+            },
+            CallEvent::SelfMuteChanged {
+                muted: true,
+                timestamp_ms: 1,
             },
         ]
     }

@@ -24,7 +24,8 @@ use rekindle_types::dto::infoview::InfoviewEvent;
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, EventScope, FriendEvent, NetworkEvent, SubscriptionEvent, SystemEvent,
+    CallEvent, ChannelMessageEvent, EventScope, FriendEvent, NetworkEvent, SubscriptionEvent,
+    SystemEvent,
     TypingContext, TypingEvent,
 };
 use serde::Serialize;
@@ -172,10 +173,15 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         | SubscriptionEvent::ChannelMessage(ChannelMessageEvent::ConversationFocusRequested {
             ..
         }) => buddy_list(),
+        // Our own mute names no call: the buddy list, every call window
+        // and every chat window show our mute control (lead decision 58).
+        SubscriptionEvent::Call(CallEvent::SelfMuteChanged { .. }) => {
+            buddy_list().with_kinds(&[WindowKind::Call, WindowKind::Chat])
+        }
         // The call's own window, the buddy list, and the chat windows
         // (each shows the call with its peer).
         SubscriptionEvent::Call(e) => buddy_list()
-            .with_labels(labels::call_label_for(e.call_id()))
+            .with_labels(labels::call_label_for(e.call_id().unwrap_or_default()))
             .with_kinds(&[WindowKind::Chat]),
         // Whether our own records are published gates what names them: the
         // buddy list's invite and public-key tabs and intent dialog, and
@@ -467,10 +473,25 @@ pub fn emit_membership(
 }
 
 /// Send a call-signalling event.
-pub fn emit_call(app: &AppHandle, event: rekindle_types::subscription_events::CallEvent) {
+pub fn emit_call(app: &AppHandle, event: CallEvent) {
     emit(
         app,
         WebviewEvent::Subscription(SubscriptionEvent::Call(event)),
+    );
+}
+
+/// Our own microphone mute changed (the mute button or the mute
+/// shortcut): a [`CallEvent::SelfMuteChanged`] on the call-event path,
+/// which the Host's skin signals fold into `MuteSelf`/`UnmuteSelf` (lead
+/// decision 58).
+pub fn emit_self_muted(state: &AppState, muted: bool) {
+    let timestamp_ms = rekindle_utils::timestamp_ms();
+    emit_from_state(
+        state,
+        WebviewEvent::Subscription(SubscriptionEvent::Call(CallEvent::SelfMuteChanged {
+            muted,
+            timestamp_ms,
+        })),
     );
 }
 

@@ -105,6 +105,14 @@
       }
     }
   },
+  "call.selfMuteChanged": {
+    "call": {
+      "selfMuteChanged": {
+        "muted": true,
+        "timestampMs": 1760000042000
+      }
+    }
+  },
   "call.started": {
     "call": {
       "started": {

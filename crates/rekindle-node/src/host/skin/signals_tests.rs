@@ -110,7 +110,7 @@ fn self_mute_follows_the_call_state() {
     );
     assert!(set.can.contains(&Capability::MuteSelf));
     assert!(set.cannot.contains(&Capability::UnmuteSelf));
-    inputs.set_self_muted(true);
+    assert!(inputs.fold(&self_mute(true)));
     let set = compute(
         "buddy-list",
         &inputs,
@@ -119,6 +119,70 @@ fn self_mute_follows_the_call_state() {
     );
     assert!(set.cannot.contains(&Capability::MuteSelf));
     assert!(set.can.contains(&Capability::UnmuteSelf));
+}
+
+fn self_mute(muted: bool) -> SubscriptionEvent {
+    SubscriptionEvent::Call(CallEvent::SelfMuteChanged {
+        muted,
+        timestamp_ms: 1,
+    })
+}
+
+fn mute_caps(inputs: &Inputs) -> (bool, bool) {
+    let set = compute(
+        "buddy-list",
+        inputs,
+        &SkinWorld::default(),
+        Selected::Nothing,
+    );
+    (
+        set.can.contains(&Capability::MuteSelf),
+        set.can.contains(&Capability::UnmuteSelf),
+    )
+}
+
+/// Lead decision 58: a `SelfMuteChanged` on the stream flips the mute
+/// capabilities both ways; a repeat of the same state changes nothing.
+#[test]
+fn a_self_mute_event_flips_the_mute_capabilities() {
+    let mut inputs = Inputs::default();
+    inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
+        call_id: "c1".into(),
+        direct: None,
+    }));
+    assert_eq!(mute_caps(&inputs), (true, false));
+    assert!(inputs.fold(&self_mute(true)));
+    assert_eq!(mute_caps(&inputs), (false, true));
+    assert!(
+        !inputs.fold(&self_mute(true)),
+        "the same state is no change"
+    );
+    assert!(inputs.fold(&self_mute(false)));
+    assert_eq!(mute_caps(&inputs), (true, false));
+}
+
+/// The last call's end clears our mute: the next call starts unmuted.
+#[test]
+fn call_end_resets_the_self_mute() {
+    let mut inputs = Inputs::default();
+    let connected = SubscriptionEvent::Call(CallEvent::Connected {
+        call_id: "c1".into(),
+        direct: None,
+    });
+    inputs.fold(&connected);
+    inputs.fold(&self_mute(true));
+    assert_eq!(mute_caps(&inputs), (false, true));
+    inputs.fold(&SubscriptionEvent::Call(CallEvent::Ended {
+        call_id: "c1".into(),
+        reason: "hangup".into(),
+    }));
+    assert_eq!(
+        mute_caps(&inputs),
+        (false, false),
+        "no call, no mute control"
+    );
+    inputs.fold(&connected);
+    assert_eq!(mute_caps(&inputs), (true, false));
 }
 
 #[test]

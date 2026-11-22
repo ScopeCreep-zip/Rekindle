@@ -224,7 +224,7 @@ pub(super) fn hash_call(h: &mut blake3::Hasher, c: &CallEvent) {
     // once, so the pair is the identity of the signal — no time bucket
     // is needed and none is wanted: a re-ring for the same call is the
     // duplicate this suppresses.
-    h.update(c.call_id().as_bytes());
+    h.update(c.call_id().unwrap_or_default().as_bytes());
     h.update(b"|");
     match c {
         CallEvent::Incoming { .. } => h.update(b"incoming"),
@@ -253,6 +253,14 @@ pub(super) fn hash_call(h: &mut blake3::Hasher, c: &CallEvent) {
         } => {
             h.update(b"media|");
             h.update(&[u8::from(*audio), u8::from(*video), u8::from(*screen)]);
+            h.update(&timestamp_ms.to_le_bytes())
+        }
+        CallEvent::SelfMuteChanged {
+            muted,
+            timestamp_ms,
+        } => {
+            h.update(b"selfmute|");
+            h.update(&[u8::from(*muted)]);
             h.update(&timestamp_ms.to_le_bytes())
         }
         CallEvent::ReactionReceived {

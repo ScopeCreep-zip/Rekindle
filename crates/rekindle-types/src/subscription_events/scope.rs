@@ -125,7 +125,10 @@ impl SubscriptionEvent {
             Self::Voice(e) => e.scope().map_or(EventScope::Device, EventScope::voice),
             Self::Governance(e) => EventScope::Community(e.community().to_owned()),
             Self::Social(e) => EventScope::Community(social_community(e).to_owned()),
-            Self::Call(e) => EventScope::Call(e.call_id().to_owned()),
+            // Our own mute names no call: it is this device's.
+            Self::Call(e) => e
+                .call_id()
+                .map_or(EventScope::Device, |id| EventScope::Call(id.to_owned())),
             // A notification is about something, but surfacing it is the
             // device's job: one OS toast, one inbox, whatever the source.
             // A review is the identity's, whichever window or client acts.

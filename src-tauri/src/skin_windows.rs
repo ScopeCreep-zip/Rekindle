@@ -44,10 +44,3 @@ pub fn opened<R: Runtime>(app: &AppHandle<R>, label: &str, selection: Option<Ski
         host.skin_window_opened(label, selection);
     }
 }
-
-/// Our microphone mute in the call changed (the desktop call engine).
-pub fn self_muted(state: &SharedState, muted: bool) {
-    if let Some(host) = state.host.current() {
-        host.skin_self_muted(muted);
-    }
-}
