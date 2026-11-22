@@ -210,6 +210,29 @@ pub fn verify_invite(invite: &GroupDmInvite, from: &str) -> Result<Roster, DmErr
     Ok(roster)
 }
 
+/// Why `me` may not rename the group of `roster` (plan E7.2 G7), or
+/// `None` when it may: only the creator, whose signature made the roster.
+#[must_use]
+pub fn rename_refused(roster: &Roster, me: &str) -> Option<String> {
+    (roster.creator().identity != me).then(|| "only the group's creator renames it".to_owned())
+}
+
+/// Why `me` may not invite anyone more to the group of `roster` (plan
+/// E7.2 G8), or `None` when it may: only the creator, whose signature
+/// makes a roster, and only while it has fewer than `MAX_MEMBERS`.
+#[must_use]
+pub fn invite_refused(roster: &Roster, me: &str) -> Option<String> {
+    if roster.creator().identity != me {
+        return Some("only the group's creator invites to it".to_owned());
+    }
+    (roster.members().len() >= rekindle_types::group_dm::MAX_MEMBERS).then(|| {
+        format!(
+            "the group is full ({} members)",
+            rekindle_types::group_dm::MAX_MEMBERS
+        )
+    })
+}
+
 /// What a received sending key does to the one we hold for its member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyUpdate {

@@ -270,6 +270,14 @@ struct GroupDmLeave {
   epoch @1 :UInt32;
 }
 
+# 0x0125: the creator grew the roster (plan E7.2 G8), to each member
+# already on it: the creator's new invite, signed as 0x0120 is, with the
+# grown roster (the held one as its prefix) and the creator's sending key
+# of the next epoch.
+struct GroupDmRosterGrow {
+  invite @0 :GroupDmInvite;
+}
+
 # 0x0126: the creator renamed the group; only ever sealed inside a 0x0124
 # entry (its inner), never a frame of its own.
 struct GroupDmRename {

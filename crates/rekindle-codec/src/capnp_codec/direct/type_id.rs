@@ -115,6 +115,9 @@ type_ids! {
     GroupDmLeave = 0x0123 => Ratchet,
     /// Group-DM content sealed under the sender's key, on its group chain.
     GroupContent = 0x0124 => GroupChain,
+    /// The creator grew the roster (plan E7.2 G8): its re-signed invite at
+    /// the next epoch, to each member already on it.
+    GroupDmRosterGrow = 0x0125 => Ratchet,
     /// The creator renamed the group (plan E7.2 G7): sealed only inside a
     /// `GroupContent` entry's inner, so every member reads it from the
     /// creator's chain; never a frame of its own.
@@ -267,7 +270,7 @@ mod tests {
     fn unallocated_ids_are_not_kinds() {
         for id in [
             // 0x0102 is FriendReject, retired (LV23 review L2).
-            0x0000, 0x0102, 0x0109, 0x0125, 0x0150, 0x0195, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
+            0x0000, 0x0102, 0x0109, 0x0127, 0x0150, 0x0195, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }

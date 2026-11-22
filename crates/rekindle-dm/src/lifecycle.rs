@@ -21,6 +21,9 @@ use crate::group::{self, group_id_hex, KeyUpdate, Roster};
 use crate::ports::{GroupDmDeps, GroupState, PendingInvite};
 use crate::sender_key;
 
+mod grow;
+pub use grow::{grow, on_roster_grow, Grown};
+
 /// A frame and the members to send it to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outbound<F> {

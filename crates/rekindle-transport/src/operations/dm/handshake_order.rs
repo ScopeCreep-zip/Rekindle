@@ -41,7 +41,7 @@ const FIRST_CONTACT: [DmTypeId; 3] = [
 /// friendship and to hold our session (the receiver drops it otherwise:
 /// `friend/presence_key.rs`, `direct/frame.rs` NoSession), so it waits for
 /// our unsettled first contact ([`waits_for`]).
-const INDEPENDENT: [DmTypeId; 22] = [
+const INDEPENDENT: [DmTypeId; 23] = [
     DmTypeId::FriendRequest,
     DmTypeId::PreKeyInit,
     DmTypeId::FriendAccept,
@@ -55,6 +55,7 @@ const INDEPENDENT: [DmTypeId; 22] = [
     DmTypeId::GroupDmAccept,
     DmTypeId::GroupDmDecline,
     DmTypeId::GroupDmLeave,
+    DmTypeId::GroupDmRosterGrow,
     DmTypeId::GroupContent,
     DmTypeId::CreatorInvite,
     DmTypeId::CreatorAccept,

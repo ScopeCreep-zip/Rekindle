@@ -24,10 +24,11 @@ pub mod video;
 
 pub use admission::{admit, AcceptedGroup, Admission, GroupFrame};
 pub use error::DmError;
-pub use group::{build_invite, verify_invite, KeyUpdate, Roster};
+pub use group::{build_invite, invite_refused, rename_refused, verify_invite, KeyUpdate, Roster};
 pub use lifecycle::{
-    accept, create, decline, leave, on_decline, on_invite, on_member_chain, on_member_key,
-    on_member_left, open_received, remove_member, rotate_own_key, seal_for_send, Created, Outbound,
+    accept, create, decline, grow, leave, on_decline, on_invite, on_member_chain, on_member_key,
+    on_member_left, on_roster_grow, open_received, remove_member, rotate_own_key, seal_for_send,
+    Created, Grown, Outbound,
 };
 pub use ports::{GroupDmDeps, GroupState, PendingInvite};
 pub use sender_key::GroupSenderKey;

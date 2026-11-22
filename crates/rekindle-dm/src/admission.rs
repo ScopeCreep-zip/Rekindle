@@ -63,6 +63,7 @@ pub fn is_group_kind(kind: DmTypeId) -> bool {
             | DmTypeId::GroupDmAccept
             | DmTypeId::GroupDmDecline
             | DmTypeId::GroupDmLeave
+            | DmTypeId::GroupDmRosterGrow
             | DmTypeId::GroupContent
     )
 }

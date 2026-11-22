@@ -144,6 +144,17 @@ fn samples() -> Vec<DirectBody> {
             group_id: [0x6D; 16],
             epoch: 3,
         }),
+        DirectBody::GroupDmRosterGrow(GroupDmRosterGrow {
+            invite: GroupDmInvite {
+                group_id: [0x6D; 16],
+                name: s("raid night"),
+                roster: roster(),
+                creator_sender_key: [0x5E; 32],
+                epoch: 1,
+                signature: [0x51; 64],
+                creator_chain_key: dht_key(),
+            },
+        }),
         DirectBody::GroupDmRename(GroupDmRename {
             group_id: [0x6D; 16],
             name: s("raid night II"),

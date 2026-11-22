@@ -12,7 +12,7 @@ use crate::capnp_codec::direct::{bounded_text, data, fixed, list_len, public_key
 use crate::capnp_codec::{capnp_err, CodecError};
 use crate::direct_capnp::{
     group_content, group_dm_accept, group_dm_decline, group_dm_invite, group_dm_leave,
-    group_dm_rename,
+    group_dm_rename, group_dm_roster_grow,
 };
 
 /// A group's id: 16 random bytes its creator mints.
@@ -217,6 +217,27 @@ impl GroupDmLeave {
         Ok(Self {
             group_id: fixed(r.get_group_id(), "group id")?,
             epoch: r.get_epoch(),
+        })
+    }
+}
+
+/// 0x0125 GroupDmRosterGrow, inside the ratchet to each member already on
+/// the roster (plan E7.2 G8): the creator's re-signed invite with the grown
+/// roster and its sending key of the next epoch. `rekindle-dm` verifies it
+/// as an invite and checks the held roster is its prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupDmRosterGrow {
+    pub invite: GroupDmInvite,
+}
+
+impl GroupDmRosterGrow {
+    pub(super) fn write(&self, b: group_dm_roster_grow::Builder<'_>) {
+        self.invite.write(b.init_invite());
+    }
+
+    pub(super) fn read(r: group_dm_roster_grow::Reader<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            invite: GroupDmInvite::read(r.get_invite().map_err(|e| capnp_err(&e))?)?,
         })
     }
 }

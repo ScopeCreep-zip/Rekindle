@@ -42,7 +42,7 @@ pub(crate) use game::{
 pub use game::{GameInvite, GameTotal, GameTotals, ProfileBio, MAX_GAME_TOTALS};
 pub use group::{
     GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite, GroupDmLeave, GroupDmRename,
-    GroupId,
+    GroupDmRosterGrow, GroupId,
 };
 pub use relay::{
     RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, StatusRequest,
@@ -144,6 +144,7 @@ direct_bodies! {
         GroupDmLeave(GroupDmLeave) = group_dm_leave,
         GroupContent(GroupContent) = group_content,
         GroupDmRename(GroupDmRename) = group_dm_rename,
+        GroupDmRosterGrow(GroupDmRosterGrow) = group_dm_roster_grow,
         RelayOffer(RelayOffer) = relay_offer,
         RelayWithdraw(RelayWithdraw) = relay_withdraw,
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,

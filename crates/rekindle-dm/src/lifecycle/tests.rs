@@ -186,6 +186,9 @@ async fn three() -> (Host, Host, Host, GroupId) {
     (ann, bea, cy, gid)
 }
 
+#[path = "grow_tests.rs"]
+mod grow_tests;
+
 #[tokio::test]
 async fn members_exchange_keys_and_read_each_other() {
     let (ann, bea, cy, gid) = three().await;
