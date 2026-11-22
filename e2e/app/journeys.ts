@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
@@ -421,4 +421,49 @@ export async function unlock(b: Browser, user: User): Promise<void> {
   await submit.click();
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
   await inBuddy(b);
+}
+
+/** Whether the skin tree's `view` node is shown (not under a hidden page, with a box). */
+export async function skinViewShown(b: Browser, view: string): Promise<boolean> {
+  return (await b.execute((v: string) => {
+    const n = document.querySelector<HTMLElement>(`[data-skin-role="view:${v}"]`);
+    return !!n && n.closest("[hidden]") === null && n.getBoundingClientRect().height > 0;
+  }, view)) as boolean;
+}
+
+/** The first visible skin node matching `selector` in `b`'s window, or "". */
+async function visibleSkinNode(b: Browser, selector: string): Promise<string> {
+  return (await b.execute(
+    (sel: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>(sel)).find((n) => n.getBoundingClientRect().width > 0)?.dataset.skinNode ?? "",
+    selector,
+  )) as string;
+}
+
+/**
+ * Under a skin's tree, press the pack's control for `view` wherever the Host
+ * placed it (plan SK2-N4) and wait for the view: a tab or knob node; a knob
+ * whose stops share one box (Combat), pressed round to the view; or a control
+ * in a pack popup (StealthX's MainMenuPopup rail), pressed in the popup.
+ */
+export async function showSkinView(b: Browser, view: string): Promise<void> {
+  await switchTo(b, BUDDY);
+  const control = await visibleSkinNode(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`);
+  if (control) {
+    await press(b, await b.$(`[data-skin-node="${control}"]`));
+  } else if (await visibleSkinNode(b, '[data-skin-role^="knob:"]')) {
+    for (let i = 0; i < 4 && !(await skinViewShown(b, view)); i++) {
+      await press(b, await b.$(`[data-skin-node="${await visibleSkinNode(b, '[data-skin-role^="knob:"]')}"]`));
+      await sleep(600);
+    }
+  } else {
+    const launcher = await visibleSkinNode(b, '[data-skin-action^="launchPopup"]');
+    if (!launcher) throw new Error(`no control for ${view} in the main window, a knob or a popup`);
+    const before = await b.getWindowHandles();
+    await press(b, await b.$(`[data-skin-node="${launcher}"]`));
+    await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("popup-") && !before.includes(h), 10_000));
+    await press(b, await shown(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`));
+    await switchTo(b, BUDDY);
+  }
+  await waitUntil(() => skinViewShown(b, view), 10_000, `the ${view} view did not show`);
 }
