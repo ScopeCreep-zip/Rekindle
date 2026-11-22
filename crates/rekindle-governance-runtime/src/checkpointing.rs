@@ -17,7 +17,7 @@ use rekindle_types::key_format::vld0_key_bytes;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
-use crate::op_log::{author_record, frontier_refs, verify_held_with};
+use crate::op_log::{frontier_refs, op_record, verify_held_with};
 
 /// One community's local trigger clocks, kept by the caller between ticks.
 #[derive(Debug, Default)]
@@ -80,7 +80,7 @@ pub async fn tick<D: GovernanceRuntimeDeps>(
     let height = prev.map_or(1, |p| p.height + 1);
     let prev_ref: Option<OpRef> = prev.and_then(|p| {
         let op = set.ops.iter().find(|o| o.hash() == p.op)?;
-        author_record(&cert, &outcome.state, op.author()).map(|r| op.op_ref(&r))
+        op_record(&cert, &outcome.state, op).map(|r| op.op_ref(&r))
     });
     if prev.is_some() && prev_ref.is_none() {
         return Ok(CheckpointStep::Idle);

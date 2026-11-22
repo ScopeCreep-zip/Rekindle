@@ -12,7 +12,7 @@ use super::device_cp_tests::{device_op, joined_with_device, who};
 use super::op_proptests::{assign, community, find, head, joined, kick, pk};
 use super::{merge_cut, merge_from, merge_outcome, MergeOutcome, NotOnTop};
 use crate::checkpoint::{causal_past, frontier_hash, state_preimage, state_root_of, CutSnapshot};
-use crate::fixture::{cert, meta, op};
+use crate::fixture::{cert, meta, op, FIXTURE_ANCHOR};
 use crate::op::VerifiedOp;
 use crate::power::{class_of, OpClass};
 
@@ -87,7 +87,7 @@ fn located_power(cert: &GenesisCert, snap: &CutSnapshot, all: &[VerifiedOp]) -> 
         (snap.cut.power.iter()).any(|(c, f)| *f == a && c.hash == o.hash())
     };
     let refused = all.iter().filter(|o| fate(o, false)).cloned();
-    let Some(refs) = snap.power_refs(cert) else {
+    let Some(refs) = snap.power_refs(cert, FIXTURE_ANCHOR) else {
         return all
             .iter()
             .filter(|o| fate(o, true))
@@ -564,7 +564,10 @@ fn a_cut_power_op_is_located_through_the_directory() {
     ops.push(k);
     let heads = [head(&ops)];
     let (snap, power, rest) = split(&cert, &ops, &heads);
-    assert!(snap.power_refs(&cert).is_some(), "all located");
+    assert!(
+        snap.power_refs(&cert, FIXTURE_ANCHOR).is_some(),
+        "all located"
+    );
     let listed: Vec<OpHash> = (snap.cut.power.iter())
         .filter(|(_, applied)| *applied)
         .map(|(c, _)| c.hash)

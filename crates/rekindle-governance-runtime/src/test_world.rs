@@ -4,7 +4,7 @@
 
 use crate::join_deps::join_deps;
 use crate::op_log::{
-    author_record, build_op, frontier_refs, held, verify_held, Deps, HeldOp, OpFate, VerifiedSet,
+    build_op, frontier_refs, held, op_record, verify_held, Deps, HeldOp, OpFate, VerifiedSet,
 };
 use crate::origin::genesis_entries;
 use crate::test_member::Member;
@@ -124,7 +124,7 @@ impl World {
     pub(crate) fn hold(&mut self, op: &VerifiedOp, encoded: Vec<u8>) {
         let record = match op.body() {
             GovernanceEntry::MemberJoined { member_record, .. } => member_record.clone(),
-            _ => author_record(&self.cert, &self.state, op.author()).unwrap(),
+            _ => op_record(&self.cert, &self.state, op).unwrap(),
         };
         self.held.push(held(op, record, encoded, OpFate::Applied));
         self.set = verify_held(ANCHOR, &self.held);

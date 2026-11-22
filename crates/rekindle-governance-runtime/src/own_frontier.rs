@@ -10,7 +10,7 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_types::governance::{Frontier, GenesisCert, OpHash, OpRef};
 use rekindle_types::id::PseudonymKey;
 
-use crate::op_log::{author_record, frontier, HeldOp, VerifiedSet};
+use crate::op_log::{frontier, op_record, HeldOp, VerifiedSet};
 
 /// Our whole `Frontier` (`M`/3), heads and D15's roster checksum, both from
 /// one merge of the verified set `set`: the state a rebuild of that set
@@ -102,6 +102,6 @@ fn own_fork<'a>(set: &VerifiedSet, held: &'a [HeldOp], me: &PseudonymKey) -> Vec
 pub fn frontier_refs(cert: &GenesisCert, state: &GovernanceState, set: &VerifiedSet) -> Vec<OpRef> {
     frontier(&set.ops, None)
         .into_iter()
-        .filter_map(|op| author_record(cert, state, op.author()).map(|r| op.op_ref(&r)))
+        .filter_map(|op| op_record(cert, state, op).map(|r| op.op_ref(&r)))
         .collect()
 }

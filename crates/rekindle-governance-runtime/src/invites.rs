@@ -101,10 +101,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     }
 
     // The joiner's walk of the op DAG starts at our frontier (`M`/3), on
-    // our member record.
-    let cert = deps
-        .genesis_cert(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_string()))?;
+    // our op record (below).
     let me = deps
         .identity_secret()
         .map(|secret| {
@@ -112,8 +109,12 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
             rekindle_types::id::PseudonymKey(key.verifying_key().to_bytes())
         })
         .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
-    let inviter_member_record = crate::op_log::author_record(&cert, &gov_state, &me)
-        .ok_or_else(|| GovernanceRuntimeError::MemberRecordMissing(hex::encode(me.0)))?;
+    // The record our ops and `Frontier` live on, where a joiner reads our
+    // frontier and fetches our `InviteCreated` by ref: this device's own
+    // (ADR 0022 rule 3, subkeys 2 and 3 are "that device's own op chain and
+    // view"), a further device's `M(p,d)`.
+    let inviter_member_record =
+        crate::device_signer::own_op_record(deps, community_id, &gov_state)?;
 
     let code = hex::encode(rekindle_utils::random::id_bytes_16_from(
         deps.rng().as_ref(),

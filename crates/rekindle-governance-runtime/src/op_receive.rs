@@ -12,7 +12,7 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
-use crate::op_log::{author_record, verify_held_with, HeldOp, OpFate};
+use crate::op_log::{verify_held_with, HeldOp, OpFate};
 
 /// The op `encoded`, when it reads (an op this reader cannot interpret
 /// included, which the rebuild holds quarantined and announces, D15) and
@@ -130,7 +130,12 @@ pub async fn store_received_op<D: GovernanceRuntimeDeps>(
         // A `MemberJoined` names its own record (op #0, or a re-join that
         // binds a fresh record, owner-proved).
         GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
-        _ => author_record(&cert, &state, &decoded.op.author),
+        _ => state.op_record(
+            &cert,
+            community_id,
+            &decoded.op.author,
+            &decoded.op.device_key,
+        ),
     };
     let Some(author_record) = record else {
         return Ok(None);
@@ -181,7 +186,8 @@ async fn receive_uninterpretable<D: GovernanceRuntimeDeps>(
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let state = deps.governance_state(community_id).unwrap_or_default();
-    let Some(record) = author_record(&cert, &state, &envelope.author) else {
+    let Some(record) = state.op_record(&cert, community_id, &envelope.author, &envelope.device_key)
+    else {
         return Ok(false);
     };
     deps.store_governance_op(community_id, &envelope.held(record, encoded))

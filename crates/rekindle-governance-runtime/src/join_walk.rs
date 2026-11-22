@@ -176,3 +176,7 @@ pub async fn walk_for_join<D: GovernanceRuntimeDeps>(
         }),
     })
 }
+
+#[cfg(test)]
+#[path = "join_walk_tests.rs"]
+mod tests;

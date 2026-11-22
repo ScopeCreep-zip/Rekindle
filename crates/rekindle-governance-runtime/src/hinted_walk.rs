@@ -291,7 +291,7 @@ where
     F: Fn(OpRef) -> Fut,
     Fut: Future<Output = Result<Option<HeldOp>, GovernanceRuntimeError>>,
 {
-    let Some(power_refs) = snap.power_refs(cert) else {
+    let Some(power_refs) = snap.power_refs(cert, anchor) else {
         return Ok(None);
     };
     let (rest_held, mut cited) = walk_above(snap, start, &fetch).await?;

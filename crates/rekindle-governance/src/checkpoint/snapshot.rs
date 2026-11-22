@@ -58,14 +58,17 @@ impl CutSnapshot {
     /// Where the cut op `op` lives: its author's member record in the
     /// snapshot's state (the directory at the cut, member → record; the
     /// cert's for the creator) at its seq, the locator a reader fetches it
-    /// by (plan E3.2 S7c.5, P3). `None` when the state names no record for
-    /// its author.
+    /// by (plan E3.2 S7c.5, P3); a further device's op, its `M(p,d)`
+    /// (`GovernanceState::op_record`, ADR 0022 rule 3). `None` when the
+    /// state names no record for its author.
     #[must_use]
-    pub fn locate(&self, cert: &GenesisCert, op: &CutOp) -> Option<OpRef> {
+    pub fn locate(&self, cert: &GenesisCert, anchor: &str, op: &CutOp) -> Option<OpRef> {
         let author = PseudonymKey(op.author);
         Some(OpRef {
             op_hash: op.hash,
-            author_record: self.state.author_record(cert, &author)?,
+            author_record: self
+                .state
+                .op_record(cert, anchor, &author, &op.device_key)?,
             device_key: op.device_key,
             author,
             author_seq: op.seq,
@@ -78,10 +81,10 @@ impl CutSnapshot {
     /// non-member, may have no record at the cut). `None` when one cannot
     /// be located.
     #[must_use]
-    pub fn power_refs(&self, cert: &GenesisCert) -> Option<Vec<OpRef>> {
+    pub fn power_refs(&self, cert: &GenesisCert, anchor: &str) -> Option<Vec<OpRef>> {
         (self.cut.power.iter())
             .filter(|(_, applied)| *applied)
-            .map(|(op, _)| self.locate(cert, op))
+            .map(|(op, _)| self.locate(cert, anchor, op))
             .collect()
     }
 }

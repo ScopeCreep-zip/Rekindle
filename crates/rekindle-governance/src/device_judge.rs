@@ -32,6 +32,7 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::device::{endorsement_holds, retirement_holds};
 use crate::op::VerifiedOp;
+use crate::state::GovernanceState;
 
 /// Most effective device keys per member, the first included (ADR 0022
 /// rule 6, Signal-Server `MAX_DEVICES`).
@@ -92,6 +93,21 @@ impl MemberDevices {
     ) -> Option<&DeviceEndorsement> {
         (self.endorsements.values())
             .find(|e| e.device_key == *key && endorsement_holds(p, anchor, record, e))
+    }
+
+    /// The `M(p,d)` that `key`'s op chain lives on when `key` is a further
+    /// device of `p` (ADR 0022 rule 3, "every further device record is
+    /// bound by its `DeviceKey` endorsement (`deviceRecord`, ...)"): the
+    /// record an endorsement of `key` binds while signed in the context of
+    /// a member record, not of the record it binds (rule 10). `None` for a
+    /// first device, whose endorsement is signed for the record it binds
+    /// ("The first device's record is `M(p)`, bound by `MemberJoined`"),
+    /// and for a key with no endorsement here.
+    #[must_use]
+    pub fn device_record(&self, p: &PseudonymKey, anchor: &str, key: &[u8; 32]) -> Option<&str> {
+        (self.endorsements.values())
+            .find(|e| e.device_key == *key && !endorsement_holds(p, anchor, &e.device_record, e))
+            .map(|e| e.device_record.as_str())
     }
 
     /// The lowest seq above which `key` signs nothing valid: its lowest
@@ -221,6 +237,30 @@ impl DeviceView {
     /// K-CP).
     pub fn harvest(&mut self, op: &VerifiedOp) {
         self.absorb(op.anchor(), op.op());
+    }
+}
+
+impl GovernanceState {
+    /// The record the op `device_key` signed as `author` in community
+    /// `anchor` lives on, the one locator every reference to the op names
+    /// (ADR 0022 rule 3: "Each device key has its own `M(p,d)`", subkey 2
+    /// `GovHead` is "that device's own op chain"): a further device's
+    /// `M(p,d)` from the device set ([`MemberDevices::device_record`]),
+    /// else the author's member record ([`Self::author_record`]: the first
+    /// device's `M(p)`, the cert's for the creator).
+    #[must_use]
+    pub fn op_record(
+        &self,
+        cert: &GenesisCert,
+        anchor: &str,
+        author: &PseudonymKey,
+        device_key: &[u8; 32],
+    ) -> Option<String> {
+        let further = (self.devices.member(author))
+            .and_then(|md| md.device_record(author, anchor, device_key));
+        further
+            .map(str::to_owned)
+            .or_else(|| self.author_record(cert, author))
     }
 }
 

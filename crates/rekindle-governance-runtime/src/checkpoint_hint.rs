@@ -75,7 +75,7 @@ pub fn hint_response(
     let need = hint.electorate / 2 + 1;
     endorsing.truncate(need);
     let locate = |op: &VerifiedOp| -> Option<OpRef> {
-        Some(op.op_ref(&state.author_record(cert, op.author())?))
+        Some(op.op_ref(&crate::op_log::op_record(cert, state, op)?))
     };
     let first = ops.iter().find(|op| op.hash() == hint.op);
     let (Some(checkpoint), Some(endorsements)) = (

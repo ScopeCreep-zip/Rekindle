@@ -108,6 +108,15 @@ pub fn author_record(
     state.author_record(cert, author)
 }
 
+/// The record `op` lives on, the locator every reference to it names
+/// (ADR 0022 rule 3): its device's `M(p,d)` for a further device's op,
+/// else its author's member record ([`author_record`]). The one lookup is
+/// `GovernanceState::op_record`.
+#[must_use]
+pub fn op_record(cert: &GenesisCert, state: &GovernanceState, op: &VerifiedOp) -> Option<String> {
+    state.op_record(cert, op.anchor(), op.author(), &op.op().device_key)
+}
+
 /// Who we are in a community and our member record in `state`.
 pub struct OwnMember {
     /// Our pseudonym in the community.
@@ -297,7 +306,7 @@ pub fn build_op(
     let deps = cited
         .into_iter()
         .map(|op| {
-            author_record(cert, state, op.author())
+            op_record(cert, state, op)
                 .map(|record| op.op_ref(&record))
                 .ok_or_else(|| {
                     GovernanceRuntimeError::MemberRecordMissing(hex::encode(op.author().0))
