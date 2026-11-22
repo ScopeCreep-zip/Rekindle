@@ -30,7 +30,7 @@
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::{EngineView, NodeTrigger, SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{
-    Anchor, NodeLabel, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
+    Anchor, NodeGlyph, NodeLabel, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
 };
 use rekindle_types::dto::skin_tree_role::ViewKey;
 
@@ -216,27 +216,48 @@ fn whole_picture(n: &SkinNode, w: u16) -> bool {
     own || n.children.iter().any(|c| whole_picture(c, w))
 }
 
-/// The clone's own words. Its art is the last tab's, word and all, and no
-/// built-in has a tab picture without its word (xslimfire's and Total
-/// Chaos's `TabHeader` draws the three words too), so a whole-picture
-/// clone covers the copied word's band: the box less a tenth of its width
-/// (at least 3 px) at each side and a fifth of its height (at least 2 px)
-/// above and below, which holds the word in both packs (xslimfire's
-/// "Files" at x 21-44, y 5-14 of 65 x 18; Total Chaos's at 21-48, 4-12 of
-/// 74 x 17) and leaves the frame's ends.
+/// The clone's own words. Its art is the last tab's, word and all.
+///
+/// - An icon tab (the art one whole picture at the box's size and the box
+///   no more than twice as wide as it is tall: Symbiosis's 46 x 48
+///   `ButtonVideosTab`, an icon button with no word) gets the shell's
+///   Communities glyph, the words its accessible name, and no cover yet: a
+///   word would be the only text tab in an icon strip. The cover, the box
+///   of the copied icon, is read from the art by [`super::cover`].
+/// - A worded whole picture (a word band at least 3.5 times as wide as it
+///   is tall: xslimfire's 65 x 18 `TabDownloadButton`, Total Chaos's
+///   74 x 17) covers the copied word's band: the box less a tenth of its
+///   width (at least 3 px) at each side and a fifth of its height (at least
+///   2 px) above and below, which holds the word in both packs
+///   (xslimfire's "Files" at x 21-44, y 5-14; Total Chaos's at 21-48, 4-12)
+///   and leaves the frame's ends.
+/// - Any other tab (a 3-slice whose middle repeats, Alloy's; words over a
+///   part, Spacecowboy's) draws the words with no cover.
 fn label(tab: &SkinNode) -> NodeLabel {
-    let cover = match (tab.x, tab.y) {
+    let text = WORDS.to_owned();
+    match (tab.x, tab.y) {
         (NodeSpan::Fixed { size: w, .. }, NodeSpan::Fixed { size: h, .. })
             if whole_picture(tab, w) =>
         {
+            if u32::from(w) <= 2 * u32::from(h) {
+                return NodeLabel {
+                    text,
+                    cover: None,
+                    glyph: Some(NodeGlyph::Communities),
+                };
+            }
             let (dx, dy) = ((w / 10).max(3), (h / 5).max(2));
-            Some([dx, dy, w.saturating_sub(2 * dx), h.saturating_sub(2 * dy)])
+            NodeLabel {
+                text,
+                cover: Some([dx, dy, w.saturating_sub(2 * dx), h.saturating_sub(2 * dy)]),
+                glyph: None,
+            }
         }
-        _ => None,
-    };
-    NodeLabel {
-        text: WORDS.to_owned(),
-        cover,
+        _ => NodeLabel {
+            text,
+            cover: None,
+            glyph: None,
+        },
     }
 }
 
@@ -420,6 +441,7 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
         label: Some(NodeLabel {
             text: WORDS.to_owned(),
             cover: None,
+            glyph: None,
         }),
         shows_with: None,
         control_group: None,

@@ -6,6 +6,7 @@
 
 mod anchor;
 mod clip;
+pub mod cover;
 pub mod css;
 mod fit;
 pub mod import;
@@ -15,6 +16,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+pub mod titles;
 mod triggers;
 pub mod validate;
 

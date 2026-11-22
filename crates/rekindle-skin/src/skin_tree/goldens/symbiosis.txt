@@ -18,7 +18,7 @@ InfoBar Group
   ButtonMaximize Button
   ButtonClose Button
 MenuBackground MenuBar
-  XfireMenu MenuTitle
+  XfireMenu MenuTitle label "Rekindle" cover [12, 4, 22, 10]
   ToolsMenu MenuTitle
   HelpMenu MenuTitle
 UsernameContainer NameField
@@ -39,7 +39,7 @@ TabsContainer Decor
   ButtonPicturesTab Tab(Pictures)
   TabSeparator5 Decor
   ButtonVideosTab Tab(Videos)
-  ButtonVideosTab.Communities Tab(Communities)
+  ButtonVideosTab.Communities Tab(Communities) label "Communities" cover [14, 15, 18, 17] glyph Communities
   TabSeparator6 Decor
 ButtonNotificationsTab Tab(Notifications)
   ButtonNotificationsTabControl ButtonBar

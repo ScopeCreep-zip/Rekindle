@@ -112,18 +112,30 @@ pub fn parse(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// As [`parse`].
 pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
     let mut manifest = parse(package)?;
-    place(&mut manifest);
+    place(&mut manifest, package)?;
     Ok(manifest)
 }
 
-/// The Host's placements in `manifest` (see [`served`]).
-pub fn place(manifest: &mut SkinManifest) {
+/// The Host's placements in `manifest` (see [`served`]), then the cover of
+/// each glyph label from the package's art (plan SK3: the icon the
+/// Communities clone copied, [`crate::skin_tree::cover`]), then every
+/// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]).
+///
+/// # Errors
+/// A glyph label's or menu title's picture missing from `package` or not
+/// decoding.
+pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), SkinError> {
     if let Some(main) = manifest
         .windows
         .get_mut(&rekindle_types::dto::skin::SkinWindow::Main)
     {
         crate::skin_tree::place::communities(main);
+        crate::skin_tree::cover::glyphs(main, package)?;
     }
+    for layout in manifest.windows.values_mut() {
+        crate::skin_tree::titles::menus(layout, package)?;
+    }
+    Ok(())
 }
 
 /// Every `icons` key an icon slot and every `sounds` key a sound cue of

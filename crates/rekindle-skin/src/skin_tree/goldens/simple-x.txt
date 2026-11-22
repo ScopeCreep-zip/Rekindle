@@ -1,11 +1,11 @@
 Top Decor
 Logo Logo
 MenuBar MenuBar
-  XfireMenuText MenuTitle
+  XfireMenuText MenuTitle label "Rekindle"
     FileMenu Part
-  ToolsMenuText MenuTitle
+  ToolsMenuText MenuTitle label "Tools"
     ToolsMenu Part
-  HelpMenuText MenuTitle
+  HelpMenuText MenuTitle label "Help"
     HelpMenu Part
 UserNameField NameField
   UserNameText Part
@@ -33,7 +33,7 @@ TabHeader TabStrip
     TabServerButton Part
   TabDownloadText Tab(Files)
     TabDownloadButton Part
-  TabDownloadText.Communities Tab(Communities)
+  TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9]
     TabDownloadButton.Communities Part
 Bottom Decor
 AdArea AdArea

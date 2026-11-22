@@ -12,7 +12,17 @@ use crate::{builtin, images, manifest, package};
 
 fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
     for n in nodes {
-        let _ = writeln!(out, "{}{} {:?}", "  ".repeat(depth), n.id, n.role);
+        let _ = write!(out, "{}{} {:?}", "  ".repeat(depth), n.id, n.role);
+        if let Some(l) = &n.label {
+            let _ = write!(out, " label {:?}", l.text);
+            if let Some(c) = l.cover {
+                let _ = write!(out, " cover {c:?}");
+            }
+            if let Some(g) = l.glyph {
+                let _ = write!(out, " glyph {g:?}");
+            }
+        }
+        out.push('\n');
         lines(&n.children, depth + 1, out);
     }
 }
@@ -157,4 +167,88 @@ fn classics_button_container_carries_its_control_group() {
     let shell = tree.shell(SkinWindow::Main, (0, 0), Vec::new());
     let area = shell_node(&shell.root, "ButtonArea").unwrap();
     assert_eq!(area.control_group, Some(1));
+}
+
+fn menu_label(id: &str, node: &str) -> Option<rekindle_types::dto::skin_tree::NodeLabel> {
+    let trees = main_and_popup_trees(id);
+    let mut found = Vec::new();
+    for t in &trees {
+        find_all(&t.root, node, &mut found);
+    }
+    assert_eq!(found.len(), 1, "{id} {node}");
+    found[0].label.clone()
+}
+
+/// Plan SK4b, lead decision 7: Symbiosis's file title art bakes "Xfire"
+/// (47 x 20 `node-xfiremenu-topleft.png`), so its label is "Rekindle" over
+/// the word's box, inside the 45 x 20 node; its Tools and Help art reads
+/// right and carries no label; Xfire Classic draws its titles as text, so
+/// its file title is "Rekindle" with no cover.
+#[test]
+fn menu_titles_carry_the_hosts_words() {
+    let file = menu_label("symbiosis", "XfireMenu").expect("file label");
+    assert_eq!(file.text, "Rekindle");
+    let [x, y, w, h] = file.cover.expect("cover");
+    assert!(
+        w > 0 && h > 0 && x + w <= 45 && y + h <= 20,
+        "{:?}",
+        file.cover
+    );
+    assert_eq!(file.cover, Some([12, 4, 22, 10]));
+    assert_eq!(menu_label("symbiosis", "ToolsMenu"), None);
+    assert_eq!(menu_label("symbiosis", "HelpMenu"), None);
+    let classic = menu_label("xfire-classic", "XfireMenuText").expect("text label");
+    assert_eq!((classic.text.as_str(), classic.cover), ("Rekindle", None));
+}
+
+/// Plan SK4b: on each art-titled pack the file cover hides the whole baked
+/// word. The word boxes are read by eye off each pack's art, in the title's
+/// box: Symbiosis "Xfire" x 12-33, y 4-13; Alloy "XFIRE" x 2-45, y 2-12;
+/// Total Chaos "XFIRE" x 15-49, y 3-9 (its `MenuBg` from x 11, y 12);
+/// XGlow "File" x 2-19, y 2-9 and its mirrored reflection to x 21, y 17.
+/// Their Tools and Help art reads right and carries no label; the
+/// text-drawn packs carry `{text}` on all three titles.
+#[test]
+fn file_covers_hide_the_whole_baked_word() {
+    let holds = |c: [u16; 4], w: [u16; 4]| {
+        c[0] <= w[0] && c[1] <= w[1] && c[0] + c[2] >= w[0] + w[2] && c[1] + c[3] >= w[1] + w[3]
+    };
+    for (pack, file, word, tools) in [
+        ("symbiosis", "XfireMenu", [12, 4, 22, 10], "ToolsMenu"),
+        ("alloy", "FileMenu", [2, 2, 44, 11], "ToolsMenu"),
+        ("total-chaos", "FileMenu", [15, 3, 35, 7], "ToolsMenu"),
+        ("xglow", "FileMenu", [2, 2, 20, 16], "ToolMenu"),
+    ] {
+        let label = menu_label(pack, file).expect(pack);
+        assert_eq!(label.text, "Rekindle", "{pack}");
+        let cover = label.cover.expect(pack);
+        assert!(
+            holds(cover, word),
+            "{pack}: cover {cover:?} misses the word {word:?}"
+        );
+        assert_eq!(menu_label(pack, tools), None, "{pack} tools");
+        assert_eq!(menu_label(pack, "HelpMenu"), None, "{pack} help");
+    }
+    for (pack, file) in [
+        ("xfire-classic", "XfireMenuText"),
+        ("combat", "FileMenuText"),
+        ("stealthx", "XfireMenuText"),
+        ("onyx", "XfireMenuText"),
+        ("simple-x", "XfireMenuText"),
+        ("spacecowboy", "XfireMenuText"),
+        ("xslimfire", "XfireMenuText"),
+    ] {
+        for (node, text) in [
+            (file, "Rekindle"),
+            ("ToolsMenuText", "Tools"),
+            ("HelpMenuText", "Help"),
+        ] {
+            let label = menu_label(pack, node).expect(pack);
+            assert_eq!(
+                (label.text.as_str(), label.cover, label.glyph),
+                (text, None, None),
+                "{pack} {node}"
+            );
+        }
+    }
 }

@@ -206,6 +206,19 @@ pub struct NodeLabel {
     /// no word.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<[u16; 4]>,
+    /// A built-in glyph the shell draws in place of `text` when the copied
+    /// art is an icon button (Symbiosis's 46 x 48 `ButtonVideosTab`): drawn
+    /// in the node's box in the strip's icon colour, `text` its accessible
+    /// name and tooltip. Never with `cover`. `None` for a worded tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<NodeGlyph>,
+}
+
+/// The shell's built-in glyphs a [`NodeLabel`] may name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeGlyph {
+    Communities,
 }
 
 /// One component of the pack's tree.

@@ -26,11 +26,11 @@ popup MainInfoViewPopup
 popup MainMenuPopup
   MainMenuBackground Decor
     MenuBar MenuBar
-      XfireMenuText MenuTitle
+      XfireMenuText MenuTitle label "Rekindle"
         FileMenu Part
-      ToolsMenuText MenuTitle
+      ToolsMenuText MenuTitle label "Tools"
         ToolsMenu Part
-      HelpMenuText MenuTitle
+      HelpMenuText MenuTitle label "Help"
         HelpMenu Part
     TabHeader TabStrip
       TabNormalText Tab(Friends)
@@ -39,7 +39,7 @@ popup MainMenuPopup
         TabServerButton Part
       TabDownloadText Tab(Files)
         TabDownloadButton Part
-      TabDownloadText.Communities Tab(Communities)
+      TabDownloadText.Communities Tab(Communities) label "Communities"
         TabDownloadButton.Communities Part
     ButtonArea ButtonBar
       FriendsButtons ButtonRow(Friends)

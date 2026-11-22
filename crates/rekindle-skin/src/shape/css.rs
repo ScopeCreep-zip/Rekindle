@@ -172,6 +172,20 @@ pub struct TreeSheet {
     pub css: String,
 }
 
+/// The root a window kind's title strip lays: its own framed windows, and
+/// the chat window too for the main strip when chat lays none. Never an
+/// unframed window (no `data-skin-window`).
+fn title_root(manifest: &SkinManifest, window: SkinWindow) -> String {
+    let own_chat = manifest
+        .windows
+        .get(&SkinWindow::Chat)
+        .is_some_and(|l| l.title.is_some());
+    match (window, own_chat) {
+        (SkinWindow::Main, false) => ".app-frame[data-skin-window]".to_owned(),
+        _ => format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window)),
+    }
+}
+
 /// The frame rules of every window kind `manifest` lays, images under
 /// `base` (the Host's serving origin and path); empty when it lays none.
 /// `None` for a tile image `images` lacks, a layout past
@@ -216,24 +230,21 @@ pub fn frame_parts(
     for (&window, layout) in &manifest.windows {
         window_rules(&mut out, window, layout, images, base)?;
     }
-    // The pack-laid title strips (plan SK1-S1): the buddy list's lays every
-    // window without its own (Xfire's dialogs and windows share the pack's
-    // title buttons); a window kind with its own strip lays its windows.
-    let own_chat = manifest
-        .windows
-        .get(&SkinWindow::Chat)
-        .is_some_and(|l| l.title.is_some());
+    // The pack-laid title strips (plan SK1-S1), only in the windows the
+    // pack frames (the desktop's `frame_of`: the buddy list and chat, the
+    // roots carrying `data-skin-window`); every other window (Settings, the
+    // skin editor, a popup) keeps the app's own titlebar. The buddy list's
+    // strip also lays the chat window when chat has none of its own.
     for (&window, layout) in &manifest.windows {
         let Some(title) = &layout.title else { continue };
-        let root = match (window, own_chat) {
-            (SkinWindow::Main, true) => ".app-frame:not([data-skin-window=\"chat\"])".to_owned(),
-            (SkinWindow::Main, false) => ".app-frame".to_owned(),
-            (SkinWindow::Chat, _) => {
-                format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window))
-            }
-        };
         let top = layout.outsets.top.saturating_add(layout.content.top);
-        out.push_str(&super::title::title_css(&root, title, top, images, base)?);
+        out.push_str(&super::title::title_css(
+            &title_root(manifest, window),
+            title,
+            top,
+            images,
+            base,
+        )?);
     }
     // The pack's component trees (plan SK2): one rule per node.
     let mut trees = Vec::new();

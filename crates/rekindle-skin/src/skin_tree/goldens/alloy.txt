@@ -1,7 +1,7 @@
 Top Decor
 Logo Logo
 MenuBar MenuBar
-  FileMenu MenuTitle
+  FileMenu MenuTitle label "Rekindle" cover [2, 2, 44, 11]
   ToolsMenu MenuTitle
   HelpMenu MenuTitle
 UserNameField NameField
@@ -29,7 +29,7 @@ TabHeader TabStrip
     TabNormalButton Tab(Friends)
     TabServerButton Tab(Servers)
     TabDownloadButton Tab(Files)
-    TabDownloadButton.Communities Tab(Communities)
+    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [8, 4, 71, 12]
 Bottom Decor
 AdArea AdArea
   AdView Part

@@ -313,7 +313,14 @@ export interface NodeLabel {
   /** [x, y, width, height] in px of the node's own box holding the copied art's baked-in word,
    *  which the label covers; absent when the art carries no word. */
   cover?: [number, number, number, number];
+  /** A built-in glyph drawn in place of `text` when the copied art is an icon button (Symbiosis's
+   *  tab strip): drawn in the node's box in the strip's icon colour, `text` its accessible name and
+   *  tooltip. Never with `cover`; absent for a worded tab. */
+  glyph?: NodeGlyph;
 }
+
+/** `NodeGlyph`: the shell's built-in glyphs a `NodeLabel` may name. */
+export type NodeGlyph = "communities";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {
