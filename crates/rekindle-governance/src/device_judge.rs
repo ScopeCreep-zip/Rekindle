@@ -25,7 +25,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::governance::{
-    DeviceEndorsement, DeviceSetElement, DeviceSetElementKind, GovernanceEntry, GovernanceOp,
+    DeviceEndorsement, DeviceSetElement, DeviceSetElementKind, GenesisCert, GovernanceEntry,
+    GovernanceOp,
 };
 use rekindle_types::id::PseudonymKey;
 
@@ -111,6 +112,20 @@ impl DeviceView {
                 *mine = (*mine).min(*seq);
             }
             ours.readmits.extend(theirs.readmits.iter().copied());
+        }
+    }
+
+    /// Seed the creator's first device from `cert` of community `anchor`
+    /// (plan E3.2 S7d-keys.5): the creator joins by the cert, not by a
+    /// `MemberJoined`, so its endorsement is `creator_device`, signed in the
+    /// context of `creator_member_record` (rule 10).
+    pub fn seed_genesis(&mut self, anchor: &str, cert: &GenesisCert) {
+        let p = &cert.creator_pseudonym;
+        let md = self.members.entry(p.clone()).or_default();
+        md.member_record
+            .get_or_insert_with(|| cert.creator_member_record.clone());
+        if let Some(e) = &cert.creator_device {
+            take_endorsement(md, p, anchor, e);
         }
     }
 

@@ -16,6 +16,7 @@ pub mod checkpoint;
 pub mod checksum;
 pub mod device;
 pub mod device_judge;
+pub mod device_writer;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod genesis;
