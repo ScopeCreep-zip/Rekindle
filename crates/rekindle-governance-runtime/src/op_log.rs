@@ -561,7 +561,7 @@ pub async fn held_op_ref<D: GovernanceRuntimeDeps>(
     let state = deps
         .governance_state(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_owned()))?;
-    let held = deps.governance_ops(community_id).await?;
+    let held = deps.op_store().governance_ops(community_id).await?;
     let set = verify_held_with(deps, community_id, &held);
     set.ops
         .iter()
