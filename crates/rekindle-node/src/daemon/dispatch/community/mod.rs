@@ -11,7 +11,7 @@ mod query;
 mod successor;
 mod transfer;
 
-pub(crate) use devices::{handle_device_readmit, handle_device_retire};
+pub(crate) use devices::{handle_device_enrol, handle_device_readmit, handle_device_retire};
 pub(crate) use lifecycle::{
     activate_community, handle_create, handle_creator_round, handle_forget, handle_join,
     handle_leave, handle_update_info, CreatorRound,

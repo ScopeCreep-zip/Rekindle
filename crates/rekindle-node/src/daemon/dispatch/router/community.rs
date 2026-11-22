@@ -137,6 +137,9 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunitySuccessors { anchor } => {
             community::handle_successors(ctx, state, &anchor)
         }
+        LifecycleRequest::CommunityDeviceEnrol { anchor } => {
+            community::handle_device_enrol(ctx, state, &anchor).await
+        }
         LifecycleRequest::CommunityDeviceRetire { anchor, device_key } => {
             community::handle_device_retire(ctx, state, &anchor, &device_key).await
         }

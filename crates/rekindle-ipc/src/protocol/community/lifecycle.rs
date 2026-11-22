@@ -140,6 +140,11 @@ pub enum LifecycleRequest {
     /// re-enrols instead).
     CommunityDeviceRetire { anchor: String, device_key: String },
 
+    /// Enrol this device in `anchor` with a fresh device key and its own
+    /// `M(p,d)` (ADR 0022 rules 1-4): a second device, or one whose person
+    /// re-joined (lead decision 63). Refused for a device already endorsed.
+    CommunityDeviceEnrol { anchor: String },
+
     /// Co-sign the re-admission of `member`'s fork-answering device key
     /// `device_key` (both hex) in `anchor` (ADR 0022 rules 7 and 8).
     CommunityDeviceReadmit {
@@ -212,6 +217,7 @@ impl LifecycleRequest {
             }
             Self::CommunitySuccessors { .. } => ("CommunitySuccessors", Query, Authenticated),
             Self::CommunityDeviceRetire { .. } => ("CommunityDeviceRetire", Write, Authenticated),
+            Self::CommunityDeviceEnrol { .. } => ("CommunityDeviceEnrol", Write, Authenticated),
             Self::CommunityDeviceReadmit { .. } => ("CommunityDeviceReadmit", Write, Authenticated),
             Self::InviteCreate { .. } => ("InviteCreate", Write, Authenticated),
             Self::InviteList { .. } => ("InviteList", Query, Authenticated),
@@ -256,6 +262,7 @@ impl LifecycleRequest {
             | Self::CommunityWithdrawTransfer { .. }
             | Self::CommunityPublishSuccessor { .. }
             | Self::CommunityDeviceRetire { .. }
+            | Self::CommunityDeviceEnrol { .. }
             | Self::CommunityDeviceReadmit { .. } => None,
         }
     }

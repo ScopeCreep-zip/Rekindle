@@ -288,7 +288,9 @@ pub async fn dispatch(
         | CommunityCmd::WithdrawTransfer { .. }
         | CommunityCmd::AcceptTransfer { .. }
         | CommunityCmd::AnswerLink { .. } => transfer(cmd, client, mode).await,
-        CommunityCmd::RetireDevice { .. } | CommunityCmd::ReadmitDevice { .. } => {
+        CommunityCmd::RetireDevice { .. }
+        | CommunityCmd::ReadmitDevice { .. }
+        | CommunityCmd::EnrolDevice { .. } => {
             device(cmd, client, mode).await
         }
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
@@ -451,6 +453,9 @@ async fn transfer(
 /// of our device keys, or co-sign a member's fork-answering key back in.
 async fn device(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     let request = match cmd {
+        CommunityCmd::EnrolDevice { community } => LifecycleRequest::CommunityDeviceEnrol {
+            anchor: community.clone(),
+        },
         CommunityCmd::RetireDevice {
             community,
             device_key,

@@ -175,6 +175,7 @@ impl IntentKind {
             | Self::ReinitiateSession
             | Self::RotateMek
             | Self::RetireDevice
+            | Self::EnrolDevice
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled
@@ -393,6 +394,7 @@ impl IntentKind {
             | Self::ReinitiateSession
             | Self::RotateMek
             | Self::RetireDevice
+            | Self::EnrolDevice
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled

@@ -173,6 +173,7 @@ LifecycleRequest::CommunityPublishSuccessor { anchor, continuing } => {
             }
             keys.iter().try_for_each(|k| pseudonym(k, "continuing member"))
         }
+LifecycleRequest::CommunityDeviceEnrol { anchor } => community(anchor),
 LifecycleRequest::CommunityDeviceRetire { anchor, device_key } => {
             community(anchor)?;
             public_key(device_key, "device key")

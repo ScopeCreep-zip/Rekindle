@@ -1,6 +1,7 @@
 //! Device-key acts in a community (ADR 0022, plan E3.2 S7d-keys K5):
 //! retire one of our device keys, or co-sign a member's fork-answering
-//! key back in. Both are intent-gated (`RetireDevice` TrustChanging,
+//! key back in, or enrol this device (`EnrolDevice` TrustChanging). All
+//! are intent-gated (`RetireDevice` TrustChanging,
 //! `ReadmitDevice` Consequential) before they reach here.
 
 use rekindle_governance_runtime::{GovernanceRuntimeError, OpOutcome};
@@ -10,6 +11,26 @@ use rekindle_types::key_format;
 
 use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
 use crate::daemon::DaemonState;
+
+/// Enrol this device in `anchor` with a fresh device key (ADR 0022, lead
+/// decision 63); answers the new key's hex.
+pub(crate) async fn handle_device_enrol(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    anchor: &str,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let membership = match ctx.resolve_community(anchor) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match Box::pin(adapter(ctx).enrol_device(&membership.anchor)).await {
+        Ok((outcome, key)) => answer("enrolled", &hex::encode(key), Ok(outcome)),
+        Err(e) => answer("enrolled", "", Err(e)),
+    }
+}
 
 /// Retire our device key `device_key` (hex) in `anchor`.
 pub(crate) async fn handle_device_retire(

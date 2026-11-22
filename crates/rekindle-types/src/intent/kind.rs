@@ -223,6 +223,10 @@ pub enum IntentKind {
     /// Retire one of our device keys (ADR 0022 rules 4 and 5): changes
     /// which keys every member trusts to sign as us, permanently.
     RetireDevice,
+    /// Enrol this device in a community with a fresh device key (ADR 0022
+    /// rules 1-4, lead decision 63): `p` endorses it, and every member
+    /// then trusts it to sign as us.
+    EnrolDevice,
     // TrustChanging: Exposure settings
     RegisterWithPushRelay,
     SetLinkPreviewsEnabled,
@@ -493,6 +497,7 @@ impl IntentKind {
             | Self::ReinitiateSession
             | Self::RotateMek
             | Self::RetireDevice
+            | Self::EnrolDevice
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled

@@ -177,6 +177,16 @@ pub(super) fn selection(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
             s.notifies = Notifies::Subject;
         }
+        LifecycleRequest::CommunityDeviceEnrol { anchor } => {
+            // ADR 0022 rules 1-4: `p` endorses a fresh key minted on this
+            // device; the review names the community and says every member
+            // then trusts this device to sign as us, and an endorsement is
+            // never taken back (only retired).
+            let (id, name) = community(ctx, anchor)?;
+            s.subject = Subject::Named { name };
+            s.reversibility = Reversibility::Never;
+            s.notifies = members(ctx, &id);
+        }
         LifecycleRequest::CommunityDeviceRetire { anchor, device_key }
         | LifecycleRequest::CommunityDeviceReadmit {
             anchor, device_key, ..

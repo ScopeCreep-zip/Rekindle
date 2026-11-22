@@ -126,6 +126,10 @@ impl std::fmt::Debug for LifecycleRequest {
                 .debug_struct("CommunitySuccessors")
                 .field("anchor", anchor)
                 .finish(),
+            Self::CommunityDeviceEnrol { anchor } => f
+                .debug_struct("CommunityDeviceEnrol")
+                .field("anchor", anchor)
+                .finish(),
             Self::CommunityDeviceRetire { anchor, device_key } => f
                 .debug_struct("CommunityDeviceRetire")
                 .field("anchor", anchor)

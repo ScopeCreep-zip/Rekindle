@@ -11,6 +11,24 @@ use rekindle_types::id::PseudonymKey;
 use super::HostGovernance;
 
 impl HostGovernance {
+    /// Enrol this device in `anchor` with a fresh device key and its own
+    /// `M(p,d)` (`DeviceKey`, signed by `p`); answers the new key.
+    ///
+    /// # Errors
+    /// `DeviceActRefused` for a device already endorsed, or the write's.
+    pub(crate) async fn enrol_device(
+        &self,
+        anchor: &str,
+    ) -> Result<(OpOutcome, [u8; 32]), GovernanceRuntimeError> {
+        let outcome = Box::pin(device_ops::enrol(self, anchor)).await?;
+        self.persist_governance_snapshot(anchor).await;
+        let key =
+            rekindle_governance_runtime::deps::GovernanceRuntimeDeps::device_op_key(self, anchor)?
+                .ok_or_else(|| GovernanceRuntimeError::DeviceOpKeyMissing(anchor.to_string()))?;
+        let key = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&key);
+        Ok((outcome, key.verifying_key().to_bytes()))
+    }
+
     /// Retire our device key `device_key` in `anchor` above the highest op
     /// of it we hold (`DeviceRetired`, signed by `p`).
     ///

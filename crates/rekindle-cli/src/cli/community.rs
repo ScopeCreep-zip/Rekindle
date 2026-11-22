@@ -163,6 +163,14 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Enrol this device in a community with a fresh device key (a second
+    /// device, or after your person re-joined from another device).
+    EnrolDevice {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+
     /// Retire one of your own device keys in a community (a lost or
     /// stolen device): every member then refuses its later ops.
     RetireDevice {
