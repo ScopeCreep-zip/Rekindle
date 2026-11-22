@@ -22,10 +22,13 @@ pub enum WindowKind {
     Profile,
     /// The skin editor (plan E7.7.5), a Settings sub-window.
     SkinEditor,
+    /// A pack popup (plan SK2-A5: Xfire's Infoview, StealthX's main menu)
+    /// beside the skin window that launched it.
+    SkinPopup,
 }
 
 impl WindowKind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Login,
         Self::BuddyList,
         Self::Settings,
@@ -34,6 +37,7 @@ impl WindowKind {
         Self::Call,
         Self::Profile,
         Self::SkinEditor,
+        Self::SkinPopup,
     ];
 
     /// The label (singletons) or label pattern (per-entity windows) that
@@ -49,6 +53,7 @@ impl WindowKind {
             Self::Call => "call-*",
             Self::Profile => "profile-*",
             Self::SkinEditor => SKIN_EDITOR,
+            Self::SkinPopup => "popup-*",
         }
     }
 
@@ -59,14 +64,16 @@ impl WindowKind {
     /// - voice messages (chat, community message input);
     /// - device settings and the pairing QR scanner (settings).
     ///
-    /// Login, profile, the skin editor and the buddy list never capture (group-call audio
+    /// Login, profile, the skin editor, pack popups and the buddy list never capture (group-call audio
     /// runs on the native pipeline), so the media-capture grant is withheld
     /// from them.
     #[must_use]
     pub const fn captures_media(self) -> bool {
         match self {
             Self::Settings | Self::Chat | Self::Community | Self::Call => true,
-            Self::Login | Self::BuddyList | Self::Profile | Self::SkinEditor => false,
+            Self::Login | Self::BuddyList | Self::Profile | Self::SkinEditor | Self::SkinPopup => {
+                false
+            }
         }
     }
 }
@@ -154,6 +161,41 @@ pub fn profile_label(peer: &PublicKeyHex) -> String {
     )
 }
 
+/// A pack popup's name (its key in the launching window's `popups`, plan
+/// SK2-P1c), validated so a label and route never carry other characters:
+/// 1 to 64 ASCII letters and digits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PopupName(String);
+
+impl PopupName {
+    /// `text` when it is 1 to 64 ASCII letters and digits.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        ((1..=64).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_alphanumeric()))
+            .then(|| Self(text.to_owned()))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// `popup-` + the launching window's label + `-` + the popup's name: one
+/// window per popup per launcher (each chat window has its own). A name
+/// holds no `-`, so the launcher is everything before the last one.
+#[must_use]
+pub fn popup_label(opener: &str, name: &PopupName) -> String {
+    format!("popup-{opener}-{}", name.as_str())
+}
+
+/// The launching window's label of the popup labelled `label`.
+#[must_use]
+pub fn popup_opener(label: &str) -> Option<&str> {
+    let (opener, name) = label.strip_prefix("popup-")?.rsplit_once('-')?;
+    PopupName::parse(name).map(|_| opener)
+}
+
 /// The chat and profile windows for a peer named by an event, if the key
 /// is well formed. Event payloads are not validated types, so routing
 /// goes through the same validators as window creation.
@@ -198,6 +240,10 @@ mod tests {
             (community_label(None), WindowKind::Community),
             (call_label(&call), WindowKind::Call),
             (profile_label(&pk), WindowKind::Profile),
+            (
+                popup_label(&chat_label(&pk), &PopupName::parse("Info").unwrap()),
+                WindowKind::SkinPopup,
+            ),
         ];
         for (label, kind) in cases {
             let prefix = kind.pattern().trim_end_matches('*');
@@ -236,10 +282,38 @@ mod tests {
             Some(WindowKind::SkinEditor)
         );
         assert_eq!(WindowKind::of_label("unknown"), None);
+        let info = PopupName::parse("MainInfoViewPopup").unwrap();
+        let popup = popup_label(BUDDY_LIST, &info);
+        assert_eq!(popup, "popup-buddy-list-MainInfoViewPopup");
+        assert_eq!(WindowKind::of_label(&popup), Some(WindowKind::SkinPopup));
+        assert_eq!(popup_opener(&popup), Some(BUDDY_LIST));
+        let chat = chat_label(&pk);
+        assert_eq!(
+            popup_opener(&popup_label(&chat, &info)),
+            Some(chat.as_str())
+        );
+        assert_eq!(popup_opener("popup-buddy-list-"), None);
+        assert_eq!(popup_opener(BUDDY_LIST), None);
         assert_eq!(peer_labels("not-a-key"), Vec::<String>::new());
         assert_eq!(peer_labels(HEX64).len(), 2);
         assert!(call_label_for(rekindle_utils::text::prefix(HEX64, 32)).is_some());
         assert!(conversation_label("nope").is_none());
         assert!(conversation_label(rekindle_utils::text::prefix(HEX64, 32)).is_some());
+    }
+
+    #[test]
+    fn popup_names_are_ascii_alphanumeric_up_to_64() {
+        assert!(PopupName::parse("MainMenuPopup").is_some());
+        assert!(PopupName::parse(&"a".repeat(64)).is_some());
+        for bad in [
+            "",
+            "Main-Menu",
+            "Main Menu",
+            "../x",
+            "Info\u{e9}",
+            &"a".repeat(65),
+        ] {
+            assert!(PopupName::parse(bad).is_none(), "{bad:?}");
+        }
     }
 }

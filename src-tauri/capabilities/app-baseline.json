@@ -9,7 +9,8 @@
     "settings",
     "profile-*",
     "call-*",
-    "skin-editor"
+    "skin-editor",
+    "popup-*"
   ],
   "permissions": [
     "allow-subscribe-events",

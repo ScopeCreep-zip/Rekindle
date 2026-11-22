@@ -31,7 +31,8 @@ pub const fn frame_of(kind: WindowKind) -> Option<SkinWindow> {
         | WindowKind::Community
         | WindowKind::Call
         | WindowKind::Profile
-        | WindowKind::SkinEditor => None,
+        | WindowKind::SkinEditor
+        | WindowKind::SkinPopup => None,
     }
 }
 

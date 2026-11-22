@@ -81,6 +81,41 @@ pub async fn open_skin_editor_window(app: tauri::AppHandle) -> Result<(), String
     windows::open_skin_editor(&app)
 }
 
+/// Open, or close if open, the pack popup `popup` beside the calling skin
+/// window (plan SK2-A5). The Host has answered the pack's `LaunchPopup`;
+/// the popup's place comes from the skin the Host shows now (`SkinGet`),
+/// never from the webview. An invalid name, or a skin whose launcher has
+/// no such popup, is an error.
+#[tauri::command]
+pub async fn open_skin_popup(
+    popup: String,
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    let name = window_labels::PopupName::parse(&popup)
+        .ok_or_else(|| "invalid popup name: 1 to 64 ASCII letters and digits".to_owned())?;
+    let outline = windows::popup::launcher_outline(&window)?;
+    if windows::popup::close_if_open(&app, &window, &name) {
+        return Ok(());
+    }
+    let skin: rekindle_types::dto::Done<rekindle_types::dto::skin_library::SkinApplied> =
+        crate::host_call::call(
+            &state,
+            rekindle_ipc::protocol::IpcRequest::SkinGet { id: None },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let place = skin
+        .value
+        .shells
+        .into_iter()
+        .filter(|shell| shell.window == outline)
+        .find_map(|shell| shell.popup.filter(|p| p.name == name.as_str()))
+        .ok_or_else(|| "the shown skin has no such popup for this window".to_owned())?;
+    windows::popup::open(&app, state.inner(), &window, &name, place)
+}
+
 /// Open a community window, or the community browser when `community_id`
 /// is absent.
 #[tauri::command]

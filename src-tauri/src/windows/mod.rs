@@ -8,6 +8,8 @@
 
 mod first_show;
 mod navigation;
+pub mod popup;
+mod popup_place;
 mod rebind;
 mod reveal;
 mod shape;
@@ -75,6 +77,8 @@ const fn size(kind: WindowKind) -> Size {
         WindowKind::Call => ((420.0, 540.0), (360.0, 420.0)),
         WindowKind::Profile => ((380.0, 500.0), (340.0, 420.0)),
         WindowKind::SkinEditor => ((640.0, 620.0), (480.0, 480.0)),
+        // Placed and sized from the served popup (`popup::open`).
+        WindowKind::SkinPopup => ((200.0, 300.0), (100.0, 100.0)),
     };
     Size { inner, min }
 }

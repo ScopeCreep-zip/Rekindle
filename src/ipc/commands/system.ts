@@ -143,6 +143,8 @@ export const systemCommands = {
     invoke<void>("open_settings_window", { tab: tab ?? null }),
   /// The skin editor, a Settings sub-window (plan E7.7.5).
   openSkinEditorWindow: () => invoke<void>("open_skin_editor_window"),
+  /// Open, or close if open, the pack popup `popup` beside this skin window (plan SK2-A5).
+  openSkinPopup: (popup: string) => invoke<void>("open_skin_popup", { popup }),
   /// `communityId` absent opens the community browser.
   openCommunityWindow: (communityId?: string) =>
     invoke<void>("open_community_window", { communityId: communityId ?? null }),
