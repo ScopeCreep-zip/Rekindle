@@ -35,7 +35,9 @@
 //!   goes with it), or the detector leaves Offline, which takes an answer
 //!   to a question sent after it went Offline
 //!   (`network_manager/online_detector.rs:1338-1350`), here the round trip
-//!   that proves a returned readiness or a reattach ([`crate::attach`]).
+//!   that proves a returned readiness or a reattach ([`crate::attach`]), or
+//!   a replica's answer to a DHT question the node sent while Offline
+//!   (`rpc_processor/mod.rs:1711-1728`, `SimDht::network`).
 //!   From then on the failures count, and 3 (Ordered) or 5 (Unordered)
 //!   kill the route (`route_spec_store/mod.rs:51-63`).
 

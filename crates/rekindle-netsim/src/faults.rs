@@ -94,7 +94,8 @@ pub enum Fault {
     /// published: what is sent into it, or over it as a safety route, is
     /// lost (a call times out), and no `RouteChange` reaches the owner. It
     /// ends when the owner releases the route, or when a round trip proves
-    /// the node's network (a returned readiness, a reattach) and the
+    /// the node's network (a returned readiness, a reattach, a replica's
+    /// answer to a DHT question sent after the death) and the
     /// loopback failures, counted again, kill it ([`crate::loopback`]).
     RouteSilentDeath { node: usize, class: RouteClass },
     /// The node's live own route of `class` stops taking traffic from
@@ -130,6 +131,11 @@ pub enum Fault {
     /// once the first hop takes it and counts no lost statement
     /// (`rpc_processor/mod.rs:2262-2320`, `route_stats.rs:144-147`, `:409`),
     /// and a question times out, its answer lost on a pool reply route too.
+    /// The node's DHT questions ride the same pool (every record is opened
+    /// `Safe`): its sets, gets, inspects, remote opens, watches,
+    /// rehydrations and transactions reach no replica, and its watches'
+    /// `ValueChanged` pushes, sent to their pool reply routes, are lost
+    /// (`records::replicas::reaches` cites 0.5.8).
     PoolRoutesFail { node: usize, failing: bool },
     /// The node's own route of `class` stops carrying traffic end to end:
     /// what is sent over it or to it is lost, its loopback tests fail, and

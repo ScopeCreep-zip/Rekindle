@@ -128,10 +128,29 @@ impl SimDht {
         if self.offline() {
             return Err(try_again());
         }
+        let asked_offline = self
+            .net
+            .inner
+            .lock()
+            .faults
+            .detector_offline
+            .contains(&self.node);
         let slot = self.net.latency.dht(self.node, span, key, subkeys).await;
-        let inner = self.net.inner.lock();
+        let mut inner = self.net.inner.lock();
         if offline(&inner.faults, self.node) {
             return Err(try_again());
+        }
+        // A replica's answer to a question sent while the online detector
+        // said Offline proves the network: the detector leaves Offline and
+        // the node's deferred loopback failures count again (0.5.8
+        // `rpc_processor/mod.rs:1711-1728` `record_answer_received`,
+        // `online_detector.rs:1343-1347`; [`crate::loopback`]).
+        let answered = inner
+            .records
+            .get(key)
+            .is_some_and(|r| !reachable(&r.replicas, &inner.faults, self.node).is_empty());
+        if asked_offline && answered {
+            inner.faults.detector_offline.remove(&self.node);
         }
         drop(inner);
         if self.fault_try_again() {
