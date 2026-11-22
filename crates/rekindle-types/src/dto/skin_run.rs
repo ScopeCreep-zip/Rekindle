@@ -113,7 +113,12 @@ pub enum SkinRun {
 
 /// What a window has selected, kept by the Host (design §2.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", content = "arg")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
 pub enum SkinSelection {
     Friend {
         public_key: String,

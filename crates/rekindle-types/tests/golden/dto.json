@@ -1081,6 +1081,37 @@
       }
     ]
   },
+  "skin.selection.friend": {
+    "arg": {
+      "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "kind": "friend"
+  },
+  "skin.selection.group": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "group"
+  },
+  "skin.selection.media": {
+    "arg": {
+      "path": "shot.png"
+    },
+    "kind": "media"
+  },
+  "skin.selection.server": {
+    "arg": {
+      "address": "203.0.113.7:27015",
+      "gameId": 4100
+    },
+    "kind": "server"
+  },
+  "skin.selection.transfer": {
+    "arg": {
+      "attachmentId": "att-1"
+    },
+    "kind": "transfer"
+  },
   "skin.shell": {
     "menus": {
       "menus": [

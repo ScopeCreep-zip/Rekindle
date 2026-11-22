@@ -7,6 +7,7 @@ use rekindle_types::dto::skin_action::{
     TileRef,
 };
 use rekindle_types::dto::skin_library::SkinEntry;
+use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree};
 use rekindle_types::dto::skin_tree_role::Edge;
 use rekindle_types::presence::SessionStatus;
@@ -17,6 +18,7 @@ use super::{pk, to};
 /// `SkinList`'s entries (plan E7.7.3d): a built-in with every credit, a
 /// library skin stating no licence and naming no one.
 pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
+    selection_samples(add);
     add(
         "skin.entry.builtin",
         to(SkinEntry {
@@ -213,4 +215,40 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
         )],
     };
     add("skin.shell", super::to(tree.shell(SkinWindow::Main)));
+}
+
+/// Every `SkinSelection` variant (design §2.2): its fields are camelCase
+/// like every IPC struct, as the TS mirror (`dto_skin_run.ts`) sends them.
+fn selection_samples(add: &mut impl FnMut(&str, Value)) {
+    add(
+        "skin.selection.friend",
+        to(SkinSelection::Friend {
+            public_key: pk('a'),
+        }),
+    );
+    add(
+        "skin.selection.server",
+        to(SkinSelection::Server {
+            game_id: 4100,
+            address: "203.0.113.7:27015".into(),
+        }),
+    );
+    add(
+        "skin.selection.transfer",
+        to(SkinSelection::Transfer {
+            attachment_id: "att-1".into(),
+        }),
+    );
+    add(
+        "skin.selection.media",
+        to(SkinSelection::Media {
+            path: "shot.png".into(),
+        }),
+    );
+    add(
+        "skin.selection.group",
+        to(SkinSelection::Group {
+            group_id: "g1".into(),
+        }),
+    );
 }
