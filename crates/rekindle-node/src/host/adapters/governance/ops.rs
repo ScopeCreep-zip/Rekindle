@@ -270,9 +270,11 @@ impl HostGovernance {
         rekindle_governance_runtime::op_walk::fetch_from_log(&*pool, logs, op_ref).await
     }
 
-    /// Publish `encoded` on our device's op record (ADR 0022 rule 3,
-    /// `device_signer::own_op_record`: `M(p)` for the first device, else
-    /// the `M(p,d)` our key's endorsement binds) and wait for what
+    /// Publish `encoded` on our device's op record (ADR 0022 rules 3 and
+    /// 10, `device_signer::encoded_op_record`, the write path's rule: a
+    /// `MemberJoined` on the record its carried endorsement binds, else
+    /// `M(p)` for the first device or the `M(p,d)` our key's endorsement
+    /// binds in the state) and wait for what
     /// `landing` names: its first attempt (a queued op stands; community
     /// create only), its landing on `M`/2 and `M`/3 within the command's
     /// deadline, or only its row on the stream.
@@ -283,8 +285,12 @@ impl HostGovernance {
         landing: rekindle_governance_runtime::OpLanding,
     ) -> Result<rekindle_governance_runtime::OpOutcome, GovernanceRuntimeError> {
         let state = self.governance_state_impl(community_id).unwrap_or_default();
-        let record =
-            rekindle_governance_runtime::device_signer::own_op_record(self, community_id, &state)?;
+        let record = rekindle_governance_runtime::device_signer::encoded_op_record(
+            self,
+            community_id,
+            &state,
+            &encoded,
+        )?;
         let ops = self
             .ctx
             .outbox

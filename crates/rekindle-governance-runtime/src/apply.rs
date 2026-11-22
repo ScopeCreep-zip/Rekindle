@@ -325,20 +325,6 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     if me.record.is_none() {
         return Ok(Written::NotAdmitted(me.hex));
     }
-    // The record this device's op chain lives on (ADR 0022 rule 3): a
-    // `MemberJoined`, the device's first op, carries its own endorsement
-    // of the record it names; any later op lands on the record our key's
-    // endorsement binds in the state ([`device_signer::own_op_record`]).
-    // Our `DeviceKey` endorsing our own fresh key is that key's first op
-    // (rule 3): it lands on the `M(p,d)` it binds.
-    let record = match &entry {
-        GovernanceEntry::MemberJoined { member_record, .. } => member_record.clone(),
-        GovernanceEntry::DeviceKey(e) if device_signer::is_own_key(deps, community_id, e)? => {
-            e.device_record.clone()
-        }
-        _ => device_signer::own_op_record(deps, community_id, &gov_state)?,
-    };
-
     // The pinned GenesisCert names the creator; S5 writes it at origin
     // and S6 pins it at join (`GovernanceRuntimeDeps::genesis_cert`).
     let cert = deps
@@ -360,6 +346,11 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         author: pseudo,
     };
     let (op, encoded) = sign_ours(deps, ours, &mut entry, op_deps)?;
+    // The record this device's op chain lives on, resolved from the signed
+    // op as the publish path resolves it (`device_signer::op_record_of`,
+    // ADR 0022 rules 3 and 10): a `MemberJoined` under the endorsement it
+    // carries, any later op under the state's.
+    let record = device_signer::op_record_of(deps, community_id, &gov_state, op.op())?;
     deps.store_signed_governance_op(
         community_id,
         &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),

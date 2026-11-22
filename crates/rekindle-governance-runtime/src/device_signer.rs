@@ -107,6 +107,72 @@ pub fn own_op_record<D: GovernanceRuntimeDeps>(
     }
 }
 
+/// The record `op`, one of ours, is stored and published on (ADR 0022
+/// rules 3 and 10): the one rule the write path (`apply::write_with`) and
+/// the publish path (`publish_governance_op`) share. A device's first op
+/// carries its own endorsement and is routed under that, not the state's:
+/// our `MemberJoined` lands on the member record it names when the
+/// `first_device` endorsement it carries is `p`'s, of our held key, for
+/// that record (a re-join's new `M(p)` included, which the state holds
+/// only once the op is applied, K5j's decision); our `DeviceKey` of our
+/// own fresh key lands on the `M(p,d)` it binds. Every later op resolves
+/// from the state ([`own_op_record`]).
+///
+/// # Errors
+/// [`GovernanceRuntimeError::DeviceUnendorsed`] for a `MemberJoined` that
+/// carries no such endorsement, else as [`own_op_record`].
+pub fn op_record_of<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    state: &GovernanceState,
+    op: &rekindle_types::governance::GovernanceOp,
+) -> Result<String, GovernanceRuntimeError> {
+    use rekindle_types::governance::GovernanceEntry;
+    match &op.body {
+        GovernanceEntry::MemberJoined {
+            member_record,
+            first_device,
+            ..
+        } => match first_device {
+            Some(e)
+                if e.device_record == *member_record
+                    && rekindle_governance::device::endorsement_holds(
+                        &op.author,
+                        community,
+                        member_record,
+                        e,
+                    )
+                    && is_own_key(deps, community, e)? =>
+            {
+                Ok(member_record.clone())
+            }
+            _ => Err(GovernanceRuntimeError::DeviceUnendorsed(
+                community.to_string(),
+            )),
+        },
+        GovernanceEntry::DeviceKey(e) if is_own_key(deps, community, e)? => {
+            Ok(e.device_record.clone())
+        }
+        _ => own_op_record(deps, community, state),
+    }
+}
+
+/// [`op_record_of`] for our op as encoded.
+///
+/// # Errors
+/// [`GovernanceRuntimeError::Encoding`] when `encoded` is no op, else as
+/// [`op_record_of`].
+pub fn encoded_op_record<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    state: &GovernanceState,
+    encoded: &[u8],
+) -> Result<String, GovernanceRuntimeError> {
+    let decoded = rekindle_codec::governance_op::decode_op(encoded)
+        .map_err(|e| GovernanceRuntimeError::Encoding(format!("our op: {e}")))?;
+    op_record_of(deps, community, state, &decoded.op)
+}
+
 /// Whether this device may write in `community` (ADR 0022 rule 4, lead
 /// decision 63): its key is endorsed for the current member record, or it
 /// must (re-)enrol: no key held, or a key whose endorsement binds no

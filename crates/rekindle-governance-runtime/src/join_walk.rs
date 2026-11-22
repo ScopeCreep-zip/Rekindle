@@ -54,9 +54,17 @@ pub struct WalkedSet {
     pub partial: Option<PartialJoin>,
 }
 
-/// Whether `joiner` has an op in `snap`'s cut, merged or not.
+/// Whether `joiner` has an op in `snap`'s cut, merged or not. The cut
+/// index is keyed by device key (ADR 0022 rule 1, `CutIndex.authors`,
+/// `checkpoint/cut.rs`), never by pseudonym: a merged cut op names its
+/// author (`CutOp.author`), and an unmerged key is `joiner`'s when the
+/// snapshot's device set holds `joiner`'s endorsement of it.
 fn in_the_cut(snap: &CutSnapshot, joiner: &PseudonymKey) -> bool {
-    snap.cut.authors.contains_key(&joiner.0) || snap.cut.unmerged.contains_key(&joiner.0)
+    let merged = (snap.cut.authors.values()).any(|op| op.author == joiner.0);
+    let ours: std::collections::BTreeSet<[u8; 32]> = (snap.state.devices.member(joiner))
+        .map(|md| md.elements().into_iter().map(|e| e.device_key).collect())
+        .unwrap_or_default();
+    merged || snap.cut.unmerged.keys().any(|key| ours.contains(key))
 }
 
 /// The ops of `joiner`'s own chain this node holds of `anchor`.
