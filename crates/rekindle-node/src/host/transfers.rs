@@ -343,3 +343,7 @@ pub(crate) fn revealable(row: &TransferRow) -> Option<String> {
         && std::fs::symlink_metadata(&row.dest_path).is_ok_and(|m| m.is_file()))
     .then(|| row.dest_path.clone())
 }
+
+#[cfg(test)]
+#[path = "transfers_tests.rs"]
+mod tests;

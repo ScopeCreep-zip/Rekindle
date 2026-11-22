@@ -143,6 +143,7 @@ mod stale_route_call;
 mod stall;
 mod successors;
 mod transfers;
+mod transfer_resume;
 mod udp_blocked;
 mod wake_trigger;
 mod walk_cost;

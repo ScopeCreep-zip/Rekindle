@@ -1,0 +1,114 @@
+//! The transfer driver's throttle and reveal (plan E7.2 G12, SK2-G design
+//! §4): progress goes out at most four times a second, and Open reveals
+//! only a finished regular file, never a link, and runs nothing.
+
+use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
+
+use super::{revealable, Checkpoint, Run, TransferRuns, PROGRESS_INTERVAL_MS};
+
+const ID: &str = "aa11";
+
+fn running() -> TransferRuns {
+    let runs = TransferRuns::default();
+    let (abort, _registration) = futures::future::AbortHandle::new_pair();
+    runs.0.lock().insert(
+        ID.to_owned(),
+        Run {
+            abort,
+            seen: None,
+            last_sent_ms: None,
+        },
+    );
+    runs
+}
+
+fn at(chunks_done: u32) -> Checkpoint {
+    Checkpoint {
+        chunks_done,
+        chunk_count: 1_000,
+        bytes_done: u64::from(chunks_done) * 28_672,
+        total: 28_672_000,
+    }
+}
+
+#[test]
+fn progress_is_capped_at_four_a_second() {
+    let runs = running();
+    // A chunk every 10 ms for two seconds.
+    let sent: Vec<u64> = (0..200u32)
+        .filter_map(|i| {
+            let now = u64::from(i) * 10;
+            runs.observe(ID, at(i + 1), now).map(|_| now)
+        })
+        .collect();
+    assert_eq!(sent.len(), 8, "four a second over two seconds: {sent:?}");
+    assert!(
+        sent.windows(2).all(|w| w[1] - w[0] >= PROGRESS_INTERVAL_MS),
+        "no two within {PROGRESS_INTERVAL_MS} ms: {sent:?}"
+    );
+    // The unsent newest checkpoint is written when the download ends.
+    assert_eq!(runs.end(ID), Some(at(200)));
+}
+
+#[test]
+fn the_last_chunk_is_always_published() {
+    let runs = running();
+    let whole = Checkpoint {
+        chunks_done: 1_000,
+        ..at(0)
+    };
+    assert!(runs.observe(ID, at(1), 0).is_some());
+    assert_eq!(runs.observe(ID, whole, 1), Some(whole));
+    assert_eq!(runs.end(ID), None, "the final checkpoint was written");
+    assert_eq!(runs.observe(ID, at(2), 500), None, "no run, no progress");
+}
+
+fn done_at(path: &std::path::Path) -> TransferRow {
+    TransferRow {
+        attachment_id: ID.to_owned(),
+        target: TransferTarget::Channel {
+            community: "c".into(),
+            channel_id: "ch".into(),
+        },
+        state: TransferState::Done,
+        chunks_done: 1,
+        chunk_count: 1,
+        bytes_done: 1,
+        total: 1,
+        dest_name: "saved".into(),
+        dest_path: path.display().to_string(),
+        started_at: 0,
+        finished_at: Some(1),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn open_refuses_a_link_and_runs_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("a folder");
+    let ran = dir.path().join("ran");
+    let script = dir.path().join("saved.sh");
+    std::fs::write(&script, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).expect("script");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let link = dir.path().join("link.sh");
+    std::os::unix::fs::symlink(&script, &link).expect("a link");
+
+    assert_eq!(
+        revealable(&done_at(&link)),
+        None,
+        "a link is never revealed"
+    );
+    assert_eq!(revealable(&done_at(dir.path())), None, "nor a folder");
+    let paused = TransferRow {
+        state: TransferState::Paused,
+        ..done_at(&script)
+    };
+    assert_eq!(revealable(&paused), None, "nor an unfinished file");
+    assert_eq!(
+        revealable(&done_at(&script)),
+        Some(script.display().to_string()),
+        "a finished regular file is revealed by its path"
+    );
+    assert!(!ran.exists(), "revealing an executable never runs it");
+}
