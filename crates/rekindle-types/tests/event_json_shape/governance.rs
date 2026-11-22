@@ -25,6 +25,7 @@ pub const NAMES: &[&str] = &[
     "governanceOpQuarantined",
     "checkpointSnapshotMismatch",
     "communitySuccessorOffered",
+    "successorLinkRequested",
 ];
 
 pub fn variant_name(e: &GovernanceEvent) -> &'static str {

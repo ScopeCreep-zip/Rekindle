@@ -715,6 +715,16 @@
       }
     }
   },
+  "governance.successorLinkRequested": {
+    "governance": {
+      "successorLinkRequested": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "newAnchor": "VLD0:newanchor",
+        "recipient": "5555555555555555555555555555555555555555555555555555555555555555",
+        "request": "7777777777777777777777777777777777777777777777777777777777777777"
+      }
+    }
+  },
   "groupDm.historyGap": {
     "groupDm": {
       "historyGap": {
