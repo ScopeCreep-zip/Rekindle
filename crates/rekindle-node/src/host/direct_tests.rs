@@ -18,6 +18,18 @@ use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource
 
 /// A Host started over `dir`, with no identity unlocked.
 pub(super) async fn started(dir: &tempfile::TempDir) -> Arc<Host> {
+    started_with(
+        dir,
+        Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+    )
+    .await
+}
+
+/// [`started`] over a server-query port of the test's (plan E7.2 G4).
+pub(super) async fn started_with(
+    dir: &tempfile::TempDir,
+    server_query: Arc<dyn rekindle_game_detect::server_query::ServerQuery>,
+) -> Arc<Host> {
     let root = rekindle_db::paths::DataRoot::under(dir.path());
     Host::start(HostConfig {
         root: claim(root).unwrap(),
@@ -27,6 +39,7 @@ pub(super) async fn started(dir: &tempfile::TempDir) -> Arc<Host> {
         clock: Arc::new(rekindle_utils::SystemClock),
         rng: Arc::new(rekindle_utils::OsRandom),
         idle: Arc::new(rekindle_idle::OsIdle),
+        server_query,
         shell: None,
     })
     .await
@@ -35,7 +48,11 @@ pub(super) async fn started(dir: &tempfile::TempDir) -> Arc<Host> {
 
 /// An offline host with Ann unlocked; her key.
 pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
-    let host = started(dir).await;
+    ann_on(started(dir).await).await
+}
+
+/// [`ann`] on a host the caller started.
+pub(super) async fn ann_on(host: Arc<Host>) -> (Arc<Host>, [u8; 32]) {
     let created = identity::create(
         host.root(),
         &host.identity_stores(),

@@ -142,6 +142,17 @@ pub async fn recent_server_remove(
     .await
 }
 
+/// Ask every server the Servers view lists what it is running
+/// (`IpcRequest::ServersRefresh`, plan E7.2 G4): the user's Refresh only, as
+/// a query shows our IP address to each server. `started` is false while a
+/// refresh runs; the answers arrive through `servers-event`.
+#[tauri::command]
+pub async fn servers_refresh(
+    state: State<'_, SharedState>,
+) -> Result<Done<rekindle_types::dto::servers::RefreshAnswer>, CommandError> {
+    host_call::call(&state, IpcRequest::Servers(ServersRequest::Refresh)).await
+}
+
 /// Our time in each detected game, the most recent first
 /// (`IpcRequest::GameTotalsGet`, plan E7.2).
 #[tauri::command]

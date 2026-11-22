@@ -375,7 +375,10 @@ fn transfers_reach_the_buddy_list_on_their_own_channel() {
 fn the_servers_view_reaches_the_buddy_list_and_chat_windows_only() {
     let e =
         WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::ServersViewChanged {
-            view: rekindle_types::dto::servers::ServersView { categories: vec![] },
+            view: rekindle_types::dto::servers::ServersView {
+                categories: vec![],
+                refresh: rekindle_types::dto::servers::ServerVerdict::Allowed,
+            },
         }));
     assert_eq!(e.channel(), "servers-event");
     let audience = e.audience();

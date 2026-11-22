@@ -20,6 +20,11 @@ pub struct GameEntry {
     /// E7.15 CH1: the native Chess of each OS is the test game).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native: Option<NativeApps>,
+    /// The query protocol this game's servers answer (plan E7.2 G4): a
+    /// Servers view row of a game without one answers "This game has no
+    /// server query".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_query: Option<crate::server_query::ServerQueryProtocol>,
     /// Xfire's id for this game, from `xfire_ids.json` (plan E7.2 "Game
     /// icons"); not part of the database JSON.
     #[serde(skip)]

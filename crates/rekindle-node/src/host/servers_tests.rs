@@ -8,7 +8,8 @@ use std::time::Duration;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 use rekindle_ipc::Caller;
 use rekindle_types::dto::servers::{
-    Joinability, ServerCategoryKind as Kind, ServerRefusal, ServerRow, ServerVerdict, ServersView,
+    Joinability, ServerCategoryKind as Kind, ServerInfo, ServerRefusal, ServerRow, ServerVerdict,
+    ServersView,
 };
 use rekindle_types::game_server::{JoinSource, ServerAddress};
 use rekindle_types::subscription_events::{
@@ -176,4 +177,88 @@ async fn each_trigger_pushes_the_view_once_per_period() {
     let favourites = &seen[0].categories[0];
     assert_eq!(favourites.kind, Kind::Favourites);
     assert!(favourites.rows.is_empty());
+}
+
+/// A game server that never answers; counts the channels opened to it.
+#[derive(Default)]
+struct Silent {
+    opened: std::sync::atomic::AtomicUsize,
+}
+
+struct Never;
+
+#[async_trait::async_trait]
+impl rekindle_game_detect::server_query::QueryChannel for Never {
+    async fn send(&mut self, _: &[u8]) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    async fn recv(&mut self) -> std::io::Result<Vec<u8>> {
+        std::future::pending().await
+    }
+}
+
+#[async_trait::async_trait]
+impl rekindle_game_detect::server_query::ServerQuery for Silent {
+    async fn open(
+        &self,
+        _: &str,
+    ) -> std::io::Result<Box<dyn rekindle_game_detect::server_query::QueryChannel>> {
+        self.opened
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(Box::new(Never))
+    }
+}
+
+async fn silent_host(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, std::sync::Arc<Silent>) {
+    let silent = std::sync::Arc::new(Silent::default());
+    let host = super::direct_tests::started_with(dir, silent.clone()).await;
+    let (host, _) = super::direct_tests::ann_on(host).await;
+    add_favourite(&host).await;
+    (host, silent)
+}
+
+fn info(view: &ServersView) -> ServerInfo {
+    only_row(view, Kind::Favourites).info.clone()
+}
+
+/// No view, favourite or wait queries a server: only `ServersRefresh`
+/// (a query shows our IP address to it).
+#[tokio::test]
+async fn nothing_queries_without_the_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, silent) = silent_host(&dir).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let shown = view(&host).await;
+    assert_eq!(info(&shown), ServerInfo::NotQueried);
+    assert_eq!(shown.refresh, ServerVerdict::Allowed);
+    assert_eq!(silent.opened.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+/// A refresh marks the row querying and refuses a second refresh; a server
+/// silent for 2 s is unanswered, and a refresh may start again.
+#[tokio::test]
+async fn refresh_times_out_to_unanswered_and_is_refused_while_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, silent) = silent_host(&dir).await;
+    let refresh = || call(&host, IpcRequest::Servers(ServersRequest::Refresh));
+    assert_eq!(refresh().await, serde_json::json!({ "started": true }));
+    let running = view(&host).await;
+    assert_eq!(info(&running), ServerInfo::Querying);
+    assert_eq!(
+        running.refresh,
+        ServerVerdict::refused(ServerRefusal::Refreshing)
+    );
+    assert_eq!(refresh().await, serde_json::json!({ "started": false }));
+    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    let done = view(&host).await;
+    assert_eq!(
+        info(&done),
+        ServerInfo::Unanswered {
+            reason: "No reply within 2 s".into()
+        }
+    );
+    assert_eq!(done.refresh, ServerVerdict::Allowed);
+    assert_eq!(refresh().await, serde_json::json!({ "started": true }));
+    assert_eq!(silent.opened.load(std::sync::atomic::Ordering::SeqCst), 2);
 }

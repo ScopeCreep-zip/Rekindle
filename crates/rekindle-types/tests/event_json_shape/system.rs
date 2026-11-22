@@ -197,6 +197,7 @@ fn sync() -> Vec<Sample> {
                         community: None,
                         rows: vec![],
                     }],
+                    refresh: rekindle_types::dto::servers::ServerVerdict::Allowed,
                 },
             },
         ),

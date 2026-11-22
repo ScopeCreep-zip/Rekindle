@@ -228,6 +228,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     // visited, local like a favourite's removal.
     ("ServersView", None),
     ("RecentServerRemove", Some(IntentKind::SetPreferences)),
+    ("ServersRefresh", Some(IntentKind::RefreshServers)),
     ("AvatarGet", None),
     ("SkinList", None),
     ("SkinGet", None),

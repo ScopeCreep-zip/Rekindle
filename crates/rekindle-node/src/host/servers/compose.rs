@@ -3,14 +3,14 @@
 //! their held game invites, and each joined community's server list. Every
 //! row carries the Host's Join, add-favourite and remove verdicts.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rekindle_db::repo::{favourite_servers, recent_servers};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::dto::servers::{
     Joinability, ServerCategory, ServerCategoryKind as Kind, ServerCommunity, ServerFriend,
-    ServerJoin, ServerRefusal, ServerRow, ServerVerdict, ServersView,
+    ServerInfo, ServerJoin, ServerRefusal, ServerRow, ServerVerdict, ServersView,
 };
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::game_server::{JoinSource, ServerAddress};
@@ -18,6 +18,13 @@ use rekindle_types::game_server::{JoinSource, ServerAddress};
 use crate::daemon::dispatch::{adapter, runtime_refused, DaemonContext};
 
 type Favourites = BTreeSet<(u32, String)>;
+
+/// What every row is judged against: our favourites, and what the last
+/// refresh learned (plan E7.2 G4).
+struct Known {
+    favourites: Favourites,
+    info: HashMap<super::refresh::InfoKey, ServerInfo>,
+}
 
 /// What a row is before its verdicts.
 struct Draft {
@@ -35,7 +42,13 @@ struct Draft {
 }
 
 impl Draft {
-    fn row(self, favourites: &Favourites) -> ServerRow {
+    fn row(self, known: &Known) -> ServerRow {
+        let favourites = &known.favourites;
+        let info = known
+            .info
+            .get(&(self.game_id, self.address.clone()))
+            .cloned()
+            .unwrap_or(ServerInfo::NotQueried);
         let entry = self
             .game_id
             .and_then(|id| rekindle_game_detect::GameDatabase::shared().lookup_by_id(id));
@@ -74,17 +87,18 @@ impl Draft {
             source: self.source,
             friend: self.friend,
             last_seen: self.last_seen,
+            info,
             add_favourite,
             remove,
         }
     }
 }
 
-fn category(kind: Kind, rows: Vec<Draft>, favourites: &Favourites) -> ServerCategory {
+fn category(kind: Kind, rows: Vec<Draft>, known: &Known) -> ServerCategory {
     ServerCategory {
         kind,
         community: None,
-        rows: rows.into_iter().map(|d| d.row(favourites)).collect(),
+        rows: rows.into_iter().map(|d| d.row(known)).collect(),
     }
 }
 
@@ -109,6 +123,10 @@ pub(crate) async fn compose(ctx: &DaemonContext) -> Result<ServersView, IpcRespo
         .iter()
         .map(|f| (f.game_id, f.address.clone()))
         .collect();
+    let known = Known {
+        favourites,
+        info: ctx.servers.refresh.info(),
+    };
     let draft = |game_id: u32, address: String, source: JoinSource| Draft {
         game_id: Some(game_id),
         fallback_name: format!("Game {game_id}"),
@@ -134,9 +152,9 @@ pub(crate) async fn compose(ctx: &DaemonContext) -> Result<ServersView, IpcRespo
         })
         .collect();
     let mut categories = vec![
-        category(Kind::Favourites, favourite_rows, &favourites),
-        category(Kind::Recent, recent_rows, &favourites),
-        category(Kind::Friends, friends(ctx)?, &favourites),
+        category(Kind::Favourites, favourite_rows, &known),
+        category(Kind::Recent, recent_rows, &known),
+        category(Kind::Friends, friends(ctx)?, &known),
     ];
     for overview in crate::daemon::dispatch::community::overviews(ctx)? {
         let servers = if overview.removed.is_some() {
@@ -161,14 +179,17 @@ pub(crate) async fn compose(ctx: &DaemonContext) -> Result<ServersView, IpcRespo
                 verdict: None,
             })
             .collect();
-        let mut c = category(Kind::Community, rows, &favourites);
+        let mut c = category(Kind::Community, rows, &known);
         c.community = Some(ServerCommunity {
             anchor: overview.anchor,
             name: overview.name,
         });
         categories.push(c);
     }
-    Ok(ServersView { categories })
+    Ok(ServersView {
+        categories,
+        refresh: ctx.servers.refresh.verdict(),
+    })
 }
 
 /// Accepted friends' servers: their presence's server (its verdict as

@@ -117,6 +117,10 @@ pub enum IntentKind {
     /// Launch a game we have installed, or to one of our own favourite
     /// servers (`GameLaunch`, lead decision (50)).
     LaunchGameToServer,
+    /// Ask every server the Servers view lists what it is running (plan
+    /// E7.2 G4, `ServersRefresh`): the user's own Refresh, as Xfire's; it
+    /// reaches the servers a launch from that view reaches.
+    RefreshServers,
     // Routine: Outgoing requests you can withdraw
     CancelInvite,
     CancelRequest,
@@ -408,6 +412,7 @@ impl IntentKind {
             | Self::RevealDownloadedAttachment
             | Self::PauseDownload
             | Self::LaunchGameToServer
+            | Self::RefreshServers
             | Self::CancelInvite
             | Self::CancelRequest
             | Self::Logout

@@ -2,8 +2,8 @@
 //! kind, every row source, both verdict and Join shapes.
 
 use rekindle_types::dto::servers::{
-    Joinability, ServerCategory, ServerCategoryKind, ServerCommunity, ServerFriend, ServerJoin,
-    ServerRefusal, ServerRow, ServerVerdict, ServersView,
+    Joinability, ServerCategory, ServerCategoryKind, ServerCommunity, ServerFriend, ServerInfo,
+    ServerJoin, ServerRefusal, ServerRow, ServerVerdict, ServersView,
 };
 use rekindle_types::friend::NotJoinableReason;
 use rekindle_types::game_server::JoinSource;
@@ -25,6 +25,7 @@ fn row(game_id: Option<u32>, source: JoinSource, joinability: Joinability) -> Se
             launch_source: source,
             joinability,
         },
+        info: ServerInfo::NotQueried,
         add_favourite: ServerVerdict::Allowed,
         remove: ServerVerdict::refused(ServerRefusal::NotRemovable),
     }
@@ -51,10 +52,18 @@ fn view(pk: &str) -> ServersView {
     };
     let recent = ServerRow {
         last_seen: Some(1_700_000_000),
+        info: ServerInfo::Answered {
+            name: "Frag Night #1".into(),
+            map: "de_dust2".into(),
+            players: 12,
+            max_players: 24,
+            ping_ms: 31,
+        },
         remove: ServerVerdict::Allowed,
         ..row(Some(4_181), JoinSource::Recent, Joinability::Joinable)
     };
     let friend = ServerRow {
+        info: ServerInfo::Querying,
         friend: Some(ServerFriend {
             public_key: pk.to_owned(),
             display_name: "Bob".into(),
@@ -71,6 +80,9 @@ fn view(pk: &str) -> ServersView {
     };
     let community_row = ServerRow {
         game_name: "minecraft".into(),
+        info: ServerInfo::Unanswered {
+            reason: "This game has no server query".into(),
+        },
         label: "Survival".into(),
         add_favourite: ServerVerdict::refused(ServerRefusal::NoNumericGame),
         ..row(
@@ -93,6 +105,7 @@ fn view(pk: &str) -> ServersView {
             category(ServerCategoryKind::Friends, vec![friend, invite]),
             community,
         ],
+        refresh: ServerVerdict::Allowed,
     }
 }
 
@@ -102,6 +115,7 @@ pub fn samples(add: &mut impl FnMut(&str, Value), pk: &str) {
         "serversViewEmpty",
         serde_json::to_value(ServersView {
             categories: vec![category(ServerCategoryKind::Recent, vec![])],
+            refresh: ServerVerdict::refused(ServerRefusal::Refreshing),
         })
         .unwrap(),
     );

@@ -249,6 +249,7 @@ async fn servers_view_changed_replaces_the_open_servers_view() {
             launch_source: JoinSource::Favourite,
             joinability: Joinability::Joinable,
         },
+        info: rekindle_types::dto::servers::ServerInfo::NotQueried,
         add_favourite: ServerVerdict::refused(ServerRefusal::AlreadyFavourite),
         remove: ServerVerdict::Allowed,
     };
@@ -258,6 +259,7 @@ async fn servers_view_changed_replaces_the_open_servers_view() {
             community: None,
             rows: vec![row],
         }],
+        refresh: ServerVerdict::Allowed,
     };
     let action = app.subscription_event_to_action(SubscriptionEvent::System(
         rekindle_types::subscription_events::SystemEvent::ServersViewChanged { view },

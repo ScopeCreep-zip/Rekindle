@@ -143,6 +143,7 @@ mod tests {
             clock: Arc::clone(&node.clock) as Arc<dyn rekindle_utils::Clock>,
             rng: Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>,
             idle: Arc::clone(&node.idle) as Arc<dyn rekindle_utils::IdleSource>,
+            server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
             shell: None,
         })
         .await

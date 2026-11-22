@@ -99,6 +99,7 @@ async fn offline_host_with(
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
         idle: std::sync::Arc::new(rekindle_idle::OsIdle),
+        server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
         shell,
     })
     .await

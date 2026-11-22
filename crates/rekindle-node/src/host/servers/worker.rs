@@ -105,7 +105,7 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
     }
 }
 
-async fn push(ctx: &DaemonContext) {
+pub(super) async fn push(ctx: &DaemonContext) {
     match super::compose(ctx).await {
         Ok(view) => ctx.publish_event(SubscriptionEvent::System(SystemEvent::ServersViewChanged {
             view,

@@ -5,6 +5,7 @@
 //! request path serves the desktop, the TUI and the CLI (decisions 51, 52).
 
 mod compose;
+mod refresh;
 mod worker;
 
 use std::collections::VecDeque;
@@ -18,6 +19,7 @@ use crate::daemon::dispatch::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
 
 pub(crate) use compose::compose;
+use worker::push;
 pub(crate) use worker::run_worker;
 
 /// How many received game invites the view keeps (newest first).
@@ -32,15 +34,28 @@ pub(crate) struct HeldInvite {
     pub server: String,
 }
 
-/// The session's received game invites (`ctx.servers`), and the worker's
-/// trigger for a change no journal event names (a favourite removed).
-#[derive(Debug, Default)]
+/// The session's received game invites (`ctx.servers`), the worker's
+/// trigger for a change no journal event names (a favourite removed), and
+/// the Refresh's port and answers (plan E7.2 G4).
+#[derive(Debug)]
 pub(crate) struct ServersState {
     invites: parking_lot::Mutex<VecDeque<HeldInvite>>,
     stale: tokio::sync::Notify,
+    pub(crate) refresh: refresh::RefreshState,
 }
 
 impl ServersState {
+    /// Over the Host's server-query port (`HostConfig::server_query`).
+    pub(crate) fn new(
+        query: std::sync::Arc<dyn rekindle_game_detect::server_query::ServerQuery>,
+    ) -> Self {
+        Self {
+            invites: parking_lot::Mutex::default(),
+            stale: tokio::sync::Notify::new(),
+            refresh: refresh::RefreshState::new(query),
+        }
+    }
+
     /// Hold `invite` first; a repeat moves to the front, the oldest past
     /// [`MAX_INVITES`] goes.
     pub(crate) fn hold(&self, invite: HeldInvite) {
@@ -69,6 +84,7 @@ impl ServersState {
     /// The session ended.
     pub(crate) fn clear(&self) {
         self.invites.lock().clear();
+        self.refresh.clear();
     }
 }
 
@@ -80,6 +96,7 @@ pub(crate) async fn route(
     request: ServersRequest,
 ) -> IpcResponse {
     match request {
+        ServersRequest::Refresh => return refresh::start(ctx, state).await,
         request @ (ServersRequest::FavouritesGet
         | ServersRequest::FavouriteAdd { .. }
         | ServersRequest::FavouriteRemove { .. }) => {

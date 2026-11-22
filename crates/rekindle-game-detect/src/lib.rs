@@ -6,6 +6,7 @@ pub mod platform;
 pub mod rich_presence;
 pub mod runtime;
 pub mod scanner;
+pub mod server_query;
 
 pub use database::GameDatabase;
 pub use error::GameDetectError;

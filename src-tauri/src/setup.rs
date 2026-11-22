@@ -239,6 +239,7 @@ async fn start_host(
         clock: Arc::clone(&state.clock),
         rng: Arc::clone(&state.rng),
         idle: Arc::new(rekindle_idle::OsIdle),
+        server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
         shell: Some(shell),
     })
     .await

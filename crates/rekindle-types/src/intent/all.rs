@@ -96,6 +96,7 @@ impl IntentKind {
         Self::PauseDownload,
         Self::RemoveDownload,
         Self::LaunchGameToServer,
+        Self::RefreshServers,
         Self::CancelInvite,
         Self::CancelRequest,
         Self::Logout,

@@ -38,7 +38,8 @@ use crate::theme::ThemeManager;
 /// One line of the list: a category's header or one of its rows.
 enum Item {
     Header(String),
-    Row(ServerRow),
+    /// Boxed: a row is far larger than a header (clippy large_enum_variant).
+    Row(Box<ServerRow>),
 }
 
 /// Servers view state.
@@ -71,7 +72,7 @@ impl GameServersView {
             .into_iter()
             .flat_map(|c| {
                 let header = Item::Header(header(&c));
-                std::iter::once(header).chain(c.rows.into_iter().map(Item::Row))
+                std::iter::once(header).chain(c.rows.into_iter().map(|r| Item::Row(Box::new(r))))
             })
             .collect();
         let at = self.list_state.selected().unwrap_or(0);
@@ -107,7 +108,7 @@ impl GameServersView {
 
     fn selected(&self) -> Option<&ServerRow> {
         match self.list_state.selected().and_then(|i| self.items.get(i)) {
-            Some(Item::Row(row)) => Some(row),
+            Some(Item::Row(row)) => Some(&**row),
             _ => None,
         }
     }
@@ -190,6 +191,7 @@ fn refusal(reason: ServerRefusal) -> &'static str {
         ServerRefusal::NoNumericGame => "not a game Rekindle knows",
         ServerRefusal::BadAddress => "not a host:port address",
         ServerRefusal::NotRemovable => "only a favourite or a recent server can be removed",
+        ServerRefusal::Refreshing => "a refresh is running",
     }
 }
 

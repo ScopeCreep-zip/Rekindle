@@ -151,6 +151,14 @@ pub(crate) async fn select(
             // Local only: setting it back reverses it (plan E7.2).
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
+        // Asking the listed servers changes nothing we hold; each server
+        // learns our IP address, which no inverse takes back (plan E7.2 G4).
+        IpcRequest::Servers(ServersRequest::Refresh) => {
+            s.subject = Subject::Named {
+                name: "the servers in the Servers view".into(),
+            };
+            s.reversibility = Reversibility::Never;
+        }
         // A forgotten server comes back only by visiting it again (plan E7.2 G3).
         IpcRequest::Servers(ServersRequest::RecentRemove { .. }) => {
             s.subject = unlocked_identity(ctx);
@@ -197,8 +205,9 @@ pub(crate) async fn select(
         // (plan E7.2).
         IpcRequest::SkinSelect { .. }
         | IpcRequest::SkinKeep { .. }
-        | IpcRequest::Servers(ServersRequest::FavouriteAdd { .. })
-        | IpcRequest::Servers(ServersRequest::FavouriteRemove { .. }) => {
+        | IpcRequest::Servers(
+            ServersRequest::FavouriteAdd { .. } | ServersRequest::FavouriteRemove { .. },
+        ) => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
@@ -261,8 +270,7 @@ pub(crate) async fn select(
         | IpcRequest::ActivityList { .. }
         | IpcRequest::InfoviewGet { .. }
         | IpcRequest::InstalledGamesGet
-        | IpcRequest::Servers(ServersRequest::FavouritesGet)
-        | IpcRequest::Servers(ServersRequest::View)
+        | IpcRequest::Servers(ServersRequest::FavouritesGet | ServersRequest::View)
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet
         | IpcRequest::FriendBioGet { .. }

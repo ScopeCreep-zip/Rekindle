@@ -21,6 +21,41 @@ use crate::game_server::JoinSource;
 #[serde(rename_all = "camelCase")]
 pub struct ServersView {
     pub categories: Vec<ServerCategory>,
+    /// Whether `ServersRefresh` may start now: refused (`Refreshing`) while
+    /// one runs (plan E7.2 G4).
+    pub refresh: ServerVerdict,
+}
+
+/// What `ServersRefresh` answers: `started` is false when a refresh was
+/// already running (plan E7.2 G4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshAnswer {
+    pub started: bool,
+}
+
+/// A server as the last refresh found it (plan E7.2 G4). A server is
+/// queried only on the user's Refresh: a query shows our IP address to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ServerInfo {
+    /// No refresh asked about it this session.
+    NotQueried,
+    /// A refresh is asking now.
+    Querying,
+    /// Its answer.
+    #[serde(rename_all = "camelCase")]
+    Answered {
+        name: String,
+        map: String,
+        players: u32,
+        max_players: u32,
+        ping_ms: u32,
+    },
+    /// Why there was no answer, in the Host's words ("No reply within
+    /// 2 s", "This game has no server query").
+    #[serde(rename_all = "camelCase")]
+    Unanswered { reason: String },
 }
 
 /// Which list a category is.
@@ -76,6 +111,8 @@ pub enum ServerRefusal {
     BadAddress,
     /// Only a favourite or a recent row can be removed.
     NotRemovable,
+    /// A refresh is running (`ServersView.refresh`).
+    Refreshing,
 }
 
 /// A row action's verdict, on the wire `{allowed: true}` or `{allowed:
@@ -222,6 +259,8 @@ pub struct ServerRow {
     /// A recent row's last visit, unix seconds.
     pub last_seen: Option<i64>,
     pub join: ServerJoin,
+    /// What the last refresh learned of the server (plan E7.2 G4).
+    pub info: ServerInfo,
     /// `FavouriteServerAdd` from this row.
     pub add_favourite: ServerVerdict,
     /// `FavouriteServerRemove` (a favourite) or `RecentServerRemove` (a
@@ -266,5 +305,29 @@ mod tests {
             r#"{"gameId":1,"server":null,"launchSource":"recent","joinable":false}"#
         )
         .is_err());
+    }
+
+    /// `ServerInfo`'s tagged wire shapes, as the frontend mirrors them.
+    #[test]
+    fn server_info_is_tagged_by_kind() {
+        let answered = ServerInfo::Answered {
+            name: "Dust".into(),
+            map: "de_dust".into(),
+            players: 5,
+            max_players: 16,
+            ping_ms: 31,
+        };
+        assert_eq!(
+            serde_json::to_string(&answered).unwrap(),
+            r#"{"kind":"answered","name":"Dust","map":"de_dust","players":5,"maxPlayers":16,"pingMs":31}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServerInfo::NotQueried).unwrap(),
+            r#"{"kind":"notQueried"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServerVerdict::refused(ServerRefusal::Refreshing)).unwrap(),
+            r#"{"allowed":false,"reason":"refreshing"}"#
+        );
     }
 }

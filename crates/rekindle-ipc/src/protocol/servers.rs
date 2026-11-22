@@ -40,6 +40,12 @@ pub enum ServersRequest {
     /// Remove a favourite game server (plan E7.2). The list comes back.
     #[serde(rename = "FavouriteServerRemove")]
     FavouriteRemove { game_id: u32, server: ServerAddress },
+    /// Ask every listed server what it is running (plan E7.2 G4): the
+    /// user's Refresh only, since a query shows our IP address to the
+    /// server. Answers `RefreshAnswer`; the rows' answers come through
+    /// `ServersViewChanged`.
+    #[serde(rename = "ServersRefresh")]
+    Refresh,
 }
 
 impl ServersRequest {
@@ -58,6 +64,7 @@ impl ServersRequest {
             Self::FavouritesGet => ("FavouriteServersGet", Query, Authenticated),
             Self::FavouriteAdd { .. } => ("FavouriteServerAdd", Write, Authenticated),
             Self::FavouriteRemove { .. } => ("FavouriteServerRemove", Write, Authenticated),
+            Self::Refresh => ("ServersRefresh", Write, Authenticated),
         }
     }
 
@@ -69,7 +76,10 @@ impl ServersRequest {
             Self::View | Self::FavouritesGet => Some(AgentCapability::IdentityRead),
             Self::RecentRemove { .. }
             | Self::FavouriteAdd { .. }
-            | Self::FavouriteRemove { .. } => None,
+            | Self::FavouriteRemove { .. }
+            // A query shows our IP address to each server: only the user
+            // asks.
+            | Self::Refresh => None,
         }
     }
 }

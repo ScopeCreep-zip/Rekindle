@@ -30,6 +30,7 @@ fn row(source: JoinSource, address: &str, joinability: Joinability) -> ServerRow
             launch_source: source,
             joinability,
         },
+        info: rekindle_types::dto::servers::ServerInfo::NotQueried,
         add_favourite: ServerVerdict::Allowed,
         remove: ServerVerdict::Allowed,
     }
@@ -65,6 +66,7 @@ fn host_view() -> HostServersView {
             category(Kind::Recent, vec![recent]),
             category(Kind::Friends, vec![bob]),
         ],
+        refresh: ServerVerdict::Allowed,
     }
 }
 

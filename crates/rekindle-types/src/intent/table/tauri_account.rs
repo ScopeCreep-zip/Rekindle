@@ -65,6 +65,7 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     // visited, local like a favourite's removal.
     ("servers_view", None),
     ("recent_server_remove", Some(IntentKind::SetPreferences)),
+    ("servers_refresh", Some(IntentKind::RefreshServers)),
     ("volunteer_relay", Some(IntentKind::VolunteerRelay)),
     ("revoke_relay", Some(IntentKind::RevokeRelay)),
     ("list_received_relay_offers", None),
