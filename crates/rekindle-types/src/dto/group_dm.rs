@@ -32,4 +32,11 @@ pub struct GroupDmView {
     pub origin_peer: Option<String>,
     /// In our "Chat Rooms" favourites (local only); never for an invite.
     pub favourite: bool,
+    /// The Host's verdict on renaming it (plan E7.2 G7): `None` when we
+    /// may, else why not (only the creator renames it; an invite).
+    pub rename_refused: Option<String>,
+    /// The Host's verdict on inviting more to it (plan E7.2 G8): `None`
+    /// when we may, else why not (only the creator; full at eight; an
+    /// invite).
+    pub invite_refused: Option<String>,
 }

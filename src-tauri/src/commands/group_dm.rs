@@ -67,6 +67,16 @@ pub async fn group_dm_rename(
     host_call::call(&state, IpcRequest::GroupDmRename { group_id, name }).await
 }
 
+/// Invite friends into a group we created (`IpcRequest::GroupDmInvite`).
+#[tauri::command]
+pub async fn group_dm_invite(
+    group_id: String,
+    members: Vec<String>,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::GroupDmInvite { group_id, members }).await
+}
+
 /// Set a DM's or group DM's disappearing-message timer
 /// (`IpcRequest::DisappearingSet`, plan E7.1).
 #[tauri::command]

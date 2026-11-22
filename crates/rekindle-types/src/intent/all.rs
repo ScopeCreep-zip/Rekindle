@@ -114,6 +114,7 @@ impl IntentKind {
         Self::CancelCommunityCreate,
         Self::WithdrawCommunityTransfer,
         Self::CreateGroupDm,
+        Self::InviteToGroupDm,
         Self::LeaveGroupDm,
         Self::SetDisappearingTimer,
         Self::RemoveTimeout,

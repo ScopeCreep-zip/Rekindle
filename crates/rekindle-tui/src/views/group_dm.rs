@@ -406,6 +406,8 @@ mod tests {
             pending,
             origin_peer: None,
             favourite: false,
+            rename_refused: None,
+            invite_refused: None,
         }
     }
 

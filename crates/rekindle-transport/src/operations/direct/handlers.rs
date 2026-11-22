@@ -206,6 +206,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         | DirectBody::GroupDmAccept(_)
         | DirectBody::GroupDmDecline(_)
         | DirectBody::GroupDmLeave(_)
+        | DirectBody::GroupDmRosterGrow(_)
         | DirectBody::GroupContent(_) => {
             applied = crate::operations::group_dm::apply(host, sender, &opened.body).await;
         }

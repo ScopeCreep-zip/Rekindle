@@ -225,6 +225,7 @@ pub(crate) fn map(
             peer: friend.map(str::to_owned),
         }),
         A::EnterRoom | A::JoinRoom | A::EnterAttachedRoom => rooms::enter(action, rooms),
+        A::InviteUsersToRoom => rooms::invite(rooms),
         // Deleting a room is leaving it (SK2-G §6); a picture or video's
         // delete is the media library's (E7.2 G14).
         A::DeleteSelected => match &rooms.selected {
@@ -286,7 +287,6 @@ pub(crate) fn map(
         | A::LeaveGameLobby
         | A::LaunchGameLobby
         | A::RefreshServer
-        | A::InviteUsersToRoom
         | A::OpenSelected
         | A::UploadSelected
         | A::SearchFor

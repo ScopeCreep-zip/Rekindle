@@ -118,6 +118,7 @@ impl IpcRequest {
             Self::GroupDmDecline { .. } => ("GroupDmDecline", Write, Authenticated),
             Self::GroupDmLeave { .. } => ("GroupDmLeave", Write, Authenticated),
             Self::GroupDmRename { .. } => ("GroupDmRename", Write, Authenticated),
+            Self::GroupDmInvite { .. } => ("GroupDmInvite", Write, Authenticated),
             Self::DisappearingSet { .. } => ("DisappearingSet", Write, Authenticated),
             Self::DisappearingGet { .. } => ("DisappearingGet", Query, Authenticated),
             Self::GroupDmSend { .. } => ("GroupDmSend", Write, Authenticated),

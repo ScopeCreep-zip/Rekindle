@@ -70,6 +70,7 @@ export type ShellOp =
   | { kind: "openGameInvite"; arg: { friend: string } }
   | { kind: "newRoom"; arg: { peer: string | null } }
   | { kind: "openGroupChat"; arg: { groupId: string } }
+  | { kind: "inviteToRoom"; arg: { groupId: string } }
   | { kind: "call"; arg: CallOp }
   | { kind: "showSettings"; arg: ArgOf<"showSettings"> }
   /** A never-fetched attachment: run `transfer_start` for it, which asks

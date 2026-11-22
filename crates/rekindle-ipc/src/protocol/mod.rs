@@ -247,6 +247,14 @@ pub enum IpcRequest {
     /// Rename `group_id` (its creator only; 1-`MAX_NAME_CHARS`
     /// characters); every member is told through our group chain.
     GroupDmRename { group_id: String, name: String },
+    /// Invite `members` (our friends, none on the roster) into `group_id`
+    /// (its creator only; at most `MAX_MEMBERS` in all; plan E7.2 G8):
+    /// each gets an invite it accepts or declines, and every member
+    /// already on it learns the grown roster and rotates its key.
+    GroupDmInvite {
+        group_id: String,
+        members: Vec<String>,
+    },
     /// Set the disappearing-message timer of `conversation` (a friend's
     /// key: our DM; a group's 32-hex id: the group DM) to `seconds`
     /// (0 = off, at most four weeks; plan E7.1). Every other member is

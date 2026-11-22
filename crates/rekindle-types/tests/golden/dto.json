@@ -338,6 +338,7 @@
     "epoch": 0,
     "favourite": false,
     "groupId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+    "inviteRefused": "accept the invite first",
     "members": [
       {
         "key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -354,7 +355,8 @@
     ],
     "name": "raid night",
     "originPeer": null,
-    "pending": true
+    "pending": true,
+    "renameRefused": "accept the invite first"
   },
   "identity.shown": {
     "communities": 2,

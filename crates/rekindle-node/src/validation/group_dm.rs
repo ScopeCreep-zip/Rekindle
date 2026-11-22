@@ -70,6 +70,29 @@ fn create(name: &str, members: &[String], origin_peer: Option<&str>) -> Checked 
             ),
         ));
     }
+    distinct_keys(members)
+}
+
+/// A roster growth (plan E7.2 G8): a group id and 1-7 distinct friends'
+/// keys, since a group holds at most [`MAX_MEMBERS`] with its creator; the
+/// operation checks the grown roster against the held one.
+fn invite(id: &str, members: &[String]) -> Checked {
+    group_id(id)?;
+    let max = MAX_MEMBERS - 1;
+    if members.is_empty() || members.len() > max {
+        return Err(IpcResponse::error(
+            400,
+            format!(
+                "invalid invite: pick 1-{max} friends, got {}",
+                members.len()
+            ),
+        ));
+    }
+    distinct_keys(members)
+}
+
+/// Each a member key, none named twice.
+fn distinct_keys(members: &[String]) -> Checked {
     let mut seen = HashSet::with_capacity(members.len());
     for member in members {
         public_key(member, "member key")?;
@@ -98,6 +121,10 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             group_id: id,
             typing: _,
         } => group_id(id),
+        IpcRequest::GroupDmInvite {
+            group_id: id,
+            members,
+        } => invite(id, members),
         IpcRequest::GroupDmRename { group_id: id, name } => {
             group_id(id).and_then(|()| group_name(name))
         }
@@ -156,6 +183,21 @@ mod tests {
         assert!(rename(g.clone(), &"x".repeat(MAX_NAME_CHARS + 1)).is_err());
         assert!(rename(g, "   ").is_err());
         assert!(rename("0F".repeat(16), "scrim night").is_err());
+    }
+
+    #[test]
+    fn an_invite_names_a_group_and_one_to_seven_distinct_keys() {
+        let g = "0f".repeat(16);
+        let seven: Vec<String> = "abcdef0".chars().map(key).collect();
+        assert!(invite(&g, &seven[..1]).is_ok());
+        assert!(invite(&g, &seven).is_ok());
+        let mut eight = seven.clone();
+        eight.push(key('1'));
+        assert!(invite(&g, &eight).is_err());
+        assert!(invite(&g, &[]).is_err());
+        assert!(invite(&g, &vec![key('a'); 2]).is_err());
+        assert!(invite(&g, &["nope".to_owned()]).is_err());
+        assert!(invite(&"0F".repeat(16), &seven[..1]).is_err());
     }
 
     #[test]

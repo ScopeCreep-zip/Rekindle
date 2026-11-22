@@ -30,6 +30,11 @@ impl IpcRequest {
                 .debug_struct("GroupDmLeave")
                 .field("group_id", group_id)
                 .finish(),
+            Self::GroupDmInvite { group_id, members } => f
+                .debug_struct("GroupDmInvite")
+                .field("group_id", group_id)
+                .field("members", &members.len())
+                .finish(),
             Self::GroupDmRename { group_id, name } => f
                 .debug_struct("GroupDmRename")
                 .field("group_id", group_id)

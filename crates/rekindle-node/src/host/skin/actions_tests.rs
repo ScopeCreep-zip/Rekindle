@@ -129,12 +129,7 @@ fn a_selection_action_is_refused_while_nothing_is_selected() {
 
 #[test]
 fn unbuilt_actions_yield_not_built_yet() {
-    for action in [
-        A::InviteUsersToRoom,
-        A::SearchFor,
-        A::RefreshServer,
-        A::DeleteSelected,
-    ] {
+    for action in [A::SearchFor, A::RefreshServer, A::DeleteSelected] {
         assert_eq!(
             run(&action),
             SkinRun::NotBuiltYet {
@@ -244,6 +239,33 @@ fn room_actions_reach_their_group_dm_ops() {
         ));
     }
     assert!(room(&A::EnterAttachedRoom, None, &pending).is_err());
+}
+
+/// `InviteUsersToRoom` (plan E7.2 G8) opens the selected joined room's
+/// invite picker, and is refused on an invite or with no room.
+#[test]
+fn invite_users_to_room_opens_the_selected_rooms_picker() {
+    let g = "0f".repeat(16);
+    let joined = Rooms {
+        selected: Some(Room::Joined(g.clone())),
+        attached: None,
+    };
+    let picker = SkinRun::Shell(ShellOp::InviteToRoom {
+        group_id: g.clone(),
+    });
+    assert!(
+        matches!(room(&A::InviteUsersToRoom, None, &joined), Ok(Mapped::Run(r)) if r == picker)
+    );
+    let pending = Rooms {
+        selected: Some(Room::Pending(g)),
+        attached: None,
+    };
+    for rooms in [pending, Rooms::default()] {
+        assert!(matches!(
+            room(&A::InviteUsersToRoom, Some(SELECTED_FRIEND_KEY), &rooms),
+            Err(IpcResponse::Error { code: 409, .. })
+        ));
+    }
 }
 
 /// The Downloads actions (plan E7.2 G12) reach the transfer requests on

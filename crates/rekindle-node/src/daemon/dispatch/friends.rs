@@ -183,6 +183,9 @@ pub(crate) async fn route(
         IpcRequest::GroupDmAccept { group_id } => done(group_dm::accept(&host, &group_id).await),
         IpcRequest::GroupDmDecline { group_id } => done(group_dm::decline(&host, &group_id).await),
         IpcRequest::GroupDmLeave { group_id } => done(group_dm::leave(&host, &group_id).await),
+        IpcRequest::GroupDmInvite { group_id, members } => {
+            done(group_dm::invite(&host, &group_id, &members).await)
+        }
         IpcRequest::GroupDmRename { group_id, name } => {
             done(group_dm::rename(&host, &group_id, &name).await)
         }

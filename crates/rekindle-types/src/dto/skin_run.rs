@@ -101,6 +101,13 @@ pub enum ShellOp {
     OpenGroupChat {
         group_id: String,
     },
+    /// The friend picker that invites more into the joined group
+    /// `group_id` (`InviteUsersToRoom`, SK2-G §6, plan E7.2 G8): its
+    /// choice is one `GroupDmInvite`, and the group's `inviteRefused`
+    /// verdict says when the Host refuses it.
+    InviteToRoom {
+        group_id: String,
+    },
     Call(CallOp),
     ShowSettings(SkinSettingsTab),
     /// Ask the user where to save a never-fetched attachment (the native

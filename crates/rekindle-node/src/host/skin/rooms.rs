@@ -33,7 +33,11 @@ pub(crate) struct Rooms {
 fn is_room(action: &A) -> bool {
     matches!(
         action,
-        A::EnterRoom | A::JoinRoom | A::EnterAttachedRoom | A::DeleteSelected
+        A::EnterRoom
+            | A::JoinRoom
+            | A::EnterAttachedRoom
+            | A::DeleteSelected
+            | A::InviteUsersToRoom
     )
 }
 
@@ -59,6 +63,27 @@ pub(crate) fn enter(action: &A, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
         _ => Err(IpcResponse::error(
             409,
             format!("{action:?} acts on a selected room or the chat's room: there is none"),
+        )),
+    }
+}
+
+/// `InviteUsersToRoom` (plan E7.2 G8) on the window's selected joined
+/// group: its friend picker, whose choice is one `GroupDmInvite`.
+///
+/// # Errors
+/// 409 for an invite not yet accepted, or no group selected.
+pub(crate) fn invite(rooms: &Rooms) -> Result<Mapped, IpcResponse> {
+    match &rooms.selected {
+        Some(Room::Joined(group_id)) => Ok(Mapped::Run(SkinRun::Shell(ShellOp::InviteToRoom {
+            group_id: group_id.clone(),
+        }))),
+        Some(Room::Pending(_)) => Err(IpcResponse::error(
+            409,
+            "InviteUsersToRoom: accept the invite first",
+        )),
+        None => Err(IpcResponse::error(
+            409,
+            "InviteUsersToRoom acts on a selected room: there is none",
         )),
     }
 }

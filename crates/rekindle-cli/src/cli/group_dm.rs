@@ -39,6 +39,15 @@ pub enum GroupDmCmd {
         /// The new name.
         name: String,
     },
+    /// Invite friends into a group we created (at most eight in all);
+    /// each accepts or declines.
+    Invite {
+        /// The group id (32 hex).
+        group_id: String,
+        /// Each friend's identity key (64 hex).
+        #[arg(required = true)]
+        members: Vec<String>,
+    },
     /// Send a message to a group.
     Send {
         /// The group id (32 hex).

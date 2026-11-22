@@ -169,6 +169,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("GroupDmDecline", Some(IntentKind::DeclineDmInvite)),
     ("GroupDmLeave", Some(IntentKind::LeaveGroupDm)),
     ("GroupDmRename", Some(IntentKind::RenameGroupDm)),
+    ("GroupDmInvite", Some(IntentKind::InviteToGroupDm)),
     ("DisappearingSet", Some(IntentKind::SetDisappearingTimer)),
     ("DisappearingGet", None),
     ("GroupDmSend", Some(IntentKind::SendDmMessage)),

@@ -18,6 +18,7 @@
     "allow-group-dm-mark-read",
     "allow-group-dm-leave",
     "allow-group-dm-rename",
+    "allow-group-dm-invite",
     "allow-disappearing-set",
     "allow-disappearing-get",
     "allow-group-dm-send",

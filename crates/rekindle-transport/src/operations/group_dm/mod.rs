@@ -117,6 +117,62 @@ pub async fn create(
     // The roster names our profile: wait for the own-records stage to
     // hold it (live finding 24), as a friend request does.
     let own = crate::operations::friend::published_identity(host).await?;
+    let others = friend_members(host, members)?;
+    let me = GroupDmRosterMember {
+        identity: own.public_key,
+        profile_record_key: own.profile_dht_key,
+        display_name: own.display_name,
+    };
+    let group_id = rekindle_dm::group::new_group_id(host.rng());
+    let gid = rekindle_dm::group::group_id_hex(&group_id);
+    let chain = host.group_chain_writer(&gid).await?;
+    let deps = host.group_dm()?;
+    let created = rekindle_dm::create(deps.as_ref(), group_id, name, me, others, &chain.record_key)
+        .await
+        .map_err(|e| friend_error(&e))?;
+    send_pairwise(host, created.invite, DirectBody::GroupDmInvite).await?;
+    Ok(gid)
+}
+
+/// Grow `group_id`'s roster by `members` (our friends; plan E7.2 G8,
+/// Xfire's "Invite users to room"): only its creator, up to eight. The
+/// invite goes to each newcomer, who accepts or declines it on the E2.6
+/// path, and the grow to each member already on it.
+///
+/// # Errors
+/// Not a group we hold, we are not its creator, it would pass eight, a
+/// member who is not a friend or is already on it, storage, or a row.
+pub async fn invite(
+    host: &dyn FriendHost,
+    group_id: &str,
+    members: &[String],
+) -> Result<(), FriendError> {
+    let id = parse_group_id(group_id)?;
+    let deps = host.group_dm()?;
+    let held = content::held(host, &id).await?;
+    if let Some(reason) = rekindle_dm::invite_refused(&held.roster, &deps.own_identity()) {
+        return Err(FriendError::Invalid(reason));
+    }
+    let max = rekindle_types::group_dm::MAX_MEMBERS;
+    if held.roster.members().len() + members.len() > max {
+        return Err(FriendError::Invalid(format!(
+            "a group holds at most {max} members"
+        )));
+    }
+    let added = friend_members(host, members)?;
+    let grown = rekindle_dm::grow(deps.as_ref(), &id, added)
+        .await
+        .map_err(|e| friend_error(&e))?;
+    let invited = send_pairwise(host, grown.invite, DirectBody::GroupDmInvite).await;
+    let told = send_pairwise(host, grown.grow, DirectBody::GroupDmRosterGrow).await;
+    invited.and(told)
+}
+
+/// `members` (each a friend the picker allows, GC3) as roster entries.
+fn friend_members(
+    host: &dyn FriendHost,
+    members: &[String],
+) -> Result<Vec<GroupDmRosterMember>, FriendError> {
     let mut others = Vec::with_capacity(members.len());
     for key in members {
         let friend = state::friend(host, key).ok_or_else(|| {
@@ -139,20 +195,7 @@ pub async fn create(
             display_name,
         });
     }
-    let me = GroupDmRosterMember {
-        identity: own.public_key,
-        profile_record_key: own.profile_dht_key,
-        display_name: own.display_name,
-    };
-    let group_id = rekindle_dm::group::new_group_id(host.rng());
-    let gid = rekindle_dm::group::group_id_hex(&group_id);
-    let chain = host.group_chain_writer(&gid).await?;
-    let deps = host.group_dm()?;
-    let created = rekindle_dm::create(deps.as_ref(), group_id, name, me, others, &chain.record_key)
-        .await
-        .map_err(|e| friend_error(&e))?;
-    send_pairwise(host, created.invite, DirectBody::GroupDmInvite).await?;
-    Ok(gid)
+    Ok(others)
 }
 
 /// Accept the pending invite to `group_id`: our chain first, then our

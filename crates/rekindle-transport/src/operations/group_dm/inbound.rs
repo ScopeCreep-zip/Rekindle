@@ -49,6 +49,7 @@ pub async fn apply(host: &dyn FriendHost, sender: &str, body: &DirectBody) -> bo
         DirectBody::GroupDmAccept(key) => rekindle_dm::on_member_key(deps, sender, key).await,
         DirectBody::GroupDmDecline(d) => rekindle_dm::on_decline(deps, sender, d).await.map(Some),
         DirectBody::GroupDmLeave(l) => rekindle_dm::on_member_left(deps, sender, l).await.map(Some),
+        DirectBody::GroupDmRosterGrow(g) => rekindle_dm::on_roster_grow(deps, sender, g).await,
         _ => {
             tracing::debug!(from = %sender, kind = ?body.type_id(), "not a pairwise group frame");
             return false;

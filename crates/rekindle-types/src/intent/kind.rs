@@ -146,6 +146,8 @@ pub enum IntentKind {
     WithdrawCommunityTransfer,
     /// Create a group DM: an invite goes to every member (plan E2.6).
     CreateGroupDm,
+    /// Invite friends into a group DM we created (plan E7.2 G8).
+    InviteToGroupDm,
     /// Leave a group DM: every other member rotates its key.
     LeaveGroupDm,
     /// Set a DM's or group DM's disappearing-message timer (plan E7.1):
@@ -434,6 +436,7 @@ impl IntentKind {
             | Self::CancelCommunityCreate
             | Self::WithdrawCommunityTransfer
             | Self::CreateGroupDm
+            | Self::InviteToGroupDm
             | Self::LeaveGroupDm
             | Self::SetDisappearingTimer
             | Self::RemoveTimeout

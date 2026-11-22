@@ -444,6 +444,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmDecline { .. }
         | IpcRequest::GroupDmLeave { .. }
         | IpcRequest::GroupDmRename { .. }
+        | IpcRequest::GroupDmInvite { .. }
         | IpcRequest::DisappearingSet { .. }
         | IpcRequest::DisappearingGet { .. }
         | IpcRequest::GroupDmSend { .. }

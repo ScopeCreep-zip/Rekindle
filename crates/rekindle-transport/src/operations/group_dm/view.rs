@@ -11,6 +11,9 @@ use rekindle_types::group_dm::GroupDmRosterMember;
 use super::{friend_error, parse_group_id};
 use crate::operations::friend::{state, FriendError, FriendHost};
 
+/// Why an unanswered invite's room actions wait.
+const NOT_JOINED: &str = "accept the invite first";
+
 async fn members(deps: &dyn GroupDmDeps, roster: &[GroupDmRosterMember]) -> Vec<GroupDmViewMember> {
     let mut out = Vec::with_capacity(roster.len());
     for member in roster {
@@ -43,9 +46,12 @@ pub async fn list(host: &dyn FriendHost) -> Result<Vec<GroupDmView>, FriendError
             pending: true,
             origin_peer: None,
             favourite: false,
+            rename_refused: Some(NOT_JOINED.to_owned()),
+            invite_refused: Some(NOT_JOINED.to_owned()),
         });
     }
     let local = local_flags(host).await?;
+    let me = deps.own_identity();
     for group in groups {
         let group_id = rekindle_dm::group::group_id_hex(&group.group_id);
         let (origin_peer, favourite) = local.get(&group_id).cloned().unwrap_or_default();
@@ -57,6 +63,8 @@ pub async fn list(host: &dyn FriendHost) -> Result<Vec<GroupDmView>, FriendError
             pending: false,
             origin_peer,
             favourite,
+            rename_refused: rekindle_dm::rename_refused(&group.roster, &me),
+            invite_refused: rekindle_dm::invite_refused(&group.roster, &me),
         });
     }
     Ok(views)

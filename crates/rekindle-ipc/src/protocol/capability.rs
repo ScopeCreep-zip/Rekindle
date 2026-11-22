@@ -160,6 +160,7 @@ impl IpcRequest {
             | Self::GroupDmDecline { .. }
             | Self::GroupDmLeave { .. }
             | Self::GroupDmRename { .. }
+            | Self::GroupDmInvite { .. }
             | Self::DisappearingSet { .. }
             | Self::GroupDmSend { .. }
             | Self::GroupDmTyping { .. }

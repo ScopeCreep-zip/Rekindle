@@ -122,6 +122,7 @@ pub(crate) async fn select(
         | IpcRequest::GroupDmDecline { .. }
         | IpcRequest::GroupDmLeave { .. }
         | IpcRequest::GroupDmRename { .. }
+        | IpcRequest::GroupDmInvite { .. }
         | IpcRequest::DisappearingSet { .. }
         | IpcRequest::GroupDmSend { .. } => {
             group_dm::selection(ctx, request, &mut s).await?;

@@ -25,10 +25,10 @@ pub async fn rename(host: &dyn FriendHost, group_id: &str, name: &str) -> Result
     let id = parse_group_id(group_id)?;
     rekindle_dm::group::check_name(name).map_err(|e| friend_error(&e))?;
     let group = held(host, &id).await?;
-    if group.roster.creator().identity != host.group_dm()?.own_identity() {
-        return Err(FriendError::Invalid(
-            "only the group's creator renames it".into(),
-        ));
+    if let Some(reason) =
+        rekindle_dm::rename_refused(&group.roster, &host.group_dm()?.own_identity())
+    {
+        return Err(FriendError::Invalid(reason));
     }
     let payload = dm_outbox::payload(&DirectBody::GroupDmRename(GroupDmRename {
         group_id: id,

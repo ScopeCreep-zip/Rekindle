@@ -22,6 +22,10 @@ export interface GroupDmView {
   originPeer: string | null;
   /** In our "Chat Rooms" favourites (local only). */
   favourite: boolean;
+  /** The Host's verdict on renaming it: null when we may, else why not. */
+  renameRefused: string | null;
+  /** The Host's verdict on inviting more to it: null when we may, else why not. */
+  inviteRefused: string | null;
 }
 
 export const groupDmCommands = {
@@ -34,6 +38,9 @@ export const groupDmCommands = {
   groupDmLeave: (groupId: string) => hostInvoke<unknown>("group_dm_leave", { groupId }),
   groupDmRename: (groupId: string, name: string) =>
     hostInvoke<unknown>("group_dm_rename", { groupId, name }),
+  /** Invite friends into a group we created (at most eight in all). */
+  groupDmInvite: (groupId: string, members: string[]) =>
+    hostInvoke<unknown>("group_dm_invite", { groupId, members }),
   /** Our message's client id once its row and echo are committed
    *  (`queued`, then `sendStatus` events). */
   groupDmSend: (groupId: string, body: string) =>
