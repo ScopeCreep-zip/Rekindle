@@ -50,34 +50,60 @@ pub fn device_op_key<D: GovernanceRuntimeDeps + ?Sized>(
 
 /// Our op record in `community`: the record our device key's endorsement
 /// binds in `state`'s device set (ADR 0022 rule 3), where this device's
-/// op chain lives: `M(p)` for the member's first device (its endorsement,
-/// [`first_endorsement`], names `M(p)`), `M(p,d)` for any other. The
-/// write path stores our ops under it and the outbox publishes them on it.
+/// op chain lives. The member's first device's endorsement
+/// ([`first_endorsement`]) binds `M(p)`, the record its set is signed in;
+/// its ops land on our member record in `state` (the cert's, else our
+/// admitted `MemberJoined`'s, a rejoin's new one included), as before any
+/// second device. Any other device's endorsement binds its own `M(p,d)`.
+/// The write path stores our ops under it and the outbox publishes them
+/// on it.
 ///
 /// # Errors
-/// No membership or pseudonym, no stored device key
-/// ([`GovernanceRuntimeError::DeviceOpKeyMissing`]), or no endorsement of
-/// it in `state` ([`GovernanceRuntimeError::DeviceUnendorsed`]): an
-/// unendorsed key's ops land nowhere, never on `M(p)` by default.
+/// No membership, pseudonym or pinned cert, no stored device key
+/// ([`GovernanceRuntimeError::DeviceOpKeyMissing`]), no endorsement of it
+/// in `state` ([`GovernanceRuntimeError::DeviceUnendorsed`]: an unendorsed
+/// key's ops land nowhere, never on `M(p)` by default), or a first device
+/// whose member the state does not admit
+/// ([`GovernanceRuntimeError::MemberRecordMissing`]).
 pub fn own_op_record<D: GovernanceRuntimeDeps>(
     deps: &D,
     community: &str,
     state: &GovernanceState,
 ) -> Result<String, GovernanceRuntimeError> {
-    let (p, _) = crate::op_log::own_pseudonym(deps, community)?;
+    let me = crate::op_log::own_member(deps, community, state)?;
     let device = device_op_key(deps, community, false)?;
-    op_record_of(state, &p, &device.verifying_key().to_bytes())
-        .ok_or_else(|| GovernanceRuntimeError::DeviceUnendorsed(community.to_string()))
+    match op_record_of(state, &me.pseudonym, &device.verifying_key().to_bytes()) {
+        None => Err(GovernanceRuntimeError::DeviceUnendorsed(
+            community.to_string(),
+        )),
+        Some(OpRecord::Member) => me
+            .record
+            .ok_or(GovernanceRuntimeError::MemberRecordMissing(me.hex)),
+        Some(OpRecord::Device(record)) => Ok(record),
+    }
 }
 
-/// The record `p`'s endorsement of device key `key` binds in `state`, the
-/// lowest incarnation's (rule 6's order; rule 3 gives a key one record).
+/// Where the endorsement of one device key binds its op chain.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OpRecord {
+    /// The member's first device: `M(p)`, the member record.
+    Member,
+    /// Any other device: its own `M(p,d)`.
+    Device(String),
+}
+
+/// Where `p`'s endorsement of device key `key` in `state` binds its ops,
+/// by the lowest incarnation's endorsement (rule 6's order; rule 3 gives
+/// a key one record); `None` when `state` holds no endorsement of it.
 #[must_use]
-pub fn op_record_of(state: &GovernanceState, p: &PseudonymKey, key: &[u8; 32]) -> Option<String> {
+pub fn op_record_of(state: &GovernanceState, p: &PseudonymKey, key: &[u8; 32]) -> Option<OpRecord> {
     let md = state.devices.member(p)?;
-    (md.endorsements.iter())
-        .find(|((_, k), _)| k == key)
-        .map(|(_, e)| e.device_record.clone())
+    let (_, e) = md.endorsements.iter().find(|((_, k), _)| k == key)?;
+    Some(if md.member_record.as_ref() == Some(&e.device_record) {
+        OpRecord::Member
+    } else {
+        OpRecord::Device(e.device_record.clone())
+    })
 }
 
 /// The stored key, `None` when one may be minted (this device's first op
