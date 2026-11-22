@@ -97,6 +97,19 @@ pub enum Fault {
     /// the node's network (a returned readiness, a reattach) and the
     /// loopback failures, counted again, kill it ([`crate::loopback`]).
     RouteSilentDeath { node: usize, class: RouteClass },
+    /// The node's live own route of `class` stops taking traffic from
+    /// outside, while its loopback still passes (plan LF9, Linux r22): what
+    /// enters it by the blob's entry hop, a peer's send or the node's own
+    /// outside test, is lost (a call times out), while the node's loopback,
+    /// the route as its own safety route, is turned around at the hop over
+    /// the flow the node's own send just opened (veilid-core 0.5.8
+    /// `route_compile.rs:103`, `:420-434`, `rpc_route.rs:329-365`) and passes.
+    /// Veilid declares a route dead only on loopback failures or on lost
+    /// questions with it as the safety route (`route_stats.rs:19-29`, `:117-131`),
+    /// and charges a caller's lost question to the caller's safety route, so no
+    /// one is told: the route stays allocated and published until its owner
+    /// releases it.
+    OutsideDead { node: usize, class: RouteClass },
     /// The first hop of the node's safety route fails on its next app
     /// message or call: that send fails `NoConnection`, which our port
     /// reports as a `Send` error (our side: the peer's route is kept,
@@ -330,6 +343,7 @@ impl Netsim {
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
             Fault::RouteSilentDeath { node, class } => self.net.silence_route(node, class),
+            Fault::OutsideDead { node, class } => self.net.kill_outside(node, class),
             Fault::RouteLinkFailure { node } => {
                 self.net.inner.lock().faults.link_failure.insert(node);
             }

@@ -32,12 +32,10 @@ impl Liveness {
         let (nonce, datagram) = self.probe();
         self.outstanding.lock().insert(nonce);
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
-        // General after a resume or a peer's report: from outside (LF7).
-        let path = if class == RouteClass::General
-            && self
-                .outside_next
-                .swap(false, std::sync::atomic::Ordering::Relaxed)
-        {
+        // General every time from outside, as a peer's call travels (LF9):
+        // a loopback passes while strangers cannot reach the route
+        // (veilid-core 0.5.8 `route_compile.rs:420-434`, `rpc_route.rs:329-365`).
+        let path = if class == RouteClass::General {
             OwnPath::Outside
         } else {
             OwnPath::Loopback
@@ -63,11 +61,6 @@ impl Liveness {
                 ok,
                 "own route self-test spanned a suspend; discarded"
             );
-            if path == OwnPath::Outside {
-                // The outside test is still owed (LF7).
-                self.outside_next
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-            }
             return None;
         }
         tracing::debug!(?class, ?path, ok, "own route self-test");

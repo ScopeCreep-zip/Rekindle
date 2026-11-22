@@ -199,6 +199,26 @@ impl Network {
         }
     }
 
+    /// [`crate::Fault::OutsideDead`]: `node`'s live route of `class` stops
+    /// taking traffic from outside now; its loopback keeps passing, so it
+    /// never enters a loopback-failure run.
+    pub(crate) fn kill_outside(&self, node: usize, class: RouteClass) {
+        let tag = crate::routes::class_tag(class);
+        let mut inner = self.inner.lock();
+        let ids: Vec<String> = inner
+            .routes
+            .iter()
+            .filter(|(id, r)| r.node == node && crate::routes::is_class(id, node, tag))
+            .map(|(id, _)| id.clone())
+            .collect();
+        inner.faults.outside_dead.extend(ids);
+    }
+
+    /// Whether route `id` is dead from outside ([`crate::Fault::OutsideDead`]).
+    pub(crate) fn outside_dead(&self, id: &str) -> bool {
+        self.inner.lock().faults.outside_dead.contains(id)
+    }
+
     /// Whether route `id` fails end to end (its loopback tests fail):
     /// nothing sent over it or to it arrives.
     pub(crate) fn route_broken(&self, id: &str) -> bool {

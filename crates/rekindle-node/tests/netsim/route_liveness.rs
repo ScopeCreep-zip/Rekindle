@@ -230,15 +230,18 @@ async fn a_silently_dead_sending_route_is_found_by_its_self_test_and_replaced() 
 /// loopback re-primes the hop next to us right before it measures it and
 /// is turned around before the blob's entry hop (veilid-core 0.5.8
 /// `rpc_route.rs:329-365`), so on a resume Ada tests her General route from
-/// outside, as Bo's call travels, at once. The netsim has no model of the
-/// fault itself (a route whose loopback passes while calls entering by its
-/// entry hop are lost), so this checks the trigger and the path.
+/// outside, as Bo's call travels, at once. The fault itself (a route whose
+/// loopback passes while calls entering by its entry hop are lost) is
+/// [`Fault::OutsideDead`], plan LF9's scenario below; this checks the
+/// resume's trigger.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_resume_tests_the_general_route_from_outside_at_once() {
     let (sim, _nodes) = friends(126).await;
     let before = sim.route_blobs(0);
     assert!(!before.is_empty());
-    assert_eq!(sim.outside_calls(0, RouteClass::General), 0);
+    // General's periodic tests run from outside too (plan LF9): the resume
+    // must add one at once, beyond those.
+    let outside_before = sim.outside_calls(0, RouteClass::General);
     sim.fault(Fault::Sleep {
         node: 0,
         asleep: true,
@@ -251,7 +254,7 @@ async fn a_resume_tests_the_general_route_from_outside_at_once() {
     assert!(
         eventually(&sim, Duration::from_secs(20), || {
             let outside = sim.outside_calls(0, RouteClass::General);
-            async move { outside >= 1 }
+            async move { outside > outside_before }
         })
         .await,
         "the resume tested General from outside within 20 s"
@@ -259,4 +262,57 @@ async fn a_resume_tests_the_general_route_from_outside_at_once() {
     // The outside test passed: the healthy route is kept, not replaced.
     tokio::time::sleep(Duration::from_secs(30)).await;
     assert_eq!(sim.route_blobs(0), before, "the healthy route is kept");
+}
+
+/// Plan LF9 (Linux r22, no suspend): Ada's General route took nothing from
+/// outside ~4 min while her loopback self-test passed every period, and Bo's
+/// FriendAccepts to it timed out. A loopback is the route as its own safety
+/// route, turned around at the hop over the flow Ada's own send just opened
+/// (veilid-core 0.5.8 `route_compile.rs:420-434`, `rpc_route.rs:329-365`),
+/// and Veilid never declares such a route dead (`route_stats.rs:19-29`).
+/// Ada tests General from outside every period: her first test fails within
+/// one period (53.3 s), three failures (retests at most 20 s apart, each
+/// waiting its 15 s deadline) replace it, the replacement is republished
+/// only after its own outside test, and Bo's messages land.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_general_route_dead_from_outside_is_found_by_its_outside_test_and_replaced() {
+    let (sim, nodes) = friends(127).await;
+    let ada = key(&nodes[0]);
+    let before = sim.route_blobs(0);
+    assert!(!before.is_empty());
+    let outside_before = sim.outside_calls(0, RouteClass::General);
+    sim.fault(Fault::OutsideDead {
+        node: 0,
+        class: RouteClass::General,
+    });
+    for i in 0..3 {
+        send(&nodes[1], &ada, &format!("from outside {i}")).await;
+    }
+    assert!(
+        eventually(&sim, Duration::from_millis(53_400), || {
+            let outside = sim.outside_calls(0, RouteClass::General);
+            async move { outside > outside_before }
+        })
+        .await,
+        "Ada tested General from outside within one test period"
+    );
+    assert!(
+        eventually(&sim, Duration::from_secs(200), || {
+            let now = sim.route_blobs(0);
+            let replaced = !now.is_empty() && now.iter().all(|b| !before.contains(b));
+            async move { replaced }
+        })
+        .await,
+        "the route dead from outside was replaced and released within about 3 minutes"
+    );
+    for i in 0..3 {
+        let body = format!("from outside {i}");
+        assert!(
+            eventually(&sim, Duration::from_secs(120), || delivered(
+                &nodes[1], &ada, &body
+            ))
+            .await,
+            "{body} reached Ada over her replacement route"
+        );
+    }
 }

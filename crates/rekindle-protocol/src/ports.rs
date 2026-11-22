@@ -347,7 +347,13 @@ impl AppMessagePort for VeilidMessages {
         };
         let context = match path {
             rekindle_records::port::OwnPath::Loopback => self.pinned(profile, class)?,
-            rekindle_records::port::OwnPath::Outside => self.context(profile)?,
+            // Over our Sending route, apart from the route under test: the
+            // answer returns over Sending too (veilid-core 0.5.8
+            // `destination.rs:498-516`), so a failing pool route cannot fail
+            // it (plan LF9).
+            rekindle_records::port::OwnPath::Outside => {
+                self.pinned(profile, RouteClass::Sending)?
+            }
         };
         crate::own_routes::loopback_call(&self.api, &self.imports, &context, &blob, message).await
     }

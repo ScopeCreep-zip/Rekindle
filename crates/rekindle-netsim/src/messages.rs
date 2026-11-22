@@ -103,7 +103,8 @@ impl FakeMessages {
     }
 
     /// The node owning `target`'s route, `None` when its owner released
-    /// it, either route is broken end to end, or an unpinned send's pool
+    /// it, either route is broken end to end, `target` is dead from outside
+    /// and this is not its owner's loopback ([`crate::Fault::OutsideDead`]), or an unpinned send's pool
     /// safety route fails ([`crate::Fault::PoolRoutesFail`]) ([`crate::loopback`]: what
     /// is sent is lost); `RouteUnusable` when this node's cache does not
     /// resolve it (Veilid's `NoConnection`, [`crate::routes`]) or the first
@@ -133,6 +134,7 @@ impl FakeMessages {
         }
         if self.net.route_broken(target.as_str())
             || pinned.is_some_and(|id| self.net.route_broken(id))
+            || (self.net.outside_dead(target.as_str()) && pinned != Some(target.as_str()))
             || (pinned.is_none() && self.pool_failing())
         {
             return Ok(None);
@@ -343,8 +345,13 @@ impl AppMessagePort for FakeMessages {
             }
         }
         self.net.import_route(self.node, &own);
-        // From outside the call takes the pool's safety route, as a peer's.
-        let safety = (path == rekindle_records::port::OwnPath::Loopback).then_some(own.as_str());
+        // From outside the call takes our Sending route as its safety
+        // route, as `VeilidMessages` does (plan LF9), and enters as a peer's.
+        let sending = match path {
+            rekindle_records::port::OwnPath::Loopback => None,
+            rekindle_records::port::OwnPath::Outside => Some(self.pinned(RouteClass::Sending)?),
+        };
+        let safety = sending.as_deref().or(Some(own.as_str()));
         // Drawn from the class's own self-test stream: the self-test task
         // wakes beside the node's other tasks in the order tokio wakes them
         // (a resume's or a report's tests run at once), and a draw from the

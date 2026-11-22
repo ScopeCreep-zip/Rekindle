@@ -22,7 +22,6 @@ pub mod peer;
 pub mod resolve;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -55,6 +54,16 @@ use tokio::time::Instant;
 /// round probes our General route (S2), so a foreign probe that reaches us
 /// is that peer's report that our route failed it: it brings General's
 /// test forward ([`Liveness::route_reported`]).
+///
+/// General's every test runs from outside (plan LF9; `OwnPath::Outside`):
+/// our blob over our `Sending` route, entering by the blob's entry hop as a
+/// peer's call does. Veilid's loopback (the route as its own safety route,
+/// veilid-core 0.5.8 `route_compile.rs:420-434`) is turned around at the hop
+/// over the flow our own send just opened (`rpc_route.rs:329-365`) and keeps
+/// passing while no stranger reaches the route; Veilid never declares such a
+/// route dead (`route_stats.rs:19-29`), and a caller's lost question is
+/// charged to the caller's safety route, so only an outside round trip shows
+/// it. The replacement's pre-publish test is the same outside test.
 const TESTED: [RouteClass; 3] = [RouteClass::General, RouteClass::Media, RouteClass::Sending];
 
 /// The answer to an inbound call that may be a liveness probe.
@@ -83,9 +92,6 @@ pub struct Liveness {
     rng: Arc<dyn RandomSource>,
     /// The wall clock that shows a resume from a suspend (plan LF7).
     clock: Arc<dyn Clock>,
-    /// General's next self-test runs from outside, as a peer's call
-    /// (`OwnPath::Outside`): set by a resume or a peer's report (plan LF7).
-    outside_next: AtomicBool,
     routes: Arc<dyn RoutePort>,
     messages: Arc<dyn AppMessagePort>,
     classes: Mutex<HashMap<RouteClass, ClassState>>,
@@ -118,7 +124,6 @@ impl Liveness {
         Arc::new(Self {
             rng,
             clock,
-            outside_next: AtomicBool::new(false),
             routes,
             messages,
             classes: Mutex::new(HashMap::new()),
@@ -205,7 +210,6 @@ impl Liveness {
             .is_some_and(|s| s.rules.reported(Instant::now()));
         if brought {
             tracing::info!("a peer's probe reported our route; self-testing it now from outside");
-            self.outside_next.store(true, Ordering::Relaxed);
             self.network_changed.notify_one();
         }
         brought
@@ -219,7 +223,6 @@ impl Liveness {
     /// (`OwnPath`). A failed test replaces and republishes the route.
     pub fn resumed(&self) {
         tracing::info!("resumed from a suspend; testing our routes from outside");
-        self.outside_next.store(true, Ordering::Relaxed);
         self.network_changed();
     }
 
