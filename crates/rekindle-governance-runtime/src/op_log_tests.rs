@@ -269,7 +269,10 @@ fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_sta
         ],
     );
     let outcome = merge::merge_outcome(&cert, &set.ops);
-    assert_eq!(outcome.equivocators, vec![(first.author().clone(), 1)]);
+    assert_eq!(
+        outcome.equivocators,
+        vec![(first.author().clone(), first.op().device_key, 1)]
+    );
     let verdicts = fates(&set, &outcome);
     let of = |hash| verdicts.iter().find(|v| v.hash == hash).unwrap().fate;
     assert_eq!(of(first.hash()), OpFate::Applied);

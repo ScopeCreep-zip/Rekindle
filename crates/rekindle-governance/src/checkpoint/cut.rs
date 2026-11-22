@@ -14,13 +14,16 @@ use crate::op::VerifiedOp;
 use crate::state::GovernanceState;
 
 /// A cut op as the cut index names it: its hash, author (pseudonym key
-/// bytes) and seq, so a reader holding only the snapshot locates it in
-/// its author's op log through the directory at the cut (member →
-/// record, `CutSnapshot::locate`) plus its seq (plan E3.2 S7c.5, P3).
+/// bytes), device key and seq, so a reader holding only the snapshot
+/// locates it in its author's op log through the directory at the cut
+/// (member → record, `CutSnapshot::locate`) plus its seq on its device
+/// key's chain (plan E3.2 S7c.5, P3; ADR 0022 rule 1: a seq numbers its
+/// device key's chain).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CutOp {
     pub hash: OpHash,
     pub author: [u8; 32],
+    pub device_key: [u8; 32],
     pub seq: u64,
 }
 
@@ -31,6 +34,7 @@ impl CutOp {
         Self {
             hash: op.hash(),
             author: op.author().0,
+            device_key: op.op().device_key,
             seq: op.op().seq,
         }
     }
@@ -40,6 +44,7 @@ impl Canon for CutOp {
     fn put(&self, out: &mut Vec<u8>) {
         self.hash.put(out);
         self.author.put(out);
+        self.device_key.put(out);
         self.seq.put(out);
     }
 }
@@ -49,6 +54,7 @@ impl Decanon for CutOp {
         Some(Self {
             hash: Decanon::take(r)?,
             author: Decanon::take(r)?,
+            device_key: Decanon::take(r)?,
             seq: Decanon::take(r)?,
         })
     }
@@ -57,10 +63,13 @@ impl Decanon for CutOp {
 /// The cut index of one cut.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CutIndex {
-    /// Each author's highest seq in the cut, with that op's hash, keyed by
-    /// pseudonym bytes: an op is in the cut iff its seq is at or below its
-    /// author's entry.
-    pub authors: BTreeMap<[u8; 32], (u64, OpHash)>,
+    /// Each device key's highest merged op in the cut, keyed by the device
+    /// key's bytes: an op is in the cut iff its seq is at or below its
+    /// device key's entry. A seq numbers its device key's chain (ADR 0022
+    /// rule 1, `op_log::build_op`), so a member's two devices each have
+    /// their own cut: keyed by author, one device's top would cover the
+    /// other's later ops.
+    pub authors: BTreeMap<[u8; 32], CutOp>,
     /// The cut's power ops in the order the power phase visits them, each
     /// with its fate (`true`: applied, `false`: refused), located by author
     /// and seq (S7c.5, P3): `merge_from` needs every one of them.
@@ -87,19 +96,20 @@ pub struct CutIndex {
     /// beside the cut has it in its past only when its deps reach the
     /// locator's author at or above its seq (S7c.8).
     pub invite_codes: BTreeMap<String, ([u8; 16], bool, CutOp)>,
-    /// The authors that signed two ops at one seq in the cut, each with the
-    /// lowest such seq: every op of theirs at or above it is dropped on
-    /// every reader (`resolve::prepare`), later ones included, and
-    /// `authors` counts only the ops below it (plan E3.2 S7c.4a).
+    /// The device keys that signed two ops at one seq in the cut, each with
+    /// the lowest such seq: every op of that key at or above it is dropped
+    /// on every reader (`resolve::prepare`; ADR 0022 rule 5), later ones
+    /// included, and `authors` counts only the ops below it (plan E3.2
+    /// S7c.4a).
     pub forks: BTreeMap<[u8; 32], u64>,
-    /// The authors with cut ops the merge leaves out (pending, or at or
+    /// The device keys with cut ops the merge leaves out (pending, or at or
     /// above their fork), each with the highest seq of any of its cut ops:
-    /// an op at a seq above its author's `authors` entry and at or below
+    /// an op at a seq above its key's `authors` entry and at or below
     /// this one is in the cut but never merged (plan E3.2 S7c.4a).
     pub unmerged: BTreeMap<[u8; 32], u64>,
-    /// The lamport of each author's op in `authors` (plan E3.2 S7c.5): a
+    /// The lamport of each device key's op in `authors` (plan E3.2 S7c.5): a
     /// post-cut op's lamport is one above its deps', so a reader that
-    /// skipped the cut verifies an op citing an author's top cut op from
+    /// skipped the cut verifies an op citing a key's top cut op from
     /// this (`VerifiedOp::verify_with`). Every cut head is such an op.
     pub lamports: BTreeMap<[u8; 32], u64>,
     /// The cut's applied `Checkpoint` ops at its two greatest heights,
@@ -121,11 +131,11 @@ impl CutIndex {
     }
 
     /// What verifying a post-cut op reads of its dep `r` when `r` is its
-    /// author's top op in the cut (`authors`); `None` for any other op.
+    /// device key's top op in the cut (`authors`); `None` for any other op.
     #[must_use]
     pub fn top_facts<'a>(&self, r: &'a OpRef) -> Option<crate::op::DepFacts<'a>> {
-        let (seq, hash) = self.authors.get(&r.author.0)?;
-        if *seq != r.author_seq || *hash != r.op_hash {
+        let top = self.authors.get(&r.device_key)?;
+        if top.seq != r.author_seq || top.hash != r.op_hash || top.author != r.author.0 {
             return None;
         }
         Some(crate::op::DepFacts {
@@ -133,8 +143,8 @@ impl CutIndex {
             // The op hash matched above covers the op's device key, so the
             // locator's is the op's.
             device_key: &r.device_key,
-            seq: *seq,
-            lamport: *self.lamports.get(&r.author.0)?,
+            seq: top.seq,
+            lamport: *self.lamports.get(&r.device_key)?,
         })
     }
 }

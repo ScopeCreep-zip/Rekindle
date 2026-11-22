@@ -70,8 +70,9 @@ pub enum NotOnTop {
     /// on stay ancestry and every op with one in its causal past is judged
     /// by the counted and final rounds (ADR 0022 rule 5, `ancestry`), over
     /// the whole op set, which the snapshot does not carry.
-    /// `author` is the pseudonym's bytes (the error stays `Copy`).
-    Forked { author: [u8; 32], seq: u64 },
+    /// `device_key` is the forked key's bytes (ADR 0022 rule 5: a fork is
+    /// a device key's; the error stays `Copy`).
+    Forked { device_key: [u8; 32], seq: u64 },
     /// (a): a device op in `rest`; the device phase resolves before every
     /// cut power op (ADR 0022 rule 6, plan E3.2 S7d-keys.1).
     DeviceOp(OpHash),
@@ -94,8 +95,8 @@ pub(super) struct RestSet<'a> {
     pub deps: Vec<Vec<Dep>>,
     pub index: HashMap<OpHash, usize>,
     pub pending: Vec<OpHash>,
-    pub equivocators: Vec<(PseudonymKey, u64)>,
-    /// Per op beside the cut, each author's highest cut seq its deps (and
+    pub equivocators: Vec<(PseudonymKey, [u8; 32], u64)>,
+    /// Per op beside the cut, each device key's highest cut seq its deps (and
     /// its `rest` ancestors' deps) cite; `None` for an op with every cut
     /// head in its past.
     pub reach: Vec<Option<Reach>>,
@@ -104,16 +105,17 @@ pub(super) struct RestSet<'a> {
     pub devices: DeviceView,
 }
 
-/// An author's highest seq cited, keyed by pseudonym bytes.
+/// A device key's highest seq cited, keyed by the key's bytes (a seq
+/// numbers its device key's chain, ADR 0022 rule 1).
 pub(super) type Reach = BTreeMap<[u8; 32], u64>;
 
-/// Whether `reach` has the cut op at `author`'s `seq` in its past.
-pub(super) fn reaches(reach: &Reach, author: &[u8; 32], seq: u64) -> bool {
-    reach.get(author).is_some_and(|s| *s >= seq)
+/// Whether `reach` has the cut op at `device_key`'s `seq` in its past.
+pub(super) fn reaches(reach: &Reach, device_key: &[u8; 32], seq: u64) -> bool {
+    reach.get(device_key).is_some_and(|s| *s >= seq)
 }
 
-fn cite(reach: &mut Reach, author: [u8; 32], seq: u64) {
-    let slot = reach.entry(author).or_insert(seq);
+fn cite(reach: &mut Reach, device_key: [u8; 32], seq: u64) {
+    let slot = reach.entry(device_key).or_insert(seq);
     *slot = (*slot).max(seq);
 }
 
@@ -249,20 +251,22 @@ fn context<'a>(
 }
 
 /// `rest` in stamp order, deduplicated, refused (`NotOnTop::Forked`) when
-/// an author forked in the cut or among `rest`'s own ops (`resolve::prepare`
+/// a device key forked in the cut or among `rest`'s own ops (`resolve::prepare`
 /// keeps its ops from the fork on as ancestry over the whole set), each
 /// op's deps
 /// resolved, (c) and (a′) checked.
 fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSet<'a>, NotOnTop> {
-    let cut_seq = |author: &PseudonymKey| snap.cut.authors.get(&author.0).map(|(s, _)| *s);
-    let cut_top = |author: &PseudonymKey| {
-        let unmerged = snap.cut.unmerged.get(&author.0).copied();
-        cut_seq(author).max(unmerged)
+    // Per device key: a seq numbers its key's chain (ADR 0022 rule 1).
+    let cut_seq = |key: &[u8; 32]| snap.cut.authors.get(key).map(|top| top.seq);
+    let cut_top = |key: &[u8; 32]| {
+        let unmerged = snap.cut.unmerged.get(key).copied();
+        cut_seq(key).max(unmerged)
     };
     let mut sorted: Vec<&VerifiedOp> = rest.iter().collect();
     sorted.sort_by_key(|op| op.stamp());
     sorted.dedup_by_key(|op| op.hash());
-    if let Some(op) = (sorted.iter()).find(|o| cut_top(o.author()).is_some_and(|s| o.op().seq <= s))
+    if let Some(op) =
+        (sorted.iter()).find(|o| cut_top(&o.op().device_key).is_some_and(|s| o.op().seq <= s))
     {
         return Err(NotOnTop::IntoTheCut(op.hash()));
     }
@@ -270,7 +274,7 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
         return Err(NotOnTop::DeviceOp(op.hash()));
     }
     let mut by_seq: Vec<(u64, [u8; 32], OpHash)> = (sorted.iter())
-        .map(|o| (o.op().seq, o.author().0, o.hash()))
+        .map(|o| (o.op().seq, o.op().device_key, o.hash()))
         .collect();
     by_seq.sort_unstable();
     let mut fork_at: BTreeMap<[u8; 32], u64> = snap.cut.forks.clone();
@@ -280,9 +284,9 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
             *slot = (*slot).min(pair[0].0);
         }
     }
-    if let Some((author, seq)) = fork_at.iter().next() {
+    if let Some((key, seq)) = fork_at.iter().next() {
         return Err(NotOnTop::Forked {
-            author: *author,
+            device_key: *key,
             seq: *seq,
         });
     }
@@ -296,9 +300,8 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
         deps: Vec::new(),
         index: HashMap::new(),
         pending: Vec::new(),
-        equivocators: (fork_at.iter())
-            .map(|(author, seq)| (PseudonymKey(*author), *seq))
-            .collect(),
+        // A fork returned above: none reaches here.
+        equivocators: Vec::new(),
         reach: Vec::new(),
         devices: snap.state.devices.clone(),
     };
@@ -311,7 +314,7 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
                 deps.push(Dep::Rest(i));
                 mask |= masks[i];
                 true
-            } else if cut_seq(&d.author).is_some_and(|s| d.author_seq <= s) {
+            } else if cut_seq(&d.device_key).is_some_and(|s| d.author_seq <= s) {
                 deps.push(Dep::Cut);
                 mask |= head_bit.get(&d.op_hash).copied().unwrap_or(0);
                 true
@@ -355,10 +358,10 @@ fn beside_reach(op: &VerifiedOp, deps: &[Dep], set: &RestSet<'_>) -> Result<Reac
     let mut reach = Reach::new();
     for (d, at) in op.op().deps.iter().zip(deps) {
         match at {
-            Dep::Cut => cite(&mut reach, d.author.0, d.author_seq),
+            Dep::Cut => cite(&mut reach, d.device_key, d.author_seq),
             Dep::Rest(i) => {
-                for (author, seq) in set.reach[*i].iter().flatten() {
-                    cite(&mut reach, *author, *seq);
+                for (key, seq) in set.reach[*i].iter().flatten() {
+                    cite(&mut reach, *key, *seq);
                 }
             }
         }
@@ -377,11 +380,11 @@ fn beside_anchored(ctx: &Ctx<'_>, set: &RestSet<'_>) -> Result<(), NotOnTop> {
         };
         let mut reach = reach.clone();
         for q in ctx.cut_applied.iter().rev() {
-            if !reaches(&reach, &q.author().0, q.op().seq) {
+            if !reaches(&reach, &q.op().device_key, q.op().seq) {
                 return Err(NotOnTop::BesideTheCut(set.ops[i].hash()));
             }
             for d in &q.op().deps {
-                cite(&mut reach, d.author.0, d.author_seq);
+                cite(&mut reach, d.device_key, d.author_seq);
             }
         }
     }
@@ -457,7 +460,11 @@ fn frontier_holds(ctx: &Ctx<'_>, set: &RestSet<'_>, i: usize) -> bool {
     let (Some(claimed), Some(target)) = (target_seq_frontier(body), removal_target(body)) else {
         return true;
     };
-    let in_cut = (ctx.snap.cut.authors.get(&target.0)).map_or(0, |(s, _)| s + 1);
+    let in_cut = (ctx.snap.cut.authors.values())
+        .filter(|top| top.author == target.0)
+        .map(|top| top.seq + 1)
+        .max()
+        .unwrap_or(0);
     let counted = (0..i)
         .filter(|&o| set.ops[o].author() == target && set.past.contains(i, o))
         .map(|o| set.ops[o].op().seq + 1)

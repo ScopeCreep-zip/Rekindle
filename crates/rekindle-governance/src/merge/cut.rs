@@ -19,15 +19,17 @@ pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState
     let set = resolve::prepare(cut_ops);
     let (round, _, _, _) = ancestry::settle(cert, &set).settled;
     // A forked op is ancestry only (ADR 0022 rule 5): the cut index counts
-    // the merged ops, and `forks` names the fork.
+    // the merged ops, and `forks` names the fork. Every map is per device
+    // key: a seq numbers its key's chain (ADR 0022 rule 1).
     let merged = |i: &usize| !set.forked[*i];
-    let mut authors: BTreeMap<[u8; 32], (u64, OpHash)> = BTreeMap::new();
+    let mut authors: BTreeMap<[u8; 32], CutOp> = BTreeMap::new();
     let mut lamports: BTreeMap<[u8; 32], u64> = BTreeMap::new();
     for op in (0..set.ops.len()).filter(merged).map(|i| set.ops[i]) {
-        let entry = (op.op().seq, op.hash());
-        if authors.get(&op.author().0).is_none_or(|held| *held < entry) {
-            authors.insert(op.author().0, entry);
-            lamports.insert(op.author().0, op.lamport());
+        let entry = CutOp::of(op);
+        let key = entry.device_key;
+        if (authors.get(&key)).is_none_or(|held| (held.seq, held.hash) < (entry.seq, entry.hash)) {
+            authors.insert(key, entry);
+            lamports.insert(key, op.lamport());
         }
     }
     let n = set.ops.len();
@@ -166,13 +168,13 @@ fn checkpoints(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<CutOp, u64> 
         .collect()
 }
 
-/// Each author that signed two ops at one seq, with the lowest such seq
+/// Each device key that signed two ops at one seq, with the lowest such seq
 /// (`resolve::prepare`'s `fork_at`).
 fn forks(cut_ops: &[VerifiedOp]) -> BTreeMap<[u8; 32], u64> {
     let mut seen: BTreeMap<([u8; 32], u64), OpHash> = BTreeMap::new();
     let mut out: BTreeMap<[u8; 32], u64> = BTreeMap::new();
     for op in cut_ops {
-        let key = (op.author().0, op.op().seq);
+        let key = (op.op().device_key, op.op().seq);
         if seen.insert(key, op.hash()).is_some_and(|h| h != op.hash()) {
             let at = out.entry(key.0).or_insert(u64::MAX);
             *at = (*at).min(key.1);
@@ -181,17 +183,14 @@ fn forks(cut_ops: &[VerifiedOp]) -> BTreeMap<[u8; 32], u64> {
     out
 }
 
-/// Each author with a cut op above its merged ops (`authors`), with the
-/// highest seq of any of its cut ops.
-fn unmerged(
-    cut_ops: &[VerifiedOp],
-    live: &BTreeMap<[u8; 32], (u64, OpHash)>,
-) -> BTreeMap<[u8; 32], u64> {
+/// Each device key with a cut op above its merged ops (`authors`), with
+/// the highest seq of any of its cut ops.
+fn unmerged(cut_ops: &[VerifiedOp], live: &BTreeMap<[u8; 32], CutOp>) -> BTreeMap<[u8; 32], u64> {
     let mut out: BTreeMap<[u8; 32], u64> = BTreeMap::new();
     for op in cut_ops {
-        let author = op.author().0;
-        if live.get(&author).is_none_or(|(s, _)| op.op().seq > *s) {
-            let top = out.entry(author).or_insert(0);
+        let key = op.op().device_key;
+        if live.get(&key).is_none_or(|top| op.op().seq > top.seq) {
+            let top = out.entry(key).or_insert(0);
             *top = (*top).max(op.op().seq);
         }
     }

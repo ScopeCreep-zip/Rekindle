@@ -521,7 +521,7 @@ fn equivocation_is_detected_and_the_fork_dropped() {
     let f2 = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 61, meta("two"));
     ops.extend([f1.clone(), f2.clone()]);
     let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
-    assert_eq!(outcome.equivocators, vec![(pk(2), 1)]);
+    assert_eq!(outcome.equivocators, vec![(pk(2), pk(2).0, 1)]);
     assert!(!outcome.applied.contains(&f1.hash()) && !outcome.applied.contains(&f2.hash()));
 }
 
@@ -539,7 +539,7 @@ fn a_fork_apart_in_stamp_order_is_found_and_one_hash_twice_is_not() {
     assert!(f1.lamport() < f2.lamport() && once.hash() == again.hash());
     ops.extend([f1, x, f2, once, again]);
     let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
-    assert_eq!(outcome.equivocators, vec![(pk(2), 1)]);
+    assert_eq!(outcome.equivocators, vec![(pk(2), pk(2).0, 1)]);
 }
 
 #[test]

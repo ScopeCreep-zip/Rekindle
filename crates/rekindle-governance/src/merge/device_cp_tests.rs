@@ -10,11 +10,12 @@ use rekindle_types::governance::{
 use rekindle_types::id::PseudonymKey;
 
 use super::op_proptests::{joined, pk};
-use super::{merge, merge_cut};
+use super::resume_tests::split;
+use super::{merge, merge_cut, merge_from, merge_outcome};
 use crate::checkpoint::{state_preimage, state_root_of, CutSnapshot};
 use crate::checksum::canonical_state;
 use crate::device::{device_set_hash, endorsement_signing_bytes, retirement_signing_bytes};
-use crate::fixture::{cert, op, FIXTURE_ANCHOR as ANCHOR};
+use crate::fixture::{cert, meta, op, op_on, FIXTURE_ANCHOR as ANCHOR};
 use crate::op::VerifiedOp;
 
 fn signer(a: u8) -> SigningKey {
@@ -140,4 +141,31 @@ fn a_checkpoint_round_trip_keeps_the_device_set() {
     };
     let snap = CutSnapshot::decode(&checkpoint, &bytes).expect("a canonical snapshot");
     assert_eq!(snap.state.devices, state.devices);
+}
+
+/// A seq numbers its device key's chain (ADR 0022 rule 1), so the cut is
+/// per device key: member 8's second device writes seq 0 and 1 of its own
+/// chain after a cut that holds its first device's seq 0 and 1. Keyed by
+/// author, the first device's top would cover them (`IntoTheCut`), and the
+/// full merge would call the two seq 0 ops a fork, muting the person
+/// (rule 5: a fork retires the key, not the person).
+#[test]
+fn a_second_device_s_ops_past_its_own_cut_resume_as_the_full_merge() {
+    let c = cert(&pk(1), AdmissionMode::Open);
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
+    let j = op(&who(8), 0, &[&c0], 1, joined_with_device(8, 3));
+    let k = op(&who(8), 1, &[&j], 2, device_op(8, 0, 4, 0, 8));
+    let b0 = op_on(&who(8), [4; 32], 0, &[&k], 3, meta("b0"));
+    let b1 = op_on(&who(8), [4; 32], 1, &[&b0], 4, meta("b1"));
+    let all = vec![c0, j, k.clone(), b0, b1];
+    let full = merge_outcome(&c, &all);
+    assert!(
+        full.equivocators.is_empty(),
+        "two devices' seq 0 ops are no fork"
+    );
+    let (snap, power, rest) = split(&c, &all, &[&k]);
+    assert_eq!(rest.len(), 2, "the second device's ops are past the cut");
+    let resumed = merge_from(&c, &snap, &power, &rest).expect("on top of the cut");
+    assert_eq!(resumed.state, full.state);
+    assert_eq!(resumed.quarantined, full.quarantined);
 }

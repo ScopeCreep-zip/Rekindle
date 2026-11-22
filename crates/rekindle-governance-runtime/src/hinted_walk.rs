@@ -1,7 +1,8 @@
 //! The joiner's walk above a checkpoint's cut (plan E3.2 S7c.5, "Using a
 //! checkpoint"). With a verified hint and its snapshot, the walk from the
-//! inviter's frontier stops at the cut: every ref at or below its author's
-//! highest seq in the cut (merged or not, `CutIndex.authors`/`unmerged`)
+//! inviter's frontier stops at the cut: every ref at or below its device
+//! key's highest seq in the cut (a seq numbers its key's chain, ADR 0022
+//! rule 1) (merged or not, `CutIndex.authors`/`unmerged`)
 //! is not walked into. What the merge from the snapshot still needs of the
 //! cut is fetched by locator, and nothing else:
 //!
@@ -68,9 +69,9 @@ use crate::op_walk::WALK_FETCHES_IN_FLIGHT;
 /// Where a ref sits against the cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Place {
-    /// Above its author's cut ops: walked.
+    /// Above its device key's cut ops: walked.
     Above,
-    /// At or below its author's highest merged cut seq: fetched by locator
+    /// At or below its device key's highest merged cut seq: fetched by locator
     /// when cited.
     Merged,
     /// In the cut but never merged (pending, or at or above a fork): the
@@ -79,18 +80,18 @@ enum Place {
 }
 
 fn place(snap: &CutSnapshot, r: &OpRef) -> Place {
-    let author = &r.author.0;
-    if (snap.cut.authors.get(author)).is_some_and(|(seq, _)| r.author_seq <= *seq) {
+    let key = &r.device_key;
+    if (snap.cut.authors.get(key)).is_some_and(|top| r.author_seq <= top.seq) {
         Place::Merged
-    } else if (snap.cut.unmerged.get(author)).is_some_and(|seq| r.author_seq <= *seq) {
+    } else if (snap.cut.unmerged.get(key)).is_some_and(|seq| r.author_seq <= *seq) {
         Place::Unmerged
     } else {
         Place::Above
     }
 }
 
-/// Whether `r` names an op at or below its author's highest merged seq in
-/// the cut.
+/// Whether `r` names an op at or below its device key's highest merged
+/// seq in the cut.
 #[must_use]
 pub fn in_cut(snap: &CutSnapshot, r: &OpRef) -> bool {
     place(snap, r) == Place::Merged
@@ -182,8 +183,10 @@ impl CutFacts {
 
 /// The facts of the cut op `held`, fetched for the locator `r` of
 /// community `anchor`: `None` unless it decodes with `r`'s hash, its
-/// device key's signature verifies, its author and seq are `r`'s, and its seq
-/// is at or below its author's highest merged seq in the cut.
+/// device key's signature verifies, its author, device key and seq are
+/// `r`'s, and its seq is at or below its device key's highest merged seq in
+/// the cut (ADR 0022 rule 1: a seq numbers its device key's chain, so a
+/// member's other device's top never covers it).
 #[must_use]
 pub fn cut_fact(
     anchor: &str,
@@ -194,7 +197,11 @@ pub fn cut_fact(
     let decoded = decode_op(&held.encoded).ok()?;
     let op = &decoded.op;
     let hash = op_hash(&decoded.unsigned, &op.sig);
-    if hash != r.op_hash || op.author != r.author || op.seq != r.author_seq {
+    if hash != r.op_hash
+        || op.author != r.author
+        || op.device_key != r.device_key
+        || op.seq != r.author_seq
+    {
         return None;
     }
     // The op's device key signs it (ADR 0022 rule 1), never its author.
@@ -204,12 +211,12 @@ pub fn cut_fact(
         &op.sig,
     )
     .ok()?;
-    let (top_seq, top_hash) = snap.cut.authors.get(&op.author.0)?;
-    if op.seq > *top_seq {
+    let top = snap.cut.authors.get(&op.device_key)?;
+    if op.seq > top.seq || top.author != op.author.0 {
         return None;
     }
-    let lamport = if (op.seq, hash) == (*top_seq, *top_hash) {
-        *snap.cut.lamports.get(&op.author.0)?
+    let lamport = if (op.seq, hash) == (top.seq, top.hash) {
+        *snap.cut.lamports.get(&op.device_key)?
     } else {
         snap.cut.lamports.values().copied().max()?
     };
@@ -356,7 +363,7 @@ where
     Fut: Future<Output = Result<Option<HeldOp>, GovernanceRuntimeError>>,
 {
     let mut known: HashMap<OpHash, u64> = (snap.cut.authors.iter())
-        .filter_map(|(author, (_, hash))| Some((*hash, *snap.cut.lamports.get(author)?)))
+        .filter_map(|(key, top)| Some((top.hash, *snap.cut.lamports.get(key)?)))
         .collect();
     let mut deps: HashMap<OpHash, Vec<OpHash>> = HashMap::new();
     let mut below = Vec::new();

@@ -79,7 +79,8 @@ pub fn op_at(
     VerifiedOp::assume_verified(given.op().clone(), given.hash(), lamport)
 }
 
-/// One fixture op: `deps` as given, hash from `tag`.
+/// One fixture op: `deps` as given, hash from `tag`, signed (in name) by
+/// the author's own key as its device key.
 #[must_use]
 pub fn op(
     author: &PseudonymKey,
@@ -88,18 +89,34 @@ pub fn op(
     tag: u64,
     entry: GovernanceEntry,
 ) -> VerifiedOp {
+    op_on(author, author.0, seq, deps, tag, entry)
+}
+
+/// One fixture op of `author` at `seq` on `device_key`'s chain (ADR 0022
+/// rule 1: a seq numbers its device key's chain, so `prev` is that key's
+/// op at `seq - 1`).
+#[must_use]
+pub fn op_on(
+    author: &PseudonymKey,
+    device_key: [u8; 32],
+    seq: u64,
+    deps: &[&VerifiedOp],
+    tag: u64,
+    entry: GovernanceEntry,
+) -> VerifiedOp {
     let prev = deps
         .iter()
-        .find(|d| d.author() == author && d.op().seq + 1 == seq)
+        .find(|d| d.op().device_key == device_key && d.op().seq + 1 == seq)
         .map(|d| d.hash());
     let lamport = 1 + deps.iter().map(|d| d.lamport()).max().unwrap_or(0);
     let mut hasher = blake3::Hasher::new();
     hasher.update(&author.0);
+    hasher.update(&device_key);
     hasher.update(&seq.to_le_bytes());
     hasher.update(&tag.to_le_bytes());
     let hash = OpHash(*hasher.finalize().as_bytes());
     let op = GovernanceOp {
-        device_key: author.0,
+        device_key,
         author: author.clone(),
         seq,
         prev,

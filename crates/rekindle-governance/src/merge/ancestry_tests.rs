@@ -60,7 +60,7 @@ fn a_quarantined_op_stays_ancestry_and_its_dependants_resolve() {
     let x = op(&pk(3), 1, &[&f1, find(&ops, 3, 0)], 62, meta("x"));
     ops.extend([f1.clone(), f2.clone(), x.clone()]);
     let out = outcome(&ops);
-    assert_eq!(out.equivocators, vec![(pk(2), 1)]);
+    assert_eq!(out.equivocators, vec![(pk(2), pk(2).0, 1)]);
     assert!(out.pending.is_empty(), "nothing waits on a quarantined op");
     assert!(applied(&out, &x));
     for f in [&f1, &f2] {

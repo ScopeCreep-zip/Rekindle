@@ -13,24 +13,24 @@ use crate::op::VerifiedOp;
 
 /// The op set `merge` resolves: complete (every dep present), in stamp
 /// order (which is causal: a dep's lamport is below its dependant's), with
-/// each op's causal past. An equivocating author's ops from its fork on stay
-/// in the set as ancestry only (`forked`, ADR 0022 rule 5): they resolve
+/// each op's causal past. An equivocating device key's ops from its fork on
+/// stay in the set as ancestry only (`forked`, ADR 0022 rule 5): they resolve
 /// their dependants' deps and are never applied.
 pub(super) struct OpSet<'a> {
     pub ops: Vec<&'a VerifiedOp>,
     pub past: Ancestry,
-    /// Per op: its author forked at or below its seq (quarantined, kept as
-    /// ancestry).
+    /// Per op: its device key forked at or below its seq (quarantined, kept
+    /// as ancestry; ADR 0022 rule 5: the key, not the person).
     pub forked: Vec<bool>,
     /// Per forked op, its quarantine cause: the lowest-stamp other op of
-    /// its author at the fork seq outside its own causal past (the op a
+    /// its device key at the fork seq outside its own causal past (the op a
     /// reader must hold to have seen the fork).
     pub fork_cause: Vec<Option<usize>>,
     /// Ops whose deps are missing from the set (`pending_deps`).
     pub pending: Vec<OpHash>,
-    /// Authors that signed two different ops at one seq, each with the
-    /// lowest such seq (its fork).
-    pub equivocators: Vec<(PseudonymKey, u64)>,
+    /// Device keys that signed two different ops at one seq of their
+    /// chain, each with its author and the lowest such seq (its fork).
+    pub equivocators: Vec<(PseudonymKey, [u8; 32], u64)>,
     /// The device set the kept ops carry, harvested in stamp order (ADR
     /// 0022 rule 2: from every carrier, a forked or refused one included).
     pub devices: DeviceView,
@@ -137,25 +137,32 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
     sorted.sort_by_key(|op| op.stamp());
     sorted.dedup_by_key(|op| op.hash());
 
-    // Equivocation: two ops at one (author, seq). Every op of that author
-    // from the fork on is quarantined, on every reader alike, and kept as
-    // ancestry (ADR 0022 rule 5).
-    // Sorted by (seq, author, hash), two ops at one (author, seq) with
+    // Equivocation: two ops at one (device key, seq). A seq numbers its
+    // device key's chain, so a member's two devices both write seq 0 and
+    // neither forks: fork evidence is two different ops at one (device
+    // key, seq), and it retires that key, not the person (ADR 0022 rule
+    // 5). Every op of that key from the fork on is quarantined, on every
+    // reader alike, and kept as ancestry.
+    // Sorted by (seq, device key, hash), two ops at one (key, seq) with
     // different hashes sit next to each other; seq leads the key because
     // it is a cheap compare that settles most pairs.
     let mut by_seq: Vec<(u64, &[u8; 32], OpHash)> = sorted
         .iter()
-        .map(|op| (op.op().seq, &op.author().0, op.hash()))
+        .map(|op| (op.op().seq, &op.op().device_key, op.hash()))
         .collect();
     by_seq.sort_unstable();
     let mut fork_at: BTreeMap<[u8; 32], u64> = BTreeMap::new();
     for pair in by_seq.windows(2) {
-        let ((seq, author, a), (next_seq, next_author, b)) = (pair[0], pair[1]);
-        if author == next_author && seq == next_seq && a != b {
-            let slot = fork_at.entry(*author).or_insert(u64::MAX);
+        let ((seq, key, a), (next_seq, next_key, b)) = (pair[0], pair[1]);
+        if key == next_key && seq == next_seq && a != b {
+            let slot = fork_at.entry(*key).or_insert(u64::MAX);
             *slot = (*slot).min(seq);
         }
     }
+    let author_of: HashMap<[u8; 32], PseudonymKey> = (sorted.iter())
+        .filter(|op| fork_at.contains_key(&op.op().device_key))
+        .map(|op| (op.op().device_key, op.author().clone()))
+        .collect();
 
     let mut index: HashMap<IndexKey, usize> = HashMap::with_capacity(sorted.len());
     let mut kept: Vec<&VerifiedOp> = Vec::with_capacity(sorted.len());
@@ -182,7 +189,7 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
         index.insert(IndexKey(op.hash()), kept.len());
         forked.push(
             fork_at
-                .get(&op.author().0)
+                .get(&op.op().device_key)
                 .is_some_and(|seq| op.op().seq >= *seq),
         );
         devices.harvest(op);
@@ -197,13 +204,13 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
         fork_cause,
         pending,
         equivocators: (fork_at.into_iter())
-            .map(|(author, seq)| (PseudonymKey(author), seq))
+            .filter_map(|(key, seq)| Some((author_of.get(&key)?.clone(), key, seq)))
             .collect(),
         devices,
     }
 }
 
-/// Each forked op's cause (`OpSet::fork_cause`): among its author's ops at
+/// Each forked op's cause (`OpSet::fork_cause`): among its device key's ops at
 /// the fork seq, the lowest in stamp order that is not the op and not in
 /// its causal past; the lowest other one when its past holds them all.
 fn fork_causes(
@@ -213,7 +220,7 @@ fn fork_causes(
     fork_at: &BTreeMap<[u8; 32], u64>,
 ) -> Vec<Option<usize>> {
     let at_fork: Vec<usize> = (0..ops.len())
-        .filter(|&j| fork_at.get(&ops[j].author().0) == Some(&ops[j].op().seq))
+        .filter(|&j| fork_at.get(&ops[j].op().device_key) == Some(&ops[j].op().seq))
         .collect();
     (0..ops.len())
         .map(|i| {
@@ -222,7 +229,7 @@ fn fork_causes(
             }
             let siblings = || {
                 (at_fork.iter().copied())
-                    .filter(move |&j| j != i && ops[j].author() == ops[i].author())
+                    .filter(move |&j| j != i && ops[j].op().device_key == ops[i].op().device_key)
             };
             siblings()
                 .find(|&j| !past.contains(i, j))

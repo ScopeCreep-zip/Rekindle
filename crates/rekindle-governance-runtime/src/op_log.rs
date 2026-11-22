@@ -357,8 +357,10 @@ pub fn fates(set: &VerifiedSet, outcome: &MergeOutcome) -> Vec<OpVerdict> {
         .iter()
         .map(|op| {
             let hash = op.hash();
-            let forked = (outcome.equivocators.iter())
-                .any(|(author, fork)| author == op.author() && op.op().seq >= *fork);
+            // A fork retires its device key, not the person (ADR 0022 rule 5).
+            let forked = (outcome.equivocators.iter()).any(|(author, key, fork)| {
+                author == op.author() && *key == op.op().device_key && op.op().seq >= *fork
+            });
             let fate = if forked {
                 OpFate::Equivocation
             } else if refused.contains(&hash) {
@@ -430,12 +432,13 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
         }
         if !fetched {
             let outcome = merge::merge_outcome(&cert, &set.ops);
-            for (author, fork) in &outcome.equivocators {
+            for (author, key, fork) in &outcome.equivocators {
                 tracing::warn!(
                     community = community_id,
                     author = %hex::encode(author.0),
+                    device_key = %hex::encode(key),
                     fork,
-                    "governance equivocation: two ops at one seq; the author's ops from the fork on are dropped"
+                    "governance equivocation: two ops at one seq of a device key; that key's ops from the fork on are dropped"
                 );
             }
             let verdicts = fates(&set, &outcome);

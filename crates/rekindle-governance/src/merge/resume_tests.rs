@@ -52,7 +52,7 @@ fn body(heads: &[&VerifiedOp], bytes: &[u8]) -> Checkpoint {
 
 /// The snapshot at the cut whose heads are `heads` (the maximal ops of
 /// their closure), the cut's power ops, and every op of `all` outside it.
-fn split(
+pub(super) fn split(
     cert: &GenesisCert,
     all: &[VerifiedOp],
     heads: &[&VerifiedOp],
@@ -338,8 +338,9 @@ proptest! {
         let on_top = (0..dag.ops.len()).filter(|i| !cut.contains(i)).all(|i| {
             let o = &dag.ops[i];
             let whole = cut.iter().all(|c| dag.past[i].contains(c));
-            let top = cut_index.authors.get(&o.author().0).map(|(s, _)| *s);
-            let top = top.max(cut_index.unmerged.get(&o.author().0).copied());
+            let key = &o.op().device_key;
+            let top = cut_index.authors.get(key).map(|t| t.seq);
+            let top = top.max(cut_index.unmerged.get(key).copied());
             let above = top.is_none_or(|s| o.op().seq > s);
             let dated = class_of(o.body()) == OpClass::Power || Some((o.op().issued_at, o.hash())) > cut_index.mainline_max;
             // A device op past the cut is not on top until K4b (K-CP).

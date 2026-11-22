@@ -66,7 +66,7 @@ impl CutSnapshot {
         Some(OpRef {
             op_hash: op.hash,
             author_record: self.state.author_record(cert, &author)?,
-            device_key: author.0,
+            device_key: op.device_key,
             author,
             author_seq: op.seq,
         })

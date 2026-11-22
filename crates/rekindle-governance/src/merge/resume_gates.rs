@@ -262,7 +262,7 @@ fn checkpoint_gate(
     invalid: &mut [bool],
 ) -> Result<(), NotOnTop> {
     let in_cut = |r: &rekindle_types::governance::OpRef| {
-        (ctx.snap.cut.authors.get(&r.author.0)).is_some_and(|(s, _)| r.author_seq <= *s)
+        (ctx.snap.cut.authors.get(&r.device_key)).is_some_and(|top| r.author_seq <= top.seq)
     };
     let at = |r: &rekindle_types::governance::OpRef| match set.index.get(&r.op_hash) {
         Some(&i) => Some(Dep::Rest(i)),
@@ -371,7 +371,7 @@ fn invite_gate(
         let in_cut = ctx.snap.cut.invite_codes.get(&proof.code_hash);
         let beside = set.reach[o].as_ref();
         if let (Some(reach), Some((_, revoked, created))) = (beside, in_cut) {
-            if *revoked || !super::resume::reaches(reach, &created.author, created.seq) {
+            if *revoked || !super::resume::reaches(reach, &created.device_key, created.seq) {
                 return Err(NotOnTop::BesideTheCut(op.hash()));
             }
         }
