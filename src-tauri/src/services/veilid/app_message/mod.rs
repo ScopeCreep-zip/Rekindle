@@ -240,7 +240,7 @@ pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
     match envelope {
         CommunityEnvelope::TypingIndicator { .. } => "typing",
         CommunityEnvelope::WatchRelay { .. } => "watch_relay",
-        CommunityEnvelope::Control(payload) => match payload {
+        CommunityEnvelope::Control(payload) => match &**payload {
             C::VoiceJoin { .. } => "voice_join",
             C::VoiceJoinAck { .. } => "voice_join_ack",
             C::VoiceJoinConfirmed { .. } => "voice_join_confirmed",
@@ -266,12 +266,11 @@ pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
 /// conservatively return `None` — the rejection is logged via tracing
 /// and a video-specific UI toast would be a guess.
 fn video_payload_channel_from_bytes(envelope_bytes: &[u8]) -> Option<String> {
-    let Ok(Some(CommunityEnvelope::Control(ref payload))) =
-        try_decode_community_envelope(envelope_bytes)
-    else {
-        return None;
-    };
-    rekindle_video::video_payload_channel(payload).map(str::to_string)
+    let payload = try_decode_community_envelope(envelope_bytes)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)?;
+    rekindle_video::video_payload_channel(&payload).map(str::to_string)
 }
 
 /// True when the local user's active voice/video session is bound to
@@ -337,7 +336,7 @@ async fn handle_relayed_envelope(
                 state,
                 &community_id,
                 &signed.sender_pseudonym,
-                payload,
+                *payload,
             )
             .await;
         }

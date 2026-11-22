@@ -65,21 +65,24 @@ pub(crate) fn acknowledges(
     reply: Option<&CommunityEnvelope>,
 ) -> bool {
     let (
-        CommunityEnvelope::Control(ControlPayload::VoiceMediaKey {
+        Some(ControlPayload::VoiceMediaKey {
             channel_id,
             sender,
             recipient,
             key_index,
             ..
         }),
-        Some(CommunityEnvelope::Control(ControlPayload::VoiceMediaKeyAck {
+        Some(ControlPayload::VoiceMediaKeyAck {
             channel_id: acked_channel,
             sender: acked_sender,
             recipient: acker,
             key_index: acked_index,
             ..
-        })),
-    ) = (envelope, reply)
+        }),
+    ) = (
+        envelope.as_control(),
+        reply.and_then(CommunityEnvelope::as_control),
+    )
     else {
         return false;
     };
@@ -99,13 +102,13 @@ pub async fn attempt_media_key(
         tracing::warn!("unreadable media key row; settled unsent");
         return MediaKeyAttempt::Superseded;
     };
-    let CommunityEnvelope::Control(ControlPayload::VoiceMediaKey {
+    let Some(ControlPayload::VoiceMediaKey {
         community_id,
         channel_id,
         recipient,
         key_index,
         ..
-    }) = &envelope
+    }) = envelope.as_control()
     else {
         tracing::warn!("a media key row that is not a media key; settled unsent");
         return MediaKeyAttempt::Superseded;

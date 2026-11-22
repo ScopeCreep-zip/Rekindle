@@ -37,7 +37,7 @@ pub async fn fetch_and_broadcast(
     let preview = rekindle_link_preview::fetch_link_preview(url, message_id)
         .await
         .map_err(|e| format!("link preview fetch failed: {e}"))?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::LinkPreview {
+    let envelope = CommunityEnvelope::control(ControlPayload::LinkPreview {
         channel_id: channel_id.to_string(),
         message_id: preview.message_id.clone(),
         url: preview.url.clone(),

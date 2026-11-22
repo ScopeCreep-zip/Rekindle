@@ -173,7 +173,7 @@ async fn the_awaited_send_reaches_peers_after_the_scope_closed() {
         route_blob: vec![1, 2, 3],
     }]);
     let envelope =
-        CommunityEnvelope::Control(envelope::ControlPayload::HeadAdvanced { hint: vec![1] });
+        CommunityEnvelope::control(envelope::ControlPayload::HeadAdvanced { hint: vec![1] });
     let sent = send_to_mesh_awaited(Arc::clone(&deps), "c1", &envelope)
         .await
         .expect("signed");

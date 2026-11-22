@@ -44,7 +44,7 @@ pub(super) fn broadcast_media_capabilities_impl(
 ) -> Result<(), String> {
     use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
     let caps = local_media_capabilities(state);
-    let envelope = CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+    let envelope = CommunityEnvelope::control(ControlPayload::MediaCapabilities {
         channel_id: channel_id.to_string(),
         max_pixel_count: caps.max_pixel_count,
         max_fps: caps.max_fps,

@@ -271,7 +271,7 @@ impl HostGovernance {
     ) -> Result<(), ModerationRefusal> {
         self.moderate(community_id, target, ModerationAction::Remove)?;
         moderation::remove_member(self, community_id, target, reason).await?;
-        let notice = CommunityEnvelope::Control(ControlPayload::Kick {
+        let notice = CommunityEnvelope::control(ControlPayload::Kick {
             target_pseudonym: target.to_owned(),
         });
         self.send_to_mesh(community_id, &notice)?;

@@ -105,7 +105,7 @@ pub async fn answer_media_key_call(
                 .await
                 .and_then(|ack| {
                     rekindle_codec::capnp_envelope::encode_community_envelope(
-                        &CommunityEnvelope::Control(ack),
+                        &CommunityEnvelope::control(ack),
                     )
                     .ok()
                 })

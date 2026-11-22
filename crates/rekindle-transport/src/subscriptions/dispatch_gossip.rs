@@ -96,9 +96,8 @@ pub(super) async fn dispatch_bare_gossip<H: InboundHandler>(
     // not delay the wave. `is_directed` payloads are never amplified —
     // §10.6, and see that method for the two definitions it replaced.
     // A head hint is gated by the member's handler before it is relayed.
-    if let rekindle_codec::community::envelope::CommunityEnvelope::Control(
-        rekindle_codec::community::envelope::ControlPayload::HeadAdvanced { ref hint },
-    ) = inner
+    if let Some(rekindle_codec::community::envelope::ControlPayload::HeadAdvanced { hint }) =
+        inner.as_control()
     {
         let relay = handler
             .on_head_advanced(&signed.community_id, &signed.sender_pseudonym, hint)

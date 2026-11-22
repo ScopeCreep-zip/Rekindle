@@ -162,7 +162,7 @@ async fn fetch_and_cache_chunks<D: FilesDeps>(
     // receivers (handle_request_attachment) probe their per-community
     // cache by attachment_id alone, so the channel context is unused
     // on the serve side.
-    let payload = CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+    let payload = CommunityEnvelope::control(ControlPayload::RequestAttachment {
         channel_id: String::new(),
         attachment_id: expression_id,
         requested_chunks: requested_chunks.to_vec(),
@@ -173,8 +173,7 @@ async fn fetch_and_cache_chunks<D: FilesDeps>(
     let reply = deps.app_call_peer(&route_blob, bytes).await?;
     let envelope = rekindle_codec::capnp_envelope::decode_community_envelope(&reply)
         .map_err(|e| FilesError::Transport(format!("decode reply: {e}")))?;
-    let CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) = envelope
-    else {
+    let Some(ControlPayload::MultiAttachmentChunk { chunks }) = envelope.into_control() else {
         return Err(FilesError::Transport("unexpected reply variant".into()));
     };
 

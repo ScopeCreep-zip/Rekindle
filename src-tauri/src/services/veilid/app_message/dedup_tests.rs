@@ -13,7 +13,7 @@ const WALK: &str = "walk";
 
 /// A `VoiceLeave` as the walk sends it, with the send's `message_id`.
 fn leave(message_id: u8) -> SignedEnvelope {
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceLeave {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceLeave {
         channel_id: "voice".into(),
     });
     SignedEnvelope {

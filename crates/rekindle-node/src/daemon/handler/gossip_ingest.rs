@@ -64,10 +64,7 @@ impl DaemonHandler {
 
         // A kick rotates the keys the kicked member holds (plan D20). The
         // worker checks the sender's authority before acting.
-        if let CommunityEnvelope::Control(ControlPayload::Kick {
-            ref target_pseudonym,
-        }) = envelope
-        {
+        if let Some(ControlPayload::Kick { target_pseudonym }) = envelope.as_control() {
             let request = crate::daemon::mek_rotation::MekRotationRequest::kick(
                 community_id,
                 target_pseudonym.clone(),
@@ -83,7 +80,7 @@ impl DaemonHandler {
 
         // The membership control messages (plan E3.1 B2e): onboarding
         // answers and a member's own departure.
-        if let CommunityEnvelope::Control(ref payload) = envelope {
+        if let Some(payload) = envelope.as_control() {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 crate::host::adapters::governance::HostGovernance::new(ctx)
                     .on_membership_control(community_id, sender_pseudonym, payload)
@@ -93,19 +90,19 @@ impl DaemonHandler {
 
         // A joiner's (or a member's missed) key request (plan E3.2 S6): the
         // Host's responder answers members only.
-        if let CommunityEnvelope::Control(ControlPayload::RequestMEK {
-            ref channel_id,
+        if let Some(ControlPayload::RequestMEK {
+            channel_id,
             needed_generation,
-            ref requester_pseudonym,
+            requester_pseudonym,
             cascade_index,
-        }) = envelope
+        }) = envelope.as_control()
         {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 let request = crate::host::adapters::governance::MekRequest {
                     channel_id: channel_id.clone(),
-                    needed_generation,
+                    needed_generation: *needed_generation,
                     requester_pseudonym: requester_pseudonym.clone(),
-                    cascade_index,
+                    cascade_index: *cascade_index,
                 };
                 let deps =
                     crate::daemon::mek_rotation::DaemonMekAdapter::new(std::sync::Arc::clone(&ctx));
@@ -119,7 +116,7 @@ impl DaemonHandler {
         }
 
         // A signed governance op (plan E3.2, `governanceOp @74`).
-        if let CommunityEnvelope::Control(ControlPayload::GovernanceOp { ref op }) = envelope {
+        if let Some(ControlPayload::GovernanceOp { op }) = envelope.as_control() {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 let host = crate::host::adapters::governance::HostGovernance::new(ctx);
                 host.on_governance_op(community_id, op.clone()).await;
@@ -129,10 +126,10 @@ impl DaemonHandler {
 
         // A game server added or removed (plan E3.1 H1): stored when the
         // Host's adapter accepts it.
-        if let CommunityEnvelope::Control(
-            ref payload @ (ControlPayload::GameServerAdded { .. }
+        if let Some(
+            payload @ (ControlPayload::GameServerAdded { .. }
             | ControlPayload::GameServerRemoved { .. }),
-        ) = envelope
+        ) = envelope.as_control()
         {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 crate::host::adapters::governance::HostGovernance::new(ctx)
@@ -143,10 +140,10 @@ impl DaemonHandler {
 
         // A message pinned or unpinned (plan E3.1 E3b): stored when the
         // Host's adapter accepts it.
-        if let CommunityEnvelope::Control(
-            ref payload @ (ControlPayload::MessagePinned { .. }
+        if let Some(
+            payload @ (ControlPayload::MessagePinned { .. }
             | ControlPayload::MessageUnpinned { .. }),
-        ) = envelope
+        ) = envelope.as_control()
         {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 crate::host::adapters::governance::HostGovernance::new(ctx)
@@ -160,9 +157,7 @@ impl DaemonHandler {
         // read from the thread record (the transport maps no thread
         // payload). A thread's opening and archive are signed governance
         // ops, never a gossip frame (plan E3.2 S8-E).
-        if let CommunityEnvelope::Control(
-            ref payload @ ControlPayload::ThreadMessageReceived { .. },
-        ) = envelope
+        if let Some(payload @ ControlPayload::ThreadMessageReceived { .. }) = envelope.as_control()
         {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 let channel = crate::host::adapters::channel::HostChannel::new(&ctx);
@@ -186,12 +181,12 @@ impl DaemonHandler {
 
         // An event created, updated, deleted or answered (plan E3.1 E4):
         // stored when the Host's adapter accepts it.
-        if let CommunityEnvelope::Control(
-            ref payload @ (ControlPayload::EventCreated { .. }
+        if let Some(
+            payload @ (ControlPayload::EventCreated { .. }
             | ControlPayload::EventUpdated { .. }
             | ControlPayload::EventDeleted { .. }
             | ControlPayload::EventRsvpChanged { .. }),
-        ) = envelope
+        ) = envelope.as_control()
         {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 crate::host::adapters::governance::HostGovernance::new(ctx)

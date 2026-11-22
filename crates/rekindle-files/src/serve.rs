@@ -69,7 +69,7 @@ pub fn serve_attachment_request(
 
 /// The `MultiAttachmentChunk` envelope carrying `chunks`.
 fn encode(chunks: &[ControlPayload]) -> Option<Vec<u8>> {
-    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(
+    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::MultiAttachmentChunk {
             chunks: chunks.to_vec(),
         },
@@ -97,8 +97,7 @@ mod tests {
     fn parse_reply(bytes: &[u8]) -> Vec<(u32, Vec<u8>)> {
         let env =
             rekindle_codec::capnp_envelope::decode_community_envelope(bytes).expect("decode reply");
-        let CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) = env
-        else {
+        let Some(ControlPayload::MultiAttachmentChunk { chunks }) = env.into_control() else {
             panic!("unexpected reply variant");
         };
         chunks

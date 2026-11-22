@@ -181,7 +181,7 @@ mod tests {
         use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
         let op = crate::governance_op::encode_op(&largest_checkpoint_op()).expect("encodes");
         let envelope =
-            encode_community_envelope(&CommunityEnvelope::Control(ControlPayload::GovernanceOp {
+            encode_community_envelope(&CommunityEnvelope::control(ControlPayload::GovernanceOp {
                 op,
             }))
             .expect("encodes");

@@ -219,7 +219,7 @@ pub(super) fn broadcast_mode_switch(
     mode: &str,
     host: Option<String>,
 ) {
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceModeSwitch {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceModeSwitch {
         channel_id: channel_id.to_string(),
         mode: mode.to_string(),
         host_pseudonym: host,

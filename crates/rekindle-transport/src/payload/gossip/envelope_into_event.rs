@@ -30,7 +30,7 @@ pub fn envelope_into_event(
     sender: &str,
 ) -> Option<SubscriptionEvent> {
     match envelope {
-        CommunityEnvelope::Control(control) => control_into_event(control, community, sender),
+        CommunityEnvelope::Control(control) => control_into_event(*control, community, sender),
         // Channel typing is the Host's (plan E3.4 S9): only it holds the
         // text keys that name the channel behind the tag, and it lapses
         // the start itself (`operations::typing::channel_frame`). A

@@ -129,7 +129,7 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     let rotator_pseudonym = deps.my_pseudonym(community_id).map(|p| pseudonym_hex(&p));
     deps.send_to_mesh(
         community_id,
-        &CommunityEnvelope::Control(ControlPayload::MEKRotated {
+        &CommunityEnvelope::control(ControlPayload::MEKRotated {
             channel_id: scope.wire_channel(),
             new_generation,
             rotator_pseudonym,
@@ -218,7 +218,7 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
 
     deps.send_to_mesh(
         community_id,
-        &CommunityEnvelope::Control(ControlPayload::MEKRotated {
+        &CommunityEnvelope::control(ControlPayload::MEKRotated {
             channel_id: scope.wire_channel(),
             new_generation,
             rotator_pseudonym: Some(me_hex),

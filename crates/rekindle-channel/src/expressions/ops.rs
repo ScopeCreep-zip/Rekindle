@@ -29,7 +29,7 @@ pub fn play_soundboard<D: ChannelMessagingDeps>(
     let actor_pseudonym = deps
         .my_pseudonym_hex(community_id)
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::SoundboardPlay {
+    let envelope = CommunityEnvelope::control(ControlPayload::SoundboardPlay {
         channel_id: channel_id.to_string(),
         expression_id: expression_id_hex.to_string(),
         actor_pseudonym,

@@ -100,18 +100,22 @@ pub enum BootstrapReply {
 /// none of the three for `anchor` (a bare NAK, whose reason is unnamed:
 /// `NotAdmitted`).
 pub fn read_reply(reply: &[u8], anchor: &str) -> Result<BootstrapReply, GovernanceRuntimeError> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(reply) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapResponseV2 {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(reply)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::BootstrapResponseV2 {
             anchor: answered,
             frontier,
-        }))) if answered == anchor => Ok(BootstrapReply::Frontier(frontier)),
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapPartial {
-            anchor: answered,
-        }))) if answered == anchor => Ok(BootstrapReply::Partial),
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRefused {
+        }) if answered == anchor => Ok(BootstrapReply::Frontier(frontier)),
+        Some(ControlPayload::BootstrapPartial { anchor: answered }) if answered == anchor => {
+            Ok(BootstrapReply::Partial)
+        }
+        Some(ControlPayload::BootstrapRefused {
             anchor: answered,
             reason,
-        }))) if answered == anchor => Err(GovernanceRuntimeError::BootstrapRefused(reason)),
+        }) if answered == anchor => Err(GovernanceRuntimeError::BootstrapRefused(reason)),
         _ => Err(GovernanceRuntimeError::BootstrapRefused(
             rekindle_types::join_refusal::JoinRefusal::NotAdmitted,
         )),

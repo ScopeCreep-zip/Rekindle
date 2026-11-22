@@ -91,7 +91,7 @@ fn sealed_envelope(
     let sealed = keys.seal_for(recipient, &aad, &key.secret)?;
     let signature =
         deps.sign_sealed_media_key(community_id, channel_id, recipient, key.index, &sealed)?;
-    Some(CommunityEnvelope::Control(ControlPayload::VoiceMediaKey {
+    Some(CommunityEnvelope::control(ControlPayload::VoiceMediaKey {
         community_id: community_id.to_string(),
         channel_id: channel_id.to_string(),
         sender,

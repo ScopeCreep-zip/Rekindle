@@ -181,7 +181,6 @@ LifecycleRequest::InviteRevoke {
 /// `check` for the profile, policy and onboarding requests.
 pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
     match request {
-        SettingsRequest::CommunityPolicyGet { community: key } => community(key),
         SettingsRequest::CommunityUpdateProfile {
             community: key,
             bio,
@@ -222,7 +221,8 @@ pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
                 .map_err(|e| IpcResponse::error(400, format!("display name: {e}")))
                 .map(drop)
         }
-        SettingsRequest::CommunitySetPresencePolicy { community: key, .. } => community(key),
+        SettingsRequest::CommunityPolicyGet { community: key }
+        | SettingsRequest::CommunitySetPresencePolicy { community: key, .. } => community(key),
         SettingsRequest::CommunitySetAvatar {
             community: key,
             image,

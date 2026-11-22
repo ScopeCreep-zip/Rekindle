@@ -167,7 +167,7 @@ fn read_community_envelope(
         )),
         Which::Control(c) => {
             let c = c.map_err(|e| capnp_err(&e))?;
-            Ok(CommunityEnvelope::Control(decode_control_payload(c)?))
+            Ok(CommunityEnvelope::control(decode_control_payload(c)?))
         }
         Which::TypingIndicator(t) => {
             let t = t.map_err(|e| capnp_err(&e))?;
@@ -252,7 +252,7 @@ mod tests {
         use crate::community::envelope::{ControlPayload, MediaSessionKey};
 
         // Leg 1 — VoiceJoin with carried display name.
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+        let env = CommunityEnvelope::control(ControlPayload::VoiceJoin {
             channel_id: "ch_voice".into(),
             route_blob: vec![9, 9, 9],
             display_name: Some("FireStarter92".into()),
@@ -262,8 +262,8 @@ mod tests {
             },
         });
         let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+        match decode_community_envelope(&bytes).unwrap().into_control() {
+            Some(ControlPayload::VoiceJoin {
                 channel_id,
                 route_blob,
                 display_name,
@@ -279,7 +279,7 @@ mod tests {
         }
 
         // Leg 2 — VoiceJoinAck carries acker identity + route.
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+        let env = CommunityEnvelope::control(ControlPayload::VoiceJoinAck {
             channel_id: "ch_voice".into(),
             joiner_pseudonym: "joiner_hex".into(),
             display_name: None,
@@ -290,8 +290,8 @@ mod tests {
             },
         });
         let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+        match decode_community_envelope(&bytes).unwrap().into_control() {
+            Some(ControlPayload::VoiceJoinAck {
                 channel_id,
                 joiner_pseudonym,
                 display_name,
@@ -309,12 +309,12 @@ mod tests {
         }
 
         // Leg 3 — VoiceJoinConfirmed.
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed {
+        let env = CommunityEnvelope::control(ControlPayload::VoiceJoinConfirmed {
             channel_id: "ch_voice".into(),
         });
         let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed { channel_id }) => {
+        match decode_community_envelope(&bytes).unwrap().into_control() {
+            Some(ControlPayload::VoiceJoinConfirmed { channel_id }) => {
                 assert_eq!(channel_id, "ch_voice");
             }
             _ => panic!("wrong variant"),
@@ -325,7 +325,7 @@ mod tests {
     fn voice_roster_entry_display_name_roundtrip() {
         use crate::community::envelope::{ControlPayload, MediaSessionKey, VoiceRosterEntry};
 
-        let env = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
+        let env = CommunityEnvelope::control(ControlPayload::VoiceRoster {
             channel_id: "ch_voice".into(),
             participants: vec![
                 VoiceRosterEntry {
@@ -350,8 +350,8 @@ mod tests {
             ],
         });
         let bytes = encode_community_envelope(&env).unwrap();
-        match decode_community_envelope(&bytes).unwrap() {
-            CommunityEnvelope::Control(ControlPayload::VoiceRoster { participants, .. }) => {
+        match decode_community_envelope(&bytes).unwrap().into_control() {
+            Some(ControlPayload::VoiceRoster { participants, .. }) => {
                 assert_eq!(participants.len(), 2);
                 assert_eq!(participants[0].display_name.as_deref(), Some("Alice"));
                 assert!(participants[0].muted);

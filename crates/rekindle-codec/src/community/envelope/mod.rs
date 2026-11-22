@@ -20,7 +20,10 @@ pub use sign::{sign_envelope, verify_envelope};
 #[serde(tag = "type", content = "data")]
 pub enum CommunityEnvelope {
     /// A control operation (channel/role/invite/event management, moderation, etc.).
-    Control(ControlPayload),
+    ///
+    /// Boxed: the control payload is several times the size of every
+    /// other variant, so an unboxed one made each envelope that size.
+    Control(Box<ControlPayload>),
     /// Typing indicator (ephemeral, not stored; plan E3.4 S9): a start
     /// lasting `ttl_ms`, or the stop when `ttl_ms` is 0, in the channel
     /// whose tag under the current text key of its scope is `channel_tag`.
@@ -48,6 +51,30 @@ pub enum CommunityEnvelope {
 }
 
 impl CommunityEnvelope {
+    /// The envelope carrying `payload`.
+    #[must_use]
+    pub fn control(payload: ControlPayload) -> Self {
+        Self::Control(Box::new(payload))
+    }
+
+    /// The control payload, when this envelope carries one.
+    #[must_use]
+    pub fn as_control(&self) -> Option<&ControlPayload> {
+        match self {
+            Self::Control(payload) => Some(payload),
+            _ => None,
+        }
+    }
+
+    /// The control payload by value, when this envelope carries one.
+    #[must_use]
+    pub fn into_control(self) -> Option<ControlPayload> {
+        match self {
+            Self::Control(payload) => Some(*payload),
+            _ => None,
+        }
+    }
+
     /// Is this envelope addressed to **one** member rather than the
     /// community?
     ///
@@ -66,7 +93,7 @@ impl CommunityEnvelope {
     /// guarded separately and only on one track.
     #[must_use]
     pub fn is_directed(&self) -> bool {
-        let Self::Control(payload) = self else {
+        let Some(payload) = self.as_control() else {
             return false;
         };
         matches!(

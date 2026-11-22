@@ -51,7 +51,7 @@ impl HostGovernance {
             .community_membership_impl(community_id)
             .and_then(|m| m.my_pseudonym_hex)
             .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.into()))?;
-        let envelope = CommunityEnvelope::Control(ControlPayload::MessagePinned {
+        let envelope = CommunityEnvelope::control(ControlPayload::MessagePinned {
             channel_id: channel_id.to_owned(),
             message_id: message_id.to_owned(),
             pinned_by: pinned_by.clone(),
@@ -79,7 +79,7 @@ impl HostGovernance {
         message_id: &str,
     ) -> Result<(), GovernanceRuntimeError> {
         self.require_permission(community_id, permissions::MANAGE_MESSAGES)?;
-        let envelope = CommunityEnvelope::Control(ControlPayload::MessageUnpinned {
+        let envelope = CommunityEnvelope::control(ControlPayload::MessageUnpinned {
             channel_id: channel_id.to_owned(),
             message_id: message_id.to_owned(),
         });

@@ -83,7 +83,7 @@ fn verify_rejects_wrong_key() {
 /// silently defaulted to `vp9 @0` fails the assert.
 #[test]
 fn envelope_video_fragment_codec_capnp_roundtrip() {
-    let data = CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
+    let data = CommunityEnvelope::control(ControlPayload::VideoFragment(VideoFragmentPayload {
         channel_id: "ch_video".into(),
         stream_id: [0xAB; 16],
         frame_seq: 7,
@@ -98,8 +98,8 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
     }));
     let bytes = encode_community_envelope(&data).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
+    match back.into_control() {
+        Some(ControlPayload::VideoFragment(VideoFragmentPayload {
             codec,
             keyframe,
             frame_seq,
@@ -114,7 +114,7 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
         other => panic!("wrong variant after capnp round-trip: {other:?}"),
     }
 
-    let parity = CommunityEnvelope::Control(ControlPayload::VideoParityFragment(
+    let parity = CommunityEnvelope::control(ControlPayload::VideoParityFragment(
         VideoParityFragmentPayload {
             channel_id: "ch_video".into(),
             stream_id: [0xCD; 16],
@@ -132,16 +132,14 @@ fn envelope_video_fragment_codec_capnp_roundtrip() {
     ));
     let bytes = encode_community_envelope(&parity).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::VideoParityFragment(
-            VideoParityFragmentPayload {
-                codec,
-                data_count,
-                frame_len,
-                key_index,
-                ..
-            },
-        )) => {
+    match back.into_control() {
+        Some(ControlPayload::VideoParityFragment(VideoParityFragmentPayload {
+            codec,
+            data_count,
+            frame_len,
+            key_index,
+            ..
+        })) => {
             assert_eq!(codec, Codec::Vp8);
             assert_eq!(data_count, 4);
             assert_eq!(frame_len, 4096);
@@ -167,11 +165,11 @@ fn envelope_media_capabilities_capnp_roundtrip() {
         supports_optimize_for_latency: true,
         supported_scalability_modes: vec![ScalabilityMode::Flat, ScalabilityMode::L1T2],
     };
-    let envelope = CommunityEnvelope::Control(inner);
+    let envelope = CommunityEnvelope::control(inner);
     let bytes = encode_community_envelope(&envelope).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+    match back.into_control() {
+        Some(ControlPayload::MediaCapabilities {
             channel_id,
             max_pixel_count,
             max_fps,
@@ -203,7 +201,7 @@ fn envelope_media_capabilities_sign_and_verify() {
     let signing_key = SigningKey::from_bytes(&[7u8; 32]);
     let verifying_key = VerifyingKey::from(&signing_key);
     let pseudo = hex::encode(verifying_key.to_bytes());
-    let envelope = CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+    let envelope = CommunityEnvelope::control(ControlPayload::MediaCapabilities {
         channel_id: "ch_42".into(),
         max_pixel_count: 854 * 480,
         max_fps: 15,
@@ -222,10 +220,10 @@ fn control_payload_capnp_roundtrip() {
     let payload = ControlPayload::MemberLeave {
         pseudonym_key: "abc123".into(),
     };
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MemberLeave { pseudonym_key }) => {
+    match back.into_control() {
+        Some(ControlPayload::MemberLeave { pseudonym_key }) => {
             assert_eq!(pseudonym_key, "abc123");
         }
         _ => panic!("wrong variant"),
@@ -245,10 +243,10 @@ fn mek_transfer_ack_capnp_roundtrip() {
         transfer_id: vec![5; 16],
         ack_tag: vec![6; 32],
     });
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MekTransferAck(MekTransferAckPayload {
+    match back.into_control() {
+        Some(ControlPayload::MekTransferAck(MekTransferAckPayload {
             community_id,
             channel_id,
             generation,
@@ -276,10 +274,10 @@ fn mek_transfer_ack_capnp_roundtrip() {
         transfer_id: vec![],
         ack_tag: vec![],
     });
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload_none)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload_none)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::MekTransferAck(MekTransferAckPayload {
+    match back.into_control() {
+        Some(ControlPayload::MekTransferAck(MekTransferAckPayload {
             channel_id,
             generation,
             ..
@@ -300,10 +298,10 @@ fn request_segment_expansion_capnp_roundtrip() {
         requester_pseudonym: "feedface".repeat(4),
         full_segment_index: 0,
     };
-    let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+    let bytes = encode_community_envelope(&CommunityEnvelope::control(payload)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
-    match back {
-        CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
+    match back.into_control() {
+        Some(ControlPayload::RequestSegmentExpansion {
             community_id,
             requester_pseudonym,
             full_segment_index,

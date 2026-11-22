@@ -111,7 +111,7 @@ fn a_full_community_envelope_decodes() {
             payload: noise(7, n),
             signature: noise(8, 64),
         };
-        encode_community_envelope(&CommunityEnvelope::Control(ControlPayload::VideoFragment(
+        encode_community_envelope(&CommunityEnvelope::control(ControlPayload::VideoFragment(
             fragment,
         )))
         .unwrap()

@@ -88,7 +88,7 @@ fn reply(served: &[Vec<u8>], indices: &[u32]) -> Vec<u8> {
             plaintext_hash: [0u8; 32],
         })
         .collect();
-    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(
+    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::MultiAttachmentChunk { chunks },
     ))
     .unwrap()

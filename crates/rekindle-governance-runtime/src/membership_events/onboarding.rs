@@ -187,7 +187,7 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
 
     process_member_roles_changed(deps, community_id, sender_pseudonym, &final_role_ids);
 
-    let envelope = CommunityEnvelope::Control(ControlPayload::OnboardingComplete {
+    let envelope = CommunityEnvelope::control(ControlPayload::OnboardingComplete {
         pseudonym_key: sender_pseudonym.to_string(),
         role_ids: final_role_ids.clone(),
     });

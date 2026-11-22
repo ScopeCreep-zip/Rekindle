@@ -326,7 +326,7 @@ pub fn encode_refusal(
 
 fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntimeError> {
     let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(
-        &CommunityEnvelope::Control(payload),
+        &CommunityEnvelope::control(payload),
     )
     .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap response: {e}")))?;
     if bytes.len() > MAX_BOOTSTRAP_RESPONSE_LEN {
@@ -357,7 +357,7 @@ pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
     anchor: &str,
     joiner: &BootstrapJoiner,
 ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
-    let request = CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+    let request = CommunityEnvelope::control(ControlPayload::BootstrapRequest {
         joiner_pseudonym: joiner.pseudonym.clone(),
         anchor: anchor.to_owned(),
         member_joined: joiner.member_joined.clone(),
@@ -429,8 +429,7 @@ mod tests {
         let back = rekindle_codec::capnp_envelope::try_decode_community_envelope(&bytes)
             .unwrap()
             .unwrap();
-        let CommunityEnvelope::Control(ControlPayload::BootstrapResponseV2 { frontier, .. }) = back
-        else {
+        let Some(ControlPayload::BootstrapResponseV2 { frontier, .. }) = back.into_control() else {
             panic!("not a bootstrapResponseV2");
         };
         assert_eq!(frontier.len(), MAX_FRONTIER_REFS);

@@ -124,7 +124,7 @@ impl HostGovernance {
                 return;
             };
             let route = host.our_route_blob_impl();
-            let joined = CommunityEnvelope::Control(ControlPayload::MemberJoined {
+            let joined = CommunityEnvelope::control(ControlPayload::MemberJoined {
                 pseudonym_key,
                 // No name (plan E3.4 S6): a member's name is its card's.
                 display_name: String::new(),

@@ -65,7 +65,7 @@ pub async fn join_voice_channel<D: VoiceSessionDeps + ?Sized>(
 
     if let (Some(cid), Some(route_blob)) = (community_id, route_blob) {
         deps.log_voice_membership(cid, channel_id, true);
-        let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+        let envelope = CommunityEnvelope::control(ControlPayload::VoiceJoin {
             channel_id: channel_id.to_string(),
             route_blob,
             display_name: deps.my_display_name(),
@@ -100,7 +100,7 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
         );
         return;
     };
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceJoin {
         channel_id: channel_id.clone(),
         route_blob,
         display_name: deps.my_display_name(),
@@ -132,7 +132,7 @@ pub async fn announce_leave<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
     };
     deps.end_channel_session(&cid, &channel_id).await;
     deps.log_voice_membership(&cid, &channel_id, false);
-    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceLeave {
+    let envelope = CommunityEnvelope::control(ControlPayload::VoiceLeave {
         channel_id: channel_id.clone(),
     });
     deps.send_channel_envelope_now(&cid, &channel_id, &envelope)
