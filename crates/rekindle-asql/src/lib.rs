@@ -127,6 +127,7 @@
     unreachable_pub
 )]
 
+mod init;
 #[cfg(test)]
 mod tests;
 mod worker;
@@ -140,6 +141,8 @@ use std::{
 };
 use tokio::sync::oneshot::{self};
 use worker::Worker;
+
+pub use init::{init_sqlite, sqlite_initialized};
 
 pub use rusqlite::{self, *};
 

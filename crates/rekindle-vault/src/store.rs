@@ -151,14 +151,9 @@ impl VaultStore {
         sqlcipher: &[u8; 32],
         entry_key: LockedBox<32>,
     ) -> Result<Self, VaultError> {
-        // SQLite sets `isInit` before SQLCipher's `sqlcipher_extra_init`
-        // has run, so a concurrent first open could key before it ends and
-        // get SQLITE_ERROR, read here as a wrong passphrase (finding DB1b;
-        // `rekindle_db::open` does the same). The first open runs the
-        // initialization to completion while every other waits; a failed
-        // one fails the open below with SQLite's own error.
-        static INITIALIZED: std::sync::Once = std::sync::Once::new();
-        INITIALIZED.call_once(|| drop(Connection::open_in_memory()));
+        // A concurrent first open could key before SQLCipher's own
+        // initialization ends (finding DB1b; `rekindle_asql::init_sqlite`).
+        rekindle_asql::init_sqlite();
         let conn = Connection::open(path)?;
         let key_pragma = format!("x'{}'", hex::encode(sqlcipher));
         // Keying, then the first read, which makes SQLCipher decrypt the
