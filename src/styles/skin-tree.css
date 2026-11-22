@@ -107,4 +107,40 @@
     min-height: 0;
     overflow: hidden;
   }
+
+  /* Words the Host draws on a node it placed (plan SK2-N4d, SkinTreeWindow
+   * NodeLabelView): over the art; with a cover, that rectangle takes the
+   * skin's ground so the copied art's own word (xslimfire's "Files") is
+   * hidden. Presses pass through to the node. */
+  .skin-node-label {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-family-xfire);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-xfire-accent-text);
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .skin-node-label[data-cover] {
+    inset: auto;
+    left: var(--label-x);
+    top: var(--label-y);
+    width: var(--label-w);
+    height: var(--label-h);
+    font-size: min(11px, calc(var(--label-h) - 2px));
+    background-color: var(--color-xfire-bg-secondary);
+  }
+
+  .skin-node-label-text {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

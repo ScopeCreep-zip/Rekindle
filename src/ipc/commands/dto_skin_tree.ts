@@ -302,6 +302,17 @@ export interface ShellNode {
   controlGroup?: number;
   triggers?: NodeTrigger[];
   children?: ShellNode[];
+  /** Words the Host draws on a node it placed (plan SK2-N4d): the Communities tab. */
+  label?: NodeLabel;
+}
+
+/** A Host-placed node's words (`NodeLabel`, plan SK2-N4d). */
+export interface NodeLabel {
+  /** The words to draw: "Communities" for N4. */
+  text: string;
+  /** [x, y, width, height] in px of the node's own box holding the copied art's baked-in word,
+   *  which the label covers; absent when the art carries no word. */
+  cover?: [number, number, number, number];
 }
 
 /** `MenuItem`: one item of an engine menu. */

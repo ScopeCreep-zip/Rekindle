@@ -1,6 +1,6 @@
-import { Component, For, JSX, Match, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
+import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import type { EngineMenu, MenuItem, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { EngineMenu, MenuItem, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
@@ -97,6 +97,26 @@ function actionLabel(a: SkinAction): string {
   const arg = "arg" in a && typeof a.arg === "string" ? ` ${a.arg.replace(/([A-Z])/g, " $1").toLowerCase()}` : "";
   return (words + arg).replace(/^./, (c) => c.toUpperCase());
 }
+
+/**
+ * The words the Host serves on a node it placed (plan SK2-N4d): over the
+ * node's art, centred in `cover` (filled with the skin's ground so the copied
+ * art's own word is hidden) or in the whole box. Presses pass through to
+ * the node; its accessible name stays the action's.
+ */
+const NodeLabelView: Component<{ label: NodeLabel }> = (props) => {
+  const box = (): JSX.CSSProperties | undefined => {
+    const c = props.label.cover;
+    return c
+      ? { "--label-x": `${c[0]}px`, "--label-y": `${c[1]}px`, "--label-w": `${c[2]}px`, "--label-h": `${c[3]}px` }
+      : undefined;
+  };
+  return (
+    <span class="skin-node-label" data-cover={props.label.cover ? "" : undefined} style={box()} aria-hidden="true">
+      <span class="skin-node-label-text">{props.label.text}</span>
+    </span>
+  );
+};
 
 /** One node, as the served role draws it and its triggers drive it
  *  (design §2.4, §2.6). */
@@ -196,7 +216,12 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     },
   });
 
-  const children = (): JSX.Element => <Children node={n()} />;
+  const children = (): JSX.Element => (
+    <>
+      <Children node={n()} />
+      <Show when={n().label}>{(label) => <NodeLabelView label={label()} />}</Show>
+    </>
+  );
   const menuOf = (): EngineMenu | undefined => {
     const a = press();
     return a && (a.kind === "menu" || a.kind === "contextMenu") && tree.menus(a.arg).length > 0 ? a.arg : undefined;

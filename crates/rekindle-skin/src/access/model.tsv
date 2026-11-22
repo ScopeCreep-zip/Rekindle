@@ -733,6 +733,8 @@
 .skin-name-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-start	1.0	true
 .skin-name-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
 .skin-name-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
+.skin-node-label	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
+.skin-node-label	text	var(--color-xfire-accent-text)	--color-xfire-bg-secondary	1.0	false
 .skin-pair	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-pair-apca	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-pair-rule	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false

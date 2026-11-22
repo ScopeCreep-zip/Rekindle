@@ -158,6 +158,7 @@
 # strip text (as `.xfire-titlebar-text`); the status edit is the status
 # ground's text (as `.status-bar`); the name edit and banner paint their own.
 '.skin-tree' = { on = ["--color-xfire-bg-dark"] }
+'.skin-node-label' = { on = ["--color-xfire-bg-secondary", "--color-xfire-bg-dark"] }
 '.skin-name-text' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
 '.skin-name-edit' = { on = ["--color-xfire-bg-input"] }
 '.skin-status-edit' = { on = ["--color-xfire-bg-status"] }
