@@ -9,11 +9,12 @@ import { errorMessage } from "../../utils/error";
 // the signer and both links for a follow), and a cancelled review rejects.
 // The Host validates; the window shows its refusal as given.
 
-/// The Host's successor snapshot for `community`, or null (logged) when it
-/// is not read.
+/// The successors the Host's snapshot (`CommunitySuccessors`) offers for
+/// `community`, or null (logged) when it is not read. Its link requests
+/// (SS4) are answered by the co-creator link view, not here.
 export async function handleGetCommunitySuccessors(community: string): Promise<SuccessorOffer[] | null> {
   try {
-    return await commands.getCommunitySuccessors(community);
+    return (await commands.getCommunitySuccessors(community)).offers;
   } catch (e) {
     console.warn("successor snapshot not read:", errorMessage(e));
     return null;
