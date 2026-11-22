@@ -112,4 +112,32 @@
   .group-chat-compose {
     flex: 0 0 auto;
   }
+
+  /* Rename and Invite (plan E7.2 G7/G8): compact like Leave. A refused one
+     stays focusable (`aria-disabled`) so its Host reason reaches the title
+     and the screen reader; it looks like a disabled secondary button. */
+  .group-chat-action {
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+
+  .group-chat-action[aria-disabled="true"] {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .group-chat-rename {
+    display: flex;
+    margin: 0;
+  }
+
+  .group-chat-rename-input {
+    width: 14ch;
+    padding: 1px 4px;
+    font-size: 11px;
+  }
+
+  .group-chat-error {
+    padding: 2px 8px;
+  }
 }

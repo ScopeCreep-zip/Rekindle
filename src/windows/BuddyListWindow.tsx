@@ -21,6 +21,7 @@ import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
 import NewGroupModal from "../components/buddy-list/NewGroupModal";
+import InviteToRoomModal from "../components/chat/InviteToRoomModal";
 import GroupDmList from "../components/buddy-list/GroupDmList";
 import { subscribeBuddyListGroupDmEvents } from "../handlers/group-dm.handlers";
 import { subscribeBuddyListTransferEvents } from "../handlers/transfer.handlers";
@@ -129,6 +130,10 @@ function runBuddyListOp(op: ShellOp): boolean {
       // A room is a group DM (SK2-G §6): the New Group dialog, with the
       // selected friend the Host named already picked.
       setBuddyListUI({ newGroupPeer: op.arg.peer, showNewGroup: true });
+      return true;
+    case "inviteToRoom":
+      // The Host answered a skin's Invite Users to Room for this group (G8).
+      setBuddyListUI("inviteToRoom", op.arg.groupId);
       return true;
     default:
       return false;
@@ -266,6 +271,7 @@ const BuddyListWindow: Component = () => {
       />
       <CallController />
       <NewGroupModal />
+      <InviteToRoomModal groupId={buddyListUI.inviteToRoom} onClose={() => setBuddyListUI("inviteToRoom", null)} />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}
         onClose={() => setBuddyListUI("showStartGroupCall", false)}
