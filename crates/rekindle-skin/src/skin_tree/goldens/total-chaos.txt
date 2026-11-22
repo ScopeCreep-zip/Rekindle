@@ -10,7 +10,7 @@ AdBar AdArea
   AdArea Part
 MenuBar MenuBar
   MenuBg Part
-    FileMenu MenuTitle
+    FileMenu MenuTitle label "Rekindle" cover [16, 3, 45, 9]
     ToolsMenu MenuTitle
     HelpMenu MenuTitle
 Content Group

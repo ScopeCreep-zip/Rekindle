@@ -15,7 +15,10 @@
 //!   top to bottom (Symbiosis's `#59534d` to `#3c3b3a`) is followed row
 //!   by row;
 //! - a pixel differs when a channel is more than [`ICON_TOLERANCE`] from its
-//!   row's ground (gloss and anti-aliasing stay ground);
+//!   row's ground (gloss and anti-aliasing stay ground); every fully
+//!   transparent pixel is one colour, whatever it stores, and a tie between
+//!   colours goes to the row's end (Alloy's 48 px "XFIRE" fills half its
+//!   flanks in its top and bottom rows, ground and word 12 px each);
 //! - the differing pixels 4-connected to the art's edge are the frame (the
 //!   window ground around a rounded plate, the plate's dark rim) and are
 //!   dropped; the box of the rest is the icon.
@@ -76,12 +79,25 @@ pub(crate) fn icon_box(image: &RgbaImage) -> Option<[u16; 4]> {
     ])
 }
 
+/// What a pixel shows: a fully transparent pixel shows nothing whatever
+/// colour it stores (Alloy's `node-filemenu.png` keeps stray colour under
+/// zero alpha around its "XFIRE", which would otherwise differ from the
+/// ground and join the word to the edge).
+const fn seen(p: [u8; 4]) -> [u8; 4] {
+    if p[3] == 0 {
+        [0; 4]
+    } else {
+        p
+    }
+}
+
 /// Each pixel's difference from its row's ground (row-major).
 fn differing(image: &RgbaImage, width: usize) -> Vec<bool> {
     let quarter = (width / 4).max(1);
     let mut out = Vec::with_capacity(width * image.rows().len());
     for pixels in image.rows() {
-        let row: Vec<[u8; 4]> = pixels.map(|p| p.0).collect();
+        let row: Vec<[u8; 4]> = pixels.map(|p| seen(p.0)).collect();
+        let end = row.first().copied().unwrap_or_default();
         let mut counts: HashMap<[u8; 4], usize> = HashMap::new();
         let flanks = row
             .iter()
@@ -92,7 +108,7 @@ fn differing(image: &RgbaImage, width: usize) -> Vec<bool> {
         }
         let ground = counts
             .into_iter()
-            .max_by_key(|&(colour, count)| (count, colour))
+            .max_by_key(|&(colour, count)| (count, colour == end, colour))
             .map_or([0; 4], |(colour, _)| colour);
         out.extend(row.iter().map(|colour| {
             colour

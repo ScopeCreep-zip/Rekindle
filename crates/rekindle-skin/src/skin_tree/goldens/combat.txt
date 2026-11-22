@@ -1,11 +1,11 @@
 OuterFrame Decor
 CombatDragBar Drag
   Minimizebox Button
-FileMenuText MenuTitle
+FileMenuText MenuTitle label "Rekindle"
   FileMenu Part
-ToolsMenuText MenuTitle
+ToolsMenuText MenuTitle label "Tools"
   ToolsMenu Part
-HelpMenuText MenuTitle
+HelpMenuText MenuTitle label "Help"
   HelpMenu Part
 AdArea AdArea
 BackgroundArea Decor

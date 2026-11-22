@@ -16,6 +16,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+pub mod titles;
 mod triggers;
 pub mod validate;
 

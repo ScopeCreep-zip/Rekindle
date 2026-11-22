@@ -1,5 +1,5 @@
 Top Decor
-FileMenu MenuTitle
+FileMenu MenuTitle label "Rekindle" cover [2, 2, 20, 17]
 ToolMenu MenuTitle
 HelpMenu MenuTitle
 XfireLogo Logo

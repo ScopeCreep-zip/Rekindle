@@ -168,3 +168,31 @@ fn classics_button_container_carries_its_control_group() {
     let area = shell_node(&shell.root, "ButtonArea").unwrap();
     assert_eq!(area.control_group, Some(1));
 }
+
+fn menu_label(id: &str, node: &str) -> Option<rekindle_types::dto::skin_tree::NodeLabel> {
+    let trees = main_and_popup_trees(id);
+    let mut found = Vec::new();
+    for t in &trees {
+        find_all(&t.root, node, &mut found);
+    }
+    assert_eq!(found.len(), 1, "{id} {node}");
+    found[0].label.clone()
+}
+
+/// Plan SK4b, lead decision 7: Symbiosis's file title art bakes "Xfire"
+/// (47 x 20 `node-xfiremenu-topleft.png`), so its label is "Rekindle" over
+/// the word's box, inside the 45 x 20 node; its Tools and Help art reads
+/// right and carries no label; Xfire Classic draws its titles as text, so
+/// its file title is "Rekindle" with no cover.
+#[test]
+fn menu_titles_carry_the_hosts_words() {
+    let file = menu_label("symbiosis", "XfireMenu").expect("file label");
+    assert_eq!(file.text, "Rekindle");
+    let [x, y, w, h] = file.cover.expect("cover");
+    assert!(w > 0 && h > 0 && x + w <= 45 && y + h <= 20, "{:?}", file.cover);
+    assert_eq!(file.cover, Some([12, 4, 22, 10]));
+    assert_eq!(menu_label("symbiosis", "ToolsMenu"), None);
+    assert_eq!(menu_label("symbiosis", "HelpMenu"), None);
+    let classic = menu_label("xfire-classic", "XfireMenuText").expect("text label");
+    assert_eq!((classic.text.as_str(), classic.cover), ("Rekindle", None));
+}

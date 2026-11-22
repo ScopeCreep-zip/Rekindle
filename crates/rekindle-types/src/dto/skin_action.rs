@@ -52,6 +52,44 @@ impl EngineMenu {
     ];
 }
 
+/// A menu title's words: the names the packs' art bakes for the menu
+/// (the engine's own `v3/strings.xml` `XfireMenu` 228 "Xfire", which
+/// Alloy, Symbiosis and Total Chaos draw, and the plain "File" XGlow draws)
+/// and the name Rekindle shows (plan SK2 lead decision 7: the first menu is
+/// "Rekindle").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MenuTitleWords {
+    /// What a pack's art may read for the menu.
+    pub pack: &'static [&'static str],
+    /// What the Host shows.
+    pub ours: &'static str,
+}
+
+impl MenuTitleWords {
+    /// Whether the Host renames the menu: a word a pack's art bakes is not
+    /// Rekindle's, so the shell covers it and draws [`Self::ours`].
+    #[must_use]
+    pub fn renamed(self) -> bool {
+        !self.pack.contains(&self.ours)
+    }
+}
+
+impl EngineMenu {
+    /// The one table of the menus' title words (pack names vs the Host's).
+    #[must_use]
+    pub const fn title(self) -> MenuTitleWords {
+        let (pack, ours): (&'static [&'static str], &'static str) = match self {
+            Self::File => (&["Xfire", "File"], "Rekindle"),
+            Self::Tool => (&["Tools", "Tool"], "Tools"),
+            Self::Help | Self::CwHelp | Self::GcHelp => (&["Help"], "Help"),
+            Self::Status => (&["Status"], "Status"),
+            Self::Sys | Self::GcSystem => (&["System"], "System"),
+            Self::CwActions | Self::GcActions => (&["Actions"], "Actions"),
+        };
+        MenuTitleWords { pack, ours }
+    }
+}
+
 /// A view an engine `Show<X>` action or event names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -535,5 +573,14 @@ mod tests {
             assert_eq!(reg.items(menu).is_empty(), gap, "{menu:?}");
             assert_eq!(reg.menus.iter().filter(|m| m.menu == menu).count(), 1);
         }
+    }
+
+    /// Lead decision 7: only the file menu is renamed ("Xfire" → "Rekindle").
+    #[test]
+    fn only_the_file_menu_title_is_renamed() {
+        for menu in EngineMenu::ALL {
+            assert_eq!(menu.title().renamed(), menu == EngineMenu::File, "{menu:?}");
+        }
+        assert_eq!(EngineMenu::File.title().ours, "Rekindle");
     }
 }

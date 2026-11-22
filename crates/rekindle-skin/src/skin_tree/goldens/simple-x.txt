@@ -1,11 +1,11 @@
 Top Decor
 Logo Logo
 MenuBar MenuBar
-  XfireMenuText MenuTitle
+  XfireMenuText MenuTitle label "Rekindle"
     FileMenu Part
-  ToolsMenuText MenuTitle
+  ToolsMenuText MenuTitle label "Tools"
     ToolsMenu Part
-  HelpMenuText MenuTitle
+  HelpMenuText MenuTitle label "Help"
     HelpMenu Part
 UserNameField NameField
   UserNameText Part
