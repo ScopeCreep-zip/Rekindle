@@ -410,6 +410,22 @@ mod tests {
         }
     }
 
+    /// Design §2.6: a pressed menu's items come from the served shell, so
+    /// every shell a built-in serves carries Rekindle's menu registry.
+    #[test]
+    fn a_served_shell_carries_the_registrys_menus() {
+        let registry = rekindle_types::dto::skin_action::MenuRegistry::rekindle();
+        assert!(!registry.menus.is_empty());
+        for pack in &builtin::PACKS {
+            let c = validate::run(pack.bytes).unwrap();
+            let sheet = stylesheet(&c.bytes, &c.address()).unwrap();
+            assert!(!sheet.shells.is_empty(), "{}", pack.id);
+            for shell in &sheet.shells {
+                assert_eq!(shell.menus, registry, "{} {:?}", pack.id, shell.window);
+            }
+        }
+    }
+
     #[test]
     fn only_built_ins_are_immutable() {
         assert!(Cache::Immutable.header().contains("immutable"));

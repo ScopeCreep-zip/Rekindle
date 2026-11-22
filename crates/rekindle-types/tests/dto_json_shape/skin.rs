@@ -1,12 +1,13 @@
 //! `SkinList`'s entries in the golden DTO file.
 
-use rekindle_types::dto::skin::{OriginalLicence, SkinCredits};
+use rekindle_types::dto::skin::{Insets, OriginalLicence, SkinCredits, SkinWindow};
 use rekindle_types::dto::skin_action::{
     AnimateSpec, AppSignal, Capability, EngineMenu, EngineView, MenuRegistry, NodeState,
     NodeTrigger, OverlayPart, PackUrl, PopupRef, SkinAction, SkinEvent, SkinSettingsTab, SoundRef,
     TileRef,
 };
 use rekindle_types::dto::skin_library::SkinEntry;
+use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree};
 use rekindle_types::dto::skin_tree_role::Edge;
 use rekindle_types::presence::SessionStatus;
 use serde_json::Value;
@@ -177,4 +178,39 @@ fn actions(add: &mut impl FnMut(&str, Value)) {
         }),
     );
     add("skin.menuRegistry", super::to(MenuRegistry::rekindle()));
+    shell(add);
+}
+
+/// A served shell (design §2.6): a tab control's node with its
+/// `controlGroup`, a node without one, and Rekindle's `menus`.
+fn shell(add: &mut impl FnMut(&str, Value)) {
+    let fill = NodeSpan::Stretch { start: 0, end: 0 };
+    let node = |id: &str, role, control_group, children| SkinNode {
+        id: id.to_owned(),
+        role,
+        x: fill,
+        y: fill,
+        z: 0,
+        art: None,
+        text: None,
+        shows_with: None,
+        control_group,
+        triggers: Vec::new(),
+        children,
+    };
+    let tree = SkinTree {
+        outsets: Insets {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+        },
+        root: vec![node(
+            "ButtonArea",
+            NodeRole::ButtonBar,
+            Some(1),
+            vec![node("Plain", NodeRole::Group, None, Vec::new())],
+        )],
+    };
+    add("skin.shell", super::to(tree.shell(SkinWindow::Main)));
 }

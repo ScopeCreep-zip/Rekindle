@@ -1081,6 +1081,243 @@
       }
     ]
   },
+  "skin.shell": {
+    "menus": {
+      "menus": [
+        {
+          "items": [
+            {
+              "label": "Add Friend…",
+              "run": {
+                "kind": "addFriend"
+              }
+            },
+            {
+              "label": "New Chat…",
+              "run": {
+                "kind": "newChat"
+              }
+            },
+            {
+              "label": "New Group…",
+              "run": {
+                "kind": "newGroup"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Create Community…",
+              "run": {
+                "kind": "createCommunity"
+              }
+            },
+            {
+              "label": "Join Community…",
+              "run": {
+                "kind": "joinCommunity"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Profile",
+              "run": {
+                "arg": "profile",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Privacy",
+              "run": {
+                "arg": "privacy",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "About",
+              "run": {
+                "arg": "about",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Log Off",
+              "run": {
+                "kind": "logOff"
+              }
+            },
+            {
+              "danger": true,
+              "label": "Exit",
+              "run": {
+                "kind": "quit"
+              }
+            }
+          ],
+          "menu": "file"
+        },
+        {
+          "items": [
+            {
+              "label": "Options",
+              "run": {
+                "arg": "application",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Notifications",
+              "run": {
+                "arg": "notifications",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Audio",
+              "run": {
+                "arg": "audio",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "label": "Skins",
+              "run": {
+                "arg": "appearance",
+                "kind": "showSettings"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Start Group Call…",
+              "run": {
+                "kind": "hostGroupVoiceChat"
+              }
+            },
+            {
+              "label": "Keyboard Shortcuts",
+              "run": {
+                "kind": "showShortcuts"
+              }
+            }
+          ],
+          "menu": "tool"
+        },
+        {
+          "items": [
+            {
+              "label": "Documentation",
+              "run": {
+                "arg": "help",
+                "kind": "showView"
+              }
+            },
+            {
+              "label": "Report Bug",
+              "run": {
+                "kind": "reportBug"
+              }
+            }
+          ],
+          "menu": "help"
+        },
+        {
+          "items": [
+            {
+              "label": "Online",
+              "run": {
+                "arg": "online",
+                "kind": "setStatus"
+              }
+            },
+            {
+              "label": "Away",
+              "run": {
+                "arg": "away",
+                "kind": "setStatus"
+              }
+            },
+            {
+              "label": "Busy",
+              "run": {
+                "arg": "busy",
+                "kind": "setStatus"
+              }
+            },
+            {
+              "label": "Appear Offline",
+              "run": {
+                "arg": "invisible",
+                "kind": "setStatus"
+              }
+            }
+          ],
+          "menu": "status"
+        },
+        {
+          "items": [
+            {
+              "label": "Minimize",
+              "run": {
+                "kind": "minimize"
+              }
+            },
+            {
+              "label": "Maximize",
+              "run": {
+                "kind": "maximize"
+              }
+            },
+            {
+              "apart": true,
+              "label": "Close",
+              "run": {
+                "kind": "close"
+              }
+            }
+          ],
+          "menu": "sys"
+        },
+        {
+          "items": [],
+          "menu": "cwActions"
+        },
+        {
+          "items": [],
+          "menu": "cwHelp"
+        },
+        {
+          "items": [],
+          "menu": "gcSystem"
+        },
+        {
+          "items": [],
+          "menu": "gcActions"
+        },
+        {
+          "items": [],
+          "menu": "gcHelp"
+        }
+      ]
+    },
+    "root": [
+      {
+        "children": [
+          {
+            "id": "Plain",
+            "role": {
+              "kind": "group"
+            }
+          }
+        ],
+        "controlGroup": 1,
+        "id": "ButtonArea",
+        "role": {
+          "kind": "buttonBar"
+        }
+      }
+    ],
+    "window": "main"
+  },
   "skin.trigger": {
     "on": {
       "arg": {

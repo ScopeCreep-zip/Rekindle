@@ -293,11 +293,36 @@ export interface ShellNode {
   id: string;
   role: NodeRole;
   showsWith?: ViewKey;
+  /** The pack's `ControlGroupId`: tab controls of one group switch together. */
+  controlGroup?: number;
   triggers?: NodeTrigger[];
   children?: ShellNode[];
+}
+
+/** `MenuItem`: one item of an engine menu. */
+export interface MenuItem {
+  label: string;
+  run: SkinAction;
+  /** A separator above the item. */
+  apart?: boolean;
+  /** A destructive item, drawn as such. */
+  danger?: boolean;
+}
+
+/** `EngineMenuItems`: one engine menu's items. */
+export interface EngineMenuItems {
+  menu: EngineMenu;
+  items: MenuItem[];
+}
+
+/** `MenuRegistry`: Rekindle's items for each engine menu a pack opens. */
+export interface MenuRegistry {
+  menus: EngineMenuItems[];
 }
 
 export interface SkinShell {
   window: "main" | "chat";
   root: ShellNode[];
+  /** The items of every engine menu the shell's buttons open. */
+  menus: MenuRegistry;
 }

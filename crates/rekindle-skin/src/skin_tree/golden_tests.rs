@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 
 use rekindle_types::dto::skin::SkinWindow;
-use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{NodeRole, ShellNode, SkinNode, SkinTree};
 
 use crate::{builtin, images, manifest, package};
 
@@ -109,4 +109,29 @@ fn every_former_behaviour_node_keeps_a_trigger() {
         }
     }
     assert!(lost.is_empty(), "{}", lost.join("\n"));
+}
+
+/// The pack's `ControlGroupId` rides the node (design §2.6): Classic's
+/// game-button container `ButtonArea` and its tab control `TabbedControl`
+/// both carry group 1 (`xfirecomponents.xml:1172`), so its rows switch
+/// with the tabs, and the served shell carries the same group.
+#[test]
+fn classics_button_container_carries_its_control_group() {
+    let tree = main_tree("xfire-classic");
+    for id in ["ButtonArea", "TabbedControl"] {
+        let mut found = Vec::new();
+        find_all(&tree.root, id, &mut found);
+        assert_eq!(found.len(), 1, "{id}");
+        assert_eq!(found[0].control_group, Some(1), "{id}");
+    }
+    fn shell_node<'a>(nodes: &'a [ShellNode], id: &str) -> Option<&'a ShellNode> {
+        nodes.iter().find_map(|n| {
+            (n.id == id)
+                .then_some(n)
+                .or_else(|| shell_node(&n.children, id))
+        })
+    }
+    let shell = tree.shell(SkinWindow::Main);
+    let area = shell_node(&shell.root, "ButtonArea").unwrap();
+    assert_eq!(area.control_group, Some(1));
 }

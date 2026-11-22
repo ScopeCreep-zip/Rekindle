@@ -143,6 +143,7 @@ pub(super) fn tab_views(root: &mut [SkinNode]) {
                         art: None,
                         text: None,
                         shows_with: Some(*v),
+                        control_group: None,
                         triggers: Vec::new(),
                         children: Vec::new(),
                     });
@@ -234,6 +235,7 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
                     art: None,
                     text: None,
                     shows_with: Some(v),
+                    control_group: None,
                     triggers: Vec::new(),
                     children: Vec::new(),
                 });

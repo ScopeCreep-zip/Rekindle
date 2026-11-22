@@ -434,6 +434,14 @@ impl Walk<'_> {
                 (x, y),
                 inset,
             )?;
+            let control_group = t
+                .group
+                .as_deref()
+                .map(|g| {
+                    g.parse::<u16>()
+                        .map_err(|_| bad(format!("{}: ControlGroupId={g}", t.id)))
+                })
+                .transpose()?;
             out.push(SkinNode {
                 id: t.id,
                 role: t.role.shown(),
@@ -443,6 +451,7 @@ impl Walk<'_> {
                 art,
                 text: None,
                 shows_with,
+                control_group,
                 triggers: with_implied(t.triggers, &t.role, &children),
                 children,
             });

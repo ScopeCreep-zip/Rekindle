@@ -212,6 +212,10 @@ pub struct SkinNode {
     /// The tab whose view shows this node (a view's button row).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
+    /// The pack's `ControlGroupId` (`xfirecomponents.xml:1172`, `:1983`):
+    /// the tab controls of one group switch together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_group: Option<u16>,
     /// The pack's `(event, action)` pairs (plan SK2-A, decision 36): the
     /// tile's own, then its component's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -271,6 +275,10 @@ pub struct ShellNode {
     pub role: NodeRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
+    /// The pack's `ControlGroupId` (`xfirecomponents.xml:1172`, `:1983`):
+    /// the tab controls of one group switch together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_group: Option<u16>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<NodeTrigger>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -284,6 +292,10 @@ pub struct ShellNode {
 pub struct SkinShell {
     pub window: SkinWindow,
     pub root: Vec<ShellNode>,
+    /// Rekindle's items for each engine menu the pack's buttons open
+    /// (design §2.6), so the shell draws a pressed menu from the same
+    /// answer that laid its button.
+    pub menus: super::skin_action::MenuRegistry,
 }
 
 impl SkinNode {
@@ -325,6 +337,7 @@ impl SkinNode {
             id: self.id.clone(),
             role: self.role,
             shows_with: self.shows_with,
+            control_group: self.control_group,
             triggers: self.triggers.clone(),
             children: self.children.iter().map(Self::shell).collect(),
         }
@@ -338,6 +351,7 @@ impl SkinTree {
         SkinShell {
             window,
             root: self.root.iter().map(SkinNode::shell).collect(),
+            menus: super::skin_action::MenuRegistry::rekindle(),
         }
     }
 }
