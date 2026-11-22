@@ -172,6 +172,12 @@ impl HostGovernance {
                 name: outcome.invite.community_name.clone(),
             },
         );
+        // Our own feed entry (plan E7.15).
+        crate::host::activity::own(
+            &self.ctx,
+            rekindle_presence::activity::joined_community(&id, self.ctx.clock.now_ms_i64()),
+        )
+        .await;
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
         // gossiped and queued, and the outbox lands it (S6b).
         Ok(CommunityJoined {

@@ -55,6 +55,12 @@ pub enum SettingsCmd {
         /// `on` or `off`.
         state: Switch,
     },
+    /// Keep a local log of what friends did, for the Infoview (on by
+    /// default); off clears it.
+    ActivityLog {
+        /// `on` or `off`.
+        state: Switch,
+    },
 }
 
 /// The game we show.

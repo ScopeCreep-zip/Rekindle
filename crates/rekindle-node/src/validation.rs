@@ -265,7 +265,17 @@ fn own(request: &IpcRequest) -> Checked {
         IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::SetGameDetection { .. }
-        | IpcRequest::SetShareCurrentGame { .. } => Ok(()),
+        | IpcRequest::SetShareCurrentGame { .. }
+        | IpcRequest::SetKeepActivityLog { .. } => Ok(()),
+        // A page is 1–100 entries (the feed keeps at most 500); any row id
+        // is a cursor, one no longer stored answers nothing.
+        IpcRequest::ActivityList { limit, .. } => {
+            if (1..=100).contains(limit) {
+                Ok(())
+            } else {
+                Err(IpcResponse::error(400, format!("invalid limit: {limit}")))
+            }
+        }
         // Game id 0 is "no database entry", never a game to hide or keep a
         // favourite server for.
         IpcRequest::FavouriteServerAdd { game_id, label, .. } => {
@@ -425,6 +435,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::SetGameDetection { .. }
         | IpcRequest::SetShareCurrentGame { .. }
+        | IpcRequest::SetKeepActivityLog { .. }
+        | IpcRequest::ActivityList { .. }
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }
         | IpcRequest::FavouriteServerAdd { .. }

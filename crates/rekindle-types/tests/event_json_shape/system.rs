@@ -13,6 +13,7 @@ pub const NAMES: &[&str] = &[
     "skinChanged",
     "skinTrialChanged",
     "quickWipeChanged",
+    "activityAppended",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
@@ -25,6 +26,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::SkinChanged { .. } => "skinChanged",
         SystemEvent::SkinTrialChanged { .. } => "skinTrialChanged",
         SystemEvent::QuickWipeChanged { .. } => "quickWipeChanged",
+        SystemEvent::ActivityAppended { .. } => "activityAppended",
     }
 }
 
@@ -111,6 +113,23 @@ fn sync() -> Vec<Sample> {
             SystemEvent::QuickWipeChanged {
                 armed: true,
                 shortcut: Some("CommandOrControl+Shift+F12".into()),
+            },
+        ),
+        ev(
+            "activityAppended",
+            SystemEvent::ActivityAppended {
+                entries: vec![rekindle_types::activity::ActivityListItem {
+                    id: 42,
+                    at: 1_700_000_000_000,
+                    kind: rekindle_types::activity::ActivityKind::StartedGame {
+                        friend: pk(),
+                        game_id: 4_100,
+                        server: Some("203.0.113.7:27015".into()),
+                    },
+                    display_name: Some("Alice".into()),
+                    nickname: Some("Al".into()),
+                    identity_pin_mismatch: false,
+                }],
             },
         ),
     ]

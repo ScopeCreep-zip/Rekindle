@@ -73,11 +73,18 @@ pub(crate) async fn on_profile_bio(host: &dyn FriendHost, sender: &str, body: &P
     let peer = sender.to_string();
     let bio = body.bio.clone();
     let stored = state::db_call!(host, "store a friend's bio", move |conn| {
-        rekindle_db::repo::bio::set_friend(conn, &owner, &peer, bio.as_deref())
+        let before = rekindle_db::repo::bio::friend(conn, &owner, &peer)?;
+        rekindle_db::repo::bio::set_friend(conn, &owner, &peer, bio.as_deref())?;
+        Ok((before, bio))
     })
     .await;
     match stored {
-        Ok(_) => true,
+        Ok((before, after)) => {
+            if let Some(friend) = state::friend(host, sender) {
+                host.friend_changed(Some(friend.clone()), friend, Some((before, after)));
+            }
+            true
+        }
         Err(e) => {
             tracing::warn!(from = %sender, error = %e, "friend bio not stored");
             false

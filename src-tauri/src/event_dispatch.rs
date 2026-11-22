@@ -148,6 +148,11 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(
             SystemEvent::SkinTrialChanged { .. } | SystemEvent::QuickWipeChanged { .. },
         ) => Audience::kinds(&[WindowKind::Settings]),
+        // The Infoview shows the feed: the buddy list's and each chat
+        // window's (plan E7.15, design §2.1).
+        SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
+            buddy_list().with_kinds(&[WindowKind::Chat])
+        }
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them.
         SubscriptionEvent::Notification(_)
@@ -201,6 +206,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => "skin-event",
         SubscriptionEvent::System(SystemEvent::SkinTrialChanged { .. }) => "skin-trial-event",
         SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
+        SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
         SubscriptionEvent::Voice(_) => "voice-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the

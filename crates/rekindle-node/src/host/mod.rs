@@ -5,6 +5,9 @@
 
 #[cfg(test)]
 mod accept_forward_tests;
+pub(crate) mod activity;
+#[cfg(test)]
+mod activity_tests;
 pub mod adapters;
 pub mod api;
 pub mod audit;

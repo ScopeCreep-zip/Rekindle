@@ -27,7 +27,22 @@ pub(super) async fn route(
         (Ok(db), Ok(owner)) => (db, owner),
         (Err(e), _) | (_, Err(e)) => return e,
     };
-    let added_at = ctx.clock.now_ms_i64() / 1000;
+    let now_ms = ctx.clock.now_ms_i64();
+    let added_at = now_ms / 1000;
+    // Our own feed entry (plan E7.15), stored once the add is.
+    let added = match &request {
+        IpcRequest::FavouriteServerAdd {
+            game_id,
+            server,
+            label,
+        } => Some(rekindle_presence::activity::favourite_added(
+            *game_id,
+            server.as_str(),
+            label.trim(),
+            now_ms,
+        )),
+        _ => None,
+    };
     let read = db
         .call(move |conn| {
             match request {
@@ -63,7 +78,12 @@ pub(super) async fn route(
         })
         .await;
     match read {
-        Ok(views) => IpcResponse::ok(&views),
+        Ok(views) => {
+            if let Some(entry) = added {
+                crate::host::activity::own(ctx, entry).await;
+            }
+            IpcResponse::ok(&views)
+        }
         Err(e) => IpcResponse::error(500, format!("favourite servers: {e}")),
     }
 }

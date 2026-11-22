@@ -99,6 +99,33 @@ impl HostFriends {
             change(friend);
         }
     }
+
+    /// [`Self::with_friend`], then the activity feed compares the row
+    /// before and after (plan E7.15).
+    fn with_friend_noted(
+        &self,
+        friend_key: &str,
+        change: impl FnOnce(&mut rekindle_types::friend::FriendState),
+    ) {
+        let changed = self
+            .ctx()
+            .session
+            .write()
+            .as_mut()
+            .and_then(|s| s.friends.get_mut(friend_key))
+            .map(|friend| {
+                let prev = friend.clone();
+                change(friend);
+                (prev, friend.clone())
+            });
+        if let Some((prev, next)) = changed {
+            self.note_friend_change(crate::host::activity::FriendChange {
+                prev: Some(prev),
+                next,
+                bio: None,
+            });
+        }
+    }
 }
 
 #[async_trait]
@@ -174,12 +201,12 @@ impl FriendPresenceDeps for HostFriends {
             icon_key: rekindle_game_detect::GameDatabase::icon_key_for(g.game_id),
             server_address: g.server_address,
         });
-        self.with_friend(friend_key, |f| f.game_info = game);
+        self.with_friend_noted(friend_key, |f| f.game_info = game);
     }
 
     fn set_friend_display_name(&self, friend_key: &str, display_name: &str) -> bool {
         let mut changed = false;
-        self.with_friend(friend_key, |f| {
+        self.with_friend_noted(friend_key, |f| {
             if f.display_name != display_name {
                 display_name.clone_into(&mut f.display_name);
                 changed = true;

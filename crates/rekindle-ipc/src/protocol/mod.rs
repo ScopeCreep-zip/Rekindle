@@ -343,6 +343,16 @@ pub enum IpcRequest {
     /// `Preferences.share_current_game`, split from detection, off by
     /// default; a hidden game is never shown. The preferences come back.
     SetShareCurrentGame { enabled: bool },
+    /// Keep the local activity feed or stop (plan E7.15, Infoview design
+    /// §3.3): the identity's `Preferences.keep_activity_log`, on by
+    /// default, local only. Off clears the feed and no entry is written
+    /// until it is turned on again. The preferences come back.
+    SetKeepActivityLog { enabled: bool },
+    /// The activity feed, newest first (plan E7.15, the Infoview's "View
+    /// More"): up to `limit` (1–100) entries after row `before` in that
+    /// order (`Vec<activity::ActivityListItem>`), each friend's names as
+    /// the Host holds them now.
+    ActivityList { before: Option<i64>, limit: u16 },
     /// The games on the hide list (plan E7.2,
     /// `Vec<dto::presence::HiddenGameView>`).
     HiddenGamesGet,

@@ -157,6 +157,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::SetShareGameTotals { .. }
             | Self::SetGameDetection { .. }
             | Self::SetShareCurrentGame { .. }
+            | Self::SetKeepActivityLog { .. }
+            | Self::ActivityList { .. }
             | Self::HiddenGamesGet
             | Self::GameHide { .. }
             | Self::GameUnhide { .. }
@@ -237,6 +239,15 @@ impl IpcRequest {
             Self::SetGameDetection { enabled } => f
                 .debug_struct("SetGameDetection")
                 .field("enabled", enabled)
+                .finish(),
+            Self::SetKeepActivityLog { enabled } => f
+                .debug_struct("SetKeepActivityLog")
+                .field("enabled", enabled)
+                .finish(),
+            Self::ActivityList { before, limit } => f
+                .debug_struct("ActivityList")
+                .field("before", before)
+                .field("limit", limit)
                 .finish(),
             Self::SetShareCurrentGame { enabled } => f
                 .debug_struct("SetShareCurrentGame")

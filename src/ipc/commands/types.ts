@@ -213,6 +213,32 @@ export interface Preferences {
   /** Show friends the game we play (plan E7.2): split from detection, off
    *  by default; set only by `setShareCurrentGame`. */
   shareCurrentGame: boolean;
+  /** Keep the local activity feed (plan E7.15): on by default, local
+   *  only; set only by `SetKeepActivityLog`, which clears it when off. */
+  keepActivityLog: boolean;
+}
+
+/** What a feed entry says (`rekindle_types::activity::ActivityKind`). */
+export type ActivityKind =
+  | { type: "startedGame"; data: { friend: string; gameId: number; server: string | null } }
+  | { type: "stoppedGame"; data: { friend: string; gameId: number; seconds: number } }
+  | { type: "firstPlayed"; data: { friend: string; gameId: number } }
+  | { type: "renamedSelf"; data: { friend: string; from: string; to: string } }
+  | { type: "statusMessage"; data: { friend: string; text: string } }
+  | { type: "bioChanged"; data: { friend: string } }
+  | { type: "nowFriends"; data: { friend: string } }
+  | { type: "favouriteAdded"; data: { gameId: number; address: string; label: string } }
+  | { type: "joinedCommunity"; data: { community: string } };
+
+/** A feed entry as `ActivityList` answers and `ActivityAppended` pushes it
+ *  (plan E7.15): names are the Host's at read time. */
+export interface ActivityListItem {
+  id: number;
+  at: number;
+  kind: ActivityKind;
+  displayName: string | null;
+  nickname: string | null;
+  identityPinMismatch: boolean;
 }
 
 /** A game on the hide list (plan E7.2): never shown to anyone. */

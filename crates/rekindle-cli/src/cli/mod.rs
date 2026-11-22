@@ -183,6 +183,16 @@ pub enum Command {
     #[command(subcommand)]
     Game(GameCmd),
 
+    /// The activity feed: what friends did, newest first.
+    Activity {
+        /// Only the entries after this entry id (the last id a page printed).
+        #[arg(long)]
+        before: Option<i64>,
+        /// How many entries, 1–100.
+        #[arg(long, default_value_t = 20)]
+        limit: u16,
+    },
+
     /// The tamper-evident audit log.
     #[command(subcommand)]
     Audit(AuditCmd),

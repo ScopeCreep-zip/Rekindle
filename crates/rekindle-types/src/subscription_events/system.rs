@@ -69,4 +69,12 @@ pub enum SystemEvent {
         armed: bool,
         shortcut: Option<String>,
     },
+    /// New entries in the local activity feed (plan E7.15), newest first,
+    /// names resolved by the Host: the Infoview's Activity section adds
+    /// them without asking again. Triggered by: a friend's presence, game,
+    /// name, status message or bio change, a new friendship, while
+    /// `keep_activity_log` is on.
+    ActivityAppended {
+        entries: Vec<crate::activity::ActivityListItem>,
+    },
 }

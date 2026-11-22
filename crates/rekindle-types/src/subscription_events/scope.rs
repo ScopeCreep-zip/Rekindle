@@ -139,7 +139,8 @@ impl SubscriptionEvent {
                 SystemEvent::AuditChainBroken { .. }
                 | SystemEvent::SkinChanged { .. }
                 | SystemEvent::SkinTrialChanged { .. }
-                | SystemEvent::QuickWipeChanged { .. } => EventScope::Device,
+                | SystemEvent::QuickWipeChanged { .. }
+                | SystemEvent::ActivityAppended { .. } => EventScope::Device,
             },
             Self::UnreadChanged { context, .. } => match context {
                 UnreadContext::Channel { community, .. } => {

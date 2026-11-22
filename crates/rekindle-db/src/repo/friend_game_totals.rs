@@ -39,6 +39,21 @@ pub fn replace(
     tx.commit()
 }
 
+/// The game ids of the totals `friend_key` shares; `None` while we hold
+/// none from them (the activity feed's "first time" has nothing to
+/// compare against).
+///
+/// # Errors
+/// The query failed.
+pub fn game_ids(
+    conn: &Connection,
+    owner_key: &str,
+    friend_key: &str,
+) -> rusqlite::Result<Option<std::collections::BTreeSet<u32>>> {
+    let totals = of(conn, owner_key, friend_key)?;
+    Ok((!totals.is_empty()).then(|| totals.iter().map(|t| t.game_id).collect()))
+}
+
 /// `friend_key`'s totals, the most recently played first.
 ///
 /// # Errors

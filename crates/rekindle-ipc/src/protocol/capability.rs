@@ -111,6 +111,7 @@ impl IpcRequest {
             | Self::FriendCode
             | Self::FriendGameTotalsGet { .. }
             | Self::FriendBioGet { .. }
+            | Self::ActivityList { .. }
             | Self::IdentitySafetyNumber { .. } => Some(C::FriendsRead),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
@@ -197,6 +198,8 @@ impl IpcRequest {
             // games are never shown.
             | Self::SetGameDetection { .. }
             | Self::SetShareCurrentGame { .. }
+            // And whether we keep a log of what friends did.
+            | Self::SetKeepActivityLog { .. }
             | Self::GameHide { .. }
             | Self::GameUnhide { .. }
             // And which servers we keep as favourites.

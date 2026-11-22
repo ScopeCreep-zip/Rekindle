@@ -63,6 +63,10 @@ pub struct Preferences {
     /// detection, off by default. Changed only by the trust-changing
     /// `SetShareCurrentGame`; a game on the hide list is never shown.
     pub share_current_game: bool,
+    /// Keep the local activity feed (plan E7.15, Infoview design §3.3): on
+    /// by default, local only. Changed only by `SetKeepActivityLog`, which
+    /// clears the feed when it turns it off.
+    pub keep_activity_log: bool,
     /// What an OS notification shows (prod research batch 7, Signal's
     /// "Show: name and message / name only / no name or message").
     pub notification_content: NotificationContent,
@@ -133,6 +137,7 @@ impl Default for Preferences {
             read_receipts_enabled: false,
             share_game_totals: false,
             share_current_game: false,
+            keep_activity_log: true,
             notification_content: NotificationContent::NameOnly,
         }
     }

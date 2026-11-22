@@ -92,6 +92,9 @@ pub async fn dispatch_settings(
         SettingsCmd::ShareGame { state } => IpcRequest::SetShareCurrentGame {
             enabled: matches!(state, Switch::On),
         },
+        SettingsCmd::ActivityLog { state } => IpcRequest::SetKeepActivityLog {
+            enabled: matches!(state, Switch::On),
+        },
     };
     let value = helpers::send(client, request).await?;
     format::print_structured(&value, mode)

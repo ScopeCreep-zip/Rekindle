@@ -574,6 +574,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
     -- `GameTotals` (0x0172), never in the profile record.
     share_game_totals INTEGER NOT NULL DEFAULT 0
         CHECK(share_game_totals IN (0, 1)),
+    -- The local activity feed (plan E7.15, Infoview design §3.3): on by
+    -- default, local only. Set only by `SetKeepActivityLog`, which clears
+    -- `activity_log` when it turns it off; never by the bulk save.
+    keep_activity_log INTEGER NOT NULL DEFAULT 1
+        CHECK(keep_activity_log IN (0, 1)),
     -- The identity's skin and sound bank (plan E7.7.2): a built-in
     -- (`rekindle_skin::builtin`) or a `skin_packages` row (`pkg:<hash>`),
     -- which the Host checks before writing. Device-bound, not synced.

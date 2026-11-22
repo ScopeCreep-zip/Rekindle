@@ -48,6 +48,9 @@ pub(crate) async fn route(
         | IpcRequest::HiddenGamesGet
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }) => super::own_game::route(ctx, state, request).await,
+        request @ (IpcRequest::SetKeepActivityLog { .. } | IpcRequest::ActivityList { .. }) => {
+            super::own_activity::route(ctx, state, request).await
+        }
         request @ (IpcRequest::FavouriteServersGet
         | IpcRequest::FavouriteServerAdd { .. }
         | IpcRequest::FavouriteServerRemove { .. }) => {

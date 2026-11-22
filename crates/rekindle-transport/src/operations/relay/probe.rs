@@ -92,6 +92,7 @@ pub(crate) fn on_status_response(host: &dyn FriendHost, friend: &str, r: &Status
         .ok()
         .and_then(|s| s.checked_mul(1000))
         .filter(|_| r.last_seen > 0);
+    let before = state::friend(host, target);
     state::update(host, target, |f| {
         if let Some(status) = UserStatus::from_wire_str(&r.status) {
             f.status = status;
@@ -104,6 +105,9 @@ pub(crate) fn on_status_response(host: &dyn FriendHost, friend: &str, r: &Status
             f.last_heartbeat_at = seen_ms;
         }
     });
+    if let (Some(before), Some(after)) = (before, state::friend(host, target)) {
+        host.friend_changed(Some(before), after, None);
+    }
 }
 
 #[cfg(test)]

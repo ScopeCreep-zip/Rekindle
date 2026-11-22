@@ -204,6 +204,8 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     // one again, widens what friends see.
     ("SetGameDetection", Some(IntentKind::SetPreferences)),
     ("SetShareCurrentGame", Some(IntentKind::ShareCurrentGame)),
+    ("SetKeepActivityLog", Some(IntentKind::SetPreferences)),
+    ("ActivityList", None),
     ("HiddenGamesGet", None),
     ("GameHide", Some(IntentKind::SetPreferences)),
     ("GameUnhide", Some(IntentKind::ShareCurrentGame)),

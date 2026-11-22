@@ -140,6 +140,13 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(b"|");
             h.update(&now_ms.to_le_bytes());
         }
+        SystemEvent::ActivityAppended { entries } => {
+            // Row ids are unique per identity: the ids are the fact.
+            h.update(b"activity|");
+            for entry in entries {
+                h.update(&entry.id.to_le_bytes());
+            }
+        }
     }
 }
 

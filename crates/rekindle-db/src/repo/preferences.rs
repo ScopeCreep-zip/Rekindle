@@ -19,7 +19,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
              noise_suppression, echo_cancellation, auto_away_minutes, \
              auto_volunteer_relay_for_new_friends, ringtone_enabled, ringtone_volume, \
              in_call_dnd_auto_enable, read_receipts_enabled, notification_content, \
-             share_game_totals, share_current_game \
+             share_game_totals, share_current_game, keep_activity_log \
              FROM app_settings WHERE owner_key = ?1",
             params![owner_key],
             |row| {
@@ -55,6 +55,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
                     },
                     share_game_totals: row.get(20)?,
                     share_current_game: row.get(21)?,
+                    keep_activity_log: row.get(22)?,
                     input_channels: BTreeMap::new(),
                 })
             },
@@ -227,6 +228,29 @@ pub fn set_share_current_game(
         params![owner_key, enabled],
     )?;
     Ok(())
+}
+
+/// Keep the activity feed or stop (`SetKeepActivityLog`, plan E7.15); the
+/// row's other settings stay. Off clears `activity_log` in the same
+/// transaction, so no entry outlives the choice.
+///
+/// # Errors
+/// A write failed; nothing is kept.
+pub fn set_keep_activity_log(
+    conn: &mut Connection,
+    owner_key: &str,
+    enabled: bool,
+) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT INTO app_settings (owner_key, keep_activity_log) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET keep_activity_log = excluded.keep_activity_log",
+        params![owner_key, enabled],
+    )?;
+    if !enabled {
+        crate::repo::activity::clear(&tx, owner_key)?;
+    }
+    tx.commit()
 }
 
 /// The identity's skin and sound bank (plan E7.7.2), each a

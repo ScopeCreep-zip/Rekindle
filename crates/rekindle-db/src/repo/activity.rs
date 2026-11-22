@@ -54,6 +54,29 @@ pub fn insert(
     tx.commit()
 }
 
+/// [`insert`], then the stored entries with their row ids, newest first
+/// (what the Host pushes); nothing for no entries.
+///
+/// # Errors
+/// As [`insert`] and [`page`].
+pub fn insert_returning(
+    conn: &mut Connection,
+    owner_key: &str,
+    entries: &[ActivityEntry],
+    now_ms: i64,
+) -> rusqlite::Result<Vec<StoredActivity>> {
+    if entries.is_empty() {
+        return Ok(Vec::new());
+    }
+    insert(conn, owner_key, entries, now_ms)?;
+    page(
+        conn,
+        owner_key,
+        None,
+        u16::try_from(entries.len()).unwrap_or(u16::MAX),
+    )
+}
+
 /// Drop the entries older than [`MAX_AGE_MS`] before `now_ms`, then all but
 /// the newest [`MAX_ROWS`].
 ///

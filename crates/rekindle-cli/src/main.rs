@@ -196,6 +196,14 @@ async fn dispatch_command(
         Command::Settings(cmd) => presence::dispatch_settings(&cmd, client, mode).await,
         Command::Skin(cmd) => skin::dispatch(&cmd, client, mode).await,
         Command::Game(cmd) => presence::dispatch_game(&cmd, client, mode).await,
+        Command::Activity { before, limit } => {
+            let value = helpers::send(
+                client,
+                rekindle_ipc::protocol::IpcRequest::ActivityList { before, limit },
+            )
+            .await?;
+            output::format::print_structured(&value, mode)
+        }
         Command::Audit(cmd) => presence::dispatch_audit(&cmd, client, mode).await,
         Command::Undo { id } => presence::undo(&id, client, mode).await,
         Command::Export(cmd) => identity::dispatch_export(&cmd, client, mode).await,

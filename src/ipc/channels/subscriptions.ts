@@ -19,7 +19,7 @@ import type {
   NotificationSubscriptionEvent,
 } from "./notification_events";
 import type { IntentReview, LifecycleState, SkinApplied, SkinTrial } from "../commands/dto";
-import type { SettingsTab } from "../commands/types";
+import type { ActivityListItem, SettingsTab } from "../commands/types";
 
 /// Where this window is in the host's event stream
 /// (`rekindle_types::subscription_events::Cursor`, plan D3.2).
@@ -256,6 +256,20 @@ export function subscribeSkinTrial(
 }
 
 /** The quick wipe's state the Host published when an arm or disarm committed. */
+/**
+ * Subscribe to new activity feed entries (`SystemEvent::ActivityAppended`,
+ * plan E7.15): the buddy list and chat windows receive them on
+ * `activity-event`, newest first, names resolved by the Host.
+ */
+export function subscribeActivity(
+  onAppended: (entries: ActivityListItem[]) => void,
+): Promise<UnlistenFn> {
+  return on<{ system: { activityAppended: { entries: ActivityListItem[] } } }>(
+    "activity-event",
+    (payload) => onAppended(payload.system.activityAppended.entries),
+  );
+}
+
 export interface QuickWipeChange {
   armed: boolean;
   shortcut: string | null;

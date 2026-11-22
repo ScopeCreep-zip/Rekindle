@@ -146,6 +146,14 @@ pub(crate) async fn select(
             // Local only: setting it back reverses it (plan E7.2).
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
+        IpcRequest::SetKeepActivityLog { enabled } => {
+            s.subject = unlocked_identity(ctx);
+            // Local only. Turning it on is set back by turning it off;
+            // turning it off clears the feed, which nothing brings back.
+            if *enabled {
+                s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
+            }
+        }
         IpcRequest::SetShareCurrentGame { .. } => {
             s.subject = unlocked_identity(ctx);
             // Friends already saw the game: turning it off stops showing it.
@@ -235,6 +243,7 @@ pub(crate) async fn select(
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
         | IpcRequest::HiddenGamesGet
+        | IpcRequest::ActivityList { .. }
         | IpcRequest::FavouriteServersGet
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet

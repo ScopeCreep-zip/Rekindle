@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use rekindle_events::typing::{TypingExpiry, TypingSessions};
+use rekindle_types::friend::FriendState;
 use rekindle_types::friend_store::FriendStore;
 use rekindle_types::subscription_events::SubscriptionEvent;
 use zeroize::Zeroizing;
@@ -260,6 +261,15 @@ pub trait FriendHost: Send + Sync {
     fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).
     fn publish(&self, event: SubscriptionEvent);
+    /// A friend's projection row (`prev` → `next`) or, with `bio`, their
+    /// bio (before, after) changed: the Host's activity feed compares them
+    /// (plan E7.15). Called after the change is stored.
+    fn friend_changed(
+        &self,
+        prev: Option<FriendState>,
+        next: FriendState,
+        bio: Option<(Option<String>, Option<String>)>,
+    );
     /// Append to the identity's audit chain.
     async fn audit(&self, kind: rekindle_audit::AuditKind, detail: serde_json::Value);
     /// Watch a friend's profile record for their presence.

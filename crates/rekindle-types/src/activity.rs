@@ -104,6 +104,22 @@ pub struct ActivityEntry {
     pub kind: ActivityKind,
 }
 
+/// A feed entry as the Host answers `ActivityList` and pushes
+/// `SystemEvent::ActivityAppended`: the stored entry, its row id (the
+/// "View More" cursor) and, for a friend's entry, the names the Host holds
+/// for them when it answers (the stored display name, our nickname and the
+/// identity-pin flag; design §3.6), never a name from the entry itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityListItem {
+    pub id: i64,
+    pub at: i64,
+    pub kind: ActivityKind,
+    pub display_name: Option<String>,
+    pub nickname: Option<String>,
+    pub identity_pin_mismatch: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

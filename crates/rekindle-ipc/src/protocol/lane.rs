@@ -143,6 +143,8 @@ impl IpcRequest {
             Self::SetShareGameTotals { .. } => ("SetShareGameTotals", Write, Authenticated),
             Self::SetGameDetection { .. } => ("SetGameDetection", Write, Authenticated),
             Self::SetShareCurrentGame { .. } => ("SetShareCurrentGame", Write, Authenticated),
+            Self::SetKeepActivityLog { .. } => ("SetKeepActivityLog", Write, Authenticated),
+            Self::ActivityList { .. } => ("ActivityList", Query, Authenticated),
             Self::HiddenGamesGet => ("HiddenGamesGet", Query, Authenticated),
             Self::GameHide { .. } => ("GameHide", Write, Authenticated),
             Self::GameUnhide { .. } => ("GameUnhide", Write, Authenticated),

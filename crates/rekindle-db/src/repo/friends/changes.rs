@@ -215,6 +215,8 @@ pub fn block(
     blocked_at: i64,
 ) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
+        // What the feed logged about them goes (Infoview design §3.3).
+        crate::repo::activity::purge_friend(conn, owner_key, public_key)?;
         delete(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         let failed = fail_to_peer(conn, owner_key, public_key, Ended::Both)?;
@@ -244,6 +246,8 @@ pub fn mark_removing(
         super::clear_presence_key(conn, owner_key, public_key)?;
         // What they shared ends with the friendship (plan E7.2).
         crate::repo::bio::set_friend(conn, owner_key, public_key, None)?;
+        // And what the feed logged about them (Infoview design §3.3).
+        crate::repo::activity::purge_friend(conn, owner_key, public_key)?;
         conn.execute(
             "DELETE FROM friend_game_totals WHERE owner_key = ?1 AND friend_key = ?2",
             params![owner_key, public_key],
