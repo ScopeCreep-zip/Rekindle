@@ -307,6 +307,16 @@
     text-align: center;
   }
 
+  /* A paused inbound route (owner decision 65): it stays until the Host lifts it. */
+  .route-paused-status {
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--color-xfire-danger) 30%, var(--color-xfire-bg-dark));
+    color: var(--color-xfire-danger-text);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+  }
+
   /* Architecture §32 a11y — pulse only for motion-tolerant users. */
   @media (prefers-reduced-motion: no-preference) {
     .network-banner {

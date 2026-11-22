@@ -298,6 +298,7 @@
 '.message-status-note' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-note-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.network-banner' = { on = ["--color-xfire-away 30% over --color-xfire-bg-dark"] }
+'.route-paused-status' = { on = ["--color-xfire-danger 30% over --color-xfire-bg-dark"] }
 '.action-bar-icon-btn' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
 '.chat-safety-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-panel"], on_hover = ["--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
 '.chat-call-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark", "--color-xfire-bg-panel"], on_hover = ["--color-xfire-online 20% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }

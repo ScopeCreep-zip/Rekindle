@@ -15,6 +15,8 @@ import type {
   NetworkStatusEvent,
   NetworkSubscriptionEvent,
   OwnRecordsPhase,
+  OwnRouteClass,
+  RoutePauseCause,
   NotificationEvent,
   NotificationSubscriptionEvent,
 } from "./notification_events";
@@ -340,6 +342,28 @@ export function subscribeNetworkStrength(onBars: (bars: number) => void): Promis
     if ("strength" in inner) {
       onBars(inner.strength.bars);
     }
+  });
+}
+
+/**
+ * Whether our inbound route is paused (`NetworkEvent::RoutePaused`, plan
+ * RV1): the new-route budget is spent or unreadable, so the route stays down
+ * until the Host says `paused: false`. Never a silent redraw.
+ */
+export function subscribeRoutePaused(onPaused: (paused: boolean, cause: RoutePauseCause | null) => void): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("routePaused" in inner) onPaused(inner.routePaused.paused, inner.routePaused.cause ?? null);
+  });
+}
+
+/** Own-route deaths above their baseline (`NetworkEvent::RouteDeathsAboveBaseline`, plan RV1): a warning. */
+export function subscribeRouteDeaths(
+  onDeaths: (d: { class: OwnRouteClass; deaths: number; windowSecs: number; baseline: number }) => void,
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("routeDeathsAboveBaseline" in inner) onDeaths(inner.routeDeathsAboveBaseline);
   });
 }
 

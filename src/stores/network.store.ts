@@ -7,8 +7,11 @@ import {
   subscribeNetworkStatus,
   subscribeNetworkStrength,
   subscribeOwnRecords,
+  subscribeRouteDeaths,
+  subscribeRoutePaused,
 } from "../ipc/channels";
-import type { OwnRecordsPhase, RouteAvailability } from "../ipc/channels/notification_events";
+import { addToast } from "./toast.store";
+import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause } from "../ipc/channels/notification_events";
 
 /**
  * The node's network state, as the Host reports it: the `network-status`
@@ -44,6 +47,14 @@ export interface NetworkState {
   ownRecords: OwnRecordsPhase | "unknown";
   /** Why publishing failed, when it did. */
   ownRecordsError: string | null;
+  /**
+   * Our inbound route is paused (plan RV1, `NetworkEvent::RoutePaused`): the
+   * new-route budget is spent or unreadable, so the route stays down rather
+   * than drawing again, until the Host says otherwise.
+   */
+  routePaused: boolean;
+  /** Why, as the Host states it, while paused. */
+  routePauseCause: RoutePauseCause | null;
 }
 
 const [networkState, setNetworkState] = createStore<NetworkState>({
@@ -56,9 +67,25 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
   bars: 0,
   ownRecords: "unknown",
   ownRecordsError: null,
+  routePaused: false,
+  routePauseCause: null,
 });
 
 export { networkState };
+
+/** The paused route's status line (owner decision 65): the Host's cause, worded. */
+export function routePausedText(cause: RoutePauseCause | null): string {
+  return cause === "unreadable"
+    ? "Route budget couldn't be read; inbound route paused"
+    : "Inbound route paused after repeated failures: possible attack";
+}
+
+/** The deaths warning, from the Host's numbers (plan RV1): what died, how often, against the usual. */
+function routeDeathsText(d: { class: OwnRouteClass; deaths: number; windowSecs: number; baseline: number }): string {
+  const minutes = Math.max(1, Math.round(d.windowSecs / 60));
+  const route = d.class === "media" ? "media route" : "inbound route";
+  return `Our ${route} failed ${d.deaths} times in ${minutes} min (usually ${d.baseline}): possible attack.`;
+}
 
 /** Public internet ready and a route: the indicator's "Connected". */
 export function isNetworkConnected(): boolean {
@@ -109,7 +136,7 @@ let unlisteners: UnlistenFn[] = [];
  * older than the last change: the snapshot then leaves that kind alone
  * rather than overwrite it with what may be older (plan VI1).
  */
-const applied = { attachment: 0, strength: 0, ownRecords: 0 };
+const applied = { attachment: 0, strength: 0, ownRecords: 0, routePaused: 0 };
 
 /** The state when the stream went live; the push events follow it. */
 async function readNetworkStatus(): Promise<void> {
@@ -166,6 +193,14 @@ function start(): void {
       setNetworkState({ ownRecords: phase, ownRecordsError: error });
     }),
   );
+  keep(
+    subscribeRoutePaused((paused, cause) => {
+      applied.routePaused += 1;
+      setNetworkState({ routePaused: paused, routePauseCause: paused ? cause : null });
+    }),
+  );
+  // Deaths above their baseline: a notice with the Host's numbers, no reaction.
+  keep(subscribeRouteDeaths((d) => addToast(routeDeathsText(d), "error")));
   void eventStreamLive().then(readNetworkStatus);
 }
 
