@@ -11,6 +11,7 @@ import TabBar from "../components/buddy-list/TabBar";
 import SearchBar, { focusSearchInput } from "../components/buddy-list/SearchBar";
 import PendingRequests from "../components/buddy-list/PendingRequests";
 import CoCreatorInvites from "../components/buddy-list/CoCreatorInvites";
+import SuccessorOffers from "../components/buddy-list/SuccessorOffers";
 import BuddyList from "../components/buddy-list/BuddyList";
 import CommunityListCompact from "../components/buddy-list/CommunityListCompact";
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
@@ -81,6 +82,7 @@ function BuddyContent(): JSX.Element {
       <Show when={buddyListUI.activeTab === "friends"}>
         <PendingRequests />
         <CoCreatorInvites />
+        <SuccessorOffers />
         <GroupDmList />
         <BuddyList />
       </Show>

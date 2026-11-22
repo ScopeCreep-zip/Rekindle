@@ -5,6 +5,7 @@ import type {
   GovernanceEvent,
 } from "../../ipc/channels/community_subscription_events";
 import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
+import { applySuccessorEvent } from "../../stores/successor.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
 import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
@@ -199,6 +200,9 @@ function applyMembershipNotice(m: MembershipEvent): void {
 /// exception is `governanceRebuilt`, which changes channels, roles,
 /// members and permissions together and so still triggers a re-read.
 function applyGovernanceEvent(g: GovernanceEvent): void {
+  // An offered successor is kept by community, not under its row: the
+  // offer can arrive before the window holds the community.
+  if (applySuccessorEvent(g)) return;
   const community = governanceRowCommunity(g);
   if (community !== null) {
     withCommunity(community, () => applyGovernance(g));
