@@ -164,6 +164,17 @@ impl InboundHandler for DaemonHandler {
         let host = self.friends()?;
         match direct::answer_call(&host, datagram).await {
             direct::Called::Answered(reply) => Some(reply),
+            // A `CallEnd` (plan CE4) is receipted and ignored: the daemon
+            // holds no call (E4.1), as a desktop ignores an unknown call id.
+            direct::Called::Unported(opened)
+                if matches!(
+                    opened.body,
+                    rekindle_codec::capnp_codec::direct::DirectBody::CallEnd(_)
+                ) =>
+            {
+                debug!(from = %opened.sender_hex, "CallEnd for no call held at the daemon — receipted");
+                Some(Vec::new())
+            }
             direct::Called::Unported(opened) => {
                 // The daemon relays for no one yet (E5.2): refused.
                 debug!(from = %opened.sender_hex, "unported 1:1 call refused at the daemon");

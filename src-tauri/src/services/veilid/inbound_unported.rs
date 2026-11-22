@@ -100,10 +100,28 @@ pub(super) async fn handle(app: &AppHandle, state: &Arc<AppState>, pool: &Db, op
     }
 }
 
-/// Answer an unported `app_call` (a relay offer, architecture §13.2 step
-/// 2): a `RelayOfferAck` frame under our session with the caller, or an
-/// empty reply when none can be sealed.
-pub(super) async fn handle_call(state: &Arc<AppState>, pool: &Db, opened: Opened) -> Vec<u8> {
+/// Answer an unported `app_call`: a relay offer (architecture §13.2 step
+/// 2) with a `RelayOfferAck` frame under our session with the caller, or
+/// an empty reply when none can be sealed; a call's `CallEnd` (plan CE4)
+/// with the receipt at once (its ratchet step is committed), then applied
+/// by the call arm, which ignores a call id it does not hold (D24: the
+/// apply follows the ack).
+pub(super) async fn handle_call(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    pool: &Db,
+    opened: Opened,
+) -> Vec<u8> {
+    if matches!(opened.body, DirectBody::CallEnd(_)) {
+        let (app, owned, pool) = (app.clone(), Arc::clone(state), pool.clone());
+        crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+            "apply CallEnd",
+            async move {
+                handle(&app, &owned, &pool, opened).await;
+            },
+        );
+        return Vec::new();
+    }
     let DirectBody::RelayOffer(offer) = &opened.body else {
         tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
             "unported app_call kind — empty reply");

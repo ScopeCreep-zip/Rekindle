@@ -59,7 +59,7 @@ pub async fn handle_app_call(
         rekindle_codec::ingress::Ingress::Direct(_) => {
             // A call left unanswered gets no reply: the caller's `app_call`
             // times out and is attempted again (a NAK is a refusal, RV2).
-            if let Some(reply) = direct_call(state, &message).await {
+            if let Some(reply) = direct_call(app_handle, state, &message).await {
                 reply_to_call(state, call_id, reply).await;
             }
             return;
@@ -247,7 +247,7 @@ async fn community_call(
 /// (its deadline, an internal error) is answered retry later
 /// (`direct::RETRY_LATER`, review RV5 M2); with no host there is no reply.
 /// Either way the caller attempts it again.
-async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Option<Vec<u8>> {
+async fn direct_call(app: &AppHandle, state: &Arc<AppState>, message: &[u8]) -> Option<Vec<u8>> {
     let host = state.host.current()?;
     match host.receive_direct_call(message).await {
         rekindle_transport::operations::direct::Called::Answered(reply) => Some(reply),
@@ -256,7 +256,7 @@ async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Option<Vec<u8>> {
         }
         rekindle_transport::operations::direct::Called::Unported(opened) => {
             let pool = state.db.current().ok()?;
-            Some(super::inbound_unported::handle_call(state, &pool, *opened).await)
+            Some(super::inbound_unported::handle_call(app, state, &pool, *opened).await)
         }
     }
 }

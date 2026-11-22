@@ -365,6 +365,12 @@ async fn commit(
 /// is receipted for the same reason (Linux run 2: one lost invite left the
 /// invitee outside the group with nothing re-sending it): it is the one
 /// frame carrying the signed roster and the creator's key and chain.
+/// A call's `CallEnd` is receipted (plan CE4, lead decision 22): sent as
+/// an `app_message` it settled on leaving and was lost unseen by a frozen
+/// peer (Veilid 0.5.8 `rpc_app_message.rs:24`: a statement no one
+/// answers), so it waits for the receipt, re-sent until its deadline; the
+/// receiver answers once open, a duplicate with the same receipt
+/// (`Dropped::Duplicate`), and ignores a call id it does not hold.
 #[must_use]
 pub fn receipted(kind: DmTypeId) -> bool {
     matches!(
@@ -376,6 +382,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::UnfriendedAck
             | DmTypeId::GroupDmInvite
             | DmTypeId::GroupDmAccept
+            | DmTypeId::CallEnd
     )
 }
 

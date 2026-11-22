@@ -242,7 +242,13 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
         held::keep(host, opened).await;
         return Called::Answered(Vec::new());
     }
-    if matches!(opened.body, DirectBody::RelayOffer(_)) {
+    // The unported kinds that come by call: a relay offer (its owner
+    // replies with its ack) and a call's `CallEnd` (plan CE4: receipted,
+    // its owner applies it after answering the receipt).
+    if matches!(
+        opened.body,
+        DirectBody::RelayOffer(_) | DirectBody::CallEnd(_)
+    ) {
         frame::processed(host, &opened);
         return Called::Unported(Box::new(opened));
     }

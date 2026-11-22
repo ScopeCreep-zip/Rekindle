@@ -112,3 +112,12 @@ fn a_call_invite_awaits_its_answer() {
     assert!(!awaits_answer(DmTypeId::CallEnd));
     assert!(!awaits_answer(DmTypeId::CallRinging));
 }
+
+/// Plan CE4: a `CallEnd` goes by `app_call` and settles only on its
+/// receipt (re-sent until then or its deadline); a `CallRinging` does not.
+#[test]
+fn a_call_end_awaits_its_receipt() {
+    assert!(receipted(DmTypeId::CallEnd));
+    assert!(!receipted(DmTypeId::CallRinging));
+    assert!(!receipted(DmTypeId::CallInvite));
+}
