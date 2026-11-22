@@ -31,39 +31,6 @@ fn reject(label: &str, e: &KeyFormatError) -> IpcResponse {
     IpcResponse::error(400, format!("invalid {label}: {e}"))
 }
 
-/// A transfer request: its attachment id, and a start's place and
-/// destination (a file path) within their bounds.
-fn transfer(request: &rekindle_ipc::protocol::TransferRequest) -> Checked {
-    request.attachment_id().map_or(Ok(()), attachment_id)?;
-    if let rekindle_ipc::protocol::TransferRequest::Start { target, dest, .. } = request {
-        if !crate::host::skin::ids::target_fits(target) {
-            return Err(IpcResponse::error(400, "transfer place out of bounds"));
-        }
-        if dest
-            .as_ref()
-            .is_some_and(|d| d.is_empty() || d.len() > 4096)
-        {
-            return Err(IpcResponse::error(
-                400,
-                "transfer destination: 1..=4096 bytes",
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// An attachment id: 32 lowercase hex digits (a UUID's bytes).
-fn attachment_id(s: &str) -> Checked {
-    if s.len() == 32 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-        Ok(())
-    } else {
-        Err(IpcResponse::error(
-            400,
-            "invalid attachment id: 32 lowercase hex digits",
-        ))
-    }
-}
-
 fn public_key(s: &str, label: &str) -> Checked {
     key_format::public_key_hex(s)
         .map(drop)
@@ -502,7 +469,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
         IpcRequest::Community(request) => community::check(request),
-        IpcRequest::Transfer(request) => transfer(request),
+        IpcRequest::Transfer(request) => transfers::check(request),
 
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
@@ -588,6 +555,7 @@ mod pins;
 mod rich_messaging;
 #[cfg(test)]
 mod tests;
+mod transfers;
 
 /// The conversation a validated `DisappearingSet` or `DisappearingGet` names (plan E7.1): a
 /// group's 32-hex id, else a friend's key.
