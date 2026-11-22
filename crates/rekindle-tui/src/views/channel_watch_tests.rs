@@ -49,7 +49,8 @@ fn view_selecting(index: usize) -> ChannelWatchView {
     .unwrap();
     let member = |key: &str, name: &str| -> CommunityMemberView {
         serde_json::from_value(serde_json::json!({
-            "pseudonymKey": key, "displayName": name, "roleIds": [], "displayRole": "",
+            "pseudonymKey": key, "fingerprint": "a1b2 c3d4", "displayName": name, "roleIds": [],
+            "displayRole": "",
             "status": "online", "timeoutUntil": null, "group": {"kind": "online"},
         }))
         .unwrap()
