@@ -23,6 +23,8 @@ fn friend(status: UserStatus, server: Option<&str>) -> FriendState {
         elapsed_seconds: 0,
         server_address: Some(s.into()),
         icon_key: None,
+        joinable: true,
+        joinable_reason: None,
     });
     f
 }

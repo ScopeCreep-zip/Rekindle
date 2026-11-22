@@ -30,6 +30,8 @@ fn in_game(game_id: u32) -> FriendState {
         elapsed_seconds: 0,
         server_address: Some("10.0.0.1:27015".into()),
         icon_key: None,
+        joinable: true,
+        joinable_reason: None,
     });
     f
 }
