@@ -41,6 +41,11 @@ use crate::loopback::ROUTE_MIN_IDLE;
 use crate::network::Network;
 use crate::routes::FakeAllocator;
 
+/// The latency streams of a node's own-route self-tests, one per class
+/// (its [`class_tag`](crate::routes::class_tag) in the low bits): apart
+/// from the route-test streams, which are the bare tag.
+const SELF_TEST_STREAM: u64 = 0x7365_6c66_0000_0000;
+
 /// Veilid's default RPC timeout (`network.rpc.timeout_ms`,
 /// Veilid 0.5.8 `veilid_config.rs:944`).
 pub const RPC_TIMEOUT: Duration = Duration::from_millis(5_000);
@@ -180,12 +185,14 @@ impl FakeMessages {
     }
 
     /// A call to `target`, over our `pinned` route when given (its reply
-    /// route too).
+    /// route too), its legs' latencies drawn from `stream` when given, else
+    /// from the node's shared stream.
     async fn call_over(
         &self,
         target: &PeerTarget,
         profile: &SafetyProfile,
         pinned: Option<&str>,
+        stream: Option<u64>,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
         check_message_len(&message)?;
@@ -216,8 +223,14 @@ impl FakeMessages {
         if pinned.is_none() {
             self.net.select_pool_reply(self.node);
         }
-        let there = self.net.latency.draw(self.node, latency::MESSAGE);
-        let back = self.net.latency.draw(self.node, latency::MESSAGE);
+        let leg = || match stream {
+            Some(stream) => self
+                .net
+                .latency
+                .draw_stream(self.node, stream, latency::MESSAGE),
+            None => self.net.latency.draw(self.node, latency::MESSAGE),
+        };
+        let (there, back) = (leg(), leg());
         self.net.send_after(
             self.node,
             to,
@@ -298,7 +311,7 @@ impl AppMessagePort for FakeMessages {
         profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
-        self.call_over(target, profile, None, message).await
+        self.call_over(target, profile, None, None, message).await
     }
 
     async fn call_pinned(
@@ -309,7 +322,7 @@ impl AppMessagePort for FakeMessages {
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
         let pinned = self.pinned(class)?;
-        self.call_over(target, profile, Some(&pinned), message)
+        self.call_over(target, profile, Some(&pinned), None, message)
             .await
     }
 
@@ -332,8 +345,19 @@ impl AppMessagePort for FakeMessages {
         self.net.import_route(self.node, &own);
         // From outside the call takes the pool's safety route, as a peer's.
         let safety = (path == rekindle_records::port::OwnPath::Loopback).then_some(own.as_str());
+        // Drawn from the class's own self-test stream: the self-test task
+        // wakes beside the node's other tasks in the order tokio wakes them
+        // (a resume's or a report's tests run at once), and a draw from the
+        // node's shared stream would hand them each other's latencies.
+        let stream = SELF_TEST_STREAM | u64::from(crate::routes::class_tag(class));
         let answer = self
-            .call_over(&PeerTarget::new(own.clone()), profile, safety, message)
+            .call_over(
+                &PeerTarget::new(own.clone()),
+                profile,
+                safety,
+                Some(stream),
+                message,
+            )
             .await;
         self.net.forget_import(self.node, &own);
         answer

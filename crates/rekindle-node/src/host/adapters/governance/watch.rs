@@ -11,7 +11,7 @@ use rekindle_codec::member_record::head_advanced::RELAYED_SUBKEYS;
 use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontiers};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, OUTBOX, ROUTES};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX, ROUTES};
 
 #[cfg(test)]
 #[path = "watch_tests.rs"]
@@ -70,7 +70,11 @@ impl HostGovernance {
         if subkeys.contains(&ROUTES) {
             self.ring_route_moved(&community, record).await;
         }
-        let frontier_follows_head = self.frontier_follows_head(&community, record, subkeys);
+        let head_seq = seqs
+            .as_ref()
+            .and_then(|s| s.get(GOV_HEAD as usize).copied().flatten());
+        let frontier_follows_head =
+            self.frontier_follows_head(&community, record, subkeys, head_seq);
         if rebuilds_on(subkeys) {
             // The change names the frontier: it is force-read (VU3's hint
             // contract), never gated on an inspect a lagging replica answers;
@@ -112,13 +116,22 @@ impl HostGovernance {
 
     /// Does this ring change of `record` relay a frontier hint
     /// ([`HeadHints::frontier_follows_head`](crate::host::community::state::HeadHints::frontier_follows_head))?
-    fn frontier_follows_head(&self, community: &str, record: &str, subkeys: &[u32]) -> bool {
+    fn frontier_follows_head(
+        &self,
+        community: &str,
+        record: &str,
+        subkeys: &[u32],
+        head_seq: Option<u64>,
+    ) -> bool {
         self.ctx
             .communities
             .map()
             .write()
             .get_mut(community)
-            .is_some_and(|c| c.head_hints.frontier_follows_head(record, subkeys))
+            .is_some_and(|c| {
+                c.head_hints
+                    .frontier_follows_head(record, subkeys, head_seq)
+            })
     }
 
     /// `community`'s frontier reads, shared by its sweeps, ring changes and

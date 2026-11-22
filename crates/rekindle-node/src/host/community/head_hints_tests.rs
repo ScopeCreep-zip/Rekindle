@@ -105,21 +105,44 @@ fn a_write_refused_mid_flight_is_read_again_once() {
 fn only_a_frontier_after_its_head_is_relayed() {
     let mut hints = HeadHints::default();
     assert!(
-        !hints.frontier_follows_head("M", &[FRONTIER]),
+        !hints.frontier_follows_head("M", &[FRONTIER], Some(3)),
         "a republish"
     );
-    assert!(!hints.frontier_follows_head("M", &[GOV_HEAD]));
+    assert!(!hints.frontier_follows_head("M", &[GOV_HEAD], Some(4)));
     assert!(
-        hints.frontier_follows_head("M", &[FRONTIER]),
+        hints.frontier_follows_head("M", &[FRONTIER], Some(4)),
         "the append's frontier"
     );
     assert!(
-        !hints.frontier_follows_head("M", &[FRONTIER]),
+        !hints.frontier_follows_head("M", &[FRONTIER], Some(4)),
         "then a republish"
     );
-    assert!(hints.frontier_follows_head("M", &[GOV_HEAD, FRONTIER]));
-    assert!(!hints.frontier_follows_head("M", &[FRONTIER]));
-    assert!(!hints.frontier_follows_head("M", &[1, 4]));
+    assert!(hints.frontier_follows_head("M", &[GOV_HEAD, FRONTIER], Some(5)));
+    assert!(!hints.frontier_follows_head("M", &[FRONTIER], Some(5)));
+    assert!(!hints.frontier_follows_head("M", &[1, 4], Some(5)));
+}
+
+/// LF7c (netsim `ring_frontier`): Veilid reports a value change from each
+/// node holding our watch, so the author's append can come as `[2, 3]` and
+/// again as `[2]` then `[3]` at the same seqs. Its frontier is relayed
+/// once: a change naming a head already seen moves nothing, and a head
+/// whose seq is unknown proves no advance.
+#[test]
+fn a_change_reported_again_relays_its_frontier_once() {
+    let mut hints = HeadHints::default();
+    assert!(hints.frontier_follows_head("M", &[GOV_HEAD, FRONTIER], Some(11)));
+    assert!(!hints.frontier_follows_head("M", &[GOV_HEAD], Some(11)));
+    assert!(
+        !hints.frontier_follows_head("M", &[FRONTIER], Some(11)),
+        "the same append, reported again"
+    );
+    assert!(!hints.frontier_follows_head("M", &[GOV_HEAD], None));
+    assert!(!hints.frontier_follows_head("M", &[FRONTIER], None));
+    assert!(!hints.frontier_follows_head("M", &[GOV_HEAD], Some(12)));
+    assert!(
+        hints.frontier_follows_head("M", &[FRONTIER], Some(12)),
+        "the next append"
+    );
 }
 
 /// A departed member's record is forgotten after a rebuild; a current
@@ -129,19 +152,19 @@ fn a_departed_members_entries_are_pruned() {
     let mut hints = HeadHints::default();
     hints.record_read("Gone", FRONTIER, 4);
     hints.record_read("Kept", FRONTIER, 4);
-    hints.frontier_follows_head("Gone", &[GOV_HEAD]);
-    hints.frontier_follows_head("Kept", &[GOV_HEAD]);
+    hints.frontier_follows_head("Gone", &[GOV_HEAD], Some(1));
+    hints.frontier_follows_head("Kept", &[GOV_HEAD], Some(1));
     hints.retain_records(&BTreeSet::from(["Kept".to_owned()]));
     assert!(
         hints.worth_reading("Gone", FRONTIER, 4),
         "Gone's seq was dropped"
     );
     assert!(
-        !hints.frontier_follows_head("Gone", &[FRONTIER]),
+        !hints.frontier_follows_head("Gone", &[FRONTIER], Some(1)),
         "and its moved head"
     );
     assert!(!hints.worth_reading("Kept", FRONTIER, 4));
-    assert!(hints.frontier_follows_head("Kept", &[FRONTIER]));
+    assert!(hints.frontier_follows_head("Kept", &[FRONTIER], Some(1)));
 }
 
 /// Review S7m part 2 P2: a frontier the ring or a hint read is the read

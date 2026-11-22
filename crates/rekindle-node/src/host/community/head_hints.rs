@@ -30,6 +30,13 @@ pub struct HeadHints {
     /// not also name the frontier: the frontier write that follows is the
     /// author's append, the one frontier change a ring watcher relays.
     head_moved: BTreeSet<String>,
+    /// The op-log head (`M`/2) seq each ring record was last seen at: a
+    /// change that names the head moves it only past this seq. Veilid
+    /// reports one value change from each node holding our watch, so a
+    /// change can come again for a value already handled (netsim
+    /// `ring_frontier`, LF7c: `[2, 3]`, then `[2]` and `[3]` for the same
+    /// seqs relayed the frontier twice).
+    heads: BTreeMap<String, u64>,
 }
 
 /// A frontier catch-up in flight: the highest seq a trigger refused
@@ -110,8 +117,16 @@ impl HeadHints {
     /// earlier change (the writer appends `M`/2, then writes `M`/3). A
     /// republish after a rebuild moves the frontier alone and stays a
     /// ring-local signal, so ops spread hop by hop, not by mesh floods.
-    pub fn frontier_follows_head(&mut self, record: &str, subkeys: &[u32]) -> bool {
-        let head = subkeys.contains(&GOV_HEAD);
+    /// The head moved only when `head_seq`, its seq as the change was
+    /// inspected, is past the one last seen: a change reported again for
+    /// a head already seen moves nothing (LF7c).
+    pub fn frontier_follows_head(
+        &mut self,
+        record: &str,
+        subkeys: &[u32],
+        head_seq: Option<u64>,
+    ) -> bool {
+        let head = subkeys.contains(&GOV_HEAD) && self.head_advanced(record, head_seq);
         if !subkeys.contains(&FRONTIER) {
             if head {
                 self.head_moved.insert(record.to_owned());
@@ -127,12 +142,27 @@ impl HeadHints {
         self.frontiers.retain_records(records);
         self.read.retain(|(record, _), _| records.contains(record));
         self.head_moved.retain(|record| records.contains(record));
+        self.heads.retain(|record, _| records.contains(record));
     }
 
     /// The community's frontier reads, shared with its sweeps.
     #[must_use]
     pub fn frontiers(&self) -> SeenFrontiers {
         self.frontiers.clone()
+    }
+
+    /// Whether `seq` moves `record`'s head past the one last seen (any seq
+    /// for a record never seen), which it then is. An unknown seq (the
+    /// inspect failed) proves no advance.
+    fn head_advanced(&mut self, record: &str, seq: Option<u64>) -> bool {
+        let Some(seq) = seq else {
+            return false;
+        };
+        if self.heads.get(record).is_some_and(|seen| seq <= *seen) {
+            return false;
+        }
+        self.heads.insert(record.to_owned(), seq);
+        true
     }
 
     fn read_at(&self, record: &str, subkey: u32) -> Option<u64> {

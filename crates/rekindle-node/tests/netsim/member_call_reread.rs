@@ -80,6 +80,19 @@ async fn settled() -> (Community, Vec<usize>) {
     (community, outside)
 }
 
+/// Node 0's app calls that are not its own routes' self-tests: General
+/// and Sending are self-tested each period whatever arrives over them
+/// (plan LF6, `InboundLiveness::ungated`), so a test may fall inside the
+/// window a scenario counts its member calls in.
+fn member_calls(community: &Community) -> u64 {
+    let sim = &community.sim;
+    let own: u64 = [RouteClass::General, RouteClass::Media, RouteClass::Sending]
+        .into_iter()
+        .map(|class| sim.own_calls(0, class))
+        .sum();
+    sim.app_calls(0) - own
+}
+
 /// Node 0's cached route of node `i`.
 async fn cached(community: &Community, i: usize) -> Option<Vec<u8>> {
     let hex = community.pseudonym(i).await;
@@ -120,7 +133,7 @@ async fn a_dropped_routes_hint_costs_one_reread_and_the_call_lands() {
     assert_eq!(cached(&community, x).await, old, "the hint was dropped");
 
     let record = record_of(&community, x).await;
-    let (gets, calls) = (sim.app_gets(0, &record), sim.app_calls(0));
+    let (gets, calls) = (sim.app_gets(0, &record), member_calls(&community));
     let hex = community.pseudonym(x).await;
     let reply = community.nodes[0]
         .host
@@ -130,7 +143,7 @@ async fn a_dropped_routes_hint_costs_one_reread_and_the_call_lands() {
     assert!(reply.is_ok(), "the call lands on the new route: {reply:?}");
     assert_eq!(sim.app_gets(0, &record) - gets, 1, "exactly one M/6 read");
     assert_eq!(
-        sim.app_calls(0) - calls,
+        member_calls(&community) - calls,
         2,
         "the lost call and the landed one"
     );
@@ -151,7 +164,7 @@ async fn a_member_with_no_newer_route_is_unreachable_after_one_reread() {
     tokio::time::sleep(Duration::from_secs(30)).await;
 
     let record = record_of(&community, y).await;
-    let (gets, calls) = (sim.app_gets(0, &record), sim.app_calls(0));
+    let (gets, calls) = (sim.app_gets(0, &record), member_calls(&community));
     let hex = community.pseudonym(y).await;
     let reply = community.nodes[0]
         .host
@@ -160,7 +173,11 @@ async fn a_member_with_no_newer_route_is_unreachable_after_one_reread() {
         .await;
     assert_eq!(reply, Err(MemberCallError::Unreachable));
     assert_eq!(sim.app_gets(0, &record) - gets, 1, "exactly one M/6 read");
-    assert_eq!(sim.app_calls(0) - calls, 1, "no call after the re-read");
+    assert_eq!(
+        member_calls(&community) - calls,
+        1,
+        "no call after the re-read"
+    );
     assert_eq!(cached(&community, y).await, None, "the dead route is gone");
 }
 
