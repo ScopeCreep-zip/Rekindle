@@ -159,6 +159,14 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(SystemEvent::Infoview(InfoviewEvent::Updated {
             window, ..
         })) => Audience::labels([window.clone()]),
+        // A skin window's signals go to that window only (plan SK2-A4
+        // step 3): the buddy list for `Main`, the chat windows for `Chat`.
+        SubscriptionEvent::System(SystemEvent::SkinSignals { window, .. }) => match window {
+            rekindle_types::dto::skin_layout::SkinWindow::Main => buddy_list(),
+            rekindle_types::dto::skin_layout::SkinWindow::Chat => {
+                Audience::kinds(&[WindowKind::Chat])
+            }
+        },
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them.
         SubscriptionEvent::Notification(_)
@@ -214,6 +222,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
         SubscriptionEvent::System(SystemEvent::Infoview(_)) => "infoview-event",
+        SubscriptionEvent::System(SystemEvent::SkinSignals { .. }) => "skin-signals-event",
         SubscriptionEvent::Voice(_) => "voice-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the

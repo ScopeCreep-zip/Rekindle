@@ -16,6 +16,7 @@ pub const NAMES: &[&str] = &[
     "activityAppended",
     "favouriteServerAdded",
     "infoview",
+    "skinSignals",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
@@ -31,6 +32,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::ActivityAppended { .. } => "activityAppended",
         SystemEvent::FavouriteServerAdded { .. } => "favouriteServerAdded",
         SystemEvent::Infoview(_) => "infoview",
+        SystemEvent::SkinSignals { .. } => "skinSignals",
     }
 }
 
@@ -167,6 +169,26 @@ fn sync() -> Vec<Sample> {
                 game_id: 4_100,
                 server: "203.0.113.7:27015".into(),
                 label: "Frag Night".into(),
+            },
+        ),
+        ev(
+            "skinSignals",
+            SystemEvent::SkinSignals {
+                window: rekindle_types::dto::skin_layout::SkinWindow::Main,
+                set: rekindle_types::dto::skin_signals::SkinSignalSet {
+                    focused: true,
+                    can: [
+                        rekindle_types::dto::skin_action::Capability::Chat,
+                        rekindle_types::dto::skin_action::Capability::Profile,
+                    ]
+                    .into(),
+                    cannot: [rekindle_types::dto::skin_action::Capability::Join].into(),
+                    user_typing: true,
+                    voice_ringing: false,
+                    talking: false,
+                    disconnected: false,
+                    new_notification: true,
+                },
             },
         ),
     ]

@@ -131,6 +131,8 @@ pub struct DaemonContext {
     pub(crate) infoview: crate::host::infoview::OpenViews,
     /// Each skin window's selection (plan SK2-A4).
     pub(crate) skin_selection: crate::host::skin::actions::Selections,
+    /// Each skin window's state signals (plan SK2-A4 step 3).
+    pub(crate) skin_signals: crate::host::skin::signals::SignalState,
     /// The unlocked identity's database (plan D1), shared with the
     /// handler and the inbox scan. Empty while locked.
     pub db: Arc<rekindle_db::DbHandle>,

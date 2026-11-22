@@ -91,4 +91,14 @@ pub enum SystemEvent {
     /// its subject shows (a friend's presence, name, bio or friendship, a
     /// feed entry, an unread or membership change), coalesced per window.
     Infoview(crate::dto::infoview::InfoviewEvent),
+    /// A skin window's state signals changed (plan SK2-A4 step 3): its
+    /// focus, the selection's capabilities, typing, ringing or talking,
+    /// the network, a new notification. Only that window applies it.
+    /// Triggered by: any of those inputs changing (the Host's
+    /// `skin::signals` worker); kept as the session state
+    /// `skin-signals:<window>`, so a window that opens is handed it.
+    SkinSignals {
+        window: crate::dto::skin_layout::SkinWindow,
+        set: crate::dto::skin_signals::SkinSignalSet,
+    },
 }

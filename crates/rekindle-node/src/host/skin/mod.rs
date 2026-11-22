@@ -15,6 +15,9 @@ pub(crate) mod ids;
 pub(crate) mod login;
 mod serve;
 mod shown;
+pub(crate) mod signals;
+#[cfg(test)]
+mod signals_tests;
 mod trial;
 
 use rekindle_db::repo::{preferences, skins};

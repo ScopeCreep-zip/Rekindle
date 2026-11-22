@@ -143,7 +143,8 @@ impl SubscriptionEvent {
                 | SystemEvent::QuickWipeChanged { .. }
                 | SystemEvent::ActivityAppended { .. }
                 | SystemEvent::Infoview(_)
-                | SystemEvent::FavouriteServerAdded { .. } => EventScope::Device,
+                | SystemEvent::FavouriteServerAdded { .. }
+                | SystemEvent::SkinSignals { .. } => EventScope::Device,
             },
             Self::UnreadChanged { context, .. } => match context {
                 UnreadContext::Channel { community, .. } => {
