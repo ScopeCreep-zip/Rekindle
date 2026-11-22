@@ -44,6 +44,21 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.identity_secret_impl()
     }
 
+    fn device_op_key(
+        &self,
+        community_id: &str,
+    ) -> Result<Option<zeroize::Zeroizing<[u8; 32]>>, GovernanceRuntimeError> {
+        self.device_op_key_impl(community_id)
+    }
+
+    fn store_device_op_key(
+        &self,
+        community_id: &str,
+        secret: &[u8; 32],
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.store_device_op_key_impl(community_id, secret)
+    }
+
     fn identity_display_name(&self) -> String {
         self.identity_display_name_impl()
     }

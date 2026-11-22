@@ -8,6 +8,7 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
     CommunityMembership, OnlineMemberSnapshot, UserStatusKind,
 };
+use rekindle_governance_runtime::error::GovernanceRuntimeError;
 
 use rekindle_transport::session::CommunityMembership as SessionMembership;
 
@@ -19,6 +20,33 @@ impl HostGovernance {
     /// Ed25519 identity secret, or `None` while the daemon is locked.
     pub(super) fn identity_secret_impl(&self) -> Option<[u8; 32]> {
         self.ctx.identity_secret()
+    }
+
+    /// This device's op key for `community` from the device vault the
+    /// unlock opened (ADR 0022 rule 4); the guard drops before returning.
+    pub(super) fn device_op_key_impl(
+        &self,
+        community: &str,
+    ) -> Result<Option<zeroize::Zeroizing<[u8; 32]>>, GovernanceRuntimeError> {
+        let guard = self.ctx.device_vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+        rekindle_vault::typed::device_keys::load_device_op_key(vault, community)
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
+    }
+
+    pub(super) fn store_device_op_key_impl(
+        &self,
+        community: &str,
+        secret: &[u8; 32],
+    ) -> Result<(), GovernanceRuntimeError> {
+        let guard = self.ctx.device_vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+        rekindle_vault::typed::device_keys::store_device_op_key(vault, community, secret)
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("device vault: {e}")))
     }
 
     pub(super) fn identity_display_name_impl(&self) -> String {

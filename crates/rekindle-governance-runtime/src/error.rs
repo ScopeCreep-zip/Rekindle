@@ -18,6 +18,12 @@ pub enum GovernanceRuntimeError {
     #[error("identity secret not available")]
     IdentitySecretUnavailable,
 
+    /// This device's op key for the community is gone from its vault
+    /// while its endorsement stands (ADR 0022 rule 4): refused, never
+    /// minted again.
+    #[error("this device holds no op key for community {0}")]
+    DeviceOpKeyMissing(String),
+
     #[error("not attached to Veilid")]
     NotAttached,
 

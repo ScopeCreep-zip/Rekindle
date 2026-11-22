@@ -9,6 +9,7 @@ use rekindle_codec::governance_op::encode_op;
 use rekindle_governance::fixture::meta;
 use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance::op::op_hash;
+use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::invite::{hash_invite_code, sign_invite_join};
 use rekindle_secrets::member_record::sign_member_record_binding;
 use rekindle_types::governance::{AdmissionMode, InviteProof};

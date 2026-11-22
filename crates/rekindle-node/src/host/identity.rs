@@ -26,6 +26,9 @@ use zeroize::Zeroizing;
 pub struct Stores<'a> {
     pub db: &'a Arc<DbHandle>,
     pub vault: &'a VaultHandle,
+    /// This device's vault (plan E3.2 S7d-keys.7, ADR 0022 rule 4): the
+    /// per-community device op keys. Opened at unlock, dropped at lock.
+    pub device_vault: &'a VaultHandle,
     pub attempts: &'a AttemptLimiter<String>,
 }
 
@@ -172,8 +175,10 @@ pub fn passphrase_matches(
     }
 }
 
-/// Install the opened vault and database.
+/// Install the opened vault, this device's vault (opened with the key the
+/// identity vault holds, K1) and the database.
 fn install(
+    root: &DataRoot,
     stores: &Stores<'_>,
     vault: VaultStore,
     db: Db,
@@ -181,16 +186,18 @@ fn install(
     display_name: String,
     secret: Zeroizing<[u8; 32]>,
     failed_attempts: u32,
-) -> Unlocked {
+) -> Result<Unlocked, IdentityError> {
+    let device = rekindle_vault::device::open(&vault, &root.device_vault(&public_key))?;
+    *stores.device_vault.lock() = Some(device);
     *stores.vault.lock() = Some(vault);
     stores.db.set(db);
-    Unlocked {
+    Ok(Unlocked {
         public_key,
         display_name,
         secret,
         friend_store: Arc::new(SqliteFriendStore::new(Arc::clone(stores.db))),
         failed_attempts,
-    }
+    })
 }
 
 /// Remove an identity's files: vault, header, this device's vault (plan
@@ -255,15 +262,7 @@ pub async fn create(
             return Err(e);
         }
     };
-    Ok(install(
-        stores,
-        vault,
-        db,
-        public_key,
-        display_name,
-        secret,
-        0,
-    ))
+    install(root, stores, vault, db, public_key, display_name, secret, 0)
 }
 
 async fn create_files(
@@ -390,7 +389,8 @@ async fn unlock_opened(
         .await
         .map_err(|e| IdentityError::Storage(e.to_string()))?
         .map_or(entry.display_name, |(name, _)| name);
-    Ok(install(
+    install(
+        root,
         stores,
         vault,
         db,
@@ -398,7 +398,7 @@ async fn unlock_opened(
         display_name,
         secret,
         cleared_failures,
-    ))
+    )
 }
 
 /// Record a new display name in the registry, so the login picker shows
@@ -425,6 +425,7 @@ pub async fn lock(stores: &Stores<'_>) {
     if let Err(e) = stores.db.clear().await {
         tracing::warn!(error = %e, "identity database still held at lock");
     }
+    stores.device_vault.lock().take();
     stores.vault.lock().take();
 }
 

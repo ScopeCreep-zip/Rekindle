@@ -22,12 +22,13 @@ use rekindle_governance::power::{
     removal_target, seq_frontier, target_seq_frontier, with_target_seq_frontier,
 };
 use rekindle_governance::state::GovernanceState;
-use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+use rekindle_secrets::ed25519_dalek::Signer;
 use rekindle_types::dht_layout::member_record::MAX_FRONTIER_REFS;
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, GovernanceOp, OpHash, OpRef};
 use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
+use crate::device_signer::OpSigner;
 use crate::error::GovernanceRuntimeError;
 pub use crate::op_receive::{held_from_encoded, receive_bounded, receive_op};
 pub use crate::op_walk::{walk, WalkLogCache};
@@ -212,28 +213,34 @@ pub enum Deps {
 }
 
 /// Our op for `body`: the next seq of our chain, `deps` as its deps,
-/// signed by `key` (our community pseudonym) and verified against `set`
+/// authored by `signer.author` (our community pseudonym) and signed by
+/// `signer.device` (this device's op key, ADR 0022 rule 1), its seq the
+/// next of that device key's chain, and verified against `set`
 /// as every reader verifies it. A `MemberRemoved` or `BanEntry` gets its
 /// target's seq frontier from those deps, whatever `body` held.
 ///
 /// # Errors
 /// A dep's author has no member record in `state`, a join dep is not in
 /// `set`, the op does not encode, or it fails verification.
-pub fn build_op(
+pub fn build_op<'a>(
     anchor: &str,
     cert: &GenesisCert,
     state: &GovernanceState,
     set: &VerifiedSet,
-    key: &SigningKey,
+    signer: impl Into<OpSigner<'a>>,
     body: GovernanceEntry,
     deps: Deps,
     issued_at: u64,
 ) -> Result<(VerifiedOp, Vec<u8>), GovernanceRuntimeError> {
-    let author = PseudonymKey(key.verifying_key().to_bytes());
+    let OpSigner {
+        author,
+        device: key,
+    } = signer.into();
+    let device_key = key.verifying_key().to_bytes();
     let last = set
         .ops
         .iter()
-        .filter(|op| *op.author() == author)
+        .filter(|op| op.op().device_key == device_key)
         .max_by_key(|op| op.op().seq);
     let (seq, prev) = last.map_or((0, None), |op| (op.op().seq + 1, Some(op.hash())));
     let cited = cited(set, deps, prev)?;
@@ -262,7 +269,7 @@ pub fn build_op(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut op = GovernanceOp {
-        device_key: author.0,
+        device_key,
         author,
         seq,
         prev,

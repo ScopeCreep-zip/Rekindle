@@ -308,6 +308,7 @@ impl Host {
             root: root.clone(),
             db: Arc::clone(&stores.db),
             vault: stores.vault.clone(),
+            device_vault: rekindle_vault::new_handle(),
             identity_attempts: Arc::clone(&stores.attempts),
             mek_cache,
             signing_key,

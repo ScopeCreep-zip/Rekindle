@@ -365,6 +365,16 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     let (k_m_text, k_m) = owner_signing_key(&member, "member record")?;
     let member_owner = keypair_text::public_key_text(&k_m.verifying_key().to_bytes());
     drop(k_m);
+    // This device's first op key signs the genesis ops; the cert carries
+    // `p`'s endorsement of it (ADR 0022 rule 3, plan S7d-keys.5).
+    let device = crate::device_signer::device_op_key(deps, &anchor_key, true)?;
+    let creator_device = crate::device_signer::first_endorsement(
+        &pseudonym_signing,
+        &anchor_key,
+        &device,
+        &member.record_key,
+        &member_owner,
+    )?;
     let member_key = member.record_key.clone();
     deps.release_record(member.lease).await;
     let writer = k_m_text.clone();
@@ -380,7 +390,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         created_at: deps.clock().now_secs(),
         additional_creators: further,
         predecessor,
-        creator_device: None,
+        creator_device: Some(creator_device),
     };
     rekindle_governance::genesis::check_creator_set(&cert).map_err(|e| {
         GovernanceRuntimeError::Crypto(format!("origin: the creator set is refused: {e:?}"))
@@ -397,7 +407,10 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
             &cert,
             &GovernanceState::default(),
             &set,
-            &pseudonym_signing,
+            crate::device_signer::OpSigner {
+                author: my_pseudo.clone(),
+                device: &device,
+            },
             body,
             op_log::Deps::Frontier,
             cert.created_at,

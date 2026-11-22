@@ -78,6 +78,7 @@ impl DaemonContext {
         crate::host::identity::Stores {
             db: &self.db,
             vault: &self.vault,
+            device_vault: &self.device_vault,
             attempts: &self.identity_attempts,
         }
     }

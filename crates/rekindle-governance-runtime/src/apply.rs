@@ -9,6 +9,7 @@ use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
 use crate::deps::{GovernanceRuntimeDeps, OpLanding, OpOutcome};
+use crate::device_signer;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 use crate::op_log;
@@ -276,6 +277,12 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         .identity_secret()
         .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
     let key = derive::derive_community_pseudonym(&identity_secret, community_id);
+    // ADR 0022: this device's op key signs, `p` stays the author. A
+    // `MemberJoined` is this device's first op here and carries its
+    // endorsement (rule 3); any other write needs the stored key.
+    let first_op = matches!(entry, GovernanceEntry::MemberJoined { .. });
+    let device = device_signer::device_op_key(deps, community_id, first_op)?;
+    let entry = device_signer::carry_first_device(entry.clone(), &key, community_id, &device)?;
     let set = op_log::verify_held_with(
         deps,
         community_id,
@@ -286,7 +293,10 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         &cert,
         &gov_state,
         &set,
-        &key,
+        device_signer::OpSigner {
+            author: pseudo.clone(),
+            device: &device,
+        },
         entry.clone(),
         op_deps,
         deps.clock().now_secs(),

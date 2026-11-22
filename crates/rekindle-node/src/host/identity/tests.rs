@@ -35,6 +35,37 @@ async fn create_lock_unlock_round_trips_and_lists() {
     assert_eq!(again.display_name, "Alice");
 }
 
+/// The device vault opens at unlock and drops at lock (ADR 0022 rule 4,
+/// plan S7d-keys.7): a device op key stored in one session is there in the
+/// next, and nothing holds it while locked.
+#[tokio::test]
+async fn the_device_op_key_survives_lock_and_unlock() {
+    use rekindle_vault::typed::device_keys::{load_device_op_key, store_device_op_key};
+    let f = Fixture::new();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        None,
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    {
+        let guard = f.device_vault.lock();
+        store_device_op_key(guard.as_ref().unwrap(), "c1", &[4; 32]).unwrap();
+    }
+    let pk = made.public_key.clone();
+    drop(made);
+    lock(&f.stores()).await;
+    assert!(f.device_vault.lock().is_none());
+    unlock(&f.root, &f.stores(), &pk, "pass", 2).await.unwrap();
+    let guard = f.device_vault.lock();
+    let held = load_device_op_key(guard.as_ref().unwrap(), "c1").unwrap();
+    assert_eq!(held.as_deref(), Some(&[4; 32]));
+}
+
 #[tokio::test]
 async fn a_default_name_is_given_when_none_is() {
     let f = Fixture::new();

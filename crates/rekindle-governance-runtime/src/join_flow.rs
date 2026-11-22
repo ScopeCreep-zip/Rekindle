@@ -29,6 +29,7 @@ use rekindle_types::join_refusal::JoinRefusal;
 use zeroize::Zeroizing;
 
 use crate::deps::GovernanceRuntimeDeps;
+use crate::device_signer;
 use crate::error::GovernanceRuntimeError;
 use crate::hint_chain::Asker;
 use crate::join::{derive_join_identity, InitialPresence, JoinIdentity};
@@ -283,13 +284,15 @@ fn joined_op(
     anchor: &str,
     cert: &GenesisCert,
     walked: &WalkedSet,
-    key: &SigningKey,
+    keys: (&SigningKey, &SigningKey),
     member: (&JoinerRecord, String),
     invite: (&str, &PseudonymKey),
     now_secs: u64,
 ) -> Result<HeldOp, GovernanceRuntimeError> {
     let (code, inviter) = invite;
     let (member, owner) = member;
+    // `p` endorses this device's first op key `d`, which signs (ADR 0022).
+    let (key, device) = keys;
     let record = member.record_key.as_str();
     let joiner = PseudonymKey(key.verifying_key().to_bytes());
     let code_hash = rekindle_secrets::invite::hash_invite_code(code);
@@ -306,16 +309,22 @@ fn joined_op(
     );
     let body = GovernanceEntry::MemberJoined {
         member_record: record.to_owned(),
-        member_record_owner: owner,
+        member_record_owner: owner.clone(),
         invite_proof: Some(InviteProof { code_hash, sig }),
         owner_proof: owner_proof.to_vec(),
-        first_device: None,
+        first_device: Some(device_signer::first_endorsement(
+            key, anchor, device, record, &owner,
+        )?),
     };
     let (set, outcome) = (&walked.set, &walked.merged);
     let hint = walked.hint.as_ref();
     let deps = Deps::Join(join_deps(cert, set, outcome, hint, &joiner, inviter)?);
     let state = &outcome.state;
-    let (op, encoded) = op_log::build_op(anchor, cert, state, set, key, body, deps, now_secs)?;
+    let signer = device_signer::OpSigner {
+        author: joiner,
+        device,
+    };
+    let (op, encoded) = op_log::build_op(anchor, cert, state, set, signer, body, deps, now_secs)?;
     Ok(op_log::held(
         &op,
         record.to_owned(),
@@ -406,11 +415,12 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     }
 
     let (member, member_owner) = create_member_record(deps).await?;
+    let device = device_signer::device_op_key(deps, anchor, true)?;
     let joined = joined_op(
         anchor,
         &cert,
         &walked,
-        &identity.pseudonym_signing,
+        (&identity.pseudonym_signing, &device),
         (&member, member_owner),
         (link.invite_code.as_str(), &inviter),
         now,

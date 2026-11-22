@@ -4,6 +4,7 @@
 
 use super::*;
 use rekindle_governance::fixture::meta;
+use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::{AdmissionMode, Frontier};
 
 fn cert(key: &SigningKey) -> GenesisCert {

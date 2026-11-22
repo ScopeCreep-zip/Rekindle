@@ -83,6 +83,24 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     // ---------- Identity ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]>;
+    /// This device's op key secret for `community_id` from its device
+    /// vault (ADR 0022 rules 1, 4), or `None` when it holds none.
+    ///
+    /// # Errors
+    /// Locked, or the device vault cannot be read.
+    fn device_op_key(
+        &self,
+        community_id: &str,
+    ) -> Result<Option<zeroize::Zeroizing<[u8; 32]>>, GovernanceRuntimeError>;
+    /// Store this device's op key secret for `community_id`.
+    ///
+    /// # Errors
+    /// Locked, or the device vault cannot be written.
+    fn store_device_op_key(
+        &self,
+        community_id: &str,
+        secret: &[u8; 32],
+    ) -> Result<(), GovernanceRuntimeError>;
     fn identity_display_name(&self) -> String;
     fn identity_status(&self) -> UserStatusKind;
     fn our_route_blob(&self) -> Vec<u8>;

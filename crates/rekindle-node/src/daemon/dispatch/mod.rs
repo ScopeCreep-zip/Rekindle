@@ -134,6 +134,9 @@ pub struct DaemonContext {
     pub db: Arc<rekindle_db::DbHandle>,
     /// The unlocked identity's vault. Empty while locked.
     pub vault: rekindle_vault::VaultHandle,
+    /// This device's vault (plan E3.2 S7d-keys.7, ADR 0022 rule 4): the
+    /// per-community device op keys, never exported. Empty while locked.
+    pub device_vault: rekindle_vault::VaultHandle,
     /// The one wrong-passphrase counter per identity (U1.9): unlock,
     /// import, rotate and export count on it.
     pub identity_attempts: std::sync::Arc<rekindle_idempotency::attempts::AttemptLimiter<String>>,

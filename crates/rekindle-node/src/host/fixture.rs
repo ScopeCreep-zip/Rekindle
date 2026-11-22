@@ -14,6 +14,7 @@ pub struct Fixture {
     pub root: DataRoot,
     pub db: Arc<DbHandle>,
     pub vault: VaultHandle,
+    pub device_vault: VaultHandle,
     pub attempts: AttemptLimiter<String>,
 }
 
@@ -32,6 +33,7 @@ impl Fixture {
             root,
             db: Arc::new(DbHandle::default()),
             vault: rekindle_vault::new_handle(),
+            device_vault: rekindle_vault::new_handle(),
             attempts: AttemptLimiter::default(),
         }
     }
@@ -40,6 +42,7 @@ impl Fixture {
         Stores {
             db: &self.db,
             vault: &self.vault,
+            device_vault: &self.device_vault,
             attempts: &self.attempts,
         }
     }
