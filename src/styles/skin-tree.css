@@ -81,7 +81,8 @@
 
   /* RV1 in the tree: the paused route fills the pack's status field, on the
    * app layout's status-line ground (.route-paused-status), ellipsized in
-   * the box; the whole line is its alert text and tooltip. */
+   * the box; the whole line is its alert text and tooltip. A press reaches
+ * the away-message input under it, and it steps aside while that has focus. */
   .skin-status-paused {
     position: absolute;
     inset: 0;
@@ -90,6 +91,7 @@
     padding: 0 3px;
     background-color: color-mix(in srgb, var(--color-xfire-danger) 30%, var(--color-xfire-bg-dark));
     font-size: 11px;
+    pointer-events: none;
   }
   .skin-status-paused-text {
     min-width: 0;
