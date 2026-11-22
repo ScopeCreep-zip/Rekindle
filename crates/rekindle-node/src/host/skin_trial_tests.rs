@@ -46,7 +46,7 @@ async fn library(host: &Host) -> SkinLibrary {
     data(host.call(Caller::shell(), IpcRequest::SkinList).await)
 }
 
-async fn shown(host: &Host) -> String {
+pub(super) async fn shown(host: &Host) -> String {
     let applied: SkinApplied = data(
         host.call(Caller::shell(), IpcRequest::SkinGet { id: None })
             .await,

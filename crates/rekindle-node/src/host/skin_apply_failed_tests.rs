@@ -8,10 +8,11 @@ use std::time::Duration;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
 use rekindle_skin::{builtin, validate};
-use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure, SkinEntry, SkinLibrary};
+use rekindle_types::dto::skin_library::{SkinApplyFailure, SkinEntry, SkinLibrary};
 use rekindle_types::subscription_events::{StreamFrame, SubscriptionEvent, SystemEvent};
 
 use super::skin_requests::{data, run, stand_in};
+use super::skin_trial::shown;
 use super::{create_ann, offline_host, status_of};
 use crate::host::direct_call_tests::{capture, Captured};
 use crate::host::Host;
@@ -39,14 +40,6 @@ async fn report(host: &Host, request: IpcRequest) -> IpcResponse {
 
 async fn library(host: &Host) -> SkinLibrary {
     data(host.call(Caller::shell(), IpcRequest::SkinList).await)
-}
-
-async fn shown(host: &Host) -> String {
-    let applied: SkinApplied = data(
-        host.call(Caller::shell(), IpcRequest::SkinGet { id: None })
-            .await,
-    );
-    applied.id
 }
 
 /// The next `SkinApplyFailed` on the journal, as (window, skin, cause, reverted).
