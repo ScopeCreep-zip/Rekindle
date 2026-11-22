@@ -11,9 +11,7 @@ export interface TypingUser {
 }
 
 const [typingUsersStore, setTypingUsers] = createStore<Record<string, TypingUser[]>>({});
-const typingTimers: Record<string, number> = {};
-
-export { typingUsersStore as typingUsers, setTypingUsers, typingTimers };
+export { typingUsersStore as typingUsers, setTypingUsers };
 
 export function computeDisplayRoleName(roleIds: string[], roles: Role[]): string {
   const highestRole = roleIds

@@ -11,7 +11,7 @@ import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
 import { truncateKey } from "../../utils/formatting";
 import { transformHistoryGap, transformMessages } from "../../utils/transformers";
-import { setTypingUsers, typingTimers } from "../../actions/community/shared";
+import { setTypingUsers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
 import { handleLoadChannelMessages } from "../../actions/community/messages";
@@ -361,40 +361,27 @@ export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): voi
   }
 }
 
-/// Channel typing on the daemon vocabulary.
-///
-/// Body moved from the `channelTyping` case. Only `started` arrives:
-/// the protocol has no explicit stop, so the 5 s timer below is what
-/// expires an indicator — unchanged from before.
+/// Channel typing as the Host states it (plan E3.4 S9): `started` shows a
+/// member typing, `stopped` (expiry, their message, or an explicit stop,
+/// all the Host's) removes them. The window keeps no timer.
 export function reduceSubscriptionTyping(event: CommunitySubscriptionEvent): void {
   if (!("typing" in event)) return;
   const t = event.typing;
-  if (!("started" in t)) return;
-  const { context, who } = t.started;
+  const { context, who } = "started" in t ? t.started : t.stopped;
   if (!("channel" in context)) return;
-
   const { community, channel } = context.channel;
   const c = communityState.communities[community];
   if (!c) return;
 
-  // Find display name for the typing member
+  if ("stopped" in t) {
+    setTypingUsers(channel, (prev) => (prev ?? []).filter((x) => x.pseudonymKey !== who));
+    return;
+  }
   const member = c.members.find((m) => m.pseudonymKey === who);
   const displayName = member?.displayName ?? truncateKey(who);
-
-  // Track typing users per channel with auto-expire
-  const key = `${channel}:${who}`;
-  if (typingTimers[key]) {
-    clearTimeout(typingTimers[key]);
-  } else {
-    setTypingUsers(channel, (prev) => {
-      const existing = prev ?? [];
-      if (existing.some((x) => x.pseudonymKey === who)) return existing;
-      return [...existing, { pseudonymKey: who, displayName }];
-    });
-  }
-  // Auto-remove after 5 seconds
-  typingTimers[key] = window.setTimeout(() => {
-    setTypingUsers(channel, (prev) => (prev ?? []).filter((x) => x.pseudonymKey !== who));
-    delete typingTimers[key];
-  }, 5000);
+  setTypingUsers(channel, (prev) => {
+    const existing = prev ?? [];
+    if (existing.some((x) => x.pseudonymKey === who)) return existing;
+    return [...existing, { pseudonymKey: who, displayName }];
+  });
 }
