@@ -152,7 +152,7 @@ export const communityCommands = {
     bio: string | null,
     pronouns: string | null,
     themeColor: number | null,
-    badges: string[],
+    badges: string[] | null,
     avatarRef: string | null,
     bannerRef: string | null,
     customStatus: string | null,

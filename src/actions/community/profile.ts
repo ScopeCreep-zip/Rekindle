@@ -3,59 +3,58 @@ import { setCommunityState, communityState } from "../../stores/community.store"
 import { addToast } from "../../stores/toast.store";
 import { decodeBase64ToBytes } from "../../utils/base64";
 import type { WelcomeScreen } from "../../ipc/commands/dto";
+import { isCommandError } from "../../ipc/commands/dto";
+import { errorMessage } from "../../utils/error";
+import { refreshCommunityMembers } from "../../handlers/community/members_refresh";
 
-export async function handleUpdateCommunityProfile(
-  communityId: string,
-  bio: string | null,
-  pronouns: string | null,
-  themeColor: number | null,
-  badges: string[],
-  avatarRef: string | null = null,
-  bannerRef: string | null = null,
-  customStatus: string | null = null,
-): Promise<boolean> {
+/**
+ * Changes to our card in one community (plan E3.4 S6b): each field `null`
+ * keeps it, an empty value clears it (`""` for text, `[]` for badges); a
+ * theme colour has no clear form. A partial change never wipes another field.
+ */
+export interface ProfileChange {
+  bio: string | null;
+  pronouns: string | null;
+  themeColor: number | null;
+  badges: string[] | null;
+  avatarRef: string | null;
+  bannerRef: string | null;
+  customStatus: string | null;
+}
+
+/** Send `change` (the Host persists our whole card), then show the card as the Host now holds it. */
+export async function handleUpdateCommunityProfile(communityId: string, change: ProfileChange): Promise<boolean> {
   try {
     await commands.updateCommunityProfile(
       communityId,
-      bio,
-      pronouns,
-      themeColor,
-      badges,
-      avatarRef,
-      bannerRef,
-      customStatus,
+      change.bio,
+      change.pronouns,
+      change.themeColor,
+      change.badges,
+      change.avatarRef,
+      change.bannerRef,
+      change.customStatus,
     );
-    setCommunityState("communities", communityId, {
-      myBio: bio,
-      myPronouns: pronouns,
-      myThemeColor: themeColor,
-      myBadges: badges,
-      myAvatarRef: avatarRef,
-      myBannerRef: bannerRef,
-      myCustomStatus: customStatus,
-    });
-    const community = communityState.communities[communityId];
-    const myPseudonymKey = community?.myPseudonymKey;
-    if (community && myPseudonymKey) {
-      const memberIdx = community.members.findIndex((m) => m.pseudonymKey === myPseudonymKey);
-      if (memberIdx >= 0) {
-        setCommunityState("communities", communityId, "members", memberIdx, {
-          bio,
-          pronouns,
-          themeColor,
-          badges,
-          avatarRef,
-          bannerRef,
-          customStatus,
-        });
-      }
+    const detail = (await commands.getCommunityDetails()).find((d) => d.id === communityId);
+    if (detail) {
+      setCommunityState("communities", communityId, {
+        myBio: detail.myBio ?? null,
+        myPronouns: detail.myPronouns ?? null,
+        myThemeColor: detail.myThemeColor ?? null,
+        myBadges: detail.myBadges ?? [],
+        myCustomStatus: detail.myCustomStatus ?? null,
+      });
     }
+    // The view does not carry our avatar and banner refs: an accepted change sets them.
+    if (change.avatarRef !== null) setCommunityState("communities", communityId, "myAvatarRef", change.avatarRef || null);
+    if (change.bannerRef !== null) setCommunityState("communities", communityId, "myBannerRef", change.bannerRef || null);
+    // Our own member row is the Host's too.
+    refreshCommunityMembers(communityId);
     addToast("Profile updated", "success");
     return true;
   } catch (e) {
-    const msg = typeof e === "string" ? e : "Failed to update profile";
-    console.error("Failed to update community profile:", e);
-    addToast(msg, "error");
+    if (isCommandError(e) && e.type === "cancelled") return false;
+    addToast(`Profile not updated: ${errorMessage(e)}`, "error");
     return false;
   }
 }

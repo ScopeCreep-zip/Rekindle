@@ -255,7 +255,7 @@ export interface Community {
   myCustomStatus: string | null;
   expressions: Expression[];
   automodRules: AutoModRule[];
-  /** Our per-community profile bio (≤190 chars). Local-only; resets to undefined on restart. */
+  /** Our per-community profile bio (≤190 chars), as the Host persists it (plan E3.4 S6b). */
   myBio?: string | null;
   myPronouns?: string | null;
   myThemeColor?: number | null;

@@ -230,18 +230,25 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
       return;
     }
     const themeColor = parseColorHex(themeColorDraft());
+    // Only what changed goes to the Host (plan E3.4 S6b): null keeps a
+    // field, an empty value clears it; the card is the Host's.
+    const c = myCommunity();
+    const text = (next: string, was: string | null | undefined): string | null => (next === (was ?? "") ? null : next);
+    const ref = (next: string | null, was: string | null | undefined): string | null =>
+      next === (was ?? null) ? null : (next ?? "");
+    const wasBadges = c?.myBadges ?? [];
     setSaving(true);
     try {
-      const ok = await handleUpdateCommunityProfile(
-        props.communityId,
-        bio.length > 0 ? bio : null,
-        pronouns.length > 0 ? pronouns : null,
-        themeColor,
-        badges,
-        avatarRefDraft(),
-        bannerRefDraft(),
-        customStatusDraft().trim() || null,
-      );
+      const ok = await handleUpdateCommunityProfile(props.communityId, {
+        bio: text(bio, c?.myBio),
+        pronouns: text(pronouns, c?.myPronouns),
+        // A theme colour has no clear form: only a new colour is sent.
+        themeColor: themeColor !== null && themeColor !== (c?.myThemeColor ?? null) ? themeColor : null,
+        badges: badges.length === wasBadges.length && badges.every((b, i) => b === wasBadges[i]) ? null : badges,
+        avatarRef: ref(avatarRefDraft(), c?.myAvatarRef),
+        bannerRef: ref(bannerRefDraft(), c?.myBannerRef),
+        customStatus: text(customStatusDraft().trim(), c?.myCustomStatus),
+      });
       if (ok) setEditing(false);
     } finally {
       setSaving(false);
