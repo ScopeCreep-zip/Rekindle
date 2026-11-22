@@ -19,6 +19,14 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("export_skin_draft", None),
     ("import_skin_region", None),
     ("export_skin_schema", None),
+    // Reads: `HostApi::call` (`rekindle-node/src/host/api.rs:56` ->
+    // `DaemonContext::call`, `daemon/dispatch/context.rs:261-267`) turns a
+    // skin action that is a feature into its own request before the
+    // clearance check, so that request is classified and gated as itself
+    // (plan SK2-A4); the rest are window operations, and a selection is
+    // view state.
+    ("run_skin_action", None),
+    ("set_skin_selection", None),
     ("import_skin", Some(IntentKind::ImportSkin)),
     ("remove_skin", Some(IntentKind::RemoveSkin)),
     ("select_skin", Some(IntentKind::SetPreferences)),

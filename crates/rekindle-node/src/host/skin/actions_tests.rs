@@ -10,17 +10,17 @@ use rekindle_types::presence::SessionStatus;
 
 use super::actions::{map, resolve, Mapped, Selections};
 
-const BOB: &str = "bobkey";
+const SELECTED_FRIEND_KEY: &str = "bobkey";
 
 fn run(action: &A) -> SkinRun {
-    match map(action, Some(BOB)) {
+    match map(action, Some(SELECTED_FRIEND_KEY)) {
         Ok(Mapped::Run(r)) => r,
         other => panic!("{action:?}: {other:?}"),
     }
 }
 
 fn request(action: &A) -> IpcRequest {
-    match map(action, Some(BOB)) {
+    match map(action, Some(SELECTED_FRIEND_KEY)) {
         Ok(Mapped::Request(r)) => *r,
         other => panic!("{action:?}: {other:?}"),
     }
@@ -47,7 +47,7 @@ fn feature_actions_yield_the_handlers_requests() {
 
 #[test]
 fn shell_actions_yield_their_operation_on_the_selected_friend() {
-    let friend = BOB.to_owned();
+    let friend = SELECTED_FRIEND_KEY.to_owned();
     for (action, op) in [
         (
             A::ChatFriend,
@@ -148,7 +148,7 @@ fn resolve_takes_the_selection_from_the_host() {
     selections.set(
         SkinWindow::Main,
         Some(SkinSelection::Friend {
-            public_key: BOB.into(),
+            public_key: SELECTED_FRIEND_KEY.into(),
         }),
     );
     assert!(matches!(
