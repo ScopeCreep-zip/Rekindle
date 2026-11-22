@@ -28,6 +28,8 @@ enum Seen {
 #[derive(Default)]
 struct Recorder {
     seen: Mutex<Vec<Seen>>,
+    /// Its bare-request handler runs twice past `CALL_DEADLINE`.
+    slow_calls: bool,
 }
 
 impl Recorder {
@@ -77,6 +79,11 @@ impl InboundHandler for Recorder {
     }
 
     async fn on_call(&self, _sender: Option<&str>, _request: InboundCall) -> CallResponse {
+        if self.slow_calls {
+            tokio::time::sleep(crate::operations::direct::CALL_DEADLINE * 2).await;
+            return CallResponse::Ok(b"late".to_vec());
+        }
+        // Anything but `Ok` is a refusal.
         CallResponse::Ack
     }
 
@@ -288,5 +295,42 @@ async fn a_gossip_call_is_refused_before_any_decode() {
             crate::operations::direct::NAK.to_vec(),
             crate::operations::direct::NAK.to_vec()
         ]
+    );
+}
+
+/// The finding of round 23: a joiner's bare `BootstrapRequest` whose
+/// handler runs past `CALL_DEADLINE` is answered `RETRY_LATER`, as a 1:1
+/// call is (a deadline is no refusal, review RV5 H1), never the NAK that
+/// withdraws the join; a request the handler refuses stays a NAK. The
+/// clock is paused, so the deadline passes without waiting.
+#[tokio::test(start_paused = true)]
+async fn a_bare_request_past_the_deadline_is_answered_retry_later() {
+    use crate::operations::direct::{NAK, RETRY_LATER};
+    let bootstrap = || InboundCall::BootstrapRequest {
+        joiner_pseudonym: "joiner".into(),
+        anchor: "VLD0:anchor".into(),
+        member_joined: rekindle_types::governance::OpRef {
+            op_hash: rekindle_types::governance::OpHash([1; 32]),
+            device_key: [2; 32],
+            author: rekindle_types::id::PseudonymKey([3; 32]),
+            author_record: "VLD0:record".into(),
+            author_seq: 1,
+        },
+        member_joined_op: vec![4],
+        joiner_route: vec![5],
+    };
+    let snapshot = || InboundCall::CheckpointStateRequest { request: vec![6] };
+    let replies = Replies::default();
+    let slow = Arc::new(Recorder {
+        slow_calls: true,
+        ..Recorder::default()
+    });
+    let refusing = Arc::new(Recorder::default());
+    super::dispatch_bare_request(&slow, &replies, AppCallId(1), bootstrap()).await;
+    super::dispatch_bare_request(&slow, &replies, AppCallId(2), snapshot()).await;
+    super::dispatch_bare_request(&refusing, &replies, AppCallId(3), bootstrap()).await;
+    assert_eq!(
+        *replies.0.lock(),
+        [RETRY_LATER.to_vec(), RETRY_LATER.to_vec(), NAK.to_vec()]
     );
 }

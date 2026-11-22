@@ -518,8 +518,13 @@ mod tests;
 
 /// Answer a joiner's bare `BootstrapRequest` (plan E3.2) with the
 /// handler's encoded `bootstrapResponseV2`, or a member's bare
-/// `CheckpointStateRequest` (S7c.3) with its `checkpointStateResponse`; a
-/// refusal, or a handler past the deadline, is a NAK.
+/// `CheckpointStateRequest` (S7c.3) with its `checkpointStateResponse` (a
+/// `CheckpointHintRequest`, S7c.5, likewise). A refusal is a NAK; a handler
+/// past [`CALL_DEADLINE`] is answered
+/// [`RETRY_LATER`](crate::operations::direct::RETRY_LATER), as a 1:1 call
+/// is: a deadline is no refusal (review RV5 H1), and a NAK here withdraws a
+/// joiner's join (`rekindle_governance_runtime::bootstrap_peers`). The
+/// handler's work goes on past it.
 async fn dispatch_bare_request<H: InboundHandler>(
     handler: &Arc<H>,
     messages: &dyn AppMessagePort,
@@ -533,8 +538,8 @@ async fn dispatch_bare_request<H: InboundHandler>(
             NAK.to_vec()
         }
         Err(_) => {
-            warn!("bare request exceeded the call deadline");
-            NAK.to_vec()
+            warn!("bare request exceeded the call deadline: answered retry-later");
+            crate::operations::direct::RETRY_LATER.to_vec()
         }
     };
     if let Err(e) = messages.reply(call_id, reply).await {
