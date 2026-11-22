@@ -9,7 +9,6 @@ import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
 import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
-import { truncateKey } from "../../utils/formatting";
 import { transformHistoryGap, transformMessages } from "../../utils/transformers";
 import { setTypingUsers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
@@ -377,8 +376,8 @@ export function reduceSubscriptionTyping(event: CommunitySubscriptionEvent): voi
     setTypingUsers(channel, (prev) => (prev ?? []).filter((x) => x.pseudonymKey !== who));
     return;
   }
-  const member = c.members.find((m) => m.pseudonymKey === who);
-  const displayName = member?.displayName ?? truncateKey(who);
+  // The typist's name is the Host's (never empty, plan E3.4 S6/S9).
+  const displayName = t.started.name;
   setTypingUsers(channel, (prev) => {
     const existing = prev ?? [];
     if (existing.some((x) => x.pseudonymKey === who)) return existing;
