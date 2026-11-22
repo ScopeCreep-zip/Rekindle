@@ -62,6 +62,25 @@ pub const PUBLISH_RETRY_MIN: Duration = Duration::from_secs(20);
 /// The publish retry jitter's bound, ms.
 pub const PUBLISH_RETRY_JITTER_MS: u64 = 20_000;
 
+/// A wall-clock jump past a step's own bound larger than this is a resume
+/// from a suspend (plan LF7): a stopped process or a sleeping machine reads
+/// no clock, and its first reading after the resume sees the whole gap. A
+/// monotonic clock misses a machine's sleep on macOS; the wall clock (the
+/// clock port, plan C9.2) sees both. Veilid gives no app-visible signal of
+/// it: the node stays attached, and the change it does track, our peer
+/// info, un-publishes our routes internally "so we can republish" them
+/// (veilid-core 0.5.8 `route_spec_store_cache.rs:430-455`) without telling
+/// the app.
+pub const RESUME_GAP: Duration = Duration::from_secs(10);
+
+/// Whether a step bounded by `bound` that began at wall time `before_ms`
+/// and ended at `after_ms` spanned a suspend: the clock moved more than
+/// `bound` plus [`RESUME_GAP`]. A clock set back is no resume.
+#[must_use]
+pub fn resumed_across(before_ms: u64, after_ms: u64, bound: Duration) -> bool {
+    Duration::from_millis(after_ms.saturating_sub(before_ms)) > bound + RESUME_GAP
+}
+
 /// The ack deadline on a route that has answered before (I2P
 /// `RATCHET_REPLY_TIMEOUT_MS_MIN`, `OutboundClientMessageOneShotJob.java`
 /// `#L1199-1201`; batch 12 S1).

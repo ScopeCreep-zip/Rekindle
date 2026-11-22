@@ -316,6 +316,7 @@ impl AppMessagePort for FakeMessages {
     async fn call_own(
         &self,
         class: RouteClass,
+        path: rekindle_records::port::OwnPath,
         profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
@@ -324,10 +325,15 @@ impl AppMessagePort for FakeMessages {
         let own = self.pinned(class)?;
         if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
             *slot.own_calls.entry(class).or_default() += 1;
+            if path == rekindle_records::port::OwnPath::Outside {
+                *slot.outside_calls.entry(class).or_default() += 1;
+            }
         }
         self.net.import_route(self.node, &own);
+        // From outside the call takes the pool's safety route, as a peer's.
+        let safety = (path == rekindle_records::port::OwnPath::Loopback).then_some(own.as_str());
         let answer = self
-            .call_over(&PeerTarget::new(own.clone()), profile, Some(&own), message)
+            .call_over(&PeerTarget::new(own.clone()), profile, safety, message)
             .await;
         self.net.forget_import(self.node, &own);
         answer

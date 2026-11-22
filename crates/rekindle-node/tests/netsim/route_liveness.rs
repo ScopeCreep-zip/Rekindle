@@ -224,3 +224,35 @@ async fn a_silently_dead_sending_route_is_found_by_its_self_test_and_replaced() 
         "the dead Sending route was replaced by Ada's own self-test"
     );
 }
+
+/// Plan LF7 (Linux: after B was frozen and resumed, A's calls to B's General
+/// route were lost ~2.5 min while B's loopback self-tests passed). A
+/// loopback re-primes the hop next to us right before it measures it and
+/// is turned around before the blob's entry hop (veilid-core 0.5.8
+/// `rpc_route.rs:329-365`), so on a resume Ada tests her General route from
+/// outside, as Bo's call travels, at once. The netsim has no model of the
+/// fault itself (a route whose loopback passes while calls entering by its
+/// entry hop are lost), so this checks the trigger and the path.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_resume_tests_the_general_route_from_outside_at_once() {
+    let (sim, _nodes) = friends(126).await;
+    assert!(!sim.route_blobs(0).is_empty());
+    assert_eq!(sim.outside_calls(0, RouteClass::General), 0);
+    sim.fault(Fault::Sleep {
+        node: 0,
+        asleep: true,
+    });
+    tokio::time::sleep(Duration::from_secs(150)).await;
+    sim.fault(Fault::Sleep {
+        node: 0,
+        asleep: false,
+    });
+    assert!(
+        eventually(&sim, Duration::from_secs(20), || {
+            let outside = sim.outside_calls(0, RouteClass::General);
+            async move { outside >= 1 }
+        })
+        .await,
+        "the resume tested General from outside within 20 s"
+    );
+}

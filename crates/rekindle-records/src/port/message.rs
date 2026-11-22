@@ -4,6 +4,24 @@ use super::{PeerTarget, PortError, RouteClass};
 
 use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
 
+/// Which way a round trip through our own route travels (plan LF7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OwnPath {
+    /// The route as its own safety route, Veilid's loopback
+    /// (veilid-core 0.5.8 `route_compile.rs:420-435`): we send to its last
+    /// hop ourselves and the entry hop turns it around without transiting
+    /// the network (`rpc_processor/rpc_route.rs:329-365`), so it re-primes
+    /// the hop next to us (a fresh flow, our current peer info,
+    /// `rpc_processor/mod.rs:895-897`) right before it measures it.
+    Loopback,
+    /// From outside, as a peer's call arrives: our route's blob over a pool
+    /// safety route chosen apart from the route (`route_compile.rs:455-485`,
+    /// the shape of Veilid's remote-route test, `route_test.rs:345-388`), so
+    /// it enters by the blob's entry hop and reaches us through the hop next
+    /// to us unprompted.
+    Outside,
+}
+
 /// An inbound app call awaiting its reply, by the id the network gave it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AppCallId(pub u64);
@@ -81,9 +99,10 @@ pub trait AppMessagePort: Send + Sync {
     ) -> Result<Vec<u8>, PortError>;
 
     /// A round trip through our own live route of `class` (plan RH1r-c
-    /// O1, O6): `message` is called to our route with the same route as
-    /// the safety route, so it leaves through the route's hops and comes
-    /// back in through them, and our own dispatch answers it. Veilid's own
+    /// O1, O6; LF7 `path`): with [`OwnPath::Loopback`] `message` is called
+    /// to our route with the same route as the safety route, so it leaves
+    /// through the route's hops and comes back in through them, and our own
+    /// dispatch answers it; with [`OwnPath::Outside`] it enters as a peer's. Veilid's own
     /// loopback test takes this path (`routing_table/tasks/ping_validator.rs`
     /// `:498-514`): the private route is also the safety route
     /// (`route_spec_store/route_compile.rs:385-400`), the hop turns it
@@ -96,6 +115,7 @@ pub trait AppMessagePort: Send + Sync {
     async fn call_own(
         &self,
         class: RouteClass,
+        path: OwnPath,
         profile: &rekindle_types::config::SafetyProfile,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError>;

@@ -189,10 +189,11 @@ impl AppMessagePort for Bounded {
     async fn call_own(
         &self,
         class: RouteClass,
+        path: rekindle_records::port::OwnPath,
         profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
-        within(profile, self.inner.call_own(class, profile, message)).await
+        within(profile, self.inner.call_own(class, path, profile, message)).await
     }
 
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
@@ -270,6 +271,7 @@ mod tests {
         async fn call_own(
             &self,
             _: RouteClass,
+            _: rekindle_records::port::OwnPath,
             _: &SafetyProfile,
             _: Vec<u8>,
         ) -> Result<Vec<u8>, PortError> {
@@ -294,7 +296,14 @@ mod tests {
         assert!(port.call(&target, &profile, vec![1]).await.is_err());
         // The owner's route self-test (plan RH1r-c O1) is a call like any.
         let started = tokio::time::Instant::now();
-        let own = port.call_own(RouteClass::General, &profile, vec![1]).await;
+        let own = port
+            .call_own(
+                RouteClass::General,
+                rekindle_records::port::OwnPath::Loopback,
+                &profile,
+                vec![1],
+            )
+            .await;
         assert!(matches!(own, Err(PortError::Timeout(ref m)) if m.contains("unresolved")));
         assert_eq!(started.elapsed(), app_call_deadline(&profile));
     }

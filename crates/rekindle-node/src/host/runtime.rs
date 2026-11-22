@@ -244,6 +244,7 @@ impl Host {
                     handler,
                     Arc::clone(&stores.session),
                     Arc::clone(&rng),
+                    Arc::clone(&clock),
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("transport node did not start: {e}"))?;
@@ -265,6 +266,7 @@ impl Host {
                     handler,
                     Arc::clone(&stores.session),
                     Arc::clone(&rng),
+                    Arc::clone(&clock),
                 ));
                 *handler_transport.write() = Some(Arc::downgrade(&node));
                 tracing::info!("transport node on supplied ports");

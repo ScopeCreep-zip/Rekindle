@@ -5,10 +5,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use rekindle_records::port::OwnPath;
 use rekindle_records::port::RouteClass;
 use rekindle_route::liveness::{
-    SelfTest, PROBE_TIMEOUT, PUBLISH_RETRY_JITTER_MS, PUBLISH_RETRY_MIN, RETEST_JITTER_MS,
-    SELF_TEST_JITTER_MS, SILENCE_TRIGGER,
+    resumed_across, SelfTest, PROBE_TIMEOUT, PUBLISH_RETRY_JITTER_MS, PUBLISH_RETRY_MIN,
+    RETEST_JITTER_MS, SELF_TEST_JITTER_MS, SILENCE_TRIGGER,
 };
 use tokio::sync::watch;
 use tokio::time::Instant;
@@ -29,14 +30,29 @@ impl Liveness {
         let (nonce, datagram) = self.probe();
         self.outstanding.lock().insert(nonce);
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        // General after a resume or a peer's report: from outside (LF7).
+        let path = if class == RouteClass::General
+            && self
+                .outside_next
+                .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            OwnPath::Outside
+        } else {
+            OwnPath::Loopback
+        };
+        let before = self.wall_ms();
         let answer = tokio::time::timeout(
             PROBE_TIMEOUT,
-            self.messages.call_own(class, &profile, datagram.clone()),
+            self.messages
+                .call_own(class, path, &profile, datagram.clone()),
         )
         .await;
         self.outstanding.lock().remove(&nonce);
         let ok = matches!(&answer, Ok(Ok(reply)) if *reply == datagram);
-        tracing::debug!(?class, ok, "own route self-test");
+        tracing::debug!(?class, ?path, ok, "own route self-test");
+        if resumed_across(before, self.wall_ms(), PROBE_TIMEOUT) {
+            self.resumed();
+        }
         self.routes.self_tested_own(class, ok);
         ok
     }
@@ -83,11 +99,16 @@ pub(crate) async fn run_self_tests(live: Arc<Liveness>, mut offers: Offers) {
         // Biased, the end first: a closed `offers` (shutdown) beside a tick
         // tests nothing more. Every other arm wakes the same pass, and none
         // is ready again until its next change or tick.
+        let before = live.wall_ms();
         tokio::select! {
             biased;
             changed = offers.changed() => if changed.is_err() { return },
             () = live.network_changed.notified() => {}
             () = tokio::time::sleep(SELF_TEST_TICK) => {}
+        }
+        // A tick wait that the wall clock saw last far longer: a suspend.
+        if resumed_across(before, live.wall_ms(), SELF_TEST_TICK) {
+            live.resumed();
         }
         for class in TESTED {
             let now = Instant::now();

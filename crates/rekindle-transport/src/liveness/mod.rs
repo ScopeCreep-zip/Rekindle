@@ -22,6 +22,7 @@ pub mod peer;
 pub mod resolve;
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -29,7 +30,7 @@ use parking_lot::Mutex;
 use rekindle_codec::ingress::{LIVENESS_PROBE_LEN, LIVENESS_TAG};
 use rekindle_records::port::{AppMessagePort, RouteClass, RoutePort};
 use rekindle_route::liveness::{InboundLiveness, PeerLiveness, SELF_TEST_JITTER_MS};
-use rekindle_utils::RandomSource;
+use rekindle_utils::{Clock, RandomSource};
 use tokio::sync::Notify;
 use tokio::time::Instant;
 
@@ -80,6 +81,11 @@ struct ClassState {
 /// task of one transport node.
 pub struct Liveness {
     rng: Arc<dyn RandomSource>,
+    /// The wall clock that shows a resume from a suspend (plan LF7).
+    clock: Arc<dyn Clock>,
+    /// General's next self-test runs from outside, as a peer's call
+    /// (`OwnPath::Outside`): set by a resume or a peer's report (plan LF7).
+    outside_next: AtomicBool,
     routes: Arc<dyn RoutePort>,
     messages: Arc<dyn AppMessagePort>,
     classes: Mutex<HashMap<RouteClass, ClassState>>,
@@ -99,16 +105,20 @@ pub struct Liveness {
 }
 
 impl Liveness {
-    /// Liveness over `routes` and `messages`, its jitter drawn from `rng`.
+    /// Liveness over `routes` and `messages`, its jitter drawn from `rng`,
+    /// a resume read from `clock`.
     #[must_use]
     pub fn new(
         rng: Arc<dyn RandomSource>,
+        clock: Arc<dyn Clock>,
         routes: Arc<dyn RoutePort>,
         messages: Arc<dyn AppMessagePort>,
         self_tests: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             rng,
+            clock,
+            outside_next: AtomicBool::new(false),
             routes,
             messages,
             classes: Mutex::new(HashMap::new()),
@@ -194,10 +204,28 @@ impl Liveness {
             .get_mut(&RouteClass::General)
             .is_some_and(|s| s.rules.reported(Instant::now()));
         if brought {
-            tracing::info!("a peer's probe reported our route; self-testing it now");
+            tracing::info!("a peer's probe reported our route; self-testing it now from outside");
+            self.outside_next.store(true, Ordering::Relaxed);
             self.network_changed.notify_one();
         }
         brought
+    }
+
+    /// Our process resumed from a suspend (plan LF7): every route is tested
+    /// at once and one failure is death (as O5), and General's test runs
+    /// from outside. Our loopback cannot see what a pause breaks for peers:
+    /// it re-primes the hop next to us right before it measures it, and the
+    /// entry hop turns it around before the blob's entry is ever resolved
+    /// (`OwnPath`). A failed test replaces and republishes the route.
+    pub fn resumed(&self) {
+        tracing::info!("resumed from a suspend; testing our routes from outside");
+        self.outside_next.store(true, Ordering::Relaxed);
+        self.network_changed();
+    }
+
+    /// The wall clock now, ms.
+    fn wall_ms(&self) -> u64 {
+        self.clock.now_ms()
     }
 
     /// Whether any peer should be answering us now (O2): a send to them

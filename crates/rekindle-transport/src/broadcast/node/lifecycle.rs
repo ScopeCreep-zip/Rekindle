@@ -14,7 +14,7 @@ use crate::error::{Result, TransportError};
 use crate::handler::InboundHandler;
 use crate::shared::SharedState;
 use crate::subscriptions::dispatch;
-use rekindle_utils::RandomSource;
+use rekindle_utils::{Clock, RandomSource};
 
 type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::Session>>>;
 
@@ -34,6 +34,7 @@ impl TransportNode {
         handler: Arc<H>,
         session: SharedSession,
         rng: Arc<dyn RandomSource>,
+        clock: Arc<dyn Clock>,
     ) -> Result<Self> {
         info!(namespace = %config.namespace, "starting transport node");
 
@@ -62,7 +63,7 @@ impl TransportNode {
         )
         .await?;
 
-        let (node, shutdown_rx) = Self::outbound(config, ports, shared_state, rng, true);
+        let (node, shutdown_rx) = Self::outbound(config, ports, shared_state, rng, clock, true);
         let node = node.run_inbound(shutdown_rx, events, handler, session);
         info!("transport node started");
         Ok(node)
@@ -77,9 +78,11 @@ impl TransportNode {
         handler: Arc<H>,
         session: SharedSession,
         rng: Arc<dyn RandomSource>,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         info!(namespace = %config.namespace, "transport node on supplied ports");
-        let (node, shutdown_rx) = Self::outbound(config, ports, SharedState::new(), rng, true);
+        let (node, shutdown_rx) =
+            Self::outbound(config, ports, SharedState::new(), rng, clock, true);
         node.run_inbound(shutdown_rx, events, handler, session)
     }
 
@@ -102,7 +105,8 @@ impl TransportNode {
         // L-FR1: an untested route stayed published, dead, for minutes);
         // its jitter is OS entropy.
         let rng: Arc<dyn RandomSource> = Arc::new(rekindle_utils::OsRandom);
-        let mut node = Self::outbound(config, ports, SharedState::new(), rng, true).0;
+        let clock: Arc<dyn Clock> = Arc::new(rekindle_utils::SystemClock);
+        let mut node = Self::outbound(config, ports, SharedState::new(), rng, clock, true).0;
         node.spawn_route_publisher(None, session);
         node
     }
@@ -115,6 +119,7 @@ impl TransportNode {
         mut ports: PortSet,
         shared_state: Arc<SharedState>,
         rng: Arc<dyn RandomSource>,
+        clock: Arc<dyn Clock>,
         self_tests: bool,
     ) -> (Self, mpsc::Receiver<()>) {
         ports.messages = crate::broadcast::deadline::Bounded::wrap(ports.messages);
@@ -130,6 +135,7 @@ impl TransportNode {
         ports.routes.want_own();
         let liveness = crate::liveness::Liveness::new(
             rng,
+            clock,
             Arc::clone(&ports.routes),
             Arc::clone(&ports.messages),
             self_tests,

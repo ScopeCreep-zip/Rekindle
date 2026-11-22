@@ -122,6 +122,7 @@ impl AppMessagePort for Replies {
     async fn call_own(
         &self,
         _class: rekindle_records::port::RouteClass,
+        _path: rekindle_records::port::OwnPath,
         _profile: &rekindle_types::config::SafetyProfile,
         _message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {

@@ -236,3 +236,18 @@ fn a_peer_report_tests_at_once_at_most_once_per_gap() {
         "a failing route keeps its retest schedule"
     );
 }
+
+/// Plan LF7: a 1 s tick wait that reads 2.5 min on the wall clock spanned a
+/// suspend; one that reads a little long, or a clock set back, did not.
+#[test]
+fn a_wall_clock_jump_past_the_step_is_a_resume() {
+    let tick = Duration::from_secs(1);
+    assert!(!resumed_across(1_000, 2_200, tick));
+    assert!(!resumed_across(1_000, 11_000, tick));
+    assert!(resumed_across(1_000, 12_001, tick));
+    assert!(resumed_across(1_000, 151_000, tick));
+    assert!(!resumed_across(151_000, 1_000, tick));
+    // A self-test may take its whole probe deadline.
+    assert!(!resumed_across(0, 25_000, PROBE_TIMEOUT));
+    assert!(resumed_across(0, 25_001, PROBE_TIMEOUT));
+}

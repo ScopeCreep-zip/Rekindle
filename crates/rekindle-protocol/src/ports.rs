@@ -317,6 +317,7 @@ impl AppMessagePort for VeilidMessages {
     async fn call_own(
         &self,
         class: RouteClass,
+        path: rekindle_records::port::OwnPath,
         profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
@@ -326,7 +327,10 @@ impl AppMessagePort for VeilidMessages {
                 "our {class:?} route is not available"
             )));
         };
-        let context = self.pinned(profile, class)?;
+        let context = match path {
+            rekindle_records::port::OwnPath::Loopback => self.pinned(profile, class)?,
+            rekindle_records::port::OwnPath::Outside => self.context(profile)?,
+        };
         crate::own_routes::loopback_call(&self.api, &self.imports, &context, &blob, message).await
     }
 

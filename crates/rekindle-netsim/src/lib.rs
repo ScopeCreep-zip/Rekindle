@@ -525,6 +525,17 @@ impl Netsim {
             .unwrap_or(0)
     }
 
+    /// Of those, the ones from outside (`OwnPath::Outside`, plan LF7): our
+    /// route's blob over the pool's safety route, as a peer's call.
+    #[must_use]
+    pub fn outside_calls(&self, node: usize, class: rekindle_records::port::RouteClass) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .outside_calls
+            .get(&class)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Each replica's value at `key`/`subkey`, in placement order.
     #[must_use]
     pub fn replica_values(&self, key: &str, subkey: u32) -> Vec<Option<RecordValue>> {

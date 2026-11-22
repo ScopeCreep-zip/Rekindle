@@ -11,7 +11,7 @@ mod record;
 mod route;
 
 pub use dht::{DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, WriterKey};
-pub use message::{check_message_len, AppCallId, AppMessagePort};
+pub use message::{check_message_len, AppCallId, AppMessagePort, OwnPath};
 pub use record::{
     RecordPort, RecordReport, RecordSchema, RecordStore, RecordValue, ReportScope, SchemaMember,
     SetOutcome, Settled, UnsentWrite, ValueChange, ValueChangeReport,
