@@ -348,8 +348,9 @@ pub async fn read_beat(
 /// does not verify is not remembered.
 ///
 /// The reads run [`read_each`]'s way, [`CARD_READS_IN_FLIGHT`] in flight
-/// (plan E3.2 S7c.9): a joiner holds no card name yet, so its first
-/// rebuild reads a card per member, and one at a time that cost a forced
+/// (plan E3.2 S7c.9): a joiner holds no card name yet, so the refresh
+/// its first rebuild starts (as its own task, never awaited by the
+/// rebuild: plan JP1) reads a card per member, and one at a time that cost a forced
 /// read per member on every join (≈ 0.5 s of simulated time each, the
 /// join-cost run's growth per post-cut op).
 pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(

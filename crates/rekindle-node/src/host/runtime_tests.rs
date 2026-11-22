@@ -284,7 +284,7 @@ pub(crate) async fn seed_registry_community(host: &Host, owner: &str) {
 /// a community whose store entry lacks it gets the vault's.
 #[tokio::test]
 async fn hydration_recovers_the_stored_registry_keypair() {
-    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_governance_runtime::deps::SlotRecovery;
 
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;

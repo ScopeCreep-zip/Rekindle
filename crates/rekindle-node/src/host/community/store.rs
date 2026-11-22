@@ -78,6 +78,9 @@ pub struct CommunityStore {
     /// The post-rebuild follow-up per community (S7l): at most one runs,
     /// and the rebuilds that finish meanwhile only mark it dirty.
     follow_ups: Arc<parking_lot::Mutex<BTreeMap<String, FollowUp>>>,
+    /// The member card refresh per community (plan JP1): at most one
+    /// runs, and the rebuilds that finish meanwhile only mark it dirty.
+    card_refreshes: Arc<parking_lot::Mutex<BTreeMap<String, FollowUp>>>,
     /// The channel edits and deletes that arrived before their message
     /// (plan E3.3 E5), bounded, keyed by author pseudonym and message id.
     held_changes: Arc<parking_lot::Mutex<HeldChanges<HeldChange>>>,
@@ -98,6 +101,7 @@ impl CommunityStore {
             frontier_writes: Arc::default(),
             admissions: Arc::default(),
             follow_ups: Arc::default(),
+            card_refreshes: Arc::default(),
             held_changes: Arc::default(),
         }
     }

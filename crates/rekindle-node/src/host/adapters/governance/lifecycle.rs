@@ -301,6 +301,47 @@ impl HostGovernance {
         }
     }
 
+    /// The member card refresh after a rebuild (plan JP1): one task per
+    /// community on the community's scope (leave or lock stops it at its
+    /// next read), so a rebuild never waits on the card reads; the
+    /// rebuilds that finish while it runs cost it one more turn, which
+    /// reads only the cards still unnamed.
+    pub(super) fn schedule_card_refresh(&self, community_id: &str) {
+        let communities = &self.ctx.communities;
+        if !communities.map().read().contains_key(community_id)
+            || !communities.mark_card_refresh(community_id)
+        {
+            return;
+        }
+        let host = self.clone();
+        let community = community_id.to_owned();
+        let span = tracing::Span::current();
+        let started = self.ctx.community_scope(community_id).spawn_with_token(
+            "member cards after a rebuild",
+            move |stop| {
+                tracing::Instrument::instrument(
+                    async move {
+                        while host.ctx.communities.take_card_refresh(&community) {
+                            let refresh =
+                                rekindle_governance_runtime::member_card::refresh_member_cards(
+                                    &host, &community,
+                                );
+                            if stop.run_until_cancelled(refresh).await.is_none() {
+                                host.ctx.communities.stop_card_refresh(&community);
+                                return;
+                            }
+                        }
+                    },
+                    span,
+                )
+            },
+        );
+        if let Err(closed) = started {
+            tracing::debug!(community_id, error = %closed, "card refresh dropped");
+            communities.stop_card_refresh(community_id);
+        }
+    }
+
     /// [`FOLLOW_UP_DELAY_MIN`] plus a jitter below [`FOLLOW_UP_JITTER_MS`]
     /// from the RNG port.
     fn follow_up_delay(&self) -> std::time::Duration {
