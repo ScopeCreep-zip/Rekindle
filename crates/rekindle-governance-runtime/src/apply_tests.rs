@@ -178,3 +178,104 @@ fn classify_role_assignment_affects_nothing() {
     assert!(!affects.roles);
     assert!(!affects.channels_or_categories);
 }
+
+/// An honest member's op written through the real write path is judged
+/// `Effective` by every reader (ADR 0022 rules 1, 6): read back from the
+/// state the write installs, its device key is the one `p` endorsed, in
+/// the merged `DeviceView`, never the pseudonym.
+#[tokio::test]
+async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_view() {
+    use crate::deps::{CommunityMembership, MockGovernanceRuntimeDeps, OpOutcome};
+    use parking_lot::Mutex;
+    use rekindle_governance::device_judge::{judge_op, KeyJudgement};
+    use rekindle_secrets::ed25519_dalek::SigningKey;
+    use std::sync::Arc;
+
+    const COMMUNITY: &str = crate::test_world::ANCHOR;
+    let secret = [9u8; 32];
+    let p = derive::derive_community_pseudonym(&secret, COMMUNITY);
+    let d = SigningKey::from_bytes(&[8; 32]);
+    let author = PseudonymKey(p.verifying_key().to_bytes());
+    let (record, owner) = ("VLD0:m", "o");
+    let cert = GenesisCert {
+        name: "c".into(),
+        policy: rekindle_types::governance::AdmissionMode::Open,
+        initial_roles: Vec::new(),
+        creator_pseudonym: author.clone(),
+        creator_member_record: record.into(),
+        creator_member_record_owner: owner.into(),
+        created_at: 1,
+        additional_creators: Vec::new(),
+        predecessor: None,
+        creator_device: Some(
+            device_signer::first_endorsement(&p, COMMUNITY, &d, record, owner).unwrap(),
+        ),
+    };
+    let state = merge::merge(&cert, &[]);
+
+    let mut deps = MockGovernanceRuntimeDeps::new();
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    deps.expect_rebuild_lock()
+        .returning(move |_| Arc::clone(&lock));
+    deps.expect_governance_state()
+        .returning(move |_| Some(state.clone()));
+    let hex = author.to_hex();
+    deps.expect_community_membership().returning(move |_| {
+        Some(CommunityMembership {
+            anchor: Some(COMMUNITY.into()),
+            member_registry_key: None,
+            my_pseudonym_hex: Some(hex.clone()),
+            my_subkey_index: None,
+            my_segment_index: None,
+            slot_keypair: None,
+            slot_seed_hex: None,
+            channel_ids: Vec::new(),
+            mek_generation: 0,
+        })
+    });
+    let pinned = cert.clone();
+    deps.expect_genesis_cert()
+        .returning(move |_| Some(pinned.clone()));
+    deps.expect_governance_ops().returning(|_| Ok(Vec::new()));
+    deps.expect_op_verify_cache()
+        .returning(|_| Arc::new(crate::verify_cache::OpVerifyCache::default()));
+    deps.expect_identity_secret()
+        .returning(move || Some(secret));
+    let device = d.to_bytes();
+    deps.expect_device_op_key()
+        .returning(move |_| Ok(Some(Zeroizing::new(device))));
+    deps.expect_clock()
+        .returning(|| Arc::new(rekindle_utils::SystemClock));
+    let stored = Arc::new(Mutex::new(Vec::new()));
+    let into = Arc::clone(&stored);
+    deps.expect_store_signed_governance_op()
+        .returning(move |_, op| {
+            into.lock().push(op.clone());
+            Ok(())
+        });
+    deps.expect_gossip_governance_op().return_const(());
+    let merged = Arc::new(Mutex::new(None));
+    let installed = Arc::clone(&merged);
+    deps.expect_set_governance_state()
+        .returning(move |_, state| *installed.lock() = Some(state));
+    deps.expect_emit_event().return_const(());
+    deps.expect_publish_governance_op()
+        .returning(|_, _, _| Ok(OpOutcome::Landed));
+
+    let entry = rekindle_governance::fixture::meta("renamed");
+    let outcome = write_entry(&deps, COMMUNITY, entry).await.unwrap();
+    assert!(matches!(outcome, OpOutcome::Landed));
+
+    let held = stored.lock().clone();
+    let read = op_log::verify_held(COMMUNITY, &held);
+    let [op] = read.ops.as_slice() else {
+        panic!("one op written, read back verified");
+    };
+    assert_eq!(op.op().author, author, "p stays the author");
+    let merged = merged.lock().take().expect("the write installed a state");
+    assert_eq!(
+        judge_op(COMMUNITY, &merged.devices, op.op()),
+        KeyJudgement::Effective,
+        "an honest member's own op is effective in the merged view"
+    );
+}
