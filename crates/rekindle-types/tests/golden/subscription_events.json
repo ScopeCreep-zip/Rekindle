@@ -828,6 +828,14 @@
       }
     }
   },
+  "groupDm.renamed": {
+    "groupDm": {
+      "renamed": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "name": "raid night II"
+      }
+    }
+  },
   "groupDm.sendStatus": {
     "groupDm": {
       "sendStatus": {

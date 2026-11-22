@@ -93,6 +93,7 @@ pub(crate) async fn three_members(sim: &Netsim, nodes: &mut [SimNode]) -> String
             .ok(IpcRequest::GroupDmCreate {
                 name: "raid night".to_string(),
                 members,
+                origin_peer: None,
             })
             .await,
     )
