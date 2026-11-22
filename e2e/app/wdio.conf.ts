@@ -5,7 +5,7 @@
 // Its specs size windows, so on Linux the app runs on X11 (`display:
 // "x11"`, launcher.ts AppCapability: Wayland gives a client no resize);
 // specs/native/ checks Wayland's own window behaviour. `pnpm test:app`
-// runs this config, then wdio.peers.conf.ts and wdio.native.conf.ts.
+// runs this config, then wdio.peers.conf.ts, wdio.native.conf.ts and wdio.budget.conf.ts.
 //
 //   pnpm test:app                          build, then run every spec
 //   REKINDLE_APP_NO_BUILD=1 pnpm test:app  run against the last build
