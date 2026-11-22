@@ -336,7 +336,7 @@ fn a_non_creator_acts_on_a_creator_only_after_it_left() {
         &state
     ));
     // What the merge's `MemberLeft` fold leaves (`merge::fold`).
-    state.departed_heads.insert(pseudo(2), Default::default());
+    state.departed_heads.insert(pseudo(2), HashMap::default());
     assert!(!holds_creator_seat(&pseudo(2), &state));
     assert!(validate_write(&pseudo(5), &kick, &state));
     assert!(may_moderate(
