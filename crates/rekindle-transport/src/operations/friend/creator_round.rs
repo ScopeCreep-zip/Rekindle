@@ -68,6 +68,18 @@ impl CreatorFrame {
         }
     }
 
+    /// The anchor the frame names.
+    #[must_use]
+    pub fn anchor(&self) -> &str {
+        match self {
+            Self::Invite { anchor, .. }
+            | Self::Accept { anchor, .. }
+            | Self::Decline { anchor }
+            | Self::Withdrawn { anchor }
+            | Self::Join { anchor, .. } => anchor,
+        }
+    }
+
     /// The frame a creator-set body is; `None` for any other kind.
     #[must_use]
     pub fn of(body: &DirectBody) -> Option<Self> {
@@ -125,7 +137,8 @@ pub(crate) async fn on_frame(host: &dyn FriendHost, sender: &str, body: &DirectB
         return true;
     };
     if !is_accepted_friend(host, sender) {
-        tracing::warn!(from = %sender, kind = ?body.type_id(), "creator-set frame from a non-friend refused");
+        tracing::warn!(from = %sender, kind = ?body.type_id(), anchor = %frame.anchor(),
+            "creator-set frame from a non-friend refused");
         return true;
     }
     host.on_creator_round(sender, frame).await

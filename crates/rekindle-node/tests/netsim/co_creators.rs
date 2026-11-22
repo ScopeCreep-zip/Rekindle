@@ -36,9 +36,15 @@ async fn friends_of_zero(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
 /// Node `creator` starts creating "Co" with `co_creators`; returns the
 /// reserved anchor.
 async fn create_with(creator: &SimNode, co_creators: &[&SimNode]) -> String {
+    create_named(creator, "Co", co_creators).await
+}
+
+/// Node `creator` starts creating `name` with `co_creators`; returns the
+/// reserved anchor.
+async fn create_named(creator: &SimNode, name: &str, co_creators: &[&SimNode]) -> String {
     let created = creator
         .ok(lifecycle(LifecycleRequest::CommunityCreate {
-            name: "Co".into(),
+            name: name.into(),
             description: String::new(),
             approval_required: false,
             co_creators: co_creators.iter().map(|n| key(n)).collect(),
@@ -334,5 +340,44 @@ async fn a_creator_restarted_before_genesis_withdraws_at_its_unlock() {
     assert!(
         !lists(&ann, &anchor).await,
         "the dead creation is never written"
+    );
+}
+
+/// Live finding CC2: right after a co-creation with Bob completes (Bob
+/// accepted; his join may still be running), Ann starts a second one naming Bob. Bob holds the
+/// new invite, hears `CreatorInvited` for its anchor, and his snapshot
+/// lists it, as for the first.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_second_co_creation_after_a_completed_one_reaches_the_same_friend() {
+    let (sim, nodes) = friends_of_zero(2, 9306).await;
+    let (ann, bob) = (&nodes[0], &nodes[1]);
+    let (ann_seen, bob_seen) = (ann.events().await, bob.events().await);
+    let first = create_with(ann, &[bob]).await;
+    assert!(eventually(&sim, LIMIT, || async { invited(&bob_seen, &first) }).await);
+    answer(bob, &first, true).await;
+    assert!(
+        eventually(&sim, LIMIT, || async { finished(&ann_seen, &first, true) }).await,
+        "the first co-creation finishes"
+    );
+    // At once, as live: Bob's join of the first may still be running.
+    let second = create_named(ann, "Co2", &[bob]).await;
+    assert_ne!(first, second, "a new reservation");
+    assert!(
+        eventually(&sim, LIMIT, || async { invited(&bob_seen, &second) }).await,
+        "Bob hears the second invite"
+    );
+    let held = snapshot(bob).await;
+    assert_eq!(
+        held.invites,
+        vec![HeldCreatorInvite {
+            anchor: second.clone(),
+            peer_key: key(ann),
+            community_name: "Co2".into(),
+        }],
+        "Bob holds the second invite"
+    );
+    assert!(
+        eventually(&sim, Duration::from_secs(300), || lists(bob, &first)).await,
+        "Bob joins the first through his link"
     );
 }

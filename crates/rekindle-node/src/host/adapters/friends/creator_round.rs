@@ -48,9 +48,11 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
                 .call(move |c| rekindle_db::repo::creator_round::put_invite(c, &owner, &row))
                 .await
             {
-                tracing::warn!(error = %e, "co-creator invite not stored");
+                tracing::warn!(error = %e, anchor = %anchor, from = %sender,
+                    "co-creator invite not stored (kept for the replay)");
                 return false;
             }
+            tracing::info!(anchor = %anchor, from = %sender, "co-creator invite held");
             host.publish(SubscriptionEvent::Friend(FriendEvent::CreatorInvited {
                 peer_key: sender.to_owned(),
                 anchor,
@@ -70,10 +72,10 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
                     },
                 )),
                 Ok(None) => {
-                    tracing::warn!(from = %sender, "CreatorWithdrawn for no held invite refused");
+                    tracing::warn!(anchor = %anchor, from = %sender, "CreatorWithdrawn for no held invite refused");
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "co-creator withdrawal not applied");
+                    tracing::warn!(error = %e, anchor = %anchor, from = %sender, "co-creator withdrawal not applied");
                     return false;
                 }
             }
@@ -85,7 +87,7 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
         } => {
             let key = PseudonymKey(pseudonym);
             if !rekindle_governance::genesis::verify_creator_accept(&anchor, &key, &signature) {
-                tracing::warn!(from = %sender, "CreatorAccept with a bad signature refused");
+                tracing::warn!(anchor = %anchor, from = %sender, "CreatorAccept with a bad signature refused");
                 return true;
             }
             return answer(host, sender, anchor, Some((pseudonym, signature))).await;
@@ -101,10 +103,10 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
             match taken {
                 Ok(Some(_)) => join(host, &anchor, &invite).await,
                 Ok(None) => {
-                    tracing::warn!(from = %sender, "CreatorJoin for no accepted invite refused");
+                    tracing::warn!(anchor = %anchor, from = %sender, "CreatorJoin for no accepted invite refused");
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "co-creator join not applied");
+                    tracing::warn!(error = %e, anchor = %anchor, from = %sender, "co-creator join not applied");
                     return false;
                 }
             }
@@ -149,11 +151,11 @@ async fn answer(
             true
         }
         Ok(false) => {
-            tracing::warn!(from = %sender, "co-creator answer for no creation of ours refused");
+            tracing::warn!(anchor = %anchor, from = %sender, "co-creator answer for no creation of ours refused");
             true
         }
         Err(e) => {
-            tracing::warn!(error = %e, "co-creator answer not applied");
+            tracing::warn!(error = %e, anchor = %anchor, from = %sender, "co-creator answer not applied");
             false
         }
     }
@@ -165,7 +167,7 @@ async fn join(host: &HostFriends, anchor: &str, invite: &str) {
     let link = match InviteLink::parse(invite) {
         Ok(link) if link.anchor.as_str() == anchor => link,
         _ => {
-            tracing::warn!("co-creator join link names another community: refused");
+            tracing::warn!(anchor = %anchor, "co-creator join link names another community: refused");
             return;
         }
     };
