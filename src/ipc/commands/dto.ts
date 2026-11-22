@@ -488,6 +488,12 @@ export interface SkinTrial {
   revertsAtMs: number;
 }
 
+/// Why a window could not apply a skin (`SkinApplyFailure`): the window
+/// reports it with `report_skin_apply_failed`, and the Host decides.
+export type SkinApplyFailure =
+  | { type: "imageDecode"; data: { path: string } }
+  | { type: "sheetError"; data: { detail: string } };
+
 /// `list_skins`' answer (`SkinLibrary`).
 export interface SkinLibrary {
   skins: SkinEntry[];

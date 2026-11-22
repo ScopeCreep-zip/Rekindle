@@ -66,6 +66,9 @@ mod shell_hooks_tests;
 #[path = "signed_here_tests.rs"]
 mod signed_here;
 #[cfg(unix)]
+#[path = "skin_apply_failed_tests.rs"]
+mod skin_apply_failed;
+#[cfg(unix)]
 #[path = "skin_draft_tests.rs"]
 mod skin_draft;
 #[cfg(unix)]

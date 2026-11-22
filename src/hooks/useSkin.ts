@@ -1,7 +1,7 @@
 import { createSignal, onCleanup } from "solid-js";
 import { commands } from "../ipc/commands";
 import { subscribeSkinEvents } from "../ipc/channels";
-import type { SkinApplied } from "../ipc/commands/dto";
+import type { SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
 import type { SkinShell } from "../ipc/commands/dto_skin_tree";
 
 /// The shown skin's window outlines (plan SK2-S2): set with the sheet that
@@ -72,19 +72,38 @@ export function applySkin(skin: SkinApplied): void {
     return;
   }
   // Held until the swap, so the decoded images stay in this document's cache.
-  const images = skin.images.map((href) => {
+  const loads = skin.images.map((href) => {
     const img = new Image();
     img.src = href;
-    return img;
+    return { href, img };
   });
-  Promise.all(images.map((img) => img.decode())).then(
+  const images = loads.map((l) => l.img);
+  // Each decode names its own href, so the report says which image failed.
+  const decoded = loads.map(({ href, img }) =>
+    img.decode().catch((err: unknown) => {
+      throw new SkinImageError(href, err);
+    }),
+  );
+  Promise.all(decoded).then(
     () => {
       if (mine === generation) linkSheet(skin, mine, images);
     },
-    (err: unknown) => {
-      if (mine === generation) console.error(`skin ${skin.id}: an image failed to decode — the shown skin stays`, err);
+    (err: SkinImageError) => {
+      if (mine !== generation) return;
+      console.error(`skin ${skin.id}: ${err.path} failed to decode — the shown skin stays`, err.reason);
+      report(skin, { type: "imageDecode", data: { path: err.path } });
     },
   );
+}
+
+/** A skin image that did not decode: its `skin://` href and the reason. */
+class SkinImageError extends Error {
+  constructor(
+    readonly path: string,
+    readonly reason: unknown,
+  ) {
+    super(`${path} failed to decode`);
+  }
 }
 
 /** Load `skin`'s sheet beside the shown one and swap on `load` (apply `mine`). */
@@ -106,7 +125,19 @@ function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]):
     loading = null;
     next.remove();
     console.error(`skin sheet ${skin.tokensHref} failed to load — the shown skin stays`);
+    report(skin, { type: "sheetError", data: { detail: `${skin.tokensHref} failed to load` } });
   });
   next.href = skin.tokensHref;
   document.head.appendChild(next);
+}
+
+/**
+ * Tell the Host this window could not apply `skin` (plan SK2-T1). The
+ * window only reports: the Host logs it, tells this window and Settings,
+ * and reverts `skin` if it is on trial.
+ */
+function report(skin: SkinApplied, cause: SkinApplyFailure): void {
+  void commands
+    .reportSkinApplyFailed(skin.id, cause)
+    .catch((err: unknown) => console.error(`skin ${skin.id}: the failure was not reported`, err));
 }

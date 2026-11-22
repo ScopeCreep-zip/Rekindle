@@ -177,6 +177,8 @@ impl IpcRequest {
             Self::SkinExportSchema { .. } => ("SkinExportSchema", Write, Authenticated),
             Self::RunSkinAction { .. } => ("RunSkinAction", Write, Authenticated),
             Self::SkinSelectionSet { .. } => ("SkinSelectionSet", Write, Authenticated),
+            // The login window reports its device skin before unlock.
+            Self::SkinApplyFailed { .. } => ("SkinApplyFailed", Write, Open),
             Self::GamePresenceSet { .. } => ("GamePresenceSet", Write, Authenticated),
             Self::GamePresenceClear => ("GamePresenceClear", Write, Authenticated),
 
@@ -233,6 +235,23 @@ mod tests {
             .lane(),
             Lane::Write
         );
+    }
+
+    /// Plan SK2-T1: the login window reports a device skin it could not
+    /// apply before any identity is unlocked, and no agent reports one.
+    #[test]
+    fn a_skin_apply_failure_is_open_and_the_users_own() {
+        let failed = IpcRequest::SkinApplyFailed {
+            window: "login".into(),
+            skin: "builtin:xfire-classic".into(),
+            cause: rekindle_types::dto::skin_library::SkinApplyFailure::SheetError {
+                detail: String::new(),
+            },
+        };
+        assert_eq!(failed.name(), "SkinApplyFailed");
+        assert_eq!(failed.lane(), Lane::Write);
+        assert_eq!(failed.required_clearance(), SecurityLevel::Open);
+        assert_eq!(failed.agent_capability(), None);
     }
 
     #[test]

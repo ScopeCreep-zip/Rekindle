@@ -234,6 +234,7 @@ impl IpcRequest {
             | Self::SkinExportSchema { .. }
             | Self::RunSkinAction { .. }
             | Self::SkinSelectionSet { .. }
+            | Self::SkinApplyFailed { .. }
             | Self::AuditVerify
             | Self::AuditExport { .. }
             | Self::LinkOpen { .. }

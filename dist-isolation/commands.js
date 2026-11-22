@@ -220,6 +220,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "reorder_channels",
   "report_local_video_capabilities",
   "report_media_capture_error",
+  "report_skin_apply_failed",
   "report_video_decoder_status",
   "report_video_encoder_status",
   "report_video_render_facts",

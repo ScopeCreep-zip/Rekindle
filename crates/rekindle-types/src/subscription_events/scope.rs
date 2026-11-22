@@ -147,6 +147,7 @@ impl SubscriptionEvent {
                 SystemEvent::AuditChainBroken { .. }
                 | SystemEvent::SkinChanged { .. }
                 | SystemEvent::SkinTrialChanged { .. }
+                | SystemEvent::SkinApplyFailed { .. }
                 | SystemEvent::QuickWipeChanged { .. }
                 | SystemEvent::ActivityAppended { .. }
                 | SystemEvent::Infoview(_)

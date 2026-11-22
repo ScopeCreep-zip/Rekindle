@@ -508,6 +508,14 @@ pub enum IpcRequest {
         window: String,
         selection: Option<rekindle_types::dto::skin_run::SkinSelection>,
     },
+    /// The window labelled `window` could not apply `skin` and kept the
+    /// one it shows; the Host logs it, tells the window and Settings, and
+    /// reverts `skin` if it is on trial. Sent before unlock too.
+    SkinApplyFailed {
+        window: String,
+        skin: String,
+        cause: rekindle_types::dto::skin_library::SkinApplyFailure,
+    },
     /// Set game presence info.
     GamePresenceSet {
         game_name: String,

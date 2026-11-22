@@ -124,7 +124,7 @@ fn the_call_deadline_is_under_veilids_app_call_timeout() {
 
 /// A shared buffer the scrubbed log lines land in.
 #[derive(Clone, Default)]
-struct Captured(std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
+pub(super) struct Captured(pub(super) std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
 
 thread_local! {
     /// The buffer this thread's events are captured into, while armed.
@@ -159,7 +159,7 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ToArmed {
 }
 
 /// Disarms this thread when dropped.
-struct Armed;
+pub(super) struct Armed;
 
 impl Drop for Armed {
     fn drop(&mut self) {
@@ -184,7 +184,7 @@ impl Drop for Armed {
 /// `Interest::sometimes` for every callsite (`DynFilterFn`, filter_fn.rs:
 /// 577-622; `Layered::pick_interest`, layered.rs:457-460) and decides per
 /// event whether this thread is armed.
-fn capture(captured: &Captured) -> Armed {
+pub(super) fn capture(captured: &Captured) -> Armed {
     use tracing_subscriber::layer::SubscriberExt;
     static INSTALL: std::sync::Once = std::sync::Once::new();
     INSTALL.call_once(|| {

@@ -14,6 +14,7 @@ pub(crate) mod capability;
 #[cfg(test)]
 mod capability_tests;
 mod draft;
+pub(crate) mod failure;
 pub(crate) mod ids;
 pub(crate) mod login;
 pub(crate) mod reads;

@@ -2007,6 +2007,21 @@
       }
     }
   },
+  "system.skinApplyFailed": {
+    "system": {
+      "skinApplyFailed": {
+        "cause": {
+          "data": {
+            "path": "skin://pkg/frame/top.png"
+          },
+          "type": "imageDecode"
+        },
+        "reverted": true,
+        "skin": "pkg:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "window": "chat-0123456789abcdef"
+      }
+    }
+  },
   "system.skinChanged": {
     "system": {
       "skinChanged": {

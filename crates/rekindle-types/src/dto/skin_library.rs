@@ -54,6 +54,19 @@ pub struct SkinTrial {
     pub reverts_at_ms: u64,
 }
 
+/// Why a window could not apply a skin (`SkinApplyFailed`): that window
+/// keeps the skin it shows, and the Host decides the rest (it reverts a
+/// skin on trial).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+pub enum SkinApplyFailure {
+    /// An image the stylesheet draws did not decode; `path` is its
+    /// `skin://` href (one of `SkinApplied::images`).
+    ImageDecode { path: String },
+    /// The stylesheet did not load; `detail` is what the window saw.
+    SheetError { detail: String },
+}
+
 /// What a window applies (`SkinGet`'s answer and `SkinChanged`'s payload):
 /// the skin, its active variant's base for `:root[data-skin-base]`, the
 /// `skin://` href of its `@layer skin` stylesheet and the region slots it

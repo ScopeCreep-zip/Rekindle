@@ -244,6 +244,9 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     // rest are window operations, and a selection is view state.
     ("RunSkinAction", None),
     ("SkinSelectionSet", None),
+    // A window reporting a skin it could not apply: the Host's revert of
+    // a trial is the trial's own end, not a user action.
+    ("SkinApplyFailed", None),
     ("SkinImport", Some(IntentKind::ImportSkin)),
     ("SkinRemove", Some(IntentKind::RemoveSkin)),
     // The identity's skin is a preference (E6.8's `PatchPreferences`).

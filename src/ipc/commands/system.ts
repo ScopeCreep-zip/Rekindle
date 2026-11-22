@@ -5,7 +5,7 @@ import type {
 import type { OnboardingConfig, OnboardingConfigEdit, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
   AuditExported, AuditVerified, GameTotalView, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
-  SkinApplied, SkinEntry, SkinLibrary,
+  SkinApplied, SkinApplyFailure, SkinEntry, SkinLibrary,
 } from "./dto";
 import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
 import type { InfoviewSubject, InfoviewView } from "./dto_infoview";
@@ -77,6 +77,10 @@ export const systemCommands = {
     hostInvoke<unknown>("run_skin_action", { node, action }),
   setSkinSelection: (selection: SkinSelection | null) =>
     hostInvoke<void>("set_skin_selection", { selection }),
+  // This window could not apply `skin` and kept the one it shows; the
+  // Host logs it and reverts a skin on trial (plan SK2-T1).
+  reportSkinApplyFailed: (skin: string, cause: SkinApplyFailure) =>
+    hostInvoke<void>("report_skin_apply_failed", { skin, cause }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),

@@ -793,6 +793,12 @@
       "kind": "openNotifications"
     }
   ],
+  "skin.applyFailure.sheetError": {
+    "data": {
+      "detail": "the stylesheet failed to load"
+    },
+    "type": "sheetError"
+  },
   "skin.entry.builtin": {
     "credits": {
       "authors": [

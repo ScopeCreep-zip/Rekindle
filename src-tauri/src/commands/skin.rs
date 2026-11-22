@@ -6,7 +6,7 @@ use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::skin::RegionFit;
 use rekindle_types::dto::skin_action::SkinAction;
 use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftRegion, SkinDraftReport};
-use rekindle_types::dto::skin_library::{SkinApplied, SkinEntry, SkinLibrary};
+use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure, SkinEntry, SkinLibrary};
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -225,4 +225,27 @@ pub async fn set_skin_selection(
 ) -> Result<Done<()>, CommandError> {
     let window = window.label().to_owned();
     host_call::call(&state, IpcRequest::SkinSelectionSet { window, selection }).await
+}
+
+/// The calling window could not apply `skin` (`useSkin.ts`: an image did
+/// not decode, or the stylesheet did not load) and kept the skin it
+/// shows. The window only reports; the Host logs it, tells this window
+/// and Settings, and reverts `skin` if it is on trial (plan SK2-T1).
+#[tauri::command]
+pub async fn report_skin_apply_failed(
+    state: State<'_, SharedState>,
+    window: tauri::WebviewWindow,
+    skin: String,
+    cause: SkinApplyFailure,
+) -> Result<Done<()>, CommandError> {
+    let window = window.label().to_owned();
+    host_call::call(
+        &state,
+        IpcRequest::SkinApplyFailed {
+            window,
+            skin,
+            cause,
+        },
+    )
+    .await
 }

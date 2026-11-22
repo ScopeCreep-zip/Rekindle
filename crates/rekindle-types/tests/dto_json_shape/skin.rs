@@ -6,7 +6,7 @@ use rekindle_types::dto::skin_action::{
     NodeTrigger, OverlayPart, PackUrl, PopupRef, SkinAction, SkinEvent, SkinSettingsTab, SoundRef,
     TileRef,
 };
-use rekindle_types::dto::skin_library::SkinEntry;
+use rekindle_types::dto::skin_library::{SkinApplyFailure, SkinEntry};
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree};
 use rekindle_types::dto::skin_tree_role::Edge;
@@ -19,6 +19,14 @@ use super::{pk, to};
 /// library skin stating no licence and naming no one.
 pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
     selection_samples(add);
+    // `SkinApplyFailed`'s cause, each kind (the image one is also in the
+    // event golden).
+    add(
+        "skin.applyFailure.sheetError",
+        to(SkinApplyFailure::SheetError {
+            detail: "the stylesheet failed to load".into(),
+        }),
+    );
     add(
         "skin.entry.builtin",
         to(SkinEntry {

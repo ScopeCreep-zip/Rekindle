@@ -1,6 +1,7 @@
 //! Content hashers for network transport and system-level events.
 
 use rekindle_types::dto::infoview::InfoviewEvent;
+use rekindle_types::dto::skin_library::SkinApplyFailure;
 use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, NotificationEvent, SystemEvent,
 };
@@ -130,6 +131,29 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
                 h.update(b"|");
                 h.update(&t.reverts_at_ms.to_le_bytes());
             }
+        }
+        SystemEvent::SkinApplyFailed {
+            window,
+            skin,
+            cause,
+            reverted,
+        } => {
+            h.update(b"skin_apply_failed|");
+            h.update(window.as_bytes());
+            h.update(b"|");
+            h.update(skin.as_bytes());
+            h.update(b"|");
+            match cause {
+                SkinApplyFailure::ImageDecode { path } => {
+                    h.update(b"image|");
+                    h.update(path.as_bytes());
+                }
+                SkinApplyFailure::SheetError { detail } => {
+                    h.update(b"sheet|");
+                    h.update(detail.as_bytes());
+                }
+            }
+            h.update(&[u8::from(*reverted)]);
         }
         SystemEvent::QuickWipeChanged { armed, shortcut } => {
             // Each committed arm or disarm is its own fact, re-arming the

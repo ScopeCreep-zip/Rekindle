@@ -271,6 +271,7 @@ pub(crate) async fn select(
         | IpcRequest::SkinExportSchema { .. }
         | IpcRequest::RunSkinAction { .. }
         | IpcRequest::SkinSelectionSet { .. }
+        | IpcRequest::SkinApplyFailed { .. }
         | IpcRequest::AuditVerify
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests

@@ -12,6 +12,7 @@ pub const NAMES: &[&str] = &[
     "auditChainBroken",
     "skinChanged",
     "skinTrialChanged",
+    "skinApplyFailed",
     "quickWipeChanged",
     "activityAppended",
     "favouriteServerAdded",
@@ -28,6 +29,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::AuditChainBroken { .. } => "auditChainBroken",
         SystemEvent::SkinChanged { .. } => "skinChanged",
         SystemEvent::SkinTrialChanged { .. } => "skinTrialChanged",
+        SystemEvent::SkinApplyFailed { .. } => "skinApplyFailed",
         SystemEvent::QuickWipeChanged { .. } => "quickWipeChanged",
         SystemEvent::ActivityAppended { .. } => "activityAppended",
         SystemEvent::FavouriteServerAdded { .. } => "favouriteServerAdded",
@@ -114,6 +116,17 @@ fn sync() -> Vec<Sample> {
                     previous: "builtin:symbiosis".into(),
                     reverts_at_ms: 1_700_000_015_000,
                 }),
+            },
+        ),
+        ev(
+            "skinApplyFailed",
+            SystemEvent::SkinApplyFailed {
+                window: "chat-0123456789abcdef".into(),
+                skin: "pkg:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+                cause: rekindle_types::dto::skin_library::SkinApplyFailure::ImageDecode {
+                    path: "skin://pkg/frame/top.png".into(),
+                },
+                reverted: true,
             },
         ),
         ev(

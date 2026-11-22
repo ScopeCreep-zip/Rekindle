@@ -264,6 +264,33 @@ fn a_skin_trial_reaches_the_settings_window_only() {
     }
 }
 
+/// Plan SK2-T1: a skin a window could not apply reaches that window, by
+/// label, and Settings; no other window.
+#[test]
+fn a_skin_apply_failure_reaches_its_window_and_settings_only() {
+    let e = WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
+        window: "chat-0123456789ab".into(),
+        skin: "builtin:xfire-classic".into(),
+        cause: rekindle_types::dto::skin_library::SkinApplyFailure::SheetError {
+            detail: "failed to load".into(),
+        },
+        reverted: false,
+    }));
+    assert_eq!(e.channel(), "skin-apply-event");
+    let audience = e.audience();
+    assert!(audience.includes("chat-0123456789ab"));
+    assert!(audience.includes("settings"));
+    for label in [
+        "login",
+        "buddy-list",
+        "chat-ba9876543210",
+        "community-x",
+        "profile-x",
+    ] {
+        assert!(!audience.includes(label), "{label}");
+    }
+}
+
 #[test]
 fn system_events_ride_the_community_channel() {
     let e = WebviewEvent::Subscription(SubscriptionEvent::System(

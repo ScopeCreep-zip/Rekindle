@@ -133,6 +133,21 @@ async fn revert_announced(ctx: &DaemonContext) {
     publish(ctx, None);
 }
 
+/// A window could not apply `id` (`SkinApplyFailed`): if it is `owner`'s
+/// trial, end it now and put the stored choice back, so a skin that does
+/// not render is never left on screen until the timer. True if reverted.
+pub(super) async fn revert_failed(ctx: &DaemonContext, owner: &str, id: &str) -> bool {
+    let ended = ctx
+        .skin
+        .trial
+        .take_if(|h| h.owner == owner && h.trial.id == id)
+        .is_some();
+    if ended {
+        revert_announced(ctx).await;
+    }
+    ended
+}
+
 /// End `owner`'s trial because another choice was stored (a built-in,
 /// or the stored skin chosen again).
 pub(super) fn end(ctx: &DaemonContext, owner: &str) {

@@ -149,6 +149,12 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(
             SystemEvent::SkinTrialChanged { .. } | SystemEvent::QuickWipeChanged { .. },
         ) => Audience::kinds(&[WindowKind::Settings]),
+        // A skin a window could not apply goes to that window, by label,
+        // and to Settings, where skins are chosen and a trial ends (plan
+        // SK2-T1).
+        SubscriptionEvent::System(SystemEvent::SkinApplyFailed { window, .. }) => {
+            Audience::labels([window.clone()]).with_kinds(&[WindowKind::Settings])
+        }
         // The Infoview shows the feed: the buddy list's and each chat
         // window's (plan E7.15, design §2.1).
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
@@ -225,6 +231,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         // Every window applies it, not only the community dispatcher.
         SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => "skin-event",
         SubscriptionEvent::System(SystemEvent::SkinTrialChanged { .. }) => "skin-trial-event",
+        SubscriptionEvent::System(SystemEvent::SkinApplyFailed { .. }) => "skin-apply-event",
         SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
         SubscriptionEvent::System(SystemEvent::Infoview(_)) => "infoview-event",

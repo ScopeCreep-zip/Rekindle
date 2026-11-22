@@ -140,6 +140,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("export_skin_schema", HostCall::Request("SkinExportSchema")),
     ("run_skin_action", HostCall::Request("RunSkinAction")),
     ("set_skin_selection", HostCall::Request("SkinSelectionSet")),
+    (
+        "report_skin_apply_failed",
+        HostCall::Request("SkinApplyFailed"),
+    ),
     ("transfer_list", HostCall::Request("TransferList")),
     ("transfer_start", HostCall::Request("TransferStart")),
     ("transfer_stop", HostCall::Request("TransferStop")),

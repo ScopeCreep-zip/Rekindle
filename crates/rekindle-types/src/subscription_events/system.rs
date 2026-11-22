@@ -60,6 +60,15 @@ pub enum SystemEvent {
     SkinTrialChanged {
         trial: Option<crate::dto::skin_library::SkinTrial>,
     },
+    /// The window labelled `window` could not apply `skin` (`cause`) and
+    /// kept the skin it shows. `reverted`: `skin` was on trial and the
+    /// Host put the stored choice back. Triggered by: `SkinApplyFailed`.
+    SkinApplyFailed {
+        window: String,
+        skin: String,
+        cause: crate::dto::skin_library::SkinApplyFailure,
+        reverted: bool,
+    },
     /// The quick wipe was armed (`armed`, with its panic shortcut or none)
     /// or disarmed (plan E7.1). The GUI registers or releases the panic
     /// shortcut's OS grab (or portal binding) on it, the path its unlock

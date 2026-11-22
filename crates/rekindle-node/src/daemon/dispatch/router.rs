@@ -195,6 +195,9 @@ async fn route(
             ctx.skin.signals.poke();
             answer
         }
+        request @ IpcRequest::SkinApplyFailed { .. } => {
+            crate::host::skin::failure::report(ctx, request).await
+        }
         request @ (IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }
         | IpcRequest::SkinFile { .. }

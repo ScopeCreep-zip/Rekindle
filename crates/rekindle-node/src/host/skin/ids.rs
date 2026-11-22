@@ -72,6 +72,16 @@ pub(crate) fn target_fits(target: &rekindle_types::dto::transfer::TransferTarget
     community.len() <= 128 && channel_id.len() <= 64
 }
 
+/// A cause's text: an image's `skin://` href, bounded like a media path,
+/// or what the window saw, bounded like a short message.
+fn cause_fits(cause: &rekindle_types::dto::skin_library::SkinApplyFailure) -> bool {
+    use rekindle_types::dto::skin_library::SkinApplyFailure as F;
+    match cause {
+        F::ImageDecode { path } => !path.is_empty() && path.len() <= 4096,
+        F::SheetError { detail } => detail.len() <= 1024,
+    }
+}
+
 /// A 400 naming the field.
 pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
     match request {
@@ -89,6 +99,20 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
                 "skin window label not 1 to 64 bytes",
             ))
         }
+        IpcRequest::SkinApplyFailed { window, .. } if window.is_empty() || window.len() > 64 => {
+            Err(IpcResponse::error(
+                400,
+                "skin window label not 1 to 64 bytes",
+            ))
+        }
+        // `builtin:<id>`, `pkg:<hash>` or `dev:<hash>` (`SkinApplied::id`).
+        IpcRequest::SkinApplyFailed { skin, .. } if skin.is_empty() || skin.len() > 128 => {
+            Err(IpcResponse::error(400, "skin id not 1 to 128 bytes"))
+        }
+        IpcRequest::SkinApplyFailed { cause, .. } if !cause_fits(cause) => Err(IpcResponse::error(
+            400,
+            "a skin apply failure field is longer than its bound",
+        )),
         IpcRequest::SkinSelectionSet {
             selection: Some(selection),
             ..
@@ -101,7 +125,8 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
         | IpcRequest::SkinGet { id: None }
         | IpcRequest::SkinDraftStart { id: None }
         | IpcRequest::RunSkinAction { .. }
-        | IpcRequest::SkinSelectionSet { .. } => Ok(()),
+        | IpcRequest::SkinSelectionSet { .. }
+        | IpcRequest::SkinApplyFailed { .. } => Ok(()),
         IpcRequest::SkinGet { id: Some(id) } | IpcRequest::SkinDraftStart { id: Some(id) } => {
             parse(id)
                 .map(drop)

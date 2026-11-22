@@ -341,6 +341,7 @@ macro_rules! skin_commands {
         commands::skin::export_skin_schema,
         commands::skin::run_skin_action,
         commands::skin::set_skin_selection,
+        commands::skin::report_skin_apply_failed,
         commands::skin::set_login_skin,
         commands::transfers::transfer_list,
         commands::transfers::transfer_start,

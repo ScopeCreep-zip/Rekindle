@@ -191,6 +191,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::SkinExportSchema { .. }
             | Self::RunSkinAction { .. }
             | Self::SkinSelectionSet { .. }
+            | Self::SkinApplyFailed { .. }
             | Self::LinkOpen { .. } => self.fmt_own(f),
             Self::PresenceSet { .. }
             | Self::GamePresenceSet { .. }
@@ -362,6 +363,16 @@ impl IpcRequest {
                 .debug_struct("SkinSelectionSet")
                 .field("window", window)
                 .field("selected", &selection.is_some())
+                .finish(),
+            Self::SkinApplyFailed {
+                window,
+                skin,
+                cause,
+            } => f
+                .debug_struct("SkinApplyFailed")
+                .field("window", window)
+                .field("skin", skin)
+                .field("cause", cause)
                 .finish(),
             Self::SkinExportSchema { path } => f
                 .debug_struct("SkinExportSchema")
