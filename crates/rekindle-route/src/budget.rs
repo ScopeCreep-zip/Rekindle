@@ -18,6 +18,8 @@
 
 use std::time::Duration;
 
+pub use rekindle_records::port::OwnDeaths;
+
 /// One day.
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 /// One week.
@@ -109,12 +111,10 @@ impl RouteBudget {
     /// the bucket is empty or the week's cap is met, and nothing is spent.
     pub fn try_spend(&mut self, now_ms: u64) -> bool {
         self.refill(now_ms);
-        if std::env::var_os("RV1_NEVER").is_some()
-            && (self.state.tokens == 0 || self.state.week_spent >= BUDGET_WEEKLY_CAP)
-        {
+        if self.state.tokens == 0 || self.state.week_spent >= BUDGET_WEEKLY_CAP {
             return false;
         }
-        self.state.tokens = self.state.tokens.saturating_sub(1);
+        self.state.tokens -= 1;
         self.state.week_spent += 1;
         true
     }
@@ -127,29 +127,17 @@ impl RouteBudget {
     }
 }
 
-/// One class's own-route deaths against the baseline (plan RV1): the Host
-/// feeds it the class's running total and warns once each time the count
-/// within [`DEATH_WINDOW`] rises above [`DEATH_WARN_ABOVE`].
+/// One running count's arrivals within [`DEATH_WINDOW`].
 #[derive(Debug, Clone, Default)]
-pub struct DeathRate {
+struct Windowed {
     seen: u32,
     times: std::collections::VecDeque<tokio::time::Instant>,
-    warned: bool,
 }
 
-impl DeathRate {
-    /// A rate that starts from the class's running total `total`.
-    #[must_use]
-    pub fn new(total: u32) -> Self {
-        Self {
-            seen: total,
-            ..Self::default()
-        }
-    }
-
-    /// The class's running total is `total` at `now`: the deaths within the
-    /// window when they first rise above the baseline, `None` otherwise.
-    pub fn observe(&mut self, total: u32, now: tokio::time::Instant) -> Option<u32> {
+impl Windowed {
+    /// The running count is `total` at `now`: how many arrived within the
+    /// window.
+    fn observe(&mut self, total: u32, now: tokio::time::Instant) -> u32 {
         for _ in self.seen..total {
             self.times.push_back(now);
         }
@@ -161,8 +149,49 @@ impl DeathRate {
         {
             self.times.pop_front();
         }
-        let count = u32::try_from(self.times.len()).unwrap_or(u32::MAX);
-        if count <= DEATH_WARN_ABOVE {
+        u32::try_from(self.times.len()).unwrap_or(u32::MAX)
+    }
+}
+
+/// One class's own-route deaths against the baseline (plan RV1): the Host
+/// feeds it the class's running counts and warns once each time the deaths
+/// within [`DEATH_WINDOW`] rise above [`DEATH_WARN_ABOVE`], saying how many
+/// of them were young ([`YOUNG_ROUTE_AGE`]).
+#[derive(Debug, Clone, Default)]
+pub struct DeathRate {
+    all: Windowed,
+    young: Windowed,
+    warned: bool,
+}
+
+impl DeathRate {
+    /// A rate that starts from the class's running counts `start`.
+    #[must_use]
+    pub fn new(start: OwnDeaths) -> Self {
+        Self {
+            all: Windowed {
+                seen: start.total,
+                ..Windowed::default()
+            },
+            young: Windowed {
+                seen: start.young,
+                ..Windowed::default()
+            },
+            warned: false,
+        }
+    }
+
+    /// The class's running counts are `now_counts` at `now`: the deaths
+    /// within the window (young ones apart) when they first rise above the
+    /// baseline, `None` otherwise.
+    pub fn observe(
+        &mut self,
+        now_counts: OwnDeaths,
+        now: tokio::time::Instant,
+    ) -> Option<OwnDeaths> {
+        let total = self.all.observe(now_counts.total, now);
+        let young = self.young.observe(now_counts.young, now);
+        if total <= DEATH_WARN_ABOVE {
             self.warned = false;
             return None;
         }
@@ -170,7 +199,7 @@ impl DeathRate {
             return None;
         }
         self.warned = true;
-        Some(count).filter(|_| std::env::var_os("RV1_NEVER").is_some())
+        Some(OwnDeaths { total, young })
     }
 }
 
@@ -216,29 +245,31 @@ mod tests {
     #[test]
     fn deaths_above_the_baseline_warn_once() {
         let start = tokio::time::Instant::now();
-        let mut rate = DeathRate::new(2);
+        let d = |total, young| OwnDeaths { total, young };
+        let mut rate = DeathRate::new(d(2, 1));
         for n in 1..=DEATH_WARN_ABOVE {
-            assert_eq!(rate.observe(2 + n, start), None, "at the baseline");
+            assert_eq!(rate.observe(d(2 + n, 1), start), None, "at the baseline");
         }
         assert_eq!(
-            rate.observe(3 + DEATH_WARN_ABOVE, start),
-            Some(DEATH_WARN_ABOVE + 1)
+            rate.observe(d(3 + DEATH_WARN_ABOVE, 3), start),
+            Some(d(DEATH_WARN_ABOVE + 1, 2)),
+            "young deaths within the window are told apart"
         );
         assert_eq!(
-            rate.observe(4 + DEATH_WARN_ABOVE, start),
+            rate.observe(d(4 + DEATH_WARN_ABOVE, 3), start),
             None,
             "warned once"
         );
         let later = start + DEATH_WINDOW;
         assert_eq!(
-            rate.observe(4 + DEATH_WARN_ABOVE, later),
+            rate.observe(d(4 + DEATH_WARN_ABOVE, 3), later),
             None,
             "the window passed"
         );
-        let mut natural = DeathRate::new(0);
+        let mut natural = DeathRate::new(d(0, 0));
         for hour in 0..48u32 {
             let at = start + Duration::from_secs(u64::from(hour) * 3600);
-            assert_eq!(natural.observe(hour / 5, at), None);
+            assert_eq!(natural.observe(d(hour / 5, hour / 10), at), None);
         }
     }
 

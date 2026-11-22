@@ -36,7 +36,7 @@ pub async fn handle_app_call(
         // refused, and evidence that rotates our General route (plan RV1),
         // as the daemon's dispatch answers it (`rekindle-transport`
         // `subscriptions::dispatch`).
-        match live.answer_probe(&message) {
+        match rekindle_transport::liveness::answer_probe(&message) {
             ProbeAnswer::NotProbe => {}
             ProbeAnswer::Refuse => {
                 live.route_reported();

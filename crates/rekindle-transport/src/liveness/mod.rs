@@ -45,6 +45,18 @@ pub enum ProbeAnswer {
     Refuse,
 }
 
+/// What to answer an inbound call `raw` that may be a liveness probe: every
+/// probe is a peer's (RV1 removed our own self-test probes, so none is ours)
+/// and is refused. It reads only the datagram, so it needs no node state.
+#[must_use]
+pub fn answer_probe(raw: &[u8]) -> ProbeAnswer {
+    if raw.len() == LIVENESS_PROBE_LEN && raw.first() == Some(&LIVENESS_TAG) {
+        ProbeAnswer::Refuse
+    } else {
+        ProbeAnswer::NotProbe
+    }
+}
+
 /// Our General route's state.
 struct GeneralState {
     /// The live route's id these rules are for.
@@ -108,17 +120,6 @@ impl Liveness {
             if state.id.as_deref() == Some(route) {
                 state.rules.heard(Instant::now());
             }
-        }
-    }
-
-    /// What to answer an inbound call `raw` that may be a liveness probe:
-    /// every probe is a peer's and is refused.
-    #[must_use]
-    pub fn answer_probe(&self, raw: &[u8]) -> ProbeAnswer {
-        if raw.len() == LIVENESS_PROBE_LEN && raw.first() == Some(&LIVENESS_TAG) {
-            ProbeAnswer::Refuse
-        } else {
-            ProbeAnswer::NotProbe
         }
     }
 

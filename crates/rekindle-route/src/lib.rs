@@ -4,6 +4,7 @@ pub mod contexts;
 pub mod lifecycle;
 pub mod liveness;
 pub mod ordered_watch;
+pub mod own_route_accounts;
 pub mod own_routes;
 pub mod profile;
 pub mod relay;

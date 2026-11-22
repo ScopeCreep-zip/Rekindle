@@ -17,7 +17,8 @@ pub use record::{
     SetOutcome, Settled, UnsentWrite, ValueChange, ValueChangeReport,
 };
 pub use route::{
-    PeerTarget, RouteBudgetState, RouteClass, RoutePort, RouteState, SaveBudget, WallMs,
+    OwnDeaths, PeerTarget, RouteBudgetState, RouteClass, RoutePauseCause, RoutePort, RouteState,
+    SaveBudget, WallMs,
 };
 
 use std::sync::Arc;

@@ -132,7 +132,7 @@ async fn dispatch_event<H: InboundHandler>(
             message,
             route,
         } => {
-            match routes.liveness.answer_probe(&message) {
+            match crate::liveness::answer_probe(&message) {
                 ProbeAnswer::NotProbe => {}
                 // A peer's probe: its suspect round, its report that our
                 // route failed it (plan LF6): evidence that rotates our

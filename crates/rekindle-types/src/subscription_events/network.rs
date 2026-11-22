@@ -29,6 +29,19 @@ pub enum OwnRouteClass {
     Media,
 }
 
+/// Why a route class is down with no new route allocated (plan RV1, threat
+/// model L2): fail-closed in both cases, never a silent redraw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RoutePauseCause {
+    /// The identity's new-route budget is spent: "inbound route paused
+    /// after repeated failures: possible attack".
+    Exhausted,
+    /// The identity's stored budget could not be read: no new route is paid
+    /// for until it can be (never a full budget in its place).
+    Unreadable,
+}
+
 /// Where the unlocked identity's own-records stage is (plan E2.5 FC3):
 /// whether our profile and mailbox are published yet. Inviting, adding or
 /// accepting a friend and a first message name them, so each waits for
@@ -90,18 +103,26 @@ pub enum NetworkEvent {
     /// Our own allocated private routes died and need reallocation.
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_routes).
     LocalRoutesDied { count: usize },
-    /// The identity's new-route budget is spent, so a route class stays
-    /// down (`paused: true`), or a refill brought it back (plan RV1, threat
-    /// model L2): a window shows "inbound route paused after repeated
-    /// failures: possible attack". Never a silent redraw.
+    /// A route class is down with no new route allocated (plan RV1, threat
+    /// model L2): for `Exhausted` a window shows "inbound route paused after
+    /// repeated failures: possible attack"; for `Unreadable` that the stored
+    /// budget could not be read. Never a silent redraw. A pause always has
+    /// its cause; [`NetworkEvent::RouteResumed {}`] ends it.
     /// Triggered by: the Host following `RoutePort::own_paused`.
-    RoutePaused { paused: bool },
+    RoutePaused { cause: RoutePauseCause },
+    /// The pause ended: a refill paid for a new route (plan RV1).
+    /// Triggered by: the Host following `RoutePort::own_paused`.
+    RouteResumed {},
     /// Own-route deaths of `class` within `window_secs` rose above the
     /// baseline (`baseline`): a warning only, with no automatic reaction
-    /// (plan RV1). Triggered by: the Host's per-class death counts.
+    /// (plan RV1). `young` of them died younger than the young-route age
+    /// (`rekindle_route::budget::YOUNG_ROUTE_AGE`: Veilid's own judgement
+    /// of a route that never passed a test). Triggered by: the Host's
+    /// per-class death counts.
     RouteDeathsAboveBaseline {
         class: OwnRouteClass,
         deaths: u32,
+        young: u32,
         window_secs: u64,
         baseline: u32,
     },

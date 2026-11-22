@@ -170,7 +170,7 @@ impl MockNode {
             peer_count: peer_reg.route_count(),
             route_allocated,
             route_age_secs: None, // No real route to measure age of
-            route_paused: false,  // No budget on the mock
+            route_paused: None,   // No budget on the mock
         }
     }
 

@@ -70,6 +70,8 @@ pub struct App {
     pub(crate) node_was_connected: bool,
     /// The Host's smoothed network bars (`NetworkEvent::Strength`, plan E7.2).
     pub(crate) network_bars: u8,
+    /// The Host's route pause and deaths warning (plan RV1).
+    pub(crate) route_alert: super::components::status_bar::RouteAlert,
     pub(crate) clipboard: Option<arboard::Clipboard>,
     pub(crate) clipboard_clear_at: Option<std::time::Instant>,
     pub(crate) idle_frames: u32,
@@ -150,6 +152,7 @@ impl App {
             loading_spinner: Spinner::new(animations, use_unicode),
             node_was_connected: false,
             network_bars: 0,
+            route_alert: super::components::status_bar::RouteAlert::default(),
             clipboard: None,
             clipboard_clear_at: None,
             idle_frames: 0,

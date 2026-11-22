@@ -29,11 +29,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use rekindle_lifecycle::SessionScope;
-use rekindle_records::port::{RouteClass, RouteState};
+use rekindle_records::port::{
+    OwnDeaths, RouteBudgetState, RouteClass, RoutePauseCause, RouteState,
+};
 use tokio::sync::watch;
 
-use crate::budget::{RouteBudget, RouteBudgetState};
 use crate::ordered_watch::{Follow, OrderedWatch};
+use crate::own_route_accounts::RouteAccounts;
 use crate::route_death::{DeathCause, RouteDeath};
 
 /// Why an allocation did not produce a route.
@@ -114,27 +116,10 @@ impl<Id> Slot<Id> {
 
 pub use rekindle_records::port::{SaveBudget, WallMs};
 
-/// The unlocked identity's new-route budget ([`crate::budget`]).
-struct BudgetHook {
-    state: RouteBudget,
-    wall: WallMs,
-    save: SaveBudget,
-}
-
 /// The node's own routes.
 pub struct OwnRoutes<A: RouteAllocator> {
-    /// The unlocked identity's new-route budget; `None` while locked (no
-    /// route's blob leaves the device then).
-    budget: Mutex<Option<BudgetHook>>,
-    /// Whether a class is down because the budget is spent: the Host
-    /// shows it ("inbound route paused after repeated failures").
-    paused: OrderedWatch<bool>,
-    /// Own-route deaths per class since the node started (General, Media),
-    /// for the Host's above-baseline warning.
-    deaths: [std::sync::atomic::AtomicU32; 2],
-    /// Of those, the routes that died younger than
-    /// [`crate::budget::YOUNG_ROUTE_AGE`] (counted apart, plan RV1).
-    young_deaths: [std::sync::atomic::AtomicU32; 2],
+    /// The new-route budget, the pause and the death counts (plan RV1).
+    accounts: RouteAccounts,
     alloc: A,
     /// Readiness, one watch per waiting class task (RK1).
     ready: Follow<bool>,
@@ -166,10 +151,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
 
     fn with_backoff(alloc: A, ready: Follow<bool>, backoff_min: Duration) -> Arc<Self> {
         Arc::new(Self {
-            budget: Mutex::new(None),
-            paused: OrderedWatch::new(false),
-            deaths: Default::default(),
-            young_deaths: Default::default(),
+            accounts: RouteAccounts::new(),
             alloc,
             ready,
             scope: SessionScope::new(
@@ -294,10 +276,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
 
     /// The identifier-free record of `old`'s death (r7 design §4.6).
     fn death(&self, class: RouteClass, cause: DeathCause, old: &Live<A::Id>) -> RouteDeath {
-        self.deaths[class_index(class)].fetch_add(1, Ordering::SeqCst);
-        if old.at.elapsed() < crate::budget::YOUNG_ROUTE_AGE {
-            self.young_deaths[class_index(class)].fetch_add(1, Ordering::SeqCst);
-        }
+        self.accounts.record_death(class, old.at.elapsed());
         RouteDeath::new(
             class,
             cause,
@@ -309,24 +288,16 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     }
 
     /// Own-route deaths of `class` since the node started (Veilid's reports
-    /// and our rotations).
+    /// and our rotations), young ones counted apart.
     #[must_use]
-    pub fn deaths(&self, class: RouteClass) -> u32 {
-        self.deaths[class_index(class)].load(Ordering::SeqCst)
+    pub fn deaths(&self, class: RouteClass) -> OwnDeaths {
+        self.accounts.deaths(class)
     }
 
-    /// Own-route deaths of `class` younger than
-    /// [`crate::budget::YOUNG_ROUTE_AGE`], since the node started.
+    /// Why a class is down without a new route, if one is, to follow.
     #[must_use]
-    pub fn young_deaths(&self, class: RouteClass) -> u32 {
-        self.young_deaths[class_index(class)].load(Ordering::SeqCst)
-    }
-
-    /// Whether a class is down because the new-route budget is spent, to
-    /// follow.
-    #[must_use]
-    pub fn paused(&self) -> watch::Receiver<bool> {
-        self.paused.subscribe()
+    pub fn paused(&self) -> watch::Receiver<Option<RoutePauseCause>> {
+        self.accounts.paused()
     }
 
     /// Unlock: the identity's new-route budget `state`, read with `wall`
@@ -339,53 +310,34 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         wall: WallMs,
         save: SaveBudget,
     ) {
-        *self.budget.lock() = Some(BudgetHook {
-            state: RouteBudget::from(state),
-            wall,
-            save,
-        });
+        self.accounts.attach(state, wall, save);
         for class in CLASSES {
-            if self.slot(class).current.lock().is_some() && !self.spend() {
+            if self.slot(class).current.lock().is_some() && !self.accounts.spend() {
                 self.pause(class);
             }
         }
     }
 
+    /// Unlock with a stored budget that could not be read: no class is
+    /// paid for, so each live route is released before it is published and
+    /// every class stays down, its cause `Unreadable` (fail-closed).
+    pub fn attach_unreadable_budget(self: &Arc<Self>) {
+        self.accounts.attach_unreadable();
+        for class in CLASSES {
+            self.pause(class);
+        }
+    }
+
     /// Lock: the identity's budget is no longer ours to spend.
     pub fn detach_budget(&self) {
-        *self.budget.lock() = None;
+        self.accounts.detach();
     }
 
     /// Spend a token for a route whose blob leaves the device but which we
     /// do not own here (a relay offer): `false` when the budget is spent or
-    /// no identity is unlocked.
+    /// unreadable, or no identity is unlocked.
     pub fn spend_external(&self) -> bool {
-        self.budget.lock().is_some() && self.spend()
-    }
-
-    /// Spend one token for a new route of ours; `true` while locked (the
-    /// route is not published until an unlock pays for it).
-    fn spend(&self) -> bool {
-        let mut guard = self.budget.lock();
-        let Some(hook) = guard.as_mut() else {
-            return true;
-        };
-        let now = (hook.wall)();
-        if !hook.state.try_spend(now) {
-            return false;
-        }
-        (hook.save)(hook.state.state());
-        drop(guard);
-        self.paused.send_replace(false);
-        true
-    }
-
-    /// Whether a new route of ours could be paid for now.
-    fn can_spend(&self) -> bool {
-        self.budget
-            .lock()
-            .as_ref()
-            .is_none_or(|hook| hook.state.can_spend((hook.wall)()))
+        self.accounts.spend_external()
     }
 
     /// The class cannot be paid for: its live route (if any) is released,
@@ -396,8 +348,12 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             self.alloc.release(&live.id);
         }
         slot.state.send_replace(RouteState::Allocating);
-        tracing::warn!(?class, "new-route budget spent; the class stays down");
-        self.paused.send_replace(true);
+        let cause = self.accounts.mark_paused();
+        tracing::warn!(
+            ?class,
+            ?cause,
+            "no new route can be paid for; the class stays down"
+        );
     }
 
     /// Release the routes of `class` that [`Self::replace`] retired, once
@@ -533,7 +489,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             // Every new route spends from the budget once it lands (a
             // `TryAgain` spends nothing); an empty one leaves the class
             // down, never a silent redraw (plan RV1).
-            if !self.can_spend() {
+            if !self.accounts.can_spend() {
                 self.pause(class);
                 return;
             }
@@ -546,7 +502,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                         self.alloc.release(&id);
                         return;
                     }
-                    if !self.spend() {
+                    if !self.accounts.spend() {
                         self.alloc.release(&id);
                         self.pause(class);
                         return;
@@ -587,13 +543,6 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 }
             }
         }
-    }
-}
-
-fn class_index(class: RouteClass) -> usize {
-    match class {
-        RouteClass::General => 0,
-        RouteClass::Media => 1,
     }
 }
 

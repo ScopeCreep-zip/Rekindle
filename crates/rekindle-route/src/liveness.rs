@@ -139,7 +139,7 @@ impl InboundLiveness {
             .hints
             .get(peer)
             .is_some_and(|at| now.duration_since(*at) < HINT_WINDOW);
-        if hinted {
+        if !hinted {
             self.ahead.entry(peer.to_owned()).or_insert(now);
         }
     }

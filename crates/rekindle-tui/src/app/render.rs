@@ -67,6 +67,7 @@ impl App {
                 node_attached: self.node_was_connected,
                 bars: self.network_bars,
                 hints: hints_line,
+                route_alert: self.route_alert.text(),
             },
             &self.theme,
         );

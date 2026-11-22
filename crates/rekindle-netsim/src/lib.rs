@@ -378,6 +378,29 @@ impl Netsim {
         );
     }
 
+    /// A stray app call reaches `to` from `from` (any node may call any
+    /// route it holds), with no one waiting on its answer: the receiver's
+    /// reply finds no waiter and is ignored, as an expired call's is
+    /// ([`FakeMessages::reply`](crate::messages)). A forged signal (plan RV1).
+    pub fn stray_call(&self, from: usize, to: usize, message: Vec<u8>) {
+        let call_id = {
+            let mut inner = self.net.inner.lock();
+            inner.next_call += 1;
+            inner.next_call
+        };
+        self.net.send(
+            from,
+            to,
+            "AppCall",
+            PortEvent::AppCall {
+                call_id: rekindle_records::port::AppCallId(call_id),
+                message,
+                route: None,
+            },
+            true,
+        );
+    }
+
     /// The blobs of `node`'s live general routes, as a peer who reached
     /// it would hold them (for an outsider in a scenario).
     #[must_use]

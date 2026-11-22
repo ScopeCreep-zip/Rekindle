@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_lifecycle::SessionScope;
-use rekindle_records::port::{RouteBudgetState, RouteClass, RoutePort};
+use rekindle_records::port::{RouteBudgetState, RouteClass, RoutePauseCause, RoutePort};
 use rekindle_route::budget::{DeathRate, RouteBudget, DEATH_WARN_ABOVE, DEATH_WINDOW};
 use rekindle_transport::operations::friend::FriendHost;
 use rekindle_types::subscription_events::{NetworkEvent, OwnRouteClass, SubscriptionEvent};
@@ -27,8 +27,9 @@ const DEATH_CHECK: Duration = Duration::from_secs(30);
 
 /// Unlock: attach the identity `owner`'s budget to the route owner and
 /// start telling the pause and the death warnings on `scope`. A budget that
-/// cannot be read attaches empty: the classes stay down and the pause
-/// shows (never an unbounded redraw).
+/// cannot be read is logged and attached as unreadable: nothing is paid
+/// for, every class stays down and the pause shows its cause `Unreadable`
+/// (fail-closed and visible, never a full budget in its place).
 pub(crate) async fn attach(ctx: &DaemonContext, scope: &Arc<SessionScope>, owner: &str) {
     let Some(transport) = ctx.transport.read().clone() else {
         return;
@@ -55,29 +56,29 @@ pub(crate) async fn attach(ctx: &DaemonContext, scope: &Arc<SessionScope>, owner
         });
     });
     let state = match row {
-        Ok(Some((tokens, refilled_ms, week_start_ms, week_spent))) => RouteBudgetState {
+        Ok(Some((tokens, refilled_ms, week_start_ms, week_spent))) => Some(RouteBudgetState {
             tokens,
             refilled_ms,
             week_start_ms,
             week_spent,
-        },
+        }),
         Ok(None) => {
             let full = RouteBudget::full(now).state();
             save(full);
-            full
+            Some(full)
         }
         Err(e) => {
-            tracing::warn!(error = %e, "route budget unreadable; routes stay down");
-            RouteBudgetState {
-                tokens: 0,
-                refilled_ms: now,
-                week_start_ms: now,
-                week_spent: 0,
-            }
+            tracing::error!(error = %e, "route budget unreadable; every route class stays down");
+            None
         }
     };
-    let clock = Arc::clone(&ctx.clock);
-    routes.attach_budget(state, Arc::new(move || clock.now_ms()), save);
+    match state {
+        Some(state) => {
+            let clock = Arc::clone(&ctx.clock);
+            routes.attach_budget(state, Arc::new(move || clock.now_ms()), save);
+        }
+        None => routes.attach_unreadable_budget(),
+    }
     let friends = super::adapters::friends::HostFriends::of(ctx);
     let paused_routes = Arc::clone(&routes);
     let paused_friends = friends.clone();
@@ -103,13 +104,18 @@ async fn tell_paused(
 ) {
     let mut paused = routes.own_paused();
     loop {
-        let now = *paused.borrow_and_update();
-        if now {
-            tracing::warn!("inbound route paused after repeated failures: possible attack");
-        }
-        friends.publish(SubscriptionEvent::Network(NetworkEvent::RoutePaused {
-            paused: now,
-        }));
+        let event = match *paused.borrow_and_update() {
+            Some(cause @ RoutePauseCause::Exhausted) => {
+                tracing::warn!("inbound route paused after repeated failures: possible attack");
+                NetworkEvent::RoutePaused { cause }
+            }
+            Some(cause @ RoutePauseCause::Unreadable) => {
+                tracing::error!("inbound route paused: the stored route budget is unreadable");
+                NetworkEvent::RoutePaused { cause }
+            }
+            None => NetworkEvent::RouteResumed {},
+        };
+        friends.publish(SubscriptionEvent::Network(event));
         let changed = stop.run_until_cancelled(paused.changed()).await;
         if !matches!(changed, Some(Ok(()))) {
             return;
@@ -141,11 +147,17 @@ async fn watch_deaths(
         let now = tokio::time::Instant::now();
         for ((class, shown), rate) in classes.iter().zip(rates.iter_mut()) {
             if let Some(deaths) = rate.observe(routes.own_deaths(*class), now) {
-                tracing::warn!(?class, deaths, "own-route deaths above the baseline");
+                tracing::warn!(
+                    ?class,
+                    deaths = deaths.total,
+                    young = deaths.young,
+                    "own-route deaths above the baseline"
+                );
                 friends.publish(SubscriptionEvent::Network(
                     NetworkEvent::RouteDeathsAboveBaseline {
                         class: *shown,
-                        deaths,
+                        deaths: deaths.total,
+                        young: deaths.young,
                         window_secs: DEATH_WINDOW.as_secs(),
                         baseline: DEATH_WARN_ABOVE,
                     },

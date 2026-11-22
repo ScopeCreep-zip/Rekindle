@@ -39,19 +39,24 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
             h.update(&[*phase as u8]);
             h.update(error.as_deref().unwrap_or_default().as_bytes());
         }
-        NetworkEvent::RoutePaused { paused } => {
+        NetworkEvent::RoutePaused { cause } => {
             h.update(b"route_paused|");
-            h.update(&[u8::from(*paused)]);
+            h.update(&[*cause as u8]);
+        }
+        NetworkEvent::RouteResumed {} => {
+            h.update(b"route_resumed|");
         }
         NetworkEvent::RouteDeathsAboveBaseline {
             class,
             deaths,
+            young,
             window_secs,
             baseline,
         } => {
             h.update(b"route_deaths|");
             h.update(&[*class as u8]);
             h.update(&deaths.to_le_bytes());
+            h.update(&young.to_le_bytes());
             h.update(&window_secs.to_le_bytes());
             h.update(&baseline.to_le_bytes());
         }

@@ -16,6 +16,17 @@ pub fn route_status(state: &AppState) -> (bool, RouteAvailability) {
     (routes.blob(RouteClass::General).is_some(), media)
 }
 
+/// Why a route class is down with no new route (plan RV1), read from the
+/// route owner the Host's `RoutePort::own_paused` follows; `None` with no
+/// node.
+pub fn route_paused(
+    state: &AppState,
+) -> Option<rekindle_types::subscription_events::RoutePauseCause> {
+    let routes = state.own_routes.read().clone()?;
+    let cause = *routes.paused().borrow();
+    cause
+}
+
 /// Build and emit a network attachment event from current `NodeHandle` state.
 ///
 /// Also drives the lifecycle's attachment edges (until E5.7 moves

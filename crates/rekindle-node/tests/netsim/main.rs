@@ -129,6 +129,7 @@ mod role_assign;
 mod roster_convergence;
 mod rotation;
 mod rotation_routes;
+mod route_budget;
 mod route_link_failure;
 mod route_liveness;
 mod routeless_request;

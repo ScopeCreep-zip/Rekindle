@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use tokio::sync::watch;
 
+pub use rekindle_types::subscription_events::RoutePauseCause;
+
 use super::PortError;
 
 /// A peer's imported private route, by its route id text. Opaque: only a
@@ -38,6 +40,16 @@ pub struct RouteBudgetState {
     pub week_start_ms: u64,
     /// Tokens spent since `week_start_ms`.
     pub week_spent: u32,
+}
+
+/// Own-route deaths of one class since the node started (plan RV1).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OwnDeaths {
+    /// Every death: the network's reports and our rotations on evidence.
+    pub total: u32,
+    /// Of those, the routes that died younger than
+    /// `rekindle_route::budget::YOUNG_ROUTE_AGE`, counted apart.
+    pub young: u32,
 }
 
 /// The wall clock (ms) the budget reads.
@@ -163,6 +175,11 @@ pub trait RoutePort: Send + Sync {
     /// stays down.
     fn attach_budget(&self, state: RouteBudgetState, wall: WallMs, save: SaveBudget);
 
+    /// Unlock with a stored budget that could not be read: nothing is paid
+    /// for, so every class stays down with the pause's cause
+    /// `Unreadable` (fail-closed, never a full budget in its place).
+    fn attach_unreadable_budget(&self);
+
     /// Lock: the identity's budget is no longer ours to spend.
     fn detach_budget(&self);
 
@@ -171,10 +188,10 @@ pub trait RoutePort: Send + Sync {
     /// budget is spent or no identity is unlocked.
     fn spend_budget(&self) -> bool;
 
-    /// Whether a class is down because the budget is spent, to follow.
-    fn own_paused(&self) -> watch::Receiver<bool>;
+    /// Why a class is down with no new route, if one is, to follow.
+    fn own_paused(&self) -> watch::Receiver<Option<RoutePauseCause>>;
 
     /// Own-route deaths of `class` since the node started (the network's
-    /// reports and our rotations on evidence).
-    fn own_deaths(&self, class: RouteClass) -> u32;
+    /// reports and our rotations on evidence), young ones counted apart.
+    fn own_deaths(&self, class: RouteClass) -> OwnDeaths;
 }

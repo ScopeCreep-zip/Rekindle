@@ -389,6 +389,10 @@ impl RoutePort for FakeRoutes {
         self.own.attach_budget(state, wall, save);
     }
 
+    fn attach_unreadable_budget(&self) {
+        self.own.attach_unreadable_budget();
+    }
+
     fn detach_budget(&self) {
         self.own.detach_budget();
     }
@@ -397,11 +401,11 @@ impl RoutePort for FakeRoutes {
         self.own.spend_external()
     }
 
-    fn own_paused(&self) -> watch::Receiver<bool> {
+    fn own_paused(&self) -> watch::Receiver<Option<rekindle_records::port::RoutePauseCause>> {
         self.own.paused()
     }
 
-    fn own_deaths(&self, class: RouteClass) -> u32 {
+    fn own_deaths(&self, class: RouteClass) -> rekindle_records::port::OwnDeaths {
         self.own.deaths(class)
     }
 }

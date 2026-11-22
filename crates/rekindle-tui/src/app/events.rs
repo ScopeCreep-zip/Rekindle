@@ -126,15 +126,18 @@ impl App {
             NetworkEvent::AttachmentChanged { is_attached, .. } => {
                 self.node_was_connected = *is_attached;
             }
-            // Routed by the caller's other arms. Plan RV1: the pause shows
-            // from the status snapshot's `route_paused`; the death warning
-            // lands in the log (frontend track).
+            // Plan RV1: the pause and the deaths warning show in the
+            // status line.
+            NetworkEvent::RoutePaused { .. }
+            | NetworkEvent::RouteResumed {}
+            | NetworkEvent::RouteDeathsAboveBaseline { .. } => {
+                self.route_alert.fold(event);
+            }
+            // Routed by the caller's other arms.
             NetworkEvent::LocalRoutesDied { .. }
             | NetworkEvent::RemoteRoutesDied { .. }
             | NetworkEvent::ValueChanged { .. }
-            | NetworkEvent::OwnRecordsChanged { .. }
-            | NetworkEvent::RoutePaused { .. }
-            | NetworkEvent::RouteDeathsAboveBaseline { .. } => {}
+            | NetworkEvent::OwnRecordsChanged { .. } => {}
         }
         Action::Render
     }
@@ -159,9 +162,14 @@ impl App {
                 rekindle_types::subscription_events::PresenceEvent::SelfChanged { snapshot, .. },
             ) => Some(Action::OwnPresence(Box::new(snapshot))),
             // The status bar's network indicator (plan E7.2): the Host's
-            // smoothed bars and whether the node is attached.
+            // smoothed bars and whether the node is attached; its route
+            // warnings (plan RV1).
             SubscriptionEvent::Network(
-                event @ (NetworkEvent::Strength { .. } | NetworkEvent::AttachmentChanged { .. }),
+                event @ (NetworkEvent::Strength { .. }
+                | NetworkEvent::AttachmentChanged { .. }
+                | NetworkEvent::RoutePaused { .. }
+                | NetworkEvent::RouteResumed {}
+                | NetworkEvent::RouteDeathsAboveBaseline { .. }),
             ) => Some(self.network_event(&event)),
             // ── Events forwarded to active view (real-time data push) ─────
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New { .. }) => {

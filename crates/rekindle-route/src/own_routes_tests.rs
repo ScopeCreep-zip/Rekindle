@@ -300,8 +300,16 @@ async fn a_signal_storm_spends_the_budget_and_the_class_stays_down() {
         *routes.state(RouteClass::General).borrow(),
         RouteState::Allocating
     );
-    assert!(*routes.paused().borrow(), "the Host is told");
-    assert_eq!(routes.deaths(RouteClass::General), 3);
+    assert_eq!(
+        *routes.paused().borrow(),
+        Some(RoutePauseCause::Exhausted),
+        "the Host is told"
+    );
+    assert_eq!(
+        routes.deaths(RouteClass::General),
+        OwnDeaths { total: 3, young: 3 },
+        "each died within a minute of landing: young, counted apart"
+    );
 }
 
 /// Plan RV1: an unlock whose budget is empty releases the live route it
@@ -315,11 +323,48 @@ async fn an_empty_budget_refuses_and_releases() {
     let saved = attach(&routes, 0);
     assert!(saved.lock().is_empty());
     assert_eq!(*fake.released.lock(), vec![1]);
-    assert!(*routes.paused().borrow());
+    assert_eq!(*routes.paused().borrow(), Some(RoutePauseCause::Exhausted));
     assert!(!routes.spend_external(), "no relay route past the cap");
     routes.want(RouteClass::General);
     settle().await;
     assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "nothing drawn");
+}
+
+/// Plan RV1: a stored budget that cannot be read pays for nothing: the live
+/// routes are released before they are published, every class stays down
+/// with the cause `Unreadable`, no route is drawn and no relay is offered
+/// (fail-closed and visible, never a full budget in its place).
+#[tokio::test]
+async fn an_unreadable_budget_keeps_every_class_down_and_says_why() {
+    let fake = Arc::new(Fake::new(many(5)));
+    let (routes, _ready) = owner(&fake, true);
+    routes.want_all();
+    settle().await;
+    routes.attach_unreadable_budget();
+    assert_eq!(*routes.paused().borrow(), Some(RoutePauseCause::Unreadable));
+    assert_eq!(routes.id(RouteClass::General), None);
+    assert_eq!(routes.id(RouteClass::Media), None);
+    assert_eq!(fake.released.lock().len(), 2);
+    assert!(!routes.spend_external());
+    routes.want_all();
+    settle().await;
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 2, "nothing drawn");
+}
+
+/// Plan RV1: a route that dies after the young-route age is not young.
+#[tokio::test(start_paused = true)]
+async fn a_death_past_the_young_age_is_not_young() {
+    let fake = Arc::new(Fake::new(many(5)));
+    let (routes, _ready) = owner(&fake, true);
+    routes.want(RouteClass::General);
+    settle().await;
+    tokio::time::sleep(crate::budget::YOUNG_ROUTE_AGE).await;
+    routes.on_dead(&[1]);
+    settle().await;
+    assert_eq!(
+        routes.deaths(RouteClass::General),
+        OwnDeaths { total: 1, young: 0 }
+    );
 }
 
 /// Plan RV1: no route is drawn on a timer: a live route stays for days.

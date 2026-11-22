@@ -73,7 +73,7 @@ impl QueryEngine {
         &self,
         shared: &SharedState,
         route_allocated: bool,
-        route_paused: bool,
+        route_paused: Option<rekindle_types::subscription_events::RoutePauseCause>,
     ) -> TransportSnapshot {
         TransportSnapshot {
             attachment: shared.attachment_state().to_string(),
