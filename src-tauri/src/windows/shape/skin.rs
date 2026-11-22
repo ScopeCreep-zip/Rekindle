@@ -46,17 +46,15 @@ pub const fn kind_of(frame: SkinWindow) -> WindowKind {
 }
 
 /// The smallest window (logical px) that holds `frame` of `frames`: the
-/// layout's `min_*` (the smallest frame its tiles fit, plan SK0 S1) grown by
-/// its `outsets`, as the window is the frame grown by them. `None` when the
-/// skin lays no frame for that kind.
+/// skin crate's [`rekindle_skin::shape::min_window`] of its served layout,
+/// the same value the Host serves on the window's shell (plan SK4). `None`
+/// when the skin lays no frame for that kind (or a minimum past `u16`,
+/// which the helper never passes).
 #[must_use]
 pub fn min_window(frames: &SkinFrameMap, frame: Option<SkinWindow>) -> Option<(f64, f64)> {
     let (layout, _) = frame.and_then(|f| frames.get(&f))?;
-    let o = &layout.outsets;
-    Some((
-        f64::from(layout.min_width) + f64::from(o.left) + f64::from(o.right),
-        f64::from(layout.min_height) + f64::from(o.top) + f64::from(o.bottom),
-    ))
+    let (w, h) = rekindle_skin::shape::min_window(layout)?;
+    Some((f64::from(w), f64::from(h)))
 }
 
 /// The size (logical px) to grow a window of `current` to so it holds

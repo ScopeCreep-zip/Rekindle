@@ -30,7 +30,7 @@ use crate::regions::labels::label_css;
 use crate::regions::still;
 use crate::regions::title::title_css;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
-use crate::shape::{self, frame_css};
+use crate::shape;
 use crate::{manifest, tokens};
 
 /// The stylesheet's file name.
@@ -140,7 +140,9 @@ pub struct Stylesheet {
     pub base: SkinBase,
     pub css: String,
     pub regions: Vec<String>,
-    /// [`sheet_images`] of `css`: every image href the stylesheet draws.
+    /// [`sheet_images`] of the shared rules (regions, titles, labels,
+    /// frames): every image href any window's sheet may draw; each tree's
+    /// own art is on its shell (plan SK4).
     pub images: Vec<String>,
     /// [`crate::generate::tui_colours`] of the active variant.
     pub palette: Vec<SkinPaletteColour>,
@@ -173,7 +175,7 @@ fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
 /// The stylesheet of the canonical package `bytes` at `address`: the
 /// active variant's resolved tokens, then the region rules with images
 /// under `{origin}/{address}`, then the window frames
-/// ([`frame_css`], plan SK0 S2).
+/// ([`shape::frame_css`], plan SK0 S2).
 ///
 /// # Errors
 /// The package, its manifest or its tokens do not read, or a region does
@@ -188,22 +190,58 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
     css.push_str(&skin_css(&m, &images, &base).ok_or_else(|| unreadable("regions"))?);
     css.push_str(&title_css(&m, &images, &resolved));
     css.push_str(&label_css(&m, &images, &resolved));
-    css.push_str(&frame_css(&m, &images, &base).ok_or_else(|| unreadable("frame"))?);
+    let (frame, trees) =
+        shape::frame_parts(&m, &images, &base).ok_or_else(|| unreadable("frame"))?;
+    let mut shared_css = css.clone();
+    shared_css.push_str(&frame);
+    let shared = sheet_images(&shared_css, &base);
+    css.push_str(&shape::layered(&frame, &trees));
     Ok(Stylesheet {
         base: v.base,
-        images: sheet_images(&css, &base),
+        shells: shells(&m, &trees, &shared, &base)?,
+        images: shared,
         css,
         regions: m.regions.keys().cloned().collect(),
         palette: tui_colours(&resolved),
-        shells: m
-            .windows
-            .iter()
-            .flat_map(|(&w, l)| {
-                let popups = l.popups.iter().map(move |(n, p)| p.shell(w, n));
-                l.tree.iter().map(move |t| t.shell(w)).chain(popups)
-            })
-            .collect(),
     })
+}
+
+/// Each tree-laid window kind's shell and each of its popups', in
+/// [`shape::frame_parts`]' order: its served minimum ([`shape::min_window`])
+/// and the images its own rules draw that `shared` does not list (plan
+/// SK4: a window decodes only the shared images and its own shell's).
+fn shells(
+    m: &SkinManifest,
+    trees: &[shape::TreeSheet],
+    shared: &[String],
+    base: &str,
+) -> Result<Vec<SkinShell>, SkinError> {
+    let own = |css: &str| -> Vec<String> {
+        sheet_images(css, base)
+            .into_iter()
+            .filter(|h| !shared.contains(h))
+            .collect()
+    };
+    trees
+        .iter()
+        .map(|t| {
+            let layout = m.windows.get(&t.window).ok_or_else(|| unreadable("tree"))?;
+            let shell = match &t.popup {
+                None => {
+                    let tree = layout.tree.as_ref().ok_or_else(|| unreadable("tree"))?;
+                    let min = shape::min_window(layout).ok_or_else(|| unreadable("minimum"))?;
+                    tree.shell(t.window, min, own(&t.css))
+                }
+                Some(name) => {
+                    let popup = layout.popups.get(name).ok_or_else(|| unreadable("popup"))?;
+                    let frame = crate::skin_tree::popup::frame(popup, layout.min_height);
+                    let min = shape::min_window(&frame).ok_or_else(|| unreadable("minimum"))?;
+                    popup.shell(t.window, name, min, own(&t.css))
+                }
+            };
+            Ok(shell)
+        })
+        .collect()
 }
 
 /// Every distinct image href under `base` that `css` draws, in order: read
@@ -345,10 +383,18 @@ mod tests {
             let a = c.address();
             let applied = stylesheet(&c.bytes, &a).unwrap();
             assert!(!applied.images.is_empty(), "{}", pack.id);
-            let listed: std::collections::BTreeSet<&str> =
+            let shared: std::collections::BTreeSet<&str> =
                 applied.images.iter().map(String::as_str).collect();
-            assert_eq!(listed.len(), applied.images.len(), "{} twice", pack.id);
-            for href in &applied.images {
+            assert_eq!(shared.len(), applied.images.len(), "{} twice", pack.id);
+            let mut listed = shared.clone();
+            for shell in &applied.shells {
+                let own: std::collections::BTreeSet<&str> =
+                    shell.images.iter().map(String::as_str).collect();
+                assert_eq!(own.len(), shell.images.len(), "{} twice", pack.id);
+                assert!(own.is_disjoint(&shared), "{} shares tree art", pack.id);
+                listed.extend(own);
+            }
+            for href in &listed {
                 let path = href.strip_prefix(origin()).expect("under the origin");
                 assert!(parse_path(path).is_some(), "{href} is no served file");
                 assert!(applied.css.contains(&format!("url(\"{href}\")")), "{href}");
@@ -358,6 +404,71 @@ mod tests {
                 assert!(listed.contains(href), "{} draws {href} unlisted", pack.id);
             }
         }
+    }
+
+    /// Plan SK4: the shared list a window without a tree (Settings)
+    /// decodes holds no tree art, each tree's art is on its own shell, and
+    /// no image is lost (the union is the whole sheet's list).
+    #[test]
+    fn a_trees_art_is_served_on_its_shell_and_none_is_lost() {
+        let symbiosis = builtin::PACKS.iter().find(|p| p.id == "symbiosis").unwrap();
+        for pack in &builtin::PACKS {
+            let c = validate::run(pack.bytes).unwrap();
+            let a = c.address();
+            let applied = stylesheet(&c.bytes, &a).unwrap();
+            let whole: std::collections::BTreeSet<String> =
+                sheet_images(&applied.css, &format!("{}/{a}", origin()))
+                    .into_iter()
+                    .collect();
+            let mut union: std::collections::BTreeSet<String> =
+                applied.images.iter().cloned().collect();
+            for shell in &applied.shells {
+                union.extend(shell.images.iter().cloned());
+            }
+            assert_eq!(union, whole, "{}", pack.id);
+            let p = package::read(&c.bytes).unwrap();
+            let m = manifest::served(&p).unwrap();
+            let base = format!("{}/{a}", origin());
+            let (_, trees) = shape::frame_parts(&m, &files(&p), &base).unwrap();
+            for href in &applied.images {
+                let outside = applied.css.matches(&format!("url(\"{href}\")")).count()
+                    > trees
+                        .iter()
+                        .map(|t| t.css.matches(&format!("url(\"{href}\")")).count())
+                        .sum::<usize>();
+                assert!(outside, "{}: {href} is tree art only", pack.id);
+            }
+            if pack.id == symbiosis.id {
+                let art: usize = applied.shells.iter().map(|s| s.images.len()).sum();
+                assert!(art > applied.images.len(), "{}", pack.id);
+            }
+        }
+    }
+
+    /// Plan SK4: a tree-laid window's shell serves its minimum with the
+    /// frame's outsets, the value the desktop's fit applies
+    /// ([`shape::min_window`]); Symbiosis's main window is 368 wide.
+    #[test]
+    fn a_shell_serves_its_windows_minimum_with_the_outsets() {
+        let pack = builtin::PACKS.iter().find(|p| p.id == "symbiosis").unwrap();
+        let c = validate::run(pack.bytes).unwrap();
+        let applied = stylesheet(&c.bytes, &c.address()).unwrap();
+        let p = package::read(&c.bytes).unwrap();
+        let m = manifest::served(&p).unwrap();
+        let main = &m.windows[&rekindle_types::dto::skin::SkinWindow::Main];
+        let shell = applied
+            .shells
+            .iter()
+            .find(|s| s.window == rekindle_types::dto::skin::SkinWindow::Main && s.popup.is_none())
+            .unwrap();
+        assert_eq!(shell.min_width, 368);
+        assert_eq!(
+            Some((shell.min_width, shell.min_height)),
+            shape::min_window(main)
+        );
+        let o = main.outsets;
+        assert_eq!(shell.min_width, main.min_width + o.left + o.right);
+        assert_eq!(shell.min_height, main.min_height + o.top + o.bottom);
     }
 
     #[test]

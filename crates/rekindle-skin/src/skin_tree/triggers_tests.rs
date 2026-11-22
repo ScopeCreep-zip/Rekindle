@@ -78,7 +78,7 @@ fn a_pack_trigger_round_trips_into_the_node() {
     let json = serde_json::to_string(&tree).unwrap();
     let back: SkinTree = serde_json::from_str(&json).unwrap();
     assert_eq!(back, tree);
-    let shell = tree.shell(SkinWindow::Main);
+    let shell = tree.shell(SkinWindow::Main, (0, 0), Vec::new());
     let shelled = &shell.root[0].children[0];
     assert_eq!(shelled.triggers, close.triggers);
 }

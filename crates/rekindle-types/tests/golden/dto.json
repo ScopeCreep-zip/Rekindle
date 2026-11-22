@@ -1347,6 +1347,9 @@
     "kind": "transfer"
   },
   "skin.shell": {
+    "images": [
+      "skin://app/0123/abcd.png"
+    ],
     "menus": {
       "menus": [
         {
@@ -1564,6 +1567,8 @@
         }
       ]
     },
+    "minHeight": 400,
+    "minWidth": 368,
     "root": [
       {
         "children": [
