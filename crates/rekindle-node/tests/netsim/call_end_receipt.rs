@@ -16,7 +16,7 @@ use crate::harness::{eventually, start, SimNode};
 use crate::pair::{befriend, key, talk, LIMIT};
 
 /// A day past the simulated epoch: no run here reaches it.
-const DEADLINE_MS: i64 = SIM_EPOCH_MS as i64 + 86_400_000;
+const DEADLINE_MS: i64 = SIM_EPOCH_MS.cast_signed() + 86_400_000;
 
 /// Commit a `CallEnd` from `from` to `to` as the desktop's hang-up does.
 async fn hang_up(from: &SimNode, to: &SimNode) -> String {
