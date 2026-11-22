@@ -178,6 +178,7 @@ export function transformCommunityDetail(c: {
   myPermissions: string; myChannelPermissions: Record<string, string>;
   memberRegistryKey?: string; anchor?: string | null;
   onboardingComplete?: boolean;
+  weAreCreator: boolean;
   myBio?: string | null; myPronouns?: string | null;
   myThemeColor?: number | null; myBadges?: string[];
   removed?: {
@@ -202,6 +203,7 @@ export function transformCommunityDetail(c: {
     events: [],
     memberRegistryKey: c.memberRegistryKey, anchor: c.anchor ?? null,
     onboardingComplete: c.onboardingComplete ?? true,
+    weAreCreator: c.weAreCreator,
     expressions: [],
     automodRules: [],
     myBio: c.myBio ?? null,

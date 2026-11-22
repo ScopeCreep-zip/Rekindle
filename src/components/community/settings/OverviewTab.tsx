@@ -4,6 +4,7 @@ import { handleUpdateCommunityInfo } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import { ICON_SAVE, ICON_COPY } from "../../../icons";
 import FormField from "../../common/FormField";
+import SuccessorSection from "./SuccessorSection";
 
 interface OverviewTabProps {
   community: Community;
@@ -85,6 +86,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
           </button>
         </div>
       </FormField>
+      <SuccessorSection communityId={props.community.id} />
       <Show when={props.canManage}>
         <div class="settings-actions-sticky">
           <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>

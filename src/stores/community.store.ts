@@ -240,6 +240,8 @@ export interface Community {
   onboardingConfig?: OnboardingConfig;
   welcomeScreen?: WelcomeScreen;
   onboardingComplete?: boolean;
+  /** We hold a creator seat, as the Host states it (`CommunityView::we_are_creator`). */
+  weAreCreator: boolean;
   expressions: Expression[];
   automodRules: AutoModRule[];
   /** Our per-community profile bio (≤190 chars). Local-only; resets to undefined on restart. */
