@@ -71,6 +71,22 @@ fn unread_changed_never_deduped() {
     assert_eq!(dedup.suppressed_count(), 0);
 }
 
+/// Stop, start, stop: the same `paused` state twice is two real
+/// changes, so neither is suppressed (plan E7.2 G12).
+#[test]
+fn transfer_events_never_deduped() {
+    use rekindle_types::dto::transfer::TransferState;
+    use rekindle_types::subscription_events::TransferEvent;
+    let mut dedup = EventDedup::new(100, 300);
+    let event = SubscriptionEvent::Transfer(TransferEvent::StateChanged {
+        attachment_id: "att".into(),
+        state: TransferState::Paused,
+    });
+    assert!(dedup.check(&event, NOW_MS));
+    assert!(dedup.check(&event, NOW_MS));
+    assert_eq!(dedup.suppressed_count(), 0);
+}
+
 #[test]
 fn capacity_eviction() {
     let mut dedup = EventDedup::new(2, 300);

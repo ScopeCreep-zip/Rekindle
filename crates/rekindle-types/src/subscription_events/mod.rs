@@ -126,13 +126,14 @@ pub enum EventCategory {
     Notification,
     Network,
     System,
+    Transfer,
     UnreadChanged,
     Intent,
 }
 
 impl EventCategory {
     /// Every category, for subscribers that want all of them.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::ChannelMessage,
         Self::Typing,
         Self::Presence,
@@ -147,6 +148,7 @@ impl EventCategory {
         Self::Notification,
         Self::Network,
         Self::System,
+        Self::Transfer,
         Self::UnreadChanged,
         Self::Intent,
     ];
@@ -169,7 +171,8 @@ impl SubscriptionEvent {
             Self::Call(_) => EventCategory::Call,
             Self::Notification(_) => EventCategory::Notification,
             Self::Network(_) => EventCategory::Network,
-            Self::System(_) | Self::Transfer(_) => EventCategory::System,
+            Self::System(_) => EventCategory::System,
+            Self::Transfer(_) => EventCategory::Transfer,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
             Self::IntentPending(_) => EventCategory::Intent,
         }

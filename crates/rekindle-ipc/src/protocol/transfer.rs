@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use rekindle_types::dto::transfer::TransferTarget;
+
 use crate::message::SecurityLevel;
 use crate::protocol::{AgentCapability, Lane};
 
@@ -13,8 +15,17 @@ use crate::protocol::{AgentCapability, Lane};
 pub enum TransferRequest {
     /// Every transfer, newest first (`TransferRow`s).
     TransferList,
-    /// Resume a paused or failed download from its checkpoint.
-    TransferStart { attachment_id: String },
+    /// Resume a paused or failed download from its checkpoint, or start
+    /// a never-fetched attachment of `target`: without `dest` the Host
+    /// answers `SkinRun::Shell(ShellOp::ChooseDownloadDest)`, the shell
+    /// asks the user where to save (the native save dialog
+    /// `download_attachment` uses), then sends this again with `dest`.
+    /// The answer is `None` once the download has finished.
+    TransferStart {
+        attachment_id: String,
+        target: TransferTarget,
+        dest: Option<String>,
+    },
     /// Pause a running download; its held chunks stay cached.
     TransferStop { attachment_id: String },
     /// The finished file to reveal in the OS file manager
@@ -66,7 +77,7 @@ impl TransferRequest {
     pub fn attachment_id(&self) -> Option<&str> {
         match self {
             Self::TransferList => None,
-            Self::TransferStart { attachment_id }
+            Self::TransferStart { attachment_id, .. }
             | Self::TransferStop { attachment_id }
             | Self::TransferOpen { attachment_id }
             | Self::TransferRemove { attachment_id, .. } => Some(attachment_id),
@@ -79,6 +90,11 @@ impl std::fmt::Debug for TransferRequest {
         let mut d = f.debug_struct(self.name());
         if let Some(id) = self.attachment_id() {
             d.field("attachment_id", &id);
+        }
+        // A destination is a local path (it names the OS user): only
+        // whether one was given is logged.
+        if let Self::TransferStart { dest, .. } = self {
+            d.field("dest", &dest.is_some());
         }
         if let Self::TransferRemove { delete_file, .. } = self {
             d.field("delete_file", delete_file);

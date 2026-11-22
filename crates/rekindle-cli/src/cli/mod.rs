@@ -20,6 +20,7 @@ mod parse_tests;
 mod settings;
 mod skin;
 mod social;
+mod transfer;
 
 // Re-export all types so callers use `cli::Cli`, `cli::Command`, etc.
 pub use activity::{ActivityArgs, InfoviewArgs};
@@ -36,6 +37,7 @@ pub use skin::SkinCmd;
 pub use social::{
     DmCmd, FriendCmd, FriendCodeCmd, FriendInviteCmd, GroupCmd, PresenceCmd, PresenceStatus,
 };
+pub use transfer::TransferCmd;
 
 use std::path::PathBuf;
 
@@ -184,6 +186,9 @@ pub enum Command {
     /// Skins: the library, the skin in use and the login skin.
     #[command(subcommand)]
     Skin(SkinCmd),
+    /// File transfers: list, start (resume), stop, open, remove.
+    #[command(subcommand)]
+    Transfer(TransferCmd),
 
     /// The game we show.
     #[command(subcommand)]

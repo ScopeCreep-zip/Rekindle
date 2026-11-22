@@ -31,6 +31,7 @@ mod keys;
 mod network;
 mod presence;
 mod skin;
+mod transfer;
 mod voice;
 
 use clap::{CommandFactory, Parser};
@@ -195,6 +196,7 @@ async fn dispatch_command(
         Command::Profile(cmd) => presence::dispatch_profile(&cmd, client, mode).await,
         Command::Settings(cmd) => presence::dispatch_settings(&cmd, client, mode).await,
         Command::Skin(cmd) => skin::dispatch(&cmd, client, mode).await,
+        Command::Transfer(cmd) => transfer::dispatch(&cmd, client, mode).await,
         Command::Game(cmd) => presence::dispatch_game(&cmd, client, mode).await,
         Command::Activity(cli::ActivityArgs { before, limit }) => {
             let value = helpers::send(

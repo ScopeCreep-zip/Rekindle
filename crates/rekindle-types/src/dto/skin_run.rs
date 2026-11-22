@@ -103,6 +103,14 @@ pub enum ShellOp {
     },
     Call(CallOp),
     ShowSettings(SkinSettingsTab),
+    /// Ask the user where to save a never-fetched attachment (the native
+    /// save dialog, `suggested_name` the uploader's sanitized filename),
+    /// then send `TransferStart` with that destination (plan E7.2 G12).
+    ChooseDownloadDest {
+        attachment_id: String,
+        target: super::transfer::TransferTarget,
+        suggested_name: String,
+    },
     ReportBug,
     CopyKey,
     EditName,
@@ -139,9 +147,11 @@ pub enum SkinSelection {
         game_id: u32,
         address: String,
     },
-    /// A download in the transfers view (SK2-G §4), by attachment id.
+    /// A download in the transfers view, or an offered attachment in a
+    /// channel (SK2-G §4), by attachment id and where it lives.
     Transfer {
         attachment_id: String,
+        target: super::transfer::TransferTarget,
     },
     /// A picture or video in the media view (SK2-G §7), by its file.
     Media {

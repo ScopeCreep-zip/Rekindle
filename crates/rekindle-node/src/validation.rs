@@ -31,6 +31,27 @@ fn reject(label: &str, e: &KeyFormatError) -> IpcResponse {
     IpcResponse::error(400, format!("invalid {label}: {e}"))
 }
 
+/// A transfer request: its attachment id, and a start's place and
+/// destination (a file path) within their bounds.
+fn transfer(request: &rekindle_ipc::protocol::TransferRequest) -> Checked {
+    request.attachment_id().map_or(Ok(()), attachment_id)?;
+    if let rekindle_ipc::protocol::TransferRequest::TransferStart { target, dest, .. } = request {
+        if !crate::host::skin::ids::target_fits(target) {
+            return Err(IpcResponse::error(400, "transfer place out of bounds"));
+        }
+        if dest
+            .as_ref()
+            .is_some_and(|d| d.is_empty() || d.len() > 4096)
+        {
+            return Err(IpcResponse::error(
+                400,
+                "transfer destination: 1..=4096 bytes",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// An attachment id: 32 lowercase hex digits (a UUID's bytes).
 fn attachment_id(s: &str) -> Checked {
     if s.len() == 32 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
@@ -481,7 +502,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
         IpcRequest::Community(request) => community::check(request),
-        IpcRequest::Transfer(request) => request.attachment_id().map_or(Ok(()), attachment_id),
+        IpcRequest::Transfer(request) => transfer(request),
 
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }

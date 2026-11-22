@@ -11,7 +11,7 @@ use rekindle_ipc::protocol::{IpcResponse, PinRequest};
 
 use super::{adapter, DaemonContext};
 use crate::host::adapters::files::HostFiles;
-use crate::host::transfers::{self, Ended};
+use crate::host::transfers;
 use rekindle_types::dto::transfer::TransferTarget;
 
 /// The status a files failure answers with.

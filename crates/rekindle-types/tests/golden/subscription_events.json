@@ -2068,6 +2068,71 @@
       }
     }
   },
+  "transfer.downloadComplete": {
+    "transfer": {
+      "downloadComplete": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "transfer.progress": {
+    "transfer": {
+      "progress": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bytesDone": 786432,
+        "chunkCount": 8,
+        "chunksDone": 3,
+        "total": 2000000
+      }
+    }
+  },
+  "transfer.removed": {
+    "transfer": {
+      "removed": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "transfer.stateChanged.active": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "active"
+      }
+    }
+  },
+  "transfer.stateChanged.done": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "done"
+      }
+    }
+  },
+  "transfer.stateChanged.failed": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "failed"
+      }
+    }
+  },
+  "transfer.stateChanged.paused": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "paused"
+      }
+    }
+  },
+  "transfer.stateChanged.queued": {
+    "transfer": {
+      "stateChanged": {
+        "attachmentId": "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "state": "queued"
+      }
+    }
+  },
   "typing.started.channel": {
     "typing": {
       "started": {

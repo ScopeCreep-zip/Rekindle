@@ -342,6 +342,11 @@ macro_rules! skin_commands {
         commands::skin::run_skin_action,
         commands::skin::set_skin_selection,
         commands::skin::set_login_skin,
+        commands::transfers::transfer_list,
+        commands::transfers::transfer_start,
+        commands::transfers::transfer_stop,
+        commands::transfers::transfer_open,
+        commands::transfers::transfer_remove,
     ] $($rest)*) };
 }
 

@@ -35,6 +35,18 @@ pub enum FilesEvent {
         channel_id: String,
         attachment_id_hex: String,
     },
+    /// A verified chunk of an attachment entered the cache (plan E7.2
+    /// G12): the fetch's checkpoint, which a running transfer records and
+    /// shows as progress. Also sent once as a fetch starts, from the
+    /// chunks the cache already held.
+    ChunkCached {
+        community_id: String,
+        attachment_id_hex: String,
+        chunks_done: u32,
+        chunk_count: u32,
+        bytes_done: u64,
+        total: u64,
+    },
     /// Architecture §32 W15 — expression-asset chunks fully cached;
     /// picker can render.
     ExpressionAssetReady {

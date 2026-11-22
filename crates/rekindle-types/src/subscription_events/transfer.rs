@@ -14,6 +14,15 @@ pub enum TransferEvent {
         attachment_id: String,
         state: TransferState,
     },
+    /// A running download's progress, at most four times a second: its
+    /// checkpoint (chunks held of `chunk_count`) and bytes.
+    Progress {
+        attachment_id: String,
+        chunks_done: u32,
+        chunk_count: u32,
+        bytes_done: u64,
+        total: u64,
+    },
     /// A download finished and its file is saved (`AppSignal::DownloadComplete`).
     DownloadComplete { attachment_id: String },
     /// A transfer was forgotten (`TransferRemove`).

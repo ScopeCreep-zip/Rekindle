@@ -1,6 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "../invoke";
+import type { TransferEvent } from "../commands/dto_transfer";
 import type { ChatEvent, GroupDmEvent } from "./chat_events";
 import type {
   PresenceEvent,
@@ -253,6 +254,15 @@ export function subscribeSkinSignals(onSignals: (set: SkinSignalSet) => void): P
     "skin-signals-event",
     (payload) => onSignals(payload.system.skinSignals.set),
   );
+}
+
+/**
+ * Subscribe to the file transfers (`SubscriptionEvent::Transfer`, plan
+ * E7.2 G12): state changes, progress (at most 4 Hz), finished downloads
+ * and removals, on the buddy list's `transfer-event` channel.
+ */
+export function subscribeTransfers(onTransfer: (event: TransferEvent) => void): Promise<UnlistenFn> {
+  return on<{ transfer: TransferEvent }>("transfer-event", (payload) => onTransfer(payload.transfer));
 }
 
 /**

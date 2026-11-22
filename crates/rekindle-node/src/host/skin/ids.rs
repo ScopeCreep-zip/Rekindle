@@ -54,9 +54,22 @@ fn selection_fits(selection: &rekindle_types::dto::skin_run::SkinSelection) -> b
     match selection {
         S::Friend { public_key } => public_key.len() <= 128,
         S::Server { address, .. } => address.len() <= 256,
-        S::Transfer { attachment_id: id } | S::Group { group_id: id } => id.len() <= 64,
+        S::Transfer {
+            attachment_id,
+            target,
+        } => attachment_id.len() <= 64 && target_fits(target),
+        S::Group { group_id: id } => id.len() <= 64,
         S::Media { path } => path.len() <= 4096,
     }
+}
+
+/// A transfer's place: a community key and a channel id, each a name.
+pub(crate) fn target_fits(target: &rekindle_types::dto::transfer::TransferTarget) -> bool {
+    let rekindle_types::dto::transfer::TransferTarget::Channel {
+        community,
+        channel_id,
+    } = target;
+    community.len() <= 128 && channel_id.len() <= 64
 }
 
 /// A 400 naming the field.

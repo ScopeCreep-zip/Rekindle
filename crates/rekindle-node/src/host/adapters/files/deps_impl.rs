@@ -202,6 +202,27 @@ impl FilesDeps for HostFiles {
 
     fn emit_event(&self, event: FilesEvent) {
         let event = match event {
+            // The transfer driver is its one subscriber (lead decision 51).
+            FilesEvent::ChunkCached {
+                attachment_id_hex,
+                chunks_done,
+                chunk_count,
+                bytes_done,
+                total,
+                ..
+            } => {
+                crate::host::transfers::chunk_cached(
+                    self.gov.context(),
+                    &attachment_id_hex,
+                    crate::host::transfers::Checkpoint {
+                        chunks_done,
+                        chunk_count,
+                        bytes_done,
+                        total,
+                    },
+                );
+                return;
+            }
             FilesEvent::AttachmentDownloaded {
                 community_id,
                 channel_id,

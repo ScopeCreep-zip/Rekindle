@@ -88,6 +88,7 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     if have.is_complete() {
         return Ok(FetchedAttachment { offer, fek });
     }
+    chunk_cached(deps, community_id, &offer, &have);
 
     let sources =
         discover_sources(deps, community_id, channel_id, attachment_id, chunk_count).await?;
@@ -278,11 +279,32 @@ async fn fetch_from_source<D: FilesDeps>(
                     .map_err(|e| FilesError::Db(format!("cache insert {chunk_index}: {e}")))
             })?;
             have.set(chunk_index);
+            chunk_cached(deps, community_id, offer, have);
         }
         if have.count() == held_before {
             return Ok(true);
         }
     }
+}
+
+/// Tell the deps the fetch's checkpoint: `have`'s chunks, and their bytes
+/// (every chunk is `chunk_size` but the last, so the held bytes are capped
+/// by `total_size`).
+fn chunk_cached<D: FilesDeps>(
+    deps: &D,
+    community_id: &str,
+    offer: &AttachmentOffer,
+    have: &AttachmentBitmap,
+) {
+    let chunks_done = have.count();
+    deps.emit_event(FilesEvent::ChunkCached {
+        community_id: community_id.to_owned(),
+        attachment_id_hex: hex::encode(offer.attachment_id),
+        chunks_done,
+        chunk_count: offer.chunk_count,
+        bytes_done: (u64::from(chunks_done) * u64::from(offer.chunk_size)).min(offer.total_size),
+        total: offer.total_size,
+    });
 }
 
 /// A served chunk's plaintext, if it decrypts under the FEK, is in range

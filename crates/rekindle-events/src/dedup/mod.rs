@@ -72,8 +72,14 @@ impl EventDedup {
     /// Returns `true` if the event is new and has been recorded.
     /// Returns `false` if the event is a duplicate.
     pub fn check(&mut self, event: &SubscriptionEvent, now_ms: u64) -> bool {
-        // UnreadChanged is always emitted — it's a computed aggregate, not a network event
-        if matches!(event, SubscriptionEvent::UnreadChanged { .. }) {
+        // UnreadChanged is always emitted — it's a computed aggregate, not a network event.
+        // A transfer event is the Host's own local state (plan E7.2 G12): it
+        // arrives by one path only, and the same state legitimately repeats
+        // (stop, start, stop again), so no digest may suppress it.
+        if matches!(
+            event,
+            SubscriptionEvent::UnreadChanged { .. } | SubscriptionEvent::Transfer(_)
+        ) {
             return true;
         }
 
@@ -178,6 +184,10 @@ fn hash_event(event: &SubscriptionEvent, now_ms: u64) -> [u8; 32] {
             // Never reaches here — check() returns true early for UnreadChanged
             hasher.update(b"unread");
         }
+        // Never reaches here either — check() returns true early for transfers.
+        SubscriptionEvent::Transfer(_) => {
+            hasher.update(b"transfer");
+        }
         // Each review has its own id: two are never the same action.
         SubscriptionEvent::IntentPending(review) => {
             hasher.update(review.intent_id.to_string().as_bytes());
@@ -203,6 +213,7 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Notification(_) => "nt",
         SubscriptionEvent::Network(_) => "ne",
         SubscriptionEvent::System(_) => "sy",
+        SubscriptionEvent::Transfer(_) => "tf",
         SubscriptionEvent::UnreadChanged { .. } => "ur",
         SubscriptionEvent::IntentPending(_) => "ip",
     }

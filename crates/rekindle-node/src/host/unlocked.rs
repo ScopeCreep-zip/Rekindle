@@ -59,6 +59,8 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         }
     };
     *ctx.session.write() = Some(session);
+    // A download the last Host left running resumes only when asked.
+    super::transfers::pause_interrupted(ctx).await;
     let audit = restore_audit(ctx, &public_key, failed_attempts).await;
     // The identity's trusted clients get their clearance back (plan D1).
     crate::daemon::clients::load(ctx).await;

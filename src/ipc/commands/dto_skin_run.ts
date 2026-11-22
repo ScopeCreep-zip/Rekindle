@@ -2,6 +2,7 @@
 // `rekindle_types::dto::skin_run`. The Host decides; the shell only runs
 // the operation it is handed.
 import type { Capability, EngineMenu, SkinAction } from "./dto_skin_tree";
+import type { TransferTarget } from "./dto_transfer";
 
 type ArgOf<K extends SkinAction["kind"]> = Extract<SkinAction, { kind: K; arg: unknown }>["arg"];
 
@@ -23,7 +24,7 @@ export interface SkinSignalSet {
 export type SkinSelection =
   | { kind: "friend"; arg: { publicKey: string } }
   | { kind: "server"; arg: { gameId: number; address: string } }
-  | { kind: "transfer"; arg: { attachmentId: string } }
+  | { kind: "transfer"; arg: { attachmentId: string; target: TransferTarget } }
   | { kind: "media"; arg: { path: string } }
   | { kind: "group"; arg: { groupId: string } };
 
@@ -71,6 +72,12 @@ export type ShellOp =
   | { kind: "openGroupChat"; arg: { groupId: string } }
   | { kind: "call"; arg: CallOp }
   | { kind: "showSettings"; arg: ArgOf<"showSettings"> }
+  /** A never-fetched attachment: run `transfer_start` for it, which asks
+   *  where to save in Rust (plan E7.2 G12); no path reaches the webview. */
+  | {
+      kind: "chooseDownloadDest";
+      arg: { attachmentId: string; target: TransferTarget; suggestedName: string };
+    }
   | { kind: "reportBug" }
   | { kind: "copyKey" }
   | { kind: "editName" }

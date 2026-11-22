@@ -16,6 +16,7 @@ pub mod settings;
 pub mod skin;
 pub mod status;
 pub mod sync;
+pub mod transfers;
 #[cfg(debug_assertions)]
 pub mod vault;
 pub mod voice;

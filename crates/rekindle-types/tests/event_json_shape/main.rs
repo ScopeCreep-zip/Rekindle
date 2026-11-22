@@ -31,6 +31,7 @@ mod notification;
 mod presence;
 mod social;
 mod system;
+mod transfer;
 mod typing;
 mod voice;
 
@@ -165,6 +166,11 @@ const FAMILIES: &[Family] = &[
         nested: &[],
     },
     Family {
+        tag: "transfer",
+        names: transfer::NAMES,
+        nested: transfer::NESTED,
+    },
+    Family {
         tag: "unreadChanged",
         names: UNREAD_NAMES,
         nested: UNREAD_NESTED,
@@ -228,6 +234,11 @@ fn classify(event: &SubscriptionEvent) -> Classified {
             network::nested_names(e),
         ),
         SubscriptionEvent::System(e) => ("system", system::variant_name(e), vec![]),
+        SubscriptionEvent::Transfer(e) => (
+            "transfer",
+            transfer::variant_name(e),
+            transfer::nested_names(e),
+        ),
         SubscriptionEvent::UnreadChanged { context, .. } => (
             "unreadChanged",
             "unreadChanged",
@@ -279,6 +290,7 @@ fn all_samples() -> Vec<Sample> {
     all.extend(notification::samples());
     all.extend(network::samples());
     all.extend(system::samples());
+    all.extend(transfer::samples());
     all.extend(unread_samples());
     all.push((
         "intentPending.intentPending".to_owned(),

@@ -319,3 +319,24 @@ fn a_window_s_skin_signals_reach_that_window_only() {
         assert!(!audience.includes(label), "{label}");
     }
 }
+
+/// The Downloads view is the buddy list's (plan E7.2 G12): a transfer's
+/// progress reaches it, on its own channel, and no other window.
+#[test]
+fn transfers_reach_the_buddy_list_on_their_own_channel() {
+    let e = WebviewEvent::Subscription(SubscriptionEvent::Transfer(
+        rekindle_types::subscription_events::TransferEvent::Progress {
+            attachment_id: "att".into(),
+            chunks_done: 1,
+            chunk_count: 4,
+            bytes_done: 262_144,
+            total: 1_000_000,
+        },
+    ));
+    assert_eq!(e.channel(), "transfer-event");
+    let audience = e.audience();
+    assert!(audience.includes("buddy-list"));
+    for label in ["chat-0123456789ab", "settings", "login"] {
+        assert!(!audience.includes(label), "{label}");
+    }
+}

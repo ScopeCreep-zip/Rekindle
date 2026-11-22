@@ -55,7 +55,7 @@ impl<'a> Selected<'a> {
                 game_id: *game_id,
                 address,
             },
-            Some(SkinSelection::Transfer { attachment_id }) => Self::Transfer { attachment_id },
+            Some(SkinSelection::Transfer { attachment_id, .. }) => Self::Transfer { attachment_id },
             Some(SkinSelection::Media { path }) => Self::Media { path },
             Some(SkinSelection::Group { group_id }) => Self::Group { group_id },
         }

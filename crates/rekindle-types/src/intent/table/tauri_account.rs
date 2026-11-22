@@ -27,6 +27,15 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     // view state.
     ("run_skin_action", None),
     ("set_skin_selection", None),
+    // The Downloads view (plan E7.2 G12): each the Host request it sends.
+    ("transfer_list", None),
+    ("transfer_start", Some(IntentKind::DownloadAttachment)),
+    ("transfer_stop", Some(IntentKind::PauseDownload)),
+    (
+        "transfer_open",
+        Some(IntentKind::RevealDownloadedAttachment),
+    ),
+    ("transfer_remove", Some(IntentKind::RemoveDownload)),
     ("import_skin", Some(IntentKind::ImportSkin)),
     ("remove_skin", Some(IntentKind::RemoveSkin)),
     ("select_skin", Some(IntentKind::SetPreferences)),

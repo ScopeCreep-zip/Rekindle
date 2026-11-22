@@ -220,7 +220,14 @@ fn room_actions_reach_their_group_dm_ops() {
 fn each_download_action_reaches_its_transfer_request() {
     use rekindle_ipc::protocol::TransferRequest as T;
     let id = "0123456789abcdef0123456789abcdef";
-    let reached = |action: &A| match map(action, None, Some(id), &Rooms::default()) {
+    let selected = (
+        id.to_owned(),
+        rekindle_types::dto::transfer::TransferTarget::Channel {
+            community: "VLD0:community".into(),
+            channel_id: "ch".into(),
+        },
+    );
+    let reached = |action: &A| match map(action, None, Some(&selected), &Rooms::default()) {
         Ok(Mapped::Request(r)) => match *r {
             IpcRequest::Transfer(t) => t.name(),
             other => panic!("{action:?} reached {}", other.name()),
@@ -231,7 +238,16 @@ fn each_download_action_reaches_its_transfer_request() {
     assert_eq!(reached(&A::StopDownload), "TransferStop");
     assert_eq!(reached(&A::OpenDownload), "TransferOpen");
     assert_eq!(reached(&A::DownloadInfo), "TransferList");
-    let Ok(Mapped::Request(stop)) = map(&A::StopDownload, None, Some(id), &Rooms::default()) else {
+    let Ok(Mapped::Request(start)) = map(&A::StartDownload, None, Some(&selected), &Rooms::default()) else {
+        unreachable!()
+    };
+    // The shell asks where to save, then sends the destination.
+    assert!(matches!(
+        *start,
+        IpcRequest::Transfer(T::TransferStart { ref attachment_id, ref target, dest: None })
+            if attachment_id == id && *target == selected.1
+    ));
+    let Ok(Mapped::Request(stop)) = map(&A::StopDownload, None, Some(&selected), &Rooms::default()) else {
         unreachable!()
     };
     assert!(matches!(

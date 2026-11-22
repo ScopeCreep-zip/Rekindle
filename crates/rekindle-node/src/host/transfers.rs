@@ -16,18 +16,129 @@ use rekindle_types::subscription_events::{SubscriptionEvent, TransferEvent};
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::files::HostFiles;
 
+/// The least time between two progress events (and checkpoint writes)
+/// of one transfer: at most four a second (SK2-G design §4).
+pub(crate) const PROGRESS_INTERVAL_MS: u64 = 250;
+
+/// One running download: how to stop it and the last checkpoint seen.
+#[derive(Debug)]
+struct Run {
+    abort: futures::future::AbortHandle,
+    /// The newest `ChunkCached` counts, and whether they are written.
+    seen: Option<(Checkpoint, bool)>,
+    /// When the last progress event went out (Host clock, ms).
+    last_sent_ms: Option<u64>,
+}
+
+/// A transfer's checkpoint: chunks held of `chunk_count`, bytes of `total`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Checkpoint {
+    pub chunks_done: u32,
+    pub chunk_count: u32,
+    pub bytes_done: u64,
+    pub total: u64,
+}
+
 /// The downloads running now, by attachment id.
 #[derive(Debug, Default)]
-pub struct TransferRuns(parking_lot::Mutex<BTreeMap<String, tokio::task::AbortHandle>>);
+pub struct TransferRuns(parking_lot::Mutex<BTreeMap<String, Run>>);
 
 impl TransferRuns {
     /// Abort the running download of `attachment_id`; `false` when none runs.
     pub(crate) fn stop(&self, attachment_id: &str) -> bool {
         self.0
             .lock()
-            .remove(attachment_id)
-            .inspect(tokio::task::AbortHandle::abort)
+            .get(attachment_id)
+            .inspect(|run| run.abort.abort())
             .is_some()
+    }
+
+    /// Record `at` for a running download; the checkpoint to write and the
+    /// progress to publish when the last went out at least
+    /// [`PROGRESS_INTERVAL_MS`] ago or the download is complete. `None`
+    /// for an attachment no transfer runs (a voice message, an expression).
+    fn observe(&self, attachment_id: &str, at: Checkpoint, now_ms: u64) -> Option<Checkpoint> {
+        let mut runs = self.0.lock();
+        let run = runs.get_mut(attachment_id)?;
+        let due = at.chunks_done == at.chunk_count
+            || run
+                .last_sent_ms
+                .is_none_or(|last| now_ms.saturating_sub(last) >= PROGRESS_INTERVAL_MS);
+        run.seen = Some((at, due));
+        if due {
+            run.last_sent_ms = Some(now_ms);
+        }
+        due.then_some(at)
+    }
+
+    /// Forget a download that ended: its last checkpoint when unwritten.
+    fn end(&self, attachment_id: &str) -> Option<Checkpoint> {
+        let run = self.0.lock().remove(attachment_id)?;
+        run.seen.and_then(|(at, written)| (!written).then_some(at))
+    }
+}
+
+/// `FilesEvent::ChunkCached` (the one subscriber, lead decision 51): a
+/// running transfer's checkpoint is written and its progress published,
+/// throttled to [`PROGRESS_INTERVAL_MS`].
+pub(crate) fn chunk_cached(ctx: &DaemonContext, attachment_id: &str, at: Checkpoint) {
+    let now = u64::try_from(ctx.clock.now_ms_i64()).unwrap_or(0);
+    let Some(at) = ctx.transfers.observe(attachment_id, at, now) else {
+        return;
+    };
+    publish(
+        ctx,
+        TransferEvent::Progress {
+            attachment_id: attachment_id.to_owned(),
+            chunks_done: at.chunks_done,
+            chunk_count: at.chunk_count,
+            bytes_done: at.bytes_done,
+            total: at.total,
+        },
+    );
+    let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
+        return;
+    };
+    let id = attachment_id.to_owned();
+    tokio::spawn(checkpoint_into(db, owner, id, at));
+}
+
+async fn write_checkpoint(ctx: &DaemonContext, attachment_id: &str, at: Checkpoint) {
+    if let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) {
+        checkpoint_into(db, owner, attachment_id.to_owned(), at).await;
+    }
+}
+
+async fn checkpoint_into(db: rekindle_db::Db, owner: String, id: String, at: Checkpoint) {
+    let wrote = db
+        .call(move |conn| {
+            rekindle_db::repo::transfers::checkpoint(
+                conn,
+                &owner,
+                &id,
+                (at.chunks_done, at.chunk_count),
+                (at.bytes_done, at.total),
+            )
+        })
+        .await;
+    if let Err(e) = wrote {
+        tracing::warn!(error = %e, "transfer checkpoint unwritten");
+    }
+}
+
+/// At unlock: a transfer the last Host left running is `paused`, so Start
+/// resumes it from its checkpoint (design §4 (3)).
+pub(crate) async fn pause_interrupted(ctx: &DaemonContext) {
+    let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
+        return;
+    };
+    let paused = db
+        .call(move |conn| rekindle_db::repo::transfers::pause_interrupted(conn, &owner))
+        .await;
+    match paused {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(paused = n, "interrupted transfers paused"),
+        Err(e) => tracing::warn!(error = %e, "interrupted transfers unread"),
     }
 }
 
@@ -118,22 +229,31 @@ pub(crate) async fn download(
     );
     let files = HostFiles::new(crate::daemon::dispatch::adapter(ctx));
     let id = attachment_id.to_owned();
-    let task = tokio::spawn(async move {
-        files
-            .download(&community, &channel_id, &id, Path::new(&dest))
-            .await
-    });
-    ctx.transfers
-        .0
-        .lock()
-        .insert(attachment_id.to_owned(), task.abort_handle());
-    let ended = match task.await {
+    // Registered before the fetch starts, so its first chunk is seen.
+    let (abort, registration) = futures::future::AbortHandle::new_pair();
+    ctx.transfers.0.lock().insert(
+        attachment_id.to_owned(),
+        Run {
+            abort,
+            seen: None,
+            last_sent_ms: None,
+        },
+    );
+    let fetch = futures::future::Abortable::new(
+        async move {
+            files
+                .download(&community, &channel_id, &id, Path::new(&dest))
+                .await
+        },
+        registration,
+    );
+    let ended = match fetch.await {
         Ok(Ok(())) => Ended::Done,
         Ok(Err(e)) => Ended::Failed(e),
-        Err(_) => Ended::Stopped,
+        Err(futures::future::Aborted) => Ended::Stopped,
     };
-    if !matches!(ended, Ended::Stopped) {
-        ctx.transfers.0.lock().remove(attachment_id);
+    if let Some(at) = ctx.transfers.end(attachment_id) {
+        write_checkpoint(ctx, attachment_id, at).await;
     }
     match &ended {
         Ended::Done => {
@@ -146,20 +266,20 @@ pub(crate) async fn download(
             );
         }
         Ended::Failed(_) => set_state(ctx, attachment_id, TransferState::Failed).await,
-        // `stop` wrote `paused` (or `remove` the row's end).
-        Ended::Stopped => {}
+        // Paused by `stop` (or forgotten by `remove`, which wrote the end).
+        Ended::Stopped => {
+            if get(ctx, attachment_id).await.is_ok_and(|row| row.is_some()) {
+                set_state(ctx, attachment_id, TransferState::Paused).await;
+            }
+        }
     }
     Ok(ended)
 }
 
-/// Pause the running download: abort its task and mark it `paused`.
-/// `false` when none runs.
-pub(crate) async fn stop(ctx: &DaemonContext, attachment_id: &str) -> bool {
-    if !ctx.transfers.stop(attachment_id) {
-        return false;
-    }
-    set_state(ctx, attachment_id, TransferState::Paused).await;
-    true
+/// Pause the running download: abort it; its `download` writes the last
+/// checkpoint and marks it `paused`. `false` when none runs.
+pub(crate) fn stop(ctx: &DaemonContext, attachment_id: &str) -> bool {
+    ctx.transfers.stop(attachment_id)
 }
 
 /// Forget a transfer, stopping it first; with `delete_file`, delete the

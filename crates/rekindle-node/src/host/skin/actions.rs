@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse, TransferRequest};
 use rekindle_types::dto::skin_action::{MenuRegistry, SkinAction as A};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
+use rekindle_types::dto::transfer::TransferTarget;
 
 use super::rooms::{self, Rooms};
 
@@ -40,9 +41,12 @@ impl Selections {
     }
 
     /// The window's selected transfer, when its selection is one.
-    pub(crate) fn transfer(&self, window: &str) -> Option<String> {
+    pub(crate) fn transfer(&self, window: &str) -> Option<(String, TransferTarget)> {
         match self.0.lock().get(window) {
-            Some(SkinSelection::Transfer { attachment_id }) => Some(attachment_id.clone()),
+            Some(SkinSelection::Transfer {
+                attachment_id,
+                target,
+            }) => Some((attachment_id.clone(), target.clone())),
             _ => None,
         }
     }
@@ -74,7 +78,7 @@ pub(crate) enum Mapped {
 pub(crate) fn map(
     action: &A,
     friend: Option<&str>,
-    transfer: Option<&str>,
+    transfer: Option<&(String, TransferTarget)>,
     rooms: &Rooms,
 ) -> Result<Mapped, IpcResponse> {
     use Mapped::{Request, Run};
@@ -88,8 +92,8 @@ pub(crate) fn map(
             )
         })
     };
-    let attachment_id = || {
-        transfer.map(str::to_owned).ok_or_else(|| {
+    let transfer_selected = || {
+        transfer.cloned().ok_or_else(|| {
             IpcResponse::error(
                 409,
                 format!("{action:?} acts on the selected transfer: none is selected"),
@@ -101,14 +105,19 @@ pub(crate) fn map(
         // Feature requests (the handlers' own requests, intent-gated).
         // The Downloads view (plan E7.2 G12, SK2-G §4): Xfire's Execute is
         // a reveal; "Search for Files" lists our transfers.
-        A::StartDownload => transfer_request(TransferRequest::TransferStart {
-            attachment_id: attachment_id()?,
-        }),
+        A::StartDownload => {
+            let (attachment_id, target) = transfer_selected()?;
+            transfer_request(TransferRequest::TransferStart {
+                attachment_id,
+                target,
+                dest: None,
+            })
+        }
         A::StopDownload => transfer_request(TransferRequest::TransferStop {
-            attachment_id: attachment_id()?,
+            attachment_id: transfer_selected()?.0,
         }),
         A::OpenDownload => transfer_request(TransferRequest::TransferOpen {
-            attachment_id: attachment_id()?,
+            attachment_id: transfer_selected()?.0,
         }),
         A::DownloadInfo => transfer_request(TransferRequest::TransferList),
         A::LogOff => Ok(Request(Box::new(IpcRequest::Logout))),
@@ -255,7 +264,7 @@ pub(crate) fn resolve(
     match map(
         action,
         selections.friend(window).as_deref(),
-        selections.transfer(window).as_deref(),
+        selections.transfer(window).as_ref(),
         rooms,
     )? {
         Mapped::Request(mapped) => Ok(Resolved::Request(*mapped)),

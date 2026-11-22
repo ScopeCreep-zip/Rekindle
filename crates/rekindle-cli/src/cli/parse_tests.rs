@@ -222,3 +222,38 @@ fn game_invite_parses_to_its_request() {
         "the server is required"
     );
 }
+
+#[test]
+fn transfer_subcommands_parse_to_their_requests() {
+    use rekindle_ipc::protocol::{IpcRequest, TransferRequest as T};
+
+    let id = "0123456789abcdef0123456789abcdef";
+    let request = |args: &[&str]| match parse(args).command {
+        Some(Command::Transfer(cmd)) => crate::transfer::request(&cmd).unwrap(),
+        _ => panic!("{args:?} is not a transfer command"),
+    };
+    assert!(matches!(
+        request(&["transfer", "list"]),
+        IpcRequest::Transfer(T::TransferList)
+    ));
+    assert!(matches!(
+        request(&["transfer", "start", id, "--community", "VLD0:c", "--channel", "ch", "--dest", "/tmp/f"]),
+        IpcRequest::Transfer(T::TransferStart { ref attachment_id, dest: Some(ref d), .. })
+            if attachment_id == id && d == "/tmp/f"
+    ));
+    assert!(matches!(
+        request(&["transfer", "stop", id]),
+        IpcRequest::Transfer(T::TransferStop { ref attachment_id }) if attachment_id == id
+    ));
+    assert!(matches!(
+        request(&["transfer", "open", id]),
+        IpcRequest::Transfer(T::TransferOpen { .. })
+    ));
+    assert!(matches!(
+        request(&["transfer", "remove", id, "--delete-file"]),
+        IpcRequest::Transfer(T::TransferRemove {
+            delete_file: true,
+            ..
+        })
+    ));
+}

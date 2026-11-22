@@ -140,6 +140,11 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("export_skin_schema", HostCall::Request("SkinExportSchema")),
     ("run_skin_action", HostCall::Request("RunSkinAction")),
     ("set_skin_selection", HostCall::Request("SkinSelectionSet")),
+    ("transfer_list", HostCall::Request("TransferList")),
+    ("transfer_start", HostCall::Request("TransferStart")),
+    ("transfer_stop", HostCall::Request("TransferStop")),
+    ("transfer_open", HostCall::Request("TransferOpen")),
+    ("transfer_remove", HostCall::Request("TransferRemove")),
     ("get_game_status", HostCall::Request("PresenceGet")),
     ("get_game_totals", HostCall::Request("GameTotalsGet")),
     (

@@ -116,7 +116,7 @@ fn downloads_follow_the_selected_transfer_state() {
         [C::StartDownload, C::StopDownload, C::ExecuteDownload].map(|c| can(c, &i, w, t))
     };
     let saved = temp_file("saved");
-    let mut set = |w: &mut SkinWorld, s| {
+    let set = |w: &mut SkinWorld, s| {
         w.transfers.insert("a1".into(), transfer(s, &saved));
     };
     assert_eq!(state(&w), [true, false, false], "offered, not fetched");
