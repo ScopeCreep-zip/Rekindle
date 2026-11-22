@@ -124,6 +124,7 @@ fn community_view(c: &CommunityState, now_secs: u64, shown: Option<&SkinGrounds>
         my_badges: c.my_badges.clone(),
         removed: None,
         op_publications: std::collections::BTreeMap::new(),
+        device_status: rekindle_types::dto::community::DeviceStatus::Enrolled,
     }
 }
 
@@ -284,6 +285,9 @@ impl HostGovernance {
             .collect();
         for view in &mut views {
             view.removed = removal_display(&self.ctx.communities, &view.id);
+            if view.removed.is_none() {
+                view.device_status = self.device_status(&view.id);
+            }
         }
         if let Some(ops) = self.ctx.outbox.governance_ops() {
             for view in &mut views {

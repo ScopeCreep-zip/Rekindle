@@ -146,6 +146,10 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
         Err(error) => tracing::warn!(community = community_id, %error, "frontier catch-up failed"),
     }
     dht_hydration::rebuild_governance(governance, community_id).await;
+    // Our device's standing against the caught-up set (ADR 0022 rule 4,
+    // lead decision 63): a key endorsed only under an ended membership
+    // drops its stale record binding before any write.
+    governance.catch_up_own_device(community_id);
     // Our own op pages beyond the checkpoint the rebuild applied, held
     // again from our local op log (plan E3.2 S7 record warming).
     governance.rewarm_own_op_pages(community_id).await;

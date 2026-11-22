@@ -128,7 +128,7 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 ),
             )
         }),
-LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } | LifecycleRequest::CommunitySuccessors { anchor } | LifecycleRequest::CommunityWithdrawTransfer { anchor }
+LifecycleRequest::CommunityDeviceEnrol { anchor } | LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } | LifecycleRequest::CommunitySuccessors { anchor } | LifecycleRequest::CommunityWithdrawTransfer { anchor }
 | LifecycleRequest::CommunityAcceptTransfer { anchor } => community(anchor),
 LifecycleRequest::CommunityUpdateInfo {
             anchor,
@@ -173,7 +173,6 @@ LifecycleRequest::CommunityPublishSuccessor { anchor, continuing } => {
             }
             keys.iter().try_for_each(|k| pseudonym(k, "continuing member"))
         }
-LifecycleRequest::CommunityDeviceEnrol { anchor } => community(anchor),
 LifecycleRequest::CommunityDeviceRetire { anchor, device_key } => {
             community(anchor)?;
             public_key(device_key, "device key")

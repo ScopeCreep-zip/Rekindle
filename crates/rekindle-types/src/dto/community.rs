@@ -171,6 +171,23 @@ pub struct CommunityView {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub op_publications:
         std::collections::BTreeMap<String, crate::subscription_events::OpPublicationState>,
+    /// Whether this device may write here (ADR 0022 rule 4, lead decision
+    /// 63): `NeedsReenrol` when it holds no key endorsed for our current
+    /// member record (a fresh device, or one whose person re-joined from
+    /// another device); the window offers `CommunityDeviceEnrol`.
+    #[serde(default)]
+    pub device_status: DeviceStatus,
+}
+
+/// This device's standing in a community ([`CommunityView::device_status`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeviceStatus {
+    /// Our device key is endorsed for the current member record.
+    #[default]
+    Enrolled,
+    /// Our writes are refused until this device enrols a fresh key.
+    NeedsReenrol,
 }
 
 /// One channel's unread messages and mentions after our read marker

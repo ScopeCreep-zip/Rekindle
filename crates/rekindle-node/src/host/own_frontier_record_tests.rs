@@ -12,6 +12,7 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::device_signer::first_endorsement;
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
+use rekindle_types::dto::community::DeviceStatus;
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, GovernanceOp};
 use rekindle_types::id::PseudonymKey;
 
@@ -211,4 +212,67 @@ async fn a_rejoin_clears_the_phones_stale_device_record() {
         );
     }
     host.shutdown().await.unwrap();
+}
+
+/// The unlock catch-up's device check (ADR 0022 rule 4, lead decision 63,
+/// plan K5k): a held key bound to `M(p,d)` whose endorsement binds no
+/// current member record drops the binding, reads `NeedsReenrol` and
+/// writes nothing (`DeviceUnendorsed`); an endorsed key keeps its binding.
+async fn device_check(device_key: [u8; 32]) -> (bool, DeviceStatus, Result<(), String>) {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let (me, cert, state) = two_device_state();
+    if let Some(c1) = host
+        .ctx
+        .communities
+        .map()
+        .write()
+        .get_mut(FRONTIER_COMMUNITY)
+    {
+        c1.my_pseudonym_key = Some(me.to_hex());
+        c1.genesis_cert = Some(cert);
+    }
+    (host.ctx.communities).set_my_member_record(FRONTIER_COMMUNITY, PERSON_RECORD);
+    let bound = |host: &crate::host::Host| {
+        let guard = host.ctx.device_vault.lock();
+        let vault = guard.as_ref().expect("device vault");
+        rekindle_vault::typed::device_keys::load_device_record(vault, FRONTIER_COMMUNITY)
+            .unwrap()
+            .is_some()
+    };
+    {
+        let guard = host.ctx.device_vault.lock();
+        let vault = guard.as_ref().expect("device vault");
+        use rekindle_vault::typed::device_keys::{store_device_op_key, store_device_record};
+        store_device_op_key(vault, FRONTIER_COMMUNITY, &device_key).unwrap();
+        store_device_record(vault, FRONTIER_COMMUNITY, PHONE_RECORD, PHONE_OWNER).unwrap();
+    }
+    let governance = HostGovernance::new(Arc::clone(&host.ctx));
+    governance.set_governance_state(FRONTIER_COMMUNITY, state);
+    governance.catch_up_own_device(FRONTIER_COMMUNITY);
+    let kept = bound(&host);
+    let status = governance.device_status(FRONTIER_COMMUNITY);
+    let written = governance
+        .own_op_record_writer(FRONTIER_COMMUNITY)
+        .map(|_| ());
+    host.shutdown().await.unwrap();
+    (kept, status, written)
+}
+
+#[tokio::test]
+async fn an_unendorsed_device_drops_its_binding_and_needs_reenrol() {
+    let (kept, status, written) = device_check([6; 32]).await;
+    assert!(!kept, "the stale M(p,d) binding is dropped");
+    assert_eq!(status, DeviceStatus::NeedsReenrol);
+    assert!(written.unwrap_err().contains("is not endorsed"));
+}
+
+#[tokio::test]
+async fn an_endorsed_device_keeps_its_binding() {
+    let (kept, status, written) = device_check(PHONE_KEY).await;
+    assert!(kept);
+    assert_eq!(status, DeviceStatus::Enrolled);
+    assert!(written.is_ok());
 }
