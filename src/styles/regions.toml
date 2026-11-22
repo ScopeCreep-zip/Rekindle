@@ -170,6 +170,12 @@
 '.files-view-size' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.files-view-status' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.files-view-empty' = { on = ["--color-xfire-bg-dark"] }
+'.servers-view-title' = { on = ["--color-xfire-bg-dark"] }
+'.servers-view-row' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.servers-view-address' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.servers-view-empty' = { on = ["--color-xfire-bg-dark"] }
+'.servers-view-action' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.servers-view-action[aria-disabled="true"]' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.skin-pair' = { on = ["--color-xfire-bg-dark"] }
 '.skin-pair-rule' = { on = ["--color-xfire-bg-dark"] }
 '.skin-pair-apca' = { on = ["--color-xfire-bg-dark"] }

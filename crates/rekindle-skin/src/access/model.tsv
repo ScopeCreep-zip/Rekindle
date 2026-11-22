@@ -679,6 +679,20 @@
 .search-panel-hit-scope-thread	text	var(--color-xfire-thread-tag)	--color-xfire-thread-tag 25% over --color-xfire-bg-primary	1.0	false
 .search-panel-hit-time	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .search-panel-pinned	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
+.servers-view-action	text	var(--color-xfire-link)	--color-xfire-bg-dark	1.0	false
+.servers-view-action	text hovered	var(--color-xfire-link)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.servers-view-action	text selected	var(--color-xfire-link)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
+.servers-view-action[aria-disabled="true"]	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
+.servers-view-action[aria-disabled="true"]	text hovered	var(--color-xfire-text-disabled)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.servers-view-action[aria-disabled="true"]	text selected	var(--color-xfire-text-disabled)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
+.servers-view-address	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.servers-view-address	text hovered	var(--color-xfire-text-dim)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.servers-view-address	text selected	var(--color-xfire-text-dim)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
+.servers-view-empty	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.servers-view-row	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.servers-view-row	text hovered	var(--color-xfire-text)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.servers-view-row	text selected	var(--color-xfire-text)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
+.servers-view-title	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .settings-about-text	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .settings-about-value	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .settings-audit-collapsible summary:hover	text	var(--color-xfire-text-primary)	--color-xfire-bg-panel	1.0	false

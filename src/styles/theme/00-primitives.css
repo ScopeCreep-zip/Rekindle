@@ -20,6 +20,7 @@
   .channel-name,
   .community-name,
   .files-view-name,
+  .servers-view-name,
   .member-group-header,
   .voice-participant-name {
     overflow: hidden;
@@ -465,7 +466,8 @@
   }
 
   .forum-channel-tags,
-  .infoview-actions {
+  .infoview-actions,
+  .servers-view-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
