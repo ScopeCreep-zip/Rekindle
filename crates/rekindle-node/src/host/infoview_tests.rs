@@ -229,7 +229,7 @@ async fn a_community_page_counts_the_members_its_beats_show_present() {
         let mut map = host.ctx.communities.map().write();
         let c = map.get_mut("c1").unwrap();
         c.my_pseudonym_key = Some("aa".repeat(32));
-        c.governance_state = Some(Default::default());
+        c.governance_state = Some(rekindle_governance::state::GovernanceState::default());
     }
     host.ctx
         .session

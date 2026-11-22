@@ -99,7 +99,6 @@ impl IpcRequest {
                 subject: crate::protocol::InfoviewSubject::Community { .. },
                 ..
             } => Some(C::CommunitiesRead),
-            Self::InfoviewGet { .. } => Some(C::FriendsRead),
             Self::IdentityShow
             | Self::PresenceGet
             | Self::GameTotalsGet
@@ -119,6 +118,7 @@ impl IpcRequest {
             | Self::FriendGameTotalsGet { .. }
             | Self::FriendBioGet { .. }
             | Self::ActivityList { .. }
+            | Self::InfoviewGet { .. }
             | Self::IdentitySafetyNumber { .. } => Some(C::FriendsRead),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }

@@ -151,7 +151,7 @@ pub enum InfoviewSection {
     /// A friend's header (design §2.7): their buddy-list view, whether we
     /// block them, and the chat and profile links.
     FriendHeader {
-        friend: Friend,
+        friend: Box<Friend>,
         blocked: bool,
         actions: Vec<InfoviewAction>,
     },

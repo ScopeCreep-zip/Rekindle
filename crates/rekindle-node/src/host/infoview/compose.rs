@@ -176,7 +176,7 @@ async fn friend(ctx: &DaemonContext, key: &str) -> Result<Vec<InfoviewSection>, 
         .await
         .map_err(|e| IpcResponse::error(500, format!("friend not read: {e}")))?;
     let mut sections = vec![InfoviewSection::FriendHeader {
-        friend: Friend::of(&state),
+        friend: Box::new(Friend::of(&state)),
         blocked,
         actions: vec![
             InfoviewAction::OpenChat {

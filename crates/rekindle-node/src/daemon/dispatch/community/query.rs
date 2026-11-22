@@ -32,16 +32,13 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
 pub(crate) fn overviews(
     ctx: &DaemonContext,
 ) -> Result<Vec<rekindle_types::display::CommunityOverview>, IpcResponse> {
-    let memberships = match ctx.require_session(|session| {
+    let memberships = ctx.require_session(|session| {
         session
             .communities
             .values()
             .cloned()
             .collect::<Vec<rekindle_transport::CommunityMembership>>()
-    }) {
-        Ok(m) => m,
-        Err(e) => return Err(e),
-    };
+    })?;
 
     // From the roster the presence poll materialised, not from a DHT
     // read: every row behind these counts was W26-verified and
