@@ -79,7 +79,7 @@ export type NetworkEvent =
   | { localRoutesDied: { count: number } }
   /** Our new-route budget is spent (or unreadable), so the inbound route
    *  stays down; `paused: false` once a refill brought it back (plan RV1). */
-  | { routePaused: { paused: boolean; cause?: RoutePauseCause } }
+  | { routePaused: { paused: boolean; cause: RoutePauseCause } }
   /** Own-route deaths of `class` in `windowSecs` rose above `baseline`: a warning only (plan RV1). */
   | { routeDeathsAboveBaseline: { class: OwnRouteClass; deaths: number; windowSecs: number; baseline: number } }
   | { remoteRoutesDied: { peerKeys: string[] } }

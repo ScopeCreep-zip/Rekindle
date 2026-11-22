@@ -157,6 +157,9 @@ async function readNetworkStatus(): Promise<void> {
   if (applied.ownRecords === before.ownRecords) {
     setNetworkState({ ownRecords: status.ownRecords, ownRecordsError: status.ownRecordsError });
   }
+  if (applied.routePaused === before.routePaused) {
+    setNetworkState({ routePaused: status.routePaused !== null, routePauseCause: status.routePaused });
+  }
 }
 
 function keep(subscription: Promise<UnlistenFn>): void {

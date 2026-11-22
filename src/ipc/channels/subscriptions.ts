@@ -350,10 +350,10 @@ export function subscribeNetworkStrength(onBars: (bars: number) => void): Promis
  * RV1): the new-route budget is spent or unreadable, so the route stays down
  * until the Host says `paused: false`. Never a silent redraw.
  */
-export function subscribeRoutePaused(onPaused: (paused: boolean, cause: RoutePauseCause | null) => void): Promise<UnlistenFn> {
+export function subscribeRoutePaused(onPaused: (paused: boolean, cause: RoutePauseCause) => void): Promise<UnlistenFn> {
   return on<NetworkSubscriptionEvent>("network-status", (payload) => {
     const inner = payload.network;
-    if ("routePaused" in inner) onPaused(inner.routePaused.paused, inner.routePaused.cause ?? null);
+    if ("routePaused" in inner) onPaused(inner.routePaused.paused, inner.routePaused.cause);
   });
 }
 
