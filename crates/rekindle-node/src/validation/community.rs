@@ -128,7 +128,8 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 ),
             )
         }),
-LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } | LifecycleRequest::CommunitySuccessors { anchor } | LifecycleRequest::CommunityWithdrawTransfer { anchor } => community(anchor),
+LifecycleRequest::CommunityLeave { anchor } | LifecycleRequest::CommunityForget { anchor } | LifecycleRequest::CommunityInfo { anchor } | LifecycleRequest::CommunityMembers { anchor } | LifecycleRequest::CommunityPendingMembers { anchor } | LifecycleRequest::CommunityCreateCancel { anchor } | LifecycleRequest::CreatorInviteAnswer { anchor, accept: _ } | LifecycleRequest::CommunitySuccessors { anchor } | LifecycleRequest::CommunityWithdrawTransfer { anchor }
+| LifecycleRequest::CommunityAcceptTransfer { anchor } => community(anchor),
 LifecycleRequest::CommunityUpdateInfo {
             anchor,
             name: community_name,
@@ -183,15 +184,9 @@ LifecycleRequest::CommunityOfferTransfer {
             community(anchor)?;
             pseudonym(transfer_to, "transfer recipient pseudonym")
         }
-LifecycleRequest::CommunityAcceptTransfer {
-            anchor,
-            co_creators,
-        } => {
+LifecycleRequest::CommunityAnswerSuccessorLink { anchor, request } => {
             community(anchor)?;
-            if co_creators.len() > rekindle_types::governance::MAX_ADDITIONAL_CREATORS {
-                return Err(IpcResponse::error(400, "too many co-creators"));
-            }
-            co_creators.iter().try_for_each(|k| pseudonym(k, "co-creator key"))
+            pseudonym(request, "link request op hash")
         }
 LifecycleRequest::InviteList { community: c }
         // Role ids, invite use counts and expiries are governance rules,

@@ -73,6 +73,9 @@ export function factText(fact: Fact): string {
       ? "No creator leaves the creator set."
       : `These creators are not creators of the new community: ${leaving.join(", ")}.`;
   }
+  if ("transferLinksMissing" in fact) {
+    return `Not linked yet: ${fact.transferLinksMissing.creators.join(", ")}. The transfer completes once every creator has linked.`;
+  }
   if ("successorLinked" in fact) {
     return `Signed by ${fact.successorLinked.signer}; both communities link to each other.`;
   }

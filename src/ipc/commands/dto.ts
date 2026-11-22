@@ -278,6 +278,7 @@ export type Fact =
   | { newCreatorSet: { creators: string[] } }
   | { creatorsLeave: { creators: string[] } }
   | { successorLinked: { signer: string } }
+  | { transferLinksMissing: { creators: string[] } }
   | { fingerprint: { fingerprint: string } }
   | { safetyNumber: { safetyNumber: string } }
   | { safetyNumberChanged: { oldSafetyNumber: string; newSafetyNumber: string } }

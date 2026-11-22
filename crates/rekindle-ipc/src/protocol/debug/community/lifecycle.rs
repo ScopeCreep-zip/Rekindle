@@ -103,13 +103,14 @@ impl std::fmt::Debug for LifecycleRequest {
                 .debug_struct("CommunityWithdrawTransfer")
                 .field("anchor", anchor)
                 .finish(),
-            Self::CommunityAcceptTransfer {
-                anchor,
-                co_creators,
-            } => f
+            Self::CommunityAcceptTransfer { anchor } => f
                 .debug_struct("CommunityAcceptTransfer")
                 .field("anchor", anchor)
-                .field("co_creators", &co_creators.len())
+                .finish(),
+            Self::CommunityAnswerSuccessorLink { anchor, request } => f
+                .debug_struct("CommunityAnswerSuccessorLink")
+                .field("anchor", anchor)
+                .field("request", request)
                 .finish(),
             Self::CommunityPublishSuccessor { anchor, continuing } => f
                 .debug_struct("CommunityPublishSuccessor")

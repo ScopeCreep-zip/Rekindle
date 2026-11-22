@@ -122,6 +122,10 @@ pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::DeviceReadmit(p) => Ok(GovernanceEntry::DeviceReadmit(
             crate::governance_op::read_device_readmit(p.map_err(|e| capnp_err(&e))?)?,
         )),
+        Which::SuccessorLinkRequest(p) => {
+            successor::read_link_request(p.map_err(|e| capnp_err(&e))?)
+        }
+        Which::SuccessorLink(p) => successor::read_link(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelCreated(p) => read_channel_created(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelArchived(p) => read_channel_archived(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelUpdated(p) => read_channel_updated(p.map_err(|e| capnp_err(&e))?),

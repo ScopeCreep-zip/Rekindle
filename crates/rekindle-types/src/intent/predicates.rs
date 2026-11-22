@@ -163,6 +163,7 @@ impl IntentKind {
             | Self::JoinCommunity
             | Self::FollowCommunitySuccessor
             | Self::AcceptCommunityTransfer
+            | Self::AnswerSuccessorLink
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
@@ -373,6 +374,7 @@ impl IntentKind {
             | Self::JoinCommunity
             | Self::FollowCommunitySuccessor
             | Self::AcceptCommunityTransfer
+            | Self::AnswerSuccessorLink
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation

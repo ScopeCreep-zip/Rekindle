@@ -107,6 +107,8 @@ pub fn well_formed(
         GovernanceEntry::DeviceReadmit(r) if !r.well_formed() => return false,
         // A successor body in none of its four shapes (S7s.3e).
         GovernanceEntry::CommunitySuccessor(s) if s.shape().is_none() => return false,
+        GovernanceEntry::SuccessorLinkRequest(r) if !r.well_formed() => return false,
+        GovernanceEntry::SuccessorLink(l) if !l.well_formed() => return false,
         // Value bounds (plan E3.0): an out-of-range slowmode, timeout or
         // description is malformed whoever wrote it, the creator included.
         _ if !bounds::entry_within_bounds(entry) => return false,
@@ -163,6 +165,23 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
                 && !state.bans.contains(writer));
     }
 
+    // The link round (lead decision (46)): a request is a counted
+    // member's (whether it is the cited offer's `transferTo` is causal,
+    // `merge::gates::successor_gate`); a link is a creator's own, signed
+    // by its pseudonym here (whether a request in its deps asks it is
+    // causal, `merge::gates::link_gate`).
+    match entry {
+        GovernanceEntry::SuccessorLinkRequest(_) => {
+            return state.members.contains_key(writer)
+                && !state.is_departed(writer)
+                && !state.bans.contains(writer);
+        }
+        GovernanceEntry::SuccessorLink(l) => {
+            return holds_creator_seat(writer, state) && l.link.old == *writer;
+        }
+        _ => {}
+    }
+
     // A device key's endorsement and retirement name the author's own key
     // (`p` signs them, ADR 0022 rule 1) and are valid from any carrier, a
     // banned, departed or forked member's included (rule 2, plan E3.2
@@ -209,7 +228,10 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         GovernanceEntry::Checkpoint(_)
         | GovernanceEntry::CommunitySuccessor(_)
         | GovernanceEntry::DeviceKey(_)
-        | GovernanceEntry::DeviceRetired(_) => true,
+        | GovernanceEntry::DeviceRetired(_)
+        | GovernanceEntry::SuccessorLinkRequest(_)
+        | GovernanceEntry::SuccessorLink(_) => true,
+
 
         // A re-admission is the member's own (rule 7: by one of its pre-fork
         // device keys, checked at the op's deps in S7d-keys.2) or a kick's:

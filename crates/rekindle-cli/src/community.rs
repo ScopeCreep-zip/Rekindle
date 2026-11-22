@@ -286,7 +286,8 @@ pub async fn dispatch(
         | CommunityCmd::Successors { .. } => successor(cmd, client, mode).await,
         CommunityCmd::Transfer { .. }
         | CommunityCmd::WithdrawTransfer { .. }
-        | CommunityCmd::AcceptTransfer { .. } => transfer(cmd, client, mode).await,
+        | CommunityCmd::AcceptTransfer { .. }
+        | CommunityCmd::AnswerLink { .. } => transfer(cmd, client, mode).await,
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
@@ -429,13 +430,15 @@ async fn transfer(
                 anchor: community.clone(),
             }
         }
-        CommunityCmd::AcceptTransfer {
-            community,
-            co_creators,
-        } => LifecycleRequest::CommunityAcceptTransfer {
+        CommunityCmd::AcceptTransfer { community } => LifecycleRequest::CommunityAcceptTransfer {
             anchor: community.clone(),
-            co_creators: co_creators.clone(),
         },
+        CommunityCmd::AnswerLink { community, request } => {
+            LifecycleRequest::CommunityAnswerSuccessorLink {
+                anchor: community.clone(),
+                request: request.clone(),
+            }
+        }
         _ => anyhow::bail!("not a transfer command"),
     };
     lifecycle(client, mode, request).await

@@ -187,6 +187,10 @@ pub struct GovernanceState {
 
     /// Every member's device set harvested from the merged ops (ADR 0022, plan E3.2 K-CP).
     pub devices: crate::device_judge::DeviceView,
+    /// Every applied transfer link-round op by op hash (lead decision
+    /// (46)): requests, and each creator's first link per request.
+    pub successor_links:
+        BTreeMap<rekindle_types::governance::OpHash, crate::link_round::LinkRoundState>,
 }
 
 // ── Sub-states ──

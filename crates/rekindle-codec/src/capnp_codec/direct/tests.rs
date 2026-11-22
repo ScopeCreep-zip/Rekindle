@@ -177,16 +177,11 @@ fn samples() -> Vec<DirectBody> {
         DirectBody::CreatorInvite(CreatorInvite {
             anchor: dht_key(),
             community_name: s("LAN Party"),
-            predecessor: Some(dht_key()),
         }),
         DirectBody::CreatorAccept(CreatorAccept {
             anchor: dht_key(),
             pseudonym: [0x5A; 32],
             signature: [0xC3; 64],
-            link: Some(CreatorLinkSig {
-                old: [0x6B; 32],
-                sig: [0xD4; 64],
-            }),
         }),
         DirectBody::CreatorDecline(CreatorDecline { anchor: dht_key() }),
         DirectBody::CreatorWithdrawn(CreatorWithdrawn { anchor: dht_key() }),

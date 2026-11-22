@@ -3,7 +3,9 @@
 //! creator set the links' new pseudonyms) and publishing the acceptance
 //! citing the offer; every member is then offered the successor and
 //! follows it. A withdrawn offer cannot be accepted and a later offer
-//! supersedes an earlier one (lead decisions (24)–(26)).
+//! supersedes an earlier one (lead decisions (24)–(26)). In a two-creator
+//! community the co-creator, not the recipient's friend, answers the
+//! recipient's link request inside the community (lead decision (46)).
 
 use std::time::Duration;
 
@@ -26,7 +28,6 @@ fn offer(community: &Community, to: String) -> IpcRequest {
 fn accept(community: &Community) -> IpcRequest {
     lifecycle(LifecycleRequest::CommunityAcceptTransfer {
         anchor: community.anchor.clone(),
-        co_creators: Vec::new(),
     })
 }
 

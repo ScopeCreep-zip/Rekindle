@@ -5,6 +5,7 @@
 //! creator authority.
 
 use rekindle_ipc::protocol::IpcResponse;
+use rekindle_types::governance::OpHash;
 use rekindle_types::id::PseudonymKey;
 
 use crate::daemon::dispatch::{adapter, state_error, DaemonContext};
@@ -51,12 +52,11 @@ pub(crate) async fn handle_withdraw_transfer(
 }
 
 /// Accept the standing offer of `anchor` to us; answers the reserved
-/// successor with the co-creators it waits on.
+/// successor with the creators still to link (lead decision (46)).
 pub(crate) async fn handle_accept_transfer(
     ctx: &DaemonContext,
     state: DaemonState,
     anchor: &str,
-    co_creators: &[String],
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -65,8 +65,30 @@ pub(crate) async fn handle_accept_transfer(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match Box::pin(adapter(ctx).accept_transfer(&membership.anchor, co_creators)).await {
+    match Box::pin(adapter(ctx).accept_transfer(&membership.anchor)).await {
         Ok(created) => IpcResponse::ok(&created),
+        Err(e) => IpcResponse::error(409, e),
+    }
+}
+
+/// Answer the link request `request` (op hash, hex) in `anchor` that asks
+/// us (lead decision (46)).
+pub(crate) async fn handle_answer_successor_link(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    anchor: &str,
+    request: &str,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let membership = match ctx.resolve_community(anchor) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    let request = OpHash(PseudonymKey::from_hex_lossy(request).0);
+    match Box::pin(adapter(ctx).answer_successor_link(&membership.anchor, request)).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "linked": true })),
         Err(e) => IpcResponse::error(409, e),
     }
 }

@@ -197,6 +197,9 @@ pub enum IntentKind {
     /// Accept a transfer offered to us: collect the other creators' links,
     /// create the successor and name it (plan E3.2 S7s.4).
     AcceptCommunityTransfer,
+    /// Answer a transfer's link request asking us, with our creator link
+    /// into the successor (lead decision (46)).
+    AnswerSuccessorLink,
     AnswerCreatorInvite,
     // TrustChanging: Key trust
     AcceptSessionReset,
@@ -455,6 +458,7 @@ impl IntentKind {
             | Self::JoinCommunity
             | Self::FollowCommunitySuccessor
             | Self::AcceptCommunityTransfer
+            | Self::AnswerSuccessorLink
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation

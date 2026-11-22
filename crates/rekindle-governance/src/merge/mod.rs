@@ -518,6 +518,9 @@ fn apply(
             };
             state.successors.insert(stamp.hash, row);
         }
+        G::SuccessorLinkRequest(_) | G::SuccessorLink(_) => {
+            crate::link_round::apply(author, entry, stamp, state);
+        }
     }
 }
 

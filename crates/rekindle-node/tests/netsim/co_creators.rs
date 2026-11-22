@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_ipc::protocol::{CommunityRequest, LifecycleRequest};
 use rekindle_netsim::Netsim;
@@ -409,4 +410,120 @@ async fn a_second_creator_frame_is_applied_while_the_first_join_runs() {
         "the second invite is applied while Bob's join of the first still runs"
     );
     listed_as_direct(&sim, bob, &bob_seen, &first).await;
+}
+
+fn ours(node: &SimNode, anchor: &str) -> String {
+    (node.host.governance().community_membership(anchor))
+        .and_then(|m| m.my_pseudonym_hex)
+        .expect("our pseudonym")
+}
+
+/// Lead decision (46): Ann and Bob co-create; Cat, a friend of Ann only,
+/// joins and is offered the community by Ann. Cat's first accept asks Bob
+/// inside the community; Bob answers the request; Cat's next accept
+/// creates the successor (its creators Cat and Bob, linked from the op
+/// log); Bob is offered it and follows through his sealed invite.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_two_creator_transfer_links_the_co_creator_through_the_community() {
+    let (sim, nodes) = friends_of_zero(3, 9311).await;
+    let (ann, bob, cat) = (&nodes[0], &nodes[1], &nodes[2]);
+    let bob_seen = bob.events().await;
+    let anchor = create_with(ann, &[bob]).await;
+    assert!(eventually(&sim, LIMIT, || async { invited(&bob_seen, &anchor) }).await);
+    answer(bob, &anchor, true).await;
+    assert!(eventually(&sim, LIMIT, || async { lists(bob, &anchor).await }).await);
+    let invite = ann
+        .ok(lifecycle(LifecycleRequest::InviteCreate {
+            community: anchor.clone(),
+            max_uses: 1,
+            expires_seconds: None,
+        }))
+        .await;
+    let url = invite["url"].as_str().expect("an invite link").to_string();
+    cat.ok(lifecycle(LifecycleRequest::CommunityJoin { invite: url }))
+        .await;
+    let cat_old = ours(cat, &anchor);
+    let counted = eventually(&sim, LIMIT, || async {
+        (ann.host.governance().governance_state(&anchor)).is_some_and(|s| {
+            s.is_counted_member(&rekindle_types::id::PseudonymKey::from_hex_lossy(&cat_old))
+        })
+    })
+    .await;
+    assert!(counted, "Ann counts Cat");
+    ann.ok(lifecycle(LifecycleRequest::CommunityOfferTransfer {
+        anchor: anchor.clone(),
+        transfer_to: cat_old.clone(),
+    }))
+    .await;
+    let accept = || {
+        lifecycle(LifecycleRequest::CommunityAcceptTransfer {
+            anchor: anchor.clone(),
+        })
+    };
+    let bob_old = rekindle_types::id::PseudonymKey::from_hex_lossy(&ours(bob, &anchor));
+    let first = eventually(&sim, LIMIT, || async { cat.call(accept()).await.is_ok() }).await;
+    assert!(first, "Cat's first accept asks the co-creator");
+    let request = eventually(&sim, LIMIT, || async {
+        (bob.host.governance().governance_state(&anchor)).is_some_and(|s| {
+            !rekindle_governance_runtime::transfer::requests_asking(&s, &bob_old).is_empty()
+        })
+    })
+    .await;
+    assert!(request, "Bob sees the link request in the community");
+    let state = bob
+        .host
+        .governance()
+        .governance_state(&anchor)
+        .expect("state");
+    let (hash, _) =
+        rekindle_governance_runtime::transfer::requests_asking(&state, &bob_old).remove(0);
+    bob.ok(lifecycle(LifecycleRequest::CommunityAnswerSuccessorLink {
+        anchor: anchor.clone(),
+        request: rekindle_types::id::PseudonymKey(hash.0).to_hex(),
+    }))
+    .await;
+    let found = std::cell::RefCell::new(String::new());
+    let done = eventually(&sim, Duration::from_secs(300), || async {
+        let Ok(v) = cat.call(accept()).await else {
+            return false;
+        };
+        let finished = v["pending_co_creators"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+            && v["registry_key"].as_str().is_some_and(|k| !k.is_empty());
+        if finished {
+            *found.borrow_mut() = v["anchor"].as_str().unwrap_or_default().to_owned();
+        }
+        finished
+    })
+    .await;
+    assert!(done, "Cat's accept completes once Bob linked");
+    let new_anchor = found.into_inner();
+    let offered = eventually(&sim, Duration::from_secs(300), || async {
+        (bob.call(lifecycle(LifecycleRequest::CommunitySuccessors {
+            anchor: anchor.clone(),
+        }))
+        .await
+        .ok())
+        .is_some_and(|v| v.to_string().contains(&new_anchor))
+    })
+    .await;
+    assert!(offered, "Bob is offered the successor");
+    bob.ok(lifecycle(LifecycleRequest::CommunityFollowSuccessor {
+        anchor: anchor.clone(),
+        new_anchor: new_anchor.clone(),
+    }))
+    .await;
+    assert!(
+        eventually(&sim, Duration::from_secs(120), || async {
+            lists(bob, &new_anchor).await
+        })
+        .await
+    );
+    let creators = creators(&info(bob, &new_anchor).await);
+    assert_eq!(
+        creators.len(),
+        2,
+        "the successor's creators are Cat and Bob"
+    );
 }

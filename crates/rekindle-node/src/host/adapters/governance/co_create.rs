@@ -146,8 +146,8 @@ impl HostGovernance {
     }
 
     /// Reserve a community, record and invite `named` (a transfer's
-    /// successor when `transfer` is set: each invite names the
-    /// predecessor, whose creator link the answer carries).
+    /// successor when `transfer` is set: `named` is then empty, its links
+    /// come through the old community, lead decision (46)).
     pub(super) async fn start_round(
         &self,
         name: &str,
@@ -159,7 +159,6 @@ impl HostGovernance {
         let me = (self.ctx.require_owner()).map_err(|_| "no identity is unlocked")?;
         let friends = HostFriends::of(&self.ctx);
         let named = named.to_vec();
-        let predecessor = transfer.as_ref().map(|t| t.old_anchor.clone());
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let reserved = rekindle_governance_runtime::reserve_community(self)
             .await
@@ -188,7 +187,6 @@ impl HostGovernance {
         let invite = CreatorFrame::Invite {
             anchor: anchor.clone(),
             community_name: name.to_owned(),
-            predecessor,
         };
         for (i, peer) in named.iter().enumerate() {
             if let Err(e) = creator_round::send(&friends, peer, &invite).await {
@@ -319,22 +317,17 @@ impl HostGovernance {
                 None
             }
         };
-        let Some(mut pending) = pending else { return };
+        let Some(pending) = pending else { return };
         let answers = (self.ctx.friend_stores.creator_answers.lock())
             .remove(anchor)
             .unwrap_or_default();
-        if let Some(transfer) = pending.transfer.take() {
-            self.clear_pending_rows(anchor).await;
-            Box::pin(self.finish_transfer(pending, transfer, &answers)).await;
-            return;
-        }
         let (mut joiners, mut accepts) = (Vec::new(), Vec::new());
         for named in &pending.named {
-            if let Some(Some(answer)) = answers.get(named) {
+            if let Some(Some((pseudonym, signature))) = answers.get(named) {
                 joiners.push(named.clone());
                 accepts.push(CoCreatorAcceptance {
-                    pseudonym: PseudonymKey(answer.pseudonym),
-                    signature: answer.signature,
+                    pseudonym: PseudonymKey(*pseudonym),
+                    signature: *signature,
                 });
             }
         }
@@ -376,7 +369,7 @@ impl HostGovernance {
 
     /// Mint each accepted co-creator a one-use invite and send it as
     /// `CreatorJoin` (decision (17): it joins through the normal join).
-    pub(super) async fn send_join_links(&self, anchor: &str, joiners: &[String]) {
+    async fn send_join_links(&self, anchor: &str, joiners: &[String]) {
         let friends = HostFriends::of(&self.ctx);
         for peer in joiners {
             let invite = match self.create_invite(anchor, 1, None).await {
@@ -477,13 +470,10 @@ impl HostGovernance {
             let pseudonym = PseudonymKey(signing.verifying_key().to_bytes());
             let signing_bytes =
                 rekindle_governance::genesis::creator_accept_signing_bytes(anchor, &pseudonym);
-            let link = (row.predecessor.as_deref())
-                .map(|old| Self::answer_link(&secret, old, anchor, &pseudonym));
             CreatorFrame::Accept {
                 anchor: anchor.to_owned(),
                 pseudonym: pseudonym.0,
                 signature: sign_with_pseudonym(&signing, &signing_bytes),
-                link,
             }
         } else {
             CreatorFrame::Decline {

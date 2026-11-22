@@ -12,8 +12,8 @@ use rekindle_types::governance::{AdmissionMode, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use super::resume::{Ctx, Dep, NotOnTop, RestRound, RestSet};
+use crate::link_round::{answers_request, cited_offer, fits_offer, LinkRoundBody};
 use crate::power::{removal_target, target_seq_frontier};
-use crate::successor::accepts_offer;
 
 /// What the gates decided from one pass.
 pub(super) struct Gated {
@@ -42,6 +42,7 @@ pub(super) fn invalidated(
     record_gate(ctx, set, round, &mut invalid, &mut record_refusals)?;
     checkpoint_gate(ctx, set, round, &mut invalid)?;
     successor_gate(ctx, set, round, &mut invalid)?;
+    link_gate(ctx, set, round, &mut invalid);
     beside_revoke_gate(ctx, set, round)?;
     let mut invite_refusals = BTreeMap::new();
     let uses = invite_gate(ctx, set, round, &mut invalid, &mut invite_refusals)?;
@@ -476,10 +477,7 @@ fn successor_gate(
 ) -> Result<(), NotOnTop> {
     let cut = &ctx.snap.state.successors;
     for (o, op) in set.ops.iter().enumerate() {
-        let GovernanceEntry::CommunitySuccessor(acc) = op.body() else {
-            continue;
-        };
-        let Some(accepts) = &acc.accepts else {
+        let Some(accepts) = cited_offer(op.body()) else {
             continue;
         };
         let in_deps = op.op().deps.iter().any(|r| r == accepts);
@@ -498,7 +496,7 @@ fn successor_gate(
             round.applied[p]
                 && !later_in_rest(set.ops[p].author(), Some(p))
                 && matches!(set.ops[p].body(), GovernanceEntry::CommunitySuccessor(offer)
-                    if accepts_offer(op.author(), acc, offer))
+                    if fits_offer(op.author(), op.body(), offer))
         } else if let Some(row) = cut.get(&accepts.op_hash) {
             let later_in_cut = cut.values().any(|s| {
                 s.author == row.author
@@ -510,11 +508,33 @@ fn successor_gate(
             }
             !later_in_cut
                 && !later_in_rest(&row.author, None)
-                && accepts_offer(op.author(), acc, &row.successor)
+                && fits_offer(op.author(), op.body(), &row.successor)
         } else {
             false
         };
         invalid[o] |= !in_deps || !holds;
     }
     Ok(())
+}
+
+/// `gates::link_gate` for a `rest` link: its request is in the rest
+/// (applied) or in the cut (the snapshot's `successor_links`).
+fn link_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &mut [bool]) {
+    let cut = &ctx.snap.state.successor_links;
+    for (o, op) in set.ops.iter().enumerate() {
+        let GovernanceEntry::SuccessorLink(link) = op.body() else {
+            continue;
+        };
+        let in_deps = op.op().deps.contains(&link.request);
+        let holds = if let Some(&q) = set.index.get(&link.request.op_hash) {
+            round.applied[q]
+                && matches!(set.ops[q].body(), GovernanceEntry::SuccessorLinkRequest(r)
+                    if answers_request(op.author(), link, r))
+        } else {
+            cut.get(&link.request.op_hash).is_some_and(|row| {
+                matches!(&row.body, LinkRoundBody::Request(r) if answers_request(op.author(), link, r))
+            })
+        };
+        invalid[o] |= !in_deps || !holds;
+    }
 }

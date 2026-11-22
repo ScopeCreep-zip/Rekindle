@@ -144,10 +144,12 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityWithdrawTransfer { anchor } => {
             community::handle_withdraw_transfer(ctx, state, &anchor).await
         }
-        LifecycleRequest::CommunityAcceptTransfer {
-            anchor,
-            co_creators,
-        } => community::handle_accept_transfer(ctx, state, &anchor, &co_creators).await,
+        LifecycleRequest::CommunityAcceptTransfer { anchor } => {
+            community::handle_accept_transfer(ctx, state, &anchor).await
+        }
+        LifecycleRequest::CommunityAnswerSuccessorLink { anchor, request } => {
+            community::handle_answer_successor_link(ctx, state, &anchor, &request).await
+        }
         LifecycleRequest::InviteCreate {
             community,
             max_uses,

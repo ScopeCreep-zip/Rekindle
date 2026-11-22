@@ -29,9 +29,7 @@ pub use content::{
     DisappearingTimer, DmAck, DmDelete, DmEdit, DmReaction, DmText, ReadUpTo, Typing,
     MAX_DM_ACK_SEQS,
 };
-pub use creator::{
-    CreatorAccept, CreatorDecline, CreatorInvite, CreatorJoin, CreatorLinkSig, CreatorWithdrawn,
-};
+pub use creator::{CreatorAccept, CreatorDecline, CreatorInvite, CreatorJoin, CreatorWithdrawn};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StreamRecord,

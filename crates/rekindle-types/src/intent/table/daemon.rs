@@ -109,6 +109,10 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
         "CommunityAcceptTransfer",
         Some(IntentKind::AcceptCommunityTransfer),
     ),
+    (
+        "CommunityAnswerSuccessorLink",
+        Some(IntentKind::AnswerSuccessorLink),
+    ),
     ("ChannelList", None),
     ("ChannelCreate", Some(IntentKind::CreateChannel)),
     ("ChannelDelete", Some(IntentKind::DeleteChannel)),

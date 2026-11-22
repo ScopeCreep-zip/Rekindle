@@ -77,7 +77,10 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         // It changes no state (plan E3.2 S7c.3).
         | G::Checkpoint(_)
         // It changes no permission: it names another community (S7s.3e).
-        | G::CommunitySuccessor(_) => OpClass::NonPower,
+        | G::CommunitySuccessor(_)
+        // The transfer's link round (lead decision (46)).
+        | G::SuccessorLinkRequest(_)
+        | G::SuccessorLink(_) => OpClass::NonPower,
         G::DeviceKey(_) | G::DeviceRetired(_) | G::DeviceReadmit(_) => OpClass::Device,
     }
 }

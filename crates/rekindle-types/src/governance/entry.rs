@@ -546,6 +546,14 @@ pub enum GovernanceEntry {
     /// A co-signed re-admission of a member's new device key after a fork
     /// (ADR 0022 rules 7 and 8).
     DeviceReadmit(super::device::DeviceReadmit),
+
+    /// A transfer recipient's link request to the offer's other creators
+    /// (lead decision (46)); by the offer's `transferTo` only.
+    SuccessorLinkRequest(super::successor::SuccessorLinkRequest),
+
+    /// A co-creator's creator link answering a request naming it (lead
+    /// decision (46)).
+    SuccessorLink(super::successor::SuccessorLink),
 }
 
 /// The exact value of a member's slot in one channel record, as a

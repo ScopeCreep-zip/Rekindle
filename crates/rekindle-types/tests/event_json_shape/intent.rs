@@ -76,6 +76,7 @@ fn fact_name(f: &Fact) -> &'static str {
         Fact::CreatorsLeave { .. } => "creatorsLeave",
         Fact::NoHistoryCopied => "noHistoryCopied",
         Fact::SuccessorLinked { .. } => "successorLinked",
+        Fact::TransferLinksMissing { .. } => "transferLinksMissing",
     }
 }
 
@@ -202,6 +203,9 @@ fn facts() -> Vec<Fact> {
         Fact::NoHistoryCopied,
         Fact::SuccessorLinked {
             signer: "aa".repeat(32),
+        },
+        Fact::TransferLinksMissing {
+            creators: vec!["cc".repeat(32)],
         },
     ]
 }
@@ -338,7 +342,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("intentClass", 5),
     ("proofRequired", 5),
     ("escalation", 11),
-    ("fact", 18),
+    ("fact", 19),
     ("subject", 8),
     ("reversibility", 4),
     ("notifies", 3),

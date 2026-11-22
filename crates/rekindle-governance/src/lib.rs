@@ -21,6 +21,7 @@ pub mod fixture;
 pub mod genesis;
 pub mod intent_facts;
 pub mod invite_quota;
+pub mod link_round;
 pub mod merge;
 pub mod op;
 pub mod permissions;

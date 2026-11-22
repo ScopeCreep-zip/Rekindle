@@ -20,5 +20,6 @@ pub(crate) use query::{
 };
 pub(crate) use successor::{handle_follow_successor, handle_publish_successor, handle_successors};
 pub(crate) use transfer::{
-    handle_accept_transfer, handle_offer_transfer, handle_withdraw_transfer,
+    handle_accept_transfer, handle_answer_successor_link, handle_offer_transfer,
+    handle_withdraw_transfer,
 };

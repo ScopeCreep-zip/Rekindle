@@ -40,4 +40,7 @@ pub use op::{
 };
 pub use payload::GovernanceSubkeyPayload;
 pub use role_edit::ExclusionGroupEdit;
-pub use successor::{CommunitySuccessor, CreatorLink, SuccessorReason, SuccessorShape};
+pub use successor::{
+    CommunitySuccessor, CreatorLink, SuccessorLink, SuccessorLinkRequest, SuccessorReason,
+    SuccessorShape,
+};

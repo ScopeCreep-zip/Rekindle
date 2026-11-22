@@ -912,6 +912,13 @@
       "signer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   },
+  "intent.fact.transferLinksMissing": {
+    "transferLinksMissing": {
+      "creators": [
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      ]
+    }
+  },
   "intent.fact.unopenedMessagesLost": "unopenedMessagesLost",
   "intent.intentClass.consequential": "consequential",
   "intent.intentClass.destructive": "destructive",

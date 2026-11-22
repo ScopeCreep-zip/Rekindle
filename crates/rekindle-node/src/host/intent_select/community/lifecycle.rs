@@ -104,10 +104,32 @@ pub(super) fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        LifecycleRequest::CommunityAcceptTransfer { anchor, .. } => {
+        LifecycleRequest::CommunityAcceptTransfer { anchor } => {
             // ADR 0019 TrustChanging; decision (25): the round removes no
-            // one, so the review names whom we still collect from.
+            // one, so the review names the creators who have not linked
+            // yet (lead decision (46): read from the op log).
             let (id, name) = community(ctx, anchor)?;
+            let state = (ctx.communities.governance_state(&id))
+                .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
+            let me = pseudonym(&ctx.my_pseudonym(&id))
+                .ok_or_else(|| unavailable("our pseudonym", "not in the community"))?;
+            let missing = rekindle_governance_runtime::transfer::links_missing(&state, &id, &me)
+                .map_err(|e| IpcResponse::error(409, e.to_string()))?;
+            s.facts.push(Fact::TransferLinksMissing {
+                creators: missing
+                    .iter()
+                    .map(rekindle_types::id::PseudonymKey::to_hex)
+                    .collect(),
+            });
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
+        }
+        LifecycleRequest::CommunityAnswerSuccessorLink { anchor, .. } => {
+            // ADR 0019 TrustChanging: our pseudonym here is linked to our
+            // pseudonym in the successor, visibly in the op log.
+            let (id, name) = community(ctx, anchor)?;
+            s.facts.push(Fact::PresenceVisible);
+            s.reversibility = Reversibility::Never;
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }

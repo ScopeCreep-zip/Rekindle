@@ -17,7 +17,6 @@
 use std::sync::Arc;
 
 use rekindle_transport::operations::friend::creator_round::{self, CreatorFrame};
-use rekindle_transport::operations::friend::AcceptedAnswer;
 use rekindle_transport::operations::friend::FriendHost as _;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::invite::InviteLink;
@@ -45,13 +44,11 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
         CreatorFrame::Invite {
             anchor,
             community_name,
-            predecessor,
         } => {
             let row = rekindle_db::repo::creator_round::CreatorInviteRow {
                 anchor: anchor.clone(),
                 inviter_key: from,
                 community_name: community_name.clone(),
-                predecessor,
                 received_at: host.ctx.clock.now_ms_i64(),
             };
             if let Err(e) = db
@@ -94,27 +91,13 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
             anchor,
             pseudonym,
             signature,
-            link,
         } => {
             let key = PseudonymKey(pseudonym);
             if !rekindle_governance::genesis::verify_creator_accept(&anchor, &key, &signature) {
                 tracing::warn!(anchor = %anchor, from = %sender, "CreatorAccept with a bad signature refused");
                 return true;
             }
-            // A transfer's round needs a holding creator link from one of
-            // the offer's other creators; a plain round takes none (plan
-            // E3.2 S7s.4, decision (24)).
-            let governance = HostGovernance::new(Arc::clone(&host.ctx));
-            if !governance.answer_link_ok(&anchor, &pseudonym, link.as_ref()) {
-                tracing::warn!(from = %sender, "CreatorAccept with a missing or bad creator link refused");
-                return true;
-            }
-            let accepted = AcceptedAnswer {
-                pseudonym,
-                signature,
-                link,
-            };
-            return answer(host, sender, anchor, Some(accepted)).await;
+            return answer(host, sender, anchor, Some((pseudonym, signature))).await;
         }
         CreatorFrame::Decline { anchor } => return answer(host, sender, anchor, None).await,
         CreatorFrame::Join { anchor, invite } => {
@@ -152,7 +135,7 @@ async fn answer(
     host: &HostFriends,
     sender: &str,
     anchor: String,
-    accept: Option<AcceptedAnswer>,
+    accept: Option<([u8; 32], [u8; 64])>,
 ) -> bool {
     let (Ok(owner), Ok(db)) = (host.ctx.require_owner(), host.ctx.db.current()) else {
         return false;

@@ -334,6 +334,11 @@ pub enum Fact {
     /// `predecessor` (ADR 0011).
     #[serde(rename_all = "camelCase")]
     SuccessorLinked { signer: String },
+    /// A transfer's creators who have not linked into the successor yet,
+    /// by their pseudonyms in the old community, hex (decision (25), lead
+    /// decision (46)); the acceptance completes only once all have.
+    #[serde(rename_all = "camelCase")]
+    TransferLinksMissing { creators: Vec<String> },
 }
 
 /// Whether the action can be taken back.

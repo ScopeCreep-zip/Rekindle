@@ -362,6 +362,27 @@ struct CreatorLink {
     sig                  @2 :Data;            # 64 bytes
 }
 
+# A transfer's link round inside the old community (lead decision (46),
+# plan E3.2 S7s.4b): the offer's recipient asks the offer's other creators,
+# by their pseudonyms here, to link themselves into the successor it
+# reserved at `newAnchor`. It cites `offer` among its deps.
+struct SuccessorLinkRequestEntry {
+    offer                @0 :Op.OpRef;
+    newAnchor            @1 :Text;
+    asked                @2 :List(Data);      # 32-byte old pseudonyms
+}
+
+# A co-creator's answer to a `SuccessorLinkRequestEntry` it is asked in,
+# citing it among its deps: its link (`old` = the op's author) and its
+# co-creator acceptance of the new anchor (`creatorSig`, 64 bytes, by
+# `link.new` over `rekindle-genesis-creator-accept-v1`'s bytes), which the
+# successor's GenesisCert carries.
+struct SuccessorLinkEntry {
+    request              @0 :Op.OpRef;
+    link                 @1 :CreatorLink;
+    creatorSig           @2 :Data;
+}
+
 # A member's request for a checkpoint's state snapshot (plan E3.2 S7c.3),
 # carried in ControlPayload `checkpointStateRequest @77`: the bytes at
 # `offset` of `canonical_state ‖ canonical_cut` at the cut of the checkpoint
@@ -792,5 +813,7 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         deviceKey                     @47 :DeviceKeyEntry;
         deviceRetired                 @48 :DeviceRetiredEntry;
         deviceReadmit                 @49 :DeviceReadmitEntry;
+        successorLinkRequest          @50 :SuccessorLinkRequestEntry;
+        successorLink                 @51 :SuccessorLinkEntry;
     }
 }

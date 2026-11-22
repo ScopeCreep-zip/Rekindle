@@ -101,15 +101,16 @@ pub enum LifecycleRequest {
     /// Withdraw our standing transfer offer of `anchor` (decision (26)).
     CommunityWithdrawTransfer { anchor: String },
 
-    /// Accept the standing transfer offer of `anchor` to us: collect a
-    /// creator link from each of the offer's other creators through
-    /// `co_creators` (friends' identity keys, one per other creator;
-    /// decision (16)'s round, which removes no one, decision (25)), then
-    /// create the successor and publish the acceptance.
-    CommunityAcceptTransfer {
-        anchor: String,
-        co_creators: Vec<String>,
-    },
+    /// Accept the standing transfer offer of `anchor` to us (lead
+    /// decision (46)): the first call reserves the successor and asks the
+    /// offer's other creators inside the community for their links; a
+    /// later call, once all have linked, creates the successor and
+    /// publishes the acceptance. Answers with the creators still to link.
+    CommunityAcceptTransfer { anchor: String },
+
+    /// Answer the transfer link request `request` (op hash, hex) in
+    /// `anchor` that asks us, with our creator link (lead decision (46)).
+    CommunityAnswerSuccessorLink { anchor: String, request: String },
 
     /// Re-create `anchor` under a new anchor whose cert names it as
     /// `predecessor`, with us as its sole creator, and name the new anchor
@@ -184,6 +185,9 @@ impl LifecycleRequest {
             Self::CommunityAcceptTransfer { .. } => {
                 ("CommunityAcceptTransfer", Write, Authenticated)
             }
+            Self::CommunityAnswerSuccessorLink { .. } => {
+                ("CommunityAnswerSuccessorLink", Write, Authenticated)
+            }
             Self::CommunityPublishSuccessor { .. } => {
                 ("CommunityPublishSuccessor", Write, Authenticated)
             }
@@ -218,6 +222,7 @@ impl LifecycleRequest {
             | Self::CommunityJoin { .. }
             | Self::CommunityFollowSuccessor { .. }
             | Self::CommunityAcceptTransfer { .. }
+            | Self::CommunityAnswerSuccessorLink { .. }
             | Self::CommunityLeave { .. }
             | Self::CommunityForget { .. }
             | Self::CommunityUpdateInfo { .. }

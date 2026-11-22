@@ -130,6 +130,55 @@ impl CommunitySuccessor {
     }
 }
 
+/// A transfer recipient's request, inside the old community, that the
+/// offer's other creators link themselves into the successor it reserved
+/// (lead decision (46)): addressed by old pseudonym, so co-creators need
+/// not be the recipient's friends (decision (25)).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuccessorLinkRequest {
+    /// The offer being accepted; it must be among the op's deps.
+    pub offer: OpRef,
+    /// The reserved successor's anchor key.
+    pub new_anchor: String,
+    /// The old pseudonyms asked: the offer's creator set without the
+    /// recipient.
+    pub asked: Vec<PseudonymKey>,
+}
+
+impl SuccessorLinkRequest {
+    /// An anchor, and 1–9 distinct pseudonyms asked.
+    #[must_use]
+    pub fn well_formed(&self) -> bool {
+        let mut asked: Vec<_> = self.asked.iter().map(|k| k.0).collect();
+        asked.sort_unstable();
+        asked.dedup();
+        !self.new_anchor.is_empty()
+            && (1..=MAX_ADDITIONAL_CREATORS).contains(&self.asked.len())
+            && asked.len() == self.asked.len()
+    }
+}
+
+/// A co-creator's answer to a [`SuccessorLinkRequest`] naming it (lead
+/// decision (46)): its creator link (`link.old` is the op's author) and
+/// its co-creator acceptance of the new anchor for the successor's cert.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuccessorLink {
+    /// The request answered; it must be among the op's deps.
+    pub request: OpRef,
+    pub link: CreatorLink,
+    /// 64-byte Ed25519 signature by `link.new` over
+    /// `creator_accept_signing_bytes(new anchor, link.new)`.
+    pub creator_sig: Vec<u8>,
+}
+
+impl SuccessorLink {
+    /// Both signatures are 64 bytes.
+    #[must_use]
+    pub fn well_formed(&self) -> bool {
+        self.link.sig.len() == 64 && self.creator_sig.len() == 64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

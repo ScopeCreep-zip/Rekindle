@@ -14,9 +14,9 @@ use rekindle_types::join_refusal::JoinRefusal;
 
 use super::resolve::{Ancestry, OpSet};
 use super::Round;
+use crate::link_round::{answers_request, cited_offer, fits_offer};
 use crate::op::VerifiedOp;
 use crate::power::{removal_target, target_seq_frontier};
-use crate::successor::accepts_offer;
 
 /// Joins counted per invite id by `invite_gate`.
 pub(super) type InviteUses = BTreeMap<[u8; 16], u32>;
@@ -47,6 +47,7 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
     record_gate(cert, set, round, &mut invalid, &mut record_refusals);
     checkpoint_gate(set, round, &mut invalid);
     successor_gate(set, round, &mut invalid);
+    link_gate(set, round, &mut invalid);
     let mut invite_refusals = BTreeMap::new();
     let uses = invite_gate(set, round, &mut invalid, &mut invite_refusals);
     Gated {
@@ -397,10 +398,7 @@ fn checkpoint_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
 /// because only the op knows its deps (S7c.3a).
 fn successor_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
     for (o, op) in set.ops.iter().enumerate() {
-        let GovernanceEntry::CommunitySuccessor(acc) = op.body() else {
-            continue;
-        };
-        let Some(accepts) = &acc.accepts else {
+        let Some(accepts) = cited_offer(op.body()) else {
             continue;
         };
         let in_deps = op.op().deps.iter().any(|r| r == accepts);
@@ -419,8 +417,29 @@ fn successor_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
             round.applied[p]
                 && !superseded
                 && matches!(set.ops[p].body(), GovernanceEntry::CommunitySuccessor(offer)
-                    if accepts_offer(op.author(), acc, offer))
+                    if fits_offer(op.author(), op.body(), offer))
         });
+        invalid[o] |= !in_deps || !holds;
+    }
+}
+
+/// A `SuccessorLink` needs the request it answers among its deps, applied,
+/// asking its author (lead decision (46)). A link request is judged by
+/// [`successor_gate`] like an acceptance: it cites a standing offer to its
+/// author whose creator set is the request's `asked` and its author.
+fn link_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
+    for (o, op) in set.ops.iter().enumerate() {
+        let GovernanceEntry::SuccessorLink(link) = op.body() else {
+            continue;
+        };
+        let in_deps = op.op().deps.contains(&link.request);
+        let holds = (0..set.ops.len())
+            .find(|&q| set.ops[q].hash() == link.request.op_hash)
+            .is_some_and(|q| {
+                round.applied[q]
+                    && matches!(set.ops[q].body(), GovernanceEntry::SuccessorLinkRequest(r)
+                        if answers_request(op.author(), link, r))
+            });
         invalid[o] |= !in_deps || !holds;
     }
 }

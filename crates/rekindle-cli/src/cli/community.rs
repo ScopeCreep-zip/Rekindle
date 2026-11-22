@@ -187,9 +187,17 @@ pub enum CommunityCmd {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
-        /// A friend's identity key per other creator of the offer.
-        #[arg(long = "co-creator")]
-        co_creators: Vec<String>,
+    },
+
+    /// Answer a transfer's link request that asks us, with our creator
+    /// link into the successor (lead decision (46)).
+    AnswerLink {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// The link request's op hash, hex.
+        #[arg(long)]
+        request: String,
     },
 
     /// Invite management.

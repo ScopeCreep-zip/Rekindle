@@ -13,6 +13,7 @@ use std::hash::Hash;
 use rekindle_types::governance::OpHash;
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
 
+use crate::link_round::LinkRoundState;
 use crate::op::OpStamp;
 use crate::state::{
     AdminDeleteState, AdmissionDecision, AutoModRuleState, CategoryState, ChannelState,
@@ -366,6 +367,11 @@ decanon_struct!(SuccessorState {
     successor: json,
     stamp
 });
+decanon_struct!(LinkRoundState {
+    author,
+    body: json,
+    stamp
+});
 // `canonical_state`'s section order.
 decanon_struct!(GovernanceState {
     members,
@@ -405,5 +411,6 @@ decanon_struct!(GovernanceState {
     community_policy,
     mod_reports,
     successors,
-    devices
+    devices,
+    successor_links
 });
