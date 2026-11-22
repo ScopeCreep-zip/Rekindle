@@ -66,3 +66,21 @@ ResizeRight Button
 ResizeUp Button
 ResizeDown Button
 BRGripper Button
+popup InfoPopup
+  InfoViewBG Decor
+  InfoViewTop Decor
+  InfoViewLeft Decor
+  InfoViewMiddle Decor
+  InfoViewRight Decor
+  InfoViewBottom Decor
+  ListViewBG Decor
+  BackDrop Decor
+  InfoView InfoView
+  ResizeRight Button
+  JoinButton Button
+  JoinChatTab ButtonBar
+    HostChatButton Button
+    JoinChatButton Button
+    LeaveChatButton Button
+      TalkingStateButton Part
+  CloseInfoView Button

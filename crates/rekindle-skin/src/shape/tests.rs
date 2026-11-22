@@ -257,6 +257,9 @@ fn builtin_silhouettes_match_their_goldens() {
     // 399 in the reference's top and bottom rows, where no Infoview is
     // attached); whole-window opacity XOR 196/222,000 px, all at the
     // drawer's and the body's bottom-left corner cuts (y 527-555), SK2-P3.
+    // SK2-P1d: the drawer is the `MainMenuPopup` rail (`popups.xml:2-89`),
+    // laid in its own box, so the main tree's silhouette is the body alone
+    // (x 112-399, 11 rects): the drawer's band (x 0-111, y 29-526) left it.
     // xSLIMFIRE and Alloy are 348 wide: their top-right/bottom-right
     // corner pieces' rightmost opaque columns sit at 347 in the reference's
     // top and bottom rows (no Infoview attached there), SK2-P4. Opacity
@@ -328,7 +331,7 @@ fn builtin_silhouettes_match_their_goldens() {
         (
             "builtin:stealthx",
             (
-                13,
+                11,
                 vec![r(118, 0, 276, 1), r(116, 1, 280, 1), r(115, 2, 282, 1)],
             ),
         ),

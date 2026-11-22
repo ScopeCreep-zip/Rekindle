@@ -66,3 +66,14 @@ InfoViewSwitch Button
   InfoViewSwitchIn Part
   InfoviewSwitchOut Part
 SystemMenu Button
+popup CombatInfoSkin
+  XfireTopRow Decor
+  XfireBottomRow Decor
+  XfireMiddleRow Decor
+  BackDrop Decor
+  InfoView InfoView
+  InfoGripperTR Decor
+  InfoGripperBR Decor
+  ResizeRight Button
+  JoinButton Button
+  JoinChatButton Button

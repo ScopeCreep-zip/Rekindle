@@ -44,3 +44,18 @@ BottomBar Group
       StopDownloadButton Button
       ExecuteDownloadButton Button
       DownloadInfoButton Button
+popup InfoPopup
+  XfireTopRow Decor
+  InfoMiddle Decor
+    InfoTopLeft Decor
+    InfoTopRight Decor
+    InfoBG Decor
+      InfoOutline Decor
+        InfoView InfoView
+  InfoBottomRow Decor
+    CloseInfoView Button
+    InfoJoinButton Button
+    JoinChatTab ButtonBar
+      HostChatButton Button
+      JoinChatButton Button
+      LeaveChatButton Button

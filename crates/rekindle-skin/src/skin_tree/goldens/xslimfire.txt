@@ -55,3 +55,18 @@ TabbedControl Views
   DownloadView View(Files)
     BvBk3 Part
 InfoViewButton Button
+popup MainInfoViewPopup
+  InfoTopRow Decor
+  InfoBottomRow Decor
+    InfoBottomRowBG Decor
+    InfoJoinGameButton Button
+    InfoJoinChatTab ButtonBar
+      InfoHostChatButton Button
+      InfoJoinChatButton Button
+      InfoLeaveChatButton Button
+        InfoTalkingStateButton Part
+  InfoMiddleRow Decor
+  InfoViewButton Button
+  InfoView InfoView
+  InfoBackDrop Decor
+  InfoResizeRight Button

@@ -103,3 +103,13 @@ TabsButtonsContainer ButtonBar
     DeleteNotification Button
     NotificationsButtonBar.Separator2 Decor
 MainInfoViewButton Button
+popup MainInfoViewPopup
+  MainInfoResizeR Button
+  MainInfoTopRow Decor
+  MainInfoLeftSide Decor
+  MainInfoBackground Decor
+  MainInfoRightSide Decor
+  MainInfoBottomRow Decor
+  MainInfoContentContainer Decor
+    MainInfoContent InfoView
+  MainInfoViewButton Button

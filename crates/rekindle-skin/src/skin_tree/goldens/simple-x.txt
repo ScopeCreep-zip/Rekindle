@@ -63,3 +63,18 @@ ResizeLeft Button
 ResizeRight Button
 ResizeDown Button
 GripperBR Button
+popup Infoskin
+  XfireTopRow Decor
+  XfireMiddleRow Decor
+  XfireBottomRow Decor
+  InfoViewButton Button
+  BackDrop Decor
+  InfoView InfoView
+  ResizeRight Button
+  ButtonHolder Group
+    JoinChatTab ButtonBar
+      HostChatButton Button
+      JoinChatButton Button
+      LeaveChatButton Button
+        TalkingStateButton Part
+    JoinButton Button

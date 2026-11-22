@@ -51,3 +51,14 @@ StatusRight Decor
 Status StatusText
 ViewInfo Button
 Gripper Button
+popup XGlowInfoSkin
+  Top Decor
+  Left Decor
+  Middle Decor
+  Right Decor
+  InfoView InfoView
+  Bottom Decor
+  Gripper Button
+  Bump Decor
+  Voice Button
+  Join Button

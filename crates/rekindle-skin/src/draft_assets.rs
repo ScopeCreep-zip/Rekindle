@@ -1,6 +1,6 @@
 //! A draft's assets (plan E7.7.5): what "Start from the current skin"
-//! carries from the source package (its regions, icons, sounds and
-//! window trees, with every entry they name) and the regions the author imported, a PNG or
+//! carries from the source package (its regions, icons, sounds,
+//! window trees and the popup trees its windows launch, with every entry they name) and the regions the author imported, a PNG or
 //! GIF each with its fit. Nothing here checks an image: the exported
 //! package goes through the whole validator, so an imported region is
 //! held to the same rules as any package's (a bad nine-slice is refused
@@ -98,6 +98,9 @@ pub(super) fn gather(
         for w in m.windows.values() {
             if let Some(t) = &w.tree {
                 tree_art(&t.root, &mut in_trees);
+            }
+            for popup in w.popups.values() {
+                tree_art(&popup.tree.root, &mut in_trees);
             }
         }
         for name in named.chain(in_trees) {

@@ -18,7 +18,11 @@ MainBackground Decor
   ResizeRight Button
   ResizeBottom Button
   ResizeBottomRight Button
-MainMenuPopup SideRail
+popup MainInfoViewPopup
+  MainInfoBackground Decor
+    InfoView InfoView
+    ResizeRight Button
+popup MainMenuPopup
   MainMenuBackground Decor
     MenuBar MenuBar
       XfireMenuText MenuTitle

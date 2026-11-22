@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 
-use rekindle_types::dto::skin::SkinWindow;
+use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_tree::{NodeRole, ShellNode, SkinNode, SkinTree};
 
 use crate::{builtin, images, manifest, package};
@@ -17,18 +17,35 @@ fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
     }
 }
 
-fn main_tree(id: &str) -> SkinTree {
+/// The built-in's main window layout, its package validated.
+fn main_layout(id: &str) -> WindowLayout {
     let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
     let package = package::read(b.bytes).unwrap();
-    let m = manifest::parse(&package).unwrap();
+    let mut m = manifest::parse(&package).unwrap();
     images::validate(&package, &m).unwrap();
-    m.windows[&SkinWindow::Main].tree.clone().unwrap()
+    m.windows.remove(&SkinWindow::Main).unwrap()
 }
 
+/// The main window's tree and the trees of the popups it launches (plan
+/// SK2 P1: StealthX's menu titles and `AddFriendButton` ride the
+/// `MainMenuPopup` rail, `popups.xml:2-89`).
+fn main_and_popup_trees(id: &str) -> Vec<SkinTree> {
+    let main = main_layout(id);
+    std::iter::once(main.tree.unwrap())
+        .chain(main.popups.into_values().map(|p| p.tree))
+        .collect()
+}
+
+/// The main tree, then each popup tree it launches under a `popup <name>`
+/// header (plan SK2 P1: a node the pack moved onto a popup stays golden).
 fn tree_of(id: &str) -> String {
-    let tree = main_tree(id);
+    let main = main_layout(id);
     let mut out = String::new();
-    lines(&tree.root, 0, &mut out);
+    lines(&main.tree.as_ref().unwrap().root, 0, &mut out);
+    for (name, popup) in &main.popups {
+        let _ = writeln!(out, "popup {name}");
+        lines(&popup.tree.root, 1, &mut out);
+    }
     out
 }
 
@@ -73,17 +90,23 @@ fn find_all<'a>(nodes: &'a [SkinNode], id: &str, out: &mut Vec<&'a SkinNode>) {
 /// (`Minimize`, `Close`, `Menu(_)`, `Resize(_)`, `Button(_)`, …, taken from
 /// the goldens at `aa6d776cd`); each still carries a pressing trigger (its
 /// own or its part's, the pack's wiring), and a former resize grip still
-/// resizes.
+/// resizes. A node the pack moved into a popup the main window launches is
+/// searched for there.
 #[test]
 fn every_former_behaviour_node_keeps_a_trigger() {
     let mut lost = Vec::new();
-    let mut trees: std::collections::BTreeMap<&str, SkinTree> = std::collections::BTreeMap::new();
+    let mut trees: std::collections::BTreeMap<&str, Vec<SkinTree>> =
+        std::collections::BTreeMap::new();
     for line in include_str!("goldens/former_behaviour.txt").lines() {
         let mut f = line.split(' ');
         let (skin, id, old) = (f.next().unwrap(), f.next().unwrap(), f.next().unwrap());
-        let tree = trees.entry(skin).or_insert_with(|| main_tree(skin));
+        let skin_trees = trees
+            .entry(skin)
+            .or_insert_with(|| main_and_popup_trees(skin));
         let mut found = Vec::new();
-        find_all(&tree.root, id, &mut found);
+        for tree in skin_trees.iter() {
+            find_all(&tree.root, id, &mut found);
+        }
         // Alloy's `IVButtonHolder` was misread as the InfoView toggle: it is
         // `Class=Tile` art with no trigger (`Chatskin.ini:523-527`).
         if (skin, id) == ("alloy", "IVButtonHolder") {
