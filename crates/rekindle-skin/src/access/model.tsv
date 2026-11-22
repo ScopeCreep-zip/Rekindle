@@ -678,6 +678,7 @@
 .role-tag-default	text	var(--color-xfire-text-dim)	--color-xfire-accent 25% over --color-xfire-bg-dark	1.0	false
 .role-tag-default	text	var(--color-xfire-text-dim)	--color-xfire-accent 25% over --color-xfire-bg-panel	1.0	false
 .role-tag-default	text	var(--color-xfire-text-dim)	--color-xfire-accent 25% over --color-xfire-bg-primary	1.0	false
+.route-paused-status	text	var(--color-xfire-danger-text)	--color-xfire-danger 30% over --color-xfire-bg-dark	1.0	false
 .search-panel-chip	text	var(--color-xfire-text-secondary)	--color-xfire-bg-secondary	1.0	false
 .search-panel-chip-active	text	var(--color-xfire-accent-text)	--color-xfire-accent 18% over --color-xfire-bg-primary	1.0	false
 .search-panel-close	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false

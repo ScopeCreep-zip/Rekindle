@@ -77,10 +77,32 @@ export type NetworkEvent =
   | { strength: { bars: number } }
   | { ownRecordsChanged: { phase: OwnRecordsPhase; error: string | null } }
   | { localRoutesDied: { count: number } }
+  /** Our new-route budget is spent (or unreadable), so the inbound route stays down (plan RV1c). */
+  | { routePaused: { cause: RoutePauseCause } }
+  /** The pause is over: a refill brought the route back (plan RV1c). */
+  | { routeResumed: Record<string, never> }
+  /** Own-route deaths of `class` in `windowSecs` rose above `baseline`: a warning only (plan RV1). */
+  | {
+      routeDeathsAboveBaseline: {
+        class: OwnRouteClass;
+        deaths: number;
+        /** Of `deaths`, routes that died under 60 s old. */
+        young: number;
+        windowSecs: number;
+        baseline: number;
+      };
+    }
   | { remoteRoutesDied: { peerKeys: string[] } }
   | { valueChanged: { recordKey: string; changedSubkeys: number[] } };
 
 export type NetworkSubscriptionEvent = { network: NetworkEvent };
+
+/** Why the inbound route is paused (Rust `RoutePauseCause`, plan RV1c): the budget is
+ *  spent, or it could not be read. */
+export type RoutePauseCause = "exhausted" | "unreadable";
+
+/** One of our own route classes, as a route event names it (Rust `OwnRouteClass`). */
+export type OwnRouteClass = "general" | "media";
 
 /**
  * Where our own-records stage is (Rust `OwnRecordsPhase`, plan E2.5 FC3):
