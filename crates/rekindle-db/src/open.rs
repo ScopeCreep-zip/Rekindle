@@ -305,6 +305,7 @@ fn sqlite(context: &'static str) -> impl FnOnce(rusqlite::Error) -> DbError {
 /// [`DbError::WrongKey`] when `key` does not decrypt it,
 /// [`DbError::VersionMismatch`], or the SQLite step that failed.
 pub fn open(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
+    sqlcipher_initialized();
     let conn = Connection::open(path).map_err(sqlite("open database"))?;
     conn.pragma_update(None, "key", format!("x'{}'", hex_lower(key)))
         .map_err(sqlite("key database"))?;
@@ -342,6 +343,22 @@ pub fn open(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
             .map_err(DbError::Io)?;
     }
     Ok(Db::from(rekindle_asql::Connection::from(conn)))
+}
+
+/// Returns once SQLite, and SQLCipher's part of it, have finished
+/// initializing in this process (finding DB1b). `sqlite3_initialize` sets
+/// `isInit` inside its main mutex but runs `SQLITE_EXTRA_INIT`
+/// (`sqlcipher_extra_init`) after leaving it, so a concurrent first open
+/// returns from its own `sqlite3_initialize` early and its `PRAGMA key`
+/// meets `sqlcipher_init == 0`: `sqlcipherCodecAttach` then answers
+/// `SQLITE_ERROR` (libsqlite3-sys 0.37 `sqlcipher/sqlite3.c`). rusqlite 0.39
+/// does not serialize that first initialization, so the first open here
+/// runs it to completion on one thread while every other waits. Its
+/// result is not needed: a failed initialization fails the real open
+/// that follows with SQLite's own error.
+fn sqlcipher_initialized() {
+    static INITIALIZED: std::sync::Once = std::sync::Once::new();
+    INITIALIZED.call_once(|| drop(Connection::open_in_memory()));
 }
 
 fn hex_lower(bytes: &[u8]) -> String {
