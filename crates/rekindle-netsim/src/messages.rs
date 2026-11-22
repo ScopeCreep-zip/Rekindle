@@ -3,48 +3,36 @@
 //! ([`crate::latency::MESSAGE`]); a call's reply travels back one more
 //! latency later, who gives up after Veilid's reply timeout.
 //!
-//! The reply route (Veilid 0.5.8 `rpc_processor/destination.rs:486-528`):
-//! the callee answers over the reply private route the question named,
-//! which is the caller's preferred route when the call was pinned to one
-//! ([`AppMessagePort::call_pinned`]); unpinned, it is an automatic pool
-//! route of our 3-hop length (`route_select.rs:131-136`). The fork holds
-//! the selected route only through its assembly (`destination.rs:493-525`,
-//! `_held_reply_route`), so nothing holds it while the question is out.
-//! An automatic route whose length is neither default (1 hop, 2 unsafe,
-//! `route_spec_store/mod.rs:135-142`) is released by the management task
-//! the first time it needs testing (`private_route_management.rs:115-137`,
-//! the `else if v.is_automatic()` arm): once [`ROUTE_MIN_IDLE`] has passed
-//! since it was last known valid (`route_stats.rs:144-158`; an answer over
-//! it makes it valid, `:489-508`, a question sent over a route does not,
-//! `:511-517`). An answer that reaches a released route finds no route to
-//! validate (`route_validate.rs:22-33`, `rpc_route.rs:226-239`) and is
-//! dropped, so the caller times out. The pinned Sending route is published,
-//! so it is tested rather than released. So an unpinned reply is lost when
-//! its pool route crosses that mark mid-call ([`FakeMessages::reply_route_gone`]),
-//! a pinned reply when the pinned route is gone (released, dead) or broken
-//! ([`crate::loopback`]) by then, and either reply crosses the network as
-//! any message does: lost to a partition, a detached caller, or the drop
-//! fault ([`Network::lost_in_transit`]).
+//! Every send and call is unpinned, as `VeilidMessages` sends (plan RV1):
+//! its safety route is a pool route of the send's hop count, floor-clamped
+//! (Veilid 0.5.8 `route_select.rs:119-124`), and a call's reply route is a
+//! pool route Veilid selects to match it (`rpc_processor/destination.rs`
+//! `:487-520`). The fork holds the selected reply route only through its
+//! assembly (`_held_reply_route`), so nothing holds it while the question is
+//! out. A pool route of the default hop count (`default_route_hop_count`,
+//! [`ANONYMITY_HOP_FLOOR`] in Rekindle's config) is kept and kept alive by
+//! the 10 s loopback keepalive (`private_route_management.rs:7`, `:143-150`);
+//! an automatic route of any other length is released by the management
+//! task the first time it needs testing (`:115-137`, the
+//! `else if v.is_automatic()` arm): once [`ROUTE_MIN_IDLE`] has passed since
+//! it was last known valid (`route_stats.rs:144-158`). An answer that reaches
+//! a released route is dropped (`route_validate.rs:22-33`), so the caller
+//! times out ([`FakeMessages::reply_route_gone`]); any reply also crosses
+//! the network as a message does: lost to a partition, a detached caller,
+//! or the drop fault ([`Network::lost_in_transit`]).
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_records::port::{
-    check_message_len, AppCallId, AppMessagePort, PeerTarget, PortError, PortEvent, RouteClass,
+    check_message_len, AppCallId, AppMessagePort, PeerTarget, PortError, PortEvent,
 };
-use rekindle_route::own_routes::OwnRoutes;
 use rekindle_types::config::{SafetyProfile, ANONYMITY_HOP_FLOOR};
 use tokio::sync::oneshot;
 
 use crate::latency;
 use crate::loopback::ROUTE_MIN_IDLE;
 use crate::network::Network;
-use crate::routes::FakeAllocator;
-
-/// The latency streams of a node's own-route self-tests, one per class
-/// (its [`class_tag`](crate::routes::class_tag) in the low bits): apart
-/// from the route-test streams, which are the bare tag.
-const SELF_TEST_STREAM: u64 = 0x7365_6c66_0000_0000;
 
 /// Veilid's default RPC timeout (`network.rpc.timeout_ms`,
 /// Veilid 0.5.8 `veilid_config.rs:944`).
@@ -74,21 +62,11 @@ fn not_started() -> PortError {
 pub struct FakeMessages {
     node: usize,
     net: Arc<Network>,
-    /// The node's own routes, the same `FakeRoutes` holds.
-    own: Arc<OwnRoutes<FakeAllocator>>,
 }
 
 impl FakeMessages {
-    pub(crate) fn new(node: usize, net: Arc<Network>, own: Arc<OwnRoutes<FakeAllocator>>) -> Self {
-        Self { node, net, own }
-    }
-
-    /// Our live route of `class`, which a pinned send goes out on;
-    /// `Routing` while none is live, as `VeilidMessages` answers.
-    fn pinned(&self, class: RouteClass) -> Result<String, PortError> {
-        self.own
-            .id(class)
-            .ok_or_else(|| PortError::Routing(format!("our {class:?} route is not available")))
+    pub(crate) fn new(node: usize, net: Arc<Network>) -> Self {
+        Self { node, net }
     }
 
     /// Whether this node's automatic pool routes fail end to end
@@ -103,19 +81,15 @@ impl FakeMessages {
     }
 
     /// The node owning `target`'s route, `None` when its owner released
-    /// it, either route is broken end to end, `target` is dead from outside
-    /// and this is not its owner's loopback ([`crate::Fault::OutsideDead`]), or an unpinned send's pool
-    /// safety route fails ([`crate::Fault::PoolRoutesFail`]) ([`crate::loopback`]: what
-    /// is sent is lost); `RouteUnusable` when this node's cache does not
+    /// it, it is broken end to end ([`crate::loopback`]), `target` is dead
+    /// from outside ([`crate::Fault::OutsideDead`]), or this node's pool
+    /// safety routes fail ([`crate::Fault::PoolRoutesFail`]): what is sent
+    /// is lost; `RouteUnusable` when this node's cache does not
     /// resolve it (Veilid's `NoConnection`, [`crate::routes`]) or the first
     /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`], a
     /// `Send` error: our side, the peer's route kept);
     /// `Send` when this node is detached.
-    fn route_owner(
-        &self,
-        target: &PeerTarget,
-        pinned: Option<&str>,
-    ) -> Result<Option<usize>, PortError> {
+    fn route_owner(&self, target: &PeerTarget) -> Result<Option<usize>, PortError> {
         if self.net.inner.lock().faults.detached.contains(&self.node) {
             return Err(not_started());
         }
@@ -133,9 +107,8 @@ impl FakeMessages {
             ));
         }
         if self.net.route_broken(target.as_str())
-            || pinned.is_some_and(|id| self.net.route_broken(id))
-            || (self.net.outside_dead(target.as_str()) && pinned != Some(target.as_str()))
-            || (pinned.is_none() && self.pool_failing())
+            || self.net.outside_dead(target.as_str())
+            || self.pool_failing()
         {
             return Ok(None);
         }
@@ -150,16 +123,11 @@ impl FakeMessages {
 }
 
 impl FakeMessages {
-    /// A message to `target`, over our `pinned` route when given.
-    async fn send_over(
-        &self,
-        target: &PeerTarget,
-        pinned: Option<&str>,
-        message: Vec<u8>,
-    ) -> Result<(), PortError> {
+    /// A message to `target` over a pool safety route.
+    async fn send_over(&self, target: &PeerTarget, message: Vec<u8>) -> Result<(), PortError> {
         check_message_len(&message)?;
         self.net.awake(self.node).await;
-        let Some(to) = self.route_owner(target, pinned)? else {
+        let Some(to) = self.route_owner(target)? else {
             // Dispatched into a released route: lost, and still "sent".
             return Ok(());
         };
@@ -186,15 +154,12 @@ impl FakeMessages {
         Ok(())
     }
 
-    /// A call to `target`, over our `pinned` route when given (its reply
-    /// route too), its legs' latencies drawn from `stream` when given, else
-    /// from the node's shared stream.
+    /// A call to `target` over a pool safety route, answered over a pool
+    /// reply route.
     async fn call_over(
         &self,
         target: &PeerTarget,
         profile: &SafetyProfile,
-        pinned: Option<&str>,
-        stream: Option<u64>,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
         check_message_len(&message)?;
@@ -202,10 +167,9 @@ impl FakeMessages {
         if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
             slot.app_calls += 1;
         }
-        let Some(to) = self.route_owner(target, pinned)? else {
+        let Some(to) = self.route_owner(target)? else {
             // Into a released route: no answer comes back.
             tokio::time::sleep(call_timeout(profile)).await;
-            self.net.lost_question(self.node, target.as_str(), pinned);
             return Err(PortError::Timeout("app call timed out".into()));
         };
         if self.net.inner.lock().faults.hung.contains(&to) {
@@ -222,16 +186,8 @@ impl FakeMessages {
             }
             id
         };
-        if pinned.is_none() {
-            self.net.select_pool_reply(self.node);
-        }
-        let leg = || match stream {
-            Some(stream) => self
-                .net
-                .latency
-                .draw_stream(self.node, stream, latency::MESSAGE),
-            None => self.net.latency.draw(self.node, latency::MESSAGE),
-        };
+        self.net.select_pool_reply(self.node);
+        let leg = || self.net.latency.draw(self.node, latency::MESSAGE);
         let (there, back) = (leg(), leg());
         self.net.send_after(
             self.node,
@@ -255,42 +211,35 @@ impl FakeMessages {
                 self.net.lost_in_transit(&inner, to, self.node)
             };
             tokio::time::sleep(back).await;
-            if lost_on_the_way || self.reply_route_gone(pinned) {
+            if lost_on_the_way || self.reply_route_gone(profile) {
                 return std::future::pending().await;
             }
             reply
         });
         if let Ok(Ok(reply)) = answered.await {
-            self.net.answered(self.node, pinned.is_none());
+            self.net.answered(self.node);
             Ok(reply)
         } else {
             self.net.inner.lock().calls.remove(&call_id);
-            self.net.lost_question(self.node, target.as_str(), pinned);
             Err(PortError::Timeout("app call timed out".into()))
         }
     }
 
-    /// Whether our reply route is gone as the answer reaches it: the
-    /// `pinned` route is no longer ours and live, or is broken; unpinned,
-    /// the pool reply route has been released ([`ROUTE_MIN_IDLE`] past its
-    /// last validity) or the node's pool routes fail
-    /// ([`crate::Fault::PoolRoutesFail`]).
-    fn reply_route_gone(&self, pinned: Option<&str>) -> bool {
+    /// Whether our pool reply route is gone as the answer reaches it: the
+    /// node's pool routes fail ([`crate::Fault::PoolRoutesFail`]), or the
+    /// route is not of the default hop count and has been released
+    /// ([`ROUTE_MIN_IDLE`] past its last validity).
+    fn reply_route_gone(&self, profile: &SafetyProfile) -> bool {
         let inner = self.net.inner.lock();
-        match pinned {
-            Some(id) => {
-                inner.routes.get(id).is_none_or(|r| r.node != self.node)
-                    || inner.faults.loopback.contains_key(id)
-            }
-            None => {
-                inner.faults.pool_failing.contains(&self.node)
-                    || inner
-                        .nodes
-                        .get(self.node)
-                        .and_then(|s| s.pool_reply_valid)
-                        .is_none_or(|valid| valid.elapsed() >= ROUTE_MIN_IDLE)
-            }
-        }
+        let default_length = profile.hop_count.max(ANONYMITY_HOP_FLOOR)
+            == rekindle_types::config::VeilidStartupOptions::default().route_hop_count;
+        inner.faults.pool_failing.contains(&self.node)
+            || (!default_length
+                && inner
+                    .nodes
+                    .get(self.node)
+                    .and_then(|s| s.pool_reply_valid)
+                    .is_none_or(|valid| valid.elapsed() >= ROUTE_MIN_IDLE))
     }
 }
 
@@ -302,9 +251,7 @@ impl AppMessagePort for FakeMessages {
         _profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<(), PortError> {
-        // As `VeilidMessages`: a statement is pinned to our `Sending` route.
-        let pinned = self.pinned(RouteClass::Sending)?;
-        self.send_over(target, Some(&pinned), message).await
+        self.send_over(target, message).await
     }
 
     async fn call(
@@ -313,61 +260,7 @@ impl AppMessagePort for FakeMessages {
         profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
-        self.call_over(target, profile, None, None, message).await
-    }
-
-    async fn call_pinned(
-        &self,
-        target: &PeerTarget,
-        profile: &SafetyProfile,
-        class: RouteClass,
-        message: Vec<u8>,
-    ) -> Result<Vec<u8>, PortError> {
-        let pinned = self.pinned(class)?;
-        self.call_over(target, profile, Some(&pinned), None, message)
-            .await
-    }
-
-    async fn call_own(
-        &self,
-        class: RouteClass,
-        path: rekindle_records::port::OwnPath,
-        profile: &SafetyProfile,
-        message: Vec<u8>,
-    ) -> Result<Vec<u8>, PortError> {
-        // As `VeilidMessages`: import our own route for the call, call it
-        // with itself as the safety route, and drop the import.
-        let own = self.pinned(class)?;
-        if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
-            *slot.own_calls.entry(class).or_default() += 1;
-            if path == rekindle_records::port::OwnPath::Outside {
-                *slot.outside_calls.entry(class).or_default() += 1;
-            }
-        }
-        self.net.import_route(self.node, &own);
-        // From outside the call takes our Sending route as its safety
-        // route, as `VeilidMessages` does (plan LF9), and enters as a peer's.
-        let sending = match path {
-            rekindle_records::port::OwnPath::Loopback => None,
-            rekindle_records::port::OwnPath::Outside => Some(self.pinned(RouteClass::Sending)?),
-        };
-        let safety = sending.as_deref().or(Some(own.as_str()));
-        // Drawn from the class's own self-test stream: the self-test task
-        // wakes beside the node's other tasks in the order tokio wakes them
-        // (a resume's or a report's tests run at once), and a draw from the
-        // node's shared stream would hand them each other's latencies.
-        let stream = SELF_TEST_STREAM | u64::from(crate::routes::class_tag(class));
-        let answer = self
-            .call_over(
-                &PeerTarget::new(own.clone()),
-                profile,
-                safety,
-                Some(stream),
-                message,
-            )
-            .await;
-        self.net.forget_import(self.node, &own);
-        answer
+        self.call_over(target, profile, message).await
     }
 
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
@@ -391,30 +284,5 @@ impl AppMessagePort for FakeMessages {
             // `Send`.
             None => Err(PortError::Send(format!("no call {}", call_id.0))),
         }
-    }
-}
-
-/// A node's self-test counters (plan RH1r-c O1, LF7).
-impl crate::Netsim {
-    /// How many of those were node `node`'s calls to its own `class` route
-    /// (its liveness self-tests), counted as [`app_calls`](Self::app_calls).
-    #[must_use]
-    pub fn own_calls(&self, node: usize, class: rekindle_records::port::RouteClass) -> u64 {
-        self.net.inner.lock().nodes[node]
-            .own_calls
-            .get(&class)
-            .copied()
-            .unwrap_or(0)
-    }
-
-    /// Of those, the ones from outside (`OwnPath::Outside`, plan LF7): our
-    /// route's blob over the pool's safety route, as a peer's call.
-    #[must_use]
-    pub fn outside_calls(&self, node: usize, class: rekindle_records::port::RouteClass) -> u64 {
-        self.net.inner.lock().nodes[node]
-            .outside_calls
-            .get(&class)
-            .copied()
-            .unwrap_or(0)
     }
 }

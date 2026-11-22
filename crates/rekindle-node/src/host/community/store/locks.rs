@@ -27,6 +27,38 @@ fn community_lock(locks: &CommunityLocks, community_id: &str) -> Arc<tokio::sync
     Arc::clone(locks.lock().entry(community_id.to_string()).or_default())
 }
 
+/// The per-community single tasks (follow-ups, card refreshes).
+type SingleTasks = Arc<parking_lot::Mutex<BTreeMap<String, FollowUp>>>;
+
+/// Mark `community_id`'s task in `tasks` dirty; `true` when none runs.
+fn mark(tasks: &SingleTasks, community_id: &str) -> bool {
+    let mut tasks = tasks.lock();
+    let entry = tasks.entry(community_id.to_string()).or_default();
+    entry.dirty = true;
+    !std::mem::replace(&mut entry.running, true)
+}
+
+/// The running task's next turn: `true` (and clean again) when it was
+/// marked since its last turn; otherwise it stops running.
+fn take(tasks: &SingleTasks, community_id: &str) -> bool {
+    let mut tasks = tasks.lock();
+    let Some(entry) = tasks.get_mut(community_id) else {
+        return false;
+    };
+    if std::mem::take(&mut entry.dirty) {
+        return true;
+    }
+    entry.running = false;
+    false
+}
+
+/// `community_id`'s task did not start: none runs.
+fn stop(tasks: &SingleTasks, community_id: &str) {
+    if let Some(entry) = tasks.lock().get_mut(community_id) {
+        entry.running = false;
+    }
+}
+
 impl CommunityStore {
     /// The lock that serializes `community_id`'s watch-ring moves.
     #[must_use]
@@ -90,32 +122,38 @@ impl CommunityStore {
     /// follow-up task runs, so the caller starts one.
     #[must_use]
     pub fn mark_follow_up(&self, community_id: &str) -> bool {
-        let mut follow_ups = self.follow_ups.lock();
-        let entry = follow_ups.entry(community_id.to_string()).or_default();
-        entry.dirty = true;
-        !std::mem::replace(&mut entry.running, true)
+        mark(&self.follow_ups, community_id)
     }
 
     /// The running follow-up's next turn: `true` (and clean again) when a
     /// rebuild finished since its last turn; otherwise it stops running.
     #[must_use]
     pub fn take_follow_up(&self, community_id: &str) -> bool {
-        let mut follow_ups = self.follow_ups.lock();
-        let Some(entry) = follow_ups.get_mut(community_id) else {
-            return false;
-        };
-        if std::mem::take(&mut entry.dirty) {
-            return true;
-        }
-        entry.running = false;
-        false
+        take(&self.follow_ups, community_id)
     }
 
     /// `community_id`'s follow-up task did not start: none runs.
     pub fn stop_follow_up(&self, community_id: &str) {
-        if let Some(entry) = self.follow_ups.lock().get_mut(community_id) {
-            entry.running = false;
-        }
+        stop(&self.follow_ups, community_id);
+    }
+
+    /// Mark `community_id`'s member card refresh dirty (plan JP1); `true`
+    /// when no refresh task runs, so the caller starts one.
+    #[must_use]
+    pub fn mark_card_refresh(&self, community_id: &str) -> bool {
+        mark(&self.card_refreshes, community_id)
+    }
+
+    /// The running card refresh's next turn: `true` (and clean again) when
+    /// a rebuild asked for one since its last turn; otherwise it stops.
+    #[must_use]
+    pub fn take_card_refresh(&self, community_id: &str) -> bool {
+        take(&self.card_refreshes, community_id)
+    }
+
+    /// `community_id`'s card refresh task did not start: none runs.
+    pub fn stop_card_refresh(&self, community_id: &str) {
+        stop(&self.card_refreshes, community_id);
     }
 
     /// Drop a community — on leave.
@@ -129,6 +167,7 @@ impl CommunityStore {
         self.frontier_writes.lock().remove(community_id);
         self.admissions.lock().remove(community_id);
         self.follow_ups.lock().remove(community_id);
+        self.card_refreshes.lock().remove(community_id);
         self.member_cards
             .write()
             .retain(|(community, _), _| community != community_id);
@@ -145,6 +184,7 @@ impl CommunityStore {
         self.frontier_writes.lock().clear();
         self.admissions.lock().clear();
         self.follow_ups.lock().clear();
+        self.card_refreshes.lock().clear();
         self.member_cards.write().clear();
     }
 }

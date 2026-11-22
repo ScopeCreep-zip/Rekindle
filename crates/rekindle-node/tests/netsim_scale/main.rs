@@ -184,8 +184,6 @@ mod route_link_failure;
 mod route_liveness;
 #[path = "../netsim/scenarios.rs"]
 mod scenarios;
-#[path = "../netsim/sending_route.rs"]
-mod sending_route;
 #[path = "../netsim/smoke.rs"]
 mod smoke;
 #[path = "../netsim/stale_route_call.rs"]

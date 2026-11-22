@@ -26,10 +26,10 @@ async fn a_transaction_get_reaches_a_minority_holders_newer_value() {
     {
         // The fourth closest replica alone holds seq 1, as a write that
         // landed only on replicas the other side of a partition leaves it.
-        let mut inner = sim.net.inner.lock();
-        let partitions = inner.faults.partitions.clone();
+        let mut guard = sim.net.inner.lock();
+        let inner = &mut *guard;
         let record = inner.records.get_mut(&key).unwrap();
-        let fourth = reachable(&record.replicas, &partitions, 1)[3];
+        let fourth = reachable(&record.replicas, &inner.faults, 1)[3];
         let mut newer = record.replicas[0].values[0].clone().unwrap();
         newer.seq += 1;
         newer.data = vec![2];

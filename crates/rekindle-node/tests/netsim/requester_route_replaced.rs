@@ -3,15 +3,18 @@
 //! `FriendAccept` call kept timing out for 7+ minutes on the route captured
 //! from the request, while the requester's first DM, typed at once, was
 //! never sent. Ola asks Tia; right after, the route her request named
-//! goes silent ([`Fault::RouteSilentDeath`]); Ola finds it by her own
-//! self-test and publishes a tested replacement. Tia accepts at once and
+//! goes silent ([`Fault::RouteSilentDeath`]); Veilid's loopback tests
+//! kill it once Ola's DHT work proves her network (plan RV1 deleted her own
+//! self-test: 0.5.8 `rpc_processor/mod.rs:1711-1728`,
+//! `online_detector.rs:1343-1347`, `route_stats.rs:19-29`), and she
+//! publishes a tested replacement. Tia accepts at once and
 //! Ola writes to Tia at once, before any accept reached her. Tia's accept
 //! must land over Ola's current route within a bounded time, and Ola's
 //! first DM, queued while she waits, must reach Tia once the session is
 //! open.
 //!
 //! The bound (`requester_route_bounds`): with a silent death Ola learns
-//! of it only by her own self-test, so the accept may take the worst
+//! of it only from Veilid's tests, so the accept may take the worst
 //! detection + the republish + the accepter's watch and one call + a
 //! margin (~171 s), and her first DM one call after that. Both are wide;
 //! what fix (b) owns is the step after the republish: Tia's waiting row
@@ -45,7 +48,8 @@ async fn an_accept_lands_over_the_requesters_new_route_and_her_first_dm_follows(
     request(&sim, &nodes[1], &nodes[0]).await;
     // Right after her request landed, the route it named stops delivering
     // and no one is told (the live case: Veilid reports nothing; Ola finds
-    // it by her own self-test and republishes a tested replacement).
+    // it by inbound silence while she awaits an answer, rotates on that evidence
+    // and republishes a tested replacement, plan RV1).
     sim.fault(Fault::RouteSilentDeath {
         node: 1,
         class: RouteClass::General,
@@ -62,7 +66,7 @@ async fn an_accept_lands_over_the_requesters_new_route_and_her_first_dm_follows(
     let republished = asked.elapsed();
     assert!(
         republished <= worst_detection() + republish(),
-        "the replacement was on the network within its self-test's worst case: {republished:?}"
+        "the replacement was on the network within its evidence's worst case: {republished:?}"
     );
     let accepted = eventually(&sim, Duration::from_secs(600), || {
         is_accepted_friend(&nodes[1], &tia)

@@ -159,12 +159,8 @@ impl Netsim {
                 Arc::clone(&self.net),
                 Arc::clone(rng),
             )),
-            routes: Arc::new(FakeRoutes::new(
-                index,
-                Arc::clone(&self.net),
-                Arc::clone(&own),
-            )),
-            messages: Arc::new(FakeMessages::new(index, Arc::clone(&self.net), own)),
+            routes: Arc::new(FakeRoutes::new(index, Arc::clone(&self.net), own)),
+            messages: Arc::new(FakeMessages::new(index, Arc::clone(&self.net))),
             lifecycle: None,
         }
     }
@@ -366,15 +362,32 @@ impl Netsim {
         }
     }
 
-    /// A stray app message reaches `to` from `from` (any node may send
-    /// any bytes to a route it holds): what the receiver makes of bytes
-    /// no Rekindle node sends.
+    /// A stray app message reaches `to` from `from` (any node may send any
+    /// bytes to a route it holds): what the receiver makes of them.
     pub fn stray_message(&self, from: usize, to: usize, message: Vec<u8>) {
         self.net.send(
             from,
             to,
             "AppMessage",
             PortEvent::AppMessage {
+                message,
+                route: None,
+            },
+            true,
+        );
+    }
+
+    /// A stray app call reaches `to` from `from` (any node may call any
+    /// route it holds), no one waiting on its answer: the reply is ignored, as
+    /// an expired call's is ([`FakeMessages::reply`](crate::messages)). Plan RV1.
+    pub fn stray_call(&self, from: usize, to: usize, message: Vec<u8>) {
+        let call_id = self.net.next_call_id();
+        self.net.send(
+            from,
+            to,
+            "AppCall",
+            PortEvent::AppCall {
+                call_id: rekindle_records::port::AppCallId(call_id),
                 message,
                 route: None,
             },

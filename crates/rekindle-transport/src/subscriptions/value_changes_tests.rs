@@ -28,6 +28,10 @@ impl InboundHandler for Gated {
         None
     }
 
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
+        rekindle_lifecycle::SessionScope::closed("test")
+    }
+
     fn clock(&self) -> &dyn rekindle_utils::Clock {
         &rekindle_utils::SystemClock
     }

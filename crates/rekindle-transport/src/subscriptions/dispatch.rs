@@ -23,7 +23,7 @@ use std::sync::Arc;
 use rekindle_codec::ingress::Ingress;
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortEvent, RoutePort};
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::TransportConfig;
 use crate::crypto::envelope::{Addressing, SignedPayload};
@@ -132,17 +132,11 @@ async fn dispatch_event<H: InboundHandler>(
             message,
             route,
         } => {
-            match routes.liveness.answer_probe(&message) {
+            match crate::liveness::answer_probe(&message) {
                 ProbeAnswer::NotProbe => {}
-                // A liveness probe: ours echoes; another's is refused.
-                ProbeAnswer::Echo(echo) => {
-                    if let Err(e) = messages.reply(call_id, echo).await {
-                        warn!(error = %e, "failed to answer our own route probe");
-                    }
-                    return;
-                }
-                // Another's probe: a peer's suspect round, its report that
-                // our route failed it (plan LF6): test the route now.
+                // A peer's probe: its suspect round, its report that our
+                // route failed it (plan LF6): evidence that rotates our
+                // General route (plan RV1).
                 ProbeAnswer::Refuse => {
                     routes.liveness.route_reported();
                     reply_nak(messages, call_id).await;
@@ -165,14 +159,7 @@ async fn dispatch_event<H: InboundHandler>(
             median_latency_us,
         } => {
             let att_state = AttachmentState::from_veilid_string(&state);
-            // A reattach, or the public internet ready again, tests our
-            // routes at once (RH1r-c O5).
-            let regained = (is_attached && !shared.is_attached())
-                || (public_internet_ready && !shared.public_internet_ready());
             let changed = shared.set_attachment(att_state, is_attached, public_internet_ready);
-            if regained {
-                routes.liveness.network_changed();
-            }
             // 0.5.7's richer attachment signal — recorded so readiness
             // checks and status surfaces can use real peer counts instead
             // of inferring health from the attachment enum alone.
@@ -518,23 +505,43 @@ mod tests;
 
 /// Answer a joiner's bare `BootstrapRequest` (plan E3.2) with the
 /// handler's encoded `bootstrapResponseV2`, or a member's bare
-/// `CheckpointStateRequest` (S7c.3) with its `checkpointStateResponse`; a
-/// refusal, or a handler past the deadline, is a NAK.
+/// `CheckpointStateRequest` (S7c.3) with its `checkpointStateResponse` (a
+/// `CheckpointHintRequest`, S7c.5, likewise). A refusal is a NAK; a handler
+/// past [`CALL_DEADLINE`] is answered
+/// [`RETRY_LATER`](crate::operations::direct::RETRY_LATER), as a 1:1 call
+/// is: a deadline is no refusal (review RV5 H1), and a NAK here withdraws a
+/// joiner's join (`rekindle_governance_runtime::bootstrap_peers`). The
+/// handler runs on the session scope ([`InboundHandler::scope`]), so its
+/// work (a bootstrap answer's invite revoke and key delivery) goes on to
+/// completion past the deadline, as `operations::direct::answer_call`'s
+/// does (plan JP1); with no session the request is answered retry-later.
 async fn dispatch_bare_request<H: InboundHandler>(
     handler: &Arc<H>,
     messages: &dyn AppMessagePort,
     call_id: AppCallId,
     request: crate::payload::rpc::InboundCall,
 ) {
-    let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
-        Ok(crate::payload::rpc::CallResponse::Ok(bytes)) => bytes,
-        Ok(other) => {
+    let (answer, answered) = tokio::sync::oneshot::channel();
+    let worker = Arc::clone(handler);
+    handler
+        .scope()
+        .spawn_or_drop("answer bare request", async move {
+            // Past the deadline the answer has no taker; the work is done.
+            let _ = answer.send(worker.on_call(None, request).await);
+        });
+    let reply = match tokio::time::timeout(CALL_DEADLINE, answered).await {
+        Ok(Ok(crate::payload::rpc::CallResponse::Ok(bytes))) => bytes,
+        Ok(Ok(other)) => {
             warn!(response = ?other, "bare request refused");
             NAK.to_vec()
         }
+        Ok(Err(_)) => {
+            debug!("bare request dropped with its session: answered retry-later");
+            crate::operations::direct::RETRY_LATER.to_vec()
+        }
         Err(_) => {
-            warn!("bare request exceeded the call deadline");
-            NAK.to_vec()
+            warn!("bare request exceeded the call deadline: answered retry-later");
+            crate::operations::direct::RETRY_LATER.to_vec()
         }
     };
     if let Err(e) = messages.reply(call_id, reply).await {

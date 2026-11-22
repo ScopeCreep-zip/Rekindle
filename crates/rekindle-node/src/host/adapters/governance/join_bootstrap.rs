@@ -41,9 +41,10 @@ pub(crate) enum Exchange {
     /// The inviter answered and refused it, and why: every member's merge
     /// holds it invalid.
     Refused(JoinRefusal),
-    /// Nobody answered (the inviter is away, holds no route, or was partial
-    /// and no member answered): the join stands from the DHT and the
-    /// exchange is tried again.
+    /// Nobody answered (the inviter is away, holds no route, answered
+    /// `RETRY_LATER` past its deadline, or was partial and no member
+    /// answered): the join stands from the DHT and the exchange is tried
+    /// again.
     Unanswered(String),
 }
 

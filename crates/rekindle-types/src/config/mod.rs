@@ -174,19 +174,22 @@ pub struct VeilidStartupOptions {
     #[serde(default)]
     pub allow_insecure_fallback: bool,
 
-    /// Hops for inbound private routes
-    /// (`network.rpc.default_route_hop_count`).
+    /// Hops for inbound private routes and for Veilid's background
+    /// safety-route pool (`network.rpc.default_route_hop_count`).
     ///
-    /// Default `1` (the Veilid default). A message to us crosses the
-    /// sender's safety route, which every Rekindle send builds explicitly
-    /// at [`ANONYMITY_HOP_FLOOR`] (3) through `safety_selection` (never the
-    /// default context, whose safety route would also use this value: V19,
-    /// fixed in plan C7), then this private route: safety(3) + private(1) =
-    /// 4 hops, at/above the architecture §8 3-hop target. 3-hop inbound was tried and reverted pre-0.5.4 because
-    /// route round-trip testing exhausted the relay pool; 0.5.4's
-    /// "simplified route testing" removes that mechanism, so `3` is worth
-    /// re-testing — against the original failure symptoms (allocation
-    /// flap, empty presence blobs, voice rosters not forming).
+    /// Default [`ANONYMITY_HOP_FLOOR`] (3), the hop count every Rekindle
+    /// send asks for through `safety_selection` (plan RV1, VA1 audit).
+    /// Veilid keeps its tested pool of safety routes at this hop count:
+    /// `DESIRED_BACKGROUND_SAFETY_ROUTE_COUNT` routes per (hop count,
+    /// ordering) cell, each kept alive by a loopback keepalive every 10 s
+    /// (veilid-core 0.5.8 `private_route_management.rs:7`, `:143-150`), and
+    /// a send picks a pool route of its own hop count
+    /// (`route_select.rs:119-124`). At the Veilid default of 1 the pool held
+    /// 1–2-hop routes no send selected, and every send rode an untested
+    /// 3-hop route built on the spot. Our General and Media routes allocate
+    /// at this count too (`new_private_route`, a 0-hop custom spec,
+    /// `veilid_api/api.rs:763-857`), and Veilid tests each at allocation
+    /// (`api.rs:831`).
     #[serde(default = "default_route_hop_count")]
     pub route_hop_count: u8,
 
@@ -386,7 +389,7 @@ fn default_true() -> bool {
     true
 }
 fn default_route_hop_count() -> u8 {
-    1
+    ANONYMITY_HOP_FLOOR
 }
 fn default_remote_max_records() -> u32 {
     65_536

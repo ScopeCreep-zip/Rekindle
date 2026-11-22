@@ -14,7 +14,7 @@ use crate::error::{Result, TransportError};
 use crate::handler::InboundHandler;
 use crate::shared::SharedState;
 use crate::subscriptions::dispatch;
-use rekindle_utils::{Clock, RandomSource};
+use rekindle_utils::RandomSource;
 
 type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::Session>>>;
 
@@ -34,7 +34,6 @@ impl TransportNode {
         handler: Arc<H>,
         session: SharedSession,
         rng: Arc<dyn RandomSource>,
-        clock: Arc<dyn Clock>,
     ) -> Result<Self> {
         info!(namespace = %config.namespace, "starting transport node");
 
@@ -63,7 +62,7 @@ impl TransportNode {
         )
         .await?;
 
-        let (node, shutdown_rx) = Self::outbound(config, ports, shared_state, rng, clock, true);
+        let (node, shutdown_rx) = Self::outbound(config, ports, shared_state, rng, true);
         let node = node.run_inbound(shutdown_rx, events, handler, session);
         info!("transport node started");
         Ok(node)
@@ -78,11 +77,9 @@ impl TransportNode {
         handler: Arc<H>,
         session: SharedSession,
         rng: Arc<dyn RandomSource>,
-        clock: Arc<dyn Clock>,
     ) -> Self {
         info!(namespace = %config.namespace, "transport node on supplied ports");
-        let (node, shutdown_rx) =
-            Self::outbound(config, ports, SharedState::new(), rng, clock, true);
+        let (node, shutdown_rx) = Self::outbound(config, ports, SharedState::new(), rng, true);
         node.run_inbound(shutdown_rx, events, handler, session)
     }
 
@@ -98,15 +95,12 @@ impl TransportNode {
     /// which deletes this mode when the GUI's Host starts its own node.
     pub fn adopt_outbound(config: TransportConfig, ports: PortSet, session: SharedSession) -> Self {
         info!(namespace = %config.namespace, "transport node (outbound-only) on the host's ports");
-        // The host's dispatch answers our own probes and reports arrivals
-        // over our routes and the network's return to [`Self::liveness`]
-        // (src-tauri `services::veilid::network`), so this node self-tests
-        // its routes as a started one does (plan RH1r-c O1–O5; Linux finding
-        // L-FR1: an untested route stayed published, dead, for minutes);
-        // its jitter is OS entropy.
+        // The host's dispatch reports peers' probes and arrivals over our
+        // routes to [`Self::liveness`] (src-tauri `services::veilid::network`),
+        // so this node rotates its General route on evidence as a started
+        // one does (plan RV1); its jitter is OS entropy.
         let rng: Arc<dyn RandomSource> = Arc::new(rekindle_utils::OsRandom);
-        let clock: Arc<dyn Clock> = Arc::new(rekindle_utils::SystemClock);
-        let mut node = Self::outbound(config, ports, SharedState::new(), rng, clock, true).0;
+        let mut node = Self::outbound(config, ports, SharedState::new(), rng, true).0;
         node.spawn_route_publisher(None, session);
         node
     }
@@ -119,8 +113,7 @@ impl TransportNode {
         mut ports: PortSet,
         shared_state: Arc<SharedState>,
         rng: Arc<dyn RandomSource>,
-        clock: Arc<dyn Clock>,
-        self_tests: bool,
+        sees_inbound: bool,
     ) -> (Self, mpsc::Receiver<()>) {
         ports.messages = crate::broadcast::deadline::Bounded::wrap(ports.messages);
         let config = Arc::new(config);
@@ -133,13 +126,7 @@ impl TransportNode {
         // Our routes are wanted from node-ready, before any login (C7.9b):
         // a login is reachable at once. Their owner waits for readiness.
         ports.routes.want_own();
-        let liveness = crate::liveness::Liveness::new(
-            rng,
-            clock,
-            Arc::clone(&ports.routes),
-            Arc::clone(&ports.messages),
-            self_tests,
-        );
+        let liveness = crate::liveness::Liveness::new(rng, Arc::clone(&ports.routes), sees_inbound);
         let node = Self {
             liveness,
             liveness_handles: Vec::new(),
@@ -208,11 +195,11 @@ impl TransportNode {
             )
             .in_current_span(),
         ));
-        if self.liveness.self_tests() {
+        if self.liveness.sees_inbound() {
             let (offer, offered) = tokio::sync::watch::channel(None);
             offers.push(offer);
             self.liveness_handles.push(tokio::spawn(
-                crate::liveness::owner::run_self_tests(Arc::clone(&self.liveness), offered)
+                crate::liveness::owner::run_rotations(Arc::clone(&self.liveness), offered)
                     .in_current_span(),
             ));
         }

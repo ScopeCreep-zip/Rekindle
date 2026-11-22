@@ -155,6 +155,14 @@ pub enum GovernanceRuntimeError {
     #[error("the inviter is partial and none of the {0} other members asked answered")]
     BootstrapUnavailable(usize),
 
+    /// The peer answered `RETRY_LATER`
+    /// (`rekindle_types::message::CALL_RETRY_LATER`): it could not judge our
+    /// call within its deadline (review RV5 H1). Not a refusal: the call is
+    /// attempted again as after a timeout (the join's bootstrap: a
+    /// `bootstrap` outbox row).
+    #[error("the peer could not answer in time: retry later")]
+    PeerRetryLater,
+
     /// Our op did not land on our member record `M` within the command's
     /// deadline; it stays queued and the outbox lands it later (plan E3.2
     /// S6b).

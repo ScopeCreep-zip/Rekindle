@@ -102,6 +102,17 @@ CREATE TABLE IF NOT EXISTS presence_keys (
     PRIMARY KEY (owner_key, epoch)
 );
 
+-- Plan RV1 (owner decision 2026-11-22, threat model L2 bounded exposure):
+-- the identity's new-route budget, a token bucket every route whose blob
+-- leaves the device spends from (`rekindle_route::budget`).
+CREATE TABLE IF NOT EXISTS route_budget (
+    owner_key TEXT PRIMARY KEY NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    tokens INTEGER NOT NULL CHECK(tokens >= 0),
+    refilled_ms INTEGER NOT NULL CHECK(refilled_ms >= 0),
+    week_start_ms INTEGER NOT NULL CHECK(week_start_ms >= 0),
+    week_spent INTEGER NOT NULL CHECK(week_spent >= 0)
+);
+
 -- Plan E2.6: a group DM (3-8 members, no governance). `group_id` is the
 -- 16 random bytes the creator minted, in hex; `roster` is the signed
 -- invite's member list (JSON array of `rekindle_types::group_dm::GroupDmRosterMember`)

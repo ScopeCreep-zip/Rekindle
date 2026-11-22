@@ -279,3 +279,20 @@ async fn servers_view_changed_replaces_the_open_servers_view() {
         "{text}"
     );
 }
+
+/// Plan RV1: the Host's route pause reaches the TUI's status line through
+/// the subscription reducer.
+#[tokio::test]
+async fn the_route_pause_reaches_the_status_line() {
+    use rekindle_types::subscription_events::{NetworkEvent, RoutePauseCause};
+    let (_dir, mut app) = app_on_test_bus().await;
+    let action =
+        app.subscription_event_to_action(SubscriptionEvent::Network(NetworkEvent::RoutePaused {
+            cause: RoutePauseCause::Exhausted,
+        }));
+    assert!(matches!(action, Some(Action::Render)));
+    assert_eq!(
+        app.route_alert.text().as_deref(),
+        Some("inbound route paused after repeated failures: possible attack")
+    );
+}

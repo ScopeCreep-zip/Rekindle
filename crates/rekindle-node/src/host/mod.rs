@@ -75,6 +75,7 @@ mod receive_tests;
 mod reinitiate_tests;
 #[cfg(test)]
 mod rotation_tests;
+mod route_budget;
 pub mod runtime;
 mod serve;
 pub(crate) mod servers;

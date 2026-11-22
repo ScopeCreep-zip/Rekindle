@@ -80,25 +80,20 @@ fn the_hex_check_catches_an_id() {
 #[test]
 fn a_death_logs_counts_and_durations_only() {
     let born = Instant::now();
-    let mut tally = TestTally::default();
-    tally.record(born + Duration::from_secs(90), true);
-    tally.record(born + Duration::from_secs(120), false);
-    tally.record(born + Duration::from_secs(135), false);
     let death = RouteDeath::new(
         RouteClass::General,
-        DeathCause::SelfTest,
-        Some(1),
+        DeathCause::Rotated,
+        Some(3),
         born,
-        tally,
         true,
         born + Duration::from_secs(140),
     );
     assert_eq!(
         death.fields(),
-        "class=General cause=self_test hops=1 age_s=140 failures=2 passes=1 since_ok_s=50 node_ready=true"
+        "class=General cause=rotated hops=3 age_s=140 node_ready=true"
     );
     let lines = Deaths::during(|| death.log());
     assert_eq!(lines.len(), 1);
     assert_identifier_free(&lines[0]);
-    assert!(lines[0].contains("since_ok_s=50"), "{}", lines[0]);
+    assert!(lines[0].contains("age_s=140"), "{}", lines[0]);
 }

@@ -80,17 +80,10 @@ async fn settled() -> (Community, Vec<usize>) {
     (community, outside)
 }
 
-/// Node 0's app calls that are not its own routes' self-tests: General
-/// and Sending are self-tested each period whatever arrives over them
-/// (plan LF6, `InboundLiveness::ungated`), so a test may fall inside the
-/// window a scenario counts its member calls in.
+/// Node 0's app calls: each is a member call (plan RV1: no own route is
+/// self-tested by an app call; Veilid's keepalive tests them).
 fn member_calls(community: &Community) -> u64 {
-    let sim = &community.sim;
-    let own: u64 = [RouteClass::General, RouteClass::Media, RouteClass::Sending]
-        .into_iter()
-        .map(|class| sim.own_calls(0, class))
-        .sum();
-    sim.app_calls(0) - own
+    community.sim.app_calls(0)
 }
 
 /// Node 0's cached route of node `i`.

@@ -27,6 +27,11 @@ pub struct NetworkStatus {
     pub own_records: rekindle_types::subscription_events::OwnRecordsPhase,
     /// Why the stage failed, when it did.
     pub own_records_error: Option<String>,
+    /// Why a route class is down with no new route (plan RV1), `null` when
+    /// none is: the route owner's state the Host's `StatusSnapshot.route_paused`
+    /// reads; later changes arrive as `NetworkEvent::RoutePaused` /
+    /// `RouteResumed`.
+    pub route_paused: Option<rekindle_types::subscription_events::RoutePauseCause>,
     pub profile_dht_key: Option<String>,
     pub friend_list_dht_key: Option<String>,
 }

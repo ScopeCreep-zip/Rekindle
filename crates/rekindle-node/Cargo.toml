@@ -45,6 +45,8 @@ rekindle-codec = { path = "../rekindle-codec" }
 rekindle-channel = { path = "../rekindle-channel" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-records = { path = "../rekindle-records" }
+# The new-route budget and death-rate rules the Host applies (plan RV1).
+rekindle-route = { path = "../rekindle-route" }
 # Tier 5. The shared gossip stack — Cap'n Proto `CommunityEnvelope`
 # over unframed `app_message`, the format the desktop already used.
 # Before this the daemon had its own postcard `GossipPayload` and the
@@ -146,7 +148,5 @@ rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" 
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 # The network simulator the netsim scenarios run real Hosts on (plan C9.3).
 rekindle-netsim = { path = "../rekindle-netsim" }
-# The route-liveness deadlines a netsim scenario waits out (plan RH1r-c S1).
-rekindle-route = { path = "../rekindle-route" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

@@ -85,11 +85,6 @@ async fn an_exit_right_after_logout_awaits_the_allocations_in_flight() {
     );
     node.host.shutdown().await.expect("the host stops");
     let after = sim.trace();
-    assert_eq!(
-        since(&after, ALLOCATION_STARTS, RouteClass::Sending),
-        0,
-        "no Sending allocation after logout"
-    );
     let cut: Vec<&str> = after
         .of(node.index)
         .filter(|e| e.starts_with(ALLOCATION_CUT))

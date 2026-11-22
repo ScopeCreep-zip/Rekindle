@@ -159,7 +159,11 @@ mod tests {
         );
         assert!(vc.protected_store.always_use_insecure_storage);
         assert!(!vc.protected_store.allow_insecure_fallback);
-        assert_eq!(vc.network.rpc.default_route_hop_count, 1);
+        assert_eq!(
+            vc.network.rpc.default_route_hop_count,
+            rekindle_types::config::ANONYMITY_HOP_FLOOR,
+            "the pool and our inbound routes take the send hop count (plan RV1)"
+        );
         assert_eq!(vc.network.dht.max_concurrent_operations, 16);
         assert_eq!(vc.network.dht.remote_max_records, 65_536);
         assert_eq!(

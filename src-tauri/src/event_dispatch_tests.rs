@@ -416,3 +416,33 @@ fn the_servers_view_reaches_the_buddy_list_and_chat_windows_only() {
         assert!(!audience.includes(label), "{label}");
     }
 }
+
+/// Plan RV1: the route pause and the deaths warning are Device-scoped and
+/// reach the buddy list (and every post-login window, never login) on
+/// `network-status`, where the frontend's network store reads them.
+#[test]
+fn route_pause_resume_and_deaths_warning_reach_the_buddy_list_on_network_status() {
+    use rekindle_types::subscription_events::{
+        EventScope, NetworkEvent, OwnRouteClass, RoutePauseCause,
+    };
+    for e in [
+        SubscriptionEvent::Network(NetworkEvent::RoutePaused {
+            cause: RoutePauseCause::Unreadable,
+        }),
+        SubscriptionEvent::Network(NetworkEvent::RouteResumed {}),
+        SubscriptionEvent::Network(NetworkEvent::RouteDeathsAboveBaseline {
+            class: OwnRouteClass::General,
+            deaths: 4,
+            young: 1,
+            window_secs: 3600,
+            baseline: 3,
+        }),
+    ] {
+        assert!(matches!(e.scope(), EventScope::Device));
+        let a = sub(e.clone());
+        assert!(a.includes("buddy-list"));
+        assert!(a.includes("settings"));
+        assert!(!a.includes("login"));
+        assert_eq!(WebviewEvent::Subscription(e).channel(), "network-status");
+    }
+}

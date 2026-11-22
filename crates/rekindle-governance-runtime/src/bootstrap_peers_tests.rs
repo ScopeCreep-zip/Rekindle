@@ -174,6 +174,28 @@ async fn only_a_partial_inviter_sends_the_joiner_elsewhere() {
     );
 }
 
+/// The finding of round 23: the inviter's `RETRY_LATER` (its handler
+/// passed its deadline) is no refusal, so the join is not withdrawn: like
+/// its silence, it ends this exchange with a typed non-refusal and the
+/// join's `bootstrap` outbox row tries again; it asks no one else.
+#[tokio::test]
+async fn an_inviters_retry_later_is_no_refusal() {
+    let pool = pool_on(Arc::new(MemDht::default()));
+    let whole = [member(&*pool, 4, b"route-whole").await];
+    let busy = caller(vec![
+        (
+            INVITER_ROUTE,
+            rekindle_types::message::CALL_RETRY_LATER.to_vec(),
+        ),
+        (b"route-whole", frontier()),
+    ]);
+    let found = find_frontier(&busy, &*pool, ASKING_AT, INVITER_ROUTE, &whole, b"r").await;
+    assert!(
+        matches!(found, Err(GovernanceRuntimeError::PeerRetryLater)),
+        "{found:?}"
+    );
+}
+
 /// The documented order (architecture §7.1, `select_mek_responder` with
 /// us as the requester): lowest `blake3(joiner ‖ member)` first, never
 /// us, the inviter or a banned member, and not the join order.

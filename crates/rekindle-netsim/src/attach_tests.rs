@@ -44,7 +44,6 @@ async fn route_to_1(sim: &Netsim, nodes: &mut [Node]) -> PeerTarget {
         .available_own(RouteClass::General)
         .await;
     attached(&mut nodes[0]).await;
-    crate::tests::sending(&nodes[0]).await;
     attached(&mut nodes[1]).await;
     sim.quiesce().await;
     nodes[0].ports.routes.import(&blob).unwrap()

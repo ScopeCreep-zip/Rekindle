@@ -24,7 +24,6 @@ use crate::dht::route_imports::RouteImports;
 use crate::error::ProtocolError;
 use crate::node::{log_dropped, startup, veilid_update_name, NodeConfig, UPDATE_QUEUE};
 use crate::own_routes::VeilidRouteAllocator;
-use crate::route_safety::{pinned_safety, statement_safety};
 
 /// A session's record pool per unlock, over the node's API.
 pub struct VeilidRecords {
@@ -170,10 +169,6 @@ impl RoutePort for VeilidRoutes {
         self.own.replace(class);
     }
 
-    fn self_tested_own(&self, class: RouteClass, ok: bool) {
-        self.own.self_tested(class, ok);
-    }
-
     fn release_retired_own(&self, class: RouteClass) {
         self.own.release_retired(class);
     }
@@ -195,61 +190,61 @@ impl RoutePort for VeilidRoutes {
     async fn shutdown_own(&self) {
         self.own.shutdown().await;
     }
+
+    fn attach_budget(
+        &self,
+        state: rekindle_records::port::RouteBudgetState,
+        wall: rekindle_records::port::WallMs,
+        save: rekindle_records::port::SaveBudget,
+    ) {
+        self.own.attach_budget(state, wall, save);
+    }
+
+    fn attach_unreadable_budget(&self) {
+        self.own.attach_unreadable_budget();
+    }
+
+    fn detach_budget(&self) {
+        self.own.detach_budget();
+    }
+
+    fn spend_budget(&self) -> bool {
+        self.own.spend_external()
+    }
+
+    fn own_paused(&self) -> watch::Receiver<Option<rekindle_records::port::RoutePauseCause>> {
+        self.own.paused()
+    }
+
+    fn own_deaths(&self, class: RouteClass) -> rekindle_records::port::OwnDeaths {
+        self.own.deaths(class)
+    }
 }
 
 /// App messages and calls over Safe routes (never `Unsafe`: it leaks the
-/// sender to the first relay), the hop count floor-clamped. Built from the
-/// same `OwnRoutes` as [`VeilidRoutes`], whose live routes a pinned send
-/// takes as its safety route.
+/// sender to the first relay), the hop count floor-clamped. Every send and
+/// call is unpinned (plan RV1): Veilid picks the safety route from its
+/// tested pool at that hop count (0.5.8 `route_select.rs:119-124`), kept
+/// alive by its 10 s loopback keepalive (`private_route_management.rs:7`),
+/// and a call's reply route from the same pool to match it
+/// (`rpc_processor/destination.rs:487-520`), so no route of ours is handed
+/// to a callee (threat model L2).
 pub struct VeilidMessages {
     api: VeilidAPI,
-    own: Arc<OwnRoutes<VeilidRouteAllocator>>,
-    /// The one importer, for a loopback self-test's import of our own route.
-    imports: Arc<RouteImports>,
 }
 
 impl VeilidMessages {
     #[must_use]
-    pub fn new(
-        api: VeilidAPI,
-        own: Arc<OwnRoutes<VeilidRouteAllocator>>,
-        imports: Arc<RouteImports>,
-    ) -> Self {
-        Self { api, own, imports }
+    pub fn new(api: VeilidAPI) -> Self {
+        Self { api }
     }
 
-    /// The unpinned context of a call that is not a 1:1 call: Veilid picks
-    /// the safety and reply route from its pool. A community call stays
-    /// unpinned because a call hands its safety route to the callee as the
-    /// reply route (0.5.8 `rpc_processor/destination.rs:485-525`): pinned to
-    /// our `Sending` route, every community member we call would learn the
-    /// blob our friends' calls already show, linking our community
-    /// pseudonym to our identity (threat model L2, "application-level
-    /// pseudonyms further decouple"). Statements carry no reply route and
-    /// are pinned ([`statement_safety`]).
+    /// The context of a send or call under `profile`.
     fn context(&self, profile: &SafetyProfile) -> Result<RoutingContext, PortError> {
-        self.with_safety(safety_selection(profile))
-    }
-
-    /// The context of a send pinned to our live route of `class`
-    /// ([`pinned_safety`]); `Routing` while none is live, never a pool
-    /// route in its place.
-    fn pinned(
-        &self,
-        profile: &SafetyProfile,
-        class: RouteClass,
-    ) -> Result<RoutingContext, PortError> {
-        self.with_safety(pinned_safety(profile, class, self.own.id(class))?)
-    }
-
-    fn with_safety(
-        &self,
-        safety: veilid_core::SafetySelection,
-    ) -> Result<RoutingContext, PortError> {
         self.api
             .routing_context()
             .map_err(|e| PortError::Node(format!("routing context: {e}")))?
-            .with_safety(safety)
+            .with_safety(safety_selection(profile))
             .map_err(|e| PortError::Routing(format!("safety: {e}")))
     }
 }
@@ -299,7 +294,7 @@ impl AppMessagePort for VeilidMessages {
         message: Vec<u8>,
     ) -> Result<(), PortError> {
         check_message_len(&message)?;
-        self.with_safety(statement_safety(profile, |class| self.own.id(class))?)?
+        self.context(profile)?
             .app_message(Target::RouteId(route_id(target.as_str())?), message)
             .await
             .map_err(|e| send_error(&e))
@@ -316,46 +311,6 @@ impl AppMessagePort for VeilidMessages {
             .app_call(Target::RouteId(route_id(target.as_str())?), message)
             .await
             .map_err(|e| send_error(&e))
-    }
-
-    async fn call_pinned(
-        &self,
-        target: &PeerTarget,
-        profile: &SafetyProfile,
-        class: RouteClass,
-        message: Vec<u8>,
-    ) -> Result<Vec<u8>, PortError> {
-        check_message_len(&message)?;
-        self.pinned(profile, class)?
-            .app_call(Target::RouteId(route_id(target.as_str())?), message)
-            .await
-            .map_err(|e| send_error(&e))
-    }
-
-    async fn call_own(
-        &self,
-        class: RouteClass,
-        path: rekindle_records::port::OwnPath,
-        profile: &SafetyProfile,
-        message: Vec<u8>,
-    ) -> Result<Vec<u8>, PortError> {
-        check_message_len(&message)?;
-        let Some(blob) = self.own.blob(class) else {
-            return Err(PortError::Routing(format!(
-                "our {class:?} route is not available"
-            )));
-        };
-        let context = match path {
-            rekindle_records::port::OwnPath::Loopback => self.pinned(profile, class)?,
-            // Over our Sending route, apart from the route under test: the
-            // answer returns over Sending too (veilid-core 0.5.8
-            // `destination.rs:498-516`), so a failing pool route cannot fail
-            // it (plan LF9).
-            rekindle_records::port::OwnPath::Outside => {
-                self.pinned(profile, RouteClass::Sending)?
-            }
-        };
-        crate::own_routes::loopback_call(&self.api, &self.imports, &context, &blob, message).await
     }
 
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
@@ -497,8 +452,8 @@ impl VeilidPorts {
                 RecordCloser::new(),
                 changes,
             )),
-            routes: Arc::new(VeilidRoutes::new(Arc::clone(&imports), Arc::clone(&own))),
-            messages: Arc::new(VeilidMessages::new(api.clone(), own, imports)),
+            routes: Arc::new(VeilidRoutes::new(imports, own)),
+            messages: Arc::new(VeilidMessages::new(api.clone())),
             lifecycle: Some(Arc::new(VeilidLifecycle::new(api))),
         };
         Ok((ports, event_rx))

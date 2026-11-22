@@ -205,6 +205,9 @@ pub struct TransportSnapshot {
     pub peer_count: usize,
     pub route_allocated: bool,
     pub route_age_secs: Option<u64>,
+    /// Why a route class is down with no new route (plan RV1), if one is:
+    /// the budget is spent or the stored budget is unreadable.
+    pub route_paused: Option<crate::subscription_events::RoutePauseCause>,
 }
 
 /// Complete daemon status — single response type for `IpcRequest::Status`.
@@ -233,6 +236,9 @@ pub struct StatusSnapshot {
     pub peer_count: usize,
     pub route_allocated: bool,
     pub route_age_secs: Option<u64>,
+    /// Why a route class is down with no new route (plan RV1), if one is:
+    /// the budget is spent or the stored budget is unreadable.
+    pub route_paused: Option<crate::subscription_events::RoutePauseCause>,
 
     // ── Subscription system ─────────────────────────────────
     pub gossip_meshes: usize,

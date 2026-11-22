@@ -1,97 +1,51 @@
 use super::*;
 
-const NO_JITTER: Duration = Duration::ZERO;
-
 fn at(start: Instant, secs: u64) -> Instant {
     start + Duration::from_secs(secs)
 }
 
+/// Plan RV1: silence rotates the General route only while a peer should be
+/// answering, and only after 120 s with nothing over the route.
 #[test]
-fn a_busy_route_is_never_tested() {
+fn silence_rotates_only_while_a_peer_should_answer() {
     let start = Instant::now();
-    let mut route = InboundLiveness::new(start, NO_JITTER);
-    for second in (0..600).step_by(5) {
-        route.heard(at(start, second));
-        assert!(
-            !route.should_test(at(start, second), true, || NO_JITTER),
-            "tested a busy route at {second} s"
-        );
-    }
-}
-
-#[test]
-fn an_idle_route_is_tested_each_period_and_dies_after_three_failures() {
-    let start = Instant::now();
-    let mut route = InboundLiveness::new(start, NO_JITTER);
-    assert!(!route.should_test(at(start, 39), false, || NO_JITTER));
-    assert!(route.should_test(at(start, 40), false, || NO_JITTER));
-    assert_eq!(
-        route.tested(at(start, 55), false, NO_JITTER, NO_JITTER),
-        SelfTest::Retry
+    let mut route = InboundLiveness::new(start);
+    assert!(
+        !route.silent(at(start, 119), true),
+        "younger than the trigger"
     );
-    // The retest is 10 s (plus its jitter) after the failure.
-    assert!(!route.should_test(at(start, 64), false, || NO_JITTER));
-    assert!(route.should_test(at(start, 65), false, || NO_JITTER));
-    assert_eq!(
-        route.tested(at(start, 80), false, NO_JITTER, NO_JITTER),
-        SelfTest::Retry
+    assert!(route.silent(at(start, 120), true));
+    assert!(
+        !route.silent(at(start, 600), false),
+        "no peer should answer"
     );
-    assert!(route.should_test(at(start, 90), false, || NO_JITTER));
-    assert_eq!(
-        route.tested(at(start, 105), false, NO_JITTER, NO_JITTER),
-        SelfTest::Dead
+    route.heard(at(start, 200));
+    assert!(!route.silent(at(start, 300), true), "inbound arrived");
+    assert!(route.silent(at(start, 320), true));
+    route.route_replaced(at(start, 320));
+    assert!(
+        !route.silent(at(start, 400), true),
+        "a fresh route gets the full trigger"
     );
 }
 
+/// Plan RV1: a peer's report rotates a route, unless the route is younger
+/// than one re-fetch gap (the report is about the route it replaced).
 #[test]
-fn an_answer_resets_the_failures() {
+fn a_report_rotates_a_route_older_than_a_refetch_gap() {
     let start = Instant::now();
-    let mut route = InboundLiveness::new(start, NO_JITTER);
-    for round in 0..5 {
-        let now = at(start, 100 * round);
-        assert_eq!(
-            route.tested(now, false, NO_JITTER, NO_JITTER),
-            SelfTest::Retry
-        );
-        assert_eq!(
-            route.tested(now, true, NO_JITTER, NO_JITTER),
-            SelfTest::Healthy
-        );
-    }
-}
-
-#[test]
-fn silence_while_peers_should_send_tests_at_once_and_not_again_for_120_s() {
-    let start = Instant::now();
-    let mut route = InboundLiveness::new(start, NO_JITTER);
-    route.heard(at(start, 100));
-    // Heard 10 s ago: the period's test is skipped (the idle gate).
-    assert!(!route.should_test(at(start, 110), false, || NO_JITTER));
-    // A passing self-test is not a peer's traffic: it does not end silence.
-    route.tested(at(start, 200), true, NO_JITTER, NO_JITTER);
-    assert!(!route.should_test(at(start, 219), true, || NO_JITTER));
-    assert!(route.should_test(at(start, 220), true, || NO_JITTER));
-    route.tested(at(start, 221), true, NO_JITTER, NO_JITTER);
-    assert!(!route.should_test(at(start, 250), true, || NO_JITTER));
-}
-
-#[test]
-fn a_network_change_tests_at_once_and_one_failure_is_death() {
-    let start = Instant::now();
-    let mut route = InboundLiveness::new(start, NO_JITTER);
-    route.heard(at(start, 10));
-    route.network_changed(at(start, 11));
-    assert!(route.should_test(at(start, 11), false, || NO_JITTER));
-    assert_eq!(
-        route.tested(at(start, 12), false, NO_JITTER, NO_JITTER),
-        SelfTest::Dead
-    );
+    let mut route = InboundLiveness::new(start);
+    assert!(!route.reported(at(start, 59)));
+    assert!(route.reported(at(start, 60)));
+    route.route_replaced(at(start, 60));
+    assert!(!route.reported(at(start, 90)), "about the replaced route");
+    assert!(route.reported(at(start, 120)));
 }
 
 #[test]
 fn republishes_are_debounced_and_at_least_60_s_apart() {
     let start = Instant::now();
-    let mut route = InboundLiveness::new(start, NO_JITTER);
+    let mut route = InboundLiveness::new(start);
     assert_eq!(
         route.publish_at(start),
         start,
@@ -100,7 +54,7 @@ fn republishes_are_debounced_and_at_least_60_s_apart() {
     route.published(at(start, 3));
     assert_eq!(route.publish_at(at(start, 10)), at(start, 63));
     assert_eq!(route.publish_at(at(start, 100)), at(start, 103));
-    route.route_replaced(at(start, 100), NO_JITTER);
+    route.route_replaced(at(start, 100));
     assert_eq!(
         route.publish_at(at(start, 10)),
         at(start, 63),
@@ -180,99 +134,31 @@ fn six_rounds_make_the_peer_unreachable_and_hearing_it_resets() {
     assert!(peer.fast_path_allowed(at(start, 493)));
 }
 
-/// Plan LF6 (lead decision 39): an ungated route (General, Sending) is
-/// tested each period however much arrives over it.
+/// Plan RV1, the third evidence source: a friend's chain entry whose hint
+/// never arrives within the window rotates the route; a hint in time, or a
+/// route too young for the friend to hold, does not.
 #[test]
-fn an_ungated_route_is_tested_each_period_while_inbound_arrives() {
+fn a_chain_ahead_of_its_hints_rotates() {
     let start = Instant::now();
-    let mut route = InboundLiveness::ungated(start, NO_JITTER);
-    let mut tests = 0;
-    for second in 0..=200 {
-        let now = at(start, second);
-        route.heard(now);
-        if route.should_test(now, true, || NO_JITTER) {
-            tests += 1;
-            assert_eq!(
-                route.tested(now, true, NO_JITTER, NO_JITTER),
-                SelfTest::Healthy
-            );
-        }
-    }
-    assert_eq!(tests, 5, "tested at 40, 80, 120, 160 and 200 s");
-    route.route_replaced(at(start, 201), NO_JITTER);
-    route.heard(at(start, 241));
+    let mut rules = InboundLiveness::new(start);
+    let old = at(start, REPORT_ROTATE_AGE.as_secs());
+    rules.chain_changed("friend", old);
+    assert!(!rules.chain_ahead(old), "the hint may still come");
+    rules.hinted("friend", old + Duration::from_secs(5));
+    assert!(!rules.chain_ahead(old + HINT_WINDOW), "the hint came");
+    let later = old + HINT_WINDOW;
+    rules.chain_changed("friend", later + Duration::from_secs(1));
     assert!(
-        route.should_test(at(start, 241), false, || NO_JITTER),
-        "a replacement keeps the route ungated"
+        !rules.chain_ahead(later + HINT_WINDOW),
+        "hinted within the window"
     );
-}
-
-/// Plan LF6: a peer's report brings the next test forward at once, at most
-/// once per [`REPORT_TEST_GAP`], and never past a scheduled retest.
-#[test]
-fn a_peer_report_tests_at_once_at_most_once_per_gap() {
-    let start = Instant::now();
-    let mut route = InboundLiveness::ungated(start, NO_JITTER);
-    assert!(!route.should_test(at(start, 5), false, || NO_JITTER));
-    assert!(route.reported(at(start, 5)));
-    assert!(route.should_test(at(start, 5), false, || NO_JITTER));
-    assert_eq!(
-        route.tested(at(start, 6), true, NO_JITTER, NO_JITTER),
-        SelfTest::Healthy
-    );
+    let lost = later + HINT_WINDOW + HINT_WINDOW;
+    rules.chain_changed("friend", lost);
+    assert!(rules.chain_ahead(lost + HINT_WINDOW), "the hint never came");
+    let mut young = InboundLiveness::new(start);
+    young.chain_changed("friend", start);
     assert!(
-        !route.reported(at(start, 14)),
-        "a second report inside the gap"
+        !young.chain_ahead(start + HINT_WINDOW),
+        "the friend holds the old blob"
     );
-    assert!(!route.should_test(at(start, 14), false, || NO_JITTER));
-    assert!(route.reported(at(start, 15)));
-    assert!(route.should_test(at(start, 15), false, || NO_JITTER));
-    assert_eq!(
-        route.tested(at(start, 16), false, NO_JITTER, NO_JITTER),
-        SelfTest::Retry
-    );
-    assert!(
-        !route.reported(at(start, 30)),
-        "a failing route keeps its retest schedule"
-    );
-}
-
-/// Plan LF7: a 1 s tick wait that reads 2.5 min on the wall clock spanned a
-/// suspend; one that reads a little long, or a clock set back, did not.
-#[test]
-fn a_wall_clock_jump_past_the_step_is_a_resume() {
-    let tick = Duration::from_secs(1);
-    assert!(!resumed_across(1_000, 2_200, tick));
-    assert!(!resumed_across(1_000, 11_000, tick));
-    assert!(resumed_across(1_000, 12_001, tick));
-    assert!(resumed_across(1_000, 151_000, tick));
-    assert!(!resumed_across(151_000, 1_000, tick));
-    // A self-test may take its whole probe deadline.
-    assert!(!resumed_across(0, 25_000, PROBE_TIMEOUT));
-    assert!(resumed_across(0, 25_001, PROBE_TIMEOUT));
-}
-
-/// Plan LF7, lead decision 45: a self-test whose window spans a suspend is
-/// discarded: one that resumed across its deadline, or one whose wall clock
-/// stood still while its deadline ran out; an ordinary test is counted.
-#[test]
-fn a_self_test_across_a_suspend_is_discarded() {
-    let waited = PROBE_TIMEOUT;
-    assert!(!test_discarded(0, 15_000, waited, PROBE_TIMEOUT));
-    assert!(!test_discarded(
-        0,
-        300,
-        Duration::from_millis(300),
-        PROBE_TIMEOUT
-    ));
-    assert!(test_discarded(0, 151_000, waited, PROBE_TIMEOUT));
-    // The wall clock held across the whole 15 s deadline.
-    assert!(test_discarded(7_000, 7_000, waited, PROBE_TIMEOUT));
-    assert!(!test_discarded(7_000, 12_000, waited, PROBE_TIMEOUT));
-    assert!(test_discarded(
-        7_000,
-        11_999,
-        Duration::from_secs(22),
-        PROBE_TIMEOUT
-    ));
 }

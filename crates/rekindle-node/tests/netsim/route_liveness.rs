@@ -13,7 +13,7 @@ use rekindle_records::port::RouteClass;
 use rekindle_types::message::SendState;
 
 use crate::harness::{eventually, start, SimNode};
-use crate::pair::{befriend, key, send, talk, LIMIT};
+use crate::pair::{befriend, key, send, talk};
 
 async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
     let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
@@ -30,21 +30,11 @@ async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
         .any(|m| m.is_own && m.body == body && m.send_state == SendState::Delivered)
 }
 
-/// Ada's self-tests of her General route, the one Bo's sends arrive over
-/// (plan RT1: her `Sending` route is self-tested too, on its own schedule).
-fn general_probes(sim: &rekindle_netsim::Netsim) -> u64 {
-    sim.own_calls(0, RouteClass::General)
-}
-
-/// Bo's app calls to others: every call but his own routes' self-tests
-/// (plan RT1: those now include his `Sending` route's, on their own
-/// schedule; a suspect round's probe of Ada's route is a call to her).
+/// Bo's app calls to others: every app call he makes (plan RV1: no route
+/// of his is self-tested by an app call; Veilid's keepalive tests them; a
+/// suspect round's probe of Ada's route is a call to her).
 fn calls_to_others(sim: &rekindle_netsim::Netsim) -> u64 {
-    let own: u64 = [RouteClass::General, RouteClass::Media, RouteClass::Sending]
-        .into_iter()
-        .map(|class| sim.own_calls(1, class))
-        .sum();
-    sim.app_calls(1) - own
+    sim.app_calls(1)
 }
 
 async fn friends(seed: u64) -> (rekindle_netsim::Netsim, Vec<SimNode>) {
@@ -79,37 +69,6 @@ async fn a_silently_dead_inbound_route_is_found_and_replaced_and_the_acks_arrive
             "{body} was acked within about 3 minutes"
         );
     }
-}
-
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_reconnect_self_tests_at_once_and_replaces_a_dead_route() {
-    let (sim, _nodes) = friends(122).await;
-    let before = sim.route_blobs(0);
-    assert!(!before.is_empty());
-    sim.fault(Fault::RouteSilentDeath {
-        node: 0,
-        class: RouteClass::General,
-    });
-    sim.fault(Fault::InternetReady {
-        node: 0,
-        ready: false,
-    });
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    sim.fault(Fault::InternetReady {
-        node: 0,
-        ready: true,
-    });
-    // Well inside the 40-53 s schedule and three failures: only the
-    // reconnect's immediate test finds it this soon.
-    assert!(
-        eventually(&sim, Duration::from_secs(30), || {
-            let now = sim.route_blobs(0);
-            let replaced = !now.is_empty() && now.iter().all(|b| !before.contains(b));
-            async move { replaced }
-        })
-        .await,
-        "the dead route was replaced and released after the reconnect"
-    );
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -166,153 +125,50 @@ async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute
     );
 }
 
-/// Plan LF6 (lead decision 39; Linux round 20): inbound does not prove a
-/// route. Ada's General route kept passing some `app_message`s while every
-/// peer's `app_call` to it timed out, and the idle gate skipped each of her
-/// self-tests. Now her General route is self-tested each period, 40 s +
-/// U(0, 13.3 s), however busy, like her `Sending` route.
+/// Plan LF9 rewritten for RV1 (Linux r22: Ada's General route took nothing
+/// from outside ~4 min while Veilid's keepalive passed; it never declares
+/// such a route dead, 0.5.8 `route_stats.rs:19-29`). With no app self-test,
+/// the evidence rotates it: Ada's sends await Bo's acks, which enter her
+/// dead route, so nothing arrives over it for `SILENCE_TRIGGER`, and the
+/// owner rotates within [`worst_detection`] plus one [`republish`]; the
+/// messages both ways land.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_busy_general_route_is_still_self_tested_each_period() {
-    let (sim, nodes) = friends(124).await;
-    let ada = key(&nodes[0]);
-    let probes = general_probes(&sim);
-    for i in 0..30 {
-        send(&nodes[1], &ada, &format!("busy {i}")).await;
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
-    // 300 s of traffic: one test per 40-53.3 s, all passing (no retests).
-    let tested = general_probes(&sim) - probes;
-    assert!(
-        (5..=8).contains(&tested),
-        "a busy General route was self-tested each period ({tested} tests in 300 s)"
-    );
-    assert!(eventually(&sim, LIMIT, || delivered(&nodes[1], &ada, "busy 29")).await);
-}
-
-/// Plan RT1 (Linux r7 probe: both Sending deaths came 200/331 s after
-/// allocation, never self-tested): Ada's `Sending` route, never published,
-/// stops carrying traffic with no word from Veilid. Her own self-test finds
-/// it (first test 40-53.3 s after it came up, retests 10-20 s apart, three
-/// failures) and allocates a replacement, which passes before the old one
-/// is released.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_silently_dead_sending_route_is_found_by_its_self_test_and_replaced() {
-    use rekindle_records::port::RouteState;
-    let (sim, nodes) = friends(125).await;
-    let sending = || {
-        nodes[0]
-            .routes
-            .own_state(RouteClass::Sending)
-            .borrow()
-            .clone()
-    };
-    let RouteState::Available { blob: before } = sending() else {
-        panic!("Ada's Sending route is live");
-    };
-    sim.fault(Fault::RouteSilentDeath {
-        node: 0,
-        class: RouteClass::Sending,
-    });
-    // 53.3 s to the first test, then two retests of at most 20 s, each
-    // probe waiting out its 15 s deadline: about 2 min 40 s.
-    assert!(
-        eventually(&sim, Duration::from_secs(200), || {
-            let replaced = matches!(sending(), RouteState::Available { blob } if blob != before);
-            async move { replaced }
-        })
-        .await,
-        "the dead Sending route was replaced by Ada's own self-test"
-    );
-}
-
-/// Plan LF7 (Linux: after B was frozen and resumed, A's calls to B's General
-/// route were lost ~2.5 min while B's loopback self-tests passed). A
-/// loopback re-primes the hop next to us right before it measures it and
-/// is turned around before the blob's entry hop (veilid-core 0.5.8
-/// `rpc_route.rs:329-365`), so on a resume Ada tests her General route from
-/// outside, as Bo's call travels, at once. The fault itself (a route whose
-/// loopback passes while calls entering by its entry hop are lost) is
-/// [`Fault::OutsideDead`], plan LF9's scenario below; this checks the
-/// resume's trigger.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_resume_tests_the_general_route_from_outside_at_once() {
-    let (sim, _nodes) = friends(126).await;
-    let before = sim.route_blobs(0);
-    assert!(!before.is_empty());
-    // General's periodic tests run from outside too (plan LF9): the resume
-    // must add one at once, beyond those.
-    let outside_before = sim.outside_calls(0, RouteClass::General);
-    sim.fault(Fault::Sleep {
-        node: 0,
-        asleep: true,
-    });
-    tokio::time::sleep(Duration::from_secs(150)).await;
-    sim.fault(Fault::Sleep {
-        node: 0,
-        asleep: false,
-    });
-    assert!(
-        eventually(&sim, Duration::from_secs(20), || {
-            let outside = sim.outside_calls(0, RouteClass::General);
-            async move { outside > outside_before }
-        })
-        .await,
-        "the resume tested General from outside within 20 s"
-    );
-    // The outside test passed: the healthy route is kept, not replaced.
-    tokio::time::sleep(Duration::from_secs(30)).await;
-    assert_eq!(sim.route_blobs(0), before, "the healthy route is kept");
-}
-
-/// Plan LF9 (Linux r22, no suspend): Ada's General route took nothing from
-/// outside ~4 min while her loopback self-test passed every period, and Bo's
-/// FriendAccepts to it timed out. A loopback is the route as its own safety
-/// route, turned around at the hop over the flow Ada's own send just opened
-/// (veilid-core 0.5.8 `route_compile.rs:420-434`, `rpc_route.rs:329-365`),
-/// and Veilid never declares such a route dead (`route_stats.rs:19-29`).
-/// Ada tests General from outside every period: her first test fails within
-/// one period (53.3 s), three failures (retests at most 20 s apart, each
-/// waiting its 15 s deadline) replace it, the replacement is republished
-/// only after its own outside test, and Bo's messages land.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_general_route_dead_from_outside_is_found_by_its_outside_test_and_replaced() {
+async fn a_general_route_dead_from_outside_is_rotated_on_evidence() {
+    use crate::requester_route_bounds::{republish, worst_detection, MARGIN};
     let (sim, nodes) = friends(127).await;
     let ada = key(&nodes[0]);
+    let bo = key(&nodes[1]);
     let before = sim.route_blobs(0);
     assert!(!before.is_empty());
-    let outside_before = sim.outside_calls(0, RouteClass::General);
     sim.fault(Fault::OutsideDead {
         node: 0,
         class: RouteClass::General,
     });
     for i in 0..3 {
+        send(&nodes[0], &bo, &format!("to bo {i}")).await;
         send(&nodes[1], &ada, &format!("from outside {i}")).await;
     }
     assert!(
-        eventually(&sim, Duration::from_millis(53_400), || {
-            let outside = sim.outside_calls(0, RouteClass::General);
-            async move { outside > outside_before }
-        })
-        .await,
-        "Ada tested General from outside within one test period"
-    );
-    assert!(
-        eventually(&sim, Duration::from_secs(200), || {
+        eventually(&sim, worst_detection() + republish() + MARGIN, || {
             let now = sim.route_blobs(0);
             let replaced = !now.is_empty() && now.iter().all(|b| !before.contains(b));
             async move { replaced }
         })
         .await,
-        "the route dead from outside was replaced and released within about 3 minutes"
+        "the route dead from outside was rotated on evidence"
     );
     for i in 0..3 {
-        let body = format!("from outside {i}");
-        assert!(
-            eventually(&sim, Duration::from_secs(120), || delivered(
-                &nodes[1], &ada, &body
-            ))
-            .await,
-            "{body} reached Ada over her replacement route"
-        );
+        for (node, peer, body) in [
+            (&nodes[0], &bo, format!("to bo {i}")),
+            (&nodes[1], &ada, format!("from outside {i}")),
+        ] {
+            assert!(
+                eventually(&sim, Duration::from_secs(120), || delivered(
+                    node, peer, &body
+                ))
+                .await,
+                "{body} landed over Ada's replacement route"
+            );
+        }
     }
 }

@@ -1405,6 +1405,47 @@
       }
     }
   },
+  "network.routeDeathsAboveBaseline.general": {
+    "network": {
+      "routeDeathsAboveBaseline": {
+        "baseline": 3,
+        "class": "general",
+        "deaths": 4,
+        "windowSecs": 3600,
+        "young": 2
+      }
+    }
+  },
+  "network.routeDeathsAboveBaseline.media": {
+    "network": {
+      "routeDeathsAboveBaseline": {
+        "baseline": 3,
+        "class": "media",
+        "deaths": 5,
+        "windowSecs": 3600,
+        "young": 0
+      }
+    }
+  },
+  "network.routePaused.exhausted": {
+    "network": {
+      "routePaused": {
+        "cause": "exhausted"
+      }
+    }
+  },
+  "network.routePaused.unreadable": {
+    "network": {
+      "routePaused": {
+        "cause": "unreadable"
+      }
+    }
+  },
+  "network.routeResumed": {
+    "network": {
+      "routeResumed": {}
+    }
+  },
   "network.strength": {
     "network": {
       "strength": {

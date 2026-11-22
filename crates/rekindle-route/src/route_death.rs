@@ -27,39 +27,16 @@ use tokio::time::Instant;
 pub enum DeathCause {
     /// Veilid listed it in `RouteChange.dead_routes`.
     VeilidReported,
-    /// Our own self-test declared it dead (plan RH1r-c O3) first.
-    SelfTest,
+    /// We rotated it on evidence that it was dead from outside (plan
+    /// RV1), before Veilid reported it.
+    Rotated,
 }
 
 impl DeathCause {
     fn as_str(self) -> &'static str {
         match self {
             Self::VeilidReported => "veilid",
-            Self::SelfTest => "self_test",
-        }
-    }
-}
-
-/// The self-test history of the live route of one class.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct TestTally {
-    /// Consecutive failed self-tests.
-    pub failures: u32,
-    /// Self-tests passed over the route's life.
-    pub passes: u32,
-    /// When it last passed one.
-    pub last_ok: Option<Instant>,
-}
-
-impl TestTally {
-    /// A self-test of the route came back `ok` at `now`.
-    pub fn record(&mut self, now: Instant, ok: bool) {
-        if ok {
-            self.failures = 0;
-            self.passes = self.passes.saturating_add(1);
-            self.last_ok = Some(now);
-        } else {
-            self.failures = self.failures.saturating_add(1);
+            Self::Rotated => "rotated",
         }
     }
 }
@@ -73,12 +50,6 @@ pub struct RouteDeath {
     pub hops: Option<usize>,
     /// How long the route lived.
     pub age: Duration,
-    /// Consecutive failed self-tests at death.
-    pub failures: u32,
-    /// Self-tests it passed in its life.
-    pub passes: u32,
-    /// Since it last passed a self-test; `None` when it never did.
-    pub since_ok: Option<Duration>,
     /// Whether our node was ready (PublicInternet published) at death.
     pub node_ready: bool,
 }
@@ -91,7 +62,6 @@ impl RouteDeath {
         cause: DeathCause,
         hops: Option<usize>,
         born: Instant,
-        tally: TestTally,
         node_ready: bool,
         now: Instant,
     ) -> Self {
@@ -100,9 +70,6 @@ impl RouteDeath {
             cause,
             hops,
             age: now.saturating_duration_since(born),
-            failures: tally.failures,
-            passes: tally.passes,
-            since_ok: tally.last_ok.map(|at| now.saturating_duration_since(at)),
             node_ready,
         }
     }
@@ -111,15 +78,12 @@ impl RouteDeath {
     #[must_use]
     pub fn fields(&self) -> String {
         format!(
-            "class={:?} cause={} hops={} age_s={} failures={} passes={} since_ok_s={} node_ready={}",
+            "class={:?} cause={} hops={} age_s={} node_ready={}",
             self.class,
             self.cause.as_str(),
-            self.hops.map_or_else(|| "unknown".to_owned(), |h| h.to_string()),
+            self.hops
+                .map_or_else(|| "unknown".to_owned(), |h| h.to_string()),
             self.age.as_secs(),
-            self.failures,
-            self.passes,
-            self.since_ok
-                .map_or_else(|| "never".to_owned(), |d| d.as_secs().to_string()),
             self.node_ready,
         )
     }

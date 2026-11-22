@@ -4,15 +4,17 @@
 //! transport drives them; every jitter is drawn by the caller from the
 //! RNG port and handed in, so a seeded run fixes the schedule.
 //!
-//! Veilid tells us of a dead own route only through `RouteChange`, and it
-//! drops its own loopback failures while its online detector says Offline
-//! (`routing_table/tasks/ping_validator.rs:666-690` at the pinned fork), so
-//! a published route can sit dead for good. An `app_message` is a
-//! statement: the sender sees only a local send error
-//! (`veilid_api/routing_context.rs:318-341`). Hence two sides:
-//! - [`InboundLiveness`], the owner: a round-trip self-test of each
-//!   published inbound class (O1), a silence trigger (O2), heal pacing
-//!   (O3) and the network-change trigger (O5);
+//! Veilid tests our allocated routes itself, a loopback keepalive every
+//! 10 s (veilid-core 0.5.8 `private_route_management.rs:7`), and reports a
+//! death through `RouteChange.dead_routes`, which `OwnRoutes::on_dead`
+//! already handles (plan RV1). What a loopback cannot see is a route dead
+//! only from outside, so the owner acts on evidence instead of testing:
+//! - [`InboundLiveness`], the owner: rotate the General route on inbound
+//!   silence while a peer should be answering, on a peer's `'L'` report,
+//!   or when a friend's DM chain runs ahead of the hints that should have
+//!   reached us over the route; pace the republish (O3). Each rotation
+//!   draws a new route and so spends from the new-route budget
+//!   ([`crate::budget`]): a forged-signal storm stops at its cap;
 //! - [`PeerLiveness`], a sender: suspect a peer's route from missing acks
 //!   (S1, S2), re-fetch it at a bounded rate (S3), escalate (S4), reset on
 //!   any authenticated frame (S5).
@@ -21,33 +23,10 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-/// The self-test period, before its jitter (I2P `TestJob` `TEST_DELAY`,
-/// `TestJob.java#L47`, `#L239`; batch 12 O1).
-pub const SELF_TEST_PERIOD: Duration = Duration::from_secs(40);
-/// The self-test jitter's bound: the period is 40 s + U(0, 13.3 s)
-/// (`TestJob.java#L239`).
-pub const SELF_TEST_JITTER_MS: u64 = 13_300;
-/// No self-test while inbound arrived over the route this recently (I2P
-/// `TestJob.java#L84-92`; Cwtch's idle gate, `networkCheck.go` L58-115).
-pub const IDLE_GATE: Duration = Duration::from_secs(40);
-/// A self-test probe's deadline (I2P `getTestPeriod`, 15 s by default,
-/// `TestJob.java#L241-276`).
-pub const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
-/// The retest after a failed self-test: 10 s + U(0, 10 s)
-/// (`TestJob.java#L241-276`).
-pub const RETEST_MIN: Duration = Duration::from_secs(10);
-/// The retest jitter's bound, ms.
-pub const RETEST_JITTER_MS: u64 = 10_000;
-/// The least gap between two self-tests run on a peer's report that our
-/// route failed it (plan LF6, lead decision 39): the report is evidence,
-/// not a verdict, so it only brings the test forward, at most once per
-/// retest interval, whoever sends it.
-pub const REPORT_TEST_GAP: Duration = RETEST_MIN;
-/// Consecutive failed self-tests that declare a route dead (I2P
-/// `MAX_CONSECUTIVE_TEST_FAILURES`, `TunnelCreatorConfig.java#L62`).
-pub const DEAD_AFTER_FAILURES: u32 = 3;
-/// Inbound silence, while peers should be sending, that runs a self-test
-/// at once: 2 × I2P's `REPLY_REQUEST_INTERVAL` (batch 12 O2, a pairing).
+/// Inbound silence on our General route, while a peer should be
+/// answering us, that rotates it: 2 × I2P's `REPLY_REQUEST_INTERVAL`
+/// (batch 12 O2, a pairing). A route younger than this is never rotated for
+/// silence: peers may still hold the blob it replaced.
 pub const SILENCE_TRIGGER: Duration = Duration::from_secs(120);
 /// The debounce before a republish (I2P `PUBLISH_DELAY`,
 /// `KademliaNetworkDatabaseFacade.java#L868-912`).
@@ -62,38 +41,19 @@ pub const PUBLISH_RETRY_MIN: Duration = Duration::from_secs(20);
 /// The publish retry jitter's bound, ms.
 pub const PUBLISH_RETRY_JITTER_MS: u64 = 20_000;
 
-/// A wall-clock jump past a step's own bound larger than this is a resume
-/// from a suspend (plan LF7): a stopped process or a sleeping machine reads
-/// no clock, and its first reading after the resume sees the whole gap. A
-/// monotonic clock misses a machine's sleep on macOS; the wall clock (the
-/// clock port, plan C9.2) sees both. Veilid gives no app-visible signal of
-/// it: the node stays attached, and the change it does track, our peer
-/// info, un-publishes our routes internally "so we can republish" them
-/// (veilid-core 0.5.8 `route_spec_store_cache.rs:430-455`) without telling
-/// the app.
-pub const RESUME_GAP: Duration = Duration::from_secs(10);
+/// The least age of our General route before a peer's `'L'` report
+/// rotates it (plan RV1): a report is evidence, but peers that suspected
+/// the old route keep probing until their re-fetch (at most one per
+/// [`REFETCH_GAP`]) finds the new blob, so a report on a route this young
+/// is about the one it replaced.
+pub const REPORT_ROTATE_AGE: Duration = REFETCH_GAP;
 
-/// Whether a step bounded by `bound` that began at wall time `before_ms`
-/// and ended at `after_ms` spanned a suspend: the clock moved more than
-/// `bound` plus [`RESUME_GAP`]. A clock set back is no resume.
-#[must_use]
-pub fn resumed_across(before_ms: u64, after_ms: u64, bound: Duration) -> bool {
-    Duration::from_millis(after_ms.saturating_sub(before_ms)) > bound + RESUME_GAP
-}
-
-/// Whether a self-test that the monotonic clock saw take `waited`, and the
-/// wall clock saw run from `before_ms` to `after_ms`, says nothing about
-/// its route and is discarded, never counted toward death (plan LF7, lead
-/// decision 45): it spanned a resume ([`resumed_across`] its `bound`), or
-/// the wall clock lagged the monotonic one by more than [`RESUME_GAP`],
-/// one that did not run while the test waited (held by a suspend the test
-/// is still inside, or set back). A pause-truncated test measured the
-/// pause, not the route; the test after the resume decides.
-#[must_use]
-pub fn test_discarded(before_ms: u64, after_ms: u64, waited: Duration, bound: Duration) -> bool {
-    let wall = Duration::from_millis(after_ms.saturating_sub(before_ms));
-    resumed_across(before_ms, after_ms, bound) || waited > wall + RESUME_GAP
-}
+/// How long after a friend's DM chain shows a new entry its hint may still
+/// arrive over our General route (plan RV1): the sender appends before the
+/// hint leaves (`rekindle-transport` `dm::stream`), so a chain entry whose
+/// hint is still missing one proven ack deadline later is evidence the
+/// hint was lost on our route.
+pub const HINT_WINDOW: Duration = ACK_TIMEOUT_PROVEN;
 
 /// The ack deadline on a route that has answered before (I2P
 /// `RATCHET_REPLY_TIMEOUT_MS_MIN`, `OutboundClientMessageOneShotJob.java`
@@ -119,97 +79,81 @@ pub const UNREACHABLE_BACKOFF_MIN: Duration = Duration::from_secs(60);
 /// The fast-path backoff's cap.
 pub const UNREACHABLE_BACKOFF_MAX: Duration = Duration::from_secs(600);
 
-/// A self-test's outcome, for the owner to act on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelfTest {
-    /// The route answered.
-    Healthy,
-    /// It failed; it is retested soon.
-    Retry,
-    /// It failed [`DEAD_AFTER_FAILURES`] times running (or once right after
-    /// a network change, O5): replace it.
-    Dead,
-}
-
-/// The owner's view of one published inbound route class.
+/// The owner's view of our General route (plan RV1): when to rotate it on
+/// evidence that it is dead from outside, and when to republish.
 #[derive(Debug, Clone)]
 pub struct InboundLiveness {
     /// When inbound last arrived over the route (or the route came up).
     last_inbound: Instant,
-    /// When the last silence-triggered test ran.
-    last_silence_test: Option<Instant>,
-    next_test: Instant,
-    failures: u32,
-    /// The next test follows a network change: one failure is death (O5).
-    after_change: bool,
+    /// When the live route came up.
+    came_up: Instant,
     last_publish: Option<Instant>,
-    /// Whether inbound over the route skips its scheduled test (the idle
-    /// gate). Media keeps it; General and Sending do not (plan LF6).
-    idle_gated: bool,
-    /// When the last test brought forward by a peer's report fell due.
-    last_report: Option<Instant>,
+    /// Per friend, when their last hint arrived over the route.
+    hints: std::collections::HashMap<String, Instant>,
+    /// Per friend, when their chain first showed an entry no hint carried.
+    ahead: std::collections::HashMap<String, Instant>,
 }
 
 impl InboundLiveness {
-    /// A route that came up at `now`; its first test is a period plus
-    /// `jitter` away. Inbound over it skips a scheduled test (the idle
-    /// gate, I2P `TestJob.java#L84-92`).
+    /// A route that came up at `now`.
     #[must_use]
-    pub fn new(now: Instant, jitter: Duration) -> Self {
+    pub fn new(now: Instant) -> Self {
         Self {
             last_inbound: now,
-            last_silence_test: None,
-            next_test: now + SELF_TEST_PERIOD + jitter,
-            failures: 0,
-            after_change: false,
+            came_up: now,
             last_publish: None,
-            idle_gated: true,
-            last_report: None,
+            hints: std::collections::HashMap::new(),
+            ahead: std::collections::HashMap::new(),
         }
     }
 
-    /// As [`Self::new`], but tested every period whatever arrives over it
-    /// (plan LF6, lead decision 39): inbound does not prove a route. On
-    /// Linux round 20 the General route kept passing some `app_message`s
-    /// while every peer's `app_call` to it timed out for ~3.5 min, and the
-    /// idle gate skipped each test. Veilid's own gate has the same blind
-    /// spot: any question or statement received marks the route valid
-    /// (0.5.8 `route_stats.rs:475-485`) and a valid route is not
-    /// loopback-tested for 30 s (`route_stats.rs:144-157`).
-    #[must_use]
-    pub fn ungated(now: Instant, jitter: Duration) -> Self {
-        Self {
-            idle_gated: false,
-            ..Self::new(now, jitter)
-        }
-    }
-
-    /// A new route replaced the old one at `now`: its tests start over;
-    /// the publish pacing and the gating carry on.
-    pub fn route_replaced(&mut self, now: Instant, jitter: Duration) {
+    /// A new route replaced the old one at `now`: its evidence starts over;
+    /// the publish pacing carries on.
+    pub fn route_replaced(&mut self, now: Instant) {
         let last_publish = self.last_publish;
-        let idle_gated = self.idle_gated;
-        *self = Self::new(now, jitter);
+        *self = Self::new(now);
         self.last_publish = last_publish;
-        self.idle_gated = idle_gated;
     }
 
     /// A peer reported at `now` that our route failed it (its suspect
-    /// round's probe reached us, plan RH1r-c S2): the next test falls due
-    /// at once, unless a retest is already scheduled or a report brought
-    /// one forward less than [`REPORT_TEST_GAP`] ago. Returns whether it
-    /// did.
-    pub fn reported(&mut self, now: Instant) -> bool {
-        if self.failures > 0
-            || self
-                .last_report
-                .is_some_and(|at| now.duration_since(at) < REPORT_TEST_GAP)
-        {
-            return false;
+    /// round's `'L'` probe reached us, plan RH1r-c S2): whether to rotate
+    /// the route. The reporter is a peer online now; a report on a route
+    /// younger than [`REPORT_ROTATE_AGE`] is about the route it replaced.
+    #[must_use]
+    pub fn reported(&self, now: Instant) -> bool {
+        now.duration_since(self.came_up) >= REPORT_ROTATE_AGE
+    }
+
+    /// A hint from friend `peer` arrived over the route at `now`: their
+    /// chain is not ahead of it.
+    pub fn hinted(&mut self, peer: &str, now: Instant) {
+        self.hints.insert(peer.to_owned(), now);
+        self.ahead.remove(peer);
+    }
+
+    /// Friend `peer`'s DM chain showed a new entry at `now` (its watch
+    /// fired): ahead of their hints unless one arrived within
+    /// [`HINT_WINDOW`].
+    pub fn chain_changed(&mut self, peer: &str, now: Instant) {
+        let hinted = self
+            .hints
+            .get(peer)
+            .is_some_and(|at| now.duration_since(*at) < HINT_WINDOW);
+        if !hinted {
+            self.ahead.entry(peer.to_owned()).or_insert(now);
         }
-        self.last_report = Some(now);
-        self.next_test = self.next_test.min(now);
-        true
+    }
+
+    /// Whether a friend's DM chain has run ahead of its hints at `now`: an
+    /// entry whose hint has not arrived within [`HINT_WINDOW`], on a route
+    /// old enough that the friend holds its blob ([`REPORT_ROTATE_AGE`]).
+    #[must_use]
+    pub fn chain_ahead(&self, now: Instant) -> bool {
+        now.duration_since(self.came_up) >= REPORT_ROTATE_AGE
+            && self
+                .ahead
+                .values()
+                .any(|at| now.duration_since(*at) >= HINT_WINDOW)
     }
 
     /// Inbound arrived over the route.
@@ -217,71 +161,13 @@ impl InboundLiveness {
         self.last_inbound = now;
     }
 
-    /// The network reconnected or changed class (O5): test at once, and a
-    /// failure of that test is death.
-    pub fn network_changed(&mut self, now: Instant) {
-        self.next_test = now;
-        self.after_change = true;
-    }
-
-    /// Whether to self-test now. `expecting` is whether peers should be
-    /// sending to us (O2). A scheduled test of a busy route is skipped and
-    /// rescheduled `jitter()` past the period (the idle gate); the jitter is
-    /// drawn only then.
-    pub fn should_test(
-        &mut self,
-        now: Instant,
-        expecting: bool,
-        jitter: impl FnOnce() -> Duration,
-    ) -> bool {
-        if expecting
-            && self.failures == 0
-            && now.duration_since(self.last_inbound) >= SILENCE_TRIGGER
-            && self
-                .last_silence_test
-                .is_none_or(|at| now.duration_since(at) >= SILENCE_TRIGGER)
-        {
-            self.last_silence_test = Some(now);
-            return true;
-        }
-        if now < self.next_test {
-            return false;
-        }
-        if self.idle_gated
-            && self.failures == 0
-            && !self.after_change
-            && now.duration_since(self.last_inbound) < IDLE_GATE
-        {
-            self.next_test = now + SELF_TEST_PERIOD + jitter();
-            return false;
-        }
-        true
-    }
-
-    /// The test that ran at `now` came back `ok`. `period_jitter` and
-    /// `retest_jitter` are drawn below [`SELF_TEST_JITTER_MS`] and
-    /// [`RETEST_JITTER_MS`].
-    pub fn tested(
-        &mut self,
-        now: Instant,
-        ok: bool,
-        period_jitter: Duration,
-        retest_jitter: Duration,
-    ) -> SelfTest {
-        let after_change = std::mem::take(&mut self.after_change);
-        if ok {
-            self.failures = 0;
-            self.next_test = now + SELF_TEST_PERIOD + period_jitter;
-            return SelfTest::Healthy;
-        }
-        self.failures += 1;
-        if after_change || self.failures >= DEAD_AFTER_FAILURES {
-            self.failures = 0;
-            self.next_test = now + SELF_TEST_PERIOD + period_jitter;
-            return SelfTest::Dead;
-        }
-        self.next_test = now + RETEST_MIN + retest_jitter;
-        SelfTest::Retry
+    /// Whether inbound silence rotates the route at `now`: `expecting` is
+    /// whether a peer should be answering us (a send to an online peer
+    /// awaits its answer, O2), and nothing has arrived over the route, nor
+    /// has it been up, for [`SILENCE_TRIGGER`].
+    #[must_use]
+    pub fn silent(&self, now: Instant, expecting: bool) -> bool {
+        expecting && now.duration_since(self.last_inbound) >= SILENCE_TRIGGER
     }
 
     /// When a publish asked for at `now` may go: the first at once; a

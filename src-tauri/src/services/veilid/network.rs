@@ -32,21 +32,19 @@ pub async fn handle_app_call(
     let message = call.message().to_vec();
     let liveness = route_liveness(state);
     if let Some(live) = &liveness {
-        // A liveness probe (plan RH1r-c O1): ours echoes, another's is
-        // refused, as the daemon's dispatch answers it
-        // (`rekindle-transport` `subscriptions::dispatch`).
-        match live.answer_probe(&message) {
+        // A liveness probe is a peer's report that our route failed it:
+        // refused, and evidence that rotates our General route (plan RV1),
+        // as the daemon's dispatch answers it (`rekindle-transport`
+        // `subscriptions::dispatch`).
+        match rekindle_transport::liveness::answer_probe(&message) {
             ProbeAnswer::NotProbe => {}
-            ProbeAnswer::Echo(echo) => {
-                reply_to_call(state, call_id, echo).await;
-                return;
-            }
             ProbeAnswer::Refuse => {
+                live.route_reported();
                 reply_to_call(state, call_id, NAK.to_vec()).await;
                 return;
             }
         }
-        // Arrival over our route proves its inbound path (O1).
+        // Arrival over our route is evidence of its inbound path (RV1).
         live.heard_over(call.route_id().map(ToString::to_string).as_deref());
     }
 
@@ -283,14 +281,6 @@ pub fn handle_attachment(
     // stage and reconnect heal, plan E3.1 C2a/C2c): this shell runs the
     // node's update loop until E5.7.
     if let Some(transport) = state.transport.read().as_ref() {
-        // The network came back: our routes are tested at once (O5), as
-        // the daemon's dispatch does on the same edge.
-        let shared = transport.shared();
-        if (attached && !shared.is_attached())
-            || (public_internet_ready && !shared.public_internet_ready())
-        {
-            transport.liveness().network_changed();
-        }
         transport.shared().set_attachment(
             rekindle_transport::AttachmentState::from_veilid_string(&attachment.state.to_string()),
             attached,

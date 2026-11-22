@@ -1,7 +1,7 @@
 //! Nodes whose UDP path fails (plan VU5, decision 2). Veilid 0.5.8 gives a
 //! custom private route exactly its spec's preferred ordering, proves every
 //! hop pair on that ordering alone, and has no fallback to the other
-//! ordering (`route_allocate.rs:936`, `:99-105`). Our `Sending` route asks
+//! ordering (`route_allocate.rs:936`, `:99-105`). Our `General` route asks
 //! `PreferOrdered` (`rekindle-protocol` `own_routes.rs`
 //! `sending_private_spec`), so it rides TCP/WS: a network that blocks UDP
 //! still allocates it, and a UDP path that fails mid-session does not take
@@ -36,7 +36,7 @@ fn calls(sim: &Netsim, from: usize, to: usize) -> usize {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_udp_blocked_node_allocates_its_sending_route() {
+async fn a_udp_blocked_node_allocates_its_general_route() {
     let (sim, mut nodes) = start(2, 94).await;
     sim.fault(Fault::UdpBlocked {
         node: 1,
@@ -47,10 +47,10 @@ async fn a_udp_blocked_node_allocates_its_sending_route() {
     }
     assert!(
         eventually(&sim, LIMIT, || async {
-            available(&nodes[0], RouteClass::Sending)
+            available(&nodes[0], RouteClass::General)
         })
         .await,
-        "Yul, with UDP, allocates Sending"
+        "Yul, with UDP, allocates General"
     );
     assert!(
         eventually(&sim, LIMIT, || async {
@@ -61,19 +61,19 @@ async fn a_udp_blocked_node_allocates_its_sending_route() {
     );
     assert!(
         eventually(&sim, LIMIT, || async {
-            available(&nodes[1], RouteClass::Sending)
+            available(&nodes[1], RouteClass::General)
         })
         .await,
-        "Zed, UDP blocked, allocates Sending (PreferOrdered, decision 2)"
+        "Zed, UDP blocked, allocates General (PreferOrdered, decision 2)"
     );
 }
 
-/// R2-1: Uma's UDP path fails after her Sending route is live, then she
+/// R2-1: Uma's UDP path fails after her General route is live, then she
 /// accepts Vic's request. Every receipted call of the accept is pinned to
-/// her Sending route; each reaches Vic on its first attempt, the first
+/// her General route; each reaches Vic on its first attempt, the first
 /// within one answer wait, so no question was lost.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_failed_udp_path_loses_no_pinned_friend_accept_call() {
+async fn a_failed_udp_path_loses_no_friend_accept_call() {
     let (sim, mut nodes) = start(2, 95).await;
     for (node, name) in nodes.iter_mut().zip(["Uma", "Vic"]) {
         node.unlock_new_identity(name).await;
@@ -81,10 +81,10 @@ async fn a_failed_udp_path_loses_no_pinned_friend_accept_call() {
     for node in &nodes {
         assert!(
             eventually(&sim, LIMIT, || async {
-                available(node, RouteClass::Sending)
+                available(node, RouteClass::General)
             })
             .await,
-            "node {} has its Sending route",
+            "node {} has its General route",
             node.index
         );
     }
@@ -122,7 +122,7 @@ async fn a_failed_udp_path_loses_no_pinned_friend_accept_call() {
         "Uma's two rows (FriendAccept PreKeyInit, FriendsKey), one call each"
     );
     assert!(
-        available(&nodes[0], RouteClass::Sending),
-        "Uma's Sending route lives on without UDP"
+        available(&nodes[0], RouteClass::General),
+        "Uma's General route lives on without UDP"
     );
 }

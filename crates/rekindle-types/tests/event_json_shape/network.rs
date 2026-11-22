@@ -1,7 +1,8 @@
 //! `NetworkEvent` samples, covering every `RouteAvailability`.
 
 use rekindle_types::subscription_events::{
-    NetworkEvent, OwnRecordsPhase, RouteAvailability, SubscriptionEvent,
+    NetworkEvent, OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause,
+    SubscriptionEvent,
 };
 
 use crate::{pk, rk, text, Sample};
@@ -13,6 +14,9 @@ pub const NAMES: &[&str] = &[
     "remoteRoutesDied",
     "valueChanged",
     "ownRecordsChanged",
+    "routePaused",
+    "routeResumed",
+    "routeDeathsAboveBaseline",
 ];
 
 pub const NESTED: &[&str] = &[
@@ -24,6 +28,10 @@ pub const NESTED: &[&str] = &[
     "OwnRecordsPhase.pending",
     "OwnRecordsPhase.held",
     "OwnRecordsPhase.failed",
+    "OwnRouteClass.general",
+    "OwnRouteClass.media",
+    "RoutePauseCause.exhausted",
+    "RoutePauseCause.unreadable",
 ];
 
 pub fn variant_name(e: &NetworkEvent) -> &'static str {
@@ -34,6 +42,9 @@ pub fn variant_name(e: &NetworkEvent) -> &'static str {
         NetworkEvent::RemoteRoutesDied { .. } => "remoteRoutesDied",
         NetworkEvent::ValueChanged { .. } => "valueChanged",
         NetworkEvent::OwnRecordsChanged { .. } => "ownRecordsChanged",
+        NetworkEvent::RoutePaused { .. } => "routePaused",
+        NetworkEvent::RouteResumed {} => "routeResumed",
+        NetworkEvent::RouteDeathsAboveBaseline { .. } => "routeDeathsAboveBaseline",
     }
 }
 
@@ -55,7 +66,16 @@ pub fn nested_names(e: &NetworkEvent) -> Vec<&'static str> {
             OwnRecordsPhase::Held => "OwnRecordsPhase.held",
             OwnRecordsPhase::Failed => "OwnRecordsPhase.failed",
         }],
+        NetworkEvent::RouteDeathsAboveBaseline { class, .. } => vec![match class {
+            OwnRouteClass::General => "OwnRouteClass.general",
+            OwnRouteClass::Media => "OwnRouteClass.media",
+        }],
+        NetworkEvent::RoutePaused { cause } => vec![match cause {
+            RoutePauseCause::Exhausted => "RoutePauseCause.exhausted",
+            RoutePauseCause::Unreadable => "RoutePauseCause.unreadable",
+        }],
         NetworkEvent::Strength { .. }
+        | NetworkEvent::RouteResumed {}
         | NetworkEvent::LocalRoutesDied { .. }
         | NetworkEvent::RemoteRoutesDied { .. }
         | NetworkEvent::ValueChanged { .. } => vec![],
@@ -139,6 +159,39 @@ pub fn samples() -> Vec<Sample> {
             NetworkEvent::OwnRecordsChanged {
                 phase: OwnRecordsPhase::Failed,
                 error: Some("no record pool".into()),
+            },
+        ),
+        ev(
+            "routePaused.exhausted",
+            NetworkEvent::RoutePaused {
+                cause: RoutePauseCause::Exhausted,
+            },
+        ),
+        ev(
+            "routePaused.unreadable",
+            NetworkEvent::RoutePaused {
+                cause: RoutePauseCause::Unreadable,
+            },
+        ),
+        ev("routeResumed", NetworkEvent::RouteResumed {}),
+        ev(
+            "routeDeathsAboveBaseline.general",
+            NetworkEvent::RouteDeathsAboveBaseline {
+                class: OwnRouteClass::General,
+                deaths: 4,
+                young: 2,
+                window_secs: 3600,
+                baseline: 3,
+            },
+        ),
+        ev(
+            "routeDeathsAboveBaseline.media",
+            NetworkEvent::RouteDeathsAboveBaseline {
+                class: OwnRouteClass::Media,
+                deaths: 5,
+                young: 0,
+                window_secs: 3600,
+                baseline: 3,
             },
         ),
         ev(

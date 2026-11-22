@@ -172,6 +172,16 @@ pub const DM_ACK_DELAY_MAX_MS: u64 = 10_000;
 /// take.
 pub const CALL_TIMEOUT_MS: u64 = 5_000;
 
+/// The `app_call` reply to a call its callee could not judge or apply in
+/// time (its deadline, `CALL_TIMEOUT_MS` less a second) or at all (its own
+/// fault): one byte, never a receipt (empty), a NAK (`N`, the refusal), a
+/// `'D'` frame or an encoded envelope. A deadline is no refusal (review
+/// RV5 H1, M2): the caller attempts the call again as on a timeout. Here
+/// so a caller below the transport (the join's bootstrap,
+/// `rekindle-governance-runtime`) reads the same byte the transport
+/// answers (`rekindle_transport::operations::direct::RETRY_LATER`).
+pub const CALL_RETRY_LATER: &[u8] = b"R";
+
 /// How far in the future a signed 1:1 envelope's timestamp may be (clock
 /// skew between the two peers).
 pub const ENVELOPE_MAX_FUTURE_SKEW_MS: u64 = 60_000;

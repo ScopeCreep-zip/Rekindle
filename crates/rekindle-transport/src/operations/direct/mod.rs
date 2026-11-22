@@ -44,7 +44,7 @@ pub const NAK: &[u8] = b"N";
 /// unanswered call holds for `rpc.timeout_ms` (0.5.8 `rpc_app_call.rs:119-139`);
 /// the caller attempts its row again, as on a timeout, with no route
 /// refresh (the call reached us).
-pub const RETRY_LATER: &[u8] = b"R";
+pub const RETRY_LATER: &[u8] = rekindle_types::message::CALL_RETRY_LATER;
 
 /// How long an inbound `app_call`'s reply may take before it is answered
 /// [`RETRY_LATER`] ([`Called::RetryLater`]; a deadline is no refusal), on

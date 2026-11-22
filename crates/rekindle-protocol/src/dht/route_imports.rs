@@ -55,25 +55,6 @@ impl RouteImports {
         Ok(id)
     }
 
-    /// Our own route's `blob` as a call target, for its loopback self-test
-    /// (plan RH1r-c O6; `own_routes::loopback_call`): Veilid can call only a
-    /// route in its remote cache. `true` with the id when this call
-    /// imported it, so the caller releases it after the test; `false` when
-    /// it was already imported here, which the test never releases.
-    ///
-    /// # Errors
-    /// The blob is not a valid route.
-    pub fn loopback_import(&self, blob: &[u8]) -> Result<(RouteId, bool), ProtocolError> {
-        if let Some(id) = self.by_blob.lock().get(blob) {
-            return Ok((id.clone(), false));
-        }
-        let id = self
-            .api
-            .import_remote_private_route(blob.to_vec())
-            .map_err(|e| ProtocolError::RoutingError(format!("import own route: {e}")))?;
-        Ok((id, true))
-    }
-
     /// Veilid reported these imported routes dead (`RouteChange`): forget
     /// them, without releasing (Veilid already dropped them). Returns their
     /// blobs so the caller can re-fetch the peers' current routes.

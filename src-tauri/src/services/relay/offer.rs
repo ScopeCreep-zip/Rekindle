@@ -96,6 +96,17 @@ async fn offer_relay(
     if owner_key.is_empty() {
         return Err("no identity".into());
     }
+    // A relay offer's route leaves the device: it spends from the
+    // identity's new-route budget, and an empty one offers nothing (plan
+    // RV1, threat model L2 bounded exposure).
+    let transport = state
+        .transport
+        .read()
+        .clone()
+        .ok_or_else(|| "transport not started".to_string())?;
+    if !transport.routes().spend_budget() {
+        return Err("new-route budget spent; relay offer paused".into());
+    }
     let route = api
         .new_private_route()
         .await

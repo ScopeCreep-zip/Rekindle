@@ -44,7 +44,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortError, RouteClass};
+use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortError};
 use rekindle_types::config::SafetyProfile;
 use rekindle_types::message::CALL_TIMEOUT_MS;
 use tracing::{debug, warn};
@@ -172,30 +172,6 @@ impl AppMessagePort for Bounded {
         within(profile, self.inner.call(target, profile, message)).await
     }
 
-    async fn call_pinned(
-        &self,
-        target: &PeerTarget,
-        profile: &SafetyProfile,
-        class: RouteClass,
-        message: Vec<u8>,
-    ) -> Result<Vec<u8>, PortError> {
-        within(
-            profile,
-            self.inner.call_pinned(target, profile, class, message),
-        )
-        .await
-    }
-
-    async fn call_own(
-        &self,
-        class: RouteClass,
-        path: rekindle_records::port::OwnPath,
-        profile: &SafetyProfile,
-        message: Vec<u8>,
-    ) -> Result<Vec<u8>, PortError> {
-        within(profile, self.inner.call_own(class, path, profile, message)).await
-    }
-
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
         self.inner.reply(call_id, message).await
     }
@@ -259,24 +235,6 @@ mod tests {
         ) -> Result<Vec<u8>, PortError> {
             std::future::pending().await
         }
-        async fn call_pinned(
-            &self,
-            _: &PeerTarget,
-            _: &SafetyProfile,
-            _: RouteClass,
-            _: Vec<u8>,
-        ) -> Result<Vec<u8>, PortError> {
-            std::future::pending().await
-        }
-        async fn call_own(
-            &self,
-            _: RouteClass,
-            _: rekindle_records::port::OwnPath,
-            _: &SafetyProfile,
-            _: Vec<u8>,
-        ) -> Result<Vec<u8>, PortError> {
-            std::future::pending().await
-        }
         async fn reply(&self, _: AppCallId, _: Vec<u8>) -> Result<(), PortError> {
             Ok(())
         }
@@ -288,23 +246,8 @@ mod tests {
         let target = PeerTarget::new("route".into());
         let profile = at(3);
         let started = tokio::time::Instant::now();
-        let pinned = port
-            .call_pinned(&target, &profile, RouteClass::Sending, vec![1])
-            .await;
-        assert!(matches!(pinned, Err(PortError::Timeout(ref m)) if m.contains("unresolved")));
-        assert_eq!(started.elapsed(), app_call_deadline(&profile));
-        assert!(port.call(&target, &profile, vec![1]).await.is_err());
-        // The owner's route self-test (plan RH1r-c O1) is a call like any.
-        let started = tokio::time::Instant::now();
-        let own = port
-            .call_own(
-                RouteClass::General,
-                rekindle_records::port::OwnPath::Loopback,
-                &profile,
-                vec![1],
-            )
-            .await;
-        assert!(matches!(own, Err(PortError::Timeout(ref m)) if m.contains("unresolved")));
+        let called = port.call(&target, &profile, vec![1]).await;
+        assert!(matches!(called, Err(PortError::Timeout(ref m)) if m.contains("unresolved")));
         assert_eq!(started.elapsed(), app_call_deadline(&profile));
     }
 

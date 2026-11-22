@@ -87,6 +87,6 @@ impl Liveness {
     /// included, proves the route delivers (S2).
     #[must_use]
     pub fn peer_probe(&self) -> Vec<u8> {
-        self.probe().1
+        self.probe()
     }
 }

@@ -12,6 +12,7 @@
 mod op_store;
 mod roles;
 mod runtime_deps;
+mod slot_recovery;
 mod types;
 
 pub use op_store::GovernanceOpStore;
@@ -21,4 +22,5 @@ pub use roles::RoleTable;
 pub use runtime_deps::GovernanceRuntimeDeps;
 #[cfg(test)]
 pub use runtime_deps::MockGovernanceRuntimeDeps;
+pub use slot_recovery::SlotRecovery;
 pub use types::*;

@@ -38,7 +38,12 @@
 //! invite, so its merge always holds the invite op our `MemberJoined`
 //! cites. Another member may not have merged that op yet and would refuse
 //! what every member will accept once it has, so its NAK, like its
-//! silence, moves on to the next member.
+//! silence, moves on to the next member. A `RETRY_LATER` (the responder's
+//! deadline passed, `rekindle_types::message::CALL_RETRY_LATER`) is no
+//! refusal from anyone ([`GovernanceRuntimeError::PeerRetryLater`]): from
+//! the inviter it ends this exchange as its silence does, the join standing
+//! and the exchange tried again (the `bootstrap` outbox row); from another
+//! member it moves on.
 
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -95,11 +100,16 @@ pub enum BootstrapReply {
 /// Read a responder's reply for `anchor`.
 ///
 /// # Errors
+/// [`GovernanceRuntimeError::PeerRetryLater`]: the reply is `RETRY_LATER`
+/// (the responder's deadline passed; no refusal).
 /// [`GovernanceRuntimeError::BootstrapRefused`]: the reply is the
 /// responder's `bootstrapRefused` for `anchor` (with its reason), or is
 /// none of the three for `anchor` (a bare NAK, whose reason is unnamed:
 /// `NotAdmitted`).
 pub fn read_reply(reply: &[u8], anchor: &str) -> Result<BootstrapReply, GovernanceRuntimeError> {
+    if reply == rekindle_types::message::CALL_RETRY_LATER {
+        return Err(GovernanceRuntimeError::PeerRetryLater);
+    }
     match rekindle_codec::capnp_envelope::try_decode_community_envelope(reply) {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapResponseV2 {
             anchor: answered,
@@ -231,7 +241,8 @@ where
 ///
 /// # Errors
 /// The inviter's call failed (it is unreachable: the join stands from the
-/// DHT) or it refused ([`GovernanceRuntimeError::BootstrapRefused`]), or
+/// DHT), it answered `RETRY_LATER`
+/// ([`GovernanceRuntimeError::PeerRetryLater`]: likewise) or it refused ([`GovernanceRuntimeError::BootstrapRefused`]), or
 /// the inviter was partial and no member answered a frontier within the
 /// cap ([`GovernanceRuntimeError::BootstrapUnavailable`], with the number
 /// asked).
