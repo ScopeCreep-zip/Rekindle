@@ -378,8 +378,14 @@
     cursor: default;
   }
   .profile-popup-join-reason {
+    display: inline-block;
     font-size: 10px;
     color: var(--color-xfire-text-disabled);
+  }
+
+  /* The Host's reason (utils/joinable_text.ts) begins the sentence here. */
+  .profile-popup-join-reason::first-letter {
+    text-transform: uppercase;
   }
 
   .member-game-info {

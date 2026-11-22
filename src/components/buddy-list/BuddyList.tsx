@@ -21,6 +21,7 @@ import {
 import { handleStartDmCall } from "../../actions/calls.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
 import { handleLaunchGame } from "../../actions/game.actions";
+import { notJoinableText } from "../../utils/joinable_text";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";
 import ScrollArea from "../common/ScrollArea";
@@ -37,19 +38,6 @@ function matchesSearch(friend: Friend, query: string): boolean {
   return false;
 }
 
-/** Why a friend's game cannot be joined, in the Host's words (IV3c). */
-function notJoinableText(friend: Friend): string {
-  const game = friend.gameInfo;
-  if (!game) return "not in a game";
-  switch (game.joinableReason) {
-    case "noServer":
-      return "not on a server";
-    case "cannotLaunch":
-      return "can't be launched here";
-    default:
-      return "";
-  }
-}
 
 /** Join the friend's game server through the Host's review; a refusal is shown. */
 async function joinFriendGame(friend: Friend): Promise<void> {
@@ -211,7 +199,7 @@ const BuddyList: Component = () => {
           >
             Join Game
             <Show when={friend.gameInfo?.joinable !== true}>
-              <span class="context-menu-item-reason">{notJoinableText(friend)}</span>
+              <span class="context-menu-item-reason">{notJoinableText(friend.gameInfo)}</span>
             </Show>
           </ContextMenu.Item>
 

@@ -11,6 +11,7 @@ import RoleTag from "./RoleTag";
 import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
 import { handleLaunchGame } from "../../actions/game.actions";
+import { notJoinableText } from "../../utils/joinable_text";
 import {
   handleSelfAssignRole,
   handleSelfUnassignRole,
@@ -300,11 +301,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
           </button>
           <Show when={props.member.gameInfo?.joinable !== true}>
             <span class="profile-popup-join-reason" id="profile-popup-join-reason">
-              {!props.member.gameInfo
-                ? "Not in a game"
-                : props.member.gameInfo.joinableReason === "noServer"
-                  ? "Not on a server"
-                  : "Can't be launched here"}
+              {notJoinableText(props.member.gameInfo)}
             </span>
           </Show>
         </div>
