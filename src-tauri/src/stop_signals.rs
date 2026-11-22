@@ -14,7 +14,7 @@
 //!
 //! That shutdown awaits the Host's teardown and Veilid's flush with no cap
 //! of its own (`shutdown::handle_exit`, plan C7.16), so a signal also arms
-//! [`STOP_DEADLINE`]: past it the process ends, whatever the shutdown still
+//! [`PROCESS_STOP_DEADLINE`]: past it the process ends, whatever the shutdown still
 //! awaits (IC2). The deadline runs on its own OS thread, never on the
 //! runtime: a runtime whose workers are busy (IC1) or a shutdown blocked on
 //! one cannot hold it off.
@@ -43,7 +43,7 @@ impl StopSource for StopSignals {
 /// `LONGEST_VEILID_CALL`, 10 s, with no cancellation, veilid #516), and
 /// inside systemd's default `TimeoutStopSec=` of 90 s (`systemd.service(5)`),
 /// so the end is ours and logged, not the session manager's SIGKILL.
-pub(crate) const STOP_DEADLINE: Duration = Duration::from_secs(60);
+pub(crate) const PROCESS_STOP_DEADLINE: Duration = Duration::from_secs(60);
 
 /// Install the stop-signal handlers and quit the app on the first signal.
 /// Called once from setup, before the Host starts, so a locked app quits
@@ -62,7 +62,7 @@ pub(crate) fn install(app: &tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn(quit_on_stop(
         signals,
         move || app.exit(0),
-        STOP_DEADLINE,
+        PROCESS_STOP_DEADLINE,
         || std::process::exit(1),
     ));
     Ok(())
