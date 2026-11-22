@@ -180,9 +180,10 @@ export async function treeMinimum(b: Browser): Promise<Size | undefined> {
     const popup = frame.getAttribute("data-skin-popup");
     const w = window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> } };
     return w.__TAURI_INTERNALS__.invoke("get_skin", { id: null }).then(
-      (skin): Got => {
+      (done): Got => {
+        // A Host command answers `{ value, undo }` (ipc/invoke.ts hostInvoke).
         type Shell = { window: string; popup?: { name: string }; minWidth: number; minHeight: number };
-        const shell = (skin as { shells?: Shell[] }).shells?.find((s) => (popup ? s.popup?.name === popup : s.window === kind && !s.popup));
+        const shell = (done as { value: { shells?: Shell[] } }).value.shells?.find((s) => (popup ? s.popup?.name === popup : s.window === kind && !s.popup));
         return shell ? { width: shell.minWidth, height: shell.minHeight } : { error: `no served shell for ${popup ?? kind ?? "this window"}` };
       },
       (e: unknown): Got => ({ error: `get_skin failed: ${String(e)}` }),
