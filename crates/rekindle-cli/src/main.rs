@@ -196,7 +196,7 @@ async fn dispatch_command(
         Command::Settings(cmd) => presence::dispatch_settings(&cmd, client, mode).await,
         Command::Skin(cmd) => skin::dispatch(&cmd, client, mode).await,
         Command::Game(cmd) => presence::dispatch_game(&cmd, client, mode).await,
-        Command::Activity { before, limit } => {
+        Command::Activity(cli::ActivityArgs { before, limit }) => {
             let value = helpers::send(
                 client,
                 rekindle_ipc::protocol::IpcRequest::ActivityList { before, limit },
