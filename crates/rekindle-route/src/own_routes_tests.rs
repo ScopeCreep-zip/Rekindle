@@ -330,6 +330,28 @@ async fn an_empty_budget_refuses_and_releases() {
     assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "nothing drawn");
 }
 
+/// Plan RV1 (real-app suite seed): a bucket seeded at 0 refuses an
+/// unlock's first allocation: nothing is drawn and the pause shows
+/// `Exhausted`, as `REKINDLE_ROUTE_BUDGET_CAPACITY=0` gives a debug build.
+#[tokio::test]
+async fn a_budget_seeded_empty_refuses_the_first_allocation() {
+    let fake = Arc::new(Fake::new(many(5)));
+    let (routes, _ready) = owner(&fake, true);
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&saved);
+    routes.attach_budget(
+        crate::budget::RouteBudget::seeded(0, 1_000).state(),
+        Arc::new(|| 1_000),
+        Arc::new(move |b| sink.lock().push(b)),
+    );
+    routes.want(RouteClass::General);
+    settle().await;
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "nothing drawn");
+    assert_eq!(routes.id(RouteClass::General), None);
+    assert!(saved.lock().is_empty(), "nothing spent");
+    assert_eq!(*routes.paused().borrow(), Some(RoutePauseCause::Exhausted));
+}
+
 /// Plan RV1: a stored budget that cannot be read pays for nothing: the live
 /// routes are released before they are published, every class stays down
 /// with the cause `Unreadable`, no route is drawn and no relay is offered

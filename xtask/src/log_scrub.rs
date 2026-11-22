@@ -12,6 +12,9 @@
 //!   `log_scrub::install_panic_hook` or `install_panic_hook_with`, itself
 //!   or in the `run` function of its package's `lib.rs` that its `main`
 //!   calls (the desktop's `rekindle_lib::run`).
+//!
+//! And a third ([`debug_env`]): a debug-only environment variable is named
+//! only inside an item under `#[cfg(debug_assertions)]`.
 
 use std::path::Path;
 
@@ -190,6 +193,7 @@ pub(crate) fn check_log_scrub(root: &Path) -> Result<()> {
                 continue;
             };
             hits.extend(scan_subscribers(&rel, &src));
+            hits.extend(debug_env::scan(&rel, &src));
             let is_binary =
                 path == src_dir.join("main.rs") || path.parent() == Some(&src_dir.join("bin"));
             if is_binary {
@@ -211,10 +215,15 @@ pub(crate) fn check_log_scrub(root: &Path) -> Result<()> {
     Err(anyhow!(
         "{} log sink(s) bypass the scrubber (rule B19). Write through \
          `rekindle_utils::log_scrub::ScrubbingMakeWriter` and install \
-         `log_scrub::install_panic_hook` in every binary.",
-        hits.len()
+         `log_scrub::install_panic_hook` in every binary; name {:?} only \
+         under `#[cfg(debug_assertions)]`.",
+        hits.len(),
+        debug_env::DEBUG_ONLY_VARS,
     ))
 }
+
+#[path = "log_scrub_debug_env.rs"]
+mod debug_env;
 
 #[cfg(test)]
 #[path = "log_scrub_tests.rs"]
