@@ -81,10 +81,11 @@ export function routePausedText(cause: RoutePauseCause | null): string {
 }
 
 /** The deaths warning, from the Host's numbers (plan RV1): what died, how often, against the usual. */
-function routeDeathsText(d: { class: OwnRouteClass; deaths: number; windowSecs: number; baseline: number }): string {
+function routeDeathsText(d: { class: OwnRouteClass; deaths: number; young: number; windowSecs: number; baseline: number }): string {
   const minutes = Math.max(1, Math.round(d.windowSecs / 60));
   const route = d.class === "media" ? "media route" : "inbound route";
-  return `Our ${route} failed ${d.deaths} times in ${minutes} min (usually ${d.baseline}): possible attack.`;
+  const young = d.young > 0 ? `, ${d.young} of them within a minute of being made,` : "";
+  return `Our ${route} failed ${d.deaths} times in ${minutes} min${young} where it usually fails ${d.baseline}: possible attack.`;
 }
 
 /** Public internet ready and a route: the indicator's "Connected". */
@@ -197,9 +198,9 @@ function start(): void {
     }),
   );
   keep(
-    subscribeRoutePaused((paused, cause) => {
+    subscribeRoutePaused((cause) => {
       applied.routePaused += 1;
-      setNetworkState({ routePaused: paused, routePauseCause: paused ? cause : null });
+      setNetworkState({ routePaused: cause !== null, routePauseCause: cause });
     }),
   );
   // Deaths above their baseline: a notice with the Host's numbers, no reaction.

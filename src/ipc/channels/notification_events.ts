@@ -77,11 +77,21 @@ export type NetworkEvent =
   | { strength: { bars: number } }
   | { ownRecordsChanged: { phase: OwnRecordsPhase; error: string | null } }
   | { localRoutesDied: { count: number } }
-  /** Our new-route budget is spent (or unreadable), so the inbound route
-   *  stays down; `paused: false` once a refill brought it back (plan RV1). */
-  | { routePaused: { paused: boolean; cause: RoutePauseCause } }
+  /** Our new-route budget is spent (or unreadable), so the inbound route stays down (plan RV1c). */
+  | { routePaused: { cause: RoutePauseCause } }
+  /** The pause is over: a refill brought the route back (plan RV1c). */
+  | { routeResumed: Record<string, never> }
   /** Own-route deaths of `class` in `windowSecs` rose above `baseline`: a warning only (plan RV1). */
-  | { routeDeathsAboveBaseline: { class: OwnRouteClass; deaths: number; windowSecs: number; baseline: number } }
+  | {
+      routeDeathsAboveBaseline: {
+        class: OwnRouteClass;
+        deaths: number;
+        /** Of `deaths`, routes that died under 60 s old. */
+        young: number;
+        windowSecs: number;
+        baseline: number;
+      };
+    }
   | { remoteRoutesDied: { peerKeys: string[] } }
   | { valueChanged: { recordKey: string; changedSubkeys: number[] } };
 
