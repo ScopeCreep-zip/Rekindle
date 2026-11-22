@@ -44,9 +44,19 @@
     padding: 4px 6px 2px;
   }
 
-  /* A server row's Join, Add to Favorites and Remove: their own line. */
+  /* What the last Refresh learned (plan E7.2 G4), and the row's Join, Add
+   * to Favorites and Remove: each on its own line. */
+  .servers-view-info,
   .servers-view-actions {
     grid-column: 1 / -1;
+  }
+
+  .servers-view-info {
+    color: var(--color-xfire-text-dim);
+  }
+
+  .servers-view-toolbar {
+    padding: 4px 6px;
   }
 
   /* The app's own Downloads tab: Start, Stop and Execute under the list. */

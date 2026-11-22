@@ -3,7 +3,7 @@ import { handleLaunchGame } from "../../actions/game.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
 import { subscribeServersView } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
-import { serverCommands, type ServerCategory, type ServerRefusal, type ServerRow, type ServerVerdict, type ServersView as View } from "../../ipc/commands/dto_servers";
+import { serverCommands, type ServerCategory, type ServerInfo, type ServerRefusal, type ServerRow, type ServerVerdict, type ServersView as View } from "../../ipc/commands/dto_servers";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import { formatRelativeTime } from "../../utils/formatting";
@@ -33,6 +33,21 @@ function categoryTitle(c: ServerCategory): string {
       return "Friends' servers";
     case "community":
       return c.community?.name ?? "Community";
+  }
+}
+
+/** What the last Refresh learned, as one line (plan E7.2 G4): the server's name, map,
+ *  players and ping; "Querying..." while it runs; the Host's reason when it had no answer. */
+function infoText(info: ServerInfo): string {
+  switch (info.kind) {
+    case "notQueried":
+      return "";
+    case "querying":
+      return "Querying...";
+    case "answered":
+      return `${info.name} · ${info.map} · ${info.players}/${info.maxPlayers} players · ${info.pingMs} ms`;
+    case "unanswered":
+      return info.reason;
   }
 }
 
@@ -115,10 +130,23 @@ const ServersView: Component = () => {
   const meta = (r: ServerRow): string =>
     [r.friend?.displayName, r.address, r.lastSeen !== null ? formatRelativeTime(r.lastSeen * 1000) : null]
       .filter((s): s is string => !!s)
-      .join(" · ");
+      .join(" Â· ");
+
+  // Refresh queries every listed server once, only when the user asks (a
+  // query shows our IP to the server); the Host says when it may run.
+  const refreshRefused = (): string | null => {
+    const v = view()?.refresh;
+    return !v ? "Servers not read yet" : "refused" in v ? v.refused.reason : null;
+  };
+  const refresh = (): void => {
+    if (refreshRefused() === null) void run("Not refreshed", () => serverCommands.serversRefresh());
+  };
 
   return (
     <div class="servers-view" role="listbox" aria-label="Servers">
+      <div class="servers-view-toolbar">
+        <RowButton label="Refresh" refused={refreshRefused()} onPress={refresh} />
+      </div>
       <For each={view()?.categories ?? []}>
         {(category) => (
           <div class="servers-view-section" role="group" aria-label={categoryTitle(category)}>
@@ -141,6 +169,13 @@ const ServersView: Component = () => {
                   >
                     <span class="servers-view-name">{r.label || r.gameName}</span>
                     <span class="servers-view-address">{meta(r)}</span>
+                    <Show when={infoText(r.info)}>
+                      {(text) => (
+                        <span class="servers-view-info" data-info={r.info.kind}>
+                          {text()}
+                        </span>
+                      )}
+                    </Show>
                     <span class="servers-view-actions">
                       <RowButton
                         label="Join"

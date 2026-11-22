@@ -689,6 +689,9 @@
 .servers-view-address	text hovered	var(--color-xfire-text-dim)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
 .servers-view-address	text selected	var(--color-xfire-text-dim)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
 .servers-view-empty	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.servers-view-info	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.servers-view-info	text hovered	var(--color-xfire-text-dim)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.servers-view-info	text selected	var(--color-xfire-text-dim)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
 .servers-view-row	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .servers-view-row	text hovered	var(--color-xfire-text)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
 .servers-view-row	text selected	var(--color-xfire-text)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
