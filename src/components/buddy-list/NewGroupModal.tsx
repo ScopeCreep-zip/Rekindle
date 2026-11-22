@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { Component, For, Show, createEffect, createSignal, on } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { friendsState } from "../../stores/friends.store";
@@ -25,6 +25,17 @@ const NewGroupModal: Component = () => {
   const ready = () =>
     !busy() && name().trim().length > 0 && count() >= MIN_PICKED && count() <= MAX_PICKED;
 
+  // A skin's New Room opens the dialog with its selected friend picked.
+  createEffect(
+    on(
+      () => buddyListUI.showNewGroup,
+      (open) => {
+        const peer = buddyListUI.newGroupPeer;
+        if (open && peer) setPicked([peer]);
+      },
+    ),
+  );
+
   function toggle(key: string): void {
     setPicked((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
   }
@@ -34,7 +45,7 @@ const NewGroupModal: Component = () => {
     setPicked([]);
     setBusy(false);
     setError(null);
-    setBuddyListUI("showNewGroup", false);
+    setBuddyListUI({ showNewGroup: false, newGroupPeer: null });
   }
 
   async function create(e: Event): Promise<void> {

@@ -47,6 +47,12 @@ export const handleDeclineGroupDm = (groupId: string) =>
   answer(() => commands.groupDmDecline(groupId));
 export const handleLeaveGroupDm = (groupId: string) =>
   answer(() => commands.groupDmLeave(groupId));
+/** Rename a group we created (plan E7.2 G7); the Host reviews it. */
+export const handleRenameGroupDm = (groupId: string, name: string) =>
+  answer(() => commands.groupDmRename(groupId, name));
+/** Invite friends into a group we created (plan E7.2 G8); the Host reviews it. */
+export const handleInviteToGroupDm = (groupId: string, members: string[]) =>
+  answer(() => commands.groupDmInvite(groupId, members));
 
 export function handleOpenGroupChat(groupId: string): void {
   void commands.openGroupChatWindow(groupId);

@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "app-skin-popup",
+  "description": "App-command grants for pack popups (`popup-*`, plan SK2-A5: Xfire's Infoview, StealthX's main menu), each beside the skin window that launched it. The popup renders the served popup shell through the same skin tree as its launcher (`src/windows/SkinPopupWindow.tsx` → `src/components/skin-tree/SkinTreeWindow.tsx`), so it runs its nodes' actions (`run_skin_action`), reports its selection (`set_skin_selection`) and holds what the tree's own parts call: the menu bar a menu popup carries (StealthX's `MainMenuPopup` is the app menu: settings, quit, the help links through `open_external_url`) and the status picker (`set_status`). The event stream and skin read come from `app-baseline.json`, the window chrome from `default.json`. It opens no popups of its own (`open_skin_popup` refuses a popup as launcher). `core:window:allow-start-resize-dragging` for the pack's resize tiles on the popup (Classic's `InfoInfoResizeRight` → `ResizeR`; the common runner's `Resize` op), clamped by the window's minimum size from the served popup. No plugin grants.",
+  "windows": [
+    "popup-*"
+  ],
+  "permissions": [
+    "core:window:allow-start-resize-dragging",
+    "allow-open-external-url",
+    "allow-open-settings-window",
+    "allow-quit-app",
+    "allow-run-skin-action",
+    "allow-set-skin-selection",
+    "allow-set-status"
+  ]
+}

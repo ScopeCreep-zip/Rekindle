@@ -433,6 +433,7 @@ pub const SHELL_LOCAL: &[&str] = &[
     "open_community_window",
     "open_settings_window",
     "open_skin_editor_window",
+    "open_skin_popup",
     "open_profile_window",
     "open_call_window",
     "get_game_name",

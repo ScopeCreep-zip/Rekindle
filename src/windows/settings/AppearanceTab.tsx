@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
-import { subscribeSkinEvents, subscribeSkinTrial } from "../../ipc/channels";
+import { subscribeSkinApplyFailed, subscribeSkinEvents, subscribeSkinTrial, type SkinApplyFailed } from "../../ipc/channels";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
 import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
@@ -17,6 +17,15 @@ function refusal(e: unknown): string | null {
   return String(e);
 }
 
+/** Why a window could not show a skin, as one sentence (plan SK2-T1). */
+function failureText(f: SkinApplyFailed, name: string): string {
+  const why = f.cause.type === "imageDecode"
+    ? `its image ${f.cause.data.path.split("/").pop() ?? f.cause.data.path} did not load`
+    : "its style sheet did not load";
+  const after = f.reverted ? "It was on trial, so the previous skin is back." : "The skin shown before stays.";
+  return `${name} could not be shown: ${why}. ${after}`;
+}
+
 /**
  * Settings → Appearance (plan E7.7.2): the skins the Host lists, import,
  * choose, remove and "use as login skin". Every decision is the Host's:
@@ -29,6 +38,8 @@ const AppearanceTab: Component = () => {
   const [trial, setTrial] = createSignal<SkinTrial | null>(null);
   const [now, setNow] = createSignal(Date.now());
   const [error, setError] = createSignal<string | null>(null);
+  /** The newest window's report that a skin could not be applied. */
+  const [failed, setFailed] = createSignal<SkinApplyFailed | null>(null);
   /** The skin whose credits are open, if any. */
   const [creditsOf, setCreditsOf] = createSignal<string | null>(null);
   let fileInput: HTMLInputElement | undefined;
@@ -62,10 +73,16 @@ const AppearanceTab: Component = () => {
       if (t === null) refresh();
     });
     const skinSub = subscribeSkinEvents(() => refresh());
+    // Every window that applies the skin reports alone; the newest stands.
+    const failedSub = subscribeSkinApplyFailed((f) => {
+      setFailed(f);
+      if (f.reverted) refresh();
+    });
     onCleanup(() => {
       window.clearInterval(ticker);
       void trialSub.then((unlisten) => unlisten());
       void skinSub.then((unlisten) => unlisten());
+      void failedSub.then((unlisten) => unlisten());
     });
   });
 
@@ -136,6 +153,16 @@ const AppearanceTab: Component = () => {
             secondsLeft={secondsLeft(t())}
             onAnswer={(keep) => void run(() => commands.keepSkin(t().id, keep))}
           />
+        )}
+      </Show>
+      <Show when={failed()}>
+        {(f) => (
+          <div class="settings-hint skin-error" role="alert">
+            {failureText(f(), library()?.skins.find((s) => s.id === f().skin)?.name ?? f().skin)}{" "}
+            <button class="form-btn-secondary skin-action" onClick={() => setFailed(null)}>
+              Dismiss
+            </button>
+          </div>
         )}
       </Show>
       <div class="settings-section-title">Skin</div>

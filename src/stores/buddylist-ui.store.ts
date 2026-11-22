@@ -11,6 +11,12 @@ export interface BuddyListUIState {
   showStartGroupCall: boolean;
   /** The "New group" dialog (plan E2.6). */
   showNewGroup: boolean;
+  /** The friend a skin's New Room named (its selection), picked when the dialog opens. */
+  newGroupPeer: string | null;
+  /** The group a skin's Invite Users to Room opened the picker for (G8). */
+  inviteToRoom: string | null;
+  /** The notification center's panel (a skin's OpenNotifications too). */
+  showNotifications: boolean;
 }
 
 const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
@@ -20,6 +26,9 @@ const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
   showJoinCommunity: false,
   showStartGroupCall: false,
   showNewGroup: false,
+  newGroupPeer: null,
+  inviteToRoom: null,
+  showNotifications: false,
 });
 
 export function switchTab(tab: BuddyListTab): void {

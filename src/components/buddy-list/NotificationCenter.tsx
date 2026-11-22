@@ -1,4 +1,5 @@
-import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { Component, For, Show, onMount, onCleanup } from "solid-js";
+import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
 import {
   notificationState,
   unreadNotifications,
@@ -11,7 +12,9 @@ import { handleStartDmCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
 
 const NotificationCenter: Component = () => {
-  const [open, setOpen] = createSignal(false);
+  const open = (): boolean => buddyListUI.showNotifications;
+  const setOpen = (v: boolean | ((prev: boolean) => boolean)): void =>
+    setBuddyListUI("showNotifications", typeof v === "function" ? v(open()) : v);
   let panelRef: HTMLDivElement | undefined;
 
   function toggle(): void {

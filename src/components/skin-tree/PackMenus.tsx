@@ -1,83 +1,30 @@
 import { Component, For, JSX, Show, createContext, useContext } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
-import type { EngineMenu } from "../../ipc/commands/dto_skin_tree";
+import { ContextMenu } from "@kobalte/core/context-menu";
+import type { EngineMenu, MenuItem } from "../../ipc/commands/dto_skin_tree";
 
-/** The engine menus a pack's menu titles open here (`Menu<Name>` triggers). */
-export type MenuKey = Extract<EngineMenu, "file" | "tool" | "help">;
-import { handleLogout } from "../../actions/auth.actions";
-import { handleToggleAddFriend } from "../../actions/buddy.actions";
-import { setBuddyListUI } from "../../stores/buddylist-ui.store";
-import { setShortcutsHelpOpen } from "../../stores/shortcuts_help.store";
-import {
-  handleOpenDocs,
-  handleQuit,
-  handleReportBug,
-  openSettingsTab,
-} from "../buddy-list/MenuBar";
-import {
-  handleToggleCreateCommunity,
-  handleToggleJoinCommunity,
-  handleToggleNewChat,
-} from "../buddy-list/BottomActionBar";
-
-interface Item {
-  label: string;
-  run: () => void;
-  /** A separator before this item. */
-  apart?: boolean;
-  danger?: boolean;
-}
-
-/// The first menu reads "Rekindle" (plan SK2 lead decision 7: the Xfire
-/// name is a trademark); the others keep Xfire's names (lang 229/231).
-const TITLE: Record<MenuKey, string> = { file: "Rekindle", tool: "Tools", help: "Help" };
-
-/// N2 (design §3): our menu items regrouped under the pack's menus. The
-/// first menu holds the account and contact actions and Log Off/Exit
-/// (Xfire's own placement; Create/Join Community per design §4), Tools
-/// the options, skins, group call and shortcuts, Help the docs.
-const ITEMS: Record<MenuKey, Item[]> = {
-  file: [
-    { label: "Add Friend…", run: handleToggleAddFriend },
-    { label: "New Chat…", run: handleToggleNewChat },
-    { label: "New Group…", run: () => setBuddyListUI("showNewGroup", true) },
-    { label: "Create Community…", run: handleToggleCreateCommunity, apart: true },
-    { label: "Join Community…", run: handleToggleJoinCommunity },
-    { label: "Profile", run: () => openSettingsTab("profile"), apart: true },
-    { label: "Privacy", run: () => openSettingsTab("privacy") },
-    { label: "About", run: () => openSettingsTab("about") },
-    { label: "Log Off", run: () => void handleLogout(), apart: true },
-    { label: "Exit", run: handleQuit, danger: true },
-  ],
-  tool: [
-    { label: "Options", run: () => openSettingsTab("application") },
-    { label: "Notifications", run: () => openSettingsTab("notifications") },
-    { label: "Audio", run: () => openSettingsTab("audio") },
-    { label: "Skins", run: () => openSettingsTab("appearance") },
-    { label: "Start Group Call…", run: () => setBuddyListUI("showStartGroupCall", true), apart: true },
-    { label: "Keyboard Shortcuts", run: () => setShortcutsHelpOpen(true) },
-  ],
-  help: [
-    { label: "Documentation", run: handleOpenDocs },
-    { label: "Report Bug", run: handleReportBug },
-  ],
-};
+/// The menu title's text: the first menu reads "Rekindle" (plan SK2 lead
+/// decision 7: the Xfire name is a trademark), the others keep Xfire's
+/// names (lang 229/231).
+const TITLE: Partial<Record<EngineMenu, string>> = { file: "Rekindle", tool: "Tools", help: "Help", status: "Status" };
 
 /** Whether a menu sits inside the pack's menu bar (one Kobalte `Menubar`,
  *  so hover moves between open menus). */
 const InBar = createContext(false);
 
 /** The pack's `MenuBar` node: the menus' container. */
-export const PackMenuBar: Component<{ id: string; children: JSX.Element }> = (props) => (
-  <Menubar class="skin-menubar" data-skin-node={props.id}>
+export const PackMenuBar: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (props) => (
+  <Menubar class="skin-menubar" {...props.attrs}>
     <InBar.Provider value={true}>{props.children}</InBar.Provider>
   </Menubar>
 );
 
-const MenuItems: Component<{ menu: MenuKey }> = (props) => (
+/** The served items of one engine menu (the Host's `MenuRegistry`), each
+ *  run through the window's dispatcher. */
+const BarItems: Component<{ items: MenuItem[]; run: (item: MenuItem) => void }> = (props) => (
   <Menubar.Portal>
     <Menubar.Content class="menu-dropdown">
-      <For each={ITEMS[props.menu]}>
+      <For each={props.items}>
         {(item) => (
           <>
             <Show when={item.apart}>
@@ -85,7 +32,7 @@ const MenuItems: Component<{ menu: MenuKey }> = (props) => (
             </Show>
             <Menubar.Item
               class={item.danger ? "menu-dropdown-item menu-dropdown-item-danger" : "menu-dropdown-item"}
-              onSelect={item.run}
+              onSelect={() => props.run(item)}
             >
               {item.label}
             </Menubar.Item>
@@ -96,31 +43,64 @@ const MenuItems: Component<{ menu: MenuKey }> = (props) => (
   </Menubar.Portal>
 );
 
-const Menu: Component<{ id: string; menu: MenuKey; children: JSX.Element }> = (props) => (
+interface MenuProps {
+  attrs: Record<string, unknown>;
+  menu: EngineMenu;
+  items: MenuItem[];
+  run: (item: MenuItem) => void;
+  children: JSX.Element;
+}
+
+const Menu: Component<MenuProps> = (props) => (
   <Menubar.Menu>
-    <Menubar.Trigger class="skin-menu" data-skin-node={props.id}>
+    <Menubar.Trigger class="skin-menu" {...props.attrs}>
       {props.children}
-      <span class="skin-menu-label">{TITLE[props.menu]}</span>
+      <Show when={TITLE[props.menu]}>{(t) => <span class="skin-menu-label">{t()}</span>}</Show>
     </Menubar.Trigger>
-    <MenuItems menu={props.menu} />
+    <BarItems items={props.items} run={props.run} />
   </Menubar.Menu>
 );
 
-/** One menu title at the pack's place; a menu the pack lays outside a menu
- *  bar is its own one-menu bar. */
-export const PackMenu: Component<{ id: string; menu: MenuKey; children: JSX.Element }> = (props) => (
+/** A menu title the pack opens with a press (`Menu<Name>`); one laid
+ *  outside a menu bar is its own one-menu bar. */
+export const PackMenu: Component<MenuProps> = (props) => (
   <Show
     when={useContext(InBar)}
     fallback={
       <Menubar class="skin-menubar skin-menubar-lone">
-        <Menu id={props.id} menu={props.menu}>
-          {props.children}
-        </Menu>
+        <Menu {...props} />
       </Menubar>
     }
   >
-    <Menu id={props.id} menu={props.menu}>
-      {props.children}
-    </Menu>
+    <Menu {...props} />
   </Show>
+);
+
+/** A node the pack opens a menu on with a right-click (`ContextMenu<Name>`,
+ *  XGlow's right-click `MenuTool`): the node itself is the trigger. */
+export const PackContextMenu: Component<Omit<MenuProps, "menu">> = (props) => (
+  <ContextMenu>
+    <ContextMenu.Trigger as="div" {...props.attrs}>
+      {props.children}
+    </ContextMenu.Trigger>
+    <ContextMenu.Portal>
+      <ContextMenu.Content class="context-menu">
+        <For each={props.items}>
+          {(item) => (
+            <>
+              <Show when={item.apart}>
+                <ContextMenu.Separator class="menu-dropdown-separator" />
+              </Show>
+              <ContextMenu.Item
+                class={item.danger ? "context-menu-item menu-dropdown-item-danger" : "context-menu-item"}
+                onSelect={() => props.run(item)}
+              >
+                {item.label}
+              </ContextMenu.Item>
+            </>
+          )}
+        </For>
+      </ContextMenu.Content>
+    </ContextMenu.Portal>
+  </ContextMenu>
 );

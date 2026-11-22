@@ -275,6 +275,17 @@
 .expression-picker-tab	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
 .expression-picker-tab-active	text	var(--color-xfire-text-primary)	--color-xfire-bg-panel	1.0	false
 .expression-picker-upload-btn	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
+.files-view-empty	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.files-view-head	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.files-view-row	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.files-view-row	text hovered	var(--color-xfire-text)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.files-view-row	text selected	var(--color-xfire-text)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
+.files-view-size	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.files-view-size	text hovered	var(--color-xfire-text-dim)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.files-view-size	text selected	var(--color-xfire-text-dim)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
+.files-view-status	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.files-view-status	text hovered	var(--color-xfire-text-dim)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.files-view-status	text selected	var(--color-xfire-text-dim)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
 .form-btn-danger	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill) over --color-xfire-bg-dark	1.0	false
 .form-btn-danger	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill) over --color-xfire-bg-panel	1.0	false
 .form-btn-danger	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false

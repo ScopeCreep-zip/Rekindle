@@ -37,6 +37,7 @@ pub(crate) fn owned_frontend_code(kind: WindowKind) -> (&'static str, Option<&'s
             "src/windows/SkinEditorWindow.tsx",
             Some("src/windows/skin_editor"),
         ),
+        WindowKind::SkinPopup => ("src/windows/SkinPopupWindow.tsx", None),
     }
 }
 

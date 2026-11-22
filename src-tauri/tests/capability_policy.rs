@@ -289,6 +289,7 @@ fn only_media_windows_capture() {
                 | WindowKind::Profile
                 | WindowKind::BuddyList
                 | WindowKind::SkinEditor
+                | WindowKind::SkinPopup
         );
         assert_eq!(kind.captures_media(), expected, "{kind:?}");
     }

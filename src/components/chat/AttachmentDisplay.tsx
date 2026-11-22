@@ -8,6 +8,7 @@ import {
 import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
 import { communityState } from "../../stores/community.store";
 import { servedPermissions } from "../../utils/permissions";
+import { formatSize } from "../../utils/formatting";
 import {
   ICON_DOWNLOAD,
   ICON_FILE,
@@ -20,15 +21,6 @@ interface AttachmentDisplayProps {
   communityId: string;
   channelId: string;
   attachment: MessageAttachment;
-}
-
-const KB = 1024;
-const MB = 1024 * 1024;
-
-function formatSize(bytes: number): string {
-  if (bytes < KB) return `${bytes} B`;
-  if (bytes < MB) return `${(bytes / KB).toFixed(1)} KB`;
-  return `${(bytes / MB).toFixed(1)} MB`;
 }
 
 function pickIcon(mimeType: string): string {

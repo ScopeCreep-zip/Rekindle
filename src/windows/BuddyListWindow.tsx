@@ -21,8 +21,10 @@ import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
 import NewGroupModal from "../components/buddy-list/NewGroupModal";
+import InviteToRoomModal from "../components/chat/InviteToRoomModal";
 import GroupDmList from "../components/buddy-list/GroupDmList";
 import { subscribeBuddyListGroupDmEvents } from "../handlers/group-dm.handlers";
+import { subscribeBuddyListTransferEvents } from "../handlers/transfer.handlers";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
@@ -48,6 +50,12 @@ import {
   subscribeSkinSignals,
 } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
+import { registerShellRunner } from "../actions/skin.actions";
+import type { ShellOp } from "../ipc/commands/dto_skin_run";
+import { handleHide } from "../actions/titlebar.actions";
+import { handleToggleAddFriend } from "../actions/buddy.actions";
+import { setShortcutsHelpOpen } from "../stores/shortcuts_help.store";
+import { handleToggleCreateCommunity, handleToggleJoinCommunity, handleToggleNewChat } from "../components/buddy-list/BottomActionBar";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
 import type { NetworkStatusEvent } from "../ipc/channels";
@@ -83,6 +91,55 @@ function BuddyContent(): JSX.Element {
   );
 }
 
+/** The buddy list's own skin operations: Close hides it in the tray (it
+ *  is never destroyed), and the panels are its dialogs. */
+function runBuddyListOp(op: ShellOp): boolean {
+  switch (op.kind) {
+    case "close":
+      handleHide();
+      return true;
+    case "openPanel":
+      switch (op.arg) {
+        case "addFriend":
+          handleToggleAddFriend();
+          return true;
+        case "newChat":
+          handleToggleNewChat();
+          return true;
+        case "newGroup":
+          setBuddyListUI("showNewGroup", true);
+          return true;
+        case "startGroupCall":
+          setBuddyListUI("showStartGroupCall", true);
+          return true;
+        case "createCommunity":
+          handleToggleCreateCommunity();
+          return true;
+        case "joinCommunity":
+          handleToggleJoinCommunity();
+          return true;
+        case "shortcuts":
+          setShortcutsHelpOpen(true);
+          return true;
+        case "notifications":
+          setBuddyListUI("showNotifications", true);
+          return true;
+      }
+      return false;
+    case "newRoom":
+      // A room is a group DM (SK2-G §6): the New Group dialog, with the
+      // selected friend the Host named already picked.
+      setBuddyListUI({ newGroupPeer: op.arg.peer, showNewGroup: true });
+      return true;
+    case "inviteToRoom":
+      // The Host answered a skin's Invite Users to Room for this group (G8).
+      setBuddyListUI("inviteToRoom", op.arg.groupId);
+      return true;
+    default:
+      return false;
+  }
+}
+
 const BuddyListWindow: Component = () => {
   const [networkAttached, setNetworkAttached] = createSignal(true);
   const unlisteners: Promise<UnlistenFn>[] = [];
@@ -104,6 +161,8 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeNotificationHandler());
     unlisteners.push(subscribeBuddyListChatEvents());
     unlisteners.push(subscribeBuddyListGroupDmEvents());
+    // The Downloads view's transfers (plan E7.2 G12): only this window lists them.
+    unlisteners.push(subscribeBuddyListTransferEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
     unlisteners.push(subscribeBuddyListVoiceEvents());
     // Each community's arrival, from the Host's one create and join path.
@@ -114,6 +173,9 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     // This window's skin signals: the tree applies the triggers they fire.
     unlisteners.push(subscribeSkinSignals(setSkinSignals));
+    // The skin operations only the buddy list runs (plan SK2-A5): Close
+    // hides it in the tray, and its dialogs.
+    unlisteners.push(Promise.resolve(registerShellRunner(runBuddyListOp)));
     unlisteners.push(subscribePairingLinkHandler());
     // Reviews of actions the backend began, in the router root's dialog.
     unlisteners.push(subscribeBackendIntents());
@@ -209,6 +271,7 @@ const BuddyListWindow: Component = () => {
       />
       <CallController />
       <NewGroupModal />
+      <InviteToRoomModal groupId={buddyListUI.inviteToRoom} onClose={() => setBuddyListUI("inviteToRoom", null)} />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}
         onClose={() => setBuddyListUI("showStartGroupCall", false)}

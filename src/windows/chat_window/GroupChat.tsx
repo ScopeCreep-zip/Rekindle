@@ -13,6 +13,7 @@ import {
   handleDiscardGroupSend,
   handleGroupDraftChanged,
   handleLeaveGroupDm,
+  handleRenameGroupDm,
   handleRetryGroupSend,
   handleSendGroupDm,
   handleLoadGroupDms,
@@ -21,6 +22,7 @@ import {
 } from "../../actions/group-dm.actions";
 import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
 import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
+import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
@@ -81,6 +83,23 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     if (!err) window.close();
   }
 
+  // Rename and Invite (plan E7.2 G7/G8) are always listed; the Host's
+  // verdict (`renameRefused`, `inviteRefused`) disables each with its reason.
+  const renameRefused = (): string | null => group()?.renameRefused ?? "This group is not in your list.";
+  const inviteRefused = (): string | null => group()?.inviteRefused ?? "This group is not in your list.";
+  const [renaming, setRenaming] = createSignal<string | null>(null);
+  const [inviting, setInviting] = createSignal(false);
+  const [roomError, setRoomError] = createSignal<string | null>(null);
+
+  async function rename(e: Event): Promise<void> {
+    e.preventDefault();
+    const next = renaming()?.trim() ?? "";
+    if (!next) return;
+    const err = await handleRenameGroupDm(groupId, next);
+    setRoomError(err);
+    if (!err) setRenaming(null);
+  }
+
   return (
     <>
       <Titlebar title={`Chat — ${name()}`} showMaximize />
@@ -97,6 +116,42 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
         <Show when={held()}>
           <DisappearingTimerControl conversation={groupId} label={name()} />
         </Show>
+        <Show
+          when={renaming() !== null}
+          fallback={
+            <button
+              class="form-btn-secondary group-chat-action"
+              aria-disabled={renameRefused() !== null ? "true" : undefined}
+              aria-describedby={renameRefused() !== null ? "group-rename-reason" : undefined}
+              title={renameRefused() ?? `Rename ${name()}`}
+              onClick={() => renameRefused() === null && setRenaming(name())}
+            >
+              Rename
+            </button>
+          }
+        >
+          <form class="group-chat-rename" onSubmit={(e) => void rename(e)}>
+            <input
+              class="form-input group-chat-rename-input"
+              aria-label={`New name for ${name()}`}
+              value={renaming() ?? ""}
+              onInput={(e) => setRenaming(e.currentTarget.value)}
+              onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+              ref={(el) => queueMicrotask(() => el.select())}
+            />
+          </form>
+        </Show>
+        <button
+          class="form-btn-secondary group-chat-action"
+          aria-disabled={inviteRefused() !== null ? "true" : undefined}
+          aria-describedby={inviteRefused() !== null ? "group-invite-reason" : undefined}
+          title={inviteRefused() ?? `Invite friends to ${name()}`}
+          onClick={() => inviteRefused() === null && setInviting(true)}
+        >
+          Invite…
+        </button>
+        <span class="sr-only" id="group-rename-reason">{renameRefused()}</span>
+        <span class="sr-only" id="group-invite-reason">{inviteRefused()}</span>
         <button
           class="form-btn-secondary group-chat-leave"
           aria-label={`Leave ${name()}`}
@@ -105,6 +160,10 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           Leave
         </button>
       </div>
+      <Show when={roomError()}>
+        {(message) => <div class="form-error group-chat-error" role="alert">{message()}</div>}
+      </Show>
+      <InviteToRoomModal groupId={inviting() ? groupId : null} onClose={() => setInviting(false)} />
       <div id="main-content" tabindex="-1" class="window-main">
         <MessageList
           messages={messages()}

@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy, openAddFriend, setValue, submitJoin } from "../walk/nav.ts";
+import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
 export interface User {
@@ -36,8 +36,10 @@ export async function createIdentity(b: Browser, user: User): Promise<void> {
   await resolveIntent(b, { passphrase: user.passphrase });
   await waitForHandle(b, (h) => h === BUDDY, NET_WAIT_MS);
   await inBuddy(b);
-  // The bar renders before the store hydrates ("Unknown" first, then the name).
-  await expect(b.$(".identity-bar-name")).toHaveText(expect.stringContaining(user.displayName), { wait: 10_000 });
+  // The name renders before the store hydrates ("Unknown" first, then the
+  // name): the tree's name field, or the app's own bar.
+  const name = (await underTree(b)) ? '[data-skin-role="nameField"] .skin-name-text' : ".identity-bar-name";
+  await expect(b.$(name)).toHaveText(expect.stringContaining(user.displayName), { wait: 10_000 });
 }
 
 async function closeAddFriend(b: Browser): Promise<void> {
@@ -99,7 +101,8 @@ export async function acceptRequest(b: Browser, user: User, message: string): Pr
 /** The Friends tab's row for `name`, once listed. */
 export async function friendRow(b: Browser, name: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
   await inBuddy(b);
-  await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  // A skin's tree shows its Friends view first; the app's bar has a tab.
+  if (!(await underTree(b))) await (await b.$('.buddy-tab[title^="Friends"]')).click();
   return byText(b, ".buddy-item", name, NET_WAIT_MS);
 }
 
@@ -123,10 +126,16 @@ export async function seesMessage(b: Browser, who: User, text: string): Promise<
 /** The buddy list's network indicator reads "Connected" (NetworkIndicator.tsx): a DHT write may land. */
 async function whenConnected(b: Browser): Promise<void> {
   await inBuddy(b);
+  // Under a skin's tree the status field says the network state while
+  // detached (StatusField.tsx, N1) and our status ("Online") once attached.
+  const tree = await underTree(b);
   await waitUntil(
-    async () => (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
+    async () =>
+      tree
+        ? ((await (await b.$('[data-skin-role="statusText"] .skin-status-edit')).getAttribute("placeholder")) ?? "") === "Online"
+        : (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
     NET_WAIT_MS,
-    "the network indicator never said Connected",
+    tree ? "the skin's status field never said Online" : "the network indicator never said Connected",
   );
 }
 
@@ -180,10 +189,20 @@ async function submitModal(b: Browser, user: User, input: string): Promise<void>
 }
 
 /** `user` creates community `name` from the buddy list's Communities tab, and it is listed. */
+/**
+ * The Communities tab. A skin's tree has no Communities view until its
+ * placement lands (plan SK2-P1, rule N4), so a community journey under a
+ * tree stops here saying so.
+ */
+async function communitiesTab(b: Browser): Promise<void> {
+  if (await underTree(b)) throw new Error("the skin's tree has no Communities view yet (plan SK2-P1 N4)");
+  await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
+}
+
 export async function createCommunity(b: Browser, user: User, name: string): Promise<void> {
   await whenConnected(b);
   // The Create Community button shows only on the Communities tab (BottomActionBar.tsx).
-  await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
+  await communitiesTab(b);
   await (await shown(b, '[aria-label="Create Community"]')).click();
   await typeInto(await shown(b, 'input[placeholder="Community name..."]'), name);
   await submitModal(b, user, 'input[placeholder="Community name..."]');
@@ -193,7 +212,7 @@ export async function createCommunity(b: Browser, user: User, name: string): Pro
 /** Open community `name`'s window from the buddy list (double-click) and switch to it. */
 export async function openCommunity(b: Browser, name: string): Promise<void> {
   await inBuddy(b);
-  await (await b.$('.buddy-tab[title^="Communities"]')).click();
+  await communitiesTab(b);
   const before = await b.getWindowHandles();
   await doubleClick(b, await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS));
   await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("community-") && !before.includes(h), NET_WAIT_MS));
@@ -228,8 +247,12 @@ export async function postMessage(b: Browser, user: User, text: string): Promise
 /** `user` creates group `name` with the friends whose names start `members` (New Group, BottomActionBar). */
 export async function createGroup(b: Browser, user: User, name: string, members: string[]): Promise<void> {
   await inBuddy(b);
-  await (await b.$('.buddy-tab[title^="Friends"]')).click();
-  await (await shown(b, '[aria-label="New Group"]')).click();
+  if (await underTree(b)) {
+    await menu(b, "Rekindle", "New Group…");
+  } else {
+    await (await b.$('.buddy-tab[title^="Friends"]')).click();
+    await (await shown(b, '[aria-label="New Group"]')).click();
+  }
   await typeInto(await shown(b, "#new-group-name"), name);
   for (const m of members) await (await byText(b, "label.group-dm-picker-option", m.slice(0, 24))).click();
   await submitModal(b, user, "#new-group-name");
@@ -238,7 +261,7 @@ export async function createGroup(b: Browser, user: User, name: string, members:
 /** Open group `name`'s chat window from the buddy list (double-click its row) and switch to it. */
 export async function openGroup(b: Browser, name: string): Promise<void> {
   await inBuddy(b);
-  await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  if (!(await underTree(b))) await (await b.$('.buddy-tab[title^="Friends"]')).click();
   const before = await b.getWindowHandles();
   await doubleClick(b, await byText(b, ".group-dm-row", name.slice(0, 24), NET_WAIT_MS));
   await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("chat-g") && !before.includes(h), NET_WAIT_MS));
@@ -286,7 +309,7 @@ export async function createInvite(b: Browser, user: User, uses: number): Promis
  */
 export async function joinCommunity(b: Browser, user: User, link: string, name: string): Promise<void> {
   await whenConnected(b);
-  await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
+  await communitiesTab(b);
   await (await shown(b, '[aria-label="Join Community"]')).click();
   await submitJoin(b, link, user.passphrase);
   await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS);
@@ -368,7 +391,8 @@ export async function setLoginSkin(b: Browser, user: User, name: string): Promis
 /** `user` logs out from the buddy list (Logout, then the review) to the unlock screen under their name. */
 export async function logOut(b: Browser, user: User): Promise<void> {
   await inBuddy(b);
-  await (await b.$('[aria-label="Logout"]')).click();
+  if (await underTree(b)) await menu(b, "Rekindle", "Log Off");
+  else await (await b.$('[aria-label="Logout"]')).click();
   await resolveIntent(b, { passphrase: user.passphrase });
   await switchTo(b, LOGIN, NET_WAIT_MS);
   await waitUntil(

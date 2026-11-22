@@ -1,0 +1,58 @@
+@layer components {
+
+  /* The Downloads view (plan E7.2 G12, `skin-tree/FilesView.tsx`): the
+   * Host's transfers as a three-column list on the views node's ground
+   * (bg-dark); a selected row takes the buddy list's selection tint. */
+  .files-view {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    font-family: var(--font-family-xfire);
+    font-size: 11px;
+  }
+
+  .files-view-head,
+  .files-view-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 64px 96px;
+    gap: 6px;
+    align-items: center;
+    padding: 2px 6px;
+  }
+
+  .files-view-head {
+    color: var(--color-xfire-text-dim);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 30%, transparent);
+  }
+
+  .files-view-rows {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .files-view-row {
+    color: var(--color-xfire-text);
+    cursor: default;
+  }
+
+  .files-view-row:hover {
+    background-color: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
+  }
+
+  .files-view-row[aria-selected="true"] {
+    background-color: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .files-view-size,
+  .files-view-status {
+    color: var(--color-xfire-text-dim);
+    white-space: nowrap;
+  }
+
+  .files-view-empty {
+    padding: 8px 6px;
+    color: var(--color-xfire-text-dim);
+  }
+}

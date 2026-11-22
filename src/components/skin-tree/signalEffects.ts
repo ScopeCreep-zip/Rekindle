@@ -1,26 +1,57 @@
-// The pack's state triggers a window's skin signals fire (plan SK2-A4
-// step 3, design §2.5). The Host computes the signals; this only reads
-// which of each node's own triggers they fire and what those triggers do
-// to a node: `SetState` (the pack's state art; `Disabled` shows its
-// disabled art, the button stays), `ShowTile`/`HideTile` (only what the
-// pack itself shows or hides) and `GroupPage`. Nothing here decides a
-// capability, and nothing is hidden that the pack does not hide.
-import type { NodeTrigger, ShellNode, SkinEvent } from "../../ipc/commands/dto_skin_tree";
+// A skin window's node states (plan SK2-A4 step 3, SK2-A5; design §2.5):
+// the pack's triggers run as Xfire's engine ran them, on the event: a
+// state trigger runs when its event happens (a signal turning on, a view
+// being shown, a press), and the last one run wins. The Host computes the
+// signals; this only reads which of each node's own triggers an event
+// fires and what those triggers do to the tree: `SetState` (the pack's
+// state art; `Disabled` shows its disabled art, the button stays),
+// `ShowTile`/`HideTile` (only what the pack itself shows or hides),
+// `GroupPage` (the page a control group shows) and `ShowView`. Nothing
+// here decides a capability, and nothing is hidden that the pack does not
+// hide.
+import type { EngineView, NodeTrigger, ShellNode, SkinAction, SkinEvent, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 
-export interface NodeEffect {
-  state?: "normal" | "disabled" | "down";
+type NodeStateName = "normal" | "disabled" | "down";
+
+interface NodeEffect {
+  state?: NodeStateName;
   hidden?: boolean;
-  page?: number;
 }
 
-export interface SignalEffects {
-  /** By node id. */
-  nodes: Map<string, NodeEffect>;
+/** One window's tree state: per-node effects, each control group's page,
+ *  and the view its views area shows. */
+export interface TreeState {
+  nodes: Record<string, NodeEffect>;
+  pages: Record<number, number>;
+  view: ViewKey;
 }
 
-/** Whether `on` is fired by the window's current signals. */
-export function fires(on: SkinEvent, set: SkinSignalSet): boolean {
+export function initialTreeState(): TreeState {
+  return { nodes: {}, pages: {}, view: "friends" };
+}
+
+/** The tree's view for an engine view, when the tree has views of that kind. */
+function viewOf(v: EngineView): ViewKey | undefined {
+  switch (v) {
+    case "friends":
+    case "chatRooms":
+    case "servers":
+    case "files":
+    case "videos":
+    case "notifications":
+      return v;
+    case "screenshots":
+      return "pictures";
+    default:
+      return undefined;
+  }
+}
+
+/** Whether `on` holds under the window's signals and shown view. */
+function holds(on: SkinEvent, set: SkinSignalSet | null, view: ViewKey): boolean {
+  if (on.kind === "show") return viewOf(on.arg) === view;
+  if (!set) return false;
   switch (on.kind) {
     case "activate":
       return set.focused;
@@ -58,47 +89,92 @@ export function fires(on: SkinEvent, set: SkinSignalSet): boolean {
   }
 }
 
-function edit(out: Map<string, NodeEffect>, id: string): NodeEffect {
-  let fx = out.get(id);
-  if (!fx) {
-    fx = {};
-    out.set(id, fx);
-  }
-  return fx;
+/** A state trigger fired by an event: the node that carries it and what it runs. */
+export interface Fired {
+  node: string;
+  run: SkinAction;
 }
 
-/** Apply one fired trigger of node `id`, in the pack's order (a later
- *  trigger wins, as the engine ran them in order). */
-function apply(out: Map<string, NodeEffect>, id: string, t: NodeTrigger): void {
-  const run = t.run;
-  switch (run.kind) {
-    case "setState":
-      edit(out, id).state = run.arg;
-      break;
-    case "showTile":
-    case "hideTile":
-      edit(out, run.arg.kind === "this" ? id : run.arg.name).hidden = run.kind === "hideTile";
-      break;
-    case "groupPage":
-      edit(out, id).page = run.arg.page;
-      break;
-    default:
-      break;
-  }
-}
-
-/** Every node's effect under `set`; none before the first set arrives. */
-export function signalEffects(root: ShellNode[], set: SkinSignalSet | null): SignalEffects {
-  const nodes = new Map<string, NodeEffect>();
-  if (!set) return { nodes };
+/**
+ * The state triggers that an event fires, in the pack's document order:
+ * each trigger whose event holds now and did not before (`before` null:
+ * the window's first signals, so every holding trigger fires).
+ */
+export function fired(
+  root: ShellNode[],
+  before: { set: SkinSignalSet | null; view: ViewKey } | null,
+  now: { set: SkinSignalSet | null; view: ViewKey },
+): Fired[] {
+  const out: Fired[] = [];
   const walk = (list: ShellNode[]): void => {
     for (const n of list) {
       for (const t of n.triggers ?? []) {
-        if (fires(t.on, set)) apply(nodes, n.id, t);
+        if (!stateEvent(t)) continue;
+        if (holds(t.on, now.set, now.view) && !(before && holds(t.on, before.set, before.view))) {
+          out.push({ node: n.id, run: t.run });
+        }
       }
       walk(n.children ?? []);
     }
   };
   walk(root);
-  return { nodes };
+  return out;
+}
+
+/** A trigger on a state event, not a pointer press. */
+function stateEvent(t: NodeTrigger): boolean {
+  return t.on.kind === "activate" || t.on.kind === "deactivate" || t.on.kind === "app" || t.on.kind === "show";
+}
+
+/**
+ * Apply one tree operation, run for `node`, to `state`; `false` when the
+ * action is not a tree operation (the caller dispatches it).
+ */
+export function applyTreeOp(state: TreeState, node: string, run: SkinAction, root: ShellNode[]): boolean {
+  switch (run.kind) {
+    case "setState":
+      state.nodes[node] = { ...state.nodes[node], state: run.arg };
+      return true;
+    case "showTile":
+    case "hideTile": {
+      const target = run.arg.kind === "this" ? node : run.arg.name;
+      state.nodes[target] = { ...state.nodes[target], hidden: run.kind === "hideTile" };
+      return true;
+    }
+    case "groupPage": {
+      state.pages[run.arg.group] = run.arg.page;
+      const page = pageNode(root, run.arg.group, run.arg.page);
+      if (page && page.role.kind === "view") state.view = page.role.key;
+      return true;
+    }
+    case "showView": {
+      const v = viewOf(run.arg);
+      if (v === undefined) return false;
+      state.view = v;
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+/** The view a `GroupPage{group, page}` shows, if its page is a view. */
+export function pageView(root: ShellNode[], group: number, page: number): ViewKey | undefined {
+  const n = pageNode(root, group, page);
+  return n?.role.kind === "view" ? n.role.key : undefined;
+}
+
+/** The view shown as child `page` of a node of control group `group`: one
+ *  group can hold several containers (Classic's group 1 is both its views,
+ *  `TabbedControl`, and its button rows, `ButtonArea`), which page together. */
+function pageNode(list: ShellNode[], group: number, page: number): ShellNode | undefined {
+  for (const n of list) {
+    if (n.controlGroup === group) {
+      const child = (n.children ?? [])[page];
+      if (child?.role.kind === "view") return child;
+    }
+    const inner = pageNode(n.children ?? [], group, page);
+    if (inner) return inner;
+  }
+  return undefined;
 }

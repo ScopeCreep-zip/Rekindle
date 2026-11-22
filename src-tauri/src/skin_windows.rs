@@ -2,7 +2,8 @@
 //! step 3, design §2.5): each window's OS focus (`OnActivate` /
 //! `OnDeactivate`), its opening with what it shows from the start (a chat
 //! window's own peer, lead decision 48) and its closing. Only the windows
-//! drawn from a skin tree carry signals: the buddy list and chat windows.
+//! drawn from a skin tree carry signals: the buddy list, chat windows and
+//! the pack popups they launch (plan SK2-A5).
 
 use rekindle_types::dto::skin_run::SkinSelection;
 use tauri::{AppHandle, Manager, Runtime, Window, WindowEvent};
@@ -14,7 +15,7 @@ use crate::window_labels::WindowKind;
 fn is_skin_window(label: &str) -> bool {
     matches!(
         WindowKind::of_label(label),
-        Some(WindowKind::BuddyList | WindowKind::Chat)
+        Some(WindowKind::BuddyList | WindowKind::Chat | WindowKind::SkinPopup)
     )
 }
 

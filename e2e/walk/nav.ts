@@ -9,14 +9,48 @@ export const LOGIN = "login";
 export const BUDDY = "buddy-list";
 export const SETTINGS = "settings";
 
+/**
+ * The buddy list, settled on its layout: its skin's sheet linked, then
+ * either the skin's tree (plan SK2: the pack's nodes, found by their
+ * `data-skin-role` / `data-skin-action`, the same in every pack) or the
+ * app's own bar. Deciding before the sheet links raced the tree replacing
+ * the bar mid-step (the SK2 capture, 2026-11-21).
+ */
 export async function inBuddy(b: Browser): Promise<void> {
   await switchTo(b, BUDDY, NET_WAIT_MS);
-  await shown(b, ".identity-bar", NET_WAIT_MS);
+  await waitUntil(
+    async () =>
+      (await b.execute(() => {
+        const l = document.getElementById("rekindle-skin") as HTMLLinkElement | null;
+        if (!l?.sheet) return false;
+        return !!document.querySelector('.skin-tree [data-skin-role="nameField"]') || !!document.querySelector(".identity-bar");
+      })) as boolean,
+    NET_WAIT_MS,
+    "the buddy list showed neither its skin's tree nor its own bar",
+  );
 }
 
-/** Open a buddy-list menu (Kobalte Menubar) and choose one of its items. */
+/** Whether the buddy list is drawn as its skin's tree (call after `inBuddy`). */
+export async function underTree(b: Browser): Promise<boolean> {
+  return present(b, ".skin-tree");
+}
+
+/** The engine menu a buddy-list menu title opens (design §2.2 `MenuRegistry`). */
+const ENGINE_MENU: Record<string, string> = { Rekindle: "file", Tools: "tool", Help: "help" };
+
+/**
+ * Open a buddy-list menu and choose one of its items: the pack's own menu
+ * title (`data-skin-action="menu:<engine menu>"`, its items the Host's
+ * registry) under a skin's tree, else the app's menu bar (Kobalte Menubar).
+ */
 export async function menu(b: Browser, trigger: string, item: string): Promise<void> {
-  await press(b, await byText(b, ".menu-bar-item", trigger));
+  if (await underTree(b)) {
+    const engine = ENGINE_MENU[trigger];
+    if (!engine) throw new Error(`no engine menu for the "${trigger}" menu`);
+    await press(b, await shown(b, `[data-skin-action="menu:${engine}"]`));
+  } else {
+    await press(b, await byText(b, ".menu-bar-item", trigger));
+  }
   await shown(b, ".menu-dropdown");
   await press(b, await byText(b, ".menu-dropdown-item", item));
 }
@@ -193,7 +227,12 @@ export async function waitStored(b: Browser, key: string, value: unknown): Promi
 
 /** Open the Add Friend modal from the buddy list (left open when already shown). */
 export async function openAddFriend(b: Browser): Promise<void> {
-  if (!(await present(b, ".form-tabs-equal"))) {
+  if (!(await present(b, ".form-tabs-equal")) && (await underTree(b))) {
+    // The pack's Add Friends button follows the Host's AddFriend
+    // capability; the first menu's "Add Friend…" is always there.
+    await menu(b, "Rekindle", "Add Friend…");
+    await shown(b, ".form-tabs-equal");
+  } else if (!(await present(b, ".form-tabs-equal"))) {
     // The bar shows Add Friend on the Friends tab only (BottomActionBar.tsx:
     // 34-44); the community rows leave the Communities tab active (B57's
     // failure in walk 3).

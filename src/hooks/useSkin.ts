@@ -11,7 +11,12 @@ const [skinShells, setSkinShells] = createSignal<SkinShell[]>([]);
 
 /** The shown skin's outline for `window`, if it lays that window as a tree. */
 export function skinShell(window: SkinShell["window"]): SkinShell | undefined {
-  return skinShells().find((s) => s.window === window);
+  return skinShells().find((s) => s.window === window && s.popup === undefined);
+}
+
+/** The shown skin's tree for its popup `name` (plan SK2-P1b), if it lays one. */
+export function skinPopupShell(name: string): SkinShell | undefined {
+  return skinShells().find((s) => s.popup?.name === name);
 }
 
 /// The one `<link>` each window swaps (plan E7.7.2 "Apply").

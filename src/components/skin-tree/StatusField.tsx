@@ -12,7 +12,7 @@ import { handleSelectStatus, statusOptions } from "../status/StatusPicker";
  * says so ("Connecting...", Xfire showed connecting in the status field),
  * which replaces the network banner.
  */
-export const StatusText: Component<{ id: string }> = (props) => {
+export const StatusText: Component<{ attrs: Record<string, unknown> }> = (props) => {
   trackNetworkStatus();
   const [value, setValue] = createSignal("");
   createEffect(() => setValue(authState.statusMessage ?? ""));
@@ -21,7 +21,7 @@ export const StatusText: Component<{ id: string }> = (props) => {
       ? (statusOptions.find((o) => o.value === authState.status)?.label ?? "")
       : networkLabel();
   return (
-    <div data-skin-node={props.id} class="skin-status">
+    <div {...props.attrs} class="skin-status">
       <input
         class="skin-status-edit"
         aria-label="Status message"
@@ -39,9 +39,9 @@ export const StatusText: Component<{ id: string }> = (props) => {
 };
 
 /** N3's `DownArrow`: opens Online/Away/Busy/Appear Offline. */
-export const StatusList: Component<{ id: string; children: JSX.Element }> = (props) => (
+export const StatusList: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (props) => (
   <DropdownMenu placement="bottom-end">
-    <DropdownMenu.Trigger class="skin-status-list" data-skin-node={props.id} aria-label="Status">
+    <DropdownMenu.Trigger class="skin-status-list" {...props.attrs} aria-label="Status">
       {props.children}
     </DropdownMenu.Trigger>
     <DropdownMenu.Portal>

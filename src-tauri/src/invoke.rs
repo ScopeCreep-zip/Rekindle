@@ -439,6 +439,7 @@ macro_rules! window_commands {
         commands::window::open_chat_window,
         commands::window::open_settings_window,
         commands::window::open_skin_editor_window,
+        commands::window::open_skin_popup,
         commands::window::open_community_window,
         commands::window::open_profile_window,
         commands::window::open_call_window,

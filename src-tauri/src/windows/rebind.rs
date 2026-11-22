@@ -59,15 +59,17 @@ fn peer_key_changed(app: &AppHandle, state: &SharedState, old: &str, new: &str) 
 /// windows: a review the backend began is answered on the buddy list, so
 /// it is brought forward (never recreated, which would drop the review);
 /// a friend's rotated identity rebinds their windows (plan audit R-5); a
-/// skin change recomputes every window's silhouette (plan SK0 S3).
+/// skin change recomputes every window's silhouette (plan SK0 S3) and
+/// re-places or closes the open pack popups (plan SK2-A5).
 pub fn follow_event(app: &AppHandle, state: &SharedState, event: &SubscriptionEvent) {
     match event {
         SubscriptionEvent::IntentPending(_) => super::surface_buddy_list(app),
         SubscriptionEvent::Friend(FriendEvent::KeyChanged { peer_key, new_key }) => {
             peer_key_changed(app, state, peer_key, new_key);
         }
-        SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => {
+        SubscriptionEvent::System(SystemEvent::SkinChanged { skin }) => {
             super::shape::refresh(app);
+            super::popup::skin_changed(app, state, &skin.shells);
         }
         _ => {}
     }

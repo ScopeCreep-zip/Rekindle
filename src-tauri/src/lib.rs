@@ -154,6 +154,7 @@ pub fn run() {
         .manage(shared_state)
         .on_window_event(|window, event| {
             skin_windows::on_window_event(window, event);
+            windows::popup::on_window_event(window, event);
             if let WindowEvent::Destroyed = event {
                 if let Some(state) = window.app_handle().try_state::<SharedState>() {
                     state.event_router.remove(window.label());
