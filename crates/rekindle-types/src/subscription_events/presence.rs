@@ -191,7 +191,8 @@ impl PresenceSnapshot {
 #[allow(clippy::enum_variant_names, reason = "the postfix is the shared verb")]
 pub enum PresenceEvent {
     /// A community member's presence changed.
-    /// Triggered by: gossip `PresenceUpdate`.
+    /// Triggered by: the member's beat (`M`/1, status) and card (`M`/0,
+    /// game), plan E3.4 S2, S6.
     CommunityMemberChanged {
         community: String,
         pseudonym: String,

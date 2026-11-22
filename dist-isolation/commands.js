@@ -327,7 +327,6 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "unregister_native_preview_channel",
   "unregister_with_push_relay",
   "update_community_info",
-  "update_community_presence",
   "update_community_profile",
   "upload_attachment",
   "upload_emoji",

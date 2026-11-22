@@ -128,24 +128,6 @@ fn write_community_envelope(
             let ctrl = builder.init_control();
             encode_control_payload(ctrl, payload)?;
         }
-        CommunityEnvelope::PresenceUpdate {
-            pseudonym_key,
-            status,
-            game_info,
-            route_blob,
-        } => {
-            let mut p = builder.init_presence_update();
-            p.set_pseudonym_key(pseudonym_key);
-            p.set_status(status);
-            p.set_has_game_info(game_info.is_some());
-            if let Some(gi) = game_info {
-                sub_types::write_presence_game_info(p.reborrow().init_game_info(), gi);
-            }
-            p.set_has_route_blob(route_blob.is_some());
-            if let Some(blob) = route_blob {
-                p.set_route_blob(blob);
-            }
-        }
         CommunityEnvelope::TypingIndicator {
             channel_tag,
             ttl_ms,
@@ -177,35 +159,15 @@ fn read_community_envelope(
 ) -> Result<CommunityEnvelope, CodecError> {
     use crate::community_envelope_capnp::community_envelope::Which;
     match reader.which().map_err(not_in_schema)? {
-        // @0 was `messageNotification` (plan E3.3 slice 8): skipped like an
-        // unknown arm.
-        Which::Obsolete0(()) => Err(CodecError::UnknownVariant(
+        // @0 was `messageNotification` (plan E3.3 slice 8) and @2
+        // `presenceUpdate` (plan E3.4 S5): no member sends either, and both
+        // are skipped like an unknown arm, never acted on.
+        Which::Obsolete0(()) | Which::Obsolete2(()) => Err(CodecError::UnknownVariant(
             "obsolete community envelope".to_string(),
         )),
         Which::Control(c) => {
             let c = c.map_err(|e| capnp_err(&e))?;
             Ok(CommunityEnvelope::Control(decode_control_payload(c)?))
-        }
-        Which::PresenceUpdate(p) => {
-            let p = p.map_err(|e| capnp_err(&e))?;
-            let game_info = if p.get_has_game_info() {
-                Some(sub_types::read_presence_game_info(
-                    p.get_game_info().map_err(|e| capnp_err(&e))?,
-                )?)
-            } else {
-                None
-            };
-            let route_blob = if p.get_has_route_blob() {
-                Some(p.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec())
-            } else {
-                None
-            };
-            Ok(CommunityEnvelope::PresenceUpdate {
-                pseudonym_key: text_to_string(p.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
-                status: text_to_string(p.get_status().map_err(|e| capnp_err(&e))?)?,
-                game_info,
-                route_blob,
-            })
         }
         Which::TypingIndicator(t) => {
             let t = t.map_err(|e| capnp_err(&e))?;
@@ -241,7 +203,6 @@ mod retired_control_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::community::envelope::PresenceGameInfo;
 
     #[test]
     fn signed_envelope_roundtrip() {
@@ -424,41 +385,6 @@ mod tests {
                 assert_eq!(subkey, 12);
                 assert_eq!(content_hash, "blake3:abc");
                 assert_eq!(observer_pseudonym, "obsvr");
-            }
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[test]
-    fn presence_update_with_game_info_roundtrip() {
-        let env = CommunityEnvelope::PresenceUpdate {
-            pseudonym_key: "abcd".into(),
-            status: "online".into(),
-            game_info: Some(PresenceGameInfo {
-                game_name: "Halo".into(),
-                game_id: Some(42),
-                elapsed_seconds: Some(3600),
-                server_address: Some("10.0.0.1:27015".into()),
-            }),
-            route_blob: Some(vec![9, 8, 7]),
-        };
-        let bytes = encode_community_envelope(&env).unwrap();
-        let back = decode_community_envelope(&bytes).unwrap();
-        match back {
-            CommunityEnvelope::PresenceUpdate {
-                pseudonym_key,
-                status,
-                game_info,
-                route_blob,
-            } => {
-                assert_eq!(pseudonym_key, "abcd");
-                assert_eq!(status, "online");
-                let gi = game_info.expect("game info");
-                assert_eq!(gi.game_name, "Halo");
-                assert_eq!(gi.game_id, Some(42));
-                assert_eq!(gi.elapsed_seconds, Some(3600));
-                assert_eq!(gi.server_address.as_deref(), Some("10.0.0.1:27015"));
-                assert_eq!(route_blob, Some(vec![9, 8, 7]));
             }
             _ => panic!("wrong variant"),
         }

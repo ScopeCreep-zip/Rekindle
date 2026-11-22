@@ -68,7 +68,7 @@ pub enum TransportNotification {
         sender_pseudonym: String,
     },
 
-    /// A member's presence changed (gossip PresenceUpdate).
+    /// A member's presence changed (their beat or card).
     PresenceChanged {
         community_id: String,
         pseudonym_key: String,

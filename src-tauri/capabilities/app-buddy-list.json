@@ -71,7 +71,6 @@
     "allow-set-status-message",
     "allow-start-dm-call",
     "allow-start-group-call",
-    "allow-update-community-presence",
     "allow-volunteer-relay",
     "allow-accept-dm-call",
     "allow-decline-dm-call",

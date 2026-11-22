@@ -46,7 +46,6 @@ impl IntentKind {
             | Self::SetNickname
             | Self::SetStatus
             | Self::SetStatusMessage
-            | Self::UpdateCommunityPresence
             | Self::UpdateCommunityProfile
             | Self::SetCommunityDisplayName
             | Self::AcceptDmCall
@@ -256,7 +255,6 @@ impl IntentKind {
             | Self::SetNickname
             | Self::SetStatus
             | Self::SetStatusMessage
-            | Self::UpdateCommunityPresence
             | Self::UpdateCommunityProfile
             | Self::SetCommunityDisplayName
             | Self::AcceptDmCall

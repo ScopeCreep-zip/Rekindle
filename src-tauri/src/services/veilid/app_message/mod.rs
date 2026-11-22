@@ -239,7 +239,6 @@ pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
     use rekindle_codec::community::envelope::ControlPayload as C;
     match envelope {
         CommunityEnvelope::TypingIndicator { .. } => "typing",
-        CommunityEnvelope::PresenceUpdate { .. } => "presence",
         CommunityEnvelope::WatchRelay { .. } => "watch_relay",
         CommunityEnvelope::Control(payload) => match payload {
             C::VoiceJoin { .. } => "voice_join",
@@ -326,10 +325,8 @@ async fn handle_relayed_envelope(
     match envelope {
         // Channel typing is the Host's (plan E3.4 S9): the frame names its
         // channel by a tag under the text key only the Host holds, and the
-        // Host lapses the start, so this relay surfaces nothing. A member's
-        // presence is its `M`/1 beat (plan E3.4 S2, S5): a gossip presence
-        // announce is accepted by no reader.
-        CommunityEnvelope::TypingIndicator { .. } | CommunityEnvelope::PresenceUpdate { .. } => {}
+        // Host lapses the start, so this relay surfaces nothing.
+        CommunityEnvelope::TypingIndicator { .. } => {}
         CommunityEnvelope::Control(payload) => {
             if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");

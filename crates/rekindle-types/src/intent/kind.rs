@@ -38,7 +38,6 @@ pub enum IntentKind {
     SetNickname,
     SetStatus,
     SetStatusMessage,
-    UpdateCommunityPresence,
     UpdateCommunityProfile,
     SetCommunityDisplayName,
     // Routine: Voice and call controls
@@ -347,7 +346,6 @@ impl IntentKind {
             | Self::SetNickname
             | Self::SetStatus
             | Self::SetStatusMessage
-            | Self::UpdateCommunityPresence
             | Self::UpdateCommunityProfile
             | Self::SetCommunityDisplayName
             | Self::AcceptDmCall

@@ -21,15 +21,6 @@ pub use sign::{sign_envelope, verify_envelope};
 pub enum CommunityEnvelope {
     /// A control operation (channel/role/invite/event management, moderation, etc.).
     Control(ControlPayload),
-    /// Presence update from a member.
-    PresenceUpdate {
-        pseudonym_key: String,
-        status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        game_info: Option<PresenceGameInfo>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        route_blob: Option<Vec<u8>>,
-    },
     /// Typing indicator (ephemeral, not stored; plan E3.4 S9): a start
     /// lasting `ttl_ms`, or the stop when `ttl_ms` is 0, in the channel
     /// whose tag under the current text key of its scope is `channel_tag`.
@@ -104,19 +95,6 @@ impl CommunityEnvelope {
                 | ControlPayload::RequestAttachment { .. }
         )
     }
-}
-
-/// Game information for community presence.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PresenceGameInfo {
-    pub game_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub game_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub elapsed_seconds: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub server_address: Option<String>,
 }
 
 /// A participant entry in a voice roster broadcast.

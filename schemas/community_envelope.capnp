@@ -53,31 +53,12 @@ struct CommunityEnvelope @0xe1d4eb16e9bf1c2e {
         # the author's `HeadAdvanced` for `M`/4, a control payload.
         obsolete0           @0 :Void;
         control             @1 :ControlPayload;
-        presenceUpdate      @2 :PresenceUpdate;
+        # @2 was `presenceUpdate` (plan E3.4 S5): status rides the member's
+        # beat (`M`/1) and the shared game its card (`M`/0).
+        obsolete2           @2 :Void;
         typingIndicator     @3 :TypingIndicator;
         watchRelay          @4 :WatchRelay;
     }
-}
-
-# Architecture §11 — presence broadcast. Carries pseudonym + status +
-# optional rich-presence game info + optional route blob.
-struct PresenceUpdate @0xe3d4eb16e9bf1c2e {
-    pseudonymKey     @0 :Text;
-    status           @1 :Text;
-    hasGameInfo      @2 :Bool;
-    gameInfo         @3 :PresenceGameInfo;
-    hasRouteBlob     @4 :Bool;
-    routeBlob        @5 :Data;
-}
-
-struct PresenceGameInfo @0xe4d4eb16e9bf1c2e {
-    gameName         @0 :Text;
-    hasGameId        @1 :Bool;
-    gameId           @2 :UInt32;
-    hasElapsedSecs   @3 :Bool;
-    elapsedSeconds   @4 :UInt32;
-    hasServerAddress @5 :Bool;
-    serverAddress    @6 :Text;
 }
 
 # Plan E3.4 S9: a channel typing start (ttlMs > 0) or stop (ttlMs = 0).

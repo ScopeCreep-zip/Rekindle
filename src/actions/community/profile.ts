@@ -165,17 +165,6 @@ export async function handleExpandCommunitySegment(
   }
 }
 
-export async function handleUpdateCommunityPresence(
-  communityId: string,
-  status: string,
-): Promise<void> {
-  try {
-    await commands.updateCommunityPresence(communityId, status);
-  } catch (e) {
-    console.error("Failed to update community presence:", e);
-  }
-}
-
 export async function handleSetNotificationOverride(
   communityId: string, channelId: string, level: "all" | "mentions" | "nothing"
 ): Promise<void> {

@@ -17,7 +17,4 @@ pub(super) use events::{
     write_event_location_via_event_capnp, write_onboarding_answer,
     write_recurrence_rule_via_event_capnp, write_voice_roster_entry,
 };
-pub(super) use messages::{
-    read_game_server_info, read_presence_game_info, write_game_server_info,
-    write_presence_game_info,
-};
+pub(super) use messages::{read_game_server_info, write_game_server_info};

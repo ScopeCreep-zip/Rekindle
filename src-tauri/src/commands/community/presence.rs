@@ -1,8 +1,6 @@
 use tauri::State;
 
-use crate::services::community_presence_runtime::{
-    get_presence_policy_inner, update_community_presence_inner,
-};
+use crate::services::community_presence_runtime::get_presence_policy_inner;
 use crate::state::SharedState;
 
 use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest, SettingsRequest};
@@ -27,28 +25,6 @@ pub async fn send_channel_typing(
         },
     ));
     crate::host_call::call(&state, request).await
-}
-
-#[tauri::command]
-pub async fn update_community_presence(
-    community_id: String,
-    status: String,
-    game_name: Option<String>,
-    game_id: Option<u32>,
-    elapsed_seconds: Option<u32>,
-    server_address: Option<String>,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    update_community_presence_inner(
-        state.inner(),
-        community_id,
-        status,
-        game_name,
-        game_id,
-        elapsed_seconds,
-        server_address,
-    )
-    .await
 }
 
 /// The channel we are in, or none (`CommunityRequest::ChannelSetActive`).
