@@ -360,6 +360,12 @@ impl GroupSink<'_> {
                 return Ok(0);
             }
         };
+        if let DirectBody::GroupDmRename(rename) = &body {
+            super::rename::on_rename(self.host, &self.group_id, writer, rename)
+                .await
+                .map_err(sink_error)?;
+            return Ok(stream_seq);
+        }
         let DirectBody::DmText(text) = body else {
             tracing::debug!(from = %writer, kind = ?body.type_id(), "group kind not stored");
             return Ok(stream_seq);

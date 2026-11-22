@@ -115,6 +115,10 @@ type_ids! {
     GroupDmLeave = 0x0123 => Ratchet,
     /// Group-DM content sealed under the sender's key, on its group chain.
     GroupContent = 0x0124 => GroupChain,
+    /// The creator renamed the group (plan E7.2 G7): sealed only inside a
+    /// `GroupContent` entry's inner, so every member reads it from the
+    /// creator's chain; never a frame of its own.
+    GroupDmRename = 0x0126 => GroupChain,
     /// A friend offers a relay route.
     RelayOffer = 0x0130 => Ratchet,
     /// The relay friend withdraws its offer.

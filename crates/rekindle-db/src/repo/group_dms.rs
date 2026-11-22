@@ -109,6 +109,24 @@ pub fn set_origin_peer(
     Ok(changed > 0)
 }
 
+/// The group's name (its creator renamed it). `false` when we are not in
+/// the group or it already had that name.
+///
+/// # Errors
+/// The write failed.
+pub fn set_name(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+    name: &str,
+) -> rusqlite::Result<bool> {
+    let changed = conn.execute(
+        "UPDATE group_dms SET name = ?3 WHERE owner_key = ?1 AND group_id = ?2 AND name <> ?3",
+        params![owner_key, group_id, name],
+    )?;
+    Ok(changed > 0)
+}
+
 /// The group most recently created from `peer`'s chat, the room attached
 /// to it (`EnterAttachedRoom`).
 ///
@@ -349,6 +367,19 @@ mod tests {
         assert!(delete(&conn, OWNER, G).unwrap());
         assert_eq!(get(&conn, OWNER, G).unwrap(), None);
         assert!(!delete(&conn, OWNER, G).unwrap());
+    }
+
+    #[test]
+    fn a_rename_changes_the_name_once_and_only_a_held_group() {
+        let conn = fixture::conn();
+        insert(&conn, OWNER, &group()).unwrap();
+        assert!(set_name(&conn, OWNER, G, "raid night II").unwrap());
+        assert_eq!(get(&conn, OWNER, G).unwrap().unwrap().name, "raid night II");
+        assert!(
+            !set_name(&conn, OWNER, G, "raid night II").unwrap(),
+            "unchanged"
+        );
+        assert!(!set_name(&conn, OWNER, "ff", "x").unwrap(), "not held");
     }
 
     #[test]

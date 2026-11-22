@@ -13,6 +13,7 @@ pub const NAMES: &[&str] = &[
     "sendStatus",
     "message",
     "historyGap",
+    "renamed",
 ];
 
 pub fn variant_name(e: &GroupDmEvent) -> &'static str {
@@ -24,6 +25,7 @@ pub fn variant_name(e: &GroupDmEvent) -> &'static str {
         GroupDmEvent::SendStatus { .. } => "sendStatus",
         GroupDmEvent::Message { .. } => "message",
         GroupDmEvent::HistoryGap { .. } => "historyGap",
+        GroupDmEvent::Renamed { .. } => "renamed",
     }
 }
 
@@ -77,6 +79,13 @@ pub fn samples() -> Vec<Sample> {
                 group_id: group(),
                 member: member('b', "Bob"),
                 epoch: 2,
+            },
+        ),
+        ev(
+            "renamed",
+            GroupDmEvent::Renamed {
+                group_id: group(),
+                name: text("raid night II"),
             },
         ),
         ev(

@@ -187,6 +187,7 @@ impl IntentKind {
         Self::Shutdown,
         Self::PolicyReload,
         Self::UpdateChannel,
+        Self::RenameGroupDm,
         Self::SetGamePresence,
         Self::ClearGamePresence,
         Self::RejectJoinRequest,

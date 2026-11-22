@@ -57,6 +57,16 @@ pub async fn group_dm_leave(
     host_call::call(&state, IpcRequest::GroupDmLeave { group_id }).await
 }
 
+/// Rename a group we created (`IpcRequest::GroupDmRename`).
+#[tauri::command]
+pub async fn group_dm_rename(
+    group_id: String,
+    name: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::GroupDmRename { group_id, name }).await
+}
+
 /// Set a DM's or group DM's disappearing-message timer
 /// (`IpcRequest::DisappearingSet`, plan E7.1).
 #[tauri::command]

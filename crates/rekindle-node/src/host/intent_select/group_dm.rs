@@ -47,6 +47,7 @@ pub(super) async fn selection(
         | IpcRequest::GroupDmAccept { group_id }
         | IpcRequest::GroupDmDecline { group_id }
         | IpcRequest::GroupDmLeave { group_id }
+        | IpcRequest::GroupDmRename { group_id, .. }
         | IpcRequest::GroupDmSend { group_id, .. } => group_id,
         other => unreachable!("{} is not a group-DM write", other.name()),
     };
@@ -63,6 +64,10 @@ pub(super) async fn selection(
         IpcRequest::GroupDmAccept { .. } => {
             s.notifies = count(others);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveGroupDm);
+        }
+        IpcRequest::GroupDmRename { .. } => {
+            s.notifies = count(others);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RenameGroupDm);
         }
         IpcRequest::GroupDmDecline { .. } => {
             s.notifies = count(1);

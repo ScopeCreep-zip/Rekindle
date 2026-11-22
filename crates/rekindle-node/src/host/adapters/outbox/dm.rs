@@ -391,6 +391,23 @@ impl DmOutbox for DmStream {
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
     }
 
+    async fn enqueue_group_control(
+        &self,
+        group_id: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError> {
+        let entry = Entry {
+            kind: StreamKind::GroupDm,
+            scope: group_id.to_owned(),
+            client_id,
+            payload,
+            deadline: Deadline::Horizon,
+        };
+        let enqueued = self.0.enqueue(entry, None).await;
+        enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
+    }
+
     async fn enqueue_control(
         &self,
         to: &str,

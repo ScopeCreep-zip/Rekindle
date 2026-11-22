@@ -248,6 +248,9 @@ pub enum IntentKind {
     PolicyReload,
     // Routine: Community content you create (daemon)
     UpdateChannel,
+    /// Rename a group DM we created (plan E7.2 G7): every member sees the
+    /// new name; renaming back undoes it.
+    RenameGroupDm,
     // Routine: Own presence and profile (daemon)
     SetGamePresence,
     ClearGamePresence,
@@ -403,6 +406,7 @@ impl IntentKind {
             | Self::Shutdown
             | Self::PolicyReload
             | Self::UpdateChannel
+            | Self::RenameGroupDm
             | Self::SetGamePresence
             | Self::ClearGamePresence
             | Self::SetLoginSkin

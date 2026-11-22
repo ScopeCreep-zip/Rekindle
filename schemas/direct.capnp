@@ -270,6 +270,13 @@ struct GroupDmLeave {
   epoch @1 :UInt32;
 }
 
+# 0x0126: the creator renamed the group; only ever sealed inside a 0x0124
+# entry (its inner), never a frame of its own.
+struct GroupDmRename {
+  groupId @0 :Data;                     # 16
+  name @1 :Text;
+}
+
 # 0x0124: a content kind (0x01xx) or typing (0x0401), sealed under the
 # sender's sending key of `epoch`; an entry of the sender's group chain.
 struct GroupContent {

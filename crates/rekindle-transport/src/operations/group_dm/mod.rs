@@ -13,9 +13,11 @@ pub mod content;
 mod inbound;
 mod pairwise;
 pub mod receive;
+mod rename;
 pub mod retire;
 mod review;
 mod room;
+pub use rename::rename;
 pub use room::create_from;
 mod view;
 

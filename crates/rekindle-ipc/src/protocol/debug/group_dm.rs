@@ -30,6 +30,11 @@ impl IpcRequest {
                 .debug_struct("GroupDmLeave")
                 .field("group_id", group_id)
                 .finish(),
+            Self::GroupDmRename { group_id, name } => f
+                .debug_struct("GroupDmRename")
+                .field("group_id", group_id)
+                .field("name_len", &name.chars().count())
+                .finish(),
             Self::DisappearingSet {
                 conversation,
                 seconds,

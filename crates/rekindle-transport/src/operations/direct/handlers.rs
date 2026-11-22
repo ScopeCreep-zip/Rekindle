@@ -209,6 +209,11 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         | DirectBody::GroupContent(_) => {
             applied = crate::operations::group_dm::apply(host, sender, &opened.body).await;
         }
+        // Only ever sealed inside a group entry (plan E7.2 G7).
+        DirectBody::GroupDmRename(_) => {
+            tracing::info!(from = %sender, "GroupDmRename outside a group entry; refused");
+            applied = false;
+        }
         DirectBody::CreatorInvite(_)
         | DirectBody::CreatorAccept(_)
         | DirectBody::CreatorDecline(_)

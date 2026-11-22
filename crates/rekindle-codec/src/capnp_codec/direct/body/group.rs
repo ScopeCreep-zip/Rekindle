@@ -12,6 +12,7 @@ use crate::capnp_codec::direct::{bounded_text, data, fixed, list_len, public_key
 use crate::capnp_codec::{capnp_err, CodecError};
 use crate::direct_capnp::{
     group_content, group_dm_accept, group_dm_decline, group_dm_invite, group_dm_leave,
+    group_dm_rename,
 };
 
 /// A group's id: 16 random bytes its creator mints.
@@ -216,6 +217,32 @@ impl GroupDmLeave {
         Ok(Self {
             group_id: fixed(r.get_group_id(), "group id")?,
             epoch: r.get_epoch(),
+        })
+    }
+}
+
+/// 0x0126 GroupDmRename, sealed inside a `GroupContent` inner only: the
+/// creator's new name for the group (1-`MAX_NAME_CHARS` characters).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupDmRename {
+    pub group_id: GroupId,
+    pub name: String,
+}
+
+impl GroupDmRename {
+    pub(super) fn write(&self, mut b: group_dm_rename::Builder<'_>) {
+        b.set_group_id(&self.group_id);
+        b.set_name(&self.name);
+    }
+
+    pub(super) fn read(r: group_dm_rename::Reader<'_>) -> Result<Self, CodecError> {
+        let name = bounded_text(r.get_name(), MAX_NAME_CHARS, "group name")?;
+        if name.trim().is_empty() {
+            return Err(CodecError::Deserialization("empty group name".into()));
+        }
+        Ok(Self {
+            group_id: fixed(r.get_group_id(), "group id")?,
+            name,
         })
     }
 }

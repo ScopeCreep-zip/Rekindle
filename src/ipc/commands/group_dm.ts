@@ -32,6 +32,8 @@ export const groupDmCommands = {
   groupDmAccept: (groupId: string) => hostInvoke<unknown>("group_dm_accept", { groupId }),
   groupDmDecline: (groupId: string) => hostInvoke<unknown>("group_dm_decline", { groupId }),
   groupDmLeave: (groupId: string) => hostInvoke<unknown>("group_dm_leave", { groupId }),
+  groupDmRename: (groupId: string, name: string) =>
+    hostInvoke<unknown>("group_dm_rename", { groupId, name }),
   /** Our message's client id once its row and echo are committed
    *  (`queued`, then `sendStatus` events). */
   groupDmSend: (groupId: string, body: string) =>

@@ -158,6 +158,7 @@ impl IpcRequest {
             | Self::GroupDmAccept { .. }
             | Self::GroupDmDecline { .. }
             | Self::GroupDmLeave { .. }
+            | Self::GroupDmRename { .. }
             | Self::DisappearingSet { .. }
             | Self::GroupDmSend { .. }
             | Self::GroupDmTyping { .. }

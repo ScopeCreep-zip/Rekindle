@@ -77,7 +77,7 @@ pub fn parse_inner(plain: &[u8]) -> Result<GroupContentInner, String> {
     })
 }
 
-async fn held(host: &dyn FriendHost, id: &GroupId) -> Result<GroupState, FriendError> {
+pub(super) async fn held(host: &dyn FriendHost, id: &GroupId) -> Result<GroupState, FriendError> {
     let deps = host.group_dm()?;
     deps.group(id)
         .await

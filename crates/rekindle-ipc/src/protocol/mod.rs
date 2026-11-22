@@ -240,6 +240,9 @@ pub enum IpcRequest {
     GroupDmDecline { group_id: String },
     /// Leave `group_id`; every other member rotates its key.
     GroupDmLeave { group_id: String },
+    /// Rename `group_id` (its creator only; 1-`MAX_NAME_CHARS`
+    /// characters); every member is told through our group chain.
+    GroupDmRename { group_id: String, name: String },
     /// Set the disappearing-message timer of `conversation` (a friend's
     /// key: our DM; a group's 32-hex id: the group DM) to `seconds`
     /// (0 = off, at most four weeks; plan E7.1). Every other member is

@@ -104,6 +104,7 @@ export type GroupDmEvent =
   | { joined: { groupId: string; member: GroupDmMember } }
   | { left: { groupId: string; member: GroupDmMember } }
   | { keyRotated: { groupId: string; member: GroupDmMember; epoch: number } }
+  | { renamed: { groupId: string; name: string } }
   | { sendStatus: { groupId: string; clientId: string; state: SendState } }
   | {
       message: {

@@ -47,6 +47,18 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed; nothing was committed.
     async fn enqueue_group(&self, group_id: &str, dm: OutgoingDm) -> Result<i64, FriendError>;
+    /// Commit a group control entry (`payload`, [`payload`]; a
+    /// `GroupDmRename`) with no echo at the end of our stream to
+    /// `group_id`: it rides our group chain like a message; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_group_control(
+        &self,
+        group_id: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError>;
     /// Commit a `friend_handshake` frame (`payload`, [`super::Framed`]) at
     /// the end of our handshake stream to `to`; its stream seq.
     ///

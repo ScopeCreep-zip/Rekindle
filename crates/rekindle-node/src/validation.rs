@@ -443,6 +443,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmDecline { .. }
         | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::GroupDmRename { .. }
         | IpcRequest::DisappearingSet { .. }
         | IpcRequest::DisappearingGet { .. }
         | IpcRequest::GroupDmSend { .. }

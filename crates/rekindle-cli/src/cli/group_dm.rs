@@ -32,6 +32,13 @@ pub enum GroupDmCmd {
         /// The group id (32 hex).
         group_id: String,
     },
+    /// Rename a group we created; every member sees the new name.
+    Rename {
+        /// The group id (32 hex).
+        group_id: String,
+        /// The new name.
+        name: String,
+    },
     /// Send a message to a group.
     Send {
         /// The group id (32 hex).

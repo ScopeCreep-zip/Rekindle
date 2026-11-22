@@ -312,6 +312,10 @@ pub(super) fn hash_group_dm(
             h.update(sender.public_key.as_bytes());
             h.update(message_id.as_bytes());
         }
+        GroupDmEvent::Renamed { name, .. } => {
+            h.update(b"name|");
+            h.update(name.as_bytes());
+        }
         GroupDmEvent::HistoryGap {
             member,
             through_seq,

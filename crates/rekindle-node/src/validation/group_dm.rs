@@ -40,13 +40,8 @@ fn disappearing(conversation: &str, seconds: u32) -> Checked {
     }
 }
 
-fn create(name: &str, members: &[String], origin_peer: Option<&str>) -> Checked {
-    if origin_peer.is_some_and(|peer| !members.iter().any(|m| m == peer)) {
-        return Err(IpcResponse::error(
-            400,
-            "invalid group: the chat it comes from must be a member's",
-        ));
-    }
+/// A group's name: 1-[`MAX_NAME_CHARS`] characters, not blank.
+fn group_name(name: &str) -> Checked {
     let chars = name.chars().count();
     if name.trim().is_empty() || chars > MAX_NAME_CHARS {
         return Err(IpcResponse::error(
@@ -54,6 +49,17 @@ fn create(name: &str, members: &[String], origin_peer: Option<&str>) -> Checked 
             format!("invalid group name: must be 1-{MAX_NAME_CHARS} characters, got {chars}"),
         ));
     }
+    Ok(())
+}
+
+fn create(name: &str, members: &[String], origin_peer: Option<&str>) -> Checked {
+    if origin_peer.is_some_and(|peer| !members.iter().any(|m| m == peer)) {
+        return Err(IpcResponse::error(
+            400,
+            "invalid group: the chat it comes from must be a member's",
+        ));
+    }
+    group_name(name)?;
     let (min, max) = (MIN_MEMBERS - 1, MAX_MEMBERS - 1);
     if members.len() < min || members.len() > max {
         return Err(IpcResponse::error(
@@ -92,6 +98,9 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             group_id: id,
             typing: _,
         } => group_id(id),
+        IpcRequest::GroupDmRename { group_id: id, name } => {
+            group_id(id).and_then(|()| group_name(name))
+        }
         IpcRequest::GroupDmSend { group_id: id, body } => {
             group_id(id).and_then(|()| message_body(body))
         }
