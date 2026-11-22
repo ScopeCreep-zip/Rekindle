@@ -260,6 +260,12 @@ impl DaemonContext {
     /// from the registry, or the shell's) must meet the request's (plan D1),
     /// and an agent's capabilities admit it.
     pub(crate) async fn call(&self, request: IpcRequest, caller: &Caller) -> IpcResponse {
+        // A skin action that is a feature becomes its own request first
+        // (plan SK2-A4), so that request meets its own clearance and gate.
+        let request = match crate::host::skin::actions::resolve(&self.skin_selection, request) {
+            Ok(request) => request,
+            Err(refused) => return refused,
+        };
         let required = request.required_clearance();
         if caller.clearance < required {
             return self.clearance_refusal(&request, required, caller);

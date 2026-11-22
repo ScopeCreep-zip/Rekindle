@@ -297,6 +297,7 @@ impl Host {
             skin_trial: crate::host::skin::TrialSlot::default(),
             skin_grounds: crate::host::skin::ShownGrounds::default(),
             infoview: crate::host::infoview::OpenViews::default(),
+            skin_selection: crate::host::skin::actions::Selections::default(),
             mode,
             read_markers: super::read_markers::PendingMarkers::default(),
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(

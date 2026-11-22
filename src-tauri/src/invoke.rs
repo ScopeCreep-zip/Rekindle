@@ -338,6 +338,8 @@ macro_rules! skin_commands {
         commands::skin::export_skin_draft,
         commands::skin::import_skin_region,
         commands::skin::export_skin_schema,
+        commands::skin::run_skin_action,
+        commands::skin::set_skin_selection,
         commands::skin::set_login_skin,
     ] $($rest)*) };
 }

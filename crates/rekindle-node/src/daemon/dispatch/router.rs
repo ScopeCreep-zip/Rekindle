@@ -187,6 +187,9 @@ async fn route(
         | IpcRequest::GameLaunch { .. }) => own::route(ctx, state, request).await,
 
         // ── Skins (plan E7.7.2) ──────────────────────────────────
+        request @ (IpcRequest::RunSkinAction { .. } | IpcRequest::SkinSelectionSet { .. }) => {
+            crate::host::skin::actions::answer(&ctx.skin_selection, request)
+        }
         request @ (IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }
         | IpcRequest::SkinFile { .. }

@@ -129,6 +129,8 @@ pub struct DaemonContext {
     pub(crate) skin_grounds: crate::host::skin::ShownGrounds,
     /// Each open window's Infoview subject (plan E7.15, IV4).
     pub(crate) infoview: crate::host::infoview::OpenViews,
+    /// Each skin window's selection (plan SK2-A4).
+    pub(crate) skin_selection: crate::host::skin::actions::Selections,
     /// The unlocked identity's database (plan D1), shared with the
     /// handler and the inbox scan. Empty while locked.
     pub db: Arc<rekindle_db::DbHandle>,

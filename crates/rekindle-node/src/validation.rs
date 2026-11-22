@@ -501,7 +501,9 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::SkinDraftStart { .. }
         | IpcRequest::SkinExportDraft { .. }
         | IpcRequest::SkinDraftCheck { .. }
-        | IpcRequest::SkinExportSchema { .. } => crate::host::skin::check(request),
+        | IpcRequest::SkinExportSchema { .. }
+        | IpcRequest::RunSkinAction { .. }
+        | IpcRequest::SkinSelectionSet { .. } => crate::host::skin::check(request),
         IpcRequest::GamePresenceSet {
             game_name,
             game_id: _,

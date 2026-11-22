@@ -7,6 +7,9 @@
 //! `SkinGet`, `SkinFile` (the `skin://` scheme's bytes) and
 //! `SystemEvent::SkinChanged` are the serving-and-apply half ([`serve`]).
 
+pub(crate) mod actions;
+#[cfg(test)]
+mod actions_tests;
 mod draft;
 pub(crate) mod ids;
 pub(crate) mod login;

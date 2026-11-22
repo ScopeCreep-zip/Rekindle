@@ -230,6 +230,8 @@ impl IpcRequest {
             | Self::SkinExportDraft { .. }
             | Self::SkinDraftCheck { .. }
             | Self::SkinExportSchema { .. }
+            | Self::RunSkinAction { .. }
+            | Self::SkinSelectionSet { .. }
             | Self::AuditVerify
             | Self::AuditExport { .. }
             | Self::LinkOpen { .. }

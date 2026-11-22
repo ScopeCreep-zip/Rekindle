@@ -97,6 +97,19 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
             absolute(path, "export path")
         }
         IpcRequest::SkinExportSchema { path } => absolute(path, "export path"),
+        // A node id and a friend key are names, bounded like one.
+        IpcRequest::RunSkinAction { node, .. } if node.len() > 256 => Err(IpcResponse::error(
+            400,
+            "skin node id longer than 256 bytes",
+        )),
+        IpcRequest::SkinSelectionSet {
+            selection: Some(rekindle_types::dto::skin_run::SkinSelection::Friend { public_key }),
+            ..
+        } if public_key.len() > 128 => Err(IpcResponse::error(
+            400,
+            "selected key longer than 128 bytes",
+        )),
+        IpcRequest::RunSkinAction { .. } | IpcRequest::SkinSelectionSet { .. } => Ok(()),
         other => unreachable!("{} is not a skin request", other.name()),
     }
 }

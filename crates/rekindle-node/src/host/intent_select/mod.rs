@@ -268,6 +268,8 @@ pub(crate) async fn select(
         | IpcRequest::SkinExportDraft { .. }
         | IpcRequest::SkinDraftCheck { .. }
         | IpcRequest::SkinExportSchema { .. }
+        | IpcRequest::RunSkinAction { .. }
+        | IpcRequest::SkinSelectionSet { .. }
         | IpcRequest::AuditVerify
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests

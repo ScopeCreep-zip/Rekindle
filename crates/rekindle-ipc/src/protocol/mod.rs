@@ -480,6 +480,20 @@ pub enum IpcRequest {
     /// The JSON Schema of a skin token file for DTCG tools (Figma plugins,
     /// Style Dictionary), written to `path`, a file the user chose.
     SkinExportSchema { path: String },
+    /// Run the action a skin node's trigger names (plan SK2-A4, design
+    /// §2.2): a feature action runs as its own request through the intent
+    /// gate; any other answers `dto::skin_run::SkinRun`.
+    RunSkinAction {
+        window: rekindle_types::dto::skin_layout::SkinWindow,
+        node: String,
+        action: rekindle_types::dto::skin_action::SkinAction,
+    },
+    /// Set or clear what `window` has selected, the selection a
+    /// selection-dependent skin action acts on.
+    SkinSelectionSet {
+        window: rekindle_types::dto::skin_layout::SkinWindow,
+        selection: Option<rekindle_types::dto::skin_run::SkinSelection>,
+    },
     /// Set game presence info.
     GamePresenceSet {
         game_name: String,

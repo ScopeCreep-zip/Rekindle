@@ -238,6 +238,11 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     // schema export writes the file the user chose (its dialog confirms).
     ("SkinDraftCheck", None),
     ("SkinExportSchema", None),
+    // A skin action that is a feature runs as its own request, gated as
+    // that request (`HostApi::call` resolves it first, plan SK2-A4); the
+    // rest are window operations, and a selection is view state.
+    ("RunSkinAction", None),
+    ("SkinSelectionSet", None),
     ("SkinImport", Some(IntentKind::ImportSkin)),
     ("SkinRemove", Some(IntentKind::RemoveSkin)),
     // The identity's skin is a preference (E6.8's `PatchPreferences`).

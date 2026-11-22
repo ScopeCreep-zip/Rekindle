@@ -173,6 +173,8 @@ impl IpcRequest {
             Self::SkinExportDraft { .. } => ("SkinExportDraft", Write, Authenticated),
             Self::SkinDraftCheck { .. } => ("SkinDraftCheck", Query, Authenticated),
             Self::SkinExportSchema { .. } => ("SkinExportSchema", Write, Authenticated),
+            Self::RunSkinAction { .. } => ("RunSkinAction", Write, Authenticated),
+            Self::SkinSelectionSet { .. } => ("SkinSelectionSet", Write, Authenticated),
             Self::GamePresenceSet { .. } => ("GamePresenceSet", Write, Authenticated),
             Self::GamePresenceClear => ("GamePresenceClear", Write, Authenticated),
 

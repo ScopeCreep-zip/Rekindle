@@ -4,8 +4,11 @@
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::skin::RegionFit;
+use rekindle_types::dto::skin_action::SkinAction;
 use rekindle_types::dto::skin_draft::{SkinDraft, SkinDraftRegion, SkinDraftReport};
+use rekindle_types::dto::skin_layout::SkinWindow;
 use rekindle_types::dto::skin_library::{SkinApplied, SkinEntry, SkinLibrary};
+use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -188,4 +191,35 @@ pub async fn export_skin_schema(
         value: true,
         undo: done.undo,
     })
+}
+
+/// A skin node's trigger (plan SK2-A4): the Host's table runs it, a
+/// feature as its own request through the intent gate; any other answers
+/// `dto::skin_run::SkinRun` for the window's shell.
+#[tauri::command]
+pub async fn run_skin_action(
+    state: State<'_, SharedState>,
+    window: SkinWindow,
+    node: String,
+    action: SkinAction,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::RunSkinAction {
+            window,
+            node,
+            action,
+        },
+    )
+    .await
+}
+
+/// What a skin window has selected, kept by the Host (plan SK2-A4).
+#[tauri::command]
+pub async fn set_skin_selection(
+    state: State<'_, SharedState>,
+    window: SkinWindow,
+    selection: Option<SkinSelection>,
+) -> Result<Done<()>, CommandError> {
+    host_call::call(&state, IpcRequest::SkinSelectionSet { window, selection }).await
 }

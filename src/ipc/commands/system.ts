@@ -9,6 +9,8 @@ import type {
 } from "./dto";
 import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
 import type { InfoviewSubject, InfoviewView } from "./dto_infoview";
+import type { SkinSelection, SkinWindow } from "./dto_skin_run";
+import type { SkinAction } from "./dto_skin_tree";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
 /// serialized as its MIME type).
@@ -68,6 +70,12 @@ export const systemCommands = {
     hostInvoke<SkinDraft | null>("import_skin_region", { draft, region, fit, textBacking }),
   // The token file's JSON Schema for DTCG tools; `false` if cancelled.
   exportSkinSchema: () => hostInvoke<boolean>("export_skin_schema"),
+  // A skin node's trigger (plan SK2-A4): a feature answers its own
+  // request's value; any other a SkinRun for the window's shell.
+  runSkinAction: (window: SkinWindow, node: string, action: SkinAction) =>
+    hostInvoke<unknown>("run_skin_action", { window, node, action }),
+  setSkinSelection: (window: SkinWindow, selection: SkinSelection | null) =>
+    hostInvoke<void>("set_skin_selection", { window, selection }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),
