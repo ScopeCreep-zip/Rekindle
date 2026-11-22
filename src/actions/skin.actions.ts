@@ -70,6 +70,11 @@ const common: ShellRunner = (op) => {
     case "openProfile":
       void commands.openProfileWindow(op.arg.friend);
       return true;
+    case "launchPopup":
+      // The shell opens (or closes, when open) the pack popup beside this
+      // window; its place and size come from the Host's shell (popup_place.rs).
+      commands.openSkinPopup(op.arg.popup).catch((e) => addToast(String(e), "error"));
+      return true;
     case "call":
       runCall(op.arg);
       return true;
