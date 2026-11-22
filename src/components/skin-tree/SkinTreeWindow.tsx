@@ -1,13 +1,13 @@
 import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import type { EngineMenu, MenuItem, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../buddy-list/MenuBar";
 import NameField from "./NameField";
-import { PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
+import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
 import FilesView from "./FilesView";
@@ -114,11 +114,45 @@ const NodeLabelView: Component<{ label: NodeLabel }> = (props) => {
       : undefined;
   };
   return (
-    <span class="skin-node-label" data-cover={props.label.cover ? "" : undefined} style={box()} aria-hidden="true">
-      <span class="skin-node-label-text">{props.label.text}</span>
-    </span>
+    <Show
+      when={props.label.glyph}
+      fallback={
+        <span class="skin-node-label" data-cover={props.label.cover ? "" : undefined} style={box()} aria-hidden="true">
+          <span class="skin-node-label-text">{props.label.text}</span>
+        </span>
+      }
+    >
+      {(glyph) => (
+        <span
+          class="skin-node-label skin-node-glyph"
+          data-cover={props.label.cover ? "" : undefined}
+          style={box()}
+          title={props.label.text}
+        >
+          <NodeGlyphView glyph={glyph()} />
+          <span class="sr-only">{props.label.text}</span>
+        </span>
+      )}
+    </Show>
   );
 };
+
+/** A built-in glyph (plan SK3), in the current colour, sized by its box. */
+const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
+  <Switch>
+    <Match when={props.glyph === "communities"}>
+      {/* Three people: the community mark. */}
+      <svg class="skin-node-glyph-svg" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="7" r="3.2" fill="currentColor" />
+        <path d="M6.5 19c0-3.2 2.5-5.6 5.5-5.6s5.5 2.4 5.5 5.6z" fill="currentColor" />
+        <circle cx="5" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
+        <path d="M1 18.5c0-2.4 1.8-4.2 4-4.2 1 0 1.9.3 2.6.9-1.2 1-2 2.3-2.3 3.8z" fill="currentColor" opacity="0.8" />
+        <circle cx="19" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
+        <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
+      </svg>
+    </Match>
+  </Switch>
+);
 
 /** One node, as the served role draws it and its triggers drive it
  *  (design §2.4, §2.6). */
@@ -169,7 +203,15 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     if (on === "rightClick" || on === "rightDown") e.preventDefault();
     for (const t of runs) tree.run(n().id, t.run);
   };
-  const pressable = (): boolean => press() !== undefined && !role().kind.startsWith("menu");
+  // A drag strip is the window's grip, not a control: its double-click
+  // maximize and right-click menu are pointer shortcuts for the pack's own
+  // buttons and menus. As a button it would hold those controls inside one
+  // named "Maximize" (axe nested-interactive, label-content-name-mismatch)
+  // and take a focus ring the size of the window.
+  const pressable = (): boolean => press() !== undefined && !role().kind.startsWith("menu") && role().kind !== "drag";
+  // Inside a menu bar every element is a menu title or presentational
+  // (ARIA menubar's required owned elements).
+  const inBar = useContext(InBar);
 
   const attrs: Record<string, unknown> = {
     get "data-skin-node"() {
@@ -235,10 +277,10 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const runItem = (item: MenuItem): void => tree.run(n().id, item.run);
 
   return (
-    <Switch fallback={<div {...attrs}>{children()}</div>}>
+    <Switch fallback={<div {...attrs} role={inBar ? "none" : undefined}>{children()}</div>}>
       <Match when={menuOf()}>
         {(menu) => (
-          <PackMenu attrs={attrs} menu={menu()} items={tree.menus(menu())} run={runItem}>
+          <PackMenu attrs={attrs} menu={menu()} label={n().label?.text} items={tree.menus(menu())} run={runItem}>
             {children()}
           </PackMenu>
         )}

@@ -3,14 +3,26 @@ import { Menubar } from "@kobalte/core/menubar";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import type { EngineMenu, MenuItem } from "../../ipc/commands/dto_skin_tree";
 
-/// The menu title's text: the first menu reads "Rekindle" (plan SK2 lead
-/// decision 7: the Xfire name is a trademark), the others keep Xfire's
-/// names (lang 229/231).
-const TITLE: Partial<Record<EngineMenu, string>> = { file: "Rekindle", tool: "Tools", help: "Help", status: "Status" };
+/// The accessible name of a menu title the Host serves no label for: its
+/// art already carries the right word (Tools, Help), or it is art alone (a
+/// logo opening the window menu), which has no name otherwise (axe
+/// button-name). A served label (plan SK4b) names the title instead.
+const ART_NAME: Record<EngineMenu, string> = {
+  file: "Rekindle",
+  tool: "Tools",
+  help: "Help",
+  status: "Status",
+  sys: "Window menu",
+  cwActions: "Actions",
+  cwHelp: "Help",
+  gcSystem: "Window menu",
+  gcActions: "Actions",
+  gcHelp: "Help",
+};
 
 /** Whether a menu sits inside the pack's menu bar (one Kobalte `Menubar`,
  *  so hover moves between open menus). */
-const InBar = createContext(false);
+export const InBar = createContext(false);
 
 /** The pack's `MenuBar` node: the menus' container. */
 export const PackMenuBar: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (props) => (
@@ -46,6 +58,8 @@ const BarItems: Component<{ items: MenuItem[]; run: (item: MenuItem) => void }> 
 interface MenuProps {
   attrs: Record<string, unknown>;
   menu: EngineMenu;
+  /** The served label's words (plan SK4b), drawn by the node's NodeLabelView. */
+  label?: string;
   items: MenuItem[];
   run: (item: MenuItem) => void;
   children: JSX.Element;
@@ -53,9 +67,8 @@ interface MenuProps {
 
 const Menu: Component<MenuProps> = (props) => (
   <Menubar.Menu>
-    <Menubar.Trigger class="skin-menu" {...props.attrs}>
+    <Menubar.Trigger class="skin-menu" {...props.attrs} aria-label={props.label ?? ART_NAME[props.menu]}>
       {props.children}
-      <Show when={TITLE[props.menu]}>{(t) => <span class="skin-menu-label">{t()}</span>}</Show>
     </Menubar.Trigger>
     <BarItems items={props.items} run={props.run} />
   </Menubar.Menu>
