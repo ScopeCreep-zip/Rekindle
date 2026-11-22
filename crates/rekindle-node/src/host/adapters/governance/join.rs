@@ -322,8 +322,9 @@ impl HostGovernance {
         Ok(queued.load(std::sync::atomic::Ordering::Relaxed))
     }
 
-    /// A re-join (our `MemberJoined` is a later op of our own chain, after
-    /// our departure): our earlier ops, walked from the inviter's frontier,
+    /// A re-join (our `MemberJoined` is a later op of our device key's
+    /// chain, after our departure): our earlier ops of that chain
+    /// (`op_log::earlier_chain`), walked from the inviter's frontier,
     /// go first on the fresh member record, so it holds our whole chain at
     /// chain seq `op.seq + 1`, where an `OpRef` locates every op
     /// (`fetch_governance_op_impl`), the re-join's `MemberJoined` included.
@@ -343,16 +344,13 @@ impl HostGovernance {
         if joined.seq == 0 {
             return Ok(());
         }
-        let mut own: Vec<&rekindle_governance_runtime::op_log::HeldOp> = outcome
-            .walked
-            .iter()
-            .filter(|op| op.author == joined.author)
-            .collect();
-        own.sort_by_key(|op| op.seq);
-        own.dedup_by_key(|op| op.seq);
-        if !own.iter().map(|op| op.seq).eq(0..joined.seq) {
-            return Err("community re-join failed: our earlier ops are not all readable".into());
-        }
+        // Our chain is the chain of the device key that signed the
+        // re-join (ADR 0022 rule 1), the one `build_op` numbers our seqs
+        // in: never the ops of our other devices under the same `p`.
+        let own = rekindle_governance_runtime::op_log::earlier_chain(&outcome.walked, joined)
+            .ok_or_else(|| {
+                "community re-join failed: our earlier ops are not all readable".to_string()
+            })?;
         let entries: Vec<Vec<u8>> = own.iter().map(|op| op.encoded.clone()).collect();
         let writer = self.member_record_writer(community)?;
         let pool = self

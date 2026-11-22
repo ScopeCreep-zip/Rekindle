@@ -475,3 +475,42 @@ fn a_fork_proof_too_large_for_the_subkey_keeps_what_fits() {
         "a proof that fits is kept whole"
     );
 }
+
+fn chain_op(device: u8, seq: u64) -> super::HeldOp {
+    super::HeldOp {
+        hash: OpHash(
+            [device
+                .wrapping_mul(16)
+                .wrapping_add(u8::try_from(seq).unwrap()); 32],
+        ),
+        device_key: [device; 32],
+        author: PseudonymKey([1; 32]),
+        author_record: "VLD0:mp".into(),
+        seq,
+        lamport: seq,
+        issued_at: 0,
+        encoded: vec![device, u8::try_from(seq).unwrap()],
+        fate: super::OpFate::Applied,
+    }
+}
+
+/// A re-join mirrors the chain of the device key that signed its
+/// `MemberJoined`, never the same member's other device (ADR 0022 rule 1:
+/// seqs number each device key's chain), and a gap in that chain is not
+/// filled by the other device's op at that seq.
+#[test]
+fn a_rejoin_mirrors_its_own_device_keys_chain_only() {
+    let walked = vec![
+        chain_op(2, 0),
+        chain_op(1, 0),
+        chain_op(2, 1),
+        chain_op(1, 1),
+        chain_op(1, 2),
+    ];
+    let joined = chain_op(1, 3);
+    let chain = super::earlier_chain(&walked, &joined).expect("seqs 0..3 of our key are held");
+    let got: Vec<(u8, u64)> = chain.iter().map(|op| (op.device_key[0], op.seq)).collect();
+    assert_eq!(got, vec![(1, 0), (1, 1), (1, 2)]);
+    let gapped = vec![chain_op(1, 0), chain_op(2, 1), chain_op(1, 2)];
+    assert!(super::earlier_chain(&gapped, &joined).is_none());
+}

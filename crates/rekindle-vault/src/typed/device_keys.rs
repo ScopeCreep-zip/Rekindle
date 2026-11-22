@@ -38,7 +38,9 @@ pub fn load_device_op_key(
     Ok(load_entry(device, community)?.map(|entry| entry.secret))
 }
 
-/// Store this device's op key secret for `community`.
+/// Store this device's op key secret for `community`. The entry then
+/// holds the key alone, the first device's entry: a record an earlier
+/// entry bound is gone ([`load_device_record`] is `None`).
 ///
 /// # Errors
 /// The vault cannot be written.

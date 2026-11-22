@@ -155,3 +155,60 @@ async fn the_first_devices_frontier_stays_on_the_member_record() {
         (PERSON_RECORD.to_owned(), PERSON_OWNER.to_owned()),
     );
 }
+
+/// A re-join from the phone (bound to `M(p,d)` by an earlier membership's
+/// `DeviceKey`): signing its `MemberJoined` makes it the member's first
+/// device (ADR 0022 rule 3), so its device vault entry keeps the key and
+/// binds no record; its op record is the new `M(p)`, owned by `K_M(p)`,
+/// never the stale `M(p,d)`.
+#[tokio::test]
+async fn a_rejoin_clears_the_phones_stale_device_record() {
+    use rekindle_vault::typed::device_keys::{
+        load_device_record, store_device_op_key, store_device_record,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    {
+        let guard = host.ctx.device_vault.lock();
+        let vault = guard.as_ref().expect("device vault");
+        store_device_op_key(vault, FRONTIER_COMMUNITY, &PHONE_KEY).unwrap();
+        store_device_record(vault, FRONTIER_COMMUNITY, PHONE_RECORD, PHONE_OWNER).unwrap();
+    }
+    let governance = HostGovernance::new(Arc::clone(&host.ctx));
+    let later = rekindle_governance_runtime::device_signer::device_op_key(
+        &governance,
+        FRONTIER_COMMUNITY,
+        false,
+    )
+    .unwrap();
+    assert_eq!(later.to_bytes(), PHONE_KEY, "a later op keeps the key");
+    {
+        let guard = host.ctx.device_vault.lock();
+        let vault = guard.as_ref().expect("device vault");
+        assert!(
+            load_device_record(vault, FRONTIER_COMMUNITY)
+                .unwrap()
+                .is_some(),
+            "a later op leaves the binding"
+        );
+    }
+    let joined = rekindle_governance_runtime::device_signer::device_op_key(
+        &governance,
+        FRONTIER_COMMUNITY,
+        true,
+    )
+    .unwrap();
+    assert_eq!(joined.to_bytes(), PHONE_KEY, "the re-join keeps the key");
+    {
+        let guard = host.ctx.device_vault.lock();
+        let vault = guard.as_ref().expect("device vault");
+        assert!(
+            load_device_record(vault, FRONTIER_COMMUNITY)
+                .unwrap()
+                .is_none(),
+            "the re-join's MemberJoined binds M(p): no M(p,d) is left"
+        );
+    }
+    host.shutdown().await.unwrap();
+}

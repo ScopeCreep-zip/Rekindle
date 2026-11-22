@@ -94,7 +94,9 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         &self,
         community_id: &str,
     ) -> Result<Option<zeroize::Zeroizing<[u8; 32]>>, GovernanceRuntimeError>;
-    /// Store this device's op key secret for `community_id`.
+    /// Store this device's op key secret for `community_id`, the entry
+    /// then holding the key alone: no `M(p,d)` bound, the member's first
+    /// device's entry (ADR 0022 rule 3).
     ///
     /// # Errors
     /// Locked, or the device vault cannot be written.

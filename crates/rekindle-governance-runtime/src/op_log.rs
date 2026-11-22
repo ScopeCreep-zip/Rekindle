@@ -212,6 +212,43 @@ pub enum Deps {
     FrontierAnd(Vec<OpHash>),
 }
 
+/// One device key's op chain (ADR 0022 rule 1, "Every governance op is
+/// signed by a device key"; rule 3, "2 `GovHead` ... are that device's own
+/// op chain"): the ops `device_key` signed, by seq, one per seq. Seqs
+/// number a device key's chain, never the member's, so two devices of one
+/// member never mix. The one reading of "our chain": the write path takes
+/// its next seq from it ([`build_op`]) and a re-join mirrors it
+/// ([`earlier_chain`]). `signed` gives an op's device key and seq.
+pub fn device_chain<T>(
+    ops: impl IntoIterator<Item = T>,
+    device_key: &[u8; 32],
+    signed: impl Fn(&T) -> ([u8; 32], u64),
+) -> Vec<T> {
+    let mut chain: Vec<T> = ops
+        .into_iter()
+        .filter(|op| signed(op).0 == *device_key)
+        .collect();
+    chain.sort_by_key(|op| signed(op).1);
+    chain.dedup_by_key(|op| signed(op).1);
+    chain
+}
+
+/// Our earlier ops a re-join mirrors onto its fresh member record: the
+/// chain ([`device_chain`]) of the device key that signed our re-join's
+/// `MemberJoined` `joined`, every seq below `joined.seq` held; `None` when
+/// one is missing (another device's op at that seq never fills it).
+#[must_use]
+pub fn earlier_chain<'a>(held: &'a [HeldOp], joined: &HeldOp) -> Option<Vec<&'a HeldOp>> {
+    let chain = device_chain(held.iter(), &joined.device_key, |op| {
+        (op.device_key, op.seq)
+    });
+    chain
+        .iter()
+        .map(|op| op.seq)
+        .eq(0..joined.seq)
+        .then_some(chain)
+}
+
 /// Our op for `body`: the next seq of our chain, `deps` as its deps,
 /// authored by `signer.author` (our community pseudonym) and signed by
 /// `signer.device` (this device's op key, ADR 0022 rule 1), its seq the
@@ -237,11 +274,10 @@ pub fn build_op(
         device: key,
     } = signer;
     let device_key = key.verifying_key().to_bytes();
-    let last = set
-        .ops
-        .iter()
-        .filter(|op| op.op().device_key == device_key)
-        .max_by_key(|op| op.op().seq);
+    let last = device_chain(set.ops.iter(), &device_key, |op| {
+        (op.op().device_key, op.op().seq)
+    })
+    .pop();
     let (seq, prev) = last.map_or((0, None), |op| (op.op().seq + 1, Some(op.hash())));
     let cited = cited(set, deps, prev)?;
     let known: HashMap<OpHash, &VerifiedOp> = set.ops.iter().map(|o| (o.hash(), o)).collect();

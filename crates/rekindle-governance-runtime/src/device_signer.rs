@@ -28,8 +28,18 @@ pub struct OpSigner<'a> {
 }
 
 /// This device's op key for `community`. Minted and stored when this
-/// device holds none and `first_op` (the op being written is this
-/// device's first in the community); otherwise refused.
+/// device holds none and `first_op` (the op being written is our
+/// `MemberJoined`, which makes this device its member's first); otherwise
+/// refused.
+///
+/// A held key under `first_op` is a re-join: the `MemberJoined` binds the
+/// new `M(p)` as this device's op record (ADR 0022 rule 3, "The first
+/// device's record is `M(p)`, bound by `MemberJoined` with owner `K_M(p)`"),
+/// and the endorsement it carries signs that record (rule 10). The entry is
+/// stored again with the key alone, the first device's entry, so the
+/// `M(p,d)` an earlier membership's `DeviceKey` bound (signed for the old
+/// member record, which rule 1 no longer accepts) never names our op
+/// record or its owner again.
 ///
 /// # Errors
 /// [`GovernanceRuntimeError::DeviceOpKeyMissing`] for a later op with no
@@ -40,6 +50,9 @@ pub fn device_op_key<D: GovernanceRuntimeDeps + ?Sized>(
     first_op: bool,
 ) -> Result<SigningKey, GovernanceRuntimeError> {
     if let Some(key) = held_key(deps.device_op_key(community)?, community, first_op)? {
+        if first_op {
+            deps.store_device_op_key(community, &zeroize::Zeroizing::new(key.to_bytes()))?;
+        }
         return Ok(key);
     }
     let mut secret = zeroize::Zeroizing::new([0u8; 32]);
