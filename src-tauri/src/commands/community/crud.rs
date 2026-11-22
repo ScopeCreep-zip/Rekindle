@@ -203,6 +203,27 @@ pub async fn leave_community(
     host_call::call(&state, request).await
 }
 
+/// Enrol this device as a fresh device of our membership
+/// (`LifecycleRequest::CommunityDeviceEnrol`, ADR 0022 rule 1, lead decision
+/// 63): the re-enrol action a `NeedsReenrol` device status offers, reviewed
+/// as a trust-changing act.
+#[tauri::command]
+pub async fn community_device_enrol(
+    community_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, device_enrol_request(community_id)).await
+}
+
+/// The request `community_device_enrol` sends.
+fn device_enrol_request(community_id: String) -> IpcRequest {
+    IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityDeviceEnrol {
+            anchor: community_id,
+        },
+    ))
+}
+
 /// Edit the community's name, description, icon or banner; `None` keeps
 /// the merged value (`IpcRequest::Community(CommunityRequest::CommunityUpdateInfo)`).
 #[tauri::command]
@@ -224,4 +245,28 @@ pub async fn update_community_info(
         },
     ));
     host_call::call(&state, request).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell_commands::{HostCall, HOST_CALLS};
+
+    /// `community_device_enrol` sends `CommunityDeviceEnrol` for the
+    /// community it names, and the port ledger records that request.
+    #[test]
+    fn community_device_enrol_sends_the_enrol_request() {
+        let request = device_enrol_request("anchor-1".to_owned());
+        assert!(matches!(
+            &request,
+            IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityDeviceEnrol { anchor }
+            )) if anchor == "anchor-1"
+        ));
+        let ledger = HOST_CALLS
+            .iter()
+            .find(|(command, _)| *command == "community_device_enrol")
+            .map(|(_, call)| *call);
+        assert_eq!(ledger, Some(HostCall::Request(request.name())));
+    }
 }

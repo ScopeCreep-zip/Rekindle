@@ -28,6 +28,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "check_for_updates",
   "clear_identity_verification",
   "close_poll",
+  "community_device_enrol",
   "create_category",
   "create_channel",
   "create_community",

@@ -166,6 +166,7 @@ macro_rules! community_commands {
         commands::community::send_voice_message,
         commands::community::expand_community_segment,
         commands::community::leave_community,
+        commands::community::community_device_enrol,
         commands::community::delete_channel,
         commands::community::rename_channel,
         commands::community::update_community_info,

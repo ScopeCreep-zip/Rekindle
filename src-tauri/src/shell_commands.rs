@@ -201,6 +201,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         HostCall::Request("CreatorInviteAnswer"),
     ),
     ("leave_community", HostCall::Request("CommunityLeave")),
+    (
+        "community_device_enrol",
+        HostCall::Request("CommunityDeviceEnrol"),
+    ),
     ("join_community", HostCall::Request("CommunityJoin")),
     ("get_co_creation", HostCall::Request("CoCreationSnapshot")),
     ("get_communities", HostCall::Request("CommunityList")),
