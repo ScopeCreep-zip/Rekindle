@@ -387,3 +387,37 @@ fn a_continuing_friendship_keeps_its_rows() {
         assert_eq!(left(&conn), (1, 1));
     }
 }
+
+/// Plan HOL1 (decision 47) regression: a removal cuts every unsettled row
+/// to the peer (a first contact, a presence key waiting for it, a DM)
+/// except the `Unfriended` row it queues, which is then all that is due.
+#[test]
+fn a_removal_cuts_every_unsettled_row_to_the_peer_but_its_own() {
+    use crate::repo::outbox::{due, enqueue_with_echo, NewRow};
+    let conn = conn();
+    accepted(&conn).unwrap();
+    let new = |stream: &'static str, id: &'static str, on: Option<&'static str>| NewRow {
+        owner_key: OWNER,
+        stream,
+        client_id: id,
+        kind: "friend_handshake",
+        payload: b"frame",
+        next_at: 0,
+        deadline: 1_000,
+        depends_on: on,
+    };
+    let fh = "friend_handshake:bb";
+    for row in [
+        new(fh, "FriendAccept:1", None),
+        new(fh, "FriendsKey:1", Some("FriendAccept:1")),
+        new(fh, "GroupDmInvite:1", None),
+        new("dm:bb", "m", None),
+    ] {
+        enqueue_with_echo(&conn, &row, None).unwrap();
+    }
+    mark_removing(&conn, OWNER, BOB, &new(fh, "unfriended:bb", None)).unwrap();
+    let ids: Vec<String> = (due(&conn, OWNER, i64::MAX).unwrap().into_iter())
+        .map(|r| r.client_id)
+        .collect();
+    assert_eq!(ids, ["unfriended:bb"]);
+}
