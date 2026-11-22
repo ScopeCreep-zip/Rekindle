@@ -259,9 +259,9 @@ allow-git = [
     # Pinned git deps already in Cargo.toml. Keep this list in sync
     # with `[patch.crates-io]` and any `git = "..."` entries.
     "https://github.com/mcginty/snow",
-    # veilid-core 0.5.8 + the route select/release drain fix (branch
-    # rekindle/v0.5.8-route-drain, rev 91453e97), until a Veilid release
-    # carries it (ADR 0017, root Cargo.toml [patch.crates-io]).
+    # veilid-core 0.5.8 + the route drain and route pool fixes (branch
+    # rekindle/v0.5.8-route-pool, rev bc741633), until a Veilid release
+    # carries them (ADR 0017, root Cargo.toml [patch.crates-io]).
     "https://github.com/radicalkjax/veilid.git",
     # libdbus-sys at dbus-rs commit dd78d826 (HAVE_POLL in the vendored
     # build, upstream PR #523) until a release carries it (plan E7.13 W7,

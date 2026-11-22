@@ -20,6 +20,17 @@
   the allocate lock and inserts the route as an allocation would (the mock has no published peer info). The
   upstream-history twin is `bba17bfd` on `fix/route-select-holds-ref-v0.5.8` in `~/veilid`. The 0.5.7 branch and
   `0cd847de` below are history.
+- **Amended 2026-11-22** (lead decision 62): two more fix commits on top of `91453e97`, branch
+  `rekindle/v0.5.8-route-pool`, pin `bc7416334ee0b94fe30ac9fec14dee98493aea4a`. `e1158844` "Keep API-allocated
+  private routes out of the safety route pool": `route_select` takes only automatic routes, so a route the API
+  allocated (Rekindle's own inbound private route) is never chosen as someone's safety route.
+  `bc741633` "Keep testing API-allocated routes after a peer info change": `private_route_management` still
+  tests manual routes after our peer info changes, so a dead published route is found. Tests in
+  `veilid-core/src/routing_table/route_spec_store/tests_route_spec_store/test_route_pool.rs`:
+  `test_manual_route_is_not_a_pool_route`, `test_published_manual_route_stays_out_after_peer_info_change`,
+  `test_preferred_manual_route_is_selected`, `test_automatic_route_is_selected_beside_manual`,
+  `test_manual_route_is_tested_after_peer_info_change`. Upstream contact (MR, push to any Veilid remote) is held
+  per Policy 1. `SCHEMA_VERSION` 152 → 153 in the same change (Consequences).
 
 ## Context and problem statement
 
@@ -36,12 +47,13 @@ at the source, to be contributed back.
 **Build veilid-core from a private fork, pinned by commit:**
 
 - `Cargo.toml` `[patch.crates-io]` → `veilid-core = { git = "https://github.com/radicalkjax/veilid.git",
-  rev = "91453e97e8ef467aa7c7c3b5e871a7ed5738f941" }` (since the 2026-11-14 amendment; originally
-  `0cd847debfaee427eeceeb5046ad48cd85540d63`).
+  rev = "bc7416334ee0b94fe30ac9fec14dee98493aea4a" }` (since the 2026-11-22 amendment; `91453e97…` from the
+  2026-11-14 amendment; originally `0cd847debfaee427eeceeb5046ad48cd85540d63`).
 - Branch `rekindle/v0.5.8-route-drain` = commit `dcf0b315` "Veilid v0.5.8 source snapshot" (the upstream
   v0.5.8 tree, `759da70b`, identical tree hash; history is not carried because upstream history holds a 266 MB
   file GitHub refuses) plus **one** fix commit, `91453e97` "Hold a selected route until it is used; a release
-  drains a held route". Before the amendment: branch `rekindle/v0.5.7-route-drain` = `1cabfbe1` (the v0.5.7
+  drains a held route" (since 2026-11-22 branch `rekindle/v0.5.8-route-pool` adds `e1158844` and `bc741633`,
+  see the amendment above). Before the 2026-11-14 amendment: branch `rekindle/v0.5.7-route-drain` = `1cabfbe1` (the v0.5.7
   tree, `f5cdcca3`) plus `0cd847de`.
 - The same change on upstream history is `c9e29651` on branch `fix/route-select-holds-ref` in `~/veilid`
   (remote `origin` = `gitlab.com/veilid/veilid`), ready for the upstream merge request.
@@ -78,7 +90,7 @@ returns an `Arc`), i2pd `eTunnelStateExpiring`.
 - Every machine that builds Rekindle needs GitHub credentials for the private fork; the Linux (Pop!_OS) build
   fetches through the git CLI.
 - Rekindle no longer builds against stock veilid-core 0.5.8. Text that says "matches veilid-core 0.5.8" means
-  0.5.8 plus this fork commit; older text that says 0.5.7 is history from before the 2026-11-14 rebase.
+  0.5.8 plus these fork commits; older text that says 0.5.7 is history from before the 2026-11-14 rebase.
 - **A pin bump can be one-way, so `SCHEMA_VERSION` bumps with every pin bump.** 0.5.8's table store migrates
   every row on first open (`veilid-core/src/table_store/mod.rs:639-646`, `table_store/migration/v1.rs`: rows
   re-encrypted LZ4-compressed, the routing table dropped). A 0.5.7 build cannot read the migrated rows, and its
@@ -91,6 +103,6 @@ returns an `Arc`), i2pd `eTunnelStateExpiring`.
 
 ## More information
 
-- [Veilid developer book](https://veilid.gitlab.io/developer-book), the fork at `91453e97` (worktree
-  `~/veilid-wt-058`; `~/veilid` at `0cd847de` for 0.5.7)
+- [Veilid developer book](https://veilid.gitlab.io/developer-book), the fork at `bc741633` (worktree
+  `~/veilid-wt-vf2`; `91453e97` in `~/veilid-wt-058`; `~/veilid` at `0cd847de` for 0.5.7)
 - `.claude/plans/standards-remediation/00-integration-plan.md` C7.21

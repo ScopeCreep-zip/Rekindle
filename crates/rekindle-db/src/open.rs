@@ -258,8 +258,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// (with `answered`); `governance_ops.{device_seq, device_key, signed_here}`, `governance_heads`
 /// keyed by device, `governance_devices`.
 /// 152 (plan E3.2 IV1b): `community_invites.url`, the link as minted.
-/// 153 (round 23: HOL1 + plan E7.15 IV1/IV2): `outbox.depends_on`, a row's named
-/// dependency; `activity_log` and `activity_seen`; `app_settings.keep_activity_log`.
+/// 153 (round 23: HOL1 + plan E7.15 IV1/IV2 + ADR 0017 2026-11-22): `outbox.depends_on`, a
+/// row's named dependency; `activity_log` and `activity_seen`; `app_settings.keep_activity_log`;
+/// and the veilid-core pin moves to fork rev `bc741633`, so the DB, vault and Veilid storage
+/// reset together.
 pub const SCHEMA_VERSION: i64 = 153;
 
 /// Opening the database failed.
