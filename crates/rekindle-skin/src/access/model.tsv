@@ -36,7 +36,7 @@
 .activity-feed-mismatch	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
 .activity-feed-text	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .activity-feed-time	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
-.activity-feed-title	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.activity-feed-title	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .add-friend-cancel-btn	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-panel	1.0	false
 .add-friend-cancel-btn	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false
 .add-friend-copy-btn	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false

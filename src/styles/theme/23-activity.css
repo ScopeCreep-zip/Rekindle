@@ -10,12 +10,7 @@
     font-family: var(--font-family-xfire);
   }
 
-  .activity-feed-title {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--color-xfire-text);
-  }
-
+  .activity-feed-title,
   .activity-feed-empty {
     font-size: 11px;
     color: var(--color-xfire-text-dim);
@@ -93,26 +88,11 @@
     overflow-wrap: anywhere;
   }
 
-  .infoview-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
   .infoview-row {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: 6px;
-  }
-
-  .infoview-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
   }
 
   .infoview-link {
