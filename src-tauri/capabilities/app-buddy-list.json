@@ -8,6 +8,7 @@
   "permissions": [
     "core:window:allow-start-resize-dragging",
     "allow-get-infoview",
+    "allow-activity-list",
     "allow-open-external-url",
     "allow-quit-app",
     "allow-accept-request",

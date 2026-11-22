@@ -100,6 +100,11 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("quick_wipe_arm", HostCall::Request("QuickWipeArm")),
     ("quick_wipe_disarm", HostCall::Request("QuickWipeDisarm")),
     ("get_hidden_games", HostCall::Request("HiddenGamesGet")),
+    ("activity_list", HostCall::Request("ActivityList")),
+    (
+        "set_keep_activity_log",
+        HostCall::Request("SetKeepActivityLog"),
+    ),
     ("hide_game", HostCall::Request("GameHide")),
     ("unhide_game", HostCall::Request("GameUnhide")),
     ("launch_game", HostCall::Request("GameLaunch")),

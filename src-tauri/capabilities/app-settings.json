@@ -70,6 +70,7 @@
     "allow-remove-favourite-server",
     "allow-unhide-game",
     "allow-set-share-current-game",
+    "allow-set-keep-activity-log",
     "allow-set-game-detection"
   ]
 }

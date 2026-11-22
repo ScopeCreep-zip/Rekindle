@@ -49,6 +49,8 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_game_detection", Some(IntentKind::SetPreferences)),
     ("set_share_current_game", Some(IntentKind::ShareCurrentGame)),
     ("get_hidden_games", None),
+    ("activity_list", None),
+    ("set_keep_activity_log", Some(IntentKind::SetPreferences)),
     ("hide_game", Some(IntentKind::SetPreferences)),
     ("unhide_game", Some(IntentKind::ShareCurrentGame)),
     ("get_game_name", None),

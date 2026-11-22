@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod auth;
 pub mod calls;
 pub mod chat;

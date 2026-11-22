@@ -107,6 +107,11 @@
 '.buddy-last-seen' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-handshake-error' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-identity-mismatch' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.activity-feed-title' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-empty' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-text' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-time' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-mismatch' = { on = ["--color-xfire-bg-panel"] }
 '.buddy-handshake-retrying' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-group-pending .buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-group-pending .buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
