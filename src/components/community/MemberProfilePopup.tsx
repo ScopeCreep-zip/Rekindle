@@ -10,6 +10,7 @@ import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
+import { handleLaunchGame } from "../../actions/game.actions";
 import {
   handleSelfAssignRole,
   handleSelfUnassignRole,
@@ -63,11 +64,7 @@ function formatLastSeen(secs: number): string {
 /** Join a member's game server through the Host's review; a refusal is shown. */
 async function joinMemberGame(info: GameInfo): Promise<void> {
   if (!info.joinable || info.gameId === null || info.serverAddress === null) return;
-  try {
-    await commands.launchGame(info.gameId, info.serverAddress, "friendPresence");
-  } catch (e) {
-    addToast(`Game not launched: ${String(e)}`, "error");
-  }
+  await handleLaunchGame(info.gameId, info.serverAddress, "friendPresence");
 }
 
 const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {

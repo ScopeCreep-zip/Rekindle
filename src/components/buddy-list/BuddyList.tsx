@@ -20,6 +20,7 @@ import {
 } from "../../actions/relay.actions";
 import { handleStartDmCall } from "../../actions/calls.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
+import { handleLaunchGame } from "../../actions/game.actions";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";
 import ScrollArea from "../common/ScrollArea";
@@ -54,11 +55,7 @@ function notJoinableText(friend: Friend): string {
 async function joinFriendGame(friend: Friend): Promise<void> {
   const game = friend.gameInfo;
   if (!game?.joinable || game.gameId === null || game.serverAddress === null) return;
-  try {
-    await commands.launchGame(game.gameId, game.serverAddress, "friendPresence");
-  } catch (e) {
-    addToast(`Game not launched: ${String(e)}`, "error");
-  }
+  await handleLaunchGame(game.gameId, game.serverAddress, "friendPresence");
 }
 
 const BuddyList: Component = () => {
