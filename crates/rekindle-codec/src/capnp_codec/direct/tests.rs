@@ -144,6 +144,10 @@ fn samples() -> Vec<DirectBody> {
             group_id: [0x6D; 16],
             epoch: 3,
         }),
+        DirectBody::GroupDmRename(GroupDmRename {
+            group_id: [0x6D; 16],
+            name: s("raid night II"),
+        }),
         DirectBody::GroupContent(GroupContent {
             group_id: [0x6D; 16],
             epoch: 3,
