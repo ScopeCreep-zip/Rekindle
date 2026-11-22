@@ -57,4 +57,77 @@
   .activity-feed-more {
     align-self: flex-start;
   }
+
+  /* The Infoview's sections (plan E7.15 IV6): the Host's order, each a
+   * title, its rows and the Host's links. */
+  .infoview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    overflow-y: auto;
+    font-family: var(--font-family-xfire);
+  }
+
+  .infoview-section {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .infoview-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-xfire-text);
+  }
+
+  .infoview-empty,
+  .infoview-meta {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .infoview-text {
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  .infoview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .infoview-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .infoview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .infoview-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    color: var(--color-xfire-link);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .infoview-link:focus-visible {
+    outline: 2px solid var(--color-xfire-focus-outline);
+    outline-offset: 1px;
+  }
 }

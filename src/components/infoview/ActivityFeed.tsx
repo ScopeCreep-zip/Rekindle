@@ -1,30 +1,55 @@
-import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import { commands } from "../../ipc/commands";
-import { subscribeActivity } from "../../ipc/channels";
+import type { InfoviewAction } from "../../ipc/commands/dto_infoview";
 import type { ActivityKind, ActivityListItem } from "../../ipc/commands/types";
 import { communityState } from "../../stores/community.store";
 import { formatDuration, formatRelativeTime } from "../../utils/formatting";
 import { identityPinMismatchText } from "../../utils/identity_pin";
 
-/** One page of the feed (the Host's bound is 1–100). */
+/** One older page (the Host's bound is 1–100). */
 const PAGE = 20;
 
 /**
  * The Infoview's Activity section (plan E7.15 IV6, design §2.3; Xfire's
- * "Activity Report"): the local feed the Host keeps, newest first, the
- * names as the Host holds them now. A page loads on mount, each
- * `ActivityAppended` adds its entries at the top, and View More pages
- * older rows (`ActivityList{before}`), in place: it is not a website.
- * The window decides nothing; it renders what the Host said.
+ * "Activity Report"): the newest entries as the Host's section holds them
+ * (replaced with each view it pushes), names as the Host holds them now.
+ * View More is the Host's `activityMore{before}`: older rows page in below,
+ * in place (`ActivityList`), not a website.
  */
-const ActivityFeed: Component = () => {
-  const [entries, setEntries] = createSignal<ActivityListItem[]>([]);
+const ActivityFeed: Component<{ entries: ActivityListItem[]; more: InfoviewAction | null }> = (props) => {
+  const [older, setOlder] = createSignal<ActivityListItem[]>([]);
+  // The cursor for the next older page: the section's first, then each page's.
+  const [next, setNext] = createSignal<number | null | undefined>(undefined);
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
-  // Whether the last page was full: the Host may hold older rows.
-  const [more, setMore] = createSignal(false);
-  const gameNames = new Map<number, ReturnType<typeof createSignal<string | null>>>();
 
+  const shown = createMemo(() => {
+    const seen = new Set<number>();
+    return [...props.entries, ...older()].filter((e) => !seen.has(e.id) && (seen.add(e.id), true));
+  });
+  const cursor = (): number | null => {
+    const n = next();
+    if (n !== undefined) return n;
+    return props.more?.type === "activityMore" ? props.more.before : null;
+  };
+
+  async function viewMore(): Promise<void> {
+    const before = cursor();
+    if (before === null) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await commands.activityList(before, PAGE);
+      setOlder((list) => [...list, ...page]);
+      setNext(page.length === PAGE ? page[page.length - 1].id : null);
+    } catch (e) {
+      setError(`Activity not read: ${String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const gameNames = new Map<number, ReturnType<typeof createSignal<string | null>>>();
   function gameName(id: number): string {
     let entry = gameNames.get(id);
     if (!entry) {
@@ -35,38 +60,6 @@ const ActivityFeed: Component = () => {
     }
     return entry[0]() ?? `Game ${id}`;
   }
-
-  function merge(incoming: ActivityListItem[], older: boolean): void {
-    setEntries((list) => {
-      const seen = new Set(list.map((e) => e.id));
-      const fresh = incoming.filter((e) => !seen.has(e.id));
-      const all = older ? [...list, ...fresh] : [...fresh, ...list];
-      return all.sort((a, b) => b.id - a.id);
-    });
-  }
-
-  async function load(older: boolean): Promise<void> {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = entries();
-      const before = older && list.length > 0 ? list[list.length - 1].id : null;
-      const page = await commands.activityList(before, PAGE);
-      merge(page, older);
-      setMore(page.length === PAGE);
-    } catch (e) {
-      setError(`Activity not read: ${String(e)}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  let unlisten: (() => void) | undefined;
-  onMount(() => {
-    void subscribeActivity((appended) => merge(appended, false)).then((u) => (unlisten = u));
-    void load(false);
-  });
-  onCleanup(() => unlisten?.());
 
   const who = (e: ActivityListItem): string => e.nickname ?? e.displayName ?? "A friend";
 
@@ -95,7 +88,7 @@ const ActivityFeed: Component = () => {
   }
 
   return (
-    <section class="activity-feed" aria-labelledby="activity-feed-title">
+    <section class="activity-feed infoview-section" aria-labelledby="activity-feed-title">
       <div class="activity-feed-title" id="activity-feed-title">
         Activity
       </div>
@@ -104,12 +97,9 @@ const ActivityFeed: Component = () => {
           {error()}
         </div>
       </Show>
-      <Show
-        when={entries().length > 0}
-        fallback={<div class="activity-feed-empty">{loading() ? "Loading…" : "No activity yet."}</div>}
-      >
+      <Show when={shown().length > 0} fallback={<div class="activity-feed-empty">No activity yet.</div>}>
         <ul class="activity-feed-list">
-          <For each={entries()}>
+          <For each={shown()}>
             {(e) => (
               <li class="activity-feed-item">
                 <span class="activity-feed-text">{text(e)}</span>
@@ -126,8 +116,8 @@ const ActivityFeed: Component = () => {
           </For>
         </ul>
       </Show>
-      <Show when={more()}>
-        <button type="button" class="form-btn-secondary activity-feed-more" disabled={loading()} onClick={() => void load(true)}>
+      <Show when={cursor() !== null}>
+        <button type="button" class="form-btn-secondary activity-feed-more" disabled={loading()} onClick={() => void viewMore()}>
           View More
         </button>
       </Show>
