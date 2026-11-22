@@ -3,6 +3,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import type { ShellOp } from "../commands/dto_skin_run";
 import { invoke } from "../invoke";
 import type { TransferEvent } from "../commands/dto_transfer";
+import type { ServersView } from "../commands/dto_servers";
 import type { ChatEvent, GroupDmEvent } from "./chat_events";
 import type {
   PresenceEvent,
@@ -273,6 +274,17 @@ export function subscribeSkinSignals(onSignals: (set: SkinSignalSet) => void): P
  * E7.2 G12): state changes, progress (at most 4 Hz), finished downloads
  * and removals, on the buddy list's `transfer-event` channel.
  */
+/**
+ * Subscribe to the Servers view the Host composed again
+ * (`SystemEvent::ServersViewChanged`, plan E7.2 G3), on `servers-event`:
+ * the buddy list and the skin-tree windows, at most once per 250 ms.
+ */
+export function subscribeServersView(onView: (view: ServersView) => void): Promise<UnlistenFn> {
+  return on<{ system: { serversViewChanged: { view: ServersView } } }>("servers-event", (payload) =>
+    onView(payload.system.serversViewChanged.view),
+  );
+}
+
 export function subscribeTransfers(onTransfer: (event: TransferEvent) => void): Promise<UnlistenFn> {
   return on<{ transfer: TransferEvent }>("transfer-event", (payload) => onTransfer(payload.transfer));
 }

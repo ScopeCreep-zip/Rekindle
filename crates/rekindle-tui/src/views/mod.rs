@@ -16,6 +16,7 @@ pub mod group_dm;
 pub mod identity_settings;
 pub mod installed_games;
 pub mod profile;
+pub mod servers;
 pub mod voice_session;
 
 use anyhow::Result;
@@ -98,6 +99,8 @@ pub enum ViewKind {
     Activity,
     /// The games we can launch (plan E7.15 IV3).
     InstalledGames,
+    /// Favourite, recent, friends' and communities' servers (plan E7.2 G3).
+    Servers,
 }
 
 /// Trait for all TUI views.
@@ -176,6 +179,7 @@ pub struct ViewRegistry {
     favourites: Option<favourites::FavouritesView>,
     activity: Option<activity::ActivityView>,
     installed_games: Option<installed_games::InstalledGamesView>,
+    servers: Option<servers::GameServersView>,
 }
 
 impl ViewRegistry {
@@ -196,6 +200,7 @@ impl ViewRegistry {
             favourites: None,
             activity: None,
             installed_games: None,
+            servers: None,
         }
     }
 
@@ -288,6 +293,11 @@ impl ViewRegistry {
                     self.installed_games = Some(installed_games::InstalledGamesView::new());
                 }
             }
+            ViewKind::Servers => {
+                if self.servers.is_none() {
+                    self.servers = Some(servers::GameServersView::new());
+                }
+            }
         }
         self.current = kind;
     }
@@ -349,6 +359,10 @@ impl ViewRegistry {
                 .installed_games
                 .as_mut()
                 .expect("installed_games view should exist after transition"),
+            ViewKind::Servers => self
+                .servers
+                .as_mut()
+                .expect("servers view should exist after transition"),
         }
     }
 }

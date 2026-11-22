@@ -220,3 +220,62 @@ async fn a_host_error_on_the_activity_list_is_a_toast() {
     assert!(toasts[0].0.starts_with("activity: "), "{toasts:?}");
     assert_eq!(toasts[0].1, ToastLevel::Error);
 }
+
+/// `ServersViewChanged` reaches the open Servers view through the stream
+/// handler and the reducer (plan E7.2 G3): the pushed view replaces the
+/// list, rows with their verdicts.
+#[tokio::test]
+async fn servers_view_changed_replaces_the_open_servers_view() {
+    use rekindle_types::dto::servers::{
+        Joinability, ServerCategory, ServerCategoryKind, ServerJoin, ServerRefusal, ServerRow,
+        ServerVerdict, ServersView,
+    };
+    use rekindle_types::game_server::JoinSource;
+    let (_dir, mut app) = app_on_test_bus().await;
+    app.reduce(Action::ShowServers).unwrap();
+    assert_eq!(app.breadcrumb(), "Servers");
+    let row = ServerRow {
+        game_id: Some(4181),
+        game_name: "Counter-Strike 2".into(),
+        icon_key: None,
+        address: "198.51.100.2:27015".into(),
+        label: "Scrims".into(),
+        source: JoinSource::Favourite,
+        friend: None,
+        last_seen: None,
+        join: ServerJoin {
+            game_id: Some(4181),
+            server: Some("198.51.100.2:27015".into()),
+            launch_source: JoinSource::Favourite,
+            joinability: Joinability::Joinable,
+        },
+        info: rekindle_types::dto::servers::ServerInfo::NotQueried,
+        add_favourite: ServerVerdict::refused(ServerRefusal::AlreadyFavourite),
+        remove: ServerVerdict::Allowed,
+    };
+    let view = ServersView {
+        categories: vec![ServerCategory {
+            kind: ServerCategoryKind::Favourites,
+            community: None,
+            rows: vec![row],
+        }],
+        refresh: ServerVerdict::Allowed,
+    };
+    let action = app.subscription_event_to_action(SubscriptionEvent::System(
+        rekindle_types::subscription_events::SystemEvent::ServersViewChanged { view },
+    ));
+    assert!(matches!(action, Some(Action::Render)));
+    while let Ok(queued) = app.action_rx.try_recv() {
+        if matches!(queued, Action::SubscriptionEvent(_)) {
+            app.reduce(queued).unwrap();
+        }
+    }
+    let text = screen(&mut app);
+    assert!(text.contains("Servers (1)"), "{text}");
+    assert!(text.contains("Favourites (1)"), "{text}");
+    assert!(text.contains("\"Scrims\""), "{text}");
+    assert!(
+        text.contains("[Add to favourites: already a favourite]"),
+        "{text}"
+    );
+}

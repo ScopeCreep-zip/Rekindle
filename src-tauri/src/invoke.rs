@@ -370,6 +370,9 @@ macro_rules! game_commands {
         commands::infoview::get_infoview,
         commands::game::add_favourite_server,
         commands::game::remove_favourite_server,
+        commands::game::servers_view,
+        commands::game::recent_server_remove,
+        commands::game::servers_refresh,
     ] $($rest)*) };
 }
 

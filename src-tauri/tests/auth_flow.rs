@@ -28,6 +28,7 @@ async fn test_env(dir: &std::path::Path) -> (DataRoot, SharedState) {
         clock: Arc::new(rekindle_utils::SystemClock),
         rng: Arc::new(rekindle_utils::OsRandom),
         idle: Arc::new(rekindle_idle::OsIdle),
+        server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
         shell: Some(rekindle_lib::ShellSession::new(Arc::clone(&state), None) as _),
     })
     .await

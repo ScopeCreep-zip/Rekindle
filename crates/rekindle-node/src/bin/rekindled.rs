@@ -60,6 +60,7 @@ async fn run() -> anyhow::Result<rekindle_node::daemon::shutdown::ExitReason> {
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
         idle: std::sync::Arc::new(rekindle_idle::OsIdle),
+        server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
         shell: None,
     })
     .await?;

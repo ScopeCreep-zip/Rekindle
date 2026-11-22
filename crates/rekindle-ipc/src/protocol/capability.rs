@@ -104,7 +104,6 @@ impl IpcRequest {
             | Self::GameTotalsGet
             | Self::HiddenGamesGet
             | Self::InstalledGamesGet
-            | Self::FavouriteServersGet
             | Self::ProfileBioGet
             | Self::AvatarGet { .. } => {
                 Some(C::IdentityRead)
@@ -146,6 +145,7 @@ impl IpcRequest {
             | Self::SessionResetDecline { .. } => Some(C::FriendsWrite),
             Self::Community(request) => request.agent_capability(),
             Self::Transfer(request) => request.agent_capability(),
+            Self::Servers(request) => request.agent_capability(),
             Self::DmInbox { .. }
             | Self::DmHistory { .. }
             | Self::GroupDmList
@@ -213,9 +213,6 @@ impl IpcRequest {
             | Self::SetKeepActivityLog { .. }
             | Self::GameHide { .. }
             | Self::GameUnhide { .. }
-            // And which servers we keep as favourites.
-            | Self::FavouriteServerAdd { .. }
-            | Self::FavouriteServerRemove { .. }
             | Self::ProfileSetAvatar { .. }
             // What the app looks like, and what shows before unlock, is
             // the user's own.

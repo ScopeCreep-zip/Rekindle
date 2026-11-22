@@ -1,7 +1,7 @@
 //! `GameLaunch`'s class follows its `JoinSource` (lead decision (50)).
 //! Only the selection and validation run: no game is ever launched here.
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 use rekindle_types::game_server::{JoinSource, ServerAddress};
 use rekindle_types::intent::{
     acknowledgement, effective_class, Fact, IntentClass, IntentKind, IrreversibleReason,
@@ -228,11 +228,11 @@ async fn our_own_launch_is_routine_and_a_claimed_favourite_is_checked() {
     assert!(matches!(refused, Err(IpcResponse::Error { code: 404, .. })));
     let (answer, _) = run(
         &host,
-        IpcRequest::FavouriteServerAdd {
+        IpcRequest::Servers(ServersRequest::FavouriteAdd {
             game_id: 4181,
             server: ServerAddress::parse("1.2.3.4:27015").unwrap(),
             label: String::new(),
-        },
+        }),
     )
     .await;
     assert!(matches!(answer, IpcResponse::Ok { .. }), "{answer:?}");

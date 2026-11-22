@@ -4,20 +4,21 @@
 //! hidden and current-game sharing is on), so no frontend decides it.
 
 use rekindle_db::repo::favourite_servers::{self, FavouriteServer};
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcResponse, ServersRequest};
 use rekindle_types::dto::presence::FavouriteServerView;
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
 
-/// Route one of the favourite-server requests (`own::route`'s arm).
-pub(super) async fn route(
+/// Route one of the favourite-server requests (`host::servers::route`'s
+/// arm).
+pub(crate) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: IpcRequest,
+    request: ServersRequest,
 ) -> IpcResponse {
-    let write = !matches!(request, IpcRequest::FavouriteServersGet);
+    let write = !matches!(request, ServersRequest::FavouritesGet);
     if write && !state.can_write() {
         return state_error(state, "write");
     }
@@ -32,7 +33,7 @@ pub(super) async fn route(
     // Published once the add is stored (the activity feed folds it, lead
     // decision (51)).
     let added = match &request {
-        IpcRequest::FavouriteServerAdd {
+        ServersRequest::FavouriteAdd {
             game_id,
             server,
             label,
@@ -43,10 +44,11 @@ pub(super) async fn route(
         }),
         _ => None,
     };
+    let removed = matches!(request, ServersRequest::FavouriteRemove { .. });
     let read = db
         .call(move |conn| {
             match request {
-                IpcRequest::FavouriteServerAdd {
+                ServersRequest::FavouriteAdd {
                     game_id,
                     server,
                     label,
@@ -60,7 +62,7 @@ pub(super) async fn route(
                         added_at,
                     },
                 )?,
-                IpcRequest::FavouriteServerRemove { game_id, server } => {
+                ServersRequest::FavouriteRemove { game_id, server } => {
                     favourite_servers::remove(conn, &owner, game_id, server.as_str())?;
                 }
                 _ => {}
@@ -81,6 +83,11 @@ pub(super) async fn route(
         Ok(views) => {
             if let Some(added) = added {
                 ctx.publish_event(SubscriptionEvent::System(added));
+            }
+            // The Servers view lists favourites (plan E7.2 G3): a removal
+            // names no journal event, so its worker is told directly.
+            if removed {
+                ctx.servers.mark_stale();
             }
             IpcResponse::ok(&views)
         }

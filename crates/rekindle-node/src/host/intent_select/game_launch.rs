@@ -38,6 +38,12 @@ pub(super) async fn selection(
         if !is_favourite(ctx, game_id, server).await? {
             return Err(IpcResponse::error(404, "not one of our favourite servers"));
         }
+    } else if source == JoinSource::Recent {
+        // Ours only while `recent_servers` holds it (plan E7.2 G3): a
+        // forgotten or never-visited address is not Routine.
+        if !is_recent(ctx, game_id, server).await? {
+            return Err(IpcResponse::error(404, "not a server we recently visited"));
+        }
     } else if source.peer_supplied() {
         s.kind = IntentKind::JoinGameServer;
         super::discloses_ip_address(
@@ -66,6 +72,23 @@ async fn is_favourite(
                 .any(|f| f.game_id == game_id && f.address == address)
         })
         .map_err(|e| IpcResponse::error(500, format!("favourite servers not read: {e}")))
+}
+
+async fn is_recent(
+    ctx: &DaemonContext,
+    game_id: u32,
+    server: &ServerAddress,
+) -> Result<bool, IpcResponse> {
+    let db = ctx.require_db()?;
+    let owner = ctx.require_owner()?;
+    let address = server.as_str().to_owned();
+    db.call(move |conn| rekindle_db::repo::recent_servers::list(conn, &owner))
+        .await
+        .map(|list| {
+            list.iter()
+                .any(|r| r.game_id == game_id && r.address == address)
+        })
+        .map_err(|e| IpcResponse::error(500, format!("recent servers not read: {e}")))
 }
 
 #[cfg(test)]

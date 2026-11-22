@@ -49,6 +49,7 @@ pub mod preferences;
 pub mod presence_keys;
 pub mod read_markers;
 pub mod received_dm;
+pub mod recent_servers;
 pub mod retry_requests;
 pub mod search;
 pub mod send_log;

@@ -950,6 +950,18 @@ CREATE TABLE IF NOT EXISTS favourite_servers (
     PRIMARY KEY (owner_key, game_id, address)
 );
 
+-- Servers we ourselves visited (plan E7.2 G3, SK2-G §3; `rekindle_db::repo::recent_servers`):
+-- written when our own presence shows a server or we launch to one. Local only, never sent;
+-- at most 50 rows (the oldest `last_seen` goes first); cleared when game detection is
+-- turned off.
+CREATE TABLE IF NOT EXISTS recent_servers (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    address TEXT NOT NULL,
+    last_seen INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, game_id, address)
+);
+
 -- File transfers (plan E7.2 G12, SK2-G design §4; `rekindle_db::repo::transfers`):
 -- the Downloads view. `target` is plan E5.1's AttachmentTarget as JSON (G12:
 -- the channel arm). `chunks_done`/`bytes_done` are the resume checkpoint: the

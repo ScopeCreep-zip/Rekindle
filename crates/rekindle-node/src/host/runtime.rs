@@ -148,6 +148,9 @@ pub struct HostConfig {
     /// The user's input idle time the idle stage reads (plan E2.B):
     /// `rekindle_idle::OsIdle`, or the simulator's.
     pub idle: Arc<dyn rekindle_utils::IdleSource>,
+    /// How the Servers view's Refresh asks a game server (plan E7.2 G4):
+    /// `UdpServerQuery`, or a test's fake. Used only on `ServersRefresh`.
+    pub server_query: Arc<dyn rekindle_game_detect::server_query::ServerQuery>,
     /// The GUI's side of an unlock (`ShellHooks`); `None` for `rekindled`,
     /// the E2E server and the simulator.
     pub shell: Option<Arc<dyn super::shell_hooks::ShellHooks>>,
@@ -186,6 +189,7 @@ impl Host {
             clock,
             rng,
             idle,
+            server_query,
             shell,
         } = config;
         let root = claimed.root().clone();
@@ -299,6 +303,7 @@ impl Host {
             game: crate::host::game_stage::GameControl::default(),
             network_strength: strength,
             infoview: crate::host::infoview::OpenViews::default(),
+            servers: crate::host::servers::ServersState::new(server_query),
             skin: crate::host::skin::SkinState::default(),
             transfers: Arc::default(),
             mode,
@@ -388,6 +393,7 @@ impl Host {
         workers.spawn(crate::host::activity::run_worker(Arc::clone(&ctx)).in_current_span());
         // So does the Infoview's push (plan E7.15, IV4).
         workers.spawn(crate::host::infoview::run_worker(Arc::clone(&ctx)).in_current_span());
+        workers.spawn(crate::host::servers::run_worker(Arc::clone(&ctx)).in_current_span());
         workers.spawn(crate::host::skin::signals::run_worker(Arc::clone(&ctx)).in_current_span());
         workers.spawn(crate::daemon::shutdown::announce_when_requested(
             Arc::clone(&ctx),

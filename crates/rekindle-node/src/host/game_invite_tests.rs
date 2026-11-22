@@ -4,7 +4,7 @@
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, GameInvite};
 use rekindle_crypto::Identity;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 use rekindle_transport::operations::direct::{receive, replay_unprocessed};
 use rekindle_transport::operations::dm::handshake::client_prefix;
 use rekindle_transport::operations::friend::FriendHost as _;
@@ -79,7 +79,7 @@ fn removing(host: &Host, peer: [u8; 32]) {
 
 /// Whether `host`'s one favourite is offered for invites.
 async fn invitable(host: &Host) -> bool {
-    let (answer, _) = run(host, IpcRequest::FavouriteServersGet).await;
+    let (answer, _) = run(host, IpcRequest::Servers(ServersRequest::FavouritesGet)).await;
     let IpcResponse::Ok { data, .. } = answer else {
         panic!("{answer:?}");
     };
@@ -165,10 +165,12 @@ async fn favourites_say_which_an_invite_may_name() {
     let dir = tempfile::tempdir().unwrap();
     let (host, owner) = ann(&dir).await;
     let server = ServerAddress::parse("203.0.113.7:27015").unwrap();
-    let add = |label: String| IpcRequest::FavouriteServerAdd {
-        game_id: CS2,
-        server: server.clone(),
-        label,
+    let add = |label: String| {
+        IpcRequest::Servers(ServersRequest::FavouriteAdd {
+            game_id: CS2,
+            server: server.clone(),
+            label,
+        })
     };
     let (answer, _) = run(&host, add("x".repeat(65))).await;
     assert!(refused(&answer), "label over 64: {answer:?}");
@@ -185,10 +187,10 @@ async fn favourites_say_which_an_invite_may_name() {
     privacy(&host, owner, true, true).await;
     assert!(!invitable(&host).await, "a hidden game is never offered");
 
-    let remove = IpcRequest::FavouriteServerRemove {
+    let remove = IpcRequest::Servers(ServersRequest::FavouriteRemove {
         game_id: CS2,
         server,
-    };
+    });
     let (answer, _) = run(&host, remove).await;
     let IpcResponse::Ok { data, .. } = answer else {
         panic!("{answer:?}");

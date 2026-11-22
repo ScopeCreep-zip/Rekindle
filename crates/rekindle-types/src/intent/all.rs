@@ -179,6 +179,7 @@ impl IntentKind {
         Self::VolunteerRelay,
         Self::OpenExternalUrl,
         Self::JoinGameServer,
+        Self::RefreshServers,
         Self::UploadAttachment,
         Self::GeneratePairingQrSvg,
         Self::StartPairingSession,

@@ -61,6 +61,11 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("get_infoview", None),
     ("add_favourite_server", Some(IntentKind::SetPreferences)),
     ("remove_favourite_server", Some(IntentKind::SetPreferences)),
+    // The Servers view (plan E7.2 G3): read, and forgetting a server we
+    // visited, local like a favourite's removal.
+    ("servers_view", None),
+    ("recent_server_remove", Some(IntentKind::SetPreferences)),
+    ("servers_refresh", Some(IntentKind::RefreshServers)),
     ("volunteer_relay", Some(IntentKind::VolunteerRelay)),
     ("revoke_relay", Some(IntentKind::RevokeRelay)),
     ("list_received_relay_offers", None),

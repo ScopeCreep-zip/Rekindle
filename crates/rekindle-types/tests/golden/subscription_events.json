@@ -2010,6 +2010,24 @@
       }
     }
   },
+  "system.serversViewChanged": {
+    "system": {
+      "serversViewChanged": {
+        "view": {
+          "categories": [
+            {
+              "community": null,
+              "kind": "recent",
+              "rows": []
+            }
+          ],
+          "refresh": {
+            "allowed": true
+          }
+        }
+      }
+    }
+  },
   "system.skinApplyFailed": {
     "system": {
       "skinApplyFailed": {

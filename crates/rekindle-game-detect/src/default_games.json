@@ -1,9 +1,9 @@
 {
   "games": [
-    {"id": 4181, "name": "Counter-Strike 2", "process_names": ["cs2.exe", "cs2"], "icon": "cs2", "steam_app_id": 730, "connect_template": "steam://connect/{addr}"},
-    {"id": 4180, "name": "Counter-Strike: Global Offensive", "process_names": ["csgo.exe", "csgo"], "icon": "csgo", "steam_app_id": 730, "connect_template": "steam://connect/{addr}"},
+    {"id": 4181, "name": "Counter-Strike 2", "process_names": ["cs2.exe", "cs2"], "icon": "cs2", "steam_app_id": 730, "connect_template": "steam://connect/{addr}", "server_query": "a2s"},
+    {"id": 4180, "name": "Counter-Strike: Global Offensive", "process_names": ["csgo.exe", "csgo"], "icon": "csgo", "steam_app_id": 730, "connect_template": "steam://connect/{addr}", "server_query": "a2s"},
     {"id": 4102, "name": "Dota 2", "process_names": ["dota2.exe", "dota2"], "icon": "dota2", "steam_app_id": 570},
-    {"id": 4100, "name": "Team Fortress 2", "process_names": ["hl2.exe", "tf2_linux64"], "icon": "tf2", "steam_app_id": 440, "connect_template": "steam://connect/{addr}"},
+    {"id": 4100, "name": "Team Fortress 2", "process_names": ["hl2.exe", "tf2_linux64"], "icon": "tf2", "steam_app_id": 440, "connect_template": "steam://connect/{addr}", "server_query": "a2s"},
     {"id": 4200, "name": "League of Legends", "process_names": ["League of Legends.exe", "LeagueClient.exe", "leagueclient"], "icon": "lol"},
     {"id": 4201, "name": "VALORANT", "process_names": ["VALORANT-Win64-Shipping.exe", "valorant"], "icon": "valorant"},
     {"id": 4300, "name": "Minecraft", "process_names": ["javaw.exe", "minecraft-launcher", "Minecraft.exe"], "icon": "minecraft"},

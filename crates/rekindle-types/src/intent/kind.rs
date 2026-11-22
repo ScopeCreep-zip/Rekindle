@@ -241,6 +241,12 @@ pub enum IntentKind {
     /// Launch a game to a server whose address a peer chose (lead decision
     /// (50)): our IP address reaches that host.
     JoinGameServer,
+    /// Ask the Servers view's servers what they are running (plan E7.2 G4,
+    /// `ServersRefresh`): the user's own Refresh, as Xfire's. Our IP
+    /// address reaches every server asked, addresses friends and
+    /// communities supplied among them, so it is `JoinGameServer`'s case
+    /// (r9 §7.2: metadata leaving the app) and the review lists them.
+    RefreshServers,
     UploadAttachment,
     // TrustChanging: Starting device pairing
     GeneratePairingQrSvg,
@@ -509,6 +515,7 @@ impl IntentKind {
             | Self::VolunteerRelay
             | Self::OpenExternalUrl
             | Self::JoinGameServer
+            | Self::RefreshServers
             | Self::UploadAttachment
             | Self::GeneratePairingQrSvg
             | Self::StartPairingSession

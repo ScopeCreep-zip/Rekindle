@@ -15,6 +15,7 @@ pub(crate) mod audit_alert;
 #[cfg(test)]
 mod bio_tests;
 pub mod bus_key;
+mod coalesce;
 pub mod community;
 #[cfg(test)]
 mod creator_round_tests;
@@ -76,6 +77,9 @@ mod reinitiate_tests;
 mod rotation_tests;
 pub mod runtime;
 mod serve;
+pub(crate) mod servers;
+#[cfg(test)]
+mod servers_tests;
 pub mod session;
 pub mod shell_hooks;
 pub(crate) mod skin;

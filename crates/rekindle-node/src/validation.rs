@@ -14,7 +14,7 @@ use rekindle_types::key_format::{
 };
 
 use rekindle_ipc::noise_keys::validate_agent_name;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 
 /// Largest identity archive (base64) an import takes: the bus's whole
 /// application frame (`framing::MAX_APP_FRAME`, 16 MiB).
@@ -299,7 +299,7 @@ fn own(request: &IpcRequest) -> Checked {
         }
         // Game id 0 is "no database entry", never a game to hide or keep a
         // favourite server for.
-        IpcRequest::FavouriteServerAdd { game_id, label, .. } => {
+        IpcRequest::Servers(ServersRequest::FavouriteAdd { game_id, label, .. }) => {
             if *game_id == 0 {
                 return Err(IpcResponse::error(400, "invalid game id: 0"));
             }
@@ -312,7 +312,10 @@ fn own(request: &IpcRequest) -> Checked {
         }
         IpcRequest::GameHide { game_id }
         | IpcRequest::GameUnhide { game_id }
-        | IpcRequest::FavouriteServerRemove { game_id, .. } => {
+        | IpcRequest::Servers(
+            ServersRequest::FavouriteRemove { game_id, .. }
+            | ServersRequest::RecentRemove { game_id, .. },
+        ) => {
             if *game_id == 0 {
                 Err(IpcResponse::error(400, "invalid game id: 0"))
             } else {
@@ -379,7 +382,9 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GameTotalsGet
         | IpcRequest::HiddenGamesGet
         | IpcRequest::InstalledGamesGet
-        | IpcRequest::FavouriteServersGet
+        | IpcRequest::Servers(
+            ServersRequest::FavouritesGet | ServersRequest::View | ServersRequest::Refresh,
+        )
         | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
@@ -485,8 +490,11 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::InfoviewGet { .. }
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }
-        | IpcRequest::FavouriteServerAdd { .. }
-        | IpcRequest::FavouriteServerRemove { .. }
+        | IpcRequest::Servers(
+            ServersRequest::FavouriteAdd { .. }
+            | ServersRequest::FavouriteRemove { .. }
+            | ServersRequest::RecentRemove { .. },
+        )
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AuditExport { .. }
         | IpcRequest::LinkOpen { .. }

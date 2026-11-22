@@ -152,6 +152,7 @@ impl SubscriptionEvent {
                 | SystemEvent::ActivityAppended { .. }
                 | SystemEvent::Infoview(_)
                 | SystemEvent::FavouriteServerAdded { .. }
+                | SystemEvent::ServersViewChanged { .. }
                 | SystemEvent::SkinSignals { .. }
                 | SystemEvent::SkinShell { .. } => EventScope::Device,
             },

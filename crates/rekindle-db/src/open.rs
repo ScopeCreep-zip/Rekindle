@@ -267,7 +267,8 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// resume checkpoint.
 /// 155 (plan E3.4 S6): `community_members.custom_status`; the row's `display_name` and
 /// `custom_status` are the member's verified card, written only from `read_card`.
-pub const SCHEMA_VERSION: i64 = 155;
+/// 156 (plan E7.2 G3): `recent_servers`, the servers we visited, for the Servers view.
+pub const SCHEMA_VERSION: i64 = 156;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

@@ -4,7 +4,7 @@ use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
-use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest};
+use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest, ServersRequest};
 use rekindle_types::subscription_events::SubscriptionEvent;
 
 impl App {
@@ -196,6 +196,8 @@ impl App {
             Action::LoadActivity { before } => self.load_activity(before),
             action @ (Action::ShowFavourites
             | Action::ShowInstalledGames
+            | Action::ShowServers
+            | Action::RemoveRecentServer { .. }
             | Action::LaunchGame { .. }
             | Action::AddFavourite { .. }
             | Action::RemoveFavourite { .. }) => self.process_game_action(action),
@@ -339,6 +341,15 @@ impl App {
                     .navigate(ViewKind::InstalledGames, self.theme.use_unicode());
                 self.load_installed_games();
             }
+            Action::ShowServers => {
+                self.nav
+                    .navigate(ViewKind::Servers, self.theme.use_unicode());
+                self.load_servers_view();
+            }
+            Action::RemoveRecentServer { game_id, server } => self.spawn_servers(
+                IpcRequest::Servers(ServersRequest::RecentRemove { game_id, server }),
+                "remove recent server",
+            ),
             Action::LaunchGame {
                 game_id,
                 server,
@@ -349,15 +360,15 @@ impl App {
                 server,
                 label,
             } => self.spawn_favourites(
-                IpcRequest::FavouriteServerAdd {
+                IpcRequest::Servers(ServersRequest::FavouriteAdd {
                     game_id,
                     server,
                     label,
-                },
+                }),
                 "add favourite server",
             ),
             Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
-                IpcRequest::FavouriteServerRemove { game_id, server },
+                IpcRequest::Servers(ServersRequest::FavouriteRemove { game_id, server }),
                 "remove favourite server",
             ),
             _ => {}

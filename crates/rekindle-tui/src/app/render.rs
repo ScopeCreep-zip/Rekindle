@@ -178,6 +178,11 @@ impl App {
                     .navigate(ViewKind::Activity, self.theme.use_unicode());
                 self.load_activity(None);
             }
+            "servers" => {
+                self.nav
+                    .navigate(ViewKind::Servers, self.theme.use_unicode());
+                self.load_servers_view();
+            }
             _ => {}
         }
     }
@@ -206,6 +211,7 @@ impl App {
             ViewKind::Favourites => "Dashboard > Favourite servers".into(),
             ViewKind::Activity => "Activity".into(),
             ViewKind::InstalledGames => "Dashboard > Installed games".into(),
+            ViewKind::Servers => "Servers".into(),
             ViewKind::CommunityInfo { community } => {
                 format!("{} / Info", self.community_name(community))
             }
@@ -255,6 +261,11 @@ impl App {
                     label: "Activity".into(),
                     detail: "view".into(),
                     action: Action::ShowActivity,
+                });
+                items.push(SearchItem {
+                    label: "Servers".into(),
+                    detail: "view".into(),
+                    action: Action::ShowServers,
                 });
                 items.push(SearchItem {
                     label: "Favourite servers".into(),
@@ -314,6 +325,11 @@ impl App {
                     label: "Activity".into(),
                     detail: String::new(),
                     action: Action::ShowActivity,
+                },
+                SearchItem {
+                    label: "Servers".into(),
+                    detail: String::new(),
+                    action: Action::ShowServers,
                 },
             ],
         }

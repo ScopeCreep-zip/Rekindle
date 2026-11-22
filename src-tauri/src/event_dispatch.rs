@@ -155,11 +155,15 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(SystemEvent::SkinApplyFailed { window, .. }) => {
             Audience::labels([window.clone()]).with_kinds(&[WindowKind::Settings])
         }
-        // The Infoview shows the feed: the buddy list's and each chat
-        // window's (plan E7.15, design §2.1).
-        SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
-            buddy_list().with_kinds(&[WindowKind::Chat])
-        }
+        SubscriptionEvent::System(
+            // The Infoview shows the feed: the buddy list's and each chat
+            // window's (plan E7.15, design §2.1).
+            SystemEvent::ActivityAppended { .. }
+            // The Servers view (plan E7.2 G3): the buddy list's Servers tab
+            // (`EngineView::Servers`) and every chat window's skin tree, the
+            // windows the Infoview's feed reaches.
+            | SystemEvent::ServersViewChanged { .. },
+        ) => buddy_list().with_kinds(&[WindowKind::Chat]),
         // Each goes to the one window it names, by label (ADR 0013):
         // - a window's Infoview, asked with its own label (`commands::infoview`);
         // - a skin window's signals (plan SK2-A4 step 3, lead decision 48):
@@ -234,6 +238,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(SystemEvent::SkinApplyFailed { .. }) => "skin-apply-event",
         SubscriptionEvent::System(SystemEvent::QuickWipeChanged { .. }) => "quick-wipe-event",
         SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => "activity-event",
+        SubscriptionEvent::System(SystemEvent::ServersViewChanged { .. }) => "servers-event",
         SubscriptionEvent::System(SystemEvent::Infoview(_)) => "infoview-event",
         SubscriptionEvent::System(SystemEvent::SkinSignals { .. }) => "skin-signals-event",
         SubscriptionEvent::System(SystemEvent::SkinShell { .. }) => "skin-shell-event",

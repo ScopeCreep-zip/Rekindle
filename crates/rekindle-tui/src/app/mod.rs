@@ -22,6 +22,7 @@ mod group_dm_commands;
 mod profile_commands;
 mod reducer;
 mod render;
+mod servers_commands;
 mod skin;
 mod stream;
 
@@ -140,6 +141,11 @@ impl App {
             Tab {
                 label: "Activity".into(),
                 id: "activity".into(),
+                unread: 0,
+            },
+            Tab {
+                label: "Servers".into(),
+                id: "servers".into(),
                 unread: 0,
             },
         ];

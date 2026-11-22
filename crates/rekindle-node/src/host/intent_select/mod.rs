@@ -8,7 +8,7 @@
 //! E4.1/E5.1): none is a placeholder.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 use rekindle_types::intent::{
     Escalation, Fact, IntentKind, IrreversibleReason, Notifies, Recipient, Reversibility, Subject,
 };
@@ -151,6 +151,28 @@ pub(crate) async fn select(
             // Local only: setting it back reverses it (plan E7.2).
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
+        // Asking the listed servers changes nothing we hold, but each server
+        // asked learns our IP address, addresses friends and communities
+        // supplied among them (plan E7.2 G4, r9 §7.2): one fact per server,
+        // as `JoinGameServer`'s, recomputed at commit.
+        IpcRequest::Servers(ServersRequest::Refresh) => {
+            let servers = crate::host::servers::refresh::disclosed(ctx).await?;
+            s.subject = Subject::Named {
+                name: match servers.len() {
+                    1 => "1 server in the Servers view".into(),
+                    n => format!("{n} servers in the Servers view"),
+                },
+            };
+            s.reversibility = Reversibility::Never;
+            for to in servers {
+                discloses_ip_address(&mut s, to);
+            }
+        }
+        // A forgotten server comes back only by visiting it again (plan E7.2 G3).
+        IpcRequest::Servers(ServersRequest::RecentRemove { .. }) => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::Never;
+        }
         IpcRequest::SetKeepActivityLog { enabled } => {
             s.subject = unlocked_identity(ctx);
             // Local only. Turning it on is set back by turning it off;
@@ -192,8 +214,9 @@ pub(crate) async fn select(
         // (plan E7.2).
         IpcRequest::SkinSelect { .. }
         | IpcRequest::SkinKeep { .. }
-        | IpcRequest::FavouriteServerAdd { .. }
-        | IpcRequest::FavouriteServerRemove { .. } => {
+        | IpcRequest::Servers(
+            ServersRequest::FavouriteAdd { .. } | ServersRequest::FavouriteRemove { .. },
+        ) => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
@@ -256,7 +279,7 @@ pub(crate) async fn select(
         | IpcRequest::ActivityList { .. }
         | IpcRequest::InfoviewGet { .. }
         | IpcRequest::InstalledGamesGet
-        | IpcRequest::FavouriteServersGet
+        | IpcRequest::Servers(ServersRequest::FavouritesGet | ServersRequest::View)
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet
         | IpcRequest::FriendBioGet { .. }

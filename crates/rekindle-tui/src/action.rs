@@ -88,6 +88,14 @@ pub enum Action {
     },
     /// The games we can launch (`InstalledGamesGet`, plan E7.15 IV3).
     ShowInstalledGames,
+    /// The Servers view (`ServersView`, plan E7.2 G3).
+    ShowServers,
+    /// `RecentServerRemove`: forget a recently visited server (plan E7.2
+    /// G3); the view comes back.
+    RemoveRecentServer {
+        game_id: u32,
+        server: rekindle_types::game_server::ServerAddress,
+    },
     ShowCommunityInfo {
         community: String,
     },
@@ -348,5 +356,10 @@ pub enum CommandResult {
     /// The games we can launch (`InstalledGamesGet`, plan E7.15 IV3).
     InstalledGamesLoaded {
         games: Vec<rekindle_types::dto::presence::InstalledGameView>,
+    },
+    /// The Servers view as the Host composed it (`ServersView`, or the
+    /// answer to `RecentServerRemove`, plan E7.2 G3).
+    ServersViewLoaded {
+        view: rekindle_types::dto::servers::ServersView,
     },
 }

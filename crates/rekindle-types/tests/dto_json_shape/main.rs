@@ -7,6 +7,7 @@
 mod dm;
 #[path = "../common/json.rs"]
 mod json;
+mod servers;
 mod skin;
 
 use std::path::PathBuf;
@@ -261,6 +262,7 @@ fn samples() -> Map<String, Value> {
     onboarding_samples(&mut add);
     skin::samples(&mut add);
     dm::samples(&mut add);
+    servers::samples(&mut add, &pk('b'));
     out
 }
 

@@ -2,7 +2,7 @@
 //! yields the request today's handler sends, a selection-dependent one the
 //! Host's selection, and a feature gap `NotBuiltYet`.
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
 use rekindle_types::dto::skin_action::{
     EngineMenu, EngineView, PackUrl, SkinAction as A, SkinSettingsTab,
 };
@@ -390,7 +390,7 @@ fn add_server_and_delete_room_reach_their_requests() {
     };
     assert!(matches!(
         *r,
-        IpcRequest::FavouriteServerAdd { game_id: 4100, ref server, .. }
+        IpcRequest::Servers(ServersRequest::FavouriteAdd { game_id: 4100, ref server, .. })
             if server.as_str() == "10.0.0.1:27015"
     ));
     assert!(matches!(

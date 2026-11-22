@@ -105,6 +105,7 @@ impl IpcRequest {
 
             Self::Community(request) => request.class(),
             Self::Transfer(request) => request.class(),
+            Self::Servers(request) => request.class(),
 
             Self::DmSend { .. } => ("DmSend", Write, Authenticated),
             Self::DmTyping { .. } => ("DmTyping", Write, Authenticated),
@@ -155,9 +156,6 @@ impl IpcRequest {
             Self::InstalledGamesGet => ("InstalledGamesGet", Query, Authenticated),
             Self::GameLaunch { .. } => ("GameLaunch", Write, Authenticated),
             Self::GameInviteSend { .. } => ("GameInviteSend", Write, Authenticated),
-            Self::FavouriteServersGet => ("FavouriteServersGet", Query, Authenticated),
-            Self::FavouriteServerAdd { .. } => ("FavouriteServerAdd", Write, Authenticated),
-            Self::FavouriteServerRemove { .. } => ("FavouriteServerRemove", Write, Authenticated),
             Self::ProfileSetAvatar { .. } => ("ProfileSetAvatar", Write, Authenticated),
             Self::AvatarGet { .. } => ("AvatarGet", Query, Authenticated),
             Self::SkinList => ("SkinList", Query, Authenticated),

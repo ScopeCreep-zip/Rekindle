@@ -94,6 +94,14 @@ pub enum SystemEvent {
         server: String,
         label: String,
     },
+    /// The Servers view composed again (plan E7.2 G3, SK2-G §3): every
+    /// window showing it replaces its rows. At most one per 250 ms.
+    /// Triggered by: the Host's servers worker, folding a favourite or
+    /// recent change, a friend's presence, friendship or game invite, a
+    /// membership or a community's server list.
+    ServersViewChanged {
+        view: crate::dto::servers::ServersView,
+    },
     /// A window's Infoview composed again (plan E7.15, IV4; design §2.2),
     /// delivered to that window only (ADR 0013).
     /// Triggered by: the Host's Infoview worker, folding the journal events

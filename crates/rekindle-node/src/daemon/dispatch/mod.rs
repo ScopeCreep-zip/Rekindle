@@ -43,7 +43,7 @@ mod member_block;
 mod onboarding;
 mod own;
 mod own_activity;
-mod own_favourite_servers;
+pub(crate) mod own_favourite_servers;
 mod own_game;
 mod own_game_invite;
 mod own_game_launch;
@@ -121,6 +121,8 @@ pub struct DaemonContext {
     pub root: rekindle_db::paths::DataRoot,
     /// Each open window's Infoview subject (plan E7.15, IV4).
     pub(crate) infoview: crate::host::infoview::OpenViews,
+    /// The Servers view's held game invites (plan E7.2 G3).
+    pub(crate) servers: crate::host::servers::ServersState,
     /// The skin helper, trial, shown grounds and each skin window's
     /// selection and signals (`host::skin::SkinState`).
     pub(crate) skin: crate::host::skin::SkinState,

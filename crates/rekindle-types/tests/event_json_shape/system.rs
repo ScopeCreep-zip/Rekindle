@@ -16,6 +16,7 @@ pub const NAMES: &[&str] = &[
     "quickWipeChanged",
     "activityAppended",
     "favouriteServerAdded",
+    "serversViewChanged",
     "infoview",
     "skinSignals",
     "skinShell",
@@ -34,6 +35,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::QuickWipeChanged { .. } => "quickWipeChanged",
         SystemEvent::ActivityAppended { .. } => "activityAppended",
         SystemEvent::FavouriteServerAdded { .. } => "favouriteServerAdded",
+        SystemEvent::ServersViewChanged { .. } => "serversViewChanged",
         SystemEvent::Infoview(_) => "infoview",
         SystemEvent::SkinSignals { .. } => "skinSignals",
         SystemEvent::SkinShell { .. } => "skinShell",
@@ -186,6 +188,19 @@ fn sync() -> Vec<Sample> {
                 game_id: 4_100,
                 server: "203.0.113.7:27015".into(),
                 label: "Frag Night".into(),
+            },
+        ),
+        ev(
+            "serversViewChanged",
+            SystemEvent::ServersViewChanged {
+                view: rekindle_types::dto::servers::ServersView {
+                    categories: vec![rekindle_types::dto::servers::ServerCategory {
+                        kind: rekindle_types::dto::servers::ServerCategoryKind::Recent,
+                        community: None,
+                        rows: vec![],
+                    }],
+                    refresh: rekindle_types::dto::servers::ServerVerdict::Allowed,
+                },
             },
         ),
         ev(

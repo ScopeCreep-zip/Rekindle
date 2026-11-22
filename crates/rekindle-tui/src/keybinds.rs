@@ -304,6 +304,7 @@ fn map_action(action: &str) -> Option<Action> {
         "ShowDmInbox" => Some(Action::ShowDmInbox),
         "ShowGroupDms" => Some(Action::ShowGroupDms),
         "ShowActivity" => Some(Action::ShowActivity),
+        "ShowServers" => Some(Action::ShowServers),
         unknown => {
             tracing::warn!(action = unknown, "unknown keymap action — ignoring");
             None
