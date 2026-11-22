@@ -237,6 +237,10 @@ fn selection_samples(add: &mut impl FnMut(&str, Value)) {
         "skin.selection.transfer",
         to(SkinSelection::Transfer {
             attachment_id: "att-1".into(),
+            target: rekindle_types::dto::transfer::TransferTarget::Channel {
+                community: "VLD0:community".into(),
+                channel_id: "ch".into(),
+            },
         }),
     );
     add(

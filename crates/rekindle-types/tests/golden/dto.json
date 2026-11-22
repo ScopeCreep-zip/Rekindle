@@ -1110,7 +1110,12 @@
   },
   "skin.selection.transfer": {
     "arg": {
-      "attachmentId": "att-1"
+      "attachmentId": "att-1",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
     },
     "kind": "transfer"
   },
