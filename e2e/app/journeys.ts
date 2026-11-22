@@ -103,7 +103,7 @@ export async function acceptRequest(b: Browser, user: User, message: string): Pr
  * tree may still show the Communities view a community journey left it
  * on); otherwise the app's Friends tab.
  */
-async function friendsView(b: Browser): Promise<void> {
+export async function friendsView(b: Browser): Promise<void> {
   if (await underTree(b)) {
     if (!(await skinViewShown(b, "friends"))) await showSkinView(b, "friends");
   } else {
