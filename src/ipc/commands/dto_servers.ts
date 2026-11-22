@@ -5,7 +5,7 @@ import { hostInvoke } from "../invoke";
 import type { JoinSource, NotJoinableReason } from "./types";
 
 /** Why a row's Add to Favorites or Remove is refused (`ServerRefusal`). */
-export type ServerRefusal = "alreadyFavourite" | "noNumericGame" | "badAddress" | "notRemovable";
+export type ServerRefusal = "alreadyFavourite" | "noNumericGame" | "badAddress" | "notRemovable" | "refreshing";
 
 /** One of a row's actions, as the Host allows it (`ServerVerdict`). */
 /** A server as the last Refresh found it (`ServerInfo`, plan E7.2 G4): never queried, being
@@ -15,9 +15,6 @@ export type ServerInfo =
   | { kind: "querying" }
   | { kind: "answered"; name: string; map: string; players: number; maxPlayers: number; pingMs: number }
   | { kind: "unanswered"; reason: string };
-
-/** Whether Refresh may run (`Verdict`): allowed, or refused with the Host's reason. */
-export type RefreshVerdict = { allowed: true } | { refused: { reason: string } };
 
 /** The reason is present exactly when refused. */
 export type ServerVerdict = { allowed: true } | { allowed: false; reason: ServerRefusal };
@@ -63,7 +60,7 @@ export interface ServerCategory {
 export interface ServersView {
   categories: ServerCategory[];
   /** Whether Refresh may run now (refused while one is running, with the Host's reason). */
-  refresh: RefreshVerdict;
+  refresh: ServerVerdict;
 }
 
 export const serverCommands = {

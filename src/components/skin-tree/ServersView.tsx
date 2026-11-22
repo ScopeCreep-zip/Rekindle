@@ -21,6 +21,7 @@ const REFUSAL_TEXT: Record<ServerRefusal, string> = {
   noNumericGame: "its game is not known",
   badAddress: "not a valid server address",
   notRemovable: "can't be removed from this list",
+  refreshing: "Refreshing...",
 };
 
 function categoryTitle(c: ServerCategory): string {
@@ -45,7 +46,7 @@ function infoText(info: ServerInfo): string {
     case "querying":
       return "Querying...";
     case "answered":
-      return `${info.name} · ${info.map} · ${info.players}/${info.maxPlayers} players · ${info.pingMs} ms`;
+      return `${info.name} Â· ${info.map} Â· ${info.players}/${info.maxPlayers} players Â· ${info.pingMs} ms`;
     case "unanswered":
       return info.reason;
   }
@@ -130,13 +131,13 @@ const ServersView: Component = () => {
   const meta = (r: ServerRow): string =>
     [r.friend?.displayName, r.address, r.lastSeen !== null ? formatRelativeTime(r.lastSeen * 1000) : null]
       .filter((s): s is string => !!s)
-      .join(" Â· ");
+      .join(" ÃÂ· ");
 
   // Refresh queries every listed server once, only when the user asks (a
   // query shows our IP to the server); the Host says when it may run.
   const refreshRefused = (): string | null => {
     const v = view()?.refresh;
-    return !v ? "Servers not read yet" : "refused" in v ? v.refused.reason : null;
+    return v ? verdictText(v) : "Servers not read yet";
   };
   const refresh = (): void => {
     if (refreshRefused() === null) void run("Not refreshed", () => serverCommands.serversRefresh());
