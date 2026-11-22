@@ -205,6 +205,9 @@ pub struct TransportSnapshot {
     pub peer_count: usize,
     pub route_allocated: bool,
     pub route_age_secs: Option<u64>,
+    /// A route class is down because the new-route budget is spent (plan
+    /// RV1): "inbound route paused after repeated failures: possible attack".
+    pub route_paused: bool,
 }
 
 /// Complete daemon status — single response type for `IpcRequest::Status`.
@@ -233,6 +236,9 @@ pub struct StatusSnapshot {
     pub peer_count: usize,
     pub route_allocated: bool,
     pub route_age_secs: Option<u64>,
+    /// A route class is down because the new-route budget is spent (plan
+    /// RV1): "inbound route paused after repeated failures: possible attack".
+    pub route_paused: bool,
 
     // ── Subscription system ─────────────────────────────────
     pub gossip_meshes: usize,

@@ -126,11 +126,15 @@ impl App {
             NetworkEvent::AttachmentChanged { is_attached, .. } => {
                 self.node_was_connected = *is_attached;
             }
-            // Routed by the caller's other arms.
+            // Routed by the caller's other arms. Plan RV1: the pause shows
+            // from the status snapshot's `route_paused`; the death warning
+            // lands in the log (frontend track).
             NetworkEvent::LocalRoutesDied { .. }
             | NetworkEvent::RemoteRoutesDied { .. }
             | NetworkEvent::ValueChanged { .. }
-            | NetworkEvent::OwnRecordsChanged { .. } => {}
+            | NetworkEvent::OwnRecordsChanged { .. }
+            | NetworkEvent::RoutePaused { .. }
+            | NetworkEvent::RouteDeathsAboveBaseline { .. } => {}
         }
         Action::Render
     }

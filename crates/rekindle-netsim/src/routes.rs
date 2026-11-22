@@ -23,22 +23,12 @@
 //!   A send to a resolved route the owner released leaves and is lost.
 //! - **own route death** (Veilid 0.5.8 at `/Users/kali/veilid-wt-058`):
 //!   only evidence spanning the route kills it (`route_stats.rs:19-29`
-//!   `means_route_dead`): a run of failed loopback tests (3 on an Ordered
-//!   route, 5 on an Unordered one, [`crate::loopback`]), or questions lost
-//!   to [`LOST_DESTINATIONS_INVALIDATE`] distinct destinations
-//!   (`route_stats.rs:134-141`). A lost question counts on the call's
-//!   safety and reply routes (`rpc_processor/mod.rs:1567-1640`): for a
-//!   pinned call that is the pinned route, once (the reply route equal to
-//!   the safety route is not counted twice, `:1621-1624`); for
-//!   an unpinned call they are Veilid's automatic pool routes
-//!   (`route_select.rs:131-136` asks our 3-hop length, which no own route
-//!   of the default 1-hop length matches), so no own route is charged. A
-//!   loss on a safety route enqueues an out-of-band loopback test
-//!   (`rpc_processor/mod.rs:1586-1600`) whose pass clears the lost
-//!   destinations (`route_stats.rs:536-543`): on a route that works, only
-//!   losses inside one test's span ([`OUT_OF_BAND_TEST`]) add up. An answer
-//!   clears them too (`route_stats.rs:489-508`). A death is reported to
-//!   the owner as `dead_routes` (`route_stats.rs:716-756`).
+//!   `means_route_dead`): here a run of failed loopback tests (3 on an
+//!   Ordered route, 5 on an Unordered one, [`crate::loopback`]). Lost
+//!   questions count on a call's safety and reply routes
+//!   (`rpc_processor/mod.rs:1567-1640`), which are Veilid's pool routes for
+//!   every send (plan RV1), so no own route is charged. A death is reported
+//!   to the owner as `dead_routes` (`route_stats.rs:716-756`).
 //! - **first-hop send failure:** a send that fails at the safety route's
 //!   first hop answers `NoConnection` and records a send failure
 //!   (`rpc_processor/mod.rs:1433-1447`), which only asks for a recompile
@@ -117,17 +107,6 @@ pub(crate) const REMOTE_ROUTE_CACHE_SIZE: usize = 1024;
 /// `route_spec_store/mod.rs:44`).
 pub(crate) const REMOTE_ROUTE_EXPIRY: Duration = Duration::from_secs(300);
 
-/// Distinct lost-question destinations that kill an own route
-/// (Veilid 0.5.8 `route_spec_store/mod.rs:48`), each at full blame weight
-/// (`route_stats.rs:134-141`).
-pub(crate) const LOST_DESTINATIONS_INVALIDATE: usize = 5;
-
-/// How long after a loss on a working route its out-of-band loopback test
-/// passes and clears the lost destinations: the next management tick
-/// ([`crate::loopback::ROUTE_TEST_TICK`]) plus the loopback's round trip,
-/// two [`crate::latency::MESSAGE`] legs at their longest.
-pub(crate) const OUT_OF_BAND_TEST: Duration = Duration::from_millis(1_000 + 2 * 800);
-
 /// The one ordering a route carries (Veilid's `SequenceOrdering`): Ordered
 /// over TCP and WebSocket, Unordered over UDP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,18 +117,16 @@ pub enum RouteOrdering {
 
 impl RouteOrdering {
     /// The ordering our allocator asks for `class`, as
-    /// `rekindle-protocol` `own_routes.rs` (`media_private_spec`,
-    /// `sending_private_spec`) asks it: General is `new_private_route`,
+    /// `rekindle-protocol` `own_routes.rs` (`media_private_spec`) asks it: General is `new_private_route`,
     /// whose default spec is PreferOrdered (Veilid 0.5.8
     /// `veilid_api/types/safety.rs:16-17`,
-    /// `api.rs:763-765`); Sending is PreferOrdered (plan VU decision 2) and
-    /// Media PreferUnordered. A preference names the route's one ordering
+    /// `api.rs:763-765`); Media is PreferUnordered (plan VU decision 2). A preference names the route's one ordering
     /// (`safety.rs:24-29` `preferred_ordering`). The netsim cannot link that
     /// crate (ADR 0014), so this follows it by hand.
     #[must_use]
     pub fn of(class: RouteClass) -> Self {
         match class {
-            RouteClass::General | RouteClass::Sending => Self::Ordered,
+            RouteClass::General => Self::Ordered,
             RouteClass::Media => Self::Unordered,
         }
     }
@@ -295,7 +272,6 @@ pub(crate) fn class_tag(class: RouteClass) -> char {
     match class {
         RouteClass::General => 'g',
         RouteClass::Media => 'm',
-        RouteClass::Sending => 's',
     }
 }
 
@@ -384,10 +360,6 @@ impl RoutePort for FakeRoutes {
         self.own.replace(class);
     }
 
-    fn self_tested_own(&self, class: RouteClass, ok: bool) {
-        self.own.self_tested(class, ok);
-    }
-
     fn release_retired_own(&self, class: RouteClass) {
         self.own.release_retired(class);
     }
@@ -406,6 +378,31 @@ impl RoutePort for FakeRoutes {
 
     async fn shutdown_own(&self) {
         self.own.shutdown().await;
+    }
+
+    fn attach_budget(
+        &self,
+        state: rekindle_records::port::RouteBudgetState,
+        wall: rekindle_records::port::WallMs,
+        save: rekindle_records::port::SaveBudget,
+    ) {
+        self.own.attach_budget(state, wall, save);
+    }
+
+    fn detach_budget(&self) {
+        self.own.detach_budget();
+    }
+
+    fn spend_budget(&self) -> bool {
+        self.own.spend_external()
+    }
+
+    fn own_paused(&self) -> watch::Receiver<bool> {
+        self.own.paused()
+    }
+
+    fn own_deaths(&self, class: RouteClass) -> u32 {
+        self.own.deaths(class)
     }
 }
 
@@ -475,56 +472,6 @@ impl Network {
         true
     }
 
-    /// A question `node` asked of `destination` was lost: counted on the
-    /// `pinned` route when the call was pinned, on no own route otherwise
-    /// ([`routes`](crate::routes)). On a working route the losses older than
-    /// [`OUT_OF_BAND_TEST`] were cleared by the test the first of them
-    /// enqueued; on a broken one that test fails, run on the next tick
-    /// ([`crate::loopback`]). The fifth distinct destination kills the route,
-    /// reported to `node` as `dead_routes`.
-    pub(crate) fn lost_question(&self, node: usize, destination: &str, pinned: Option<&str>) {
-        let Some(id) = pinned else {
-            return;
-        };
-        let now = tokio::time::Instant::now();
-        let dead = {
-            let mut guard = self.inner.lock();
-            let inner = &mut *guard;
-            if inner.routes.get(id).is_none_or(|r| r.node != node) {
-                return;
-            }
-            let broken = inner.faults.loopback.contains_key(id);
-            Network::test_soon(inner, id);
-            let Some(slot) = inner.nodes.get_mut(node) else {
-                return;
-            };
-            let lost = slot.lost.entry(id.to_string()).or_default();
-            if !broken {
-                lost.retain(|_, at| now.duration_since(*at) < OUT_OF_BAND_TEST);
-            }
-            lost.insert(destination.to_string(), now);
-            let dead = lost.len() >= LOST_DESTINATIONS_INVALIDATE;
-            if dead {
-                slot.lost.remove(id);
-                inner.routes.remove(id);
-                inner.faults.loopback.remove(id);
-            }
-            dead
-        };
-        if dead {
-            self.send(
-                node,
-                node,
-                "RouteChange",
-                PortEvent::RouteChange {
-                    dead: vec![id.to_string()],
-                    dead_remote: Vec::new(),
-                },
-                false,
-            );
-        }
-    }
-
     /// Whether `node`'s send fails at its safety route's first hop
     /// ([`crate::Fault::RouteLinkFailure`]): the fault is spent and the
     /// send answers `NoConnection`; the route lives and is recompiled for
@@ -534,15 +481,11 @@ impl Network {
         self.inner.lock().faults.link_failure.remove(&node)
     }
 
-    /// An answer reached `node`: its own routes' lost destinations clear
-    /// (Veilid 0.5.8 `route_stats.rs:489-508`), and the pool reply route it came over
-    /// (an unpinned call's, `pool`) is known valid now.
-    pub(crate) fn answered(&self, node: usize, pool: bool) {
+    /// An answer reached `node`: the pool reply route it came over
+    /// is known valid now.
+    pub(crate) fn answered(&self, node: usize) {
         if let Some(slot) = self.inner.lock().nodes.get_mut(node) {
-            slot.lost.clear();
-            if pool {
-                slot.pool_reply_valid = Some(tokio::time::Instant::now());
-            }
+            slot.pool_reply_valid = Some(tokio::time::Instant::now());
         }
     }
 

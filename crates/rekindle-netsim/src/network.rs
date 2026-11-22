@@ -16,7 +16,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rekindle_record_pool::RecordPool;
-use rekindle_records::port::{PortEvent, RecordSchema, RecordValue, RouteClass};
+use rekindle_records::port::{PortEvent, RecordSchema, RecordValue};
 use tokio::sync::{mpsc, oneshot, Notify};
 
 use crate::busy::Busy;
@@ -174,11 +174,6 @@ pub(crate) struct NodeSlot {
     /// How many app calls the node made: an observation, never a
     /// behaviour.
     pub app_calls: u64,
-    /// Of those, the calls to our own route of each class (the liveness
-    /// self-tests, `call_own`): an observation, never a behaviour.
-    pub own_calls: HashMap<RouteClass, u64>,
-    /// Of those, the calls from outside (`OwnPath::Outside`, plan LF7).
-    pub outside_calls: HashMap<RouteClass, u64>,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// The attachment state last queued for the node ([`crate::attach`]).
@@ -201,9 +196,6 @@ pub(crate) struct NodeSlot {
     /// The generation of Veilid's own value-changed route for the node's
     /// watches: a route death starts a new one ([`crate::records::watches`]).
     pub route_epoch: u64,
-    /// Per own route: the destinations of questions lost on it, each with
-    /// when it was lost ([`crate::routes`]).
-    pub lost: HashMap<String, HashMap<String, tokio::time::Instant>>,
     /// The node's queued rehydrations, by record key (Veilid's
     /// `rehydration_requests`, [`crate::records`]' rehydration).
     pub rehydrations: BTreeSet<String>,
@@ -237,15 +229,12 @@ impl NodeSlot {
             app_sets: 0,
             app_resends: 0,
             app_calls: 0,
-            own_calls: HashMap::new(),
-            outside_calls: HashMap::new(),
             pools: Vec::new(),
             state: "detached",
             public_ready: false,
             pool_reply_valid: None,
             attach_next: tokio::time::Instant::now(),
             imported: HashMap::new(),
-            lost: HashMap::new(),
             setting: HashMap::new(),
             skew_ms: 0,
             route_epoch: 0,

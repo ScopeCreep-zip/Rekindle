@@ -172,7 +172,6 @@ mod tests {
         .await
         .unwrap();
         attached(&mut nodes[1]).await;
-        crate::tests::sending(&nodes[0]).await;
         let target = nodes[0].ports.routes.import(&blob).unwrap();
         let pool = nodes[0].ports.records.start_session().unwrap();
         let (lease, key, _) = pool

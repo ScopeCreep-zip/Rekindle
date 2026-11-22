@@ -110,9 +110,9 @@ pub(crate) async fn run(
     // 2. The session's one record pool, with what the last lock left unsent.
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {
-        // The route our 1:1 calls are pinned to, from unlock to lock (plan
-        // E4.3 RH2, built at RH1r); the teardown's `release_routes` ends it.
-        transport.want_sending_route();
+        // The identity's new-route budget (plan RV1) before anything
+        // publishes a route blob.
+        super::route_budget::attach(ctx, &scope, &installed.public_key).await;
         match transport.start_records() {
             Ok(pool) => {
                 // The channel posts' key deadline (plan E3.2 S7l); their
@@ -437,6 +437,7 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
         transport.end_records();
         // No route serves two identities (C7.9b): this unlock's go, and the
         // next login gets fresh ones at once.
+        super::route_budget::detach(transport.routes().as_ref());
         transport.release_routes();
         if reason != EndReason::Exit {
             transport.want_routes();

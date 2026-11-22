@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rekindle_records::port::{AppMessagePort, PeerTarget, PortError, RouteClass, RoutePort};
+use rekindle_records::port::{AppMessagePort, PeerTarget, PortError, RoutePort};
 use tracing::debug;
 
 use crate::config::TransportConfig;
@@ -39,14 +39,6 @@ fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> Tr
     }
 }
 
-/// The route a 1:1 `app_call`'s answer comes back over, for the trace: the
-/// call is pinned to our `Sending` route (`SafetySpec.preferred_route`), and
-/// Veilid names the preferred route as the question's reply private route
-/// (veilid-core 0.5.8 `rpc_processor/destination.rs:484-528`, `route_select.rs:148-180`).
-/// Unpinned, Veilid would pick an untested automatic pool route instead
-/// (`route_select.rs:182-188,265-269`), so a 1:1 call is never sent unpinned.
-const REPLY_ROUTE: &str = "our Sending route (pinned)";
-
 /// Report of a broadcast operation.
 #[derive(Debug, Default)]
 pub struct BroadcastReport {
@@ -69,15 +61,13 @@ impl Sender {
 
     /// Send an already-built 1:1 wire message (`operations::dm::wire`) to the
     /// peer whose route is `target`, over the safe route profile every 1:1
-    /// message takes (`RouteContextSpec::rc_safe`, plan E2.1), pinned to our
-    /// `Sending` route as every app message is ([`AppMessagePort::send`]):
-    /// an untested pool route would lose it silently (Veilid counts only
-    /// lost questions, 0.5.8 `route_stats.rs:144-147`).
+    /// message takes (`RouteContextSpec::rc_safe`, plan E2.1), over a
+    /// tested pool route Veilid picks ([`AppMessagePort::send`], plan RV1).
+    /// A statement lost on the way is not charged to the route; the
+    /// outbox's acks and retries and the DM chain recover it.
     ///
     /// # Errors
-    /// `OwnRouteUnavailable` while our `Sending` route is not live (there is
-    /// no pool route fallback); the send failed; an unusable route is
-    /// forgotten first.
+    /// The send failed; an unusable route is forgotten first.
     pub async fn send_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<()> {
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
         // The route id is scrubbed to a per-run tag at the log sink
@@ -91,26 +81,7 @@ impl Sender {
         self.messages
             .send(target, &profile, message)
             .await
-            .map_err(|e| own_route_or_failure(self.routes.as_ref(), target, e))
-    }
-}
-
-/// A pinned send's failure: `Routing` is our `Sending` route not live
-/// (`OwnRouteUnavailable`, the peer's route not in question); anything
-/// else as [`send_failure`].
-fn own_route_or_failure(
-    routes: &dyn RoutePort,
-    target: &PeerTarget,
-    e: PortError,
-) -> TransportError {
-    match e {
-        PortError::Routing(reason) => {
-            debug!(%reason, "not sent: no Sending route");
-            TransportError::OwnRouteUnavailable {
-                class: format!("{:?}", RouteClass::Sending),
-            }
-        }
-        e => send_failure(routes, target, e),
+            .map_err(|e| send_failure(self.routes.as_ref(), target, e))
     }
 }
 
@@ -180,27 +151,24 @@ impl AppCaller {
     }
 
     /// `app_call` an already-built 1:1 wire message (`operations::dm::wire`)
-    /// and await the reply, as [`Sender::send_direct`] sends one, pinned to
-    /// our `Sending` route, over which the answer comes back (plan E4.3 RH2,
-    /// built at RH1r).
+    /// and await the reply, as [`Sender::send_direct`] sends one: Veilid
+    /// picks the safety route from its pool and the reply route to match it
+    /// (0.5.8 `rpc_processor/destination.rs:487-520`; plan RV1).
     ///
     /// # Errors
-    /// `OwnRouteUnavailable` while our `Sending` route is not live (there is no
-    /// pool route fallback); the call failed or timed out; an unusable
-    /// route is forgotten first.
+    /// The call failed or timed out; an unusable route is forgotten first.
     pub async fn call_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<Vec<u8>> {
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
         debug!(
             route = target.as_str(),
             hops = profile.hop_count,
             len = message.len(),
-            reply_over = REPLY_ROUTE,
             "1:1 app_call sent"
         );
         self.messages
-            .call_pinned(target, &profile, RouteClass::Sending, message)
+            .call(target, &profile, message)
             .await
-            .map_err(|e| own_route_or_failure(self.routes.as_ref(), target, e))
+            .map_err(|e| send_failure(self.routes.as_ref(), target, e))
     }
 
     /// `app_call` a bare, unframed Cap'n Proto `CommunityEnvelope`.
@@ -257,13 +225,11 @@ impl AppCaller {
     /// `call_community_envelope` above.
     ///
     /// Takes the route blob rather than an imported `PeerTarget`; the
-    /// import happens here. Pinned to our `Sending` route as every app
-    /// message is ([`AppMessagePort::send`]); a statement names no reply
-    /// route, so the member learns nothing of it (threat model L2).
+    /// import happens here. Over a pool route Veilid picks
+    /// ([`AppMessagePort::send`]); a statement names no reply route.
     ///
     /// # Errors
-    /// `OwnRouteUnavailable` while our `Sending` route is not live; the
-    /// import or the send failed.
+    /// The import or the send failed.
     pub async fn send_unframed_to_route(&self, route_blob: &[u8], data: Vec<u8>) -> Result<()> {
         let target =
             self.routes
@@ -275,6 +241,6 @@ impl AppCaller {
         self.messages
             .send(&target, &self.config.safety.rpc, data)
             .await
-            .map_err(|e| own_route_or_failure(self.routes.as_ref(), &target, e))
+            .map_err(|e| send_failure(self.routes.as_ref(), &target, e))
     }
 }

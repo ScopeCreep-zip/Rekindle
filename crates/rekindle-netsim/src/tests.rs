@@ -26,13 +26,6 @@ pub(crate) async fn recv(node: &mut Node) -> PortEvent {
 }
 
 /// Take `node`'s attachment updates up to AttachedFull (after `start`).
-/// Want `node`'s `Sending` route, which every app message is pinned to
-/// (`AppMessagePort::send`), and wait until it is live.
-pub(crate) async fn sending(node: &Node) {
-    node.ports.routes.want_own_class(RouteClass::Sending);
-    node.ports.routes.available_own(RouteClass::Sending).await;
-}
-
 pub(crate) async fn attached(node: &mut Node) {
     while !matches!(recv(node).await, PortEvent::Attachment { state, .. } if state == "attached_full")
     {
@@ -233,7 +226,6 @@ fn the_seed_fixes_the_delivery_order() {
             for node in &nodes {
                 node.ports.routes.want_own();
                 targets.push(node.ports.routes.available_own(RouteClass::General).await);
-                sending(node).await;
             }
             sim.quiesce().await;
             for (from, sender) in nodes.iter().enumerate() {

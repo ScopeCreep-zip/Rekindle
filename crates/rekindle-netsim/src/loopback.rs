@@ -121,9 +121,6 @@ impl Network {
                 if run.failures >= threshold(route.ordering) {
                     inner.faults.loopback.remove(&id);
                     inner.routes.remove(&id);
-                    if let Some(slot) = inner.nodes.get_mut(route.node) {
-                        slot.lost.remove(&id);
-                    }
                     dead.push((route.node, id));
                 }
             }
@@ -169,9 +166,6 @@ impl Network {
             }
             inner.routes.remove(id);
             inner.faults.loopback.remove(id);
-            if let Some(slot) = inner.nodes.get_mut(node) {
-                slot.lost.remove(id);
-            }
         }
         self.send(
             node,
@@ -190,13 +184,6 @@ impl Network {
     pub(crate) fn silence_route(&self, node: usize, class: RouteClass) {
         self.break_route(node, class);
         self.inner.lock().faults.detector_offline.insert(node);
-    }
-
-    /// `node` drops its own import of route `id` (a loopback test's).
-    pub(crate) fn forget_import(&self, node: usize, id: &str) {
-        if let Some(slot) = self.inner.lock().nodes.get_mut(node) {
-            slot.imported.remove(id);
-        }
     }
 
     /// [`crate::Fault::UdpBlocked`]: `node`'s live Unordered routes break
@@ -249,15 +236,5 @@ impl Network {
     /// nothing sent over it or to it arrives.
     pub(crate) fn route_broken(&self, id: &str) -> bool {
         self.inner.lock().faults.loopback.contains_key(id)
-    }
-
-    /// A question lost on broken route `id` enqueues an out-of-band test
-    /// (Veilid 0.5.8 `rpc_processor/mod.rs:1586-1600`): it runs on the next tick.
-    pub(crate) fn test_soon(inner: &mut crate::network::Inner, id: &str) {
-        if let Some(run) = inner.faults.loopback.get_mut(id) {
-            run.next_test = run
-                .next_test
-                .min(tokio::time::Instant::now() + ROUTE_TEST_TICK);
-        }
     }
 }

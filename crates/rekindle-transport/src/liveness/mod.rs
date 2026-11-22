@@ -2,11 +2,14 @@
 //! production research batch 12): the rules of
 //! [`rekindle_route::liveness`], driven over the ports.
 //!
-//! - **Owner** ([`owner`]): a round-trip self-test of our own routes
-//!   (General, Media in use, Sending) through [`AppMessagePort::call_own`], Veilid's own loopback
-//!   (O1, O6); a silence trigger (O2); on death, a replacement, tested and
-//!   then republished under the DHT's next seq, the old route kept until
-//!   then (O3, O4); an immediate test on a reconnect (O5).
+//! - **Owner** ([`owner`]): our routes are tested by Veilid itself (a
+//!   loopback keepalive every 10 s on each allocated route, veilid-core
+//!   0.5.8 `private_route_management.rs:7`) and a death arrives as
+//!   `RouteChange.dead_routes`, which `OwnRoutes::on_dead` handles. A
+//!   General route dead only from outside is rotated on evidence (plan
+//!   RV1): inbound silence while a peer should be answering, or a peer's
+//!   `'L'` report; the replacement is republished under the DHT's next seq
+//!   and the old route released once that lands (O3, O4).
 //! - **Sender** ([`peer`]): a peer's route is suspected from missing acks,
 //!   re-read from their profile at a bounded rate and probed, and the peer
 //!   shown unreachable after six rounds (S1–S5).
@@ -14,132 +17,81 @@
 //!   with no usable route, a 5 s backoff after a failed one (CR2).
 //!
 //! The probe is `'L'` ‖ 16 random bytes (`rekindle_codec::ingress`
-//! `LIVENESS_TAG`). Our dispatch echoes only a nonce we issued; any other
-//! is answered with a NAK, which tells a prober only that its call arrived.
+//! `LIVENESS_TAG`). Our dispatch answers every probe with a NAK, which tells
+//! a prober only that its call arrived, and takes it as that peer's report.
 
 pub mod owner;
 pub mod peer;
 pub mod resolve;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
 use rekindle_codec::ingress::{LIVENESS_PROBE_LEN, LIVENESS_TAG};
-use rekindle_records::port::{AppMessagePort, RouteClass, RoutePort};
-use rekindle_route::liveness::{InboundLiveness, PeerLiveness, SELF_TEST_JITTER_MS};
-use rekindle_utils::{Clock, RandomSource};
-use tokio::sync::Notify;
+use rekindle_records::port::{RouteClass, RoutePort};
+use rekindle_route::liveness::{InboundLiveness, PeerLiveness};
+use rekindle_utils::RandomSource;
 use tokio::time::Instant;
 
-/// The classes we self-test: General always, Media while a call carries
-/// media over it, and Sending always (plan RT1: on Linux both Sending deaths
-/// in 21 app-hours came 200/331 s after allocation, never tested). Sending
-/// is a private route we allocated like the others, never published: the
-/// safety route our 1:1 calls and statements are pinned to and their
-/// answers' reply route. Veilid's own loopback test of an allocated route is
-/// the same call for any of them, the route as its own safety route
-/// (veilid-core 0.5.8 `ping_validator.rs:597-612`, accepted as a loopback
-/// at `route_compile.rs:420-434` whatever its hop count), and Veilid tests an
-/// unpublished route on its own once only while it has never passed
-/// (`private_route_management.rs:116-123`), dropping its failures while
-/// Offline (`ping_validator.rs:666-690`). One 17-byte probe per 40-53.3 s
-/// per class when healthy; after a failure, retests 10-20 s apart, three
-/// failures and the route is replaced.
-///
-/// General and Sending are tested each period whatever arrives over them
-/// (plan LF6, lead decision 39; [`InboundLiveness::ungated`]); Media keeps
-/// the idle gate, being tested only while a call uses it. A peer's suspect
-/// round probes our General route (S2), so a foreign probe that reaches us
-/// is that peer's report that our route failed it: it brings General's
-/// test forward ([`Liveness::route_reported`]).
-///
-/// General's every test runs from outside (plan LF9; `OwnPath::Outside`):
-/// our blob over our `Sending` route, entering by the blob's entry hop as a
-/// peer's call does. Veilid's loopback (the route as its own safety route,
-/// veilid-core 0.5.8 `route_compile.rs:420-434`) is turned around at the hop
-/// over the flow our own send just opened (`rpc_route.rs:329-365`) and keeps
-/// passing while no stranger reaches the route; Veilid never declares such a
-/// route dead (`route_stats.rs:19-29`), and a caller's lost question is
-/// charged to the caller's safety route, so only an outside round trip shows
-/// it. The replacement's pre-publish test is the same outside test.
-const TESTED: [RouteClass; 3] = [RouteClass::General, RouteClass::Media, RouteClass::Sending];
-
 /// The answer to an inbound call that may be a liveness probe.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProbeAnswer {
     /// Not a probe: dispatch it as any call.
     NotProbe,
-    /// Our own probe: echo it.
-    Echo(Vec<u8>),
-    /// Another's probe: NAK it.
+    /// A peer's probe, its report that our route failed it: NAK it.
     Refuse,
 }
 
-/// One inbound class's state.
-struct ClassState {
+/// Our General route's state.
+struct GeneralState {
     /// The live route's id these rules are for.
     id: Option<String>,
     rules: InboundLiveness,
-    /// When inbound last arrived over it (any frame).
-    heard: Option<Instant>,
 }
 
 /// Route liveness, shared by the dispatch loop, the senders and the owner
 /// task of one transport node.
 pub struct Liveness {
     rng: Arc<dyn RandomSource>,
-    /// The wall clock that shows a resume from a suspend (plan LF7).
-    clock: Arc<dyn Clock>,
     routes: Arc<dyn RoutePort>,
-    messages: Arc<dyn AppMessagePort>,
-    classes: Mutex<HashMap<RouteClass, ClassState>>,
-    /// Nonces of our self-tests in flight.
-    outstanding: Mutex<HashSet<[u8; 16]>>,
+    general: Mutex<Option<GeneralState>>,
     peers: Mutex<HashMap<String, PeerLiveness>>,
-    /// A reconnect or readiness change (O5).
-    network_changed: Notify,
-    /// Classes whose replacement must pass a self-test before it is
-    /// published (O3).
-    heal_pending: Mutex<HashSet<RouteClass>>,
-    /// Whether this node answers its own probes (it dispatches its own
-    /// events); an outbound-only node never self-tests.
-    self_tests: bool,
+    /// A rotation's replacement waits for its paced republish (O3).
+    rotated: AtomicBool,
+    /// Whether this node sees its inbound (it, or its host, dispatches its
+    /// events), so it can act on inbound evidence; an outbound-only node
+    /// with no dispatch never rotates.
+    sees_inbound: bool,
     /// One re-resolve of a peer's route in flight at a time (CR2).
     resolves: resolve::ResolveFlights,
 }
 
 impl Liveness {
-    /// Liveness over `routes` and `messages`, its jitter drawn from `rng`,
-    /// a resume read from `clock`.
+    /// Liveness over `routes`, its jitter drawn from `rng`.
     #[must_use]
     pub fn new(
         rng: Arc<dyn RandomSource>,
-        clock: Arc<dyn Clock>,
         routes: Arc<dyn RoutePort>,
-        messages: Arc<dyn AppMessagePort>,
-        self_tests: bool,
+        sees_inbound: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             rng,
-            clock,
             routes,
-            messages,
-            classes: Mutex::new(HashMap::new()),
-            outstanding: Mutex::new(HashSet::new()),
+            general: Mutex::new(None),
             peers: Mutex::new(HashMap::new()),
-            network_changed: Notify::new(),
-            heal_pending: Mutex::new(HashSet::new()),
-            self_tests,
+            rotated: AtomicBool::new(false),
+            sees_inbound,
             resolves: resolve::ResolveFlights::default(),
         })
     }
 
-    /// Whether this node self-tests its routes.
+    /// Whether this node acts on inbound evidence about its routes.
     #[must_use]
-    pub fn self_tests(&self) -> bool {
-        self.self_tests
+    pub fn sees_inbound(&self) -> bool {
+        self.sees_inbound
     }
 
     /// A jitter in `[0, bound_ms)` ms from the RNG port.
@@ -152,112 +104,97 @@ impl Liveness {
         let Some(route) = route else {
             return;
         };
-        let now = Instant::now();
-        let mut classes = self.classes.lock();
-        for state in classes.values_mut() {
+        if let Some(state) = self.general.lock().as_mut() {
             if state.id.as_deref() == Some(route) {
-                state.rules.heard(now);
-                state.heard = Some(now);
+                state.rules.heard(Instant::now());
             }
         }
     }
 
     /// What to answer an inbound call `raw` that may be a liveness probe:
-    /// our own nonce comes back as it went; any other probe is refused.
+    /// every probe is a peer's and is refused.
     #[must_use]
     pub fn answer_probe(&self, raw: &[u8]) -> ProbeAnswer {
-        if raw.len() != LIVENESS_PROBE_LEN || raw.first() != Some(&LIVENESS_TAG) {
-            return ProbeAnswer::NotProbe;
-        }
-        let mut nonce = [0u8; 16];
-        nonce.copy_from_slice(&raw[1..]);
-        if self.outstanding.lock().contains(&nonce) {
-            ProbeAnswer::Echo(raw.to_vec())
-        } else {
+        if raw.len() == LIVENESS_PROBE_LEN && raw.first() == Some(&LIVENESS_TAG) {
             ProbeAnswer::Refuse
+        } else {
+            ProbeAnswer::NotProbe
         }
     }
 
-    /// A fresh probe datagram, its nonce noted as ours until `forget`.
-    fn probe(&self) -> ([u8; 16], Vec<u8>) {
+    /// A fresh probe datagram for a peer's route.
+    fn probe(&self) -> Vec<u8> {
         let mut nonce = [0u8; 16];
         self.rng.fill(&mut nonce);
         let mut datagram = Vec::with_capacity(LIVENESS_PROBE_LEN);
         datagram.push(LIVENESS_TAG);
         datagram.extend_from_slice(&nonce);
-        (nonce, datagram)
+        datagram
     }
 
-    /// The network reconnected or became ready again (O5).
-    pub fn network_changed(&self) {
-        let now = Instant::now();
-        for state in self.classes.lock().values_mut() {
-            state.rules.network_changed(now);
+    /// A hint from friend `peer` arrived over our route (plan RV1, the
+    /// third evidence source): their chain is not ahead of it.
+    pub fn hinted(&self, peer: &str) {
+        if let Some(state) = self.general.lock().as_mut() {
+            state.rules.hinted(peer, Instant::now());
         }
-        self.network_changed.notify_one();
+    }
+
+    /// Friend `peer`'s DM chain showed a new entry (its watch fired): the
+    /// owner task rotates our General route if the hint it should have
+    /// carried does not arrive ([`rekindle_route::liveness::HINT_WINDOW`]).
+    pub fn chain_changed(&self, peer: &str) {
+        if let Some(state) = self.general.lock().as_mut() {
+            state.rules.chain_changed(peer, Instant::now());
+        }
     }
 
     /// A peer reported our route failed it: its suspect round's probe
-    /// reached us (S2). The General route's next self-test falls due at once
-    /// (at most once per `REPORT_TEST_GAP`); the test, not the report,
-    /// decides whether the route is dead. Returns whether a test was
-    /// brought forward.
+    /// reached us (S2), and the reporter is online. Our General route is
+    /// rotated unless it is younger than one re-fetch gap
+    /// ([`rekindle_route::liveness::REPORT_ROTATE_AGE`]: the report is about
+    /// the route it replaced). Returns whether it is rotated.
     pub fn route_reported(&self) -> bool {
-        let brought = self
-            .classes
-            .lock()
-            .get_mut(&RouteClass::General)
-            .is_some_and(|s| s.rules.reported(Instant::now()));
-        if brought {
-            tracing::info!("a peer's probe reported our route; self-testing it now from outside");
-            self.network_changed.notify_one();
+        let rotate = self.sees_inbound
+            && self
+                .general
+                .lock()
+                .as_ref()
+                .is_some_and(|s| s.id.is_some() && s.rules.reported(Instant::now()));
+        if rotate {
+            self.rotate("a peer reported it");
         }
-        brought
+        rotate
     }
 
-    /// Our process resumed from a suspend (plan LF7): every route is tested
-    /// at once and one failure is death (as O5), and General's test runs
-    /// from outside. Our loopback cannot see what a pause breaks for peers:
-    /// it re-primes the hop next to us right before it measures it, and the
-    /// entry hop turns it around before the blob's entry is ever resolved
-    /// (`OwnPath`). A failed test replaces and republishes the route.
-    pub fn resumed(&self) {
-        tracing::info!("resumed from a suspend; testing our routes from outside");
-        self.network_changed();
+    /// Rotate our General route on evidence that it is dead from outside
+    /// (plan RV1): `OwnRoutes::replace` allocates a new one (Veilid tests
+    /// it at allocation, 0.5.8 `veilid_api/api.rs:831`) and keeps the old
+    /// one until the publisher's write of the new blob lands (O4).
+    fn rotate(&self, why: &str) {
+        tracing::warn!(why, "rotating our General route on evidence");
+        self.rotated.store(true, Ordering::SeqCst);
+        self.routes.replace_own_class(RouteClass::General);
     }
 
-    /// The wall clock now, ms.
-    fn wall_ms(&self) -> u64 {
-        self.clock.now_ms()
-    }
-
-    /// Whether any peer should be answering us now (O2): a send to them
-    /// awaits its answer.
+    /// Whether any peer should be answering us now (O2): a send to an
+    /// online peer awaits its answer.
     fn expecting(&self) -> bool {
         self.peers.lock().values().any(PeerLiveness::awaiting)
     }
 
-    /// Follow our live route of `class`: a new one starts its rules over.
+    /// Follow our live General route: a new one starts its rules over.
     /// Returns whether it is live.
-    pub(crate) fn track(&self, class: RouteClass, now: Instant) -> bool {
-        let id = self.routes.own_id(class);
-        let mut classes = self.classes.lock();
-        let state = classes.entry(class).or_insert_with(|| ClassState {
+    pub(crate) fn track(&self, now: Instant) -> bool {
+        let id = self.routes.own_id(RouteClass::General);
+        let mut general = self.general.lock();
+        let state = general.get_or_insert_with(|| GeneralState {
             id: None,
-            rules: if class == RouteClass::Media {
-                InboundLiveness::new(now, Duration::ZERO)
-            } else {
-                InboundLiveness::ungated(now, Duration::ZERO)
-            },
-            heard: None,
+            rules: InboundLiveness::new(now),
         });
         if state.id != id {
-            // The jitter is drawn only when a route comes or goes.
-            state
-                .rules
-                .route_replaced(now, self.jitter(SELF_TEST_JITTER_MS));
+            state.rules.route_replaced(now);
             state.id.clone_from(&id);
-            state.heard = None;
         }
         id.is_some()
     }

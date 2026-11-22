@@ -262,7 +262,8 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// row's named dependency; `activity_log` and `activity_seen`; `app_settings.keep_activity_log`;
 /// and the veilid-core pin moves to fork rev `bc741633`, so the DB, vault and Veilid storage
 /// reset together.
-pub const SCHEMA_VERSION: i64 = 153;
+/// 154 (plan RV1): `route_budget`, the identity's persisted new-route budget.
+pub const SCHEMA_VERSION: i64 = 154;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

@@ -361,6 +361,9 @@ pub(crate) async fn on_stream_record(
 /// An `app_message` from `peer` arrived: diff their chain in the
 /// background.
 pub fn on_hint(host: &dyn FriendHost, peer: &str) {
+    if let Ok(node) = host.node() {
+        node.liveness().hinted(peer);
+    }
     spawn_diff(host, peer);
 }
 
@@ -368,7 +371,14 @@ pub fn on_hint(host: &dyn FriendHost, peer: &str) {
 /// when it is the record we hold for them.
 pub async fn on_watch_change(host: &dyn FriendHost, peer: &str, record: &str) {
     match peer_record(host, Some(peer)).await.as_deref() {
-        Ok([(_, held)]) if held == record => diff(host, peer).await,
+        Ok([(_, held)]) if held == record => {
+            // A new entry: evidence against our route if its hint never
+            // arrives (plan RV1).
+            if let Ok(node) = host.node() {
+                node.liveness().chain_changed(peer);
+            }
+            diff(host, peer).await;
+        }
         _ => tracing::debug!(peer = %peer, "change on a record we do not read"),
     }
 }

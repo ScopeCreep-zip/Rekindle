@@ -45,7 +45,8 @@ async fn an_accept_lands_over_the_requesters_new_route_and_her_first_dm_follows(
     request(&sim, &nodes[1], &nodes[0]).await;
     // Right after her request landed, the route it named stops delivering
     // and no one is told (the live case: Veilid reports nothing; Ola finds
-    // it by her own self-test and republishes a tested replacement).
+    // it by inbound silence while she awaits an answer, rotates on that evidence
+    // and republishes a tested replacement, plan RV1).
     sim.fault(Fault::RouteSilentDeath {
         node: 1,
         class: RouteClass::General,
@@ -62,7 +63,7 @@ async fn an_accept_lands_over_the_requesters_new_route_and_her_first_dm_follows(
     let republished = asked.elapsed();
     assert!(
         republished <= worst_detection() + republish(),
-        "the replacement was on the network within its self-test's worst case: {republished:?}"
+        "the replacement was on the network within its evidence's worst case: {republished:?}"
     );
     let accepted = eventually(&sim, Duration::from_secs(600), || {
         is_accepted_friend(&nodes[1], &tia)

@@ -247,12 +247,6 @@ pub(super) async fn route_send_datagram(
                 tracing::debug!(to = %to, ?kind, "frame sent via veilid");
                 return Ok(true);
             }
-            // Our Sending route is not live: not sent, and the peer's
-            // route is not in question, so nothing is refreshed.
-            Err(crate::error::TransportError::OwnRouteUnavailable { .. }) => {
-                tracing::debug!(?kind, "frame not sent: our Sending route is not live");
-                return Ok(false);
-            }
             Err(e) => {
                 // Only the peer's unusable route goes (plan audit G10), so
                 // the next attempt fetches a fresh one; a send that failed
@@ -387,11 +381,6 @@ pub(super) async fn call_datagram_answer(
     let reply = match route::cached_target(&node, to) {
         Some(target) => match node.caller().call_direct(&target, datagram.clone()).await {
             Ok(reply) => reply,
-            // Our Sending route is not live: the row waits for it, and the
-            // peer's route is not in question.
-            Err(e @ crate::error::TransportError::OwnRouteUnavailable { .. }) => {
-                return Err(FriendError::NotReady(e.to_string()));
-            }
             // The peer may have a new route since we cached theirs (a
             // restart, a silent death): call once more over the one their
             // profile holds, as a send does (`refresh_and_send`), when it
@@ -437,12 +426,7 @@ async fn call_refreshed(
         node.caller()
             .call_direct(&target, datagram)
             .await
-            .map_err(|e| match e {
-                crate::error::TransportError::OwnRouteUnavailable { .. } => {
-                    FriendError::NotReady(e.to_string())
-                }
-                e => FriendError::Failed(format!("app_call: {e}")),
-            }),
+            .map_err(|e| FriendError::Failed(format!("app_call: {e}"))),
     )
 }
 

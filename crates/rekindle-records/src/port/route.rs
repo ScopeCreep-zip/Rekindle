@@ -25,18 +25,35 @@ impl PeerTarget {
     }
 }
 
+/// The unlocked identity's new-route budget as it is persisted (plan RV1,
+/// owner decision 2026-11-22): the bucket `rekindle_route::budget` spends
+/// from and the identity's database keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RouteBudgetState {
+    /// Tokens left now.
+    pub tokens: u32,
+    /// Wall time (ms) of the last whole-day refill.
+    pub refilled_ms: u64,
+    /// Wall time (ms) the current week began.
+    pub week_start_ms: u64,
+    /// Tokens spent since `week_start_ms`.
+    pub week_spent: u32,
+}
+
+/// The wall clock (ms) the budget reads.
+pub type WallMs = std::sync::Arc<dyn Fn() -> u64 + Send + Sync>;
+/// Where each spend of the budget is persisted (the identity's database).
+pub type SaveBudget = std::sync::Arc<dyn Fn(RouteBudgetState) + Send + Sync>;
+
 /// A class of our own private route: `General` for messages, calls and the
 /// published profile/mailbox route; `Media` for realtime media, relays
-/// chosen for latency, never substituted by the general route (r6 R-NET2);
-/// `Sending` the safety route our 1:1 calls are pinned to, which is also
-/// their answers' reply route (plan E4.3 RH2, built at RH1r). Its blob is
-/// never published, but Veilid hands it to every callee as the reply
-/// route, the same for every peer we call while it lives.
+/// chosen for latency, never substituted by the general route (r6 R-NET2).
+/// Both are receive routes; a send's safety route is Veilid's pool route,
+/// never one of ours (plan RV1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RouteClass {
     General,
     Media,
-    Sending,
 }
 
 /// A class's route, as hosts see it.
@@ -113,15 +130,13 @@ pub trait RoutePort: Send + Sync {
     /// Release our route of `class` and stop wanting it.
     fn release_own_class(&self, class: RouteClass);
 
-    /// Replace our live route of `class`, which our self-test found dead
-    /// though the network has not said so (plan RH1r-c O3): allocate a new
-    /// one and keep the old one allocated, out of service, until
-    /// [`release_retired_own`](Self::release_retired_own) (O4).
+    /// Rotate our live route of `class`, which the evidence shows dead
+    /// from outside though the network has not said so (plan RV1: inbound
+    /// silence while a peer is online, or a peer's `'L'` report): allocate
+    /// a new one, which Veilid tests at allocation (0.5.8
+    /// `veilid_api/api.rs:831`), and keep the old one allocated, out of
+    /// service, until [`release_retired_own`](Self::release_retired_own).
     fn replace_own_class(&self, class: RouteClass);
-
-    /// A self-test of our live route of `class` came back `ok` (plan RH1r-c
-    /// O1): kept for that route's death log (r7 design §4.6).
-    fn self_tested_own(&self, class: RouteClass, ok: bool);
 
     /// Release the routes of `class` that a replacement retired, once the
     /// replacement is published (O4).
@@ -141,4 +156,25 @@ pub trait RoutePort: Send + Sync {
     /// Node shutdown: stop allocating, release, and wait for allocations in
     /// flight.
     async fn shutdown_own(&self);
+
+    /// Unlock: the identity's new-route budget `state`, read with `wall`
+    /// and persisted through `save` (plan RV1). Each live class is about to
+    /// be published and spends a token now; one the budget cannot pay for
+    /// stays down.
+    fn attach_budget(&self, state: RouteBudgetState, wall: WallMs, save: SaveBudget);
+
+    /// Lock: the identity's budget is no longer ours to spend.
+    fn detach_budget(&self);
+
+    /// Spend a token for a route whose blob leaves the device but which the
+    /// own-route owner does not hold (a relay offer): `false` when the
+    /// budget is spent or no identity is unlocked.
+    fn spend_budget(&self) -> bool;
+
+    /// Whether a class is down because the budget is spent, to follow.
+    fn own_paused(&self) -> watch::Receiver<bool>;
+
+    /// Own-route deaths of `class` since the node started (the network's
+    /// reports and our rotations on evidence).
+    fn own_deaths(&self, class: RouteClass) -> u32;
 }

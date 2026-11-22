@@ -130,7 +130,6 @@ pub enum Fault {
     /// once the first hop takes it and counts no lost statement
     /// (`rpc_processor/mod.rs:2262-2320`, `route_stats.rs:144-147`, `:409`),
     /// and a question times out, its answer lost on a pool reply route too.
-    /// A pinned send takes our own route and is unaffected.
     PoolRoutesFail { node: usize, failing: bool },
     /// The node's own route of `class` stops carrying traffic end to end:
     /// what is sent over it or to it is lost, its loopback tests fail, and

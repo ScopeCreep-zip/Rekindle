@@ -69,7 +69,12 @@ impl QueryEngine {
     ///
     /// `route_allocated` requires the route manager which `QueryEngine` doesn't
     /// own. The caller passes it explicitly from `TransportNode::status_snapshot()`.
-    pub fn node_health(&self, shared: &SharedState, route_allocated: bool) -> TransportSnapshot {
+    pub fn node_health(
+        &self,
+        shared: &SharedState,
+        route_allocated: bool,
+        route_paused: bool,
+    ) -> TransportSnapshot {
         TransportSnapshot {
             attachment: shared.attachment_state().to_string(),
             is_attached: shared.is_attached(),
@@ -78,6 +83,7 @@ impl QueryEngine {
             peer_count: self.peer_registry.read().route_count(),
             route_allocated,
             route_age_secs: None,
+            route_paused,
         }
     }
 }

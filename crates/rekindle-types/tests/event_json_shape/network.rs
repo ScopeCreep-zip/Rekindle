@@ -1,7 +1,7 @@
 //! `NetworkEvent` samples, covering every `RouteAvailability`.
 
 use rekindle_types::subscription_events::{
-    NetworkEvent, OwnRecordsPhase, RouteAvailability, SubscriptionEvent,
+    NetworkEvent, OwnRecordsPhase, OwnRouteClass, RouteAvailability, SubscriptionEvent,
 };
 
 use crate::{pk, rk, text, Sample};
@@ -13,6 +13,8 @@ pub const NAMES: &[&str] = &[
     "remoteRoutesDied",
     "valueChanged",
     "ownRecordsChanged",
+    "routePaused",
+    "routeDeathsAboveBaseline",
 ];
 
 pub const NESTED: &[&str] = &[
@@ -24,6 +26,8 @@ pub const NESTED: &[&str] = &[
     "OwnRecordsPhase.pending",
     "OwnRecordsPhase.held",
     "OwnRecordsPhase.failed",
+    "OwnRouteClass.general",
+    "OwnRouteClass.media",
 ];
 
 pub fn variant_name(e: &NetworkEvent) -> &'static str {
@@ -34,6 +38,8 @@ pub fn variant_name(e: &NetworkEvent) -> &'static str {
         NetworkEvent::RemoteRoutesDied { .. } => "remoteRoutesDied",
         NetworkEvent::ValueChanged { .. } => "valueChanged",
         NetworkEvent::OwnRecordsChanged { .. } => "ownRecordsChanged",
+        NetworkEvent::RoutePaused { .. } => "routePaused",
+        NetworkEvent::RouteDeathsAboveBaseline { .. } => "routeDeathsAboveBaseline",
     }
 }
 
@@ -55,7 +61,12 @@ pub fn nested_names(e: &NetworkEvent) -> Vec<&'static str> {
             OwnRecordsPhase::Held => "OwnRecordsPhase.held",
             OwnRecordsPhase::Failed => "OwnRecordsPhase.failed",
         }],
+        NetworkEvent::RouteDeathsAboveBaseline { class, .. } => vec![match class {
+            OwnRouteClass::General => "OwnRouteClass.general",
+            OwnRouteClass::Media => "OwnRouteClass.media",
+        }],
         NetworkEvent::Strength { .. }
+        | NetworkEvent::RoutePaused { .. }
         | NetworkEvent::LocalRoutesDied { .. }
         | NetworkEvent::RemoteRoutesDied { .. }
         | NetworkEvent::ValueChanged { .. } => vec![],
@@ -139,6 +150,25 @@ pub fn samples() -> Vec<Sample> {
             NetworkEvent::OwnRecordsChanged {
                 phase: OwnRecordsPhase::Failed,
                 error: Some("no record pool".into()),
+            },
+        ),
+        ev("routePaused", NetworkEvent::RoutePaused { paused: true }),
+        ev(
+            "routeDeathsAboveBaseline.general",
+            NetworkEvent::RouteDeathsAboveBaseline {
+                class: OwnRouteClass::General,
+                deaths: 4,
+                window_secs: 3600,
+                baseline: 3,
+            },
+        ),
+        ev(
+            "routeDeathsAboveBaseline.media",
+            NetworkEvent::RouteDeathsAboveBaseline {
+                class: OwnRouteClass::Media,
+                deaths: 5,
+                window_secs: 3600,
+                baseline: 3,
             },
         ),
         ev(

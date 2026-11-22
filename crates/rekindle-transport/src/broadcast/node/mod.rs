@@ -80,15 +80,8 @@ impl TransportNode {
         self.ports.routes.want_own();
     }
 
-    /// Unlock: want the `Sending` route our 1:1 calls are pinned to (plan
-    /// E4.3 RH2, built at RH1r); [`release_routes`](Self::release_routes)
-    /// releases it at lock with the others.
-    pub fn want_sending_route(&self) {
-        self.ports.routes.want_own_class(RouteClass::Sending);
-    }
-
-    /// Lock: release this session's routes of every class (`Sending`
-    /// among them), so no route outlives the unlock that published it.
+    /// Lock: release this session's routes of every class, so no route
+    /// outlives the unlock that published it.
     pub fn release_routes(&self) {
         self.ports.routes.release_own();
     }
@@ -225,6 +218,7 @@ impl TransportNode {
             peer_count: peer_reg.route_count(),
             route_allocated: route_age.is_some(),
             route_age_secs: route_age.map(|d| d.as_secs()),
+            route_paused: *self.routes().own_paused().borrow(),
         }
     }
 

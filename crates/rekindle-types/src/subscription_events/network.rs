@@ -19,6 +19,16 @@ pub enum RouteAvailability {
     Failed,
 }
 
+/// One of our own route classes, as a route event names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OwnRouteClass {
+    /// Messages, calls and the published profile/mailbox route.
+    General,
+    /// Realtime media.
+    Media,
+}
+
 /// Where the unlocked identity's own-records stage is (plan E2.5 FC3):
 /// whether our profile and mailbox are published yet. Inviting, adding or
 /// accepting a friend and a first message name them, so each waits for
@@ -80,6 +90,21 @@ pub enum NetworkEvent {
     /// Our own allocated private routes died and need reallocation.
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_routes).
     LocalRoutesDied { count: usize },
+    /// The identity's new-route budget is spent, so a route class stays
+    /// down (`paused: true`), or a refill brought it back (plan RV1, threat
+    /// model L2): a window shows "inbound route paused after repeated
+    /// failures: possible attack". Never a silent redraw.
+    /// Triggered by: the Host following `RoutePort::own_paused`.
+    RoutePaused { paused: bool },
+    /// Own-route deaths of `class` within `window_secs` rose above the
+    /// baseline (`baseline`): a warning only, with no automatic reaction
+    /// (plan RV1). Triggered by: the Host's per-class death counts.
+    RouteDeathsAboveBaseline {
+        class: OwnRouteClass,
+        deaths: u32,
+        window_secs: u64,
+        baseline: u32,
+    },
     /// Remote peer routes died (imported routes expired).
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_remote_routes).
     RemoteRoutesDied { peer_keys: Vec<String> },

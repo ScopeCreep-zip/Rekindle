@@ -3,7 +3,6 @@ pub mod error;
 pub mod node;
 pub mod own_routes;
 pub mod ports;
-mod route_safety;
 pub mod veilid_config;
 
 pub use error::ProtocolError;

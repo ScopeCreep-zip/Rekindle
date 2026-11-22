@@ -11,12 +11,14 @@ mod record;
 mod route;
 
 pub use dht::{DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, WriterKey};
-pub use message::{check_message_len, AppCallId, AppMessagePort, OwnPath};
+pub use message::{check_message_len, AppCallId, AppMessagePort};
 pub use record::{
     RecordPort, RecordReport, RecordSchema, RecordStore, RecordValue, ReportScope, SchemaMember,
     SetOutcome, Settled, UnsentWrite, ValueChange, ValueChangeReport,
 };
-pub use route::{PeerTarget, RouteClass, RoutePort, RouteState};
+pub use route::{
+    PeerTarget, RouteBudgetState, RouteClass, RoutePort, RouteState, SaveBudget, WallMs,
+};
 
 use std::sync::Arc;
 

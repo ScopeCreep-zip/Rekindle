@@ -159,12 +159,8 @@ impl Netsim {
                 Arc::clone(&self.net),
                 Arc::clone(rng),
             )),
-            routes: Arc::new(FakeRoutes::new(
-                index,
-                Arc::clone(&self.net),
-                Arc::clone(&own),
-            )),
-            messages: Arc::new(FakeMessages::new(index, Arc::clone(&self.net), own)),
+            routes: Arc::new(FakeRoutes::new(index, Arc::clone(&self.net), own)),
+            messages: Arc::new(FakeMessages::new(index, Arc::clone(&self.net))),
             lifecycle: None,
         }
     }

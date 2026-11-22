@@ -134,15 +134,9 @@ async fn dispatch_event<H: InboundHandler>(
         } => {
             match routes.liveness.answer_probe(&message) {
                 ProbeAnswer::NotProbe => {}
-                // A liveness probe: ours echoes; another's is refused.
-                ProbeAnswer::Echo(echo) => {
-                    if let Err(e) = messages.reply(call_id, echo).await {
-                        warn!(error = %e, "failed to answer our own route probe");
-                    }
-                    return;
-                }
-                // Another's probe: a peer's suspect round, its report that
-                // our route failed it (plan LF6): test the route now.
+                // A peer's probe: its suspect round, its report that our
+                // route failed it (plan LF6): evidence that rotates our
+                // General route (plan RV1).
                 ProbeAnswer::Refuse => {
                     routes.liveness.route_reported();
                     reply_nak(messages, call_id).await;
@@ -165,14 +159,7 @@ async fn dispatch_event<H: InboundHandler>(
             median_latency_us,
         } => {
             let att_state = AttachmentState::from_veilid_string(&state);
-            // A reattach, or the public internet ready again, tests our
-            // routes at once (RH1r-c O5).
-            let regained = (is_attached && !shared.is_attached())
-                || (public_internet_ready && !shared.public_internet_ready());
             let changed = shared.set_attachment(att_state, is_attached, public_internet_ready);
-            if regained {
-                routes.liveness.network_changed();
-            }
             // 0.5.7's richer attachment signal — recorded so readiness
             // checks and status surfaces can use real peer counts instead
             // of inferring health from the attachment enum alone.

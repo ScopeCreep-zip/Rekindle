@@ -32,8 +32,9 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{RouteClass, RouteState};
 use tokio::sync::watch;
 
+use crate::budget::{RouteBudget, RouteBudgetState};
 use crate::ordered_watch::{Follow, OrderedWatch};
-use crate::route_death::{DeathCause, RouteDeath, TestTally};
+use crate::route_death::{DeathCause, RouteDeath};
 
 /// Why an allocation did not produce a route.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,63 +79,24 @@ struct Slot<Id> {
     /// A want or a death arrived while the task ran: run another pass.
     again: AtomicBool,
     current: Mutex<Option<Live<Id>>>,
-    /// The live route's self-tests, for its death log.
-    tally: Mutex<TestTally>,
     /// Routes [`OwnRoutes::replace`] took out of service that peers may
     /// still hold: kept allocated until [`OwnRoutes::release_retired`]
     /// (plan RH1r-c O4).
     retiring: Mutex<Vec<Live<Id>>>,
-    /// The warm standby of a class that keeps one ([`keeps_standby`]):
-    /// allocated, never handed to peers, promoted at once when the live
-    /// route dies.
-    standby: Mutex<Option<Live<Id>>>,
     /// Followed by the route publisher, the member-routes loop and each
     /// [`OwnRoutes::available`] wait, each through its own watch (RK1).
     state: OrderedWatch<RouteState>,
 }
 
-/// Whether `class` keeps a warm standby route (lead decision 60): the
-/// `Sending` route is our safety route for every pinned send and call,
-/// never handed to a peer, so a second one links nothing, and promoting it
-/// on a death leaves no send gap. A standby is allocated like any manual
-/// route, so Veilid tests it and marks it published, which keeps it out of
-/// its safety-route pool (veilid-core 0.5.8 `veilid_api/api.rs:829-850`,
-/// `route_select.rs:348-359`).
-fn keeps_standby(class: RouteClass) -> bool {
-    class == RouteClass::Sending
-}
-
 impl<Id> Slot<Id> {
-    /// The live route is up and, for a class that keeps one, its standby.
+    /// The live route is up.
     fn full(&self) -> bool {
         self.current.lock().is_some()
-            && (!keeps_standby(self.class) || self.standby.lock().is_some())
     }
 
-    /// Promote the standby into the live place, if there is one: its blob.
-    fn promote(&self) -> Option<Vec<u8>> {
-        let standby = self.standby.lock().take()?;
-        let blob = standby.blob.clone();
-        *self.tally.lock() = TestTally::default();
-        *self.current.lock() = Some(Live {
-            at: tokio::time::Instant::now(),
-            ..standby
-        });
-        Some(blob)
-    }
-
-    /// The class's new state once its live route is gone: the promoted
-    /// standby, or allocating.
+    /// The class's new state once its live route is gone: allocating.
     fn after_loss(&self) {
-        match self.promote() {
-            Some(blob) => {
-                tracing::info!(class = ?self.class, "own standby route promoted");
-                self.state.send_replace(RouteState::Available { blob });
-            }
-            None => {
-                self.state.send_replace(RouteState::Allocating);
-            }
-        }
+        self.state.send_replace(RouteState::Allocating);
     }
 
     fn new(class: RouteClass) -> Self {
@@ -144,16 +106,35 @@ impl<Id> Slot<Id> {
             running: AtomicBool::new(false),
             again: AtomicBool::new(false),
             current: Mutex::new(None),
-            tally: Mutex::new(TestTally::default()),
             retiring: Mutex::new(Vec::new()),
-            standby: Mutex::new(None),
             state: OrderedWatch::new(RouteState::Idle),
         }
     }
 }
 
+pub use rekindle_records::port::{SaveBudget, WallMs};
+
+/// The unlocked identity's new-route budget ([`crate::budget`]).
+struct BudgetHook {
+    state: RouteBudget,
+    wall: WallMs,
+    save: SaveBudget,
+}
+
 /// The node's own routes.
 pub struct OwnRoutes<A: RouteAllocator> {
+    /// The unlocked identity's new-route budget; `None` while locked (no
+    /// route's blob leaves the device then).
+    budget: Mutex<Option<BudgetHook>>,
+    /// Whether a class is down because the budget is spent: the Host
+    /// shows it ("inbound route paused after repeated failures").
+    paused: OrderedWatch<bool>,
+    /// Own-route deaths per class since the node started (General, Media),
+    /// for the Host's above-baseline warning.
+    deaths: [std::sync::atomic::AtomicU32; 2],
+    /// Of those, the routes that died younger than
+    /// [`crate::budget::YOUNG_ROUTE_AGE`] (counted apart, plan RV1).
+    young_deaths: [std::sync::atomic::AtomicU32; 2],
     alloc: A,
     /// Readiness, one watch per waiting class task (RK1).
     ready: Follow<bool>,
@@ -161,18 +142,16 @@ pub struct OwnRoutes<A: RouteAllocator> {
     backoff_min: Duration,
     general: Slot<A::Id>,
     media: Slot<A::Id>,
-    sending: Slot<A::Id>,
 }
 
 /// Every class, in the order a pass over them takes.
-const CLASSES: [RouteClass; 3] = [RouteClass::General, RouteClass::Media, RouteClass::Sending];
+const CLASSES: [RouteClass; 2] = [RouteClass::General, RouteClass::Media];
 
 impl<A: RouteAllocator> std::fmt::Debug for OwnRoutes<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OwnRoutes")
             .field("general", &self.general.state.get())
             .field("media", &self.media.state.get())
-            .field("sending", &self.sending.state.get())
             .finish_non_exhaustive()
     }
 }
@@ -187,6 +166,10 @@ impl<A: RouteAllocator> OwnRoutes<A> {
 
     fn with_backoff(alloc: A, ready: Follow<bool>, backoff_min: Duration) -> Arc<Self> {
         Arc::new(Self {
+            budget: Mutex::new(None),
+            paused: OrderedWatch::new(false),
+            deaths: Default::default(),
+            young_deaths: Default::default(),
             alloc,
             ready,
             scope: SessionScope::new(
@@ -196,7 +179,6 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             backoff_min,
             general: Slot::new(RouteClass::General),
             media: Slot::new(RouteClass::Media),
-            sending: Slot::new(RouteClass::Sending),
         })
     }
 
@@ -204,7 +186,6 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         match class {
             RouteClass::General => &self.general,
             RouteClass::Media => &self.media,
-            RouteClass::Sending => &self.sending,
         }
     }
 
@@ -272,15 +253,6 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             let slot = self.slot(class);
             // Veilid released a dead retiring route itself.
             slot.retiring.lock().retain(|live| !dead.contains(&live.id));
-            // So did a dead standby: a new one is allocated.
-            let standby_died = {
-                let mut standby = slot.standby.lock();
-                let hit = standby.as_ref().is_some_and(|live| dead.contains(&live.id));
-                if hit {
-                    standby.take();
-                }
-                hit
-            };
             let died = {
                 let mut current = slot.current.lock();
                 let hit = current.as_ref().is_some_and(|live| dead.contains(&live.id));
@@ -295,53 +267,137 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 tracing::info!(?class, "own route died; allocating a replacement");
                 slot.after_loss();
                 self.start(class);
-            } else if standby_died {
-                self.start(class);
             }
         }
     }
 
-    /// Replace our live route of `class`, which our own self-test found
-    /// dead (plan RH1r-c O3) though Veilid has not reported it: a new one
-    /// is allocated, and the old one stays allocated, out of service, while
-    /// a peer may still send to it, until [`Self::release_retired`] (O4).
+    /// Rotate our live route of `class`, which the evidence shows dead
+    /// from outside though Veilid has not reported it (plan RV1): a new one
+    /// is allocated (Veilid tests it at allocation, 0.5.8
+    /// `veilid_api/api.rs:831`), and the old one stays allocated, out of
+    /// service, while a peer may still send to it, until
+    /// [`Self::release_retired`] (O4).
     pub fn replace(self: &Arc<Self>, class: RouteClass) {
         let slot = self.slot(class);
         let Some(old) = slot.current.lock().take() else {
             return;
         };
-        self.death(class, DeathCause::SelfTest, &old).log();
+        self.death(class, DeathCause::Rotated, &old).log();
         tracing::info!(
             ?class,
-            "own route failed its self-test; allocating a replacement"
+            "own route rotated on evidence; allocating a replacement"
         );
         slot.retiring.lock().push(old);
         slot.after_loss();
         self.start(class);
     }
 
-    /// A self-test of the class's live route came back `ok` (plan RH1r-c
-    /// O1): kept for the route's death log.
-    pub fn self_tested(&self, class: RouteClass, ok: bool) {
-        let slot = self.slot(class);
-        if slot.current.lock().is_some() {
-            slot.tally.lock().record(tokio::time::Instant::now(), ok);
-        }
-    }
-
-    /// The identifier-free record of `old`'s death (r7 design §4.6); the
-    /// class's self-test tally starts over for its replacement.
+    /// The identifier-free record of `old`'s death (r7 design §4.6).
     fn death(&self, class: RouteClass, cause: DeathCause, old: &Live<A::Id>) -> RouteDeath {
-        let tally = std::mem::take(&mut *self.slot(class).tally.lock());
+        self.deaths[class_index(class)].fetch_add(1, Ordering::SeqCst);
+        if old.at.elapsed() < crate::budget::YOUNG_ROUTE_AGE {
+            self.young_deaths[class_index(class)].fetch_add(1, Ordering::SeqCst);
+        }
         RouteDeath::new(
             class,
             cause,
             self.alloc.hop_count(class),
             old.at,
-            tally,
             *self.ready.follow().borrow(),
             tokio::time::Instant::now(),
         )
+    }
+
+    /// Own-route deaths of `class` since the node started (Veilid's reports
+    /// and our rotations).
+    #[must_use]
+    pub fn deaths(&self, class: RouteClass) -> u32 {
+        self.deaths[class_index(class)].load(Ordering::SeqCst)
+    }
+
+    /// Own-route deaths of `class` younger than
+    /// [`crate::budget::YOUNG_ROUTE_AGE`], since the node started.
+    #[must_use]
+    pub fn young_deaths(&self, class: RouteClass) -> u32 {
+        self.young_deaths[class_index(class)].load(Ordering::SeqCst)
+    }
+
+    /// Whether a class is down because the new-route budget is spent, to
+    /// follow.
+    #[must_use]
+    pub fn paused(&self) -> watch::Receiver<bool> {
+        self.paused.subscribe()
+    }
+
+    /// Unlock: the identity's new-route budget `state`, read with `wall`
+    /// and persisted through `save`. Each class's live route is about to be
+    /// published, so each spends a token now; a class the budget cannot pay
+    /// for is released and stays down.
+    pub fn attach_budget(
+        self: &Arc<Self>,
+        state: RouteBudgetState,
+        wall: WallMs,
+        save: SaveBudget,
+    ) {
+        *self.budget.lock() = Some(BudgetHook {
+            state: RouteBudget::from(state),
+            wall,
+            save,
+        });
+        for class in CLASSES {
+            if self.slot(class).current.lock().is_some() && !self.spend() {
+                self.pause(class);
+            }
+        }
+    }
+
+    /// Lock: the identity's budget is no longer ours to spend.
+    pub fn detach_budget(&self) {
+        *self.budget.lock() = None;
+    }
+
+    /// Spend a token for a route whose blob leaves the device but which we
+    /// do not own here (a relay offer): `false` when the budget is spent or
+    /// no identity is unlocked.
+    pub fn spend_external(&self) -> bool {
+        self.budget.lock().is_some() && self.spend()
+    }
+
+    /// Spend one token for a new route of ours; `true` while locked (the
+    /// route is not published until an unlock pays for it).
+    fn spend(&self) -> bool {
+        let mut guard = self.budget.lock();
+        let Some(hook) = guard.as_mut() else {
+            return true;
+        };
+        let now = (hook.wall)();
+        if !hook.state.try_spend(now) {
+            return false;
+        }
+        (hook.save)(hook.state.state());
+        drop(guard);
+        self.paused.send_replace(false);
+        true
+    }
+
+    /// Whether a new route of ours could be paid for now.
+    fn can_spend(&self) -> bool {
+        self.budget
+            .lock()
+            .as_ref()
+            .is_none_or(|hook| hook.state.can_spend((hook.wall)()))
+    }
+
+    /// The class cannot be paid for: its live route (if any) is released,
+    /// and it stays down (`Allocating`) with the pause shown.
+    fn pause(&self, class: RouteClass) {
+        let slot = self.slot(class);
+        if let Some(live) = slot.current.lock().take() {
+            self.alloc.release(&live.id);
+        }
+        slot.state.send_replace(RouteState::Allocating);
+        tracing::warn!(?class, "new-route budget spent; the class stays down");
+        self.paused.send_replace(true);
     }
 
     /// Release the routes of `class` that [`Self::replace`] retired, once
@@ -375,9 +431,6 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         if let Some(live) = slot.current.lock().take() {
             self.alloc.release(&live.id);
         }
-        if let Some(live) = slot.standby.lock().take() {
-            self.alloc.release(&live.id);
-        }
         self.release_retired(class);
         slot.state.send_replace(RouteState::Idle);
     }
@@ -399,15 +452,14 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     }
 
     /// Want the classes every node holds from node-ready: the general route
-    /// and the media route (`Sending` is wanted by the session that sends
-    /// over it, [`want`](Self::want)).
+    /// and the media route.
     pub fn want_all(self: &Arc<Self>) {
         self.want(RouteClass::General);
         self.want(RouteClass::Media);
     }
 
     /// Start the class's allocation task unless one runs, it is not
-    /// wanted, or its routes are up (the live one and any standby).
+    /// wanted, or its route is up.
     fn start(self: &Arc<Self>, class: RouteClass) {
         let slot = self.slot(class);
         if !slot.wanted.load(Ordering::SeqCst) || slot.full() {
@@ -448,7 +500,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         }
     }
 
-    /// Allocate until the routes are up (the live one, then any standby),
+    /// Allocate until the route is up,
     /// the class is not wanted, Veilid fails for good, or `stop`.
     async fn allocate_until_done(
         &self,
@@ -459,8 +511,6 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         let mut backoff = self.backoff_min;
         let mut ready = self.ready.follow();
         while slot.wanted.load(Ordering::SeqCst) && !slot.full() {
-            // The class's state is its live route's: a standby's allocation
-            // never shows.
             let live_up = slot.current.lock().is_some();
             if !live_up {
                 slot.state.send_replace(RouteState::Allocating);
@@ -480,6 +530,13 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             // (`logging/duration_recorder.rs:84-90`; live A/B round 3
             // R3-6). Veilid bounds the call itself (the route test's RPC
             // timeout), so [`shutdown`](Self::shutdown) waits for it.
+            // Every new route spends from the budget once it lands (a
+            // `TryAgain` spends nothing); an empty one leaves the class
+            // down, never a silent redraw (plan RV1).
+            if !self.can_spend() {
+                self.pause(class);
+                return;
+            }
             let result = self.alloc.allocate(class).await;
             match result {
                 Ok((id, blob)) => {
@@ -489,19 +546,11 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                         self.alloc.release(&id);
                         return;
                     }
-                    if slot.current.lock().is_some() {
-                        let replaced = slot.standby.lock().replace(Live {
-                            id,
-                            blob,
-                            at: tokio::time::Instant::now(),
-                        });
-                        if let Some(old) = replaced {
-                            self.alloc.release(&old.id);
-                        }
-                        tracing::info!(class = ?slot.class, "own standby route allocated");
-                        continue;
+                    if !self.spend() {
+                        self.alloc.release(&id);
+                        self.pause(class);
+                        return;
                     }
-                    *slot.tally.lock() = TestTally::default();
                     let replaced = slot.current.lock().replace(Live {
                         id,
                         blob: blob.clone(),
@@ -538,6 +587,13 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 }
             }
         }
+    }
+}
+
+fn class_index(class: RouteClass) -> usize {
+    match class {
+        RouteClass::General => 0,
+        RouteClass::Media => 1,
     }
 }
 

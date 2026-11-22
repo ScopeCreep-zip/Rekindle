@@ -6,14 +6,11 @@ use std::time::Duration;
 
 use rekindle_netsim::latency;
 use rekindle_route::contexts::RouteContextSpec;
-use rekindle_route::liveness::{
-    DEAD_AFTER_FAILURES, PROBE_TIMEOUT, PUBLISH_DELAY, RETEST_JITTER_MS, RETEST_MIN,
-    SELF_TEST_JITTER_MS, SELF_TEST_PERIOD,
-};
+use rekindle_route::liveness::{PUBLISH_DELAY, SILENCE_TRIGGER};
 
-/// The owner's self-test loop wakes once a second (`rekindle-transport`
-/// `liveness/owner.rs` `SELF_TEST_TICK`): a due test starts up to this late.
-const SELF_TEST_TICK: Duration = Duration::from_secs(1);
+/// The owner's evidence loop wakes once a second (`rekindle-transport`
+/// `liveness/owner.rs` `EVIDENCE_TICK`): a due rotation starts up to this late.
+const EVIDENCE_TICK: Duration = Duration::from_secs(1);
 
 /// One app call's deadline over our safety route (`call_direct` sends
 /// over `rc_safe`; Veilid 0.5.8 `routed_timeout`, [`rekindle_netsim::call_timeout`]).
@@ -21,27 +18,22 @@ pub fn call_timeout() -> Duration {
     rekindle_netsim::call_timeout(&RouteContextSpec::rc_safe().safety_profile())
 }
 
-/// The latest a silently dead route is declared dead by its owner's own
-/// self-test, from the moment it died: the death falls right after a
-/// passed test, so the next one comes a full period plus its jitter later
-/// (40 s + 13.3 s); then [`DEAD_AFTER_FAILURES`] probes each wait out
-/// [`PROBE_TIMEOUT`] (15 s), two retests apart at their longest (10 s +
-/// 10 s), each start up to one loop tick late. 138.3 s + 3 ticks.
+/// The latest a route that silently stopped delivering (its online
+/// detector deferring Veilid's keepalive, so Veilid reports nothing) is
+/// rotated on evidence by its owner (plan RV1), from the moment it died:
+/// its owner awaits a peer's answer, and nothing arrived over the route
+/// for [`SILENCE_TRIGGER`] (120 s), then one evidence tick.
 pub fn worst_detection() -> Duration {
-    let retest = RETEST_MIN + Duration::from_millis(RETEST_JITTER_MS);
-    SELF_TEST_PERIOD
-        + Duration::from_millis(SELF_TEST_JITTER_MS)
-        + (PROBE_TIMEOUT + SELF_TEST_TICK) * DEAD_AFTER_FAILURES
-        + retest * (DEAD_AFTER_FAILURES - 1)
+    SILENCE_TRIGGER + EVIDENCE_TICK
 }
 
-/// From the death's declaration to the replacement on the network: the
-/// replacement's own self-test (at most [`PROBE_TIMEOUT`]), the
-/// republish's debounce [`PUBLISH_DELAY`] (the pacing gap has passed: the
-/// earliest declaration is past `PUBLISH_GAP` since the unlock's publish),
-/// and one DHT set at its slowest ([`latency::SET`]).
+/// From the rotation to the replacement on the network: the replacement's
+/// test at allocation (one routed call at most, Veilid 0.5.8
+/// `veilid_api/api.rs:831`), the republish's debounce [`PUBLISH_DELAY`]
+/// (the pacing gap has passed since the unlock's publish), and one DHT set
+/// at its slowest ([`latency::SET`]).
 pub fn republish() -> Duration {
-    PROBE_TIMEOUT + PUBLISH_DELAY + latency::SET.max
+    call_timeout() + PUBLISH_DELAY + latency::SET.max
 }
 
 /// From the replacement on the network to the accept applied: the
