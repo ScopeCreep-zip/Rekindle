@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-buddy-list",
-  "description": "App-command grants for the `buddy-list` window: friend list management, invites, blocking, community create/join, status/presence, game launch and the installed games it lists (`get_installed_games`, the Host's `InstalledGamesGet`), opening other windows, DM list, group DMs (create, the pending invites' accept and decline, the list), strand-relay volunteering, the deep-link consent dialog, `open_external_url` for the menu bar's links, and the call shell it alone hosts (incoming-call modal, call waiting, outgoing and group panels, missed calls) plus the session-reset prompt — the app's home base. `core:window:allow-start-resize-dragging` for the tree-laid window's resize edges (`src/components/skin-tree/ResizeHandle.tsx`): the only window that resizes from its own edges. No plugin grants.",
+  "description": "App-command grants for the `buddy-list` window: friend list management, invites, blocking, community create/join, status/presence, game launch and the installed games it lists (`get_installed_games`, the Host's `InstalledGamesGet`), opening other windows, DM list, group DMs (create, the pending invites' accept and decline, the list), strand-relay volunteering, the deep-link consent dialog, `open_external_url` for the menu bar's links, and the call shell it alone hosts (incoming-call modal, call waiting, outgoing and group panels, missed calls) plus the session-reset prompt — the app's home base. The skin tree it renders (`src/components/skin-tree/SkinTreeWindow.tsx`, plan SK2-A4) runs its nodes' actions (`run_skin_action`) and reports its selection (`set_skin_selection`); no other window renders a skin tree, so no other window holds them. `core:window:allow-start-resize-dragging` for the tree-laid window's resize edges (`src/components/skin-tree/ResizeHandle.tsx`): the only window that resizes from its own edges. No plugin grants.",
   "windows": [
     "buddy-list"
   ],
@@ -53,8 +53,10 @@
     "allow-delete-friend-group",
     "allow-reset-signal-session",
     "allow-revoke-relay",
+    "allow-run-skin-action",
     "allow-set-friend-nickname",
     "allow-set-nickname",
+    "allow-set-skin-selection",
     "allow-set-status",
     "allow-set-status-message",
     "allow-start-dm-call",
