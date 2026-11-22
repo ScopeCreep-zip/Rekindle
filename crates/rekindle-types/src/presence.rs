@@ -213,7 +213,7 @@ impl MemberPresence {
 }
 
 /// Game currently being played (populated by rekindle-game-detect).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GameInfo {
     pub game_name: String,

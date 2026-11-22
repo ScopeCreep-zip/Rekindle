@@ -66,6 +66,7 @@ mod tests {
         CardText {
             display_name: Some(name.to_owned()),
             custom_status: None,
+            game: None,
         }
     }
 

@@ -19,6 +19,7 @@ fn ida() -> OwnCardText {
     OwnCardText {
         display_name: Some("Ida".into()),
         custom_status: None,
+        game: None,
     }
 }
 
@@ -260,4 +261,58 @@ async fn an_invisible_member_publishes_its_record_without_a_beat() {
             "{status:?}"
         );
     }
+}
+
+/// Plan E3.4 S6: the game our card carries is what a peer's verified read
+/// of the network copy (`decode_member_card` + `card_of`, as the ring's
+/// `ring_card_moved` reads it) sees, and a stopped game rewrites the card
+/// without one.
+#[tokio::test]
+async fn a_card_game_reaches_a_peer_and_a_stopped_one_clears() {
+    let dht = Arc::new(MemDht::default());
+    let pool = pool_on(Arc::clone(&dht));
+    let (lease, record, writer) =
+        RecordPort::create(&*pool, &rekindle_records::schema::member_record(), None)
+            .await
+            .unwrap();
+    pool.release(lease).await;
+    let pseudonym = SigningKey::from_bytes(&[6; 32]);
+    let own = OwnRecord {
+        community_id: "community",
+        record: &record,
+        writer: &writer,
+        pseudonym: &pseudonym,
+    };
+    let peer_reads = || {
+        let value = dht.value(&record, member_record::CARD).expect("a card");
+        let at = rekindle_codec::member_record::RecordScope {
+            community_id: "community",
+            member_record: &record,
+        };
+        let signed = rekindle_codec::member_record::card::decode_member_card(
+            &value.data,
+            at,
+            &pseudonym.verifying_key().to_bytes(),
+        )
+        .expect("the card verifies");
+        super::card_of(&signed).game
+    };
+    let game = rekindle_types::presence::GameInfo {
+        game_name: "Quake III Arena".into(),
+        game_id: Some("4100".into()),
+        elapsed_seconds: None,
+        server_address: Some("10.0.0.7:27960".into()),
+    };
+    let playing = OwnCardText {
+        game: Some(game.clone()),
+        ..ida()
+    };
+    write_card(&*pool, &own, &playing, &[3; 32]).await.unwrap();
+    assert_eq!(
+        peer_reads(),
+        Some(game),
+        "the started game reaches the peer"
+    );
+    write_card(&*pool, &own, &ida(), &[3; 32]).await.unwrap();
+    assert_eq!(peer_reads(), None, "the stopped game clears");
 }

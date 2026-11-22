@@ -32,6 +32,7 @@ fn joiner_card() -> OwnCardText {
     OwnCardText {
         display_name: Some("Joiner".into()),
         custom_status: None,
+        game: None,
     }
 }
 

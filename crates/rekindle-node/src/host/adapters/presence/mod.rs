@@ -16,6 +16,7 @@
 //! the ring, inspected once per beat period in another (plan E3.4 Q1,
 //! `governance::on_screen`).
 
+pub(crate) mod card_game;
 pub(crate) mod mesh;
 pub(crate) mod view;
 
@@ -99,7 +100,9 @@ pub(crate) fn start(
     let on_screen = ctx.this.clone();
     scope.spawn_with_token("presence on screen", move |stop| {
         run_on_screen(on_screen, stop)
-    })
+    })?;
+    let card_game = ctx.this.clone();
+    scope.spawn_with_token("card game", move |stop| card_game::run(card_game, stop))
 }
 
 /// Inspect the members on screen outside the ring once per beat period

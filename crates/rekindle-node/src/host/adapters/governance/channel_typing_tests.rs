@@ -292,6 +292,7 @@ async fn an_unlisted_typist_is_named_by_the_fingerprint() {
         rekindle_governance_runtime::CardText {
             display_name: Some("Carol".into()),
             custom_status: None,
+            game: None,
         },
     );
     assert!(noted);
