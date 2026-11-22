@@ -263,15 +263,15 @@ impl DaemonContext {
     pub(crate) async fn call(&self, request: IpcRequest, caller: &Caller) -> IpcResponse {
         // A skin action that is a feature becomes its own request first
         // (plan SK2-A4), so that request meets its own clearance and gate.
-        let rooms = match crate::host::skin::rooms::load(self, &self.skin.selection, &request).await
+        let reads = match crate::host::skin::reads::load(self, &self.skin.selection, &request).await
         {
-            Ok(rooms) => rooms,
+            Ok(reads) => reads,
             Err(refused) => return refused,
         };
-        // The action resolves here only (with its rooms read once): a run
+        // The action resolves here only (with its reads made once): a run
         // is the answer once the request is admitted.
         let (request, run) =
-            match crate::host::skin::actions::resolve(&self.skin.selection, &rooms, request) {
+            match crate::host::skin::actions::resolve(&self.skin.selection, &reads, request) {
                 Ok(Resolved::Request(request)) => (request, None),
                 Ok(Resolved::Run { request, run }) => (request, Some(run)),
                 Err(refused) => return refused,

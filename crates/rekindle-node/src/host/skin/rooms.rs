@@ -28,8 +28,13 @@ pub(crate) struct Rooms {
     pub attached: Option<String>,
 }
 
+/// The actions that read the rooms: the room actions, and
+/// `DeleteSelected`, which on a joined group leaves it (SK2-G §6).
 fn is_room(action: &A) -> bool {
-    matches!(action, A::EnterRoom | A::JoinRoom | A::EnterAttachedRoom)
+    matches!(
+        action,
+        A::EnterRoom | A::JoinRoom | A::EnterAttachedRoom | A::DeleteSelected
+    )
 }
 
 /// The room actions' answer.

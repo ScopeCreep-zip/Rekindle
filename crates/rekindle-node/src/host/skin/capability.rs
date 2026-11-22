@@ -112,14 +112,21 @@ fn media_exists(selected: Selected<'_>) -> bool {
     matches!(selected, Selected::Media { path } if Path::new(path).is_file())
 }
 
-/// An online accepted friend in a launchable game with a server (SK2-G §1).
+/// An online accepted friend whose game the Host's launch check judges
+/// joinable here (`journal_entry::not_joinable`, plan E7.15 IV3c: a parsed
+/// server and a launch method), the verdict `JoinFriend` refuses on
+/// (SK2-G §1, lead decision 49).
 fn can_join_friend(friend: Option<&FriendState>) -> bool {
     friend.is_some_and(|f| {
         f.friendship_state == FriendshipState::Accepted
             && f.status != UserStatus::Offline
-            && f.game_info
-                .as_ref()
-                .is_some_and(|g| g.server_address.is_some() && launchable(g.game_id))
+            && f.game_info.as_ref().is_some_and(|g| {
+                crate::host::journal_entry::not_joinable(
+                    Some(g.game_id),
+                    g.server_address.as_deref(),
+                )
+                .is_none()
+            })
     })
 }
 

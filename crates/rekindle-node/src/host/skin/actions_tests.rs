@@ -7,20 +7,35 @@ use rekindle_types::dto::skin_action::{EngineMenu, PackUrl, SkinAction as A, Ski
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::presence::SessionStatus;
 
-use super::actions::{map, resolve, Mapped, Resolved, Selections};
+use super::actions::{map, resolve, Mapped, Resolved, Selected, Selections};
+use super::reads::Reads;
 use super::rooms::{Room, Rooms};
 
 const SELECTED_FRIEND_KEY: &str = "bobkey";
 
+fn friend_selected() -> Selected<'static> {
+    Selected {
+        friend: Some(SELECTED_FRIEND_KEY),
+        ..Selected::default()
+    }
+}
+
+fn transfer_selected(t: &(String, rekindle_types::dto::transfer::TransferTarget)) -> Selected<'_> {
+    Selected {
+        transfer: Some(t),
+        ..Selected::default()
+    }
+}
+
 fn run(action: &A) -> SkinRun {
-    match map(action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default()) {
+    match map(action, friend_selected(), &Reads::default()) {
         Ok(Mapped::Run(r)) => r,
         other => panic!("{action:?}: {other:?}"),
     }
 }
 
 fn request(action: &A) -> IpcRequest {
-    match map(action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default()) {
+    match map(action, friend_selected(), &Reads::default()) {
         Ok(Mapped::Request(r)) => *r,
         other => panic!("{action:?}: {other:?}"),
     }
@@ -107,17 +122,18 @@ fn shell_actions_yield_their_operation_on_the_selected_friend() {
 
 #[test]
 fn a_selection_action_is_refused_while_nothing_is_selected() {
-    let refused = map(&A::ChatFriend, None, None, &Rooms::default()).expect_err("no selection");
+    let refused =
+        map(&A::ChatFriend, Selected::default(), &Reads::default()).expect_err("no selection");
     assert!(matches!(refused, IpcResponse::Error { code: 409, .. }));
 }
 
 #[test]
-fn gap_actions_yield_not_built_yet() {
+fn unbuilt_actions_yield_not_built_yet() {
     for action in [
-        A::JoinFriend,
-        A::AddServer,
         A::InviteUsersToRoom,
         A::SearchFor,
+        A::RefreshServer,
+        A::DeleteSelected,
     ] {
         assert_eq!(
             run(&action),
@@ -143,7 +159,7 @@ fn resolve_takes_the_selection_from_the_host() {
         node: "ChatButton".into(),
         action: A::ChatFriend,
     };
-    assert!(resolve(&selections, &Rooms::default(), chat()).is_err());
+    assert!(resolve(&selections, &Reads::default(), chat()).is_err());
     selections.set(
         "buddy-list",
         Some(SkinSelection::Friend {
@@ -151,7 +167,7 @@ fn resolve_takes_the_selection_from_the_host() {
         }),
     );
     assert!(matches!(
-        resolve(&selections, &Rooms::default(), chat()),
+        resolve(&selections, &Reads::default(), chat()),
         Ok(Resolved::Run {
             request: IpcRequest::RunSkinAction { .. },
             ..
@@ -163,13 +179,24 @@ fn resolve_takes_the_selection_from_the_host() {
         action: A::LogOff,
     };
     assert!(matches!(
-        resolve(&selections, &Rooms::default(), logoff),
+        resolve(&selections, &Reads::default(), logoff),
         Ok(Resolved::Request(IpcRequest::Logout))
     ));
 }
 
 fn room(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
-    map(action, friend, None, rooms)
+    let reads = Reads {
+        rooms: rooms.clone(),
+        friend_game: None,
+    };
+    map(
+        action,
+        Selected {
+            friend,
+            ..Selected::default()
+        },
+        &reads,
+    )
 }
 
 #[test]
@@ -232,7 +259,7 @@ fn each_download_action_reaches_its_transfer_request() {
             channel_id: "ch".into(),
         },
     );
-    let reached = |action: &A| match map(action, None, Some(&selected), &Rooms::default()) {
+    let reached = |action: &A| match map(action, transfer_selected(&selected), &Reads::default()) {
         Ok(Mapped::Request(r)) => match *r {
             IpcRequest::Transfer(t) => t.name(),
             other => panic!("{action:?} reached {}", other.name()),
@@ -243,9 +270,11 @@ fn each_download_action_reaches_its_transfer_request() {
     assert_eq!(reached(&A::StopDownload), "TransferStop");
     assert_eq!(reached(&A::OpenDownload), "TransferOpen");
     assert_eq!(reached(&A::DownloadInfo), "TransferList");
-    let Ok(Mapped::Request(start)) =
-        map(&A::StartDownload, None, Some(&selected), &Rooms::default())
-    else {
+    let Ok(Mapped::Request(start)) = map(
+        &A::StartDownload,
+        transfer_selected(&selected),
+        &Reads::default(),
+    ) else {
         unreachable!()
     };
     // The shell asks where to save, then sends the destination.
@@ -254,8 +283,11 @@ fn each_download_action_reaches_its_transfer_request() {
         IpcRequest::Transfer(T::Start { ref attachment_id, ref target, dest: None })
             if attachment_id == id && *target == selected.1
     ));
-    let Ok(Mapped::Request(stop)) = map(&A::StopDownload, None, Some(&selected), &Rooms::default())
-    else {
+    let Ok(Mapped::Request(stop)) = map(
+        &A::StopDownload,
+        transfer_selected(&selected),
+        &Reads::default(),
+    ) else {
         unreachable!()
     };
     assert!(matches!(
@@ -263,11 +295,94 @@ fn each_download_action_reaches_its_transfer_request() {
         IpcRequest::Transfer(T::Stop { ref attachment_id }) if attachment_id == id
     ));
     for action in [A::StartDownload, A::StopDownload, A::OpenDownload] {
-        let refused = map(&action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default())
-            .expect_err("no transfer");
+        let refused = map(&action, friend_selected(), &Reads::default()).expect_err("no transfer");
         assert!(
             matches!(refused, IpcResponse::Error { code: 409, .. }),
             "{action:?}"
         );
     }
+}
+
+fn game(server: Option<&str>, joinable: bool) -> rekindle_types::friend::GameInfoState {
+    rekindle_types::friend::GameInfoState {
+        game_id: 4100,
+        game_name: "Team Fortress 2".into(),
+        server_info: None,
+        elapsed_seconds: 0,
+        server_address: server.map(str::to_owned),
+        icon_key: None,
+        joinable,
+        joinable_reason: (!joinable).then_some(rekindle_types::friend::NotJoinableReason::NoServer),
+    }
+}
+
+/// `JoinFriend` (lead decision 49) is the one launch path on the selected
+/// friend's presence server, and is refused on the Host's `not_joinable`.
+#[test]
+fn join_friend_launches_the_selected_friends_presence_server() {
+    use rekindle_types::game_server::JoinSource;
+    let reads = Reads {
+        friend_game: Some(game(Some("10.0.0.1:27015"), true)),
+        ..Reads::default()
+    };
+    let Ok(Mapped::Request(r)) = map(&A::JoinFriend, friend_selected(), &reads) else {
+        panic!("JoinFriend is a request")
+    };
+    assert!(matches!(
+        *r,
+        IpcRequest::GameLaunch { game_id: 4100, server: Some(ref s), source: JoinSource::FriendPresence }
+            if s.as_str() == "10.0.0.1:27015"
+    ));
+    for refused in [
+        Reads::default(),
+        Reads {
+            friend_game: Some(game(None, false)),
+            ..Reads::default()
+        },
+        Reads {
+            friend_game: Some(game(Some("not a server"), true)),
+            ..Reads::default()
+        },
+    ] {
+        assert!(matches!(
+            map(&A::JoinFriend, friend_selected(), &refused),
+            Err(IpcResponse::Error { code: 409, .. })
+        ));
+    }
+    assert!(map(&A::JoinFriend, Selected::default(), &reads).is_err());
+}
+
+/// `AddServer` adds the selected server to our favourites; `DeleteSelected`
+/// on a joined group leaves it.
+#[test]
+fn add_server_and_delete_room_reach_their_requests() {
+    let server = (4100, "10.0.0.1:27015".to_owned());
+    let on_server = Selected {
+        server: Some(&server),
+        ..Selected::default()
+    };
+    let Ok(Mapped::Request(r)) = map(&A::AddServer, on_server, &Reads::default()) else {
+        panic!("AddServer is a request")
+    };
+    assert!(matches!(
+        *r,
+        IpcRequest::FavouriteServerAdd { game_id: 4100, ref server, .. }
+            if server.as_str() == "10.0.0.1:27015"
+    ));
+    assert!(matches!(
+        map(&A::AddServer, friend_selected(), &Reads::default()),
+        Err(IpcResponse::Error { code: 409, .. })
+    ));
+    let g = "0f".repeat(16);
+    let joined = Reads {
+        rooms: Rooms {
+            selected: Some(Room::Joined(g.clone())),
+            attached: None,
+        },
+        ..Reads::default()
+    };
+    assert!(matches!(
+        map(&A::DeleteSelected, Selected::default(), &joined),
+        Ok(Mapped::Request(r)) if matches!(&*r, IpcRequest::GroupDmLeave { group_id } if *group_id == g)
+    ));
 }

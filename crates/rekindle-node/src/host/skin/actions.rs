@@ -3,7 +3,8 @@
 //! sends, run through the intent gate (ADR 0019) by `HostApi::call`
 //! ([`resolve`]); window, menu, tile and panel operations are
 //! [`ShellOp`]s the window's shell runs; an action Rekindle has no feature
-//! for answers [`SkinRun::NotBuiltYet`]. A selection-dependent action acts
+//! for yet answers [`SkinRun::NotBuiltYet`] (each listed with its plan
+//! step, lead decision 49). A selection-dependent action acts
 //! on the window's selection the Host keeps ([`Selections`]), never on the
 //! click target, and is refused while nothing is selected.
 
@@ -13,8 +14,11 @@ use rekindle_ipc::protocol::{IpcRequest, IpcResponse, TransferRequest};
 use rekindle_types::dto::skin_action::{MenuRegistry, SkinAction as A};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::dto::transfer::TransferTarget;
+use rekindle_types::friend::GameInfoState;
+use rekindle_types::game_server::{JoinSource, ServerAddress};
 
-use super::rooms::{self, Rooms};
+use super::reads::Reads;
+use super::rooms::{self, Room};
 
 /// Each window's selection (`SkinSelectionSet`), by window label (lead
 /// decision 48): a chat window's is its own peer, the buddy list's its
@@ -51,6 +55,14 @@ impl Selections {
         }
     }
 
+    /// The window's selected game server, as (game id, `host:port`).
+    pub(crate) fn server(&self, window: &str) -> Option<(u32, String)> {
+        match self.0.lock().get(window) {
+            Some(SkinSelection::Server { game_id, address }) => Some((*game_id, address.clone())),
+            _ => None,
+        }
+    }
+
     /// The window's selection.
     pub(crate) fn get(&self, window: &str) -> Option<SkinSelection> {
         self.0.lock().get(window).cloned()
@@ -69,18 +81,72 @@ pub(crate) enum Mapped {
     Run(SkinRun),
 }
 
-/// The table. `friend` and `transfer` are the window's selected friend
-/// and transfer, `rooms` what the room actions read ([`rooms::load`]).
+/// The window's selections one action may act on.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Selected<'a> {
+    pub friend: Option<&'a str>,
+    pub transfer: Option<&'a (String, TransferTarget)>,
+    pub server: Option<&'a (u32, String)>,
+}
+
+/// `JoinFriend` (SK2-G §1, lead decision 49): the selected friend's game
+/// on the server their presence shares, launched by the one launch path
+/// (`GameLaunch`, TrustChanging for a peer's address). Refused with the
+/// Host's own `not_joinable` reason, the check the `Join` capability makes.
+fn join_friend(friend: &str, game: Option<&GameInfoState>) -> Result<Mapped, IpcResponse> {
+    let refused = |why: String| IpcResponse::error(409, format!("JoinFriend: {friend} {why}"));
+    let game = game.ok_or_else(|| refused("is in no game".into()))?;
+    let server = game.server_address.as_deref();
+    if let Some(reason) = crate::host::journal_entry::not_joinable(Some(game.game_id), server) {
+        return Err(refused(format!("cannot be joined: {reason:?}")));
+    }
+    let server = server
+        .map(ServerAddress::parse)
+        .and_then(Result::ok)
+        .ok_or_else(|| refused("shares no server".into()))?;
+    Ok(Mapped::Request(Box::new(IpcRequest::GameLaunch {
+        game_id: game.game_id,
+        server: Some(server),
+        source: JoinSource::FriendPresence,
+    })))
+}
+
+/// `AddServer` (SK2-G §3): the selected server into our favourites, the
+/// existing `FavouriteServerAdd` (labelled later from the Servers view).
+fn add_server(server: Option<&(u32, String)>) -> Result<Mapped, IpcResponse> {
+    let (game_id, address) = server.ok_or_else(|| {
+        IpcResponse::error(
+            409,
+            "AddServer acts on the selected server: none is selected",
+        )
+    })?;
+    let server = ServerAddress::parse(address)
+        .map_err(|e| IpcResponse::error(400, format!("AddServer: {address}: {e}")))?;
+    Ok(Mapped::Request(Box::new(IpcRequest::FavouriteServerAdd {
+        game_id: *game_id,
+        server,
+        label: String::new(),
+    })))
+}
+
+/// The table. `selected` holds the window's selected friend, transfer
+/// and server, `reads` what the room and join actions read
+/// ([`super::reads::load`]).
 ///
 /// # Errors
 /// 409 for a selection-dependent action while nothing it acts on is
 /// selected.
 pub(crate) fn map(
     action: &A,
-    friend: Option<&str>,
-    transfer: Option<&(String, TransferTarget)>,
-    rooms: &Rooms,
+    selected: Selected<'_>,
+    reads: &Reads,
 ) -> Result<Mapped, IpcResponse> {
+    let Selected {
+        friend,
+        transfer,
+        server,
+    } = selected;
+    let rooms = &reads.rooms;
     use Mapped::{Request, Run};
     let shell = |op| Ok(Run(SkinRun::Shell(op)));
     let panel = |p| shell(ShellOp::OpenPanel(p));
@@ -159,6 +225,16 @@ pub(crate) fn map(
             peer: friend.map(str::to_owned),
         }),
         A::EnterRoom | A::JoinRoom | A::EnterAttachedRoom => rooms::enter(action, rooms),
+        // Deleting a room is leaving it (SK2-G §6); a picture or video's
+        // delete is the media library's (E7.2 G14).
+        A::DeleteSelected => match &rooms.selected {
+            Some(Room::Joined(group_id)) => Ok(Request(Box::new(IpcRequest::GroupDmLeave {
+                group_id: group_id.clone(),
+            }))),
+            _ => Ok(gap(action)),
+        },
+        A::JoinFriend => join_friend(&selected()?, reads.friend_game.as_ref()),
+        A::AddServer => add_server(server),
         A::GroupVoiceChat | A::HostGroupVoiceChat => panel(ShellPanel::StartGroupCall),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
@@ -202,17 +278,15 @@ pub(crate) fn map(
         A::AnimationStop { group } => shell(ShellOp::AnimationStop { group: *group }),
         A::SetState(s) => shell(ShellOp::SetState(*s)),
         A::PlaySound(s) => shell(ShellOp::PlaySound(s.clone())),
-        // Feature gaps (design §2.2): each button stays; the window says so.
-        A::JoinFriend
-        | A::ShowVoiceWindow
+        // Not built yet, each with its plan step (lead decision 49; the
+        // table in SK2-T1a's mapping): the button stays; the window says so.
+        A::ShowVoiceWindow
         | A::HostGameLobby
         | A::JoinGameLobby
         | A::LeaveGameLobby
         | A::LaunchGameLobby
-        | A::AddServer
         | A::RefreshServer
         | A::InviteUsersToRoom
-        | A::DeleteSelected
         | A::OpenSelected
         | A::UploadSelected
         | A::SearchFor
@@ -250,23 +324,26 @@ pub(crate) enum Resolved {
 }
 
 /// `RunSkinAction` in `HostApi::call`, before clearance: the one place an
-/// action is resolved (with the [`rooms::load`] it reads). A request action
+/// action is resolved (with the [`super::reads::load`] it reads). A request action
 /// becomes its request (which then meets its own clearance and the intent
 /// gate); any other stays `RunSkinAction` with its run.
 pub(crate) fn resolve(
     selections: &Selections,
-    rooms: &Rooms,
+    reads: &Reads,
     request: IpcRequest,
 ) -> Result<Resolved, IpcResponse> {
     let IpcRequest::RunSkinAction { window, action, .. } = &request else {
         return Ok(Resolved::Request(request));
     };
-    match map(
-        action,
-        selections.friend(window).as_deref(),
-        selections.transfer(window).as_ref(),
-        rooms,
-    )? {
+    let friend = selections.friend(window);
+    let transfer = selections.transfer(window);
+    let server = selections.server(window);
+    let selected = Selected {
+        friend: friend.as_deref(),
+        transfer: transfer.as_ref(),
+        server: server.as_ref(),
+    };
+    match map(action, selected, reads)? {
         Mapped::Request(mapped) => Ok(Resolved::Request(*mapped)),
         Mapped::Run(run) => Ok(Resolved::Run { request, run }),
     }

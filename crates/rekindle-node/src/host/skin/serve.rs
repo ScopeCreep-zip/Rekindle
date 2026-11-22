@@ -172,8 +172,19 @@ pub(super) async fn frames(ctx: &DaemonContext) -> Answer<SkinFrames> {
     Ok(SkinFrames { id, windows })
 }
 
-/// `SkinFile`: one file of the package a `skin://` path names.
+/// `SkinFile`: one file of the package a `skin://` path names. Every
+/// refusal is logged at WARN with the path and the refusal (its status and
+/// cause), so a window's failed image or sheet names itself in the Host's
+/// log (plan SK2-T1); the shell's `skin://` handler only copies the answer.
 pub(super) async fn file(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> {
+    let answer = file_answer(ctx, path).await;
+    if let Err(refusal) = &answer {
+        tracing::warn!(path, ?refusal, "skin:// file not served");
+    }
+    answer
+}
+
+async fn file_answer(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> {
     let missing = || IpcResponse::error(404, "no such skin file");
     let (address, _) = serve::parse_path(path).ok_or_else(missing)?;
     // A built-in is found by its address and only that pack is validated.

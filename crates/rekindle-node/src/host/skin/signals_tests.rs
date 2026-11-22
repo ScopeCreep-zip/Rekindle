@@ -237,3 +237,13 @@ fn focus_changes_the_set() {
         .focused
     );
 }
+
+/// `Join` follows the Host's launch check (`not_joinable`, lead decision
+/// 49), the one `JoinFriend` refuses on: a launchable game whose shared
+/// server does not parse is `cannot` (NoServer).
+#[test]
+fn join_follows_the_hosts_not_joinable_check() {
+    let unparsed = friend(UserStatus::Online, Some("not a server"));
+    assert!(!can(&unparsed, Capability::Join));
+    assert!(!can(&unparsed, Capability::JoinGameLobby));
+}
