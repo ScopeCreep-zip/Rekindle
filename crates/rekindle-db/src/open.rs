@@ -262,7 +262,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// row's named dependency; `activity_log` and `activity_seen`; `app_settings.keep_activity_log`;
 /// and the veilid-core pin moves to fork rev `bc741633`, so the DB, vault and Veilid storage
 /// reset together.
-pub const SCHEMA_VERSION: i64 = 153;
+/// 154 (plan E7.2 G7 + G12): `group_dms.origin_peer`, the friend whose chat the room was created
+/// from, and `group_dms.favourite`, our "Chat Rooms" flag; `transfers`, each download's state and
+/// resume checkpoint.
+pub const SCHEMA_VERSION: i64 = 154;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
