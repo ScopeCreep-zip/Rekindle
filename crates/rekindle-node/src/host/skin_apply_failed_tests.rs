@@ -192,7 +192,7 @@ async fn a_skin_on_trial_that_fails_is_reverted_and_logged() {
     assert!(line.contains(REPORTING_WINDOW), "{line}");
 }
 
-const WINDOWS: [&str; 3] = ["chat-ann", "buddy-list", "settings"];
+const REPORTING_WINDOWS: [&str; 3] = ["chat-ann", "buddy-list", "settings"];
 
 fn sheet() -> SkinApplyFailure {
     SkinApplyFailure::SheetError {
@@ -218,20 +218,34 @@ async fn n_windows_reporting_one_failure_publish_one_event() {
     let captured = Captured::default();
     {
         let _armed = capture(&captured);
-        for window in WINDOWS {
+        for window in REPORTING_WINDOWS {
             let answer = report(&host, failed(window, builtin::DEFAULT, image())).await;
             assert_eq!(status_of(&answer), None, "{answer:?}");
         }
     }
     // Events are in order: the next one after the first is the other cause.
-    let _ = report(&host, failed(WINDOWS[1], builtin::DEFAULT, sheet())).await;
+    let _ = report(
+        &host,
+        failed(REPORTING_WINDOWS[1], builtin::DEFAULT, sheet()),
+    )
+    .await;
     assert_eq!(
         next_failed(&mut events).await,
-        (WINDOWS[0].into(), builtin::DEFAULT.into(), image(), false)
+        (
+            REPORTING_WINDOWS[0].into(),
+            builtin::DEFAULT.into(),
+            image(),
+            false
+        )
     );
     assert_eq!(
         next_failed(&mut events).await,
-        (WINDOWS[1].into(), builtin::DEFAULT.into(), sheet(), false),
+        (
+            REPORTING_WINDOWS[1].into(),
+            builtin::DEFAULT.into(),
+            sheet(),
+            false
+        ),
         "the other windows' reports of the same failure published nothing"
     );
     let log = String::from_utf8(captured.0.lock().clone()).unwrap();
@@ -253,18 +267,32 @@ async fn n_windows_reporting_one_failure_publish_one_event() {
         .0,
     );
     assert_eq!(again.active, builtin::DEFAULT);
-    for window in WINDOWS {
+    for window in REPORTING_WINDOWS {
         let _ = report(&host, failed(window, builtin::DEFAULT, image())).await;
     }
-    let _ = report(&host, failed(WINDOWS[2], builtin::DEFAULT, sheet())).await;
+    let _ = report(
+        &host,
+        failed(REPORTING_WINDOWS[2], builtin::DEFAULT, sheet()),
+    )
+    .await;
     assert_eq!(
         next_failed(&mut events).await,
-        (WINDOWS[0].into(), builtin::DEFAULT.into(), image(), false),
+        (
+            REPORTING_WINDOWS[0].into(),
+            builtin::DEFAULT.into(),
+            image(),
+            false
+        ),
         "a re-apply tells the same failure again"
     );
     assert_eq!(
         next_failed(&mut events).await,
-        (WINDOWS[2].into(), builtin::DEFAULT.into(), sheet(), false)
+        (
+            REPORTING_WINDOWS[2].into(),
+            builtin::DEFAULT.into(),
+            sheet(),
+            false
+        )
     );
 }
 
@@ -296,19 +324,19 @@ async fn n_windows_failing_a_trial_revert_it_once_and_tell_it_once() {
         let chosen: SkinLibrary = data(run(&host, select.clone()).await.0);
         assert!(chosen.trial.is_some(), "round {round}: on trial");
         let mut events = host.ctx.journal.subscribe(None);
-        for window in WINDOWS {
+        for window in REPORTING_WINDOWS {
             let answer = report(&host, failed(window, &id, image())).await;
             assert_eq!(status_of(&answer), None, "{answer:?}");
         }
-        let _ = report(&host, failed(WINDOWS[1], &id, sheet())).await;
+        let _ = report(&host, failed(REPORTING_WINDOWS[1], &id, sheet())).await;
         assert_eq!(
             next_failed(&mut events).await,
-            (WINDOWS[0].into(), id.clone(), image(), true),
+            (REPORTING_WINDOWS[0].into(), id.clone(), image(), true),
             "round {round}"
         );
         assert_eq!(
             next_failed(&mut events).await,
-            (WINDOWS[1].into(), id.clone(), sheet(), false),
+            (REPORTING_WINDOWS[1].into(), id.clone(), sheet(), false),
             "round {round}: one event for the three reports"
         );
         let after = library(&host).await;
