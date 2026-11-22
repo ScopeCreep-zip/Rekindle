@@ -110,18 +110,36 @@ fn a_lobby_is_hosted_in_a_group_with_a_member_while_in_a_launchable_game() {
     let i = Inputs::default();
     let mut w = SkinWorld::default();
     let g = Selected::Group { group_id: "g1" };
-    w.groups.insert("g1".into(), Group::Joined { others: 1, creator: false });
+    w.groups.insert(
+        "g1".into(),
+        Group::Joined {
+            others: 1,
+            creator: false,
+        },
+    );
     w.own_game = Some(TF2);
     assert!(can(C::HostGameLobby, &i, &w, g));
     w.own_game = Some(UNKNOWN);
     assert!(!can(C::HostGameLobby, &i, &w, g));
     w.own_game = Some(TF2);
-    w.groups.insert("g1".into(), Group::Joined { others: 0, creator: false });
+    w.groups.insert(
+        "g1".into(),
+        Group::Joined {
+            others: 0,
+            creator: false,
+        },
+    );
     assert!(!can(C::HostGameLobby, &i, &w, g));
     w.groups.insert("g1".into(), Group::Pending);
     assert!(!can(C::HostGameLobby, &i, &w, g));
     // We are in no lobby: nothing to join, leave or launch.
-    w.groups.insert("g1".into(), Group::Joined { others: 3, creator: false });
+    w.groups.insert(
+        "g1".into(),
+        Group::Joined {
+            others: 3,
+            creator: false,
+        },
+    );
     for c in [C::JoinGameLobby, C::LeaveGameLobby, C::LaunchGameLobby] {
         assert!(!can(c, &i, &w, g), "{c:?}");
     }
@@ -142,7 +160,13 @@ fn rooms_need_two_friends_to_create_and_a_known_group_to_enter() {
     w.groups.insert("g1".into(), Group::Pending);
     assert!(can(C::EnterRoom, &i, &w, g));
     assert!(!can(C::DeleteSelected, &i, &w, g), "an invite is not left");
-    w.groups.insert("g1".into(), Group::Joined { others: 2, creator: false });
+    w.groups.insert(
+        "g1".into(),
+        Group::Joined {
+            others: 2,
+            creator: false,
+        },
+    );
     assert!(
         can(C::DeleteSelected, &i, &w, g),
         "a room is deleted by leaving"
