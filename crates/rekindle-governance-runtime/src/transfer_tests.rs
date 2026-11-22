@@ -128,6 +128,7 @@ fn an_accepted_offer_stands_no_more() {
     let round = transfer_round(&s, &pk(2)).expect("the offer stands");
     let offer = OpRef {
         op_hash: round.offer,
+        device_key: pk(1).0,
         author: pk(1),
         author_record: "VLD0:m1".into(),
         author_seq: 5,
@@ -200,6 +201,7 @@ fn a_transfer_waits_for_every_co_creator_link() {
 fn op_ref(hash: OpHash, author: u8) -> OpRef {
     OpRef {
         op_hash: hash,
+        device_key: pk(author).0,
         author: pk(author),
         author_record: format!("VLD0:m{author}"),
         author_seq: 1,

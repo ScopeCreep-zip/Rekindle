@@ -220,6 +220,7 @@ mod tests {
             creator_set_hash: Some([1; 32]),
             accepts: Some(OpRef {
                 op_hash: super::super::OpHash([2; 32]),
+                device_key: [3; 32],
                 author: PseudonymKey([3; 32]),
                 author_record: "VLD0:rec".into(),
                 author_seq: 1,

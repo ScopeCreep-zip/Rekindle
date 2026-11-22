@@ -15,6 +15,7 @@ fn key(b: u8) -> PseudonymKey {
 fn op_ref(b: u8) -> OpRef {
     OpRef {
         op_hash: OpHash([b; 32]),
+        device_key: key(b).0,
         author: key(b),
         author_record: "VLD0:rec".into(),
         author_seq: 1,
