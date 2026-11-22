@@ -8,7 +8,6 @@ import type { GameInfo } from "../../ipc/commands/dto";
 import { EVERYONE_ROLE_ID, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
-import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
 import { handleLaunchGame } from "../../actions/game.actions";
 import { notJoinableText } from "../../utils/joinable_text";
@@ -264,7 +263,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
     <Popover.Portal>
       <Popover.Content class="profile-popup" style={accentStyle()}>
         <div class="profile-popup-name">{props.member.displayName}</div>
-        <div class="profile-popup-key">{truncateKey(props.member.pseudonymKey)}</div>
+        <div class="profile-popup-key">{props.member.fingerprint}</div>
         <div class="profile-popup-status">
           <StatusDot status={props.member.status || "online"} />
           <span>{props.member.status || "online"}</span>
