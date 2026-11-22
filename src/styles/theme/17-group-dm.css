@@ -116,12 +116,14 @@
   /* Rename and Invite (plan E7.2 G7/G8): compact like Leave. A refused one
      stays focusable (`aria-disabled`) so its Host reason reaches the title
      and the screen reader; it looks like a disabled secondary button. */
-  .group-chat-action {
+  .group-chat-action,
+  .downloads-tab-action {
     padding: 2px 8px;
     font-size: 10px;
   }
 
-  .group-chat-action[aria-disabled="true"] {
+  .group-chat-action[aria-disabled="true"],
+  .downloads-tab-action[aria-disabled="true"] {
     opacity: 0.4;
     cursor: not-allowed;
   }

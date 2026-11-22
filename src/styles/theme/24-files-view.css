@@ -49,6 +49,13 @@
     grid-column: 1 / -1;
   }
 
+  /* The app's own Downloads tab: Start, Stop and Execute under the list. */
+  .downloads-tab-actions {
+    display: flex;
+    gap: 6px;
+    padding: 4px 6px;
+  }
+
   .files-view-rows {
     flex: 1;
     min-height: 0;

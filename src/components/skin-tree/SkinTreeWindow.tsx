@@ -271,7 +271,7 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
         <div {...attrs}>
           {children()}
           <div class="skin-tree-view-content">
-            <FilesView run={(a) => tree.run(n().id, a)} />
+            <FilesView onExecute={() => tree.run(n().id, { kind: "openDownload" })} />
           </div>
         </div>
       </Match>

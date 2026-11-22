@@ -32,6 +32,8 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     rows: [
       { keys: [["Alt", "1"]], action: "Friends tab" },
       { keys: [["Alt", "2"]], action: "Communities tab" },
+      { keys: [["Alt", "3"]], action: "Servers tab" },
+      { keys: [["Alt", "4"]], action: "Downloads tab" },
       { keys: [["Mod", "F"]], action: "Search friends" },
     ],
   },
