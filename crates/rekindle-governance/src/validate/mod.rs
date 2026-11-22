@@ -232,7 +232,6 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         | GovernanceEntry::SuccessorLinkRequest(_)
         | GovernanceEntry::SuccessorLink(_) => true,
 
-
         // A re-admission is the member's own (rule 7: by one of its pre-fork
         // device keys, checked at the op's deps in S7d-keys.2) or a kick's:
         // `KICK_MEMBERS` and outranking the member's highest role (rule 8).
