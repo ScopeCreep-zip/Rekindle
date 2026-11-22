@@ -107,7 +107,7 @@ impl HostGovernance {
             cascade_index,
             "asking for a community key held behind"
         );
-        let request = CommunityEnvelope::Control(ControlPayload::RequestMEK {
+        let request = CommunityEnvelope::control(ControlPayload::RequestMEK {
             channel_id: KeyScope::Community.wire_channel_str(),
             needed_generation: generation,
             requester_pseudonym: pseudonym,
@@ -121,7 +121,7 @@ impl HostGovernance {
             shell.spawn_community_mek_recovery(community_id, &pseudonym);
             return;
         }
-        let request = CommunityEnvelope::Control(ControlPayload::RequestMEK {
+        let request = CommunityEnvelope::control(ControlPayload::RequestMEK {
             channel_id: KeyScope::Community.wire_channel_str(),
             needed_generation: 0,
             requester_pseudonym: pseudonym,

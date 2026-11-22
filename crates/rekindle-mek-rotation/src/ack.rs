@@ -51,7 +51,7 @@ pub fn encode_mek_transfer_ack(
             joiner: joiner_hex,
         },
     );
-    let ack = CommunityEnvelope::Control(ControlPayload::MekTransferAck(MekTransferAckPayload {
+    let ack = CommunityEnvelope::control(ControlPayload::MekTransferAck(MekTransferAckPayload {
         community_id: transfer.community_id.clone(),
         channel_id: transfer.channel_id.clone(),
         generation: mek.generation(),
@@ -96,8 +96,11 @@ fn refusal(expected: &ExpectedAck<'_>, ack: &MekTransferAckPayload) -> Option<&'
 pub fn is_mek_transfer_ack(expected: &ExpectedAck<'_>, reply: &[u8]) -> bool {
     let community = expected.community_id;
     let joiner = expected.joiner_hex;
-    let Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransferAck(ack)))) =
+    let Some(ControlPayload::MekTransferAck(ack)) =
         rekindle_codec::capnp_envelope::try_decode_community_envelope(reply)
+            .ok()
+            .flatten()
+            .and_then(CommunityEnvelope::into_control)
     else {
         tracing::debug!(
             community,
@@ -142,13 +145,16 @@ mod tests {
     }
 
     fn reencode(ack: &[u8], edit: impl FnOnce(&mut MekTransferAckPayload)) -> Vec<u8> {
-        let Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransferAck(mut p)))) =
+        let Some(ControlPayload::MekTransferAck(mut p)) =
             rekindle_codec::capnp_envelope::try_decode_community_envelope(ack)
+                .ok()
+                .flatten()
+                .and_then(CommunityEnvelope::into_control)
         else {
             panic!("not an ack")
         };
         edit(&mut p);
-        rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(
+        rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::control(
             ControlPayload::MekTransferAck(p),
         ))
         .unwrap()

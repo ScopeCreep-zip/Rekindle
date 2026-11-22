@@ -214,14 +214,14 @@ fn first_frame_emits_initial_topology_change() {
         "only the topology envelope dispatches here"
     );
     assert!(matches!(
-        calls.sent.first().expect("topology sent"),
-        CommunityEnvelope::Control(ControlPayload::TopologyChange { reason, .. }) if reason == "initial"
+        calls.sent.first().expect("topology sent").as_control(),
+        Some(ControlPayload::TopologyChange { reason, .. }) if reason == "initial"
     ));
     // The returned frame carries the fragments for the pacer.
     for env in &frame.envelopes {
         assert!(matches!(
-            env,
-            CommunityEnvelope::Control(ControlPayload::VideoFragment(_))
+            env.as_control(),
+            Some(ControlPayload::VideoFragment(_))
         ));
     }
 }
@@ -253,12 +253,7 @@ fn second_frame_same_stream_skips_initial_topology() {
     let topology_count = calls
         .sent
         .iter()
-        .filter(|e| {
-            matches!(
-                e,
-                CommunityEnvelope::Control(ControlPayload::TopologyChange { .. })
-            )
-        })
+        .filter(|e| matches!(e.as_control(), Some(ControlPayload::TopologyChange { .. })))
         .count();
     assert_eq!(
         topology_count, 1,

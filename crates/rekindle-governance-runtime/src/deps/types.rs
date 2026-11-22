@@ -165,4 +165,7 @@ pub enum OpOutcome {
 pub struct CardText {
     pub display_name: Option<String>,
     pub custom_status: Option<String>,
+    /// The game the member shares there (plan E3.4 S6, field-fate table:
+    /// `game_info` is the card's); `None` while they share none.
+    pub game: Option<rekindle_types::presence::GameInfo>,
 }

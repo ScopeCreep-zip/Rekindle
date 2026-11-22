@@ -12,10 +12,6 @@ use crate::deps::PresenceError;
 
 #[async_trait]
 pub trait CommunityPresenceDeps: Send + Sync + 'static {
-    /// The host's RNG port (plan C9.2): the gossip fan-out sample draws
-    /// from it, so a seed fixes which peers a tick asks.
-    fn rng(&self) -> &dyn rekindle_utils::RandomSource;
-
     /// The scope of the session this work belongs to. A poll tick stops
     /// before its next Veilid call once it is closed (plan C4.L1).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
@@ -24,14 +20,12 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// times and the poll's freshness checks read it, never the wall clock.
     fn now_secs(&self) -> u64;
 
-    // === Initial-sync handshake surface (21.k-REDO) ===
-
     /// Pseudonym key (hex) the local user holds in `community_id`,
     /// or empty string when missing.
     fn my_pseudonym_for_community(&self, community_id: &str) -> String;
 
-    /// Our published private route blob (if attached), used by the
-    /// gossip `PresenceUpdate` broadcast. This is the GENERAL route
+    /// Our published private route blob (if attached), written on our
+    /// presence row. This is the GENERAL route
     /// (Reliable + PreferOrdered) for chat / governance / gossip.
     fn our_route_blob(&self) -> Option<Vec<u8>>;
 
@@ -40,33 +34,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// the first presence row names a route peers can import (live
     /// finding 25). At once when no transport runs: the tick reports that.
     async fn own_route_available(&self);
-
-    /// String form of the local user's current presence status —
-    /// "online" / "away" / "busy" / "offline" (Invisible folds to
-    /// "offline"). Defaults to "online" when no identity is loaded.
-    ///
-    /// `community_id` is the wire-up point for per-community
-    /// `MemberPresence.custom_status` (architecture spec
-    /// `rekindle-communities-architecture.md` line 754 — custom
-    /// status text like "Playing Halo" is published per-community).
-    /// The current adapter impl returns global identity status; the
-    /// parameter stays so a follow-up commit can resolve
-    /// `community.my_custom_status` first and fall back to identity
-    /// status without breaking the trait signature.
-    fn current_presence_status_str(&self, community_id: &str) -> String;
-
-    /// Fire-and-forget gossip broadcast of a community envelope.
-    /// Mirrors `services::community::send_to_mesh` semantics: the
-    /// transport pipeline is spawned + errors logged inside.
-    fn send_to_mesh(
-        &self,
-        community_id: &str,
-        envelope: rekindle_codec::community::envelope::CommunityEnvelope,
-    );
-
-    /// Flip `gossip.needs_initial_sync` to false after the initial
-    /// sync round completes.
-    fn mark_initial_sync_done(&self, community_id: &str);
 
     // === Registry write surface (21.j-REDO) ===
 
@@ -251,61 +218,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         emit_refreshed: bool,
     );
 
-    /// Re-inject still-fresh peers from the prior gossip overlay
-    /// into `online_members` (architecture §3 — TTL-based eviction
-    /// over a 180 s threshold so a peer briefly missing from one
-    /// scan doesn't drop them from the overlay).
-    fn extend_online_with_recent_gossip(
-        &self,
-        community_id: &str,
-        online_members: &mut HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-        eviction_threshold_secs: u64,
-    );
-
-    /// Peers that WERE in the prior gossip overlay's online set but
-    /// are absent from the freshly-scanned `online_members`. Used
-    /// to emit one `MemberPresenceChanged{status:"offline"}` event
-    /// per gone-offline peer.
-    fn gossip_offline_diff(
-        &self,
-        community_id: &str,
-        online_members: &HashMap<String, OnlineMember>,
-        my_pseudonym: &str,
-    ) -> Vec<String>;
-
-    /// Snapshot the prior gossip overlay's mutation-relevant
-    /// fields (lamport counter + needs_initial_sync flag + the
-    /// drained pending-mesh queue). The crate orchestrator hands
-    /// this to
-    /// [`crate::community::overlay_rebuild::compute_rebuild_plan`]
-    /// to compute the new overlay state.
-    fn read_gossip_snapshot(&self, community_id: &str) -> crate::community::GossipOverlaySnapshot;
-
-    /// Atomically write the rebuilt overlay back into the
-    /// community state. The orchestrator passes the plan returned
-    /// from `compute_rebuild_plan` after the write lock releases —
-    /// the adapter does the actual `peers` / `online_members` /
-    /// `needs_initial_sync` /
-    /// `pending_mesh_broadcasts` writes under one lock.
-    fn apply_gossip_rebuild_plan(
-        &self,
-        community_id: &str,
-        plan: crate::community::GossipOverlayPlan,
-    );
-
-    /// Resend a drained signed envelope through the gossip mesh.
-    /// Adapter forwards to `services::community::send_to_mesh_raw`.
-    fn send_to_mesh_raw(
-        &self,
-        community_id: &str,
-        envelope: rekindle_codec::community::envelope::SignedEnvelope,
-    );
-
-    /// Emit a `MemberPresenceChanged{status:"offline"}` community
-    /// event for a peer that's just gone offline.
-    fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str);
-
     /// Voice channel the LOCAL user is currently connected to in this
     /// community, if any. Rides the MEK-encrypted `SessionExtras` on
     /// our presence row (MatrixRTC `m.rtc.member` pattern) so the
@@ -368,8 +280,8 @@ pub struct VoicePresenceRow {
     pub fresh: bool,
 }
 
-/// In-memory snapshot of one online community member used by the
-/// gossip overlay rebuild. Mirrors src-tauri's `OnlineMember`
+/// In-memory snapshot of one online community member a fresh registry
+/// row decodes to. Mirrors src-tauri's `OnlineMember`
 /// shape without forcing the crate to depend on the AppState type.
 ///
 /// `location` / `last_active` are the decoded session signals used by

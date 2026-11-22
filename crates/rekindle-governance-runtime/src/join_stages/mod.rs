@@ -363,7 +363,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
             full_segment_index,
             "Plate Gate: joiner lacks MANAGE_COMMUNITY — gossiping RequestSegmentExpansion"
         );
-        let envelope = CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
+        let envelope = CommunityEnvelope::control(ControlPayload::RequestSegmentExpansion {
             community_id: community_id.to_string(),
             requester_pseudonym,
             full_segment_index,

@@ -349,7 +349,7 @@ impl HostGovernance {
     pub(super) fn gossip_op(&self, community_id: &str, encoded: Vec<u8>) {
         self.send_to_mesh_impl(
             community_id,
-            &rekindle_codec::community::envelope::CommunityEnvelope::Control(
+            &rekindle_codec::community::envelope::CommunityEnvelope::control(
                 rekindle_codec::community::envelope::ControlPayload::GovernanceOp { op: encoded },
             ),
         );

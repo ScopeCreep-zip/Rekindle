@@ -159,7 +159,6 @@
     "allow-unregister-community-video-channel",
     "allow-unregister-native-preview-channel",
     "allow-update-community-info",
-    "allow-update-community-presence",
     "allow-update-community-profile",
     "allow-set-community-display-name",
     "allow-upload-attachment",

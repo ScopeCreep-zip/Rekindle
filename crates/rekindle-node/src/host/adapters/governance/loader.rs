@@ -57,6 +57,7 @@ pub(crate) async fn restore(
                 let card = rekindle_governance_runtime::CardText {
                     display_name: p.display_name,
                     custom_status: p.custom_status,
+                    game: None,
                 };
                 (
                     p.community_id,

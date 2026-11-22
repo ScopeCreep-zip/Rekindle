@@ -59,8 +59,8 @@ async fn misdirected_or_rebound_keys_are_refused() {
     bob.roster(&[&alice]).await;
     let ack = handle_voice_media_key(&bob.deps(), &genuine).await.unwrap();
     assert!(acknowledges(
-        &CommunityEnvelope::Control(genuine),
-        Some(&CommunityEnvelope::Control(ack))
+        &CommunityEnvelope::control(genuine),
+        Some(&CommunityEnvelope::control(ack))
     ));
     assert_eq!(alice.held_by(&bob, 5), Some([4; 32]));
 }

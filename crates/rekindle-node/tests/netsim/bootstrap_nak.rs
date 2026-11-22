@@ -154,7 +154,7 @@ async fn outsider_is_refused_and_not_stored(
         ),
         "the refusal names {reason}"
     );
-    let request = encode_community_envelope(&CommunityEnvelope::Control(
+    let request = encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::BootstrapRequest {
             joiner_pseudonym: hex::encode(author.0),
             anchor: anchor.clone(),
@@ -179,11 +179,15 @@ async fn outsider_is_refused_and_not_stored(
     let refused = rekindle_codec::capnp_envelope::try_decode_community_envelope(&reply);
     assert!(
         matches!(
-            &refused,
-            Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRefused {
+            refused
+                .as_ref()
+                .ok()
+                .and_then(Option::as_ref)
+                .and_then(CommunityEnvelope::as_control),
+            Some(ControlPayload::BootstrapRefused {
                 anchor: answered,
                 reason: got,
-            }))) if *answered == anchor && *got == reason
+            }) if *answered == anchor && *got == reason
         ),
         "the member refuses the join for {reason:?}: {refused:?}"
     );

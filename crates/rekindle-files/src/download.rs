@@ -404,7 +404,7 @@ fn encode_chunk_request<D: FilesDeps>(
     requested_chunks: &[u32],
 ) -> Result<Vec<u8>, FilesError> {
     let requester_pseudonym = deps.my_pseudonym(community_id)?;
-    let payload = CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+    let payload = CommunityEnvelope::control(ControlPayload::RequestAttachment {
         channel_id: channel_id.to_string(),
         attachment_id,
         requested_chunks: requested_chunks.to_vec(),
@@ -429,8 +429,8 @@ async fn ask_source<D: FilesDeps>(
     let reply = deps.app_call_peer(&route_blob, request).await?;
     let envelope = rekindle_codec::capnp_envelope::decode_community_envelope(&reply)
         .map_err(|e| FilesError::Transport(format!("decode reply: {e}")))?;
-    match envelope {
-        CommunityEnvelope::Control(ControlPayload::MultiAttachmentChunk { chunks }) => Ok(chunks
+    match envelope.into_control() {
+        Some(ControlPayload::MultiAttachmentChunk { chunks }) => Ok(chunks
             .into_iter()
             .filter_map(|c| match c {
                 ControlPayload::AttachmentChunk {

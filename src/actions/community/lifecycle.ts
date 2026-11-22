@@ -10,7 +10,6 @@ import {
   transformMember,
 } from "../../utils/transformers";
 import { handleLoadUnreadCounts } from "./channels";
-import { handleUpdateCommunityPresence } from "./profile";
 
 /// Create a community. A refused create (a cancelled review, a node not
 /// yet attached) rejects with the Host's error, so the form that asked
@@ -60,8 +59,6 @@ export function handleSelectCommunity(communityId: string): void {
     console.error("Failed to load community members:", e);
     addToast("Failed to load members", "error");
   });
-  // Notify the server we're online in this community
-  handleUpdateCommunityPresence(communityId, "online");
   // Refresh community details to ensure myPseudonymKey, roles, categories, and mekGeneration are current
   commands.getCommunityDetails().then((details) => {
     const detail = details.find((c) => c.id === communityId);

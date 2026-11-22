@@ -50,7 +50,6 @@
 
 mod deps_impl;
 mod events;
-mod gossip;
 mod lifecycle;
 mod registry;
 mod state_reads;

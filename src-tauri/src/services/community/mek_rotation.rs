@@ -82,7 +82,7 @@ pub fn spawn_mek_request_with_retry(
                     return;
                 }
                 // Build & broadcast RequestMEK at the current cascade level.
-                let request = CommunityEnvelope::Control(ControlPayload::RequestMEK {
+                let request = CommunityEnvelope::control(ControlPayload::RequestMEK {
                     channel_id: channel_id.clone(),
                     needed_generation,
                     requester_pseudonym: requester_pseudonym.clone(),

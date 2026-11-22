@@ -82,11 +82,10 @@ fn status_response(
     let sub_guard = ctx.subscriptions.read();
     let (gossip_meshes, gossip_mesh_peers, unread_friend_requests, dedup_entries, dedup_suppressed) =
         if let Some(ref sub_mgr) = *sub_guard {
-            let meshes = sub_mgr.meshes().read();
-            let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
+            let meshes = sub_mgr.meshes().read().len();
             (
-                meshes.len(),
-                mesh_peers,
+                meshes,
+                host_mesh_peers(ctx),
                 sub_mgr.unread_friend_requests(),
                 sub_mgr.dedup_entries(),
                 sub_mgr.dedup_suppressed(),
@@ -380,12 +379,11 @@ fn build_checks(
     // ── SUBSCRIPTIONS — event system health ─────────────────────────
     let sub_guard = ctx.subscriptions.read();
     if let Some(ref sub_mgr) = *sub_guard {
-        let meshes = sub_mgr.meshes().read();
-        let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
+        let meshes = sub_mgr.meshes().read().len();
         checks.push(Check::pass(
             "subscriptions.gossip_meshes",
             "subscriptions",
-            format!("{} meshes, {} peers", meshes.len(), mesh_peers),
+            format!("{meshes} meshes, {} peers", host_mesh_peers(ctx)),
         ));
         checks.push(Check::pass(
             "subscriptions.poll_loop",
@@ -403,6 +401,20 @@ fn build_checks(
 }
 
 /// Format seconds as human-readable uptime.
+/// The fan-out targets across our communities: the Host's mesh (plan E3.4
+/// S5), the roster's live members by their `M`/6 routes.
+fn host_mesh_peers(ctx: &DaemonContext) -> usize {
+    let Some(ctx) = ctx.this.upgrade() else {
+        return 0;
+    };
+    let communities: Vec<String> = ctx.communities.map().read().keys().cloned().collect();
+    let governance = crate::host::adapters::governance::HostGovernance::new(ctx);
+    communities
+        .iter()
+        .map(|c| governance.mesh_peers(c).len())
+        .sum()
+}
+
 fn fmt_uptime(secs: u64) -> String {
     if secs < 60 {
         return format!("{secs}s");

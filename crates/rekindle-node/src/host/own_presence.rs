@@ -105,6 +105,8 @@ pub(crate) struct OwnPresence {
     clock: Arc<dyn rekindle_utils::Clock>,
     /// The community beat engine (`host::adapters::presence`, plan E3.4 S2).
     pub(crate) beats: crate::host::adapters::presence::BeatSlot,
+    /// Woken on every change: the card's game writer (`presence::card_game`).
+    pub(crate) card_game: Arc<tokio::sync::Notify>,
 }
 
 impl OwnPresence {
@@ -124,6 +126,7 @@ impl OwnPresence {
             journal,
             clock,
             beats: crate::host::adapters::presence::BeatSlot::default(),
+            card_game: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -170,11 +173,9 @@ impl OwnPresence {
         self.state.read().status
     }
 
-    /// A status the user picked: auto-away no longer holds it. Entering
-    /// Invisible or Offline writes the status message and the game empty
-    /// ([`hides_details`]); leaving them writes both again from what we
-    /// hold (prod research batch 7 G1: Discord and Steam show an invisible
-    /// user with no activity).
+    /// A status the user picked: auto-away no longer holds it. Entering Invisible or Offline writes
+    /// the status message and the game empty ([`hides_details`]); leaving them writes both again
+    /// from what we hold (prod research batch 7 G1: Discord and Steam show an invisible user with no activity).
     pub(crate) async fn set_status(&self, status: SessionStatus) {
         let flipped = {
             let mut state = self.state.write();
@@ -307,10 +308,9 @@ impl OwnPresence {
         self.write_details(false).await
     }
 
-    /// The game we play, or none: written to profile subkey 4 as the
-    /// schema's packed `GameStatus`, empty for none (plan E1.1), sealed
-    /// under our friend-presence key (plan E2.5). Written empty while
-    /// Invisible or Offline: the game is kept and published on leaving them.
+    /// The game we play, or none: written to profile subkey 4 as the schema's packed `GameStatus`,
+    /// empty for none (plan E1.1), sealed under our friend-presence key (plan E2.5). Written empty
+    /// while Invisible or Offline: the game is kept and published on leaving them.
     ///
     /// # Errors
     /// The profile write failed (the game is kept and shown).
@@ -475,6 +475,7 @@ impl OwnPresence {
     /// Wake the publisher and tell every frontend.
     fn changed(&self) {
         self.wake.notify_one();
+        self.card_game.notify_one();
         let owner = self
             .session
             .read()

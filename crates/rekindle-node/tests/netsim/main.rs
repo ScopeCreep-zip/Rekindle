@@ -14,6 +14,7 @@ mod beat_on_screen;
 mod behind_key_repair;
 mod bootstrap_nak;
 mod call_end_receipt;
+mod card_game_policy;
 mod channel_delete_container_not_empty;
 mod channel_edit_both_ways;
 mod channel_move;

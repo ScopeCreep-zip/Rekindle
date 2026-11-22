@@ -60,7 +60,7 @@ impl HostGovernance {
             added_by,
             created_at: self.ctx.clock.now_secs(),
         };
-        let envelope = CommunityEnvelope::Control(ControlPayload::GameServerAdded {
+        let envelope = CommunityEnvelope::control(ControlPayload::GameServerAdded {
             server: server.clone(),
         });
         self.send_to_mesh(community_id, &envelope)?;
@@ -80,7 +80,7 @@ impl HostGovernance {
         server_id: &str,
     ) -> Result<(), GovernanceRuntimeError> {
         self.require_permission(community_id, permissions::MANAGE_CHANNELS)?;
-        let envelope = CommunityEnvelope::Control(ControlPayload::GameServerRemoved {
+        let envelope = CommunityEnvelope::control(ControlPayload::GameServerRemoved {
             server_id: server_id.to_owned(),
         });
         self.send_to_mesh(community_id, &envelope)?;

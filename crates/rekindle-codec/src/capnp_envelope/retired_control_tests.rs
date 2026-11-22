@@ -44,3 +44,27 @@ fn a_retired_control_ordinal_decodes_to_no_payload() {
         );
     }
 }
+
+/// The envelope arm `@2` (`presenceUpdate`, retired at plan E3.4 S5: a
+/// member's status rides its beat, its game its card) decodes to no
+/// envelope, so a frame an old peer still sends reaches no receiver: the
+/// gossip ingress drops `Ok(None)` before any handler
+/// (`rekindle-transport` `dispatch_bare_gossip`).
+#[test]
+fn a_frame_with_the_retired_presence_arm_is_not_acted_on() {
+    let mut builder = capnp::message::Builder::new_default();
+    let mut root = builder.init_root::<community_envelope::Builder<'_>>();
+    root.set_obsolete2(());
+    let bytes = pack(&builder);
+    assert!(
+        matches!(
+            decode_community_envelope(&bytes),
+            Err(CodecError::UnknownVariant(_))
+        ),
+        "@2 decoded to an envelope"
+    );
+    assert!(
+        matches!(try_decode_community_envelope(&bytes), Ok(None)),
+        "@2: a relay must skip it, not act on it or fail the frame"
+    );
+}

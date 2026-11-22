@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::state::{AppState, OnlineMember};
+use crate::state::AppState;
 use crate::state_helpers;
 
 use rekindle_codec::capnp_envelope::{decode_signed_envelope, try_decode_community_envelope};
 use rekindle_codec::community::envelope::{verify_envelope, CommunityEnvelope, SignedEnvelope};
-use rekindle_codec::ingress::{classify, gossip_datagram, Ingress};
+use rekindle_codec::ingress::{classify, Ingress};
 
 // Fully synchronous: the voice fast path is a `try_send` and
 // everything else is a queue push — the dispatch loop never blocks on
@@ -192,7 +192,7 @@ async fn handle_gossip_envelope(
     // non-compliant sender ships them with ttl > 0, so honest nodes
     // never amplify channel media beyond the roster it was sent to.
     if signed.ttl > 0 && video_channel.is_none() {
-        gossip_forward(state, community_id, &signed);
+        gossip_forward(state, &signed);
     }
 
     let is_from_self = {
@@ -239,9 +239,8 @@ pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
     use rekindle_codec::community::envelope::ControlPayload as C;
     match envelope {
         CommunityEnvelope::TypingIndicator { .. } => "typing",
-        CommunityEnvelope::PresenceUpdate { .. } => "presence",
         CommunityEnvelope::WatchRelay { .. } => "watch_relay",
-        CommunityEnvelope::Control(payload) => match payload {
+        CommunityEnvelope::Control(payload) => match &**payload {
             C::VoiceJoin { .. } => "voice_join",
             C::VoiceJoinAck { .. } => "voice_join_ack",
             C::VoiceJoinConfirmed { .. } => "voice_join_confirmed",
@@ -267,12 +266,11 @@ pub(crate) fn envelope_kind(envelope: &CommunityEnvelope) -> &'static str {
 /// conservatively return `None` — the rejection is logged via tracing
 /// and a video-specific UI toast would be a guess.
 fn video_payload_channel_from_bytes(envelope_bytes: &[u8]) -> Option<String> {
-    let Ok(Some(CommunityEnvelope::Control(ref payload))) =
-        try_decode_community_envelope(envelope_bytes)
-    else {
-        return None;
-    };
-    rekindle_video::video_payload_channel(payload).map(str::to_string)
+    let payload = try_decode_community_envelope(envelope_bytes)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)?;
+    rekindle_video::video_payload_channel(&payload).map(str::to_string)
 }
 
 /// True when the local user's active voice/video session is bound to
@@ -284,45 +282,16 @@ fn local_in_channel(state: &Arc<AppState>, community_id: &str, channel_id: &str)
     })
 }
 
-fn gossip_forward(state: &Arc<AppState>, community_id: &str, signed: &SignedEnvelope) {
+/// Relay `signed` one hop further through the Host's mesh (plan E3.4 S5),
+/// the one fan-out on both modes: the roster's live members by their `M`/6
+/// routes. Only the TTL changes; the author's signature and id stay.
+fn gossip_forward(state: &Arc<AppState>, signed: &SignedEnvelope) {
     let mut forward = signed.clone();
     forward.ttl = forward.ttl.saturating_sub(1);
-    let signed_bytes = gossip_datagram(&forward);
-
-    let peers: Vec<Vec<u8>> = {
-        let communities = state.communities.read();
-        let Some(cs) = communities.get(community_id) else {
-            return;
-        };
-        let Some(ref gossip) = cs.gossip else {
-            return;
-        };
-        gossip
-            .peers
-            .iter()
-            .filter(|(pk, _)| *pk != &signed.sender_pseudonym)
-            .map(|(_, m)| m.route_blob.clone())
-            .collect()
-    };
-
-    if peers.is_empty() {
-        return;
-    }
-
-    for route_blob in peers {
-        let data = signed_bytes.clone();
-        let forward_state = Arc::clone(state);
-        crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
-            "gossip forward",
-            async move {
-                if let Err(e) =
-                    crate::state_helpers::message_route_blob(&forward_state, &route_blob, data)
-                        .await
-                {
-                    tracing::trace!(error = %e, "gossip forward failed");
-                }
-            },
-        );
+    if let Ok(host) = crate::state_helpers::host_governance(state) {
+        host.forward_signed(forward);
+    } else {
+        tracing::trace!("gossip forward before the host started — dropped");
     }
 }
 
@@ -357,77 +326,6 @@ async fn handle_relayed_envelope(
         // channel by a tag under the text key only the Host holds, and the
         // Host lapses the start, so this relay surfaces nothing.
         CommunityEnvelope::TypingIndicator { .. } => {}
-        CommunityEnvelope::PresenceUpdate {
-            pseudonym_key,
-            status,
-            game_info,
-            route_blob,
-        } => {
-            {
-                let mut communities = state.communities.write();
-                if let Some(cs) = communities.get_mut(&community_id) {
-                    cs.known_members.insert(pseudonym_key.clone());
-                    if let Some(ref mut gossip) = cs.gossip {
-                        if status == "offline" {
-                            gossip.online_members.remove(&pseudonym_key);
-                            gossip.peers.remove(&pseudonym_key);
-                        } else if let Some(ref blob) = route_blob {
-                            if !blob.is_empty() {
-                                let member = OnlineMember {
-                                    route_blob: blob.clone(),
-                                    status: status.clone(),
-                                    last_seen: rekindle_utils::timestamp_secs(),
-                                    ..Default::default()
-                                };
-                                gossip
-                                    .online_members
-                                    .insert(pseudonym_key.clone(), member.clone());
-                                gossip.peers.insert(pseudonym_key.clone(), member);
-                            }
-                        }
-                    }
-                }
-            }
-
-            let (game_name, game_id, elapsed_seconds, server_address) = if let Some(gi) = game_info
-            {
-                (
-                    Some(gi.game_name),
-                    gi.game_id,
-                    gi.elapsed_seconds,
-                    gi.server_address,
-                )
-            } else {
-                (None, None, None, None)
-            };
-
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Presence(
-                    rekindle_types::subscription_events::PresenceEvent::CommunityMemberChanged {
-                        community: community_id,
-                        pseudonym: pseudonym_key,
-                        // A gossip presence row states both the status
-                        // and the game, so both are observed here.
-                        snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(
-                            status,
-                        )
-                        .with_game(
-                            rekindle_types::subscription_events::GameActivity::from_parts(
-                                game_name,
-                                game_id,
-                                elapsed_seconds,
-                                server_address,
-                                // A member card shows no game icon (plan
-                                // E7.2 names the buddy row, the profile
-                                // and the call tile).
-                                None,
-                            ),
-                        ),
-                    },
-                ),
-            );
-        }
         CommunityEnvelope::Control(payload) => {
             if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");
@@ -438,7 +336,7 @@ async fn handle_relayed_envelope(
                 state,
                 &community_id,
                 &signed.sender_pseudonym,
-                payload,
+                *payload,
             )
             .await;
         }

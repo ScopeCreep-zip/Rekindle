@@ -13,7 +13,7 @@
 //! variant to rather than two.
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_types::subscription_events::{PresenceEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::SubscriptionEvent;
 
 use super::into_event_control::control_into_event;
 
@@ -29,42 +29,13 @@ pub fn envelope_into_event(
     community: &str,
     sender: &str,
 ) -> Option<SubscriptionEvent> {
-    let c = || community.to_string();
-
-    Some(match envelope {
-        CommunityEnvelope::PresenceUpdate {
-            pseudonym_key,
-            status,
-            game_info,
-            ..
-        } => SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged {
-            community: c(),
-            pseudonym: pseudonym_key,
-            // Unpacked from `PresenceGameInfo` rather than dropped —
-            // rich presence is the point of the field. A gossip row
-            // always carries a game observation, even when it is
-            // `Idle`, so the peer's game clears when they stop.
-            snapshot: rekindle_types::subscription_events::PresenceSnapshot::status(status)
-                .with_game(
-                    rekindle_types::subscription_events::GameActivity::from_parts(
-                        game_info.as_ref().map(|g| g.game_name.clone()),
-                        game_info.as_ref().and_then(|g| g.game_id),
-                        None,
-                        None,
-                        // A member card shows no game icon (plan E7.2 names
-                        // the buddy row, the profile and the call tile).
-                        None,
-                    ),
-                ),
-        }),
-        CommunityEnvelope::Control(control) => {
-            return control_into_event(control, community, sender)
-        }
+    match envelope {
+        CommunityEnvelope::Control(control) => control_into_event(*control, community, sender),
         // Channel typing is the Host's (plan E3.4 S9): only it holds the
         // text keys that name the channel behind the tag, and it lapses
-        // the start itself (`operations::typing::channel_frame`).
-        CommunityEnvelope::TypingIndicator { .. } | CommunityEnvelope::WatchRelay { .. } => {
-            return None
-        }
-    })
+        // the start itself (`operations::typing::channel_frame`). A
+        // member's presence is its beat and card (plan E3.4 S2, S6): the
+        // gossip `PresenceUpdate` (envelope arm @2) is obsolete.
+        CommunityEnvelope::TypingIndicator { .. } | CommunityEnvelope::WatchRelay { .. } => None,
+    }
 }

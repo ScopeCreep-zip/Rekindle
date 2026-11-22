@@ -54,6 +54,26 @@ pub(crate) async fn handle_set_display_name(
     }
 }
 
+/// Make `policy` our presence sharing consent in the community.
+fn handle_set_presence_policy(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    community: &str,
+    policy: rekindle_types::presence::PresenceSharingPolicy,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let membership = match ctx.resolve_community(community) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match adapter(ctx).set_presence_policy(&membership.anchor, policy) {
+        Ok(()) => IpcResponse::ok(&()),
+        Err(e) => IpcResponse::error(400, format!("presence policy: {e}")),
+    }
+}
+
 /// Cache an uploaded avatar or banner; answered with its hash.
 pub(crate) async fn handle_set_picture(
     ctx: &DaemonContext,
@@ -177,6 +197,9 @@ pub(crate) async fn route(
             community,
             display_name,
         } => handle_set_display_name(ctx, state, &community, &display_name).await,
+        SettingsRequest::CommunitySetPresencePolicy { community, policy } => {
+            handle_set_presence_policy(ctx, state, &community, policy)
+        }
         SettingsRequest::CommunitySetAvatar {
             community,
             image,

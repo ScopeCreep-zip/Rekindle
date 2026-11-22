@@ -38,10 +38,7 @@ export const governanceCommands = {
   getPresencePolicy: (communityId: string) =>
     invoke<PresenceSharingPolicy>("get_presence_policy", { communityId }),
   setPresencePolicy: (communityId: string, policy: PresenceSharingPolicy) =>
-    invoke<void>("set_presence_policy", { communityId, policy }),
-
-  updateCommunityPresence: (communityId: string, status: string, gameName?: string, gameId?: number, elapsedSeconds?: number, serverAddress?: string) =>
-    invoke<void>("update_community_presence", { communityId, status, gameName, gameId, elapsedSeconds, serverAddress }),
+    hostInvoke<void>("set_presence_policy", { communityId, policy }),
 
   // Audit log
   getAuditLog: (communityId: string, beforeTimestamp?: number, limit: number = 50) =>

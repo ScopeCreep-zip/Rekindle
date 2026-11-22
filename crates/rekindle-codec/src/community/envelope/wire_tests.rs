@@ -108,7 +108,7 @@ fn capnp_wire_identity() {
         ("mek_ack", sample_mek_ack(), "1010500101010150010101435002050000010511111a0000110d1a110d12110d0a0363310370320301020103"),
     ];
     for (name, payload, hex_expected) in expect {
-        let env = CommunityEnvelope::Control(payload);
+        let env = CommunityEnvelope::control(payload);
         let bytes = encode_community_envelope(&env).expect(name);
         assert_eq!(
             hex::encode(&bytes),
@@ -207,13 +207,13 @@ fn media_key_payloads_round_trip() {
     ];
     for payload in payloads {
         let bytes =
-            encode_community_envelope(&CommunityEnvelope::Control(payload.clone())).unwrap();
+            encode_community_envelope(&CommunityEnvelope::control(payload.clone())).unwrap();
         let decoded = crate::capnp_envelope::try_decode_community_envelope(&bytes)
             .unwrap()
             .unwrap();
         assert_eq!(
             format!("{decoded:?}"),
-            format!("{:?}", CommunityEnvelope::Control(payload))
+            format!("{:?}", CommunityEnvelope::control(payload))
         );
     }
 }

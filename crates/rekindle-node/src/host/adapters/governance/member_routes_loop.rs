@@ -156,7 +156,7 @@ impl HostGovernance {
         let hint = hint
             .encode(community_id, &keys.pseudonym)
             .map_err(|e| format!("quit hint: {e}"))?;
-        let envelope = rekindle_codec::community::envelope::CommunityEnvelope::Control(
+        let envelope = rekindle_codec::community::envelope::CommunityEnvelope::control(
             rekindle_codec::community::envelope::ControlPayload::HeadAdvanced { hint },
         );
         self.send_before_teardown(community_id, &envelope).await;

@@ -61,7 +61,7 @@ pub async fn leave_community(
     mek_cache.write().remove_community(&membership.anchor);
     info!(community = %membership.community_name, "community left");
     Ok(LeaveResult {
-        departure_notice: rekindle_codec::community::envelope::CommunityEnvelope::Control(
+        departure_notice: rekindle_codec::community::envelope::CommunityEnvelope::control(
             rekindle_codec::community::envelope::ControlPayload::MemberLeave {
                 pseudonym_key: membership.pseudonym_key.clone(),
             },

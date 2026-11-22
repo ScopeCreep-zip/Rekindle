@@ -35,6 +35,13 @@ pub enum SettingsRequest {
         display_name: String,
     },
 
+    /// Our presence sharing consent in one community (local only, never
+    /// published; architecture §10 / §16.3): what our beat and card share.
+    CommunitySetPresencePolicy {
+        community: String,
+        policy: rekindle_types::presence::PresenceSharingPolicy,
+    },
+
     /// Cache `image`, declared to be `kind`, as a community avatar (a WebP
     /// of at most 128 px a side); answered with its BLAKE3 hex hash.
     CommunitySetAvatar {
@@ -110,6 +117,9 @@ impl SettingsRequest {
             Self::CommunitySetDisplayName { .. } => {
                 ("CommunitySetDisplayName", Write, Authenticated)
             }
+            Self::CommunitySetPresencePolicy { .. } => {
+                ("CommunitySetPresencePolicy", Write, Authenticated)
+            }
             Self::CommunitySetAvatar { .. } => ("CommunitySetAvatar", Write, Authenticated),
             Self::CommunitySetBanner { .. } => ("CommunitySetBanner", Write, Authenticated),
             Self::CommunityAvatarGet { .. } => ("CommunityAvatarGet", Query, Authenticated),
@@ -136,6 +146,7 @@ impl SettingsRequest {
             | Self::CommunityPolicyGet { .. } => C::CommunitiesRead,
             Self::CommunityUpdateProfile { .. }
             | Self::CommunitySetDisplayName { .. }
+            | Self::CommunitySetPresencePolicy { .. }
             | Self::CommunitySetAvatar { .. }
             | Self::CommunitySetBanner { .. }
             | Self::CommunityPolicySet { .. }

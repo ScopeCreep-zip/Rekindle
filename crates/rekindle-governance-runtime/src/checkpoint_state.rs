@@ -130,7 +130,7 @@ pub async fn answer_state_request<D: GovernanceRuntimeDeps>(
     let response = chunk_at(&snapshot, request.offset)?
         .encode()
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("checkpoint state response: {e}")))?;
-    encode_community_envelope(&CommunityEnvelope::Control(
+    encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::CheckpointStateResponse { response },
     ))
     .map_err(|e| GovernanceRuntimeError::Encoding(format!("checkpoint state envelope: {e}")))
@@ -221,7 +221,7 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
         let encoded = request.encode(me).map_err(|e| {
             GovernanceRuntimeError::Encoding(format!("checkpoint state request: {e}"))
         })?;
-        encode_community_envelope(&CommunityEnvelope::Control(
+        encode_community_envelope(&CommunityEnvelope::control(
             ControlPayload::CheckpointStateRequest { request: encoded },
         ))
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("checkpoint state envelope: {e}")))
@@ -232,12 +232,16 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
         let call = request(offset);
         async move {
             let reply = deps.app_call_peer(&peer_routes[peer], call?).await?;
-            match try_decode_community_envelope(&reply) {
-                Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateResponse {
-                    response,
-                }))) => decode_checkpoint_state_response(&response).map_err(|e| {
-                    GovernanceRuntimeError::Encoding(format!("checkpoint state response: {e}"))
-                }),
+            match try_decode_community_envelope(&reply)
+                .ok()
+                .flatten()
+                .and_then(CommunityEnvelope::into_control)
+            {
+                Some(ControlPayload::CheckpointStateResponse { response }) => {
+                    decode_checkpoint_state_response(&response).map_err(|e| {
+                        GovernanceRuntimeError::Encoding(format!("checkpoint state response: {e}"))
+                    })
+                }
                 _ => Err(no_state("the reply is not a checkpointStateResponse")),
             }
         }

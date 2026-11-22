@@ -59,7 +59,7 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
         },
     };
     deps.queue_post(&post).await?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::ThreadMessageReceived {
+    let envelope = CommunityEnvelope::control(ControlPayload::ThreadMessageReceived {
         thread_id: thread_id.to_string(),
         message_id: sent.message_id.clone(),
         sender_pseudonym: sent.sender_pseudonym.clone(),

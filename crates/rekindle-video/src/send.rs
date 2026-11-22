@@ -153,7 +153,7 @@ fn emit_initial_topology<D: VideoDeps>(
     stream_id: [u8; 16],
 ) -> Result<(), VideoError> {
     let lamport = deps.increment_lamport(community_id)?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::TopologyChange {
+    let envelope = CommunityEnvelope::control(ControlPayload::TopologyChange {
         channel_id: channel_id.to_string(),
         stream_id,
         // Initial topology is full-mesh broadcast — no relay host yet.
@@ -218,7 +218,7 @@ impl SendCtx<'_> {
         let envelopes: Vec<CommunityEnvelope> = fragments
             .into_iter()
             .map(|fragment| {
-                CommunityEnvelope::Control(ControlPayload::VideoFragment(VideoFragmentPayload {
+                CommunityEnvelope::control(ControlPayload::VideoFragment(VideoFragmentPayload {
                     channel_id: self.channel_id.to_string(),
                     stream_id: fragment.stream_id,
                     frame_seq: fragment.frame_seq,
@@ -269,7 +269,7 @@ impl SendCtx<'_> {
         let mut envelopes: Vec<CommunityEnvelope> =
             Vec::with_capacity(usize::try_from(total).unwrap_or(0));
         for fragment in fec.data {
-            envelopes.push(CommunityEnvelope::Control(ControlPayload::VideoFragment(
+            envelopes.push(CommunityEnvelope::control(ControlPayload::VideoFragment(
                 VideoFragmentPayload {
                     channel_id: self.channel_id.to_string(),
                     stream_id: fragment.stream_id,
@@ -295,7 +295,7 @@ impl SendCtx<'_> {
             "built video frame"
         );
         for fragment in fec.parity {
-            envelopes.push(CommunityEnvelope::Control(
+            envelopes.push(CommunityEnvelope::control(
                 ControlPayload::VideoParityFragment(VideoParityFragmentPayload {
                     channel_id: self.channel_id.to_string(),
                     stream_id: fragment.stream_id,

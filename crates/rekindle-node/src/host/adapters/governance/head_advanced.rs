@@ -91,7 +91,7 @@ impl HostGovernance {
             match hint.encode(community_id, &relayer) {
                 Ok(hint) => self.send_to_mesh_impl(
                     community_id,
-                    &CommunityEnvelope::Control(ControlPayload::HeadAdvanced { hint }),
+                    &CommunityEnvelope::control(ControlPayload::HeadAdvanced { hint }),
                 ),
                 Err(error) => tracing::debug!(community_id, %error, "head hint not encoded"),
             }

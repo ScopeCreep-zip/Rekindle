@@ -65,13 +65,8 @@ pub(crate) async fn ensure_registry_open(
 /// helper: looks up registry key + slot credentials + history
 /// ranges + W26 signs + writes via the crate orchestrator.
 ///
-/// Exposed as a public src-tauri surface for the
-/// `update_community_presence` Tauri command — when the user
-/// changes their status or game info, the gossip envelope reaches
-/// online peers immediately AND this call refreshes the registry
-/// row so peers reading the registry directly (returning members,
-/// fresh joiners) see the new status without waiting for the next
-/// presence-poll cadence tick. The lower-level
+/// Called when the presence sharing consent changes, so the redaction
+/// takes effect at once. The lower-level
 /// `rekindle_presence::write_our_presence(deps, …)` stays the
 /// crate's authoritative builder; this facade does the AppState
 /// lookups that the orchestrator does inline inside

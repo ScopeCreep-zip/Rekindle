@@ -205,7 +205,7 @@ impl HostGovernance {
         .await?;
         self.send_to_mesh(
             community_id,
-            &CommunityEnvelope::Control(ControlPayload::EventDeleted {
+            &CommunityEnvelope::control(ControlPayload::EventDeleted {
                 event_id: event_id.to_owned(),
             }),
         )?;
@@ -256,7 +256,7 @@ impl HostGovernance {
         self.store_rsvp(community_id, event_id, &me, wire).await?;
         self.send_to_mesh(
             community_id,
-            &CommunityEnvelope::Control(ControlPayload::EventRsvpChanged {
+            &CommunityEnvelope::control(ControlPayload::EventRsvpChanged {
                 event_id: event_id.to_owned(),
                 pseudonym_key: me.clone(),
                 status: wire.to_owned(),
@@ -399,7 +399,7 @@ impl HostGovernance {
                 },
             )
         };
-        self.send_to_mesh(community_id, &CommunityEnvelope::Control(payload))?;
+        self.send_to_mesh(community_id, &CommunityEnvelope::control(payload))?;
         self.ctx.publish_event(SubscriptionEvent::Social(social));
         Ok(())
     }

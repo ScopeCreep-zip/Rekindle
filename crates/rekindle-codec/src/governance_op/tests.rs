@@ -554,12 +554,12 @@ fn an_op_round_trips_through_the_gossip_arm() {
         vec![op_ref(3)],
     );
     let encoded = encode_op(&original).unwrap();
-    let envelope = CommunityEnvelope::Control(ControlPayload::GovernanceOp {
+    let envelope = CommunityEnvelope::control(ControlPayload::GovernanceOp {
         op: encoded.clone(),
     });
     let wire = encode_community_envelope(&envelope).unwrap();
-    let CommunityEnvelope::Control(ControlPayload::GovernanceOp { op: carried }) =
-        decode_community_envelope(&wire).unwrap()
+    let Some(ControlPayload::GovernanceOp { op: carried }) =
+        decode_community_envelope(&wire).unwrap().into_control()
     else {
         panic!("not the governanceOp arm");
     };

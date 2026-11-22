@@ -124,7 +124,7 @@ pub fn send_video_keyframe_request_inner(
         stream_id = %stream_id_hex,
         "keyframe request → channel peers"
     );
-    let envelope = CommunityEnvelope::Control(ControlPayload::KeyframeRequest {
+    let envelope = CommunityEnvelope::control(ControlPayload::KeyframeRequest {
         channel_id: channel_id.to_string(),
         stream_id,
     });
@@ -147,7 +147,7 @@ pub fn notify_video_topology_change_inner(
     let stream_id = decode_stream_id(stream_id_hex)?;
     let lamport =
         state_helpers::next_message_lamport(state, community_id).map_err(|e| e.to_string())?;
-    let envelope = CommunityEnvelope::Control(ControlPayload::TopologyChange {
+    let envelope = CommunityEnvelope::control(ControlPayload::TopologyChange {
         channel_id: channel_id.to_string(),
         stream_id,
         relay_host_pseudonym,

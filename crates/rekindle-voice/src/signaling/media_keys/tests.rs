@@ -240,9 +240,7 @@ impl VoiceSignalingDeps for Peer {
         route_blob: &[u8],
         envelope: &CommunityEnvelope,
     ) -> Option<CommunityEnvelope> {
-        let CommunityEnvelope::Control(payload) = envelope else {
-            return None;
-        };
+        let payload = envelope.as_control()?;
         if let ControlPayload::VoiceMediaKey {
             recipient,
             key_index,
@@ -262,7 +260,7 @@ impl VoiceSignalingDeps for Peer {
         match payload {
             ControlPayload::VoiceMediaKey { .. } => handle_voice_media_key(&target.deps(), payload)
                 .await
-                .map(CommunityEnvelope::Control),
+                .map(CommunityEnvelope::control),
             ControlPayload::VoiceMediaKeyRequest { .. } => {
                 handle_voice_media_key_request(&target.deps(), payload);
                 None

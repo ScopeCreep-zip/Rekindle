@@ -53,10 +53,12 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, Mek
 /// `Ok(None)` on a union discriminant it does not know, so anything
 /// that is not genuinely this envelope falls through to `None`.
 pub(super) fn decode_bare_mek_transfer(raw: &[u8]) -> Option<MekTransferPayload> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
-            Some(transfer)
-        }
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::MekTransfer(transfer)) => Some(transfer),
         _ => None,
     }
 }
@@ -64,12 +66,16 @@ pub(super) fn decode_bare_mek_transfer(raw: &[u8]) -> Option<MekTransferPayload>
 /// Recognise a bare `CommunityEnvelope` asking for attachment chunks:
 /// the attachment id and the chunk indices requested.
 pub(super) fn decode_bare_attachment_request(raw: &[u8]) -> Option<([u8; 16], Vec<u32>)> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::RequestAttachment {
             attachment_id,
             requested_chunks,
             ..
-        }))) => Some((attachment_id, requested_chunks)),
+        }) => Some((attachment_id, requested_chunks)),
         _ => None,
     }
 }
@@ -79,14 +85,18 @@ pub(super) fn decode_bare_attachment_request(raw: &[u8]) -> Option<([u8; 16], Ve
 pub(super) fn decode_bare_bootstrap_request(
     raw: &[u8],
 ) -> Option<crate::payload::rpc::InboundCall> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::BootstrapRequest {
             joiner_pseudonym,
             anchor,
             member_joined,
             member_joined_op,
             joiner_route,
-        }))) => Some(crate::payload::rpc::InboundCall::BootstrapRequest {
+        }) => Some(crate::payload::rpc::InboundCall::BootstrapRequest {
             joiner_pseudonym,
             anchor,
             member_joined,
@@ -102,10 +112,14 @@ pub(super) fn decode_bare_bootstrap_request(
 pub(super) fn decode_bare_checkpoint_state_request(
     raw: &[u8],
 ) -> Option<crate::payload::rpc::InboundCall> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateRequest {
-            request,
-        }))) => Some(crate::payload::rpc::InboundCall::CheckpointStateRequest { request }),
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::CheckpointStateRequest { request }) => {
+            Some(crate::payload::rpc::InboundCall::CheckpointStateRequest { request })
+        }
         _ => None,
     }
 }
@@ -115,8 +129,12 @@ pub(super) fn decode_bare_checkpoint_state_request(
 pub(super) fn decode_bare_checkpoint_hint_request(
     raw: &[u8],
 ) -> Option<crate::payload::rpc::InboundCall> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintRequest { request }))) => {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::CheckpointHintRequest { request }) => {
             Some(crate::payload::rpc::InboundCall::CheckpointHintRequest { request })
         }
         _ => None,
@@ -132,7 +150,7 @@ mod tests {
     };
 
     fn mek_transfer_bytes() -> Vec<u8> {
-        encode_community_envelope(&CommunityEnvelope::Control(ControlPayload::MekTransfer(
+        encode_community_envelope(&CommunityEnvelope::control(ControlPayload::MekTransfer(
             MekTransferPayload {
                 community_id: "gov-key".into(),
                 channel_id: Some("general".into()),
@@ -160,7 +178,7 @@ mod tests {
     #[test]
     fn refuses_other_control_variants_even_when_well_formed() {
         let rotated =
-            encode_community_envelope(&CommunityEnvelope::Control(ControlPayload::MEKRotated {
+            encode_community_envelope(&CommunityEnvelope::control(ControlPayload::MEKRotated {
                 channel_id: Some("general".into()),
                 new_generation: 9,
                 rotator_pseudonym: Some("bb".repeat(32)),
@@ -174,7 +192,7 @@ mod tests {
 
     #[test]
     fn admits_an_attachment_request_and_nothing_else_as_one() {
-        let request = encode_community_envelope(&CommunityEnvelope::Control(
+        let request = encode_community_envelope(&CommunityEnvelope::control(
             ControlPayload::RequestAttachment {
                 channel_id: "general".into(),
                 attachment_id: [7; 16],

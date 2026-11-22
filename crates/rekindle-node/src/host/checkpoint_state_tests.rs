@@ -113,8 +113,11 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
         .answer_checkpoint_state(&ask(&key, digest))
         .await
         .expect("a member is served");
-    let Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateResponse { response }))) =
+    let Some(ControlPayload::CheckpointStateResponse { response }) =
         try_decode_community_envelope(&reply)
+            .ok()
+            .flatten()
+            .and_then(CommunityEnvelope::into_control)
     else {
         panic!("not a checkpoint state response");
     };

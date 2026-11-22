@@ -27,13 +27,15 @@ fn incompressible(len: usize) -> Vec<u8> {
 fn a_request_round_trips_through_the_envelope() {
     let key = SigningKey::from_bytes(&[3; 32]);
     let encoded = request(&key).encode(&key).unwrap();
-    let envelope = encode_community_envelope(&CommunityEnvelope::Control(
+    let envelope = encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::CheckpointStateRequest { request: encoded },
     ))
     .unwrap();
-    let Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateRequest {
-        request: got,
-    }))) = try_decode_community_envelope(&envelope)
+    let Some(ControlPayload::CheckpointStateRequest { request: got }) =
+        try_decode_community_envelope(&envelope)
+            .ok()
+            .flatten()
+            .and_then(CommunityEnvelope::into_control)
     else {
         panic!("not a checkpoint state request");
     };
@@ -75,7 +77,7 @@ fn a_full_chunk_fits_the_app_call_cap() {
         bytes: incompressible(SNAPSHOT_CHUNK_MAX),
     };
     let encoded = response.encode().unwrap();
-    let envelope = encode_community_envelope(&CommunityEnvelope::Control(
+    let envelope = encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::CheckpointStateResponse { response: encoded },
     ))
     .unwrap();
@@ -84,9 +86,11 @@ fn a_full_chunk_fits_the_app_call_cap() {
         "{} B",
         envelope.len()
     );
-    let Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateResponse {
-        response: got,
-    }))) = try_decode_community_envelope(&envelope)
+    let Some(ControlPayload::CheckpointStateResponse { response: got }) =
+        try_decode_community_envelope(&envelope)
+            .ok()
+            .flatten()
+            .and_then(CommunityEnvelope::into_control)
     else {
         panic!("not a checkpoint state response");
     };

@@ -135,8 +135,12 @@ async fn a_partial_community_answers_bootstrap_partial() {
     let decoded = rekindle_codec::capnp_envelope::try_decode_community_envelope(&bytes);
     assert!(
         matches!(
-            decoded,
-            Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapPartial { ref anchor })))
+            decoded
+                .as_ref()
+                .ok()
+                .and_then(Option::as_ref)
+                .and_then(CommunityEnvelope::as_control),
+            Some(ControlPayload::BootstrapPartial { anchor })
                 if anchor == "c1"
         ),
         "{decoded:?}"

@@ -357,7 +357,7 @@ async fn an_outsider_cannot_inject_a_community_key() {
         &key.to_wire_bytes(),
     )
     .unwrap();
-    let transfer = encode_community_envelope(&CommunityEnvelope::Control(
+    let transfer = encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::MekTransfer(MekTransferPayload {
             community_id: community.anchor.clone(),
             channel_id: None,

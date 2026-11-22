@@ -269,7 +269,7 @@ pub async fn reconcile_from_presence(
     // membership change, so nothing rotates). Repeats every scan until
     // the peer is in our roster.
     if !plan.introduce.is_empty() {
-        let join = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+        let join = CommunityEnvelope::control(ControlPayload::VoiceJoin {
             channel_id: channel_id.clone(),
             route_blob: our_route.clone(),
             display_name: deps.my_display_name(),
@@ -297,7 +297,7 @@ pub async fn reconcile_from_presence(
     // the peer holds our route and streams back, media_live drops them
     // from this set.
     for peer in &reannounce {
-        let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+        let ack = CommunityEnvelope::control(ControlPayload::VoiceJoinAck {
             channel_id: channel_id.clone(),
             joiner_pseudonym: peer.clone(),
             display_name: deps.my_display_name(),

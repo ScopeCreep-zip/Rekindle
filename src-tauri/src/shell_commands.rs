@@ -463,7 +463,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     // E2.6 — the SMPL group-DM path (E2.3 deleted its 1:1 half) is replaced
     // by the group DM requests.
     // E3.1 — communities.
-    ("update_community_presence", "E3.4"),
     ("get_presence_policy", "E3.4"),
     ("set_presence_policy", "E3.4"),
     ("rotate_mek", "E3.5"),

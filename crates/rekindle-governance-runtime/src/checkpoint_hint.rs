@@ -126,7 +126,7 @@ pub async fn answer_hint_request<D: GovernanceRuntimeDeps>(
     let response = response
         .encode()
         .map_err(|e| encoding("checkpoint hint response", e))?;
-    encode_community_envelope(&CommunityEnvelope::Control(
+    encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::CheckpointHintResponse { response },
     ))
     .map_err(|e| encoding("checkpoint hint envelope", e))
@@ -160,16 +160,20 @@ pub async fn request_hint<D: GovernanceRuntimeDeps>(
     }
     .encode(me)
     .map_err(|e| encoding("checkpoint hint request", e))?;
-    let envelope = encode_community_envelope(&CommunityEnvelope::Control(
+    let envelope = encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::CheckpointHintRequest { request },
     ))
     .map_err(|e| encoding("checkpoint hint envelope", e))?;
     let reply = deps.app_call_peer(route, envelope).await?;
-    match try_decode_community_envelope(&reply) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintResponse {
-            response,
-        }))) => decode_checkpoint_hint_response(&response)
-            .map_err(|e| encoding("checkpoint hint response", e)),
+    match try_decode_community_envelope(&reply)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::CheckpointHintResponse { response }) => {
+            decode_checkpoint_hint_response(&response)
+                .map_err(|e| encoding("checkpoint hint response", e))
+        }
         _ => Err(GovernanceRuntimeError::Adapter(
             "the reply is not a checkpointHintResponse".into(),
         )),

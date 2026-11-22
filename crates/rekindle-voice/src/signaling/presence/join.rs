@@ -151,7 +151,7 @@ async fn voice_join_apply(
     // Without a media route there is nothing to introduce us by; the ack
     // goes out when the route is back and re-announced.
     if let Some(route_blob) = deps.our_media_route_blob() {
-        let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+        let ack = CommunityEnvelope::control(ControlPayload::VoiceJoinAck {
             channel_id: channel_id.to_string(),
             joiner_pseudonym: sender_key.clone(),
             display_name: deps.my_display_name(),
@@ -197,7 +197,7 @@ async fn voice_join_apply(
 
     let participants = roster_entries(&**deps, community_id, channel_id, &my_pk, &transport).await;
     if !participants.is_empty() {
-        let envelope = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
+        let envelope = CommunityEnvelope::control(ControlPayload::VoiceRoster {
             channel_id: channel_id.to_string(),
             participants,
         });
@@ -218,7 +218,7 @@ pub(in crate::signaling) async fn send_confirmed_if_first(
     if !transport.lock().await.advance_handshake_connected() {
         return;
     }
-    let confirmed = CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed {
+    let confirmed = CommunityEnvelope::control(ControlPayload::VoiceJoinConfirmed {
         channel_id: channel_id.to_string(),
     });
     deps.send_to_channel(community_id, channel_id, &confirmed);

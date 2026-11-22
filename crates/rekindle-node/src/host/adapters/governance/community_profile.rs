@@ -21,7 +21,10 @@ use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions;
-use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
+use rekindle_types::presence::{GameInfo, PresenceSharingPolicy};
+use rekindle_types::subscription_events::{
+    GameActivity, MembershipEvent, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
+};
 
 use super::HostGovernance;
 
@@ -114,14 +117,82 @@ impl HostGovernance {
         self.publish_own_card(community, &text).await
     }
 
-    /// What our card says now, from the card cache.
+    /// What our card says now: its name and custom status from the card
+    /// cache, and the game we share there now ([`Self::shared_card_game`]).
     fn own_card_text(&self, community: &str) -> OwnCardText {
-        let card = GovernanceRuntimeDeps::my_pseudonym(self, community)
-            .and_then(|me| self.ctx.communities.member_card(community, &me))
-            .unwrap_or_default();
+        let card = self.own_cached_card(community).unwrap_or_default();
         OwnCardText {
             display_name: card.display_name,
             custom_status: card.custom_status,
+            game: self.shared_card_game(community),
+        }
+    }
+
+    /// Our card as the card cache holds it (what a verified read returned).
+    fn own_cached_card(&self, community: &str) -> Option<CardText> {
+        GovernanceRuntimeDeps::my_pseudonym(self, community)
+            .and_then(|me| self.ctx.communities.member_card(community, &me))
+    }
+
+    /// The game our card carries in `community`: the game we show, through
+    /// the community's sharing consent (`presence::card_game::shared_game`).
+    fn shared_card_game(&self, community: &str) -> Option<GameInfo> {
+        let policy = {
+            let map = self.ctx.communities.map().read();
+            map.get(community).map(|c| c.presence_policy.clone())
+        }?;
+        crate::host::adapters::presence::card_game::shared_game(
+            &self.ctx.own_presence.view(),
+            &policy,
+        )
+    }
+
+    /// Make `policy` our presence sharing consent in `community` (local
+    /// only, never published; architecture §10 / §16.3), kept on the
+    /// community and its row, and wake the card's game writer: the game our
+    /// card shares follows the consent, so hiding it reaches the card within
+    /// [`CARD_GAME_SETTLE`](crate::host::adapters::presence::card_game::CARD_GAME_SETTLE)
+    /// with no presence change (plan E3.4 S6).
+    ///
+    /// # Errors
+    /// The community is not joined, or the policy does not serialize.
+    pub fn set_presence_policy(
+        &self,
+        community: &str,
+        policy: PresenceSharingPolicy,
+    ) -> Result<(), String> {
+        let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
+        {
+            let mut map = self.ctx.communities.map().write();
+            let state = map.get_mut(community).ok_or("unknown community")?;
+            state.presence_policy = policy;
+        }
+        crate::host::session::record_presence_policy(
+            &self.ctx.session,
+            &self.ctx.db,
+            community,
+            policy_json,
+        );
+        self.ctx.own_presence.card_game.notify_one();
+        Ok(())
+    }
+
+    /// Rewrite our card in every community we beat in whose card cache
+    /// shows another game than the one we share there now (plan E3.4 S6;
+    /// the coalesced writer, `presence::card_game::run`, calls it).
+    pub(crate) async fn rewrite_moved_card_games(&self) {
+        for community in self.sync_targets() {
+            if self.own_departed(&community) {
+                continue;
+            }
+            let shared = self.shared_card_game(&community);
+            if self.own_cached_card(&community).and_then(|c| c.game) == shared {
+                continue;
+            }
+            let text = self.own_card_text(&community);
+            if let Err(error) = self.publish_own_card(&community, &text).await {
+                tracing::warn!(community, %error, "card game not rewritten");
+            }
         }
     }
 
@@ -151,12 +222,23 @@ impl HostGovernance {
         pseudonym: &PseudonymKey,
         card: CardText,
     ) {
+        let before = self.ctx.communities.member_card(community, pseudonym);
         if !self
             .ctx
             .communities
             .note_member_card(community, pseudonym, card.clone())
         {
             return;
+        }
+        let ours = GovernanceRuntimeDeps::my_pseudonym(self, community).as_ref() == Some(pseudonym);
+        if let Some(snapshot) = game_moved(before.as_ref(), &card).filter(|_| !ours) {
+            self.ctx.publish_event(SubscriptionEvent::Presence(
+                PresenceEvent::CommunityMemberChanged {
+                    community: community.to_owned(),
+                    pseudonym: pseudonym.to_hex(),
+                    snapshot,
+                },
+            ));
         }
         if let Some((owner, db)) = self.owner_and_db() {
             let (cid, pk) = (community.to_owned(), pseudonym.to_hex());
@@ -251,6 +333,25 @@ pub(crate) fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) ->
         .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&pseudonym.0))
 }
 
+/// The member-list observation a card read makes when its game moved from
+/// `before` (plan E3.4 S6): game only (the beat owns the status, `None` is
+/// "not observed"), built as the gossip `PresenceUpdate` receiver built it
+/// (`GameActivity::from_parts` of the name and numeric id, no elapsed time,
+/// server address or icon), so a stopped game reads `Idle` and clears.
+fn game_moved(before: Option<&CardText>, after: &CardText) -> Option<PresenceSnapshot> {
+    if before.and_then(|c| c.game.as_ref()) == after.game.as_ref() {
+        return None;
+    }
+    let game = after.game.as_ref();
+    Some(PresenceSnapshot::game(GameActivity::from_parts(
+        game.map(|g| g.game_name.clone()),
+        game.and_then(|g| g.game_id.as_deref()?.parse().ok()),
+        None,
+        None,
+        None,
+    )))
+}
+
 /// The governance entry that makes `edit` the policy.
 fn policy_entry(edit: PolicyEdit) -> GovernanceEntry {
     GovernanceEntry::CommunityPolicy {
@@ -284,6 +385,41 @@ mod tests {
     use rekindle_types::id::PseudonymKey;
 
     use super::*;
+
+    fn carded(game: Option<&str>) -> CardText {
+        CardText {
+            game: game.map(|name| GameInfo {
+                game_name: name.into(),
+                game_id: Some("4100".into()),
+                elapsed_seconds: None,
+                server_address: None,
+            }),
+            ..CardText::default()
+        }
+    }
+
+    /// A card whose game started reaches the member list as that game, a
+    /// stopped one as `Idle`, and a re-read of the same game as nothing
+    /// (plan E3.4 S6: the card replaced the gossip `PresenceUpdate`).
+    #[test]
+    fn a_card_game_move_is_one_member_observation() {
+        let playing = game_moved(Some(&carded(None)), &carded(Some("Quake")))
+            .expect("a started game is observed");
+        assert_eq!(playing.status, None, "the beat owns the status");
+        assert!(matches!(
+            playing.game,
+            Some(GameActivity::Playing { ref game_name, game_id: Some(4100), .. })
+                if game_name == "Quake"
+        ));
+        let stopped = game_moved(Some(&carded(Some("Quake"))), &carded(None))
+            .expect("a stopped game is observed");
+        assert_eq!(stopped.game, Some(GameActivity::Idle));
+        assert_eq!(
+            game_moved(Some(&carded(Some("Quake"))), &carded(Some("Quake"))),
+            None
+        );
+        assert_eq!(game_moved(None, &carded(None)), None);
+    }
 
     /// A member whose card names nobody renders as its short pseudonym
     /// fingerprint, stated by the Host, never empty and never another name

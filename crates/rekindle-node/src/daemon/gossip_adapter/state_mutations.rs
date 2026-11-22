@@ -61,15 +61,14 @@ impl DaemonGossipAdapter {
         tracing::debug!(
             community = %community_id,
             held = gossip.pending_mesh_broadcasts.len(),
-            "gossip: no peers online, broadcast held for the next poll with peers"
+            "gossip: the mesh is empty, broadcast held until a member's beat goes live"
         );
     }
 
     /// Patch a peer's route after a DHT re-resolve.
     ///
-    /// Writes both `peers` and `online_members` so the next presence
-    /// poll does not overwrite the fresh blob with the stale one it
-    /// still has cached.
+    /// Writes `online_members`, the set heard from; the fan-out reads the
+    /// Host's mesh (plan E3.4 S5), never this set.
     pub(super) fn update_peer_route_impl(
         &self,
         community_id: &str,
@@ -86,20 +85,16 @@ impl DaemonGossipAdapter {
             return;
         };
         let last_seen = self.ctx.clock.now_secs();
-        for map in [&mut mesh.peers, &mut mesh.online_members] {
-            map.insert(
-                peer_key.to_string(),
-                OnlineMember {
-                    route_blob: route_blob.to_vec(),
-                    status: status.to_string(),
-                    last_seen,
-                    // A gossip observation carries neither: `location`
-                    // and `last_active` come off the member's signed
-                    // registry row, which the presence poll decodes and
-                    // `to_mesh_members` now carries through.
-                    ..OnlineMember::default()
-                },
-            );
-        }
+        mesh.online_members.insert(
+            peer_key.to_string(),
+            OnlineMember {
+                route_blob: route_blob.to_vec(),
+                status: status.to_string(),
+                last_seen,
+                // A gossip observation carries neither: `location` and
+                // `last_active` come off the member's signed registry row.
+                ..OnlineMember::default()
+            },
+        );
     }
 }

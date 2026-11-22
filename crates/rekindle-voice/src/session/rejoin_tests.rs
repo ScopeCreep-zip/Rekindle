@@ -192,8 +192,8 @@ impl VoiceSessionDeps for Joiner {
     }
     async fn send_channel_envelope_now(&self, _: &str, _: &str, envelope: &CommunityEnvelope) {
         if matches!(
-            envelope,
-            CommunityEnvelope::Control(ControlPayload::VoiceLeave { .. })
+            envelope.as_control(),
+            Some(ControlPayload::VoiceLeave { .. })
         ) {
             self.steps.lock().push("leave sent to the roster");
         }
@@ -267,15 +267,10 @@ fn last_join(joiner: &Joiner) -> (Vec<u8>, Vec<u8>) {
     let join = mesh
         .iter()
         .rev()
-        .find(|e| {
-            matches!(
-                e,
-                CommunityEnvelope::Control(ControlPayload::VoiceJoin { .. })
-            )
-        })
+        .find(|e| matches!(e.as_control(), Some(ControlPayload::VoiceJoin { .. })))
         .cloned()
         .expect("a VoiceJoin was sent");
-    let CommunityEnvelope::Control(ControlPayload::VoiceJoin { session_key, .. }) = &join else {
+    let Some(ControlPayload::VoiceJoin { session_key, .. }) = join.as_control() else {
         unreachable!("matched above");
     };
     let bytes = encode_community_envelope(&join).expect("encodes");

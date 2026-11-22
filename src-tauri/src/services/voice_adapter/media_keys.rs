@@ -89,7 +89,7 @@ pub(crate) fn request_media_key(
     else {
         return;
     };
-    let request = CommunityEnvelope::Control(ControlPayload::VoiceMediaKeyRequest {
+    let request = CommunityEnvelope::control(ControlPayload::VoiceMediaKeyRequest {
         community_id: community_id.to_string(),
         channel_id: channel_id.to_string(),
         requester,

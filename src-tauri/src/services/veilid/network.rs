@@ -121,14 +121,18 @@ async fn community_call(
     message: &[u8],
 ) -> Option<Vec<u8>> {
     Some(
-        match rekindle_codec::capnp_envelope::try_decode_community_envelope(message) {
-            Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+        match rekindle_codec::capnp_envelope::try_decode_community_envelope(message)
+            .ok()
+            .flatten()
+            .and_then(CommunityEnvelope::into_control)
+        {
+            Some(ControlPayload::BootstrapRequest {
                 joiner_pseudonym,
                 anchor,
                 member_joined,
                 member_joined_op,
                 joiner_route,
-            }))) => {
+            }) => {
                 let joiner = rekindle_governance_runtime::BootstrapJoiner {
                     pseudonym: joiner_pseudonym,
                     member_joined,
@@ -147,9 +151,7 @@ async fn community_call(
                     }
                 }
             }
-            Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateRequest {
-                request,
-            }))) => {
+            Some(ControlPayload::CheckpointStateRequest { request }) => {
                 // A member's state snapshot request (plan E3.2 S7c.3): the Host
                 // admits and rate-limits the signer; a refusal is a NAK.
                 match state.host.current() {
@@ -161,9 +163,7 @@ async fn community_call(
                     None => NAK.to_vec(),
                 }
             }
-            Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintRequest {
-                request,
-            }))) => {
+            Some(ControlPayload::CheckpointHintRequest { request }) => {
                 // A member's or a joiner's checkpoint hint request (plan E3.2
                 // S7c.5): admitted and rate-limited like a snapshot request.
                 match state.host.current() {
@@ -175,7 +175,7 @@ async fn community_call(
                     None => NAK.to_vec(),
                 }
             }
-            Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
+            Some(ControlPayload::MekTransfer(transfer)) => {
                 // The Host's one receive path (plan E3.1, CB3 glue audit), the
                 // daemon's too: membership and removal checks, unwrap, install
                 // (catch-up included), `MekRotated`, and the `MekTransferAck`
@@ -199,10 +199,10 @@ async fn community_call(
                     }
                 }
             }
-            Ok(Some(CommunityEnvelope::Control(
+            Some(
                 payload @ (ControlPayload::VoiceMediaKey { .. }
                 | ControlPayload::VoiceMediaKeyRequest { .. }),
-            ))) => {
+            ) => {
                 // Plan C7.22 — call-media keys arrive point to point and are
                 // acknowledged. The sender is authenticated by its pseudonym
                 // signature inside the payload (plan C7.29), not by an
@@ -212,12 +212,12 @@ async fn community_call(
                 )
                 .await
             }
-            Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+            Some(ControlPayload::RequestAttachment {
                 channel_id: _,
                 attachment_id,
                 requested_chunks,
                 requester_pseudonym,
-            }))) => {
+            }) => {
                 // Find the community that owns this attachment by scanning each
                 // open file cache for the requested attachment_id. The requester's
                 // pseudonym is informational here — permission to read the file

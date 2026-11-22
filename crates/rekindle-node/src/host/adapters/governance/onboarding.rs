@@ -190,7 +190,7 @@ impl HostGovernance {
             write_entry(self, community_id, entry).await?;
         }
         let envelope =
-            CommunityEnvelope::Control(ControlPayload::SubmitOnboardingAnswers { answers });
+            CommunityEnvelope::control(ControlPayload::SubmitOnboardingAnswers { answers });
         GovernanceRuntimeDeps::send_to_mesh(self, community_id, &envelope)?;
         Ok(())
     }

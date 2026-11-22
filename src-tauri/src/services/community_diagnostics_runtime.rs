@@ -15,7 +15,6 @@ pub struct GossipDiagnostics {
     pub gossip_peer_count: usize,
     pub online_member_count: usize,
     pub known_member_count: usize,
-    pub needs_initial_sync: bool,
     pub message_clock: u64,
     pub has_route_blob: bool,
     pub my_pseudonym_key: Option<String>,
@@ -32,6 +31,16 @@ pub fn debug_gossip_state_inner(
     state: &SharedState,
     community_id: String,
 ) -> Result<GossipDiagnostics, String> {
+    // The fan-out targets are the Host's mesh (plan E3.4 S5): the roster's
+    // live members by their `M`/6 routes.
+    let peer_keys: Vec<String> = state_helpers::host_governance(state)
+        .map(|host| {
+            host.mesh_peers(&community_id)
+                .into_iter()
+                .map(|p| p.pseudonym_key)
+                .collect()
+        })
+        .unwrap_or_default();
     let communities = state.communities.read();
     let cs = communities
         .get(&community_id)
@@ -45,27 +54,18 @@ pub fn debug_gossip_state_inner(
     )
     .is_some();
 
-    let (has_gossip, peer_count, online_count, needs_sync, peer_keys, online_keys) =
-        if let Some(ref g) = cs.gossip {
-            (
-                true,
-                g.peers.len(),
-                g.online_members.len(),
-                g.needs_initial_sync,
-                g.peers.keys().cloned().collect::<Vec<_>>(),
-                g.online_members.keys().cloned().collect::<Vec<_>>(),
-            )
-        } else {
-            (false, 0, 0, true, vec![], vec![])
-        };
+    let (has_gossip, online_keys) = if let Some(ref g) = cs.gossip {
+        (true, g.online_members.keys().cloned().collect::<Vec<_>>())
+    } else {
+        (false, vec![])
+    };
 
     Ok(GossipDiagnostics {
         community_id,
         has_gossip,
-        gossip_peer_count: peer_count,
-        online_member_count: online_count,
+        gossip_peer_count: peer_keys.len(),
+        online_member_count: online_keys.len(),
         known_member_count: cs.known_members.len(),
-        needs_initial_sync: needs_sync,
         message_clock: cs.message_clock,
         has_route_blob,
         my_pseudonym_key: cs.my_pseudonym_key.clone(),

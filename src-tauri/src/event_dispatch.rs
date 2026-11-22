@@ -398,9 +398,6 @@ pub fn spawn_host_stream(
                             },
                         ) = &sequenced.event
                         {
-                            crate::services::community_presence_runtime::fan_out_own_presence(
-                                &state, snapshot,
-                            );
                             if let Some(status) = snapshot
                                 .status
                                 .as_deref()

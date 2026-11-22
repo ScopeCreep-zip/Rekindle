@@ -522,12 +522,10 @@ pub struct GossipOverlay {
     /// All online members: pseudonym_key → member info.
     /// Superset of `peers`. Updated on each presence poll.
     pub online_members: HashMap<String, OnlineMember>,
-    /// True until the first successful sync after coming online.
-    /// Triggers the initial presence broadcast and slot-record catch-up.
-    pub needs_initial_sync: bool,
-    /// A1/P4.1 — broadcasts queued because `peers` was empty at send time.
-    /// `send_to_mesh_raw` enqueues here instead of dropping; the next
-    /// presence poll that lands online peers drains the queue and re-sends.
+    /// A1/P4.1 — broadcasts queued because the Host's mesh was empty at
+    /// send time. `send_to_mesh_raw` enqueues here instead of dropping; the
+    /// Host's `drain_pending_mesh` sends them once a member's beat makes the
+    /// mesh non-empty (plan E3.4 S5), and nothing else takes them.
     /// Bounded at 100 (oldest dropped) so an offline burst doesn't OOM.
     /// Without this, the first member of a fresh community broadcast all
     /// their join announcements / MEK requests / governance updates to a
@@ -540,7 +538,6 @@ impl Default for GossipOverlay {
         Self {
             peers: HashMap::new(),
             online_members: HashMap::new(),
-            needs_initial_sync: true,
             pending_mesh_broadcasts: VecDeque::with_capacity(16),
         }
     }

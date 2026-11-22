@@ -205,7 +205,7 @@ pub fn seal_mek_transfer<D: MekDistributeDeps + ?Sized>(
     // Random per push; a retry resends these bytes, so it keeps its id.
     let mut transfer_id = vec![0u8; TRANSFER_ID_LEN];
     deps.rng().fill(&mut transfer_id);
-    let payload = CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
+    let payload = CommunityEnvelope::control(ControlPayload::MekTransfer(MekTransferPayload {
         community_id: community_id.to_string(),
         channel_id: scope.wire_channel(),
         generation: mek.generation(),

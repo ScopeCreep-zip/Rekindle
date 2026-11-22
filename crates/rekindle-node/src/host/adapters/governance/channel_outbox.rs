@@ -65,7 +65,7 @@ impl HostGovernance {
         match hint.encode(community_id, &own.author) {
             Ok(hint) => self.send_to_mesh_impl(
                 community_id,
-                &CommunityEnvelope::Control(ControlPayload::HeadAdvanced { hint }),
+                &CommunityEnvelope::control(ControlPayload::HeadAdvanced { hint }),
             ),
             Err(error) => tracing::debug!(community_id, %error, "own outbox hint not encoded"),
         }

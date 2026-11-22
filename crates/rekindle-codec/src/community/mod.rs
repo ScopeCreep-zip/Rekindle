@@ -10,7 +10,7 @@ pub mod types;
 pub use audit_log::{AuditAction, AuditChange, AuditLogEntry, AuditTarget};
 pub use envelope::{
     sign_envelope, verify_envelope, CommunityEnvelope, ControlPayload, OnboardingAnswer,
-    PresenceGameInfo, SignedEnvelope,
+    SignedEnvelope,
 };
 // `CoordinatorInfo`, `MemberPresence` and `SignedPresence` used to be
 // re-exported here. All three were v1.0 coordinator-era types with no

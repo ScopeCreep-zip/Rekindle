@@ -85,11 +85,14 @@ pub struct OwnProfile {
 
 /// The text our card carries in one community (plan E3.4 S6): the name we
 /// set there, never the identity's (`None` = unset; readers show the short
-/// pseudonym fingerprint), and our custom status there.
+/// pseudonym fingerprint), our custom status there, and the game we share
+/// there (the field-fate table puts `game_info` on the card; the Host
+/// fills it through the community's sharing policy).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OwnCardText {
     pub display_name: Option<String>,
     pub custom_status: Option<String>,
+    pub game: Option<rekindle_types::presence::GameInfo>,
 }
 
 /// Our card: `text` and the HPKE key, cross-signed.
@@ -103,7 +106,7 @@ fn own_card(text: &OwnCardText, hpke_secret: &[u8; 32]) -> MemberCard {
         theme_color: None,
         badges: Vec::new(),
         custom_status: text.custom_status.clone(),
-        game: None,
+        game: text.game.clone(),
         hpke_key: rekindle_secrets::hpke::public_key(hpke_secret),
     }
 }
@@ -441,6 +444,7 @@ pub fn card_of(signed: &SignedMemberCard) -> crate::deps::CardText {
     crate::deps::CardText {
         display_name: signed.card.display_name.clone().filter(|n| !n.is_empty()),
         custom_status: signed.card.custom_status.clone(),
+        game: signed.card.game.clone(),
     }
 }
 

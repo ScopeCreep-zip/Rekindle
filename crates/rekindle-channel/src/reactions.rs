@@ -54,7 +54,7 @@ pub fn build_reaction_envelope(
             reactor_pseudonym,
         }
     };
-    CommunityEnvelope::Control(payload)
+    CommunityEnvelope::control(payload)
 }
 
 /// Add or remove our reaction `expression` on `message_id` (rules R1–R4):
@@ -137,8 +137,8 @@ mod tests {
             "pseu".into(),
             true,
         );
-        match env {
-            CommunityEnvelope::Control(ControlPayload::ReactionAdded {
+        match env.into_control() {
+            Some(ControlPayload::ReactionAdded {
                 channel_id,
                 message_id,
                 emoji,
@@ -163,8 +163,8 @@ mod tests {
             false,
         );
         assert!(matches!(
-            env,
-            CommunityEnvelope::Control(ControlPayload::ReactionRemoved { .. })
+            env.as_control(),
+            Some(ControlPayload::ReactionRemoved { .. })
         ));
     }
 }

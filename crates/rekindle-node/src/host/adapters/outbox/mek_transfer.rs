@@ -60,8 +60,12 @@ struct SealedKey {
 }
 
 fn sealed_key(sealed: &[u8]) -> Option<SealedKey> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(sealed) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(p)))) => Some(SealedKey {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(sealed)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::MekTransfer(p)) => Some(SealedKey {
             scope: KeyScope::from_wire(p.channel_id.as_deref())?,
             generation: p.generation,
             sender_hex: p.sender_pseudonym,

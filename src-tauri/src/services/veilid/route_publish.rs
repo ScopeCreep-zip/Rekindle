@@ -68,16 +68,9 @@ pub(crate) async fn run(
 }
 
 async fn republish_general(state: &Arc<AppState>, blob: &[u8]) {
-    // Gossip peers re-learn our route from the presence rows and the next
-    // PresenceUpdate, which the initial-sync flag re-broadcasts.
-    {
-        let mut communities = state.communities.write();
-        for community in communities.values_mut() {
-            if let Some(gossip) = community.gossip.as_mut() {
-                gossip.needs_initial_sync = true;
-            }
-        }
-    }
+    // Members re-learn our route from our `M`/6, which the Host's member
+    // routes loop rewrites on every new `Available` blob (plan E3.4 S4),
+    // never from a gossip re-announce.
     rewrite_presence_rows(state).await;
     crate::services::voice_adapter::reannounce_voice_route(state);
     // A key request sent while routeless had no way back to us.

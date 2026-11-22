@@ -31,7 +31,7 @@ const JOINER_NOW_MS: u64 = 1_800_000_000_000;
 const ASKING_AT: (&str, u64) = (BOOTSTRAP_COMMUNITY, JOINER_NOW_MS);
 
 fn encode(payload: ControlPayload) -> Vec<u8> {
-    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(payload))
+    rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::control(payload))
         .unwrap()
 }
 

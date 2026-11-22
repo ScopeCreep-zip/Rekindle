@@ -5,11 +5,10 @@
 //! state-bound function. Here it's parameterised over
 //! [`CommunityPresenceDeps`] so the entire pipeline — registry
 //! open, presence write, per-segment Plate Gate scan, role/profile/
-//! RSVP merge, gossip overlay rebuild, initial sync, stale-sync
+//! RSVP merge, stale-sync
 //! retry, auto-expand — is observable + testable.
 //!
 //! Architecture references:
-//! - §3 gossip overlay fan-out + TTL-based eviction
 //! - §13.4 presence cadence
 //! - §14.3 Shared Locker history advertisement
 //! - §14.5 mutual aid + peer reliability
@@ -19,14 +18,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::community::sync::run_initial_sync;
-use crate::community::util::random_peer_sample;
 use crate::deps::CommunityPresenceDeps;
 
 /// 180-second heartbeat freshness window. Presence rows with a
 /// last_heartbeat older than `now - 180s` are treated as offline
-/// during the segment scan and as eviction candidates from the
-/// gossip overlay.
+/// during the segment scan.
 pub const STALE_HEARTBEAT_SECS: u64 = 180;
 
 /// Compute the gossip fan-out degree for an online population.
@@ -133,7 +129,7 @@ async fn run_tick<D: CommunityPresenceDeps>(
     let our_policy = deps.presence_policy(community_id);
 
     let mut discovered = Vec::new();
-    let mut online_members = std::collections::HashMap::new();
+    let mut online_count = 0usize;
     let mut known_member_keys = std::collections::HashSet::new();
     let mut voice_rows: Vec<crate::deps::VoicePresenceRow> = Vec::new();
     for descriptor in &descriptors {
@@ -191,13 +187,6 @@ async fn run_tick<D: CommunityPresenceDeps>(
                 }
                 row.presence.session =
                     crate::community::filter_incoming(row.presence.session, &our_policy);
-                // Re-derive the roster signals from the merged + filtered
-                // session — the pure classifier only saw the redacted
-                // plaintext session, so its snapshot location is stale.
-                if let Some(om) = row.online_member.as_mut() {
-                    om.location.clone_from(&row.presence.session.location);
-                    om.last_active = row.presence.session.last_active;
-                }
                 known_member_keys.insert(row.pseudonym_hex.clone());
                 // Presence-derived voice membership for the roster
                 // reconcile — stale rows included so ghosts expire.
@@ -207,10 +196,8 @@ async fn run_tick<D: CommunityPresenceDeps>(
                     voice_channel_id: row_voice_channel,
                     fresh: row.online_member.is_some(),
                 });
+                online_count += usize::from(row.online_member.is_some());
                 discovered.push((descriptor.segment_index, subkey, row.presence));
-                if let Some(om) = row.online_member {
-                    online_members.insert(row.pseudonym_hex, om);
-                }
             }
         }
     }
@@ -244,66 +231,15 @@ async fn run_tick<D: CommunityPresenceDeps>(
         profile_outcome.changed,
     );
 
-    // Re-inject still-fresh peers from the prior gossip overlay
-    // (architecture §3 — TTL-based eviction at 180 s prevents a peer
-    // briefly missing from one scan from dropping out of the mesh).
-    deps.extend_online_with_recent_gossip(
-        community_id,
-        &mut online_members,
-        &creds.my_pseudonym_hex,
-        STALE_HEARTBEAT_SECS,
-    );
-
-    let degree = gossip_degree(online_members.len());
-    let online_count = online_members.len();
-    let selected = random_peer_sample(&online_members, degree, deps.rng());
-
-    // Emit one `MemberPresenceChanged{status:"offline"}` per peer
-    // that was in the prior overlay but isn't in the freshly-scanned
-    // set.
-    let offline_to_emit =
-        deps.gossip_offline_diff(community_id, &online_members, &creds.my_pseudonym_hex);
-    for pseudonym_key in offline_to_emit {
-        deps.emit_member_presence_offline(community_id, &pseudonym_key);
-    }
-
-    // Atomic gossip overlay rebuild + pending-mesh drain. The
-    // drained envelopes are re-sent OUTSIDE the rebuild lock — the
-    // crate composes the rebuild plan via the pure
-    // `compute_rebuild_plan`, the adapter writes it back under one
-    // lock, then the orchestrator fires the drained envelopes
-    // (prevents the send_to_mesh_raw deadlock pre-port documented
-    // in poll.rs).
-    let prior_overlay = deps.read_gossip_snapshot(community_id);
-    let rebuild = crate::community::compute_rebuild_plan(prior_overlay, selected, online_members);
-    if let Some(plan) = rebuild.plan {
-        deps.apply_gossip_rebuild_plan(community_id, plan);
-    }
-    if !rebuild.drained_pending.is_empty() {
-        tracing::info!(
-            community = %community_id,
-            queued = rebuild.drained_pending.len(),
-            "presence_poll_tick: draining pending mesh broadcasts now that peers are online",
-        );
-        for envelope in rebuild.drained_pending {
-            deps.send_to_mesh_raw(community_id, envelope);
-        }
-    }
-
+    // The gossip mesh is not the scan's: the Host builds it from the
+    // roster's live beats and their `M`/6 routes (plan E3.4 S5,
+    // `host/adapters/presence/mesh.rs`), and a member whose beats stop
+    // turns offline by the beat view's expiry, never by this poll.
     tracing::info!(
         community = %community_id,
-        online_members = online_count,
-        gossip_degree = degree,
-        needs_sync = rebuild.needs_sync,
-        "presence_poll_tick: gossip overlay updated",
+        online_rows = online_count,
+        "presence_poll_tick: registry rows merged",
     );
-
-    // Initial sync handshake (architecture §14.2). Runs after the
-    // rebuild lock releases so its internal send_to_mesh calls
-    // don't deadlock.
-    if rebuild.needs_sync {
-        run_initial_sync(Arc::clone(&deps), community_id, degree).await;
-    }
 
     // A5/P4.3 — admin-side Plate Gate auto-expand trigger
     // (architecture §15.1). Spawned by the adapter; the
@@ -364,13 +300,11 @@ fn log_scanned_row(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     use super::*;
     use crate::community::test_fixture::{MockCommunityDeps, MockState};
-    use crate::community::GossipOverlaySnapshot;
-    use crate::deps::{OnlineMember, PresenceCredentials, SegmentDescriptor};
+    use crate::deps::{PresenceCredentials, SegmentDescriptor};
 
     fn creds_with(my_subkey: u32, my_segment: u32) -> PresenceCredentials {
         PresenceCredentials {
@@ -379,15 +313,6 @@ mod tests {
             slot_keypair_str: Some("kp".to_string()),
             slot_seed_hex: Some("seed".to_string()),
             my_segment_index: my_segment,
-        }
-    }
-
-    fn online_member(route: &[u8]) -> OnlineMember {
-        OnlineMember {
-            route_blob: route.to_vec(),
-            status: "online".to_string(),
-            last_seen: 0,
-            ..Default::default()
         }
     }
 
@@ -442,11 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn happy_path_invokes_every_pipeline_stage_once() {
-        let state = MockState {
-            gossip_snapshot: GossipOverlaySnapshot::default(),
-            ..MockState::default()
-        };
-        let deps = make_deps_with(state);
+        let deps = make_deps_with(MockState::default());
         let result = presence_poll_tick(Arc::clone(&deps), "c1").await;
         assert!(result.is_ok());
         let st = deps.state.lock();
@@ -460,10 +381,6 @@ mod tests {
         assert_eq!(st.calls_apply_member_state.len(), 1);
         assert_eq!(st.calls_read_profiles, vec!["c1".to_string()]);
         assert_eq!(st.calls_apply_profiles.len(), 1);
-        assert_eq!(st.calls_extend_online.len(), 1);
-        assert_eq!(st.calls_offline_diff.len(), 1);
-        assert_eq!(st.calls_read_gossip.len(), 1);
-        assert_eq!(st.calls_apply_gossip.len(), 1);
         assert_eq!(st.calls_auto_expand, vec!["c1".to_string()]);
     }
 
@@ -494,39 +411,6 @@ mod tests {
             1,
             "the beat writes once"
         );
-    }
-
-    #[tokio::test]
-    async fn rebuild_drained_pending_envelopes_are_resent() {
-        // Build a snapshot whose pending-mesh queue has one entry +
-        // arrange for at least one online peer via the mock's
-        // `inject_online` hook (rebuild only drains when peers
-        // become non-empty).
-        let pending = rekindle_codec::community::envelope::SignedEnvelope {
-            message_id: [7u8; 16],
-            community_id: "c1".to_string(),
-            sender_pseudonym: "me".to_string(),
-            envelope_bytes: vec![1, 2, 3],
-            signature: vec![0u8; 64],
-            ttl: 5,
-        };
-        let mut queue = std::collections::VecDeque::new();
-        queue.push_back(pending);
-        let mut inject = HashMap::new();
-        inject.insert("peer1".to_string(), online_member(&[9, 9, 9]));
-        let state = MockState {
-            gossip_snapshot: GossipOverlaySnapshot {
-                needs_initial_sync: false,
-                pending_mesh_broadcasts: queue,
-            },
-            inject_online: inject,
-            ..MockState::default()
-        };
-        let deps = make_deps_with(state);
-        let _ = presence_poll_tick(Arc::clone(&deps), "c1").await;
-        let st = deps.state.lock();
-        assert_eq!(st.calls_send_raw.len(), 1);
-        assert_eq!(st.calls_send_raw[0].0, "c1");
     }
 
     #[tokio::test]

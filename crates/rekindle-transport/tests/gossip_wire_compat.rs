@@ -163,7 +163,7 @@ fn watch_relay_carries_no_payload_bytes() {
 fn directed_payloads_are_not_forwarded() {
     use rekindle_codec::community::envelope::ControlPayload;
 
-    let transfer = CommunityEnvelope::Control(ControlPayload::MekTransfer(
+    let transfer = CommunityEnvelope::control(ControlPayload::MekTransfer(
         rekindle_codec::community::envelope::MekTransferPayload {
             community_id: "c".into(),
             channel_id: None,

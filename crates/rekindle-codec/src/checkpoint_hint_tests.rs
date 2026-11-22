@@ -40,13 +40,15 @@ fn a_hint_request_round_trips_and_its_signature_binds_it() {
     for invite in [None, Some("ab".repeat(32))] {
         let want = request(&key, invite.as_deref());
         let encoded = want.encode(&key).unwrap();
-        let envelope = encode_community_envelope(&CommunityEnvelope::Control(
+        let envelope = encode_community_envelope(&CommunityEnvelope::control(
             ControlPayload::CheckpointHintRequest { request: encoded },
         ))
         .unwrap();
-        let Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintRequest {
-            request: got,
-        }))) = try_decode_community_envelope(&envelope)
+        let Some(ControlPayload::CheckpointHintRequest { request: got }) =
+            try_decode_community_envelope(&envelope)
+                .ok()
+                .flatten()
+                .and_then(CommunityEnvelope::into_control)
         else {
             panic!("not a checkpoint hint request");
         };
@@ -83,7 +85,7 @@ fn the_largest_hint_response_fits_the_app_call_cap() {
             .collect(),
     };
     let encoded = response.encode().unwrap();
-    let envelope = encode_community_envelope(&CommunityEnvelope::Control(
+    let envelope = encode_community_envelope(&CommunityEnvelope::control(
         ControlPayload::CheckpointHintResponse { response: encoded },
     ))
     .unwrap();
@@ -92,9 +94,11 @@ fn the_largest_hint_response_fits_the_app_call_cap() {
         "{} B",
         envelope.len()
     );
-    let Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintResponse {
-        response: got,
-    }))) = try_decode_community_envelope(&envelope)
+    let Some(ControlPayload::CheckpointHintResponse { response: got }) =
+        try_decode_community_envelope(&envelope)
+            .ok()
+            .flatten()
+            .and_then(CommunityEnvelope::into_control)
     else {
         panic!("not a checkpoint hint response");
     };
