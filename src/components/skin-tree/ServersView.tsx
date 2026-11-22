@@ -4,6 +4,7 @@ import { sendSkinSelection } from "../../actions/skin.actions";
 import { subscribeServersView } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
 import { serverCommands, type ServerCategory, type ServerInfo, type ServerRefusal, type ServerRow, type ServerVerdict, type ServersView as View } from "../../ipc/commands/dto_servers";
+import { isCommandError } from "../../ipc/commands/dto";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import { formatRelativeTime } from "../../utils/formatting";
@@ -104,7 +105,8 @@ const ServersView: Component = () => {
       const answer = await action();
       if (answer && typeof answer === "object" && "categories" in answer) setView(answer as View);
     } catch (e) {
-      addToast(`${what}: ${errorMessage(e)}`, "error");
+      // A review the user cancelled (Refresh and Add are reviewed) is no failure.
+      if (!(isCommandError(e) && e.type === "cancelled")) addToast(`${what}: ${errorMessage(e)}`, "error");
     }
   };
 
@@ -133,8 +135,9 @@ const ServersView: Component = () => {
       .filter((s): s is string => !!s)
       .join(" ÃÂ· ");
 
-  // Refresh queries every listed server once, only when the user asks (a
-  // query shows our IP to the server); the Host says when it may run.
+  // Refresh queries every listed server once, only when the user asks, through
+  // the Host's review (a query shows our IP to each server); the Host says
+  // when it may run.
   const refreshRefused = (): string | null => {
     const v = view()?.refresh;
     return v ? verdictText(v) : "Servers not read yet";
