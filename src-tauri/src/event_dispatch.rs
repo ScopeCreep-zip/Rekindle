@@ -165,12 +165,12 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(SystemEvent::SkinSignals { window, .. }) => {
             Audience::labels([window.clone()])
         }
-        // The Downloads view (`EngineView::Files`) is the buddy list's, and
-        // its skin's download capabilities fold there (plan E7.2 G12).
-        SubscriptionEvent::Transfer(_) => buddy_list(),
         // One OS notification, one inbox, one ring, one review of an action
-        // the backend began: the buddy list owns them.
+        // the backend began: the buddy list owns them. So does the Downloads
+        // view (`EngineView::Files`), where its skin's download capabilities
+        // fold (plan E7.2 G12).
         SubscriptionEvent::Notification(_)
+        | SubscriptionEvent::Transfer(_)
         | SubscriptionEvent::IntentPending(_)
         | SubscriptionEvent::ChannelMessage(ChannelMessageEvent::ConversationFocusRequested {
             ..
