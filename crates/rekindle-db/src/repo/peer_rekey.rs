@@ -15,7 +15,9 @@
 //! again), as do the client ids applied from it and our stream's last seq
 //! (a seq is never handed out twice). Our own record to them is replaced
 //! at our next frame (its writer is saved under the old key), so its chain
-//! bookkeeping goes.
+//! bookkeeping goes. The rows keyed by their friend row (game totals,
+//! the activity feed's entries and last-seen state, the DM read marker)
+//! move with it.
 
 use rusqlite::{params, Connection};
 
@@ -36,6 +38,10 @@ pub fn rotate_peer(
     let (owner_key, old_key, new_key) =
         (identity_text(owner), identity_text(old), identity_text(new));
     let tx = conn.unchecked_transaction()?;
+    // The rows keyed by the friend row (their game totals, the activity
+    // feed's entries and last-seen state, the DM read marker) move with it
+    // below; their foreign keys are checked at commit.
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
     let moved = tx.execute(
         "UPDATE friends SET public_key = ?3, mailbox_dht_key = NULL \
          WHERE owner_key = ?1 AND public_key = ?2",
@@ -78,6 +84,19 @@ pub fn rotate_peer(
             "UPDATE missed_calls SET peer_key = ?3 WHERE owner_key = ?1 AND peer_key = ?2",
             "UPDATE strand_relay_volunteered SET friend_public_key = ?3 \
              WHERE owner_key = ?1 AND friend_public_key = ?2",
+        ] {
+            tx.execute(sql, params![owner_key, old_key, new_key])?;
+        }
+        // What is keyed by their friend row is theirs and moves with it:
+        // the game totals they shared (plan E7.2), what the activity feed
+        // logged and last saw of them (plan E7.15) and our read marker on
+        // their conversation (plan E3.1).
+        for sql in [
+            "UPDATE friend_game_totals SET friend_key = ?3 \
+             WHERE owner_key = ?1 AND friend_key = ?2",
+            "UPDATE activity_log SET subject_key = ?3 WHERE owner_key = ?1 AND subject_key = ?2",
+            "UPDATE activity_seen SET friend_key = ?3 WHERE owner_key = ?1 AND friend_key = ?2",
+            "UPDATE read_markers SET peer_key = ?3 WHERE owner_key = ?1 AND peer_key = ?2",
         ] {
             tx.execute(sql, params![owner_key, old_key, new_key])?;
         }
@@ -144,6 +163,19 @@ mod tests {
         }
         signal_identities::ensure(&conn, &OWNER, &OLD).unwrap();
         signal_identities::mark_verified(&conn, &OWNER, &OLD, 5).unwrap();
+        // Rows keyed by the friend row (foreign keys to it).
+        for sql in [
+            "INSERT INTO friend_game_totals (owner_key, friend_key, game_id, total_secs, \
+             last_played) VALUES (?1, ?2, 7, 60, 1)",
+            "INSERT INTO activity_log (owner_key, at, kind, subject_key, payload_json) \
+             VALUES (?1, 1, 'nowFriends', ?2, '{}')",
+            "INSERT INTO activity_seen (owner_key, friend_key, accepted, display_name) \
+             VALUES (?1, ?2, 1, 'Bob')",
+            "INSERT INTO read_markers (owner_key, scope_kind, peer_key, last_read_seq, \
+             updated_at) VALUES (?1, 'dm', ?2, 3, 1)",
+        ] {
+            conn.execute(sql, params![owner, old]).unwrap();
+        }
 
         assert!(rotate_peer(&conn, &OWNER, &OLD, &NEW, 9).unwrap());
         let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
@@ -200,6 +232,15 @@ mod tests {
             1
         );
         assert_eq!(count("SELECT COUNT(*) FROM chain_entries"), 0);
+        // What is keyed by their friend row moves with it.
+        for sql in [
+            "SELECT COUNT(*) FROM friend_game_totals WHERE friend_key = '{new}'",
+            "SELECT COUNT(*) FROM activity_log WHERE subject_key = '{new}'",
+            "SELECT COUNT(*) FROM activity_seen WHERE friend_key = '{new}'",
+            "SELECT COUNT(*) FROM read_markers WHERE peer_key = '{new}'",
+        ] {
+            assert_eq!(count(&sql.replace("{new}", &new)), 1, "{sql}");
+        }
         // The verified key changed: the new row is unverified and records it.
         let row = signal_identities::get(&conn, &OWNER, &NEW)
             .unwrap()
