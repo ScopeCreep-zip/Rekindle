@@ -372,7 +372,13 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
   await (await byText(b, ".form-tab", "Appearance")).click();
   await shown(b, ".skin-row-shown .skin-name", NET_WAIT_MS);
   const inUse = async (): Promise<string> => (await (await b.$(".skin-row-shown .skin-name")).getText()).trim();
+  const linked = async (): Promise<string> => (await b.execute(LINKED_SHEET)) as string;
+  // The sheet shown before the change: the new one links only after every
+  // image it lists has decoded (useSkin.ts), seconds after the row says
+  // "in use", so any skin:// sheet before then is the old skin's.
+  let before = "";
   if ((await inUse()) !== name) {
+    before = await linked();
     let found = false;
     for (const row of await b.$$(".skin-row")) {
       if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
@@ -387,14 +393,17 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
   let href = "";
   await waitUntil(
     async () => {
-      href = (await b.execute('var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";')) as string;
-      return href.startsWith("skin://");
+      href = await linked();
+      return href.startsWith("skin://") && href !== before;
     },
     NET_WAIT_MS,
-    "Settings never linked the skin's sheet",
+    `Settings never linked ${name}'s sheet`,
   );
   return href;
 }
+
+/** The href of the window's linked, loaded skin sheet (useSkin.ts LINK_ID), or "". */
+export const LINKED_SHEET = 'var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";';
 
 /** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
 export async function setLoginSkin(b: Browser, user: User, name: string): Promise<void> {
