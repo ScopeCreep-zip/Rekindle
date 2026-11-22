@@ -101,6 +101,10 @@ pub(crate) struct SkinWorld {
     pub own_game: Option<u32>,
     /// Our `transfers` (plan E7.2 G12), by attachment id.
     pub transfers: BTreeMap<String, TransferRow>,
+    /// The own-records stage is `Held`: our profile and mailbox are
+    /// published, so a friend code, invite or request can name them
+    /// (`FriendStores::own_records`, plan E2.5 FC3).
+    pub records_held: bool,
 }
 
 /// The game has a launch method (`launcher::launch_to_server`'s own
@@ -142,8 +146,6 @@ fn friend_allows(capability: Capability, inputs: &Inputs, selected: Selected<'_>
     let online = accepted && friend.is_some_and(|f| f.status != UserStatus::Offline);
     let call = inputs.call_with(key);
     match capability {
-        // A key that is not a friend yet.
-        Capability::AddFriend => friend.is_none(),
         Capability::Chat => accepted,
         Capability::VoiceChat | Capability::HostVoiceChat => online && call.is_none(),
         Capability::LeaveVoiceChat => call.is_some_and(|c| !c.ringing),
@@ -166,8 +168,12 @@ pub(crate) fn allows(
         _ => None,
     };
     match capability {
-        C::AddFriend
-        | C::Chat
+        // Xfire's Add Friend works whatever is selected (plan SKC1): it
+        // holds while our profile and mailbox are published, the stage
+        // every friend code, invite and request waits on and is refused
+        // without (`operations::friend::invites::published_identity`).
+        C::AddFriend => world.records_held,
+        C::Chat
         | C::Profile
         | C::Delete
         | C::VoiceChat

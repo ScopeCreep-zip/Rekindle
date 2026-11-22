@@ -5,8 +5,9 @@
 //! `Failed` with its reason).
 
 use rekindle_transport::operations::friend::OwnRecordsStage;
+use rekindle_types::dto::skin_action::Capability;
 use rekindle_types::subscription_events::{
-    NetworkEvent, OwnRecordsPhase, StreamFrame, SubscriptionEvent,
+    NetworkEvent, OwnRecordsPhase, StreamFrame, SubscriptionEvent, SystemEvent,
 };
 
 use super::{create_ann, offline_host};
@@ -58,5 +59,51 @@ async fn the_stage_is_published_at_the_unlock_and_when_it_ends() {
         host.own_records_stage(),
         OwnRecordsStage::Failed("no record pool".into())
     );
+    host.shutdown().await.unwrap();
+}
+
+/// Whether the next `SkinSignals` published for `window` lets Add Friend.
+async fn add_friend_signal(stream: &mut rekindle_events::EventStream, window: &str) -> bool {
+    let wait = async {
+        loop {
+            let Some(StreamFrame::Event(s)) = stream.next().await else {
+                continue;
+            };
+            if let SubscriptionEvent::System(SystemEvent::SkinSignals { window: w, set }) = s.event
+            {
+                if w == window {
+                    return set.can.contains(&Capability::AddFriend);
+                }
+            }
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(10), wait)
+        .await
+        .expect("a skin signal set for the window")
+}
+
+/// Plan SKC1: the Host pushes a window's signals when the own-records
+/// stage changes; Add Friend holds while it is `Held`, with nothing
+/// selected, and not after it fails.
+#[tokio::test]
+async fn the_stage_pushes_the_add_friend_capability() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    let mut events = host.ctx.journal.subscribe(None);
+    host.skin_window_opened("buddy-list", None, None);
+    assert!(
+        !add_friend_signal(&mut events, "buddy-list").await,
+        "no Add Friend before our records are published"
+    );
+
+    let stage = &host.ctx.friend_stores.own_records;
+    stage.send_replace(OwnRecordsStage::Held);
+    assert!(
+        add_friend_signal(&mut events, "buddy-list").await,
+        "the stage held pushes Add Friend"
+    );
+    stage.send_replace(OwnRecordsStage::Failed("no record pool".into()));
+    assert!(!add_friend_signal(&mut events, "buddy-list").await);
     host.shutdown().await.unwrap();
 }
