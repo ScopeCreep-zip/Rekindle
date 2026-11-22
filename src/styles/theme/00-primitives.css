@@ -17,6 +17,7 @@
  */
 @layer components {
   .category-name,
+  .member-custom-status,
   .channel-name,
   .community-name,
   .files-view-name,

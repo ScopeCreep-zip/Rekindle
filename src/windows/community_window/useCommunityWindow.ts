@@ -1,7 +1,6 @@
 import { createEffect, onMount, onCleanup } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import { communityState, setCommunityState } from "../../stores/community.store";
-import { authState } from "../../stores/auth.store";
 import { initVoiceEventListener } from "../../actions/voice.actions";
 import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
 import {
@@ -246,7 +245,7 @@ export function useCommunityWindow() {
 
   function handleReply(message: Message): void {
     setReplyTo({
-      senderName: message.isOwn ? (authState.displayName ?? "You") : message.senderId,
+      senderName: message.isOwn ? (activeCommunity()?.myDisplayName ?? "Member") : s.memberName(message.senderId),
       body: message.body,
       messageId: message.serverMessageId,
     });

@@ -81,14 +81,27 @@ function applyMembershipRow(m: MembershipEvent): void {
     return;
   }
 
-  // The member's verified card named it (plan E3.2 F9-2): the row shows
-  // the short pseudonym until then.
+  // A member's card was read or changed (plan E3.2 F9-2, E3.4 S6): its
+  // name (never empty, the Host's: the card name or the short fingerprint)
+  // and custom status, ours included after a set-name or profile update.
   if ("memberCardChanged" in m) {
-    const { community, pseudonym, displayName } = m.memberCardChanged;
+    const { community, pseudonym, displayName, customStatus } = m.memberCardChanged;
     const c = communityState.communities[community];
+    if (c?.myPseudonymKey && c.myPseudonymKey.toLowerCase() === pseudonym.toLowerCase()) {
+      setCommunityState("communities", community, { myDisplayName: displayName, myCustomStatus: customStatus ?? null });
+      // The event names the shown name; the set-name form's prefill is the
+      // card name as set, which only the Host's view states.
+      commands
+        .getCommunityDetails()
+        .then((details) => {
+          const d = details.find((x) => x.id === community);
+          if (d) setCommunityState("communities", community, "myCardName", d.myCardName ?? null);
+        })
+        .catch(() => {});
+    }
     const idx = (c?.members ?? []).findIndex((x) => x.pseudonymKey === pseudonym);
     if (idx >= 0) {
-      setCommunityState("communities", community, "members", idx, "displayName", displayName);
+      setCommunityState("communities", community, "members", idx, { displayName, customStatus: customStatus ?? null });
     } else {
       refreshForUnlistedMember(community, pseudonym);
     }

@@ -76,11 +76,13 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const myCommunity = () => communityState.communities[props.communityId];
   const initialBio = () => myCommunity()?.myBio ?? "";
   const initialPronouns = () => myCommunity()?.myPronouns ?? "";
+  const initialCustomStatus = () => myCommunity()?.myCustomStatus ?? "";
   const initialThemeColorHex = () => formatColorHex(myCommunity()?.myThemeColor ?? null);
   const initialBadges = () => (myCommunity()?.myBadges ?? []).join(", ");
 
   const [bioDraft, setBioDraft] = createSignal(initialBio());
   const [pronounsDraft, setPronounsDraft] = createSignal(initialPronouns());
+  const [customStatusDraft, setCustomStatusDraft] = createSignal(initialCustomStatus());
   const [themeColorDraft, setThemeColorDraft] = createSignal(initialThemeColorHex());
   const [badgesDraft, setBadgesDraft] = createSignal(initialBadges());
 
@@ -197,6 +199,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   function startEditing(): void {
     setBioDraft(initialBio());
     setPronounsDraft(initialPronouns());
+    setCustomStatusDraft(initialCustomStatus());
     setThemeColorDraft(initialThemeColorHex());
     setBadgesDraft(initialBadges());
     setAvatarRefDraft(myCommunity()?.myAvatarRef ?? null);
@@ -237,6 +240,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         badges,
         avatarRefDraft(),
         bannerRefDraft(),
+        customStatusDraft().trim() || null,
       );
       if (ok) setEditing(false);
     } finally {
@@ -260,6 +264,9 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         </div>
         <Show when={props.member.status === "offline" && (props.member.lastActive ?? 0) > 0}>
           <div class="profile-popup-lastseen">Last seen {formatLastSeen(props.member.lastActive!)}</div>
+        </Show>
+        <Show when={props.member.customStatus}>
+          <div class="profile-popup-custom-status">{props.member.customStatus}</div>
         </Show>
         <Show when={props.member.pronouns}>
           <div class="profile-popup-pronouns">{props.member.pronouns}</div>
@@ -419,6 +426,16 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
                     </button>
                   </Show>
                 </div>
+              </label>
+              <label class="profile-popup-edit-label">
+                <span>Custom status</span>
+                <input
+                  class="profile-popup-edit-input"
+                  type="text"
+                  value={customStatusDraft()}
+                  onInput={(e) => setCustomStatusDraft(e.currentTarget.value)}
+                  placeholder="What are you up to?"
+                />
               </label>
               <label class="profile-popup-edit-label">
                 <span>Pronouns</span>

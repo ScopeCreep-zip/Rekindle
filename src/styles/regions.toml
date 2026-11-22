@@ -217,6 +217,7 @@
 '.profile-popup-join-btn' = { on = ["--color-xfire-ingame"], on_hover = ["--color-xfire-ingame 85% over --color-xfire-overlay"] }
 '.profile-popup-join-btn:disabled' = { on = ["--color-xfire-bg-primary"] }
 '.member-game-info' = { on = ["--color-xfire-bg-dark"] }
+'.member-custom-status' = { on = ["--color-xfire-bg-dark"] }
 '.member-game-server' = { on = ["--color-xfire-bg-dark"] }
 '.avatar' = { on = ["--color-xfire-accent"] }
 '.community-channel-header' = { on = ["--color-xfire-bg-dark"] }
@@ -493,6 +494,7 @@
 '.action-bar-btn.header-btn-active' = { on = ["--color-xfire-bg-dark"] }
 '.profile-popup-empty-hint' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-pronouns' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-custom-status' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-bio' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-badge' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-primary"] }
 '.profile-popup-edit-label' = { on = ["--color-xfire-bg-primary"] }

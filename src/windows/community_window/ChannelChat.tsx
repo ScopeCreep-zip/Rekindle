@@ -2,7 +2,6 @@ import { Component, Show } from "solid-js";
 import MessageList from "../../components/chat/MessageList";
 import MessageInput from "../../components/chat/MessageInput";
 import { communityState } from "../../stores/community.store";
-import { authState } from "../../stores/auth.store";
 import { removalText } from "../../utils/removal_text";
 import { hasPermission, servedPermissions, MANAGE_MESSAGES } from "../../utils/permissions";
 import {
@@ -34,7 +33,7 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         communityId={vm.selectedCommunityId()}
         channelId={vm.selectedChannelId()}
         messages={vm.channelMessages()}
-        ownName={authState.displayName ?? "You"}
+        ownName={vm.activeCommunity()?.myDisplayName ?? "Member"}
         peerName="Member"
         memberNames={vm.memberNames()}
         myPseudonymKey={vm.activeCommunity()?.myPseudonymKey}

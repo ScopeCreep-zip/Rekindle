@@ -12,6 +12,7 @@ export async function handleUpdateCommunityProfile(
   badges: string[],
   avatarRef: string | null = null,
   bannerRef: string | null = null,
+  customStatus: string | null = null,
 ): Promise<boolean> {
   try {
     await commands.updateCommunityProfile(
@@ -22,6 +23,7 @@ export async function handleUpdateCommunityProfile(
       badges,
       avatarRef,
       bannerRef,
+      customStatus,
     );
     setCommunityState("communities", communityId, {
       myBio: bio,
@@ -30,6 +32,7 @@ export async function handleUpdateCommunityProfile(
       myBadges: badges,
       myAvatarRef: avatarRef,
       myBannerRef: bannerRef,
+      myCustomStatus: customStatus,
     });
     const community = communityState.communities[communityId];
     const myPseudonymKey = community?.myPseudonymKey;
@@ -43,6 +46,7 @@ export async function handleUpdateCommunityProfile(
           badges,
           avatarRef,
           bannerRef,
+          customStatus,
         });
       }
     }

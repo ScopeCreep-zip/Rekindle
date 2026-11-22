@@ -5,6 +5,7 @@ import { addToast } from "../../../stores/toast.store";
 import { ICON_SAVE, ICON_COPY } from "../../../icons";
 import FormField from "../../common/FormField";
 import SuccessorSection from "./SuccessorSection";
+import MyNameSection from "./MyNameSection";
 
 interface OverviewTabProps {
   community: Community;
@@ -86,6 +87,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
           </button>
         </div>
       </FormField>
+      <MyNameSection communityId={props.community.id} />
       <SuccessorSection communityId={props.community.id} />
       <Show when={props.canManage}>
         <div class="settings-actions-sticky">

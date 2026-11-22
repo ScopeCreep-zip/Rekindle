@@ -47,7 +47,12 @@ export interface Category {
 
 export interface Member {
   pseudonymKey: string;
+  /** The Host's name, never empty: the per-community card name, else the short fingerprint (plan E3.4 S6). */
   displayName: string;
+  /** The member's short pseudonym fingerprint ("a1b2 c3d4"), as the Host gives it. */
+  fingerprint: string;
+  /** The card's custom status, or null. */
+  customStatus: string | null;
   roleIds: string[];
   displayRole: string;
   status: string;
@@ -242,6 +247,12 @@ export interface Community {
   onboardingComplete?: boolean;
   /** We hold a creator seat, as the Host states it (`CommunityView::we_are_creator`). */
   weAreCreator: boolean;
+  /** Our name in this community, never empty, as the Host states it (plan E3.4 S6); never our identity name. */
+  myDisplayName: string;
+  /** Our per-community name as set, or null (the set-name form's prefill). */
+  myCardName: string | null;
+  /** Our card's custom status, or null. */
+  myCustomStatus: string | null;
   expressions: Expression[];
   automodRules: AutoModRule[];
   /** Our per-community profile bio (≤190 chars). Local-only; resets to undefined on restart. */

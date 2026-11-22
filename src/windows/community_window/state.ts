@@ -1,7 +1,6 @@
 import { createSignal, createMemo } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import { authState } from "../../stores/auth.store";
 import { typingUsers } from "../../actions/community.actions";
 import {
   hasPermission,
@@ -119,11 +118,12 @@ export function createCommunityWindowState() {
     return map;
   });
 
-  /// A pseudonym's display name, as the channel message list shows it:
-  /// our own key is our name, a listed member's is the card's, and an
+  /// A pseudonym's display name, as the channel message list shows it: our
+  /// own key is our name in this community as the Host states it (never our
+  /// identity name, plan E3.4 S6), a listed member's is the Host's, and an
   /// unlisted key is "Member" (never the raw 64-hex key).
   function memberName(pseudonymKey: string): string {
-    if (pseudonymKey === activeCommunity()?.myPseudonymKey) return authState.displayName ?? "You";
+    if (pseudonymKey === activeCommunity()?.myPseudonymKey) return activeCommunity()?.myDisplayName ?? "Member";
     return memberNames()[pseudonymKey] ?? "Member";
   }
 

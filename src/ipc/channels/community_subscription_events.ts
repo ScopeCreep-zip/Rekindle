@@ -28,7 +28,7 @@ export type MembershipEvent =
       };
     }
   /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
-  | { memberCardChanged: { community: string; pseudonym: string; displayName: string } }
+  | { memberCardChanged: { community: string; pseudonym: string; displayName: string; customStatus?: string } }
   | { left: { community: string; pseudonym: string } }
   | { removed: { community: string; pseudonym: string } }
   | {

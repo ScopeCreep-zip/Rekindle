@@ -264,6 +264,13 @@
     padding: 0 8px 4px;
   }
 
+  /* The member's custom status from their card (plan E3.4 S6). */
+  .profile-popup-custom-status {
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    padding: 0 8px 4px;
+  }
+
   .profile-popup-bio {
     font-size: 11px;
     color: var(--color-xfire-text-dim);

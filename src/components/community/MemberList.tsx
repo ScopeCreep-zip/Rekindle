@@ -327,7 +327,12 @@ const MemberList: Component<MemberListProps> = (props) => {
         <Popover.Trigger as="div" class="member-item" data-pseudonym={member.pseudonymKey}>
           <StatusDot status={memberStatus(member)} />
           <div class="member-name-info">
-            <span class="member-name">{member.displayName}</span>
+            <span class="member-name" title={member.fingerprint}>
+              {member.displayName}
+            </span>
+            <Show when={member.customStatus}>
+              {(text) => <span class="member-custom-status">{text()}</span>}
+            </Show>
             <Show when={member.gameInfo}>
               {(info) => (
                 <span class="member-game-info">

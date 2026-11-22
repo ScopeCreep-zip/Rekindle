@@ -440,6 +440,7 @@
 .login-title	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .logout-icon-btn	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .logout-icon-btn:hover	text	var(--color-xfire-danger-text)	--color-xfire-busy 25% over --color-xfire-bg-dark	1.0	false
+.member-custom-status	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-game-info	text	var(--color-xfire-ingame-text)	--color-xfire-bg-dark	1.0	false
 .member-game-server	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-group-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
@@ -609,6 +610,7 @@
 .profile-popup-action-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-primary	1.0	false
 .profile-popup-badge	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
 .profile-popup-bio	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
+.profile-popup-custom-status	text	var(--color-xfire-text)	--color-xfire-bg-primary	1.0	false
 .profile-popup-edit-btn	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
 .profile-popup-edit-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-primary	1.0	false
 .profile-popup-edit-image-placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
