@@ -278,7 +278,7 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     <Switch fallback={<div {...attrs} role={inBar ? "none" : undefined}>{children()}</div>}>
       <Match when={menuOf()}>
         {(menu) => (
-          <PackMenu attrs={attrs} menu={menu()} items={tree.menus(menu())} run={runItem}>
+          <PackMenu attrs={attrs} menu={menu()} label={n().label?.text} items={tree.menus(menu())} run={runItem}>
             {children()}
           </PackMenu>
         )}

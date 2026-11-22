@@ -3,14 +3,10 @@ import { Menubar } from "@kobalte/core/menubar";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import type { EngineMenu, MenuItem } from "../../ipc/commands/dto_skin_tree";
 
-/// The menu title's text: the first menu reads "Rekindle" (plan SK2 lead
-/// decision 7: the Xfire name is a trademark), the others keep Xfire's
-/// names (lang 229/231).
-const TITLE: Partial<Record<EngineMenu, string>> = { file: "Rekindle", tool: "Tools", help: "Help", status: "Status" };
-
-/// The accessible name of a menu whose trigger is the pack's art alone (a
-/// logo or icon opening the window menu): a trigger with no words has no
-/// name otherwise (axe button-name). A titled menu is named by its title.
+/// The accessible name of a menu title the Host serves no label for: its
+/// art already carries the right word (Tools, Help), or it is art alone (a
+/// logo opening the window menu), which has no name otherwise (axe
+/// button-name). A served label (plan SK4b) names the title instead.
 const ART_NAME: Record<EngineMenu, string> = {
   file: "Rekindle",
   tool: "Tools",
@@ -62,6 +58,8 @@ const BarItems: Component<{ items: MenuItem[]; run: (item: MenuItem) => void }> 
 interface MenuProps {
   attrs: Record<string, unknown>;
   menu: EngineMenu;
+  /** The served label's words (plan SK4b), drawn by the node's NodeLabelView. */
+  label?: string;
   items: MenuItem[];
   run: (item: MenuItem) => void;
   children: JSX.Element;
@@ -69,9 +67,8 @@ interface MenuProps {
 
 const Menu: Component<MenuProps> = (props) => (
   <Menubar.Menu>
-    <Menubar.Trigger class="skin-menu" {...props.attrs} aria-label={TITLE[props.menu] ? undefined : ART_NAME[props.menu]}>
+    <Menubar.Trigger class="skin-menu" {...props.attrs} aria-label={props.label ?? ART_NAME[props.menu]}>
       {props.children}
-      <Show when={TITLE[props.menu]}>{(t) => <span class="skin-menu-label">{t()}</span>}</Show>
     </Menubar.Trigger>
     <BarItems items={props.items} run={props.run} />
   </Menubar.Menu>

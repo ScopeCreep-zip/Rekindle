@@ -37,11 +37,6 @@
     align-items: center;
     justify-content: center;
   }
-  .skin-menu-label {
-    position: relative;
-    font-size: 11px;
-    white-space: nowrap;
-  }
 
   /* N1: the name, in the field's box. */
   .skin-name {
