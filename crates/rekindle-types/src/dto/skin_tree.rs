@@ -193,6 +193,21 @@ impl NodeArt {
     }
 }
 
+/// The Host's words over a node it placed (rule N4, plan SK2-N4): the
+/// cloned Communities tab's art is another tab's, label and all.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NodeLabel {
+    pub text: String,
+    /// `[x, y, width, height]` of the node's box, px from its top-left,
+    /// holding the copied art's own word (xslimfire's and Total Chaos's
+    /// tabs are one whole picture, "Files" drawn in): the shell fills it
+    /// with the pack's ground before the text. `None` when the art draws
+    /// no word.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<[u16; 4]>,
+}
+
 /// One component of the pack's tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -209,6 +224,10 @@ pub struct SkinNode {
     pub art: Option<NodeArt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<NodeText>,
+    /// Words the Host draws over the node (rule N4's Communities tab,
+    /// whose art is a clone of another tab's): never a pack's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<NodeLabel>,
     /// The tab whose view shows this node (a view's button row).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
@@ -279,6 +298,9 @@ pub struct ShellNode {
     /// the tab controls of one group switch together.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control_group: Option<u16>,
+    /// The Host's words over the node (rule N4), drawn by the shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<NodeLabel>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<NodeTrigger>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -357,6 +379,7 @@ impl SkinNode {
             role: self.role,
             shows_with: self.shows_with,
             control_group: self.control_group,
+            label: self.label.clone(),
             triggers: self.triggers.clone(),
             children: self.children.iter().map(Self::shell).collect(),
         }

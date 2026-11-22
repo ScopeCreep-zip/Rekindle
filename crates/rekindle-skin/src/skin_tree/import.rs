@@ -444,6 +444,7 @@ impl Walk<'_> {
                 z,
                 art,
                 text: None,
+                label: None,
                 shows_with,
                 control_group,
                 triggers: with_implied(t.triggers, &t.role, &children),

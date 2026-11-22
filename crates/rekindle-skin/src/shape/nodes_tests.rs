@@ -42,6 +42,7 @@ fn node(id: &str, role: NodeRole, (x, y, w, h): (i16, i16, u16, u16)) -> SkinNod
         z: 0,
         art: Some(NodeArt::middle(format!("assets/tree/{id}.png"), w, h)),
         text: None,
+        label: None,
         shows_with: None,
         control_group: None,
         triggers: Vec::new(),

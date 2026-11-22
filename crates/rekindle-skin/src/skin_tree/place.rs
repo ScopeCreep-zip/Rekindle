@@ -29,10 +29,13 @@
 
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::{EngineView, NodeTrigger, SkinAction, SkinEvent};
-use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode};
+use rekindle_types::dto::skin_tree::{
+    Anchor, NodeLabel, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
+};
 use rekindle_types::dto::skin_tree_role::ViewKey;
 
 const C: ViewKey = ViewKey::Communities;
+const WORDS: &str = "Communities";
 
 fn find_mut<'a>(
     nodes: &'a mut [SkinNode],
@@ -59,6 +62,7 @@ fn fill_view(views: &SkinNode, v: ViewKey) -> SkinNode {
         z: views.z,
         art: None,
         text: None,
+        label: None,
         shows_with: Some(v),
         control_group: None,
         triggers: Vec::new(),
@@ -193,9 +197,47 @@ fn clone_tab(strip: &mut Vec<SkinNode>, at: Target) -> Option<String> {
     }
     retarget(&mut tab, at.group);
     tab.triggers.extend(at.press());
+    tab.label = Some(label(&tab));
     let id = tab.id.clone();
     strip.insert(last + 1, tab);
     Some(id)
+}
+
+/// Whether `n` or a piece of it draws one whole picture `w` px wide: a
+/// tab's art with its word drawn in (xslimfire's `TabDownloadButton`, a
+/// 65 px "Files"), not a 3-slice whose middle repeats (Alloy's).
+fn whole_picture(n: &SkinNode, w: u16) -> bool {
+    let own = n.art.as_ref().is_some_and(|a| {
+        a.normal.len() == 1
+            && a.normal
+                .get(&PieceSlot::Middle)
+                .is_some_and(|p| p.width == w)
+    });
+    own || n.children.iter().any(|c| whole_picture(c, w))
+}
+
+/// The clone's own words. Its art is the last tab's, word and all, and no
+/// built-in has a tab picture without its word (xslimfire's and Total
+/// Chaos's `TabHeader` draws the three words too), so a whole-picture
+/// clone covers the copied word's band: the box less a tenth of its width
+/// (at least 3 px) at each side and a fifth of its height (at least 2 px)
+/// above and below, which holds the word in both packs (xslimfire's
+/// "Files" at x 21-44, y 5-14 of 65 x 18; Total Chaos's at 21-48, 4-12 of
+/// 74 x 17) and leaves the frame's ends.
+fn label(tab: &SkinNode) -> NodeLabel {
+    let cover = match (tab.x, tab.y) {
+        (NodeSpan::Fixed { size: w, .. }, NodeSpan::Fixed { size: h, .. })
+            if whole_picture(tab, w) =>
+        {
+            let (dx, dy) = ((w / 10).max(3), (h / 5).max(2));
+            Some([dx, dy, w.saturating_sub(2 * dx), h.saturating_sub(2 * dy)])
+        }
+        _ => None,
+    };
+    NodeLabel {
+        text: WORDS.to_owned(),
+        cover,
+    }
 }
 
 /// A row spread over its strip: the last tab flush with the strip's end
@@ -242,34 +284,72 @@ fn pack_row(strip: &mut SkinNode) {
     }
 }
 
-/// Grows the window's minimum width by the run of the node `id` past its
-/// strip on either side, when the strip stretches with the window (or is
-/// the window), so the node sits in the strip at the minimum size. A fixed
-/// strip is left as laid, and validation judges it (rule 3).
-fn widen(layout: &mut WindowLayout, id: &str) {
-    let Some(tree) = layout.tree.as_ref() else {
-        return;
+/// `span` grown to `[start, start + size)` in a parent `len` long, its
+/// anchor kept (a centred strip stays centred as the window grows).
+fn regrow(span: NodeSpan, len: i32, start: i32, size: i32) -> NodeSpan {
+    let NodeSpan::Fixed { at, .. } = span else {
+        return span;
     };
-    let out = layout.outsets;
-    let w = i32::from(layout.min_width) + i32::from(out.left) + i32::from(out.right);
-    let h = i32::from(layout.min_height) + i32::from(out.top) + i32::from(out.bottom);
+    let size = u16::try_from(size).unwrap_or(u16::MAX);
+    let (placed, _) = NodeSpan::Fixed { at, size }.place(len);
+    let by = i16::try_from(start - placed).unwrap_or(0);
+    let at = match at {
+        Anchor::Start(o) => Anchor::Start(o + by),
+        Anchor::End(o) => Anchor::End(o - by),
+        Anchor::Centre {
+            by: b,
+            before,
+            after,
+        } => Anchor::Centre {
+            by: b + by,
+            before,
+            after,
+        },
+    };
+    NodeSpan::Fixed { at, size }
+}
+
+/// Fits the node `id` in its strip at `w × h` (rule 3: inside its
+/// parent's box). A fixed strip grows over it on each axis, its start kept
+/// (Total Chaos's centred 343 px `TabHeader` takes a fourth 74 px tab);
+/// a strip that stretches with the window, or the window, cannot, so the
+/// run past it across is returned for the window's minimum width.
+fn fit(tree: &mut SkinTree, w: i32, h: i32, id: &str) -> i32 {
     let boxes = tree.boxes(w, h);
     let Some(tab) = boxes.iter().find(|(n, _)| n.id == id).map(|b| b.1) else {
-        return;
+        return 0;
     };
-    let strip = boxes
+    let Some((strip, sb)) = boxes
         .iter()
-        .find(|(n, _)| n.children.iter().any(|c| c.id == id));
-    let end = match strip {
-        None => w,
-        Some((n, b)) if matches!(n.x, NodeSpan::Stretch { .. }) => b[0] + b[2],
-        Some(_) => return,
+        .find(|(n, _)| n.children.iter().any(|c| c.id == id))
+        .map(|(n, b)| ((*n).clone(), *b))
+    else {
+        return (tab[0] + tab[2] - w).max(0) + (-tab[0]).max(0);
     };
-    let start = strip.map_or(0, |(_, b)| b[0]);
-    let run = (tab[0] + tab[2] - end).max(0) + (start - tab[0]).max(0);
-    if let Ok(run) = u16::try_from(run) {
-        layout.min_width = layout.min_width.saturating_add(run);
+    let pb = boxes
+        .iter()
+        .find(|(n, _)| n.children.iter().any(|c| c.id == strip.id))
+        .map_or([0, 0, w, h], |b| b.1);
+    let mut grown = [strip.x, strip.y];
+    let mut across = 0;
+    for axis in 0..2 {
+        let (s0, s1) = (sb[axis], sb[axis] + sb[axis + 2]);
+        let (t0, t1) = (tab[axis], tab[axis] + tab[axis + 2]);
+        let run = (t1 - s1).max(0) + (s0 - t0).max(0);
+        if run == 0 {
+            continue;
+        }
+        if matches!(grown[axis], NodeSpan::Fixed { .. }) {
+            let (a, b) = (s0.min(t0), s1.max(t1));
+            grown[axis] = regrow(grown[axis], pb[axis + 2], a - pb[axis], b - a);
+        } else if axis == 0 {
+            across = run;
+        }
     }
+    if let Some(n) = find_mut(&mut tree.root, &|n| n.id == strip.id) {
+        [n.x, n.y] = grown;
+    }
+    across
 }
 
 /// A `Knob(Communities)` stop after the last stop of `knob`.
@@ -336,6 +416,11 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
         z: views.z,
         art: None,
         text: None,
+        // No art: its words are all it shows.
+        label: Some(NodeLabel {
+            text: WORDS.to_owned(),
+            cover: None,
+        }),
         shows_with: None,
         control_group: None,
         triggers: at.press(),
@@ -358,9 +443,11 @@ pub fn communities(layout: &mut WindowLayout) {
     };
     let is_tab = |r: NodeRole| r == NodeRole::Tab(ViewKey::Friends);
     let is_knob = |r: NodeRole| matches!(r, NodeRole::Knob(_));
+    let keys: Vec<String> = layout.popups.keys().cloned().collect();
     let roots =
         std::iter::once(&mut tree.root).chain(layout.popups.values_mut().map(|p| &mut p.tree.root));
     let mut roots: Vec<&mut Vec<SkinNode>> = roots.collect();
+    let mut placed = None;
     for (i, root) in roots.iter_mut().enumerate() {
         // XGlow lays its tabs at the window's root (`Xglow.ini` `[Friends]`).
         let (id, packed) = if root.iter().any(|n| is_tab(n.role)) {
@@ -375,12 +462,16 @@ pub fn communities(layout: &mut WindowLayout) {
         } else {
             continue;
         };
-        // A popup's rail (StealthX) keeps its own size.
-        if let (0, Some(id)) = (i, id) {
-            for id in packed.iter().chain([&id]) {
-                widen(layout, id);
-            }
-        }
+        placed = Some((i, id, packed));
+        break;
+    }
+    if let Some((i, id, packed)) = placed {
+        fit_placed(
+            layout,
+            i.checked_sub(1).map(|p| keys[p].as_str()),
+            id,
+            packed,
+        );
         return;
     }
     for root in &mut roots {
@@ -397,5 +488,39 @@ pub fn communities(layout: &mut WindowLayout) {
         parent.children.push(tab);
     } else {
         roots[0].push(tab);
+    }
+}
+
+/// Fits the placed tab (and a packed row's strip) in its parent, in the
+/// main tree (`popup` `None`), whose minimum width grows by a run past a
+/// stretching strip, or in a popup, which keeps its own size (StealthX's
+/// rail grows its fixed `TabHeader` down).
+fn fit_placed(
+    layout: &mut WindowLayout,
+    popup: Option<&str>,
+    id: Option<String>,
+    packed: Option<String>,
+) {
+    let out = layout.outsets;
+    let (tree, w, h, insets) = match popup.and_then(|k| layout.popups.get_mut(k)) {
+        Some(p) => {
+            let o = p.tree.outsets;
+            (&mut p.tree, p.min_width, p.min_height, o)
+        }
+        None => match layout.tree.as_mut() {
+            Some(t) => (t, layout.min_width, layout.min_height, out),
+            None => return,
+        },
+    };
+    let w = i32::from(w) + i32::from(insets.left) + i32::from(insets.right);
+    let h = i32::from(h) + i32::from(insets.top) + i32::from(insets.bottom);
+    let mut run = 0;
+    for id in packed.iter().chain(id.iter()) {
+        run += fit(tree, w, h, id);
+    }
+    if popup.is_none() {
+        if let Ok(run) = u16::try_from(run) {
+            layout.min_width = layout.min_width.saturating_add(run);
+        }
     }
 }
