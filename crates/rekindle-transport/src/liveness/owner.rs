@@ -98,7 +98,16 @@ pub(crate) async fn run_publisher(
                 }
                 () = tokio::time::sleep_until(at) => {}
             }
-            match crate::broadcast::node::publish_personal_route(&session, &shared, &blob).await {
+            let route_id =
+                crate::route_trace::own_route_id(live.routes.as_ref(), RouteClass::General, &blob);
+            match crate::broadcast::node::publish_personal_route(
+                &session,
+                &shared,
+                &blob,
+                route_id.as_deref(),
+            )
+            .await
+            {
                 None => break,
                 Some(landed) => {
                     live.published(Instant::now());

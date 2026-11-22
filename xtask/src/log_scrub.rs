@@ -12,6 +12,11 @@
 //!   `log_scrub::install_panic_hook` or `install_panic_hook_with`, itself
 //!   or in the `run` function of its package's `lib.rs` that its `main`
 //!   calls (the desktop's `rekindle_lib::run`).
+//!
+//! And a third over the same code: the debug-only shared-key variable
+//! `REKINDLE_LOG_SCRUB_KEY` (plan RD2) is named only inside an item under
+//! `#[cfg(debug_assertions)]`, so no release build reads it (the
+//! compiler then rejects any release path that uses the gated name).
 
 use std::path::Path;
 
@@ -26,6 +31,105 @@ use crate::walk_source_files;
 const SUBSCRIBER_ROOTS: &[&str] = &["fmt", "registry", "layer", "init", "try_init", "builder"];
 const WRITER: &str = "ScrubbingMakeWriter";
 const PANIC_HOOKS: &[&str] = &["install_panic_hook", "install_panic_hook_with"];
+const SHARED_KEY_VAR: &str = "REKINDLE_LOG_SCRUB_KEY";
+
+fn is_debug_only(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|a| {
+        a.path().is_ident("cfg")
+            && a.parse_args::<syn::Meta>()
+                .is_ok_and(|m| m.path().is_ident("debug_assertions"))
+    })
+}
+
+/// Finds `SHARED_KEY_VAR` named outside a `#[cfg(debug_assertions)]` item.
+struct SharedKeyFinder<'a> {
+    rel: &'a str,
+    src: &'a str,
+    cursor: usize,
+    gated: usize,
+    hits: Vec<String>,
+}
+
+impl SharedKeyFinder<'_> {
+    fn within(&mut self, attrs: &[syn::Attribute], walk: impl FnOnce(&mut Self)) {
+        if is_test_attr(attrs) {
+            return;
+        }
+        let gate = usize::from(is_debug_only(attrs));
+        self.gated += gate;
+        walk(self);
+        self.gated -= gate;
+    }
+
+    /// One mention, walked in source order: the line of the next quoted
+    /// occurrence (spans carry no lines without `span-locations`).
+    fn found(&mut self) {
+        let quoted = format!("\"{SHARED_KEY_VAR}\"");
+        let line = match self.src[self.cursor..].find(&quoted) {
+            Some(at) => {
+                let abs = self.cursor + at;
+                self.cursor = abs + 1;
+                self.src[..abs].matches('\n').count() + 1
+            }
+            None => 0,
+        };
+        if self.gated == 0 {
+            self.hits.push(format!(
+                "{}:{line}  {SHARED_KEY_VAR} named outside #[cfg(debug_assertions)]",
+                self.rel
+            ));
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for SharedKeyFinder<'_> {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        let attrs = match item {
+            syn::Item::Fn(f) => &f.attrs,
+            syn::Item::Mod(m) => &m.attrs,
+            syn::Item::Impl(i) => &i.attrs,
+            syn::Item::Const(c) => &c.attrs,
+            syn::Item::Static(s) => &s.attrs,
+            _ => return syn::visit::visit_item(self, item),
+        };
+        self.within(attrs, |this| syn::visit::visit_item(this, item));
+    }
+
+    fn visit_impl_item_fn(&mut self, f: &'ast syn::ImplItemFn) {
+        self.within(&f.attrs, |this| syn::visit::visit_impl_item_fn(this, f));
+    }
+
+    fn visit_lit_str(&mut self, lit: &'ast syn::LitStr) {
+        if lit.value() == SHARED_KEY_VAR {
+            self.found();
+        }
+    }
+
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        if mac
+            .tokens
+            .to_string()
+            .contains(&format!("\"{SHARED_KEY_VAR}\""))
+        {
+            self.found();
+        }
+    }
+}
+
+fn scan_shared_key(rel: &str, src: &str) -> Vec<String> {
+    let Ok(parsed) = syn::parse_file(src) else {
+        return Vec::new();
+    };
+    let mut finder = SharedKeyFinder {
+        rel,
+        src,
+        cursor: 0,
+        gated: 0,
+        hits: Vec::new(),
+    };
+    finder.visit_file(&parsed);
+    finder.hits
+}
 
 fn is_test_attr(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
@@ -190,6 +294,7 @@ pub(crate) fn check_log_scrub(root: &Path) -> Result<()> {
                 continue;
             };
             hits.extend(scan_subscribers(&rel, &src));
+            hits.extend(scan_shared_key(&rel, &src));
             let is_binary =
                 path == src_dir.join("main.rs") || path.parent() == Some(&src_dir.join("bin"));
             if is_binary {
@@ -211,7 +316,8 @@ pub(crate) fn check_log_scrub(root: &Path) -> Result<()> {
     Err(anyhow!(
         "{} log sink(s) bypass the scrubber (rule B19). Write through \
          `rekindle_utils::log_scrub::ScrubbingMakeWriter` and install \
-         `log_scrub::install_panic_hook` in every binary.",
+         `log_scrub::install_panic_hook` in every binary; name \
+         `{SHARED_KEY_VAR}` only under `#[cfg(debug_assertions)]`.",
         hits.len()
     ))
 }

@@ -14,6 +14,11 @@
 //! uses an HMAC-SHA256 key the same way). Within one run the same
 //! identifier always gets the same tag, so a log can still be followed;
 //! across runs, and against the real key, tags are unlinkable.
+//! Debug builds only: `REKINDLE_LOG_SCRUB_KEY` (64 hex digits) replaces
+//! the random key, so every process of one test run tags alike and the
+//! app's and its peers' logs line up (plan RD2). Release builds never read
+//! it: the code that does is under `cfg(debug_assertions)`, and
+//! `cargo xtask check-log-scrub` keeps every mention of the name there.
 //!
 //! Recognised shapes (each verified against real output — see the tests
 //! here and `rekindle-protocol/tests/log_scrub_veilid.rs`):
@@ -36,18 +41,73 @@ use tracing_subscriber::fmt::MakeWriter;
 
 fn process_key() -> &'static [u8; 32] {
     static KEY: OnceLock<[u8; 32]> = OnceLock::new();
-    KEY.get_or_init(|| {
-        let mut k = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut k);
-        k
-    })
+    KEY.get_or_init(draw_key)
+}
+
+fn random_key() -> [u8; 32] {
+    let mut k = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut k);
+    k
+}
+
+/// The debug-only variable that names one test run's shared key (plan
+/// RD2): with it, every process of the run tags an identifier alike, so
+/// the app's and its peers' logs can be lined up. It exists only under
+/// `debug_assertions`; a release build has no code that reads it
+/// (`cargo xtask check-log-scrub` keeps every mention of it there).
+#[cfg(debug_assertions)]
+const SHARED_KEY_VAR: &str = "REKINDLE_LOG_SCRUB_KEY";
+
+/// The key for a `SHARED_KEY_VAR` value: 64 hex digits, or `Err` naming
+/// what is wrong. Unset (`None`) is the normal per-process random key.
+#[cfg(debug_assertions)]
+fn key_from(shared: Option<&str>) -> Result<[u8; 32], String> {
+    let Some(text) = shared else {
+        return Ok(random_key());
+    };
+    let text = text.trim();
+    if text.len() != 64 || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("{SHARED_KEY_VAR} must be 64 hex digits"));
+    }
+    let mut k = [0u8; 32];
+    for (byte, pair) in k.iter_mut().zip(text.as_bytes().chunks(2)) {
+        let pair = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
+        *byte = u8::from_str_radix(pair, 16).map_err(|e| e.to_string())?;
+    }
+    Ok(k)
+}
+
+/// Debug builds: the run's shared key when `SHARED_KEY_VAR` is set. A
+/// malformed value stops the process: logging on under a random key would
+/// silently defeat the run it was set for, and the scrubber cannot panic
+/// (its own panic hook scrubs through this key).
+#[cfg(debug_assertions)]
+fn draw_key() -> [u8; 32] {
+    let shared = std::env::var(SHARED_KEY_VAR).ok();
+    match key_from(shared.as_deref()) {
+        Ok(k) => k,
+        Err(e) => {
+            let _ = writeln!(io::stderr().lock(), "log scrub: {e}");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Release builds: always a fresh key from the OS RNG.
+#[cfg(not(debug_assertions))]
+fn draw_key() -> [u8; 32] {
+    random_key()
+}
+
+fn tag_with(key: &[u8; 32], identifier: &str) -> String {
+    let h = blake3::keyed_hash(key, identifier.as_bytes());
+    format!("<{}>", &h.to_hex()[..8])
 }
 
 /// The `<tag>` an identifier is replaced with in this process.
 #[must_use]
 pub fn tag(identifier: &str) -> String {
-    let h = blake3::keyed_hash(process_key(), identifier.as_bytes());
-    format!("<{}>", &h.to_hex()[..8])
+    tag_with(process_key(), identifier)
 }
 
 struct Rules {
@@ -348,6 +408,27 @@ mod tests {
         let a = scrub(&format!("a={HEX64}")).into_owned();
         let b = scrub(&format!("b={HEX64}")).into_owned();
         assert_eq!(&a[2..], &b[2..]);
+    }
+
+    #[test]
+    fn a_shared_key_tags_alike_across_scrubbers() {
+        let key = "00112233445566778899aabbccddeeff00112233445566778899AABBCCDDEEFF";
+        let one = super::key_from(Some(key)).unwrap();
+        let two = super::key_from(Some(key)).unwrap();
+        assert_eq!(super::tag_with(&one, HEX64), super::tag_with(&two, HEX64));
+    }
+
+    #[test]
+    fn without_a_shared_key_each_scrubber_draws_its_own() {
+        let one = super::key_from(None).unwrap();
+        let two = super::key_from(None).unwrap();
+        assert_ne!(super::tag_with(&one, HEX64), super::tag_with(&two, HEX64));
+    }
+
+    #[test]
+    fn a_malformed_shared_key_is_refused() {
+        assert!(super::key_from(Some("abc")).is_err());
+        assert!(super::key_from(Some(&"g".repeat(64))).is_err());
     }
 
     #[test]

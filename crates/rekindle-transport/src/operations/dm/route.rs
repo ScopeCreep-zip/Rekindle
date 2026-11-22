@@ -39,7 +39,10 @@ pub fn invalidate_blob(node: &TransportNode, peer: &str, blob: &[u8]) {
 /// import is the peer's no longer, so it is forgotten (that blob only).
 pub(crate) fn import(node: &TransportNode, peer: &str, blob: &[u8]) -> Option<PeerTarget> {
     match node.routes().import(blob) {
-        Ok(target) => Some(target),
+        Ok(target) => {
+            crate::route_trace::imported(peer, &target, blob);
+            Some(target)
+        }
         Err(e) => {
             tracing::debug!(to = %peer, error = %e, blob_len = blob.len(),
                 "route import failed — invalidating cached route");

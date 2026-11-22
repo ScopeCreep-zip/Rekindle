@@ -1,4 +1,4 @@
-use super::{binary_installs_hook, scan_subscribers};
+use super::{binary_installs_hook, scan_shared_key, scan_subscribers};
 
 #[test]
 fn flags_a_subscriber_without_the_scrubber() {
@@ -66,4 +66,24 @@ fn a_binary_may_install_it_in_its_libs_run() {
     assert!(binary_installs_hook(main, Some(lib)));
     assert!(!binary_installs_hook(main, Some(lib_without)));
     assert!(!binary_installs_hook(main, None));
+}
+
+#[test]
+fn the_shared_key_is_named_only_in_debug_builds() {
+    let gated = r#"
+        #[cfg(debug_assertions)]
+        const SHARED_KEY_VAR: &str = "REKINDLE_LOG_SCRUB_KEY";
+        #[cfg(debug_assertions)]
+        fn draw() { let _ = std::env::var("REKINDLE_LOG_SCRUB_KEY"); }
+    "#;
+    assert!(scan_shared_key("f.rs", gated).is_empty());
+    let open = r#"
+        const SHARED_KEY_VAR: &str = "REKINDLE_LOG_SCRUB_KEY";
+        #[cfg(not(debug_assertions))]
+        fn draw() { let _ = std::env::var("REKINDLE_LOG_SCRUB_KEY"); }
+        fn say() { println!("REKINDLE_LOG_SCRUB_KEY"); }
+    "#;
+    let hits = scan_shared_key("f.rs", open);
+    assert_eq!(hits.len(), 3, "{hits:?}");
+    assert!(hits[0].starts_with("f.rs:2 "), "{hits:?}");
 }
