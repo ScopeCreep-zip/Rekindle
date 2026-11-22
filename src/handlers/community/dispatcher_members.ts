@@ -413,6 +413,8 @@ function applyGovernance(g: GovernanceEvent): void {
         );
         // A creator seat gained or lost names us here too.
         setCommunityState("communities", community, "weAreCreator", detail.weAreCreator);
+        // So may this device's standing (a key endorsed or revoked, ADR 0022 rule 4).
+        setCommunityState("communities", community, "deviceStatus", detail.deviceStatus);
       })
       .catch(() => {});
     return;

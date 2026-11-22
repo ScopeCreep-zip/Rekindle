@@ -5,6 +5,7 @@ import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../ipc/commands/dto";
 import type { NotJoinableReason } from "../ipc/commands/types";
+import type { DeviceStatus } from "../ipc/commands/community";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
@@ -179,6 +180,7 @@ export function transformCommunityDetail(c: {
   memberRegistryKey?: string; anchor?: string | null;
   onboardingComplete?: boolean;
   weAreCreator: boolean;
+  deviceStatus: DeviceStatus;
   myBio?: string | null; myPronouns?: string | null;
   myThemeColor?: number | null; myBadges?: string[];
   removed?: {
@@ -204,6 +206,7 @@ export function transformCommunityDetail(c: {
     memberRegistryKey: c.memberRegistryKey, anchor: c.anchor ?? null,
     onboardingComplete: c.onboardingComplete ?? true,
     weAreCreator: c.weAreCreator,
+    deviceStatus: c.deviceStatus,
     expressions: [],
     automodRules: [],
     myBio: c.myBio ?? null,

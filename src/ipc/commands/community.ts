@@ -4,6 +4,10 @@ import type { OpPublicationState } from "../channels/community_subscription_even
 
 /// A voice message as the Host decoded it: the Ogg Opus audio and the
 /// duration and waveform read from it (base64 fields).
+/** This device's standing in a community (`DeviceStatus`, plan E3.2 / ADR 0022 rule 4):
+ *  `needsReenrol` while it holds no key endorsed for our current member record. */
+export type DeviceStatus = "enrolled" | "needsReenrol";
+
 export interface VoiceMessageAudioView {
   audio: string;
   durationMs: number;
@@ -94,6 +98,8 @@ export const communityCommands = {
   } | null;
       /** Our ops not yet landed, by op hash (`CommunityView::op_publications`). */
       opPublications?: Record<string, OpPublicationState>;
+      /** Whether this device may write here (`CommunityView::device_status`, ADR 0022 rule 4). */
+      deviceStatus: DeviceStatus;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{
@@ -403,6 +409,9 @@ export const communityCommands = {
     hostInvoke<unknown>("delete_automod_rule", { communityId, ruleId }).then(() => undefined),
   removeCommunityMember: (communityId: string, pseudonymKey: string) =>
     hostInvoke<unknown>("remove_community_member", { communityId, pseudonymKey }).then(() => undefined),
+  /** Enrol this device's fresh key in a community it may not write to
+   *  (`CommunityDeviceEnrol`; the Host's TrustChanging review, `EnrolDevice`). */
+  communityDeviceEnrol: (communityId: string) => hostInvoke<null>("community_device_enrol", { communityId }),
   leaveCommunity: (communityId: string) =>
     hostInvoke<unknown>("leave_community", { communityId }).then(() => undefined),
   deleteChannel: (communityId: string, channelId: string) =>
