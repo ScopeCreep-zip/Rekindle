@@ -140,7 +140,7 @@ fn every_former_behaviour_node_keeps_a_trigger() {
 /// with the tabs, and the served shell carries the same group.
 #[test]
 fn classics_button_container_carries_its_control_group() {
-    let tree = main_tree("xfire-classic");
+    let tree = main_layout("xfire-classic").tree.unwrap();
     for id in ["ButtonArea", "TabbedControl"] {
         let mut found = Vec::new();
         find_all(&tree.root, id, &mut found);
