@@ -311,7 +311,7 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
                 new: PseudonymKey([27; 32]),
                 sig: vec![28; 64],
             }],
-            invites_record: None,
+            invites_record: Some("VLD0:inv".into()),
         }),
         E::DeviceKey(super::device_tests::endorsement(30)),
         E::DeviceRetired(super::device_tests::retired(31)),

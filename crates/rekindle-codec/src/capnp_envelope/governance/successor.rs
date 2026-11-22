@@ -179,6 +179,7 @@ mod tests {
             set: Some([8; 32]),
             accepts: Some(accepted()),
             links,
+            invites: Some(format!("VLD0:{}", "j".repeat(43))),
             ..Parts::default()
         })
     }

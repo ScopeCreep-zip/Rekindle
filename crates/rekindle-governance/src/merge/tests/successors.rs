@@ -71,7 +71,7 @@ fn acceptance(offer: &VerifiedOp, set: &[u8], links: &[u8]) -> GovernanceEntry {
                 sig: vec![0; 64],
             })
             .collect(),
-        invites_record: None,
+        invites_record: Some("VLD0:inv".into()),
     })
 }
 

@@ -206,6 +206,9 @@ pub enum Deps {
     /// A `Checkpoint`'s deps (plan E3.2 S7c.4): its cut's heads, by hash;
     /// our previous op is added when missing.
     Cited(Vec<OpHash>),
+    /// The frontier and the ops named, by hash: a transfer acceptance
+    /// cites the offer it accepts (plan E3.2 S7s.4, `successor_gate`).
+    FrontierAnd(Vec<OpHash>),
 }
 
 /// Our op for `body`: the next seq of our chain, `deps` as its deps,
@@ -282,8 +285,12 @@ fn cited(
     deps: Deps,
     prev: Option<OpHash>,
 ) -> Result<Vec<&VerifiedOp>, GovernanceRuntimeError> {
-    let (Deps::Join(mut hashes) | Deps::Cited(mut hashes)) = deps else {
-        return Ok(frontier(&set.ops, prev));
+    let mut hashes = match deps {
+        Deps::Frontier => return Ok(frontier(&set.ops, prev)),
+        Deps::FrontierAnd(extra) => (frontier(&set.ops, prev).iter().map(|op| op.hash()))
+            .chain(extra)
+            .collect(),
+        Deps::Join(hashes) | Deps::Cited(hashes) => hashes,
     };
     hashes.extend(prev);
     hashes.sort_unstable();
@@ -477,6 +484,33 @@ pub async fn fetch_held<D: GovernanceRuntimeDeps>(
         return Ok(None);
     };
     Ok(held_from_encoded(op_ref, encoded))
+}
+
+/// The `OpRef` of held op `hash` of `community_id`, as a dep cites it.
+///
+/// # Errors
+/// No cert is pinned, the op store failed, or the op is not held (or its
+/// author has no member record).
+pub async fn held_op_ref<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    hash: OpHash,
+) -> Result<OpRef, GovernanceRuntimeError> {
+    let cert = deps
+        .genesis_cert(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
+    let state = deps
+        .governance_state(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_owned()))?;
+    let held = deps.governance_ops(community_id).await?;
+    let set = verify_held_with(deps, community_id, &held);
+    set.ops
+        .iter()
+        .find(|op| op.hash() == hash)
+        .and_then(|op| author_record(&cert, &state, op.author()).map(|r| op.op_ref(&r)))
+        .ok_or_else(|| {
+            GovernanceRuntimeError::OpRefused(format!("op {} not held", hex::encode(hash.0)))
+        })
 }
 
 /// The state at `frontier`: the merge of the frontier ops' causal past

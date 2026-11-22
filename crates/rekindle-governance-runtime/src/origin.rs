@@ -178,6 +178,24 @@ pub async fn create_successor_community<D: GovernanceRuntimeDeps>(
     finish_with(deps, reserved, name, admission, &[], predecessor).await
 }
 
+/// Write the genesis of a reserved transfer successor of `predecessor`
+/// (plan E3.2 S7s.4): [`finish_community`] whose cert names `predecessor`
+/// and lists `accepted`, the linked co-creators' new pseudonyms.
+///
+/// # Errors
+/// As [`finish_community`].
+pub async fn finish_successor_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    reserved: ReservedCommunity,
+    name: &str,
+    admission: AdmissionMode,
+    accepted: &[CoCreatorAcceptance],
+    predecessor: &str,
+) -> Result<String, GovernanceRuntimeError> {
+    let predecessor = Some(predecessor.to_owned());
+    finish_with(deps, reserved, name, admission, accepted, predecessor).await
+}
+
 /// [`finish_community`] with the cert's `predecessor`.
 async fn finish_with<D: GovernanceRuntimeDeps>(
     deps: &D,

@@ -85,7 +85,7 @@ fn acceptance(rn: &PseudonymKey, cn: &PseudonymKey) -> SuccessorState {
                 author_seq: 1,
             }),
             links: vec![link(&key(2), rn, NEW), link(&key(3), cn, NEW)],
-            invites_record: None,
+            invites_record: Some("VLD0:inv".into()),
         },
     )
 }

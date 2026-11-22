@@ -91,13 +91,25 @@ impl std::fmt::Debug for LifecycleRequest {
                 .debug_struct("CommunityPendingMembers")
                 .field("anchor", anchor)
                 .finish(),
-            Self::CommunityTransferOwnership {
+            Self::CommunityOfferTransfer {
                 anchor,
-                new_owner_pseudonym,
+                transfer_to,
             } => f
-                .debug_struct("CommunityTransferOwnership")
+                .debug_struct("CommunityOfferTransfer")
                 .field("anchor", anchor)
-                .field("new_owner_pseudonym", new_owner_pseudonym)
+                .field("transfer_to", transfer_to)
+                .finish(),
+            Self::CommunityWithdrawTransfer { anchor } => f
+                .debug_struct("CommunityWithdrawTransfer")
+                .field("anchor", anchor)
+                .finish(),
+            Self::CommunityAcceptTransfer {
+                anchor,
+                co_creators,
+            } => f
+                .debug_struct("CommunityAcceptTransfer")
+                .field("anchor", anchor)
+                .field("co_creators", &co_creators.len())
                 .finish(),
             Self::CommunityPublishSuccessor { anchor, continuing } => f
                 .debug_struct("CommunityPublishSuccessor")

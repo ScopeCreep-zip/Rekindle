@@ -71,6 +71,24 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     .await
 }
 
+/// [`write_entry`] citing `extra` among its deps beside the frontier: a
+/// transfer acceptance cites the offer it accepts (plan E3.2 S7s.4).
+pub async fn write_entry_citing<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: GovernanceEntry,
+    extra: Vec<rekindle_types::governance::OpHash>,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    write(
+        deps,
+        community_id,
+        entry,
+        OpLanding::FirstAttempt,
+        op_log::Deps::FrontierAnd(extra),
+    )
+    .await
+}
+
 /// [`write_entry`] for an invite's `InviteCreated` (of `invite_id`),
 /// answering only once the op landed on `M`/2 with our frontier on `M`/3,
 /// else [`GovernanceRuntimeError::NotYetPublished`] with the op queued: a

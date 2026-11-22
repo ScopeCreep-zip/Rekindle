@@ -137,10 +137,17 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunitySuccessors { anchor } => {
             community::handle_successors(ctx, state, &anchor)
         }
-        LifecycleRequest::CommunityTransferOwnership {
+        LifecycleRequest::CommunityOfferTransfer {
             anchor,
-            new_owner_pseudonym,
-        } => community::handle_transfer_ownership(ctx, state, &anchor, &new_owner_pseudonym).await,
+            transfer_to,
+        } => community::handle_offer_transfer(ctx, state, &anchor, &transfer_to).await,
+        LifecycleRequest::CommunityWithdrawTransfer { anchor } => {
+            community::handle_withdraw_transfer(ctx, state, &anchor).await
+        }
+        LifecycleRequest::CommunityAcceptTransfer {
+            anchor,
+            co_creators,
+        } => community::handle_accept_transfer(ctx, state, &anchor, &co_creators).await,
         LifecycleRequest::InviteCreate {
             community,
             max_uses,

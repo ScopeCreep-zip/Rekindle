@@ -61,7 +61,6 @@ pub mod origin;
 pub mod origin_reserve;
 pub mod overflow;
 pub mod own_frontier;
-pub mod ownership;
 pub mod partial;
 pub mod quarantine;
 pub mod rebuild_flight;
@@ -72,6 +71,7 @@ pub mod seen_frontiers;
 pub mod segments;
 pub mod successor;
 pub mod successor_invites;
+pub mod transfer;
 pub mod verify_cache;
 pub mod watch_ring;
 

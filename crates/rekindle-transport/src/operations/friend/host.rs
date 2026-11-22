@@ -34,9 +34,19 @@ pub enum BackendHold {
     SessionReinitiate { peer: String },
 }
 
-/// A co-creator's answer: its verified `(pseudonym, signature)`, or
-/// `None` for a decline (plan E3.2 S7s.3).
-pub type CreatorAnswer = Option<([u8; 32], [u8; 64])>;
+/// A co-creator's verified acceptance (plan E3.2 S7s.3): its pseudonym
+/// for the new anchor and that pseudonym's signature, and in a transfer's
+/// round its verified creator link (S7s.4, lead decision (24)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AcceptedAnswer {
+    pub pseudonym: [u8; 32],
+    pub signature: [u8; 64],
+    pub link: Option<super::creator_round::CreatorLinkSig>,
+}
+
+/// A co-creator's answer: its verified acceptance, or `None` for a
+/// decline.
+pub type CreatorAnswer = Option<AcceptedAnswer>;
 
 /// The 1:1 receive and handshake state the Host keeps for the unlocked
 /// identity, cleared at lock.

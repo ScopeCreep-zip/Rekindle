@@ -92,10 +92,23 @@ pub enum LifecycleRequest {
     /// List pending join requests for a community.
     CommunityPendingMembers { anchor: String },
 
-    /// Transfer community ownership to a new owner.
-    CommunityTransferOwnership {
+    /// Offer `anchor` to the member `transfer_to` (pseudonym hex): a
+    /// transfer, completed only by that member's acceptance (plan E3.2
+    /// S7s.4, lead decisions (24)–(26)). Creator-only; our latest offer or
+    /// withdrawal supersedes our earlier ones.
+    CommunityOfferTransfer { anchor: String, transfer_to: String },
+
+    /// Withdraw our standing transfer offer of `anchor` (decision (26)).
+    CommunityWithdrawTransfer { anchor: String },
+
+    /// Accept the standing transfer offer of `anchor` to us: collect a
+    /// creator link from each of the offer's other creators through
+    /// `co_creators` (friends' identity keys, one per other creator;
+    /// decision (16)'s round, which removes no one, decision (25)), then
+    /// create the successor and publish the acceptance.
+    CommunityAcceptTransfer {
         anchor: String,
-        new_owner_pseudonym: String,
+        co_creators: Vec<String>,
     },
 
     /// Re-create `anchor` under a new anchor whose cert names it as
@@ -164,8 +177,12 @@ impl LifecycleRequest {
             Self::CommunityPendingMembers { .. } => {
                 ("CommunityPendingMembers", Query, Authenticated)
             }
-            Self::CommunityTransferOwnership { .. } => {
-                ("CommunityTransferOwnership", Write, Authenticated)
+            Self::CommunityOfferTransfer { .. } => ("CommunityOfferTransfer", Write, Authenticated),
+            Self::CommunityWithdrawTransfer { .. } => {
+                ("CommunityWithdrawTransfer", Write, Authenticated)
+            }
+            Self::CommunityAcceptTransfer { .. } => {
+                ("CommunityAcceptTransfer", Write, Authenticated)
             }
             Self::CommunityPublishSuccessor { .. } => {
                 ("CommunityPublishSuccessor", Write, Authenticated)
@@ -200,6 +217,7 @@ impl LifecycleRequest {
             | Self::CreatorInviteAnswer { .. }
             | Self::CommunityJoin { .. }
             | Self::CommunityFollowSuccessor { .. }
+            | Self::CommunityAcceptTransfer { .. }
             | Self::CommunityLeave { .. }
             | Self::CommunityForget { .. }
             | Self::CommunityUpdateInfo { .. }
@@ -210,9 +228,9 @@ impl LifecycleRequest {
             }
             // Channel keys are key material; ownership is the owner's own.
             // A successor moves creator authority: the creator's own act.
-            Self::CommunityTransferOwnership { .. } | Self::CommunityPublishSuccessor { .. } => {
-                None
-            }
+            Self::CommunityOfferTransfer { .. }
+            | Self::CommunityWithdrawTransfer { .. }
+            | Self::CommunityPublishSuccessor { .. } => None,
         }
     }
 }

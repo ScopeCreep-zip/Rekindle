@@ -452,6 +452,9 @@ struct DmVideoFragment {
 struct CreatorInvite {
   anchor @0 :Text;
   communityName @1 :Text;
+  # A transfer's round (plan E3.2 S7s.4, lead decision (24)): the old
+  # community the reserved one succeeds; empty for a plain co-creation.
+  predecessor @2 :Text;
 }
 
 # 0x0191: we accept: our pseudonym for `anchor` and its signature over
@@ -460,6 +463,12 @@ struct CreatorAccept {
   anchor @0 :Text;
   pseudonym @1 :Data;                   # 32
   signature @2 :Data;                   # 64
+  # Answering a transfer's invite: our pseudonym in the predecessor and
+  # its CreatorLink signature over
+  # `rekindle-gov-successor-link-v1 ‖ old anchor ‖ anchor ‖ pseudonym`
+  # (lead decision (24)); both empty otherwise.
+  linkOld @3 :Data;                     # 32
+  linkSig @4 :Data;                     # 64
 }
 
 # 0x0192: we decline the co-creator invite for `anchor`.

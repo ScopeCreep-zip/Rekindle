@@ -89,15 +89,27 @@ pub(super) fn selection(
             member_pseudonym,
             ..
         }
-        | LifecycleRequest::CommunityTransferOwnership {
+        | LifecycleRequest::CommunityOfferTransfer {
             anchor,
-            new_owner_pseudonym: member_pseudonym,
+            transfer_to: member_pseudonym,
         } => {
             let (id, _) = community(ctx, anchor)?;
             s.subject = Subject::Named {
                 name: member_pseudonym.clone(),
             };
             s.notifies = members(ctx, &id);
+        }
+        LifecycleRequest::CommunityWithdrawTransfer { anchor } => {
+            let (id, name) = community(ctx, anchor)?;
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
+        }
+        LifecycleRequest::CommunityAcceptTransfer { anchor, .. } => {
+            // ADR 0019 TrustChanging; decision (25): the round removes no
+            // one, so the review names whom we still collect from.
+            let (id, name) = community(ctx, anchor)?;
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
         }
         LifecycleRequest::CommunityPublishSuccessor { anchor, .. } => {
             // ADR 0019 Destructive: the new creator set, who leaves it, and

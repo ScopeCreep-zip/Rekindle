@@ -67,6 +67,7 @@ async fn an_invite_is_held_and_its_withdrawal_takes_it() {
     let invite = CreatorFrame::Invite {
         anchor: anchor(),
         community_name: "LAN Party".into(),
+        predecessor: None,
     };
     creator_round::send(&ann_friends, &hex::encode(bob), &invite)
         .await
@@ -125,11 +126,18 @@ async fn an_accept_counts_only_for_a_waiting_creation_and_a_valid_signature() {
     let bob_friends = HostFriends::of(&other.ctx);
     let ann_friends = HostFriends::of(&host.ctx);
     let mut events = host.ctx.journal.subscribe(None);
-    for signature in [[0u8; 64], good, good] {
+    // A creator link answering a plain co-creation is refused too: only a
+    // transfer's round takes one (plan E3.2 S7s.4, decision (24)).
+    let stray = Some(creator_round::CreatorLinkSig {
+        old: [3; 32],
+        sig: [4; 64],
+    });
+    for (signature, link) in [([0u8; 64], None), (good, stray), (good, None), (good, None)] {
         let accept = CreatorFrame::Accept {
             anchor: anchor(),
             pseudonym: key.0,
             signature,
+            link,
         };
         creator_round::send(&bob_friends, &hex::encode(owner), &accept)
             .await
@@ -140,12 +148,17 @@ async fn an_accept_counts_only_for_a_waiting_creation_and_a_valid_signature() {
         )
         .await;
     }
-    // The bad signature and the repeat (no longer waited on) are refused.
+    // The bad signature, the stray link and the repeat (no longer waited
+    // on) are refused.
     assert_eq!(mentions(&drain(&mut events).await, "accepted"), 1);
     let answers = host.ctx.friend_stores.creator_answers.lock();
     assert_eq!(
         answers[&anchor()][&hex::encode(bob)],
-        Some((key.0, good)),
+        Some(rekindle_transport::operations::friend::AcceptedAnswer {
+            pseudonym: key.0,
+            signature: good,
+            link: None,
+        }),
         "the verified accept is held for the finish"
     );
 }

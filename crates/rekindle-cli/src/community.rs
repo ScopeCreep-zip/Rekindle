@@ -284,25 +284,9 @@ pub async fn dispatch(
         CommunityCmd::PublishSuccessor { .. }
         | CommunityCmd::FollowSuccessor { .. }
         | CommunityCmd::Successors { .. } => successor(cmd, client, mode).await,
-        CommunityCmd::Transfer {
-            community,
-            new_owner,
-        } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Lifecycle(
-                    LifecycleRequest::CommunityTransferOwnership {
-                        anchor: community.clone(),
-                        new_owner_pseudonym: new_owner.clone(),
-                    },
-                )),
-            )
-            .await?;
-            if mode.is_structured() {
-                return format::print_structured(&value, mode);
-            }
-            format::print_text(&format!("Ownership transferred to {new_owner}"))
-        }
+        CommunityCmd::Transfer { .. }
+        | CommunityCmd::WithdrawTransfer { .. }
+        | CommunityCmd::AcceptTransfer { .. } => transfer(cmd, client, mode).await,
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
@@ -422,6 +406,37 @@ async fn successor(
             anchor: community.clone(),
         },
         _ => anyhow::bail!("not a successor command"),
+    };
+    lifecycle(client, mode, request).await
+}
+
+/// The transfer commands (plan E3.2 S7s.4): offer, withdraw, accept.
+async fn transfer(
+    cmd: &CommunityCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
+        CommunityCmd::Transfer {
+            community,
+            new_owner,
+        } => LifecycleRequest::CommunityOfferTransfer {
+            anchor: community.clone(),
+            transfer_to: new_owner.clone(),
+        },
+        CommunityCmd::WithdrawTransfer { community } => {
+            LifecycleRequest::CommunityWithdrawTransfer {
+                anchor: community.clone(),
+            }
+        }
+        CommunityCmd::AcceptTransfer {
+            community,
+            co_creators,
+        } => LifecycleRequest::CommunityAcceptTransfer {
+            anchor: community.clone(),
+            co_creators: co_creators.clone(),
+        },
+        _ => anyhow::bail!("not a transfer command"),
     };
     lifecycle(client, mode, request).await
 }

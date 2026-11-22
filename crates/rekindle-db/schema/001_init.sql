@@ -168,6 +168,9 @@ CREATE TABLE IF NOT EXISTS creator_invites (
     anchor TEXT NOT NULL CHECK(length(anchor) > 0),
     inviter_key TEXT NOT NULL CHECK(length(inviter_key) = 64),
     community_name TEXT NOT NULL CHECK(length(community_name) > 0),
+    -- A transfer's round (plan E3.2 S7s.4): the community the reserved one
+    -- succeeds, whose pseudonym signs our creator link; NULL otherwise.
+    predecessor TEXT CHECK(predecessor IS NULL OR length(predecessor) > 0),
     received_at INTEGER NOT NULL,
     accepted INTEGER NOT NULL DEFAULT 0 CHECK(accepted IN (0, 1)),
     PRIMARY KEY (owner_key, anchor)

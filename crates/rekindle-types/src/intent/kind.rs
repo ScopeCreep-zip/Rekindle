@@ -130,6 +130,9 @@ pub enum IntentKind {
     LeaveCommunity,
     RemoveCoCreator,
     CancelCommunityCreate,
+    /// Withdraw our standing transfer offer (plan E3.2 S7s.4, decision
+    /// (26)).
+    WithdrawCommunityTransfer,
     /// Create a group DM: an invite goes to every member (plan E2.6).
     CreateGroupDm,
     /// Leave a group DM: every other member rotates its key.
@@ -191,6 +194,9 @@ pub enum IntentKind {
     /// Follow a successor both sides link: join its new anchor, keeping
     /// the old community (ADR 0011, plan E3.2 S7s.4).
     FollowCommunitySuccessor,
+    /// Accept a transfer offered to us: collect the other creators' links,
+    /// create the successor and name it (plan E3.2 S7s.4).
+    AcceptCommunityTransfer,
     AnswerCreatorInvite,
     // TrustChanging: Key trust
     AcceptSessionReset,
@@ -243,6 +249,9 @@ pub enum IntentKind {
     /// 0011 "Successor community", plan E3.2 S7s.4): moves creator
     /// authority to a new creator set for everyone who follows.
     PublishCommunitySuccessor,
+    /// Offer the community to a member: once accepted, a successor whose
+    /// creator set drops us and adds that member (plan E3.2 S7s.4).
+    OfferCommunityTransfer,
     /// Delete a community we were removed from: its kept history and
     /// every local trace (plan E3.2 S9 R3-5; Element's "Forget this room").
     ForgetCommunity,
@@ -396,6 +405,7 @@ impl IntentKind {
             | Self::LeaveCommunity
             | Self::RemoveCoCreator
             | Self::CancelCommunityCreate
+            | Self::WithdrawCommunityTransfer
             | Self::CreateGroupDm
             | Self::LeaveGroupDm
             | Self::SetDisappearingTimer
@@ -444,6 +454,7 @@ impl IntentKind {
             | Self::CreateCommunity
             | Self::JoinCommunity
             | Self::FollowCommunitySuccessor
+            | Self::AcceptCommunityTransfer
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
@@ -467,6 +478,7 @@ impl IntentKind {
             | Self::ImportSkin => IntentClass::TrustChanging,
             Self::BulkDeleteChannelMessages
             | Self::PublishCommunitySuccessor
+            | Self::OfferCommunityTransfer
             | Self::ForgetCommunity
             | Self::DeleteCommunity
             | Self::DeleteAccount => IntentClass::Destructive,

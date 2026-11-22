@@ -15,6 +15,8 @@ pub struct CreatorInviteRow {
     /// The creator, whose session it came over.
     pub inviter_key: String,
     pub community_name: String,
+    /// A transfer's round: the community the reserved one succeeds.
+    pub predecessor: Option<String>,
     /// Milliseconds.
     pub received_at: i64,
 }
@@ -24,6 +26,7 @@ fn invite_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CreatorInviteRow> {
         anchor: crate::row::get(r, "anchor")?,
         inviter_key: crate::row::get(r, "inviter_key")?,
         community_name: crate::row::get(r, "community_name")?,
+        predecessor: crate::row::get(r, "predecessor")?,
         received_at: crate::row::get(r, "received_at")?,
     })
 }
@@ -38,11 +41,19 @@ pub fn put_invite(
     row: &CreatorInviteRow,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO creator_invites (owner_key, anchor, inviter_key, community_name, received_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(owner_key, anchor) DO UPDATE SET \
+        "INSERT INTO creator_invites \
+         (owner_key, anchor, inviter_key, community_name, predecessor, received_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(owner_key, anchor) DO UPDATE SET \
          inviter_key = excluded.inviter_key, community_name = excluded.community_name, \
-         received_at = excluded.received_at",
-        params![owner_key, row.anchor, row.inviter_key, row.community_name, row.received_at],
+         predecessor = excluded.predecessor, received_at = excluded.received_at",
+        params![
+            owner_key,
+            row.anchor,
+            row.inviter_key,
+            row.community_name,
+            row.predecessor,
+            row.received_at
+        ],
     )?;
     Ok(())
 }
@@ -60,7 +71,7 @@ pub fn take_invite(
 ) -> rusqlite::Result<Option<CreatorInviteRow>> {
     conn.query_row(
         "DELETE FROM creator_invites WHERE owner_key = ?1 AND anchor = ?2 AND inviter_key = ?3 \
-         RETURNING anchor, inviter_key, community_name, received_at",
+         RETURNING anchor, inviter_key, community_name, predecessor, received_at",
         params![owner_key, anchor, inviter_key],
         invite_row,
     )
@@ -99,7 +110,7 @@ pub fn take_accepted(
 ) -> rusqlite::Result<Option<CreatorInviteRow>> {
     conn.query_row(
         "DELETE FROM creator_invites WHERE owner_key = ?1 AND anchor = ?2 AND inviter_key = ?3 \
-         AND accepted = 1 RETURNING anchor, inviter_key, community_name, received_at",
+         AND accepted = 1 RETURNING anchor, inviter_key, community_name, predecessor, received_at",
         params![owner_key, anchor, inviter_key],
         invite_row,
     )
@@ -116,7 +127,7 @@ pub fn invite(
     anchor: &str,
 ) -> rusqlite::Result<Option<CreatorInviteRow>> {
     conn.query_row(
-        "SELECT anchor, inviter_key, community_name, received_at FROM creator_invites \
+        "SELECT anchor, inviter_key, community_name, predecessor, received_at FROM creator_invites \
          WHERE owner_key = ?1 AND anchor = ?2",
         params![owner_key, anchor],
         invite_row,
@@ -130,7 +141,7 @@ pub fn invite(
 /// The query failed or a row is corrupt.
 pub fn invites(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<CreatorInviteRow>> {
     let mut stmt = conn.prepare(
-        "SELECT anchor, inviter_key, community_name, received_at FROM creator_invites \
+        "SELECT anchor, inviter_key, community_name, predecessor, received_at FROM creator_invites \
          WHERE owner_key = ?1 ORDER BY received_at DESC, anchor",
     )?;
     let rows = stmt.query_map(params![owner_key], invite_row)?;
@@ -237,6 +248,7 @@ mod tests {
 
     fn invite_at(at: i64) -> CreatorInviteRow {
         CreatorInviteRow {
+            predecessor: None,
             anchor: "VLD0:anchor".into(),
             inviter_key: "a".repeat(64),
             community_name: "LAN".into(),

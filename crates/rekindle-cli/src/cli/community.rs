@@ -163,14 +163,33 @@ pub enum CommunityCmd {
         community: String,
     },
 
-    /// Transfer community ownership to another member.
+    /// Offer the community to another member: a transfer they complete by
+    /// accepting it (plan E3.2 S7s.4).
     Transfer {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
-        /// New owner's pseudonym key.
+        /// The recipient's pseudonym key.
         #[arg(long, short = 'M')]
         new_owner: String,
+    },
+
+    /// Withdraw our standing transfer offer.
+    WithdrawTransfer {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+
+    /// Accept the transfer offered to us, collecting each other creator's
+    /// link through the named friends.
+    AcceptTransfer {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// A friend's identity key per other creator of the offer.
+        #[arg(long = "co-creator")]
+        co_creators: Vec<String>,
     },
 
     /// Invite management.

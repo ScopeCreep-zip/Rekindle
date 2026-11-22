@@ -26,26 +26,30 @@ use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::create_leave::NOT_CONNECTED;
+use super::transfer::PendingTransfer;
 use super::HostGovernance;
 use crate::host::adapters::friends::creator_round::status;
 use crate::host::adapters::friends::HostFriends;
 
 /// A reserved creation waiting on its co-creators.
 pub(crate) struct PendingCreation {
-    reserved: ReservedCommunity,
-    name: String,
-    description: String,
-    admission: AdmissionMode,
+    pub(super) reserved: ReservedCommunity,
+    pub(super) name: String,
+    pub(super) description: String,
+    pub(super) admission: AdmissionMode,
     /// Every co-creator named, in the order named.
-    named: Vec<String>,
+    pub(super) named: Vec<String>,
     /// The named co-creators that have neither answered nor been removed.
-    waiting: BTreeSet<String>,
+    pub(super) waiting: BTreeSet<String>,
+    /// Set when this is a transfer's successor (plan E3.2 S7s.4): its round
+    /// collects creator links and removes no one (decision (25)).
+    pub(super) transfer: Option<PendingTransfer>,
 }
 
 /// Our reserved creations by anchor; memory only, released at lock (the
 /// rows left behind are withdrawn at the next unlock, decision (20)).
 #[derive(Default)]
-pub(crate) struct PendingCreations(parking_lot::Mutex<HashMap<String, PendingCreation>>);
+pub(crate) struct PendingCreations(pub(super) parking_lot::Mutex<HashMap<String, PendingCreation>>);
 
 impl PendingCreations {
     /// Drop every reservation (lock): their one-time keys go with them.
@@ -87,7 +91,7 @@ fn co_creator_status(
 
 /// `co_creators` as a set of distinct friends other than `me`, refused
 /// when malformed.
-fn named_co_creators(
+pub(super) fn named_co_creators(
     friends: &HostFriends,
     me: &str,
     co_creators: &[String],
@@ -137,6 +141,25 @@ impl HostGovernance {
         if !self.transport().is_ok_and(|node| node.is_ready()) {
             return Err(NOT_CONNECTED.into());
         }
+        self.start_round(name, description, admission, &named, None)
+            .await
+    }
+
+    /// Reserve a community, record and invite `named` (a transfer's
+    /// successor when `transfer` is set: each invite names the
+    /// predecessor, whose creator link the answer carries).
+    pub(super) async fn start_round(
+        &self,
+        name: &str,
+        description: &str,
+        admission: AdmissionMode,
+        named: &[String],
+        transfer: Option<PendingTransfer>,
+    ) -> Result<CommunityCreated, String> {
+        let me = (self.ctx.require_owner()).map_err(|_| "no identity is unlocked")?;
+        let friends = HostFriends::of(&self.ctx);
+        let named = named.to_vec();
+        let predecessor = transfer.as_ref().map(|t| t.old_anchor.clone());
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let reserved = rekindle_governance_runtime::reserve_community(self)
             .await
@@ -159,11 +182,13 @@ impl HostGovernance {
                 admission,
                 waiting: named.iter().cloned().collect(),
                 named: named.clone(),
+                transfer,
             },
         );
         let invite = CreatorFrame::Invite {
             anchor: anchor.clone(),
             community_name: name.to_owned(),
+            predecessor,
         };
         for (i, peer) in named.iter().enumerate() {
             if let Err(e) = creator_round::send(&friends, peer, &invite).await {
@@ -188,9 +213,18 @@ impl HostGovernance {
     /// The creation does not wait on `peer`, or the withdrawal or the row
     /// update failed.
     pub(crate) async fn remove_co_creator(&self, anchor: &str, peer: &str) -> Result<(), String> {
-        let waits = (self.ctx.pending_creations.0.lock())
+        let (waits, transfer) = (self.ctx.pending_creations.0.lock())
             .get(anchor)
-            .is_some_and(|p| p.waiting.contains(peer));
+            .map_or((false, false), |p| {
+                (p.waiting.contains(peer), p.transfer.is_some())
+            });
+        if transfer {
+            // Decision (25): a transfer's round removes no one; the
+            // recipient waits, or abandons the acceptance.
+            return Err(format!(
+                "a transfer's round removes no co-creator: {peer} is still awaited"
+            ));
+        }
         if !waits {
             return Err(format!("the creation of {anchor} does not wait on {peer}"));
         }
@@ -242,7 +276,7 @@ impl HostGovernance {
     }
 
     /// Send each of `peers` `CreatorWithdrawn` for `anchor`.
-    async fn withdraw(&self, anchor: &str, peers: &[String]) {
+    pub(super) async fn withdraw(&self, anchor: &str, peers: &[String]) {
         let friends = HostFriends::of(&self.ctx);
         let frame = CreatorFrame::Withdrawn {
             anchor: anchor.to_owned(),
@@ -285,17 +319,22 @@ impl HostGovernance {
                 None
             }
         };
-        let Some(pending) = pending else { return };
+        let Some(mut pending) = pending else { return };
         let answers = (self.ctx.friend_stores.creator_answers.lock())
             .remove(anchor)
             .unwrap_or_default();
+        if let Some(transfer) = pending.transfer.take() {
+            self.clear_pending_rows(anchor).await;
+            Box::pin(self.finish_transfer(pending, transfer, &answers)).await;
+            return;
+        }
         let (mut joiners, mut accepts) = (Vec::new(), Vec::new());
         for named in &pending.named {
-            if let Some(Some((pseudonym, signature))) = answers.get(named) {
+            if let Some(Some(answer)) = answers.get(named) {
                 joiners.push(named.clone());
                 accepts.push(CoCreatorAcceptance {
-                    pseudonym: PseudonymKey(*pseudonym),
-                    signature: *signature,
+                    pseudonym: PseudonymKey(answer.pseudonym),
+                    signature: answer.signature,
                 });
             }
         }
@@ -337,7 +376,7 @@ impl HostGovernance {
 
     /// Mint each accepted co-creator a one-use invite and send it as
     /// `CreatorJoin` (decision (17): it joins through the normal join).
-    async fn send_join_links(&self, anchor: &str, joiners: &[String]) {
+    pub(super) async fn send_join_links(&self, anchor: &str, joiners: &[String]) {
         let friends = HostFriends::of(&self.ctx);
         for peer in joiners {
             let invite = match self.create_invite(anchor, 1, None).await {
@@ -438,10 +477,13 @@ impl HostGovernance {
             let pseudonym = PseudonymKey(signing.verifying_key().to_bytes());
             let signing_bytes =
                 rekindle_governance::genesis::creator_accept_signing_bytes(anchor, &pseudonym);
+            let link = (row.predecessor.as_deref())
+                .map(|old| Self::answer_link(&secret, old, anchor, &pseudonym));
             CreatorFrame::Accept {
                 anchor: anchor.to_owned(),
                 pseudonym: pseudonym.0,
                 signature: sign_with_pseudonym(&signing, &signing_bytes),
+                link,
             }
         } else {
             CreatorFrame::Decline {

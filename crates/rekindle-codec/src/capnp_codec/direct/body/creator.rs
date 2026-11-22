@@ -27,28 +27,53 @@ fn community_name(
 pub struct CreatorInvite {
     pub anchor: String,
     pub community_name: String,
+    /// A transfer's round: the community `anchor` succeeds (plan E3.2
+    /// S7s.4, lead decision (24)); `None` for a plain co-creation.
+    pub predecessor: Option<String>,
 }
 
 impl CreatorInvite {
     pub(super) fn write(&self, mut b: creator_invite::Builder<'_>) {
         b.set_anchor(&self.anchor);
         b.set_community_name(&self.community_name);
+        if let Some(predecessor) = &self.predecessor {
+            b.set_predecessor(predecessor);
+        }
     }
 
     pub(super) fn read(r: creator_invite::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             anchor: record_key(r.get_anchor(), "creator invite anchor")?,
             community_name: community_name(r.get_community_name())?,
+            predecessor: if r.has_predecessor() {
+                Some(record_key(
+                    r.get_predecessor(),
+                    "creator invite predecessor",
+                )?)
+            } else {
+                None
+            },
         })
     }
 }
 
-/// 0x0191 CreatorAccept: our pseudonym for `anchor`, signed by it.
+/// A transfer co-creator's `CreatorLink` half (lead decision (24)): its
+/// pseudonym in the predecessor and that pseudonym's signature binding it
+/// to the accept's pseudonym in the successor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CreatorLinkSig {
+    pub old: [u8; 32],
+    pub sig: [u8; 64],
+}
+
+/// 0x0191 CreatorAccept: our pseudonym for `anchor`, signed by it, and for
+/// a transfer's invite our creator link.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatorAccept {
     pub anchor: String,
     pub pseudonym: [u8; 32],
     pub signature: [u8; 64],
+    pub link: Option<CreatorLinkSig>,
 }
 
 impl CreatorAccept {
@@ -56,6 +81,10 @@ impl CreatorAccept {
         b.set_anchor(&self.anchor);
         b.set_pseudonym(&self.pseudonym);
         b.set_signature(&self.signature);
+        if let Some(link) = &self.link {
+            b.set_link_old(&link.old);
+            b.set_link_sig(&link.sig);
+        }
     }
 
     pub(super) fn read(r: creator_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -63,6 +92,14 @@ impl CreatorAccept {
             anchor: record_key(r.get_anchor(), "creator accept anchor")?,
             pseudonym: fixed(r.get_pseudonym(), "creator accept pseudonym")?,
             signature: fixed(r.get_signature(), "creator accept signature")?,
+            link: if r.has_link_old() || r.has_link_sig() {
+                Some(CreatorLinkSig {
+                    old: fixed(r.get_link_old(), "creator link old pseudonym")?,
+                    sig: fixed(r.get_link_sig(), "creator link signature")?,
+                })
+            } else {
+                None
+            },
         })
     }
 }

@@ -54,7 +54,8 @@ pub struct CommunitySuccessor {
     /// A successor's sealed invites record (lead decision (34)): the key of
     /// the first DFLT(1) page holding one invite to the new community per
     /// continuing member, each HPKE-sealed to that member's card key, so no
-    /// invite is readable in the op log itself. Set in a successor only.
+    /// invite is readable in the op log itself. Set in a successor and a
+    /// transfer acceptance only.
     pub invites_record: Option<String>,
 }
 
@@ -104,9 +105,16 @@ impl CommunitySuccessor {
         } else {
             self.links.is_empty()
         };
+        // A successor and a transfer acceptance both name a new community
+        // the members follow, so both carry its sealed invites (lead
+        // decision (34)); an offer and a withdrawal carry none.
+        let names_new = matches!(
+            shape,
+            SuccessorShape::Successor | SuccessorShape::Acceptance
+        );
         let invites_ok = match &self.invites_record {
-            Some(record) => shape == SuccessorShape::Successor && !record.is_empty(),
-            None => shape != SuccessorShape::Successor,
+            Some(record) => names_new && !record.is_empty(),
+            None => !names_new,
         };
         (links_ok && invites_ok).then_some(shape)
     }
@@ -152,5 +160,32 @@ mod tests {
             ..successor(Some("VLD0:inv"))
         };
         assert_eq!(withdrawal.shape(), None);
+    }
+
+    /// Plan E3.2 S7s.4: an acceptance names the new community the members
+    /// follow, so it needs the sealed invites like a successor does.
+    #[test]
+    fn a_transfer_acceptance_carries_its_invites_record() {
+        let acceptance = |invites: Option<&str>| CommunitySuccessor {
+            reason: SuccessorReason::Transfer,
+            creator_set_hash: Some([1; 32]),
+            accepts: Some(OpRef {
+                op_hash: super::super::OpHash([2; 32]),
+                author: PseudonymKey([3; 32]),
+                author_record: "VLD0:rec".into(),
+                author_seq: 1,
+            }),
+            links: vec![CreatorLink {
+                old: PseudonymKey([4; 32]),
+                new: PseudonymKey([5; 32]),
+                sig: vec![0; 64],
+            }],
+            ..successor(invites)
+        };
+        assert_eq!(
+            acceptance(Some("VLD0:inv")).shape(),
+            Some(SuccessorShape::Acceptance)
+        );
+        assert_eq!(acceptance(None).shape(), None);
     }
 }

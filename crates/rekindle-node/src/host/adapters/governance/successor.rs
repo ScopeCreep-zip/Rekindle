@@ -4,7 +4,6 @@
 //! links); a member follows an offered successor by joining it after
 //! re-checking both links; a window reads the offers made this session.
 
-use rekindle_codec::successor_invites::seal_invite;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::{successor, successor_invites};
@@ -52,20 +51,7 @@ impl HostGovernance {
             .map_err(|e| format!("successor create failed: {e}"))?;
         let description = meta.description.unwrap_or_default();
         let created = (self.store_created(new_anchor.clone(), &meta.name, &description)).await?;
-        let mut sealed = Vec::with_capacity(cards.len());
-        for (member, hpke_key) in &cards {
-            let invite = (self.create_invite(&new_anchor, 1, None).await).map_err(|e| {
-                format!("successor {new_anchor} created but an invite failed: {e:?}")
-            })?;
-            let entry = seal_invite(anchor, &new_anchor, member, hpke_key, &invite.url)
-                .map_err(|e| format!("successor {new_anchor} created but an invite failed: {e}"))?;
-            sealed.push(entry);
-        }
-        let record = successor_invites::write_invites(self, sealed)
-            .await
-            .map_err(|e| {
-                format!("successor {new_anchor} created but its invites not written: {e}")
-            })?;
+        let record = self.seal_invites(anchor, &new_anchor, &cards).await?;
         successor::publish(self, anchor, &new_anchor, &record)
             .await
             .map_err(|e| format!("successor {new_anchor} created but not named here: {e}"))?;

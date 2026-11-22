@@ -9,6 +9,7 @@
 //! taken only from one: anyone else's is refused, never applied. What a
 //! frame means is the Host's ([`FriendHost::on_creator_round`]).
 
+pub use rekindle_codec::capnp_codec::direct::CreatorLinkSig;
 use rekindle_codec::capnp_codec::direct::{
     CreatorAccept, CreatorDecline, CreatorInvite, CreatorJoin, CreatorWithdrawn, DirectBody,
 };
@@ -24,12 +25,17 @@ pub enum CreatorFrame {
     Invite {
         anchor: String,
         community_name: String,
+        /// A transfer's round: the community `anchor` succeeds (lead
+        /// decision (24)); we answer with our creator link from it.
+        predecessor: Option<String>,
     },
     /// The friend accepts our invite: its pseudonym for `anchor`, signed.
     Accept {
         anchor: String,
         pseudonym: [u8; 32],
         signature: [u8; 64],
+        /// Answering a transfer's invite: our creator link.
+        link: Option<CreatorLinkSig>,
     },
     /// The friend declines our invite.
     Decline { anchor: String },
@@ -47,18 +53,22 @@ impl CreatorFrame {
             Self::Invite {
                 anchor,
                 community_name,
+                predecessor,
             } => DirectBody::CreatorInvite(CreatorInvite {
                 anchor,
                 community_name,
+                predecessor,
             }),
             Self::Accept {
                 anchor,
                 pseudonym,
                 signature,
+                link,
             } => DirectBody::CreatorAccept(CreatorAccept {
                 anchor,
                 pseudonym,
                 signature,
+                link,
             }),
             Self::Decline { anchor } => DirectBody::CreatorDecline(CreatorDecline { anchor }),
             Self::Withdrawn { anchor } => DirectBody::CreatorWithdrawn(CreatorWithdrawn { anchor }),
@@ -87,11 +97,13 @@ impl CreatorFrame {
             DirectBody::CreatorInvite(b) => Self::Invite {
                 anchor: b.anchor,
                 community_name: b.community_name,
+                predecessor: b.predecessor,
             },
             DirectBody::CreatorAccept(b) => Self::Accept {
                 anchor: b.anchor,
                 pseudonym: b.pseudonym,
                 signature: b.signature,
+                link: b.link,
             },
             DirectBody::CreatorDecline(b) => Self::Decline { anchor: b.anchor },
             DirectBody::CreatorWithdrawn(b) => Self::Withdrawn { anchor: b.anchor },

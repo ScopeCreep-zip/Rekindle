@@ -98,8 +98,16 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("CommunityReject", Some(IntentKind::RejectJoinRequest)),
     ("CommunityPendingMembers", None),
     (
-        "CommunityTransferOwnership",
-        Some(IntentKind::PublishCommunitySuccessor),
+        "CommunityOfferTransfer",
+        Some(IntentKind::OfferCommunityTransfer),
+    ),
+    (
+        "CommunityWithdrawTransfer",
+        Some(IntentKind::WithdrawCommunityTransfer),
+    ),
+    (
+        "CommunityAcceptTransfer",
+        Some(IntentKind::AcceptCommunityTransfer),
     ),
     ("ChannelList", None),
     ("ChannelCreate", Some(IntentKind::CreateChannel)),

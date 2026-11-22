@@ -119,6 +119,7 @@ impl IntentKind {
             | Self::LeaveCommunity
             | Self::RemoveCoCreator
             | Self::CancelCommunityCreate
+            | Self::WithdrawCommunityTransfer
             | Self::CreateGroupDm
             | Self::LeaveGroupDm
             | Self::SetDisappearingTimer
@@ -161,6 +162,7 @@ impl IntentKind {
             | Self::CreateCommunity
             | Self::JoinCommunity
             | Self::FollowCommunitySuccessor
+            | Self::AcceptCommunityTransfer
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
@@ -192,6 +194,7 @@ impl IntentKind {
             | Self::ClearGamePresence
             | Self::ApproveJoinRequest
             | Self::PublishCommunitySuccessor
+            | Self::OfferCommunityTransfer
             | Self::ForgetCommunity
             | Self::ExportIdentity
             | Self::ImportIdentity
@@ -323,6 +326,7 @@ impl IntentKind {
             | Self::LeaveCommunity
             | Self::RemoveCoCreator
             | Self::CancelCommunityCreate
+            | Self::WithdrawCommunityTransfer
             | Self::CreateGroupDm
             | Self::LeaveGroupDm
             | Self::SetDisappearingTimer
@@ -368,6 +372,7 @@ impl IntentKind {
             | Self::CreateCommunity
             | Self::JoinCommunity
             | Self::FollowCommunitySuccessor
+            | Self::AcceptCommunityTransfer
             | Self::AnswerCreatorInvite
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
@@ -399,6 +404,7 @@ impl IntentKind {
             | Self::RevokeAgent
             | Self::ApproveJoinRequest
             | Self::PublishCommunitySuccessor
+            | Self::OfferCommunityTransfer
             | Self::ForgetCommunity
             | Self::ExportIdentity
             | Self::RotateIdentity
