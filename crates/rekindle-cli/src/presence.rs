@@ -132,6 +132,11 @@ pub fn game_request(cmd: &GameCmd) -> IpcRequest {
             game_id: *id,
             server: server.clone(),
         },
+        GameCmd::Invite { friend, id, server } => IpcRequest::GameInviteSend {
+            public_key: friend.clone(),
+            game_id: *id,
+            server: server.clone(),
+        },
         GameCmd::Installed => IpcRequest::InstalledGamesGet,
         GameCmd::Launch { id, server, source } => IpcRequest::GameLaunch {
             game_id: *id,

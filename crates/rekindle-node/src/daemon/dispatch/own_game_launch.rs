@@ -58,7 +58,8 @@ async fn installed_games(ctx: &DaemonContext) -> IpcResponse {
         Err(e) => return IpcResponse::error(500, format!("games not read: {e}")),
     };
     let steam = if detection {
-        match rekindle_lifecycle::run_blocking(installed::scan_steam).await {
+        let apps = ctx.root.apps.clone();
+        match rekindle_lifecycle::run_blocking(move || installed::scan_steam(&apps)).await {
             Ok(ids) => ids,
             Err(e) => return IpcResponse::error(500, format!("Steam library not read: {e}")),
         }

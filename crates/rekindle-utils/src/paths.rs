@@ -42,6 +42,22 @@ pub struct DataRoot {
     /// the windows are built for it (`windows::base_builder`) and a wipe
     /// removes its [`WebviewStore::dirs`], so both follow this root.
     pub webview: WebviewStore,
+    /// Where other apps on this machine keep their files (Steam's library,
+    /// plan E7.15 IV3), decided with the root.
+    pub apps: AppRoots,
+}
+
+/// The per-OS roots other apps keep their files under, resolved with the
+/// [`DataRoot`] so the Host reads them from its own value, never from the
+/// process environment: a root under one base gets roots under that base
+/// too, and reads nothing of the user's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppRoots {
+    /// The user's home directory (Steam on macOS and Linux).
+    pub home: PathBuf,
+    /// `%ProgramFiles(x86)%` on Windows (Steam's default install); `None`
+    /// elsewhere and under a base.
+    pub program_files_x86: Option<PathBuf>,
 }
 
 /// Where the GUI's webview keeps its stores, decided with the root.
@@ -102,11 +118,16 @@ impl DataRoot {
             logs,
             state,
             webview: WebviewStore::Platform(platform_webview_dirs()?),
+            apps: AppRoots {
+                home: dirs::home_dir().ok_or(PathsError("home"))?,
+                program_files_x86: std::env::var_os("ProgramFiles(x86)").map(PathBuf::from),
+            },
         })
     }
 
     /// The same layout under one base directory instead of the platform's:
-    /// `base/data`, `base/config`, `base/logs`, `base/data/state`. Nothing is
+    /// `base/data`, `base/config`, `base/logs`, `base/data/state`, and other
+    /// apps' home `base/home`. Nothing is
     /// created. The WebDriver walk (plan E7.13) runs the desktop on such a
     /// root so it never opens the user's.
     #[must_use]
@@ -118,6 +139,10 @@ impl DataRoot {
             state: data.join("state"),
             data,
             webview: WebviewStore::Contained(base.join("webview")),
+            apps: AppRoots {
+                home: base.join("home"),
+                program_files_x86: None,
+            },
         }
     }
 
@@ -232,15 +257,6 @@ impl DataRoot {
     pub fn user_config(&self) -> PathBuf {
         self.config.join("config.toml")
     }
-}
-
-/// The user's home directory: the root of the per-OS paths other apps
-/// keep (Steam's library, plan E7.15 IV3).
-///
-/// # Errors
-/// [`PathsError`] when the platform has no home directory.
-pub fn home_dir() -> Result<PathBuf, PathsError> {
-    dirs::home_dir().ok_or(PathsError("home"))
 }
 
 /// The webview's platform stores outside `DataRoot.data` (see

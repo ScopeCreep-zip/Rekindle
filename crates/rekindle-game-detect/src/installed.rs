@@ -12,6 +12,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use rekindle_utils::paths::AppRoots;
+
 use crate::database::GameDatabase;
 
 /// Where Steam keeps its root on each OS.
@@ -138,15 +140,12 @@ pub fn steam_app_ids(roots: &[PathBuf]) -> BTreeSet<u32> {
     ids
 }
 
-/// The Steam application ids installed on this machine, from this OS's
-/// Steam roots; empty with no home directory.
+/// The Steam application ids installed under `apps`, this OS's Steam
+/// roots in the Host's resolved [`AppRoots`] (never the process's own
+/// home, so a Host on a contained root reads only that root).
 #[must_use]
-pub fn scan_steam() -> BTreeSet<u32> {
-    let Ok(home) = rekindle_utils::paths::home_dir() else {
-        return BTreeSet::new();
-    };
-    let program_files_x86 = std::env::var_os("ProgramFiles(x86)").map(PathBuf::from);
-    steam_app_ids(&SteamLayout::CURRENT.roots(&home, program_files_x86.as_deref()))
+pub fn scan_steam(apps: &AppRoots) -> BTreeSet<u32> {
+    steam_app_ids(&SteamLayout::CURRENT.roots(&apps.home, apps.program_files_x86.as_deref()))
 }
 
 /// The game ids we can launch: the games in `db` whose Steam id is in

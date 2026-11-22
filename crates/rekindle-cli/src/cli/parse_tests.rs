@@ -177,3 +177,48 @@ fn favourite_server_subcommands_parse_to_their_requests() {
         "an unparsed address never leaves"
     );
 }
+
+#[test]
+fn game_invite_parses_to_its_request() {
+    use rekindle_ipc::protocol::IpcRequest;
+
+    let args = [
+        "game",
+        "invite",
+        "--friend",
+        "ab12",
+        "--id",
+        "4181",
+        "--server",
+        "203.0.113.7:27015",
+    ];
+    let request = match parse(&args).command {
+        Some(Command::Game(cmd)) => crate::presence::game_request(&cmd),
+        _ => panic!("{args:?} is not a game command"),
+    };
+    assert!(matches!(
+        request,
+        IpcRequest::GameInviteSend { ref public_key, game_id: 4181, ref server }
+            if public_key == "ab12" && server.as_str() == "203.0.113.7:27015"
+    ));
+    assert!(
+        Cli::try_parse_from([
+            "rekindle",
+            "game",
+            "invite",
+            "--friend",
+            "ab12",
+            "--id",
+            "4181",
+            "--server",
+            "host/path:1",
+        ])
+        .is_err(),
+        "an unparsed address never leaves"
+    );
+    assert!(
+        Cli::try_parse_from(["rekindle", "game", "invite", "--friend", "ab12", "--id", "4181"])
+            .is_err(),
+        "the server is required"
+    );
+}

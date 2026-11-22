@@ -69,6 +69,19 @@ pub enum GameCmd {
         #[arg(value_parser = rekindle_types::game_server::ServerAddress::parse)]
         server: rekindle_types::game_server::ServerAddress,
     },
+    /// Invite an accepted friend to join us on a game server (refused for
+    /// a hidden game and while sharing our game is off).
+    Invite {
+        /// The friend's public key.
+        #[arg(long)]
+        friend: String,
+        /// The game's id in the game database.
+        #[arg(long)]
+        id: u32,
+        /// The server, host:port.
+        #[arg(long, value_parser = rekindle_types::game_server::ServerAddress::parse)]
+        server: rekindle_types::game_server::ServerAddress,
+    },
     /// The games we can launch: installed through Steam or played, never a
     /// hidden one.
     Installed,

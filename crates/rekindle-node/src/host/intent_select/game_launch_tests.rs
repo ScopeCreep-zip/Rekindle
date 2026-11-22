@@ -92,12 +92,52 @@ fn a_server_must_match_its_source_and_the_game_must_launch() {
     }));
 }
 
+/// The installed games' ids, read through the Host.
+async fn installed(host: &crate::host::Host) -> Vec<u64> {
+    let (answer, class) = run(host, IpcRequest::InstalledGamesGet).await;
+    assert_eq!(class, None);
+    let IpcResponse::Ok { data, .. } = answer else {
+        panic!("{answer:?}");
+    };
+    data.as_array()
+        .unwrap()
+        .iter()
+        .map(|game| game["gameId"].as_u64().unwrap())
+        .collect()
+}
+
 /// With detection off the Steam library is never read: only played games,
-/// minus the hide list.
+/// minus the hide list. The Host's own root holds a Steam library with
+/// Counter-Strike 2's Steam app, whose games it lists while detection is
+/// on.
 #[tokio::test]
 async fn installed_games_read_no_steam_library_with_detection_off() {
     let dir = tempfile::tempdir().unwrap();
     let (host, owner) = ann(&dir).await;
+    let app_id = rekindle_game_detect::GameDatabase::shared()
+        .lookup_by_id(4181)
+        .and_then(|entry| entry.steam_app_id)
+        .unwrap();
+    let apps = &host.root().apps;
+    assert!(apps.home.starts_with(dir.path()), "a fixture root");
+    let library = rekindle_game_detect::installed::SteamLayout::CURRENT
+        .roots(&apps.home, apps.program_files_x86.as_deref())
+        .remove(0)
+        .join("steamapps");
+    std::fs::create_dir_all(&library).unwrap();
+    std::fs::write(
+        library.join(format!("appmanifest_{app_id}.acf")),
+        format!("\"AppState\"\n{{\n\t\"appid\"\t\t\"{app_id}\"\n}}\n"),
+    )
+    .unwrap();
+    // Every game under that Steam app (Counter-Strike 2 and its predecessor).
+    let shared: Vec<u64> = rekindle_game_detect::GameDatabase::shared()
+        .ids_with_steam_app_id(app_id)
+        .into_iter()
+        .map(u64::from)
+        .collect();
+    assert!(shared.contains(&4181), "{shared:?}");
+    assert_eq!(installed(&host).await, shared, "detection on");
     let o = hex::encode(owner);
     host.ctx
         .db
@@ -106,10 +146,5 @@ async fn installed_games_read_no_steam_library_with_detection_off() {
         .call(move |c| rekindle_db::repo::preferences::set_game_detection_enabled(c, &o, false))
         .await
         .unwrap();
-    let (answer, class) = run(&host, IpcRequest::InstalledGamesGet).await;
-    let IpcResponse::Ok { data, .. } = answer else {
-        panic!("{answer:?}");
-    };
-    assert!(data.as_array().unwrap().is_empty(), "{data}");
-    assert_eq!(class, None);
+    assert!(installed(&host).await.is_empty(), "detection off");
 }
