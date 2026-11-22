@@ -1,12 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-skin-popup",
-  "description": "App-command grants for pack popups (`popup-*`, plan SK2-A5: Xfire's Infoview, StealthX's main menu), each beside the skin window that launched it. The popup renders the served popup shell through the same skin tree as its launcher (`src/windows/SkinPopupWindow.tsx`), so it runs its nodes' actions (`run_skin_action`) and reports its selection (`set_skin_selection`); the event stream and skin read come from `app-baseline.json`, the window chrome from `default.json`. It opens no windows and no popups of its own. No plugin grants.",
+  "description": "App-command grants for pack popups (`popup-*`, plan SK2-A5: Xfire's Infoview, StealthX's main menu), each beside the skin window that launched it. The popup renders the served popup shell through the same skin tree as its launcher (`src/windows/SkinPopupWindow.tsx` → `src/components/skin-tree/SkinTreeWindow.tsx`), so it runs its nodes' actions (`run_skin_action`), reports its selection (`set_skin_selection`) and holds what the tree's own parts call: the menu bar a menu popup carries (StealthX's `MainMenuPopup` is the app menu: settings, quit, the help links through `open_external_url`) and the status picker (`set_status`). The event stream and skin read come from `app-baseline.json`, the window chrome from `default.json`. It opens no popups of its own (`open_skin_popup` refuses a popup as launcher). No plugin grants.",
   "windows": [
     "popup-*"
   ],
   "permissions": [
+    "allow-open-external-url",
+    "allow-open-settings-window",
+    "allow-quit-app",
     "allow-run-skin-action",
-    "allow-set-skin-selection"
+    "allow-set-skin-selection",
+    "allow-set-status"
   ]
 }
