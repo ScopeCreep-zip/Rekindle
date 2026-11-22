@@ -46,11 +46,15 @@ fn request(asked: &[u8]) -> SuccessorLinkRequest {
 /// creators.
 #[test]
 fn a_request_fits_only_its_offer_to_its_author() {
+    let wider = offer(3, &[2, 3, 4]);
     let offer = offer(3, &[2, 3]);
     assert!(requests_offer(&key(3), &request(&[2]), &offer));
     assert!(!requests_offer(&key(4), &request(&[2]), &offer));
     assert!(!requests_offer(&key(3), &request(&[2, 5]), &offer));
     assert!(!requests_offer(&key(3), &request(&[2, 3]), &offer));
+    // A co-creator asking the rest of the set is not the recipient, though
+    // the set it names hashes to the offer's.
+    assert!(!requests_offer(&key(4), &request(&[2, 3]), &wider));
 }
 
 /// A link answers a request only when its author is asked and signs its
