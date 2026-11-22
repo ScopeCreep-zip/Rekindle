@@ -19,6 +19,26 @@ export function skinPopupShell(name: string): SkinShell | undefined {
   return skinShells().find((s) => s.popup?.name === name);
 }
 
+/** The popup this window shows: `/popup/<name>`. */
+export function popupName(): string {
+  return decodeURIComponent(window.location.pathname.replace(/^\/popup\//, ""));
+}
+
+/**
+ * The trees of `shells` this window lays (plan SK4): a popup window its
+ * popup's, the buddy list and chat windows their window's own; every other
+ * window none, so it decodes none of their art.
+ */
+function boundShells(shells: SkinShell[]): SkinShell[] {
+  const path = window.location.pathname;
+  if (path.startsWith("/popup/")) {
+    const name = popupName();
+    return shells.filter((s) => s.popup?.name === name);
+  }
+  const kind: SkinShell["window"] | undefined = path === "/buddy-list" ? "main" : path.startsWith("/chat") ? "chat" : undefined;
+  return kind ? shells.filter((s) => s.window === kind && s.popup === undefined) : [];
+}
+
 /// The one `<link>` each window swaps (plan E7.7.2 "Apply").
 const LINK_ID = "rekindle-skin";
 
@@ -55,7 +75,8 @@ let loading: HTMLLinkElement | null = null;
 
 /**
  * Apply `skin` to this window, showing it only once it can be drawn
- * whole. First every image the sheet draws (`skin.images`) is decoded: a
+ * whole. First every image it draws is decoded (`skin.images`, the shared
+ * sheet's, plus its own trees' `images`, plan SK4): a
  * frame tile or region still loading paints nothing, so the window would
  * be see-through inside the shaper's cut, which already follows the new
  * skin. Then the sheet loads in its own `<link>` beside the shown one
@@ -77,7 +98,10 @@ export function applySkin(skin: SkinApplied): void {
     return;
   }
   // Held until the swap, so the decoded images stay in this document's cache.
-  const loads = skin.images.map((href) => {
+  // The shared sheet's images and this window's own trees' (plan SK4): a
+  // window never waits on art another window's tree draws.
+  const hrefs = [...new Set([...skin.images, ...boundShells(skin.shells ?? []).flatMap((s) => s.images)])];
+  const loads = hrefs.map((href) => {
     const img = new Image();
     img.src = href;
     return { href, img };

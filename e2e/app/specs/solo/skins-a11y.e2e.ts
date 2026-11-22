@@ -15,10 +15,11 @@ import { browser, expect } from "@wdio/globals";
 import { switchTo } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { type Violation, violations } from "../../axe.ts";
-import { checkGeometry } from "../../geometry.ts";
+import { checkGeometry, treeFitIn } from "../../geometry.ts";
+import type { TreeFit } from "../../geometry-page.ts";
 import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 import { builtinPacks, type SkinPack } from "../../skin-pack.ts";
-import { BUDDY_LIST, COMMUNITY, SETTINGS_APPEARANCE, type WindowCase, sizeWindow, sizes } from "../../windows.ts";
+import { BUDDY_LIST, COMMUNITY, SETTINGS_APPEARANCE, type WindowCase, sizeWindow, sizesIn, spacingOf, treeGrowth } from "../../windows.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "skins-a11y");
 const PACKS = builtinPacks();
@@ -150,19 +151,24 @@ describe("every built-in skin keeps the app accessible and laid out", function (
     const found: Record<string, unknown> = {};
     const dir = path.join(OUT, pack.file);
     mkdirSync(dir, { recursive: true });
-    for (const [sizeName, size] of sizes(w)) {
+    const fits: [string, TreeFit][] = [];
+    for (const [sizeName, size] of await sizesIn(browser, w)) {
       await sizeWindow(browser, size);
       await browser.saveScreenshot(path.join(dir, `${w.name}-${sizeName}.png`));
       const where = `${w.name} ${sizeName} ${size.width}x${size.height}`;
       const axe = await violations(browser);
       if (axe.length > 0) found[`${where}: axe`] = axe;
+      const fit = await treeFitIn(browser, ".app-frame");
+      if (fit) fits.push([where, fit]);
       const geometry = await checkGeometry(browser, ".app-frame", {
-        spacing: withData ? [...w.spacing, ...(w.spacingWithData ?? [])] : w.spacing,
+        spacing: spacingOf(w, fit !== null, withData),
         panes: withData ? (w.panes ?? []) : [],
         overlapAllow: w.overlapAllow,
       });
       for (const [check, value] of Object.entries(geometry)) found[`${where}: ${check}`] = value;
     }
+    const growth = treeGrowth(fits);
+    if (growth.length > 0) found[`${w.name}: tree does not grow with the window`] = growth;
     return found;
   }
 

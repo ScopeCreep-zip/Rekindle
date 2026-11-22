@@ -33,6 +33,8 @@ import {
   overlaps,
   spacingOffScale,
   textOverflows,
+  type TreeFit,
+  treeFit,
 } from "./geometry-page.ts";
 
 /**
@@ -85,6 +87,11 @@ export interface GeometryOptions {
   onScreen?: boolean;
 }
 
+/** How the window's skin tree sits in it (`treeFit`), or null when it lays none. */
+export async function treeFitIn(b: Browser, rootSelector: string): Promise<TreeFit | null> {
+  return inPage(b, rootSelector, treeFit, null);
+}
+
 /** Every check's findings, keyed by check; `{}` when the window passes. */
 export type Findings = Record<string, unknown>;
 
@@ -99,7 +106,12 @@ export async function checkGeometry(b: Browser, rootSelector: string, opts: Geom
   const record = (name: string, value: unknown, ok: unknown): void => {
     if (!isDeepStrictEqual(value, ok)) found[name] = value;
   };
-  record("window flex contract", await inPage(b, rootSelector, flexContract, null), FLEX_CONTRACT);
+  // A skin's tree places every node itself, so it keeps the tree's fit in
+  // place of the flex contract (its growth is compared across sizes by
+  // the caller, `treeFitIn`).
+  const fit = await treeFitIn(b, rootSelector);
+  if (fit) record("tree inside the window", fit.inWindow, true);
+  else record("window flex contract", await inPage(b, rootSelector, flexContract, null), FLEX_CONTRACT);
   record("horizontal overflow (px)", await inPage(b, rootSelector, horizontalOverflow, null), { document: 0, root: 0 });
   if (!opts.onScreen) record("overlapping elements", await inPage(b, rootSelector, overlaps, [...skip, ...(opts.overlapAllow ?? [])]), []);
   if (!opts.onScreen) record("text that neither fits nor ellipsizes", await inPage(b, rootSelector, textOverflows, skip), []);

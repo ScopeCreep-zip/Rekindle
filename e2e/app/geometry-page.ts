@@ -220,6 +220,39 @@ export function flexContract(el: Element): FlexContract {
   };
 }
 
+/** How a skin's tree sits in its window (plan SK4), at one size. */
+export interface TreeFit {
+  /** The tree's box lies inside the viewport. */
+  inWindow: boolean;
+  /** The window's width and height beyond the tree's (the frame's outsets). */
+  gapWidth: number;
+  gapHeight: number;
+  /** The window's height beyond the views node's (its content area). */
+  viewsGapHeight: number | null;
+}
+
+/**
+ * A tree-laid window's stand-in for the flex contract (plan SK4): the
+ * pack places every node itself, so there is no flex chain to keep. What
+ * the contract promised, content that fills the window and a foot held
+ * down as it grows, holds when the tree lies inside the window and the
+ * tree and its views node grow with it: the gaps stay the same at every
+ * size (`checkWindow` compares them). Null when the window lays no tree.
+ */
+export function treeFit(root: Element): TreeFit | null {
+  const tree = root.querySelector(".skin-tree");
+  if (!tree) return null;
+  const r = tree.getBoundingClientRect();
+  const views = tree.querySelector('[data-skin-role="views"]');
+  const v = views ? views.getBoundingClientRect() : null;
+  return {
+    inWindow: r.left >= -0.5 && r.top >= -0.5 && r.right <= window.innerWidth + 0.5 && r.bottom <= window.innerHeight + 0.5,
+    gapWidth: Math.round(window.innerWidth - r.width),
+    gapHeight: Math.round(window.innerHeight - r.height),
+    viewsGapHeight: v && v.height > 0 ? Math.round(window.innerHeight - v.height) : null,
+  };
+}
+
 /**
  * Every focusable element under `root` takes focus, looks different in its
  * focused state (outline, shadow, border, background or text colour), and
