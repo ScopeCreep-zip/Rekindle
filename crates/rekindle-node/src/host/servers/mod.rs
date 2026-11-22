@@ -32,10 +32,12 @@ pub(crate) struct HeldInvite {
     pub server: String,
 }
 
-/// The session's received game invites (`ctx.servers`).
+/// The session's received game invites (`ctx.servers`), and the worker's
+/// trigger for a change no journal event names (a favourite removed).
 #[derive(Debug, Default)]
 pub(crate) struct ServersState {
     invites: parking_lot::Mutex<VecDeque<HeldInvite>>,
+    stale: tokio::sync::Notify,
 }
 
 impl ServersState {
@@ -50,6 +52,18 @@ impl ServersState {
 
     pub(crate) fn invites(&self) -> Vec<HeldInvite> {
         self.invites.lock().iter().cloned().collect()
+    }
+
+    /// What the view shows changed without a journal event: the worker
+    /// composes again one coalescing period later. A mark made while the
+    /// worker is busy is kept (one permit), never lost.
+    pub(crate) fn mark_stale(&self) {
+        self.stale.notify_one();
+    }
+
+    /// Resolves at the next [`Self::mark_stale`].
+    pub(super) async fn marked_stale(&self) {
+        self.stale.notified().await;
     }
 
     /// The session ended.

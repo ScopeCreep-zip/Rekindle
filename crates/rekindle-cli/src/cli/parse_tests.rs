@@ -163,6 +163,15 @@ fn favourite_server_subcommands_parse_to_their_requests() {
         IpcRequest::FavouriteServersGet
     ));
     assert!(matches!(
+        request(&["game", "servers"]),
+        IpcRequest::ServersView
+    ));
+    assert!(matches!(
+        request(&["game", "recent-remove", "4181", "203.0.113.7:27015"]),
+        IpcRequest::RecentServerRemove { game_id: 4181, ref server }
+            if server.as_str() == "203.0.113.7:27015"
+    ));
+    assert!(matches!(
         request(&["game", "favourite-add", "4181", "203.0.113.7:27015", "--label", "Scrims"]),
         IpcRequest::FavouriteServerAdd { game_id: 4181, ref server, ref label }
             if server.as_str() == "203.0.113.7:27015" && label == "Scrims"

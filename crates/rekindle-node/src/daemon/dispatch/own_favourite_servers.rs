@@ -43,6 +43,7 @@ pub(super) async fn route(
         }),
         _ => None,
     };
+    let removed = matches!(request, IpcRequest::FavouriteServerRemove { .. });
     let read = db
         .call(move |conn| {
             match request {
@@ -81,6 +82,11 @@ pub(super) async fn route(
         Ok(views) => {
             if let Some(added) = added {
                 ctx.publish_event(SubscriptionEvent::System(added));
+            }
+            // The Servers view lists favourites (plan E7.2 G3): a removal
+            // names no journal event, so its worker is told directly.
+            if removed {
+                ctx.servers.mark_stale();
             }
             IpcResponse::ok(&views)
         }

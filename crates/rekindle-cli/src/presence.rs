@@ -123,6 +123,11 @@ pub fn game_request(cmd: &GameCmd) -> IpcRequest {
         GameCmd::Hide { id } => IpcRequest::GameHide { game_id: *id },
         GameCmd::Unhide { id } => IpcRequest::GameUnhide { game_id: *id },
         GameCmd::Favourites => IpcRequest::FavouriteServersGet,
+        GameCmd::Servers => IpcRequest::ServersView,
+        GameCmd::RecentRemove { id, server } => IpcRequest::RecentServerRemove {
+            game_id: *id,
+            server: server.clone(),
+        },
         GameCmd::FavouriteAdd { id, server, label } => IpcRequest::FavouriteServerAdd {
             game_id: *id,
             server: server.clone(),

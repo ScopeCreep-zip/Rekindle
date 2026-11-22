@@ -50,6 +50,17 @@ pub enum GameCmd {
     },
     /// Our favourite servers, each with whether an invite may name it.
     Favourites,
+    /// The Servers view (plan E7.2 G3): favourites, recent, friends and
+    /// each community's servers, with the Host's verdict on every action.
+    Servers,
+    /// Forget a server we visited (its Recent row).
+    RecentRemove {
+        /// The game's id in the game database.
+        id: u32,
+        /// The server, host:port.
+        #[arg(value_parser = rekindle_types::game_server::ServerAddress::parse)]
+        server: rekindle_types::game_server::ServerAddress,
+    },
     /// Add a favourite server, or relabel one already there.
     FavouriteAdd {
         /// The game's id in the game database.

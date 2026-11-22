@@ -367,3 +367,27 @@ fn transfers_reach_the_buddy_list_on_their_own_channel() {
         assert!(!audience.includes(label), "{label}");
     }
 }
+
+/// The Servers view (plan E7.2 G3) reaches the buddy list's Servers tab
+/// and every chat window's skin tree, on its own channel, and no other
+/// window.
+#[test]
+fn the_servers_view_reaches_the_buddy_list_and_chat_windows_only() {
+    let e =
+        WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::ServersViewChanged {
+            view: rekindle_types::dto::servers::ServersView { categories: vec![] },
+        }));
+    assert_eq!(e.channel(), "servers-event");
+    let audience = e.audience();
+    for label in ["buddy-list", "chat-0123456789ab", "chat-fedcba987654"] {
+        assert!(audience.includes(label), "{label}");
+    }
+    for label in [
+        "settings",
+        "login",
+        "community-0123456789ab",
+        "call-0123456789ab",
+    ] {
+        assert!(!audience.includes(label), "{label}");
+    }
+}

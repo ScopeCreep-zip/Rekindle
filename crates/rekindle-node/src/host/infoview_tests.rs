@@ -44,7 +44,8 @@ fn kinds(view: &InfoviewView) -> Vec<String> {
 }
 
 /// Ann and her friend Bob, playing on a server he shared.
-async fn ann_and_bob() -> (Vec<tempfile::TempDir>, std::sync::Arc<Host>, String, String) {
+pub(super) async fn ann_and_bob() -> (Vec<tempfile::TempDir>, std::sync::Arc<Host>, String, String)
+{
     let dirs = vec![tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap()];
     let (host, owner) = ann(&dirs[0]).await;
     let (bob_host, bob) = ann(&dirs[1]).await;

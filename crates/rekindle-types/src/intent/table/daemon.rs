@@ -224,6 +224,10 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("FavouriteServersGet", None),
     ("FavouriteServerAdd", Some(IntentKind::SetPreferences)),
     ("FavouriteServerRemove", Some(IntentKind::SetPreferences)),
+    // The Servers view (plan E7.2 G3): read, and forgetting a server we
+    // visited, local like a favourite's removal.
+    ("ServersView", None),
+    ("RecentServerRemove", Some(IntentKind::SetPreferences)),
     ("AvatarGet", None),
     ("SkinList", None),
     ("SkinGet", None),

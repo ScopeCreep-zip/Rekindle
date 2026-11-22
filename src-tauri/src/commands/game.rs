@@ -2,6 +2,7 @@ use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::presence::{
     FavouriteServerView, GameTotalView, HiddenGameView, InstalledGameView, OwnGame, OwnPresenceView,
 };
+use rekindle_types::dto::servers::ServersView;
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -112,6 +113,28 @@ pub async fn remove_favourite_server(
         IpcRequest::FavouriteServerRemove { game_id, server },
     )
     .await
+}
+
+/// The Servers view (`IpcRequest::ServersView`, plan E7.2 G3): favourites,
+/// recent, friends and each community's servers, every row with the Host's
+/// verdicts. The Host pushes it again as it changes
+/// (`SystemEvent::ServersViewChanged`, `servers-event`).
+#[tauri::command]
+pub async fn servers_view(
+    state: State<'_, SharedState>,
+) -> Result<Done<ServersView>, CommandError> {
+    host_call::call(&state, IpcRequest::ServersView).await
+}
+
+/// Forget a server we visited (`IpcRequest::RecentServerRemove`, plan E7.2
+/// G3): `server` arrives parsed. The view comes back.
+#[tauri::command]
+pub async fn recent_server_remove(
+    game_id: u32,
+    server: rekindle_game_detect::launcher::ServerAddress,
+    state: State<'_, SharedState>,
+) -> Result<Done<ServersView>, CommandError> {
+    host_call::call(&state, IpcRequest::RecentServerRemove { game_id, server }).await
 }
 
 /// Our time in each detected game, the most recent first

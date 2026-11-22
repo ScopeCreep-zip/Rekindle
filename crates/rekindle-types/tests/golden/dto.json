@@ -495,6 +495,169 @@
     "status": "busy",
     "statusMessage": "fragging"
   },
+  "serversView": {
+    "categories": [
+      {
+        "community": null,
+        "kind": "favourites",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": false,
+              "reason": "alreadyFavourite"
+            },
+            "address": "203.0.113.7:27015",
+            "friend": null,
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "join": {
+              "gameId": 4181,
+              "joinable": false,
+              "joinableReason": "cannotLaunch",
+              "launchSource": "favourite",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "Scrims",
+            "lastSeen": null,
+            "remove": {
+              "allowed": true
+            },
+            "source": "favourite"
+          }
+        ]
+      },
+      {
+        "community": null,
+        "kind": "recent",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": true
+            },
+            "address": "203.0.113.7:27015",
+            "friend": null,
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "join": {
+              "gameId": 4181,
+              "joinable": true,
+              "launchSource": "recent",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "",
+            "lastSeen": 1700000000,
+            "remove": {
+              "allowed": true
+            },
+            "source": "recent"
+          }
+        ]
+      },
+      {
+        "community": null,
+        "kind": "friends",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": true
+            },
+            "address": "203.0.113.7:27015",
+            "friend": {
+              "displayName": "Bob",
+              "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "join": {
+              "gameId": 4181,
+              "joinable": true,
+              "launchSource": "friendPresence",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "",
+            "lastSeen": null,
+            "remove": {
+              "allowed": false,
+              "reason": "notRemovable"
+            },
+            "source": "friendPresence"
+          },
+          {
+            "addFavourite": {
+              "allowed": true
+            },
+            "address": "203.0.113.7:27015",
+            "friend": {
+              "displayName": "Bob",
+              "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "gameId": 4181,
+            "gameName": "Counter-Strike 2",
+            "iconKey": "cs2",
+            "join": {
+              "gameId": 4181,
+              "joinable": true,
+              "launchSource": "invite",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "",
+            "lastSeen": null,
+            "remove": {
+              "allowed": false,
+              "reason": "notRemovable"
+            },
+            "source": "invite"
+          }
+        ]
+      },
+      {
+        "community": {
+          "anchor": "VLD0:um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2",
+          "name": "Frag Night"
+        },
+        "kind": "community",
+        "rows": [
+          {
+            "addFavourite": {
+              "allowed": false,
+              "reason": "noNumericGame"
+            },
+            "address": "203.0.113.7:27015",
+            "friend": null,
+            "gameId": null,
+            "gameName": "minecraft",
+            "iconKey": null,
+            "join": {
+              "gameId": null,
+              "joinable": false,
+              "joinableReason": "cannotLaunch",
+              "launchSource": "community",
+              "server": "203.0.113.7:27015"
+            },
+            "label": "Survival",
+            "lastSeen": null,
+            "remove": {
+              "allowed": false,
+              "reason": "notRemovable"
+            },
+            "source": "community"
+          }
+        ]
+      }
+    ]
+  },
+  "serversViewEmpty": {
+    "categories": [
+      {
+        "community": null,
+        "kind": "recent",
+        "rows": []
+      }
+    ]
+  },
   "skin.action.all": [
     {
       "kind": "dragWindow"

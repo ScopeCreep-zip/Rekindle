@@ -77,6 +77,8 @@ mod rotation_tests;
 pub mod runtime;
 mod serve;
 pub(crate) mod servers;
+#[cfg(test)]
+mod servers_tests;
 pub mod session;
 pub mod shell_hooks;
 pub(crate) mod skin;

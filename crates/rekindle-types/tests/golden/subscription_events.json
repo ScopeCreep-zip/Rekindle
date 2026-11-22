@@ -2009,6 +2009,21 @@
       }
     }
   },
+  "system.serversViewChanged": {
+    "system": {
+      "serversViewChanged": {
+        "view": {
+          "categories": [
+            {
+              "community": null,
+              "kind": "recent",
+              "rows": []
+            }
+          ]
+        }
+      }
+    }
+  },
   "system.skinApplyFailed": {
     "system": {
       "skinApplyFailed": {

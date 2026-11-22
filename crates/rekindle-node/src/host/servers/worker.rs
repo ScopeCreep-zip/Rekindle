@@ -23,7 +23,9 @@ pub(super) const COALESCE: Duration = Duration::from_millis(250);
 
 /// Whether `event` changes what the view shows: a friend's presence or
 /// friendship (game invites included), a membership, a community's server
-/// list, a favourite added. Never the view's own push.
+/// list, a favourite added. Never the view's own push. A favourite removed
+/// has no journal event: its route marks the view stale
+/// (`ServersState::mark_stale`).
 fn shown(event: &SubscriptionEvent) -> bool {
     matches!(
         event,
@@ -64,6 +66,10 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
             () = sleep_until(due), if due.is_some() => {
                 due = None;
                 push(&ctx).await;
+                continue;
+            }
+            () = ctx.servers.marked_stale() => {
+                due.get_or_insert_with(|| Instant::now() + COALESCE);
                 continue;
             }
             frame = stream.next() => frame,
