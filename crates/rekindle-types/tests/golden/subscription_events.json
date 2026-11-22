@@ -1425,7 +1425,9 @@
     }
   },
   "network.routeResumed": {
-    "network": "routeResumed"
+    "network": {
+      "routeResumed": {}
+    }
   },
   "network.strength": {
     "network": {

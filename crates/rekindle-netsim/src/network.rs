@@ -374,6 +374,13 @@ impl Network {
         true
     }
 
+    /// A fresh app call id.
+    pub(crate) fn next_call_id(&self) -> u64 {
+        let mut inner = self.inner.lock();
+        inner.next_call += 1;
+        inner.next_call
+    }
+
     /// Whether a message from `from` to `to` is lost on the way: a
     /// partition between them, `to` detached, or the draw of the drop fault
     /// (the larger of the network's and the sender's own,

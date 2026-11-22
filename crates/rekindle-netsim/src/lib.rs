@@ -362,9 +362,8 @@ impl Netsim {
         }
     }
 
-    /// A stray app message reaches `to` from `from` (any node may send
-    /// any bytes to a route it holds): what the receiver makes of bytes
-    /// no Rekindle node sends.
+    /// A stray app message reaches `to` from `from` (any node may send any
+    /// bytes to a route it holds): what the receiver makes of them.
     pub fn stray_message(&self, from: usize, to: usize, message: Vec<u8>) {
         self.net.send(
             from,
@@ -379,15 +378,10 @@ impl Netsim {
     }
 
     /// A stray app call reaches `to` from `from` (any node may call any
-    /// route it holds), with no one waiting on its answer: the receiver's
-    /// reply finds no waiter and is ignored, as an expired call's is
-    /// ([`FakeMessages::reply`](crate::messages)). A forged signal (plan RV1).
+    /// route it holds), no one waiting on its answer: the reply is ignored, as
+    /// an expired call's is ([`FakeMessages::reply`](crate::messages)). Plan RV1.
     pub fn stray_call(&self, from: usize, to: usize, message: Vec<u8>) {
-        let call_id = {
-            let mut inner = self.net.inner.lock();
-            inner.next_call += 1;
-            inner.next_call
-        };
+        let call_id = self.net.next_call_id();
         self.net.send(
             from,
             to,

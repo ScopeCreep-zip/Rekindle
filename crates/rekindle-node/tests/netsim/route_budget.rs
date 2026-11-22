@@ -42,6 +42,18 @@ async fn friends(seed: u64) -> (rekindle_netsim::Netsim, Vec<SimNode>) {
     (sim, nodes)
 }
 
+/// The app messages and calls from node `from` that reached node `to` over
+/// a route so far. A send's DM chain entry is not counted: it is a DHT write
+/// (plan E2.5), which [`Fault::PoolRoutesFail`] does not model.
+fn over_routes(sim: &rekindle_netsim::Netsim, from: usize, to: usize) -> usize {
+    let message = format!("{to}<-{from} AppMessage");
+    let call = format!("{to}<-{from} AppCall");
+    sim.trace()
+        .of(to)
+        .filter(|e| *e == message || *e == call)
+        .count()
+}
+
 fn paused(node: &SimNode) -> Option<RoutePauseCause> {
     *node.routes.own_paused().borrow()
 }
@@ -59,9 +71,10 @@ fn told_exhausted(e: &SubscriptionEvent) -> bool {
 /// pool route of another hop count lives untested, the netsim's
 /// `ROUTE_MIN_IDLE`, Veilid 0.5.8 `route_stats.rs:144-158`) are all
 /// delivered, so the routes are of the default hop count, kept by the
-/// keepalive; when her pool routes fail and her own routes are healthy, a
-/// send is not delivered, and her own routes are untouched (no own route is
-/// a safety route), until the pool heals.
+/// keepalive; when her pool routes fail and her own routes are healthy, no
+/// app message or call of hers reaches Bo over a route, and her own routes
+/// are untouched (no own route is a safety route); once the pool heals the
+/// send is delivered.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn sends_ride_tested_pool_routes_at_the_default_hop_count() {
     let (sim, nodes) = friends(131).await;
@@ -80,14 +93,13 @@ async fn sends_ride_tested_pool_routes_at_the_default_hop_count() {
         node: 0,
         failing: true,
     });
+    sim.quiesce().await;
+    let carried = over_routes(&sim, 0, 1);
     send(&nodes[0], &bo, "pool down").await;
-    assert!(
-        !eventually(&sim, Duration::from_secs(30), || delivered(
-            &nodes[0],
-            &bo,
-            "pool down"
-        ))
-        .await,
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    assert_eq!(
+        over_routes(&sim, 0, 1),
+        carried,
         "with the pool failing, Ada's own healthy routes carry no send"
     );
     assert_eq!(sim.route_blobs(0), own, "her own routes are untouched");
