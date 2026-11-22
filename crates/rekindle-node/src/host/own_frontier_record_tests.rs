@@ -18,7 +18,7 @@ use rekindle_types::id::PseudonymKey;
 use super::{create_ann, offline_host, seed_registry_community};
 use crate::host::adapters::governance::HostGovernance;
 
-const COMMUNITY: &str = "c1";
+const FRONTIER_COMMUNITY: &str = "c1";
 const PERSON_SECRET: [u8; 32] = [9; 32];
 const PERSON_RECORD: &str = "VLD0:mp";
 const PERSON_OWNER: &str = "K_M(p)";
@@ -30,11 +30,11 @@ const PHONE_KEY: [u8; 32] = [7; 32];
 /// The person's cert (its first device `LAPTOP_KEY` bound to `M(p)`) and a
 /// state that also endorses its second device `PHONE_KEY` for `M(p,d)`.
 fn two_device_state() -> (PseudonymKey, GenesisCert, GovernanceState) {
-    let p = derive::derive_community_pseudonym(&PERSON_SECRET, COMMUNITY);
+    let p = derive::derive_community_pseudonym(&PERSON_SECRET, FRONTIER_COMMUNITY);
     let author = PseudonymKey(p.verifying_key().to_bytes());
     let laptop = SigningKey::from_bytes(&LAPTOP_KEY);
-    let creator_device =
-        first_endorsement(&p, COMMUNITY, &laptop, PERSON_RECORD, "o").expect("endorse laptop");
+    let creator_device = first_endorsement(&p, FRONTIER_COMMUNITY, &laptop, PERSON_RECORD, "o")
+        .expect("endorse laptop");
     let cert = GenesisCert {
         name: "c".into(),
         policy: rekindle_types::governance::AdmissionMode::Open,
@@ -48,7 +48,7 @@ fn two_device_state() -> (PseudonymKey, GenesisCert, GovernanceState) {
         creator_device: Some(creator_device),
     };
     let mut state = merge::merge(&cert, &[]);
-    state.devices.seed_genesis(COMMUNITY, &cert);
+    state.devices.seed_genesis(FRONTIER_COMMUNITY, &cert);
     let phone = SigningKey::from_bytes(&PHONE_KEY)
         .verifying_key()
         .to_bytes();
@@ -57,10 +57,18 @@ fn two_device_state() -> (PseudonymKey, GenesisCert, GovernanceState) {
         owner: "opd".into(),
     };
     let held = state.devices.member(&author);
-    let e =
-        endorse(&p, COMMUNITY, PERSON_RECORD, held, phone, record, [0; 32]).expect("endorse phone");
+    let e = endorse(
+        &p,
+        FRONTIER_COMMUNITY,
+        PERSON_RECORD,
+        held,
+        phone,
+        record,
+        [0; 32],
+    )
+    .expect("endorse phone");
     state.devices.absorb(
-        COMMUNITY,
+        FRONTIER_COMMUNITY,
         &GovernanceOp {
             author: author.clone(),
             seq: 0,
@@ -83,30 +91,40 @@ async fn frontier_target(device_key: [u8; 32], phone: bool) -> (String, String) 
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
     let (me, cert, state) = two_device_state();
-    if let Some(c1) = host.ctx.communities.map().write().get_mut(COMMUNITY) {
+    if let Some(c1) = host
+        .ctx
+        .communities
+        .map()
+        .write()
+        .get_mut(FRONTIER_COMMUNITY)
+    {
         c1.my_pseudonym_key = Some(me.to_hex());
         c1.genesis_cert = Some(cert);
     }
     host.ctx
         .communities
-        .set_my_member_record(COMMUNITY, PERSON_RECORD);
+        .set_my_member_record(FRONTIER_COMMUNITY, PERSON_RECORD);
     {
         let guard = host.ctx.vault.lock();
         let vault = guard.as_ref().expect("identity vault");
         let key = rekindle_vault::VaultKey::MemberRecordOwner {
-            community: COMMUNITY.into(),
+            community: FRONTIER_COMMUNITY.into(),
         };
         vault.put(&key, PERSON_OWNER.as_bytes()).unwrap();
     }
     {
         let guard = host.ctx.device_vault.lock();
         let vault = guard.as_ref().expect("device vault");
-        rekindle_vault::typed::device_keys::store_device_op_key(vault, COMMUNITY, &device_key)
-            .unwrap();
+        rekindle_vault::typed::device_keys::store_device_op_key(
+            vault,
+            FRONTIER_COMMUNITY,
+            &device_key,
+        )
+        .unwrap();
         if phone {
             rekindle_vault::typed::device_keys::store_device_record(
                 vault,
-                COMMUNITY,
+                FRONTIER_COMMUNITY,
                 PHONE_RECORD,
                 PHONE_OWNER,
             )
@@ -114,8 +132,8 @@ async fn frontier_target(device_key: [u8; 32], phone: bool) -> (String, String) 
         }
     }
     let governance = HostGovernance::new(Arc::clone(&host.ctx));
-    governance.set_governance_state(COMMUNITY, state);
-    let (record, writer) = governance.own_op_record_writer(COMMUNITY).unwrap();
+    governance.set_governance_state(FRONTIER_COMMUNITY, state);
+    let (record, writer) = governance.own_op_record_writer(FRONTIER_COMMUNITY).unwrap();
     let target = (record, writer.as_str().to_owned());
     host.shutdown().await.unwrap();
     target
