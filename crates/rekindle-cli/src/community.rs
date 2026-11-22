@@ -290,9 +290,7 @@ pub async fn dispatch(
         | CommunityCmd::AnswerLink { .. } => transfer(cmd, client, mode).await,
         CommunityCmd::RetireDevice { .. }
         | CommunityCmd::ReadmitDevice { .. }
-        | CommunityCmd::EnrolDevice { .. } => {
-            device(cmd, client, mode).await
-        }
+        | CommunityCmd::EnrolDevice { .. } => device(cmd, client, mode).await,
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
