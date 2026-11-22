@@ -84,6 +84,13 @@ pub enum Dropped {
     /// Refused (undecodable, blocked, not admitted, a bad signature, stale,
     /// or a failed decrypt): no receipt, a call is answered NAK.
     Refused,
+    /// Not admitted yet (real-app finding GDI1,
+    /// [`admission::not_yet`]): the gate refused it from a sender we asked
+    /// (`PendingOut`), whose accept may still be on its way. Nothing is
+    /// opened or stored; a call is answered [`super::RETRY_LATER`], so the
+    /// sender's receipted row is attempted again after the accept lands;
+    /// a chain entry stays pending.
+    NotYet,
     /// Not judged: an internal error of ours (no unlocked identity, our
     /// database, the block-list or friendship read, or framing our reply
     /// failed). Not a refusal: a call is answered [`super::RETRY_LATER`],
@@ -157,7 +164,11 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
     // its session and is held (plan E2.5i R2-2); a sealed one never is.
     let hold = super::held::holds(kind, status) && !matches!(frame.body, FrameBody::Sealed(_));
     if !hold && !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
-        return Err(Dropped::Refused);
+        return Err(if admission::not_yet(status) {
+            Dropped::NotYet
+        } else {
+            Dropped::Refused
+        });
     }
     let mut opened = match frame.body {
         FrameBody::Sealed(sealed) => {

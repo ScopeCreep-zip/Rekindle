@@ -98,7 +98,10 @@ pub(crate) async fn frame_admitted(
 /// [`sender_admitted`], logged when it refuses.
 pub(crate) fn kind_admitted(sender_hex: &str, kind: DmTypeId, status: Status) -> bool {
     let admitted = sender_admitted(kind, status);
-    if !admitted {
+    if !admitted && not_yet(status) {
+        tracing::info!(from = %sender_hex, ?status, ?kind,
+            "not admitted yet: our request to the sender is outstanding — retry later");
+    } else if !admitted {
         tracing::info!(from = %sender_hex, ?status, ?kind,
             "dropping frame: sender not admitted for this kind");
     }
@@ -123,11 +126,27 @@ pub(crate) async fn init_admitted(
     let admitted = may_open_session(kind, status, reset_outstanding)
         || (crate::operations::group_dm::opens_member_session(kind)
             && crate::operations::group_dm::admitted(host, sender_hex, kind, true).await);
-    if !admitted {
+    if !admitted && not_yet(status) {
+        tracing::info!(from = %sender_hex, ?status, ?kind,
+            "PreKeyInit not admitted yet: our request to the sender is outstanding — retry later");
+    } else if !admitted {
         tracing::info!(from = %sender_hex, ?status, ?kind,
             "dropping PreKeyInit: sender may not open a session with this kind");
     }
     admitted
+}
+
+/// Whether a frame the gate refused from a sender with `status` is refused
+/// only for now (real-app finding GDI1): we asked them (`PendingOut`), so
+/// their accept is on its way and frames they framed under the session it
+/// opens (a group invite right after the accept) can arrive first. Nothing
+/// is admitted early: the frame is not opened, stored or acknowledged; a
+/// call is answered retry later (`direct::RETRY_LATER`, RV5 M2) so the
+/// sender's receipted stream attempts it again after the accept commits,
+/// where a NAK ended its row for good. A stranger (`None`, nothing asked)
+/// and every other status stay refused.
+pub(crate) fn not_yet(status: Status) -> bool {
+    status == Some(FriendshipState::PendingOut)
 }
 
 /// The sender's friendship as the identity's database holds it.
@@ -215,6 +234,26 @@ mod tests {
         Some(FriendshipState::Accepted),
         Some(FriendshipState::Removing),
     ];
+
+    #[test]
+    fn a_refusal_is_for_now_only_while_our_request_is_outstanding() {
+        for status in EVERY_STATUS {
+            assert_eq!(
+                not_yet(status),
+                status == Some(FriendshipState::PendingOut),
+                "{status:?}"
+            );
+        }
+        // The real-app race: an invite opening a session from a sender we
+        // asked is refused for now, never admitted early; from a stranger
+        // it stays refused for good.
+        let asked = Some(FriendshipState::PendingOut);
+        assert!(!may_open_session(DmTypeId::GroupDmInvite, asked, false));
+        assert!(!sender_admitted(DmTypeId::GroupDmInvite, asked));
+        assert!(not_yet(asked));
+        assert!(!may_open_session(DmTypeId::GroupDmInvite, None, false));
+        assert!(!not_yet(None));
+    }
 
     #[test]
     fn friend_accept_reaches_the_requester() {

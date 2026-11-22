@@ -117,7 +117,11 @@ fn by_message(host: &dyn FriendHost, dropped: Dropped, digest: &[u8; 32]) {
         Dropped::Duplicate { from } => dm::ack::duplicate(host, &from, digest),
         // A blocked sender is never acked (LV23 review H1/H2); an in-flight
         // copy's first copy settles the receipt.
-        Dropped::Blocked | Dropped::InFlight | Dropped::Refused | Dropped::Failed => {}
+        Dropped::Blocked
+        | Dropped::InFlight
+        | Dropped::Refused
+        | Dropped::NotYet
+        | Dropped::Failed => {}
     }
 }
 
@@ -180,7 +184,7 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
     let digest = dm::ack::digest(bytes);
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
-        Err(dropped @ (Dropped::InFlight | Dropped::Failed)) => {
+        Err(dropped @ (Dropped::InFlight | Dropped::Failed | Dropped::NotYet)) => {
             by_message(host, dropped, &digest);
             return EntryFate::Pending;
         }
@@ -210,7 +214,8 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
 /// replies with its ack). A blocked sender's call gets the empty receipt
 /// and is dropped unstored (LV23 review). A refused frame is answered [`NAK`], one not
 /// judged (an internal error of ours, a store that failed on our side, a
-/// copy whose first is in flight) [`RETRY_LATER`], and a copy
+/// copy whose first is in flight) or refused only until the accept of our
+/// request to its sender lands ([`Dropped::NotYet`]) [`RETRY_LATER`], and a copy
 /// of one that opened the empty receipt (plan audit G3). A sealed kind
 /// advances no ratchet and leaves no `unprocessed` row, so it is applied
 /// before the answer, and only a stored one is receipted (G4). A ratchet
@@ -227,7 +232,9 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
         // The silent receipt: a block is never told (LV23 review H1/H2).
         Err(Dropped::Duplicate { .. } | Dropped::Blocked) => return Called::Answered(Vec::new()),
         Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
-        Err(Dropped::Failed | Dropped::InFlight) => return Called::RetryLater,
+        // Not judged, or refused only until the accept of our request
+        // lands (finding GDI1): the caller attempts it again.
+        Err(Dropped::Failed | Dropped::InFlight | Dropped::NotYet) => return Called::RetryLater,
         // B5 by the call itself (finding 46): the caller tells a refused
         // prekey (this reply, its one resend) from any other refusal (NAK).
         Err(Dropped::Rejected { to, frame }) => {
