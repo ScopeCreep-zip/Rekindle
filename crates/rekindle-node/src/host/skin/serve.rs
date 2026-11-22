@@ -221,6 +221,8 @@ async fn file_answer(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> {
 /// Tell every window the skin it shows now.
 pub(super) async fn announce(ctx: &DaemonContext) -> Answer<()> {
     let skin = get(ctx, None).await?;
+    // The windows apply this skin afresh: its failures are told again.
+    ctx.skin.failures.applying(&skin.id);
     ctx.publish_event(SubscriptionEvent::System(SystemEvent::SkinChanged { skin }));
     Ok(())
 }

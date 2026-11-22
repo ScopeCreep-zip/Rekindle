@@ -191,3 +191,128 @@ async fn a_skin_on_trial_that_fails_is_reverted_and_logged() {
     assert!(line.contains("WARN"), "{line}");
     assert!(line.contains(REPORTING_WINDOW), "{line}");
 }
+
+const WINDOWS: [&str; 3] = ["chat-ann", "buddy-list", "settings"];
+
+fn sheet() -> SkinApplyFailure {
+    SkinApplyFailure::SheetError {
+        detail: "the stylesheet failed to load".into(),
+    }
+}
+
+/// Every window applying a skin reports its own failure: N reports of one
+/// (skin, cause) are one event, logged at WARN once. A different cause is
+/// a new event, and so is the same cause after the skin is applied again.
+#[tokio::test]
+async fn n_windows_reporting_one_failure_publish_one_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    let canonical = validate::run(builtin::PACKS[0].bytes).unwrap();
+    host.ctx
+        .skin
+        .helper
+        .set(stand_in(&dir, &Ok(canonical)))
+        .unwrap();
+    let mut events = host.ctx.journal.subscribe(None);
+    let captured = Captured::default();
+    {
+        let _armed = capture(&captured);
+        for window in WINDOWS {
+            let answer = report(&host, failed(window, builtin::DEFAULT, image())).await;
+            assert_eq!(status_of(&answer), None, "{answer:?}");
+        }
+    }
+    // Events are in order: the next one after the first is the other cause.
+    let _ = report(&host, failed(WINDOWS[1], builtin::DEFAULT, sheet())).await;
+    assert_eq!(
+        next_failed(&mut events).await,
+        (WINDOWS[0].into(), builtin::DEFAULT.into(), image(), false)
+    );
+    assert_eq!(
+        next_failed(&mut events).await,
+        (WINDOWS[1].into(), builtin::DEFAULT.into(), sheet(), false),
+        "the other windows' reports of the same failure published nothing"
+    );
+    let log = String::from_utf8(captured.0.lock().clone()).unwrap();
+    let warned = log
+        .lines()
+        .filter(|l| l.contains("WARN") && l.contains("could not apply a skin"))
+        .count();
+    assert_eq!(warned, 1, "WARN once, not once per window: {log}");
+
+    // The user applies the skin again: the same failure is told again.
+    let again: SkinLibrary = data(
+        run(
+            &host,
+            IpcRequest::SkinSelect {
+                id: builtin::DEFAULT.into(),
+            },
+        )
+        .await
+        .0,
+    );
+    assert_eq!(again.active, builtin::DEFAULT);
+    for window in WINDOWS {
+        let _ = report(&host, failed(window, builtin::DEFAULT, image())).await;
+    }
+    let _ = report(&host, failed(WINDOWS[2], builtin::DEFAULT, sheet())).await;
+    assert_eq!(
+        next_failed(&mut events).await,
+        (WINDOWS[0].into(), builtin::DEFAULT.into(), image(), false),
+        "a re-apply tells the same failure again"
+    );
+    assert_eq!(
+        next_failed(&mut events).await,
+        (WINDOWS[2].into(), builtin::DEFAULT.into(), sheet(), false)
+    );
+}
+
+/// N windows failing a skin on trial: one event, the trial reverted once,
+/// and the late reports leave the stored choice shown. Trying the skin
+/// again tells its failure again.
+#[tokio::test]
+async fn n_windows_failing_a_trial_revert_it_once_and_tell_it_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    let canonical = validate::run(builtin::PACKS[0].bytes).unwrap();
+    host.ctx
+        .skin
+        .helper
+        .set(stand_in(&dir, &Ok(canonical.clone())))
+        .unwrap();
+    let (answer, _) = run(
+        &host,
+        IpcRequest::SkinImport {
+            bytes: canonical.bytes,
+        },
+    )
+    .await;
+    let id = data::<SkinEntry>(answer).id;
+    let before = library(&host).await.active;
+    let select = IpcRequest::SkinSelect { id: id.clone() };
+    for round in 0..2 {
+        let chosen: SkinLibrary = data(run(&host, select.clone()).await.0);
+        assert!(chosen.trial.is_some(), "round {round}: on trial");
+        let mut events = host.ctx.journal.subscribe(None);
+        for window in WINDOWS {
+            let answer = report(&host, failed(window, &id, image())).await;
+            assert_eq!(status_of(&answer), None, "{answer:?}");
+        }
+        let _ = report(&host, failed(WINDOWS[1], &id, sheet())).await;
+        assert_eq!(
+            next_failed(&mut events).await,
+            (WINDOWS[0].into(), id.clone(), image(), true),
+            "round {round}"
+        );
+        assert_eq!(
+            next_failed(&mut events).await,
+            (WINDOWS[1].into(), id.clone(), sheet(), false),
+            "round {round}: one event for the three reports"
+        );
+        let after = library(&host).await;
+        assert!(after.trial.is_none(), "the trial ended");
+        assert_eq!(shown(&host).await, before, "the stored choice is back");
+    }
+}

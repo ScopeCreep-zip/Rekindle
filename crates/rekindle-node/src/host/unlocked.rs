@@ -135,6 +135,7 @@ pub(crate) async fn release(ctx: &DaemonContext) {
     }
     // A skin on trial was never stored: the next unlock shows the choice.
     ctx.skin.trial.clear();
+    ctx.skin.failures.clear();
     crate::daemon::clients::unload(ctx).await;
     ctx.mek_cache.write().clear();
     *ctx.signing_key.write() = None;

@@ -57,7 +57,7 @@ pub struct SkinTrial {
 /// Why a window could not apply a skin (`SkinApplyFailed`): that window
 /// keeps the skin it shows, and the Host decides the rest (it reverts a
 /// skin on trial).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
 pub enum SkinApplyFailure {
     /// An image the stylesheet draws did not decode; `path` is its

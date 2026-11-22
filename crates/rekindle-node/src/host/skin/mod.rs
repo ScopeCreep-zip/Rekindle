@@ -57,6 +57,9 @@ pub(crate) struct SkinState {
     pub(crate) selection: actions::Selections,
     /// Each skin window's state signals (plan SK2-A4 step 3).
     pub(crate) signals: signals::SignalState,
+    /// The apply failures already told, so N windows failing one skin the
+    /// same way publish one `SkinApplyFailed` (`failure`).
+    pub(crate) failures: failure::ToldFailures,
 }
 
 /// Route one skin request (the router's arm for them).
