@@ -71,6 +71,8 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
         Some(IntentKind::FollowCommunitySuccessor),
     ),
     ("CommunitySuccessors", None),
+    ("CommunityDeviceRetire", Some(IntentKind::RetireDevice)),
+    ("CommunityDeviceReadmit", Some(IntentKind::ReadmitDevice)),
     ("CreatorRemove", Some(IntentKind::RemoveCoCreator)),
     (
         "CommunityCreateCancel",

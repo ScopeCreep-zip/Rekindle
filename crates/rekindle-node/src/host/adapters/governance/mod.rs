@@ -39,6 +39,7 @@ pub(crate) mod community_profile;
 pub(crate) mod community_sync;
 mod create_leave;
 pub mod deps_impl;
+mod devices;
 mod dht;
 mod event_control;
 mod event_reminders;

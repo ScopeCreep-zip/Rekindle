@@ -134,6 +134,20 @@ pub enum LifecycleRequest {
     /// `SuccessorLinkRequested`, decision (46)).
     CommunitySuccessors { anchor: String },
 
+    /// Retire one of our own device keys in `anchor` above the highest op
+    /// of it we hold (ADR 0022 rules 4 and 5): a lost or stolen device.
+    /// `device_key` is the key's hex; this device's own key is refused (it
+    /// re-enrols instead).
+    CommunityDeviceRetire { anchor: String, device_key: String },
+
+    /// Co-sign the re-admission of `member`'s fork-answering device key
+    /// `device_key` (both hex) in `anchor` (ADR 0022 rules 7 and 8).
+    CommunityDeviceReadmit {
+        anchor: String,
+        member: String,
+        device_key: String,
+    },
+
     /// Create a community invite.
     InviteCreate {
         community: String,
@@ -197,6 +211,8 @@ impl LifecycleRequest {
                 ("CommunityFollowSuccessor", Write, Authenticated)
             }
             Self::CommunitySuccessors { .. } => ("CommunitySuccessors", Query, Authenticated),
+            Self::CommunityDeviceRetire { .. } => ("CommunityDeviceRetire", Write, Authenticated),
+            Self::CommunityDeviceReadmit { .. } => ("CommunityDeviceReadmit", Write, Authenticated),
             Self::InviteCreate { .. } => ("InviteCreate", Write, Authenticated),
             Self::InviteList { .. } => ("InviteList", Query, Authenticated),
             Self::InviteRevoke { .. } => ("InviteRevoke", Write, Authenticated),
@@ -235,9 +251,12 @@ impl LifecycleRequest {
             }
             // Channel keys are key material; ownership is the owner's own.
             // A successor moves creator authority: the creator's own act.
+            // Device keys are key trust (ADR 0022): the member's own act.
             Self::CommunityOfferTransfer { .. }
             | Self::CommunityWithdrawTransfer { .. }
-            | Self::CommunityPublishSuccessor { .. } => None,
+            | Self::CommunityPublishSuccessor { .. }
+            | Self::CommunityDeviceRetire { .. }
+            | Self::CommunityDeviceReadmit { .. } => None,
         }
     }
 }

@@ -177,6 +177,25 @@ pub(super) fn selection(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
             s.notifies = Notifies::Subject;
         }
+        LifecycleRequest::CommunityDeviceRetire { anchor, device_key }
+        | LifecycleRequest::CommunityDeviceReadmit {
+            anchor, device_key, ..
+        } => {
+            // ADR 0022: the review names the device key by its full
+            // fingerprint, the one compared out of band; every member then
+            // judges that key's ops by this act, and nothing undoes it
+            // (a retired key re-enrols; a readmission stands).
+            let (id, _) = community(ctx, anchor)?;
+            let key = hex::decode(device_key)
+                .map_err(|e| IpcResponse::error(400, format!("device key: {e}")))?;
+            let fingerprint = rekindle_crypto::identity::key_fingerprint(&key);
+            s.subject = Subject::Named {
+                name: fingerprint.clone(),
+            };
+            s.facts.push(Fact::Fingerprint { fingerprint });
+            s.reversibility = Reversibility::Never;
+            s.notifies = members(ctx, &id);
+        }
         LifecycleRequest::InviteCreate {
             community: target, ..
         }

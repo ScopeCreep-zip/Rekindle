@@ -288,6 +288,9 @@ pub async fn dispatch(
         | CommunityCmd::WithdrawTransfer { .. }
         | CommunityCmd::AcceptTransfer { .. }
         | CommunityCmd::AnswerLink { .. } => transfer(cmd, client, mode).await,
+        CommunityCmd::RetireDevice { .. } | CommunityCmd::ReadmitDevice { .. } => {
+            device(cmd, client, mode).await
+        }
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
@@ -440,6 +443,31 @@ async fn transfer(
             }
         }
         _ => anyhow::bail!("not a transfer command"),
+    };
+    lifecycle(client, mode, request).await
+}
+
+/// The device-key commands (ADR 0022, plan E3.2 S7d-keys K5): retire one
+/// of our device keys, or co-sign a member's fork-answering key back in.
+async fn device(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    let request = match cmd {
+        CommunityCmd::RetireDevice {
+            community,
+            device_key,
+        } => LifecycleRequest::CommunityDeviceRetire {
+            anchor: community.clone(),
+            device_key: device_key.clone(),
+        },
+        CommunityCmd::ReadmitDevice {
+            community,
+            member,
+            device_key,
+        } => LifecycleRequest::CommunityDeviceReadmit {
+            anchor: community.clone(),
+            member: member.clone(),
+            device_key: device_key.clone(),
+        },
+        _ => anyhow::bail!("not a device command"),
     };
     lifecycle(client, mode, request).await
 }

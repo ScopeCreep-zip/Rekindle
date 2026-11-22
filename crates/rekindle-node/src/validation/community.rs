@@ -30,7 +30,7 @@ use crate::host::adapters::governance::community_pictures::{
 };
 
 use super::community_fields::{audit_fields, automod_fields, game_server_fields, role_id_field};
-use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
+use super::{community, key_scope, name, opt, pseudonym, public_key, reject, text, Checked};
 
 /// A community request's fields.
 /// A read-marker or unread-count request (plan E3.1 G1).
@@ -172,6 +172,19 @@ LifecycleRequest::CommunityPublishSuccessor { anchor, continuing } => {
                 return Err(IpcResponse::error(400, format!("over {max} continuing members")));
             }
             keys.iter().try_for_each(|k| pseudonym(k, "continuing member"))
+        }
+LifecycleRequest::CommunityDeviceRetire { anchor, device_key } => {
+            community(anchor)?;
+            public_key(device_key, "device key")
+        }
+LifecycleRequest::CommunityDeviceReadmit {
+            anchor,
+            member,
+            device_key,
+        } => {
+            community(anchor)?;
+            pseudonym(member, "member pseudonym")?;
+            public_key(device_key, "device key")
         }
 LifecycleRequest::CommunityFollowSuccessor { anchor, new_anchor } => {
             community(anchor)?;

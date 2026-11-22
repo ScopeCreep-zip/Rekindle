@@ -126,6 +126,21 @@ impl std::fmt::Debug for LifecycleRequest {
                 .debug_struct("CommunitySuccessors")
                 .field("anchor", anchor)
                 .finish(),
+            Self::CommunityDeviceRetire { anchor, device_key } => f
+                .debug_struct("CommunityDeviceRetire")
+                .field("anchor", anchor)
+                .field("device_key", device_key)
+                .finish(),
+            Self::CommunityDeviceReadmit {
+                anchor,
+                member,
+                device_key,
+            } => f
+                .debug_struct("CommunityDeviceReadmit")
+                .field("anchor", anchor)
+                .field("member", member)
+                .field("device_key", device_key)
+                .finish(),
             Self::InviteCreate {
                 community,
                 max_uses,

@@ -131,6 +131,9 @@ pub enum IntentKind {
     // Consequential: Membership
     LeaveCommunity,
     RemoveCoCreator,
+    /// Co-sign the re-admission of a member's fork-answering device key
+    /// (ADR 0022 rules 7 and 8): every member then counts that key's ops.
+    ReadmitDevice,
     CancelCommunityCreate,
     /// Withdraw our standing transfer offer (plan E3.2 S7s.4, decision
     /// (26)).
@@ -209,6 +212,9 @@ pub enum IntentKind {
     ResetSignalSession,
     ReinitiateSession,
     RotateMek,
+    /// Retire one of our device keys (ADR 0022 rules 4 and 5): changes
+    /// which keys every member trusts to sign as us, permanently.
+    RetireDevice,
     // TrustChanging: Exposure settings
     RegisterWithPushRelay,
     SetLinkPreviewsEnabled,
@@ -412,6 +418,7 @@ impl IntentKind {
             | Self::RotateFriendToken
             | Self::LeaveCommunity
             | Self::RemoveCoCreator
+            | Self::ReadmitDevice
             | Self::CancelCommunityCreate
             | Self::WithdrawCommunityTransfer
             | Self::CreateGroupDm
@@ -470,6 +477,7 @@ impl IntentKind {
             | Self::ResetSignalSession
             | Self::ReinitiateSession
             | Self::RotateMek
+            | Self::RetireDevice
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled

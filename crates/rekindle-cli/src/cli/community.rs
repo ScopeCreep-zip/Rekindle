@@ -163,6 +163,30 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Retire one of your own device keys in a community (a lost or
+    /// stolen device): every member then refuses its later ops.
+    RetireDevice {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// The device key to retire (hex); not this device's own.
+        #[arg(long)]
+        device_key: String,
+    },
+
+    /// Co-sign a member's fork-answering device key back in.
+    ReadmitDevice {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// The member (pseudonym hex) whose device key it is.
+        #[arg(long)]
+        member: String,
+        /// The device key to readmit (hex).
+        #[arg(long)]
+        device_key: String,
+    },
+
     /// Offer the community to another member: a transfer they complete by
     /// accepting it (plan E3.2 S7s.4).
     Transfer {

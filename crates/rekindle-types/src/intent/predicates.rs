@@ -118,6 +118,7 @@ impl IntentKind {
             | Self::RotateFriendToken
             | Self::LeaveCommunity
             | Self::RemoveCoCreator
+            | Self::ReadmitDevice
             | Self::CancelCommunityCreate
             | Self::WithdrawCommunityTransfer
             | Self::CreateGroupDm
@@ -170,6 +171,7 @@ impl IntentKind {
             | Self::ResetSignalSession
             | Self::ReinitiateSession
             | Self::RotateMek
+            | Self::RetireDevice
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled
@@ -327,6 +329,7 @@ impl IntentKind {
             | Self::RotateFriendToken
             | Self::LeaveCommunity
             | Self::RemoveCoCreator
+            | Self::ReadmitDevice
             | Self::CancelCommunityCreate
             | Self::WithdrawCommunityTransfer
             | Self::CreateGroupDm
@@ -382,6 +385,7 @@ impl IntentKind {
             | Self::ResetSignalSession
             | Self::ReinitiateSession
             | Self::RotateMek
+            | Self::RetireDevice
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
             | Self::SetReadReceiptsEnabled
