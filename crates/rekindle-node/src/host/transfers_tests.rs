@@ -120,3 +120,50 @@ fn open_refuses_a_link_and_runs_nothing() {
     );
     assert!(!ran.exists(), "revealing an executable never runs it");
 }
+
+/// Two checkpoints back to back (the resume's first, from the cache, and
+/// the completing chunk's), then a read: it sees the newest, as the end
+/// state and `TransferList` that follow the last chunk do.
+#[tokio::test]
+async fn a_read_after_the_last_checkpoint_sees_it() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let (host, _) = crate::host::direct_tests::ann(&dir).await;
+    let ctx = &host.ctx;
+    let db = ctx.db.current().expect("unlocked");
+    let owner = ctx.require_owner().expect("an owner");
+    let row = TransferRow {
+        state: TransferState::Active,
+        chunks_done: 0,
+        chunk_count: 0,
+        bytes_done: 0,
+        total: 0,
+        finished_at: None,
+        ..done_at(dir.path())
+    };
+    let o = owner.clone();
+    db.call(move |c| rekindle_db::repo::transfers::begin(c, &o, &row))
+        .await
+        .expect("the row");
+    let (abort, _registration) = futures::future::AbortHandle::new_pair();
+    ctx.transfers.0.lock().insert(
+        ATTACHMENT_ID.to_owned(),
+        Run {
+            abort,
+            seen: None,
+            last_sent_ms: None,
+        },
+    );
+    let whole = at(1_000);
+    super::chunk_cached(ctx, ATTACHMENT_ID, at(999));
+    super::chunk_cached(ctx, ATTACHMENT_ID, whole);
+    let stored = db
+        .call(move |c| rekindle_db::repo::transfers::get(c, &owner, ATTACHMENT_ID))
+        .await
+        .expect("read")
+        .expect("the row");
+    assert_eq!(
+        (stored.chunks_done, stored.bytes_done),
+        (whole.chunks_done, whole.bytes_done),
+        "the stored checkpoint is the newest cached"
+    );
+}

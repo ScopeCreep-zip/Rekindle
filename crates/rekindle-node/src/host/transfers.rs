@@ -101,36 +101,29 @@ pub(crate) fn chunk_cached(ctx: &DaemonContext, attachment_id: &str, at: Transfe
             total: at.total,
         },
     );
+    queue_checkpoint(ctx, attachment_id, at);
+}
+
+/// Queue the checkpoint write on the database thread now, in the order the
+/// chunks were cached: every later call (the next checkpoint, the end
+/// state, a `TransferList`) runs after it, so the stored count is the
+/// cache's newest. A write on a task of its own reached the queue only
+/// when that task first ran, after calls queued later — a resumed
+/// transfer could be `done` with its last checkpoint unwritten.
+fn queue_checkpoint(ctx: &DaemonContext, attachment_id: &str, at: TransferCheckpoint) {
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
         return;
     };
-    // On the unlock's scope, so a lock cancels a write still queued.
     let id = attachment_id.to_owned();
-    ctx.unlock_scope_or_closed()
-        .spawn_or_drop("transfer checkpoint", checkpoint_into(db, owner, id, at));
-}
-
-async fn write_checkpoint(ctx: &DaemonContext, attachment_id: &str, at: TransferCheckpoint) {
-    if let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) {
-        checkpoint_into(db, owner, attachment_id.to_owned(), at).await;
-    }
-}
-
-async fn checkpoint_into(db: rekindle_db::Db, owner: String, id: String, at: TransferCheckpoint) {
-    let wrote = db
-        .call(move |conn| {
-            rekindle_db::repo::transfers::checkpoint(
-                conn,
-                &owner,
-                &id,
-                (at.chunks_done, at.chunk_count),
-                (at.bytes_done, at.total),
-            )
-        })
-        .await;
-    if let Err(e) = wrote {
-        tracing::warn!(error = %e, "transfer checkpoint unwritten");
-    }
+    db.fire("transfer checkpoint", move |conn| {
+        rekindle_db::repo::transfers::checkpoint(
+            conn,
+            &owner,
+            &id,
+            (at.chunks_done, at.chunk_count),
+            (at.bytes_done, at.total),
+        )
+    });
 }
 
 /// At unlock: a transfer the last Host left running is `paused`, so Start
@@ -260,7 +253,7 @@ pub(crate) async fn download(
         Err(futures::future::Aborted) => DownloadEnd::Stopped,
     };
     if let Some(at) = ctx.transfers.end(attachment_id) {
-        write_checkpoint(ctx, attachment_id, at).await;
+        queue_checkpoint(ctx, attachment_id, at);
     }
     match &ended {
         DownloadEnd::Done => {

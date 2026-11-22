@@ -195,3 +195,34 @@ async fn the_attempt_fails_cleanly_when_every_source_fails() {
         "nothing advertised"
     );
 }
+
+/// A fetch over a cache that already holds every chunk still reports the
+/// cache's count, so a resumed transfer's checkpoint reaches the whole.
+#[tokio::test]
+async fn a_fetch_over_a_complete_cache_reports_every_chunk_held() {
+    let (_, offer, served) = real_file();
+    let deps = deps(&offer, vec![silent(), Ok(reply(&served, &[0, 1]))]);
+    let id = hex::encode(AID);
+    super::fetch_attachment_to_cache(&deps, "c1", TEST_CHANNEL_ID, &id)
+        .await
+        .expect("the first fetch fills the cache");
+    deps.calls.lock().events.clear();
+    super::fetch_attachment_to_cache(&deps, "c1", TEST_CHANNEL_ID, &id)
+        .await
+        .expect("the cache already holds the file");
+    let reported: Vec<(u32, u32)> = deps
+        .calls
+        .lock()
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            crate::deps::FilesEvent::ChunkCached {
+                chunks_done,
+                chunk_count,
+                ..
+            } => Some((*chunks_done, *chunk_count)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reported, vec![(2, 2)], "the held count is reported");
+}

@@ -85,10 +85,12 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
         })?;
         bitmap.ok_or_else(|| FilesError::NotFound(format!("cache for {community_id}")))?
     };
+    // The checkpoint is what the cache holds, even when it holds every
+    // chunk already (a transfer resumed after its last chunk was cached).
+    chunk_cached(deps, community_id, &offer, &have);
     if have.is_complete() {
         return Ok(FetchedAttachment { offer, fek });
     }
-    chunk_cached(deps, community_id, &offer, &have);
 
     let sources =
         discover_sources(deps, community_id, channel_id, attachment_id, chunk_count).await?;
