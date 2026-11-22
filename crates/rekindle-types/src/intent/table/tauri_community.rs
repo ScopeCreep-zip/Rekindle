@@ -99,6 +99,7 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
         Some(IntentKind::ExpandCommunitySegment),
     ),
     ("leave_community", Some(IntentKind::LeaveCommunity)),
+    ("community_device_enrol", Some(IntentKind::EnrolDevice)),
     ("group_dm_create", Some(IntentKind::CreateGroupDm)),
     ("group_dm_accept", Some(IntentKind::AcceptDmInvite)),
     ("group_dm_decline", Some(IntentKind::DeclineDmInvite)),

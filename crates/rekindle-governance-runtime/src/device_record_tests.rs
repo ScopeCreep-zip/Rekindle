@@ -89,6 +89,9 @@ fn deps_for(
     deps.expect_governance_state()
         .returning(move |_| Some(state.clone()));
     let hex = cert.creator_pseudonym.to_hex();
+    // The write path judges successors in the state it installs (SS4h).
+    deps.expect_successor_judgements()
+        .returning(|_| Arc::default());
     deps.expect_community_membership().returning(move |_| {
         Some(CommunityMembership {
             anchor: Some(HELD_IN.into()),
