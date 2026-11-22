@@ -68,9 +68,20 @@ pub fn acknowledgement(facts: &[Fact], escalations: &[Escalation]) -> &'static s
         }
         _ => None,
     });
+    // Several game servers (a Servers refresh, plan E7.2 G4) are named in
+    // the plural, so the checkbox states what the review lists.
+    let servers = facts
+        .iter()
+        .filter(
+            |f| matches!(f, Fact::IpAddressLeaves { to } if to.kind() == RecipientKind::GameServer),
+        )
+        .count();
     let from_fact = || {
         facts.iter().find_map(|f| match f {
             Fact::IpAddressLeaves { to } => Some(match to.kind() {
+                RecipientKind::GameServer if servers > 1 => {
+                    "I understand these servers will see my IP address."
+                }
                 RecipientKind::GameServer => "I understand this server will see my IP address.",
                 RecipientKind::Site => "I understand this site will see my IP address.",
             }),

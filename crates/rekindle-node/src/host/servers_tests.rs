@@ -337,6 +337,11 @@ async fn the_refresh_review_names_each_server_it_will_ask() {
     assert_eq!(review.kind, IntentKind::RefreshServers);
     assert_eq!(review.class, IntentClass::TrustChanging);
     assert_eq!(review.proof, ProofRequired::Acknowledge);
+    assert_eq!(
+        review.acknowledgement.as_deref(),
+        Some("I understand these servers will see my IP address."),
+        "two servers are named in the plural"
+    );
     let mut named: Vec<(String, String)> = review
         .facts
         .iter()
