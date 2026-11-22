@@ -328,11 +328,13 @@ pub const ENTRIES: &[TokenEntry] = &[
         ),
         // A pack's own text toward its own ground, so it stays grey and
         // readable on that pack's colours (Alloy's light #bcbcbc ground
-        // takes the fixed #5b5b5b to 3.57:1).
+        // takes the fixed #5b5b5b to 3.57:1). 860 is the least weight that
+        // keeps 4.5:1 on every text ground of every built-in (Alloy's
+        // bg.input and bg.status read 4.43:1 at 850 once N4 laid them).
         Derivation::Mix {
             a: "text.primary",
             b: "bg.primary",
-            a_weight: 850,
+            a_weight: 860,
         },
     ),
     row(
