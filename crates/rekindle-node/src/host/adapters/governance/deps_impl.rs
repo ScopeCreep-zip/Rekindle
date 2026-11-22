@@ -10,11 +10,10 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, UserStatusKind,
+    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RoleTable, UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::op_log::{HeldOp, OpVerdict};
-use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_records::port::RecordSchema;
@@ -551,38 +550,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
 
     // ---------- Role mutations ----------
 
-    fn role_current_definition(
-        &self,
-        community_id: &str,
-        role_id: rekindle_types::id::RoleId,
-    ) -> Option<RoleSnapshotInsert> {
-        self.role_current_definition_impl(community_id, role_id)
-    }
-
-    fn role_table_summary(&self, community_id: &str) -> (Vec<rekindle_types::id::RoleId>, u32) {
-        self.role_table_summary_impl(community_id)
-    }
-
-    /// No local mirror to update: the definition is already carried by
-    /// the governance entry that triggered this call, and
-    /// `role_current_definition` reads it back from the merged CRDT
-    /// state. See `roles.rs` for why the daemon keeps no role table.
-    async fn apply_role_create(
-        &self,
-        _community_id: &str,
-        _snapshot: RoleSnapshotInsert,
-    ) -> Result<(), GovernanceRuntimeError> {
-        Ok(())
-    }
-
-    /// Likewise: the patch is already in the governance entry and
-    /// therefore in the next merge.
-    async fn apply_role_edit(
-        &self,
-        _community_id: &str,
-        _role_id: rekindle_types::id::RoleId,
-        _patch: RoleSnapshotPatch,
-    ) -> Result<(), GovernanceRuntimeError> {
-        Ok(())
+    fn roles(&self) -> std::sync::Arc<dyn RoleTable> {
+        std::sync::Arc::new(self.clone())
     }
 }

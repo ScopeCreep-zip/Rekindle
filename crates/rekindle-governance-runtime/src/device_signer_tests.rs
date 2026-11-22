@@ -12,8 +12,7 @@ use rekindle_types::id::PseudonymKey;
 use super::{first_endorsement, held_key, OpSigner};
 use crate::error::GovernanceRuntimeError;
 use crate::op_log::{build_op, Deps, VerifiedSet};
-
-const ANCHOR: &str = "A";
+use crate::test_world::ANCHOR;
 
 fn cert(p: &SigningKey, d: &SigningKey) -> GenesisCert {
     let (record, owner) = ("VLD0:m", "o");

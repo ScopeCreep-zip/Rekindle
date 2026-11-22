@@ -68,7 +68,7 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     write(
         deps,
         community_id,
-        Entry::Ready(Box::new(entry)),
+        WriteEntry::Ready(Box::new(entry)),
         OpLanding::FirstAttempt,
         op_log::Deps::Frontier,
     )
@@ -108,7 +108,7 @@ pub async fn write_invite_created<D: GovernanceRuntimeDeps>(
     write(
         deps,
         community_id,
-        Entry::Ready(Box::new(entry)),
+        WriteEntry::Ready(Box::new(entry)),
         OpLanding::InviteLanded { invite_id },
         op_log::Deps::Frontier,
     )
@@ -128,7 +128,7 @@ pub async fn write_entry_queued<D: GovernanceRuntimeDeps>(
     write(
         deps,
         community_id,
-        Entry::Ready(Box::new(entry)),
+        WriteEntry::Ready(Box::new(entry)),
         OpLanding::Queued,
         op_log::Deps::Frontier,
     )
@@ -147,7 +147,7 @@ pub async fn write_checkpoint_queued<D: GovernanceRuntimeDeps>(
     write(
         deps,
         community_id,
-        Entry::Ready(Box::new(GovernanceEntry::Checkpoint(checkpoint))),
+        WriteEntry::Ready(Box::new(GovernanceEntry::Checkpoint(checkpoint))),
         OpLanding::Queued,
         op_log::Deps::Cited(heads),
     )
@@ -156,20 +156,20 @@ pub async fn write_checkpoint_queued<D: GovernanceRuntimeDeps>(
 
 /// What a [`Build`] reads: the locked state, the verified op set and our
 /// pseudonym `p`, exactly what the op it returns is built on.
-pub(crate) struct Held<'a> {
+pub(crate) struct BuiltOn<'a> {
     pub state: &'a GovernanceState,
     pub set: &'a op_log::VerifiedSet,
     pub author: &'a PseudonymKey,
 }
 
 /// An entry built under the rebuild lock from what the op will be built
-/// on ([`Held`]): a `DeviceRetired`'s `lastSeq` must hold every op of its
+/// on ([`BuiltOn`]): a `DeviceRetired`'s `lastSeq` must hold every op of its
 /// key in the carrier's causal past (ADR 0022 rule 5), so it is read there.
 pub(crate) type Build<D> =
-    Box<dyn FnOnce(&D, &Held<'_>) -> Result<GovernanceEntry, GovernanceRuntimeError> + Send>;
+    Box<dyn FnOnce(&D, &BuiltOn<'_>) -> Result<GovernanceEntry, GovernanceRuntimeError> + Send>;
 
 /// The entry [`write_with`] writes: given, or built under its lock.
-pub(crate) enum Entry<D> {
+pub(crate) enum WriteEntry<D> {
     Ready(Box<GovernanceEntry>),
     Built(Build<D>),
 }
@@ -184,7 +184,7 @@ pub(crate) async fn write_built<D: GovernanceRuntimeDeps>(
     write(
         deps,
         community_id,
-        Entry::Built(build),
+        WriteEntry::Built(build),
         OpLanding::FirstAttempt,
         op_log::Deps::Frontier,
     )
@@ -242,7 +242,7 @@ pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
     let written = write_with(
         deps,
         community_id,
-        Entry::Ready(Box::new(GovernanceEntry::MemberLeft { heads })),
+        WriteEntry::Ready(Box::new(GovernanceEntry::MemberLeft { heads })),
         OpLanding::FirstAttempt,
         op_log::Deps::Frontier,
         NotAdmitted::Withdraw,
@@ -257,7 +257,7 @@ pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
 async fn write<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    entry: Entry<D>,
+    entry: WriteEntry<D>,
     landing: OpLanding,
     op_deps: op_log::Deps,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
@@ -271,12 +271,12 @@ async fn write<D: GovernanceRuntimeDeps>(
 async fn write_with<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    entry: Entry<D>,
+    entry: WriteEntry<D>,
     landing: OpLanding,
     op_deps: op_log::Deps,
     not_admitted: NotAdmitted,
 ) -> Result<Written, GovernanceRuntimeError> {
-    if let Entry::Ready(ready) = &entry {
+    if let WriteEntry::Ready(ready) = &entry {
         refuse_out_of_bounds(ready)?;
     }
 
@@ -305,11 +305,11 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     }
     let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
     let (mut entry, built_on) = match entry {
-        Entry::Ready(ready) => (*ready, None),
-        Entry::Built(build) => {
+        WriteEntry::Ready(ready) => (*ready, None),
+        WriteEntry::Built(build) => {
             let held = deps.governance_ops(community_id).await?;
             let set = op_log::verify_held_with(deps, community_id, &held);
-            let on = Held {
+            let on = BuiltOn {
                 state: &gov_state,
                 set: &set,
                 author: &pseudo,

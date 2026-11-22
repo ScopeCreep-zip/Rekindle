@@ -13,7 +13,7 @@ use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 use zeroize::Zeroizing;
 
-use crate::apply::{self, Held};
+use crate::apply::{self, BuiltOn};
 use crate::deps::{GovernanceRuntimeDeps, OpOutcome};
 use crate::error::GovernanceRuntimeError;
 
@@ -32,7 +32,7 @@ pub async fn retire<D: GovernanceRuntimeDeps>(
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
     let anchor = community.to_owned();
     let build: apply::Build<D> =
-        Box::new(move |deps: &D, on: &Held<'_>| retirement(deps, &anchor, on, device_key));
+        Box::new(move |deps: &D, on: &BuiltOn<'_>| retirement(deps, &anchor, on, device_key));
     apply::write_built(deps, community, build).await
 }
 
@@ -51,14 +51,14 @@ pub async fn readmit<D: GovernanceRuntimeDeps>(
     device_key: [u8; 32],
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
     let build: apply::Build<D> =
-        Box::new(move |_: &D, on: &Held<'_>| readmission(on, &member, device_key));
+        Box::new(move |_: &D, on: &BuiltOn<'_>| readmission(on, &member, device_key));
     apply::write_built(deps, community, build).await
 }
 
 fn retirement<D: GovernanceRuntimeDeps>(
     deps: &D,
     community: &str,
-    on: &Held<'_>,
+    on: &BuiltOn<'_>,
     device_key: [u8; 32],
 ) -> Result<GovernanceEntry, GovernanceRuntimeError> {
     if let Some(ours) = deps.device_op_key(community)? {
@@ -83,7 +83,7 @@ fn retirement<D: GovernanceRuntimeDeps>(
 }
 
 fn readmission(
-    on: &Held<'_>,
+    on: &BuiltOn<'_>,
     member: &PseudonymKey,
     device_key: [u8; 32],
 ) -> Result<GovernanceEntry, GovernanceRuntimeError> {
@@ -102,7 +102,7 @@ fn readmission(
 }
 
 fn member_set<'a>(
-    on: &Held<'a>,
+    on: &BuiltOn<'a>,
     member: &PseudonymKey,
 ) -> Result<&'a MemberDevices, GovernanceRuntimeError> {
     on.state
@@ -116,7 +116,7 @@ fn member_set<'a>(
 /// The highest seq of `device_key` among our ops in the set the carrier
 /// is built on: a `DeviceRetired` below its carrier's causal past is
 /// invalid (rule 5), and every op of the key at or below it stays.
-fn last_seq_of(on: &Held<'_>, device_key: [u8; 32]) -> u64 {
+fn last_seq_of(on: &BuiltOn<'_>, device_key: [u8; 32]) -> u64 {
     (on.set.ops.iter())
         .map(rekindle_governance::op::VerifiedOp::op)
         .filter(|op| op.author == *on.author && op.device_key == device_key)

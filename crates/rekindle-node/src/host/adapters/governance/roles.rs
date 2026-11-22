@@ -9,7 +9,10 @@
 //! so an assignment, an unassignment or a role deletion has nothing left
 //! to store here.
 
-use rekindle_governance_runtime::roles::RoleSnapshotInsert;
+use async_trait::async_trait;
+use rekindle_governance_runtime::deps::RoleTable;
+use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
+use rekindle_governance_runtime::GovernanceRuntimeError;
 
 use rekindle_types::id::RoleId;
 
@@ -57,5 +60,43 @@ impl HostGovernance {
             .max()
             .map_or(0, |max| max.saturating_add(1).min(u32::MAX - 1));
         (ids, next_position)
+    }
+}
+
+#[async_trait]
+impl RoleTable for HostGovernance {
+    fn role_current_definition(
+        &self,
+        community_id: &str,
+        role_id: rekindle_types::id::RoleId,
+    ) -> Option<RoleSnapshotInsert> {
+        self.role_current_definition_impl(community_id, role_id)
+    }
+
+    fn role_table_summary(&self, community_id: &str) -> (Vec<rekindle_types::id::RoleId>, u32) {
+        self.role_table_summary_impl(community_id)
+    }
+
+    /// No local mirror to update: the definition is already carried by
+    /// the governance entry that triggered this call, and
+    /// `role_current_definition` reads it back from the merged CRDT
+    /// state. See `roles.rs` for why the daemon keeps no role table.
+    async fn apply_role_create(
+        &self,
+        _community_id: &str,
+        _snapshot: RoleSnapshotInsert,
+    ) -> Result<(), GovernanceRuntimeError> {
+        Ok(())
+    }
+
+    /// Likewise: the patch is already in the governance entry and
+    /// therefore in the next merge.
+    async fn apply_role_edit(
+        &self,
+        _community_id: &str,
+        _role_id: rekindle_types::id::RoleId,
+        _patch: RoleSnapshotPatch,
+    ) -> Result<(), GovernanceRuntimeError> {
+        Ok(())
     }
 }

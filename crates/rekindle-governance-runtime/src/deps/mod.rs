@@ -23,8 +23,10 @@ use crate::rebuild_flight::RebuildFlight;
 use crate::successor::SuccessorJudgements;
 use crate::verify_cache::OpVerifyCache;
 
+mod roles;
 mod types;
 
+pub use roles::RoleTable;
 pub use types::*;
 
 /// Composite deps trait — one impl on the src-tauri adapter, every
@@ -584,35 +586,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     // ---------- Role mutations (Phase 23.D.15) ----------
 
-    /// Snapshot of an existing role's current definition. Used by
-    /// `edit_role` to compute the merged-update RoleDefinition.
-    fn role_current_definition(
-        &self,
-        community_id: &str,
-        role_id: rekindle_types::id::RoleId,
-    ) -> Option<crate::roles::RoleSnapshotInsert>;
-
-    /// Return `(existing_ids, next_position)` for `create_role` —
-    /// used to allocate a unique random role id and assign the next
-    /// position slot.
-    fn role_table_summary(&self, community_id: &str) -> (Vec<rekindle_types::id::RoleId>, u32);
-
-    /// Insert a new role into AppState + DB. The `RoleSnapshotInsert`
-    /// is fully populated; adapter mirrors into `community.roles` (sort
-    /// by position) + `community_roles` SQLite row.
-    async fn apply_role_create(
-        &self,
-        community_id: &str,
-        snapshot: crate::roles::RoleSnapshotInsert,
-    ) -> Result<(), GovernanceRuntimeError>;
-
-    /// Apply a partial-update patch to an existing role. Adapter
-    /// mutates AppState `community.roles[role_id]` + emits the matching
-    /// `community_roles` UPDATE.
-    async fn apply_role_edit(
-        &self,
-        community_id: &str,
-        role_id: rekindle_types::id::RoleId,
-        patch: crate::roles::RoleSnapshotPatch,
-    ) -> Result<(), GovernanceRuntimeError>;
+    /// The role table the role commands read and write ([`RoleTable`]).
+    fn roles(&self) -> Arc<dyn RoleTable>;
 }

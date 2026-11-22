@@ -18,7 +18,7 @@ use crate::error::GovernanceRuntimeError;
 
 /// Role-row fields the adapter mirrors into AppState + DB. The
 /// crate-side orchestrator builds this and hands it to
-/// `deps.apply_role_create`.
+/// `RoleTable::apply_role_create`.
 #[derive(Debug, Clone)]
 pub struct RoleSnapshotInsert {
     pub role_id: RoleId,
@@ -119,7 +119,7 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
     self_assignable: bool,
     exclusion_group: Option<String>,
 ) -> Result<RoleId, GovernanceRuntimeError> {
-    let (existing_ids, next_position) = deps.role_table_summary(community_id);
+    let (existing_ids, next_position) = deps.roles().role_table_summary(community_id);
     let role_id = allocate_unique_role_id(&existing_ids, deps.rng().as_ref()).ok_or_else(|| {
         GovernanceRuntimeError::Adapter("failed to allocate unique role id".into())
     })?;
@@ -152,7 +152,9 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
         self_assignable,
         exclusion_group,
     };
-    deps.apply_role_create(community_id, snapshot).await?;
+    deps.roles()
+        .apply_role_create(community_id, snapshot)
+        .await?;
     Ok(role_id)
 }
 
@@ -163,6 +165,7 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
     patch: RoleSnapshotPatch,
 ) -> Result<(), GovernanceRuntimeError> {
     let current = deps
+        .roles()
         .role_current_definition(community_id, role_id)
         .ok_or_else(|| {
             GovernanceRuntimeError::Adapter(format!("role not found: {}", role_id.to_hex()))
@@ -191,7 +194,9 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
     )
     .await?;
 
-    deps.apply_role_edit(community_id, role_id, patch).await
+    deps.roles()
+        .apply_role_edit(community_id, role_id, patch)
+        .await
 }
 
 pub async fn delete_role<D: GovernanceRuntimeDeps>(
