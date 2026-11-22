@@ -370,6 +370,16 @@
     background: color-mix(in srgb, var(--color-xfire-ingame) 85%, var(--color-xfire-overlay));
   }
 
+  /* Join Game the Host says cannot run now: still shown, with why. */
+  .profile-popup-join-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .profile-popup-join-reason {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
   .member-game-info {
     font-size: 0.65rem;
     color: var(--color-xfire-ingame-text);

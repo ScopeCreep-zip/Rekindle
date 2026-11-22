@@ -202,6 +202,7 @@
 '.profile-popup-timeout' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-game-name' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-game-server' = { on = ["--color-xfire-bg-primary"] }
+'.profile-popup-join-reason' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-join-btn' = { on = ["--color-xfire-ingame"], on_hover = ["--color-xfire-ingame 85% over --color-xfire-overlay"] }
 '.member-game-info' = { on = ["--color-xfire-bg-dark"] }
 '.member-game-server' = { on = ["--color-xfire-bg-dark"] }
