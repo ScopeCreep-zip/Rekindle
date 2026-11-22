@@ -137,6 +137,15 @@
     background-color: var(--color-xfire-bg-secondary);
   }
 
+  /* A built-in glyph on an icon tab the Host placed (plan SK3): it takes the
+   * served label's box and colour (.skin-node-label: the cover filled with the
+   * button's ground, accent.text), and the glyph fills the cover. */
+  .skin-node-glyph-svg {
+    width: 100%;
+    height: 100%;
+    padding: 1px;
+  }
+
   .skin-node-label-text {
     max-width: 100%;
     overflow: hidden;

@@ -1,6 +1,6 @@
 import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import type { EngineMenu, MenuItem, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
@@ -112,11 +112,45 @@ const NodeLabelView: Component<{ label: NodeLabel }> = (props) => {
       : undefined;
   };
   return (
-    <span class="skin-node-label" data-cover={props.label.cover ? "" : undefined} style={box()} aria-hidden="true">
-      <span class="skin-node-label-text">{props.label.text}</span>
-    </span>
+    <Show
+      when={props.label.glyph}
+      fallback={
+        <span class="skin-node-label" data-cover={props.label.cover ? "" : undefined} style={box()} aria-hidden="true">
+          <span class="skin-node-label-text">{props.label.text}</span>
+        </span>
+      }
+    >
+      {(glyph) => (
+        <span
+          class="skin-node-label skin-node-glyph"
+          data-cover={props.label.cover ? "" : undefined}
+          style={box()}
+          title={props.label.text}
+        >
+          <NodeGlyphView glyph={glyph()} />
+          <span class="sr-only">{props.label.text}</span>
+        </span>
+      )}
+    </Show>
   );
 };
+
+/** A built-in glyph (plan SK3), in the current colour, sized by its box. */
+const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
+  <Switch>
+    <Match when={props.glyph === "communities"}>
+      {/* Three people: the community mark. */}
+      <svg class="skin-node-glyph-svg" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="7" r="3.2" fill="currentColor" />
+        <path d="M6.5 19c0-3.2 2.5-5.6 5.5-5.6s5.5 2.4 5.5 5.6z" fill="currentColor" />
+        <circle cx="5" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
+        <path d="M1 18.5c0-2.4 1.8-4.2 4-4.2 1 0 1.9.3 2.6.9-1.2 1-2 2.3-2.3 3.8z" fill="currentColor" opacity="0.8" />
+        <circle cx="19" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
+        <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
+      </svg>
+    </Match>
+  </Switch>
+);
 
 /** One node, as the served role draws it and its triggers drive it
  *  (design §2.4, §2.6). */

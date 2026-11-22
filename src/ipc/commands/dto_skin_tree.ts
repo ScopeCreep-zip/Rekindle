@@ -313,7 +313,13 @@ export interface NodeLabel {
   /** [x, y, width, height] in px of the node's own box holding the copied art's baked-in word,
    *  which the label covers; absent when the art carries no word. */
   cover?: [number, number, number, number];
+  /** A built-in glyph drawn instead of text (an icon tab, plan SK3), centred in `cover`
+   *  (the source icon's box); `text` is then its accessible name and tooltip. */
+  glyph?: NodeGlyph;
 }
+
+/** The built-in glyphs the shell draws (`NodeGlyph`). */
+export type NodeGlyph = "communities";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {
