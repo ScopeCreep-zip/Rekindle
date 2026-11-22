@@ -104,6 +104,7 @@ impl TabBarState {
             | ViewKind::Doctor
             | ViewKind::IdentitySettings
             | ViewKind::Favourites
+            | ViewKind::InstalledGames
             | ViewKind::Profile { peer_key: None, .. } => "dashboard",
             ViewKind::DmInbox | ViewKind::DmThread { .. } | ViewKind::GroupDms => "dms",
             ViewKind::FriendList | ViewKind::Profile { .. } => "friends",

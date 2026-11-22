@@ -205,6 +205,7 @@ impl App {
             }
             ViewKind::Favourites => "Dashboard > Favourite servers".into(),
             ViewKind::Activity => "Activity".into(),
+            ViewKind::InstalledGames => "Dashboard > Installed games".into(),
             ViewKind::CommunityInfo { community } => {
                 format!("{} / Info", self.community_name(community))
             }
@@ -254,6 +255,16 @@ impl App {
                     label: "Activity".into(),
                     detail: "view".into(),
                     action: Action::ShowActivity,
+                });
+                items.push(SearchItem {
+                    label: "Favourite servers".into(),
+                    detail: "games".into(),
+                    action: Action::ShowFavourites,
+                });
+                items.push(SearchItem {
+                    label: "Installed games".into(),
+                    detail: "games".into(),
+                    action: Action::ShowInstalledGames,
                 });
                 items
             }

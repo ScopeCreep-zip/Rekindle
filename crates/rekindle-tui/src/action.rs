@@ -86,6 +86,8 @@ pub enum Action {
     LoadActivity {
         before: Option<i64>,
     },
+    /// The games we can launch (`InstalledGamesGet`, plan E7.15 IV3).
+    ShowInstalledGames,
     ShowCommunityInfo {
         community: String,
     },
@@ -171,6 +173,14 @@ pub enum Action {
     RemoveFavourite {
         game_id: u32,
         server: rekindle_types::game_server::ServerAddress,
+    },
+
+    /// `GameLaunch` (lead decision (50)): `source` says where the server
+    /// came from; the Host decides the rest and reviews a peer's server.
+    LaunchGame {
+        game_id: u32,
+        server: Option<rekindle_types::game_server::ServerAddress>,
+        source: rekindle_types::game_server::JoinSource,
     },
 
     // ─── Clipboard ───────────────────────────────────────────────
@@ -334,5 +344,9 @@ pub enum CommandResult {
     ActivityLoaded {
         before: Option<i64>,
         entries: Vec<rekindle_types::activity::ActivityListItem>,
+    },
+    /// The games we can launch (`InstalledGamesGet`, plan E7.15 IV3).
+    InstalledGamesLoaded {
+        games: Vec<rekindle_types::dto::presence::InstalledGameView>,
     },
 }

@@ -11,11 +11,13 @@
 //! - `reducer.rs`  — process_action() — the TEA reducer
 //! - `render.rs`   — draw(), overlays, breadcrumb, search items, tab transitions
 //! - `commands.rs` — Async IPC command spawning (all daemon requests)
+//! - `game_commands.rs` — installed games and `GameLaunch`
 
 mod activity_commands;
 mod commands;
 mod events;
 mod friend_commands;
+mod game_commands;
 mod group_dm_commands;
 mod profile_commands;
 mod reducer;

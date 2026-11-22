@@ -3,6 +3,12 @@
 //! session-reset request is the host's review, shown by the intent
 //! overlay.
 //!
+//! `J` joins the selected friend's game on their server (plan E7.15 IV3):
+//! offered for every friend, enabled only while the Host says the game is
+//! `joinable`; otherwise it shows the Host's reason and sends nothing. The
+//! launch is the Host's review (a peer chose the server), shown by the
+//! intent overlay.
+//!
 //! Layout:
 //! ```text
 //! ┌─ Friends (23) ────────────────────────────────────────────┐
@@ -27,6 +33,8 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::dto::friends::{BlockedUser, Friend, OutgoingInvite, PendingRequest};
+use rekindle_types::friend::{GameInfoState, NotJoinableReason};
+use rekindle_types::game_server::{JoinSource, ServerAddress};
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -93,6 +101,49 @@ pub struct FriendListView {
 
 fn status_of(friend: &Friend) -> &'static str {
     friend.status.as_wire_str()
+}
+
+/// The friend's game while the Host says it is joinable, or why `J` is
+/// disabled, in the Host's terms.
+fn joinable_game(friend: &Friend) -> Result<&GameInfoState, &'static str> {
+    let game = friend.game_info.as_ref().ok_or("not in a game")?;
+    if game.joinable {
+        return Ok(game);
+    }
+    Err(match game.joinable_reason {
+        Some(NotJoinableReason::CannotLaunch) => "can't be launched here",
+        Some(NotJoinableReason::NoServer) | None => "not on a server",
+    })
+}
+
+/// `J` on a friend: `GameLaunch` to their server while the Host says it is
+/// joinable, otherwise the reason as a toast and nothing sent.
+fn join_game(friend: &Friend) -> Action {
+    let name = helpers::sanitize_for_display(&friend.display_name);
+    let game = match joinable_game(friend) {
+        Ok(game) => game,
+        Err(reason) => {
+            return Action::ShowToast {
+                message: format!("Can't join {name}: {reason}"),
+                level: crate::action::ToastLevel::Warning,
+            }
+        }
+    };
+    match game.server_address.as_deref().map(ServerAddress::parse) {
+        Some(Ok(server)) => Action::LaunchGame {
+            game_id: game.game_id,
+            server: Some(server),
+            source: JoinSource::FriendPresence,
+        },
+        Some(Err(e)) => Action::ShowToast {
+            message: format!("Can't join {name}: {e}"),
+            level: crate::action::ToastLevel::Error,
+        },
+        None => Action::ShowToast {
+            message: format!("Can't join {name}: not on a server"),
+            level: crate::action::ToastLevel::Error,
+        },
+    }
 }
 
 fn section(title: &str, count: usize, keys: &str) -> ListItem<'static> {
@@ -261,10 +312,15 @@ impl FriendListView {
         } else {
             ""
         };
+        let playing = friend
+            .game_info
+            .as_ref()
+            .map(|g| format!("  playing {}", helpers::sanitize_for_display(&g.game_name)))
+            .unwrap_or_default();
         ListItem::new(Line::from(vec![
             Span::raw(format!("   {glyph} {text_label} ")),
             Span::styled(format!("{name}{nickname}"), Style::new().bold()),
-            Span::styled(format!("{last_seen}{pending}"), Style::new().dim()),
+            Span::styled(format!("{playing}{last_seen}{pending}"), Style::new().dim()),
         ]))
     }
 
@@ -322,7 +378,14 @@ fn request_item(req: &PendingRequest) -> ListItem<'static> {
 
 impl View for FriendListView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> {
-        let title = format!(" Friends ({}) ", self.friends.len());
+        let join = match self.selected() {
+            Some(Selected::Friend(f)) => match joinable_game(f) {
+                Ok(_) => " · [J] join game".to_owned(),
+                Err(reason) => format!(" · [J] join game ({reason})"),
+            },
+            _ => String::new(),
+        };
+        let title = format!(" Friends ({}){join} ", self.friends.len());
         let block = Block::bordered()
             .title(title)
             .border_style(theme.focused_border());
@@ -410,6 +473,11 @@ impl View for FriendListView {
                 Selected::Friend(f) => Some(Action::ShowDmThread {
                     peer_key: f.public_key.clone(),
                 }),
+                _ => None,
+            },
+            // Join the selected friend's game (plan E7.15 IV3).
+            KeyCode::Char('J') => match self.selected()? {
+                Selected::Friend(f) => Some(join_game(f)),
                 _ => None,
             },
             // The selected friend's bio and shared game time (plan E7.2).
@@ -575,6 +643,73 @@ mod tests {
         assert_eq!(view.list_state.selected(), Some(1));
         view.update(Action::ScrollToBottom).unwrap();
         assert_eq!(view.list_state.selected(), Some(10));
+    }
+
+    fn playing(server: Option<&str>, joinable: bool, reason: Option<NotJoinableReason>) -> Friend {
+        let mut f = friend("alice", UserStatus::Online);
+        f.game_info = Some(rekindle_types::friend::GameInfoState {
+            game_id: 4181,
+            game_name: "Counter-Strike 2".into(),
+            server_info: None,
+            elapsed_seconds: 0,
+            server_address: server.map(str::to_owned),
+            icon_key: None,
+            joinable,
+            joinable_reason: reason,
+        });
+        f
+    }
+
+    fn with(friend: Friend) -> FriendListView {
+        let mut view = FriendListView::new(true);
+        view.on_command_result(CommandResult::FriendListLoaded {
+            friends: vec![friend],
+        })
+        .unwrap();
+        view
+    }
+
+    #[test]
+    fn join_while_not_joinable_shows_the_hosts_reason_and_sends_nothing() {
+        let cases = [
+            (friend("alice", UserStatus::Online), "not in a game"),
+            (
+                playing(None, false, Some(NotJoinableReason::NoServer)),
+                "not on a server",
+            ),
+            (
+                playing(
+                    Some("10.0.0.1:27015"),
+                    false,
+                    Some(NotJoinableReason::CannotLaunch),
+                ),
+                "can't be launched here",
+            ),
+        ];
+        for (f, reason) in cases {
+            let mut view = with(f);
+            let Some(Action::ShowToast { message, .. }) = press(&mut view, 'J') else {
+                panic!("a disabled Join shows the reason and launches nothing");
+            };
+            assert_eq!(message, format!("Can't join alice: {reason}"));
+        }
+    }
+
+    #[test]
+    fn join_while_joinable_launches_to_the_friends_server() {
+        let mut view = with(playing(Some("10.0.0.1:27015"), true, None));
+        let Some(Action::LaunchGame {
+            game_id,
+            server,
+            source,
+        }) = press(&mut view, 'J')
+        else {
+            panic!("Join launches the friend's game");
+        };
+        assert_eq!(
+            (game_id, server.as_ref().map(ServerAddress::as_str), source),
+            (4181, Some("10.0.0.1:27015"), JoinSource::FriendPresence)
+        );
     }
 
     #[test]

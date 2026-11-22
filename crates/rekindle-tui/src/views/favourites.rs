@@ -3,8 +3,9 @@
 //! with whether an invite may name each one (`invitable`, the Host's call:
 //! not a hidden game, current-game sharing on).
 //!
-//! Keys on the list: `j`/`k` move, `x` removes the selected server
-//! (`FavouriteServerRemove`). `i` focuses the input box, where
+//! Keys on the list: `j`/`k` move, `Enter` launches the game to the
+//! selected server (`GameLaunch { source: Favourite }`, the Host checks it
+//! is ours), `x` removes the selected server (`FavouriteServerRemove`). `i` focuses the input box, where
 //! `<game id> <host:port> [label]` adds one or relabels it
 //! (`FavouriteServerAdd`); the address is parsed with
 //! `ServerAddress::parse` here, so no unparsed address reaches the bus, and
@@ -18,7 +19,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState};
 use ratatui::Frame;
 
 use rekindle_types::dto::presence::FavouriteServerView;
-use rekindle_types::game_server::ServerAddress;
+use rekindle_types::game_server::{JoinSource, ServerAddress};
 
 use super::View;
 use crate::action::{Action, CommandResult, ToastLevel};
@@ -88,6 +89,28 @@ impl FavouritesView {
             .collect()
     }
 
+    /// Launch the selected server's game to it.
+    fn launch(&self) -> Option<Action> {
+        if !self.focus.is_focused(FocusId::DmList) {
+            return None;
+        }
+        let s = self
+            .list_state
+            .selected()
+            .and_then(|i| self.servers.get(i))?;
+        Some(match ServerAddress::parse(&s.address) {
+            Ok(server) => Action::LaunchGame {
+                game_id: s.game_id,
+                server: Some(server),
+                source: JoinSource::Favourite,
+            },
+            Err(e) => Action::ShowToast {
+                message: format!("{}: {e}", s.address),
+                level: ToastLevel::Error,
+            },
+        })
+    }
+
     /// The input line as an add request, or why it is not one.
     fn parse_add(text: &str) -> Result<Action, String> {
         let mut parts = text.trim().splitn(3, char::is_whitespace);
@@ -131,7 +154,7 @@ impl View for FavouritesView {
         let [list_area, input_area] =
             Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).areas(area);
         let title = format!(
-            " Favourite servers ({}) · [x] remove · [i] add: <game id> <host:port> [label] ",
+            " Favourite servers ({}) · [Enter] launch · [x] remove · [i] add: <game id> <host:port> [label] ",
             self.servers.len()
         );
         let list = List::new(self.list_items())
@@ -167,6 +190,9 @@ impl View for FavouritesView {
                 };
                 return Ok(Some(next));
             }
+            Action::ScrollDown(_) => self.step(true),
+            Action::ScrollUp(_) => self.step(false),
+            Action::Select => return Ok(self.launch()),
             Action::EnterInputMode => self.focus.set(FocusId::InputBox),
             Action::ExitInputMode => self.focus.set(FocusId::DmList),
             _ => {}
@@ -254,6 +280,28 @@ mod tests {
             )
         );
         assert_eq!(row(&view.servers[1]).1, "  \"scrims\"  (no invites)");
+    }
+
+    #[test]
+    fn enter_launches_the_selected_favourite_to_its_server() {
+        let mut view = FavouritesView::new();
+        view.on_command_result(CommandResult::FavouritesLoaded {
+            servers: vec![server("10.0.0.1:27015", true), server("[::1]:27016", false)],
+        })
+        .unwrap();
+        view.update(Action::ScrollDown(1)).unwrap();
+        let Ok(Some(Action::LaunchGame {
+            game_id,
+            server,
+            source,
+        })) = view.update(Action::Select)
+        else {
+            panic!("Enter launches the selected favourite");
+        };
+        assert_eq!(
+            (game_id, server.as_ref().map(ServerAddress::as_str), source),
+            (4181, Some("[::1]:27016"), JoinSource::Favourite)
+        );
     }
 
     #[test]

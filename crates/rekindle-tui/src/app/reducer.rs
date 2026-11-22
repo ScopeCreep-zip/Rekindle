@@ -187,33 +187,17 @@ impl App {
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_profile(peer_key);
             }
-            Action::ShowFavourites => {
-                self.nav
-                    .navigate(ViewKind::Favourites, self.theme.use_unicode());
-                self.load_favourites();
-            }
             Action::ShowActivity => {
                 self.nav
                     .navigate(ViewKind::Activity, self.theme.use_unicode());
                 self.load_activity(None);
             }
             Action::LoadActivity { before } => self.load_activity(before),
-            Action::AddFavourite {
-                game_id,
-                server,
-                label,
-            } => self.spawn_favourites(
-                IpcRequest::FavouriteServerAdd {
-                    game_id,
-                    server,
-                    label,
-                },
-                "add favourite server",
-            ),
-            Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
-                IpcRequest::FavouriteServerRemove { game_id, server },
-                "remove favourite server",
-            ),
+            action @ (Action::ShowFavourites
+            | Action::ShowInstalledGames
+            | Action::LaunchGame { .. }
+            | Action::AddFavourite { .. }
+            | Action::RemoveFavourite { .. }) => self.process_game_action(action),
             Action::ShowCommunityInfo { community } => {
                 let kind = ViewKind::CommunityInfo {
                     community: community.clone(),
@@ -339,6 +323,44 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Favourite servers, installed games and launches (plan E7.2, E7.15).
+    fn process_game_action(&mut self, action: Action) {
+        match action {
+            Action::ShowFavourites => {
+                self.nav
+                    .navigate(ViewKind::Favourites, self.theme.use_unicode());
+                self.load_favourites();
+            }
+            Action::ShowInstalledGames => {
+                self.nav
+                    .navigate(ViewKind::InstalledGames, self.theme.use_unicode());
+                self.load_installed_games();
+            }
+            Action::LaunchGame {
+                game_id,
+                server,
+                source,
+            } => self.spawn_game_launch(game_id, server, source),
+            Action::AddFavourite {
+                game_id,
+                server,
+                label,
+            } => self.spawn_favourites(
+                IpcRequest::FavouriteServerAdd {
+                    game_id,
+                    server,
+                    label,
+                },
+                "add favourite server",
+            ),
+            Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
+                IpcRequest::FavouriteServerRemove { game_id, server },
+                "remove favourite server",
+            ),
+            _ => {}
+        }
     }
 
     /// Handle a completed async command: update local caches, then forward
