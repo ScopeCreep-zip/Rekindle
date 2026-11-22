@@ -347,7 +347,10 @@ const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element }> 
         },
       }}
     >
-      <div class="skin-tree">
+      {/* Whether this window's signal sets have started arriving: the
+       *  pack's state art is applied from them, so the real-app suite
+       *  waits for "live" before reading a button's state. */}
+      <div class="skin-tree" data-skin-signals={skinSignals() ? "live" : "none"}>
         <For each={props.shell.root}>{(node) => <SkinNodeView node={node} />}</For>
       </div>
     </TreeCtx.Provider>
