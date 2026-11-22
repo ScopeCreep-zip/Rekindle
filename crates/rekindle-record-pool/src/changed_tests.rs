@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use rekindle_records::port::{OpenIntent, RecordPort, RecordSchema};
+use rekindle_records::port::{OpenIntent, RecordPort, RecordSchema, RecordValue, ValueChange};
 
 use crate::test_support::{pool_on, MemDht};
 use crate::READ_CHANGE_COUNT;
@@ -81,4 +81,47 @@ async fn a_hinted_read_or_an_unwatched_subkey_publishes_nothing() {
     dht.write_remote(&key, 0, b"card", "bea");
     pool.get(lease, 0, true).await.unwrap();
     assert!(dht.published().is_empty());
+}
+
+/// Lead decision (61): two reads of one watched subkey in flight together
+/// both start before either stores the peer's new seq. Each would find it
+/// newer than the local seq it started from; the handed-seq ledger
+/// publishes it once.
+#[tokio::test]
+async fn two_concurrent_reads_of_the_same_new_seq_publish_it_once() {
+    let dht = Arc::new(MemDht::default());
+    let (pool, lease, key) = watched(&dht).await;
+    dht.write_remote(&key, 1, b"post", "bea");
+    let (a, b) = tokio::join!(pool.get(lease, 1, true), pool.get(lease, 1, true));
+    assert_eq!(a.unwrap().map(|v| v.seq), Some(0));
+    assert_eq!(b.unwrap().map(|v| v.seq), Some(0));
+    assert_eq!(dht.published().len(), 1, "one change per seq");
+}
+
+/// Lead decision (61): a seq a delivered watch report already handed to
+/// the consumer is not published again by a read that answers it.
+#[tokio::test]
+async fn a_seq_a_watch_report_already_handed_is_not_republished() {
+    let dht = Arc::new(MemDht::default());
+    let (pool, lease, key) = watched(&dht).await;
+    dht.write_remote(&key, 1, b"post", "bea");
+    let report = ValueChange {
+        key: key.clone(),
+        subkeys: vec![1],
+        count: 5,
+        value: Some(RecordValue {
+            seq: 0,
+            data: b"post".to_vec(),
+            writer: "bea".to_string(),
+        }),
+    };
+    assert!(pool.on_value_change(&report).held);
+    let read = pool.get(lease, 1, true).await.unwrap().expect("the post");
+    assert_eq!(read.seq, 0);
+    assert!(dht.published().is_empty(), "the report handed seq 0");
+
+    // A later seq is past the ledger: published.
+    dht.write_remote(&key, 1, b"edit", "bea");
+    pool.get(lease, 1, true).await.unwrap();
+    assert_eq!(dht.published().len(), 1);
 }

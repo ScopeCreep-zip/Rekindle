@@ -169,6 +169,7 @@ impl RecordPool {
             subkeys: change.subkeys.clone(),
             value: change.value.clone(),
         };
+        self.note_report(change);
         if !report.held || !report.watch_died || watched.is_empty() {
             return report;
         }

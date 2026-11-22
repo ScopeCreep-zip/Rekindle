@@ -35,8 +35,9 @@ impl RecordPool {
     /// # Errors
     /// The lease is not held, or the read failed within the retry budget.
     ///
-    /// A read of a watched subkey that stored a newer value than the local
-    /// copy held before it publishes the change it absorbed (`changed.rs`).
+    /// A read of a watched subkey that answered a seq past every seq handed
+    /// to a consumer publishes the change it absorbed (`changed.rs`, lead
+    /// decisions 57 and 61).
     pub async fn get(
         &self,
         id: LeaseId,
@@ -56,15 +57,6 @@ impl RecordPool {
         publish: bool,
     ) -> Result<Option<RecordValue>, PortError> {
         let (key, _) = self.lookup(id)?;
-        let before = if publish && self.watches_subkey(&key, subkey) {
-            Some(
-                self.local_seq(&key, subkey)
-                    .await
-                    .map_err(|e| to_port(&e))?,
-            )
-        } else {
-            None
-        };
         let k = key.clone();
         let value = self
             .run_retrying("dht get", move |backend| {
@@ -73,8 +65,8 @@ impl RecordPool {
             })
             .await
             .map_err(|e| to_port(&e))?;
-        if let (Some(before), Some(value)) = (before, value.as_ref()) {
-            self.publish_if_newer(&key, subkey, before, value);
+        if let Some(value) = value.as_ref() {
+            self.hand_read(&key, subkey, value, publish);
         }
         Ok(value)
     }

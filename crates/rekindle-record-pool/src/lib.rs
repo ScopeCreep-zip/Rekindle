@@ -172,6 +172,8 @@ pub struct RecordPool {
     /// The node's consumer of value changes, for a change a read found
     /// (`changed.rs`, lead decision 57).
     changes: ChangeSink,
+    /// The newest seq handed to a consumer per watched subkey (`changed.rs`).
+    handed: Mutex<changed::Handed>,
     /// This pool, for the tasks it starts on its own scope.
     this: std::sync::Weak<RecordPool>,
 }
@@ -243,6 +245,7 @@ impl RecordPool {
             repush_stop: CancellationToken::new(),
             closer,
             changes,
+            handed: Mutex::new(changed::Handed::new()),
         })
     }
 
@@ -545,6 +548,7 @@ impl RecordPool {
         self.rearm.lock().remove(name);
         self.unconfirmed.lock().forget(name);
         self.unarmed.lock().remove(name);
+        self.forget_handed(name);
         let key = name.to_string();
         if let Err(e) = self
             .run("dht close", move |backend| async move {
@@ -575,6 +579,7 @@ impl RecordPool {
         self.rearm.lock().clear();
         self.unconfirmed.lock().clear();
         self.unarmed.lock().clear();
+        self.handed.lock().clear();
         let mut keys: Vec<String> = self.records.lock().drain().map(|(key, _)| key).collect();
         // One close order on every run.
         keys.sort_unstable();
