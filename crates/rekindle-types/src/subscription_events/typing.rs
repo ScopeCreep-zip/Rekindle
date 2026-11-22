@@ -13,7 +13,16 @@ use serde::{Deserialize, Serialize};
 pub enum TypingEvent {
     /// Someone started typing.
     /// Triggered by: gossip `TypingIndicator`, a 1:1 `TypingIndicator { typing: true }`.
-    Started { context: TypingContext, who: String },
+    ///
+    /// `name` is the Host's name for the typist (plan E3.4 S9): in a
+    /// channel the name on their verified member card, in a DM or group DM
+    /// the name our friendship holds, else their key's short fingerprint.
+    /// Never empty and never a raw key; frontends show it as given.
+    Started {
+        context: TypingContext,
+        who: String,
+        name: String,
+    },
     /// Someone stopped typing (expired or explicit).
     /// Triggered by: the backend's expiry, a 1:1 `TypingIndicator { typing: false }`,
     /// or the typist's message arriving.

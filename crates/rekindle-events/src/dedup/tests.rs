@@ -14,6 +14,7 @@ fn time_buckets_come_from_the_callers_clock() {
             peer_key: "abc123".into(),
         },
         who: "alice".into(),
+        name: "Alice".into(),
     });
     assert!(dedup.check(&event, NOW_MS));
     assert!(!dedup.check(&event, NOW_MS + 1), "same 5 s bucket");

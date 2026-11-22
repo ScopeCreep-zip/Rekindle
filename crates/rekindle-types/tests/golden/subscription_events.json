@@ -2159,6 +2159,7 @@
             "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
           }
         },
+        "name": "Ann",
         "who": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     }
@@ -2171,6 +2172,7 @@
             "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
           }
         },
+        "name": "Bob",
         "who": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }
@@ -2183,6 +2185,7 @@
             "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d"
           }
         },
+        "name": "Carol",
         "who": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       }
     }

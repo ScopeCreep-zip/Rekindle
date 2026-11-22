@@ -24,9 +24,11 @@ use rekindle_events::typing::{Input, Lapse, TypingSessions};
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_secrets::channel_body::{channel_tag, CHANNEL_TAG_LEN};
+use rekindle_transport::operations::friend::short_key;
 use rekindle_transport::operations::friend::FriendHost;
 use rekindle_transport::operations::typing;
 use rekindle_types::channel_keys::current_key;
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::TypingContext;
 
 use super::HostGovernance;
@@ -115,9 +117,36 @@ impl HostGovernance {
         }
     }
 
+    /// The gossip ingest's hook for a typing frame the meter admitted
+    /// (`DaemonHandler::ingest_gossip`): `sender` is the envelope's verified
+    /// signer and `pseudonym_key` the typist the frame names. A frame naming
+    /// anyone but its signer is dropped, so no member can type as another.
+    pub(crate) fn on_typing_frame(
+        &self,
+        community_id: &str,
+        sender: &str,
+        pseudonym_key: &str,
+        tag: &[u8; CHANNEL_TAG_LEN],
+        ttl_ms: u32,
+    ) {
+        if pseudonym_key != sender {
+            tracing::debug!(community = %community_id, "typing frame names someone other than its signer");
+            return;
+        }
+        self.on_channel_typing(community_id, sender, tag, ttl_ms);
+    }
+
     /// A typing frame from `sender` (verified by the envelope's signature)
-    /// in the channel tagged `tag`: lapsed or stopped by the Host. A tag no
-    /// channel's current key reproduces is not ours to show.
+    /// in the channel tagged `tag`: lapsed or stopped by the Host, the
+    /// typist named by [`Self::typist_name`].
+    ///
+    /// Only the current key of each channel's text scope is tried. A frame
+    /// sealed under a key we do not hold as current (the sender's key
+    /// rotated ahead of ours, or behind it) names no channel and is dropped
+    /// silently: no event, no error. Typing is ephemeral, so the cost is at
+    /// most one missed indicator until the next start under the key both
+    /// sides hold; keeping old keys to name stale frames would widen what a
+    /// departed member's key still reveals.
     pub(crate) fn on_channel_typing(
         &self,
         community_id: &str,
@@ -130,7 +159,25 @@ impl HostGovernance {
             return;
         };
         let friends = HostFriends::of(&self.ctx);
-        typing::channel_frame(&friends, context(community_id, &channel), sender, ttl_ms);
+        let name = self.typist_name(community_id, sender);
+        typing::channel_frame(
+            &friends,
+            context(community_id, &channel),
+            sender,
+            name,
+            ttl_ms,
+        );
+    }
+
+    /// The Host's name for typist `sender` in `community_id`, as the member
+    /// list names its rows (plan E3.2 F9-2): the name on their verified
+    /// card, else their key's short fingerprint. Never empty, never a raw
+    /// key, never a name the frame carries.
+    pub(crate) fn typist_name(&self, community_id: &str, sender: &str) -> String {
+        (self.ctx.communities)
+            .member_card_name(community_id, &PseudonymKey::from_hex_lossy(sender))
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| short_key(sender))
     }
 
     /// `channel_id`'s tag under the current key of its text scope.

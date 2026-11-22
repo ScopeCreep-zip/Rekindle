@@ -175,7 +175,7 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
 pub(super) fn hash_typing(h: &mut blake3::Hasher, t: &TypingEvent, now_ms: u64) {
     let now_bucket = now_ms / 1000 / 5; // 5-second bucketing
     match t {
-        TypingEvent::Started { context, who } => {
+        TypingEvent::Started { context, who, .. } => {
             h.update(b"start|");
             hash_typing_context(h, context);
             h.update(b"|");

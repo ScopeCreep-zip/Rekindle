@@ -76,7 +76,8 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         }
         DirectBody::Typing(t) => {
             if t.typing {
-                typing::started(host, dm_typing(sender), sender, TYPING_TTL_MS);
+                let name = typing::peer_name(host, sender);
+                typing::started(host, dm_typing(sender), sender, name, TYPING_TTL_MS);
             } else {
                 typing::stopped(host, &dm_typing(sender), sender);
             }
