@@ -13,7 +13,6 @@ mod outdent;
 mod passes;
 pub mod pieces;
 pub mod popup;
-mod rail;
 pub mod roles;
 mod triggers;
 pub mod validate;

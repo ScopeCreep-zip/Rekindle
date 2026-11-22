@@ -17,7 +17,13 @@
 //!
 //! * a key repeated in one section: the first occurrence wins (DoiDD
 //!   repeats ten, `DoiDD Skin.ini:80-81` `Window8.Y`); `PROFILE_Find`
-//!   returns the first matching key;
+//!   returns the first matching key. Two kinds Xfire reads every
+//!   occurrence of are kept, all of them, in file order: a layout position
+//!   key ([`position_key`]) and a trigger key (`Action.<event>`,
+//!   `<state>.Trigger`), each line one more trigger (Combat's
+//!   `[InfoViewSwitchIn]` `Action.click=GroupMessage(1)` then
+//!   `Action.click=LaunchSkin`, its own comment naming the order,
+//!   `combat.ini:803-806`);
 //! * a repeated section: the first wins and the later one's keys are never
 //!   seen. `PROFILE_Load` appends every header as its own section, no
 //!   merge, and `PROFILE_Find` "stops at the first matching section name"
@@ -208,7 +214,7 @@ pub fn parse(file: &str, bytes: &[u8]) -> Result<Ini, ImportError> {
         let (Dest::Last, Some(section)) = (&dest, sections.last_mut()) else {
             continue;
         };
-        if section.get(key).is_some() && !position_key(key) {
+        if section.get(key).is_some() && !position_key(key) && !super::title::is_trigger_key(key) {
             repeated.push(format!("[{}] {key} (line {n})", section.name));
             continue;
         }
@@ -241,6 +247,33 @@ fn position_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Combat's `[InfoViewSwitchIn]` runs both of its `Action.click` lines
+    /// (`combat.ini:803-806`): a repeated trigger key is kept, every line.
+    #[test]
+    fn a_repeated_trigger_key_keeps_every_line() {
+        let ini = parse(
+            "c.ini",
+            b"[S]\nAction.click=GroupMessage(1)\nAction.click=LaunchSkin\nGraphics.Trigger=A\nGraphics.Trigger=B\nK=1\nK=2\n",
+        )
+        .unwrap();
+        let kept: Vec<_> = ini.sections[0]
+            .entries
+            .iter()
+            .map(|e| (e.key.as_str(), e.value.as_str()))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                ("Action.click", "GroupMessage(1)"),
+                ("Action.click", "LaunchSkin"),
+                ("Graphics.Trigger", "A"),
+                ("Graphics.Trigger", "B"),
+                ("K", "1"),
+            ]
+        );
+        assert_eq!(ini.repeated, ["[S] K (line 7)"]);
+    }
 
     #[test]
     fn reads_sections_and_paths() {

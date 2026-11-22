@@ -17,7 +17,7 @@ use rekindle_types::dto::skin::{
     Insets, PopupAnchor, PopupEdge, PopupLayout, SkinError, SkinRule, WindowLayout,
 };
 use rekindle_types::dto::skin_action::SkinAction;
-use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
 
 use super::anchor::{axis, Sibs, Sizes, X, Y};
 use super::clip::{clip, Art, Images};
@@ -293,9 +293,17 @@ pub fn check(
             },
         ));
     }
+    let views: BTreeSet<NodeRole> = layout
+        .tree
+        .iter()
+        .flat_map(|t| t.boxes(0, 0))
+        .map(|(n, _)| n.role)
+        .filter(|r| matches!(r, NodeRole::View(_)))
+        .collect();
     for (name, popup) in &layout.popups {
         let at = format!("{field}.popups.{name}.tree");
-        super::validate::check(&at, &popup.tree, &frame(popup, layout.min_height), images)?;
+        let laid = frame(popup, layout.min_height);
+        super::validate::check_in(&at, &popup.tree, &laid, images, &views)?;
     }
     Ok(())
 }

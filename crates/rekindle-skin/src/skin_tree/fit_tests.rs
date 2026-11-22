@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::{Insets, SkinWindow, WindowLayout};
+use rekindle_types::dto::skin::{Insets, PopupAnchor, PopupEdge, SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_action::{NodeTrigger, SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{
     Anchor, LampKey, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
@@ -339,7 +339,10 @@ fn an_ini_repeated_position_key_is_kept() {
 /// popup tile `MainMenuPopup` (`components.xml:549-562`, `popups.xml:2-89`);
 /// the popup is the side rail, laid against the window, holding the menus,
 /// the tabs, the per-view button rows and the chat buttons; the button is
-/// its toggle.
+/// its toggle. The rail is a popup tree of its own (design §2.3, one layout
+/// model): it is laid only as the window's popup, never in its tree; the
+/// popup's box is the rail (like Classic's info popup, the popup tile is
+/// the popup window), its tree the tile's children.
 #[test]
 fn stealthxs_menu_button_launches_the_side_rail() {
     let main = parse(
@@ -355,7 +358,7 @@ fn stealthxs_menu_button_launches_the_side_rail() {
         "components.xml",
         br#"<Components>
 <Component Name="MainWindow" MinWidth="300" MinHeight="400"/>
-<Component Name="MenuButton" Class="SkinLauncher"><Images State="Normal"><Image Type="Middle">menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
+<Component Name="MenuButton" Class="SkinLauncher"><Triggers><Trigger Type="OnClick">LaunchSkin</Trigger></Triggers><Images State="Normal"><Image Type="Middle">menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
 <Component Name="MainMenuWindow" Class="Tile" DefaultWidth="114" MinWidth="114" MinHeight="360" BindX="false" BindY="true" ResizeY="100"/>
 <Component Name="MenuBackground" Class="Tile"><Images><Image Type="middle">ground-10x10</Image></Images></Component>
 <Component Name="MenuBar" Class="Tile" MinWidth="110" MinHeight="67"/>
@@ -395,37 +398,50 @@ fn stealthxs_menu_button_launches_the_side_rail() {
     )
     .unwrap();
     let tree = built.0.tree.unwrap();
-    let mut roles = Vec::new();
-    let mut stack: Vec<(&SkinNode, usize)> = tree.root.iter().rev().map(|n| (n, 0)).collect();
-    while let Some((n, d)) = stack.pop() {
-        roles.push((d, n.id.as_str(), n.role));
-        stack.extend(n.children.iter().rev().map(|c| (c, d + 1)));
-    }
-    let want = [
-        (0, "MenuButton", NodeRole::Button),
-        (0, "TabbedControl", NodeRole::Views),
-        (1, "BuddyView", NodeRole::View(ViewKey::Friends)),
-        (0, "MainMenuPopup", NodeRole::SideRail),
-        (1, "MainMenuBackground", NodeRole::Decor),
-        (2, "MenuBar", NodeRole::MenuBar),
-        (3, "XfireMenuText", NodeRole::MenuTitle),
-        (2, "TabHeader", NodeRole::TabStrip),
-        (3, "TabNormalText", NodeRole::Tab(ViewKey::Friends)),
-        (2, "ButtonArea", NodeRole::ButtonBar),
-        (3, "FriendsButtons", NodeRole::ButtonRow(ViewKey::Friends)),
-        (4, "AddFriendButton", NodeRole::Button),
-        (2, "InfoJoinChatTab", NodeRole::ButtonBar),
-        (3, "HostChatButton", NodeRole::Button),
-    ];
-    assert_eq!(roles, want);
-    let rail = tree.root.iter().find(|n| n.id == "MainMenuPopup").unwrap();
+    let depths = |root: &[SkinNode]| {
+        let mut roles = Vec::new();
+        let mut stack: Vec<(&SkinNode, usize)> = root.iter().rev().map(|n| (n, 0)).collect();
+        while let Some((n, d)) = stack.pop() {
+            roles.push((d, n.id.clone(), n.role));
+            stack.extend(n.children.iter().rev().map(|c| (c, d + 1)));
+        }
+        roles
+    };
+    let own = |w: &[(usize, &str, NodeRole)]| -> Vec<(usize, String, NodeRole)> {
+        w.iter()
+            .map(|(d, id, r)| (*d, (*id).to_owned(), *r))
+            .collect()
+    };
     assert_eq!(
-        (rail.x, rail.y),
+        depths(&tree.root),
+        own(&[
+            (0, "MenuButton", NodeRole::Button),
+            (0, "TabbedControl", NodeRole::Views),
+            (1, "BuddyView", NodeRole::View(ViewKey::Friends)),
+        ])
+    );
+    let rail = &built.0.popups["MainMenuPopup"];
+    let want = [
+        (0, "MainMenuBackground", NodeRole::Decor),
+        (1, "MenuBar", NodeRole::MenuBar),
+        (2, "XfireMenuText", NodeRole::MenuTitle),
+        (1, "TabHeader", NodeRole::TabStrip),
+        (2, "TabNormalText", NodeRole::Tab(ViewKey::Friends)),
+        (1, "ButtonArea", NodeRole::ButtonBar),
+        (2, "FriendsButtons", NodeRole::ButtonRow(ViewKey::Friends)),
+        (3, "AddFriendButton", NodeRole::Button),
+        (1, "InfoJoinChatTab", NodeRole::ButtonBar),
+        (2, "HostChatButton", NodeRole::Button),
+    ];
+    assert_eq!(depths(&rail.tree.root), own(&want));
+    assert_eq!(
+        (rail.anchor, rail.width, rail.y),
         (
-            NodeSpan::Fixed {
-                at: Anchor::Start(0),
-                size: 114
+            PopupAnchor {
+                edge: PopupEdge::Left,
+                offset: 0
             },
+            114,
             NodeSpan::Stretch { start: 29, end: 28 }
         )
     );

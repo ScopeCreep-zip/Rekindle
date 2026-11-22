@@ -281,6 +281,25 @@ pub fn check(
     layout: &WindowLayout,
     images: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(), SkinError> {
+    check_in(field, tree, layout, images, &BTreeSet::new())
+}
+
+/// [`check`] for a popup's tree, whose button rows switch the views of the
+/// window that launches it (`views`, that window's `View` roles): rule 8
+/// finds a row's view in either tree. StealthX's rail `MainMenuPopup`
+/// holds `FriendsButtons`/`ServersButtons`/`FilesButtons` (`popups.xml:24-60`)
+/// for the views of its window's `TabbedControl` (`mainwindow.xml`), and
+/// the rail is a popup tree of its own (design §2.3).
+///
+/// # Errors
+/// As [`check`].
+pub fn check_in(
+    field: &str,
+    tree: &SkinTree,
+    layout: &WindowLayout,
+    images: &BTreeMap<String, Vec<u8>>,
+    views: &BTreeSet<NodeRole>,
+) -> Result<(), SkinError> {
     let out = layout.outsets;
     let w = i32::from(layout.min_width) + i32::from(out.left) + i32::from(out.right);
     let h = i32::from(layout.min_height) + i32::from(out.top) + i32::from(out.bottom);
@@ -361,7 +380,8 @@ pub fn check(
     }
     for r in &roles {
         if let NodeRole::ButtonRow(v) = r {
-            if !roles.contains(&NodeRole::View(*v)) {
+            let view = NodeRole::View(*v);
+            if !roles.contains(&view) && !views.contains(&view) {
                 return Err(bad(field, "rule 8: a button row's view"));
             }
         }

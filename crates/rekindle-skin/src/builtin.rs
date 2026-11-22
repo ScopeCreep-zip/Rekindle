@@ -150,6 +150,7 @@ pub fn validated(skin_id: &str, opts: &HelperOpts) -> Result<Option<Canonical>, 
 mod tests {
     use super::*;
     use crate::validate;
+    use rekindle_types::dto::skin::{PopupEdge, SkinWindow};
 
     #[test]
     fn every_pack_is_canonical_and_the_default_is_one() {
@@ -207,5 +208,57 @@ mod tests {
             let m = crate::manifest::parse(&crate::package::read(pack.bytes).unwrap()).unwrap();
             assert!(!m.regions.is_empty(), "builtin:{} is colour-only", pack.id);
         }
+    }
+
+    /// The main window's popups of `pack`: name → (anchor edge, offset,
+    /// width, min width), and the names of the main tree's top-level nodes.
+    fn popups_of(
+        pack: &Builtin,
+    ) -> (
+        std::collections::BTreeMap<String, (PopupEdge, i16, u16, u16)>,
+        Vec<String>,
+    ) {
+        let m = crate::manifest::parse(&crate::package::read(pack.bytes).unwrap()).unwrap();
+        let main = &m.windows[&SkinWindow::Main];
+        let popups = main
+            .popups
+            .iter()
+            .map(|(n, p)| {
+                (
+                    n.clone(),
+                    (p.anchor.edge, p.anchor.offset, p.width, p.min_width),
+                )
+            })
+            .collect();
+        let top = main
+            .tree
+            .iter()
+            .flat_map(|t| t.root.iter().map(|n| n.id.clone()))
+            .collect();
+        (popups, top)
+    }
+
+    /// Plan SK2-P1d (design §2.3): every built-in's main window serves the
+    /// popups its tree launches; Symbiosis's info popup is 196 wide at
+    /// `X="MainWindow.Right-13"` (`Popups.xml:10`), Classic's 315 wide
+    /// (173 at its smallest) at `X="MainRightOuterEdge.RIGHT"`
+    /// (`xfirepopups.xml:2`), and StealthX's rail exists only as a popup.
+    #[test]
+    fn every_pack_serves_its_popups() {
+        for pack in &PACKS {
+            let (popups, _) = popups_of(pack);
+            assert!(!popups.is_empty(), "builtin:{} serves no popup", pack.id);
+        }
+        let pack = |id: &str| find(&format!("builtin:{id}")).unwrap().1;
+        let (sym, _) = popups_of(pack("symbiosis"));
+        assert_eq!(sym["MainInfoViewPopup"], (PopupEdge::Right, -13, 196, 196));
+        let (classic, _) = popups_of(pack("xfire-classic"));
+        assert_eq!(
+            classic["MainInfoViewPopup"],
+            (PopupEdge::Right, -13, 315, 173)
+        );
+        let (stealth, top) = popups_of(pack("stealthx"));
+        assert!(stealth.contains_key("MainMenuPopup"));
+        assert!(!top.iter().any(|n| n == "MainMenuPopup"), "{top:?}");
     }
 }

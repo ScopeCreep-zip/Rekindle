@@ -29,7 +29,6 @@ use super::clip::{clip, Art, Images};
 use super::fit::fit;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
-use super::rail;
 use super::roles::{check_grip, role, with_implied, Facts, Role};
 use super::triggers::{self, Pack};
 use crate::import::tree::Node;
@@ -455,60 +454,6 @@ impl Walk<'_> {
     }
 }
 
-/// `layout` with the side rail its components launch laid as its last
-/// top-level tile (StealthX's `MenuButton` `<Popup SaveState="1">
-/// MainMenuPopup</Popup>`, `components.xml:549-562`; the popup tile
-/// `MainMenuPopup` `Component="MainMenuWindow"` `JustX="LEFT" X="0"
-/// IndentTop="29" IndentBottom="28"`, `popups.xml:2`, is laid against the
-/// window it launches from, resized as its window component says
-/// (`MainMenuWindow` `BindY="true" ResizeY="100"`, `components.xml:815`:
-/// the rail runs from 29 px below the window's top to 28 px above its
-/// bottom, as the original shows); [`super::popup`] lays each popup.
-fn with_rail(layout: &Node, components: &[Node], by_name: &BTreeMap<String, &Node>) -> Node {
-    // Only the popups this window's own tiles launch: the chat window's
-    // `MenuButton` launches its own rail (`popups.xml:112-140`).
-    let launched: Vec<String> = crate::import::xfire_xml::descendants(layout, "Tile")
-        .into_iter()
-        .filter_map(|t| t.attr_ci("Component"))
-        .filter_map(|c| by_name.get(&c.to_ascii_lowercase()))
-        .flat_map(|c| c.children_named("Popup"))
-        .map(|p| p.text.trim().to_ascii_lowercase())
-        .collect();
-    let rail = |t: &&Node| {
-        let none = Facts {
-            has_art: false,
-            class: None,
-            children: &[],
-        };
-        let name = t.attr_ci("Name").unwrap_or_default();
-        launched.contains(&name.to_ascii_lowercase())
-            && role(name, t.attr_ci("Component"), None, &none)
-                == Some(Role::Shows(NodeRole::SideRail))
-    };
-    let mut laid = layout.clone();
-    laid.children.extend(
-        components
-            .iter()
-            .filter(|n| n.name.eq_ignore_ascii_case("Popups"))
-            .flat_map(|p| p.children_named("Tile"))
-            .filter(rail)
-            .map(|t| {
-                let mut t = t.clone();
-                let window = t
-                    .attr_ci("Component")
-                    .and_then(|c| by_name.get(&c.to_ascii_lowercase()));
-                for k in ["ResizeX", "ResizeY"] {
-                    let declared = window.and_then(|w| w.attr_ci(k)).map(str::to_owned);
-                    if let (None, Some(v)) = (t.attr_ci(k), declared) {
-                        t.attrs.insert(k.to_owned(), v);
-                    }
-                }
-                t
-            }),
-    );
-    laid
-}
-
 /// Adds the component tree `layout` (the window's layout file) lays to
 /// `built`, and makes its views node's box the content rectangle; `rows`
 /// are the tiles `built`'s frame is laid from (a row stack's, else none:
@@ -534,7 +479,6 @@ pub fn add(
             by_name.entry(name.to_ascii_lowercase()).or_insert(c);
         }
     }
-    let laid = with_rail(layout, components, &by_name);
     let popups = components
         .iter()
         .filter(|n| n.name.eq_ignore_ascii_case("Popups"))
@@ -566,7 +510,7 @@ pub fn add(
             bottom: 0,
             left: 0,
         },
-        root: walk.walk(&laid, None, &Sibs::new(), &[])?,
+        root: walk.walk(layout, None, &Sibs::new(), &[])?,
     };
     tab_views(&mut tree.root);
     pages(&mut tree.root, &walk.groups);
@@ -587,7 +531,6 @@ pub fn add(
         limit_of(declared, "MinHeight").unwrap_or(0),
     );
     fit(&mut tree, pack_min, rows, &mut built.0)?;
-    rail::lay(walk.window, &tree, (&laid, &walk.by_name), &piece, built)?;
     if tree
         .boxes(0, 0)
         .iter()
@@ -597,7 +540,10 @@ pub fn add(
             bad("the views node is not a box inset from the frame on all four sides")
         })?;
     }
-    super::popup::add(&walk, (&laid, components), &tree, built)?;
+    // A side rail is a popup like any other (design §2.3): StealthX's
+    // `MainMenuPopup` is laid here from the `MenuButton`'s `LaunchPopup`,
+    // never in the window's own tree.
+    super::popup::add(&walk, (layout, components), &tree, built)?;
     built.1.extend(walk.files);
     built.0.tree = Some(tree);
     Ok(())

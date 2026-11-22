@@ -1,21 +1,22 @@
-//! Plan SK2 lead decision 15: the side rail's nine-piece ground laid as
-//! decoration tiles, so the silhouette holds the rail.
+//! Plan SK2 design §2.3 (one layout model, superseding lead decision 15's
+//! frame decoration): the side rail is a popup tree, and its nine-piece
+//! ground is its own node's art in that tree, never the window's frame.
 
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::SkinWindow;
+use rekindle_types::dto::skin_tree::NodeRole;
 
 use super::import;
 use super::test_support::{frame, piece};
 use crate::import::tree::parse;
 
-/// Plan SK2 lead decision 15: StealthX's rail is in the silhouette. Its
+/// Plan SK2 design §2.3: StealthX's rail exists only as a popup. Its
 /// ground `MainMenuBackground` (`Component="MenuBackground"`, a nine-piece
-/// set, `components.xml:26-40`) is laid over the rail's box (x 0, 114 wide,
-/// 29 px below the top to 28 px above the bottom) as three decoration tiles
-/// in the whole window: the top row, the middle band repeated, the bottom.
+/// set, `components.xml:26-40`) is that popup tree's node, carrying all
+/// nine pieces as its art; the window lays no rail tile and no rail node.
 #[test]
-fn stealthxs_rail_ground_is_laid_as_decoration() {
+fn stealthxs_rail_exists_only_as_a_popup() {
     let main = parse(
         "main.xml",
         br#"<Tile Name="W" ResizeX="100" ResizeY="100" Component="MainWindow">
@@ -40,7 +41,7 @@ fn stealthxs_rail_ground_is_laid_as_decoration() {
         format!(
             r#"<Components>
 <Component Name="MainWindow" MinWidth="300" MinHeight="400"/>
-<Component Name="MenuButton" Class="SkinLauncher"><Images State="Normal"><Image Type="Middle">menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
+<Component Name="MenuButton" Class="SkinLauncher"><Triggers><Trigger Type="OnClick">LaunchSkin</Trigger></Triggers><Images State="Normal"><Image Type="Middle">menu-20x60</Image></Images><Popup SaveState="1">MainMenuPopup</Popup></Component>
 <Component Name="MainMenuWindow" Class="Tile" DefaultWidth="114" MinWidth="114" MinHeight="360" BindX="false" BindY="true" ResizeY="100"/>
 <Component Name="MenuBackground" Class="Tile"><Images>{images}</Images></Component>
 </Components>"#
@@ -64,57 +65,29 @@ fn stealthxs_rail_ground_is_laid_as_decoration() {
         &mut built,
     )
     .unwrap();
-    use rekindle_types::dto::skin::TileAxis::{End, Repeat, Start};
-    let got: Vec<_> = built
-        .0
-        .tiles
-        .iter()
-        .map(|t| {
-            (
-                t.image.as_str(),
-                t.width,
-                t.height,
-                t.x,
-                t.y,
-                t.overhang,
-                t.decoration,
-            )
-        })
-        .collect();
-    let at = Start { offset: 0 };
-    assert_eq!(
-        got,
-        [
-            (
-                "assets/frame/main/rail-top.png",
-                114,
-                6,
-                at,
-                Start { offset: 29 },
-                true,
-                Some(50)
-            ),
-            (
-                "assets/frame/main/rail-middle.png",
-                114,
-                408,
-                at,
-                Repeat { start: 35, end: 35 },
-                true,
-                Some(50)
-            ),
-            (
-                "assets/frame/main/rail-bottom.png",
-                114,
-                7,
-                at,
-                End { offset: 28 },
-                true,
-                Some(50)
-            ),
-        ]
+    assert!(
+        built.0.tiles.iter().all(|t| !t.image.contains("rail")),
+        "no rail frame tile"
     );
-    for t in &built.0.tiles {
-        assert!(built.1.contains_key(&t.image), "{} has its PNG", t.image);
+    let tree = built.0.tree.as_ref().unwrap();
+    assert!(tree
+        .boxes(0, 0)
+        .iter()
+        .all(|(n, _)| n.role != NodeRole::SideRail && n.id != "MainMenuBackground"));
+    let rail = &built.0.popups["MainMenuPopup"];
+    // The popup's box is the rail; its tree is the rail tile's children.
+    assert_eq!(rail.tree.root.len(), 1);
+    assert_eq!(rail.tree.root[0].id, "MainMenuBackground");
+    let ground = rail
+        .tree
+        .boxes(0, 0)
+        .into_iter()
+        .find(|(n, _)| n.id == "MainMenuBackground")
+        .map(|(n, _)| n)
+        .unwrap();
+    let art = ground.art.as_ref().expect("the ground's nine pieces");
+    assert_eq!(art.normal.len(), 9);
+    for p in art.normal.values() {
+        assert!(built.1.contains_key(&p.image), "{} has its PNG", p.image);
     }
 }

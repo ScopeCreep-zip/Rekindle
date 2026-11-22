@@ -268,7 +268,9 @@ fn named(k: &str, f: &Facts<'_>) -> Option<Role> {
         // popup (`LaunchSkin` + `<Popup>`); a pack link opens the pack's
         // URL (`AppLaunchUrl`): both from the pack's own triggers.
         k if info_toggle(k) => Some(Role::Acts(R::Button, None)),
-        "menubutton" | "tclink" => Some(Role::Acts(R::Button, None)),
+        // XGlow's popup `[Voice]` runs the pack's `Action.click=AppVoiceChat`
+        // (`XGlowInfoSkin.ini:168-181`).
+        "menubutton" | "tclink" | "voice" => Some(Role::Acts(R::Button, None)),
         "systemmenu" => Some(acts(
             R::Button,
             SkinEvent::LeftDown,
@@ -276,13 +278,13 @@ fn named(k: &str, f: &Facts<'_>) -> Option<Role> {
         )),
         // The info popup's join button: the selected friend's game
         // (Classic's `InfoJoinGameButton`, Space Cowboy's and Onyx's
-        // `JoinButton`, Total Chaos's `InfoJoinButton`).
-        "joinbutton" | "infojoingamebutton" | "infojoinbutton" | "joingamebutton" => {
+        // `JoinButton`, Total Chaos's `InfoJoinButton`, XGlow's `[Join]`
+        // `Class=PushButton` with `Graphics.Trigger=AppCanJoin`,
+        // `XGlowInfoSkin.ini:185-189`; its main window's `[Join]` is a
+        // `Class=TabControl`, `Xglow.ini:616-618`, laid as a tab control above).
+        "joinbutton" | "infojoingamebutton" | "infojoinbutton" | "joingamebutton" | "join" => {
             Some(click(A::JoinFriend))
         }
-        // XGlow's popup `[Voice]` runs the pack's `Action.click=AppVoiceChat`
-        // (`XGlowInfoSkin.ini:168-181`).
-        "voice" => Some(Role::Acts(R::Button, None)),
         "adddownloadtab" => Some(click(A::AddFriend)),
         "chatrefreshstoptab" => Some(click(A::ChatFriend)),
         "joinplaytab" => Some(click(A::JoinFriend)),
@@ -377,8 +379,10 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         "gamelogo" => Some(R::GameLogo),
         // The popup's info pane (Space Cowboy's, Total Chaos's and Onyx's
         // `InfoView` component, StealthX's `InfoViewTile`; Classic's
-        // `InfoInfoView` component on its `InfoView` tile).
-        "infoview" | "infoviewtile" => Some(R::InfoView),
+        // `InfoInfoView` component on its `InfoView` tile; Symbiosis's
+        // `MainInfoViewContent` component, `Class="InfoView"`,
+        // `Components/Popups.xml:83`, on its `MainInfoContent` tile).
+        "infoview" | "infoviewtile" | "maininfoviewcontent" => Some(R::InfoView),
         "topbuttonbar"
         | "baseboard"
         | "buttonarea"
