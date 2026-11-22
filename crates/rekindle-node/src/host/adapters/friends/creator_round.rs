@@ -6,6 +6,13 @@
 //! shown per co-creator; a join link for an invite we accepted joins
 //! through the normal join path. A frame naming nothing of ours is refused
 //! with a warning, never applied.
+//!
+//! Lead decision (56): a frame's long-running consequence (the join, or
+//! the finish a last answer starts) runs as its own task on the unlock
+//! scope (cancelled at lock), never on the per-peer apply path: the DM
+//! chain's diff applies one peer's entries in order
+//! (`rekindle_sync::stream::StreamEngine::claim`), so an inline join held
+//! every later frame from that friend until it ended.
 
 use std::sync::Arc;
 
@@ -101,7 +108,14 @@ pub(super) async fn apply(host: &HostFriends, sender: &str, frame: CreatorFrame)
                 })
                 .await;
             match taken {
-                Ok(Some(_)) => join(host, &anchor, &invite).await,
+                // The row is the anchor's one (its key is the anchor) and is
+                // taken once: one join task per anchor.
+                Ok(Some(_)) => {
+                    let ctx = Arc::clone(&host.ctx);
+                    spawn(host, "co-creator join", async move {
+                        join(ctx, &anchor, &invite).await;
+                    });
+                }
                 Ok(None) => {
                     tracing::warn!(anchor = %anchor, from = %sender, "CreatorJoin for no accepted invite refused");
                 }
@@ -146,8 +160,13 @@ async fn answer(
                 &anchor,
                 if accepted { "accepted" } else { "declined" },
             );
+            // The last answer finishes the creation (its genesis writes):
+            // its own task, so the next frame from this friend is not held.
             let governance = HostGovernance::new(Arc::clone(&host.ctx));
-            Box::pin(governance.co_creator_settled(&anchor, sender)).await;
+            let peer = sender.to_owned();
+            spawn(host, "co-creation finish", async move {
+                Box::pin(governance.co_creator_settled(&anchor, &peer)).await;
+            });
             true
         }
         Ok(false) => {
@@ -161,9 +180,20 @@ async fn answer(
     }
 }
 
+/// Run `task` on the unlock scope (lead decision (56)): it ends with the
+/// session, and a locked Host starts nothing.
+fn spawn<F>(host: &HostFriends, name: &'static str, task: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    if let Err(closed) = host.ctx.unlock_scope_or_closed().spawn(name, task) {
+        tracing::warn!(error = %closed, "creator-round task not started: the session ended");
+    }
+}
+
 /// Join `anchor` with the creator's link (decision (17)): the normal join
 /// path, so we count as a member only after our own `MemberJoined`.
-async fn join(host: &HostFriends, anchor: &str, invite: &str) {
+async fn join(ctx: Arc<crate::daemon::dispatch::DaemonContext>, anchor: &str, invite: &str) {
     let link = match InviteLink::parse(invite) {
         Ok(link) if link.anchor.as_str() == anchor => link,
         _ => {
@@ -171,7 +201,7 @@ async fn join(host: &HostFriends, anchor: &str, invite: &str) {
             return;
         }
     };
-    let governance = HostGovernance::new(Arc::clone(&host.ctx));
+    let governance = HostGovernance::new(ctx);
     match Box::pin(governance.join(&link)).await {
         Ok(_) => governance.activate_created(anchor).await,
         Err(e) => tracing::warn!(community = %anchor, error = ?e, "co-creator join failed"),

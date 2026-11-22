@@ -381,3 +381,32 @@ async fn a_second_co_creation_after_a_completed_one_reaches_the_same_friend() {
         "Bob joins the first through his link"
     );
 }
+
+/// Lead decision (56): a frame's long-running consequence never holds the
+/// next frame from the same friend. Ann's `CreatorJoin` for the first
+/// co-creation starts Bob's join (many DHT round trips); Ann's next
+/// `CreatorInvite`, on the same chain right behind it, is held and shown
+/// while that join still runs, not after it (live CC2: ~18 s behind).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_second_creator_frame_is_applied_while_the_first_join_runs() {
+    let (sim, nodes) = friends_of_zero(2, 9307).await;
+    let (ann, bob) = (&nodes[0], &nodes[1]);
+    let (ann_seen, bob_seen) = (ann.events().await, bob.events().await);
+    let first = create_with(ann, &[bob]).await;
+    assert!(eventually(&sim, LIMIT, || async { invited(&bob_seen, &first) }).await);
+    answer(bob, &first, true).await;
+    assert!(
+        eventually(&sim, LIMIT, || async { finished(&ann_seen, &first, true) }).await,
+        "the first co-creation finishes"
+    );
+    let second = create_named(ann, "Co2", &[bob]).await;
+    assert!(
+        eventually(&sim, LIMIT, || async { invited(&bob_seen, &second) }).await,
+        "Bob hears the second invite"
+    );
+    assert!(
+        !arrived(&bob_seen, &first),
+        "the second invite is applied while Bob's join of the first still runs"
+    );
+    listed_as_direct(&sim, bob, &bob_seen, &first).await;
+}
