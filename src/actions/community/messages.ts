@@ -333,9 +333,10 @@ export async function handleGetChannelPins(
 export async function handleSendChannelTyping(
   communityId: string,
   channelId: string,
+  typing: boolean,
 ): Promise<void> {
   try {
-    await commands.sendChannelTyping(communityId, channelId);
+    await commands.sendChannelTyping(communityId, channelId, typing);
   } catch {
     // Typing indicators are ephemeral — silently ignore failures
   }

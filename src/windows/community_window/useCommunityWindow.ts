@@ -91,15 +91,13 @@ export function useCommunityWindow() {
     }
   });
 
-  // Typing indicator debounce
-  let typingTimeout: number | undefined;
-  function handleTyping(): void {
+  // Our typing, per composer edit (plan E3.4 S9): the Host re-sends,
+  // throttles and stops it, and ends it when the message goes out.
+  function handleDraftChanged(body: string): void {
     const communityId = selectedCommunityId();
     const channelId = selectedChannelId();
     if (!communityId || !channelId) return;
-    if (typingTimeout) return;
-    handleSendChannelTyping(communityId, channelId);
-    typingTimeout = window.setTimeout(() => { typingTimeout = undefined; }, 3000);
+    void handleSendChannelTyping(communityId, channelId, body.trim().length > 0);
   }
 
   function handleSelectCommunity(id: string) {
@@ -320,7 +318,7 @@ export function useCommunityWindow() {
 
   return {
     ...s,
-    handleTyping, handleSelectCommunity, handleSelectChannel, handleTogglePins,
+    handleDraftChanged, handleSelectCommunity, handleSelectChannel, handleTogglePins,
     handleToggleThreadList, handleToggleMembers, handleOpenThread, handleCloseThread,
     handleArchiveActiveThread, openCreateThreadModal, handleSubmitCreateThread,
     handleLoadOlder, handleReply, handleChannelSend, channelHeaderIcon, handleJumpToMessage,
