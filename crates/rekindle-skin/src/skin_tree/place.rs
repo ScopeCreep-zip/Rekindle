@@ -469,8 +469,8 @@ pub fn communities(layout: &mut WindowLayout) {
         fit_placed(
             layout,
             i.checked_sub(1).map(|p| keys[p].as_str()),
-            id,
-            packed,
+            id.as_deref(),
+            packed.as_deref(),
         );
         return;
     }
@@ -498,8 +498,8 @@ pub fn communities(layout: &mut WindowLayout) {
 fn fit_placed(
     layout: &mut WindowLayout,
     popup: Option<&str>,
-    id: Option<String>,
-    packed: Option<String>,
+    id: Option<&str>,
+    packed: Option<&str>,
 ) {
     let out = layout.outsets;
     let (tree, w, h, insets) = match popup.and_then(|k| layout.popups.get_mut(k)) {
@@ -515,7 +515,7 @@ fn fit_placed(
     let w = i32::from(w) + i32::from(insets.left) + i32::from(insets.right);
     let h = i32::from(h) + i32::from(insets.top) + i32::from(insets.bottom);
     let mut run = 0;
-    for id in packed.iter().chain(id.iter()) {
+    for id in packed.into_iter().chain(id) {
         run += fit(tree, w, h, id);
     }
     if popup.is_none() {
