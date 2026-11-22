@@ -93,6 +93,7 @@ impl App {
                 }
             }
             Action::ToggleHelp => self.nav.toggle_help(),
+            // A view answers Refresh with the action that reloads it.
             Action::Refresh => {
                 if let Some(chained) = self.nav.current_view_mut().update(Action::Refresh)? {
                     let _ = self.action_tx.send(chained);

@@ -61,6 +61,43 @@ fn loaded() -> FriendListView {
     view
 }
 
+/// A key as the TUI delivers it: the global keymap's action into the
+/// view's `update`, or, when the keymap leaves it, the view's own handler.
+fn drive(view: &mut FriendListView, code: KeyCode) -> Option<Action> {
+    let key = KeyEvent::new(code, KeyModifiers::NONE);
+    let keymap = crate::keybinds::KeymapStore::load().unwrap();
+    match keymap.classify(key, crate::keybinds::KeymapContext::Default) {
+        Some(action) => view.update(action).unwrap(),
+        None => view.handle_focused_key(key),
+    }
+}
+
+#[test]
+fn enter_opens_the_selected_friends_dm() {
+    let mut view = loaded();
+    assert!(matches!(
+        drive(&mut view, KeyCode::Enter),
+        Some(Action::ShowDmThread { peer_key }) if peer_key == "alice"
+    ));
+}
+
+#[test]
+fn x_rejects_the_selected_request_and_r_still_refreshes() {
+    let mut view = loaded();
+    // Online(2) alice carol, Offline(1) bob, then frank's request.
+    for _ in 0..3 {
+        drive(&mut view, KeyCode::Char('j'));
+    }
+    assert!(matches!(
+        drive(&mut view, KeyCode::Char('x')),
+        Some(Action::RejectFriendRequest(key)) if key == "frank"
+    ));
+    assert!(matches!(
+        drive(&mut view, KeyCode::Char('r')),
+        Some(Action::ShowFriendList)
+    ));
+}
+
 fn press(view: &mut FriendListView, c: char) -> Option<Action> {
     view.handle_focused_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE))
 }

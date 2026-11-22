@@ -16,7 +16,7 @@
 //! │   ● [ONLINE] alice                                        │
 //! │ Offline (12)                                              │
 //! │   ○ [OFFLINE] dave  last seen: 2h ago                     │
-//! │ Pending Requests (2)        [a]ccept [r]eject [b]lock     │
+//! │ Pending Requests (2)        [a]ccept [x] reject [b]lock   │
 //! │   ← frank (ab12…cd34)                                     │
 //! │ Blocked (1)                 [u]nblock                     │
 //! │   ✕ mallory                                               │
@@ -202,7 +202,7 @@ impl FriendListView {
             (
                 "Pending Requests",
                 self.requests.len(),
-                "[a]ccept [r]eject [b]lock",
+                "[a]ccept [x] reject [b]lock",
                 Row::Request,
             ),
             ("Blocked", self.blocked.len(), "[u]nblock", Row::Blocked),
@@ -427,6 +427,17 @@ impl View for FriendListView {
                 let last = self.rows.len().saturating_sub(1);
                 self.list_state.select(self.entry_from(last, false));
             }
+            // Enter (the keymap's Select) opens the selected friend's DM.
+            Action::Select => {
+                return Ok(match self.selected() {
+                    Some(Selected::Friend(f)) => Some(Action::ShowDmThread {
+                        peer_key: f.public_key.clone(),
+                    }),
+                    _ => None,
+                });
+            }
+            // `r` (the keymap's Refresh) re-reads the Host's list.
+            Action::Refresh => return Ok(Some(Action::ShowFriendList)),
             _ => {}
         }
         Ok(None)
@@ -469,12 +480,6 @@ impl View for FriendListView {
                 self.step(false);
                 None
             }
-            KeyCode::Enter => match self.selected()? {
-                Selected::Friend(f) => Some(Action::ShowDmThread {
-                    peer_key: f.public_key.clone(),
-                }),
-                _ => None,
-            },
             // Join the selected friend's game (plan E7.15 IV3).
             KeyCode::Char('J') => match self.selected()? {
                 Selected::Friend(f) => Some(join_game(f)),
@@ -494,7 +499,8 @@ impl View for FriendListView {
                 }),
                 _ => None,
             },
-            KeyCode::Char('r') => match self.selected()? {
+            // `x`, not `r`: the keymap takes `r` for Refresh.
+            KeyCode::Char('x') => match self.selected()? {
                 Selected::Request(r) => Some(Action::RejectFriendRequest(r.public_key.clone())),
                 _ => None,
             },
