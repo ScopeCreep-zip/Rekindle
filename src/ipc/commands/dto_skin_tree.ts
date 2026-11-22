@@ -322,6 +322,8 @@ export interface MenuRegistry {
 
 export interface SkinShell {
   window: "main" | "chat";
+  /** The popup this outline is (its frame carries `data-skin-popup`), else the window's own tree. */
+  popup?: string;
   root: ShellNode[];
   /** The items of every engine menu the shell's buttons open. */
   menus: MenuRegistry;
