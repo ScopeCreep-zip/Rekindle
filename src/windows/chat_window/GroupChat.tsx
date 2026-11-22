@@ -44,9 +44,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
   const messages = createMemo(() => groupDmState.conversations[groupId]?.messages ?? []);
   const typingNames = createMemo(() => {
     const typing = groupDmState.conversations[groupId]?.typing ?? {};
-    return Object.keys(typing)
-      .filter((k) => typing[k])
-      .map((k) => memberNames()[k] ?? k.slice(0, 12));
+    return Object.values(typing).filter((name): name is string => !!name);
   });
 
   // Stored history is in: from here on, new messages are announced (§13b).

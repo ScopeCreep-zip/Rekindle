@@ -119,7 +119,8 @@ export type GroupDmEvent =
   | { historyGap: { groupId: string; member: GroupDmMember; throughSeq: number } };
 
 export type TypingEvent =
-  | { started: { context: TypingContext; who: string } }
+  // `name`: the typist as the Host names them (your nickname, else their name, else fingerprint).
+  | { started: { context: TypingContext; who: string; name: string } }
   | { stopped: { context: TypingContext; who: string } };
 
 export type FriendEvent =

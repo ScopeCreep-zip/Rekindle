@@ -3,10 +3,10 @@ import type { GroupDmView } from "../ipc/commands";
 import type { Message } from "./chat.store";
 
 /** One group's chat window state: its stored history and who is typing
- *  (member key → typing), as the backend reports them. */
+ *  (member key → the Host's name for them while typing, null once stopped). */
 export interface GroupConversation {
   messages: Message[];
-  typing: Record<string, boolean>;
+  typing: Record<string, string | null>;
 }
 
 /** Group DMs (plan E2.6): the groups and pending invites the Host lists,
