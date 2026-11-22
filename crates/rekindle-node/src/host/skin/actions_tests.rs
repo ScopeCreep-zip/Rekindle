@@ -13,14 +13,14 @@ use super::rooms::{Room, Rooms};
 const SELECTED_FRIEND_KEY: &str = "bobkey";
 
 fn run(action: &A) -> SkinRun {
-    match map(action, Some(SELECTED_FRIEND_KEY), &Rooms::default()) {
+    match map(action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default()) {
         Ok(Mapped::Run(r)) => r,
         other => panic!("{action:?}: {other:?}"),
     }
 }
 
 fn request(action: &A) -> IpcRequest {
-    match map(action, Some(SELECTED_FRIEND_KEY), &Rooms::default()) {
+    match map(action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default()) {
         Ok(Mapped::Request(r)) => *r,
         other => panic!("{action:?}: {other:?}"),
     }
@@ -107,19 +107,13 @@ fn shell_actions_yield_their_operation_on_the_selected_friend() {
 
 #[test]
 fn a_selection_action_is_refused_while_nothing_is_selected() {
-    let refused = map(&A::ChatFriend, None, &Rooms::default()).expect_err("no selection");
+    let refused = map(&A::ChatFriend, None, None, &Rooms::default()).expect_err("no selection");
     assert!(matches!(refused, IpcResponse::Error { code: 409, .. }));
 }
 
 #[test]
 fn gap_actions_yield_not_built_yet() {
-    for action in [
-        A::JoinFriend,
-        A::AddServer,
-        A::StartDownload,
-        A::InviteUsersToRoom,
-        A::SearchFor,
-    ] {
+    for action in [A::JoinFriend, A::AddServer, A::InviteUsersToRoom, A::SearchFor] {
         assert_eq!(
             run(&action),
             SkinRun::NotBuiltYet {
@@ -170,7 +164,7 @@ fn resolve_takes_the_selection_from_the_host() {
 }
 
 fn room(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
-    map(action, friend, rooms)
+    map(action, friend, None, rooms)
 }
 
 #[test]
@@ -218,4 +212,37 @@ fn room_actions_reach_their_group_dm_ops() {
         ));
     }
     assert!(room(&A::EnterAttachedRoom, None, &pending).is_err());
+}
+
+/// The Downloads actions (plan E7.2 G12) reach the transfer requests on
+/// the window's selected transfer, and are refused without one.
+#[test]
+fn each_download_action_reaches_its_transfer_request() {
+    use rekindle_ipc::protocol::TransferRequest as T;
+    let id = "0123456789abcdef0123456789abcdef";
+    let reached = |action: &A| match map(action, None, Some(id), &Rooms::default()) {
+        Ok(Mapped::Request(r)) => match *r {
+            IpcRequest::Transfer(t) => t.name(),
+            other => panic!("{action:?} reached {}", other.name()),
+        },
+        other => panic!("{action:?} mapped to {other:?}"),
+    };
+    assert_eq!(reached(&A::StartDownload), "TransferStart");
+    assert_eq!(reached(&A::StopDownload), "TransferStop");
+    assert_eq!(reached(&A::OpenDownload), "TransferOpen");
+    assert_eq!(reached(&A::DownloadInfo), "TransferList");
+    let Ok(Mapped::Request(stop)) = map(&A::StopDownload, None, Some(id), &Rooms::default()) else {
+        unreachable!()
+    };
+    assert!(matches!(
+        *stop,
+        IpcRequest::Transfer(T::TransferStop { ref attachment_id }) if attachment_id == id
+    ));
+    for action in [A::StartDownload, A::StopDownload, A::OpenDownload] {
+        let refused = map(&action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default()).expect_err("no transfer");
+        assert!(
+            matches!(refused, IpcResponse::Error { code: 409, .. }),
+            "{action:?}"
+        );
+    }
 }

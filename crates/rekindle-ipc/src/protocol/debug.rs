@@ -125,6 +125,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::IdentityMarkVerified { .. }
             | Self::IdentityClearVerification { .. } => self.fmt_friend(f),
             Self::Community(request) => std::fmt::Debug::fmt(request, f),
+            Self::Transfer(request) => std::fmt::Debug::fmt(request, f),
             Self::DmTyping { .. }
             | Self::DmInbox { .. }
             | Self::DmHistory { .. }

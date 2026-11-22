@@ -31,6 +31,18 @@ fn reject(label: &str, e: &KeyFormatError) -> IpcResponse {
     IpcResponse::error(400, format!("invalid {label}: {e}"))
 }
 
+/// An attachment id: 32 lowercase hex digits (a UUID's bytes).
+fn attachment_id(s: &str) -> Checked {
+    if s.len() == 32 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        Ok(())
+    } else {
+        Err(IpcResponse::error(
+            400,
+            "invalid attachment id: 32 lowercase hex digits",
+        ))
+    }
+}
+
 fn public_key(s: &str, label: &str) -> Checked {
     key_format::public_key_hex(s)
         .map(drop)
@@ -469,6 +481,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
         IpcRequest::Community(request) => community::check(request),
+        IpcRequest::Transfer(request) => request.attachment_id().map_or(Ok(()), attachment_id),
 
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }

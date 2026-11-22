@@ -145,6 +145,7 @@ impl IpcRequest {
             | Self::IdentityRotationDecline { .. }
             | Self::SessionResetDecline { .. } => Some(C::FriendsWrite),
             Self::Community(request) => request.agent_capability(),
+            Self::Transfer(request) => request.agent_capability(),
             Self::DmInbox { .. }
             | Self::DmHistory { .. }
             | Self::GroupDmList

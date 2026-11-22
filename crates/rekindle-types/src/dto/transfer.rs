@@ -93,3 +93,12 @@ pub struct TransferRow {
     pub started_at: i64,
     pub finished_at: Option<i64>,
 }
+
+/// `TransferOpen`'s answer: the finished file the shell reveals in the OS
+/// file manager (`reveal_item_in_dir`). Nothing is ever opened or executed
+/// (`docs/architecture/files.md`, "Show in folder"; threat model).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferReveal {
+    pub path: String,
+}

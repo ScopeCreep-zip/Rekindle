@@ -23,7 +23,7 @@ use rekindle_types::subscription_events::{
     TypingEvent, VoiceEvent,
 };
 
-use super::capability::{allows, Group, Selected, SkinWorld, Transfer};
+use super::capability::{allows, Group, Selected, SkinWorld};
 use crate::daemon::dispatch::DaemonContext;
 
 /// A call the Host has seen on its stream, by call id.
@@ -50,8 +50,6 @@ pub(crate) struct Inputs {
     self_muted: bool,
     disconnected: bool,
     unseen_notification: BTreeSet<String>,
-    /// The downloads the Host ran, by attachment id.
-    transfers: BTreeMap<String, Transfer>,
 }
 
 impl Inputs {
@@ -85,15 +83,6 @@ impl Inputs {
 
     pub(crate) fn self_muted(&self) -> bool {
         self.self_muted
-    }
-
-    /// A download's state, by attachment id.
-    pub(crate) fn transfer(&self, attachment_id: &str) -> Option<&Transfer> {
-        self.transfers.get(attachment_id)
-    }
-
-    pub(crate) fn set_transfer(&mut self, attachment_id: &str, transfer: Transfer) {
-        self.transfers.insert(attachment_id.to_owned(), transfer);
     }
 
     /// Fold one event; `false` when it cannot change any window's set.
@@ -132,7 +121,10 @@ impl Inputs {
                     .collect();
                 true
             }
-            SubscriptionEvent::Presence(_) | SubscriptionEvent::Friend(_) => true,
+            // A transfer's state is read from `transfers` (`load_world`).
+            SubscriptionEvent::Presence(_)
+            | SubscriptionEvent::Friend(_)
+            | SubscriptionEvent::Transfer(_) => true,
             _ => false,
         }
     }
@@ -276,7 +268,7 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
     let now = ctx.clock.now_ms_i64();
     let read = db
         .call(move |conn| {
-            use rekindle_db::repo::{favourite_servers, group_dm_invites, group_dms};
+            use rekindle_db::repo::{favourite_servers, group_dm_invites, group_dms, transfers};
             let favourites = favourite_servers::list(conn, &owner)?;
             let groups = group_dms::list(conn, &owner)?;
             let invites = group_dm_invites::list(conn, &owner, now)?;
@@ -295,14 +287,19 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
                 .map(|f| (f.game_id, f.address))
                 .collect();
             let groups: BTreeMap<String, Group> = pending.chain(joined).collect();
-            Ok((favourites, groups, attached))
+            let transfers: BTreeMap<String, _> = transfers::list(conn, &owner)?
+                .into_iter()
+                .map(|t| (t.attachment_id.clone(), t))
+                .collect();
+            Ok((favourites, groups, attached, transfers))
         })
         .await;
     match read {
-        Ok((favourites, groups, attached)) => {
+        Ok((favourites, groups, attached, transfers)) => {
             world.favourites = favourites;
             world.groups = groups;
             world.attached = attached;
+            world.transfers = transfers;
         }
         Err(e) => tracing::warn!(error = %e, "skin signals: database state unread"),
     }
@@ -322,12 +319,6 @@ impl SignalState {
     /// A selection or the focus changed: recompute.
     pub(crate) fn poke(&self) {
         self.poke.notify_one();
-    }
-
-    /// A download's state changed (`AttachmentDownload`).
-    pub(crate) fn set_transfer(&self, attachment_id: &str, transfer: Transfer) {
-        self.inputs.lock().set_transfer(attachment_id, transfer);
-        self.poke();
     }
 
     /// The shell's window focus (`Host::skin_window_focused`).

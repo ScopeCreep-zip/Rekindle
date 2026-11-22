@@ -6,7 +6,9 @@ use std::path::PathBuf;
 use rekindle_types::dto::skin_action::Capability as C;
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserStatus};
 
-use super::capability::{allows, Group, Selected, SkinWorld, Transfer};
+use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
+
+use super::capability::{allows, Group, Selected, SkinWorld};
 use super::signals::Inputs;
 
 /// Team Fortress 2: a connect template.
@@ -82,26 +84,54 @@ fn add_server_unless_a_favourite_and_refresh_a_known_server() {
     assert!(can(C::RefreshServer, &i, &w, Selected::Nothing));
 }
 
+fn transfer(state: TransferState, dest: &std::path::Path) -> TransferRow {
+    TransferRow {
+        attachment_id: "a1".into(),
+        target: TransferTarget::Channel {
+            community: "c".into(),
+            channel_id: "ch".into(),
+        },
+        state,
+        chunks_done: 0,
+        chunk_count: 0,
+        bytes_done: 0,
+        total: 0,
+        dest_name: "saved".into(),
+        dest_path: dest.to_string_lossy().into_owned(),
+        started_at: 0,
+        finished_at: None,
+    }
+}
+
+/// The capabilities follow the `transfers` row (plan E7.2 G12), not a
+/// mark kept beside it.
 #[test]
 fn downloads_follow_the_selected_transfer_state() {
-    let mut i = Inputs::default();
-    let w = SkinWorld::default();
+    let i = Inputs::default();
+    let mut w = SkinWorld::default();
     let t = Selected::Transfer {
         attachment_id: "a1",
     };
-    let state = |i: &Inputs| {
-        [C::StartDownload, C::StopDownload, C::ExecuteDownload].map(|c| can(c, i, &w, t))
+    let state = |w: &SkinWorld| {
+        [C::StartDownload, C::StopDownload, C::ExecuteDownload].map(|c| can(c, &i, w, t))
     };
-    assert_eq!(state(&i), [true, false, false], "offered, not fetched");
-    i.set_transfer("a1", Transfer::Active);
-    assert_eq!(state(&i), [false, true, false], "active");
-    i.set_transfer("a1", Transfer::Failed);
-    assert_eq!(state(&i), [true, false, false], "failed");
     let saved = temp_file("saved");
-    i.set_transfer("a1", Transfer::Done(saved.clone()));
-    assert_eq!(state(&i), [false, false, true], "done");
+    let mut set = |w: &mut SkinWorld, s| {
+        w.transfers.insert("a1".into(), transfer(s, &saved));
+    };
+    assert_eq!(state(&w), [true, false, false], "offered, not fetched");
+    set(&mut w, TransferState::Queued);
+    assert_eq!(state(&w), [false, true, false], "queued");
+    set(&mut w, TransferState::Active);
+    assert_eq!(state(&w), [false, true, false], "active");
+    set(&mut w, TransferState::Paused);
+    assert_eq!(state(&w), [true, false, false], "paused");
+    set(&mut w, TransferState::Failed);
+    assert_eq!(state(&w), [true, false, false], "failed");
+    set(&mut w, TransferState::Done);
+    assert_eq!(state(&w), [false, false, true], "done");
     std::fs::remove_file(&saved).unwrap();
-    assert_eq!(state(&i), [false, false, false], "done, file gone");
+    assert_eq!(state(&w), [false, false, false], "done, file gone");
     assert!(!can(C::StartDownload, &i, &w, Selected::Nothing));
 }
 

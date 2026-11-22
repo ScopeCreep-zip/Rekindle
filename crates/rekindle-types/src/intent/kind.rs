@@ -107,6 +107,12 @@ pub enum IntentKind {
     // Routine: Files
     DownloadAttachment,
     RevealDownloadedAttachment,
+    /// Pause a running download (plan E7.2 G12, `TransferStop`).
+    PauseDownload,
+    /// Forget a transfer and, when asked, delete its saved file (plan
+    /// E7.2 G12, `TransferRemove`): one kind per request name, so the
+    /// stricter class, since it may delete a file.
+    RemoveDownload,
     // Routine: Games
     /// Launch a game we have installed, or to one of our own favourite
     /// servers (`GameLaunch`, lead decision (50)).
@@ -398,6 +404,7 @@ impl IntentKind {
             | Self::UploadSticker
             | Self::DownloadAttachment
             | Self::RevealDownloadedAttachment
+            | Self::PauseDownload
             | Self::LaunchGameToServer
             | Self::CancelInvite
             | Self::CancelRequest
@@ -412,6 +419,7 @@ impl IntentKind {
             | Self::SetLoginSkin
             | Self::TriggerQuickWipe => IntentClass::Routine,
             Self::BlockUser
+            | Self::RemoveDownload
             | Self::DeclineDmInvite
             | Self::DeclineSessionReset
             | Self::DeclineIdentityRotation

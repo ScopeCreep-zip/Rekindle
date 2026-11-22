@@ -53,6 +53,7 @@ mod rich_messaging;
 mod router;
 pub(crate) mod shell;
 mod status;
+mod transfers;
 mod unread;
 mod voice;
 
@@ -196,6 +197,9 @@ pub struct DaemonContext {
     /// cached CRDT `GovernanceState`, leases, roster and roles, over the
     /// map the GUI's `AppState.communities` shares in Shell mode.
     pub communities: Arc<crate::host::community::CommunityStore>,
+    /// The downloads running now, by attachment id (plan E7.2 G12):
+    /// `TransferStop` aborts one.
+    pub transfers: Arc<crate::host::transfers::TransferRuns>,
     /// The unlocked identity's chunk caches (plan E3.1 E3c,
     /// `host::adapters::files`).
     pub files: Arc<rekindle_files::FileCacheStore>,

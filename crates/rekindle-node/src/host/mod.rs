@@ -79,6 +79,7 @@ mod serve;
 pub mod session;
 pub mod shell_hooks;
 pub(crate) mod skin;
+pub(crate) mod transfers;
 mod transport_config;
 pub mod undo;
 pub(crate) mod unlock;

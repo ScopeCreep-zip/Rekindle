@@ -295,6 +295,7 @@ impl Host {
             network_strength: strength,
             infoview: crate::host::infoview::OpenViews::default(),
             skin: crate::host::skin::SkinState::default(),
+            transfers: Arc::default(),
             mode,
             read_markers: super::read_markers::PendingMarkers::default(),
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(

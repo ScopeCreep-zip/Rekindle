@@ -132,7 +132,11 @@ impl SubscriptionEvent {
             // A notification is about something, but surfacing it is the
             // device's job: one OS toast, one inbox, whatever the source.
             // A review is the identity's, whichever window or client acts.
-            Self::Notification(_) | Self::Network(_) | Self::IntentPending(_) => EventScope::Device,
+            // A transfer is the device's: its file is on this machine.
+            Self::Notification(_)
+            | Self::Network(_)
+            | Self::IntentPending(_)
+            | Self::Transfer(_) => EventScope::Device,
             Self::System(e) => match e {
                 SystemEvent::RaidDetected { community, .. }
                 | SystemEvent::AutoModAlert { community, .. }

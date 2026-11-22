@@ -6,11 +6,12 @@
 //! never because a feature is missing.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use rekindle_game_detect::GameDatabase;
 use rekindle_types::dto::skin_action::Capability;
 use rekindle_types::dto::skin_run::SkinSelection;
+use rekindle_types::dto::transfer::TransferRow;
 use rekindle_types::friend::{FriendState, FriendshipState, UserStatus};
 
 use super::signals::Inputs;
@@ -80,16 +81,6 @@ pub(crate) enum Group {
     Pending,
 }
 
-/// A download the Host runs (`AttachmentDownload` through `rekindle-files`),
-/// by attachment id.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Transfer {
-    Active,
-    Failed,
-    /// Saved at this path.
-    Done(PathBuf),
-}
-
 /// The state besides the selection and the Host's stream, read before
 /// each recompute (`signals::load_world`).
 #[derive(Debug, Clone, Default)]
@@ -105,6 +96,8 @@ pub(crate) struct SkinWorld {
     pub communities: usize,
     /// Our shown game's id.
     pub own_game: Option<u32>,
+    /// Our `transfers` (plan E7.2 G12), by attachment id.
+    pub transfers: BTreeMap<String, TransferRow>,
 }
 
 /// The game has a launch method (`launcher::launch_to_server`'s own
@@ -205,24 +198,28 @@ pub(crate) fn allows(
                 || world.friend_servers > 0
                 || !world.favourites.is_empty()
         }
+        // A paused or failed transfer, or an offered attachment not yet
+        // fetched (SK2-G §4 (5)).
         C::StartDownload => match selected {
-            Selected::Transfer { attachment_id } => matches!(
-                inputs.transfer(attachment_id),
-                None | Some(Transfer::Failed)
-            ),
+            Selected::Transfer { attachment_id } => world
+                .transfers
+                .get(attachment_id)
+                .is_none_or(|t| t.state.resumable()),
             _ => false,
         },
         C::StopDownload => match selected {
-            Selected::Transfer { attachment_id } => {
-                inputs.transfer(attachment_id) == Some(&Transfer::Active)
-            }
+            Selected::Transfer { attachment_id } => world
+                .transfers
+                .get(attachment_id)
+                .is_some_and(|t| t.state.running()),
             _ => false,
         },
+        // Done, and its file still at the stored path.
         C::ExecuteDownload => match selected {
-            Selected::Transfer { attachment_id } => matches!(
-                inputs.transfer(attachment_id),
-                Some(Transfer::Done(path)) if path.is_file()
-            ),
+            Selected::Transfer { attachment_id } => world
+                .transfers
+                .get(attachment_id)
+                .is_some_and(|t| crate::host::transfers::revealable(t).is_some()),
             _ => false,
         },
         // A group needs us and two accepted friends (`MIN_MEMBERS` 3).

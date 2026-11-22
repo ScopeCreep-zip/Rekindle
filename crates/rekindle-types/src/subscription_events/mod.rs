@@ -21,6 +21,7 @@ mod scope;
 mod social;
 mod stream;
 mod system;
+mod transfer;
 mod typing;
 mod voice;
 
@@ -38,6 +39,7 @@ pub use scope::EventScope;
 pub use social::SocialEvent;
 pub use stream::{Cursor, Sequenced, StopReason, StreamFrame};
 pub use system::SystemEvent;
+pub use transfer::TransferEvent;
 pub use typing::{TypingContext, TypingEvent};
 pub use voice::{LinkMeasurement, VoiceEvent, VoiceParticipant, VoiceScope};
 
@@ -85,6 +87,8 @@ pub enum SubscriptionEvent {
     Network(NetworkEvent),
     /// System-level signals (announcements, raid alerts, kicked, sync, bootstrap).
     System(SystemEvent),
+    /// File transfers (plan E7.2 G12): state changes and finished downloads.
+    Transfer(TransferEvent),
     /// Unread count changed for a specific context.
     UnreadChanged { context: UnreadContext, count: u32 },
     /// The backend began an action that needs the user's review (plan
@@ -165,7 +169,7 @@ impl SubscriptionEvent {
             Self::Call(_) => EventCategory::Call,
             Self::Notification(_) => EventCategory::Notification,
             Self::Network(_) => EventCategory::Network,
-            Self::System(_) => EventCategory::System,
+            Self::System(_) | Self::Transfer(_) => EventCategory::System,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
             Self::IntentPending(_) => EventCategory::Intent,
         }
@@ -282,6 +286,7 @@ impl SubscriptionEvent {
             // A call belongs to its participants, not to a community.
             Self::Call(_)
             | Self::Network(_)
+            | Self::Transfer(_)
             | Self::Notification(_)
             | Self::UnreadChanged { .. }
             | Self::IntentPending(_)

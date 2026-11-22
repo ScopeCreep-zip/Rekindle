@@ -11,10 +11,11 @@ use rekindle_ipc::protocol::{IpcResponse, PinRequest};
 
 use super::{adapter, DaemonContext};
 use crate::host::adapters::files::HostFiles;
-use crate::host::skin::capability::Transfer;
+use crate::host::transfers::{self, Ended};
+use rekindle_types::dto::transfer::TransferTarget;
 
 /// The status a files failure answers with.
-fn refused(e: &FilesError, what: &str) -> IpcResponse {
+pub(super) fn refused(e: &FilesError, what: &str) -> IpcResponse {
     let code = match e {
         FilesError::FileTooLarge { .. }
         | FilesError::InvalidInput(_)
@@ -44,23 +45,15 @@ pub(super) async fn handle(ctx: &DaemonContext, key: &str, request: PinRequest) 
             path,
             ..
         } => {
-            // The skin's StartDownload / StopDownload / ExecuteDownload
-            // follow this download (SK2-G §4).
-            let signals = &ctx.skin.signals;
-            signals.set_transfer(&attachment_id, Transfer::Active);
-            match files
-                .download(key, &channel_id, &attachment_id, Path::new(&path))
-                .await
-            {
-                Ok(()) => {
-                    signals.set_transfer(&attachment_id, Transfer::Done(path.into()));
-                    IpcResponse::ok(&())
-                }
-                Err(e) => {
-                    signals.set_transfer(&attachment_id, Transfer::Failed);
-                    refused(&e, "download attachment")
-                }
-            }
+            // A transfer (plan E7.2 G12): Stop pauses it, Start resumes it.
+            let target = TransferTarget::Channel {
+                community: key.to_owned(),
+                channel_id,
+            };
+            super::transfers::answer(
+                transfers::download(ctx, target, &attachment_id, path.into()).await,
+                "download attachment",
+            )
         }
         PinRequest::AttachmentInfo {
             channel_id,

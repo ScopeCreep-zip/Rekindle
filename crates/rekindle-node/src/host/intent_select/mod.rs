@@ -292,7 +292,8 @@ pub(crate) async fn select(
         | IpcRequest::Subscribe { .. }
         | IpcRequest::Unsubscribe { .. }
         | IpcRequest::NetworkStatus
-        | IpcRequest::NetworkPeers => {}
+        | IpcRequest::NetworkPeers
+        | IpcRequest::Transfer(_) => {}
     }
     Ok(s)
 }

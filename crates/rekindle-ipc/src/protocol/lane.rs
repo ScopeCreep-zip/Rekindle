@@ -104,6 +104,7 @@ impl IpcRequest {
             }
 
             Self::Community(request) => request.class(),
+            Self::Transfer(request) => request.class(),
 
             Self::DmSend { .. } => ("DmSend", Write, Authenticated),
             Self::DmTyping { .. } => ("DmTyping", Write, Authenticated),

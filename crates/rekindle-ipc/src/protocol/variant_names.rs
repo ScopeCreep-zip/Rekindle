@@ -78,6 +78,7 @@ fn every_leaf_name_has_a_command_table_row() {
         variants::<PinRequest>(),
         variants::<RichRequest>(),
         variants::<ExpressionRequest>(),
+        variants::<super::TransferRequest>(),
     ]
     .concat();
     assert!(top.contains(&"Community"), "{top:?}");
@@ -86,7 +87,7 @@ fn every_leaf_name_has_a_command_table_row() {
         .iter()
         .chain(&community)
         .copied()
-        .filter(|name| *name != "Community")
+        .filter(|name| *name != "Community" && *name != "Transfer")
         .filter(|name| rekindle_types::intent::kind_of(name).is_none())
         .collect();
     assert!(

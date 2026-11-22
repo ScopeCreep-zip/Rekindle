@@ -110,6 +110,8 @@ impl IntentKind {
             | Self::UploadSticker
             | Self::DownloadAttachment
             | Self::RevealDownloadedAttachment
+            | Self::PauseDownload
+            | Self::RemoveDownload
             | Self::LaunchGameToServer
             | Self::CancelInvite
             | Self::CancelRequest
@@ -315,6 +317,8 @@ impl IntentKind {
             | Self::UploadSticker
             | Self::DownloadAttachment
             | Self::RevealDownloadedAttachment
+            | Self::PauseDownload
+            | Self::RemoveDownload
             | Self::LaunchGameToServer
             | Self::CancelInvite
             | Self::CancelRequest

@@ -95,6 +95,8 @@ async fn route(
 
         // ── Community, channels, governance and channel keys (plan E3.1) ──
         IpcRequest::Community(request) => community::route(ctx, state, request).await,
+        // ── File transfers (plan E7.2 G12) ──
+        IpcRequest::Transfer(request) => super::transfers::route(ctx, request).await,
 
         // ── Friends, DMs and session resets (plan E2.1) ─────────
         request @ (IpcRequest::FriendAddFromCode { .. }

@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, TransferRequest};
 use rekindle_types::dto::skin_action::{MenuRegistry, SkinAction as A};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 
@@ -39,6 +39,14 @@ impl Selections {
         }
     }
 
+    /// The window's selected transfer, when its selection is one.
+    pub(crate) fn transfer(&self, window: &str) -> Option<String> {
+        match self.0.lock().get(window) {
+            Some(SkinSelection::Transfer { attachment_id }) => Some(attachment_id.clone()),
+            _ => None,
+        }
+    }
+
     /// The window's selection.
     pub(crate) fn get(&self, window: &str) -> Option<SkinSelection> {
         self.0.lock().get(window).cloned()
@@ -57,13 +65,18 @@ pub(crate) enum Mapped {
     Run(SkinRun),
 }
 
-/// The table. `friend` is the window's selected friend, `rooms` what the
-/// room actions read ([`rooms::load`]).
+/// The table. `friend` and `transfer` are the window's selected friend
+/// and transfer, `rooms` what the room actions read ([`rooms::load`]).
 ///
 /// # Errors
 /// 409 for a selection-dependent action while nothing it acts on is
 /// selected.
-pub(crate) fn map(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
+pub(crate) fn map(
+    action: &A,
+    friend: Option<&str>,
+    transfer: Option<&str>,
+    rooms: &Rooms,
+) -> Result<Mapped, IpcResponse> {
     use Mapped::{Request, Run};
     let shell = |op| Ok(Run(SkinRun::Shell(op)));
     let panel = |p| shell(ShellOp::OpenPanel(p));
@@ -75,8 +88,29 @@ pub(crate) fn map(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Map
             )
         })
     };
+    let attachment_id = || {
+        transfer.map(str::to_owned).ok_or_else(|| {
+            IpcResponse::error(
+                409,
+                format!("{action:?} acts on the selected transfer: none is selected"),
+            )
+        })
+    };
+    let transfer_request = |r| Ok(Request(Box::new(IpcRequest::Transfer(r))));
     match action {
         // Feature requests (the handlers' own requests, intent-gated).
+        // The Downloads view (plan E7.2 G12, SK2-G §4): Xfire's Execute is
+        // a reveal; "Search for Files" lists our transfers.
+        A::StartDownload => transfer_request(TransferRequest::TransferStart {
+            attachment_id: attachment_id()?,
+        }),
+        A::StopDownload => transfer_request(TransferRequest::TransferStop {
+            attachment_id: attachment_id()?,
+        }),
+        A::OpenDownload => transfer_request(TransferRequest::TransferOpen {
+            attachment_id: attachment_id()?,
+        }),
+        A::DownloadInfo => transfer_request(TransferRequest::TransferList),
         A::LogOff => Ok(Request(Box::new(IpcRequest::Logout))),
         A::SetStatus(status) => Ok(Request(Box::new(IpcRequest::PresenceSet {
             status: *status,
@@ -168,10 +202,6 @@ pub(crate) fn map(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Map
         | A::LaunchGameLobby
         | A::AddServer
         | A::RefreshServer
-        | A::StartDownload
-        | A::StopDownload
-        | A::OpenDownload
-        | A::DownloadInfo
         | A::InviteUsersToRoom
         | A::DeleteSelected
         | A::OpenSelected
@@ -222,7 +252,12 @@ pub(crate) fn resolve(
     let IpcRequest::RunSkinAction { window, action, .. } = &request else {
         return Ok(Resolved::Request(request));
     };
-    match map(action, selections.friend(window).as_deref(), rooms)? {
+    match map(
+        action,
+        selections.friend(window).as_deref(),
+        selections.transfer(window).as_deref(),
+        rooms,
+    )? {
         Mapped::Request(mapped) => Ok(Resolved::Request(*mapped)),
         Mapped::Run(run) => Ok(Resolved::Run { request, run }),
     }

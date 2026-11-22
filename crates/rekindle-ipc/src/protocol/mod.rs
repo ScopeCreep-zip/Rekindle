@@ -191,6 +191,10 @@ pub enum IpcRequest {
     /// roles, moderation, invites, game servers and channel keys.
     Community(CommunityRequest),
 
+    // ── File transfers (plan E7.2 G12) ─────────────────────────────
+    /// The Downloads view: list, start (resume), stop, open (reveal), remove.
+    Transfer(TransferRequest),
+
     // ── DMs ───────────────────────────────────────────────────────
     /// Send a direct message.
     DmSend {
@@ -564,6 +568,7 @@ mod community;
 mod debug;
 mod lane;
 mod response;
+mod transfer;
 #[cfg(test)]
 mod variant_names;
 
@@ -575,5 +580,6 @@ pub use community::{
 };
 pub use lane::Lane;
 pub use rekindle_types::dto::infoview::InfoviewSubject;
+pub use transfer::TransferRequest;
 
 pub use response::{BusPayload, IpcResponse};
