@@ -161,13 +161,12 @@ impl<D: OutboxDeps> Outbox<D> {
     /// When the next pass is due (ms), `None` when nothing waits. The
     /// store's `next_wake` cannot see the streams in flight: a row of one
     /// that is due now would wake a pass that skips it, over and over, so
-    /// while it is past due the wake is read again without those streams.
+    /// while it is past due the wake is read again without those streams,
+    /// and only from rows the store's `due` gives now (lead decision 51).
     pub(crate) async fn pass_wake(&self) -> Result<Option<i64>, OutboxError> {
         let attempting = self.attempting.streams();
         let stored = match self.deps.next_wake().await? {
-            Some(at) if !attempting.is_empty() && at <= self.now() => {
-                self.wake_past(&attempting).await?
-            }
+            Some(at) if at <= self.now() => self.wake_past(&attempting).await?,
             stored => stored,
         };
         let busy = self.busy_wake().await?;
@@ -188,24 +187,66 @@ impl<D: OutboxDeps> Outbox<D> {
                 streams.entry(row.stream.clone()).or_default().push(row);
             }
         }
-        let mut wake: Option<i64> = None;
+        let mut candidates = Vec::new();
         for mut rows in streams.into_values() {
             rows.sort_by_key(|row| row.stream_seq);
             let mut ahead = i64::MIN;
             for row in rows {
-                let at = row.next_at.max(ahead);
-                wake = Some(wake.map_or(at, |w| w.min(at)));
+                candidates.push((row.next_at.max(ahead), row.kind, row.client_id.clone()));
                 if row.kind.ordered() && row.state == rekindle_types::message::SendState::Queued {
                     ahead = ahead.max(row.next_at);
                 }
             }
         }
+        let wake = self.honoured(candidates).await?;
         let ends = self.deps.expired(i64::MAX).await?;
         let ends = ends
             .iter()
             .filter(|row| !attempting.contains(&row.stream))
             .map(|row| row.deadline);
         Ok(wake.into_iter().chain(ends).min())
+    }
+}
+
+impl<D: OutboxDeps> Outbox<D> {
+    /// The earliest of `candidates` (when, kind, client id) that a pass
+    /// would attempt: one past due counts only if the store's `due` gives
+    /// it now. One it withholds would wake a pass that claims nothing, over
+    /// and over (HOL1e: the store and [`StreamKind::ordered`] disagreed), so
+    /// it is reported once and left to the event that frees it.
+    async fn honoured(
+        &self,
+        candidates: Vec<(i64, StreamKind, String)>,
+    ) -> Result<Option<i64>, OutboxError> {
+        let now = self.now();
+        let mut due_now: Option<BTreeSet<String>> = None;
+        let mut wake: Option<i64> = None;
+        for (at, kind, client_id) in candidates {
+            if at <= now {
+                if due_now.is_none() {
+                    let rows = self.deps.due(now).await?;
+                    due_now = Some(rows.into_iter().map(|row| row.client_id).collect());
+                }
+                if !due_now.as_ref().is_some_and(|due| due.contains(&client_id)) {
+                    self.report_unhonoured(kind);
+                    continue;
+                }
+            }
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
+        Ok(wake)
+    }
+
+    /// Log, once per outbox, a past-due wake the store withholds (by
+    /// stream kind only: no identifier leaves through a log, B19).
+    fn report_unhonoured(&self, kind: StreamKind) {
+        use std::sync::atomic::Ordering;
+        if !self.unhonoured_wake.swap(true, Ordering::Relaxed) {
+            tracing::error!(
+                stream = kind.as_str(),
+                "outbox wake past due for a row the store's due withholds: not looped on"
+            );
+        }
     }
 }
 

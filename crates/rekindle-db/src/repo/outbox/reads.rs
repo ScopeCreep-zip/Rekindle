@@ -27,10 +27,17 @@ macro_rules! holds_chain {
 /// lead decision 47): a peer's `friend_handshake` stream, whose frames need
 /// no order among themselves (the receiver gates each on what it really
 /// needs: the friendship, the session), so one unreceipted frame never
-/// holds the unrelated ones behind it.
+/// holds the unrelated ones behind it. Which kinds those are is the
+/// caller's (`rekindle_outbox::StreamKind::ordered`, lead decision 51: one
+/// definition drives both the store and the engine's wake), bound as the
+/// parameter `$kinds`, a [`kinds_param`] list.
 macro_rules! by_dependency {
-    () => {
-        "o.stream LIKE 'friend_handshake:%'"
+    ($kinds:literal) => {
+        concat!(
+            "instr(",
+            $kinds,
+            ", ',' || substr(o.stream, 1, instr(o.stream, ':') - 1) || ',') > 0"
+        )
     };
 }
 
@@ -53,11 +60,11 @@ macro_rules! dependency_settled {
 /// plan E2.B F2), and the rows already past it.
 const DUE_UNBLOCKED: &str = concat!(
     "((",
-    by_dependency!(),
+    by_dependency!("?3"),
     " AND ",
     dependency_settled!(),
     ") OR (NOT ",
-    by_dependency!(),
+    by_dependency!("?3"),
     " AND NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
      AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
      AND ((h.state = 'failed' AND ",
@@ -71,17 +78,26 @@ const DUE_UNBLOCKED: &str = concat!(
 /// past it, whose `next_at` is when the engine next has work.
 const UNBLOCKED: &str = concat!(
     "((",
-    by_dependency!(),
+    by_dependency!("?2"),
     " AND ",
     dependency_settled!(),
     ") OR (NOT ",
-    by_dependency!(),
+    by_dependency!("?2"),
     " AND NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
      AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
      AND (h.state = 'queued' OR (h.state = 'failed' AND ",
     holds_chain!(),
     ")))))"
 );
+
+/// The stream kinds `by_dependency` (the stored forms, `dm`,
+/// `friend_handshake`) as the query binds them: `,a,b,`, or empty for none.
+fn kinds_param(by_dependency: &[&str]) -> String {
+    if by_dependency.is_empty() {
+        return String::new();
+    }
+    format!(",{},", by_dependency.join(","))
+}
 
 pub(super) fn parse_state(stored: &str, column: usize) -> rusqlite::Result<SendState> {
     SendState::parse(stored).ok_or_else(|| {
@@ -124,18 +140,24 @@ fn query_rows(
 
 /// The rows to attempt at `now`: unsettled (`queued`, or `sent` and
 /// waiting for the peer's ack), due, and not behind their stream's head.
-/// Oldest due first; within a stream in `stream_seq` order.
+/// Oldest due first; within a stream in `stream_seq` order. The streams of
+/// the kinds `by_dependency` wait only for their named row.
 ///
 /// # Errors
 /// The query failed.
-pub fn due(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result<Vec<Row>> {
+pub fn due(
+    conn: &Connection,
+    owner_key: &str,
+    now: i64,
+    by_dependency: &[&str],
+) -> rusqlite::Result<Vec<Row>> {
     query_rows(
         conn,
         &format!(
             "o.owner_key = ?1 AND o.state IN ('queued', 'sent') AND o.next_at <= ?2 \
              AND {DUE_UNBLOCKED} ORDER BY o.next_at, o.stream, o.stream_seq"
         ),
-        params![owner_key, now],
+        params![owner_key, now, kinds_param(by_dependency)],
     )
 }
 
@@ -196,7 +218,11 @@ pub fn expired(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result
 ///
 /// # Errors
 /// The query failed.
-pub fn next_wake(conn: &Connection, owner_key: &str) -> rusqlite::Result<Option<i64>> {
+pub fn next_wake(
+    conn: &Connection,
+    owner_key: &str,
+    by_dependency: &[&str],
+) -> rusqlite::Result<Option<i64>> {
     conn.query_row(
         &format!(
             "SELECT MIN(t) FROM ( \
@@ -206,7 +232,7 @@ pub fn next_wake(conn: &Connection, owner_key: &str) -> rusqlite::Result<Option<
                SELECT o.deadline FROM outbox o WHERE o.owner_key = ?1 \
                  AND o.state IN ('awaiting_key', 'queued', 'sent'))"
         ),
-        params![owner_key],
+        params![owner_key, kinds_param(by_dependency)],
         |r| r.get(0),
     )
 }

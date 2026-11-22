@@ -16,7 +16,7 @@ use super::outbox::DmOutbox;
 use crate::operations::friend::{state, FriendError, FriendHost, FriendStores};
 
 /// The stream prefix of a peer's handshake rows.
-const STREAM: &str = "friend_handshake:";
+const HANDSHAKE_STREAM: &str = "friend_handshake:";
 
 /// The kinds of a first contact: the PreKeyInit carrying our
 /// `FriendAccept` or `SessionResetAccept`.
@@ -112,7 +112,7 @@ pub(crate) async fn retried(host: &dyn FriendHost, client_id: &str) {
     };
     match read.await {
         Ok(Some(row)) => {
-            if let Some(peer) = row.stream.strip_prefix(STREAM) {
+            if let Some(peer) = row.stream.strip_prefix(HANDSHAKE_STREAM) {
                 mark(host.stores(), peer, client_id);
             }
         }
@@ -129,13 +129,13 @@ pub(crate) async fn retried(host: &dyn FriendHost, client_id: &str) {
 pub async fn restore_first_contacts(host: &dyn FriendHost) -> Result<usize, FriendError> {
     let owner = state::owner(host)?;
     let rows = state::db_call!(host, "read the handshake rows", move |conn| {
-        rekindle_db::repo::outbox::prefix_rows(conn, &owner, STREAM)
+        rekindle_db::repo::outbox::prefix_rows(conn, &owner, HANDSHAKE_STREAM)
     })
     .await?;
     let stores = host.stores();
     stores.unsettled_first_contacts.lock().clear();
     for row in rows.iter().filter(|r| r.state != SendState::Failed) {
-        if let Some(peer) = row.stream.strip_prefix(STREAM) {
+        if let Some(peer) = row.stream.strip_prefix(HANDSHAKE_STREAM) {
             mark(stores, peer, &row.client_id);
         }
     }

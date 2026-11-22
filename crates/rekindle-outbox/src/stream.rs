@@ -174,6 +174,17 @@ impl StreamKind {
         !matches!(self, Self::FriendHandshake)
     }
 
+    /// The stored forms of the kinds that are not [`Self::ordered`]: what
+    /// the store's `due` and `next_wake` read as dependency streams (lead
+    /// decision 51: one definition, so the engine never computes a wake
+    /// for a row the store's `due` withholds).
+    pub fn by_dependency() -> impl Iterator<Item = &'static str> {
+        Self::ALL
+            .into_iter()
+            .filter(|k| !k.ordered())
+            .map(Self::as_str)
+    }
+
     /// Whether the user may Retry a failed row of this kind. A call media
     /// key may not: the session's end discards it, and a key is never
     /// given a fresh deadline past the call it keys.

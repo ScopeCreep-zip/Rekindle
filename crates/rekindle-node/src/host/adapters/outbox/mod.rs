@@ -291,7 +291,8 @@ impl OutboxDeps for HostOutbox {
 
     async fn due(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError> {
         let (db, owner) = self.db()?;
-        let rows = db.call(move |c| repo::due(c, &owner, now)).await;
+        let kinds: Vec<&str> = StreamKind::by_dependency().collect();
+        let rows = db.call(move |c| repo::due(c, &owner, now, &kinds)).await;
         rows_of(rows.map_err(|e| storage(&e))?)
     }
 
@@ -321,7 +322,8 @@ impl OutboxDeps for HostOutbox {
 
     async fn next_wake(&self) -> Result<Option<i64>, OutboxError> {
         let (db, owner) = self.db()?;
-        db.call(move |c| repo::next_wake(c, &owner))
+        let kinds: Vec<&str> = StreamKind::by_dependency().collect();
+        db.call(move |c| repo::next_wake(c, &owner, &kinds))
             .await
             .map_err(|e| storage(&e))
     }

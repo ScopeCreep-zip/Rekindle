@@ -53,6 +53,10 @@ struct Store {
     hold: Option<Arc<tokio::sync::Notify>>,
     /// Streams whose attempts never resolve (an unanswered call).
     hang: HashSet<String>,
+    /// The store reads every stream as ordered, as the SQL's `due` does
+    /// with a dependency kind missing from its list: a store that
+    /// disagrees with `StreamKind::ordered` (lead decision 51).
+    ordered_all: bool,
 }
 
 #[derive(Clone)]
@@ -62,19 +66,27 @@ struct Fake {
     rng: Arc<CounterRng>,
 }
 
-fn blocked(rows: &[OutboxRow], row: &OutboxRow) -> bool {
+/// Whether `row` waits at `now` (`i64::MIN`: whatever its time, as
+/// `next_wake` reads): `ordered_all` is [`Store::ordered_all`].
+fn blocked(rows: &[OutboxRow], row: &OutboxRow, ordered_all: bool, now: i64) -> bool {
     // A dependency stream (plan HOL1): only the named row holds it, as the
     // store's `DUE_UNBLOCKED` reads.
-    if !row.kind.ordered() {
+    if !row.kind.ordered() && !ordered_all {
         return row
             .depends_on
             .as_ref()
             .is_some_and(|d| rows.iter().any(|h| &h.client_id == d));
     }
+    // A disagreeing store reads as the SQL does: a queued row ahead holds
+    // this one only while it is not due at `now`.
     rows.iter().any(|h| {
         h.stream == row.stream
             && h.stream_seq < row.stream_seq
-            && matches!(h.state, SendState::Queued | SendState::Failed)
+            && match h.state {
+                SendState::Queued => !ordered_all || h.next_at > now,
+                SendState::Failed => true,
+                _ => false,
+            }
     })
 }
 
@@ -124,7 +136,9 @@ impl OutboxDeps for Fake {
     async fn due(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError> {
         let s = self.store.lock();
         let mut due: Vec<OutboxRow> = (s.rows.iter())
-            .filter(|r| unsettled(r) && r.next_at <= now && !blocked(&s.rows, r))
+            .filter(|r| {
+                unsettled(r) && r.next_at <= now && !blocked(&s.rows, r, s.ordered_all, now)
+            })
             .cloned()
             .collect();
         due.sort_by(|a, b| {
@@ -169,7 +183,7 @@ impl OutboxDeps for Fake {
         let due = s
             .rows
             .iter()
-            .filter(|r| unsettled(r) && !blocked(&s.rows, r))
+            .filter(|r| unsettled(r) && !blocked(&s.rows, r, s.ordered_all, i64::MIN))
             .map(|r| r.next_at);
         let ends = s.rows.iter().filter(|r| unsettled(r)).map(|r| r.deadline);
         Ok(due.chain(ends).min())

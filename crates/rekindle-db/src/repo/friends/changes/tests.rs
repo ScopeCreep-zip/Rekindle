@@ -416,8 +416,10 @@ fn a_removal_cuts_every_unsettled_row_to_the_peer_but_its_own() {
         enqueue_with_echo(&conn, &row, None).unwrap();
     }
     mark_removing(&conn, OWNER, BOB, &new(fh, "unfriended:bb", None)).unwrap();
-    let ids: Vec<String> = (due(&conn, OWNER, i64::MAX).unwrap().into_iter())
-        .map(|r| r.client_id)
-        .collect();
+    let ids: Vec<String> = (due(&conn, OWNER, i64::MAX, &["friend_handshake"])
+        .unwrap()
+        .into_iter())
+    .map(|r| r.client_id)
+    .collect();
     assert_eq!(ids, ["unfriended:bb"]);
 }

@@ -81,14 +81,17 @@ fn the_stream_head_blocks_the_rows_behind_it() {
     enqueue_with_echo(&conn, &row("dm:bob", "b", 0), None).unwrap();
     enqueue_with_echo(&conn, &row("dm:carol", "c", 0), None).unwrap();
     let ids = |now| -> Vec<String> {
-        due(&conn, OWNER, now)
+        due(&conn, OWNER, now, &["friend_handshake"])
             .unwrap()
             .into_iter()
             .map(|r| r.client_id)
             .collect()
     };
     assert_eq!(ids(10), ["c"]);
-    assert_eq!(next_wake(&conn, OWNER).unwrap(), Some(0));
+    assert_eq!(
+        next_wake(&conn, OWNER, &["friend_handshake"]).unwrap(),
+        Some(0)
+    );
     update(&conn, OWNER, "a", &sent(1, 500)).unwrap();
     assert_eq!(ids(10), ["b", "c"]);
     // A failed `dm` head no longer holds the DMs behind it (D22 corrected:
@@ -148,7 +151,7 @@ fn rows_survive_a_reopen() {
         enqueue_with_echo(&conn, &row("dm:bob", "a", 0), Some(&echo())).unwrap();
     }
     let conn = Connection::open(&path).unwrap();
-    let rows = due(&conn, OWNER, 0).unwrap();
+    let rows = due(&conn, OWNER, 0, &["friend_handshake"]).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(
         (rows[0].client_id.as_str(), rows[0].state),
@@ -524,7 +527,7 @@ fn a_handshake_row_waits_for_its_named_dependency_and_a_dm_row_for_its_place() {
         .unwrap()
         .is_some());
     let due_ids = |conn: &Connection| -> Vec<String> {
-        due(conn, OWNER, 100)
+        due(conn, OWNER, 100, &["friend_handshake"])
             .unwrap()
             .into_iter()
             .map(|r| r.client_id)

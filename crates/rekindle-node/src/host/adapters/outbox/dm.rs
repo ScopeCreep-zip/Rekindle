@@ -509,8 +509,10 @@ impl DmOutbox for DmStream {
         client_prefix: &str,
     ) -> Result<usize, FriendError> {
         let stream = StreamKind::FriendHandshake.stream(peer);
-        let settled = self.0.receipt_rows(&stream, client_prefix).await;
-        settled.map_err(|e| failed(&e))
+        self.0
+            .receipt_rows(&stream, client_prefix)
+            .await
+            .map_err(|e| failed(&e))
     }
 
     async fn retry(&self, client_id: &str) -> Result<bool, FriendError> {

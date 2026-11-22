@@ -69,6 +69,9 @@ pub struct Outbox<D> {
     wake: Notify,
     pub(crate) appends: crate::appender::Appends,
     pub(crate) attempting: attempts::Attempting,
+    /// Whether a past-due wake the store's `due` withholds was reported
+    /// (lead decision 51): logged once, never looped on.
+    pub(crate) unhonoured_wake: std::sync::atomic::AtomicBool,
 }
 
 fn horizon_ms() -> i64 {
@@ -83,6 +86,7 @@ impl<D: OutboxDeps> Outbox<D> {
             wake: Notify::new(),
             appends: crate::appender::Appends::default(),
             attempting: attempts::Attempting::default(),
+            unhonoured_wake: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
