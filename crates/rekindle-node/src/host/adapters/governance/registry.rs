@@ -69,6 +69,13 @@ impl HostGovernance {
         let Ok(db) = self.ctx.db.current() else {
             return;
         };
+        // Our own row is never the registry's: its card fields are the
+        // verified card cache's and its profile ours (plan E3.4 S6).
+        let me = self.me_in(community_id).map(|p| p.to_hex());
+        let rows: Vec<_> = rows
+            .into_iter()
+            .filter(|r| me.as_deref() != Some(r.pseudonym_key.as_str()))
+            .collect();
         let community = community_id.to_string();
         let joined_at = self.ctx.clock.now_secs().cast_signed();
         db.fire("persist discovered registry members", move |conn| {

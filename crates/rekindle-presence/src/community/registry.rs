@@ -390,6 +390,12 @@ pub fn persist_discovered_registry_members<D, S>(
         }
     }
 
+    // Our own row is never the scan's: its card fields are the verified
+    // card cache's and its profile the Host's (plan E3.4 S6), so a
+    // presence row's copy never overwrites them.
+    let me = deps.my_pseudonym_for_community(community_id);
+    let rows: Vec<DiscoveredMemberRow> =
+        rows.into_iter().filter(|r| r.pseudonym_key != me).collect();
     let banned: Vec<String> = banned_members.iter().cloned().collect();
     let joined_at_secs = i64::try_from(deps.now_secs()).unwrap_or(0);
     deps.persist_discovered_member_rows(community_id, rows, banned, joined_at_secs);

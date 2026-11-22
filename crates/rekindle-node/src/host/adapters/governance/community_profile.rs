@@ -10,9 +10,13 @@
 //! The policy is a `CommunityPolicy` governance entry: readers validate
 //! `MANAGE_COMMUNITY` at merge, and the merge projects it into the store.
 
+use rekindle_codec::member_record::{card::decode_member_card, RecordScope};
 use rekindle_governance::state::CommunityPolicyState;
-use rekindle_governance_runtime::member_card::{refresh_own_card, write_card, OwnCardText};
+use rekindle_governance_runtime::member_card::{
+    card_of, refresh_own_card, write_card, OwnCardText,
+};
 use rekindle_governance_runtime::{CardText, GovernanceRuntimeDeps, GovernanceRuntimeError};
+use rekindle_types::dht_layout::member_record::CARD;
 use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
@@ -177,6 +181,35 @@ impl HostGovernance {
                 custom_status: card.custom_status,
             },
         ));
+    }
+
+    /// A ring change naming the card (subkey 0) of `record` (plan E3.4
+    /// "Card": a card is re-read only when its seq advances, and a watch
+    /// notification is that advance): read it through the ring lease,
+    /// forced through the hinted read (a ValueChange carries only its first
+    /// subkey's value, veilid-core 0.5.8 `veilid_state.rs:334-336`), verify
+    /// it under the record's member and note it. A card that does not
+    /// verify is not noted.
+    pub(super) async fn ring_card_moved(&self, community: &str, record: &str) {
+        let lease = {
+            let map = self.ctx.communities.map().read();
+            map.get(community)
+                .and_then(|c| c.watch_ring.get(record).copied())
+        };
+        let (Some(lease), Some(author)) = (lease, self.author_of_record(community, record)) else {
+            return;
+        };
+        let Ok(Some((_, bytes))) = self.read_hinted_value(lease, CARD).await else {
+            return;
+        };
+        let at = RecordScope {
+            community_id: community,
+            member_record: record,
+        };
+        match decode_member_card(&bytes, at, &author.0) {
+            Ok(signed) => self.note_member_card_impl(community, &author, card_of(&signed)),
+            Err(error) => tracing::debug!(community, %error, "ring member card refused"),
+        }
     }
 
     /// `community`'s merged policy; the defaults before any merged.

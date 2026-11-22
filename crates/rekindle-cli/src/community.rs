@@ -1,7 +1,7 @@
 //! Community commands: create, join, leave, list, info.
 
 use rekindle_ipc::protocol::LifecycleRequest;
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
 
 use crate::cli::CommunityCmd;
 use crate::helpers;
@@ -74,6 +74,19 @@ pub async fn dispatch(
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::CommunityLeave {
                         anchor: community.clone(),
+                    },
+                )),
+            )
+            .await?;
+            format::print_structured(&value, mode)
+        }
+        CommunityCmd::SetName { community, name } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Settings(
+                    SettingsRequest::CommunitySetDisplayName {
+                        community: community.clone(),
+                        display_name: name.clone(),
                     },
                 )),
             )
