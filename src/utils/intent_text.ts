@@ -45,9 +45,17 @@ export function typedName(subject: Subject): string {
   return subject.named.name;
 }
 
-/** The final button: the verb and its object, never "OK". */
+/**
+ * The final button, never "OK". Where pressing it is the whole proof
+ * (`commit`, ADR 0019's Consequential class: "a button named verb +
+ * object"), it names the verb and its object. Where the proof is a ticked
+ * fact, the typed name or the passphrase, the review's heading and subject
+ * line already name the object, so the button is the verb alone and does
+ * not wrap in a narrow window (walk B1, 2026-11-21).
+ */
 export function commitLabel(review: IntentReview): string {
-  return `${kindPhrase(review.kind)}: ${subjectLabel(review.subject)}`;
+  const verb = kindPhrase(review.kind);
+  return review.proof === "commit" ? `${verb}: ${subjectLabel(review.subject)}` : verb;
 }
 
 /** Who our IP address reaches: a game server by its game and address; a
