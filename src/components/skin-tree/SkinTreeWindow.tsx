@@ -3,7 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import type { EngineMenu, MenuItem, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { applyTreeOp, fired, initialTreeState, type TreeState } from "./signalEffects";
+import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../buddy-list/MenuBar";
 import NameField from "./NameField";
@@ -24,6 +24,8 @@ interface Tree {
   run: (node: string, action: SkinAction) => void;
   /** Edit requests for the name field (the pack's `EditName`). */
   nameEdits: () => number;
+  /** An action's accessible name (a tab names the view its page shows). */
+  label: (a: SkinAction) => string;
 }
 
 const TreeCtx = createContext<Tree>();
@@ -177,7 +179,7 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   Object.defineProperties(buttonAttrs, {
     role: { get: () => "button", enumerable: true },
     tabindex: { get: () => (hidden() ? undefined : 0), enumerable: true },
-    "aria-label": { get: () => actionLabel(press()!), enumerable: true },
+    "aria-label": { get: () => tree.label(press()!), enumerable: true },
     class: { get: () => "skin-tree-button", enumerable: true },
     onKeyDown: {
       value: (e: KeyboardEvent) => {
@@ -336,6 +338,13 @@ const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element }> 
         menus,
         run,
         nameEdits,
+        label: (a) => {
+          if (a.kind === "groupPage") {
+            const v = pageView(props.shell.root, a.arg.group, a.arg.page);
+            if (v) return `Show ${v.replace(/([A-Z])/g, " $1").toLowerCase()}`;
+          }
+          return actionLabel(a);
+        },
       }}
     >
       <div class="skin-tree">

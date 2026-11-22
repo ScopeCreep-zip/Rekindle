@@ -158,10 +158,21 @@ export function applyTreeOp(state: TreeState, node: string, run: SkinAction, roo
   }
 }
 
-/** Child `page` of the node that is control group `group`. */
+/** The view a `GroupPage{group, page}` shows, if its page is a view. */
+export function pageView(root: ShellNode[], group: number, page: number): ViewKey | undefined {
+  const n = pageNode(root, group, page);
+  return n?.role.kind === "view" ? n.role.key : undefined;
+}
+
+/** The view shown as child `page` of a node of control group `group`: one
+ *  group can hold several containers (Classic's group 1 is both its views,
+ *  `TabbedControl`, and its button rows, `ButtonArea`), which page together. */
 function pageNode(list: ShellNode[], group: number, page: number): ShellNode | undefined {
   for (const n of list) {
-    if (n.controlGroup === group) return (n.children ?? [])[page];
+    if (n.controlGroup === group) {
+      const child = (n.children ?? [])[page];
+      if (child?.role.kind === "view") return child;
+    }
     const inner = pageNode(n.children ?? [], group, page);
     if (inner) return inner;
   }
