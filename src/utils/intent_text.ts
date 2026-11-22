@@ -9,8 +9,16 @@ import type {
 } from "../ipc/commands/dto";
 import { groupDigits } from "./safety_number";
 
-/** `deleteChannel` → `Delete channel`. */
+/** A kind whose review words are not its name's: the contract's wording. */
+const KIND_WORDS: Partial<Record<IntentKind, string>> = {
+  // E3.4 S6 contract: "Change your name in this community".
+  setCommunityDisplayName: "Change your name in this community",
+};
+
+/** `deleteChannel` → `Delete channel`, unless the kind has its own words. */
 export function kindPhrase(kind: IntentKind): string {
+  const own = KIND_WORDS[kind];
+  if (own) return own;
   const words = kind.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
