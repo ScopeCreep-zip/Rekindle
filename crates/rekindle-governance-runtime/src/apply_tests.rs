@@ -219,6 +219,9 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
         .returning(move |_| Arc::clone(&lock));
     deps.expect_governance_state()
         .returning(move |_| Some(state.clone()));
+    // The write path judges successors in the state it installs (SS4h).
+    deps.expect_successor_judgements()
+        .returning(|_| Arc::default());
     let hex = author.to_hex();
     deps.expect_community_membership().returning(move |_| {
         Some(CommunityMembership {
