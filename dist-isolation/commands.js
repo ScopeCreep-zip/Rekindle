@@ -180,6 +180,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "open_profile_window",
   "open_settings_window",
   "open_skin_editor_window",
+  "open_skin_popup",
   "outbox_discard",
   "outbox_retry",
   "pin_attachment",

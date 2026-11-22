@@ -106,6 +106,8 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("open_chat_window", None),
     ("open_settings_window", None),
     ("open_skin_editor_window", None),
+    // The Host already answered the pack's LaunchPopup (plan SK2-A5).
+    ("open_skin_popup", None),
     ("open_community_window", None),
     ("open_profile_window", None),
     ("open_call_window", None),

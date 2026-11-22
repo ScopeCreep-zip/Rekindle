@@ -10,7 +10,7 @@ use rekindle_types::dto::skin_tree::ShellPopup;
 /// the outer and inner boxes coincide and the popup's `position` (outer)
 /// and `inner_size` take the same numbers the launcher reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Frame {
+pub struct WindowBox {
     pub x: i32,
     pub y: i32,
     pub width: i32,
@@ -24,14 +24,14 @@ pub struct Frame {
 /// uses (Symbiosis's `ResizeY="100" IndentTop="23" IndentBottom="23"`),
 /// never shorter than its minimum height.
 #[must_use]
-pub fn popup_frame(popup: &ShellPopup, opener: Frame) -> Frame {
+pub fn popup_frame(popup: &ShellPopup, opener: WindowBox) -> WindowBox {
     let offset = i32::from(popup.anchor.offset);
     let x = match popup.anchor.edge {
         PopupEdge::Left => opener.x + offset,
         PopupEdge::Right => opener.x + opener.width + offset,
     };
     let (start, size) = popup.y.place(opener.height);
-    Frame {
+    WindowBox {
         x,
         y: opener.y + start,
         width: i32::from(popup.width.max(popup.min_width)),
@@ -45,7 +45,7 @@ mod tests {
     use rekindle_types::dto::skin_layout::PopupAnchor;
     use rekindle_types::dto::skin_tree::{Anchor, NodeSpan};
 
-    const OPENER: Frame = Frame {
+    const OPENER: WindowBox = WindowBox {
         x: 100,
         y: 50,
         width: 300,
@@ -81,7 +81,7 @@ mod tests {
     fn a_stretched_span_follows_the_launchers_height() {
         let f = popup_frame(&popup(PopupEdge::Right, 0, STRETCH), OPENER);
         assert_eq!((f.y, f.height), (73, 554));
-        let taller = Frame {
+        let taller = WindowBox {
             height: 700,
             ..OPENER
         };

@@ -10,7 +10,7 @@ use tauri::{
     AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow, Window, WindowEvent, Wry,
 };
 
-use super::popup_place::{popup_frame, Frame};
+use super::popup_place::{popup_frame, WindowBox};
 use super::{base_builder, finish, shape};
 use crate::state::SharedState;
 use crate::window_labels::{self as labels, PopupName, WindowKind};
@@ -40,7 +40,7 @@ pub fn close_if_open(app: &AppHandle, launcher: &WebviewWindow, name: &PopupName
 
 /// `window`'s box in whole logical px: its outer position and inner size
 /// (frameless, so the two boxes coincide).
-fn frame_of(window: &Window<Wry>) -> Result<Frame, String> {
+fn frame_of(window: &Window<Wry>) -> Result<WindowBox, String> {
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let at = window
         .outer_position()
@@ -50,7 +50,7 @@ fn frame_of(window: &Window<Wry>) -> Result<Frame, String> {
         .inner_size()
         .map_err(|e| e.to_string())?
         .to_logical::<i32>(scale);
-    Ok(Frame {
+    Ok(WindowBox {
         x: at.x,
         y: at.y,
         width: size.width,
