@@ -23,7 +23,7 @@ import path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, underTree } from "../../../walk/nav.ts";
-import { createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
+import { createCommunity, createIdentity, createTextChannel, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 
 const SHORTCUTS_RS = path.join(import.meta.dirname, "..", "..", "..", "..", "src-tauri", "src", "shortcuts.rs");
 
@@ -109,14 +109,15 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
 
   it("Add Friend (a shared Modal): focus in, Esc closes it, focus back on Add Friend", async () => {
     await switchTo(browser, BUDDY);
+    // Add Friend sits in the Friends list's own controls: the app's
+    // Friends tab, a tree's Friends view (its button row shows with it).
+    await friendsView(browser);
     if (await underTree(browser)) {
       // A skin's tree draws the pack's own Add Friend control (the Host's
       // addFriend action); a hidden page may hold another, so the shown one.
       await escReturnsFocus(`[data-skin-node="${await visibleSkinNode('[data-skin-action="addFriend"]')}"]`, '[role="dialog"]');
       return;
     }
-    // Add Friend shows on the Friends tab only (BottomActionBar.tsx).
-    await (await shown(browser, '.buddy-tab[title^="Friends"]')).click();
     await escReturnsFocus('[aria-label="Add Friend"]', '[role="dialog"]');
   });
 
