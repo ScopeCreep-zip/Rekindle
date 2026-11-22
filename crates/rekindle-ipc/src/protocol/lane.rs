@@ -149,6 +149,8 @@ impl IpcRequest {
             Self::HiddenGamesGet => ("HiddenGamesGet", Query, Authenticated),
             Self::GameHide { .. } => ("GameHide", Write, Authenticated),
             Self::GameUnhide { .. } => ("GameUnhide", Write, Authenticated),
+            Self::InstalledGamesGet => ("InstalledGamesGet", Query, Authenticated),
+            Self::GameLaunch { .. } => ("GameLaunch", Write, Authenticated),
             Self::GameInviteSend { .. } => ("GameInviteSend", Write, Authenticated),
             Self::FavouriteServersGet => ("FavouriteServersGet", Query, Authenticated),
             Self::FavouriteServerAdd { .. } => ("FavouriteServerAdd", Write, Authenticated),

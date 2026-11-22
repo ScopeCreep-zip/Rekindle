@@ -325,6 +325,25 @@ fn own(request: &IpcRequest) -> Checked {
             }
             Ok(())
         }
+        IpcRequest::GameLaunch {
+            game_id,
+            server,
+            source,
+        } => {
+            if server.is_some() != source.names_server() {
+                return Err(IpcResponse::error(
+                    400,
+                    "an installed launch takes no server; every other source one",
+                ));
+            }
+            rekindle_game_detect::launcher::launch_uri(
+                rekindle_game_detect::GameDatabase::shared(),
+                *game_id,
+                server.as_ref(),
+            )
+            .map(drop)
+            .map_err(|e| IpcResponse::error(400, format!("cannot launch: {e}")))
+        }
         IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
             .map(drop)
             .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),
@@ -358,6 +377,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
         | IpcRequest::HiddenGamesGet
+        | IpcRequest::InstalledGamesGet
         | IpcRequest::FavouriteServersGet
         | IpcRequest::ProfileBioGet
         | IpcRequest::Undo { id: _ }
@@ -465,7 +485,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FavouriteServerRemove { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AuditExport { .. }
-        | IpcRequest::LinkOpen { .. } => own(request),
+        | IpcRequest::LinkOpen { .. }
+        | IpcRequest::GameLaunch { .. } => own(request),
         IpcRequest::SkinList
         | IpcRequest::SkinGet { .. }
         | IpcRequest::SkinFile { .. }

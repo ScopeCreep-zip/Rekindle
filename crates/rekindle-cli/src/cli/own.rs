@@ -69,6 +69,48 @@ pub enum GameCmd {
         #[arg(value_parser = rekindle_types::game_server::ServerAddress::parse)]
         server: rekindle_types::game_server::ServerAddress,
     },
+    /// The games we can launch: installed through Steam or played, never a
+    /// hidden one.
+    Installed,
+    /// Launch a game, to a server when given (a peer's server is reviewed
+    /// first, naming it).
+    Launch {
+        /// The game's id in the game database.
+        id: u32,
+        /// The server, host:port.
+        #[arg(long, value_parser = rekindle_types::game_server::ServerAddress::parse)]
+        server: Option<rekindle_types::game_server::ServerAddress>,
+        /// Where the server came from; `installed` takes no server.
+        #[arg(long, value_enum, default_value = "installed")]
+        source: LaunchSource,
+    },
+}
+
+/// Where a launched game's server came from (`JoinSource`).
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum LaunchSource {
+    /// No server: an installed or played game.
+    Installed,
+    /// One of our favourite servers.
+    Favourite,
+    /// A friend's presence.
+    Friend,
+    /// A friend's game invite.
+    Invite,
+    /// A community's server list.
+    Community,
+}
+
+impl From<LaunchSource> for rekindle_types::game_server::JoinSource {
+    fn from(source: LaunchSource) -> Self {
+        match source {
+            LaunchSource::Installed => Self::Installed,
+            LaunchSource::Favourite => Self::Favourite,
+            LaunchSource::Friend => Self::FriendPresence,
+            LaunchSource::Invite => Self::Invite,
+            LaunchSource::Community => Self::Community,
+        }
+    }
 }
 
 /// The identity's tamper-evident audit log.

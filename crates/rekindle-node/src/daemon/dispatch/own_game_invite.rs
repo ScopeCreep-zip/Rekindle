@@ -1,7 +1,7 @@
 //! Game invites (plan E7.2), on both hosts: an invite goes to one accepted
 //! friend as a ratchet-sealed `GameInvite` (0x0170). Joining one is the
-//! shell's `launch_game_to_server` (`LaunchGameToServer`, Routine), the same
-//! act as "Join Game" from a friend's presence.
+//! Host's `GameLaunch` with `source: Invite` (`JoinGameServer`,
+//! TrustChanging), the same act as "Join Game" from a friend's presence.
 
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::game_server::ServerAddress;

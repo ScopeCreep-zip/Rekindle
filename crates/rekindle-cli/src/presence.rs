@@ -132,6 +132,12 @@ pub fn game_request(cmd: &GameCmd) -> IpcRequest {
             game_id: *id,
             server: server.clone(),
         },
+        GameCmd::Installed => IpcRequest::InstalledGamesGet,
+        GameCmd::Launch { id, server, source } => IpcRequest::GameLaunch {
+            game_id: *id,
+            server: server.clone(),
+            source: (*source).into(),
+        },
     }
 }
 

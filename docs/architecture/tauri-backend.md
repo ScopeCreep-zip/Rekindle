@@ -117,7 +117,7 @@ Commands are registered in `src-tauri/src/invoke.rs` via
 | `voice.rs` | 12 | Join / leave channel, mute, deafen, devices, mode, server-mute, stage hand-raise |
 | `community/` | ~127 across 32 submodules | CRUD, channels, channel_admin, messaging, roles, moderation, mek, invites, notifications, reactions_pins, audit, analytics, automod, polls, expressions, files, link_previews, threads, events, game_servers, unread, presence, onboarding, segments, video, background_sync, diagnostics, profile_blobs, policy |
 | `status.rs` | 5 | Set status / nickname / avatar / status message / get avatar |
-| `game.rs` | 3 | `get_game_status`, `get_game_name`, `launch_game_to_server` |
+| `game.rs` | 4 | `get_game_status`, `get_game_name`, `launch_game` (Host `GameLaunch`), `get_installed_games` |
 | `relay.rs` | 4 | Strand Relay volunteer / revoke / list (received / volunteered) |
 | `search.rs` | 1 | `search_messages` — FTS5 over `messages_fts` / `thread_messages_fts` |
 | `sync.rs` | 10 | Personal sync record, pairing, read / write manifest / read_state / preferences / paired_devices |

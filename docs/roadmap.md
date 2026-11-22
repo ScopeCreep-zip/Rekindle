@@ -70,7 +70,7 @@ publish to DHT, integrate with community game-server favourites.
 - [x] Configurable scan interval
 - [x] DHT profile subkey 4 publish on game change
 - [x] Buddy list UI ("Playing: Game Name")
-- [x] Server-address tracking (`launch_game_to_server`)
+- [x] Server-address tracking (the Host's `GameLaunch`)
 - [x] Community game-server favourites (`game_servers` table + UI)
 - [ ] Game time tracking (elapsed, persisted to SQLite)
 - [ ] Rich presence (server info display)

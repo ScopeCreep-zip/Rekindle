@@ -171,9 +171,10 @@ const BuddyList: Component = () => {
             <ContextMenu.Item
               class="context-menu-item"
               onSelect={() =>
-                commands.launchGameToServer(
+                commands.launchGame(
                   friend.gameInfo!.gameId!,
                   friend.gameInfo!.serverAddress!,
+                  "friendPresence",
                 )
               }
             >

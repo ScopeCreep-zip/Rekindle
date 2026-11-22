@@ -103,6 +103,7 @@ impl IpcRequest {
             | Self::PresenceGet
             | Self::GameTotalsGet
             | Self::HiddenGamesGet
+            | Self::InstalledGamesGet
             | Self::FavouriteServersGet
             | Self::ProfileBioGet
             | Self::AvatarGet { .. } => {
@@ -231,6 +232,8 @@ impl IpcRequest {
             | Self::AuditVerify
             | Self::AuditExport { .. }
             | Self::LinkOpen { .. }
+            // No agent starts a process on the user's machine.
+            | Self::GameLaunch { .. }
             | Self::AgentRegister { .. }
             | Self::AgentRevoke { .. }
             | Self::PolicyReload => None,

@@ -1,5 +1,6 @@
 pub mod database;
 pub mod error;
+pub mod installed;
 pub mod launcher;
 pub mod platform;
 pub mod rich_presence;

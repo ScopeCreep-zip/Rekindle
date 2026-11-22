@@ -72,7 +72,7 @@ const GameServerList: Component<GameServerListProps> = (props) => {
   function handleJoin(gameId: string, address: string): void {
     const id = parseInt(gameId, 10);
     if (!isNaN(id)) {
-      commands.launchGameToServer(id, address);
+      void commands.launchGame(id, address, "community");
     }
   }
 

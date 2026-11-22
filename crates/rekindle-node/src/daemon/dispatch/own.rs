@@ -57,6 +57,9 @@ pub(crate) async fn route(
             }
             crate::host::infoview::get(ctx, subject, window).await
         }
+        request @ (IpcRequest::InstalledGamesGet | IpcRequest::GameLaunch { .. }) => {
+            super::own_game_launch::route(ctx, state, request).await
+        }
         request @ (IpcRequest::FavouriteServersGet
         | IpcRequest::FavouriteServerAdd { .. }
         | IpcRequest::FavouriteServerRemove { .. }) => {

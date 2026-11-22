@@ -79,7 +79,7 @@
     "allow-get-welcome-screen",
     "allow-join-community",
     "allow-join-voice-channel",
-    "allow-launch-game-to-server",
+    "allow-launch-game",
     "allow-leave-community",
     "allow-leave-voice",
     "allow-list-community-invites",

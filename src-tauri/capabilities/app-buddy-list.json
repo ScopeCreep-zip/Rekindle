@@ -36,7 +36,7 @@
     "allow-get-pending-requests",
     "allow-get-unread-counts",
     "allow-join-community",
-    "allow-launch-game-to-server",
+    "allow-launch-game",
     "allow-list-received-relay-offers",
     "allow-list-volunteered-relay-friends",
     "allow-logout",

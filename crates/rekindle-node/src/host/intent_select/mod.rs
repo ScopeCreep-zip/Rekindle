@@ -17,6 +17,7 @@ mod community;
 mod community_messages;
 mod events;
 mod friends;
+mod game_launch;
 mod game_servers;
 mod group_dm;
 mod rich_messaging;
@@ -213,6 +214,11 @@ pub(crate) async fn select(
             s.subject = Subject::Link { host };
             s.facts.push(Fact::IpAddressLeaves);
         }
+        IpcRequest::GameLaunch {
+            game_id,
+            server,
+            source,
+        } => game_launch::selection(ctx, *game_id, server.as_ref(), *source, &mut s).await?,
         IpcRequest::VoiceJoin { channel, .. } => {
             s.subject = Subject::Named {
                 name: channel.clone(),
@@ -245,6 +251,7 @@ pub(crate) async fn select(
         | IpcRequest::HiddenGamesGet
         | IpcRequest::ActivityList { .. }
         | IpcRequest::InfoviewGet { .. }
+        | IpcRequest::InstalledGamesGet
         | IpcRequest::FavouriteServersGet
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet

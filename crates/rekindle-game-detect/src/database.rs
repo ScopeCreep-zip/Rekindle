@@ -103,6 +103,18 @@ impl GameDatabase {
         }
     }
 
+    /// The ids of every game with Steam application id `app_id`, ascending
+    /// (two entries may share one: a game and its successor under the same
+    /// Steam app).
+    #[must_use]
+    pub fn ids_with_steam_app_id(&self, app_id: u32) -> std::collections::BTreeSet<u32> {
+        self.by_process
+            .values()
+            .filter(|entry| entry.steam_app_id == Some(app_id))
+            .map(|entry| entry.id)
+            .collect()
+    }
+
     /// Look up a game by process name (case-insensitive).
     pub fn lookup_by_process(&self, process_name: &str) -> Option<&GameEntry> {
         self.by_process.get(&process_name.to_lowercase())

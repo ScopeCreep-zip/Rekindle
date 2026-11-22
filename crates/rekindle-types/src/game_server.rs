@@ -210,3 +210,40 @@ mod tests {
         assert_eq!(g, back);
     }
 }
+
+/// Where a launch's server address came from (plan E7.2, lead decision
+/// (50)); it decides the launch's intent class (ADR 0019). For
+/// `FriendPresence`, `Invite` and `Community` a peer chose the address, so
+/// the launch sends our IP address to a host someone else picked
+/// (threat model I10): TrustChanging, the address named in the review.
+/// `Installed` (no server) and `Favourite` (a server we stored) are ours:
+/// Routine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JoinSource {
+    /// A game we have installed or played, launched without a server.
+    Installed,
+    /// One of our own favourite servers (`favourite_servers`).
+    Favourite,
+    /// A friend's or community member's presence: the server they play on.
+    FriendPresence,
+    /// A friend's game invite.
+    Invite,
+    /// A community's game-server list.
+    Community,
+}
+
+impl JoinSource {
+    /// Whether a peer chose the server address (TrustChanging).
+    #[must_use]
+    pub const fn peer_supplied(self) -> bool {
+        matches!(self, Self::FriendPresence | Self::Invite | Self::Community)
+    }
+
+    /// Whether a launch from this source names a server: every source but
+    /// `Installed`, which never does.
+    #[must_use]
+    pub const fn names_server(self) -> bool {
+        !matches!(self, Self::Installed)
+    }
+}

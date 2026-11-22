@@ -273,7 +273,9 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
                 <span class="profile-popup-game-server">{info().serverAddress}</span>
                 <button
                   class="profile-popup-join-btn"
-                  onClick={() => commands.launchGameToServer(info().gameId!, info().serverAddress!)}
+                  onClick={() =>
+                    void commands.launchGame(info().gameId!, info().serverAddress!, "friendPresence")
+                  }
                 >
                   Join Game
                 </button>

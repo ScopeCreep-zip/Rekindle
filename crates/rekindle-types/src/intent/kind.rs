@@ -108,6 +108,8 @@ pub enum IntentKind {
     DownloadAttachment,
     RevealDownloadedAttachment,
     // Routine: Games
+    /// Launch a game we have installed, or to one of our own favourite
+    /// servers (`GameLaunch`, lead decision (50)).
     LaunchGameToServer,
     // Routine: Outgoing requests you can withdraw
     CancelInvite,
@@ -217,6 +219,9 @@ pub enum IntentKind {
     VolunteerRelay,
     // TrustChanging: Outbound files and links
     OpenExternalUrl,
+    /// Launch a game to a server whose address a peer chose (lead decision
+    /// (50)): our IP address reaches that host.
+    JoinGameServer,
     UploadAttachment,
     // TrustChanging: Starting device pairing
     GeneratePairingQrSvg,
@@ -473,6 +478,7 @@ impl IntentKind {
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl
+            | Self::JoinGameServer
             | Self::UploadAttachment
             | Self::GeneratePairingQrSvg
             | Self::StartPairingSession

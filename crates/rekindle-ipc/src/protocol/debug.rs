@@ -163,6 +163,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::HiddenGamesGet
             | Self::GameHide { .. }
             | Self::GameUnhide { .. }
+            | Self::InstalledGamesGet
+            | Self::GameLaunch { .. }
             | Self::GameInviteSend { .. }
             | Self::FavouriteServersGet
             | Self::FavouriteServerAdd { .. }
@@ -277,6 +279,14 @@ impl IpcRequest {
                 .debug_struct("GameUnhide")
                 .field("game_id", game_id)
                 .finish(),
+            Self::InstalledGamesGet => write!(f, "InstalledGamesGet"),
+            Self::GameLaunch {
+                game_id, source, ..
+            } => f
+                .debug_struct("GameLaunch")
+                .field("game_id", game_id)
+                .field("source", source)
+                .finish_non_exhaustive(),
             Self::GameInviteSend {
                 public_key,
                 game_id,

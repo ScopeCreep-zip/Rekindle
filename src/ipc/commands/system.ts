@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  FavouriteServerView, HiddenGameView, NetworkStatus, Preferences, QuickWipeState, SettingsTab,
+  FavouriteServerView, HiddenGameView, InstalledGameView, JoinSource, NetworkStatus, Preferences, QuickWipeState, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, OnboardingConfigEdit, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
@@ -80,8 +80,10 @@ export const systemCommands = {
   hideGame: (gameId: number) => hostInvoke<HiddenGameView[]>("hide_game", { gameId }),
   unhideGame: (gameId: number) => hostInvoke<HiddenGameView[]>("unhide_game", { gameId }),
   getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
-  launchGameToServer: (gameId: number, serverAddress: string) =>
-    invoke<void>("launch_game_to_server", { gameId, serverAddress }),
+  /** The one launch path (`GameLaunch`): `server` null only for "installed". */
+  launchGame: (gameId: number, server: string | null, source: JoinSource) =>
+    hostInvoke<null>("launch_game", { gameId, server, source }),
+  getInstalledGames: () => hostInvoke<InstalledGameView[]>("get_installed_games"),
   sendGameInvite: (publicKey: string, gameId: number, server: string) =>
     hostInvoke<string>("send_game_invite", { publicKey, gameId, server }),
   getFavouriteServers: () => hostInvoke<FavouriteServerView[]>("get_favourite_servers"),

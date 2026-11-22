@@ -3,7 +3,7 @@
 //! `ServerAddress` at both ends: the sender's request carries one and the
 //! decoder refuses any other text, so nothing unparsed reaches a launch. A
 //! received invite is shown, never acted on: joining is the receiver's own
-//! action, the shell's `launch_game_to_server` (`LaunchGameToServer`).
+//! action, the Host's `GameLaunch` (`JoinGameServer`, lead decision (50)).
 //! An invite says what we play, so it follows the current-game privacy
 //! settings: never for a hidden game, and none while `share_current_game`
 //! is off.

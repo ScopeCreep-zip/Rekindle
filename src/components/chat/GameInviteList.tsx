@@ -32,7 +32,7 @@ const GameInviteList: Component<{ peerId: string; peerName: string }> = (props) 
 
   const dismiss = (invite: Invite) => setInvites((list) => list.filter((i) => i !== invite));
   const join = async (invite: Invite) => {
-    await commands.launchGameToServer(invite.gameId, invite.server);
+    await commands.launchGame(invite.gameId, invite.server, "invite");
     dismiss(invite);
   };
 

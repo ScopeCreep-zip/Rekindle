@@ -248,6 +248,19 @@ export interface HiddenGameView {
   iconKey: string | null;
 }
 
+/** Where a launch's server came from (`JoinSource`, lead decision (50)):
+ *  the Host reviews a peer's server first, naming it. */
+export type JoinSource = "installed" | "favourite" | "friendPresence" | "invite" | "community";
+
+/** A game we can launch (`InstalledGamesGet`, plan E7.15 IV3). */
+export interface InstalledGameView {
+  gameId: number;
+  gameName: string;
+  iconKey: string | null;
+  /** Whether a launch without a server can start it. */
+  launchable: boolean;
+}
+
 /** A personal favourite game server (plan E7.2), as the Host stores it.
  *  `invitable` is the Host's answer to whether an invite may name it: the
  *  game is not hidden and current-game sharing is on. */

@@ -373,6 +373,21 @@ pub enum IpcRequest {
     GameHide { game_id: u32 },
     /// Take a game off the hide list (plan E7.2). The hide list comes back.
     GameUnhide { game_id: u32 },
+    /// The games we can launch (plan E7.15 IV3,
+    /// `Vec<dto::presence::InstalledGameView>`): the bundled database's
+    /// games Steam has installed (read only while game detection is on),
+    /// with the games we have played, minus the hide list.
+    InstalledGamesGet,
+    /// Launch a game, to `server` when given (lead decision (50)): the one
+    /// launch path for every frontend. `source` says where the address came
+    /// from and so the intent class: a peer's address is TrustChanging, the
+    /// review naming it; our own favourite or an installed game is Routine.
+    /// `Installed` takes no server, every other source one.
+    GameLaunch {
+        game_id: u32,
+        server: Option<rekindle_types::game_server::ServerAddress>,
+        source: rekindle_types::game_server::JoinSource,
+    },
     /// Our favourite game servers (plan E7.2), each with whether an invite
     /// may name it (`invitable`: not a hidden game, current-game sharing on).
     FavouriteServersGet,

@@ -102,6 +102,11 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("get_hidden_games", HostCall::Request("HiddenGamesGet")),
     ("hide_game", HostCall::Request("GameHide")),
     ("unhide_game", HostCall::Request("GameUnhide")),
+    ("launch_game", HostCall::Request("GameLaunch")),
+    (
+        "get_installed_games",
+        HostCall::Request("InstalledGamesGet"),
+    ),
     ("send_game_invite", HostCall::Request("GameInviteSend")),
     (
         "get_favourite_servers",
@@ -418,7 +423,6 @@ pub const SHELL_LOCAL: &[&str] = &[
     "open_profile_window",
     "open_call_window",
     "get_game_name",
-    "launch_game_to_server",
 ];
 
 /// `(Tauri command, the step that ports it)`.

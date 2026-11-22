@@ -234,6 +234,15 @@ impl DataRoot {
     }
 }
 
+/// The user's home directory: the root of the per-OS paths other apps
+/// keep (Steam's library, plan E7.15 IV3).
+///
+/// # Errors
+/// [`PathsError`] when the platform has no home directory.
+pub fn home_dir() -> Result<PathBuf, PathsError> {
+    dirs::home_dir().ok_or(PathsError("home"))
+}
+
 /// The webview's platform stores outside `DataRoot.data` (see
 /// [`WebviewStore::Platform`]).
 fn platform_webview_dirs() -> Result<Vec<PathBuf>, PathsError> {

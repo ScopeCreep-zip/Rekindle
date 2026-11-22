@@ -210,8 +210,12 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("HiddenGamesGet", None),
     ("GameHide", Some(IntentKind::SetPreferences)),
     ("GameUnhide", Some(IntentKind::ShareCurrentGame)),
+    ("InstalledGamesGet", None),
+    // Routine for our own launch; the Host selects `JoinGameServer`
+    // (TrustChanging) when a peer chose the server (lead decision (50)).
+    ("GameLaunch", Some(IntentKind::LaunchGameToServer)),
     // An invite is a message to one friend (plan E7.2); joining from one is
-    // the shell's `launch_game_to_server` (`LaunchGameToServer`, Routine).
+    // `GameLaunch` with `source: Invite` (`JoinGameServer`, TrustChanging).
     ("GameInviteSend", Some(IntentKind::SendDmMessage)),
     ("FavouriteServersGet", None),
     ("FavouriteServerAdd", Some(IntentKind::SetPreferences)),

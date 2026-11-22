@@ -1,6 +1,6 @@
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::presence::{
-    FavouriteServerView, GameTotalView, HiddenGameView, OwnGame, OwnPresenceView,
+    FavouriteServerView, GameTotalView, HiddenGameView, InstalledGameView, OwnGame, OwnPresenceView,
 };
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -27,19 +27,32 @@ pub async fn get_game_name(game_id: u32) -> Option<String> {
     db.lookup_by_id(game_id).map(|e| e.name.clone())
 }
 
-/// Launch a game and connect to a server. The address came from a peer, so
-/// it is parsed first: only a `host:port` reaches the URI the OS opens
-/// (plan E1.1).
-///
-/// Uses `steam://connect/{addr}` for Steam games or a custom connect template
-/// from the game database.
+/// Launch a game, to `server` when given (`IpcRequest::GameLaunch`, lead
+/// decision (50)). `server` arrives parsed: a text that is not `host:port`
+/// fails to deserialize. `source` decides the review: a peer's address is
+/// reviewed first, naming it.
 #[tauri::command]
-pub async fn launch_game_to_server(game_id: u32, server_address: String) -> Result<(), String> {
-    let server = rekindle_game_detect::launcher::ServerAddress::parse(&server_address)
-        .map_err(|e| format!("not a server address: {e}"))?;
-    let db = rekindle_game_detect::GameDatabase::bundled();
-    rekindle_game_detect::launcher::launch_to_server(&db, game_id, &server)
-        .map_err(|e| e.to_string())
+pub async fn launch_game(
+    game_id: u32,
+    server: Option<rekindle_game_detect::launcher::ServerAddress>,
+    source: rekindle_types::game_server::JoinSource,
+    state: State<'_, SharedState>,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::GameLaunch {
+        game_id,
+        server,
+        source,
+    };
+    host_call::call(&state, request).await
+}
+
+/// The games we can launch (`IpcRequest::InstalledGamesGet`, plan E7.15
+/// IV3).
+#[tauri::command]
+pub async fn get_installed_games(
+    state: State<'_, SharedState>,
+) -> Result<Done<Vec<InstalledGameView>>, CommandError> {
+    host_call::call(&state, IpcRequest::InstalledGamesGet).await
 }
 
 /// Invite an accepted friend to join us on a game server

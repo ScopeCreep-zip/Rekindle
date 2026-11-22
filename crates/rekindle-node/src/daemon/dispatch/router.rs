@@ -182,7 +182,9 @@ async fn route(
         | IpcRequest::GamePresenceClear
         | IpcRequest::AuditVerify
         | IpcRequest::AuditExport { .. }
-        | IpcRequest::LinkOpen { .. }) => own::route(ctx, state, request).await,
+        | IpcRequest::LinkOpen { .. }
+        | IpcRequest::InstalledGamesGet
+        | IpcRequest::GameLaunch { .. }) => own::route(ctx, state, request).await,
 
         // ── Skins (plan E7.7.2) ──────────────────────────────────
         request @ (IpcRequest::SkinList
