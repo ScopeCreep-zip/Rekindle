@@ -45,6 +45,36 @@ async fn drain_cold_start(app_handle: &tauri::AppHandle, state: &Arc<AppState>) 
     }
 }
 
+/// Run `handle` on each item `pop` yields until the stop flag turns true,
+/// or its sender is gone: the dispatch loop ended without the flag (its task
+/// panicked or was aborted). A gone sender's `changed()` is ready at once on
+/// every poll, so a worker that only read the flag re-polled it forever,
+/// one busy runtime thread per worker (IC1).
+async fn work_until_stopped<T, P, PF, H, HF>(
+    mut stop: tokio::sync::watch::Receiver<bool>,
+    worker: &'static str,
+    mut pop: P,
+    mut handle: H,
+) where
+    P: FnMut() -> PF,
+    PF: std::future::Future<Output = T>,
+    H: FnMut(T) -> HF,
+    HF: std::future::Future<Output = ()>,
+{
+    loop {
+        tokio::select! {
+            biased;
+            changed = stop.changed() => {
+                if changed.is_err() || *stop.borrow() {
+                    tracing::info!(worker, "ingress worker shutting down");
+                    break;
+                }
+            }
+            item = pop() => handle(item).await,
+        }
+    }
+}
+
 /// Start the Veilid event dispatch loop.
 pub async fn start_dispatch_loop(
     app_handle: tauri::AppHandle,
@@ -60,30 +90,23 @@ pub async fn start_dispatch_loop(
     // fast path). Single worker — per-sender fragment ORDER is
     // load-bearing for reassembly. Terminated by a watch flag flipped
     // when this loop shuts down.
-    let (worker_stop_tx, mut worker_stop_rx) = tokio::sync::watch::channel(false);
+    let (worker_stop_tx, worker_stop_rx) = tokio::sync::watch::channel(false);
     let worker_handle = {
         let app_handle = app_handle.clone();
         let state = Arc::clone(&state);
         tauri::async_runtime::spawn(async move {
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = worker_stop_rx.changed() => {
-                        if *worker_stop_rx.borrow() {
-                            tracing::info!("gossip ingress worker shutting down");
-                            break;
-                        }
-                    }
-                    item = state.gossip_ingress.pop() => {
-                        crate::services::veilid::app_message::process_ingress_item(
-                            &app_handle,
-                            &state,
-                            item,
-                        )
-                        .await;
-                    }
-                }
-            }
+            let (app_handle, state) = (&app_handle, &state);
+            work_until_stopped(
+                worker_stop_rx,
+                "gossip",
+                move || state.gossip_ingress.pop(),
+                move |item| {
+                    crate::services::veilid::app_message::process_ingress_item(
+                        app_handle, state, item,
+                    )
+                },
+            )
+            .await;
         })
     };
 
@@ -98,36 +121,27 @@ pub async fn start_dispatch_loop(
     // events (largely order-tolerant, but kept ordered conservatively).
     // Shares the gossip worker's stop signal (one `send(true)` stops
     // both).
-    let mut control_stop_rx = worker_stop_tx.subscribe();
+    let control_stop_rx = worker_stop_tx.subscribe();
     let control_worker_handle = {
         let app_handle = app_handle.clone();
         let state = Arc::clone(&state);
         tauri::async_runtime::spawn(async move {
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = control_stop_rx.changed() => {
-                        if *control_stop_rx.borrow() {
-                            tracing::info!("control ingress worker shutting down");
-                            break;
-                        }
+            let (app_handle, state) = (&app_handle, &state);
+            work_until_stopped(
+                control_stop_rx,
+                "control",
+                move || state.control_ingress.pop(),
+                move |item| async move {
+                    // Queued before a logout, popped after: the update
+                    // belongs to a session that has ended (plan C4.L3).
+                    if crate::state_helpers::login_scope(state).is_none() {
+                        tracing::debug!("identity-dependent update dropped: no session");
+                        return;
                     }
-                    item = state.control_ingress.pop() => {
-                        // Queued before a logout, popped after: the update
-                        // belongs to a session that has ended (plan C4.L3).
-                        if crate::state_helpers::login_scope(&state).is_none() {
-                            tracing::debug!("identity-dependent update dropped: no session");
-                            continue;
-                        }
-                        crate::services::veilid::handle_veilid_update(
-                            &app_handle,
-                            &state,
-                            item,
-                        )
-                        .await;
-                    }
-                }
-            }
+                    crate::services::veilid::handle_veilid_update(app_handle, state, item).await;
+                },
+            )
+            .await;
         })
     };
 
@@ -249,5 +263,68 @@ pub async fn start_dispatch_loop(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use super::work_until_stopped;
+
+    /// A worker whose stop sender is gone ends; it never re-polls the
+    /// closed channel (IC1: two workers spun this way for hours).
+    #[tokio::test]
+    async fn a_dropped_stop_sender_ends_the_worker() {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        drop(tx);
+        let pops = AtomicUsize::new(0);
+        let worker = work_until_stopped(
+            rx,
+            "test",
+            || {
+                let polled = pops.fetch_add(1, Ordering::SeqCst);
+                assert!(polled < 1_000, "the worker spins on a closed stop channel");
+                std::future::pending::<()>()
+            },
+            |()| async {},
+        );
+        tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .expect("the worker ends");
+        assert_eq!(pops.load(Ordering::SeqCst), 1, "one pass, then the end");
+    }
+
+    /// The flag stops a worker after it handled what it was given.
+    #[tokio::test]
+    async fn the_stop_flag_ends_the_worker_after_its_items() {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        let (items_tx, items_rx) = tokio::sync::mpsc::unbounded_channel::<u32>();
+        let items = tokio::sync::Mutex::new(items_rx);
+        let handled = AtomicUsize::new(0);
+        items_tx.send(1).expect("send");
+        items_tx.send(2).expect("send");
+        let (items, counted, flag) = (&items, &handled, &tx);
+        let worker = work_until_stopped(
+            rx,
+            "test",
+            move || async move {
+                let next = items.lock().await.recv().await;
+                if next.is_none() {
+                    std::future::pending::<()>().await;
+                }
+                next
+            },
+            move |_| async move {
+                if counted.fetch_add(1, Ordering::SeqCst) == 1 {
+                    flag.send(true).expect("flag");
+                }
+            },
+        );
+        tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .expect("the worker ends on the flag");
+        assert_eq!(handled.load(Ordering::SeqCst), 2);
     }
 }
