@@ -2,7 +2,8 @@
 // (a fleet peer) plays on a server: the view lists it under Friends' servers.
 // Add to Favorites puts it under Favorites (the Host's view, refreshed by
 // servers-event), where that row's Add to Favorites is then refused as already
-// a favourite; Remove takes it out again.
+// a favourite; Remove takes it out again. Refresh (G4) queries on the user's request
+// only, and a server that never answers shows the Host's reason.
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, resolveIntent, waitUntil } from "../../../walk/helpers.ts";
@@ -84,5 +85,43 @@ describe("the Servers view (E7.2 G3)", function () {
     await pressIn("Favorites", "Remove");
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 });
     await waitUntil(async () => (await row("Favorites")) === null, NET_WAIT_MS, "the server stayed in Favorites");
+  });
+
+  // E7.2 G4: Refresh is the user's act (a query shows our IP to the server).
+  // The fleet friend's server at a documentation address never answers, so
+  // its row ends unanswered with the Host's reason, and Refresh is allowed
+  // again once the run is over.
+  it("refreshes on request and shows a server's lack of answer", async () => {
+    await showSkinView(browser, "servers");
+    await waitUntil(async () => (await row("Friends' servers")) !== null, NET_WAIT_MS, "the friend's server is not listed");
+    const info = async (): Promise<{ kind: string; text: string } | null> =>
+      (await browser.execute((address: string) => {
+        const group = document.querySelector('.servers-view-section[aria-label="Friends\' servers"]');
+        const r = Array.from(group?.querySelectorAll<HTMLElement>(".servers-view-row") ?? []).find((e) =>
+          (e.textContent ?? "").includes(address),
+        );
+        const i = r?.querySelector<HTMLElement>(".servers-view-info");
+        return i ? { kind: i.dataset.info ?? "", text: (i.textContent ?? "").trim() } : null;
+      }, SERVER)) as { kind: string; text: string } | null;
+    const refreshAllowed = async (): Promise<boolean> =>
+      (await browser.execute(() => {
+        const b = Array.from(document.querySelectorAll<HTMLElement>(".servers-view-toolbar .servers-view-action")).find(
+          (e) => (e.textContent ?? "").trim() === "Refresh",
+        );
+        return !!b && b.getAttribute("aria-disabled") !== "true";
+      })) as boolean;
+
+    // Never queried until the user asks.
+    expect(await info()).toBe(null);
+    await waitUntil(refreshAllowed, NET_WAIT_MS, "Refresh was not allowed");
+    await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".servers-view-toolbar .servers-view-action"))
+        .find((e) => (e.textContent ?? "").trim() === "Refresh")
+        ?.click(),
+    );
+    await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 });
+    await waitUntil(async () => (await info())?.kind === "unanswered", NET_WAIT_MS, "the server never reached unanswered");
+    expect((await info())!.text.length).toBeGreaterThan(0);
+    await waitUntil(refreshAllowed, NET_WAIT_MS, "Refresh stayed refused after the run");
   });
 });
