@@ -143,6 +143,22 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_names_a_group_within_the_name_bounds() {
+        let rename = |group_id: String, name: &str| {
+            check(&IpcRequest::GroupDmRename {
+                group_id,
+                name: name.to_owned(),
+            })
+        };
+        let g = "0f".repeat(16);
+        assert!(rename(g.clone(), "scrim night").is_ok());
+        assert!(rename(g.clone(), &"x".repeat(MAX_NAME_CHARS)).is_ok());
+        assert!(rename(g.clone(), &"x".repeat(MAX_NAME_CHARS + 1)).is_err());
+        assert!(rename(g, "   ").is_err());
+        assert!(rename("0F".repeat(16), "scrim night").is_err());
+    }
+
+    #[test]
     fn group_ids_are_sixteen_bytes_of_lowercase_hex() {
         assert!(group_id(&"0f".repeat(16)).is_ok());
         assert!(group_id(&"0F".repeat(16)).is_err());

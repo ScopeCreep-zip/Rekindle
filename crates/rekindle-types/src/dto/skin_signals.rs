@@ -13,7 +13,7 @@ use crate::dto::skin_action::Capability;
 /// Every [`Capability`] (Xfire's `OnAppCan<X>` / `OnAppCannot<X>`), in
 /// order: each is in exactly one of [`SkinSignalSet::can`] and
 /// [`SkinSignalSet::cannot`].
-pub const EVERY_CAPABILITY: [Capability; 25] = [
+pub const EVERY_CAPABILITY: [Capability; 26] = [
     Capability::AddFriend,
     Capability::Chat,
     Capability::Profile,
@@ -35,6 +35,7 @@ pub const EVERY_CAPABILITY: [Capability; 25] = [
     Capability::LeaveGameLobby,
     Capability::CreateRoom,
     Capability::EnterRoom,
+    Capability::RenameRoom,
     Capability::Delete,
     Capability::DeleteSelected,
     Capability::OpenSelected,

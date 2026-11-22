@@ -286,7 +286,8 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
                 .collect();
             let joined = groups.into_iter().map(|g| {
                 let others = g.roster.iter().filter(|m| m.identity != owner).count();
-                (g.group_id, Group::Joined { others })
+                let creator = g.roster.first().is_some_and(|m| m.identity == owner);
+                (g.group_id, Group::Joined { others, creator })
             });
             let pending = invites.into_iter().map(|i| (i.group_id, Group::Pending));
             let favourites: BTreeSet<(u32, String)> = favourites

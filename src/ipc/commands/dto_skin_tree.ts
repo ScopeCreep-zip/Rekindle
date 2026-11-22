@@ -222,6 +222,7 @@ export type Capability =
   | "leaveGameLobby"
   | "createRoom"
   | "enterRoom"
+  | "renameRoom"
   | "delete"
   | "deleteSelected"
   | "openSelected"

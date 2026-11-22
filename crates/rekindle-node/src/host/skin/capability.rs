@@ -72,8 +72,10 @@ impl<'a> Selected<'a> {
 /// A group DM as the capabilities see it (`group_dms`, `group_dm_invites`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Group {
-    /// We are in it, with this many other members.
-    Joined { others: usize },
+    /// We are in it, with this many other members; `creator` when we
+    /// created it (the roster's first member, `rekindle_dm::GroupRoster::
+    /// creator`), the one member whose rename the others accept.
+    Joined { others: usize, creator: bool },
     /// We are invited and have not joined.
     Pending,
 }
@@ -188,7 +190,7 @@ pub(crate) fn allows(
         C::LeaveGameLobby | C::LaunchGameLobby => false,
         // A group with another member, while we are in a game we can launch.
         C::HostGameLobby => {
-            matches!(group, Some(Group::Joined { others }) if others >= 1)
+            matches!(group, Some(Group::Joined { others, .. }) if others >= 1)
                 && world.own_game.is_some_and(launchable)
         }
         C::AddServer => match selected {
@@ -230,6 +232,9 @@ pub(crate) fn allows(
             group.is_some()
                 || matches!(selected, Selected::Friend { key, .. } if world.attached.contains(key))
         }
+        // Only the creator names the room (lead decision 1a; the others
+        // drop a rename from anyone else, `group_dm/rename.rs`).
+        C::RenameRoom => matches!(group, Some(Group::Joined { creator: true, .. })),
         C::OpenSelected => media_exists(selected),
         // Deleting a room is leaving it (SK2-G §6).
         C::DeleteSelected => media_exists(selected) || matches!(group, Some(Group::Joined { .. })),

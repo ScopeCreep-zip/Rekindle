@@ -285,6 +285,10 @@ pub enum Capability {
     LeaveGameLobby,
     CreateRoom,
     EnterRoom,
+    /// Rename the selected room: we created it (lead decision 1a; the
+    /// `RoomName` field's edit). Rekindle's own: Xfire's rooms were
+    /// renamed on the server.
+    RenameRoom,
     Delete,
     DeleteSelected,
     OpenSelected,
