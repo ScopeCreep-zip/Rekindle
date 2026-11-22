@@ -247,6 +247,7 @@ pub async fn retry_send(
     if !outbox.retry(client_id).await? {
         return Err(FriendError::NotFound(format!("send {client_id}")));
     }
+    super::handshake_order::retried(host, client_id).await;
     tracing::debug!(%client_id, "send retried by the user");
     Ok(())
 }

@@ -3,7 +3,7 @@
 //! through this one trait, which the Host implements once for both hosts
 //! (`rekindle_node::host::adapters::friends`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -55,6 +55,12 @@ pub struct FriendStores {
     /// Our first contacts not yet answered under their session, by peer
     /// (plan E2.4, B6).
     pub first_contacts: Mutex<HashMap<String, crate::operations::prekeys::FirstContact>>,
+    /// The peers to whom a first contact's row (the PreKeyInit carrying our
+    /// `FriendAccept` or `SessionResetAccept`) may still be unsettled in the
+    /// outbox (plan HOL1): set when it is committed or retried, rebuilt from
+    /// the outbox at unlock, cleared when the peer's frame under the session
+    /// settles it. A peer not here costs a received frame no outbox query.
+    pub unsettled_first_contacts: Mutex<HashSet<String>>,
     /// Our group control frames that opened a session with a roster member
     /// from their prekey record, until they answer under it (plan E2.6,
     /// B6): the frame resent once from a fresh slot if they refuse it.
@@ -142,6 +148,7 @@ impl FriendStores {
         self.creator_answers.lock().clear();
         self.incoming_resets.lock().clear();
         self.first_contacts.lock().clear();
+        self.unsettled_first_contacts.lock().clear();
         self.group_first_contacts.lock().clear();
         self.pending_rotations.lock().clear();
         self.typing_in.lock().clear();

@@ -99,6 +99,14 @@ pub(crate) async fn run(
         super::own_records::tell_stage(told, friends, stop)
     });
 
+    // The peers whose first contact is still unsettled in the outbox (plan
+    // HOL1): only a frame of theirs under the session queries it.
+    let first = super::adapters::friends::HostFriends::of(ctx);
+    let restored = rekindle_transport::operations::dm::handshake::restore_first_contacts(&first);
+    if let Err(e) = restored.await {
+        return fail(ctx, IpcResponse::error(500, format!("outbox: {e}"))).await;
+    }
+
     // 2. The session's one record pool, with what the last lock left unsent.
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {

@@ -26,6 +26,8 @@ use super::send::{self, Framed};
 use crate::operations::friend::{FriendError, FriendHost};
 use crate::operations::prekeys::Rejection;
 
+pub use super::handshake_order::{restore_first_contacts, settle_first_contact, waits_for};
+
 /// The client id of our `Unfriended` row to `peer`: the one row their
 /// `UnfriendedAck` settles.
 #[must_use]
@@ -44,84 +46,6 @@ pub fn unfriended_peer(client_id: &str) -> Option<&str> {
 #[must_use]
 pub fn client_prefix(kind: DmTypeId) -> String {
     format!("{kind:?}:")
-}
-
-/// The kinds whose row waits for no other row of the stream (plan HOL1,
-/// lead decision 47): a first contact and a request themselves, a session
-/// reset's frames, a removal and its ack, a group's and a creator round's
-/// frames (roster admission, not the friendship, admits them; a ratchet
-/// frame among them waits for the session as [`Framed::Pending`]), and a
-/// call's end. Every other frame needs the peer to have applied our
-/// friendship and to hold our session (the receiver drops it otherwise:
-/// `friend/presence_key.rs`, `direct/frame.rs` NoSession), so it waits for
-/// our unsettled first contact ([`waits_for`]).
-const INDEPENDENT: [DmTypeId; 21] = [
-    DmTypeId::FriendRequest,
-    DmTypeId::FriendAccept,
-    DmTypeId::SessionResetRequest,
-    DmTypeId::SessionResetAccept,
-    DmTypeId::SessionResetDecline,
-    DmTypeId::PreKeyRejected,
-    DmTypeId::Unfriended,
-    DmTypeId::UnfriendedAck,
-    DmTypeId::GroupDmInvite,
-    DmTypeId::GroupDmAccept,
-    DmTypeId::GroupDmDecline,
-    DmTypeId::GroupDmLeave,
-    DmTypeId::GroupContent,
-    DmTypeId::CreatorInvite,
-    DmTypeId::CreatorAccept,
-    DmTypeId::CreatorDecline,
-    DmTypeId::CreatorWithdrawn,
-    DmTypeId::CreatorJoin,
-    DmTypeId::CallEnd,
-    DmTypeId::GroupCallOffer,
-    DmTypeId::GroupCallParticipantLeft,
-];
-
-/// The client-id prefixes of the row a handshake row `client_id` waits for
-/// (plan HOL1, lead decision 47): a friend-gated frame waits for our
-/// unsettled first contact to the peer (the `FriendAccept` or
-/// `SessionResetAccept` PreKeyInit), resolved when the row is stored, and
-/// nothing when there is none; an [`INDEPENDENT`] kind's and a removal's
-/// (`unfriended:`) wait for nothing.
-#[must_use]
-pub fn waits_for(client_id: &str) -> Vec<String> {
-    let independent = unfriended_peer(client_id).is_some()
-        || INDEPENDENT
-            .iter()
-            .any(|kind| client_id.starts_with(&client_prefix(*kind)));
-    if independent {
-        return Vec::new();
-    }
-    vec![
-        client_prefix(DmTypeId::FriendAccept),
-        client_prefix(DmTypeId::SessionResetAccept),
-    ]
-}
-
-/// The peer opened a frame of theirs under our session: our first contact
-/// to them (the PreKeyInit carrying our `FriendAccept` or
-/// `SessionResetAccept`) arrived, whatever became of its receipt, so its
-/// unsettled row settles `delivered` and the frames waiting for it go
-/// (plan HOL1; libsignal stops wrapping messages as PreKey messages on the
-/// first message received on the session, `tahini.rs` `on_receive_session_state`).
-pub async fn settle_first_contact(host: &dyn FriendHost, peer: &str) {
-    let Ok(outbox) = host.outbox() else {
-        return;
-    };
-    for kind in [DmTypeId::FriendAccept, DmTypeId::SessionResetAccept] {
-        match outbox
-            .receipt_handshakes_to(peer, &client_prefix(kind))
-            .await
-        {
-            Ok(0) => {}
-            Ok(settled) => tracing::debug!(peer = %peer, ?kind, settled,
-                "first contact settled by the peer's frame under the session"),
-            Err(e) => tracing::warn!(peer = %peer, ?kind, error = %e,
-                "first contact not settled"),
-        }
-    }
 }
 
 /// A fresh client id for a handshake row carrying `kind`.
@@ -427,6 +351,7 @@ async fn commit(
     host.outbox()?
         .enqueue_handshake(to, client_id.clone(), payload)
         .await?;
+    super::handshake_order::committed(host, to, &client_id);
     tracing::debug!(to = %to, %client_id, "handshake frame committed to the outbox");
     Ok(client_id)
 }

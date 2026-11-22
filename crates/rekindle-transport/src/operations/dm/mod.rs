@@ -9,6 +9,7 @@ mod chat;
 pub mod disappearing;
 pub mod frame;
 pub mod handshake;
+mod handshake_order;
 pub mod outbox;
 mod outgoing;
 pub(crate) mod receipts;
