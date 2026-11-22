@@ -79,9 +79,6 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .initial_done
             .push(community_id.to_string());
     }
-    fn identity_display_name(&self) -> String {
-        "mock-user".to_string()
-    }
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot {
         self.state
             .lock()

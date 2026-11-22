@@ -60,10 +60,6 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         Self::current_status_impl()
     }
 
-    fn identity_display_name(&self) -> String {
-        self.identity_display_name_impl()
-    }
-
     fn presence_credentials(&self, community_id: &str) -> Option<PresenceCredentials> {
         self.presence_credentials_impl(community_id)
     }

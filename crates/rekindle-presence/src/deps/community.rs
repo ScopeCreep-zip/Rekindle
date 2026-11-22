@@ -70,10 +70,6 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
 
     // === Registry write surface (21.j-REDO) ===
 
-    /// Local user's display name (used as the default for the
-    /// presence row's `display_name` field).
-    fn identity_display_name(&self) -> String;
-
     /// Snapshot of every per-community profile field the presence
     /// row carries — read once under the communities lock so the
     /// write path doesn't have to juggle six clones inline.

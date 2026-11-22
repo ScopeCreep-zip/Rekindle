@@ -14,12 +14,12 @@ use rekindle_governance_runtime::deps::{
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::op_log::{HeldOp, OpVerdict};
+use rekindle_governance_runtime::CardText;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_records::port::RecordSchema;
 use rekindle_types::governance::{GenesisCert, OpRef};
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
 use super::HostGovernance;
 
@@ -56,10 +56,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         secret: &[u8; 32],
     ) -> Result<(), GovernanceRuntimeError> {
         self.store_device_op_key_impl(community_id, secret)
-    }
-
-    fn identity_display_name(&self) -> String {
-        self.identity_display_name_impl()
     }
 
     fn identity_status(&self) -> UserStatusKind {
@@ -383,22 +379,8 @@ impl GovernanceRuntimeDeps for HostGovernance {
             .member_card_name(community_id, pseudonym)
     }
 
-    /// A name we did not hold goes to every frontend as `MemberCardChanged`
-    /// (plan E3.2 F9-2): the first read of the card, or a changed name.
-    fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String) {
-        if self
-            .ctx
-            .communities
-            .note_member_card_name(community_id, pseudonym, name.clone())
-        {
-            self.ctx.publish_event(SubscriptionEvent::Membership(
-                MembershipEvent::MemberCardChanged {
-                    community: community_id.to_owned(),
-                    pseudonym: pseudonym.to_hex(),
-                    display_name: name,
-                },
-            ));
-        }
+    fn note_member_card(&self, community_id: &str, pseudonym: &PseudonymKey, card: CardText) {
+        self.note_member_card_impl(community_id, pseudonym, card);
     }
 
     fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey> {

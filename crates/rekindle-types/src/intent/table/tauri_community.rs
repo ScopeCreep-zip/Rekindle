@@ -200,6 +200,10 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
         "update_community_profile",
         Some(IntentKind::UpdateCommunityProfile),
     ),
+    (
+        "set_community_display_name",
+        Some(IntentKind::SetCommunityDisplayName),
+    ),
     ("get_older_channel_messages", None),
     ("set_channel_topic", Some(IntentKind::SetChannelTopic)),
     (

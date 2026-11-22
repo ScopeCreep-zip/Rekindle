@@ -64,6 +64,7 @@ impl std::fmt::Debug for SettingsRequest {
                 badges,
                 avatar_ref,
                 banner_ref,
+                custom_status,
             } => f
                 .debug_struct("CommunityUpdateProfile")
                 .field("community", community)
@@ -73,6 +74,18 @@ impl std::fmt::Debug for SettingsRequest {
                 .field("badges", &badges.len())
                 .field("avatar_ref", avatar_ref)
                 .field("banner_ref", banner_ref)
+                .field(
+                    "custom_status_len",
+                    &custom_status.as_ref().map(String::len),
+                )
+                .finish(),
+            Self::CommunitySetDisplayName {
+                community,
+                display_name,
+            } => f
+                .debug_struct("CommunitySetDisplayName")
+                .field("community", community)
+                .field("display_name_len", &display_name.len())
                 .finish(),
             Self::CommunityAvatarGet { community, hash } => f
                 .debug_struct("CommunityAvatarGet")

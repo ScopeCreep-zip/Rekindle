@@ -19,6 +19,9 @@ pub(super) fn selection(
         SettingsRequest::CommunityUpdateProfile {
             community: target, ..
         }
+        | SettingsRequest::CommunitySetDisplayName {
+            community: target, ..
+        }
         | SettingsRequest::CommunitySetAvatar {
             community: target, ..
         }

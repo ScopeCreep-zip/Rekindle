@@ -12,7 +12,7 @@ use super::{adapter, runtime_refused, state_error, DaemonContext};
 use crate::daemon::DaemonState;
 
 /// Make `edit` our profile in `community`.
-pub(crate) fn handle_update_profile(
+pub(crate) async fn handle_update_profile(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -25,9 +25,32 @@ pub(crate) fn handle_update_profile(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).update_profile(&membership.anchor, edit) {
+    match adapter(ctx).update_profile(&membership.anchor, edit).await {
         Ok(()) => IpcResponse::ok(&()),
         Err(e) => IpcResponse::error(404, format!("community profile: {e}")),
+    }
+}
+
+/// Make `name` our name in `community` (plan E3.4 S6).
+pub(crate) async fn handle_set_display_name(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    community: &str,
+    name: &str,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let membership = match ctx.resolve_community(community) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match adapter(ctx)
+        .set_display_name(&membership.anchor, name)
+        .await
+    {
+        Ok(()) => IpcResponse::ok(&()),
+        Err(e) => IpcResponse::error(400, format!("community name: {e}")),
     }
 }
 
@@ -137,6 +160,7 @@ pub(crate) async fn route(
             badges,
             avatar_ref,
             banner_ref,
+            custom_status,
         } => {
             let edit = ProfileEdit {
                 bio,
@@ -145,9 +169,14 @@ pub(crate) async fn route(
                 badges,
                 avatar_ref,
                 banner_ref,
+                custom_status,
             };
-            handle_update_profile(ctx, state, &community, edit)
+            handle_update_profile(ctx, state, &community, edit).await
         }
+        SettingsRequest::CommunitySetDisplayName {
+            community,
+            display_name,
+        } => handle_set_display_name(ctx, state, &community, &display_name).await,
         SettingsRequest::CommunitySetAvatar {
             community,
             image,

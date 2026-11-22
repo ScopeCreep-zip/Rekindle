@@ -238,9 +238,17 @@ pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
             badges,
             avatar_ref,
             banner_ref,
+            custom_status,
             theme_color: _,
         } => {
             community(key)?;
+            if let Some(status) = custom_status {
+                rekindle_types::key_format::text(
+                    status,
+                    rekindle_types::key_format::MAX_STATUS_LEN,
+                )
+                .map_err(|e| IpcResponse::error(400, format!("custom status: {e}")))?;
+            }
             rekindle_types::presence::limits::validate_profile(
                 bio.as_deref(),
                 pronouns.as_deref(),
@@ -249,6 +257,19 @@ pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
                 banner_ref.as_deref(),
             )
             .map_err(|e| IpcResponse::error(400, e))
+        }
+        SettingsRequest::CommunitySetDisplayName {
+            community: key,
+            display_name,
+        } => {
+            community(key)?;
+            let name = display_name.trim();
+            if name.is_empty() {
+                return Ok(());
+            }
+            rekindle_types::presence::limits::peer_display_name(name)
+                .map_err(|e| IpcResponse::error(400, format!("display name: {e}")))
+                .map(drop)
         }
         SettingsRequest::CommunitySetAvatar {
             community: key,

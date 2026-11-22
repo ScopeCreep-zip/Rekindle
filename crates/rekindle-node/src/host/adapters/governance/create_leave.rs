@@ -91,7 +91,8 @@ impl HostGovernance {
             .ctx
             .require_owner()
             .map_err(|_| "no identity is unlocked")?;
-        let display_name = self.ctx.identity_display_name();
+        // No name (plan E3.4 S6), as the join's row.
+        let display_name = String::new();
         let joined_at = self.ctx.clock.now_ms_i64();
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let cid = id.clone();

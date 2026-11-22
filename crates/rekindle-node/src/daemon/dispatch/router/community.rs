@@ -186,6 +186,7 @@ pub(super) async fn route_settings(
         // ── Governance (roles, moderation, invites) ──────────────
         // ── Profile, pictures and policy (plan E3.1 D4) ──────────
         request @ (SettingsRequest::CommunityUpdateProfile { .. }
+        | SettingsRequest::CommunitySetDisplayName { .. }
         | SettingsRequest::CommunitySetAvatar { .. }
         | SettingsRequest::CommunitySetBanner { .. }
         | SettingsRequest::CommunityAvatarGet { .. }

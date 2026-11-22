@@ -33,7 +33,6 @@ async fn a_joiner_reads_the_inviters_route_after_it_was_replaced() {
     };
     // The record as published when the invite was minted: route A.
     let profile = OwnProfile {
-        display_name: "Ida".into(),
         status: SessionStatus::Online,
         beat_seq: 1,
         now_ms: 1_000,

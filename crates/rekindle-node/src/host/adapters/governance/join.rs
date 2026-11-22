@@ -283,7 +283,6 @@ impl HostGovernance {
             pseudonym: &outcome.identity.pseudonym_signing,
         };
         let profile = OwnProfile {
-            display_name: self.ctx.identity_display_name(),
             status: self.identity_status(),
             beat_seq: self
                 .next_beat_seq(community)
@@ -420,7 +419,9 @@ impl HostGovernance {
             .ctx
             .require_owner()
             .map_err(|_| "no identity is unlocked")?;
-        let display_name = self.ctx.identity_display_name();
+        // Our row names nobody (plan E3.4 S6): our name in a community is
+        // our card's, set there; the identity's never reaches one.
+        let display_name = String::new();
         let db = self.ctx.db.current().map_err(|e| e.to_string())?;
         let (cid, pk) = (community.to_owned(), pseudonym.to_owned());
         db.call(move |conn| {

@@ -75,10 +75,6 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::state_reads::mark_initial_sync_done(&self.state, community_id);
     }
 
-    fn identity_display_name(&self) -> String {
-        state_helpers::identity_display_name(&self.state)
-    }
-
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot {
         let communities = self.state.communities.read();
         let Some(community) = communities.get(community_id) else {

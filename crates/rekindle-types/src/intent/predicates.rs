@@ -48,6 +48,7 @@ impl IntentKind {
             | Self::SetStatusMessage
             | Self::UpdateCommunityPresence
             | Self::UpdateCommunityProfile
+            | Self::SetCommunityDisplayName
             | Self::AcceptDmCall
             | Self::AcceptGroupCall
             | Self::DeclineDmCall
@@ -256,6 +257,7 @@ impl IntentKind {
             | Self::SetStatusMessage
             | Self::UpdateCommunityPresence
             | Self::UpdateCommunityProfile
+            | Self::SetCommunityDisplayName
             | Self::AcceptDmCall
             | Self::AcceptGroupCall
             | Self::DeclineDmCall

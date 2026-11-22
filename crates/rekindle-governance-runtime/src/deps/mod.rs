@@ -103,7 +103,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         secret: &[u8; 32],
     ) -> Result<(), GovernanceRuntimeError>;
-    fn identity_display_name(&self) -> String;
     fn identity_status(&self) -> UserStatusKind;
     fn our_route_blob(&self) -> Vec<u8>;
 
@@ -441,12 +440,13 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// ([`crate::genesis::read_pinned`]).
     fn genesis_cert(&self, community_id: &str) -> Option<rekindle_types::governance::GenesisCert>;
     /// The display name on `pseudonym`'s verified member card (`M`/0), when
-    /// we hold one; never a field from an unverified peer payload.
+    /// we hold one and it names one; never a field from an unverified peer
+    /// payload.
     fn member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> Option<String>;
-    /// Remember the display name on `pseudonym`'s card, which
-    /// `crate::member_card::read_card` verified, or on our own card, which
-    /// says `identity_display_name` (`member_card::write_card`).
-    fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String);
+    /// Remember what `pseudonym`'s card says, which
+    /// `crate::member_card::read_card` verified (plan E3.4 S6: the card
+    /// cache is written only from a verified read).
+    fn note_member_card(&self, community_id: &str, pseudonym: &PseudonymKey, card: CardText);
     /// Our pseudonym in the community, `None` while we hold none.
     fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey>;
     /// Every op `governance_ops` holds for the community.

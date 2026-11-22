@@ -144,6 +144,7 @@ export const communityCommands = {
     badges: string[],
     avatarRef: string | null,
     bannerRef: string | null,
+    customStatus: string | null,
   ) => hostInvoke<void>("update_community_profile", {
     communityId,
     bio,
@@ -152,7 +153,12 @@ export const communityCommands = {
     badges,
     avatarRef,
     bannerRef,
+    customStatus,
   }),
+  /** Our name in this community, on our card (plan E3.4 S6); `""` clears
+   *  it (the Host then shows our short pseudonym fingerprint). */
+  setCommunityDisplayName: (communityId: string, displayName: string) =>
+    hostInvoke<void>("set_community_display_name", { communityId, displayName }),
   createCommunity: (name: string) =>
     hostInvoke<CommunityCreated>(
       "create_community", { name },

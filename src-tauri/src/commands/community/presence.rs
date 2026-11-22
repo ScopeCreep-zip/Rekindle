@@ -107,6 +107,7 @@ pub async fn update_community_profile(
     badges: Vec<String>,
     avatar_ref: Option<String>,
     banner_ref: Option<String>,
+    custom_status: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Settings(
@@ -118,6 +119,23 @@ pub async fn update_community_profile(
             badges,
             avatar_ref,
             banner_ref,
+            custom_status,
+        },
+    ));
+    crate::host_call::call(&state, request).await
+}
+
+/// Our name in one community, on our card (plan E3.4 S6); `""` clears it.
+#[tauri::command]
+pub async fn set_community_display_name(
+    community_id: String,
+    display_name: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunitySetDisplayName {
+            community: community_id,
+            display_name,
         },
     ));
     crate::host_call::call(&state, request).await

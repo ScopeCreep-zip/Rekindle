@@ -127,6 +127,16 @@ pub fn key_fingerprint(public_key: &[u8]) -> String {
         .join(" ")
 }
 
+/// A key's short fingerprint: the first eight hex digits of
+/// [`key_fingerprint`], in its two groups of four (`"a1b2 c3d4"`). What a
+/// community renders for a member whose card names nobody (plan E3.4 S6):
+/// the identity's name is never written to a community.
+#[must_use]
+pub fn short_key_fingerprint(public_key: &[u8]) -> String {
+    let full = key_fingerprint(public_key);
+    full.get(..9).unwrap_or(&full).to_owned()
+}
+
 /// A DHT record key as a person compares it: [`key_fingerprint`] over the
 /// record's opaque key bytes, from the key's text form
 /// `KIND:base64url(opaque key)[:base64url(encryption key)]` (Veilid

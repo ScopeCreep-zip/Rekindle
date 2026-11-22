@@ -136,7 +136,8 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
 
     let mut presence = MemberPresence {
         pseudonym_key: rekindle_types::id::PseudonymKey(pseudonym_bytes),
-        display_name: Some(deps.identity_display_name()),
+        // No name (plan E3.4 S6): a member's name is its card's.
+        display_name: None,
         status,
         route_blob: our_route_blob.unwrap_or_default(),
         last_heartbeat: deps.now_secs(),

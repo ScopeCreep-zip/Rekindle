@@ -64,15 +64,18 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             community,
             pseudonym,
             display_name,
+            custom_status,
         } => {
-            // The name too: a rename is a new event, a repeat of the same
-            // name one.
+            // The name and status too: a rename or a new status is a new
+            // event, a repeat of the same card one.
             h.update(b"card|");
             h.update(community.as_bytes());
             h.update(b"|");
             h.update(pseudonym.as_bytes());
             h.update(b"|");
             h.update(display_name.as_bytes());
+            h.update(b"|");
+            h.update(custom_status.as_deref().unwrap_or_default().as_bytes());
         }
         MembershipEvent::Left {
             community,

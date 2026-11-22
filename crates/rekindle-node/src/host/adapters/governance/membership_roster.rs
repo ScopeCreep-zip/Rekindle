@@ -119,7 +119,8 @@ impl HostGovernance {
             let route = host.our_route_blob_impl();
             let joined = CommunityEnvelope::Control(ControlPayload::MemberJoined {
                 pseudonym_key,
-                display_name: host.identity_display_name_impl(),
+                // No name (plan E3.4 S6): a member's name is its card's.
+                display_name: String::new(),
                 role_ids: vec![rekindle_types::id::RoleId::EVERYONE],
                 status: status_str(host.ctx.own_presence.status()).to_string(),
                 route_blob: (!route.is_empty()).then_some(route),

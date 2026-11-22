@@ -78,11 +78,17 @@ pub enum MembershipEvent {
     /// pseudonym, its owner pinned to the member's `MemberJoined`), on the
     /// first read of that card and on each change (plan E3.2 F9-2).
     /// Triggered by: the Host, when it notes a card name it did not hold
-    /// (`CommunityStore::note_member_card_name`).
+    /// (`CommunityStore::note_member_card`). Ours too, after we set our
+    /// name or custom status (plan E3.4 S6).
     MemberCardChanged {
         community: String,
         pseudonym: String,
+        /// Never empty: the card's per-community name, else the member's
+        /// short pseudonym fingerprint (the Host's, never the frontend's).
         display_name: String,
+        /// The card's custom status, when it says one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        custom_status: Option<String>,
     },
     /// A member left the community voluntarily.
     /// Triggered by: the Host, when the merged governance first holds the

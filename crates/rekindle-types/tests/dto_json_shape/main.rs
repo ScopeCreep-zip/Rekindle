@@ -317,6 +317,8 @@ fn onboarding_samples(add: &mut impl FnMut(&str, Value)) {
         to(CommunityMemberView {
             pseudonym_key: pk('b'),
             display_name: "Bea".into(),
+            fingerprint: "bbbb bbbb".into(),
+            custom_status: Some("brb".into()),
             role_ids: vec!["00".repeat(16), "05".repeat(16)],
             display_role: "Shooters".into(),
             status: "online".into(),

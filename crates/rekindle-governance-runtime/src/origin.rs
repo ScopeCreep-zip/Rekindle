@@ -437,7 +437,9 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     // verify the creator authored it (until E3.4 replaces the registry).
     let mut presence = MemberPresence {
         pseudonym_key: my_pseudo.clone(),
-        display_name: Some(deps.identity_display_name()),
+        // No name (plan E3.4 S6): the identity's name never reaches a
+        // community; readers show the short pseudonym fingerprint.
+        display_name: None,
         status: deps.identity_status().as_wire_str().into(),
         route_blob: deps.our_route_blob(),
         last_heartbeat: deps.clock().now_secs(),
@@ -512,7 +514,6 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         pseudonym: &pseudonym_signing,
     };
     let profile = crate::member_card::OwnProfile {
-        display_name: deps.identity_display_name(),
         status: deps.identity_status(),
         beat_seq: deps
             .next_beat_seq(&anchor_key)

@@ -444,7 +444,8 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
             pseudonym_signing: &identity.pseudonym_signing,
             gov_state: &gov_state,
             join_status_label: deps.identity_status().as_wire_str(),
-            display_name: Some(deps.identity_display_name()),
+            // No name (plan E3.4 S6), as origin's.
+            display_name: None,
         },
     )
     .await?;

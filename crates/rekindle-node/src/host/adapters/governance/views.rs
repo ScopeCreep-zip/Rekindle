@@ -73,7 +73,30 @@ fn we_are_creator(c: &CommunityState) -> bool {
     }
 }
 
-fn community_view(c: &CommunityState, now_secs: u64, shown: Option<&SkinGrounds>) -> CommunityView {
+/// Our card in `c` as the window renders it (plan E3.4 S6): the name it
+/// shows (never empty, never the identity's), the name as set, and the
+/// custom status.
+fn own_card_view(
+    c: &CommunityState,
+    card: Option<rekindle_governance_runtime::CardText>,
+) -> (String, Option<String>, Option<String>) {
+    let card = card.unwrap_or_default();
+    let shown = c
+        .my_pseudonym_key
+        .as_deref()
+        .map(PseudonymKey::from_hex_lossy)
+        .map(|me| super::community_profile::shown_name(card.display_name.clone(), &me))
+        .unwrap_or_default();
+    (shown, card.display_name, card.custom_status)
+}
+
+fn community_view(
+    c: &CommunityState,
+    own_card: (String, Option<String>, Option<String>),
+    now_secs: u64,
+    shown: Option<&SkinGrounds>,
+) -> CommunityView {
+    let (my_display_name, my_card_name, my_custom_status) = own_card;
     let (my_permissions, my_channel_permissions) = my_permissions(c, now_secs);
     CommunityView {
         id: c.id.clone(),
@@ -122,6 +145,9 @@ fn community_view(c: &CommunityState, now_secs: u64, shown: Option<&SkinGrounds>
         my_pronouns: c.my_pronouns.clone(),
         my_theme_color: c.my_theme_color,
         my_badges: c.my_badges.clone(),
+        my_display_name,
+        my_card_name,
+        my_custom_status,
         removed: None,
         op_publications: std::collections::BTreeMap::new(),
     }
@@ -228,6 +254,8 @@ fn profile_view(
     CommunityMemberView {
         pseudonym_key: String::new(),
         display_name: String::new(),
+        fingerprint: String::new(),
+        custom_status: None,
         role_ids: Vec::new(),
         display_role: String::new(),
         status: String::new(),
@@ -280,7 +308,12 @@ impl HostGovernance {
             .map()
             .read()
             .values()
-            .map(|c| community_view(c, now_secs, shown.as_deref()))
+            .map(|c| {
+                let card = (c.my_pseudonym_key.as_deref())
+                    .map(PseudonymKey::from_hex_lossy)
+                    .and_then(|me| self.ctx.communities.member_card(&c.id, &me));
+                community_view(c, own_card_view(c, card), now_secs, shown.as_deref())
+            })
             .collect();
         for view in &mut views {
             view.removed = removal_display(&self.ctx.communities, &view.id);
@@ -376,12 +409,21 @@ impl HostGovernance {
                 // The verified card's name first (plan E3.2 F9-2), so a
                 // re-read never undoes a `MemberCardChanged`.
                 let target = PseudonymKey::from_hex_lossy(&row.pseudonym_key);
-                let card = (self.ctx.communities).member_card_name(community, &target);
+                let card = (self.ctx.communities)
+                    .member_card(community, &target)
+                    .unwrap_or_default();
                 let (can_moderate_target, outranks) =
                     moderation_of(&governance, me.as_ref(), &target);
                 CommunityMemberView {
                     display_role: display_role_name(&role_ids, &overlay.roles),
-                    display_name: card.or(row.display_name).unwrap_or_default(),
+                    // Never empty (plan E3.4 S6): the card's name, else
+                    // the short pseudonym fingerprint.
+                    display_name: super::community_profile::shown_name(
+                        card.display_name.or(row.display_name),
+                        &target,
+                    ),
+                    fingerprint: rekindle_crypto::identity::short_key_fingerprint(&target.0),
+                    custom_status: card.custom_status,
                     role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
                     status,
                     timeout_until: timeout_until(&row.pseudonym_key),

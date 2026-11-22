@@ -20,6 +20,16 @@ pub enum SettingsRequest {
         badges: Vec<String>,
         avatar_ref: Option<String>,
         banner_ref: Option<String>,
+        /// Our card's custom status (plan E3.4 S6).
+        custom_status: Option<String>,
+    },
+
+    /// Our name in one community, on our card (`M`/0, plan E3.4 S6); `""`
+    /// clears it (readers show our short pseudonym fingerprint). Never the
+    /// identity's name.
+    CommunitySetDisplayName {
+        community: String,
+        display_name: String,
     },
 
     /// Cache `image`, declared to be `kind`, as a community avatar (a WebP
@@ -94,6 +104,9 @@ impl SettingsRequest {
         use SecurityLevel::Authenticated;
         match self {
             Self::CommunityUpdateProfile { .. } => ("CommunityUpdateProfile", Write, Authenticated),
+            Self::CommunitySetDisplayName { .. } => {
+                ("CommunitySetDisplayName", Write, Authenticated)
+            }
             Self::CommunitySetAvatar { .. } => ("CommunitySetAvatar", Write, Authenticated),
             Self::CommunitySetBanner { .. } => ("CommunitySetBanner", Write, Authenticated),
             Self::CommunityAvatarGet { .. } => ("CommunityAvatarGet", Query, Authenticated),
@@ -119,6 +132,7 @@ impl SettingsRequest {
             | Self::CommunityAvatarGet { .. }
             | Self::CommunityPolicyGet { .. } => C::CommunitiesRead,
             Self::CommunityUpdateProfile { .. }
+            | Self::CommunitySetDisplayName { .. }
             | Self::CommunitySetAvatar { .. }
             | Self::CommunitySetBanner { .. }
             | Self::CommunityPolicySet { .. }

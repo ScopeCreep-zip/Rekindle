@@ -165,7 +165,7 @@ impl HostGovernance {
 
     /// Our member record in `community_id` and the keys that write and sign
     /// it.
-    fn own_record_keys(&self, community_id: &str) -> Result<OwnRecordKeys, String> {
+    pub(super) fn own_record_keys(&self, community_id: &str) -> Result<OwnRecordKeys, String> {
         let record = self
             .own_member_record(community_id)
             .ok_or("no member record of ours")?;
@@ -184,14 +184,14 @@ impl HostGovernance {
 }
 
 /// What [`OwnRecord`] borrows.
-struct OwnRecordKeys {
+pub(super) struct OwnRecordKeys {
     record: String,
     writer: zeroize::Zeroizing<String>,
     pseudonym: rekindle_secrets::ed25519_dalek::SigningKey,
 }
 
 impl OwnRecordKeys {
-    fn own<'a>(&'a self, community_id: &'a str) -> OwnRecord<'a> {
+    pub(super) fn own<'a>(&'a self, community_id: &'a str) -> OwnRecord<'a> {
         OwnRecord {
             community_id,
             record: &self.record,
