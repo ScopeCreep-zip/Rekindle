@@ -422,6 +422,7 @@
     "inputChannels": {},
     "inputDevice": null,
     "inputVolume": 1.0,
+    "keepActivityLog": true,
     "noiseSuppression": true,
     "notificationContent": "nameOnly",
     "notificationSound": true,
