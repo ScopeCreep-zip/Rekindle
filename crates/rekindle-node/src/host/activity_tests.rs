@@ -185,6 +185,7 @@ async fn unfriending_and_blocking_purge_their_entries() {
             payload: b"{}",
             next_at: 2,
             deadline: 9,
+            depends_on: None,
         };
         rekindle_db::repo::friends::mark_removing(conn, &o, &b, &row)
     })
