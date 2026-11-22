@@ -118,6 +118,38 @@ fn governance_op_quarantined_audience_golden() {
     );
 }
 
+/// Lead decision (46), plan E3.2 S7s.4c: a transfer's link request asking
+/// a co-creator reaches the buddy list, as the successor offer it answers
+/// does (decision (33)), so the creator sees it without the community
+/// window open; every community window gets both too.
+#[test]
+fn a_successor_link_request_reaches_the_buddy_list_as_the_offer_does() {
+    use rekindle_types::subscription_events::GovernanceEvent;
+    let offer = sub(SubscriptionEvent::Governance(
+        GovernanceEvent::CommunitySuccessorOffered {
+            community: REC.into(),
+            new_anchor: REC.into(),
+            signer: PK.into(),
+            reason: rekindle_types::governance::SuccessorReason::Transfer,
+            creators: vec![PK.into()],
+        },
+    ));
+    let request = sub(SubscriptionEvent::Governance(
+        GovernanceEvent::SuccessorLinkRequested {
+            community: REC.into(),
+            request: "8".repeat(64),
+            recipient: PK.into(),
+            new_anchor: REC.into(),
+        },
+    ));
+    for a in [&offer, &request] {
+        assert!(a.includes("buddy-list"));
+        assert!(a.includes("community-browser"));
+        assert!(!a.includes("settings"));
+        assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
+    }
+}
+
 #[test]
 fn calls_reach_their_window_and_conversation_windows() {
     let a = sub(SubscriptionEvent::Call(CallEvent::Ringing {
