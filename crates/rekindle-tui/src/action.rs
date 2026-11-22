@@ -79,6 +79,15 @@ pub enum Action {
     },
     /// Our favourite game servers (plan E7.2).
     ShowFavourites,
+    /// The local activity feed (plan E7.15, TU1(a)): its first page.
+    ShowActivity,
+    /// A page of the activity feed: the first (`before` `None`) or the one
+    /// older than row `before` (`ActivityList`).
+    LoadActivity {
+        before: Option<i64>,
+    },
+    /// The games we can launch (`InstalledGamesGet`, plan E7.15 IV3).
+    ShowInstalledGames,
     ShowCommunityInfo {
         community: String,
     },
@@ -164,6 +173,14 @@ pub enum Action {
     RemoveFavourite {
         game_id: u32,
         server: rekindle_types::game_server::ServerAddress,
+    },
+
+    /// `GameLaunch` (lead decision (50)): `source` says where the server
+    /// came from; the Host decides the rest and reviews a peer's server.
+    LaunchGame {
+        game_id: u32,
+        server: Option<rekindle_types::game_server::ServerAddress>,
+        source: rekindle_types::game_server::JoinSource,
     },
 
     // ─── Clipboard ───────────────────────────────────────────────
@@ -321,5 +338,15 @@ pub enum CommandResult {
     /// Our favourite game servers (`FavouriteServersGet`, plan E7.2).
     FavouritesLoaded {
         servers: Vec<rekindle_types::dto::presence::FavouriteServerView>,
+    },
+    /// A page of the activity feed (`ActivityList`, plan E7.15), newest
+    /// first, asked with `before`.
+    ActivityLoaded {
+        before: Option<i64>,
+        entries: Vec<rekindle_types::activity::ActivityListItem>,
+    },
+    /// The games we can launch (`InstalledGamesGet`, plan E7.15 IV3).
+    InstalledGamesLoaded {
+        games: Vec<rekindle_types::dto::presence::InstalledGameView>,
     },
 }

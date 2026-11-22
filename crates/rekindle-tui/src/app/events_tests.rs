@@ -129,3 +129,94 @@ async fn a_standing_alert_raised_before_the_tui_connected_is_shown() {
         )],
     );
 }
+
+fn activity_entry(id: i64, text: &str) -> rekindle_types::activity::ActivityListItem {
+    rekindle_types::activity::ActivityListItem {
+        id,
+        at: 0,
+        kind: rekindle_types::activity::ActivityKind::StatusMessage {
+            friend: "ab12ab12ab12ab12ab12ab12ab12ab12".into(),
+            text: text.into(),
+        },
+        display_name: Some("Ann".into()),
+        nickname: None,
+        identity_pin_mismatch: false,
+    }
+}
+
+/// The screen as text, drawn by the App at 100x20.
+fn screen(app: &mut App) -> String {
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
+    terminal.draw(|frame| app.draw(frame)).unwrap();
+    let buffer = terminal.backend().buffer();
+    buffer
+        .content()
+        .chunks(usize::from(buffer.area.width))
+        .map(|line| {
+            line.iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `ActivityAppended` reaches the open Activity view through the stream
+/// handler and the reducer: the new entry goes above the first page, and
+/// an entry the view already shows is not added twice.
+#[tokio::test]
+async fn activity_appended_adds_new_entries_to_the_open_view_once() {
+    let (_dir, mut app) = app_on_test_bus().await;
+    app.reduce(Action::ShowActivity).unwrap();
+    app.reduce(Action::CommandComplete(Box::new(
+        crate::action::CommandResult::ActivityLoaded {
+            before: None,
+            entries: vec![activity_entry(1, "first page")],
+        },
+    )))
+    .unwrap();
+    let action = app.subscription_event_to_action(SubscriptionEvent::System(
+        rekindle_types::subscription_events::SystemEvent::ActivityAppended {
+            entries: vec![
+                activity_entry(2, "just now"),
+                activity_entry(1, "first page"),
+            ],
+        },
+    ));
+    assert!(matches!(action, Some(Action::Render)));
+    while let Ok(queued) = app.action_rx.try_recv() {
+        if matches!(queued, Action::SubscriptionEvent(_)) {
+            app.reduce(queued).unwrap();
+        }
+    }
+    let text = screen(&mut app);
+    let new_row = text
+        .find("\"just now\"")
+        .expect("the appended entry is shown");
+    let old_row = text.find("\"first page\"").expect("the first page stays");
+    assert!(new_row < old_row, "newest first:\n{text}");
+    assert_eq!(text.matches("\"first page\"").count(), 1, "{text}");
+    assert!(text.contains("Activity (2)"), "{text}");
+}
+
+/// The Host's refusal of `ActivityList` is a toast, not swallowed: the
+/// test bus has no daemon behind it, so the request is answered with an
+/// error.
+#[tokio::test]
+async fn a_host_error_on_the_activity_list_is_a_toast() {
+    let (_dir, mut app) = app_on_test_bus().await;
+    app.reduce(Action::ShowActivity).unwrap();
+    let failed = tokio::time::timeout(std::time::Duration::from_secs(5), app.action_rx.recv())
+        .await
+        .expect("the request is answered")
+        .unwrap();
+    assert!(
+        matches!(failed, Action::CommandFailed { ref context, .. } if context == "activity"),
+        "{failed:?}"
+    );
+    app.reduce(failed).unwrap();
+    let toasts = app.notifications.visible();
+    assert_eq!(toasts.len(), 1, "{toasts:?}");
+    assert!(toasts[0].0.starts_with("activity: "), "{toasts:?}");
+    assert_eq!(toasts[0].1, ToastLevel::Error);
+}

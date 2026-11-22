@@ -26,6 +26,18 @@ impl App {
                     tui.draw(|frame| self.draw(frame))?;
                 }
             }
+            Action::Resize(w, h) => {
+                let _ = self.nav.current_view_mut().update(Action::Resize(w, h));
+                tui.draw(|frame| self.draw(frame))?;
+            }
+            action => self.reduce(action)?,
+        }
+        Ok(())
+    }
+
+    /// Every action that does not draw to the terminal.
+    pub(crate) fn reduce(&mut self, action: Action) -> anyhow::Result<()> {
+        match action {
             Action::Tick => {
                 self.notifications.tick();
                 self.loading_spinner.tick();
@@ -54,10 +66,6 @@ impl App {
                 let use_unicode = self.theme.use_unicode();
                 self.nav.back(use_unicode);
             }
-            Action::Resize(w, h) => {
-                let _ = self.nav.current_view_mut().update(Action::Resize(w, h));
-                tui.draw(|frame| self.draw(frame))?;
-            }
             Action::FocusNext => self.nav.current_view_mut().focus_ring().next(),
             Action::FocusPrev => self.nav.current_view_mut().focus_ring().prev(),
             action @ (Action::EnterInputMode | Action::ReplyToSelected | Action::EditSelected) => {
@@ -85,8 +93,11 @@ impl App {
                 }
             }
             Action::ToggleHelp => self.nav.toggle_help(),
+            // A view answers Refresh with the action that reloads it.
             Action::Refresh => {
-                let _ = self.nav.current_view_mut().update(Action::Refresh);
+                if let Some(chained) = self.nav.current_view_mut().update(Action::Refresh)? {
+                    let _ = self.action_tx.send(chained);
+                }
             }
             Action::ToggleSidebar => {
                 self.nav.toggle_sidebar();
@@ -177,27 +188,17 @@ impl App {
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_profile(peer_key);
             }
-            Action::ShowFavourites => {
+            Action::ShowActivity => {
                 self.nav
-                    .navigate(ViewKind::Favourites, self.theme.use_unicode());
-                self.load_favourites();
+                    .navigate(ViewKind::Activity, self.theme.use_unicode());
+                self.load_activity(None);
             }
-            Action::AddFavourite {
-                game_id,
-                server,
-                label,
-            } => self.spawn_favourites(
-                IpcRequest::FavouriteServerAdd {
-                    game_id,
-                    server,
-                    label,
-                },
-                "add favourite server",
-            ),
-            Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
-                IpcRequest::FavouriteServerRemove { game_id, server },
-                "remove favourite server",
-            ),
+            Action::LoadActivity { before } => self.load_activity(before),
+            action @ (Action::ShowFavourites
+            | Action::ShowInstalledGames
+            | Action::LaunchGame { .. }
+            | Action::AddFavourite { .. }
+            | Action::RemoveFavourite { .. }) => self.process_game_action(action),
             Action::ShowCommunityInfo { community } => {
                 let kind = ViewKind::CommunityInfo {
                     community: community.clone(),
@@ -323,6 +324,44 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Favourite servers, installed games and launches (plan E7.2, E7.15).
+    fn process_game_action(&mut self, action: Action) {
+        match action {
+            Action::ShowFavourites => {
+                self.nav
+                    .navigate(ViewKind::Favourites, self.theme.use_unicode());
+                self.load_favourites();
+            }
+            Action::ShowInstalledGames => {
+                self.nav
+                    .navigate(ViewKind::InstalledGames, self.theme.use_unicode());
+                self.load_installed_games();
+            }
+            Action::LaunchGame {
+                game_id,
+                server,
+                source,
+            } => self.spawn_game_launch(game_id, server, source),
+            Action::AddFavourite {
+                game_id,
+                server,
+                label,
+            } => self.spawn_favourites(
+                IpcRequest::FavouriteServerAdd {
+                    game_id,
+                    server,
+                    label,
+                },
+                "add favourite server",
+            ),
+            Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
+                IpcRequest::FavouriteServerRemove { game_id, server },
+                "remove favourite server",
+            ),
+            _ => {}
+        }
     }
 
     /// Handle a completed async command: update local caches, then forward

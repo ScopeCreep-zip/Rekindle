@@ -4,6 +4,7 @@
 //! The [`ViewRegistry`] manages view lifecycle, transitions, and
 //! routing of events/actions to the active view.
 
+pub mod activity;
 pub mod channel_watch;
 pub mod community_info;
 pub mod dashboard;
@@ -13,6 +14,7 @@ pub mod favourites;
 pub mod friend_list;
 pub mod group_dm;
 pub mod identity_settings;
+pub mod installed_games;
 pub mod profile;
 pub mod voice_session;
 
@@ -92,6 +94,10 @@ pub enum ViewKind {
     },
     /// Our favourite game servers (plan E7.2).
     Favourites,
+    /// The local activity feed (plan E7.15, TU1(a)).
+    Activity,
+    /// The games we can launch (plan E7.15 IV3).
+    InstalledGames,
 }
 
 /// Trait for all TUI views.
@@ -168,6 +174,8 @@ pub struct ViewRegistry {
     community_info: Option<community_info::CommunityInfoView>,
     profile: Option<profile::ProfileView>,
     favourites: Option<favourites::FavouritesView>,
+    activity: Option<activity::ActivityView>,
+    installed_games: Option<installed_games::InstalledGamesView>,
 }
 
 impl ViewRegistry {
@@ -186,6 +194,8 @@ impl ViewRegistry {
             community_info: None,
             profile: None,
             favourites: None,
+            activity: None,
+            installed_games: None,
         }
     }
 
@@ -268,6 +278,16 @@ impl ViewRegistry {
                     self.favourites = Some(favourites::FavouritesView::new());
                 }
             }
+            ViewKind::Activity => {
+                if self.activity.is_none() {
+                    self.activity = Some(activity::ActivityView::new());
+                }
+            }
+            ViewKind::InstalledGames => {
+                if self.installed_games.is_none() {
+                    self.installed_games = Some(installed_games::InstalledGamesView::new());
+                }
+            }
         }
         self.current = kind;
     }
@@ -321,6 +341,14 @@ impl ViewRegistry {
                 .favourites
                 .as_mut()
                 .expect("favourites view should exist after transition"),
+            ViewKind::Activity => self
+                .activity
+                .as_mut()
+                .expect("activity view should exist after transition"),
+            ViewKind::InstalledGames => self
+                .installed_games
+                .as_mut()
+                .expect("installed_games view should exist after transition"),
         }
     }
 }

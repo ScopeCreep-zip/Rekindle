@@ -104,12 +104,14 @@ impl TabBarState {
             | ViewKind::Doctor
             | ViewKind::IdentitySettings
             | ViewKind::Favourites
+            | ViewKind::InstalledGames
             | ViewKind::Profile { peer_key: None, .. } => "dashboard",
             ViewKind::DmInbox | ViewKind::DmThread { .. } | ViewKind::GroupDms => "dms",
             ViewKind::FriendList | ViewKind::Profile { .. } => "friends",
             ViewKind::ChannelWatch { .. }
             | ViewKind::CommunityInfo { .. }
             | ViewKind::VoiceSession { .. } => "communities",
+            ViewKind::Activity => "activity",
         };
         self.select_by_id(tab_id);
     }

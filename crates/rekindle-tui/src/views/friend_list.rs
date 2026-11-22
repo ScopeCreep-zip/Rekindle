@@ -3,6 +3,12 @@
 //! session-reset request is the host's review, shown by the intent
 //! overlay.
 //!
+//! `J` joins the selected friend's game on their server (plan E7.15 IV3):
+//! offered for every friend, enabled only while the Host says the game is
+//! `joinable`; otherwise it shows the Host's reason and sends nothing. The
+//! launch is the Host's review (a peer chose the server), shown by the
+//! intent overlay.
+//!
 //! Layout:
 //! ```text
 //! ┌─ Friends (23) ────────────────────────────────────────────┐
@@ -10,7 +16,7 @@
 //! │   ● [ONLINE] alice                                        │
 //! │ Offline (12)                                              │
 //! │   ○ [OFFLINE] dave  last seen: 2h ago                     │
-//! │ Pending Requests (2)        [a]ccept [r]eject [b]lock     │
+//! │ Pending Requests (2)        [a]ccept [x] reject [b]lock   │
 //! │   ← frank (ab12…cd34)                                     │
 //! │ Blocked (1)                 [u]nblock                     │
 //! │   ✕ mallory                                               │
@@ -27,6 +33,8 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::dto::friends::{BlockedUser, Friend, OutgoingInvite, PendingRequest};
+use rekindle_types::friend::{GameInfoState, NotJoinableReason};
+use rekindle_types::game_server::{JoinSource, ServerAddress};
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -95,6 +103,49 @@ fn status_of(friend: &Friend) -> &'static str {
     friend.status.as_wire_str()
 }
 
+/// The friend's game while the Host says it is joinable, or why `J` is
+/// disabled, in the Host's terms.
+fn joinable_game(friend: &Friend) -> Result<&GameInfoState, &'static str> {
+    let game = friend.game_info.as_ref().ok_or("not in a game")?;
+    if game.joinable {
+        return Ok(game);
+    }
+    Err(match game.joinable_reason {
+        Some(NotJoinableReason::CannotLaunch) => "can't be launched here",
+        Some(NotJoinableReason::NoServer) | None => "not on a server",
+    })
+}
+
+/// `J` on a friend: `GameLaunch` to their server while the Host says it is
+/// joinable, otherwise the reason as a toast and nothing sent.
+fn join_game(friend: &Friend) -> Action {
+    let name = helpers::sanitize_for_display(&friend.display_name);
+    let game = match joinable_game(friend) {
+        Ok(game) => game,
+        Err(reason) => {
+            return Action::ShowToast {
+                message: format!("Can't join {name}: {reason}"),
+                level: crate::action::ToastLevel::Warning,
+            }
+        }
+    };
+    match game.server_address.as_deref().map(ServerAddress::parse) {
+        Some(Ok(server)) => Action::LaunchGame {
+            game_id: game.game_id,
+            server: Some(server),
+            source: JoinSource::FriendPresence,
+        },
+        Some(Err(e)) => Action::ShowToast {
+            message: format!("Can't join {name}: {e}"),
+            level: crate::action::ToastLevel::Error,
+        },
+        None => Action::ShowToast {
+            message: format!("Can't join {name}: not on a server"),
+            level: crate::action::ToastLevel::Error,
+        },
+    }
+}
+
 fn section(title: &str, count: usize, keys: &str) -> ListItem<'static> {
     let mut spans = vec![Span::styled(
         format!(" {title} ({count})"),
@@ -151,7 +202,7 @@ impl FriendListView {
             (
                 "Pending Requests",
                 self.requests.len(),
-                "[a]ccept [r]eject [b]lock",
+                "[a]ccept [x] reject [b]lock",
                 Row::Request,
             ),
             ("Blocked", self.blocked.len(), "[u]nblock", Row::Blocked),
@@ -261,10 +312,15 @@ impl FriendListView {
         } else {
             ""
         };
+        let playing = friend
+            .game_info
+            .as_ref()
+            .map(|g| format!("  playing {}", helpers::sanitize_for_display(&g.game_name)))
+            .unwrap_or_default();
         ListItem::new(Line::from(vec![
             Span::raw(format!("   {glyph} {text_label} ")),
             Span::styled(format!("{name}{nickname}"), Style::new().bold()),
-            Span::styled(format!("{last_seen}{pending}"), Style::new().dim()),
+            Span::styled(format!("{playing}{last_seen}{pending}"), Style::new().dim()),
         ]))
     }
 
@@ -322,7 +378,14 @@ fn request_item(req: &PendingRequest) -> ListItem<'static> {
 
 impl View for FriendListView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> {
-        let title = format!(" Friends ({}) ", self.friends.len());
+        let join = match self.selected() {
+            Some(Selected::Friend(f)) => match joinable_game(f) {
+                Ok(_) => " · [J] join game".to_owned(),
+                Err(reason) => format!(" · [J] join game ({reason})"),
+            },
+            _ => String::new(),
+        };
+        let title = format!(" Friends ({}){join} ", self.friends.len());
         let block = Block::bordered()
             .title(title)
             .border_style(theme.focused_border());
@@ -364,6 +427,17 @@ impl View for FriendListView {
                 let last = self.rows.len().saturating_sub(1);
                 self.list_state.select(self.entry_from(last, false));
             }
+            // Enter (the keymap's Select) opens the selected friend's DM.
+            Action::Select => {
+                return Ok(match self.selected() {
+                    Some(Selected::Friend(f)) => Some(Action::ShowDmThread {
+                        peer_key: f.public_key.clone(),
+                    }),
+                    _ => None,
+                });
+            }
+            // `r` (the keymap's Refresh) re-reads the Host's list.
+            Action::Refresh => return Ok(Some(Action::ShowFriendList)),
             _ => {}
         }
         Ok(None)
@@ -406,10 +480,9 @@ impl View for FriendListView {
                 self.step(false);
                 None
             }
-            KeyCode::Enter => match self.selected()? {
-                Selected::Friend(f) => Some(Action::ShowDmThread {
-                    peer_key: f.public_key.clone(),
-                }),
+            // Join the selected friend's game (plan E7.15 IV3).
+            KeyCode::Char('J') => match self.selected()? {
+                Selected::Friend(f) => Some(join_game(f)),
                 _ => None,
             },
             // The selected friend's bio and shared game time (plan E7.2).
@@ -426,7 +499,8 @@ impl View for FriendListView {
                 }),
                 _ => None,
             },
-            KeyCode::Char('r') => match self.selected()? {
+            // `x`, not `r`: the keymap takes `r` for Refresh.
+            KeyCode::Char('x') => match self.selected()? {
                 Selected::Request(r) => Some(Action::RejectFriendRequest(r.public_key.clone())),
                 _ => None,
             },
@@ -468,127 +542,5 @@ impl View for FriendListView {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use rekindle_types::friend::FriendshipState;
-    use rekindle_types::friend::UserStatus;
-
-    fn friend(key: &str, status: UserStatus) -> Friend {
-        Friend {
-            public_key: key.to_string(),
-            display_name: key.to_string(),
-            nickname: None,
-            status,
-            status_message: None,
-            game_info: None,
-            group_id: None,
-            group: None,
-            group_label: rekindle_types::dto::friends::DEFAULT_FRIEND_GROUP.to_string(),
-            last_seen_at: None,
-            friendship_state: FriendshipState::Accepted,
-            handshake_error: None,
-            handshake_retrying: false,
-            identity_pin_mismatch: false,
-            group_dm_block: None,
-        }
-    }
-
-    fn loaded() -> FriendListView {
-        let mut view = FriendListView::new(true);
-        view.on_command_result(CommandResult::FriendListLoaded {
-            friends: vec![
-                friend("bob", UserStatus::Offline),
-                friend("alice", UserStatus::Online),
-                friend("carol", UserStatus::Online),
-            ],
-        })
-        .unwrap();
-        view.on_command_result(CommandResult::FriendExtrasLoaded {
-            requests: vec![PendingRequest {
-                public_key: "frank".into(),
-                display_name: "frank".into(),
-                message: String::new(),
-                received_at: 0,
-            }],
-            blocked: vec![BlockedUser {
-                public_key: "mallory".into(),
-                display_name: "mallory".into(),
-                blocked_at: 0,
-            }],
-            invites: vec![OutgoingInvite {
-                invite_id: "inv1".into(),
-                url: String::new(),
-                created_at: 0,
-                expires_at: 0,
-                status: "pending".into(),
-                accepted_by: None,
-            }],
-        })
-        .unwrap();
-        view
-    }
-
-    fn press(view: &mut FriendListView, c: char) -> Option<Action> {
-        view.handle_focused_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE))
-    }
-
-    #[test]
-    fn keys_act_on_the_highlighted_entry() {
-        let mut view = loaded();
-        // Online(2) alice carol, Offline(1) bob, three one-entry sections.
-        assert_eq!(view.rows.len(), 11);
-        assert_eq!(view.list_state.selected(), Some(1));
-        assert!(
-            matches!(press(&mut view, 'd'), Some(Action::RemoveFriend { peer_key }) if peer_key == "alice")
-        );
-        press(&mut view, 'j');
-        press(&mut view, 'j');
-        // The Offline header is skipped.
-        assert_eq!(view.list_state.selected(), Some(4));
-        assert!(
-            matches!(press(&mut view, 'd'), Some(Action::RemoveFriend { peer_key }) if peer_key == "bob")
-        );
-        press(&mut view, 'j');
-        assert!(matches!(
-            press(&mut view, 'a'),
-            Some(Action::AcceptFriendRequest { public_key, .. }) if public_key == "frank"
-        ));
-        press(&mut view, 'j');
-        assert!(matches!(
-            press(&mut view, 'u'),
-            Some(Action::UnblockUser { public_key }) if public_key == "mallory"
-        ));
-        press(&mut view, 'j');
-        assert!(matches!(
-            press(&mut view, 'c'),
-            Some(Action::CancelInvite { invite_id }) if invite_id == "inv1"
-        ));
-        // Past the last entry the cursor stays; up skips headers back.
-        press(&mut view, 'j');
-        assert_eq!(view.list_state.selected(), Some(10));
-        press(&mut view, 'k');
-        assert_eq!(view.list_state.selected(), Some(8));
-        view.update(Action::ScrollToTop).unwrap();
-        assert_eq!(view.list_state.selected(), Some(1));
-        press(&mut view, 'k');
-        assert_eq!(view.list_state.selected(), Some(1));
-        view.update(Action::ScrollToBottom).unwrap();
-        assert_eq!(view.list_state.selected(), Some(10));
-    }
-
-    #[test]
-    fn a_reload_keeps_the_cursor_off_headers() {
-        let mut view = loaded();
-        view.update(Action::ScrollToBottom).unwrap();
-        view.on_command_result(CommandResult::FriendExtrasLoaded {
-            requests: Vec::new(),
-            blocked: Vec::new(),
-            invites: Vec::new(),
-        })
-        .unwrap();
-        assert_eq!(view.rows.len(), 5);
-        assert_eq!(view.list_state.selected(), Some(4));
-        assert!(view.selected().is_some());
-    }
-}
+#[path = "friend_list_tests.rs"]
+mod tests;

@@ -206,7 +206,10 @@ impl App {
                 | VoiceEvent::DeviceChanged { .. }
                 | VoiceEvent::PacketsDropped { .. }
                 | VoiceEvent::ConnectionQuality { .. },
-            ) => {
+            )
+            // New feed entries (plan E7.15): the open Activity view adds
+            // them as the Host named them, without asking again.
+            | SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
                 let _ = self
                     .action_tx
                     .send(Action::SubscriptionEvent(Box::new(event)));
@@ -432,6 +435,15 @@ impl App {
                 | FriendEvent::RequestAcknowledged { .. }
                 | FriendEvent::RemoveAcknowledged { .. }
                 | FriendEvent::ProfileKeyRotated { .. },
+            )
+            // A friend's game changed: Join follows the Host's `joinable`
+            // on the re-read rows (plan E7.15 IV3).
+            | SubscriptionEvent::Presence(
+                rekindle_types::subscription_events::PresenceEvent::FriendChanged {
+                    snapshot:
+                        rekindle_types::subscription_events::PresenceSnapshot { game: Some(_), .. },
+                    ..
+                },
             ) => {
                 self.reload_friends();
                 Some(Action::Render)
