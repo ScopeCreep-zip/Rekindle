@@ -45,7 +45,9 @@ import { hydrateState } from "../stores/hydrate";
 import {
   subscribeNetworkStatus,
   subscribeProfileUpdates,
+  subscribeSkinSignals,
 } from "../ipc/channels";
+import { setSkinSignals } from "../stores/skin-signals.store";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
 import type { NetworkStatusEvent } from "../ipc/channels";
@@ -110,6 +112,8 @@ const BuddyListWindow: Component = () => {
       setNetworkAttached(event.isAttached);
     }));
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
+    // This window's skin signals: the tree applies the triggers they fire.
+    unlisteners.push(subscribeSkinSignals(setSkinSignals));
     unlisteners.push(subscribePairingLinkHandler());
     // Reviews of actions the backend began, in the router root's dialog.
     unlisteners.push(subscribeBackendIntents());

@@ -11,26 +11,33 @@ use std::collections::BTreeMap;
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::dto::skin_action::{MenuRegistry, SkinAction as A};
-use rekindle_types::dto::skin_layout::SkinWindow;
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 
-/// Each window's selection (`SkinSelectionSet`).
+/// Each window's selection (`SkinSelectionSet`), by window label (lead
+/// decision 48): a chat window's is its own peer, the buddy list's its
+/// selected friend; one shared per kind would act on, and show the
+/// capabilities of, another window's friend.
 #[derive(Debug, Default)]
-pub(crate) struct Selections(parking_lot::Mutex<BTreeMap<SkinWindow, SkinSelection>>);
+pub(crate) struct Selections(parking_lot::Mutex<BTreeMap<String, SkinSelection>>);
 
 impl Selections {
-    pub(crate) fn set(&self, window: SkinWindow, selection: Option<SkinSelection>) {
+    pub(crate) fn set(&self, window: &str, selection: Option<SkinSelection>) {
         let mut all = self.0.lock();
         match selection {
-            Some(s) => all.insert(window, s),
-            None => all.remove(&window),
+            Some(s) => all.insert(window.to_owned(), s),
+            None => all.remove(window),
         };
     }
 
-    pub(crate) fn friend(&self, window: SkinWindow) -> Option<String> {
-        self.0.lock().get(&window).map(|s| match s {
+    pub(crate) fn friend(&self, window: &str) -> Option<String> {
+        self.0.lock().get(window).map(|s| match s {
             SkinSelection::Friend { public_key } => public_key.clone(),
         })
+    }
+
+    /// The labels of the windows that have a selection.
+    pub(crate) fn windows(&self) -> Vec<String> {
+        self.0.lock().keys().cloned().collect()
     }
 }
 
@@ -191,7 +198,7 @@ pub(crate) fn resolve(
     let IpcRequest::RunSkinAction { window, action, .. } = &request else {
         return Ok(request);
     };
-    match map(action, selections.friend(*window).as_deref())? {
+    match map(action, selections.friend(window).as_deref())? {
         Mapped::Request(mapped) => Ok(*mapped),
         Mapped::Run(_) => Ok(request),
     }
@@ -202,7 +209,7 @@ pub(crate) fn resolve(
 pub(crate) fn answer(selections: &Selections, request: IpcRequest) -> IpcResponse {
     match request {
         IpcRequest::RunSkinAction { window, action, .. } => {
-            match map(&action, selections.friend(window).as_deref()) {
+            match map(&action, selections.friend(&window).as_deref()) {
                 Ok(Mapped::Run(run)) => IpcResponse::ok(&run),
                 Ok(Mapped::Request(r)) => {
                     IpcResponse::error(500, format!("{} reached the router unresolved", r.name()))
@@ -211,7 +218,7 @@ pub(crate) fn answer(selections: &Selections, request: IpcRequest) -> IpcRespons
             }
         }
         IpcRequest::SkinSelectionSet { window, selection } => {
-            selections.set(window, selection);
+            selections.set(&window, selection);
             IpcResponse::ok(&())
         }
         other => unreachable!("{} is not a skin action request", other.name()),

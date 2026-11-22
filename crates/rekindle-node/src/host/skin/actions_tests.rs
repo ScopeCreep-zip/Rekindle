@@ -4,7 +4,6 @@
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::dto::skin_action::{EngineMenu, PackUrl, SkinAction as A, SkinSettingsTab};
-use rekindle_types::dto::skin_layout::SkinWindow;
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::presence::SessionStatus;
 
@@ -140,13 +139,13 @@ fn gap_actions_yield_not_built_yet() {
 fn resolve_takes_the_selection_from_the_host() {
     let selections = Selections::default();
     let chat = || IpcRequest::RunSkinAction {
-        window: SkinWindow::Main,
+        window: "buddy-list".into(),
         node: "ChatButton".into(),
         action: A::ChatFriend,
     };
     assert!(resolve(&selections, chat()).is_err());
     selections.set(
-        SkinWindow::Main,
+        "buddy-list",
         Some(SkinSelection::Friend {
             public_key: SELECTED_FRIEND_KEY.into(),
         }),
@@ -156,7 +155,7 @@ fn resolve_takes_the_selection_from_the_host() {
         Ok(IpcRequest::RunSkinAction { .. })
     ));
     let logoff = IpcRequest::RunSkinAction {
-        window: SkinWindow::Main,
+        window: "buddy-list".into(),
         node: "LogOff".into(),
         action: A::LogOff,
     };

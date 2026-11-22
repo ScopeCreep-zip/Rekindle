@@ -174,7 +174,8 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             // A window's signals can return to an earlier set (focus in,
             // out, in again): each change is its own fact.
             h.update(b"skin_signals|");
-            h.update(format!("{window:?}|{set:?}|").as_bytes());
+            h.update(window.as_bytes());
+            h.update(format!("|{set:?}|").as_bytes());
             h.update(&now_ms.to_le_bytes());
         }
     }

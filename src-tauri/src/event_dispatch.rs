@@ -159,14 +159,12 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         SubscriptionEvent::System(SystemEvent::Infoview(InfoviewEvent::Updated {
             window, ..
         })) => Audience::labels([window.clone()]),
-        // A skin window's signals go to that window only (plan SK2-A4
-        // step 3): the buddy list for `Main`, the chat windows for `Chat`.
-        SubscriptionEvent::System(SystemEvent::SkinSignals { window, .. }) => match window {
-            rekindle_types::dto::skin_layout::SkinWindow::Main => buddy_list(),
-            rekindle_types::dto::skin_layout::SkinWindow::Chat => {
-                Audience::kinds(&[WindowKind::Chat])
-            }
-        },
+        // A skin window's signals go to that window only, by label (plan
+        // SK2-A4 step 3, lead decision 48): another chat window's set
+        // names another friend's capabilities.
+        SubscriptionEvent::System(SystemEvent::SkinSignals { window, .. }) => {
+            Audience::labels([window.clone()])
+        }
         // One OS notification, one inbox, one ring, one review of an action
         // the backend began: the buddy list owns them.
         SubscriptionEvent::Notification(_)

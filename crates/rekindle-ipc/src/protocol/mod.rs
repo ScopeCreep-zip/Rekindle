@@ -483,15 +483,17 @@ pub enum IpcRequest {
     /// Run the action a skin node's trigger names (plan SK2-A4, design
     /// §2.2): a feature action runs as its own request through the intent
     /// gate; any other answers `dto::skin_run::SkinRun`.
+    /// `window` is the calling window's label (lead decision 48: each
+    /// window has its own selection, a chat window its own peer).
     RunSkinAction {
-        window: rekindle_types::dto::skin_layout::SkinWindow,
+        window: String,
         node: String,
         action: rekindle_types::dto::skin_action::SkinAction,
     },
-    /// Set or clear what `window` has selected, the selection a
-    /// selection-dependent skin action acts on.
+    /// Set or clear what the window labelled `window` has selected, the
+    /// selection a selection-dependent skin action acts on.
     SkinSelectionSet {
-        window: rekindle_types::dto::skin_layout::SkinWindow,
+        window: String,
         selection: Option<rekindle_types::dto::skin_run::SkinSelection>,
     },
     /// Set game presence info.

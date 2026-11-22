@@ -26,6 +26,7 @@ mod shell_commands;
 mod shortcuts;
 mod shutdown;
 mod skin_scheme;
+mod skin_windows;
 pub mod state;
 pub mod state_helpers;
 mod stop_signals;
@@ -152,6 +153,7 @@ pub fn run() {
         .setup(move |app| setup::run(app, &state_for_setup))
         .manage(shared_state)
         .on_window_event(|window, event| {
+            skin_windows::on_window_event(window, event);
             if let WindowEvent::Destroyed = event {
                 if let Some(state) = window.app_handle().try_state::<SharedState>() {
                     state.event_router.remove(window.label());

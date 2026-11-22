@@ -21,6 +21,7 @@ import type {
 import type { IntentReview, LifecycleState, SkinApplied, SkinTrial } from "../commands/dto";
 import type { ActivityListItem, SettingsTab } from "../commands/types";
 import type { InfoviewView } from "../commands/dto_infoview";
+import type { SkinSignalSet } from "../commands/dto_skin_run";
 
 /// Where this window is in the host's event stream
 /// (`rekindle_types::subscription_events::Cursor`, plan D3.2).
@@ -240,6 +241,18 @@ export function subscribeSkinEvents(onSkin: (skin: SkinApplied) => void): Promis
   return on<{ system: { skinChanged: { skin: SkinApplied } } }>("skin-event", (payload) => {
     onSkin(payload.system.skinChanged.skin);
   });
+}
+
+/**
+ * Subscribe to this window's skin signals (`SystemEvent::SkinSignals`,
+ * plan SK2-A4 step 3): only the window they are for receives them, on
+ * `skin-signals-event`; the session replays the current set on open.
+ */
+export function subscribeSkinSignals(onSignals: (set: SkinSignalSet) => void): Promise<UnlistenFn> {
+  return on<{ system: { skinSignals: { window: string; set: SkinSignalSet } } }>(
+    "skin-signals-event",
+    (payload) => onSignals(payload.system.skinSignals.set),
+  );
 }
 
 /**

@@ -1,11 +1,24 @@
 // What a skin action does (plan SK2-A4, design §2.2): mirrors
 // `rekindle_types::dto::skin_run`. The Host decides; the shell only runs
 // the operation it is handed.
-import type { EngineMenu, SkinAction } from "./dto_skin_tree";
+import type { Capability, EngineMenu, SkinAction } from "./dto_skin_tree";
 
 type ArgOf<K extends SkinAction["kind"]> = Extract<SkinAction, { kind: K; arg: unknown }>["arg"];
 
 export type SkinWindow = "main" | "chat";
+
+/** `SkinSignalSet`: one window's state signals, computed by the Host
+ *  (design §2.5); the window applies the pack triggers they fire. */
+export interface SkinSignalSet {
+  focused: boolean;
+  can: Capability[];
+  cannot: Capability[];
+  userTyping: boolean;
+  voiceRinging: boolean;
+  talking: boolean;
+  disconnected: boolean;
+  newNotification: boolean;
+}
 
 export type SkinSelection = { kind: "friend"; arg: { publicKey: string } };
 

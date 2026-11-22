@@ -249,7 +249,7 @@ pub async fn open_chat_window(
     pool: &Db,
     target: &ChatTarget,
 ) -> Result<(), String> {
-    let (label, path, title) = match target {
+    let (label, path, title, selection) = match target {
         ChatTarget::Peer(peer) => {
             let peer = key_format::public_key_hex(peer).map_err(|e| invalid("peer key", &e))?;
             let label = labels::chat_label(&peer);
@@ -257,7 +257,11 @@ pub async fn open_chat_window(
                 return Ok(());
             }
             let title = titles::chat(state, pool, &peer).await;
-            (label, format!("/chat?peer={peer}"), title)
+            // The window's skin selection is its own peer (lead decision 48).
+            let selection = rekindle_types::dto::skin_run::SkinSelection::Friend {
+                public_key: peer.as_str().to_owned(),
+            };
+            (label, format!("/chat?peer={peer}"), title, Some(selection))
         }
         ChatTarget::Group(group) => {
             let group = labels::GroupIdHex::parse(group)
@@ -270,11 +274,14 @@ pub async fn open_chat_window(
                 label,
                 format!("/chat?group={}", group.as_str()),
                 titles::GROUP.to_owned(),
+                None,
             )
         }
     };
     let builder = base_builder(app, WindowKind::Chat, &label, path)?.title(title);
-    finish(builder, WindowKind::Chat).map(drop)
+    finish(builder, WindowKind::Chat)?;
+    crate::skin_windows::opened(app, &label, selection);
+    Ok(())
 }
 
 /// Open the settings window (single instance), optionally on `tab`.

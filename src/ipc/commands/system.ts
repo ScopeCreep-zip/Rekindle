@@ -9,7 +9,7 @@ import type {
 } from "./dto";
 import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
 import type { InfoviewSubject, InfoviewView } from "./dto_infoview";
-import type { SkinSelection, SkinWindow } from "./dto_skin_run";
+import type { SkinSelection } from "./dto_skin_run";
 import type { SkinAction } from "./dto_skin_tree";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
@@ -72,10 +72,11 @@ export const systemCommands = {
   exportSkinSchema: () => hostInvoke<boolean>("export_skin_schema"),
   // A skin node's trigger (plan SK2-A4): a feature answers its own
   // request's value; any other a SkinRun for the window's shell.
-  runSkinAction: (window: SkinWindow, node: string, action: SkinAction) =>
-    hostInvoke<unknown>("run_skin_action", { window, node, action }),
-  setSkinSelection: (window: SkinWindow, selection: SkinSelection | null) =>
-    hostInvoke<void>("set_skin_selection", { window, selection }),
+  // The window is the calling one, by label (lead decision 48).
+  runSkinAction: (node: string, action: SkinAction) =>
+    hostInvoke<unknown>("run_skin_action", { node, action }),
+  setSkinSelection: (selection: SkinSelection | null) =>
+    hostInvoke<void>("set_skin_selection", { selection }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),

@@ -96,9 +96,11 @@ pub enum SystemEvent {
     /// the network, a new notification. Only that window applies it.
     /// Triggered by: any of those inputs changing (the Host's
     /// `skin::signals` worker); kept as the session state
-    /// `skin-signals:<window>`, so a window that opens is handed it.
+    /// `skin-signals:<label>`, so a window that opens is handed it.
+    /// `window` is the window's label (lead decision 48): signals are
+    /// per window, not per window kind.
     SkinSignals {
-        window: crate::dto::skin_layout::SkinWindow,
+        window: String,
         set: crate::dto::skin_signals::SkinSignalSet,
     },
 }

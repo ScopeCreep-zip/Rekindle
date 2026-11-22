@@ -1,5 +1,7 @@
-import { Component, For, JSX, Match, Switch, createContext, useContext } from "solid-js";
+import { Component, For, JSX, Match, Switch, createContext, createEffect, createMemo, useContext } from "solid-js";
 import type { Edge, ShellNode, SkinAction, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import { skinSignals } from "../../stores/skin-signals.store";
+import { signalEffects, type NodeEffect, type SignalEffects } from "./signalEffects";
 import { handleHide, handleMaximize, handleMinimize } from "../../actions/titlebar.actions";
 import NameField from "./NameField";
 import { PackMenu, PackMenuBar, type MenuKey } from "./PackMenus";
@@ -12,9 +14,16 @@ import ResizeHandle from "./ResizeHandle";
 const SHOWN_VIEW: ViewKey = "friends";
 
 /** What every node of one window's tree reads: the content its views hold. */
-const TreeCtx = createContext<{ views: () => JSX.Element; hasFriendsView: boolean }>();
+interface Tree {
+  views: () => JSX.Element;
+  hasFriendsView: boolean;
+  /** What the Host's signals do to each node, by the pack's triggers. */
+  effects: () => SignalEffects;
+}
 
-function useTree(): { views: () => JSX.Element; hasFriendsView: boolean } {
+const TreeCtx = createContext<Tree>();
+
+function useTree(): Tree {
   const ctx = useContext(TreeCtx);
   if (!ctx) throw new Error("a skin node outside SkinTreeWindow");
   return ctx;
@@ -33,7 +42,7 @@ const Children: Component<{ node: ShellNode }> = (props) => (
 /** A node with no behaviour of its own yet (later slices bind it): present
  *  and sized by its rule, holding its children. */
 const Plain: Component<{ node: ShellNode; drag?: boolean; hidden?: boolean }> = (props) => (
-  <div data-skin-node={props.node.id} data-tauri-drag-region={props.drag ? true : undefined} hidden={props.hidden}>
+  <div data-skin-node={props.node.id} data-tauri-drag-region={props.drag ? true : undefined} hidden={props.hidden || undefined}>
     <Children node={props.node} />
   </div>
 );
@@ -149,12 +158,53 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
  * order, each role bound to its Rekindle feature. Every box comes from the
  * Host's rules under `.skin-tree`; nothing here positions a node.
  */
-const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element }> = (props) => (
-  <TreeCtx.Provider value={{ views: props.views, hasFriendsView: hasFriendsView(props.shell.root) }}>
-    <div class="skin-tree">
-      <For each={props.shell.root}>{(node) => <SkinNodeView node={node} />}</For>
-    </div>
-  </TreeCtx.Provider>
-);
+const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element }> = (props) => {
+  const effects = createMemo(() => signalEffects(props.shell.root, skinSignals()));
+  let root: HTMLDivElement | undefined;
+  // The signals' effects land on the nodes as attributes: `data-state`
+  // (the pack's state art, `aria-disabled` for its Disabled art),
+  // `hidden` only where the pack's own trigger hides a tile, and
+  // `data-page` for a group's page.
+  createEffect(() => {
+    const fx = effects();
+    if (!root) return;
+    for (const el of root.querySelectorAll<HTMLElement>("[data-skin-node]")) {
+      applyEffect(el, fx.nodes.get(el.dataset.skinNode ?? ""));
+    }
+  });
+  return (
+    <TreeCtx.Provider value={{ views: props.views, hasFriendsView: hasFriendsView(props.shell.root), effects }}>
+      <div class="skin-tree" ref={root}>
+        <For each={props.shell.root}>{(node) => <SkinNodeView node={node} />}</For>
+      </div>
+    </TreeCtx.Provider>
+  );
+};
+
+/** Set (or clear) one node's signal-driven attributes. */
+function applyEffect(el: HTMLElement, fx: NodeEffect | undefined): void {
+  if (fx?.state) {
+    el.dataset.state = fx.state;
+  } else {
+    delete el.dataset.state;
+  }
+  if (fx?.state === "disabled") {
+    el.setAttribute("aria-disabled", "true");
+  } else {
+    el.removeAttribute("aria-disabled");
+  }
+  if (fx?.page !== undefined) {
+    el.dataset.page = String(fx.page);
+  } else {
+    delete el.dataset.page;
+  }
+  if (fx?.hidden !== undefined) {
+    el.dataset.signalHidden = String(fx.hidden);
+    el.hidden = fx.hidden;
+  } else if (el.dataset.signalHidden !== undefined) {
+    delete el.dataset.signalHidden;
+    el.hidden = false;
+  }
+}
 
 export default SkinTreeWindow;

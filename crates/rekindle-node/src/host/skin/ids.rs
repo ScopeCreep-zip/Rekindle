@@ -55,6 +55,12 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
             400,
             "skin node id longer than 256 bytes",
         )),
+        // A window label is a name too (lead decision 48).
+        IpcRequest::RunSkinAction { window, .. } | IpcRequest::SkinSelectionSet { window, .. }
+            if window.is_empty() || window.len() > 64 =>
+        {
+            Err(IpcResponse::error(400, "skin window label not 1 to 64 bytes"))
+        }
         IpcRequest::SkinSelectionSet {
             selection: Some(rekindle_types::dto::skin_run::SkinSelection::Friend { public_key }),
             ..

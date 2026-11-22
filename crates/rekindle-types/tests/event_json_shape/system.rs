@@ -174,7 +174,7 @@ fn sync() -> Vec<Sample> {
         ev(
             "skinSignals",
             SystemEvent::SkinSignals {
-                window: rekindle_types::dto::skin_layout::SkinWindow::Main,
+                window: "chat-0123456789abcdef".into(),
                 set: rekindle_types::dto::skin_signals::SkinSignalSet {
                     focused: true,
                     can: [
