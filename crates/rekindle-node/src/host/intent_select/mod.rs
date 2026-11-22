@@ -10,7 +10,7 @@
 use rekindle_idempotency::intent_gate::Selection;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::intent::{
-    Escalation, Fact, IntentKind, Notifies, Reason, Recipient, Reversibility, Subject,
+    Escalation, Fact, IntentKind, IrreversibleReason, Notifies, Recipient, Reversibility, Subject,
 };
 
 use crate::daemon::dispatch::DaemonContext;
@@ -304,8 +304,9 @@ fn unavailable(what: &str, e: impl std::fmt::Display) -> IpcResponse {
 /// `s` sends our IP address to `to`: the review names it, and states why
 /// the action can never be taken back (ADR 0019 reversibility).
 pub(super) fn discloses_ip_address(s: &mut Selection, to: Recipient) {
-    s.reversibility =
-        Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled { to: to.kind() });
+    s.reversibility = Reversibility::NeverBecause(IrreversibleReason::DisclosureCannotBeRecalled {
+        to: to.kind(),
+    });
     s.facts.push(Fact::IpAddressLeaves { to });
 }
 

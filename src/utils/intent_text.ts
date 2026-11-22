@@ -5,7 +5,7 @@
  */
 
 import type {
-  Escalation, Fact, IntentKind, IntentReview, Notifies, Reason, Recipient, Reversibility, Subject,
+  Escalation, Fact, IntentKind, IntentReview, Notifies, IrreversibleReason, Recipient, Reversibility, Subject,
 } from "../ipc/commands/dto";
 import { groupDigits } from "./safety_number";
 
@@ -57,7 +57,7 @@ function recipientText(to: Recipient): string {
   return "The site";
 }
 
-function reasonText(reason: Reason): string {
+function reasonText(reason: IrreversibleReason): string {
   const party = reason.disclosureCannotBeRecalled.to === "gameServer" ? "server" : "site";
   return `Your IP address can't be taken back once that ${party} has seen it.`;
 }

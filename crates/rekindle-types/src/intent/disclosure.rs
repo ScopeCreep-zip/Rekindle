@@ -44,7 +44,7 @@ pub enum RecipientKind {
 /// ([`super::Reversibility::NeverBecause`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum Reason {
+pub enum IrreversibleReason {
     /// What reached a third party (our IP address) cannot be recalled
     /// once it has seen it.
     #[serde(rename_all = "camelCase")]

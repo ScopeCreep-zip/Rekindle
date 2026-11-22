@@ -6,8 +6,8 @@
 
 use rekindle_types::intent::{
     AttachmentFacts, Escalation, Fact, IntentClass, IntentId, IntentKind, IntentProof,
-    IntentReview, Notifies, ProofRequired, Reason, Recipient, RecipientKind, Reversibility,
-    Subject,
+    IntentReview, IrreversibleReason, Notifies, ProofRequired, Recipient, RecipientKind,
+    Reversibility, Subject,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -269,7 +269,7 @@ const REVERSIBILITIES: [Reversibility; 5] = [
     Reversibility::ReversibleByInverse(IntentKind::UnblockUser),
     Reversibility::NeedsOthers,
     Reversibility::Never,
-    Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled {
+    Reversibility::NeverBecause(IrreversibleReason::DisclosureCannotBeRecalled {
         to: RecipientKind::GameServer,
     }),
 ];

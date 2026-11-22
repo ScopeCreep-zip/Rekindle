@@ -310,14 +310,14 @@ export type Recipient =
 
 export type RecipientKind = "site" | "gameServer";
 
-/** Why an action can never be taken back (`Reason`). */
-export type Reason = { disclosureCannotBeRecalled: { to: RecipientKind } };
+/** Why an action can never be taken back (`IrreversibleReason`). */
+export type IrreversibleReason = { disclosureCannotBeRecalled: { to: RecipientKind } };
 
 export type Reversibility =
   | "undoable"
   | "needsOthers"
   | "never"
-  | { neverBecause: Reason }
+  | { neverBecause: IrreversibleReason }
   | { reversibleByInverse: IntentKind };
 
 export type Notifies = "nobody" | "subject" | { members: number };

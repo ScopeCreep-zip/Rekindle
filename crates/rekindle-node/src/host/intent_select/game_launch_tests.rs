@@ -4,8 +4,8 @@
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::game_server::{JoinSource, ServerAddress};
 use rekindle_types::intent::{
-    acknowledgement, effective_class, Fact, IntentClass, IntentKind, ProofRequired, Reason,
-    Recipient, RecipientKind, Reversibility, Subject,
+    acknowledgement, effective_class, Fact, IntentClass, IntentKind, IrreversibleReason,
+    ProofRequired, Recipient, RecipientKind, Reversibility, Subject,
 };
 
 use crate::host::direct_tests::ann;
@@ -59,7 +59,7 @@ async fn a_peer_supplied_server_is_trust_changing_and_named() {
         );
         assert_eq!(
             s.reversibility,
-            Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled {
+            Reversibility::NeverBecause(IrreversibleReason::DisclosureCannotBeRecalled {
                 to: RecipientKind::GameServer
             })
         );
@@ -86,14 +86,66 @@ async fn a_link_review_keeps_the_site_wording() {
     );
     assert_eq!(
         s.reversibility,
-        Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled {
+        Reversibility::NeverBecause(IrreversibleReason::DisclosureCannotBeRecalled {
             to: RecipientKind::Site
         })
     );
 }
 
+/// A string literal of the webview's fact wording: its raw text and its
+/// fixed fragments (a template literal's text outside `${…}`).
+struct Literal {
+    raw: String,
+    fragments: Vec<String>,
+}
+
+/// Read one literal opened by `quote`, pushing it (and any literal nested in
+/// a `${…}`) to `out`.
+fn read_literal(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    quote: char,
+    out: &mut Vec<Literal>,
+) {
+    let (mut raw, mut fragment, mut fragments) = (String::new(), String::new(), Vec::new());
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    raw.push(next);
+                    fragment.push(next);
+                }
+            }
+            c if c == quote => break,
+            '$' if quote == '`' && chars.peek() == Some(&'{') => {
+                chars.next();
+                fragments.push(std::mem::take(&mut fragment));
+                raw.push_str("${");
+                let mut depth = 1;
+                while let Some(e) = chars.next() {
+                    match e {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        '"' | '\'' | '`' => read_literal(chars, e, out),
+                        _ => {}
+                    }
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                raw.push('}');
+            }
+            c => {
+                raw.push(c);
+                fragment.push(c);
+            }
+        }
+    }
+    fragments.push(fragment);
+    out.push(Literal { raw, fragments });
+}
+
 /// Every string a fact line is built from, in the webview's wording.
-fn fact_line_literals() -> Vec<String> {
+fn fact_line_literals() -> Vec<Literal> {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../src/utils/intent_text.ts"
@@ -101,12 +153,28 @@ fn fact_line_literals() -> Vec<String> {
     let ts = std::fs::read_to_string(path).unwrap();
     let (_, body) = ts.split_once("export function factText").unwrap();
     let (body, _) = body.split_once("\n}\n").unwrap();
-    body.split(['"', '`'])
-        .skip(1)
-        .step_by(2)
-        .map(str::to_owned)
-        .filter(|l| l.len() > 3)
-        .collect()
+    let mut out = Vec::new();
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if matches!(c, '"' | '\'' | '`') {
+            read_literal(&mut chars, c, &mut out);
+        }
+    }
+    out.retain(|l| l.raw.len() > 3);
+    out
+}
+
+/// A literal's fixed fragments of three or more words, lower-cased, with
+/// the whitespace and punctuation at either end dropped.
+fn wording(literal: &Literal) -> impl Iterator<Item = String> + '_ {
+    literal
+        .fragments
+        .iter()
+        .map(|f| {
+            f.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .filter(|f| f.split_whitespace().count() >= 3)
 }
 
 #[tokio::test]
@@ -123,11 +191,26 @@ async fn the_acknowledgement_is_its_own_statement_not_a_fact_line() {
     let ack = acknowledgement(&s.facts, &s.escalations);
     assert_eq!(ack, "I understand this server will see my IP address.");
     let lines = fact_line_literals();
-    assert!(lines.iter().any(|l| l.contains("will see your IP address")));
+    assert!(lines
+        .iter()
+        .any(|l| l.raw.contains("will see your IP address")));
+    let fragments: Vec<String> = lines.iter().flat_map(wording).collect();
+    assert!(
+        fragments.iter().any(|f| f == "will see your ip address"),
+        "the IP fact line's fixed text is read: {fragments:?}"
+    );
+    let lower = ack.to_lowercase();
     for line in &lines {
         assert!(
-            !line.contains(ack) && !ack.contains(line.as_str()),
-            "the acknowledgement copies the fact line {line:?}"
+            !line.raw.contains(ack) && !ack.contains(line.raw.as_str()),
+            "the acknowledgement copies the fact line {:?}",
+            line.raw
+        );
+    }
+    for fragment in &fragments {
+        assert!(
+            !lower.contains(fragment.as_str()),
+            "the acknowledgement copies the fact wording {fragment:?}"
         );
     }
 }

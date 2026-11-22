@@ -25,7 +25,7 @@ mod table;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-pub use disclosure::{acknowledgement, Reason, Recipient, RecipientKind};
+pub use disclosure::{acknowledgement, IrreversibleReason, Recipient, RecipientKind};
 pub use kind::IntentKind;
 pub use table::{command_rows, kind_of, Classified, COMMAND_TABLE};
 
@@ -357,7 +357,7 @@ pub enum Reversibility {
     NeedsOthers,
     Never,
     /// It can never be taken back, and the review states why.
-    NeverBecause(Reason),
+    NeverBecause(IrreversibleReason),
 }
 
 /// Who learns of the action.
