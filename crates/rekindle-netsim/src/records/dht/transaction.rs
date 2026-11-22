@@ -75,10 +75,11 @@ impl SimDht {
         let begin_cap = replicas::SET_COUNT + (replicas::SET_COUNT * TRIM_PERCENT).div_ceil(100);
         let _begin = self.network(latency::GET, key, &[]).await?;
         let accepters: Vec<usize> = {
-            let mut inner = self.net.inner.lock();
-            let partitions = inner.faults.partitions.clone();
+            let mut guard = self.net.inner.lock();
+            let inner = &mut *guard;
+            let faults = &inner.faults;
             inner.records.get_mut(key).map_or_else(Vec::new, |r| {
-                let mut reach = reachable(&r.replicas, &partitions, self.node);
+                let mut reach = reachable(&r.replicas, faults, self.node);
                 reach.retain(|i| r.replicas[*i].open_reads < PUBLIC_TRANSACTION_LIMIT);
                 reach.truncate(begin_cap);
                 if reach.len() >= replicas::SET_COUNT {

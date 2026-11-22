@@ -11,7 +11,7 @@ impl SimDht {
     pub(super) fn held(&self, key: &str, subkeys: Option<&[u32]>) -> bool {
         let inner = self.net.inner.lock();
         inner.records.get(key).is_some_and(|r| {
-            let reach = reachable(&r.replicas, &inner.faults.partitions, self.node);
+            let reach = reachable(&r.replicas, &inner.faults, self.node);
             replicas::holds(&r.replicas, &reach, subkeys)
         })
     }

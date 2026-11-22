@@ -313,3 +313,72 @@ async fn a_min_seqnum_set_skips_seqs() {
     let held = sim.replica_values(&key, 0).into_iter().flatten();
     assert!(held.into_iter().any(|v| v.seq == 7 && v.data == b"v7"));
 }
+
+/// While a node's pool routes fail, none of its DHT questions reaches a
+/// replica, since each rides the record's safety selection over a pool
+/// safety route ([`super::records::reaches`] cites the storage manager):
+/// its set lands nowhere and answers `Offline`, and its open of a record it
+/// does not hold finds no node to answer. Another node's DHT is untouched,
+/// and once the routes carry traffic again the set lands.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_node_whose_pool_routes_fail_reaches_no_replica() {
+    let (sim, nodes) = Netsim::nodes(4, 45);
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, key, _) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
+        SetOutcome::Landed
+    );
+    let other = nodes[1].ports.records.start_session().unwrap();
+    let (other_lease, other_key, _) = other
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        other
+            .set(other_lease, 0, b"o0".to_vec(), None)
+            .await
+            .unwrap(),
+        SetOutcome::Landed
+    );
+
+    sim.fault(Fault::PoolRoutesFail {
+        node: 0,
+        failing: true,
+    });
+    assert_eq!(
+        pool.set(lease, 0, b"v1".to_vec(), None).await.unwrap(),
+        SetOutcome::Offline
+    );
+    let landed = sim
+        .replica_values(&key, 0)
+        .into_iter()
+        .flatten()
+        .filter(|v| v.data == b"v1")
+        .count();
+    assert_eq!(landed, 0, "no replica took the failing node's set");
+    assert!(
+        pool.acquire(&other_key, None, rekindle_records::port::OpenIntent::Hold)
+            .await
+            .is_err(),
+        "the failing node's open of a record it does not hold finds no node"
+    );
+    // Node 1's DHT is untouched: it opens node 0's record and reads v0.
+    let read = other
+        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
+    assert_eq!(other.get(read, 0, true).await.unwrap().unwrap().data, b"v0");
+
+    sim.fault(Fault::PoolRoutesFail {
+        node: 0,
+        failing: false,
+    });
+    assert_eq!(
+        pool.set(lease, 0, b"v1".to_vec(), None).await.unwrap(),
+        SetOutcome::Landed
+    );
+}

@@ -351,7 +351,7 @@ pub(crate) async fn run(
         inner.records.get(key).map_or_else(
             || (None, Vec::new()),
             |r| {
-                let reach = candidates(&r.replicas, &inner.faults.partitions, node);
+                let reach = candidates(&r.replicas, &inner.faults, node);
                 (Some(r.schema.clone()), reach)
             },
         )
@@ -507,7 +507,7 @@ fn arrives(inner: &crate::network::Inner, node: usize, key: &str, r: usize) -> b
         .get(key)
         .and_then(|record| record.replicas.get(r))
         .map(|x| x.home);
-    watches::online(inner, node) && home.is_some_and(|h| reaches(&inner.faults.partitions, node, h))
+    watches::online(inner, node) && home.is_some_and(|h| reaches(&inner.faults, node, h))
 }
 
 /// The RPCs still in flight when a set returned land at their arrival,

@@ -249,7 +249,7 @@ impl SimDht {
     fn reach(&self, key: &str) -> Vec<usize> {
         let inner = self.net.inner.lock();
         inner.records.get(key).map_or_else(Vec::new, |r| {
-            reachable(&r.replicas, &inner.faults.partitions, self.node)
+            reachable(&r.replicas, &inner.faults, self.node)
         })
     }
 }
@@ -418,7 +418,7 @@ impl DhtBackend for SimDht {
         let mut inner = self.net.inner.lock();
         if scope != ReportScope::Local {
             let reach = inner.records.get(key).map_or_else(Vec::new, |r| {
-                reachable(&r.replicas, &inner.faults.partitions, self.node)
+                reachable(&r.replicas, &inner.faults, self.node)
             });
             stores::touch(&mut inner, key, &reach);
         }
@@ -453,7 +453,7 @@ impl DhtBackend for SimDht {
         let reach = if scope == ReportScope::Local {
             Vec::new()
         } else {
-            reachable(&record.replicas, &inner.faults.partitions, self.node)
+            reachable(&record.replicas, &inner.faults, self.node)
         };
         // The fanout starts from the local result for the Update scopes,
         // from nothing for the Sync ones (`:328-332`); Local reports none.

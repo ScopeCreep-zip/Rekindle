@@ -68,9 +68,10 @@ pub(super) fn on_open(inner: &mut Inner, node: usize, key: &str, rehydrate: bool
 }
 
 fn reach_of(inner: &Inner, node: usize, key: &str) -> Vec<usize> {
-    inner.records.get(key).map_or_else(Vec::new, |r| {
-        reachable(&r.replicas, &inner.faults.partitions, node)
-    })
+    inner
+        .records
+        .get(key)
+        .map_or_else(Vec::new, |r| reachable(&r.replicas, &inner.faults, node))
 }
 
 /// Whether `node` has rehydration work a tick can make progress on.
@@ -142,7 +143,7 @@ fn push(inner: &mut Inner, node: usize, key: &str, subkey: u32) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
-    let candidates = candidates(&record.replicas, &inner.faults.partitions, node);
+    let candidates = candidates(&record.replicas, &inner.faults, node);
     let fanout = super::fanout::set_now(
         &record.schema,
         &mut record.replicas,

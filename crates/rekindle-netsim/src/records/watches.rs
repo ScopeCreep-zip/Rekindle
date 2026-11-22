@@ -178,7 +178,7 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
         return;
     };
     let (mut held, mut added, mut accepted, mut refused) = (0, false, Vec::new(), 0u64);
-    for r in reachable(&record.replicas, &inner.faults.partitions, node) {
+    for r in reachable(&record.replicas, &inner.faults, node) {
         let watches = &mut record.replicas[r].watches;
         if let Some(w) = watches.iter_mut().find(|w| w.node == node) {
             if w.member == d.member {
@@ -544,7 +544,7 @@ impl Network {
                 for (home, r, node, route, change) in sent {
                     if !online(inner, node)
                         || super::outbound::asleep(inner, node)
-                        || !reaches(&inner.faults.partitions, node, home)
+                        || !reaches(&inner.faults, node, home)
                     {
                         continue;
                     }

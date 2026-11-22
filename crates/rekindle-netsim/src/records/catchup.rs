@@ -184,11 +184,7 @@ fn inspect(
         .as_ref()?
         .subkeys
         .clone();
-    let reach = reachable(
-        &inner.records.get(key)?.replicas,
-        &inner.faults.partitions,
-        node,
-    );
+    let reach = reachable(&inner.records.get(key)?.replicas, &inner.faults, node);
     if reach.is_empty() {
         return None;
     }

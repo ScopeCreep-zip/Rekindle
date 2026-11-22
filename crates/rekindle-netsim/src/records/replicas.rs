@@ -43,11 +43,9 @@
 //!   with no write of ours waiting; otherwise the get returns the local copy
 //!   (`get_value.rs:600-649`).
 
-use std::collections::HashSet;
-
 use rekindle_records::port::{RecordSchema, RecordValue};
 
-use crate::network::{pair, Inner};
+use crate::network::{pair, Faults, Inner};
 
 /// A call's window: Veilid's `consensus_width` (`veilid_config.rs:1013`).
 pub(crate) const REPLICAS: usize = 10;
@@ -173,33 +171,42 @@ pub(crate) fn place(key: &str, nodes: usize, subkeys: usize) -> Vec<Replica> {
 
 /// Whether `node` reaches a replica beside `home`. `usize::MAX` is an
 /// outsider that reaches every replica (a scenario's modified client).
-pub(crate) fn reaches(partitions: &HashSet<(usize, usize)>, node: usize, home: usize) -> bool {
-    node == usize::MAX || node == home || !partitions.contains(&pair(node, home))
+///
+/// Rekindle opens every record `SafetySelection::Safe`
+/// (`rekindle-protocol` `dht/backend.rs`), and Veilid 0.5.8 sends each of
+/// the record's DHT questions over the opened record's safety selection:
+/// a set (`set_value.rs:186-206`), a get (`get_value.rs:147-153`), an
+/// inspect and the open of a record not held locally
+/// (`inspect_record.rs:212-217`, `:324-328`; `open_record.rs:95-105`), a
+/// watch (`watch_value.rs:302-311`), a rehydration (`rehydrate.rs:145-159`),
+/// an offline write's re-push (`offline_subkey_writes.rs:25-35`) and a
+/// transaction (`transaction_begin.rs:106`, `:177`). A safe question asks
+/// for its answer over a reply private route from the same pool, and a
+/// watch's `ValueChanged` pushes ride that reply route
+/// (`watch_value.rs:472-476`). So while the node's pool routes fail
+/// ([`crate::Fault::PoolRoutesFail`]) it reaches no replica, its own
+/// neighbour's included: each question times out unanswered.
+pub(crate) fn reaches(faults: &Faults, node: usize, home: usize) -> bool {
+    node == usize::MAX
+        || (!faults.pool_failing.contains(&node)
+            && (node == home || !faults.partitions.contains(&pair(node, home))))
 }
 
 /// Every candidate store `node` reaches, in placement order: a set's
 /// window then its reserve ([`super::fanout`]).
-pub(crate) fn candidates(
-    replicas: &[Replica],
-    partitions: &HashSet<(usize, usize)>,
-    node: usize,
-) -> Vec<usize> {
+pub(crate) fn candidates(replicas: &[Replica], faults: &Faults, node: usize) -> Vec<usize> {
     replicas
         .iter()
         .enumerate()
-        .filter(|(_, r)| reaches(partitions, node, r.home))
+        .filter(|(_, r)| reaches(faults, node, r.home))
         .map(|(i, _)| i)
         .collect()
 }
 
 /// The replicas in `node`'s window: the [`REPLICAS`] closest it reaches
 /// (an unreached store times out and takes no slot, `fanout_call.rs:399-405`).
-pub(crate) fn reachable(
-    replicas: &[Replica],
-    partitions: &HashSet<(usize, usize)>,
-    node: usize,
-) -> Vec<usize> {
-    let mut reach = candidates(replicas, partitions, node);
+pub(crate) fn reachable(replicas: &[Replica], faults: &Faults, node: usize) -> Vec<usize> {
+    let mut reach = candidates(replicas, faults, node);
     reach.truncate(REPLICAS);
     reach
 }
@@ -341,9 +348,10 @@ pub(crate) fn refresh(
     force: bool,
 ) -> Option<RecordValue> {
     let local = local(inner, node, key, subkey);
-    let reach = inner.records.get(key).map_or_else(Vec::new, |r| {
-        reachable(&r.replicas, &inner.faults.partitions, node)
-    });
+    let reach = inner
+        .records
+        .get(key)
+        .map_or_else(Vec::new, |r| reachable(&r.replicas, &inner.faults, node));
     super::stores::touch(inner, key, &reach);
     // A get that reached the network consumes its report mark
     // (0.5.8 `get_value.rs:199-200`, [`super::outbound`]).
