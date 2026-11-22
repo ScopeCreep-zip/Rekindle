@@ -11,6 +11,8 @@ export interface BuddyListUIState {
   showStartGroupCall: boolean;
   /** The "New group" dialog (plan E2.6). */
   showNewGroup: boolean;
+  /** The notification center's panel (a skin's OpenNotifications too). */
+  showNotifications: boolean;
 }
 
 const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
@@ -20,6 +22,7 @@ const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
   showJoinCommunity: false,
   showStartGroupCall: false,
   showNewGroup: false,
+  showNotifications: false,
 });
 
 export function switchTab(tab: BuddyListTab): void {

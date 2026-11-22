@@ -48,6 +48,12 @@ import {
   subscribeSkinSignals,
 } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
+import { registerShellRunner } from "../actions/skin.actions";
+import type { ShellOp } from "../ipc/commands/dto_skin_run";
+import { handleHide } from "../actions/titlebar.actions";
+import { handleToggleAddFriend } from "../actions/buddy.actions";
+import { setShortcutsHelpOpen } from "../stores/shortcuts_help.store";
+import { handleToggleCreateCommunity, handleToggleJoinCommunity, handleToggleNewChat } from "../components/buddy-list/BottomActionBar";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
 import type { NetworkStatusEvent } from "../ipc/channels";
@@ -83,6 +89,46 @@ function BuddyContent(): JSX.Element {
   );
 }
 
+/** The buddy list's own skin operations: Close hides it in the tray (it
+ *  is never destroyed), and the panels are its dialogs. */
+function runBuddyListOp(op: ShellOp): boolean {
+  switch (op.kind) {
+    case "close":
+      handleHide();
+      return true;
+    case "openPanel":
+      switch (op.arg) {
+        case "addFriend":
+          handleToggleAddFriend();
+          return true;
+        case "newChat":
+          handleToggleNewChat();
+          return true;
+        case "newGroup":
+          setBuddyListUI("showNewGroup", true);
+          return true;
+        case "startGroupCall":
+          setBuddyListUI("showStartGroupCall", true);
+          return true;
+        case "createCommunity":
+          handleToggleCreateCommunity();
+          return true;
+        case "joinCommunity":
+          handleToggleJoinCommunity();
+          return true;
+        case "shortcuts":
+          setShortcutsHelpOpen(true);
+          return true;
+        case "notifications":
+          setBuddyListUI("showNotifications", true);
+          return true;
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+
 const BuddyListWindow: Component = () => {
   const [networkAttached, setNetworkAttached] = createSignal(true);
   const unlisteners: Promise<UnlistenFn>[] = [];
@@ -114,6 +160,9 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     // This window's skin signals: the tree applies the triggers they fire.
     unlisteners.push(subscribeSkinSignals(setSkinSignals));
+    // The skin operations only the buddy list runs (plan SK2-A5): Close
+    // hides it in the tray, and its dialogs.
+    unlisteners.push(Promise.resolve(registerShellRunner(runBuddyListOp)));
     unlisteners.push(subscribePairingLinkHandler());
     // Reviews of actions the backend began, in the router root's dialog.
     unlisteners.push(subscribeBackendIntents());

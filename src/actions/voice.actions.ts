@@ -183,12 +183,16 @@ export async function handleLeaveVoice(): Promise<void> {
 }
 
 export async function handleToggleMute(): Promise<void> {
+  await handleSetMuted(!voiceState.isMuted);
+}
+
+/** Mute or unmute our microphone (a skin's MuteSelf / UnmuteSelf, plan SK2-A5). */
+export async function handleSetMuted(muted: boolean): Promise<void> {
   try {
-    const newMuted = !voiceState.isMuted;
-    await commands.setMute(newMuted);
-    setVoiceState("isMuted", newMuted);
+    await commands.setMute(muted);
+    setVoiceState("isMuted", muted);
   } catch (e) {
-    console.error("Failed to toggle mute:", e);
+    console.error("Failed to set mute:", e);
   }
 }
 

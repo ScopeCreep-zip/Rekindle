@@ -1,5 +1,5 @@
 import { addToast } from "../../stores/toast.store";
-import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, JSX, Show } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { friendsState } from "../../stores/friends.store";
 import { buddyListUI } from "../../stores/buddylist-ui.store";
@@ -19,6 +19,7 @@ import {
   relayState,
 } from "../../actions/relay.actions";
 import { handleStartDmCall } from "../../actions/calls.actions";
+import { sendSkinSelection } from "../../actions/skin.actions";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";
 import ScrollArea from "../common/ScrollArea";
@@ -37,6 +38,17 @@ function matchesSearch(friend: Friend, query: string): boolean {
 
 const BuddyList: Component = () => {
   const [selectedKey, setSelectedKey] = createSignal<string | null>(null);
+  // A friend no longer listed (removed, blocked) is no longer selected.
+  createEffect(() => {
+    const key = selectedKey();
+    if (key !== null && !(key in friendsState.friends)) setSelectedKey(null);
+  });
+  // The Host keeps this window's selection: the skin's selection-dependent
+  // actions act on it and its capabilities come from it (plan SK2-A5).
+  createEffect(() => {
+    const key = selectedKey();
+    sendSkinSelection(key === null ? null : { kind: "friend", arg: { publicKey: key } });
+  });
   const [newGroupTarget, setNewGroupTarget] = createSignal<string | null>(null);
 
   const groupedFriends = createMemo(() => {
