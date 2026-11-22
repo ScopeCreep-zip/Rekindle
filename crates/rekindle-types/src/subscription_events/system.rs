@@ -77,4 +77,12 @@ pub enum SystemEvent {
     ActivityAppended {
         entries: Vec<crate::activity::ActivityListItem>,
     },
+    /// We added a favourite game server (plan E7.2): a window listing
+    /// them reads them again (`FavouriteServersGet`).
+    /// Triggered by: `FavouriteServerAdd`, once stored.
+    FavouriteServerAdded {
+        game_id: u32,
+        server: String,
+        label: String,
+    },
 }

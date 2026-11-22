@@ -376,6 +376,9 @@ impl Host {
             let teardowns = super::unlock::run_panic_teardowns(Arc::clone(&ctx), unlock_panics_rx);
             workers.spawn(teardowns.in_current_span());
         }
+        // The activity feed folds the Host's journal on both modes (lead
+        // decision (51)).
+        workers.spawn(crate::host::activity::run_worker(Arc::clone(&ctx)).in_current_span());
         workers.spawn(crate::daemon::shutdown::announce_when_requested(
             Arc::clone(&ctx),
         ));

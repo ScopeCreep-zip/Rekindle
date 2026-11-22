@@ -140,6 +140,21 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(b"|");
             h.update(&now_ms.to_le_bytes());
         }
+        SystemEvent::FavouriteServerAdded {
+            game_id,
+            server,
+            label,
+        } => {
+            // Each stored add is its own fact (a removed favourite may be
+            // added again), so the commit time is part of its identity.
+            h.update(b"favourite_added|");
+            h.update(&game_id.to_le_bytes());
+            h.update(server.as_bytes());
+            h.update(b"|");
+            h.update(label.as_bytes());
+            h.update(b"|");
+            h.update(&now_ms.to_le_bytes());
+        }
         SystemEvent::ActivityAppended { entries } => {
             // Row ids are unique per identity: the ids are the fact.
             h.update(b"activity|");

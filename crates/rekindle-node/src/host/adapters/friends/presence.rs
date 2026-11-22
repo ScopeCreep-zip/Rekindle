@@ -41,17 +41,6 @@ fn subscription_event(event: FriendPresenceEvent) -> SubscriptionEvent {
         FriendPresenceEvent::StatusChanged { friend_key, status } => {
             (friend_key, PresenceSnapshot::status(status.as_wire_str()))
         }
-        FriendPresenceEvent::GameChanged { friend_key, game } => (
-            friend_key,
-            PresenceSnapshot::game(GameActivity::from_parts(
-                game.as_ref().map(|g| g.game_name.clone()),
-                game.as_ref().map(|g| g.game_id),
-                game.as_ref().map(|g| g.elapsed_seconds),
-                game.as_ref().and_then(|g| g.server_address.clone()),
-                game.as_ref()
-                    .and_then(|g| rekindle_game_detect::GameDatabase::icon_key_for(g.game_id)),
-            )),
-        ),
     };
     SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
         peer_key: friend_key,
@@ -97,33 +86,6 @@ impl HostFriends {
             .and_then(|s| s.friends.get_mut(friend_key))
         {
             change(friend);
-        }
-    }
-
-    /// [`Self::with_friend`], then the activity feed compares the row
-    /// before and after (plan E7.15).
-    fn with_friend_noted(
-        &self,
-        friend_key: &str,
-        change: impl FnOnce(&mut rekindle_types::friend::FriendState),
-    ) {
-        let changed = self
-            .ctx()
-            .session
-            .write()
-            .as_mut()
-            .and_then(|s| s.friends.get_mut(friend_key))
-            .map(|friend| {
-                let prev = friend.clone();
-                change(friend);
-                (prev, friend.clone())
-            });
-        if let Some((prev, next)) = changed {
-            self.note_friend_change(crate::host::activity::FriendChange {
-                prev: Some(prev),
-                next,
-                bio: None,
-            });
         }
     }
 }
@@ -201,12 +163,29 @@ impl FriendPresenceDeps for HostFriends {
             icon_key: rekindle_game_detect::GameDatabase::icon_key_for(g.game_id),
             server_address: g.server_address,
         });
-        self.with_friend_noted(friend_key, |f| f.game_info = game);
+        let snapshot = PresenceSnapshot::game(GameActivity::from_parts(
+            game.as_ref().map(|g| g.game_name.clone()),
+            game.as_ref().map(|g| g.game_id),
+            game.as_ref().map(|g| g.elapsed_seconds),
+            game.as_ref().and_then(|g| g.server_address.clone()),
+            game.as_ref().and_then(|g| g.icon_key.clone()),
+        ));
+        self.with_friend(friend_key, |f| f.game_info = game);
+        // An accepted friend's game change is published from here, the one
+        // place it changes (lead decision (51)); a pending friend's is kept
+        // unshown.
+        if self.is_friend_accepted(friend_key) {
+            self.ctx()
+                .publish_event(SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
+                    peer_key: friend_key.to_owned(),
+                    snapshot,
+                }));
+        }
     }
 
     fn set_friend_display_name(&self, friend_key: &str, display_name: &str) -> bool {
         let mut changed = false;
-        self.with_friend_noted(friend_key, |f| {
+        self.with_friend(friend_key, |f| {
             if f.display_name != display_name {
                 display_name.clone_into(&mut f.display_name);
                 changed = true;

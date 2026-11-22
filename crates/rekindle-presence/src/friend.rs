@@ -189,14 +189,7 @@ fn handle_status_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value
 
 fn handle_game_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: &[u8]) {
     let game = parse_game_info(value);
-    deps.set_friend_game_info(friend_key, game.clone());
-    if !deps.is_friend_accepted(friend_key) {
-        return;
-    }
-    deps.emit(FriendPresenceEvent::GameChanged {
-        friend_key: friend_key.to_string(),
-        game,
-    });
+    deps.set_friend_game_info(friend_key, game);
 }
 
 /// A friend's profile subkey 0: their own display name, UTF-8 as they

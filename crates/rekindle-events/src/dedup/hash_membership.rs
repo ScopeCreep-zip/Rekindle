@@ -45,6 +45,11 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(status.as_bytes());
         }
+        MembershipEvent::SelfJoined { community, .. } => {
+            // One join of ours per community per session.
+            h.update(b"self_joined|");
+            h.update(community.as_bytes());
+        }
         MembershipEvent::Joined {
             community,
             pseudonym,
@@ -219,6 +224,10 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(peer_key.as_bytes());
             h.update(b"|");
             h.update(new_profile_dht_key.as_bytes());
+        }
+        FriendEvent::BioChanged { peer_key } => {
+            h.update(b"bio|");
+            h.update(peer_key.as_bytes());
         }
         FriendEvent::DisplayNameChanged {
             peer_key,

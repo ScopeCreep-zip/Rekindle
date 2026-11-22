@@ -7,6 +7,7 @@
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, ProfileBio};
 use rekindle_types::friend::FriendshipState;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::{state, FriendHost};
 use crate::operations::dm;
@@ -73,16 +74,15 @@ pub(crate) async fn on_profile_bio(host: &dyn FriendHost, sender: &str, body: &P
     let peer = sender.to_string();
     let bio = body.bio.clone();
     let stored = state::db_call!(host, "store a friend's bio", move |conn| {
-        let before = rekindle_db::repo::bio::friend(conn, &owner, &peer)?;
-        rekindle_db::repo::bio::set_friend(conn, &owner, &peer, bio.as_deref())?;
-        Ok((before, bio))
+        rekindle_db::repo::bio::set_friend(conn, &owner, &peer, bio.as_deref())
     })
     .await;
     match stored {
-        Ok((before, after)) => {
-            if let Some(friend) = state::friend(host, sender) {
-                host.friend_changed(Some(friend.clone()), friend, Some((before, after)));
-            }
+        Ok(_) => {
+            // The Host's activity feed folds it (lead decision (51)).
+            host.publish(SubscriptionEvent::Friend(FriendEvent::BioChanged {
+                peer_key: sender.to_owned(),
+            }));
             true
         }
         Err(e) => {

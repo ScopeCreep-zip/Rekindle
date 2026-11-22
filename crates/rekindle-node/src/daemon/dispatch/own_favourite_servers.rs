@@ -6,6 +6,7 @@
 use rekindle_db::repo::favourite_servers::{self, FavouriteServer};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::dto::presence::FavouriteServerView;
+use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -27,20 +28,19 @@ pub(super) async fn route(
         (Ok(db), Ok(owner)) => (db, owner),
         (Err(e), _) | (_, Err(e)) => return e,
     };
-    let now_ms = ctx.clock.now_ms_i64();
-    let added_at = now_ms / 1000;
-    // Our own feed entry (plan E7.15), stored once the add is.
+    let added_at = ctx.clock.now_ms_i64() / 1000;
+    // Published once the add is stored (the activity feed folds it, lead
+    // decision (51)).
     let added = match &request {
         IpcRequest::FavouriteServerAdd {
             game_id,
             server,
             label,
-        } => Some(rekindle_presence::activity::favourite_added(
-            *game_id,
-            server.as_str(),
-            label.trim(),
-            now_ms,
-        )),
+        } => Some(SystemEvent::FavouriteServerAdded {
+            game_id: *game_id,
+            server: server.as_str().to_owned(),
+            label: label.trim().to_owned(),
+        }),
         _ => None,
     };
     let read = db
@@ -79,8 +79,8 @@ pub(super) async fn route(
         .await;
     match read {
         Ok(views) => {
-            if let Some(entry) = added {
-                crate::host::activity::own(ctx, entry).await;
+            if let Some(added) = added {
+                ctx.publish_event(SubscriptionEvent::System(added));
             }
             IpcResponse::ok(&views)
         }

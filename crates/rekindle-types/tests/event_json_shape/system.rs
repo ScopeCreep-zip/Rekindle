@@ -14,6 +14,7 @@ pub const NAMES: &[&str] = &[
     "skinTrialChanged",
     "quickWipeChanged",
     "activityAppended",
+    "favouriteServerAdded",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
@@ -27,6 +28,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::SkinTrialChanged { .. } => "skinTrialChanged",
         SystemEvent::QuickWipeChanged { .. } => "quickWipeChanged",
         SystemEvent::ActivityAppended { .. } => "activityAppended",
+        SystemEvent::FavouriteServerAdded { .. } => "favouriteServerAdded",
     }
 }
 
@@ -130,6 +132,14 @@ fn sync() -> Vec<Sample> {
                     nickname: Some("Al".into()),
                     identity_pin_mismatch: false,
                 }],
+            },
+        ),
+        ev(
+            "favouriteServerAdded",
+            SystemEvent::FavouriteServerAdded {
+                game_id: 4_100,
+                server: "203.0.113.7:27015".into(),
+                label: "Frag Night".into(),
             },
         ),
     ]

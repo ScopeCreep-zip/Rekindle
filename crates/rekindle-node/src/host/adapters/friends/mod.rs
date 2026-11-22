@@ -178,34 +178,7 @@ impl FriendHost for HostFriends {
     }
 
     fn publish(&self, event: SubscriptionEvent) {
-        // Every new friendship publishes `Accepted`, whichever side
-        // accepted: the feed's "now friends" (plan E7.15).
-        if let SubscriptionEvent::Friend(
-            rekindle_types::subscription_events::FriendEvent::Accepted { peer_key, .. },
-        ) = &event
-        {
-            if let Some(next) = rekindle_transport::operations::friend::FriendHost::session(self)
-                .read()
-                .as_ref()
-                .and_then(|s| s.friends.get(peer_key).cloned())
-            {
-                self.note_friend_change(crate::host::activity::FriendChange {
-                    prev: None,
-                    next,
-                    bio: None,
-                });
-            }
-        }
         self.ctx.publish_event(event);
-    }
-
-    fn friend_changed(
-        &self,
-        prev: Option<rekindle_types::friend::FriendState>,
-        next: rekindle_types::friend::FriendState,
-        bio: Option<(Option<String>, Option<String>)>,
-    ) {
-        self.note_friend_change(crate::host::activity::FriendChange { prev, next, bio });
     }
 
     async fn audit(&self, kind: rekindle_audit::AuditKind, detail: serde_json::Value) {

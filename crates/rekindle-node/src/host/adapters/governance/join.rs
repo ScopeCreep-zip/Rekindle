@@ -7,6 +7,7 @@
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dto::community::CommunityJoined;
 use rekindle_types::invite::InviteLink;
+use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
 use super::HostGovernance;
 
@@ -172,12 +173,13 @@ impl HostGovernance {
                 name: outcome.invite.community_name.clone(),
             },
         );
-        // Our own feed entry (plan E7.15).
-        crate::host::activity::own(
-            &self.ctx,
-            rekindle_presence::activity::joined_community(&id, self.ctx.clock.now_ms_i64()),
-        )
-        .await;
+        // Our own join, published once whichever path it took: the
+        // activity feed folds it (lead decision (51)).
+        self.ctx
+            .publish_event(SubscriptionEvent::Membership(MembershipEvent::SelfJoined {
+                community: id.clone(),
+                name: outcome.invite.community_name.clone(),
+            }));
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
         // gossiped and queued, and the outbox lands it (S6b).
         Ok(CommunityJoined {

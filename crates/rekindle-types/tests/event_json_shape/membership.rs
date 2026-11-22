@@ -10,6 +10,7 @@ pub const NAMES: &[&str] = &[
     "memberDiscovered",
     "joinProgress",
     "joined",
+    "selfJoined",
     "memberCardChanged",
     "left",
     "removed",
@@ -31,6 +32,7 @@ pub fn variant_name(e: &MembershipEvent) -> &'static str {
         MembershipEvent::MemberDiscovered { .. } => "memberDiscovered",
         MembershipEvent::JoinProgress { .. } => "joinProgress",
         MembershipEvent::Joined { .. } => "joined",
+        MembershipEvent::SelfJoined { .. } => "selfJoined",
         MembershipEvent::MemberCardChanged { .. } => "memberCardChanged",
         MembershipEvent::Left { .. } => "left",
         MembershipEvent::Removed { .. } => "removed",
@@ -92,6 +94,13 @@ fn joining() -> Vec<Sample> {
                 community: community(),
                 stage: text("slotClaim"),
                 status: text("done"),
+            },
+        ),
+        ev(
+            "selfJoined",
+            MembershipEvent::SelfJoined {
+                community: community(),
+                name: text("Frag Night"),
             },
         ),
         ev(

@@ -46,10 +46,6 @@ pub enum FriendPresenceEvent {
         friend_key: String,
         status: UserStatusKind,
     },
-    GameChanged {
-        friend_key: String,
-        game: Option<GameInfoSnapshot>,
-    },
     /// The friend's own display name (their profile's subkey 0) changed
     /// (live A/B finding 39); the adapter publishes it as a friend event.
     DisplayNameChanged {
@@ -109,6 +105,9 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
         -> SetFriendStatusOutcome;
     fn set_friend_offline(&self, friend_key: &str, last_seen_ts_ms: i64);
     fn set_friend_last_heartbeat(&self, friend_key: &str, heartbeat_ts_ms: i64);
+    /// Store the friend's game in the projection; the adapter publishes
+    /// the change of an accepted friend's game itself (the one place it
+    /// changes, lead decision (51)).
     fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>);
     /// Store the friend's own display name, read from their profile, in
     /// the projection and the database; whether it changed (live A/B

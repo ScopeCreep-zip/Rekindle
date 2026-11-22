@@ -4,6 +4,7 @@
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, StatusRequest, StatusResponse};
 use rekindle_types::friend::{FriendshipState, UserStatus};
+use rekindle_types::subscription_events::{PresenceEvent, PresenceSnapshot, SubscriptionEvent};
 
 use crate::operations::dm;
 use crate::operations::friend::{state, FriendHost};
@@ -92,7 +93,6 @@ pub(crate) fn on_status_response(host: &dyn FriendHost, friend: &str, r: &Status
         .ok()
         .and_then(|s| s.checked_mul(1000))
         .filter(|_| r.last_seen > 0);
-    let before = state::friend(host, target);
     state::update(host, target, |f| {
         if let Some(status) = UserStatus::from_wire_str(&r.status) {
             f.status = status;
@@ -105,9 +105,16 @@ pub(crate) fn on_status_response(host: &dyn FriendHost, friend: &str, r: &Status
             f.last_heartbeat_at = seen_ms;
         }
     });
-    if let (Some(before), Some(after)) = (before, state::friend(host, target)) {
-        host.friend_changed(Some(before), after, None);
-    }
+    // Every frontend and the Host's activity feed hear it (lead decision
+    // (51)): the status and message the relay answered with.
+    host.publish(SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
+        peer_key: target.to_owned(),
+        snapshot: PresenceSnapshot {
+            status: UserStatus::from_wire_str(&r.status).map(|s| s.as_wire_str().to_owned()),
+            status_message: r.status_message.clone(),
+            ..PresenceSnapshot::default()
+        },
+    }));
 }
 
 #[cfg(test)]

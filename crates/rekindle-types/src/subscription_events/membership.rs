@@ -68,6 +68,12 @@ pub enum MembershipEvent {
         display_name: Option<String>,
         role_ids: Vec<String>,
     },
+    /// We joined `community` (plan E3.2): the one event of our own join,
+    /// whichever path it took (a link, or a co-creator's `CreatorJoin`);
+    /// [`Self::Joined`] names any member, us included, once the merged
+    /// governance lists them.
+    /// Triggered by: the Host's join, once the community is installed.
+    SelfJoined { community: String, name: String },
     /// The name on a member's verified card (`M`/0, signed by the
     /// pseudonym, its owner pinned to the member's `MemberJoined`), on the
     /// first read of that card and on each change (plan E3.2 F9-2).

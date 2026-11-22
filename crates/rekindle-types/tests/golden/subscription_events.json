@@ -346,6 +346,13 @@
       }
     }
   },
+  "friend.bioChanged": {
+    "friend": {
+      "bioChanged": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
   "friend.blockChanged": {
     "friend": {
       "blockChanged": {
@@ -1207,6 +1214,14 @@
       }
     }
   },
+  "membership.selfJoined": {
+    "membership": {
+      "selfJoined": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "name": "Frag Night"
+      }
+    }
+  },
   "membership.timedOut": {
     "membership": {
       "timedOut": {
@@ -1879,6 +1894,15 @@
       "bootstrapRequested": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "joinerPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
+  "system.favouriteServerAdded": {
+    "system": {
+      "favouriteServerAdded": {
+        "gameId": 4100,
+        "label": "Frag Night",
+        "server": "203.0.113.7:27015"
       }
     }
   },

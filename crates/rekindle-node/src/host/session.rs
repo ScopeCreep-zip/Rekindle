@@ -129,7 +129,7 @@ pub async fn load(
 
 /// A stored friend as the projection holds it: offline until their
 /// presence is seen, nothing unread.
-fn friend_state(row: repo::friends::FriendRow) -> FriendState {
+pub(crate) fn friend_state(row: repo::friends::FriendRow) -> FriendState {
     let mut friend = FriendState::new(row.public_key, row.display_name, row.friendship_state);
     friend.nickname = row.nickname;
     friend.group_id = row.group_id;

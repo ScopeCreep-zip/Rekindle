@@ -212,6 +212,7 @@ impl SubscriptionEvent {
             Self::Membership(e) => Some(match e {
                 MembershipEvent::JoinRequested { community, .. }
                 | MembershipEvent::Joined { community, .. }
+                | MembershipEvent::SelfJoined { community, .. }
                 | MembershipEvent::MemberCardChanged { community, .. }
                 | MembershipEvent::Left { community, .. }
                 | MembershipEvent::Removed { community, .. }
@@ -266,7 +267,8 @@ impl SubscriptionEvent {
                 | SystemEvent::SkinChanged { .. }
                 | SystemEvent::SkinTrialChanged { .. }
                 | SystemEvent::QuickWipeChanged { .. }
-                | SystemEvent::ActivityAppended { .. } => None,
+                | SystemEvent::ActivityAppended { .. }
+                | SystemEvent::FavouriteServerAdded { .. } => None,
             },
             // Not community-scoped: a friend event, a network state
             // change and an unread bump all belong to the device, not

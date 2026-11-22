@@ -85,6 +85,7 @@ impl SubscriptionEvent {
                 }
                 MembershipEvent::JoinRequested { community, .. }
                 | MembershipEvent::Joined { community, .. }
+                | MembershipEvent::SelfJoined { community, .. }
                 | MembershipEvent::MemberCardChanged { community, .. }
                 | MembershipEvent::Left { community, .. }
                 | MembershipEvent::Removed { community, .. }
@@ -140,7 +141,8 @@ impl SubscriptionEvent {
                 | SystemEvent::SkinChanged { .. }
                 | SystemEvent::SkinTrialChanged { .. }
                 | SystemEvent::QuickWipeChanged { .. }
-                | SystemEvent::ActivityAppended { .. } => EventScope::Device,
+                | SystemEvent::ActivityAppended { .. }
+                | SystemEvent::FavouriteServerAdded { .. } => EventScope::Device,
             },
             Self::UnreadChanged { context, .. } => match context {
                 UnreadContext::Channel { community, .. } => {
@@ -201,6 +203,7 @@ fn friend_peer(e: &FriendEvent) -> Option<&str> {
         | FriendEvent::ProfileKeyRotated { peer_key, .. }
         | FriendEvent::NicknameChanged { peer_key, .. }
         | FriendEvent::DisplayNameChanged { peer_key, .. }
+        | FriendEvent::BioChanged { peer_key }
         | FriendEvent::GroupChanged { peer_key, .. }
         | FriendEvent::KeyChanged { peer_key, .. }
         | FriendEvent::HandshakeFailed { peer_key, .. }
