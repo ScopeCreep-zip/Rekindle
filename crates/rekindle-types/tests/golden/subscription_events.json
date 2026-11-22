@@ -1907,6 +1907,39 @@
       }
     }
   },
+  "system.infoview": {
+    "system": {
+      "infoview": {
+        "updated": {
+          "view": {
+            "sections": [
+              {
+                "servers": [
+                  {
+                    "address": "203.0.113.7:27015",
+                    "gameId": "4100",
+                    "join": {
+                      "gameId": 4100,
+                      "server": "203.0.113.7:27015",
+                      "source": "community",
+                      "type": "joinServer"
+                    },
+                    "label": "Frag Night"
+                  }
+                ],
+                "type": "gameServers"
+              }
+            ],
+            "subject": {
+              "community": "c1",
+              "type": "community"
+            }
+          },
+          "window": "main"
+        }
+      }
+    }
+  },
   "system.quickWipeChanged": {
     "system": {
       "quickWipeChanged": {

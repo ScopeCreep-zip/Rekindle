@@ -15,6 +15,7 @@ pub const NAMES: &[&str] = &[
     "quickWipeChanged",
     "activityAppended",
     "favouriteServerAdded",
+    "infoview",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
