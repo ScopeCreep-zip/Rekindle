@@ -36,7 +36,16 @@
   *Decided from research 2026-10-24 (batch 14):* still Proposed: an op whose authority came from a quarantined op is re-judged at its own causal
   position, the power state in its causal past (plan E3.2 S7c.3a), never on the converged set, and a refusal "while a
   power op stood" means that power op is in the refused op's causal past or is a removal whose `targetSeqFrontier`
-  masks it (rule 5).
+  masks it (rule 5). Amended 2026-11-22 (lead decision 63, plan K5j), Accepted: after a re-join the
+  member's new record has the re-joining device as its first device (rules 3, 10); the person's other devices are
+  **not** carried over or re-endorsed (rules 1 and 10 bind every endorsement to the member record; an automatic
+  re-endorsement would propagate trust from an ended membership): each re-enrols with a **fresh** device key (rule 2
+  revives only retired keys, and a fresh key keeps the incarnations unlinkable) whose `extendsSet` is the new
+  record's set, as Signal's re-registration unlinks linked devices, Keybase's reset revokes every device and Matrix's
+  cross-signing reset re-verifies each. A device learns its endorsement no longer binds the current member record
+  at its unlock catch-up (rule 4), refuses its own writes (`DeviceUnendorsed`), drops its stale `M(p,d)` binding,
+  and the Host exposes that state so the frontend offers the device's re-enrolment. A leave or kick and re-join
+  starts a new member record, not a fork of the old chain, so it does not count toward rule 7's one fork.
 - **Date:** 2026-10-24
 - **Amends:** [0011](0011-member-sovereign-records.md) and plan D15, their rule that the member's pseudonym signs
   its own op log. The record owner does not change: `M(p)` stays owned by the random key `K_M(p)` that only the
