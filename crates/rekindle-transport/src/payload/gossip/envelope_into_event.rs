@@ -32,10 +32,6 @@ pub fn envelope_into_event(
     let c = || community.to_string();
 
     Some(match envelope {
-        // Channel typing is the Host's (plan E3.4 S9): only it holds the
-        // text keys that name the channel behind the tag, and it lapses
-        // the start itself (`operations::typing::channel_frame`).
-        CommunityEnvelope::TypingIndicator { .. } => return None,
         CommunityEnvelope::PresenceUpdate {
             pseudonym_key,
             status,
@@ -64,6 +60,11 @@ pub fn envelope_into_event(
         CommunityEnvelope::Control(control) => {
             return control_into_event(control, community, sender)
         }
-        CommunityEnvelope::WatchRelay { .. } => return None,
+        // Channel typing is the Host's (plan E3.4 S9): only it holds the
+        // text keys that name the channel behind the tag, and it lapses
+        // the start itself (`operations::typing::channel_frame`).
+        CommunityEnvelope::TypingIndicator { .. } | CommunityEnvelope::WatchRelay { .. } => {
+            return None
+        }
     })
 }
