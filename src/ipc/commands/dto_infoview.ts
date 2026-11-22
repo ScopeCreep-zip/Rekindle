@@ -11,6 +11,11 @@ export type InfoviewSubject =
   | { type: "friendGroup"; groupId: number | null }
   | { type: "community"; community: string };
 
+/// What a window asks its Infoview for: a subject, or `selection`, which the Host
+/// resolves from the asking window's launcher's skin selection (plan E7.15 IV5;
+/// a pack's Info popup shows what the buddy list has selected).
+export type InfoviewRequest = InfoviewSubject | { type: "selection" };
+
 /// Where a Join row's server came from, stated by the Host (`JoinSource`).
 export type JoinSource = "friendPresence" | "community";
 
@@ -99,6 +104,7 @@ export type InfoviewSection =
 
 /// One window's Infoview (`InfoviewView`).
 export interface InfoviewView {
+  /** Always the resolved subject, never `selection`. */
   subject: InfoviewSubject;
   sections: InfoviewSection[];
 }

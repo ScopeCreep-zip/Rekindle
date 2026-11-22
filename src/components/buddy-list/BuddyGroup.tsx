@@ -10,6 +10,10 @@ interface BuddyGroupProps {
   groupId: number | null;
   friends: Friend[];
   selectedKey: string | null;
+  /** This group's header is the window's selection (plan E7.15 IV5). */
+  groupSelected?: boolean;
+  /** Selecting the header makes the group the selection; absent for the request list. */
+  onSelectGroup?: () => void;
   onDoubleClick: (publicKey: string, displayName: string) => void;
   onSelect: (publicKey: string) => void;
   /**
@@ -131,7 +135,12 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
       }>
         <div
           class="buddy-group-header"
-          onClick={handleToggle}
+          classList={{ "buddy-group-header-selected": !!props.groupSelected }}
+          aria-current={props.groupSelected ? "true" : undefined}
+          onClick={() => {
+            props.onSelectGroup?.();
+            handleToggle();
+          }}
           onContextMenu={handleGroupContextMenu}
         >
           <span aria-hidden="true">{collapsed() ? "▶" : "▼"}</span>

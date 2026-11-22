@@ -98,7 +98,7 @@
 '.form-tab-active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab[aria-selected="true"]' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab.active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
-'.buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-group-header' = { on = ["--color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.buddy-subgroup-header' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-name-offline' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-game-info' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
@@ -107,17 +107,17 @@
 '.buddy-last-seen' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-handshake-error' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-identity-mismatch' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
-'.activity-feed-title' = { on = ["--color-xfire-bg-panel"] }
-'.activity-feed-empty' = { on = ["--color-xfire-bg-panel"] }
-'.activity-feed-text' = { on = ["--color-xfire-bg-panel"] }
-'.activity-feed-time' = { on = ["--color-xfire-bg-panel"] }
-'.activity-feed-mismatch' = { on = ["--color-xfire-bg-panel"] }
-'.infoview-section-title' = { on = ["--color-xfire-bg-panel"] }
-'.infoview-empty' = { on = ["--color-xfire-bg-panel"] }
-'.infoview-meta' = { on = ["--color-xfire-bg-panel"] }
-'.infoview-text' = { on = ["--color-xfire-bg-panel"] }
-'.infoview-link' = { on = ["--color-xfire-bg-panel"] }
-'.infoview-link[aria-disabled="true"]' = { on = ["--color-xfire-bg-panel"] }
+'.activity-feed-title' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.activity-feed-empty' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.activity-feed-text' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.activity-feed-time' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.activity-feed-mismatch' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.infoview-section-title' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.infoview-empty' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.infoview-meta' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.infoview-text' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.infoview-link' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
+'.infoview-link[aria-disabled="true"]' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-secondary"] }
 '.buddy-handshake-retrying' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-group-pending .buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-group-pending .buddy-group-header' = { on = ["--color-xfire-bg-dark"] }

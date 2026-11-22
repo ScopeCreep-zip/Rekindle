@@ -48,6 +48,8 @@ async function joinFriendGame(friend: Friend): Promise<void> {
 
 const BuddyList: Component = () => {
   const [selectedKey, setSelectedKey] = createSignal<string | null>(null);
+  // A friend group's header selected instead (plan E7.15 IV5; null id = the default group).
+  const [selectedGroup, setSelectedGroup] = createSignal<{ groupId: number | null } | null>(null);
   // A friend no longer listed (removed, blocked) is no longer selected.
   createEffect(() => {
     const key = selectedKey();
@@ -57,7 +59,14 @@ const BuddyList: Component = () => {
   // actions act on it and its capabilities come from it (plan SK2-A5).
   createEffect(() => {
     const key = selectedKey();
-    sendSkinSelection(key === null ? null : { kind: "friend", arg: { publicKey: key } });
+    const group = selectedGroup();
+    void sendSkinSelection(
+      key !== null
+        ? { kind: "friend", arg: { publicKey: key } }
+        : group !== null
+          ? { kind: "friendGroup", arg: { groupId: group.groupId } }
+          : null,
+    );
   });
   const [newGroupTarget, setNewGroupTarget] = createSignal<string | null>(null);
 
@@ -105,12 +114,19 @@ const BuddyList: Component = () => {
   );
 
   function handleDblClick(publicKey: string): void {
+    setSelectedGroup(null);
     setSelectedKey(publicKey);
     handleDoubleClickFriend(publicKey);
   }
 
   function handleSelectFriend(publicKey: string): void {
+    setSelectedGroup(null);
     setSelectedKey(publicKey);
+  }
+
+  function handleSelectGroup(groupId: number | null): void {
+    setSelectedKey(null);
+    setSelectedGroup({ groupId });
   }
 
   async function moveToExistingGroup(friendKey: string, groupName: string): Promise<void> {
@@ -305,6 +321,8 @@ const BuddyList: Component = () => {
                 groupId={groupIdOf(name)}
                 friends={friends}
                 selectedKey={selectedKey()}
+                groupSelected={name !== AWAITING_RESPONSE && selectedGroup()?.groupId === groupIdOf(name) && selectedGroup() !== null}
+                onSelectGroup={name === AWAITING_RESPONSE ? undefined : () => handleSelectGroup(groupIdOf(name))}
                 onDoubleClick={handleDblClick}
                 onSelect={handleSelectFriend}
                 renderItem={(friend, item) => (

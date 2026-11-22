@@ -391,6 +391,11 @@
     min-width: 0;
   }
 
+  /* A friend group's header as the window's selection (plan E7.15 IV5): the rows' selection tint. */
+  .buddy-group-header-selected {
+    background-color: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
   .buddy-group-count {
     flex-shrink: 0;
   }
