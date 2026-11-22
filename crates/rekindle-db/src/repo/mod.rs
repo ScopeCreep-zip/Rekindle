@@ -8,6 +8,7 @@
 //! (`SqliteKeyValueStoreConnExt`, `SqliteTransactionExt` over
 //! `rusqlite::Connection`). The SQL lives here and nowhere else.
 
+pub mod activity;
 pub mod audit;
 pub mod bio;
 pub mod blocked;

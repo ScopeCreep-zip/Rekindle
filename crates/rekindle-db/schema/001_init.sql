@@ -951,6 +951,29 @@ CREATE TABLE IF NOT EXISTS friend_game_totals (
         ON DELETE CASCADE
 );
 
+-- The local activity feed (plan E7.15, IV1; `rekindle_db::repo::activity`):
+-- what the Infoview's Activity section lists, derived on this device from
+-- what friends already sent us and from our own actions. Local only: never
+-- synced or sent. Bounded to 500 rows and 30 days, pruned on insert.
+-- `subject_key` is the friend an entry is about (NULL for our own); a
+-- friend's removal or block purges their rows, by the repo and by cascade.
+-- `payload_json` is the `rekindle_types::activity::ActivityKind`, whose tag
+-- is `kind`.
+CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('startedGame', 'stoppedGame', 'firstPlayed',
+        'renamedSelf', 'statusMessage', 'bioChanged', 'nowFriends',
+        'favouriteAdded', 'joinedCommunity')),
+    subject_key TEXT,
+    payload_json TEXT NOT NULL,
+    FOREIGN KEY (owner_key, subject_key) REFERENCES friends(owner_key, public_key)
+        ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_activity_log_at ON activity_log(owner_key, at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_subject ON activity_log(owner_key, subject_key);
+
 -- Read markers (plan E3.1, D25; `rekindle_db::repo::read_markers`): per
 -- channel or DM, the device-independent position read up to — a channel
 -- message's `lamport_ts`, a DM peer stream's `stream_seq`. A marker only
