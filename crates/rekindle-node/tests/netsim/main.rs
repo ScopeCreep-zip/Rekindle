@@ -61,6 +61,7 @@ mod governance_warm_restore;
 mod group_dm;
 mod group_dm_accept;
 mod group_dm_hint_stretch;
+mod handshake_head_of_line;
 mod harness;
 mod host_shutdown;
 mod hung_call;
