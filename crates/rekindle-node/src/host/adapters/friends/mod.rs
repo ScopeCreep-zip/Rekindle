@@ -10,7 +10,7 @@ mod participant;
 mod presence;
 mod watch;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -34,13 +34,21 @@ pub(crate) use watch::watch_friends;
 
 /// Each watched friend's profile and participant-record leases (a watch
 /// that failed is re-opened when the network comes back).
+///
+/// Ordered maps: `heal` reads every friend's profile in the map's order,
+/// and each read draws on the node's network. A `HashMap`'s order comes
+/// from its per-instance `RandomState` keys, not from any seed, so two
+/// runs of one netsim seed read the friends in two orders and split the
+/// trace (finding RK3f; one seed, one trace, plan C9.3, as RK1's
+/// `OrderedWatch` fixed tokio's drawn wake order). Keyed by friend (or
+/// record) key, every host walks them in one order.
 #[derive(Default)]
 pub struct FriendWatches {
-    leases: Mutex<HashMap<String, LeaseId>>,
+    leases: Mutex<BTreeMap<String, LeaseId>>,
     /// Each open invite's request inbox lease, by record key (plan E2.5).
-    inboxes: Mutex<HashMap<String, LeaseId>>,
+    inboxes: Mutex<BTreeMap<String, LeaseId>>,
     /// Each friend's participant record (key, lease), by friend (plan E2.5).
-    participants: Mutex<HashMap<String, (String, LeaseId)>>,
+    participants: Mutex<BTreeMap<String, (String, LeaseId)>>,
     /// Whether the network was ready at its last change.
     network_ready: std::sync::atomic::AtomicBool,
 }
