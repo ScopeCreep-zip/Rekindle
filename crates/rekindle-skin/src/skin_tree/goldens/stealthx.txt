@@ -1,7 +1,7 @@
 MainBackground Decor
   MainBackgroundCol Decor
-  MenuButton SideRailToggle
-  InfoViewButton InfoToggle
+  MenuButton Button
+  InfoViewButton Button
   ListBackground Decor
     TabbedControl Views
       BuddyView View(Friends)
@@ -9,23 +9,23 @@ MainBackground Decor
       DownloadView View(Files)
   AdArea AdArea
     AdView Part
-  WndClose Close
-  WndMax Maximize
-  WndMin Minimize
+  WndClose Button
+  WndMax Button
+  WndMin Button
   WndXfire Logo
   StatusEdit StatusText
   StatusBtn StatusList
-  ResizeRight Resize(Right)
-  ResizeBottom Resize(Bottom)
-  ResizeBottomRight Resize(BottomRight)
+  ResizeRight Button
+  ResizeBottom Button
+  ResizeBottomRight Button
 MainMenuPopup SideRail
   MainMenuBackground Decor
     MenuBar MenuBar
-      XfireMenuText Menu(First)
+      XfireMenuText MenuTitle
         FileMenu Part
-      ToolsMenuText Menu(Tools)
+      ToolsMenuText MenuTitle
         ToolsMenu Part
-      HelpMenuText Menu(Help)
+      HelpMenuText MenuTitle
         HelpMenu Part
     TabHeader TabStrip
       TabNormalText Tab(Friends)
@@ -36,36 +36,36 @@ MainMenuPopup SideRail
         TabDownloadButton Part
     ButtonArea ButtonBar
       FriendsButtons ButtonRow(Friends)
-        AddFriendButton Button(AddFriend)
+        AddFriendButton Button
           AddFriendButtonText Part
-        ChatButton Button(Chat)
+        ChatButton Button
           ChatButtonText Part
-        GameButton1 Button(Join)
+        GameButton1 Button
           GameButton1.GameButtonText Part
-        InfoButton1 Button(Profile)
+        InfoButton1 Button
           InfoButton1.InfoButtonText Part
       ServersButtons ButtonRow(Servers)
-        AddServerButton Button(AddServer)
+        AddServerButton Button
           AddServerButtonText Part
-        RefreshButton Button(Refresh)
+        RefreshButton Button
           RefreshButtonText Part
-        GameButton2 Button(Join)
+        GameButton2 Button
           GameButton2.GameButtonText Part
-        InfoButton2 Button(Profile)
+        InfoButton2 Button
           InfoButton2.InfoButtonText Part
       FilesButtons ButtonRow(Files)
-        FindButton Button(Find)
+        FindButton Button
           FindButtonText Part
-        DownloadButton Button(StartDownload)
+        DownloadButton Button
           DownloadButtonText Part
-        StopButton Button(StopDownload)
+        StopButton Button
           StopButtonText Part
-        ExecuteButton Button(OpenDownload)
+        ExecuteButton Button
           ExecuteButtonText Part
     InfoJoinChatTab ButtonBar
-      HostChatButton Button(HostChat)
+      HostChatButton Button
         HostChatButtonText Part
-      JoinChatButton Button(JoinChat)
+      JoinChatButton Button
         JoinChatButtonText Part
-      LeaveChatButton Button(LeaveChat)
+      LeaveChatButton Button
         LeaveChatButtonText Part

@@ -86,8 +86,8 @@ struct Ctx<'a> {
 /// its offset from the node's box (shifted inward at the window's edges).
 fn hit_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
     let small = |s: NodeSpan| size(s).is_some_and(|v| i32::from(v) < HIT);
-    let grip = matches!(n.role, NodeRole::Resize(_));
-    if !n.role.interactive() || !(grip || small(n.x) || small(n.y)) || text_sized(n) {
+    let grip = n.resize_edge().is_some();
+    if !n.interactive() || !(grip || small(n.x) || small(n.y)) || text_sized(n) {
         return;
     }
     let Some(area) = ctx.boxes.get(n.id.as_str()) else {
@@ -217,7 +217,7 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     if n.role == NodeRole::Views {
         decls.push_str(" background-color: var(--color-xfire-bg-dark);");
     }
-    if matches!(n.role, NodeRole::Resize(_)) {
+    if n.resize_edge().is_some() {
         decls.push_str(" pointer-events: none;");
     }
     let mut after = None;
@@ -277,7 +277,7 @@ pub fn tree_css(
     let boxes = tree.boxes(w, h);
     let live = boxes
         .iter()
-        .filter(|(n, _)| n.role.interactive() && !matches!(n.role, NodeRole::Resize(_)))
+        .filter(|(n, _)| n.interactive() && n.resize_edge().is_none())
         .map(|(n, b)| (n.id.as_str(), *b))
         .collect();
     let ctx = Ctx {

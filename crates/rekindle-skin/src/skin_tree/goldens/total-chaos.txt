@@ -3,18 +3,18 @@ MainTitleBar Drag
   TopRight Decor
   Logo Logo
   Title Decor
-  Minimize Minimize
-  Maximize Maximize
-  Close Close
+  Minimize Button
+  Maximize Button
+  Close Button
 AdBar AdArea
   AdArea Part
 MenuBar MenuBar
   MenuBg Part
-    FileMenu Menu(First)
-    ToolsMenu Menu(Tools)
-    HelpMenu Menu(Help)
+    FileMenu MenuTitle
+    ToolsMenu MenuTitle
+    HelpMenu MenuTitle
 Content Group
-  ExpandButton InfoToggle
+  ExpandButton Button
   TabHeader TabStrip
     TabNormalButton Tab(Friends)
     TabServerButton Tab(Servers)
@@ -27,20 +27,20 @@ BottomBar Group
   BottomLeft Decor
   BottomRight Decor
   BottomCenter Decor
-    TCLink PackLink
+    TCLink Button
   TabButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
-      AddButton Button(AddFriend)
-      ImButton Button(Chat)
-      InfoButton Button(Profile)
-      JoinFriendButton Button(Join)
+      AddButton Button
+      ImButton Button
+      InfoButton Button
+      JoinFriendButton Button
     ServersButtons ButtonRow(Servers)
-      AddServerButton Button(AddServer)
-      RefreshButton Button(Refresh)
+      AddServerButton Button
+      RefreshButton Button
       PlaceHolder Decor
-      JoinServerButton Button(Join)
+      JoinServerButton Button
     FilesButtons ButtonRow(Files)
-      StartDownloadButton Button(StartDownload)
-      StopDownloadButton Button(StopDownload)
-      ExecuteDownloadButton Button(OpenDownload)
-      DownloadInfoButton Button(DownloadInfo)
+      StartDownloadButton Button
+      StopDownloadButton Button
+      ExecuteDownloadButton Button
+      DownloadInfoButton Button

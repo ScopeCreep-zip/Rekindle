@@ -162,7 +162,7 @@ fn is_slot(n: &SkinNode) -> bool {
         && !n.children.is_empty()
         && n.children
             .iter()
-            .all(|c| matches!(c.role, NodeRole::Button(_)) && c.shows_with.is_some())
+            .all(|c| c.role == NodeRole::Button && c.shows_with.is_some())
 }
 
 /// Plan SK2 lead decision 12 (design N11): an INI pack lays its buttons
@@ -252,9 +252,10 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
 #[cfg(test)]
 mod tests {
 
-    use rekindle_types::dto::skin_tree::{ActionKey, Anchor, NodeArt, NodeRole, NodeSpan, ViewKey};
+    use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
+    use rekindle_types::dto::skin_tree::{Anchor, NodeArt, NodeRole, NodeSpan, ViewKey};
 
-    use super::super::tests::{fixed, n};
+    use super::super::tests::{acts, fixed, n};
     use super::rows_by_view;
 
     /// Lead decision 12: Alloy's `[ButtonHolder]` slots (`TabAddButton` at
@@ -262,8 +263,12 @@ mod tests {
     /// become the Friends and Servers rows, each button at its same place.
     #[test]
     fn an_ini_packs_button_slots_are_one_row_per_view() {
-        let b = |id: &str, a: ActionKey, v: ViewKey| {
-            let mut b = n(id, NodeRole::Button(a), fixed(0, 40), fixed(0, 20));
+        let b = |id: &str, a: SkinAction, v: ViewKey| {
+            let mut b = acts(
+                n(id, NodeRole::Button, fixed(0, 40), fixed(0, 20)),
+                SkinEvent::Click,
+                a,
+            );
             b.shows_with = Some(v);
             b
         };
@@ -274,8 +279,8 @@ mod tests {
             fixed(3, 20),
         );
         add.children = vec![
-            b("AddButton", ActionKey::AddFriend, ViewKey::Friends),
-            b("AddServerButton", ActionKey::AddServer, ViewKey::Servers),
+            b("AddButton", SkinAction::AddFriend, ViewKey::Friends),
+            b("AddServerButton", SkinAction::AddServer, ViewKey::Servers),
         ];
         let mut chat = n(
             "TabChatRefreshButton",
@@ -284,8 +289,8 @@ mod tests {
             fixed(3, 20),
         );
         chat.children = vec![
-            b("ChatButton", ActionKey::Chat, ViewKey::Friends),
-            b("RefreshButton", ActionKey::Refresh, ViewKey::Servers),
+            b("ChatButton", SkinAction::ChatFriend, ViewKey::Friends),
+            b("RefreshButton", SkinAction::RefreshServer, ViewKey::Servers),
         ];
         let mut holder = n(
             "ButtonHolder",
@@ -368,11 +373,10 @@ mod tests {
         };
         let mut slot = n("Slot", NodeRole::Group, span, fixed(0, 20));
         slot.art = Some(NodeArt::middle("slot.png".into(), 37, 20));
-        let mut b = n(
-            "ChatButton",
-            NodeRole::Button(ActionKey::Chat),
-            fixed(0, 36),
-            fixed(0, 20),
+        let mut b = acts(
+            n("ChatButton", NodeRole::Button, fixed(0, 36), fixed(0, 20)),
+            SkinEvent::Click,
+            SkinAction::ChatFriend,
         );
         b.shows_with = Some(ViewKey::Friends);
         slot.children = vec![b];

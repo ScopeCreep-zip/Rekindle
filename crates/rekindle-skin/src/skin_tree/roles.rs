@@ -3,7 +3,83 @@
 //! `Name=`, ASCII-case-insensitively with trailing digits dropped
 //! (Classic's `GameButton1`/`GameButton2`, Combat's `Knob01`).
 
-use rekindle_types::dto::skin_tree::{ActionKey, Edge, LampKey, MenuKey, NodeRole, ViewKey};
+use rekindle_types::dto::skin_action::{EngineMenu, NodeTrigger, SkinAction, SkinEvent};
+use rekindle_types::dto::skin_tree::{Edge, LampKey, NodeRole, SkinNode, ViewKey};
+
+/// What the name table makes of a tile (plan SK2 decision 36, design
+/// §2.4): a role that only shows, or a control that acts: its shown role
+/// (`Button`, `MenuTitle`) and the trigger its name implies,
+/// which the importer adds when the pack wires no pointer trigger of its
+/// own (a pack's own triggers win). `None` for a control whose action
+/// needs the pack's data (a pack link's URL, a popup's name).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Role {
+    Shows(NodeRole),
+    Acts(NodeRole, Option<NodeTrigger>),
+}
+
+impl Role {
+    /// The role the node shows.
+    #[must_use]
+    pub const fn shown(&self) -> NodeRole {
+        match self {
+            Self::Shows(r) | Self::Acts(r, _) => *r,
+        }
+    }
+
+    /// Whether the tile takes input: a control, or an input role.
+    #[must_use]
+    pub const fn interactive(&self) -> bool {
+        match self {
+            Self::Shows(r) => r.input(),
+            Self::Acts(..) => true,
+        }
+    }
+}
+
+/// `triggers` (the pack's) then the trigger the tile's name implies
+/// (design §2.4), unless the pack wires a pointer trigger of its own on the
+/// tile or on one of its parts (StealthX's event-transparent
+/// `XfireMenuText` label holds the `FileMenu` part that runs `MenuFile`,
+/// `popups.xml:5-6`): a control the name table knows keeps its behaviour
+/// as a trigger, and a pack's own wiring wins.
+#[must_use]
+pub fn with_implied(
+    mut triggers: Vec<NodeTrigger>,
+    role: &Role,
+    children: &[SkinNode],
+) -> Vec<NodeTrigger> {
+    let wired = |ts: &[NodeTrigger]| ts.iter().any(NodeTrigger::presses);
+    let parts_wired = children
+        .iter()
+        .any(|c| c.role == NodeRole::Part && wired(&c.triggers));
+    if let Role::Acts(_, Some(implied)) = role {
+        if !wired(&triggers) && !parts_wired {
+            triggers.push(implied.clone());
+        }
+    }
+    triggers
+}
+
+/// A control `shown` as, run by `on` → `run`.
+fn acts(shown: NodeRole, on: SkinEvent, run: SkinAction) -> Role {
+    Role::Acts(shown, Some(NodeTrigger { on, run }))
+}
+
+/// A button run by a click.
+fn click(run: SkinAction) -> Role {
+    acts(NodeRole::Button, SkinEvent::Click, run)
+}
+
+/// A menu title popping `menu` on the button press (Xfire's
+/// `OnLeftButtonDown` → `Menu<Name>`).
+fn menu(m: EngineMenu) -> Role {
+    acts(
+        NodeRole::MenuTitle,
+        SkinEvent::LeftDown,
+        SkinAction::Menu(m),
+    )
+}
 
 /// What a tile is, beyond its names: whether it has art, its class and
 /// its children's names.
@@ -38,40 +114,41 @@ fn view(name: &str) -> Option<ViewKey> {
 
 const KNOBS: [ViewKey; 3] = [ViewKey::Friends, ViewKey::Servers, ViewKey::Files];
 
-fn button(k: &str) -> Option<ActionKey> {
-    let rows: [(&[&str], ActionKey); 25] = [
+fn button(k: &str) -> Option<SkinAction> {
+    use SkinAction as A;
+    let rows: [(&[&str], SkinAction); 25] = [
         // StealthX's rail (`popups.xml:69-79`), ahead of "chat" and "join".
-        (&["hostchat"], ActionKey::HostChat),
-        (&["joinchat"], ActionKey::JoinChat),
-        (&["leavechat"], ActionKey::LeaveChat),
-        (&["addserver", "addfav", "favorite"], ActionKey::AddServer),
-        (&["startdownload"], ActionKey::StartDownload),
-        (&["stopdownload"], ActionKey::StopDownload),
+        (&["hostchat"], A::HostVoiceChat),
+        (&["joinchat"], A::VoiceChat),
+        (&["leavechat"], A::LeaveVoiceChat),
+        (&["addserver", "addfav", "favorite"], A::AddServer),
+        (&["startdownload"], A::StartDownload),
+        (&["stopdownload"], A::StopDownload),
         // Combat's `ChatRefreshStopTab` on the Files tab (lead decision 1).
-        (&["stop"], ActionKey::StopDownload),
+        (&["stop"], A::StopDownload),
         // Symbiosis's `ButtonViewPictures`: open the selected shared file.
-        (&["viewpicture", "viewvideo"], ActionKey::OpenDownload),
-        (&["executedownload", "openfile"], ActionKey::OpenDownload),
-        (&["downloadinfo"], ActionKey::DownloadInfo),
+        (&["viewpicture", "viewvideo"], A::OpenDownload),
+        (&["executedownload", "openfile"], A::OpenDownload),
+        (&["downloadinfo"], A::DownloadInfo),
         // StealthX's rail `DownloadButton` (`Tooltip="StartDownloadButtonTip"`)
         // and `ExecuteButton` (`ExecuteDownloadButtonTip`).
-        (&["download"], ActionKey::StartDownload),
-        (&["execute"], ActionKey::OpenDownload),
+        (&["download"], A::StartDownload),
+        (&["execute"], A::OpenDownload),
         // Symbiosis's Pictures/Videos rows: a shared file's info, and
         // sharing one (the attachment upload) (lead decision 1).
-        (&["infopicture", "infovideo"], ActionKey::DownloadInfo),
-        (&["upload"], ActionKey::Browse),
-        (&["bigbrowsefile", "browse"], ActionKey::Browse),
-        (&["find", "search"], ActionKey::Find),
-        (&["roomenter", "enterroom", "enter"], ActionKey::EnterRoom),
-        (&["roomcreate", "create"], ActionKey::CreateRoom),
-        (&["delete"], ActionKey::DeleteItem),
-        (&["refresh"], ActionKey::Refresh),
-        (&["add"], ActionKey::AddFriend),
-        (&["chat", "im"], ActionKey::Chat),
-        (&["game", "join", "play"], ActionKey::Join),
-        (&["info", "profile"], ActionKey::Profile),
-        (&["fav"], ActionKey::Favorite),
+        (&["infopicture", "infovideo"], A::DownloadInfo),
+        (&["upload"], A::UploadSelected),
+        (&["bigbrowsefile", "browse"], A::UploadSelected),
+        (&["find", "search"], A::SearchFor),
+        (&["roomenter", "enterroom", "enter"], A::EnterRoom),
+        (&["roomcreate", "create"], A::CreateRoom),
+        (&["delete"], A::DeleteSelected),
+        (&["refresh"], A::RefreshServer),
+        (&["add"], A::AddFriend),
+        (&["chat", "im"], A::ChatFriend),
+        (&["game", "join", "play"], A::JoinFriend),
+        (&["info", "profile"], A::ProfileFriend),
+        (&["fav"], A::AddServer),
     ];
     let k = k
         .trim_start_matches("button")
@@ -87,7 +164,9 @@ fn chat_states(children: &[String]) -> bool {
         && children.iter().all(|c| {
             matches!(
                 button(&key(c)),
-                Some(ActionKey::HostChat | ActionKey::JoinChat | ActionKey::LeaveChat)
+                Some(
+                    SkinAction::HostVoiceChat | SkinAction::VoiceChat | SkinAction::LeaveVoiceChat
+                )
             )
         })
 }
@@ -101,7 +180,7 @@ fn tab(k: &str) -> Option<()> {
     (paired || matches!(k, "friends" | "servers" | "downloads" | "files")).then_some(())
 }
 
-fn resize(k: &str) -> Option<NodeRole> {
+fn resize(k: &str) -> Option<Role> {
     let rest = k
         .strip_prefix("mainresizegripper")
         .or_else(|| k.strip_prefix("resize"))
@@ -117,12 +196,56 @@ fn resize(k: &str) -> Option<NodeRole> {
         "bottomleft" => Edge::BottomLeft,
         _ => Edge::BottomRight,
     };
-    Some(NodeRole::Resize(edge))
+    Some(acts(
+        NodeRole::Button,
+        SkinEvent::LeftDown,
+        SkinAction::Resize(edge),
+    ))
 }
 
-fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
+fn named(k: &str, f: &Facts<'_>) -> Option<Role> {
     use NodeRole as R;
-    let menu = |m| Some(R::Menu(m));
+    use SkinAction as A;
+    named_shown(k, f).map(Role::Shows).or_else(|| match k {
+        "minimizebox" | "minimize" | "buttonminimize" | "wndmin" | "minimizebutton" => {
+            Some(click(A::Minimize))
+        }
+        "maximizebox" | "maximize" | "buttonmaximize" | "wndmax" => Some(click(A::Maximize)),
+        "closebox" | "close" | "buttonclose" | "wndclose" => Some(click(A::Close)),
+        "xfiremenutext" | "xfiremenu" | "filemenutext" | "filemenu" => Some(menu(EngineMenu::File)),
+        "toolsmenutext" | "toolsmenu" | "toolmenu" => Some(menu(EngineMenu::Tool)),
+        "helpmenutext" | "helpmenu" => Some(menu(EngineMenu::Help)),
+        // The InfoView toggle and StealthX's rail toggle launch the pack's
+        // popup (`LaunchSkin` + `<Popup>`); a pack link opens the pack's
+        // URL (`AppLaunchUrl`): both from the pack's own triggers.
+        k if info_toggle(k) => Some(Role::Acts(R::Button, None)),
+        "menubutton" | "tclink" => Some(Role::Acts(R::Button, None)),
+        "systemmenu" => Some(acts(
+            R::Button,
+            SkinEvent::LeftDown,
+            A::ContextMenu(EngineMenu::Sys),
+        )),
+        "adddownloadtab" => Some(click(A::AddFriend)),
+        "chatrefreshstoptab" => Some(click(A::ChatFriend)),
+        "joinplaytab" => Some(click(A::JoinFriend)),
+        "profilebrowsetab" => Some(click(A::ProfileFriend)),
+        _ => None,
+    })
+}
+
+/// Whether `k` names the InfoView toggle (`InfoViewButton`,
+/// `ExpandButton`, Combat's tab-control `InfoViewSwitch`). Alloy's
+/// `IVButtonHolder` is not one: `Class=Tile` art with no trigger, the
+/// plate behind the button (`Chatskin.ini:523-527`), so pack decor.
+fn info_toggle(k: &str) -> bool {
+    matches!(
+        k,
+        "infoviewbutton" | "expandbutton" | "infoviewswitch" | "viewinfo" | "buttonmaininfoout"
+    )
+}
+
+fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
+    use NodeRole as R;
     match k {
         "maintitlebar" | "windowdragger" | "combatdragbar" => Some(R::Drag),
         "xfirelogo" | "logo" | "logox" | "wndxfire" => Some(R::Logo),
@@ -140,14 +263,6 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         }
         "userfield" | "usernamefield" | "title" | "chattitle" | "usernamecontainer"
         | "username" => Some(R::NameField),
-        "minimizebox" | "minimize" | "buttonminimize" | "wndmin" | "minimizebutton" => {
-            Some(R::Minimize)
-        }
-        "maximizebox" | "maximize" | "buttonmaximize" | "wndmax" => Some(R::Maximize),
-        "closebox" | "close" | "buttonclose" | "wndclose" => Some(R::Close),
-        "xfiremenutext" | "xfiremenu" | "filemenutext" | "filemenu" => menu(MenuKey::First),
-        "toolsmenutext" | "toolsmenu" | "toolmenu" => menu(MenuKey::Tools),
-        "helpmenutext" | "helpmenu" => menu(MenuKey::Help),
         // StealthX's rail ground holds the menu bar: it is not the bar.
         "menubackground" if f.children.iter().any(|c| key(c) == "menubar") => Some(R::Decor),
         "menubar" | "menubackground" | "menubg" => Some(R::MenuBar),
@@ -187,21 +302,12 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         | "picturesbuttonbar"
         | "videosbuttonbar"
         | "notificationsbuttonbar" => Some(R::ButtonRow(ViewKey::Friends)),
-        "infoviewbutton" | "expandbutton" | "infoviewswitch" | "ivbuttonholder" | "viewinfo"
-        | "buttonmaininfoout" => Some(R::InfoToggle),
-        "menubutton" => Some(R::SideRailToggle),
         "mainmenuwindow" => Some(R::SideRail),
         "consoletext" => Some(R::ConsoleLabel),
         // Symbiosis's chat-room name edit: the group DM's name (lead decision 1).
         "roomedit" => Some(R::RoomName),
         "downloadblink" => Some(R::Lamp(LampKey::Files)),
-        "tclink" => Some(R::PackLink),
         "gamelogo" => Some(R::GameLogo),
-        "systemmenu" => Some(R::SystemMenu),
-        "adddownloadtab" => Some(R::Button(ActionKey::AddFriend)),
-        "chatrefreshstoptab" => Some(R::Button(ActionKey::Chat)),
-        "joinplaytab" => Some(R::Button(ActionKey::Join)),
-        "profilebrowsetab" => Some(R::Button(ActionKey::Profile)),
         "topbuttonbar"
         | "baseboard"
         | "buttonarea"
@@ -226,23 +332,25 @@ fn named(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
 pub fn role(
     name: &str,
     component: Option<&str>,
-    parent: Option<NodeRole>,
+    parent: Option<&Role>,
     f: &Facts<'_>,
-) -> Option<NodeRole> {
+) -> Option<Role> {
     use NodeRole as R;
+    let shows = |r: NodeRole| Some(Role::Shows(r));
+    let parent_shown = parent.map(Role::shown);
     let comp = component.map(key);
     let name_k = key(name);
     // Onyx's bottom `Logo2` is decor, not a second logo (the digits the
     // key drops are its name here).
     if name.trim().eq_ignore_ascii_case("logo2") {
-        return Some(R::Decor);
+        return shows(R::Decor);
     }
     // A button bar's child named for a view and not for a button is that
     // view's row (Space Cowboy's and Total Chaos's `FriendsButtons`,
     // `ServersButtons`, `FilesButtons` under `TabButtonArea`).
-    if parent == Some(R::ButtonBar) && button(&name_k).is_none() {
+    if parent_shown == Some(R::ButtonBar) && button(&name_k).is_none() {
         if let Some(v) = view(name) {
-            return Some(R::ButtonRow(v));
+            return shows(R::ButtonRow(v));
         }
     }
     // A tab control holding the buddy list is the views; one holding
@@ -256,25 +364,25 @@ pub fn role(
         c.eq_ignore_ascii_case("TabControl") || c.eq_ignore_ascii_case("TabbedControl")
     });
     if f.children.iter().any(|c| key(c) == "knob") && tabbed_class {
-        return Some(R::TabStrip);
+        return shows(R::TabStrip);
     }
     // Combat's `[ConsoleText]` is `Class=TabControl` but holds the console
     // plate's per-tab texts (`BuddyText`/`ServerText`/`DownloadText`, the
     // label's parts, lead decision 1), not views.
     if name_k == "consoletext" || comp.as_deref() == Some("consoletext") {
-        return Some(R::ConsoleLabel);
+        return shows(R::ConsoleLabel);
     }
     // Combat's `DownloadBlink` is a tab control too (one blinker per state,
     // `WhiteBlinkNoAnimation`/`RedBlinker`): the files lamp, not the views.
     if name_k == "downloadblink" {
-        return Some(R::Lamp(LampKey::Files));
+        return shows(R::Lamp(LampKey::Files));
     }
     // The info view switch is a tab control too (Combat's `[InfoViewSwitch]`
     // `Class=TabControl`, `combat.ini:786-794`): its two windows
     // (`InfoViewSwitchIn`/`InfoviewSwitchOut`) are the toggle's two states,
     // one shown at a time, so they are its parts, not two buttons in one place.
-    if tabbed_class && named(&name_k, f) == Some(R::InfoToggle) {
-        return Some(R::InfoToggle);
+    if tabbed_class && info_toggle(&name_k) {
+        return named(&name_k, f);
     }
     if comp.as_deref() == Some("tabbedcontrol") || name_k == "maintabbedarea" || tabbed_class {
         // StealthX's rail `InfoJoinChatTab` (`Component="ChatTab"`,
@@ -283,19 +391,19 @@ pub fn role(
         // page per chat state, never shown together, so the button bar
         // (its pages), not one view's slot as its "chat"/"info" name says.
         if chat_states(f.children) {
-            return Some(R::ButtonBar);
+            return shows(R::ButtonBar);
         }
         if button(&name_k).is_some() {
-            return Some(R::Group);
+            return shows(R::Group);
         }
         let rows = f.children.iter().any(|c| key(c).contains("button"));
-        return Some(if rows { R::ButtonBar } else { R::Views });
+        return shows(if rows { R::ButtonBar } else { R::Views });
     }
     let found = comp
         .as_deref()
         .and_then(|c| named(c, f))
         .or_else(|| named(&name_k, f))
-        .or_else(|| match parent {
+        .or_else(|| match parent_shown {
             Some(R::TabStrip) if name_k == "knob" => {
                 let n: usize = name
                     .trim_start_matches(|c: char| !c.is_ascii_digit())
@@ -304,23 +412,29 @@ pub fn role(
                 // Combat's four knob rotations share one place
                 // (`combat.ini` `[TabControl]`, all at X15 Y36) for three
                 // tabs: the fourth is a piece of the strip's art.
-                Some(
+                shows(
                     KNOBS
                         .get(n.checked_sub(1)?)
                         .map_or(R::Part, |v| R::Knob(*v)),
                 )
             }
-            Some(R::TabStrip) => view(name).map(R::Tab),
+            Some(R::TabStrip) => view(name).map(|v| Role::Shows(R::Tab(v))),
             Some(R::ButtonRow(_) | R::ButtonBar | R::Group) => button(&name_k)
                 .or_else(|| comp.as_deref().and_then(button))
-                .map(R::Button),
+                .map(click),
             _ => None,
         })
-        .or_else(|| tab(&name_k).and_then(|()| view(name)).map(R::Tab))
+        .or_else(|| {
+            tab(&name_k)
+                .and_then(|()| view(name))
+                .map(|v| Role::Shows(R::Tab(v)))
+        })
         .or_else(|| resize(&name_k))
         .or_else(|| comp.as_deref().and_then(resize));
     let found = match found {
-        Some(R::ButtonRow(_)) => view(name).map(R::ButtonRow).or(found),
+        Some(Role::Shows(R::ButtonRow(_))) => {
+            view(name).map(|v| Role::Shows(R::ButtonRow(v))).or(found)
+        }
         other => other,
     };
     match (found, parent) {
@@ -328,24 +442,18 @@ pub fn role(
         // `XfireMenuText`, `UserNameText` under `UserNameField`, Classic's
         // `TabNormalButton` art under its `TabNormalText` tab); a group or
         // decor inside one is its own.
-        (Some(r), Some(p)) if !matches!(r, R::Group | R::Decor | R::Part) && r == p => {
-            Some(R::Part)
+        (Some(r), Some(p)) if !matches!(r.shown(), R::Group | R::Decor | R::Part) && &r == p => {
+            shows(R::Part)
         }
         (Some(r), _) => Some(r),
         (None, Some(p))
             if p.interactive()
                 || matches!(
-                    p,
-                    R::Logo
-                        | R::AdArea
-                        | R::View(_)
-                        | R::ConsoleLabel
-                        | R::Lamp(_)
-                        | R::NameField
-                        | R::InfoToggle
+                    p.shown(),
+                    R::Logo | R::AdArea | R::View(_) | R::ConsoleLabel | R::Lamp(_) | R::NameField
                 ) =>
         {
-            Some(R::Part)
+            shows(R::Part)
         }
         (None, _) => {
             let classless = f.class.is_none_or(|c| {
@@ -353,7 +461,7 @@ pub fn role(
                     .iter()
                     .any(|t| c.trim().eq_ignore_ascii_case(t))
             });
-            (f.has_art && classless).then_some(R::Decor)
+            (f.has_art && classless).then_some(Role::Shows(R::Decor))
         }
     }
 }

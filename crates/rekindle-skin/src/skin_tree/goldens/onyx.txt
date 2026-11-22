@@ -4,12 +4,12 @@ TopRight Decor
 StatusWrapper Group
 StatusEdit StatusText
 DownArrow StatusList
-ExpandButton InfoToggle
-ResizeLeft Resize(Left)
-ResizeRight Resize(Right)
-ResizeUp Resize(Top)
-ResizeDown Resize(Bottom)
-BRGripper Resize(BottomRight)
+ExpandButton Button
+ResizeLeft Button
+ResizeRight Button
+ResizeUp Button
+ResizeDown Button
+BRGripper Button
 BottomLeft Decor
 Bottom Decor
 BottomRight Decor
@@ -21,15 +21,15 @@ MainTitleBar Drag
   Logo Logo
   Title NameField
 TopButtonBar Group
-  Minimize Minimize
-  Maximize Maximize
-  Close Close
+  Minimize Button
+  Maximize Button
+  Close Button
 MenuBar MenuBar
-  XfireMenuText Menu(First)
+  XfireMenuText MenuTitle
     FileMenu Part
-  ToolsMenuText Menu(Tools)
+  ToolsMenuText MenuTitle
     ToolsMenu Part
-  HelpMenuText Menu(Help)
+  HelpMenuText MenuTitle
     HelpMenu Part
   MenuDiv0 Decor
   MenuDiv1 Decor
@@ -58,17 +58,17 @@ TabbedControl Views
 BottomBar Group
   TabButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
-      AddButton Button(AddFriend)
-      ImButton Button(Chat)
-      JoinFriendButton Button(Join)
-      FriendsButtons.InfoButton Button(Profile)
+      AddButton Button
+      ImButton Button
+      JoinFriendButton Button
+      FriendsButtons.InfoButton Button
     ServerButtons ButtonRow(Servers)
-      AddServerButton Button(AddServer)
-      RefreshButton Button(Refresh)
-      JoinServerButton Button(Join)
-      ServerButtons.InfoButton Button(Profile)
+      AddServerButton Button
+      RefreshButton Button
+      JoinServerButton Button
+      ServerButtons.InfoButton Button
     FilesButtons ButtonRow(Files)
-      StartDownloadButton Button(StartDownload)
-      StopDownloadButton Button(StopDownload)
-      ExecuteDownloadButton Button(OpenDownload)
-      DownloadInfoButton Button(DownloadInfo)
+      StartDownloadButton Button
+      StopDownloadButton Button
+      ExecuteDownloadButton Button
+      DownloadInfoButton Button

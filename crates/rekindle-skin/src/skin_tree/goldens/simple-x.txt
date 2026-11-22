@@ -1,11 +1,11 @@
 Top Decor
 Logo Logo
 MenuBar MenuBar
-  XfireMenuText Menu(First)
+  XfireMenuText MenuTitle
     FileMenu Part
-  ToolsMenuText Menu(Tools)
+  ToolsMenuText MenuTitle
     ToolsMenu Part
-  HelpMenuText Menu(Help)
+  HelpMenuText MenuTitle
     HelpMenu Part
 UserNameField NameField
   UserNameText Part
@@ -13,11 +13,11 @@ StatusWrapper Group
 StatusEdit StatusText
 DownArrow StatusList
 TopButtonBar Group
-  MinimizeBox Minimize
-  MaximizeBox Maximize
-  CloseBox Close
+  MinimizeBox Button
+  MaximizeBox Button
+  CloseBox Button
 Middle Decor
-InfoViewButton InfoToggle
+InfoViewButton Button
 TabbedControl Views
   BuddyView View(Friends)
     BuddyView.BvBk Part
@@ -38,28 +38,28 @@ AdArea AdArea
 ButtonHolder ButtonBar
   FriendsButtons ButtonRow(Friends)
     FriendsButtons.TabAddButton Group
-      AddButton Button(AddFriend)
+      AddButton Button
     FriendsButtons.TabChatRefreshButton Group
-      ChatButton Button(Chat)
+      ChatButton Button
     FriendsButtons.TabGameDownloadButton Group
-      GameButton@Friends Button(Join)
+      GameButton@Friends Button
     FriendsButtons.TabInfoButton Group
-      InfoButton@Friends Button(Profile)
+      InfoButton@Friends Button
   ServersButtons ButtonRow(Servers)
     ServersButtons.TabAddButton Group
-      AddServerButton Button(AddServer)
+      AddServerButton Button
     ServersButtons.TabChatRefreshButton Group
-      RefreshButton Button(Refresh)
+      RefreshButton Button
     ServersButtons.TabGameDownloadButton Group
-      GameButton@Servers Button(Join)
+      GameButton@Servers Button
     ServersButtons.TabInfoButton Group
-      InfoButton@Servers Button(Profile)
+      InfoButton@Servers Button
   FilesButtons ButtonRow(Files)
     FilesButtons.TabAddButton Group
-      SearchFiles Button(Find)
+      SearchFiles Button
         BigBrowseFileText Part
-ResizeUp Resize(Top)
-ResizeLeft Resize(Left)
-ResizeRight Resize(Right)
-ResizeDown Resize(Bottom)
-GripperBR Resize(BottomRight)
+ResizeUp Button
+ResizeLeft Button
+ResizeRight Button
+ResizeDown Button
+GripperBR Button

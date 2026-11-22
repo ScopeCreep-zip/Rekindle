@@ -10,7 +10,7 @@ Bottom Decor
 BottomRight Decor
 AdAreaBG AdArea
   AdArea Part
-ExpandButton InfoToggle
+ExpandButton Button
 MainTitleBar Drag
   Logo Logo
   Title NameField
@@ -27,15 +27,15 @@ TabHeader TabStrip
   TabDownloadText Tab(Files)
     TabDownloadButton Part
 TopButtonBar Group
-  Minimize Minimize
-  Maximize Maximize
-  Close Close
+  Minimize Button
+  Maximize Button
+  Close Button
 MenuBar MenuBar
-  XfireMenuText Menu(First)
+  XfireMenuText MenuTitle
     FileMenu Part
-  ToolsMenuText Menu(Tools)
+  ToolsMenuText MenuTitle
     ToolsMenu Part
-  HelpMenuText Menu(Help)
+  HelpMenuText MenuTitle
     HelpMenu Part
 ListViewBG Decor
 TabbedControl Views
@@ -47,22 +47,22 @@ TabbedControl Views
     DownloadView.BvBk Part
 TabButtonArea ButtonBar
   FriendsButtons ButtonRow(Friends)
-    AddButton Button(AddFriend)
-    ImButton Button(Chat)
-    JoinFriendButton Button(Join)
-    InfoButton1 Button(Profile)
+    AddButton Button
+    ImButton Button
+    JoinFriendButton Button
+    InfoButton1 Button
   ServerButtons ButtonRow(Servers)
-    AddServerButton Button(AddServer)
-    RefreshButton Button(Refresh)
-    JoinServerButton Button(Join)
-    InfoButton2 Button(Profile)
+    AddServerButton Button
+    RefreshButton Button
+    JoinServerButton Button
+    InfoButton2 Button
   FilesButtons ButtonRow(Files)
-    StartDownloadButton Button(StartDownload)
-    StopDownloadButton Button(StopDownload)
-    ExecuteDownloadButton Button(OpenDownload)
-    DownloadInfoButton Button(DownloadInfo)
-ResizeLeft Resize(Left)
-ResizeRight Resize(Right)
-ResizeUp Resize(Top)
-ResizeDown Resize(Bottom)
-BRGripper Resize(BottomRight)
+    StartDownloadButton Button
+    StopDownloadButton Button
+    ExecuteDownloadButton Button
+    DownloadInfoButton Button
+ResizeLeft Button
+ResizeRight Button
+ResizeUp Button
+ResizeDown Button
+BRGripper Button

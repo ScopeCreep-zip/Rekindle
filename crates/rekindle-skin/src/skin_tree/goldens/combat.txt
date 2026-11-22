@@ -1,15 +1,15 @@
 OuterFrame Decor
 CombatDragBar Drag
-  Minimizebox Minimize
-FileMenuText Menu(First)
+  Minimizebox Button
+FileMenuText MenuTitle
   FileMenu Part
-ToolsMenuText Menu(Tools)
+ToolsMenuText MenuTitle
   ToolsMenu Part
-HelpMenuText Menu(Help)
+HelpMenuText MenuTitle
   HelpMenu Part
 AdArea AdArea
 BackgroundArea Decor
-ResizeUlbr Resize(BottomRight)
+ResizeUlbr Button
 CenterConsole Group
   TabControl TabStrip
     Knob01 Knob(Friends)
@@ -32,37 +32,37 @@ StatusEdit StatusText
 DownArrow StatusList
 FriendsButtons ButtonRow(Friends)
   FriendsButtons.JoinPlayTab Group
-    JoinButton@Friends Button(Join)
+    JoinButton@Friends Button
   FriendsButtons.ProfileBrowseTab Group
-    ProfileButton@Friends Button(Profile)
+    ProfileButton@Friends Button
   FriendsButtons.ChatRefreshStopTab Group
-    ChatButton Button(Chat)
+    ChatButton Button
   FriendsButtons.AddDownloadTab Group
-    AddFriendButton Button(AddFriend)
+    AddFriendButton Button
 ServersButtons ButtonRow(Servers)
   ServersButtons.JoinPlayTab Group
-    JoinButton@Servers Button(Join)
+    JoinButton@Servers Button
   ServersButtons.ProfileBrowseTab Group
-    ProfileButton@Servers Button(Profile)
+    ProfileButton@Servers Button
   ServersButtons.ChatRefreshStopTab Group
-    RefreshButton Button(Refresh)
+    RefreshButton Button
   ServersButtons.AddDownloadTab Group
-    AddServerButton Button(AddServer)
+    AddServerButton Button
 FilesButtons ButtonRow(Files)
   FilesButtons.JoinPlayTab Group
-    PlayButton Button(Join)
+    PlayButton Button
   FilesButtons.ProfileBrowseTab Group
-    BrowseButton Button(Browse)
+    BrowseButton Button
   FilesButtons.ChatRefreshStopTab Group
-    StopButton Button(StopDownload)
+    StopButton Button
   FilesButtons.AddDownloadTab Group
-    StartDownloadButton Button(StartDownload)
+    StartDownloadButton Button
 TopOuterEdge Decor
 LeftOuterEdge Decor
 BottomOuterEdge Decor
 RightOuterEdge Decor
 XfireLogo Logo
-InfoViewSwitch InfoToggle
+InfoViewSwitch Button
   InfoViewSwitchIn Part
   InfoviewSwitchOut Part
-SystemMenu SystemMenu
+SystemMenu Button

@@ -5,12 +5,11 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin_tree::{
-    ActionKey, Anchor, Edge, NodeRole, NodeSpan, SkinTree, ViewKey,
-};
+use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
+use rekindle_types::dto::skin_tree::{Anchor, Edge, NodeRole, NodeSpan, SkinTree, ViewKey};
 
-use super::roles::{role, Facts};
-use super::tests::{checked, fixed, good, layout, n, refused, whole};
+use super::roles::{role, Facts, Role};
+use super::tests::{acts, checked, fixed, good, layout, n, refused, whole};
 use super::{css, passes, validate};
 
 /// Lead decision 6: interactive nodes may overlap, stacked by `Z` then the
@@ -18,14 +17,18 @@ use super::{css, passes, validate};
 #[test]
 fn rule_4_overlap_stacks_by_document_order() {
     let min = |at: i16, size: u16| {
-        n(
-            "Min",
-            NodeRole::Minimize,
-            NodeSpan::Fixed {
-                at: Anchor::End(at),
-                size,
-            },
-            fixed(4, 16),
+        acts(
+            n(
+                "Min",
+                NodeRole::Button,
+                NodeSpan::Fixed {
+                    at: Anchor::End(at),
+                    size,
+                },
+                fixed(4, 16),
+            ),
+            SkinEvent::Click,
+            SkinAction::Minimize,
         )
     };
     // Overlapping the close box in part: allowed, the later one on top.
@@ -74,17 +77,15 @@ fn rule_4_an_edge_grips_hit_area_yields() {
         validate::hit_area([0, 0, 5, 300], (200, 300))
     );
     let mut t = good();
-    t.push(n(
-        "ResizeLeft",
-        NodeRole::Resize(Edge::Left),
-        fixed(0, 5),
-        whole(),
+    t.push(acts(
+        n("ResizeLeft", NodeRole::Button, fixed(0, 5), whole()),
+        SkinEvent::LeftDown,
+        SkinAction::Resize(Edge::Left),
     ));
-    t.push(n(
-        "Chat",
-        NodeRole::Button(ActionKey::Chat),
-        fixed(10, 30),
-        fixed(100, 16),
+    t.push(acts(
+        n("Chat", NodeRole::Button, fixed(10, 30), fixed(100, 16)),
+        SkinEvent::Click,
+        SkinAction::ChatFriend,
     ));
     assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
     let out = css::tree_css(
@@ -134,11 +135,10 @@ fn rule_4_a_grip_yields_by_effective_z() {
     title.z = 1;
     title.children.push(close);
     t.insert(0, title);
-    let mut grip = n(
-        "ResizeUp",
-        NodeRole::Resize(Edge::Top),
-        whole(),
-        fixed(0, 24),
+    let mut grip = acts(
+        n("ResizeUp", NodeRole::Button, whole(), fixed(0, 24)),
+        SkinEvent::LeftDown,
+        SkinAction::Resize(Edge::Top),
     );
     grip.z = 2;
     t.push(grip);
@@ -173,7 +173,7 @@ fn a_single_views_control_is_one_view_per_tab() {
         children: &[],
     };
     let views = role("XfireView", Some("XfireView"), None, &facts);
-    assert_eq!(views, Some(NodeRole::Views));
+    assert_eq!(views, Some(Role::Shows(NodeRole::Views)));
     let mut strip = n("Tabs", NodeRole::TabStrip, whole(), fixed(0, 20));
     for (id, v) in [
         ("ButtonFriendsTab", ViewKey::Friends),
@@ -218,12 +218,18 @@ fn rule_4_a_button_bars_pages_are_never_shown_together() {
     let bar = |role| {
         let mut b = n("ChatTab", role, fixed(20, 110), fixed(60, 21));
         b.children = [
-            ("HostChatButton", ActionKey::HostChat),
-            ("JoinChatButton", ActionKey::JoinChat),
-            ("LeaveChatButton", ActionKey::LeaveChat),
+            ("HostChatButton", SkinAction::HostVoiceChat),
+            ("JoinChatButton", SkinAction::VoiceChat),
+            ("LeaveChatButton", SkinAction::LeaveVoiceChat),
         ]
         .into_iter()
-        .map(|(id, a)| n(id, NodeRole::Button(a), fixed(0, 110), fixed(0, 21)))
+        .map(|(id, a)| {
+            acts(
+                n(id, NodeRole::Button, fixed(0, 110), fixed(0, 21)),
+                SkinEvent::Click,
+                a,
+            )
+        })
         .collect();
         b
     };

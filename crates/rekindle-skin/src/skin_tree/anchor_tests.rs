@@ -6,11 +6,10 @@ use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
-use rekindle_types::dto::skin_tree::{
-    ActionKey, Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
-};
+use rekindle_types::dto::skin_action::{NodeTrigger, SkinAction, SkinEvent};
+use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
 
-use super::roles::{role, Facts};
+use super::roles::{role, Facts, Role};
 use super::tests::{fixed, good, layout, ON};
 use super::{css, import};
 use crate::import::tree::parse;
@@ -268,9 +267,9 @@ fn a_title_is_the_name_field_only_as_text() {
         children: &[],
     };
     let text = role("Title", Some("Title"), None, &facts("Text", false));
-    assert_eq!(text, Some(NodeRole::NameField));
+    assert_eq!(text, Some(Role::Shows(NodeRole::NameField)));
     let plaque = role("Title", Some("Title"), None, &facts("Tile", true));
-    assert_eq!(plaque, Some(NodeRole::Decor));
+    assert_eq!(plaque, Some(Role::Shows(NodeRole::Decor)));
 }
 
 /// SimpleX's `[TabAddButton]` `Class=TabControl` holds `AddButton`,
@@ -287,17 +286,26 @@ fn an_ini_tab_control_slot_is_a_group_of_buttons() {
     let slot = role(
         "TabAddButton",
         Some("TabAddButton"),
-        Some(NodeRole::Group),
+        Some(&Role::Shows(NodeRole::Group)),
         &facts,
     );
-    assert_eq!(slot, Some(NodeRole::Group));
+    assert_eq!(slot, Some(Role::Shows(NodeRole::Group)));
     let plain = Facts {
         has_art: true,
         class: Some("PushButton"),
         children: &[],
     };
-    let search = role("SearchFiles", Some("SearchFiles"), slot, &plain);
-    assert_eq!(search, Some(NodeRole::Button(ActionKey::Find)));
+    let search = role("SearchFiles", Some("SearchFiles"), slot.as_ref(), &plain);
+    assert_eq!(
+        search,
+        Some(Role::Acts(
+            NodeRole::Button,
+            Some(NodeTrigger {
+                on: SkinEvent::Click,
+                run: SkinAction::SearchFor,
+            })
+        ))
+    );
     let knobs = ["Knob01".to_owned(), "Knob04".to_owned()];
     let strip = Facts {
         has_art: false,
@@ -307,12 +315,12 @@ fn an_ini_tab_control_slot_is_a_group_of_buttons() {
     let tc = role(
         "TabControl",
         Some("TabControl"),
-        Some(NodeRole::Group),
+        Some(&Role::Shows(NodeRole::Group)),
         &strip,
     );
-    assert_eq!(tc, Some(NodeRole::TabStrip));
-    let fourth = role("Knob04", Some("Knob04"), tc, &plain);
-    assert_eq!(fourth, Some(NodeRole::Part));
+    assert_eq!(tc, Some(Role::Shows(NodeRole::TabStrip)));
+    let fourth = role("Knob04", Some("Knob04"), tc.as_ref(), &plain);
+    assert_eq!(fourth, Some(Role::Shows(NodeRole::Part)));
 }
 
 /// StealthX's rail `InfoJoinChatTab` (`Component="ChatTab"`,
@@ -333,10 +341,10 @@ fn a_tab_control_of_chat_state_buttons_is_a_button_bar() {
     let bar = role(
         "InfoJoinChatTab",
         Some("ChatTab"),
-        Some(NodeRole::Decor),
+        Some(&Role::Shows(NodeRole::Decor)),
         &facts,
     );
-    assert_eq!(bar, Some(NodeRole::ButtonBar));
+    assert_eq!(bar, Some(Role::Shows(NodeRole::ButtonBar)));
 }
 
 /// Spec A6 row 6: Classic's `MainTitleBar` `MinHeight="51"` over 47 px art

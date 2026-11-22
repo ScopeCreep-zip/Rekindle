@@ -91,7 +91,7 @@ pub fn text_sized(n: &SkinNode) -> bool {
     n.art.is_none()
         && matches!(
             n.role,
-            NodeRole::Menu(_) | NodeRole::Tab(_) | NodeRole::StatusText | NodeRole::NameField
+            NodeRole::MenuTitle | NodeRole::Tab(_) | NodeRole::StatusText | NodeRole::NameField
         )
         && (empty(n.x) || empty(n.y))
 }
@@ -165,7 +165,7 @@ pub fn grip_area(area: [i32; 4], window: (i32, i32), live: &[[i32; 4]]) -> [i32;
 /// (its hit area yields to the nodes it overlaps) and above those below it.
 #[must_use]
 pub fn stack_z(n: &SkinNode) -> i32 {
-    2 * i32::from(n.z) - i32::from(matches!(n.role, NodeRole::Resize(_)))
+    2 * i32::from(n.z) - i32::from(n.resize_edge().is_some())
 }
 
 /// The window's global stacking order (lead decisions 6 and 10).
@@ -301,8 +301,7 @@ pub fn check(
             return Err(bad(&at, "rule 3: a node inside the window"));
         }
         let sized = b[2] > 0 && b[3] > 0;
-        if n.role.interactive() && !text_sized(n) && (!sized || !inside(hit_area(*b, (w, h)), w, h))
-        {
+        if n.interactive() && !text_sized(n) && (!sized || !inside(hit_area(*b, (w, h)), w, h)) {
             return Err(bad(
                 &at,
                 "rule 5: an interactive node with a 24x24 hit area in the window",
@@ -338,19 +337,22 @@ pub fn check(
     // A grip covers a node only when it does not yield to it (lead
     // decision 10): its hit area then leaves the node's box.
     let covers = |b: &SkinNode, a: &str| {
-        stack.above(&b.id, a) && !(matches!(b.role, NodeRole::Resize(_)) && stack.yields(&b.id, a))
+        stack.above(&b.id, a) && !(b.resize_edge().is_some() && stack.yields(&b.id, a))
     };
     let live: Vec<_> = boxes
         .iter()
-        .filter(|(n, b)| n.role.interactive() && b[2] > 0 && b[3] > 0)
+        .filter(|(n, b)| n.interactive() && b[2] > 0 && b[3] > 0)
         .collect();
     for (a, ab) in &live {
-        if live.iter().any(|(b, bb)| {
+        if let Some((b, _)) = live.iter().find(|(b, bb)| {
             b.id != a.id && covers(b, &a.id) && contains(*bb, *ab) && !apart(&a.id, &b.id)
         }) {
             return Err(bad(
                 &format!("{field}.{}", a.id),
-                "rule 4: an interactive node another never wholly covers",
+                &format!(
+                    "rule 4: an interactive node another never wholly covers (covered by {})",
+                    b.id
+                ),
             ));
         }
     }

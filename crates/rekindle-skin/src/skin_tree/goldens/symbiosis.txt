@@ -1,11 +1,11 @@
-ResizeGripperTL Resize(BottomRight)
-ResizeTop Resize(Top)
-ResizeGripperTR Resize(BottomRight)
-ResizeL Resize(BottomRight)
-ResizeR Resize(BottomRight)
-ResizeGripperBL Resize(BottomRight)
-ResizeBottom Resize(Bottom)
-ResizeGripperBR Resize(BottomRight)
+ResizeGripperTL Button
+ResizeTop Button
+ResizeGripperTR Button
+ResizeL Button
+ResizeR Button
+ResizeGripperBL Button
+ResizeBottom Button
+ResizeGripperBR Button
 WindowDraggerTop Drag
 TopRow Decor
 LeftSide Decor
@@ -14,13 +14,13 @@ RightSide Decor
 BottomRow Decor
 InfoBar Group
   XfireLogo Logo
-  ButtonMinimize Minimize
-  ButtonMaximize Maximize
-  ButtonClose Close
+  ButtonMinimize Button
+  ButtonMaximize Button
+  ButtonClose Button
 MenuBackground MenuBar
-  XfireMenu Menu(First)
-  ToolsMenu Menu(Tools)
-  HelpMenu Menu(Help)
+  XfireMenu MenuTitle
+  ToolsMenu MenuTitle
+  HelpMenu MenuTitle
 UsernameContainer NameField
   Username Part
 StatusBarContainer Group
@@ -54,52 +54,52 @@ XfireView Views
   XfireView.Notifications View(Notifications)
 TabsButtonsContainer ButtonBar
   FriendsButtonBar ButtonRow(Friends)
-    FriendChatButton Button(Chat)
+    FriendChatButton Button
     FriendsButtonBar.Separator1 Decor
-    FriendInfoButton Button(Profile)
+    FriendInfoButton Button
     FriendsButtonBar.Separator2 Decor
-    FriendJoinGame Button(Join)
+    FriendJoinGame Button
     FriendsButtonBar.Separator3 Decor
-    FriendAddButton Button(AddFriend)
+    FriendAddButton Button
   ChatRoomsButtonBar ButtonRow(ChatRooms)
     RoomEditBG Decor
       ChatRoomEdit RoomName
-    ChatRoomEnter Button(Chat)
+    ChatRoomEnter Button
     ChatRoomsButtonBar.Separator1 Decor
-    ChatRoomDelete Button(Chat)
+    ChatRoomDelete Button
     ChatRoomsButtonBar.Separator2 Decor
-    ChatRoomCreate Button(Chat)
+    ChatRoomCreate Button
   FilesButtonBar ButtonRow(Files)
-    OpenFiles Button(OpenDownload)
+    OpenFiles Button
     FilesButtonBar.Separator1 Decor
-    DeleteFiles Button(DeleteItem)
+    DeleteFiles Button
     FilesButtonBar.Separator2 Decor
-    SearchFiles Button(Find)
+    SearchFiles Button
   ServersButtonBar ButtonRow(Servers)
-    FavoriteServer Button(AddServer)
+    FavoriteServer Button
     ServersButtonBar.Separator1 Decor
-    JoinGame Button(Join)
+    JoinGame Button
     ServersButtonBar.Separator2 Decor
-    RefreshServer Button(Refresh)
+    RefreshServer Button
   PicturesButtonBar ButtonRow(Pictures)
-    OpenPictures Button(OpenDownload)
+    OpenPictures Button
     PicturesButtonBar.Separator1 Decor
-    UploadPictures Button(Browse)
+    UploadPictures Button
     PicturesButtonBar.Separator2 Decor
-    DeletePictures Button(DeleteItem)
+    DeletePictures Button
     PicturesButtonBar.Separator3 Decor
-    ViewPictures Button(OpenDownload)
+    ViewPictures Button
   VideosButtonBar ButtonRow(Videos)
-    OpenVideos Button(OpenDownload)
+    OpenVideos Button
     VideosButtonBar.Separator1 Decor
-    DeleteVideos Button(DeleteItem)
+    DeleteVideos Button
     VideosButtonBar.Separator2 Decor
-    UploadVideos Button(Browse)
+    UploadVideos Button
     VideosButtonBar.Separator3 Decor
-    SearchVideos Button(Find)
+    SearchVideos Button
   NotificationsButtonBar ButtonRow(Notifications)
-    OpenNotification Button(OpenDownload)
+    OpenNotification Button
     NotificationsButtonBar.Separator1 Decor
-    DeleteNotification Button(DeleteItem)
+    DeleteNotification Button
     NotificationsButtonBar.Separator2 Decor
-MainInfoViewButton InfoToggle
+MainInfoViewButton Button

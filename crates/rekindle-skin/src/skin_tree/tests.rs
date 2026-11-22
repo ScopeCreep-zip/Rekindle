@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 
 use rekindle_image::Rgba;
 use rekindle_types::dto::skin::{Insets, WindowLayout};
+use rekindle_types::dto::skin_action::{EngineMenu, NodeTrigger, SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{
-    ActionKey, Anchor, MenuKey, NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
+    Anchor, NodeArt, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
 };
 
 use super::{css, validate};
@@ -35,6 +36,12 @@ pub(super) fn fixed(at: i16, size: u16) -> NodeSpan {
         at: Anchor::Start(at),
         size,
     }
+}
+
+/// `node` run by `on` → `run` (a control's trigger, design §2.4).
+pub(super) fn acts(mut node: SkinNode, on: SkinEvent, run: SkinAction) -> SkinNode {
+    node.triggers.push(NodeTrigger { on, run });
+    node
 }
 
 pub(super) fn n(id: &str, role: NodeRole, x: NodeSpan, y: NodeSpan) -> SkinNode {
@@ -86,22 +93,25 @@ pub(super) fn good() -> Vec<SkinNode> {
         whole(),
         whole(),
     );
-    row.children.push(n(
-        "AddButton",
-        NodeRole::Button(ActionKey::AddFriend),
-        fixed(4, 30),
-        fixed(2, 16),
+    row.children.push(acts(
+        n("AddButton", NodeRole::Button, fixed(4, 30), fixed(2, 16)),
+        SkinEvent::Click,
+        SkinAction::AddFriend,
     ));
     bar.children.push(row);
     vec![
-        n(
-            "CloseBox",
-            NodeRole::Close,
-            NodeSpan::Fixed {
-                at: Anchor::End(4),
-                size: 18,
-            },
-            fixed(4, 16),
+        acts(
+            n(
+                "CloseBox",
+                NodeRole::Button,
+                NodeSpan::Fixed {
+                    at: Anchor::End(4),
+                    size: 18,
+                },
+                fixed(4, 16),
+            ),
+            SkinEvent::Click,
+            SkinAction::Close,
         ),
         views,
         bar,
@@ -158,10 +168,18 @@ fn rule_3_nodes_lie_inside_the_window() {
 #[test]
 fn rule_5_an_interactive_node_has_a_hit_area_in_the_window() {
     let mut t = good();
-    t.push(n("Min", NodeRole::Minimize, fixed(0, 0), fixed(30, 0)));
+    t.push(acts(
+        n("Min", NodeRole::Button, fixed(0, 0), fixed(30, 0)),
+        SkinEvent::Click,
+        SkinAction::Minimize,
+    ));
     refused(t, "rule 5");
     // A window too small for any 24 px target refuses every interactive node.
-    let mut t = vec![n("Min", NodeRole::Minimize, fixed(0, 16), fixed(0, 16))];
+    let mut t = vec![acts(
+        n("Min", NodeRole::Button, fixed(0, 16), fixed(0, 16)),
+        SkinEvent::Click,
+        SkinAction::Minimize,
+    )];
     let mut small = layout(None);
     small.min_width = 20;
     small.tree = Some(SkinTree {
@@ -192,7 +210,11 @@ fn rule_5_an_interactive_node_has_a_hit_area_in_the_window() {
     // Lead decision 2: 16 px tall at the top edge, its 24 px hit area is
     // shifted inward (down) to stay in the window, not refused.
     t = good();
-    t.push(n("Min", NodeRole::Minimize, fixed(60, 16), fixed(0, 16)));
+    t.push(acts(
+        n("Min", NodeRole::Button, fixed(60, 16), fixed(0, 16)),
+        SkinEvent::Click,
+        SkinAction::Minimize,
+    ));
     assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
     assert_eq!(
         validate::hit_area([60, 0, 16, 16], (200, 300)),
@@ -210,11 +232,15 @@ fn rule_5_an_interactive_node_has_a_hit_area_in_the_window() {
 #[test]
 fn rule_5_a_text_sized_menu_is_sized_at_render() {
     let mut t = good();
-    t.push(n(
-        "XfireMenuText",
-        NodeRole::Menu(MenuKey::First),
-        fixed(40, 0),
-        fixed(30, 0),
+    t.push(acts(
+        n(
+            "XfireMenuText",
+            NodeRole::MenuTitle,
+            fixed(40, 0),
+            fixed(30, 0),
+        ),
+        SkinEvent::LeftDown,
+        SkinAction::Menu(EngineMenu::File),
     ));
     assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
     let out = css::tree_css(
@@ -235,11 +261,10 @@ fn rule_5_a_text_sized_menu_is_sized_at_render() {
     .unwrap();
     assert!(out.contains("[data-skin-node=\"XfireMenuText\"] {\n    position: absolute; left: 40px; width: max-content; top: 30px; height: max-content;"), "{out}");
     let mut t = good();
-    t.push(n(
-        "Chat",
-        NodeRole::Button(ActionKey::Chat),
-        fixed(40, 0),
-        fixed(30, 0),
+    t.push(acts(
+        n("Chat", NodeRole::Button, fixed(40, 0), fixed(30, 0)),
+        SkinEvent::Click,
+        SkinAction::ChatFriend,
     ));
     refused(t, "rule 5");
 }
@@ -249,7 +274,8 @@ fn rule_5_a_text_sized_menu_is_sized_at_render() {
 #[test]
 fn rule_6_singleton_roles_are_unique() {
     let mut t = good();
-    t.push(n("Close2", NodeRole::Close, fixed(40, 24), fixed(40, 24)));
+    t.push(n("Drag1", NodeRole::Drag, fixed(0, 24), fixed(40, 24)));
+    t.push(n("Drag2", NodeRole::Drag, fixed(40, 24), fixed(40, 24)));
     refused(t, "rule 6");
     let mut t = good();
     t.push(n("Views2", NodeRole::Views, fixed(40, 24), fixed(80, 24)));
@@ -289,11 +315,15 @@ fn rule_9_art_is_in_the_package() {
 fn a_tree_never_requires_a_component_the_pack_lacks() {
     // XGlow lays no close box and StealthX no name field: a tree with
     // neither, and no views at all, passes.
-    let t = vec![n(
-        "MinimizeButton",
-        NodeRole::Minimize,
-        fixed(6, 24),
-        fixed(13, 24),
+    let t = vec![acts(
+        n(
+            "MinimizeButton",
+            NodeRole::Button,
+            fixed(6, 24),
+            fixed(13, 24),
+        ),
+        SkinEvent::Click,
+        SkinAction::Minimize,
     )];
     assert_eq!(checked(t, &BTreeMap::new()), Ok(()));
 }

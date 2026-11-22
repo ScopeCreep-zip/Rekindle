@@ -16,7 +16,7 @@ use super::skin::{Insets, RegionState};
 use super::skin_action::NodeTrigger;
 use super::skin_layout::SkinWindow;
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
-pub use super::skin_tree_role::{ActionKey, Edge, LampKey, MenuKey, NodeRole, ViewKey};
+pub use super::skin_tree_role::{Edge, LampKey, NodeRole, ViewKey};
 
 /// Where a fixed-size node sits along one axis of its parent's box, px.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,6 +287,39 @@ pub struct SkinShell {
 }
 
 impl SkinNode {
+    /// The node's pressing triggers and its parts' (a control's label
+    /// tile holding the part that runs it, StealthX's `XfireMenuText` >
+    /// `FileMenu`).
+    pub fn presses(&self) -> impl Iterator<Item = &NodeTrigger> {
+        self.triggers
+            .iter()
+            .chain(
+                self.children
+                    .iter()
+                    .filter(|c| c.role == NodeRole::Part)
+                    .flat_map(|c| c.triggers.iter()),
+            )
+            .filter(|t| t.presses())
+    }
+
+    /// Whether the node takes input ([`NodeRole::interactive`] over its
+    /// own and its parts' triggers).
+    #[must_use]
+    pub fn interactive(&self) -> bool {
+        let presses: Vec<NodeTrigger> = self.presses().cloned().collect();
+        self.role.interactive(&presses)
+    }
+
+    /// The edge a pointer trigger resizes the window from (a pack's
+    /// `Resize<Edge>` on a grip strip).
+    #[must_use]
+    pub fn resize_edge(&self) -> Option<Edge> {
+        self.triggers.iter().find_map(|t| match t.run {
+            super::skin_action::SkinAction::Resize(e) if t.on.pointer() => Some(e),
+            _ => None,
+        })
+    }
+
     fn shell(&self) -> ShellNode {
         ShellNode {
             id: self.id.clone(),

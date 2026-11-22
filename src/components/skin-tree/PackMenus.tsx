@@ -1,6 +1,9 @@
 import { Component, For, JSX, Show, createContext, useContext } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
-import type { MenuKey } from "../../ipc/commands/dto_skin_tree";
+import type { EngineMenu } from "../../ipc/commands/dto_skin_tree";
+
+/** The engine menus a pack's menu titles open here (`Menu<Name>` triggers). */
+export type MenuKey = Extract<EngineMenu, "file" | "tool" | "help">;
 import { handleLogout } from "../../actions/auth.actions";
 import { handleToggleAddFriend } from "../../actions/buddy.actions";
 import { setBuddyListUI } from "../../stores/buddylist-ui.store";
@@ -27,14 +30,14 @@ interface Item {
 
 /// The first menu reads "Rekindle" (plan SK2 lead decision 7: the Xfire
 /// name is a trademark); the others keep Xfire's names (lang 229/231).
-const TITLE: Record<MenuKey, string> = { first: "Rekindle", tools: "Tools", help: "Help" };
+const TITLE: Record<MenuKey, string> = { file: "Rekindle", tool: "Tools", help: "Help" };
 
 /// N2 (design §3): our menu items regrouped under the pack's menus. The
 /// first menu holds the account and contact actions and Log Off/Exit
 /// (Xfire's own placement; Create/Join Community per design §4), Tools
 /// the options, skins, group call and shortcuts, Help the docs.
 const ITEMS: Record<MenuKey, Item[]> = {
-  first: [
+  file: [
     { label: "Add Friend…", run: handleToggleAddFriend },
     { label: "New Chat…", run: handleToggleNewChat },
     { label: "New Group…", run: () => setBuddyListUI("showNewGroup", true) },
@@ -46,7 +49,7 @@ const ITEMS: Record<MenuKey, Item[]> = {
     { label: "Log Off", run: () => void handleLogout(), apart: true },
     { label: "Exit", run: handleQuit, danger: true },
   ],
-  tools: [
+  tool: [
     { label: "Options", run: () => openSettingsTab("application") },
     { label: "Notifications", run: () => openSettingsTab("notifications") },
     { label: "Audio", run: () => openSettingsTab("audio") },

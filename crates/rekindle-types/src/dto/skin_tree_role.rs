@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::skin_action::NodeTrigger;
+
 /// The views of Xfire's sticky tab group (`TabbedControl`, Alt+1…7) and
 /// Symbiosis's extra tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -17,48 +19,6 @@ pub enum ViewKey {
     Pictures,
     Videos,
     Notifications,
-}
-
-/// The three menus of Xfire's menu bar (lang 228/229/231).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum MenuKey {
-    /// The first menu ("X&fire"; Rekindle's, plan SK2 lead decision 7).
-    First,
-    Tools,
-    Help,
-}
-
-/// A button's action (design §3 N11/N16): the Friends, Servers, Files and
-/// Chat Rooms rows' buttons. Combat's per-tab round buttons
-/// (`AddDownloadTab`, `ChatRefreshStopTab`, `JoinPlayTab`,
-/// `ProfileBrowseTab`) carry their Friends-tab action; the shell binds
-/// the active view's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ActionKey {
-    AddFriend,
-    Chat,
-    Join,
-    Profile,
-    AddServer,
-    Refresh,
-    StartDownload,
-    StopDownload,
-    OpenDownload,
-    DownloadInfo,
-    Browse,
-    Find,
-    EnterRoom,
-    CreateRoom,
-    DeleteItem,
-    Favorite,
-    /// StealthX's `HostChatButton`: a new group DM (design N16).
-    HostChat,
-    /// StealthX's `JoinChatButton`: join the group DM.
-    JoinChat,
-    /// StealthX's `LeaveChatButton`: leave the group DM.
-    LeaveChat,
 }
 
 /// A resize edge or corner (Xfire's `Resize*` strips and `Gripper*` art).
@@ -93,11 +53,9 @@ pub enum NodeRole {
     Logo,
     /// The signed-in user's name (`UserNameField`, `Title`, `UsernameContainer`).
     NameField,
-    Minimize,
-    Maximize,
-    Close,
-    /// One menu's title.
-    Menu(MenuKey),
+    /// One menu's title (`XfireMenuText`, `ToolsMenu`): the menu it opens
+    /// is its `Menu<Name>` trigger's (plan SK2 decision 36).
+    MenuTitle,
     /// The menus' container (`MenuBar`, `MenuBackground`).
     MenuBar,
     /// The editable status text (`StatusEdit`, `Status`).
@@ -122,10 +80,10 @@ pub enum NodeRole {
     ButtonBar,
     /// One view's button row.
     ButtonRow(ViewKey),
-    /// One button.
-    Button(ActionKey),
-    /// The InfoView toggle (`InfoViewButton`, `ExpandButton`, `InfoViewSwitch`).
-    InfoToggle,
+    /// A pressable control: what it does is its triggers (plan SK2
+    /// decision 36: the window boxes, buttons, the InfoView toggle, the
+    /// side rail's toggle, a pack's link, the system menu).
+    Button,
     /// The InfoView pane.
     InfoView,
     /// Symbiosis's chat-room name edit (`RoomEdit` in `ChatRoomsButtonBar`),
@@ -134,25 +92,16 @@ pub enum NodeRole {
     /// StealthX's MENU rail: the launched `MainMenuWindow` popup
     /// (`popups.xml:2-89`) holding the menus, tabs and button rows.
     SideRail,
-    /// The control that opens and closes the [`Self::SideRail`]
-    /// (StealthX's `MenuButton`, `Class="SkinLauncher"`, `<Popup
-    /// SaveState="1">MainMenuPopup</Popup>`).
-    SideRailToggle,
-    /// A resize edge or corner grip.
-    Resize(Edge),
     Lamp(LampKey),
     /// Combat's console plate naming the active tab (`ConsoleText`).
     ConsoleLabel,
-    /// A pack's own link (Total Chaos `TCLink`).
-    PackLink,
     /// The current game's logo (Symbiosis `GameLogo`).
     GameLogo,
-    /// Combat's window system menu.
-    SystemMenu,
     /// A container with no behaviour of its own (`TopButtonBar`,
     /// `BaseBoard`, `BottomBar`, `StatusWrapper`).
     Group,
-    /// A piece of its parent component: its state art or label
+    /// A piece of its parent component (a resize grip's strip, its state
+    /// art or label
     /// (`FileMenu` under `XfireMenuText`, `TabNormalButton` under
     /// `TabNormalText`, `UserNameText` under `UserNameField`, a view's
     /// list ground); bound with the parent.
@@ -162,45 +111,39 @@ pub enum NodeRole {
 }
 
 impl NodeRole {
-    /// Whether the node takes input (validation rules 4 and 5).
+    /// Whether the role takes input whatever its triggers: the editable
+    /// name, status and room fields, the status list and the tabs.
     #[must_use]
-    pub const fn interactive(self) -> bool {
+    pub const fn input(self) -> bool {
         matches!(
             self,
             Self::NameField
-                | Self::Minimize
-                | Self::Maximize
-                | Self::Close
-                | Self::Menu(_)
                 | Self::StatusText
                 | Self::StatusList
                 | Self::Tab(_)
                 | Self::Knob(_)
-                | Self::Button(_)
-                | Self::InfoToggle
-                | Self::SideRailToggle
                 | Self::RoomName
-                | Self::Resize(_)
-                | Self::PackLink
-                | Self::SystemMenu
         )
     }
 
+    /// Whether a node of this role with `triggers` takes input
+    /// (validation rules 4 and 5; design §2.4): it is an input role or a
+    /// trigger presses it ([`NodeTrigger::presses`]). A part never does: it
+    /// is a piece of its parent control, whose triggers it carries.
+    #[must_use]
+    pub fn interactive(self, triggers: &[NodeTrigger]) -> bool {
+        !matches!(self, Self::Part) && (self.input() || triggers.iter().any(NodeTrigger::presses))
+    }
+
     /// Whether a tree holds at most one node of the role (rule 6, plan SK2
-    /// lead decision 7): the title strip, the window boxes, the name and
-    /// status fields and the views; every other role may repeat per view
-    /// or tab (Symbiosis's two button bars).
+    /// lead decision 7): the title strip, the name and status fields and
+    /// the views; every other role may repeat per view or tab (Symbiosis's
+    /// two button bars).
     #[must_use]
     pub const fn singleton(self) -> bool {
         matches!(
             self,
-            Self::Drag
-                | Self::Minimize
-                | Self::Maximize
-                | Self::Close
-                | Self::NameField
-                | Self::StatusText
-                | Self::Views
+            Self::Drag | Self::NameField | Self::StatusText | Self::Views
         )
     }
 }

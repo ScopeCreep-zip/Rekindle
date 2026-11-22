@@ -6,11 +6,12 @@
 use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{Insets, SkinWindow, WindowLayout};
+use rekindle_types::dto::skin_action::{NodeTrigger, SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{
-    ActionKey, Anchor, LampKey, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
+    Anchor, LampKey, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey,
 };
 
-use super::roles::{role, Facts};
+use super::roles::{role, Facts, Role};
 use super::test_support::{frame, piece, Z};
 use super::{import, validate};
 use crate::import::tree::parse;
@@ -194,9 +195,10 @@ fn an_art_less_tile_is_its_components_declared_size() {
         br#"<Components><Component Name="ResizeUp" Class="Tile" MinHeight="5"/></Components>"#,
     );
     let grip = &tree.root[0];
+    assert_eq!(grip.role, NodeRole::Button);
     assert_eq!(
-        grip.role,
-        NodeRole::Resize(rekindle_types::dto::skin_tree::Edge::Top)
+        grip.resize_edge(),
+        Some(rekindle_types::dto::skin_tree::Edge::Top)
     );
     assert_eq!(
         grip.y,
@@ -229,10 +231,10 @@ fn a_repeated_name_is_scoped_by_its_parent() {
     );
 }
 
-fn button(id: &str, key: ActionKey) -> SkinNode {
+fn button(id: &str, key: SkinAction) -> SkinNode {
     SkinNode {
         id: id.to_owned(),
-        role: NodeRole::Button(key),
+        role: NodeRole::Button,
         x: NodeSpan::Fixed {
             at: Anchor::Start(10),
             size: 30,
@@ -245,7 +247,10 @@ fn button(id: &str, key: ActionKey) -> SkinNode {
         art: None,
         text: None,
         shows_with: None,
-        triggers: Vec::new(),
+        triggers: vec![NodeTrigger {
+            on: SkinEvent::Click,
+            run: key,
+        }],
         children: Vec::new(),
     }
 }
@@ -274,7 +279,7 @@ fn rule_4_rows_of_different_views_may_share_a_place() {
     let view = |id: &str, v| SkinNode {
         role: NodeRole::View(v),
         children: Vec::new(),
-        ..row(id, v, button(&format!("{id}x"), ActionKey::Chat))
+        ..row(id, v, button(&format!("{id}x"), SkinAction::ChatFriend))
     };
     let tree = |a: SkinNode, b: SkinNode| SkinTree {
         outsets: Z,
@@ -286,13 +291,13 @@ fn rule_4_rows_of_different_views_may_share_a_place() {
         ],
     };
     let apart = tree(
-        row("F", ViewKey::Friends, button("G1", ActionKey::Join)),
-        row("S", ViewKey::Servers, button("G2", ActionKey::Join)),
+        row("F", ViewKey::Friends, button("G1", SkinAction::JoinFriend)),
+        row("S", ViewKey::Servers, button("G2", SkinAction::JoinFriend)),
     );
     validate::check("t", &apart, &l, &BTreeMap::new()).unwrap();
     let together = tree(
-        row("F", ViewKey::Friends, button("G1", ActionKey::Join)),
-        row("S", ViewKey::Friends, button("G2", ActionKey::Join)),
+        row("F", ViewKey::Friends, button("G1", SkinAction::JoinFriend)),
+        row("S", ViewKey::Friends, button("G2", SkinAction::JoinFriend)),
     );
     let e = validate::check("t", &together, &l, &BTreeMap::new()).unwrap_err();
     assert!(format!("{e:?}").contains("rule 4"), "{e:?}");
@@ -309,7 +314,7 @@ fn combats_download_blink_is_the_files_lamp() {
     };
     assert_eq!(
         role("DownloadBlink", Some("DownloadBlink"), None, &f),
-        Some(NodeRole::Lamp(LampKey::Files))
+        Some(Role::Shows(NodeRole::Lamp(LampKey::Files)))
     );
 }
 
@@ -395,24 +400,20 @@ fn stealthxs_menu_button_launches_the_side_rail() {
         stack.extend(n.children.iter().rev().map(|c| (c, d + 1)));
     }
     let want = [
-        (0, "MenuButton", NodeRole::SideRailToggle),
+        (0, "MenuButton", NodeRole::Button),
         (0, "TabbedControl", NodeRole::Views),
         (1, "BuddyView", NodeRole::View(ViewKey::Friends)),
         (0, "MainMenuPopup", NodeRole::SideRail),
         (1, "MainMenuBackground", NodeRole::Decor),
         (2, "MenuBar", NodeRole::MenuBar),
-        (
-            3,
-            "XfireMenuText",
-            NodeRole::Menu(rekindle_types::dto::skin_tree::MenuKey::First),
-        ),
+        (3, "XfireMenuText", NodeRole::MenuTitle),
         (2, "TabHeader", NodeRole::TabStrip),
         (3, "TabNormalText", NodeRole::Tab(ViewKey::Friends)),
         (2, "ButtonArea", NodeRole::ButtonBar),
         (3, "FriendsButtons", NodeRole::ButtonRow(ViewKey::Friends)),
-        (4, "AddFriendButton", NodeRole::Button(ActionKey::AddFriend)),
+        (4, "AddFriendButton", NodeRole::Button),
         (2, "InfoJoinChatTab", NodeRole::ButtonBar),
-        (3, "HostChatButton", NodeRole::Button(ActionKey::HostChat)),
+        (3, "HostChatButton", NodeRole::Button),
     ];
     assert_eq!(roles, want);
     let rail = tree.root.iter().find(|n| n.id == "MainMenuPopup").unwrap();

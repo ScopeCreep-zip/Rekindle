@@ -1,8 +1,8 @@
 import { Component, For, JSX, Match, Switch, createContext, useContext } from "solid-js";
-import type { ShellNode, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { Edge, ShellNode, SkinAction, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import { handleHide, handleMaximize, handleMinimize } from "../../actions/titlebar.actions";
 import NameField from "./NameField";
-import { PackMenu, PackMenuBar } from "./PackMenus";
+import { PackMenu, PackMenuBar, type MenuKey } from "./PackMenus";
 import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
 import ResizeHandle from "./ResizeHandle";
@@ -44,7 +44,23 @@ const TitleButton: Component<{ node: ShellNode; label: string; onClick: () => vo
   </button>
 );
 
-/** One node, bound by its role (design §3). */
+/** The action the node's own primary press runs (click or button down,
+ *  not the window drag): its behaviour (plan SK2-A3, decision 36). */
+function pressAction(n: ShellNode): SkinAction | undefined {
+  return (n.triggers ?? []).find(
+    (t) => (t.on.kind === "click" || t.on.kind === "leftDown") && t.run.kind !== "dragWindow",
+  )?.run;
+}
+
+function menuOf(a: SkinAction | undefined): MenuKey | undefined {
+  return a?.kind === "menu" && (a.arg === "file" || a.arg === "tool" || a.arg === "help") ? a.arg : undefined;
+}
+
+function edgeOf(a: SkinAction | undefined): Edge | undefined {
+  return a?.kind === "resize" ? a.arg : undefined;
+}
+
+/** One node, bound by its role and its triggers (design §2.4). */
 const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const tree = useTree();
   const n = (): ShellNode => props.node;
@@ -54,8 +70,26 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     const r = role();
     return r.kind === "view" || r.kind === "buttonRow" ? r.key : undefined;
   };
+  const act = (): SkinAction | undefined => pressAction(n());
   return (
     <Switch fallback={<Plain node={n()} hidden={offView()} />}>
+      <Match when={act()?.kind === "minimize"}>
+        <TitleButton node={n()} label="Minimize window" onClick={handleMinimize} />
+      </Match>
+      <Match when={act()?.kind === "maximize"}>
+        <TitleButton node={n()} label="Maximize window" onClick={handleMaximize} />
+      </Match>
+      <Match when={act()?.kind === "close"}>
+        <TitleButton node={n()} label="Hide window" onClick={handleHide} />
+      </Match>
+      <Match when={menuOf(act())}>
+        {(menu) => (
+          <PackMenu id={n().id} menu={menu()}>
+            <Children node={n()} />
+          </PackMenu>
+        )}
+      </Match>
+      <Match when={edgeOf(act())}>{(edge) => <ResizeHandle id={n().id} edge={edge()} />}</Match>
       <Match when={role().kind === "drag" || role().kind === "decor" || role().kind === "group"}>
         <Plain node={n()} drag hidden={offView()} />
       </Match>
@@ -69,26 +103,10 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           <Children node={n()} />
         </NameField>
       </Match>
-      <Match when={role().kind === "minimize"}>
-        <TitleButton node={n()} label="Minimize window" onClick={handleMinimize} />
-      </Match>
-      <Match when={role().kind === "maximize"}>
-        <TitleButton node={n()} label="Maximize window" onClick={handleMaximize} />
-      </Match>
-      <Match when={role().kind === "close"}>
-        <TitleButton node={n()} label="Hide window" onClick={handleHide} />
-      </Match>
       <Match when={role().kind === "menuBar"}>
         <PackMenuBar id={n().id}>
           <Children node={n()} />
         </PackMenuBar>
-      </Match>
-      <Match when={role().kind === "menu" && role()}>
-        {(r) => (
-          <PackMenu id={n().id} menu={(r() as { key: "first" | "tools" | "help" }).key}>
-            <Children node={n()} />
-          </PackMenu>
-        )}
       </Match>
       <Match when={role().kind === "statusText"}>
         <StatusText id={n().id} />
@@ -102,9 +120,6 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
         <AdArea id={n().id}>
           <Children node={n()} />
         </AdArea>
-      </Match>
-      <Match when={role().kind === "resize" && role()}>
-        {(r) => <ResizeHandle id={n().id} edge={(r() as { key: Parameters<typeof ResizeHandle>[0]["edge"] }).key} />}
       </Match>
       <Match when={role().kind === "views"}>
         <div data-skin-node={n().id} id="main-content" tabindex="-1">

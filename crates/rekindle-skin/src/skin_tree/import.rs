@@ -30,7 +30,7 @@ use super::fit::fit;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::rail;
-use super::roles::{role, Facts};
+use super::roles::{role, with_implied, Facts, Role};
 use super::triggers::{self, Pack};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_pieces, Decode};
@@ -107,7 +107,7 @@ fn natural_of(pieces: &Pieces) -> Option<(u32, u32)> {
 struct Read<'n> {
     tile: &'n Node,
     id: String,
-    role: NodeRole,
+    role: Role,
     /// The component's normal piece set (spec A7).
     pieces: Pieces,
     wh: (u16, u16),
@@ -248,7 +248,7 @@ impl Walk<'_> {
     }
 
     /// One tile's id, role and art, before it is placed.
-    fn read<'n>(&self, tile: &'n Node, parent: Option<NodeRole>) -> Result<Read<'n>, ImportError> {
+    fn read<'n>(&self, tile: &'n Node, parent: Option<&Role>) -> Result<Read<'n>, ImportError> {
         let component = tile.attr_ci("Component");
         let id = tile
             .attr_ci("Name")
@@ -351,7 +351,7 @@ impl Walk<'_> {
     fn walk(
         &mut self,
         node: &Node,
-        parent: Option<NodeRole>,
+        parent: Option<&Role>,
         outer: &Sibs,
         path: &[usize],
     ) -> Result<Vec<SkinNode>, ImportError> {
@@ -421,7 +421,7 @@ impl Walk<'_> {
             // A knob rotation shows only while its tab is selected (Combat's
             // `Knob01`-`Knob03`, one place for three tabs, `combat.ini`
             // `[TabControl]`): one shows at a time, like the views.
-            let shows_with = match t.role {
+            let shows_with = match t.role.shown() {
                 NodeRole::View(v) | NodeRole::ButtonRow(v) | NodeRole::Knob(v) => Some(v),
                 _ => None,
             };
@@ -429,20 +429,20 @@ impl Walk<'_> {
             let (cx, cy) = (client_box(x, inset[0])?, client_box(y, inset[1])?);
             let inner = outer_for(&names, cx, cy);
             let children = to_tile(
-                self.walk(t.tile, Some(t.role), &inner, &own)?,
+                self.walk(t.tile, Some(&t.role), &inner, &own)?,
                 (x, y),
                 inset,
             )?;
             out.push(SkinNode {
                 id: t.id,
-                role: t.role,
+                role: t.role.shown(),
                 x,
                 y,
                 z,
                 art,
                 text: None,
                 shows_with,
-                triggers: t.triggers,
+                triggers: with_implied(t.triggers, &t.role, &children),
                 children,
             });
         }
@@ -478,7 +478,8 @@ fn with_rail(layout: &Node, components: &[Node], by_name: &BTreeMap<String, &Nod
         };
         let name = t.attr_ci("Name").unwrap_or_default();
         launched.contains(&name.to_ascii_lowercase())
-            && role(name, t.attr_ci("Component"), None, &none) == Some(NodeRole::SideRail)
+            && role(name, t.attr_ci("Component"), None, &none)
+                == Some(Role::Shows(NodeRole::SideRail))
     };
     let mut laid = layout.clone();
     laid.children.extend(

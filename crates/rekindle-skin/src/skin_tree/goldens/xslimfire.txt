@@ -1,44 +1,44 @@
 MainTitleBar Drag
   XfireLogo Logo
-  CloseBox Close
-  MinimizeBox Minimize
+  CloseBox Button
+  MinimizeBox Button
 BaseBoard Group
   ButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
-      AddButton Button(AddFriend)
-      ChatButton Button(Chat)
-      GameButton1 Button(Join)
-      InfoButton1 Button(Profile)
+      AddButton Button
+      ChatButton Button
+      GameButton1 Button
+      InfoButton1 Button
     ServersButtons ButtonRow(Servers)
-      AddServerButton Button(AddServer)
-      RefreshButton Button(Refresh)
-      GameButton2 Button(Join)
-      InfoButton2 Button(Profile)
+      AddServerButton Button
+      RefreshButton Button
+      GameButton2 Button
+      InfoButton2 Button
     FilesButtons ButtonRow(Files)
-      StartDownloadButton Button(StartDownload)
-      StopDownloadButton Button(StopDownload)
-      ExecuteDownloadButton Button(OpenDownload)
-      DownloadInfoButton Button(DownloadInfo)
-ResizeTopLeft Resize(TopLeft)
-ResizeTopRight Resize(TopRight)
-ResizeBottomLeft Resize(BottomLeft)
-ResizeBottomRight Resize(BottomRight)
-ResizeUp Resize(Top)
-ResizeLeft Resize(Left)
-ResizeRight Resize(Right)
-ResizeDown Resize(Bottom)
+      StartDownloadButton Button
+      StopDownloadButton Button
+      ExecuteDownloadButton Button
+      DownloadInfoButton Button
+ResizeTopLeft Button
+ResizeTopRight Button
+ResizeBottomLeft Button
+ResizeBottomRight Button
+ResizeUp Button
+ResizeLeft Button
+ResizeRight Button
+ResizeDown Button
 Middle Decor
 StatusWrapper Group
 StatusEdit StatusText
 DownArrow StatusList
 MenuBar MenuBar
-  XfireMenuText Menu(First)
+  XfireMenuText MenuTitle
     XfireMenuTextT Part
     FileMenu Part
-  ToolsMenuText Menu(Tools)
+  ToolsMenuText MenuTitle
     ToolsMenuTextT Part
     ToolsMenu Part
-  HelpMenuText Menu(Help)
+  HelpMenuText MenuTitle
     HelpMenuTextT Part
     HelpMenu Part
 AdArea AdArea
@@ -54,4 +54,4 @@ TabbedControl Views
     BvBk2 Part
   DownloadView View(Files)
     BvBk3 Part
-InfoViewButton InfoToggle
+InfoViewButton Button

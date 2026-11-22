@@ -351,6 +351,18 @@ pub enum SkinEvent {
 }
 
 /// One `(event, action)` pair of a node, in the pack's order.
+impl SkinEvent {
+    /// Whether the event is a pointer press on the node (click, double
+    /// click, button down, right click): what makes a node interactive.
+    #[must_use]
+    pub const fn pointer(&self) -> bool {
+        matches!(
+            self,
+            Self::Click | Self::DoubleClick | Self::LeftDown | Self::RightDown | Self::RightClick
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NodeTrigger {
@@ -359,6 +371,20 @@ pub struct NodeTrigger {
 }
 
 /// One item of an engine menu.
+impl NodeTrigger {
+    /// Whether the trigger makes its node a control: a primary press
+    /// (click or button down) that runs anything but the window drag. The
+    /// frame's ground keeps its own gestures without becoming a control:
+    /// `AppDragWindow` on button down, Onyx's `TopLeft` double-click
+    /// `AppMaximize` (`components.xml:183-190`), XGlow's `[Bottom]`
+    /// right-click `MenuTool` (`Xglow.ini:494-498`).
+    #[must_use]
+    pub fn presses(&self) -> bool {
+        matches!(self.on, SkinEvent::Click | SkinEvent::LeftDown)
+            && self.run != SkinAction::DragWindow
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MenuItem {

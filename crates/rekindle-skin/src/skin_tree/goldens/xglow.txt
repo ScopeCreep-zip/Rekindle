@@ -1,9 +1,9 @@
 Top Decor
-FileMenu Menu(First)
-ToolMenu Menu(Tools)
-HelpMenu Menu(Help)
+FileMenu MenuTitle
+ToolMenu MenuTitle
+HelpMenu MenuTitle
 XfireLogo Logo
-MinimizeButton Minimize
+MinimizeButton Button
 Left Decor
 Right Decor
 Middle Decor
@@ -14,31 +14,31 @@ TabbedControl Views
 Bottom Decor
 FriendsButtons ButtonRow(Friends)
   FriendsButtons.Add Group
-    AddFriend Button(AddFriend)
+    AddFriend Button
   FriendsButtons.Chat Group
-    ChatButton Button(Chat)
+    ChatButton Button
   FriendsButtons.Join Group
-    JoinGame@Friends Button(Join)
+    JoinGame@Friends Button
   FriendsButtons.Info Group
-    InfoButton Button(Profile)
+    InfoButton Button
 ServersButtons ButtonRow(Servers)
   ServersButtons.Add Group
-    AddServer Button(AddServer)
+    AddServer Button
   ServersButtons.Chat Group
-    RefreshButton Button(Refresh)
+    RefreshButton Button
   ServersButtons.Join Group
-    JoinGame@Servers Button(Join)
+    JoinGame@Servers Button
   ServersButtons.Info Group
-    InfoButton2 Button(Profile)
+    InfoButton2 Button
 FilesButtons ButtonRow(Files)
   FilesButtons.Add Group
-    StartDownload Button(StartDownload)
+    StartDownload Button
   FilesButtons.Chat Group
-    StopDownloadButton Button(StopDownload)
+    StopDownloadButton Button
   FilesButtons.Join Group
-    ExecuteDownload Button(OpenDownload)
+    ExecuteDownload Button
   FilesButtons.Info Group
-    DownloadInfo Button(DownloadInfo)
+    DownloadInfo Button
 ButtonDivider Decor
 Friends Tab(Friends)
 Servers Tab(Servers)
@@ -49,5 +49,5 @@ DownArrow StatusList
 StatusMiddle Decor
 StatusRight Decor
 Status StatusText
-ViewInfo InfoToggle
-Gripper Resize(BottomRight)
+ViewInfo Button
+Gripper Button
