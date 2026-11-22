@@ -9,13 +9,23 @@
 //! per-class death counts are compared with the baseline and an excess is
 //! a warning only ([`NetworkEvent::RouteDeathsAboveBaseline`]), never an
 //! automatic reaction.
+//!
+//! Debug builds only: `REKINDLE_ROUTE_BUDGET_CAPACITY=<n>` seeds the attach
+//! with a bucket of `n` tokens and capacity `n` (at most the default), so
+//! the real-app suite can see `RoutePaused { Exhausted }` at unlock with
+//! `0`. The seeded attach neither reads nor writes the stored row (its save
+//! drops each spend), so the identity's persisted budget is untouched. The
+//! name and the code reading it exist only under `cfg(debug_assertions)`
+//! (`cargo xtask check-log-scrub` keeps every mention there).
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{RouteBudgetState, RouteClass, RoutePauseCause, RoutePort};
-use rekindle_route::budget::{DeathRate, RouteBudget, DEATH_WARN_ABOVE, DEATH_WINDOW};
+use rekindle_route::budget::{
+    DeathRate, RouteBudget, BUDGET_CAPACITY, DEATH_WARN_ABOVE, DEATH_WINDOW,
+};
 use rekindle_transport::operations::friend::FriendHost;
 use rekindle_types::subscription_events::{NetworkEvent, OwnRouteClass, SubscriptionEvent};
 use tokio_util::sync::CancellationToken;
@@ -35,8 +45,79 @@ pub(crate) async fn attach(ctx: &DaemonContext, scope: &Arc<SessionScope>, owner
         return;
     };
     let routes = transport.routes();
-    let Ok(db) = ctx.db.current() else {
+    if !attach_seeded(ctx, routes.as_ref()) && !attach_stored(ctx, routes.as_ref(), owner).await {
         return;
+    }
+    let friends = super::adapters::friends::HostFriends::of(ctx);
+    let paused_routes = Arc::clone(&routes);
+    let paused_friends = friends.clone();
+    scope.spawn_with_token_or_drop("route pause events", move |stop| {
+        tell_paused(paused_routes, paused_friends, stop)
+    });
+    scope.spawn_with_token_or_drop("route death counts", move |stop| {
+        watch_deaths(routes, friends, stop)
+    });
+}
+
+/// The debug-only variable that seeds the attach (plan RV1 real-app suite).
+#[cfg(debug_assertions)]
+const CAPACITY_VAR: &str = "REKINDLE_ROUTE_BUDGET_CAPACITY";
+
+/// The seed a `CAPACITY_VAR` value names: unset is `None` (the stored
+/// budget), else a whole number of tokens no larger than the default
+/// capacity (the seed only shrinks the bucket), or `Err` naming what is
+/// wrong.
+#[cfg(debug_assertions)]
+fn capacity_from(value: Option<&str>) -> Result<Option<u32>, String> {
+    let Some(text) = value else {
+        return Ok(None);
+    };
+    match text.trim().parse::<u32>() {
+        Ok(n) if n <= BUDGET_CAPACITY => Ok(Some(n)),
+        _ => Err(format!(
+            "{CAPACITY_VAR} must be a whole number of tokens from 0 to {BUDGET_CAPACITY}, got {text:?}"
+        )),
+    }
+}
+
+/// Debug builds: attach a bucket seeded from `CAPACITY_VAR` when it is
+/// set, its spends dropped so the stored row is never overwritten; `false`
+/// when unset. A malformed value stops the process: unlocking on the full
+/// stored budget would silently defeat the run it was set for.
+#[cfg(debug_assertions)]
+fn attach_seeded(ctx: &DaemonContext, routes: &dyn RoutePort) -> bool {
+    use std::io::Write as _;
+    let value = std::env::var(CAPACITY_VAR).ok();
+    let capacity = match capacity_from(value.as_deref()) {
+        Ok(Some(capacity)) => capacity,
+        Ok(None) => return false,
+        Err(e) => {
+            let _ = writeln!(std::io::stderr().lock(), "route budget: {e}");
+            std::process::exit(2);
+        }
+    };
+    tracing::warn!(
+        capacity,
+        "debug build: route budget seeded from {CAPACITY_VAR}; the stored budget is neither read nor written"
+    );
+    let state = RouteBudget::seeded(capacity, ctx.clock.now_ms()).state();
+    let clock = Arc::clone(&ctx.clock);
+    let drop_spend: rekindle_records::port::SaveBudget = Arc::new(|_: RouteBudgetState| {});
+    routes.attach_budget(state, Arc::new(move || clock.now_ms()), drop_spend);
+    true
+}
+
+/// Release builds: the stored budget, always.
+#[cfg(not(debug_assertions))]
+fn attach_seeded(_: &DaemonContext, _: &dyn RoutePort) -> bool {
+    false
+}
+
+/// Attach the identity `owner`'s stored budget (a full one, saved, at its
+/// first unlock); `false` when no database is open.
+async fn attach_stored(ctx: &DaemonContext, routes: &dyn RoutePort, owner: &str) -> bool {
+    let Ok(db) = ctx.db.current() else {
+        return false;
     };
     let now = ctx.clock.now_ms();
     let o = owner.to_string();
@@ -61,6 +142,7 @@ pub(crate) async fn attach(ctx: &DaemonContext, scope: &Arc<SessionScope>, owner
             refilled_ms,
             week_start_ms,
             week_spent,
+            capacity: BUDGET_CAPACITY,
         }),
         Ok(None) => {
             let full = RouteBudget::full(now).state();
@@ -79,15 +161,7 @@ pub(crate) async fn attach(ctx: &DaemonContext, scope: &Arc<SessionScope>, owner
         }
         None => routes.attach_unreadable_budget(),
     }
-    let friends = super::adapters::friends::HostFriends::of(ctx);
-    let paused_routes = Arc::clone(&routes);
-    let paused_friends = friends.clone();
-    scope.spawn_with_token_or_drop("route pause events", move |stop| {
-        tell_paused(paused_routes, paused_friends, stop)
-    });
-    scope.spawn_with_token_or_drop("route death counts", move |stop| {
-        watch_deaths(routes, friends, stop)
-    });
+    true
 }
 
 /// Lock: the identity's budget is no longer the route owner's to spend.
@@ -164,5 +238,36 @@ async fn watch_deaths(
                 ));
             }
         }
+    }
+}
+
+#[cfg(all(test, debug_assertions))]
+mod tests {
+    use super::capacity_from;
+    use rekindle_route::budget::BUDGET_CAPACITY;
+
+    /// Unset seeds nothing: the stored budget is attached as before.
+    #[test]
+    fn route_budget_seed_unset_is_the_stored_budget() {
+        assert_eq!(capacity_from(None), Ok(None));
+    }
+
+    /// `0` seeds an empty bucket; the default capacity is the largest seed.
+    #[test]
+    fn route_budget_seed_names_its_tokens() {
+        assert_eq!(capacity_from(Some("0")), Ok(Some(0)));
+        assert_eq!(capacity_from(Some(" 3 ")), Ok(Some(3)));
+        let full = BUDGET_CAPACITY.to_string();
+        assert_eq!(capacity_from(Some(&full)), Ok(Some(BUDGET_CAPACITY)));
+    }
+
+    /// A malformed or widening value is refused, never read as unset.
+    #[test]
+    fn route_budget_seed_refuses_a_malformed_value() {
+        assert!(capacity_from(Some("")).is_err());
+        assert!(capacity_from(Some("-1")).is_err());
+        assert!(capacity_from(Some("two")).is_err());
+        let wider = (BUDGET_CAPACITY + 1).to_string();
+        assert!(capacity_from(Some(&wider)).is_err());
     }
 }

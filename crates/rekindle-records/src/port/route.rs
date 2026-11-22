@@ -40,6 +40,11 @@ pub struct RouteBudgetState {
     pub week_start_ms: u64,
     /// Tokens spent since `week_start_ms`.
     pub week_spent: u32,
+    /// The most tokens the bucket holds after a refill. Not persisted: a
+    /// stored bucket is read back at `rekindle_route::budget::BUDGET_CAPACITY`;
+    /// only a debug build's seeded attach (`REKINDLE_ROUTE_BUDGET_CAPACITY`,
+    /// rekindle-node `host::route_budget`) holds a smaller one.
+    pub capacity: u32,
 }
 
 /// Own-route deaths of one class since the node started (plan RV1).

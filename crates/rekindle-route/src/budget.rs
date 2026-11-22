@@ -80,6 +80,20 @@ impl RouteBudget {
             refilled_ms: now_ms,
             week_start_ms: now_ms,
             week_spent: 0,
+            capacity: BUDGET_CAPACITY,
+        })
+    }
+
+    /// A bucket of `capacity` tokens, full and capped there, at wall time
+    /// `now_ms`: the real-app suite's debug-build seed (rekindle-node
+    /// `host::route_budget`), never more than [`BUDGET_CAPACITY`] (the
+    /// caller refuses a larger value).
+    #[must_use]
+    pub fn seeded(capacity: u32, now_ms: u64) -> Self {
+        Self::from(RouteBudgetState {
+            tokens: capacity,
+            capacity,
+            ..Self::full(now_ms).state
         })
     }
 
@@ -98,7 +112,11 @@ impl RouteBudget {
             let add = u32::try_from(days)
                 .unwrap_or(u32::MAX)
                 .saturating_mul(BUDGET_DAILY_REFILL);
-            self.state.tokens = self.state.tokens.saturating_add(add).min(BUDGET_CAPACITY);
+            self.state.tokens = self
+                .state
+                .tokens
+                .saturating_add(add)
+                .min(self.state.capacity);
             self.state.refilled_ms = self.state.refilled_ms.saturating_add(days * day);
         }
         if now_ms.saturating_sub(self.state.week_start_ms) >= duration_ms(WEEK) {
@@ -224,6 +242,21 @@ mod tests {
         assert!(!budget.try_spend(HOUR_MS));
         assert!(!budget.try_spend(23 * HOUR_MS));
         assert!(budget.try_spend(24 * HOUR_MS), "a day refills it");
+    }
+
+    /// A seeded bucket starts with its capacity and a day's refill stops
+    /// there, never at the default capacity; a seed of 0 refuses the first
+    /// spend.
+    #[test]
+    fn a_seeded_bucket_holds_its_capacity() {
+        let mut budget = RouteBudget::seeded(2, 0);
+        assert!(budget.try_spend(HOUR_MS));
+        assert!(budget.try_spend(HOUR_MS));
+        assert!(!budget.try_spend(HOUR_MS));
+        assert!(budget.try_spend(48 * HOUR_MS), "a day refills it");
+        assert!(budget.try_spend(48 * HOUR_MS));
+        assert!(!budget.try_spend(48 * HOUR_MS), "but only to its capacity");
+        assert!(!RouteBudget::seeded(0, 0).try_spend(0));
     }
 
     /// A storm that spends every day's refill stops at the weekly cap.
