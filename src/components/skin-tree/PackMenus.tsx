@@ -8,9 +8,25 @@ import type { EngineMenu, MenuItem } from "../../ipc/commands/dto_skin_tree";
 /// names (lang 229/231).
 const TITLE: Partial<Record<EngineMenu, string>> = { file: "Rekindle", tool: "Tools", help: "Help", status: "Status" };
 
+/// The accessible name of a menu whose trigger is the pack's art alone (a
+/// logo or icon opening the window menu): a trigger with no words has no
+/// name otherwise (axe button-name). A titled menu is named by its title.
+const ART_NAME: Record<EngineMenu, string> = {
+  file: "Rekindle",
+  tool: "Tools",
+  help: "Help",
+  status: "Status",
+  sys: "Window menu",
+  cwActions: "Actions",
+  cwHelp: "Help",
+  gcSystem: "Window menu",
+  gcActions: "Actions",
+  gcHelp: "Help",
+};
+
 /** Whether a menu sits inside the pack's menu bar (one Kobalte `Menubar`,
  *  so hover moves between open menus). */
-const InBar = createContext(false);
+export const InBar = createContext(false);
 
 /** The pack's `MenuBar` node: the menus' container. */
 export const PackMenuBar: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (props) => (
@@ -53,7 +69,7 @@ interface MenuProps {
 
 const Menu: Component<MenuProps> = (props) => (
   <Menubar.Menu>
-    <Menubar.Trigger class="skin-menu" {...props.attrs}>
+    <Menubar.Trigger class="skin-menu" {...props.attrs} aria-label={TITLE[props.menu] ? undefined : ART_NAME[props.menu]}>
       {props.children}
       <Show when={TITLE[props.menu]}>{(t) => <span class="skin-menu-label">{t()}</span>}</Show>
     </Menubar.Trigger>

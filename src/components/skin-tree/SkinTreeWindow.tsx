@@ -7,7 +7,7 @@ import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../buddy-list/MenuBar";
 import NameField from "./NameField";
-import { PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
+import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
 import FilesView from "./FilesView";
@@ -201,7 +201,15 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     if (on === "rightClick" || on === "rightDown") e.preventDefault();
     for (const t of runs) tree.run(n().id, t.run);
   };
-  const pressable = (): boolean => press() !== undefined && !role().kind.startsWith("menu");
+  // A drag strip is the window's grip, not a control: its double-click
+  // maximize and right-click menu are pointer shortcuts for the pack's own
+  // buttons and menus. As a button it would hold those controls inside one
+  // named "Maximize" (axe nested-interactive, label-content-name-mismatch)
+  // and take a focus ring the size of the window.
+  const pressable = (): boolean => press() !== undefined && !role().kind.startsWith("menu") && role().kind !== "drag";
+  // Inside a menu bar every element is a menu title or presentational
+  // (ARIA menubar's required owned elements).
+  const inBar = useContext(InBar);
 
   const attrs: Record<string, unknown> = {
     get "data-skin-node"() {
@@ -267,7 +275,7 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const runItem = (item: MenuItem): void => tree.run(n().id, item.run);
 
   return (
-    <Switch fallback={<div {...attrs}>{children()}</div>}>
+    <Switch fallback={<div {...attrs} role={inBar ? "none" : undefined}>{children()}</div>}>
       <Match when={menuOf()}>
         {(menu) => (
           <PackMenu attrs={attrs} menu={menu()} items={tree.menus(menu())} run={runItem}>
