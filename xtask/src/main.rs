@@ -72,7 +72,7 @@
 //!     cargo xtask import-skin --format teamspeak3 --from <style dir> --builtin <id>
 //!                                      Import a legacy skin as a built-in
 //!                                      pack and its NOTICE (plan E7.7.3).
-//!         [--credit-source <url> --credit-quote <text>]
+//!         [--credit-source <url> --credit-quote <text>] [--source-correction <text>]...
 //!                                      Xfire's authorship stated outside the
 //!                                      skin's files (xfire-xml/xfire-ini).
 //!         [--dry-run]                  Import and report; write nothing.
@@ -246,6 +246,10 @@ enum Command {
         /// That page's words.
         #[arg(long, requires = "credit_source")]
         credit_quote: Option<String>,
+        /// A line our copy of the pack source corrects (file, line, before →
+        /// after, why), recorded in the NOTICE; repeatable.
+        #[arg(long)]
+        source_correction: Vec<String>,
         /// Import and report the outcome without writing the pack.
         #[arg(long)]
         dry_run: bool,
@@ -498,6 +502,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
             builtin,
             credit_source,
             credit_quote,
+            source_correction,
             dry_run,
         } => import_skin::import_skin(
             &root,
@@ -506,6 +511,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 from,
                 id: builtin,
                 credit: credit_source.as_deref().zip(credit_quote.as_deref()),
+                corrections: source_correction,
                 dry_run: *dry_run,
             },
         ),

@@ -7,7 +7,7 @@ Provenance
   LongName: xSLIMFIRE
   Name: xSLIMFIRE
   Version: 1
-  source tree BLAKE3: 861ab7eb8e7366b23dec4d7a23b278d67498498a16449ac6671cd9e9d1e54d0d
+  source tree BLAKE3: f9aea4aac3d0d7b03cbe22ab67dce228f1c7fffec7e98855a44f07a665db4fbc
 
 Licence
   The skin art and palette are third-party work published without a licence.
@@ -220,3 +220,6 @@ Contrast changes (minimal Oklab-lightness walk) (8 made)
   accent.text: #3184d6 -> #388bdd (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.13:1 -> passes, required 4.50:1)
   bg.primary: #0d0d0d -> #0d0d0c (1.4.3 .channel-voice-join-btn text.on-fill on status.online tint.fill over bg.dark: 4.49:1 -> passes, required 4.50:1)
   danger.text: #ff5955 -> #ff5d58 (1.4.3 .removal-banner danger.text on status.busy 30% over bg.dark: 4.40:1 -> passes, required 4.50:1)
+
+Source corrections (our copy of the pack source differs from the author's)
+  xSLIMFIREpopups.xml:5 MainInfoViewPopup X: "MainRightOuterEdge.RIGHT-15" -> "ResizeRight.RIGHT-15". xSLIMFIRE's main window has no MainRightOuterEdge tile (Xfire's own loader refuses a missing anchor tile: "XML Skin matching component (%ws) not found"); its right outer edge tile is ResizeRight (xSLIMFIREmainwindow.xml:38, JustX=RIGHT ResizeY=100). Plan SK2 lead decision 54.

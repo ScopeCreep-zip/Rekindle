@@ -113,7 +113,12 @@ fn lay(
         .attr_ci("Component")
         .and_then(|c| by_name.get(&c.to_ascii_lowercase()).copied());
     let min_width = limit_of(comp, "MinWidth").unwrap_or(0);
-    let width = limit_of(comp, "DefaultWidth").unwrap_or(min_width);
+    // `MinWidth` is the narrowest the window ever is, so a `DefaultWidth`
+    // below it never shows: XGlow's `[XGlowInfoSkin]` `DefaultWidth=100`
+    // `MinWidth=175` (`XGlowInfoSkin.ini:3,5`) is 175 wide, which puts its
+    // `Voice`/`Join` (`X=Bump.LEFT` `X=-55`, `X=Bump.RIGHT` `X=3`,
+    // `XGlowInfoSkin.ini:82-94`) either side of the centred `Bump`.
+    let width = limit_of(comp, "DefaultWidth").map_or(min_width, |w| w.max(min_width));
     if width == 0 {
         return Err(bad(format!("{name}: a popup with no width")));
     }

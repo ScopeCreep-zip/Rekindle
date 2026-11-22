@@ -270,7 +270,10 @@ fn named(k: &str, f: &Facts<'_>) -> Option<Role> {
         k if info_toggle(k) => Some(Role::Acts(R::Button, None)),
         // XGlow's popup `[Voice]` runs the pack's `Action.click=AppVoiceChat`
         // (`XGlowInfoSkin.ini:168-181`).
-        "menubutton" | "tclink" | "voice" => Some(Role::Acts(R::Button, None)),
+        // Combat's info popup `[JoinChatButton]` `Class=PushButton` runs the
+        // pack's own `Action.click=AppVoiceChat` (`CombatInfoSkin.ini:136-146`,
+        // `CombatGroupChatInfoSkin.ini:150-160`), outside any button row.
+        "menubutton" | "tclink" | "voice" | "joinchatbutton" => Some(Role::Acts(R::Button, None)),
         "systemmenu" => Some(acts(
             R::Button,
             SkinEvent::LeftDown,
@@ -349,7 +352,13 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         | "left" | "right" | "maintoprow" | "mainleftside" | "mainbackground" | "mainrightside"
         | "mainbottomrow" | "mainbackgroundcol" | "leftdetail" | "rightdetail" | "vent"
         | "divider" | "partnergraphic" | "partnerframe" | "agear" | "igear" | "sclogo" | "thex"
-        | "thexcover" => Some(R::Decor),
+        | "thexcover"
+        // Combat's info popup backdrop: `[BackDrop]` `Class=Tile`
+        // `Graphics.middle=middle.gif` behind the pane at `Z=-2`
+        // (`CombatInfoSkin.ini:23-30,95-98`; `CombatGroupChatInfoSkin.ini:92-94`
+        // `c_background.gif`): window art, its bitmap absent from the pack
+        // (spec A8: an undefined bitmap lays nothing).
+        | "backdrop" => Some(R::Decor),
         "tabheader" | "tabs" | "tabbuttonbar" => Some(R::TabStrip),
         "tabcontrol" if f.children.iter().any(|c| key(c) == "knob") => Some(R::TabStrip),
         // Symbiosis's one list for every tab (lead decision 9): the views,

@@ -4,7 +4,10 @@
 //! `crates/rekindle-skin/builtin/<id>.rkskin` with its `<id>.NOTICE`.
 //! The import is deterministic: the same tree writes the same bytes.
 //! `--credit-source`/`--credit-quote` give Xfire's authorship stated outside
-//! the files (plan E7.7.3c); `--dry-run` imports and reports, writing nothing.
+//! the files (plan E7.7.3c); `--source-correction` records, in the NOTICE, each
+//! line our copy of the pack source changes from the author's (plan SK2 lead
+//! decision 54: xSLIMFIRE's popup anchor); `--dry-run` imports and reports,
+//! writing nothing.
 
 use std::path::Path;
 
@@ -146,6 +149,9 @@ pub struct Request<'a> {
     pub id: &'a str,
     /// `(source URL, quote)`: Xfire's authorship stated outside the files.
     pub credit: Option<(&'a str, &'a str)>,
+    /// Each correction our copy of the source makes (file, line, before →
+    /// after, why), listed in the NOTICE.
+    pub corrections: &'a [String],
     pub dry_run: bool,
 }
 
@@ -203,7 +209,7 @@ pub fn import_skin(root: &Path, req: &Request<'_>) -> Result<()> {
     std::fs::write(&pack, &canonical.bytes)
         .with_context(|| format!("writing {}", pack.display()))?;
     let notice_path = dir.join(format!("{id}.NOTICE"));
-    std::fs::write(&notice_path, notice)
+    std::fs::write(&notice_path, with_corrections(notice, req.corrections))
         .with_context(|| format!("writing {}", notice_path.display()))?;
     println!(
         "    wrote {BUILTIN_DIR}/{id}.rkskin ({})",
@@ -213,9 +219,34 @@ pub fn import_skin(root: &Path, req: &Request<'_>) -> Result<()> {
     Ok(())
 }
 
+/// `notice` with a section listing `corrections`, when there are any.
+fn with_corrections(mut notice: String, corrections: &[String]) -> String {
+    if !corrections.is_empty() {
+        notice.push_str(
+            "\nSource corrections (our copy of the pack source differs from the author's)\n",
+        );
+        for c in corrections {
+            notice.push_str("  ");
+            notice.push_str(c.trim());
+            notice.push('\n');
+        }
+    }
+    notice
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_source_correction_is_listed_in_the_notice() {
+        assert_eq!(with_corrections("N\n".to_owned(), &[]), "N\n");
+        let got = with_corrections("N\n".to_owned(), &["a.xml:5: x -> y".to_owned()]);
+        assert!(
+            got.ends_with("differs from the author's)\n  a.xml:5: x -> y\n"),
+            "{got}"
+        );
+    }
 
     #[test]
     fn ids_are_checked() {

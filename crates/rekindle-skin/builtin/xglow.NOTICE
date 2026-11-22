@@ -56,17 +56,15 @@ Dropped
   other skin files (chat, group chat, in-game): 3
   text styles: 47
   window layout: 214
-  lines Windows reads no value from (5):
+  lines Windows reads no value from (4):
     version.ini: [Version] (line 2): no '=', no value
     Xglow.ini: [BuddyView] Text.color_selected (line 359)
     Xglow.ini: [BuddyView] Text.color_header (line 363)
-    Xglow.ini: [ExecuteDownload] Action.click (line 654)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
-  files not read (117):
+  files not read (99):
     ChatSkin.ini
     InGameMainSkin.ini
     InGameSkin.ini
-    XGlowInfoSkin.ini
     buttons/Thumbs.db
     buttons/chat-down.gif
     buttons/downloads-hover.gif
@@ -114,25 +112,8 @@ Dropped
     chatskin/top-bump.gif
     chatskin/viewinfo.gif
     infoskin/Thumbs.db
-    infoskin/bb.gif
-    infoskin/blc.gif
-    infoskin/brc.gif
-    infoskin/bump.gif
-    infoskin/gripper.gif
-    infoskin/join-down.gif
-    infoskin/join-hover.gif
-    infoskin/join.gif
-    infoskin/ml.gif
-    infoskin/mm.gif
-    infoskin/mr.gif
     infoskin/nojoin.gif
     infoskin/novoice.gif
-    infoskin/ulc.gif
-    infoskin/urc.gif
-    infoskin/ut.gif
-    infoskin/voice-down.gif
-    infoskin/voice-hover.gif
-    infoskin/voice.gif
     ingame/Thumbs.db
     ingame/bottom_edge.gif
     ingame/bottomleft_edge.gif
