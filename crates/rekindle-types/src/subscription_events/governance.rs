@@ -183,6 +183,19 @@ pub enum GovernanceEvent {
         reason: crate::governance::SuccessorReason,
         creators: Vec<String>,
     },
+
+    /// A transfer's link request asks us (lead decision (46), plan E3.2
+    /// S7s.4c): `recipient`, the offer's recipient, asks this member, a
+    /// creator of the offer's set, to link into its successor
+    /// `new_anchor`. Announced once per request while it is unanswered and
+    /// its offer stands; answered with intent `AnswerSuccessorLink`.
+    /// `request` is the request op's hash and `recipient` a pseudonym, hex.
+    SuccessorLinkRequested {
+        community: String,
+        request: String,
+        recipient: String,
+        new_anchor: String,
+    },
 }
 
 /// Why a governance op is quarantined
@@ -248,7 +261,8 @@ impl GovernanceEvent {
             | Self::GovernanceRebuilt { community }
             | Self::GovernanceOpQuarantined { community, .. }
             | Self::CheckpointSnapshotMismatch { community, .. }
-            | Self::CommunitySuccessorOffered { community, .. } => community,
+            | Self::CommunitySuccessorOffered { community, .. }
+            | Self::SuccessorLinkRequested { community, .. } => community,
         }
     }
 }

@@ -27,6 +27,8 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
+use crate::event::GovernanceRuntimeEvent;
+use crate::successor::SuccessorJudgements;
 
 /// The new creator set of `signer`'s transfer to `to`: the creators
 /// without the signer, with the recipient (old pseudonyms).
@@ -274,9 +276,11 @@ pub fn round_for<D: GovernanceRuntimeDeps>(
     Ok((transfer_round(&state, &me)?, me))
 }
 
-/// Publish our acceptance of `round`'s offer in `community_id`: the offer
-/// and the link ops (`link_ops`) are cited among its deps, so every
-/// reader's `successor_gate` finds the offer and the whole transfer is
+/// Publish our acceptance of `round`'s offer in `community_id`: the offer,
+/// our link request and its link ops (`link_ops`) are cited among its
+/// deps, so every
+/// reader's `successor_gate` finds the offer and the link round
+/// (`link_round::acceptance_links_cited`): the whole transfer is
 /// verifiable from the op log (lead decision (46)).
 ///
 /// # Errors
@@ -381,6 +385,71 @@ pub fn links_missing(
             .map_or_else(|| round.others.iter().cloned().collect(), |c| c.missing),
         None => round.others.iter().cloned().collect(),
     })
+}
+
+/// Each link request asking `me` that it has not answered
+/// ([`requests_asking`]), as the event a window shows (lead decision (46):
+/// the backend tells a co-creator a request waits).
+#[must_use]
+pub fn link_requests_asking(
+    community_id: &str,
+    state: &GovernanceState,
+    me: &PseudonymKey,
+) -> Vec<GovernanceRuntimeEvent> {
+    (requests_asking(state, me).into_iter())
+        .filter_map(|(request, r)| {
+            let recipient = state.successor_links.get(&request)?.author.clone();
+            Some(GovernanceRuntimeEvent::SuccessorLinkRequested {
+                community_id: community_id.to_owned(),
+                request,
+                recipient,
+                new_anchor: r.new_anchor,
+            })
+        })
+        .collect()
+}
+
+/// The [`link_requests_asking`] not yet announced this session, each
+/// marked announced in `judgements`.
+#[must_use]
+pub fn new_link_requests(
+    community_id: &str,
+    state: &GovernanceState,
+    me: &PseudonymKey,
+    judgements: &SuccessorJudgements,
+) -> Vec<GovernanceRuntimeEvent> {
+    (link_requests_asking(community_id, state, me).into_iter())
+        .filter(|e| match e {
+            GovernanceRuntimeEvent::SuccessorLinkRequested { request, .. } => {
+                judgements.first_ask(*request)
+            }
+            _ => false,
+        })
+        .collect()
+}
+
+/// Publish [`new_link_requests`] for our pseudonym in `community_id`
+/// after a merge; a community we hold no pseudonym in asks us nothing.
+pub fn announce_link_requests<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    state: &GovernanceState,
+) {
+    let me = match own_pseudonym(deps, community_id) {
+        Ok(me) => me,
+        Err(error) => {
+            tracing::debug!(
+                community = community_id,
+                ?error,
+                "no pseudonym: no link requests"
+            );
+            return;
+        }
+    };
+    let judgements = deps.successor_judgements(community_id);
+    for event in new_link_requests(community_id, state, &me, &judgements) {
+        deps.emit_event(event);
+    }
 }
 
 /// The link requests asking `me` that it has not answered, each the

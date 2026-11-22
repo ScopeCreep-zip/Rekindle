@@ -195,6 +195,17 @@ impl HostGovernance {
                 reason: *reason,
                 creators: creators.iter().map(|c| hex::encode(c.0)).collect(),
             }),
+            GovernanceRuntimeEvent::SuccessorLinkRequested {
+                community_id,
+                request,
+                recipient,
+                new_anchor,
+            } => governance(GovernanceEvent::SuccessorLinkRequested {
+                community: community_id.clone(),
+                request: hex::encode(request.0),
+                recipient: hex::encode(recipient.0),
+                new_anchor: new_anchor.clone(),
+            }),
             GovernanceRuntimeEvent::GovernanceRebuilt { .. }
             | GovernanceRuntimeEvent::BootstrapResponseBuilt { .. }
             | GovernanceRuntimeEvent::GovernanceEntryApplied { .. } => None,

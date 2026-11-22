@@ -12,7 +12,9 @@ use rekindle_types::governance::{AdmissionMode, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use super::resume::{Ctx, Dep, NotOnTop, RestRound, RestSet};
-use crate::link_round::{answers_request, cited_offer, fits_offer, LinkRoundBody};
+use crate::link_round::{
+    acceptance_links_cited, answers_request, cited_offer, fits_offer, LinkRoundBody,
+};
 use crate::power::{removal_target, target_seq_frontier};
 
 /// What the gates decided from one pass.
@@ -468,7 +470,8 @@ fn live_uses(state: &crate::state::GovernanceState, invite_id: [u8; 16]) -> u32 
 /// ops); a later offer or withdrawal of its author there supersedes it, as
 /// every cut op is in a `rest` op's past (a′). For an op beside the cut,
 /// whose past may hold only part of the cut, such a later one is
-/// undecidable.
+/// undecidable. The link round an acceptance cites is read from
+/// `round.state`, the cut's `successor_links` with the rest's applied.
 fn successor_gate(
     ctx: &Ctx<'_>,
     set: &RestSet<'_>,
@@ -512,7 +515,8 @@ fn successor_gate(
         } else {
             false
         };
-        invalid[o] |= !in_deps || !holds;
+        let linked = acceptance_links_cited(op.author(), op.body(), &op.op().deps, &round.state);
+        invalid[o] |= !in_deps || !holds || !linked;
     }
     Ok(())
 }

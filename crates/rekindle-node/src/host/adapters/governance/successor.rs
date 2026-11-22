@@ -7,7 +7,9 @@
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::{successor, successor_invites};
-use rekindle_types::dto::community::{CommunityCreated, CommunityJoined, SuccessorOffer};
+use rekindle_types::dto::community::{
+    CommunityCreated, CommunityJoined, CommunitySuccessors, SuccessorLinkRequested, SuccessorOffer,
+};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::invite::InviteLink;
 
@@ -125,5 +127,45 @@ impl HostGovernance {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The link requests asking us in `anchor` now: unanswered, their
+    /// offer standing (lead decision (46), the snapshot of
+    /// `GovernanceEvent::SuccessorLinkRequested`).
+    pub(crate) fn successor_link_requests(&self, anchor: &str) -> Vec<SuccessorLinkRequested> {
+        let (Some(state), Some(me)) = (
+            self.governance_state(anchor),
+            (self.community_membership(anchor))
+                .and_then(|m| m.my_pseudonym_hex)
+                .map(|hex| PseudonymKey::from_hex_lossy(&hex)),
+        ) else {
+            return Vec::new();
+        };
+        (rekindle_governance_runtime::transfer::link_requests_asking(anchor, &state, &me))
+            .into_iter()
+            .filter_map(|event| match event {
+                GovernanceRuntimeEvent::SuccessorLinkRequested {
+                    community_id,
+                    request,
+                    recipient,
+                    new_anchor,
+                } => Some(SuccessorLinkRequested {
+                    community: community_id,
+                    request: hex::encode(request.0),
+                    recipient: recipient.to_hex(),
+                    new_anchor,
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `anchor`'s successor snapshot (lead decision (33)): the offers
+    /// this session and the link requests asking us.
+    pub(crate) fn successor_snapshot(&self, anchor: &str) -> CommunitySuccessors {
+        CommunitySuccessors {
+            offers: self.successor_offers(anchor),
+            link_requests: self.successor_link_requests(anchor),
+        }
     }
 }

@@ -10,8 +10,8 @@
 use serde::{Deserialize, Serialize};
 
 use rekindle_types::governance::{
-    CommunitySuccessor, GovernanceEntry, OpHash, OpRef, SuccessorLink, SuccessorLinkRequest,
-    SuccessorShape,
+    CommunitySuccessor, CreatorLink, GovernanceEntry, OpHash, OpRef, SuccessorLink,
+    SuccessorLinkRequest, SuccessorShape,
 };
 use rekindle_types::id::PseudonymKey;
 
@@ -86,6 +86,52 @@ pub fn answers_request(
     request: &SuccessorLinkRequest,
 ) -> bool {
     link.link.old == *writer && request.asked.contains(writer)
+}
+
+/// Whether acceptance `acc`, by `writer`, cites among its `deps` the
+/// transfer's link round as kept in `state` (lead decision (46): the
+/// transfer verifiable from the op log): an applied link request by
+/// `writer` for the offer it accepts, naming its successor, and for every
+/// other creator its links name, that creator's kept link answering that
+/// request with exactly the link the acceptance carries. A sole creator's
+/// acceptance carries only its own link and cites none; a body that is
+/// not an acceptance is not judged here.
+#[must_use]
+pub fn acceptance_links_cited(
+    writer: &PseudonymKey,
+    body: &GovernanceEntry,
+    deps: &[OpRef],
+    state: &GovernanceState,
+) -> bool {
+    let GovernanceEntry::CommunitySuccessor(acc) = body else {
+        return true;
+    };
+    let Some(offer) = &acc.accepts else {
+        return true;
+    };
+    let others: Vec<&CreatorLink> = acc.links.iter().filter(|l| l.old != *writer).collect();
+    if others.is_empty() {
+        return true;
+    }
+    let row = |d: &OpRef| state.successor_links.get(&d.op_hash);
+    let linked = |request: &OpHash, l: &CreatorLink| {
+        deps.iter().any(|e| {
+            row(e).is_some_and(|k| {
+                k.author == l.old
+                    && matches!(&k.body, LinkRoundBody::Link(link)
+                        if link.request.op_hash == *request && link.link == *l)
+            })
+        })
+    };
+    deps.iter().any(|d| {
+        row(d).is_some_and(|q| {
+            q.author == *writer
+                && matches!(&q.body, LinkRoundBody::Request(r)
+                    if r.offer.op_hash == offer.op_hash
+                        && acc.new_anchor.as_deref() == Some(r.new_anchor.as_str())
+                        && others.iter().all(|l| r.asked.contains(&l.old) && linked(&d.op_hash, l)))
+        })
+    })
 }
 
 /// Keep an applied link-round op. A creator's first link to a request by

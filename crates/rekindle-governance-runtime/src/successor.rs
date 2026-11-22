@@ -40,6 +40,8 @@ pub struct SuccessorJudgements {
     /// The offers among them, for a window opened after the event (lead
     /// decision (33)'s snapshot).
     offered: parking_lot::Mutex<BTreeMap<OpHash, GovernanceRuntimeEvent>>,
+    /// The link requests asking us already announced (lead decision (46)).
+    asked: parking_lot::Mutex<BTreeSet<OpHash>>,
 }
 
 impl SuccessorJudgements {
@@ -53,6 +55,11 @@ impl SuccessorJudgements {
 
     fn offer(&self, hash: OpHash, offer: GovernanceRuntimeEvent) {
         self.offered.lock().insert(hash, offer);
+    }
+
+    /// Mark the link request `hash` announced: whether it was not yet.
+    pub fn first_ask(&self, hash: OpHash) -> bool {
+        self.asked.lock().insert(hash)
     }
 
     /// Every successor offered this session, each a
@@ -167,6 +174,7 @@ pub async fn announce<D: GovernanceRuntimeDeps>(
     for offer in judge(community_id, state, &judgements, read).await {
         deps.emit_event(offer);
     }
+    crate::transfer::announce_link_requests(deps, community_id, state);
 }
 
 /// Re-create `community_id` under a new anchor whose cert names it as

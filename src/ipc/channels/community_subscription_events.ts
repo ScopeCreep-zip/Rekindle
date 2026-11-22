@@ -255,6 +255,19 @@ export type GovernanceEvent =
         reason: "recreate" | "transfer";
         creators: string[];
       };
+    }
+  | {
+      /** A transfer's link request asks us (lead decision (46)):
+       *  `recipient`, the offer's recipient, asks this creator to link into
+       *  its successor `newAnchor`. Announced once per request while it is
+       *  unanswered and its offer stands; answered with
+       *  `AnswerSuccessorLink`. `request` and `recipient` are hex. */
+      successorLinkRequested: {
+        community: string;
+        request: string;
+        recipient: string;
+        newAnchor: string;
+      };
     };
 
 /** Why the backend set a governance op aside, never applied

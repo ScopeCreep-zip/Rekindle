@@ -67,7 +67,8 @@ pub(crate) async fn handle_follow_successor(
     IpcResponse::ok(&joined)
 }
 
-/// The successors of `anchor` offered this session.
+/// `anchor`'s successor snapshot: the successors offered this session and
+/// the link requests asking us (lead decisions (33), (46)).
 pub(crate) fn handle_successors(
     ctx: &DaemonContext,
     state: DaemonState,
@@ -77,7 +78,7 @@ pub(crate) fn handle_successors(
         return state_error(state, "query");
     }
     match ctx.resolve_community(anchor) {
-        Ok(m) => IpcResponse::ok(&adapter(ctx).successor_offers(&m.anchor)),
+        Ok(m) => IpcResponse::ok(&adapter(ctx).successor_snapshot(&m.anchor)),
         Err(e) => e,
     }
 }

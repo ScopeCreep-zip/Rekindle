@@ -4,7 +4,8 @@
 //! matching, and never of an offer its signer superseded.
 
 use rekindle_types::governance::{
-    AdmissionMode, CommunitySuccessor, CreatorLink, GovernanceEntry, SuccessorReason,
+    AdmissionMode, CommunitySuccessor, CreatorLink, GovernanceEntry, SuccessorLink,
+    SuccessorLinkRequest, SuccessorReason,
 };
 
 use crate::fixture::{cert, meta, op};
@@ -75,6 +76,45 @@ fn acceptance(offer: &VerifiedOp, set: &[u8], links: &[u8]) -> GovernanceEntry {
     })
 }
 
+/// `pk(4)`'s link request (its seq 1) for `o1` asking `pk(1)`, and
+/// `pk(1)`'s link answering it (its seq 8, after `m`) with `new` as its
+/// new pseudonym; `acceptance` carries `new == pk(101)` (lead decision
+/// (46)).
+fn link_round(
+    o1: &VerifiedOp,
+    d0: &VerifiedOp,
+    m: &VerifiedOp,
+    new: u8,
+) -> (VerifiedOp, VerifiedOp) {
+    let req = op(
+        &pk(4),
+        1,
+        &[o1, d0],
+        57,
+        GovernanceEntry::SuccessorLinkRequest(SuccessorLinkRequest {
+            offer: o1.op_ref("VLD0:fixture"),
+            new_anchor: "VLD0:new".into(),
+            asked: vec![pk(1)],
+        }),
+    );
+    let link = op(
+        &pk(1),
+        8,
+        &[m, &req],
+        58,
+        GovernanceEntry::SuccessorLink(SuccessorLink {
+            request: req.op_ref("VLD0:fixture"),
+            link: CreatorLink {
+                old: pk(1),
+                new: pk(new),
+                sig: vec![0; 64],
+            },
+            creator_sig: vec![0; 64],
+        }),
+    );
+    (req, link)
+}
+
 /// Whether `o` applied in the merge of `ops`, and is in `successors`.
 fn kept(ops: &[VerifiedOp], o: &VerifiedOp) -> bool {
     let out = merge_outcome(&cert(&pk(1), AdmissionMode::Open), ops);
@@ -132,15 +172,22 @@ fn an_acceptance_without_the_offer_in_its_deps_is_refused() {
     let (d0, c5) = (at(&ops, 4).clone(), at(&ops, 8).clone());
     let o1 = op(&pk(1), 6, &[&c5], 60, offer(4, &[4, 1]));
     let m = op(&pk(1), 7, &[&o1], 61, meta("after"));
-    let past_only = op(&pk(4), 1, &[&m, &d0], 62, acceptance(&o1, &[4, 1], &[1, 4]));
+    let (req, link) = link_round(&o1, &d0, &m, 101);
+    let past_only = op(
+        &pk(4),
+        2,
+        &[&m, &req, &link],
+        62,
+        acceptance(&o1, &[4, 1], &[1, 4]),
+    );
     let in_deps = op(
         &pk(4),
-        1,
-        &[&m, &o1, &d0],
+        2,
+        &[&m, &o1, &req, &link],
         63,
         acceptance(&o1, &[4, 1], &[1, 4]),
     );
-    ops.extend([o1, m]);
+    ops.extend([o1, m, req, link]);
     let mut all = ops.clone();
     all.push(past_only.clone());
     assert!(!kept(&all, &past_only), "the offer only in its causal past");
@@ -158,6 +205,8 @@ fn an_acceptance_from_another_member_or_with_another_creator_set_is_refused() {
         at(&ops, 8).clone(),
     );
     let o1 = op(&pk(1), 6, &[&c5], 70, offer(4, &[4, 1]));
+    let m = op(&pk(1), 7, &[&o1], 69, meta("after"));
+    let (req, link) = link_round(&o1, &d0, &m, 101);
     let cases = [
         // pk(3) is not the offer's transferTo.
         (
@@ -186,19 +235,20 @@ fn an_acceptance_from_another_member_or_with_another_creator_set_is_refused() {
             op(&pk(4), 1, &[&o1, &d0], 73, acceptance(&o1, &[4], &[4])),
             false,
         ),
-        // A set without transferTo, hashing to the offer's.
+        // A set without transferTo, hashing to the offer's, citing its
+        // link round.
         (
             op(
                 &pk(4),
-                1,
-                &[&o1, &d0],
+                2,
+                &[&o1, &req, &link],
                 74,
                 acceptance(&o1, &[4, 1], &[4, 1]),
             ),
             true,
         ),
     ];
-    ops.push(o1);
+    ops.extend([o1, m, req, link]);
     for (acc, stands) in cases {
         let mut all = ops.clone();
         all.push(acc.clone());
@@ -249,4 +299,80 @@ fn a_resumed_merge_judges_an_acceptance_of_a_cut_offer_alike() {
     all.extend([o1.clone(), open.clone()]);
     let out = resume(&cert, &all, &[&o1]).expect("on top");
     assert!(out.state.successors.contains_key(&open.hash()));
+}
+
+/// Lead decision (46): a multi-creator acceptance stands only when its
+/// deps cite its link request and, for every other creator it links, that
+/// creator's link carrying exactly the acceptance's link.
+#[test]
+fn an_acceptance_not_citing_every_creators_link_is_refused() {
+    let mut ops = community();
+    let (d0, c5) = (at(&ops, 4).clone(), at(&ops, 8).clone());
+    let o1 = op(&pk(1), 6, &[&c5], 100, offer(4, &[4, 1]));
+    let m = op(&pk(1), 7, &[&o1], 101, meta("after"));
+    let (req, link) = link_round(&o1, &d0, &m, 101);
+    let (_, other) = link_round(&o1, &d0, &m, 102);
+    let accept =
+        |deps: &[&VerifiedOp], at: u64| op(&pk(4), 2, deps, at, acceptance(&o1, &[4, 1], &[4, 1]));
+    let cases = [
+        (accept(&[&o1, &req, &m], 102), false, "no link cited"),
+        (accept(&[&o1, &link], 103), false, "the request not cited"),
+        (accept(&[&o1, &req, &other], 104), false, "another link"),
+        (accept(&[&o1, &req, &link], 105), true, "the whole round"),
+    ];
+    ops.extend([o1.clone(), m.clone(), req.clone(), link.clone()]);
+    for (acc, stands, why) in cases {
+        let mut all = ops.clone();
+        if !stands && why == "another link" {
+            // `other` replaces `link` as pk(1)'s seq 8.
+            all.retain(|o| o.hash() != link.hash());
+            all.push(other.clone());
+        }
+        all.push(acc.clone());
+        assert_eq!(kept(&all, &acc), stands, "{why}");
+    }
+}
+
+/// The resumed merge reads the link round from the cut's
+/// `successor_links` and judges a rest acceptance as the full merge does.
+#[test]
+fn a_resumed_merge_judges_an_acceptance_citing_cut_links_alike() {
+    let ops = community();
+    let (d0, c5) = (at(&ops, 4).clone(), at(&ops, 8).clone());
+    let o1 = op(&pk(1), 6, &[&c5], 110, offer(4, &[4, 1]));
+    let m = op(&pk(1), 7, &[&o1], 111, meta("after"));
+    let (req, link) = link_round(&o1, &d0, &m, 101);
+    let cited = op(
+        &pk(4),
+        2,
+        &[&o1, &req, &link],
+        112,
+        acceptance(&o1, &[4, 1], &[4, 1]),
+    );
+    let GovernanceEntry::CommunitySuccessor(mut wrong) = acceptance(&o1, &[4, 1], &[4, 1]) else {
+        unreachable!("an acceptance")
+    };
+    wrong.links[1].new = pk(103);
+    // pk(1)'s link in the acceptance is not the one it wrote.
+    let mismatched = op(
+        &pk(4),
+        2,
+        &[&o1, &req, &link],
+        113,
+        GovernanceEntry::CommunitySuccessor(wrong),
+    );
+    let cert = cert(&pk(1), AdmissionMode::Open);
+    for (acc, stands) in [(cited, true), (mismatched, false)] {
+        let mut all = ops.clone();
+        all.extend([
+            o1.clone(),
+            m.clone(),
+            req.clone(),
+            link.clone(),
+            acc.clone(),
+        ]);
+        let out = resume(&cert, &all, &[&link]).expect("on top");
+        assert_eq!(out.state.successors.contains_key(&acc.hash()), stands);
+        assert_eq!(kept(&all, &acc), stands, "the full merge alike");
+    }
 }

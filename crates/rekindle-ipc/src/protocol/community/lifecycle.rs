@@ -128,8 +128,10 @@ pub enum LifecycleRequest {
     /// are re-checked first and `anchor` is kept (plan E3.2 S7s.4).
     CommunityFollowSuccessor { anchor: String, new_anchor: String },
 
-    /// The successors of `anchor` offered this session (lead decision
-    /// (33)'s snapshot of `CommunitySuccessorOffered`).
+    /// `anchor`'s successor snapshot (`dto::community::CommunitySuccessors`):
+    /// the successors offered this session (lead decision (33)'s snapshot of
+    /// `CommunitySuccessorOffered`) and the link requests asking us (of
+    /// `SuccessorLinkRequested`, decision (46)).
     CommunitySuccessors { anchor: String },
 
     /// Create a community invite.

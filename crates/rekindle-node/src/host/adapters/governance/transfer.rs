@@ -20,7 +20,7 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::transfer::{self, TransferRound};
 use rekindle_governance_runtime::{successor_invites, CoCreatorAcceptance};
 use rekindle_types::dto::community::CommunityCreated;
-use rekindle_types::governance::{CreatorLink, OpHash, SuccessorLink};
+use rekindle_types::governance::{CreatorLink, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use super::co_create::PendingCreation;
@@ -151,7 +151,7 @@ impl HostGovernance {
         me_old: &PseudonymKey,
     ) -> Result<CommunityCreated, String> {
         let links = if round.others.is_empty() {
-            Vec::new()
+            None
         } else {
             let state = (self.governance_state(old_anchor))
                 .ok_or("the community's governance is not loaded")?;
@@ -171,7 +171,7 @@ impl HostGovernance {
                         .collect(),
                 });
             }
-            collected.links
+            Some(collected)
         };
         let pending = (self.ctx.pending_creations.0.lock().remove(new_anchor))
             .ok_or("the reserved successor is gone")?;
@@ -187,7 +187,7 @@ impl HostGovernance {
         &self,
         pending: PendingCreation,
         transfer: &PendingTransfer,
-        collected: Vec<(OpHash, SuccessorLink)>,
+        collected: Option<transfer::CollectedLinks>,
     ) -> Result<CommunityCreated, String> {
         let PendingCreation {
             reserved,
@@ -200,6 +200,13 @@ impl HostGovernance {
         let old = transfer.old_anchor.as_str();
         let mut links = vec![self.own_link(old, &new_anchor, &transfer.me_old)?];
         let (mut accepts, mut link_ops) = (Vec::new(), Vec::new());
+        // The acceptance cites our request and each link answering it, so
+        // the transfer is verifiable from the op log (lead decision (46),
+        // `link_round::acceptance_links_cited`).
+        let collected = collected.map_or_else(Vec::new, |c| {
+            link_ops.push(c.request);
+            c.links
+        });
         for (op, l) in collected {
             let Ok(signature) = <[u8; 64]>::try_from(l.creator_sig.as_slice()) else {
                 continue;

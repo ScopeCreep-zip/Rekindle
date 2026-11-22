@@ -73,6 +73,28 @@ pub struct SuccessorOffer {
     pub creators: Vec<String>,
 }
 
+/// A transfer's link request asking this member (lead decision (46)): the
+/// snapshot of `GovernanceEvent::SuccessorLinkRequested` a window opened
+/// after the event reads. `request` is the op's hash and `recipient` the
+/// offer's recipient, hex.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessorLinkRequested {
+    pub community: String,
+    pub request: String,
+    pub recipient: String,
+    pub new_anchor: String,
+}
+
+/// A community's successor snapshot (lead decision (33)): the successors
+/// offered this session and the link requests asking us now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunitySuccessors {
+    pub offers: Vec<SuccessorOffer>,
+    pub link_requests: Vec<SuccessorLinkRequested>,
+}
+
 /// A community this identity just joined from an invite (plan E3.1 D2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -163,3 +163,59 @@ fn a_transfer_waits_for_every_co_creator_link() {
     let outsider = [link(2, &pk(20), NEW), link(4, &pk(40), NEW)];
     assert!(check_links(OLD, NEW, &round, &pk(2), &outsider).is_err());
 }
+
+fn op_ref(hash: OpHash, author: u8) -> OpRef {
+    OpRef {
+        op_hash: hash,
+        author: pk(author),
+        author_record: format!("VLD0:m{author}"),
+        author_seq: 1,
+    }
+}
+
+/// Lead decision (46), the lead's (b): a co-creator is told by a backend
+/// event, once per session, that a link request asks it; once answered
+/// the snapshot no longer lists it.
+#[test]
+fn a_link_request_asking_us_is_announced_once_until_answered() {
+    let mut s = state();
+    let e = offer_entry(&s, &pk(1), &pk(2)).unwrap();
+    apply(&mut s, 1, 5, e);
+    let request = GovernanceEntry::SuccessorLinkRequest(SuccessorLinkRequest {
+        offer: op_ref(OpHash([105; 32]), 1),
+        new_anchor: NEW.into(),
+        asked: vec![pk(3)],
+    });
+    let req = OpHash([60; 32]);
+    let at = |lamport, hash| OpStamp { lamport, hash };
+    rekindle_governance::link_round::apply(&pk(2), &request, at(6, req), &mut s);
+
+    let judgements = SuccessorJudgements::default();
+    let first = new_link_requests("c", &s, &pk(3), &judgements);
+    assert_eq!(first.len(), 1);
+    assert!(
+        matches!(&first[0], GovernanceRuntimeEvent::SuccessorLinkRequested {
+        community_id, request, recipient, new_anchor
+    } if community_id == "c" && *request == req && *recipient == pk(2) && new_anchor == NEW)
+    );
+    assert!(
+        new_link_requests("c", &s, &pk(3), &judgements).is_empty(),
+        "once per request per session"
+    );
+    let fresh = SuccessorJudgements::default();
+    assert!(
+        new_link_requests("c", &s, &pk(4), &fresh).is_empty(),
+        "not asked"
+    );
+
+    let answer = GovernanceEntry::SuccessorLink(SuccessorLink {
+        request: op_ref(req, 2),
+        link: link(3, &pk(30), NEW),
+        creator_sig: vec![0; 64],
+    });
+    rekindle_governance::link_round::apply(&pk(3), &answer, at(7, OpHash([61; 32])), &mut s);
+    assert!(
+        link_requests_asking("c", &s, &pk(3)).is_empty(),
+        "answered: the snapshot drops it"
+    );
+}

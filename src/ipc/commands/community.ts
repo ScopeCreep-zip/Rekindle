@@ -24,6 +24,22 @@ export interface SuccessorOffer {
   creators: string[];
 }
 
+/** `SuccessorLinkRequested` (rekindle-types `dto::community`): a
+ *  transfer's link request asking us, as `successorLinkRequested` carries it. */
+export interface SuccessorLinkRequested {
+  community: string;
+  request: string;
+  recipient: string;
+  newAnchor: string;
+}
+
+/** `CommunitySuccessors` (rekindle-types `dto::community`): the successor
+ *  snapshot, offers this session and link requests asking us now. */
+export interface CommunitySuccessors {
+  offers: SuccessorOffer[];
+  linkRequests: SuccessorLinkRequested[];
+}
+
 /** `CommunityCreated` (rekindle-types `dto::community`). */
 export interface CommunityCreated {
   anchor: string;
@@ -157,10 +173,11 @@ export const communityCommands = {
   /// invites record; the old community is kept.
   followCommunitySuccessor: (communityId: string, newAnchor: string) =>
     hostInvoke<{ anchor: string; name: string }>("follow_community_successor", { communityId, newAnchor }),
-  /// The successors offered this session (lead decision (33)'s snapshot,
-  /// read after the event stream is live).
+  /// The successor snapshot (lead decisions (33), (46)): the offers this
+  /// session and the link requests asking us, read after the event stream
+  /// is live.
   getCommunitySuccessors: (communityId: string) =>
-    hostInvoke<SuccessorOffer[]>("get_community_successors", { communityId }),
+    hostInvoke<CommunitySuccessors>("get_community_successors", { communityId }),
   removeCoCreator: (communityId: string, identity: string) =>
     hostInvoke<void>("remove_co_creator", { communityId, identity }),
   cancelCommunityCreate: (communityId: string) =>

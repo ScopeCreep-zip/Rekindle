@@ -13,7 +13,7 @@ use rekindle_ipc::protocol::IpcRequest;
 use rekindle_ipc::protocol::{CommunityRequest, LifecycleRequest};
 use rekindle_netsim::Netsim;
 use rekindle_types::dto::community::{CoCreationSnapshot, CoCreatorState, HeldCreatorInvite};
-use rekindle_types::subscription_events::{FriendEvent, GovernanceEvent};
+use rekindle_types::subscription_events::{FriendEvent, GovernanceEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, start, Events, SimNode, PASSPHRASE};
 use crate::pair::{befriend, key, LIMIT};
@@ -460,26 +460,41 @@ async fn a_two_creator_transfer_links_the_co_creator_through_the_community() {
             anchor: anchor.clone(),
         })
     };
-    let bob_old = rekindle_types::id::PseudonymKey::from_hex_lossy(&ours(bob, &anchor));
     let first = eventually(&sim, LIMIT, || async { cat.call(accept()).await.is_ok() }).await;
     assert!(first, "Cat's first accept asks the co-creator");
-    let request = eventually(&sim, LIMIT, || async {
-        (bob.host.governance().governance_state(&anchor)).is_some_and(|s| {
-            !rekindle_governance_runtime::transfer::requests_asking(&s, &bob_old).is_empty()
+    // Bob is told by a backend event that the request waits (the lead's
+    // (b) on decision (46)), not by reading the community's state.
+    let asked = std::cell::RefCell::new(String::new());
+    let told = eventually(&sim, LIMIT, || async {
+        bob_seen.any(|e| match e {
+            SubscriptionEvent::Governance(GovernanceEvent::SuccessorLinkRequested {
+                community,
+                request,
+                recipient,
+                ..
+            }) if *community == anchor && *recipient == cat_old => {
+                *asked.borrow_mut() = request.clone();
+                true
+            }
+            _ => false,
         })
     })
     .await;
-    assert!(request, "Bob sees the link request in the community");
-    let state = bob
-        .host
-        .governance()
-        .governance_state(&anchor)
-        .expect("state");
-    let (hash, _) =
-        rekindle_governance_runtime::transfer::requests_asking(&state, &bob_old).remove(0);
+    assert!(told, "Bob is told Cat's link request waits");
+    let request = asked.into_inner();
+    let snapshot = bob
+        .ok(lifecycle(LifecycleRequest::CommunitySuccessors {
+            anchor: anchor.clone(),
+        }))
+        .await;
+    assert_eq!(
+        snapshot["linkRequests"][0]["request"].as_str(),
+        Some(request.as_str()),
+        "the successor snapshot lists it for a window opened later"
+    );
     bob.ok(lifecycle(LifecycleRequest::CommunityAnswerSuccessorLink {
         anchor: anchor.clone(),
-        request: rekindle_types::id::PseudonymKey(hash.0).to_hex(),
+        request,
     }))
     .await;
     let found = std::cell::RefCell::new(String::new());

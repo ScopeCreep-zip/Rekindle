@@ -45,6 +45,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::GovernanceOpQuarantined { .. } => "governanceOpQuarantined",
         GovernanceEvent::CheckpointSnapshotMismatch { .. } => "checkpointSnapshotMismatch",
         GovernanceEvent::CommunitySuccessorOffered { .. } => "communitySuccessorOffered",
+        GovernanceEvent::SuccessorLinkRequested { .. } => "successorLinkRequested",
     }
 }
 
@@ -67,6 +68,15 @@ pub fn samples() -> Vec<Sample> {
 
 fn structure() -> Vec<Sample> {
     vec![
+        ev(
+            "successorLinkRequested",
+            GovernanceEvent::SuccessorLinkRequested {
+                community: community(),
+                request: "7".repeat(64),
+                recipient: "5".repeat(64),
+                new_anchor: "VLD0:newanchor".into(),
+            },
+        ),
         ev(
             "communitySuccessorOffered",
             GovernanceEvent::CommunitySuccessorOffered {

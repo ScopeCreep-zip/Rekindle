@@ -124,6 +124,15 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(&height.to_le_bytes());
             h.update(digest.as_bytes());
         }
+        // One per link request: its op hash names it.
+        GovernanceEvent::SuccessorLinkRequested {
+            community, request, ..
+        } => {
+            h.update(b"link_request|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(request.as_bytes());
+        }
         // One per successor op: its new anchor and signer name it.
         GovernanceEvent::CommunitySuccessorOffered {
             community,

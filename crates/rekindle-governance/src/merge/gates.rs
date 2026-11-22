@@ -14,7 +14,7 @@ use rekindle_types::join_refusal::JoinRefusal;
 
 use super::resolve::{Ancestry, OpSet};
 use super::Round;
-use crate::link_round::{answers_request, cited_offer, fits_offer};
+use crate::link_round::{acceptance_links_cited, answers_request, cited_offer, fits_offer};
 use crate::op::VerifiedOp;
 use crate::power::{removal_target, target_seq_frontier};
 
@@ -393,7 +393,9 @@ fn checkpoint_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
 /// its deps, applied, by an author whose later offer or withdrawal in the
 /// acceptance's causal past does not supersede it (lead decision (26)),
 /// and to match it ([`accepts_offer`]: written by its `transferTo`, the
-/// same `creatorSetHash`, links naming exactly that set). Plan E3.2
+/// same `creatorSetHash`, links naming exactly that set) and, when it
+/// links further creators, cite their link round
+/// ([`acceptance_links_cited`], decision (46)). Plan E3.2
 /// S7s.3e, decision (24); the deps check is here, not in `permitted`,
 /// because only the op knows its deps (S7c.3a).
 fn successor_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
@@ -419,7 +421,8 @@ fn successor_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
                 && matches!(set.ops[p].body(), GovernanceEntry::CommunitySuccessor(offer)
                     if fits_offer(op.author(), op.body(), offer))
         });
-        invalid[o] |= !in_deps || !holds;
+        let linked = acceptance_links_cited(op.author(), op.body(), &op.op().deps, &round.state);
+        invalid[o] |= !in_deps || !holds || !linked;
     }
 }
 

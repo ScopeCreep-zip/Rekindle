@@ -96,6 +96,18 @@ pub enum GovernanceRuntimeEvent {
         creators: Vec<PseudonymKey>,
     },
 
+    /// A transfer's link request asking us is applied and unanswered (lead
+    /// decision (46), plan E3.2 S7s.4c): the Host publishes
+    /// `GovernanceEvent::SuccessorLinkRequested`, once per request per
+    /// session ([`crate::transfer::announce_link_requests`]). `recipient`
+    /// is the offer's recipient, who wrote the request.
+    SuccessorLinkRequested {
+        community_id: String,
+        request: rekindle_types::governance::OpHash,
+        recipient: PseudonymKey,
+        new_anchor: String,
+    },
+
     /// A bootstrap response has been built for a joiner. Adapter logs
     /// this for telemetry (no user-visible event today).
     BootstrapResponseBuilt {
