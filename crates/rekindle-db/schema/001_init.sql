@@ -979,6 +979,24 @@ CREATE TABLE IF NOT EXISTS activity_log (
 CREATE INDEX IF NOT EXISTS idx_activity_log_at ON activity_log(owner_key, at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_log_subject ON activity_log(owner_key, subject_key);
 
+-- What the activity worker last saw of each friend (plan E7.15, IV2;
+-- `rekindle_db::repo::activity::seen`): the fields the feed compares,
+-- written after each fold and read at unlock, so a change is compared with
+-- what the worker saw, never the friend row it already updated. Local only.
+-- `game_json` is the `rekindle_types::friend::GameInfoState`.
+CREATE TABLE IF NOT EXISTS activity_seen (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    friend_key TEXT NOT NULL,
+    accepted INTEGER NOT NULL CHECK(accepted IN (0, 1)),
+    display_name TEXT NOT NULL,
+    status_message TEXT,
+    bio TEXT,
+    game_json TEXT,
+    PRIMARY KEY (owner_key, friend_key),
+    FOREIGN KEY (owner_key, friend_key) REFERENCES friends(owner_key, public_key)
+        ON DELETE CASCADE
+);
+
 -- Read markers (plan E3.1, D25; `rekindle_db::repo::read_markers`): per
 -- channel or DM, the device-independent position read up to — a channel
 -- message's `lamport_ts`, a DM peer stream's `stream_seq`. A marker only

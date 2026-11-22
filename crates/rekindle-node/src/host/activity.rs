@@ -15,7 +15,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use rekindle_db::repo::activity::{self as repo, StoredActivity};
+use rekindle_db::repo::activity::{self as repo, seen::SeenFriend, StoredActivity};
 use rekindle_presence::activity::{friend_entries, FriendActivitySnapshot};
 use rekindle_types::activity::{ActivityEntry, ActivityListItem};
 use rekindle_types::friend::{FriendState, FriendshipState};
@@ -25,55 +25,55 @@ use rekindle_types::subscription_events::{
 
 use crate::daemon::dispatch::DaemonContext;
 
-/// One change of a friend: their projection row before (`None`: not a
-/// friend before) and after, and their bio (before, after) when the change
-/// is the bio's; otherwise the stored bio is both.
-pub(crate) struct FriendChange {
-    pub prev: Option<FriendState>,
-    pub next: FriendState,
-    pub bio: Option<(Option<String>, Option<String>)>,
-}
-
-fn snapshot(
-    friend: &FriendState,
-    bio: Option<String>,
-    played_games: Option<BTreeSet<u32>>,
-) -> FriendActivitySnapshot {
-    FriendActivitySnapshot {
-        public_key: friend.public_key.clone(),
+/// The fields of `friend` the feed compares, with their `bio`.
+pub(crate) fn seen_of(friend: &FriendState, bio: Option<String>) -> SeenFriend {
+    SeenFriend {
         accepted: friend.friendship_state == FriendshipState::Accepted,
         display_name: friend.display_name.clone(),
         status_message: friend.status_message.clone(),
         bio,
         game: friend.game_info.clone(),
+    }
+}
+
+fn snapshot(
+    public_key: &str,
+    seen: &SeenFriend,
+    played_games: Option<BTreeSet<u32>>,
+) -> FriendActivitySnapshot {
+    FriendActivitySnapshot {
+        public_key: public_key.to_owned(),
+        accepted: seen.accepted,
+        display_name: seen.display_name.clone(),
+        status_message: seen.status_message.clone(),
+        bio: seen.bio.clone(),
+        game: seen.game.clone(),
         played_games,
     }
 }
 
-/// Store the entries `change` makes while the log is on, and push them.
-pub(crate) async fn ingest(ctx: &DaemonContext, change: FriendChange) {
+/// Record `next` as what the worker last saw of `key` (whether or not the
+/// log is on), then store the entries `next` makes against `prev` (`None`:
+/// not a friend before) while the log is on, and push them.
+pub(crate) async fn store(
+    ctx: &DaemonContext,
+    key: String,
+    prev: Option<SeenFriend>,
+    next: SeenFriend,
+) {
     let (Ok(owner), Ok(db)) = (ctx.require_owner(), ctx.db.current()) else {
         return;
     };
     let at = ctx.clock.now_ms_i64();
     let stored = db
         .call(move |conn| {
+            repo::seen::save(conn, &owner, &key, &next)?;
             if !rekindle_db::repo::preferences::load(conn, &owner)?.keep_activity_log {
                 return Ok(Vec::new());
             }
-            let key = change.next.public_key.clone();
-            let (prev_bio, next_bio) = if let Some(pair) = change.bio {
-                pair
-            } else {
-                let bio = rekindle_db::repo::bio::friend(conn, &owner, &key)?;
-                (bio.clone(), bio)
-            };
             let played = rekindle_db::repo::friend_game_totals::game_ids(conn, &owner, &key)?;
-            let prev = change
-                .prev
-                .as_ref()
-                .map(|f| snapshot(f, prev_bio, played.clone()));
-            let next = snapshot(&change.next, next_bio, played);
+            let prev = prev.as_ref().map(|p| snapshot(&key, p, played.clone()));
+            let next = snapshot(&key, &next, played);
             let entries = friend_entries(prev.as_ref(), &next, at);
             repo::insert_returning(conn, &owner, &entries, at)
         })
@@ -137,12 +137,14 @@ pub(crate) fn items(ctx: &DaemonContext, rows: Vec<StoredActivity>) -> Vec<Activ
         .collect()
 }
 
-/// What the worker last saw of each friend: their projection row and bio.
-type Seen = HashMap<String, (FriendState, Option<String>)>;
+/// What the worker last saw of each friend, by public key (hex).
+type Seen = HashMap<String, SeenFriend>;
 
 /// The worker: fold the Host's journal until shutdown. Each session's
-/// `seen` is rebuilt from the database at its first event (the journal's
-/// `InvalidSession` opens it, before the session is installed).
+/// `seen` is read from the worker's own stored state
+/// (`rekindle_db::repo::activity::seen`) at its first event (the journal's
+/// `InvalidSession` opens it, before the session is installed), never
+/// rebuilt from friend rows a change may already have updated.
 pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
     let mut stream = ctx.journal.subscribe(None);
     let mut seen: Option<Seen> = None;
@@ -154,7 +156,7 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
         match frame {
             Some(StreamFrame::Event(s)) => {
                 if seen.is_none() {
-                    seen = stored_friends(&ctx).await;
+                    seen = stored_seen(&ctx).await;
                 }
                 if let Some(seen) = seen.as_mut() {
                     fold(&ctx, seen, &s.event).await;
@@ -167,34 +169,23 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
     }
 }
 
-/// The session's friends as stored, with their bios; `None` while no
+/// What the worker last saw of the session's friends; `None` while no
 /// session is installed.
-async fn stored_friends(ctx: &DaemonContext) -> Option<Seen> {
+async fn stored_seen(ctx: &DaemonContext) -> Option<Seen> {
     let (Ok(owner), Ok(db)) = (ctx.require_owner(), ctx.db.current()) else {
         return None;
     };
-    let read = db
-        .call(move |conn| {
-            let mut seen = Seen::new();
-            for row in rekindle_db::repo::friends::load_all(conn, &owner)? {
-                let bio = rekindle_db::repo::bio::friend(conn, &owner, &row.public_key)?;
-                let friend = super::session::friend_state(row);
-                seen.insert(friend.public_key.clone(), (friend, bio));
-            }
-            Ok(seen)
-        })
-        .await;
-    match read {
+    match db.call(move |conn| repo::seen::load(conn, &owner)).await {
         Ok(seen) => Some(seen),
         Err(e) => {
-            tracing::warn!(error = %e, "activity feed: friends not read");
+            tracing::warn!(error = %e, "activity feed: last-seen state not read");
             Some(Seen::new())
         }
     }
 }
 
-/// One stored friend and their bio, for a friend `seen` does not hold.
-async fn stored_friend(ctx: &DaemonContext, peer: &str) -> Option<(FriendState, Option<String>)> {
+/// A friend the worker has never seen, as stored: its first observation.
+async fn stored_friend(ctx: &DaemonContext, peer: &str) -> Option<SeenFriend> {
     let (Ok(owner), Ok(db)) = (ctx.require_owner(), ctx.db.current()) else {
         return None;
     };
@@ -207,11 +198,25 @@ async fn stored_friend(ctx: &DaemonContext, peer: &str) -> Option<(FriendState, 
             return Ok(None);
         };
         let bio = rekindle_db::repo::bio::friend(conn, &owner, &peer)?;
-        Ok(Some((super::session::friend_state(row), bio)))
+        Ok(Some(seen_of(&super::session::friend_state(row), bio)))
     })
     .await
     .ok()
     .flatten()
+}
+
+/// The worker no longer holds `peer` (removed or blocked).
+async fn forget(ctx: &DaemonContext, peer: &str) {
+    let (Ok(owner), Ok(db)) = (ctx.require_owner(), ctx.db.current()) else {
+        return;
+    };
+    let peer = peer.to_owned();
+    if let Err(e) = db
+        .call(move |conn| repo::seen::forget(conn, &owner, &peer))
+        .await
+    {
+        tracing::warn!(error = %e, "activity feed: last-seen state not forgotten");
+    }
 }
 
 /// How a published event touches a friend.
@@ -274,7 +279,7 @@ async fn fold(ctx: &DaemonContext, seen: &mut Seen, event: &SubscriptionEvent) {
     let (peer, prev) = match touch {
         Touch::Gone(peer) => {
             seen.remove(peer);
-            return;
+            return forget(ctx, peer).await;
         }
         Touch::Accepted(peer) => (peer, None),
         Touch::Row(peer) | Touch::Bio(peer) => match seen.get(peer).cloned() {
@@ -291,19 +296,13 @@ async fn fold(ctx: &DaemonContext, seen: &mut Seen, event: &SubscriptionEvent) {
         seen.remove(peer);
         return;
     };
-    let prev_bio = prev.as_ref().and_then(|(_, bio)| bio.clone());
-    let next_bio = if matches!(touch, Touch::Bio(_)) || prev.is_none() {
-        stored_bio(ctx, peer).await
-    } else {
-        prev_bio.clone()
+    let next_bio = match &prev {
+        Some(prev) if !matches!(touch, Touch::Bio(_)) => prev.bio.clone(),
+        _ => stored_bio(ctx, peer).await,
     };
-    seen.insert(peer.to_owned(), (next.clone(), next_bio.clone()));
-    let change = FriendChange {
-        prev: prev.map(|(friend, _)| friend),
-        next,
-        bio: Some((prev_bio, next_bio)),
-    };
-    ingest(ctx, change).await;
+    let next = seen_of(&next, next_bio);
+    seen.insert(peer.to_owned(), next.clone());
+    store(ctx, peer.to_owned(), prev, next).await;
 }
 
 async fn stored_bio(ctx: &DaemonContext, peer: &str) -> Option<String> {

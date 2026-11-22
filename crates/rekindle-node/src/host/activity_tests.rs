@@ -9,7 +9,7 @@ use rekindle_types::activity::ActivityListItem;
 use rekindle_types::friend::{FriendState, GameInfoState};
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
-use super::activity::{ingest, FriendChange};
+use super::activity::{seen_of, store};
 use super::adapters::friends::HostFriends;
 use super::direct_tests::ann;
 use super::game_totals_tests::{open_session, run};
@@ -51,13 +51,12 @@ fn game(id: u32) -> GameInfoState {
 }
 
 async fn change(host: &Host, prev: FriendState, next: FriendState) {
-    ingest(
+    let key = next.public_key.clone();
+    store(
         &host.ctx,
-        FriendChange {
-            prev: Some(prev),
-            next,
-            bio: None,
-        },
+        key,
+        Some(seen_of(&prev, None)),
+        seen_of(&next, None),
     )
     .await;
 }
@@ -121,13 +120,11 @@ async fn each_friend_change_makes_its_entry_with_the_hosts_names() {
     renamed.display_name = "Robert".into();
     renamed.status_message = Some("fragging".into());
     change(&host, base.clone(), renamed).await;
-    ingest(
+    store(
         &host.ctx,
-        FriendChange {
-            prev: Some(base.clone()),
-            next: base.clone(),
-            bio: Some((None, Some("Quake".into()))),
-        },
+        bob.clone(),
+        Some(seen_of(&base, None)),
+        seen_of(&base, Some("Quake".into())),
     )
     .await;
     let items = feed(&host).await;
@@ -281,5 +278,31 @@ async fn two_bio_changes_in_a_row_are_two_entries() {
         names(&wait_for(&host, 3).await),
         ["bioChanged", "bioChanged", "startedGame"],
         "the second change is not dropped as a duplicate"
+    );
+}
+
+/// A bio change as a friend's first event after an unlock makes an entry:
+/// the worker compares it with what it last saw of them (its own stored
+/// state), not the friend row the change already updated.
+#[tokio::test]
+async fn a_bio_change_first_after_unlock_makes_an_entry() {
+    let (_dirs, host, _bob_host, bob) = pair().await;
+    HostFriends::of(&host.ctx).set_friend_game_info(
+        &bob,
+        Some(GameInfoSnapshot {
+            game_id: 7,
+            game_name: "Game 7".into(),
+            elapsed_seconds: 0,
+            server_address: None,
+        }),
+    );
+    assert_eq!(names(&wait_for(&host, 1).await), ["startedGame"]);
+    // A new session: the worker drops what it holds in memory.
+    host.ctx.journal.begin();
+    bio_changed(&host, &bob, "Quake").await;
+    assert_eq!(
+        names(&wait_for(&host, 2).await),
+        ["bioChanged", "startedGame"],
+        "the bio is compared with the one the worker last saw"
     );
 }

@@ -7,6 +7,9 @@
 //! purges their rows (Infoview design §3.2–§3.3).
 
 use rekindle_types::activity::{ActivityEntry, ActivityKind};
+
+#[path = "activity_seen.rs"]
+pub mod seen;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 /// The most rows the feed keeps per identity.
