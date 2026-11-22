@@ -14,6 +14,27 @@ pub(super) struct AuditRow {
     pub timestamp: u64,
 }
 
+/// The entry's target when it is a person: the variants whose `target` is
+/// typed [`PseudonymKey`](rekindle_types::id::PseudonymKey) (a role grant or
+/// removal, a ban or unban, a timeout or its removal). Every other target
+/// (a channel, category, role, thread, event, expression, message, invite,
+/// segment or rule id) is an object, never a person (plan E3.4 S6).
+pub(super) fn person_target(
+    entry: &rekindle_types::governance::GovernanceEntry,
+) -> Option<rekindle_types::id::PseudonymKey> {
+    use rekindle_types::governance::GovernanceEntry;
+
+    match entry {
+        GovernanceEntry::RoleAssignment { target, .. }
+        | GovernanceEntry::RoleUnassignment { target, .. }
+        | GovernanceEntry::BanEntry { target, .. }
+        | GovernanceEntry::UnbanEntry { target, .. }
+        | GovernanceEntry::TimeoutEntry { target, .. }
+        | GovernanceEntry::RemoveTimeoutEntry { target, .. } => Some(target.clone()),
+        _ => None,
+    }
+}
+
 pub(super) fn governance_entry_to_audit_row(
     actor_pseudonym: &str,
     lamport: u64,

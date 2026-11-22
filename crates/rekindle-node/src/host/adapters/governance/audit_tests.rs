@@ -4,7 +4,7 @@ use rekindle_governance::fixture::{at, stamp, Stamped};
 use rekindle_governance::state::{GovernanceState, NotificationDefaultState};
 use rekindle_types::dto::community::CommunityAuditEntry;
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::{PseudonymKey, RoleId};
+use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 
 use super::{audit_page, notification_default, AuditNames, MAX_AUDIT_PAGE};
 
@@ -55,16 +55,40 @@ fn page(before: Option<u64>, limit: u32) -> Vec<CommunityAuditEntry> {
 
 /// Each row names its author and member target as the member list does
 /// (plan E3.4 S6): an author with no card is its short fingerprint, never
-/// empty or a raw key; a member target is its card's name; a target that
-/// is no member is not named.
+/// empty or a raw key; a member target is its card's name; a person who is
+/// no member is its short fingerprint.
 #[test]
 fn an_author_without_a_card_is_named_by_its_fingerprint() {
     let rows = page(None, 50);
     let fingerprint = rekindle_crypto::identity::short_key_fingerprint(&[1; 32]);
     assert!(rows.iter().all(|r| r.actor_name == fingerprint), "{rows:?}");
     assert_eq!(rows[0].action, "member_banned");
-    assert_eq!(rows[0].target_name, None, "a banned key is no member");
     assert_eq!(rows[1].target_name.as_deref(), Some("Bea"));
+}
+
+/// An entry never loses who it was about (plan E3.4 S6): a banned member,
+/// no longer counted, is named by its short fingerprint, the name the
+/// member list gives a key without a card; a channel is no person, so its
+/// row names no target.
+#[test]
+fn a_banned_target_is_its_fingerprint_and_a_channel_is_unnamed() {
+    let rows = page(None, 50);
+    assert_eq!(rows[0].action, "member_banned");
+    let banned = rekindle_crypto::identity::short_key_fingerprint(&[3; 32]);
+    assert_eq!(rows[0].target_name.as_deref(), Some(banned.as_str()));
+    let archived = vec![at(
+        6,
+        GovernanceEntry::ChannelArchived {
+            channel_id: ChannelId([9; 16]),
+        },
+    )];
+    let rows = with_names(|names| audit_page(vec![(key(1), archived)], None, 50, names));
+    assert_eq!(rows[0].action, "channel_archived");
+    assert_eq!(
+        rows[0].target.as_deref(),
+        Some(hex::encode([9u8; 16]).as_str())
+    );
+    assert_eq!(rows[0].target_name, None, "a channel is no person");
 }
 
 #[test]
