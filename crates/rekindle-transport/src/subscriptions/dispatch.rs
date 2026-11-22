@@ -23,7 +23,7 @@ use std::sync::Arc;
 use rekindle_codec::ingress::Ingress;
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortEvent, RoutePort};
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::TransportConfig;
 use crate::crypto::envelope::{Addressing, SignedPayload};
@@ -524,18 +524,33 @@ mod tests;
 /// [`RETRY_LATER`](crate::operations::direct::RETRY_LATER), as a 1:1 call
 /// is: a deadline is no refusal (review RV5 H1), and a NAK here withdraws a
 /// joiner's join (`rekindle_governance_runtime::bootstrap_peers`). The
-/// handler's work goes on past it.
+/// handler runs on the session scope ([`InboundHandler::scope`]), so its
+/// work (a bootstrap answer's invite revoke and key delivery) goes on to
+/// completion past the deadline, as `operations::direct::answer_call`'s
+/// does (plan JP1); with no session the request is answered retry-later.
 async fn dispatch_bare_request<H: InboundHandler>(
     handler: &Arc<H>,
     messages: &dyn AppMessagePort,
     call_id: AppCallId,
     request: crate::payload::rpc::InboundCall,
 ) {
-    let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
-        Ok(crate::payload::rpc::CallResponse::Ok(bytes)) => bytes,
-        Ok(other) => {
+    let (answer, answered) = tokio::sync::oneshot::channel();
+    let worker = Arc::clone(handler);
+    handler
+        .scope()
+        .spawn_or_drop("answer bare request", async move {
+            // Past the deadline the answer has no taker; the work is done.
+            let _ = answer.send(worker.on_call(None, request).await);
+        });
+    let reply = match tokio::time::timeout(CALL_DEADLINE, answered).await {
+        Ok(Ok(crate::payload::rpc::CallResponse::Ok(bytes))) => bytes,
+        Ok(Ok(other)) => {
             warn!(response = ?other, "bare request refused");
             NAK.to_vec()
+        }
+        Ok(Err(_)) => {
+            debug!("bare request dropped with its session: answered retry-later");
+            crate::operations::direct::RETRY_LATER.to_vec()
         }
         Err(_) => {
             warn!("bare request exceeded the call deadline: answered retry-later");

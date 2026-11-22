@@ -69,6 +69,12 @@ pub trait InboundHandler: Send + Sync + 'static {
     /// dedup key.
     fn clock(&self) -> &dyn rekindle_utils::Clock;
 
+    /// The unlocked session's scope (a closed one while none is unlocked):
+    /// a bare request's handler runs on it, so its work goes on to
+    /// completion past [`crate::operations::direct::CALL_DEADLINE`] (plan
+    /// JP1, review RV5 H1), as a 1:1 call's does on its host's scope.
+    fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
+
     /// A 1:1 `app_message` arrived: `datagram` starts with the `'D'` tag
     /// (`operations::dm::DIRECT_TAG`). The handler opens it with
     /// `operations::direct::receive`, which opens the frame by its carrier.

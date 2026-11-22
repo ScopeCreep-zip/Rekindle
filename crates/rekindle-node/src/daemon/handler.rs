@@ -148,6 +148,17 @@ impl InboundHandler for DaemonHandler {
         self.clock.as_ref()
     }
 
+    /// The Host's unlock scope; a closed one before the Host exists.
+    fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {
+        self.host
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .map_or_else(
+                || rekindle_lifecycle::SessionScope::closed("no host"),
+                |ctx| ctx.unlock_scope_or_closed(),
+            )
+    }
+
     async fn on_direct(&self, datagram: &[u8]) {
         let Some(host) = self.friends() else {
             debug!("1:1 message before the host is up — dropped");
