@@ -50,10 +50,24 @@ fn refuse(what: &str) -> IpcResponse {
 /// A 400 naming the field.
 pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
     match request {
+        // A node id and a friend key are names, bounded like one.
+        IpcRequest::RunSkinAction { node, .. } if node.len() > 256 => Err(IpcResponse::error(
+            400,
+            "skin node id longer than 256 bytes",
+        )),
+        IpcRequest::SkinSelectionSet {
+            selection: Some(rekindle_types::dto::skin_run::SkinSelection::Friend { public_key }),
+            ..
+        } if public_key.len() > 128 => Err(IpcResponse::error(
+            400,
+            "selected key longer than 128 bytes",
+        )),
         IpcRequest::SkinList
         | IpcRequest::SkinFrames
         | IpcRequest::SkinGet { id: None }
-        | IpcRequest::SkinDraftStart { id: None } => Ok(()),
+        | IpcRequest::SkinDraftStart { id: None }
+        | IpcRequest::RunSkinAction { .. }
+        | IpcRequest::SkinSelectionSet { .. } => Ok(()),
         IpcRequest::SkinGet { id: Some(id) } | IpcRequest::SkinDraftStart { id: Some(id) } => {
             parse(id)
                 .map(drop)
@@ -97,19 +111,6 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
             absolute(path, "export path")
         }
         IpcRequest::SkinExportSchema { path } => absolute(path, "export path"),
-        // A node id and a friend key are names, bounded like one.
-        IpcRequest::RunSkinAction { node, .. } if node.len() > 256 => Err(IpcResponse::error(
-            400,
-            "skin node id longer than 256 bytes",
-        )),
-        IpcRequest::SkinSelectionSet {
-            selection: Some(rekindle_types::dto::skin_run::SkinSelection::Friend { public_key }),
-            ..
-        } if public_key.len() > 128 => Err(IpcResponse::error(
-            400,
-            "selected key longer than 128 bytes",
-        )),
-        IpcRequest::RunSkinAction { .. } | IpcRequest::SkinSelectionSet { .. } => Ok(()),
         other => unreachable!("{} is not a skin request", other.name()),
     }
 }
