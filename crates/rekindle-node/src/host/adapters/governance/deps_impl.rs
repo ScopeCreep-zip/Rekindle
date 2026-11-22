@@ -10,7 +10,8 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RoleTable, UserStatusKind,
+    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RoleTable, SlotRecovery,
+    UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::op_log::{HeldOp, OpVerdict};
@@ -295,26 +296,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.list_community_governance_targets_impl()
     }
 
-    fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)> {
-        self.list_registries_with_my_pseudonym_impl()
-    }
-
-    fn apply_recovered_member_state(&self, community_id: &str, subkey_index: u32) {
-        self.apply_recovered_member_state_impl(community_id, subkey_index);
-    }
-
-    fn try_derive_slot_keypair_if_ready(&self, community_id: &str) {
-        self.try_derive_slot_keypair_impl(community_id);
-    }
-
-    fn list_missing_registry_keypairs(&self) -> Vec<String> {
-        self.ctx.communities.missing_registry_keypairs()
-    }
-
-    fn recover_registry_keypair_from_keystore(&self, community_id: &str) {
-        self.recover_registry_keypair_impl(community_id);
-    }
-
     fn list_communities_for_dht_open(&self) -> Vec<CommunityDhtOpenSetup> {
         self.list_communities_for_dht_open_impl()
     }
@@ -539,6 +520,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
         }
     }
 
+    fn spawn_member_card_refresh(&self, community_id: &str) {
+        self.schedule_card_refresh(community_id);
+    }
+
     async fn departed_slot_heads(
         &self,
         community_id: &str,
@@ -551,6 +536,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
     // ---------- Role mutations ----------
 
     fn roles(&self) -> std::sync::Arc<dyn RoleTable> {
+        std::sync::Arc::new(self.clone())
+    }
+
+    fn slot_recovery(&self) -> std::sync::Arc<dyn SlotRecovery> {
         std::sync::Arc::new(self.clone())
     }
 }

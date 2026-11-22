@@ -24,9 +24,11 @@ use crate::successor::SuccessorJudgements;
 use crate::verify_cache::OpVerifyCache;
 
 mod roles;
+mod slot_recovery;
 mod types;
 
 pub use roles::RoleTable;
+pub use slot_recovery::SlotRecovery;
 pub use types::*;
 
 /// Composite deps trait — one impl on the src-tauri adapter, every
@@ -340,35 +342,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// records to merge.
     fn list_community_governance_targets(&self) -> Vec<(String, String)>;
 
-    /// Snapshot every joined community's
-    /// `(community_id, registry_key, my_pseudonym_hex_opt)`. Communities
-    /// without a `member_registry_key` are skipped. Used by
-    /// `dht_hydration::hydrate_one_community` to enumerate
-    /// records to read from the DHT.
-    fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)>;
-
-    /// Apply recovered member state for one community: adopts
-    /// `my_subkey_index` and persists it to SQLite so the next login can
-    /// skip the recovery step. Our roles are the merged role assignments
-    /// (the projection), never recovered here.
-    fn apply_recovered_member_state(&self, community_id: &str, subkey_index: u32);
-
-    /// If the community has a `slot_seed` + `my_subkey_index` but no
-    /// `slot_keypair`, derive the keypair now via the existing
-    /// `services::community::try_derive_slot_keypair`. No-op otherwise.
-    fn try_derive_slot_keypair_if_ready(&self, community_id: &str);
-
-    /// Belt-and-suspenders: list communities whose
-    /// `registry_owner_keypair` is empty. Used by the orchestrator to
-    /// trigger Stronghold recovery for races where login didn't load
-    /// the keypair in time.
-    fn list_missing_registry_keypairs(&self) -> Vec<String>;
-
-    /// Look up the registry owner keypair from Stronghold and install
-    /// it on the community's state. No-op when the keystore lookup
-    /// returns `None`.
-    fn recover_registry_keypair_from_keystore(&self, community_id: &str);
-
     /// Snapshot every joined community's open-DHT-records setup info.
     /// Used by the Host's per-community login stage to drive
     /// the per-community `open_dht_record` calls without holding the
@@ -568,6 +541,16 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// pseudonym so the rotation work is parallelised across bans.
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str);
 
+    /// Start [`crate::member_card::refresh_member_cards`] for
+    /// `community_id` as a task on the session (plan JP1): a rebuild never
+    /// waits on the card reads, which are DHT round trips, so a rebuild a
+    /// `BootstrapRequest` triggers answers within the app_call deadline. At
+    /// most one refresh runs per community; a call while one runs costs
+    /// one more turn after it, not a read per call. Its names arrive
+    /// through `note_member_card_name` as before. Stopped with the session
+    /// or the community.
+    fn spawn_member_card_refresh(&self, community_id: &str);
+
     /// The seq of `target_hex`'s slot value in each channel record of its
     /// segment, as we hold it now: a `MemberRemoved` records them for its
     /// target, our own `MemberLeft` for us, and readers keep the departed
@@ -588,4 +571,8 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     /// The role table the role commands read and write ([`RoleTable`]).
     fn roles(&self) -> Arc<dyn RoleTable>;
+
+    /// Our slot and its keys, recovered at login (the slot model's
+    /// hydration, `dht_hydration::hydrate_one_community`).
+    fn slot_recovery(&self) -> Arc<dyn SlotRecovery>;
 }

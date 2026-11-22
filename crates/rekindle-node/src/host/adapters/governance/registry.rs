@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use rekindle_governance_runtime::deps::DiscoveredMember;
+use rekindle_governance_runtime::deps::{DiscoveredMember, SlotRecovery};
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 use rekindle_vault::typed::community_keys;
 
@@ -93,5 +93,27 @@ impl HostGovernance {
         self.ctx
             .communities
             .set_registry_owner_keypair(community_id, keypair);
+    }
+}
+
+impl SlotRecovery for HostGovernance {
+    fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)> {
+        self.list_registries_with_my_pseudonym_impl()
+    }
+
+    fn apply_recovered_member_state(&self, community_id: &str, subkey_index: u32) {
+        self.apply_recovered_member_state_impl(community_id, subkey_index);
+    }
+
+    fn try_derive_slot_keypair_if_ready(&self, community_id: &str) {
+        self.try_derive_slot_keypair_impl(community_id);
+    }
+
+    fn list_missing_registry_keypairs(&self) -> Vec<String> {
+        self.ctx.communities.missing_registry_keypairs()
+    }
+
+    fn recover_registry_keypair_from_keystore(&self, community_id: &str) {
+        self.recover_registry_keypair_impl(community_id);
     }
 }

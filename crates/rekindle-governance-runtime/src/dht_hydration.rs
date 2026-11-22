@@ -22,6 +22,8 @@
 //! 7. `apply_governance_rebuild_result` — persist merged state +
 //!    lamport restore via the adapter.
 //! 8. For each new ban: `spawn_text_mek_rotation_for_ban` (fire-and-forget).
+//! 9. `spawn_member_card_refresh`: the card names, as their own task
+//!    (plan JP1), never awaited by the rebuild.
 
 use crate::event::GovernanceRuntimeEvent;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
@@ -151,7 +153,8 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
 /// per-community login stage, which a reconnect or a wake re-runs): our slot from its registry, its slot keypair, and
 /// its registry keypair from the vault when login did not load it.
 pub async fn hydrate_one_community<D: GovernanceRuntimeDeps>(deps: &D, community: &str) {
-    let registry = deps
+    let recovery = deps.slot_recovery();
+    let registry = recovery
         .list_registries_with_my_pseudonym()
         .into_iter()
         .find(|(id, _, _)| id == community);
@@ -159,18 +162,18 @@ pub async fn hydrate_one_community<D: GovernanceRuntimeDeps>(deps: &D, community
         let gov_state = deps.governance_state(community_id).unwrap_or_default();
         if let Some(subkey) = crate::roster::find_my_slot(deps, registry_key, pk, &gov_state).await
         {
-            deps.apply_recovered_member_state(community_id, subkey);
+            recovery.apply_recovered_member_state(community_id, subkey);
         }
     }
     if registry.is_some() {
-        deps.try_derive_slot_keypair_if_ready(community);
+        recovery.try_derive_slot_keypair_if_ready(community);
     }
-    if deps
+    if recovery
         .list_missing_registry_keypairs()
         .iter()
         .any(|id| id == community)
     {
-        deps.recover_registry_keypair_from_keystore(community);
+        recovery.recover_registry_keypair_from_keystore(community);
     }
 }
 
@@ -207,7 +210,10 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
     });
 
     tracing::info!(community = %community_id, "rebuilt governance state from the op set");
-    crate::member_card::refresh_member_cards(deps, community_id).await;
+    // The card reads (names only) run as their own task, never inside
+    // the rebuild (plan JP1): its callers include a bootstrap answer
+    // bounded by the app_call deadline.
+    deps.spawn_member_card_refresh(community_id);
 
     for banned_pseudonym in new_bans {
         deps.spawn_text_mek_rotation_for_ban(community_id, &banned_pseudonym);
@@ -298,3 +304,7 @@ pub async fn republish_active_records<D: GovernanceRuntimeDeps>(deps: &D) {
         "re-opened active community records for rehydration"
     );
 }
+
+#[cfg(test)]
+#[path = "dht_hydration_tests.rs"]
+mod tests;
