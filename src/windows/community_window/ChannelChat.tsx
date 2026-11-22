@@ -99,7 +99,7 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         replyTo={vm.replyTo()}
         editMode={vm.editState()}
         onSend={vm.handleChannelSend}
-        onTyping={vm.handleTyping}
+        onDraftChanged={vm.handleDraftChanged}
         onDismissReply={() => vm.setReplyTo(null)}
         onEditSave={(messageId, newBody) => {
           handleEditChannelMessage(vm.selectedChannelId(), messageId, newBody);

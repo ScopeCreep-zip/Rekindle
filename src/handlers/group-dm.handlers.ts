@@ -88,7 +88,7 @@ function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unkn
   row.expireSeconds = undefined;
   row.expireAt = undefined;
   setGroupDmState("conversations", groupId, "messages", (rows) => [...rows, row]);
-  setGroupDmState("conversations", groupId, "typing", m.sender.publicKey, false);
+  setGroupDmState("conversations", groupId, "typing", m.sender.publicKey, null);
 }
 
 // A member's chain retired entries we never read (`historyGap`): the
@@ -108,11 +108,11 @@ function applyHistoryGap(groupId: string, member: string, throughSeq: number): v
   setGroupDmState("conversations", groupId, "messages", (msgs) => [...msgs, marker]);
 }
 
-function setTyping(groupId: string, who: string, typing: boolean): void {
+function setTyping(groupId: string, who: string, name: string | null): void {
   if (!groupDmState.conversations[groupId]) {
     setGroupDmState("conversations", groupId, { messages: [], typing: {} });
   }
-  setGroupDmState("conversations", groupId, "typing", who, typing);
+  setGroupDmState("conversations", groupId, "typing", who, name);
 }
 
 // The group's disappearing timer changed (its notice joins the timeline),
@@ -164,10 +164,10 @@ export function subscribeGroupChatEvents(
     }
     if (!("typing" in event)) return;
     const t = event.typing;
-    const started = "started" in t;
     const inner = "started" in t ? t.started : t.stopped;
     if ("groupDm" in inner.context && inner.context.groupDm.groupId === groupId) {
-      setTyping(groupId, inner.who, started);
+      // The typist's name is the Host's (plan E3.4 S9b), never the window's.
+      setTyping(groupId, inner.who, "started" in t ? t.started.name : null);
     }
   });
   return [lifecycle, typing];

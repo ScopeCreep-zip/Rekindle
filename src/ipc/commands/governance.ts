@@ -24,8 +24,10 @@ export const governanceCommands = {
       { communityId, channelId },
     ),
 
-  sendChannelTyping: (communityId: string, channelId: string) =>
-    hostInvoke<null>("send_channel_typing", { communityId, channelId }),
+  /** Our typing in a channel, per composer edit (plan E3.4 S9): `typing` while it is non-empty;
+   *  the Host re-sends, throttles and stops it. */
+  sendChannelTyping: (communityId: string, channelId: string, typing: boolean) =>
+    hostInvoke<null>("send_channel_typing", { communityId, channelId, typing }),
 
   // Presence: tell peers which channel we're focused on (or null to clear).
   // `kind` is "voice" for voice channels, "text" otherwise.

@@ -449,7 +449,8 @@ export type CommunitySubscriptionEvent =
    */
   | {
       typing:
-        | { started: { context: TypingContext; who: string } }
+        // `name`: the typist's name as the Host states it, never empty (card name, else short fingerprint).
+        | { started: { context: TypingContext; who: string; name: string } }
         | { stopped: { context: TypingContext; who: string } };
     }
   | { unreadChanged: UnreadChanged };
