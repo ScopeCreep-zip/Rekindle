@@ -9,7 +9,7 @@
 mod first_show;
 mod navigation;
 pub mod popup;
-mod popup_place;
+pub mod popup_place;
 mod rebind;
 mod reveal;
 mod shape;

@@ -189,11 +189,18 @@ pub fn popup_label(opener: &str, name: &PopupName) -> String {
     format!("popup-{opener}-{}", name.as_str())
 }
 
+/// The launching window's label and the popup's name of the popup
+/// labelled `label`.
+#[must_use]
+pub fn popup_parts(label: &str) -> Option<(&str, &str)> {
+    let (opener, name) = label.strip_prefix("popup-")?.rsplit_once('-')?;
+    PopupName::parse(name).map(|_| (opener, name))
+}
+
 /// The launching window's label of the popup labelled `label`.
 #[must_use]
 pub fn popup_opener(label: &str) -> Option<&str> {
-    let (opener, name) = label.strip_prefix("popup-")?.rsplit_once('-')?;
-    PopupName::parse(name).map(|_| opener)
+    popup_parts(label).map(|(opener, _)| opener)
 }
 
 /// The chat and profile windows for a peer named by an event, if the key
@@ -287,6 +294,7 @@ mod tests {
         assert_eq!(popup, "popup-buddy-list-MainInfoViewPopup");
         assert_eq!(WindowKind::of_label(&popup), Some(WindowKind::SkinPopup));
         assert_eq!(popup_opener(&popup), Some(BUDDY_LIST));
+        assert_eq!(popup_parts(&popup), Some((BUDDY_LIST, "MainInfoViewPopup")));
         let chat = chat_label(&pk);
         assert_eq!(
             popup_opener(&popup_label(&chat, &info)),

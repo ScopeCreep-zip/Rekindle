@@ -5,12 +5,12 @@
 //! from the served [`ShellPopup`] and keeps it beside its launcher.
 
 use rekindle_types::dto::skin_layout::SkinWindow;
-use rekindle_types::dto::skin_tree::ShellPopup;
+use rekindle_types::dto::skin_tree::{ShellPopup, SkinShell};
 use tauri::{
     AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow, Window, WindowEvent, Wry,
 };
 
-use super::popup_place::{popup_frame, WindowBox};
+use super::popup_place::{follow_frame, popup_frame, served_popup, OpenPopup, WindowBox};
 use super::{base_builder, finish, shape};
 use crate::state::SharedState;
 use crate::window_labels::{self as labels, PopupName, WindowKind};
@@ -58,11 +58,28 @@ fn frame_of(window: &Window<Wry>) -> Result<WindowBox, String> {
     })
 }
 
+/// Move and size `popup` to `frame`, with `min` as its OS minimum (the
+/// clamp a user's resize stops at).
+fn place(popup: &WebviewWindow, frame: WindowBox, min: Option<(u16, u16)>) {
+    let mut placed = popup
+        .set_position(LogicalPosition::new(frame.x, frame.y))
+        .and_then(|()| popup.set_size(LogicalSize::new(frame.width, frame.height)));
+    if let Some((w, h)) = min {
+        placed = placed
+            .and_then(|()| popup.set_min_size(Some(LogicalSize::new(f64::from(w), f64::from(h)))));
+    }
+    if let Err(e) = placed {
+        tracing::debug!(error = %e, "could not place a popup beside its launcher");
+    }
+}
+
 /// Open `launcher`'s popup `name` at `popup`'s place beside it, without
 /// taking focus from the launcher: built unfocused and parented to the
 /// launcher (macOS child window, Windows owned window, GTK transient), and
 /// the launcher's focus handed back after the first show, which keys the
-/// new window on macOS (tao `set_visible`).
+/// new window on macOS (tao `set_visible`). Resizable (the base builder),
+/// down to the popup's minimum (`min_inner_size`, the OS clamp of the
+/// pack's resize tiles).
 ///
 /// # Errors
 /// The launcher's frame is unreadable or the window could not be built.
@@ -89,7 +106,11 @@ pub fn open(
     .parent(launcher)
     .map_err(|e| e.to_string())?;
     let launcher_focused = matches!(launcher.is_focused(), Ok(true));
-    state.skin_popups.lock().insert(label.clone(), popup);
+    let open = OpenPopup {
+        place: popup,
+        laid: (frame.width, frame.height),
+    };
+    state.skin_popups.lock().insert(label.clone(), open);
     if let Err(e) = finish(builder, WindowKind::SkinPopup) {
         state.skin_popups.lock().remove(&label);
         return Err(e);
@@ -103,9 +124,19 @@ pub fn open(
     Ok(())
 }
 
+/// A popup window's current inner size in whole logical px.
+fn current_size(popup: &WebviewWindow) -> Result<(i32, i32), String> {
+    let scale = popup.scale_factor().map_err(|e| e.to_string())?;
+    let size = popup
+        .inner_size()
+        .map_err(|e| e.to_string())?
+        .to_logical::<i32>(scale);
+    Ok((size.width, size.height))
+}
+
 /// The window event hook: a launcher that moves or resizes takes its
-/// popups along; a launcher that closes closes them; a popup that closes
-/// leaves the registry.
+/// popups along (a popup the user resized keeps its size); a launcher that
+/// closes closes them; a popup that closes leaves the registry.
 pub fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
     let follows = matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_));
     let destroyed = matches!(event, WindowEvent::Destroyed);
@@ -119,12 +150,12 @@ pub fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
     if destroyed {
         state.skin_popups.lock().remove(label);
     }
-    let launched: Vec<(String, ShellPopup)> = state
+    let launched: Vec<(String, OpenPopup)> = state
         .skin_popups
         .lock()
         .iter()
         .filter(|(popup, _)| labels::popup_opener(popup) == Some(label))
-        .map(|(popup, place)| (popup.clone(), place.clone()))
+        .map(|(popup, open)| (popup.clone(), open.clone()))
         .collect();
     if launched.is_empty() {
         return;
@@ -146,16 +177,63 @@ pub fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
             return;
         }
     };
-    for (popup, place) in launched {
-        let Some(popup) = window.app_handle().get_webview_window(&popup) else {
+    for (label, open) in launched {
+        let Some(popup) = window.app_handle().get_webview_window(&label) else {
             continue;
         };
-        let frame = popup_frame(&place, launcher);
-        let moved = popup
-            .set_position(LogicalPosition::new(frame.x, frame.y))
-            .and_then(|()| popup.set_size(LogicalSize::new(frame.width, frame.height)));
-        if let Err(e) = moved {
-            tracing::debug!(error = %e, "could not move a popup with its launcher");
+        let current = match current_size(&popup) {
+            Ok(size) => size,
+            Err(e) => {
+                tracing::debug!(error = %e, "a popup's size is unreadable");
+                continue;
+            }
+        };
+        let frame = follow_frame(&open, launcher, current);
+        if current == open.laid {
+            if let Some(entry) = state.skin_popups.lock().get_mut(&label) {
+                entry.laid = (frame.width, frame.height);
+            }
         }
+        place(&popup, frame, None);
+    }
+}
+
+/// The shown skin changed (`SystemEvent::SkinChanged`, its served
+/// `shells`): each open popup is laid afresh from the new skin's popup of
+/// its name for its launcher's outline (a new skin is a fresh layout, size
+/// included), or closed when the new skin has none.
+pub fn skin_changed(app: &AppHandle, state: &SharedState, shells: &[SkinShell]) {
+    let open: Vec<String> = state.skin_popups.lock().keys().cloned().collect();
+    for label in open {
+        let Some(popup) = app.get_webview_window(&label) else {
+            continue;
+        };
+        let served = labels::popup_parts(&label).and_then(|(opener, name)| {
+            let outline = WindowKind::of_label(opener).and_then(shape::frame_of)?;
+            let launcher = app.get_webview_window(opener)?;
+            Some((served_popup(shells, outline, name), launcher))
+        });
+        let Some((Some(place_now), launcher)) = served else {
+            if let Err(e) = popup.destroy() {
+                tracing::warn!(error = %e, "could not close a popup the new skin lacks");
+            }
+            continue;
+        };
+        let frame = match frame_of(&launcher.as_ref().window()) {
+            Ok(opener) => popup_frame(&place_now, opener),
+            Err(e) => {
+                tracing::debug!(error = %e, "a popup's launcher frame is unreadable");
+                continue;
+            }
+        };
+        let min = (place_now.min_width, place_now.min_height);
+        state.skin_popups.lock().insert(
+            label,
+            OpenPopup {
+                place: place_now,
+                laid: (frame.width, frame.height),
+            },
+        );
+        place(&popup, frame, Some(min));
     }
 }

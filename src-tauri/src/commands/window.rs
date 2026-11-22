@@ -106,12 +106,7 @@ pub async fn open_skin_popup(
         )
         .await
         .map_err(|e| e.to_string())?;
-    let place = skin
-        .value
-        .shells
-        .into_iter()
-        .filter(|shell| shell.window == outline)
-        .find_map(|shell| shell.popup.filter(|p| p.name == name.as_str()))
+    let place = windows::popup_place::served_popup(&skin.value.shells, outline, name.as_str())
         .ok_or_else(|| "the shown skin has no such popup for this window".to_owned())?;
     windows::popup::open(&app, state.inner(), &window, &name, place)
 }

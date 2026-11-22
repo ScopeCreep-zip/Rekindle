@@ -137,7 +137,7 @@ pub struct AppState {
     pub pending_link_opens: Mutex<HashSet<rekindle_types::intent::IntentId>>,
     /// The open pack popups by window label, with the served placement
     /// they keep beside their launcher (`windows::popup`, plan SK2-A5).
-    pub skin_popups: Mutex<HashMap<String, rekindle_types::dto::skin_tree::ShellPopup>>,
+    pub skin_popups: Mutex<HashMap<String, crate::windows::popup_place::OpenPopup>>,
     /// An OS deep link that arrived before unlock (raw input; a newer link
     /// replaces it), submitted to the Host by the unlock and cleared at
     /// logout (`deep_links`, plans E2.1, E3.1 D2).
