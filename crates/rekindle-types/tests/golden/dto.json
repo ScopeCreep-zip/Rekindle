@@ -511,6 +511,9 @@
             "gameId": 4181,
             "gameName": "Counter-Strike 2",
             "iconKey": "cs2",
+            "info": {
+              "kind": "notQueried"
+            },
             "join": {
               "gameId": 4181,
               "joinable": false,
@@ -540,6 +543,14 @@
             "gameId": 4181,
             "gameName": "Counter-Strike 2",
             "iconKey": "cs2",
+            "info": {
+              "kind": "answered",
+              "map": "de_dust2",
+              "maxPlayers": 24,
+              "name": "Frag Night #1",
+              "pingMs": 31,
+              "players": 12
+            },
             "join": {
               "gameId": 4181,
               "joinable": true,
@@ -571,6 +582,9 @@
             "gameId": 4181,
             "gameName": "Counter-Strike 2",
             "iconKey": "cs2",
+            "info": {
+              "kind": "querying"
+            },
             "join": {
               "gameId": 4181,
               "joinable": true,
@@ -597,6 +611,9 @@
             "gameId": 4181,
             "gameName": "Counter-Strike 2",
             "iconKey": "cs2",
+            "info": {
+              "kind": "notQueried"
+            },
             "join": {
               "gameId": 4181,
               "joinable": true,
@@ -630,6 +647,10 @@
             "gameId": null,
             "gameName": "minecraft",
             "iconKey": null,
+            "info": {
+              "kind": "unanswered",
+              "reason": "This game has no server query"
+            },
             "join": {
               "gameId": null,
               "joinable": false,
@@ -647,7 +668,10 @@
           }
         ]
       }
-    ]
+    ],
+    "refresh": {
+      "allowed": true
+    }
   },
   "serversViewEmpty": {
     "categories": [
@@ -656,7 +680,11 @@
         "kind": "recent",
         "rows": []
       }
-    ]
+    ],
+    "refresh": {
+      "allowed": false,
+      "reason": "refreshing"
+    }
   },
   "skin.action.all": [
     {

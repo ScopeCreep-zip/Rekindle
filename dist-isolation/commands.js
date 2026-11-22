@@ -258,6 +258,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "send_voice_message",
   "server_deafen_member",
   "server_mute_member",
+  "servers_refresh",
   "servers_view",
   "set_active_channel",
   "set_audio_devices",

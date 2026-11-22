@@ -117,10 +117,6 @@ pub enum IntentKind {
     /// Launch a game we have installed, or to one of our own favourite
     /// servers (`GameLaunch`, lead decision (50)).
     LaunchGameToServer,
-    /// Ask every server the Servers view lists what it is running (plan
-    /// E7.2 G4, `ServersRefresh`): the user's own Refresh, as Xfire's; it
-    /// reaches the servers a launch from that view reaches.
-    RefreshServers,
     // Routine: Outgoing requests you can withdraw
     CancelInvite,
     CancelRequest,
@@ -240,6 +236,12 @@ pub enum IntentKind {
     /// Launch a game to a server whose address a peer chose (lead decision
     /// (50)): our IP address reaches that host.
     JoinGameServer,
+    /// Ask the Servers view's servers what they are running (plan E7.2 G4,
+    /// `ServersRefresh`): the user's own Refresh, as Xfire's. Our IP
+    /// address reaches every server asked, addresses friends and
+    /// communities supplied among them, so it is `JoinGameServer`'s case
+    /// (r9 §7.2: metadata leaving the app) and the review lists them.
+    RefreshServers,
     UploadAttachment,
     // TrustChanging: Starting device pairing
     GeneratePairingQrSvg,
@@ -412,7 +414,6 @@ impl IntentKind {
             | Self::RevealDownloadedAttachment
             | Self::PauseDownload
             | Self::LaunchGameToServer
-            | Self::RefreshServers
             | Self::CancelInvite
             | Self::CancelRequest
             | Self::Logout
@@ -507,6 +508,7 @@ impl IntentKind {
             | Self::VolunteerRelay
             | Self::OpenExternalUrl
             | Self::JoinGameServer
+            | Self::RefreshServers
             | Self::UploadAttachment
             | Self::GeneratePairingQrSvg
             | Self::StartPairingSession

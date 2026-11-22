@@ -5,7 +5,7 @@
 //! request path serves the desktop, the TUI and the CLI (decisions 51, 52).
 
 mod compose;
-mod refresh;
+pub(crate) mod refresh;
 mod worker;
 
 use std::collections::VecDeque;

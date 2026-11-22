@@ -12,6 +12,9 @@ use rekindle_types::dto::servers::{
     ServersView,
 };
 use rekindle_types::game_server::{JoinSource, ServerAddress};
+use rekindle_types::intent::{
+    Fact, IntentClass, IntentKind, IntentProof, ProofRequired, Recipient,
+};
 use rekindle_types::subscription_events::{
     FriendEvent, StreamFrame, SubscriptionEvent, SystemEvent,
 };
@@ -222,35 +225,79 @@ fn info(view: &ServersView) -> ServerInfo {
     only_row(view, Kind::Favourites).info.clone()
 }
 
-/// No view, favourite or wait queries a server: only `ServersRefresh`
-/// (a query shows our IP address to it).
+fn opened(silent: &Silent) -> usize {
+    silent.opened.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+const REFRESH: IpcRequest = IpcRequest::Servers(ServersRequest::Refresh);
+
+/// `ServersRefresh` reviewed and acknowledged: its answer and the class.
+async fn refresh(host: &Host) -> (serde_json::Value, Option<IntentClass>) {
+    match super::game_totals_tests::run(host, REFRESH).await {
+        (IpcResponse::Ok { data, .. }, class) => (data, class),
+        (other, _) => panic!("{other:?}"),
+    }
+}
+
+/// Let the Host's spawned work start, move the paused clock `by`, let what
+/// came due finish, and give the clock back: no real wait.
+async fn elapse(by: Duration) {
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::pause();
+    tokio::time::advance(by).await;
+    for _ in 0..32 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::resume();
+}
+
+/// No view, favourite, elapsed time or unacknowledged review queries a
+/// server: only the committed `ServersRefresh` (a query shows our IP
+/// address to it).
 #[tokio::test]
 async fn nothing_queries_without_the_request() {
     let dir = tempfile::tempdir().unwrap();
     let (host, silent) = silent_host(&dir).await;
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    elapse(Duration::from_secs(60)).await;
     let shown = view(&host).await;
     assert_eq!(info(&shown), ServerInfo::NotQueried);
     assert_eq!(shown.refresh, ServerVerdict::Allowed);
-    assert_eq!(silent.opened.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let reviewed = rekindle_ipc::HostApi::call(&*host, Caller::shell(), REFRESH).await;
+    assert!(
+        matches!(reviewed, IpcResponse::IntentRequired(_)),
+        "{reviewed:?}"
+    );
+    elapse(Duration::from_secs(60)).await;
+    assert_eq!(info(&view(&host).await), ServerInfo::NotQueried);
+    assert_eq!(opened(&silent), 0);
 }
 
 /// A refresh marks the row querying and refuses a second refresh; a server
-/// silent for 2 s is unanswered, and a refresh may start again.
+/// silent for the query timeout is unanswered, and a refresh may start
+/// again. The timeout runs on the paused clock.
 #[tokio::test]
 async fn refresh_times_out_to_unanswered_and_is_refused_while_running() {
     let dir = tempfile::tempdir().unwrap();
     let (host, silent) = silent_host(&dir).await;
-    let refresh = || call(&host, IpcRequest::Servers(ServersRequest::Refresh));
-    assert_eq!(refresh().await, serde_json::json!({ "started": true }));
-    let running = view(&host).await;
-    assert_eq!(info(&running), ServerInfo::Querying);
+    let started = serde_json::json!({ "started": true });
     assert_eq!(
-        running.refresh,
+        refresh(&host).await,
+        (started.clone(), Some(IntentClass::TrustChanging))
+    );
+    let key = (Some(CS2), FAV.to_owned());
+    let refreshing = &host.ctx.servers.refresh;
+    assert_eq!(refreshing.info().get(&key), Some(&ServerInfo::Querying));
+    assert_eq!(
+        refreshing.verdict(),
         ServerVerdict::refused(ServerRefusal::Refreshing)
     );
-    assert_eq!(refresh().await, serde_json::json!({ "started": false }));
-    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    assert_eq!(
+        refresh(&host).await.0,
+        serde_json::json!({ "started": false })
+    );
+    elapse(super::servers::refresh::QUERY_TIMEOUT + Duration::from_millis(100)).await;
     let done = view(&host).await;
     assert_eq!(
         info(&done),
@@ -259,6 +306,64 @@ async fn refresh_times_out_to_unanswered_and_is_refused_while_running() {
         }
     );
     assert_eq!(done.refresh, ServerVerdict::Allowed);
-    assert_eq!(refresh().await, serde_json::json!({ "started": true }));
-    assert_eq!(silent.opened.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(refresh(&host).await.0, started);
+    elapse(Duration::ZERO).await;
+    assert_eq!(opened(&silent), 2);
+}
+
+/// Refresh is TrustChanging (r9 §7.2: our IP address leaves the app): its
+/// review names, one fact each, exactly the servers it will ask, the two
+/// A2S rows and not the Dota 2 row, which is never contacted.
+#[tokio::test]
+async fn the_refresh_review_names_each_server_it_will_ask() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, silent) = silent_host(&dir).await;
+    for (game_id, address) in [(4100, "198.51.100.3:27015"), (4102, "198.51.100.4:27015")] {
+        call(
+            &host,
+            IpcRequest::Servers(ServersRequest::FavouriteAdd {
+                game_id,
+                server: ServerAddress::parse(address).unwrap(),
+                label: "Ours".into(),
+            }),
+        )
+        .await;
+    }
+    let IpcResponse::IntentRequired(review) =
+        rekindle_ipc::HostApi::call(&*host, Caller::shell(), REFRESH).await
+    else {
+        panic!("Refresh is reviewed")
+    };
+    assert_eq!(review.kind, IntentKind::RefreshServers);
+    assert_eq!(review.class, IntentClass::TrustChanging);
+    assert_eq!(review.proof, ProofRequired::Acknowledge);
+    let mut named: Vec<(String, String)> = review
+        .facts
+        .iter()
+        .map(|f| match f {
+            Fact::IpAddressLeaves {
+                to: Recipient::GameServer { game, address },
+            } => (game.clone(), address.clone()),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    named.sort();
+    assert_eq!(
+        named,
+        [
+            ("Counter-Strike 2".to_owned(), FAV.to_owned()),
+            (
+                "Team Fortress 2".to_owned(),
+                "198.51.100.3:27015".to_owned()
+            ),
+        ]
+    );
+    assert_eq!(opened(&silent), 0, "the review asks nobody");
+    let commit = IpcRequest::IntentCommit {
+        intent_id: review.intent_id,
+        proof: IntentProof::Acknowledged,
+    };
+    rekindle_ipc::HostApi::call(&*host, Caller::shell(), commit).await;
+    elapse(Duration::ZERO).await;
+    assert_eq!(opened(&silent), 2, "only the servers named are asked");
 }

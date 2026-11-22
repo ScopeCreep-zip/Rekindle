@@ -151,13 +151,22 @@ pub(crate) async fn select(
             // Local only: setting it back reverses it (plan E7.2).
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
-        // Asking the listed servers changes nothing we hold; each server
-        // learns our IP address, which no inverse takes back (plan E7.2 G4).
+        // Asking the listed servers changes nothing we hold, but each server
+        // asked learns our IP address, addresses friends and communities
+        // supplied among them (plan E7.2 G4, r9 §7.2): one fact per server,
+        // as `JoinGameServer`'s, recomputed at commit.
         IpcRequest::Servers(ServersRequest::Refresh) => {
+            let servers = crate::host::servers::refresh::disclosed(ctx).await?;
             s.subject = Subject::Named {
-                name: "the servers in the Servers view".into(),
+                name: match servers.len() {
+                    1 => "1 server in the Servers view".into(),
+                    n => format!("{n} servers in the Servers view"),
+                },
             };
             s.reversibility = Reversibility::Never;
+            for to in servers {
+                discloses_ip_address(&mut s, to);
+            }
         }
         // A forgotten server comes back only by visiting it again (plan E7.2 G3).
         IpcRequest::Servers(ServersRequest::RecentRemove { .. }) => {

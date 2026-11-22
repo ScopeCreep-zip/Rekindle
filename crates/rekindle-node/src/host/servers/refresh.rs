@@ -23,6 +23,7 @@ use rekindle_types::dto::servers::{
     RefreshAnswer, ServerInfo, ServerRefusal, ServerVerdict, ServersView,
 };
 use rekindle_types::game_server::ServerAddress;
+use rekindle_types::intent::Recipient;
 
 use crate::daemon::dispatch::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -94,11 +95,13 @@ impl RefreshState {
         }
     }
 
-    /// The session ended: forget every answer.
+    /// The session ended: forget every answer. A refresh still running was
+    /// stopped with the session's scope, so the next session may refresh.
     pub(crate) fn clear(&self) {
         let mut results = self.results.lock();
         results.generation += 1;
         results.info.clear();
+        self.running.store(false, Ordering::Release);
     }
 }
 
@@ -135,21 +138,33 @@ pub(crate) async fn start(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
             jobs.push((key, server));
         }
     }
-    let Some(ctx_arc) = ctx.this.upgrade() else {
+    // The queries run on the unlock's scope (rule B20), so a lock stops them.
+    let scope = ctx.unlock_scope.read().clone();
+    let (Some(ctx_arc), Some(scope)) = (ctx.this.upgrade(), scope) else {
         refresh.running.store(false, Ordering::Release);
-        return IpcResponse::error(503, "the host is stopping");
+        return IpcResponse::error(503, "the session is ending");
     };
+    if scope
+        .spawn("servers refresh", run(ctx_arc, generation, jobs))
+        .is_err()
+    {
+        refresh.running.store(false, Ordering::Release);
+        return IpcResponse::error(503, "the session is ending");
+    }
     super::push(ctx).await;
-    tokio::spawn(run(ctx_arc, generation, jobs));
     IpcResponse::ok(&RefreshAnswer { started: true })
 }
 
-/// Each distinct server in the view, with the address to ask when its game
-/// speaks a query protocol and the address parses.
-fn targets(view: &ServersView) -> HashMap<InfoKey, Option<ServerAddress>> {
+/// Each distinct server in the view, in the view's order, with the address
+/// to ask when its game speaks a query protocol and the address parses.
+fn targets(view: &ServersView) -> Vec<(InfoKey, Option<ServerAddress>)> {
     let db = rekindle_game_detect::GameDatabase::shared();
-    let mut out = HashMap::new();
+    let mut out: Vec<(InfoKey, Option<ServerAddress>)> = Vec::new();
     for row in view.categories.iter().flat_map(|c| &c.rows) {
+        let key = (row.game_id, row.address.clone());
+        if out.iter().any(|(seen, _)| *seen == key) {
+            continue;
+        }
         let protocol = row
             .game_id
             .and_then(|id| db.lookup_by_id(id))
@@ -158,9 +173,33 @@ fn targets(view: &ServersView) -> HashMap<InfoKey, Option<ServerAddress>> {
             Some(ServerQueryProtocol::A2s) => ServerAddress::parse(&row.address).ok(),
             None => None,
         };
-        out.insert((row.game_id, row.address.clone()), asked);
+        out.push((key, asked));
     }
     out
+}
+
+/// The servers a refresh started now would ask, in the view's order, each
+/// as the party our IP address reaches (r9 §7.2: `RefreshServers` is
+/// TrustChanging, its review names every one). A row that would not be
+/// asked (no query protocol, no address) is not listed: it sees nothing.
+///
+/// # Errors
+/// The view cannot be composed.
+pub(crate) async fn disclosed(ctx: &DaemonContext) -> Result<Vec<Recipient>, IpcResponse> {
+    let view = super::compose(ctx).await?;
+    let db = rekindle_game_detect::GameDatabase::shared();
+    Ok(targets(&view)
+        .into_iter()
+        .filter_map(|((game_id, _), asked)| {
+            // Only a known game speaks a query, so an asked row has one.
+            let address = asked?;
+            let entry = db.lookup_by_id(game_id?)?;
+            Some(Recipient::GameServer {
+                game: entry.name.clone(),
+                address: address.to_string(),
+            })
+        })
+        .collect())
 }
 
 fn reason_without_query(key: &InfoKey) -> &'static str {
