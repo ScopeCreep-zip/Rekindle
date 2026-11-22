@@ -114,14 +114,16 @@ pub async fn initialize_node(
 
 /// The desktop's [`ChangeSink`](rekindle_protocol::dht::pool::ChangeSink):
 /// a change the record pool's read found is handled as a watch report is
-/// (`dht_watch`), off the reader's path (lead decision 57).
+/// (`dht_watch`), off the reader's path (lead decision 57), as a task of
+/// the login session (rule B20): a change read after a logout is dropped,
+/// as the dispatch loop drops an identity-dependent update then.
 fn read_change_sink(app_handle: &tauri::AppHandle) -> rekindle_protocol::dht::pool::ChangeSink {
     let handle = app_handle.clone();
     Arc::new(move |change| {
-        let handle = handle.clone();
-        tauri::async_runtime::spawn(async move {
-            let state = Arc::clone(handle.state::<crate::state::SharedState>().inner());
-            crate::services::veilid::dht_watch::handle_port_value_change(&state, change).await;
+        let state = Arc::clone(handle.state::<crate::state::SharedState>().inner());
+        let task_state = Arc::clone(&state);
+        crate::state_helpers::spawn_in_login(&state, "read change", async move {
+            crate::services::veilid::dht_watch::handle_port_value_change(&task_state, change).await;
         });
     })
 }
