@@ -6,7 +6,8 @@
 
 use rekindle_types::intent::{
     AttachmentFacts, Escalation, Fact, IntentClass, IntentId, IntentKind, IntentProof,
-    IntentReview, Notifies, ProofRequired, Reversibility, Subject,
+    IntentReview, Notifies, ProofRequired, Reason, Recipient, RecipientKind, Reversibility,
+    Subject,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -70,7 +71,7 @@ fn fact_name(f: &Fact) -> &'static str {
         Fact::MembersAffected { .. } => "membersAffected",
         Fact::MessagesDeleted { .. } => "messagesDeleted",
         Fact::PresenceVisible => "presenceVisible",
-        Fact::IpAddressLeaves => "ipAddressLeaves",
+        Fact::IpAddressLeaves { .. } => "ipAddressLeaves",
         Fact::RejoinNeedsInvite => "rejoinNeedsInvite",
         Fact::NewCreatorSet { .. } => "newCreatorSet",
         Fact::CreatorsLeave { .. } => "creatorsLeave",
@@ -99,7 +100,27 @@ fn reversibility_name(r: Reversibility) -> &'static str {
         Reversibility::ReversibleByInverse(_) => "reversibleByInverse",
         Reversibility::NeedsOthers => "needsOthers",
         Reversibility::Never => "never",
+        Reversibility::NeverBecause(_) => "neverBecause",
     }
+}
+
+fn recipient_name(r: &Recipient) -> &'static str {
+    match r {
+        Recipient::Site { .. } => "site",
+        Recipient::GameServer { .. } => "gameServer",
+    }
+}
+
+fn recipients() -> Vec<Recipient> {
+    vec![
+        Recipient::Site {
+            host: "example.org".into(),
+        },
+        Recipient::GameServer {
+            game: "Team Fortress 2".into(),
+            address: "192.0.2.10:25565".into(),
+        },
+    ]
 }
 
 fn notifies_name(n: Notifies) -> &'static str {
@@ -192,7 +213,9 @@ fn facts() -> Vec<Fact> {
         Fact::MembersAffected { count: 41 },
         Fact::MessagesDeleted { count: 1204 },
         Fact::PresenceVisible,
-        Fact::IpAddressLeaves,
+        Fact::IpAddressLeaves {
+            to: recipients().remove(1),
+        },
         Fact::RejoinNeedsInvite,
         Fact::NewCreatorSet {
             creators: vec!["aa".repeat(32)],
@@ -241,11 +264,14 @@ fn subjects() -> Vec<Subject> {
     ]
 }
 
-const REVERSIBILITIES: [Reversibility; 4] = [
+const REVERSIBILITIES: [Reversibility; 5] = [
     Reversibility::Undoable,
     Reversibility::ReversibleByInverse(IntentKind::UnblockUser),
     Reversibility::NeedsOthers,
     Reversibility::Never,
+    Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled {
+        to: RecipientKind::GameServer,
+    }),
 ];
 
 const NOTIFIES: [Notifies; 3] = [Notifies::Nobody, Notifies::Subject, Notifies::Members(57)];
@@ -274,6 +300,7 @@ pub fn review() -> IntentReview {
         notifies: Notifies::Members(57),
         proof: ProofRequired::TypeSubject,
         expires_at_ms: 1_700_000_300_000,
+        acknowledgement: None,
         cancel_sends: true,
     }
 }
@@ -314,6 +341,11 @@ pub fn samples() -> Vec<(String, Value)> {
             .map(|f| (format!("intent.fact.{}", fact_name(f)), json(f))),
     );
     out.extend(
+        recipients()
+            .iter()
+            .map(|r| (format!("intent.recipient.{}", recipient_name(r)), json(r))),
+    );
+    out.extend(
         subjects()
             .iter()
             .map(|s| (format!("intent.subject.{}", subject_name(s)), json(s))),
@@ -344,7 +376,8 @@ const EXPECTED: &[(&str, usize)] = &[
     ("escalation", 11),
     ("fact", 19),
     ("subject", 8),
-    ("reversibility", 4),
+    ("recipient", 2),
+    ("reversibility", 5),
     ("notifies", 3),
     ("intentProof", 4),
 ];

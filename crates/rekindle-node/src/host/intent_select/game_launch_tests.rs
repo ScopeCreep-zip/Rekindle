@@ -3,7 +3,10 @@
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::game_server::{JoinSource, ServerAddress};
-use rekindle_types::intent::{effective_class, Fact, IntentClass, IntentKind, Subject};
+use rekindle_types::intent::{
+    acknowledgement, effective_class, Fact, IntentClass, IntentKind, ProofRequired, Reason,
+    Recipient, RecipientKind, Reversibility, Subject,
+};
 
 use crate::host::direct_tests::ann;
 use crate::host::game_totals_tests::run;
@@ -44,7 +47,88 @@ async fn a_peer_supplied_server_is_trust_changing_and_named() {
                 name: "Counter-Strike 2 at 1.2.3.4:27015".into()
             }
         );
-        assert!(s.facts.contains(&Fact::IpAddressLeaves));
+        assert_eq!(
+            s.facts,
+            vec![Fact::IpAddressLeaves {
+                to: Recipient::GameServer {
+                    game: "Counter-Strike 2".into(),
+                    address: "1.2.3.4:27015".into(),
+                }
+            }],
+            "the review names the server our IP address reaches"
+        );
+        assert_eq!(
+            s.reversibility,
+            Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled {
+                to: RecipientKind::GameServer
+            })
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_link_review_keeps_the_site_wording() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _owner) = ann(&dir).await;
+    let request = IpcRequest::LinkOpen {
+        url: "https://example.org/page".into(),
+    };
+    let s = super::super::select(&host.ctx, &request, IntentKind::OpenExternalUrl)
+        .await
+        .unwrap();
+    assert_eq!(
+        s.facts,
+        vec![Fact::IpAddressLeaves {
+            to: Recipient::Site {
+                host: "example.org".into()
+            }
+        }]
+    );
+    assert_eq!(
+        s.reversibility,
+        Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled {
+            to: RecipientKind::Site
+        })
+    );
+}
+
+/// Every string a fact line is built from, in the webview's wording.
+fn fact_line_literals() -> Vec<String> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../src/utils/intent_text.ts"
+    );
+    let ts = std::fs::read_to_string(path).unwrap();
+    let (_, body) = ts.split_once("export function factText").unwrap();
+    let (body, _) = body.split_once("\n}\n").unwrap();
+    body.split(['"', '`'])
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .filter(|l| l.len() > 3)
+        .collect()
+}
+
+#[tokio::test]
+async fn the_acknowledgement_is_its_own_statement_not_a_fact_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _owner) = ann(&dir).await;
+    let (class, s) = class_of(
+        &host,
+        &launch(Some("1.2.3.4:27015"), JoinSource::FriendPresence),
+    )
+    .await
+    .unwrap();
+    assert_eq!(class.proof(), ProofRequired::Acknowledge);
+    let ack = acknowledgement(&s.facts, &s.escalations);
+    assert_eq!(ack, "I understand this server will see my IP address.");
+    let lines = fact_line_literals();
+    assert!(lines.iter().any(|l| l.contains("will see your IP address")));
+    for line in &lines {
+        assert!(
+            !line.contains(ack) && !ack.contains(line.as_str()),
+            "the acknowledgement copies the fact line {line:?}"
+        );
     }
 }
 

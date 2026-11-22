@@ -5,7 +5,7 @@
  */
 
 import type {
-  Escalation, Fact, IntentKind, IntentReview, Notifies, Reversibility, Subject,
+  Escalation, Fact, IntentKind, IntentReview, Notifies, Reason, Recipient, Reversibility, Subject,
 } from "../ipc/commands/dto";
 import { groupDigits } from "./safety_number";
 
@@ -50,6 +50,18 @@ export function commitLabel(review: IntentReview): string {
   return `${kindPhrase(review.kind)}: ${subjectLabel(review.subject)}`;
 }
 
+/** Who our IP address reaches: a game server by its game and address; a
+ *  link's site as "The site" (the subject line already names its host). */
+function recipientText(to: Recipient): string {
+  if ("gameServer" in to) return `${to.gameServer.game}'s server at ${to.gameServer.address}`;
+  return "The site";
+}
+
+function reasonText(reason: Reason): string {
+  const party = reason.disclosureCannotBeRecalled.to === "gameServer" ? "server" : "site";
+  return `Your IP address can't be taken back once that ${party} has seen it.`;
+}
+
 export function factText(fact: Fact): string {
   if (fact === "subjectNotTold") return "They are not told.";
   if (fact === "pendingMessagesDropped") return "Messages waiting from them are dropped.";
@@ -59,11 +71,11 @@ export function factText(fact: Fact): string {
   if (fact === "unopenedMessagesLost")
     return "Messages from them that could not be opened are lost unless they send them again.";
   if (fact === "presenceVisible") return "They will see when you are online and can reach you.";
-  if (fact === "ipAddressLeaves") return "The site will see your IP address.";
   if (fact === "rejoinNeedsInvite") return "Rejoining needs a new invite.";
   if (fact === "noHistoryCopied") {
     return "No history is copied; this community stays readable.";
   }
+  if ("ipAddressLeaves" in fact) return `${recipientText(fact.ipAddressLeaves.to)} will see your IP address.`;
   if ("newCreatorSet" in fact) {
     return `The new community's creators: ${fact.newCreatorSet.creators.join(", ")}.`;
   }
@@ -137,6 +149,7 @@ export function reversibilityText(reversibility: Reversibility): string {
   if (reversibility === "undoable") return "You can undo this right after.";
   if (reversibility === "needsOthers") return "Undoing this needs someone else.";
   if (reversibility === "never") return "This cannot be undone.";
+  if ("neverBecause" in reversibility) return reasonText(reversibility.neverBecause);
   return `${kindPhrase(reversibility.reversibleByInverse)} reverses it.`;
 }
 

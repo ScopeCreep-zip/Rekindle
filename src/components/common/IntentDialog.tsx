@@ -22,7 +22,7 @@ import {
  *
  * A security surface (plan E7.7.0): what the decision rests on (the
  * subject, the escalations and facts, what undo and notification apply,
- * and the acknowledgement that restates the fact) sits on the reserved
+ * and the acknowledgement the Host words) sits on the reserved
  * `.sec-review` card, and its buttons are the reserved `.sec-btn-*`
  * controls; no skin can restyle either. The dialog chrome (title, frame,
  * proof fields, error line) stays themeable. The destructive commit is its
@@ -55,13 +55,6 @@ const IntentDialog: Component = () => {
   function holdOpen(e: Event): void {
     if (guarded()) e.preventDefault();
   }
-  // The box states the salient fact: the first one, else the escalation
-  // that raised the class (a verified key that changed, plan E2.3).
-  const acknowledgement = (r: NonNullable<ReturnType<typeof review>>): string => {
-    if (r.facts.length > 0) return factText(r.facts[0]);
-    if (r.escalations.length > 0) return escalationText(r.escalations[0]);
-    return "I understand.";
-  };
   const warning = () => {
     const r = review();
     return r !== null && (r.class === "destructive" || r.class === "protected");
@@ -152,7 +145,7 @@ const IntentDialog: Component = () => {
                           checked={acknowledged()}
                           onChange={(e) => setAcknowledged(e.currentTarget.checked)}
                         />
-                        <span>{acknowledgement(r())}</span>
+                        <span>{r().acknowledgement}</span>
                       </label>
                     </Show>
                   </div>

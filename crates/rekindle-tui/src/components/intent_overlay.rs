@@ -170,8 +170,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &IntentOverlay, theme: &Them
     let proof_line = match review.proof {
         ProofRequired::None | ProofRequired::Commit => String::new(),
         ProofRequired::Acknowledge => format!(
-            "  [{}] I understand (space)",
-            if state.acknowledged { "x" } else { " " }
+            "  [{}] {} (space)",
+            if state.acknowledged { "x" } else { " " },
+            review.acknowledgement.as_deref().unwrap_or_default()
         ),
         ProofRequired::TypeSubject => format!(
             "  Type \"{}\": {}",
@@ -230,6 +231,7 @@ mod tests {
             notifies: Notifies::Members(3),
             proof,
             expires_at_ms: 1,
+            acknowledgement: None,
             cancel_sends: false,
         }
     }

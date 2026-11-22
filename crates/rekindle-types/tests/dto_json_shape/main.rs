@@ -67,6 +67,7 @@ fn review() -> IntentReview {
         notifies: Notifies::Nobody,
         proof: ProofRequired::Passphrase,
         expires_at_ms: 1_700_000_300_000,
+        acknowledgement: None,
         cancel_sends: false,
     }
 }

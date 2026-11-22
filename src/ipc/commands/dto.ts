@@ -276,9 +276,9 @@ export type Fact =
   | "sessionKeptUntilReplaced"
   | "unopenedMessagesLost"
   | "presenceVisible"
-  | "ipAddressLeaves"
   | "rejoinNeedsInvite"
   | "noHistoryCopied"
+  | { ipAddressLeaves: { to: Recipient } }
   | { newCreatorSet: { creators: string[] } }
   | { creatorsLeave: { creators: string[] } }
   | { successorLinked: { signer: string } }
@@ -303,10 +303,21 @@ export type Escalation =
   | { pendingWork: { inCall: boolean; unsent: number; uploading: boolean } }
   | { verifiedKeyChanged: { oldSafetyNumber: string; newSafetyNumber: string } };
 
+/** The third party our IP address reaches (`Recipient`). */
+export type Recipient =
+  | { site: { host: string } }
+  | { gameServer: { game: string; address: string } };
+
+export type RecipientKind = "site" | "gameServer";
+
+/** Why an action can never be taken back (`Reason`). */
+export type Reason = { disclosureCannotBeRecalled: { to: RecipientKind } };
+
 export type Reversibility =
   | "undoable"
   | "needsOthers"
   | "never"
+  | { neverBecause: Reason }
   | { reversibleByInverse: IntentKind };
 
 export type Notifies = "nobody" | "subject" | { members: number };
@@ -323,6 +334,9 @@ export interface IntentReview {
   notifies: Notifies;
   proof: ProofRequired;
   expiresAtMs: number;
+  /** The Host's own statement for an Acknowledge proof's checkbox, never
+   *  a fact line; null for any other proof. */
+  acknowledgement: string | null;
   /** Cancelling it runs an action of its own (the decline a session-reset
    *  request gets): only the explicit Cancel control cancels it, never Esc
    *  or a click outside the dialog. */

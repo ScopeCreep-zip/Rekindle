@@ -30,8 +30,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_types::intent::{
-    effective_class, Escalation, Fact, IntentClass, IntentId, IntentKind, IntentProof,
-    IntentReview, Notifies, ProofRequired, Reversibility, Subject,
+    acknowledgement, effective_class, Escalation, Fact, IntentClass, IntentId, IntentKind,
+    IntentProof, IntentReview, Notifies, ProofRequired, Reversibility, Subject,
 };
 
 use rekindle_utils::RandomSource;
@@ -161,6 +161,8 @@ fn review_of(
         notifies: selection.notifies,
         proof: class.proof(),
         expires_at_ms: now_ms + ttl_ms,
+        acknowledgement: (class.proof() == ProofRequired::Acknowledge)
+            .then(|| acknowledgement(&selection.facts, &selection.escalations).to_owned()),
         cancel_sends,
     }
 }

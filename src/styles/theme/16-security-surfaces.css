@@ -12,7 +12,7 @@
  *   `.form-btn-*` ones they replace;
  * - the review card `.sec-review` with what a decision rests on: the
  *   subject, the escalations and facts, what undo and notification apply
- *   and the acknowledgement that restates the fact (`IntentDialog`), the
+ *   and the acknowledgement the Host words (`IntentDialog`), the
  *   statement of what a deep link does and the key fingerprint
  *   (`DeepLinkConsentDialog`);
  * - the pairing QR and its code (`AddDeviceModal`);

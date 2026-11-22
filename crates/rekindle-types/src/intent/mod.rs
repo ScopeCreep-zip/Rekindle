@@ -17,6 +17,7 @@
 //! enum, and the webview reads the same JSON.
 
 mod all;
+mod disclosure;
 mod kind;
 mod predicates;
 mod table;
@@ -24,6 +25,7 @@ mod table;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+pub use disclosure::{acknowledgement, Reason, Recipient, RecipientKind};
 pub use kind::IntentKind;
 pub use table::{command_rows, kind_of, Classified, COMMAND_TABLE};
 
@@ -314,8 +316,10 @@ pub enum Fact {
     MessagesDeleted { count: u32 },
     /// The subject can see our presence and reach us.
     PresenceVisible,
-    /// Our IP address reaches a third party.
-    IpAddressLeaves,
+    /// Our IP address reaches a third party, named (a link's site, or the
+    /// game and `host:port` of a server a peer supplied).
+    #[serde(rename_all = "camelCase")]
+    IpAddressLeaves { to: Recipient },
     /// Rejoining needs a new invite.
     RejoinNeedsInvite,
     /// The creators who continue into a successor community, by their
@@ -352,6 +356,8 @@ pub enum Reversibility {
     /// Reversing it needs others (a peer's consent, a new invite).
     NeedsOthers,
     Never,
+    /// It can never be taken back, and the review states why.
+    NeverBecause(Reason),
 }
 
 /// Who learns of the action.
@@ -399,6 +405,9 @@ pub struct IntentReview {
     pub notifies: Notifies,
     pub proof: ProofRequired,
     pub expires_at_ms: u64,
+    /// The statement an Acknowledge proof's checkbox carries, the Host's
+    /// own words ([`acknowledgement`]); `None` for any other proof.
+    pub acknowledgement: Option<String>,
     /// Cancelling it runs an action of its own (a backend hold's answer,
     /// such as the decline a session-reset request gets): only the
     /// review's explicit Cancel control cancels it, never Esc, a click

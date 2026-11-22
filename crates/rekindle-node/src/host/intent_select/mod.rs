@@ -9,7 +9,9 @@
 
 use rekindle_idempotency::intent_gate::Selection;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
-use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibility, Subject};
+use rekindle_types::intent::{
+    Escalation, Fact, IntentKind, Notifies, Reason, Recipient, Reversibility, Subject,
+};
 
 use crate::daemon::dispatch::DaemonContext;
 
@@ -211,8 +213,8 @@ pub(crate) async fn select(
                 .ok()
                 .and_then(|u| u.host_str().map(str::to_owned))
                 .ok_or_else(|| IpcResponse::error(400, "invalid link"))?;
-            s.subject = Subject::Link { host };
-            s.facts.push(Fact::IpAddressLeaves);
+            s.subject = Subject::Link { host: host.clone() };
+            discloses_ip_address(&mut s, Recipient::Site { host });
         }
         IpcRequest::GameLaunch {
             game_id,
@@ -297,6 +299,14 @@ fn unavailable(what: &str, e: impl std::fmt::Display) -> IpcResponse {
         format!("{what} cannot be read for review: {e}"),
         "retry once the identity's state has loaded",
     )
+}
+
+/// `s` sends our IP address to `to`: the review names it, and states why
+/// the action can never be taken back (ADR 0019 reversibility).
+pub(super) fn discloses_ip_address(s: &mut Selection, to: Recipient) {
+    s.reversibility =
+        Reversibility::NeverBecause(Reason::DisclosureCannotBeRecalled { to: to.kind() });
+    s.facts.push(Fact::IpAddressLeaves { to });
 }
 
 /// The request that takes `request` back, computed from live state when

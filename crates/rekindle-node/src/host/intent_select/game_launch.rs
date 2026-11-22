@@ -8,7 +8,7 @@
 use rekindle_idempotency::intent_gate::Selection;
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::game_server::{JoinSource, ServerAddress};
-use rekindle_types::intent::{Fact, IntentKind, Subject};
+use rekindle_types::intent::{IntentKind, Recipient, Subject};
 
 use crate::daemon::dispatch::DaemonContext;
 
@@ -40,7 +40,13 @@ pub(super) async fn selection(
         }
     } else if source.peer_supplied() {
         s.kind = IntentKind::JoinGameServer;
-        s.facts.push(Fact::IpAddressLeaves);
+        super::discloses_ip_address(
+            s,
+            Recipient::GameServer {
+                game,
+                address: server.to_string(),
+            },
+        );
     }
     Ok(())
 }

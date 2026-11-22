@@ -181,6 +181,7 @@ fn the_review_serializes_in_camel_case() {
         notifies: Notifies::Members(57),
         proof: ProofRequired::TypeSubject,
         expires_at_ms: 1,
+        acknowledgement: None,
         cancel_sends: false,
     };
     let json = serde_json::to_value(&review).unwrap();
