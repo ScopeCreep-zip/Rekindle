@@ -19,6 +19,7 @@ const SettingsWindow = lazy(() => import("./windows/SettingsWindow"));
 const ProfileWindow = lazy(() => import("./windows/ProfileWindow"));
 const CallWindow = lazy(() => import("./windows/CallWindow"));
 const SkinEditorWindow = lazy(() => import("./windows/SkinEditorWindow"));
+const SkinPopupWindow = lazy(() => import("./windows/SkinPopupWindow"));
 
 const UnknownRoute = lazy(() => import("./windows/UnknownRoute"));
 
@@ -75,6 +76,9 @@ function App() {
           </Match>
           <Match when={route() === "/skin-editor"}>
             <SkinEditorWindow />
+          </Match>
+          <Match when={route().startsWith("/popup/")}>
+            <SkinPopupWindow />
           </Match>
         </Switch>
       </Suspense>
