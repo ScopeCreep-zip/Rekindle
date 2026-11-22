@@ -203,7 +203,7 @@ fn friend_peer(e: &FriendEvent) -> Option<&str> {
         | FriendEvent::ProfileKeyRotated { peer_key, .. }
         | FriendEvent::NicknameChanged { peer_key, .. }
         | FriendEvent::DisplayNameChanged { peer_key, .. }
-        | FriendEvent::BioChanged { peer_key }
+        | FriendEvent::BioChanged { peer_key, .. }
         | FriendEvent::GroupChanged { peer_key, .. }
         | FriendEvent::KeyChanged { peer_key, .. }
         | FriendEvent::HandshakeFailed { peer_key, .. }

@@ -71,7 +71,13 @@ pub enum FriendEvent {
     /// A friend's bio (their `ProfileBio`) replaced the one we held; a
     /// window showing their profile reads it again (`ProfileGet`).
     /// Triggered by: an accepted friend's `ProfileBio`, once stored.
-    BioChanged { peer_key: String },
+    BioChanged {
+        peer_key: String,
+        /// The hex BLAKE3 digest of the bio now stored (of the empty
+        /// string when removed): what makes each change its own event, so
+        /// the journal's dedup keeps a second change inside its window.
+        bio_digest: String,
+    },
     /// A friend's group changed: moved, or their group renamed or deleted
     /// (`None`: no group).
     /// Triggered by: the friend-group actions.

@@ -123,7 +123,13 @@ pub fn samples() -> Vec<Sample> {
                 display_name: text("Bob"),
             },
         ),
-        ev("bioChanged", FriendEvent::BioChanged { peer_key: pk('b') }),
+        ev(
+            "bioChanged",
+            FriendEvent::BioChanged {
+                peer_key: pk('b'),
+                bio_digest: pk('d'),
+            },
+        ),
         ev(
             "groupChanged",
             FriendEvent::GroupChanged {

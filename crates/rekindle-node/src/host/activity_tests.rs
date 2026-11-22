@@ -7,6 +7,7 @@ use rekindle_ipc::Caller;
 use rekindle_presence::{FriendPresenceDeps, GameInfoSnapshot};
 use rekindle_types::activity::ActivityListItem;
 use rekindle_types::friend::{FriendState, GameInfoState};
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::activity::{ingest, FriendChange};
 use super::adapters::friends::HostFriends;
@@ -221,4 +222,64 @@ async fn turning_the_log_off_clears_it_and_stores_nothing_until_on() {
     assert!(matches!(answer, IpcResponse::Ok { .. }), "{answer:?}");
     change(&host, base, next).await;
     assert_eq!(names(&feed(&host).await), ["startedGame"]);
+}
+
+/// Store `bio` as `bob`'s and publish the `BioChanged` the transport
+/// publishes for it.
+async fn bio_changed(host: &Host, bob: &str, bio: &str) {
+    let (o, b, text) = (
+        host.ctx.require_owner().unwrap(),
+        bob.to_owned(),
+        bio.to_owned(),
+    );
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |c| rekindle_db::repo::bio::set_friend(c, &o, &b, Some(&text)))
+        .await
+        .unwrap();
+    host.ctx
+        .publish_event(SubscriptionEvent::Friend(FriendEvent::BioChanged {
+            peer_key: bob.to_owned(),
+            bio_digest: blake3::hash(bio.as_bytes()).to_hex().to_string(),
+        }));
+}
+
+async fn wait_for(host: &Host, len: usize) -> Vec<ActivityListItem> {
+    for _ in 0..200 {
+        let items = feed(host).await;
+        if items.len() >= len {
+            return items;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    feed(host).await
+}
+
+/// Two bio changes from one friend in a row are two entries: the journal's
+/// dedup tells them apart by the new bio's digest.
+#[tokio::test]
+async fn two_bio_changes_in_a_row_are_two_entries() {
+    let (_dirs, host, _bob_host, bob) = pair().await;
+    // The worker holds Bob once it folded an event of his (as it holds a
+    // friend from their `Accepted`); his game change is that event.
+    HostFriends::of(&host.ctx).set_friend_game_info(
+        &bob,
+        Some(GameInfoSnapshot {
+            game_id: 7,
+            game_name: "Game 7".into(),
+            elapsed_seconds: 0,
+            server_address: None,
+        }),
+    );
+    assert_eq!(names(&wait_for(&host, 1).await), ["startedGame"]);
+    bio_changed(&host, &bob, "Quake").await;
+    assert_eq!(names(&wait_for(&host, 2).await)[0], "bioChanged");
+    bio_changed(&host, &bob, "Unreal").await;
+    assert_eq!(
+        names(&wait_for(&host, 3).await),
+        ["bioChanged", "bioChanged", "startedGame"],
+        "the second change is not dropped as a duplicate"
+    );
 }

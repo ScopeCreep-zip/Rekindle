@@ -232,7 +232,7 @@ fn touch(event: &SubscriptionEvent) -> Option<Touch<'_>> {
         | SubscriptionEvent::Friend(FriendEvent::DisplayNameChanged { peer_key, .. }) => {
             Touch::Row(peer_key)
         }
-        SubscriptionEvent::Friend(FriendEvent::BioChanged { peer_key }) => Touch::Bio(peer_key),
+        SubscriptionEvent::Friend(FriendEvent::BioChanged { peer_key, .. }) => Touch::Bio(peer_key),
         SubscriptionEvent::Friend(FriendEvent::Accepted { peer_key, .. }) => {
             Touch::Accepted(peer_key)
         }

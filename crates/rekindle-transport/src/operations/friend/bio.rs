@@ -73,6 +73,9 @@ pub(crate) async fn on_profile_bio(host: &dyn FriendHost, sender: &str, body: &P
     };
     let peer = sender.to_string();
     let bio = body.bio.clone();
+    let bio_digest = blake3::hash(bio.as_deref().unwrap_or_default().as_bytes())
+        .to_hex()
+        .to_string();
     let stored = state::db_call!(host, "store a friend's bio", move |conn| {
         rekindle_db::repo::bio::set_friend(conn, &owner, &peer, bio.as_deref())
     })
@@ -82,6 +85,7 @@ pub(crate) async fn on_profile_bio(host: &dyn FriendHost, sender: &str, body: &P
             // The Host's activity feed folds it (lead decision (51)).
             host.publish(SubscriptionEvent::Friend(FriendEvent::BioChanged {
                 peer_key: sender.to_owned(),
+                bio_digest,
             }));
             true
         }

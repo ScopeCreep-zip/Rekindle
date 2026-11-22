@@ -90,3 +90,25 @@ fn capacity_eviction() {
     assert!(dedup.check(&e1, NOW_MS)); // e1 was evicted, so it's new again
     assert_eq!(dedup.len(), 2);
 }
+
+/// Two bio changes from one friend inside one bucket are two events: the
+/// new bio's digest is part of the hash, so the second is not suppressed.
+#[test]
+fn two_bio_changes_in_one_bucket_are_both_kept() {
+    let mut dedup = EventDedup::new(100, 300);
+    let bio = |digest: &str| {
+        SubscriptionEvent::Friend(FriendEvent::BioChanged {
+            peer_key: "abc123".into(),
+            bio_digest: digest.into(),
+        })
+    };
+    assert!(dedup.check(&bio("d1"), NOW_MS));
+    assert!(
+        dedup.check(&bio("d2"), NOW_MS + 1),
+        "a second change is kept"
+    );
+    assert!(
+        !dedup.check(&bio("d2"), NOW_MS + 2),
+        "the same change is not"
+    );
+}
