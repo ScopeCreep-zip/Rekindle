@@ -4,6 +4,7 @@
 //! The [`ViewRegistry`] manages view lifecycle, transitions, and
 //! routing of events/actions to the active view.
 
+pub mod activity;
 pub mod channel_watch;
 pub mod community_info;
 pub mod dashboard;
@@ -92,6 +93,8 @@ pub enum ViewKind {
     },
     /// Our favourite game servers (plan E7.2).
     Favourites,
+    /// The local activity feed (plan E7.15, TU1(a)).
+    Activity,
 }
 
 /// Trait for all TUI views.
@@ -168,6 +171,7 @@ pub struct ViewRegistry {
     community_info: Option<community_info::CommunityInfoView>,
     profile: Option<profile::ProfileView>,
     favourites: Option<favourites::FavouritesView>,
+    activity: Option<activity::ActivityView>,
 }
 
 impl ViewRegistry {
@@ -186,6 +190,7 @@ impl ViewRegistry {
             community_info: None,
             profile: None,
             favourites: None,
+            activity: None,
         }
     }
 
@@ -268,6 +273,11 @@ impl ViewRegistry {
                     self.favourites = Some(favourites::FavouritesView::new());
                 }
             }
+            ViewKind::Activity => {
+                if self.activity.is_none() {
+                    self.activity = Some(activity::ActivityView::new());
+                }
+            }
         }
         self.current = kind;
     }
@@ -321,6 +331,10 @@ impl ViewRegistry {
                 .favourites
                 .as_mut()
                 .expect("favourites view should exist after transition"),
+            ViewKind::Activity => self
+                .activity
+                .as_mut()
+                .expect("activity view should exist after transition"),
         }
     }
 }

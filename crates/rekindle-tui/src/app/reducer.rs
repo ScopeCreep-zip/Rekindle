@@ -26,6 +26,18 @@ impl App {
                     tui.draw(|frame| self.draw(frame))?;
                 }
             }
+            Action::Resize(w, h) => {
+                let _ = self.nav.current_view_mut().update(Action::Resize(w, h));
+                tui.draw(|frame| self.draw(frame))?;
+            }
+            action => self.reduce(action)?,
+        }
+        Ok(())
+    }
+
+    /// Every action that does not draw to the terminal.
+    pub(crate) fn reduce(&mut self, action: Action) -> anyhow::Result<()> {
+        match action {
             Action::Tick => {
                 self.notifications.tick();
                 self.loading_spinner.tick();
@@ -53,10 +65,6 @@ impl App {
             Action::Back => {
                 let use_unicode = self.theme.use_unicode();
                 self.nav.back(use_unicode);
-            }
-            Action::Resize(w, h) => {
-                let _ = self.nav.current_view_mut().update(Action::Resize(w, h));
-                tui.draw(|frame| self.draw(frame))?;
             }
             Action::FocusNext => self.nav.current_view_mut().focus_ring().next(),
             Action::FocusPrev => self.nav.current_view_mut().focus_ring().prev(),
@@ -86,7 +94,9 @@ impl App {
             }
             Action::ToggleHelp => self.nav.toggle_help(),
             Action::Refresh => {
-                let _ = self.nav.current_view_mut().update(Action::Refresh);
+                if let Some(chained) = self.nav.current_view_mut().update(Action::Refresh)? {
+                    let _ = self.action_tx.send(chained);
+                }
             }
             Action::ToggleSidebar => {
                 self.nav.toggle_sidebar();
@@ -182,6 +192,12 @@ impl App {
                     .navigate(ViewKind::Favourites, self.theme.use_unicode());
                 self.load_favourites();
             }
+            Action::ShowActivity => {
+                self.nav
+                    .navigate(ViewKind::Activity, self.theme.use_unicode());
+                self.load_activity(None);
+            }
+            Action::LoadActivity { before } => self.load_activity(before),
             Action::AddFavourite {
                 game_id,
                 server,

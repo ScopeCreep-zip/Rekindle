@@ -110,6 +110,7 @@ impl TabBarState {
             ViewKind::ChannelWatch { .. }
             | ViewKind::CommunityInfo { .. }
             | ViewKind::VoiceSession { .. } => "communities",
+            ViewKind::Activity => "activity",
         };
         self.select_by_id(tab_id);
     }

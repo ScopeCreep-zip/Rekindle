@@ -173,6 +173,11 @@ impl App {
                     .navigate(ViewKind::FriendList, self.theme.use_unicode());
                 self.load_friend_list();
             }
+            "activity" => {
+                self.nav
+                    .navigate(ViewKind::Activity, self.theme.use_unicode());
+                self.load_activity(None);
+            }
             _ => {}
         }
     }
@@ -199,6 +204,7 @@ impl App {
                 format!("Friends > {}", crate::helpers::sanitize_for_display(name))
             }
             ViewKind::Favourites => "Dashboard > Favourite servers".into(),
+            ViewKind::Activity => "Activity".into(),
             ViewKind::CommunityInfo { community } => {
                 format!("{} / Info", self.community_name(community))
             }
@@ -244,6 +250,11 @@ impl App {
                     detail: "diagnostics".into(),
                     action: Action::ShowDoctor,
                 });
+                items.push(SearchItem {
+                    label: "Activity".into(),
+                    detail: "view".into(),
+                    action: Action::ShowActivity,
+                });
                 items
             }
             SearchMode::MessageSearch => Vec::new(),
@@ -287,6 +298,11 @@ impl App {
                     label: "Doctor".into(),
                     detail: String::new(),
                     action: Action::ShowDoctor,
+                },
+                SearchItem {
+                    label: "Activity".into(),
+                    detail: String::new(),
+                    action: Action::ShowActivity,
                 },
             ],
         }

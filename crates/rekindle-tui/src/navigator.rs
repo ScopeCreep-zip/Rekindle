@@ -319,7 +319,8 @@ impl Navigator {
                 _ => KeyResolution::Consumed,
             }),
             // Dashboard quick shortcuts: d=DMs, f=Friends, g=Groups,
-            // p=our profile, s=favourite servers (plan E7.2)
+            // p=our profile, s=favourite servers (plan E7.2), a=activity
+            // (plan E7.15)
             KeyCode::Char('d') => Some(KeyResolution::Action(Action::ShowDmInbox)),
             KeyCode::Char('f') => Some(KeyResolution::Action(Action::ShowFriendList)),
             KeyCode::Char('g') => Some(KeyResolution::Action(Action::ShowGroupDms)),
@@ -328,6 +329,7 @@ impl Navigator {
                 name: String::new(),
             })),
             KeyCode::Char('s') => Some(KeyResolution::Action(Action::ShowFavourites)),
+            KeyCode::Char('a') => Some(KeyResolution::Action(Action::ShowActivity)),
             // All other keys fall through to global keymap
             _ => None,
         }

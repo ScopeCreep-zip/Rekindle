@@ -79,6 +79,13 @@ pub enum Action {
     },
     /// Our favourite game servers (plan E7.2).
     ShowFavourites,
+    /// The local activity feed (plan E7.15, TU1(a)): its first page.
+    ShowActivity,
+    /// A page of the activity feed: the first (`before` `None`) or the one
+    /// older than row `before` (`ActivityList`).
+    LoadActivity {
+        before: Option<i64>,
+    },
     ShowCommunityInfo {
         community: String,
     },
@@ -321,5 +328,11 @@ pub enum CommandResult {
     /// Our favourite game servers (`FavouriteServersGet`, plan E7.2).
     FavouritesLoaded {
         servers: Vec<rekindle_types::dto::presence::FavouriteServerView>,
+    },
+    /// A page of the activity feed (`ActivityList`, plan E7.15), newest
+    /// first, asked with `before`.
+    ActivityLoaded {
+        before: Option<i64>,
+        entries: Vec<rekindle_types::activity::ActivityListItem>,
     },
 }

@@ -206,7 +206,10 @@ impl App {
                 | VoiceEvent::DeviceChanged { .. }
                 | VoiceEvent::PacketsDropped { .. }
                 | VoiceEvent::ConnectionQuality { .. },
-            ) => {
+            )
+            // New feed entries (plan E7.15): the open Activity view adds
+            // them as the Host named them, without asking again.
+            | SubscriptionEvent::System(SystemEvent::ActivityAppended { .. }) => {
                 let _ = self
                     .action_tx
                     .send(Action::SubscriptionEvent(Box::new(event)));

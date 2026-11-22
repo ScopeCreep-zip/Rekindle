@@ -12,6 +12,7 @@
 //! - `render.rs`   — draw(), overlays, breadcrumb, search items, tab transitions
 //! - `commands.rs` — Async IPC command spawning (all daemon requests)
 
+mod activity_commands;
 mod commands;
 mod events;
 mod friend_commands;
@@ -132,6 +133,11 @@ impl App {
             Tab {
                 label: "Friends".into(),
                 id: "friends".into(),
+                unread: 0,
+            },
+            Tab {
+                label: "Activity".into(),
+                id: "activity".into(),
                 unread: 0,
             },
         ];
