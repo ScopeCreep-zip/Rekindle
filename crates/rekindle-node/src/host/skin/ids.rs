@@ -47,6 +47,18 @@ fn refuse(what: &str) -> IpcResponse {
 /// `validate_request`'s arm for the skin requests.
 ///
 /// # Errors
+/// Each selection field within its bound: a key and an id are names, an
+/// address `host:port`, a path a file path.
+fn selection_fits(selection: &rekindle_types::dto::skin_run::SkinSelection) -> bool {
+    use rekindle_types::dto::skin_run::SkinSelection as S;
+    match selection {
+        S::Friend { public_key } => public_key.len() <= 128,
+        S::Server { address, .. } => address.len() <= 256,
+        S::Transfer { attachment_id: id } | S::Group { group_id: id } => id.len() <= 64,
+        S::Media { path } => path.len() <= 4096,
+    }
+}
+
 /// A 400 naming the field.
 pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
     match request {
@@ -65,11 +77,11 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
             ))
         }
         IpcRequest::SkinSelectionSet {
-            selection: Some(rekindle_types::dto::skin_run::SkinSelection::Friend { public_key }),
+            selection: Some(selection),
             ..
-        } if public_key.len() > 128 => Err(IpcResponse::error(
+        } if !selection_fits(selection) => Err(IpcResponse::error(
             400,
-            "selected key longer than 128 bytes",
+            "a selection field is longer than its bound",
         )),
         IpcRequest::SkinList
         | IpcRequest::SkinFrames

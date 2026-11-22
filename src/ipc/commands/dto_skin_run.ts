@@ -20,7 +20,12 @@ export interface SkinSignalSet {
   newNotification: boolean;
 }
 
-export type SkinSelection = { kind: "friend"; arg: { publicKey: string } };
+export type SkinSelection =
+  | { kind: "friend"; arg: { publicKey: string } }
+  | { kind: "server"; arg: { gameId: number; address: string } }
+  | { kind: "transfer"; arg: { attachmentId: string } }
+  | { kind: "media"; arg: { path: string } }
+  | { kind: "group"; arg: { groupId: string } };
 
 export type ShellPanel =
   | "addFriend"

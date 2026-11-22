@@ -10,6 +10,9 @@
 pub(crate) mod actions;
 #[cfg(test)]
 mod actions_tests;
+pub(crate) mod capability;
+#[cfg(test)]
+mod capability_tests;
 mod draft;
 pub(crate) mod ids;
 pub(crate) mod login;

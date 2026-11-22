@@ -11,6 +11,7 @@ use rekindle_ipc::protocol::{IpcResponse, PinRequest};
 
 use super::{adapter, DaemonContext};
 use crate::host::adapters::files::HostFiles;
+use crate::host::skin::capability::Transfer;
 
 /// The status a files failure answers with.
 fn refused(e: &FilesError, what: &str) -> IpcResponse {
@@ -42,13 +43,25 @@ pub(super) async fn handle(ctx: &DaemonContext, key: &str, request: PinRequest) 
             attachment_id,
             path,
             ..
-        } => match files
-            .download(key, &channel_id, &attachment_id, Path::new(&path))
-            .await
-        {
-            Ok(()) => IpcResponse::ok(&()),
-            Err(e) => refused(&e, "download attachment"),
-        },
+        } => {
+            // The skin's StartDownload / StopDownload / ExecuteDownload
+            // follow this download (SK2-G §4).
+            let signals = &ctx.skin_signals;
+            signals.set_transfer(&attachment_id, Transfer::Active);
+            match files
+                .download(key, &channel_id, &attachment_id, Path::new(&path))
+                .await
+            {
+                Ok(()) => {
+                    signals.set_transfer(&attachment_id, Transfer::Done(path.into()));
+                    IpcResponse::ok(&())
+                }
+                Err(e) => {
+                    signals.set_transfer(&attachment_id, Transfer::Failed);
+                    refused(&e, "download attachment")
+                }
+            }
+        }
         PinRequest::AttachmentInfo {
             channel_id,
             attachment_id,

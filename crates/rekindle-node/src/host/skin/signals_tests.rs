@@ -6,15 +6,18 @@ use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserSt
 use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
 
 use super::actions::Selections;
+use super::capability::{Selected, World};
 use super::signals::{compute, window_sets, Inputs};
 
 const SELECTED_KEY: &str = "selectedkey";
+/// Team Fortress 2: launchable (a connect template).
+const TF2: u32 = 4100;
 
 fn friend(status: UserStatus, server: Option<&str>) -> FriendState {
     let mut f = FriendState::new(SELECTED_KEY.into(), "Sel".into(), FriendshipState::Accepted);
     f.status = status;
     f.game_info = server.map(|s| GameInfoState {
-        game_id: 1,
+        game_id: TF2,
         game_name: "Quake".into(),
         server_info: None,
         elapsed_seconds: 0,
@@ -25,10 +28,15 @@ fn friend(status: UserStatus, server: Option<&str>) -> FriendState {
 }
 
 fn can(f: &FriendState, capability: Capability) -> bool {
+    let selected = Selected::Friend {
+        key: SELECTED_KEY,
+        friend: Some(f),
+    };
     let set = compute(
         "buddy-list",
         &Inputs::default(),
-        Some((SELECTED_KEY, Some(f))),
+        &World::default(),
+        selected,
     );
     assert_ne!(
         set.can.contains(&capability),
@@ -53,7 +61,12 @@ fn capabilities_follow_the_selected_friend_offline_online_in_game() {
 
 #[test]
 fn no_selection_cannot_the_friend_capabilities_only() {
-    let set = compute("buddy-list", &Inputs::default(), None);
+    let set = compute(
+        "buddy-list",
+        &Inputs::default(),
+        &World::default(),
+        Selected::Nothing,
+    );
     for c in [
         Capability::Chat,
         Capability::Profile,
@@ -63,32 +76,32 @@ fn no_selection_cannot_the_friend_capabilities_only() {
     ] {
         assert!(set.cannot.contains(&c), "{c:?}");
     }
-    // Nothing about these depends on a selection or a missing feature.
+    // With nothing selected and nothing known, these have nothing to act on.
     for c in [
         Capability::AddServer,
         Capability::RefreshServer,
         Capability::HostGameLobby,
         Capability::CreateRoom,
     ] {
-        assert!(set.can.contains(&c), "{c:?}");
+        assert!(set.cannot.contains(&c), "{c:?}");
     }
 }
 
 #[test]
 fn self_mute_follows_the_call_state() {
     let mut inputs = Inputs::default();
-    let set = compute("buddy-list", &inputs, None);
+    let set = compute("buddy-list", &inputs, &World::default(), Selected::Nothing);
     assert!(set.cannot.contains(&Capability::MuteSelf));
     assert!(set.cannot.contains(&Capability::UnmuteSelf));
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
         direct: None,
     }));
-    let set = compute("buddy-list", &inputs, None);
+    let set = compute("buddy-list", &inputs, &World::default(), Selected::Nothing);
     assert!(set.can.contains(&Capability::MuteSelf));
     assert!(set.cannot.contains(&Capability::UnmuteSelf));
     inputs.set_self_muted(true);
-    let set = compute("buddy-list", &inputs, None);
+    let set = compute("buddy-list", &inputs, &World::default(), Selected::Nothing);
     assert!(set.cannot.contains(&Capability::MuteSelf));
     assert!(set.can.contains(&Capability::UnmuteSelf));
 }
@@ -106,7 +119,7 @@ fn two_chat_windows_with_different_peers_get_different_sets() {
     };
     pick("chat-online", "onlinekey");
     pick("chat-offline", "offlinekey");
-    let sets = window_sets(&Inputs::default(), &selections, |k| {
+    let sets = window_sets(&Inputs::default(), &selections, &World::default(), |k| {
         let status = if k == "onlinekey" {
             UserStatus::Online
         } else {
@@ -123,10 +136,10 @@ fn two_chat_windows_with_different_peers_get_different_sets() {
 #[test]
 fn focus_changes_the_set() {
     let mut inputs = Inputs::default();
-    let before = compute("chat-a", &inputs, None);
+    let before = compute("chat-a", &inputs, &World::default(), Selected::Nothing);
     inputs.set_focus("chat-a", true);
-    let after = compute("chat-a", &inputs, None);
+    let after = compute("chat-a", &inputs, &World::default(), Selected::Nothing);
     assert!(!before.focused);
     assert!(after.focused);
-    assert!(!compute("buddy-list", &inputs, None).focused);
+    assert!(!compute("buddy-list", &inputs, &World::default(), Selected::Nothing).focused);
 }

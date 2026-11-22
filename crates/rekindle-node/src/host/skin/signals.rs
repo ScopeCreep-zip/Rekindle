@@ -15,23 +15,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use rekindle_types::dto::skin_action::Capability;
+use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::skin_signals::{SkinSignalSet, EVERY_CAPABILITY};
-use rekindle_types::friend::{FriendState, FriendshipState, UserStatus};
+use rekindle_types::friend::{FriendState, FriendshipState};
 use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
     TypingEvent, VoiceEvent,
 };
 
+use super::capability::{allows, Group, Selected, Transfer, World};
 use crate::daemon::dispatch::DaemonContext;
 
 /// A call the Host has seen on its stream, by call id.
 #[derive(Debug, Clone)]
-struct Call {
+pub(crate) struct Call {
     /// The 1:1 peer; `None` for a group call.
     peer: Option<String>,
-    ringing: bool,
-    outgoing: bool,
+    pub(crate) ringing: bool,
+    pub(crate) outgoing: bool,
 }
 
 /// What the signals are computed from, besides the selection and the session.
@@ -48,6 +49,8 @@ pub(crate) struct Inputs {
     self_muted: bool,
     disconnected: bool,
     unseen_notification: BTreeSet<String>,
+    /// The downloads the Host ran, by attachment id.
+    transfers: BTreeMap<String, Transfer>,
 }
 
 impl Inputs {
@@ -80,8 +83,21 @@ impl Inputs {
         self.self_muted = muted;
     }
 
-    fn in_call(&self) -> bool {
+    pub(crate) fn in_call(&self) -> bool {
         self.calls.values().any(|c| !c.ringing)
+    }
+
+    pub(crate) fn self_muted(&self) -> bool {
+        self.self_muted
+    }
+
+    /// A download's state, by attachment id.
+    pub(crate) fn transfer(&self, attachment_id: &str) -> Option<&Transfer> {
+        self.transfers.get(attachment_id)
+    }
+
+    pub(crate) fn set_transfer(&mut self, attachment_id: &str, transfer: Transfer) {
+        self.transfers.insert(attachment_id.to_owned(), transfer);
     }
 
     /// Fold one event; `false` when it cannot change any window's set.
@@ -176,66 +192,19 @@ impl Inputs {
         true
     }
 
-    fn call_with(&self, peer: &str) -> Option<&Call> {
+    pub(crate) fn call_with(&self, peer: &str) -> Option<&Call> {
         self.calls
             .values()
             .find(|c| c.peer.as_deref() == Some(peer))
     }
 }
 
-/// Whether `capability` holds: `selected` is the selected key and the
-/// friend it names, if any. Each `false` is a state condition Xfire's
-/// `OnAppCannot<X>` followed.
-fn allows(
-    capability: Capability,
-    inputs: &Inputs,
-    selected: Option<(&str, Option<&FriendState>)>,
-) -> bool {
-    let key = selected.map(|(k, _)| k);
-    let friend = selected.and_then(|(_, f)| f);
-    let accepted = friend.is_some_and(|f| f.friendship_state == FriendshipState::Accepted);
-    let online = accepted && friend.is_some_and(|f| f.status != UserStatus::Offline);
-    let call = key.and_then(|k| inputs.call_with(k));
-    let server = friend
-        .and_then(|f| f.game_info.as_ref())
-        .is_some_and(|g| g.server_address.is_some());
-    match capability {
-        // A key that is not a friend yet.
-        Capability::AddFriend => selected.is_some() && friend.is_none(),
-        Capability::Chat => accepted,
-        Capability::Profile | Capability::Delete => selected.is_some(),
-        // An online friend in a game with a server we can join.
-        Capability::Join | Capability::JoinGameLobby => online && server,
-        Capability::VoiceChat | Capability::HostVoiceChat => online && call.is_none(),
-        Capability::LeaveVoiceChat => call.is_some_and(|c| !c.ringing),
-        Capability::CancelVoiceChat => call.is_some_and(|c| c.ringing && c.outgoing),
-        Capability::MuteSelf => inputs.in_call() && !inputs.self_muted,
-        Capability::UnmuteSelf => inputs.in_call() && inputs.self_muted,
-        // No state gates these: each is always available.
-        Capability::AddServer
-        | Capability::RefreshServer
-        | Capability::StartDownload
-        | Capability::HostGameLobby
-        | Capability::CreateRoom
-        | Capability::EnterRoom => true,
-        // These act on something selected in the window.
-        Capability::DeleteSelected | Capability::OpenSelected | Capability::UploadSelected => {
-            selected.is_some()
-        }
-        // These act on a download or a lobby in progress: there is none
-        // until one starts.
-        Capability::StopDownload
-        | Capability::ExecuteDownload
-        | Capability::LaunchGameLobby
-        | Capability::LeaveGameLobby => false,
-    }
-}
-
-/// One window's set: `selected` is the selected key and its friend, if any.
+/// One window's set.
 pub(crate) fn compute(
     window: &str,
     inputs: &Inputs,
-    selected: Option<(&str, Option<&FriendState>)>,
+    world: &World,
+    selected: Selected<'_>,
 ) -> SkinSignalSet {
     let mut set = SkinSignalSet {
         focused: inputs.focused.contains(window),
@@ -244,13 +213,13 @@ pub(crate) fn compute(
         ..SkinSignalSet::default()
     };
     for capability in EVERY_CAPABILITY {
-        if allows(capability, inputs, selected) {
+        if allows(capability, inputs, world, selected) {
             set.can.insert(capability);
         } else {
             set.cannot.insert(capability);
         }
     }
-    if let Some((key, _)) = selected {
+    if let Some(key) = selected.key() {
         set.user_typing = inputs.typing.contains(key);
         set.voice_ringing = inputs.call_with(key).is_some_and(|c| c.ringing);
         set.talking = inputs.speaking.contains(key);
@@ -263,6 +232,7 @@ pub(crate) fn compute(
 pub(crate) fn window_sets(
     inputs: &Inputs,
     selections: &super::actions::Selections,
+    world: &World,
     friend: impl Fn(&str) -> Option<FriendState>,
 ) -> BTreeMap<String, SkinSignalSet> {
     let mut windows: BTreeSet<String> = inputs.windows.clone();
@@ -270,12 +240,65 @@ pub(crate) fn window_sets(
     windows
         .into_iter()
         .map(|window| {
-            let key = selections.friend(&window);
-            let f = key.as_deref().and_then(&friend);
-            let set = compute(&window, inputs, key.as_deref().map(|k| (k, f.as_ref())));
+            let selection = selections.get(&window);
+            let f = match &selection {
+                Some(SkinSelection::Friend { public_key }) => friend(public_key),
+                _ => None,
+            };
+            let selected = Selected::of(selection.as_ref(), f.as_ref());
+            let set = compute(&window, inputs, world, selected);
             (window, set)
         })
         .collect()
+}
+
+/// The state the capabilities read besides the selection and the stream:
+/// the session's friends and communities, our shown game, and our
+/// favourite servers, groups and group invites in the database.
+pub(crate) async fn load_world(ctx: &DaemonContext) -> World {
+    let mut world = World::default();
+    if let Some(session) = ctx.session.read().as_ref() {
+        for f in session.friends.values() {
+            if f.friendship_state == FriendshipState::Accepted {
+                world.accepted_friends += 1;
+                let server = f.game_info.as_ref().and_then(|g| g.server_address.as_ref());
+                world.friend_servers += usize::from(server.is_some());
+            }
+        }
+        world.communities = session.communities.len();
+    }
+    world.own_game = ctx.own_presence.view().game.map(|g| g.game_id);
+    let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
+        return world;
+    };
+    let now = ctx.clock.now_ms_i64();
+    let read = db
+        .call(move |conn| {
+            use rekindle_db::repo::{favourite_servers, group_dm_invites, group_dms};
+            let favourites = favourite_servers::list(conn, &owner)?;
+            let groups = group_dms::list(conn, &owner)?;
+            let invites = group_dm_invites::list(conn, &owner, now)?;
+            let joined = groups.into_iter().map(|g| {
+                let others = g.roster.iter().filter(|m| m.identity != owner).count();
+                (g.group_id, Group::Joined { others })
+            });
+            let pending = invites.into_iter().map(|i| (i.group_id, Group::Pending));
+            let favourites: BTreeSet<(u32, String)> = favourites
+                .into_iter()
+                .map(|f| (f.game_id, f.address))
+                .collect();
+            let groups: BTreeMap<String, Group> = pending.chain(joined).collect();
+            Ok((favourites, groups))
+        })
+        .await;
+    match read {
+        Ok((favourites, groups)) => {
+            world.favourites = favourites;
+            world.groups = groups;
+        }
+        Err(e) => tracing::warn!(error = %e, "skin signals: database state unread"),
+    }
+    world
 }
 
 /// The Host's signal state: the inputs, the sets last published, and the
@@ -293,6 +316,12 @@ impl SignalState {
         self.poke.notify_one();
     }
 
+    /// A download's state changed (`AttachmentDownload`).
+    pub(crate) fn set_transfer(&self, attachment_id: &str, transfer: Transfer) {
+        self.inputs.lock().set_transfer(attachment_id, transfer);
+        self.poke();
+    }
+
     /// The shell's window focus (`Host::skin_window_focused`).
     pub(crate) fn set_focus(&self, window: &str, focused: bool) {
         self.inputs.lock().set_focus(window, focused);
@@ -301,11 +330,11 @@ impl SignalState {
 }
 
 /// Each window's set that differs from the one last published.
-pub(crate) fn changed(ctx: &DaemonContext) -> Vec<(String, SkinSignalSet)> {
+pub(crate) fn changed(ctx: &DaemonContext, world: &World) -> Vec<(String, SkinSignalSet)> {
     let sets = {
         let session = ctx.session.read();
         let inputs = ctx.skin_signals.inputs.lock();
-        window_sets(&inputs, &ctx.skin_selection, |k| {
+        window_sets(&inputs, &ctx.skin_selection, world, |k| {
             session.as_ref().and_then(|s| s.friends.get(k).cloned())
         })
     };
@@ -322,8 +351,8 @@ pub(crate) fn changed(ctx: &DaemonContext) -> Vec<(String, SkinSignalSet)> {
 }
 
 /// Publish every changed set.
-pub(crate) fn publish_changes(ctx: &DaemonContext) {
-    for (window, set) in changed(ctx) {
+pub(crate) fn publish_changes(ctx: &DaemonContext, world: &World) {
+    for (window, set) in changed(ctx, world) {
         ctx.journal.publish_state(
             &format!("skin-signals:{window}"),
             SubscriptionEvent::System(SystemEvent::SkinSignals { window, set }),
@@ -334,7 +363,7 @@ pub(crate) fn publish_changes(ctx: &DaemonContext) {
 /// The worker: fold the Host's stream and the pokes until shutdown.
 pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
     let mut stream = ctx.journal.subscribe(None);
-    publish_changes(&ctx);
+    publish_changes(&ctx, &load_world(&ctx).await);
     loop {
         tokio::select! {
             () = ctx.shutdown.requested() => return,
@@ -349,7 +378,7 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
             },
             () = ctx.skin_signals.poke.notified() => {}
         }
-        publish_changes(&ctx);
+        publish_changes(&ctx, &load_world(&ctx).await);
     }
 }
 

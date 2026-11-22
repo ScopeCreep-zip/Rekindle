@@ -115,7 +115,26 @@ pub enum SkinRun {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "arg")]
 pub enum SkinSelection {
-    Friend { public_key: String },
+    Friend {
+        public_key: String,
+    },
+    /// A game server in the Servers view (SK2-G §3): its game and `host:port`.
+    Server {
+        game_id: u32,
+        address: String,
+    },
+    /// A download in the transfers view (SK2-G §4), by attachment id.
+    Transfer {
+        attachment_id: String,
+    },
+    /// A picture or video in the media view (SK2-G §7), by its file.
+    Media {
+        path: String,
+    },
+    /// A group DM, a room (SK2-G §5–§6), by group id.
+    Group {
+        group_id: String,
+    },
 }
 
 /// A window's current signal set (design §2.5).

@@ -29,10 +29,17 @@ impl Selections {
         };
     }
 
+    /// The window's selected friend, when its selection is a friend.
     pub(crate) fn friend(&self, window: &str) -> Option<String> {
-        self.0.lock().get(window).map(|s| match s {
-            SkinSelection::Friend { public_key } => public_key.clone(),
-        })
+        match self.0.lock().get(window) {
+            Some(SkinSelection::Friend { public_key }) => Some(public_key.clone()),
+            _ => None,
+        }
+    }
+
+    /// The window's selection.
+    pub(crate) fn get(&self, window: &str) -> Option<SkinSelection> {
+        self.0.lock().get(window).cloned()
     }
 
     /// The labels of the windows that have a selection.
