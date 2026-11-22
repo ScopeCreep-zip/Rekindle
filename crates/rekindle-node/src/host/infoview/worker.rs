@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_types::dto::infoview::InfoviewEvent;
+use rekindle_types::dto::infoview::{InfoviewEvent, InfoviewSubject};
 use rekindle_types::subscription_events::{
     PresenceEvent, StreamFrame, SubscriptionEvent, SystemEvent,
 };
@@ -36,27 +36,35 @@ fn shown(event: &SubscriptionEvent) -> bool {
     )
 }
 
-/// The worker: fold the Host's journal until shutdown. A session's end
-/// (`InvalidSession`) closes every view.
+/// The worker: fold the Host's journal until shutdown. A shown event
+/// pushes every open view; a selection change (`OpenViews::selection_changed`)
+/// pushes only the views that follow that window's selection (plan E7.15,
+/// IV5). A session's end (`InvalidSession`) closes every view.
 pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
     let mut stream = ctx.journal.subscribe(None);
     let mut due: Option<Instant> = None;
+    let mut all = false;
     loop {
         let frame = tokio::select! {
             () = ctx.shutdown.requested() => return,
             () = sleep_until(due), if due.is_some() => {
                 due = None;
-                push(&ctx).await;
+                push(&ctx, std::mem::take(&mut all)).await;
+                continue;
+            }
+            () = ctx.infoview.changed.notified() => {
+                due.get_or_insert_with(|| Instant::now() + COALESCE);
                 continue;
             }
             frame = stream.next() => frame,
         };
         match frame {
             Some(StreamFrame::Event(s)) if shown(&s.event) => {
+                all = true;
                 due.get_or_insert_with(|| Instant::now() + COALESCE);
             }
             Some(StreamFrame::InvalidSession) => {
-                due = None;
+                (due, all) = (None, false);
                 ctx.infoview.close_all();
             }
             Some(_) => {}
@@ -65,9 +73,18 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
     }
 }
 
-/// Compose each open window's view again and push it to that window.
-async fn push(ctx: &DaemonContext) {
-    for (window, subject) in ctx.infoview.open() {
+/// Compose the open windows' views again and push each to its window:
+/// every view when `all`, else the views asking `Selection` whose launcher's
+/// selection changed.
+async fn push(ctx: &DaemonContext, all: bool) {
+    let changed = ctx.infoview.take_changed();
+    for (window, asked) in ctx.infoview.open() {
+        let follows =
+            asked == InfoviewSubject::Selection && changed.contains(&super::launcher(ctx, &window));
+        if !(all || follows) {
+            continue;
+        }
+        let subject = super::resolved(ctx, &window, &asked);
         match super::compose::view(ctx, &subject).await {
             Ok(view) => ctx.publish_event(SubscriptionEvent::System(SystemEvent::Infoview(
                 InfoviewEvent::Updated { window, view },

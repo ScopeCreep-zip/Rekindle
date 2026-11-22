@@ -9,6 +9,7 @@ use rekindle_ipc::Caller;
 use rekindle_types::dto::infoview::{
     InfoviewAction, InfoviewEvent, InfoviewSection, InfoviewSubject, InfoviewView, JoinSource,
 };
+use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::friend::{GameInfoState, NotJoinableReason};
 use rekindle_types::subscription_events::{
     FriendEvent, StreamFrame, SubscriptionEvent, SystemEvent,
@@ -340,4 +341,107 @@ async fn a_community_page_counts_the_members_its_beats_show_present() {
         panic!("{view:?}");
     };
     assert_eq!((anchor.as_str(), *online_count), ("c1", 1));
+}
+
+/// `InfoviewGet { Selection }` for `window`, answered as JSON: its
+/// `subject` is never `selection` (plan E7.15, IV5).
+async fn get_selection(host: &Host, window: &str) -> InfoviewView {
+    let request = IpcRequest::InfoviewGet {
+        subject: InfoviewSubject::Selection,
+        window: window.to_owned(),
+    };
+    let IpcResponse::Ok { data, .. } =
+        rekindle_ipc::HostApi::call(host, Caller::shell(), request).await
+    else {
+        panic!("InfoviewGet refused");
+    };
+    assert_ne!(data["subject"]["type"], "selection", "{data}");
+    serde_json::from_value(data).unwrap()
+}
+
+fn select(window: &str, selection: Option<SkinSelection>) -> IpcRequest {
+    IpcRequest::SkinSelectionSet {
+        window: window.to_owned(),
+        selection,
+    }
+}
+
+/// The Info popup asks `Selection`: it gets its launcher's selected
+/// friend's page, labelled with the friend, never `Selection`.
+#[tokio::test]
+async fn a_popup_asking_selection_gets_its_launchers_selected_friend() {
+    let (_dirs, host, _owner, bob) = ann_and_bob().await;
+    let friend = SkinSelection::Friend {
+        public_key: bob.clone(),
+    };
+    host.skin_window_opened("buddy-list", None, Some(friend));
+    host.skin_window_opened("popup-info", Some("buddy-list"), None);
+    let view = get_selection(&host, "popup-info").await;
+    assert_eq!(view.subject, InfoviewSubject::Friend { public_key: bob });
+    // Bob set no bio, so his page has no `bio` section.
+    assert_eq!(kinds(&view), ["friendHeader", "nowPlaying"]);
+}
+
+/// Nothing selected in the launcher: our own page; a friend group selected:
+/// that group's page.
+#[tokio::test]
+async fn a_popup_follows_no_selection_to_our_own_page_and_a_group_to_its_page() {
+    let (_dirs, host, _owner, _bob) = ann_and_bob().await;
+    host.skin_window_opened("buddy-list", None, None);
+    host.skin_window_opened("popup-info", Some("buddy-list"), None);
+    let view = get_selection(&host, "popup-info").await;
+    assert_eq!(view.subject, InfoviewSubject::Own);
+    assert_eq!(kinds(&view), ["activity", "communities", "nowPlaying"]);
+    let group = SkinSelection::FriendGroup { group_id: None };
+    host.skin_window_opened("buddy-list", None, Some(group));
+    let view = get_selection(&host, "popup-info").await;
+    assert_eq!(
+        view.subject,
+        InfoviewSubject::FriendGroup { group_id: None }
+    );
+    assert_eq!(kinds(&view), ["groupMembers"]);
+}
+
+/// A launcher's selection change pushes one `Updated`, with the resolved
+/// subject, to the popup that follows it, and none to a popup whose
+/// launcher did not change or to a window asking a fixed subject.
+#[tokio::test]
+async fn a_selection_change_pushes_only_the_popup_that_follows_it() {
+    let (_dirs, host, _owner, bob) = ann_and_bob().await;
+    host.skin_window_opened("buddy-list", None, None);
+    host.skin_window_opened("chat-1", None, None);
+    host.skin_window_opened("popup-info", Some("buddy-list"), None);
+    host.skin_window_opened("popup-chat", Some("chat-1"), None);
+    get_selection(&host, "popup-info").await;
+    get_selection(&host, "popup-chat").await;
+    get(&host, InfoviewSubject::Own, "buddy-list").await;
+    // The opens above are older than one coalescing period by now.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let mut stream = host.ctx.journal.subscribe(None);
+    let friend = SkinSelection::Friend {
+        public_key: bob.clone(),
+    };
+    let request = select("buddy-list", Some(friend));
+    let answer = rekindle_ipc::HostApi::call(&*host, Caller::shell(), request).await;
+    assert!(matches!(answer, IpcResponse::Ok { .. }), "{answer:?}");
+    let mut pushes = Vec::new();
+    let end = tokio::time::Instant::now() + Duration::from_millis(900);
+    while let Ok(Some(frame)) = tokio::time::timeout_at(end, stream.next()).await {
+        if let StreamFrame::Event(s) = frame {
+            if let SubscriptionEvent::System(SystemEvent::Infoview(InfoviewEvent::Updated {
+                window,
+                view,
+            })) = s.event
+            {
+                pushes.push((window, view.subject));
+            }
+        }
+    }
+    assert_eq!(
+        pushes,
+        [(
+            "popup-info".to_owned(),
+            InfoviewSubject::Friend { public_key: bob }
+        )]
+    );
 }

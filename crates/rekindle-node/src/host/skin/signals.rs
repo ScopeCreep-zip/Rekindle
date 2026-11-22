@@ -403,6 +403,7 @@ impl crate::host::Host {
         self.ctx.skin.signals.inputs.lock().open(window);
         self.ctx.skin.selection.set(window, selection);
         self.ctx.skin.signals.poke();
+        self.ctx.infoview.selection_changed(window);
     }
 
     /// A skin window closed: its selection and signals go with it.
@@ -410,6 +411,7 @@ impl crate::host::Host {
         self.ctx.skin.signals.inputs.lock().close(window);
         self.ctx.skin.selection.set(window, None);
         self.ctx.skin.launchers.set(window, None);
+        self.ctx.infoview.close(window);
         self.ctx
             .journal
             .clear_state(&format!("skin-signals:{window}"));

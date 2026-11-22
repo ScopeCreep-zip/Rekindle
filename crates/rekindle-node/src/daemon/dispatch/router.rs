@@ -190,8 +190,19 @@ async fn route(
 
         // ── Skins (plan E7.7.2) ──────────────────────────────────
         request @ (IpcRequest::RunSkinAction { .. } | IpcRequest::SkinSelectionSet { .. }) => {
+            // A changed selection recomposes the Infoviews that follow it
+            // (plan E7.15, IV5).
+            let changed = match &request {
+                IpcRequest::SkinSelectionSet { window, selection } => {
+                    (ctx.skin.selection.get(window) != *selection).then(|| window.clone())
+                }
+                _ => None,
+            };
             let answer = crate::host::skin::actions::answer(&ctx.skin.selection, request);
             ctx.skin.signals.poke();
+            if let Some(window) = changed {
+                ctx.infoview.selection_changed(&window);
+            }
             answer
         }
         request @ IpcRequest::SkinApplyFailed { .. } => {

@@ -18,13 +18,14 @@ use crate::daemon::dispatch::{adapter, runtime_refused, DaemonContext};
 /// Feed entries on our own page; "View More" pages the rest.
 const FEED: u16 = 10;
 
-/// `subject`'s view.
+/// `subject`'s view; `subject` is resolved (`super::resolved`).
 pub(super) async fn view(
     ctx: &DaemonContext,
     subject: &InfoviewSubject,
 ) -> Result<InfoviewView, IpcResponse> {
     let sections = match subject {
-        InfoviewSubject::Own => own(ctx).await?,
+        // `super::resolved` never yields `Selection`.
+        InfoviewSubject::Own | InfoviewSubject::Selection => own(ctx).await?,
         InfoviewSubject::Friend { public_key } => friend(ctx, public_key).await?,
         InfoviewSubject::FriendGroup { group_id } => vec![group(ctx, *group_id)?],
         InfoviewSubject::Community { community } => community_page(ctx, community).await?,

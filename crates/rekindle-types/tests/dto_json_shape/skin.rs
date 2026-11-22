@@ -19,6 +19,7 @@ use super::{pk, to};
 /// library skin stating no licence and naming no one.
 pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
     selection_samples(add);
+    infoview_subject_samples(add);
     // `SkinApplyFailed`'s cause, each kind (the image one is also in the
     // event golden).
     add(
@@ -264,4 +265,32 @@ fn selection_samples(add: &mut impl FnMut(&str, Value)) {
             group_id: "g1".into(),
         }),
     );
+    add(
+        "skin.selection.friendGroup",
+        to(SkinSelection::FriendGroup { group_id: Some(3) }),
+    );
+}
+
+/// Every `InfoviewSubject` a window asks (plan E7.15 IV5): an Info popup
+/// asks `selection`, a unit variant tagged like the rest.
+fn infoview_subject_samples(add: &mut impl FnMut(&str, Value)) {
+    use rekindle_types::dto::infoview::InfoviewSubject as S;
+    add("infoview.subject.own", to(S::Own));
+    add(
+        "infoview.subject.friend",
+        to(S::Friend {
+            public_key: pk('a'),
+        }),
+    );
+    add(
+        "infoview.subject.friendGroup",
+        to(S::FriendGroup { group_id: None }),
+    );
+    add(
+        "infoview.subject.community",
+        to(S::Community {
+            community: "VLD0:community".into(),
+        }),
+    );
+    add("infoview.subject.selection", to(S::Selection));
 }

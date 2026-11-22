@@ -46,7 +46,10 @@ impl<'a> Selected<'a> {
         friend: Option<&'a FriendState>,
     ) -> Self {
         match selection {
-            None => Self::Nothing,
+            // A friend group's header is no capability's object: nothing
+            // a pack's buttons act on is selected (its page is the
+            // Infoview's, plan E7.15 IV5).
+            None | Some(SkinSelection::FriendGroup { .. }) => Self::Nothing,
             Some(SkinSelection::Friend { public_key }) => Self::Friend {
                 key: public_key,
                 friend,
