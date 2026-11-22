@@ -171,6 +171,7 @@ pub(super) fn check_messages(request: &ChannelMessageRequest) -> Checked {
         ChannelMessageRequest::ChannelTyping {
             community: c,
             channel: ch,
+            typing: _,
         } => {
             community(c)?;
             channel(ch)

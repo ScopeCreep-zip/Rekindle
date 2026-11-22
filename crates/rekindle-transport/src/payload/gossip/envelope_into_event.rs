@@ -13,9 +13,7 @@
 //! variant to rather than two.
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_types::subscription_events::{
-    PresenceEvent, SubscriptionEvent, TypingContext, TypingEvent,
-};
+use rekindle_types::subscription_events::{PresenceEvent, SubscriptionEvent};
 
 use super::into_event_control::control_into_event;
 
@@ -34,16 +32,6 @@ pub fn envelope_into_event(
     let c = || community.to_string();
 
     Some(match envelope {
-        CommunityEnvelope::TypingIndicator {
-            channel_id,
-            pseudonym_key,
-        } => SubscriptionEvent::Typing(TypingEvent::Started {
-            context: TypingContext::Channel {
-                community: c(),
-                channel: channel_id,
-            },
-            who: pseudonym_key,
-        }),
         CommunityEnvelope::PresenceUpdate {
             pseudonym_key,
             status,
@@ -72,6 +60,11 @@ pub fn envelope_into_event(
         CommunityEnvelope::Control(control) => {
             return control_into_event(control, community, sender)
         }
-        CommunityEnvelope::WatchRelay { .. } => return None,
+        // Channel typing is the Host's (plan E3.4 S9): only it holds the
+        // text keys that name the channel behind the tag, and it lapses
+        // the start itself (`operations::typing::channel_frame`).
+        CommunityEnvelope::TypingIndicator { .. } | CommunityEnvelope::WatchRelay { .. } => {
+            return None
+        }
     })
 }

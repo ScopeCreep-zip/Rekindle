@@ -45,7 +45,8 @@ fn receive(datagram: &[u8]) -> SignedEnvelope {
 /// A broadcast (not directed) envelope.
 fn broadcast() -> CommunityEnvelope {
     CommunityEnvelope::TypingIndicator {
-        channel_id: "ab".repeat(8),
+        channel_tag: [0xab; 16],
+        ttl_ms: 6_000,
         pseudonym_key: "cd".repeat(32),
     }
 }

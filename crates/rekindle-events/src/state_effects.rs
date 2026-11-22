@@ -36,6 +36,7 @@ pub fn apply(
         SubscriptionEvent::Typing(TypingEvent::Started {
             context: TypingContext::Channel { community, channel },
             who,
+            ..
         }) => {
             state.typing.set_channel_typing(community, channel, who);
         }

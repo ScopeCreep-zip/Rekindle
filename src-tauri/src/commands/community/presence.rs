@@ -10,17 +10,20 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::{CommandError, Done};
 
-/// Tell the community we are typing (`CommunityRequest::ChannelTyping`).
+/// The composer of a channel changed: `typing` is whether it holds text
+/// (`ChannelMessageRequest::ChannelTyping`; the Host decides what is sent).
 #[tauri::command]
 pub async fn send_channel_typing(
     community_id: String,
     channel_id: String,
+    typing: bool,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Messages(
         ChannelMessageRequest::ChannelTyping {
             community: community_id,
             channel: channel_id,
+            typing,
         },
     ));
     crate::host_call::call(&state, request).await

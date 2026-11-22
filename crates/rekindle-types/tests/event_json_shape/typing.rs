@@ -59,6 +59,7 @@ pub fn samples() -> Vec<Sample> {
                     group_id: "6d".repeat(16),
                 },
                 who: pk('c'),
+                name: "Carol".into(),
             },
         ),
         ev(
@@ -66,6 +67,7 @@ pub fn samples() -> Vec<Sample> {
             TypingEvent::Started {
                 context: in_channel(),
                 who: pk('a'),
+                name: "Ann".into(),
             },
         ),
         ev(
@@ -73,6 +75,7 @@ pub fn samples() -> Vec<Sample> {
             TypingEvent::Started {
                 context: in_dm(),
                 who: pk('b'),
+                name: "Bob".into(),
             },
         ),
         ev(

@@ -78,7 +78,8 @@ pub async fn on_hint(host: &dyn FriendHost, sender: &str, content: &GroupContent
             {
                 let ctx = typing_context(&content.group_id);
                 if t.typing {
-                    typing::started(host, ctx, sender, TYPING_TTL_MS);
+                    let name = typing::peer_name(host, sender);
+                    typing::started(host, ctx, sender, name, TYPING_TTL_MS);
                 } else {
                     typing::stopped(host, &ctx, sender);
                 }

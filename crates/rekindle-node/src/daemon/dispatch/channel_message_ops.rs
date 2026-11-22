@@ -95,10 +95,14 @@ async fn run(
                 .map_err(|e| IpcResponse::error(u32::from(e.code()), e.to_string()))?;
             IpcResponse::ok(&deleted)
         }
-        ChannelMessageRequest::ChannelTyping { community, channel } => {
+        ChannelMessageRequest::ChannelTyping {
+            community,
+            channel,
+            typing,
+        } => {
             let (community, channel) = target(ctx, &community, &channel)?;
             governance()
-                .send_typing(&community, &channel)
+                .report_channel_draft(&community, &channel, typing)
                 .map_err(|e| IpcResponse::error(500, format!("typing: {e}")))?;
             IpcResponse::ok(&serde_json::Value::Null)
         }

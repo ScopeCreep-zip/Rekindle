@@ -508,6 +508,7 @@ impl View for ChannelWatchView {
             SubscriptionEvent::Typing(TypingEvent::Started {
                 context: TypingContext::Channel { community, channel },
                 who,
+                ..
             }) if *community == self.community && *channel == self.channel => {
                 self.typing_indicators
                     .insert(who.clone(), std::time::Instant::now());

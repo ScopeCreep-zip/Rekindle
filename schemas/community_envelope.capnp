@@ -80,9 +80,16 @@ struct PresenceGameInfo @0xe4d4eb16e9bf1c2e {
     serverAddress    @6 :Text;
 }
 
+# Plan E3.4 S9: a channel typing start (ttlMs > 0) or stop (ttlMs = 0).
+# The channel travels as its tag under the current text key of its scope
+# (`rekindle_secrets::channel_body::channel_tag`), never in clear; the
+# receiver lapses a start at arrival + min(ttlMs, 10 s).
 struct TypingIndicator @0xe5d4eb16e9bf1c2e {
-    channelId        @0 :Text;
+    # @0 carried the channel id in clear before S9; never written.
+    obsoleteChannelId @0 :Text;
     pseudonymKey     @1 :Text;
+    channelTag       @2 :Data;
+    ttlMs            @3 :UInt32;
 }
 
 struct WatchRelay @0xe6d4eb16e9bf1c2e {
