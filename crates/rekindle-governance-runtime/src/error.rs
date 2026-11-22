@@ -64,6 +64,10 @@ pub enum GovernanceRuntimeError {
     /// Our own op failed the verification every reader runs.
     #[error("our governance op was refused: {0}")]
     OpRefused(String),
+    /// A device-key act (ADR 0022) that cannot be written from the held
+    /// set: why, in words.
+    #[error("device key act refused: {0}")]
+    DeviceActRefused(&'static str),
 
     /// The entry carries a value outside its reader-validated bound
     /// (`rekindle_governance::validate::bounds`, plan E3.0): every reader
