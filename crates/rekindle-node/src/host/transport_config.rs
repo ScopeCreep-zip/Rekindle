@@ -10,7 +10,10 @@ use super::{policy, ConfigFault};
 /// `min_hop_count` is a floor on the safety-route length, beside the
 /// transport's own `ANONYMITY_HOP_FLOOR`: an administrator can raise it,
 /// never lower it.
-pub(super) fn apply_policy(mut config: TransportConfig, policy: &policy::PolicyConfig) -> TransportConfig {
+pub(super) fn apply_policy(
+    mut config: TransportConfig,
+    policy: &policy::PolicyConfig,
+) -> TransportConfig {
     if let Some(ceiling) = policy.max_gossip_ttl {
         if config.gossip_ttl > ceiling {
             tracing::info!(gossip_ttl = ceiling, "admin policy capped the gossip TTL");
