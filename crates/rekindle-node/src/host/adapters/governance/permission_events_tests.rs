@@ -108,3 +108,16 @@ fn a_timeout_moves_the_member_and_its_expiry_between_merges_does_not() {
     // Run out: both sides are read at the same instant, so no change.
     assert!(permission_transitions(&next, &next.clone(), 500).is_empty());
 }
+
+#[test]
+fn a_removed_co_creator_is_named() {
+    let mut prev = base();
+    prev.creators.extend([key(1), key(2)]);
+    let mut next = prev.clone();
+    next.members.remove(&key(2));
+    next.removed.insert(key(2), stamp(9));
+    assert_eq!(
+        permission_transitions(&prev, &next, 0).members,
+        vec![key(2).to_hex()]
+    );
+}

@@ -118,6 +118,11 @@ pub struct CommunityView {
     /// Our effective permissions per channel (id hex): the base plus the
     /// channel's overwrites, decimal `u64` strings as `my_permissions`.
     pub my_channel_permissions: std::collections::BTreeMap<String, String>,
+    /// Whether we hold a creator seat now (plan E3.2 S7s): in the pinned
+    /// cert's creator set and not departed, from the merged governance.
+    /// A change arrives as `EffectivePermissionsChanged` naming us, like
+    /// the permission flags.
+    pub we_are_creator: bool,
     pub roles: Vec<CommunityRoleView>,
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,

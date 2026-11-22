@@ -10,7 +10,7 @@ use rekindle_types::permissions::{ADMINISTRATOR, ALL};
 use super::*;
 use crate::checkpoint::{eligible_set, eligible_set_hash};
 use crate::fixture::{cert, merge_entries_under};
-use crate::permissions::compute_permissions;
+use crate::permissions::{compute_permissions, holds_creator_seat};
 use crate::state::{GovernanceState, RoleState};
 use crate::validate::target::{may_moderate, outranks, TargetAction};
 use crate::validate::validate_write;
@@ -191,4 +191,30 @@ fn a_further_creator_joins_an_approval_community_without_approval() {
         state.channels.contains_key(&channel_id(7)),
         "the approval gate passes a creator's op without an approval"
     );
+}
+
+#[test]
+fn a_sole_creator_holds_the_seat_and_a_member_does_not() {
+    let state = merge_entries_under(&cert_with(1, &[]), &[(pseudo(3), vec![at(5, joined(3))])]);
+    assert!(holds_creator_seat(&pseudo(1), &state));
+    assert!(!holds_creator_seat(&pseudo(3), &state));
+}
+
+#[test]
+fn both_co_creators_hold_the_seat() {
+    let state = merge_entries_under(&cert_with(1, &[2]), &[(pseudo(2), vec![at(5, joined(2))])]);
+    assert!(holds_creator_seat(&pseudo(1), &state));
+    assert!(holds_creator_seat(&pseudo(2), &state));
+}
+
+#[test]
+fn a_removed_co_creator_no_longer_holds_the_seat() {
+    let mut state =
+        merge_entries_under(&cert_with(1, &[2]), &[(pseudo(2), vec![at(5, joined(2))])]);
+    // What the merge's `MemberRemoved` arm leaves (`merge/membership.rs`).
+    state.members.remove(&pseudo(2));
+    state.removed.insert(pseudo(2), crate::fixture::stamp(9));
+    assert!(state.is_creator(&pseudo(2)), "the cert's set is unchanged");
+    assert!(!holds_creator_seat(&pseudo(2), &state));
+    assert!(holds_creator_seat(&pseudo(1), &state));
 }

@@ -10,7 +10,10 @@
 //!   any channel's effective permissions differ, ours included: our own
 //!   windows re-read their permission flags from it (the frontend computes
 //!   no policy, plan E6.11), and Discord likewise recomputes a member's
-//!   permissions on every role, overwrite or timeout update;
+//!   permissions on every role, overwrite or timeout update; also for each
+//!   member whose creator seat (`holds_creator_seat`, plan E3.2 S7s)
+//!   differs, as a removed co-creator, so its view's `weAreCreator` is
+//!   re-read;
 //! - `ChannelPermissionsChanged { channel }` for each channel whose
 //!   overwrite set differs (the gossip `ChannelOverwriteChanged` notice
 //!   publishes none: an overwrite is a signed governance op).
@@ -18,7 +21,7 @@
 //! Both sides are evaluated at the same instant, so a timeout running out
 //! between two merges is no transition (its end was published with it).
 
-use rekindle_governance::permissions::compute_permissions;
+use rekindle_governance::permissions::{compute_permissions, holds_creator_seat};
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
@@ -65,7 +68,10 @@ pub(super) fn permission_transitions(
     };
     let members = members
         .into_iter()
-        .filter(|m| perms_of(prev, m) != perms_of(next, m))
+        .filter(|m| {
+            perms_of(prev, m) != perms_of(next, m)
+                || holds_creator_seat(m, prev) != holds_creator_seat(m, next)
+        })
         .map(PseudonymKey::to_hex)
         .collect();
     let overwrites_of = |state: &GovernanceState, channel: &ChannelId| {

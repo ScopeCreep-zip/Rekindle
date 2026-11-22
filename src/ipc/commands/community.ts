@@ -64,6 +64,8 @@ export const communityCommands = {
       myPseudonymKey: string | null;
       mekGeneration: number;
       onboardingComplete: boolean;
+      /** We hold a creator seat now (`CommunityView::we_are_creator`); re-read on `effectivePermissionsChanged` naming us. */
+      weAreCreator: boolean;
       myBio?: string | null;
       myPronouns?: string | null;
       myThemeColor?: number | null;

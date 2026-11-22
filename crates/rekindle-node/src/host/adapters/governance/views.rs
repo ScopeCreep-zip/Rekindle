@@ -61,6 +61,18 @@ fn my_permissions(
     )
 }
 
+/// Whether we hold a creator seat in `c`'s merged governance (plan E3.2
+/// S7s, `holds_creator_seat`); false before the first merge.
+fn we_are_creator(c: &CommunityState) -> bool {
+    let me = (c.my_pseudonym_key.as_deref())
+        .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
+        .map(PseudonymKey);
+    match (c.governance_state.as_ref(), me) {
+        (Some(gov), Some(me)) => rekindle_governance::permissions::holds_creator_seat(&me, gov),
+        _ => false,
+    }
+}
+
 fn community_view(c: &CommunityState, now_secs: u64, shown: Option<&SkinGrounds>) -> CommunityView {
     let (my_permissions, my_channel_permissions) = my_permissions(c, now_secs);
     CommunityView {
@@ -99,6 +111,7 @@ fn community_view(c: &CommunityState, now_secs: u64, shown: Option<&SkinGrounds>
         my_role_ids: c.my_role_ids.iter().map(|id| id.to_hex()).collect(),
         my_permissions,
         my_channel_permissions,
+        we_are_creator: we_are_creator(c),
         roles: c.roles.iter().map(|r| role_view(r, shown)).collect(),
         my_pseudonym_key: c.my_pseudonym_key.clone(),
         mek_generation: c.mek_generation,

@@ -27,6 +27,16 @@ pub fn may_rotate_mek(member: &PseudonymKey, state: &GovernanceState) -> bool {
         .may_rotate_mek()
 }
 
+/// Whether `member` holds a creator seat now (plan E3.2 S7s, lead
+/// decisions (17), (25)): one of the cert's creator set
+/// ([`GovernanceState::is_creator`]) and not departed, so a co-creator
+/// removed, banned or gone no longer shows as a creator. A successor
+/// community pins its own cert, so its seats are its own creator set.
+#[must_use]
+pub fn holds_creator_seat(member: &PseudonymKey, state: &GovernanceState) -> bool {
+    state.is_creator(member) && !state.is_departed(member)
+}
+
 /// Compute effective permissions for a member in a specific context.
 ///
 /// # Arguments
