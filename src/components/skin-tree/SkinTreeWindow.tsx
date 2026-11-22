@@ -15,6 +15,8 @@ import FilesView from "./FilesView";
 /** What every node of one window's tree reads. */
 interface Tree {
   views: () => JSX.Element;
+  /** What the Communities view shows (plan SK2-N4); null where a window has none. */
+  communities: () => JSX.Element;
   hasFriendsView: boolean;
   state: TreeState;
   /** Each node's parent, for a control group's pages. */
@@ -250,6 +252,12 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           <div class="skin-tree-view-content">{tree.views()}</div>
         </div>
       </Match>
+      <Match when={role().kind === "view" && viewKey() === "communities"}>
+        <div {...attrs}>
+          {children()}
+          <div class="skin-tree-view-content">{tree.communities()}</div>
+        </div>
+      </Match>
       <Match when={role().kind === "view" && viewKey() === "files"}>
         <div {...attrs}>
           {children()}
@@ -280,7 +288,7 @@ const Children: Component<{ node: ShellNode }> = (props) => (
  * Every box comes from the Host's rules under `.skin-tree`; what a node
  * does is its triggers, run through the one dispatcher.
  */
-const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element }> = (props) => {
+const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element; communities: () => JSX.Element }> = (props) => {
   const [state, setState] = createStore<TreeState>(initialTreeState());
   const [nameEdits, setNameEdits] = createSignal(0);
   const root = (): ShellNode[] => props.shell.root;
@@ -341,6 +349,7 @@ const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element }> 
     <TreeCtx.Provider
       value={{
         views: props.views,
+        communities: props.communities,
         hasFriendsView: hasFriendsView(props.shell.root),
         state,
         parent: parents(props.shell.root),

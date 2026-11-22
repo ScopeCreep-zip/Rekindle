@@ -190,20 +190,29 @@ async function submitModal(b: Browser, user: User, input: string): Promise<void>
 
 /** `user` creates community `name` from the buddy list's Communities tab, and it is listed. */
 /**
- * The Communities tab. A skin's tree has no Communities view until its
- * placement lands (plan SK2-P1, rule N4), so a community journey under a
- * tree stops here saying so.
+ * The Communities list. Under a skin's tree, the pack's Communities control
+ * (the Host places one in every tree, plan SK2-N4: `tab:communities` or
+ * `knob:communities`) shows its Communities view; else the app's tab.
  */
 async function communitiesTab(b: Browser): Promise<void> {
-  if (await underTree(b)) throw new Error("the skin's tree has no Communities view yet (plan SK2-P1 N4)");
+  if (await underTree(b)) {
+    await press(b, await shown(b, '[data-skin-role="tab:communities"], [data-skin-role="knob:communities"]'));
+    await shown(b, '[data-skin-role="view:communities"]:not([hidden])');
+    return;
+  }
   await (await shown(b, '.buddy-tab[title^="Communities"]')).click();
 }
 
 export async function createCommunity(b: Browser, user: User, name: string): Promise<void> {
   await whenConnected(b);
-  // The Create Community button shows only on the Communities tab (BottomActionBar.tsx).
   await communitiesTab(b);
-  await (await shown(b, '[aria-label="Create Community"]')).click();
+  if (await underTree(b)) {
+    // A skin's tree has no BottomActionBar: the pack's first menu (the Host's registry).
+    await menu(b, "Rekindle", "Create Community…");
+  } else {
+    // The Create Community button shows only on the Communities tab (BottomActionBar.tsx).
+    await (await shown(b, '[aria-label="Create Community"]')).click();
+  }
   await typeInto(await shown(b, 'input[placeholder="Community name..."]'), name);
   await submitModal(b, user, 'input[placeholder="Community name..."]');
   await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS);
@@ -310,7 +319,8 @@ export async function createInvite(b: Browser, user: User, uses: number): Promis
 export async function joinCommunity(b: Browser, user: User, link: string, name: string): Promise<void> {
   await whenConnected(b);
   await communitiesTab(b);
-  await (await shown(b, '[aria-label="Join Community"]')).click();
+  if (await underTree(b)) await menu(b, "Rekindle", "Join Community…");
+  else await (await shown(b, '[aria-label="Join Community"]')).click();
   await submitJoin(b, link, user.passphrase);
   await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS);
 }
