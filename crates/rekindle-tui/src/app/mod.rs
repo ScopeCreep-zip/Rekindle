@@ -19,6 +19,7 @@ mod events;
 mod friend_commands;
 mod game_commands;
 mod group_dm_commands;
+mod infoview_commands;
 mod profile_commands;
 mod reducer;
 mod render;

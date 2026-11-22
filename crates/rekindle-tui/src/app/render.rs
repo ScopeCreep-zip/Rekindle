@@ -213,6 +213,7 @@ impl App {
             ViewKind::Activity => "Activity".into(),
             ViewKind::InstalledGames => "Dashboard > Installed games".into(),
             ViewKind::Servers => "Servers".into(),
+            ViewKind::Infoview { subject } => self.infoview_breadcrumb(subject),
             ViewKind::CommunityInfo { community } => {
                 format!("{} / Info", self.community_name(community))
             }
@@ -267,6 +268,13 @@ impl App {
                     label: "Servers".into(),
                     detail: "view".into(),
                     action: Action::ShowServers,
+                });
+                items.push(SearchItem {
+                    label: "Infoview".into(),
+                    detail: "view".into(),
+                    action: Action::ShowInfoview {
+                        subject: rekindle_types::dto::infoview::InfoviewSubject::Own,
+                    },
                 });
                 items.push(SearchItem {
                     label: "Favourite servers".into(),
@@ -331,6 +339,13 @@ impl App {
                     label: "Servers".into(),
                     detail: String::new(),
                     action: Action::ShowServers,
+                },
+                SearchItem {
+                    label: "Infoview".into(),
+                    detail: String::new(),
+                    action: Action::ShowInfoview {
+                        subject: rekindle_types::dto::infoview::InfoviewSubject::Own,
+                    },
                 },
             ],
         }

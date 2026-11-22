@@ -11,6 +11,7 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod fmt;
+pub mod infoview;
 pub mod log;
 pub mod spawn;
 pub mod term;

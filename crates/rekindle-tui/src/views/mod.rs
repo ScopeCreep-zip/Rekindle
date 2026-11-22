@@ -14,6 +14,7 @@ pub mod favourites;
 pub mod friend_list;
 pub mod group_dm;
 pub mod identity_settings;
+pub mod infoview;
 pub mod installed_games;
 pub mod profile;
 pub mod servers;
@@ -101,6 +102,10 @@ pub enum ViewKind {
     InstalledGames,
     /// Favourite, recent, friends' and communities' servers (plan E7.2 G3).
     Servers,
+    /// A subject's Infoview as the Host composes it (plan E7.15 IV7).
+    Infoview {
+        subject: rekindle_types::dto::infoview::InfoviewSubject,
+    },
 }
 
 /// Trait for all TUI views.
@@ -180,6 +185,7 @@ pub struct ViewRegistry {
     activity: Option<activity::ActivityView>,
     installed_games: Option<installed_games::InstalledGamesView>,
     servers: Option<servers::GameServersView>,
+    infoview: Option<infoview::InfoviewPage>,
 }
 
 impl ViewRegistry {
@@ -201,6 +207,7 @@ impl ViewRegistry {
             activity: None,
             installed_games: None,
             servers: None,
+            infoview: None,
         }
     }
 
@@ -298,6 +305,15 @@ impl ViewRegistry {
                     self.servers = Some(servers::GameServersView::new());
                 }
             }
+            ViewKind::Infoview { subject } => {
+                if self
+                    .infoview
+                    .as_ref()
+                    .is_none_or(|v| v.subject() != subject)
+                {
+                    self.infoview = Some(infoview::InfoviewPage::new(subject.clone()));
+                }
+            }
         }
         self.current = kind;
     }
@@ -363,6 +379,10 @@ impl ViewRegistry {
                 .servers
                 .as_mut()
                 .expect("servers view should exist after transition"),
+            ViewKind::Infoview { .. } => self
+                .infoview
+                .as_mut()
+                .expect("infoview should exist after transition"),
         }
     }
 }

@@ -485,6 +485,15 @@ impl View for FriendListView {
                 Selected::Friend(f) => Some(join_game(f)),
                 _ => None,
             },
+            // The selected friend's Infoview (plan E7.15 IV7).
+            KeyCode::Char('i') => match self.selected()? {
+                Selected::Friend(f) => Some(Action::ShowInfoview {
+                    subject: rekindle_types::dto::infoview::InfoviewSubject::Friend {
+                        public_key: f.public_key.clone(),
+                    },
+                }),
+                _ => None,
+            },
             // The selected friend's bio and shared game time (plan E7.2).
             KeyCode::Char('p') => match self.selected()? {
                 Selected::Friend(f) => Some(Action::ShowProfile {

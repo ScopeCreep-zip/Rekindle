@@ -269,3 +269,47 @@ fn transfer_subcommands_parse_to_their_requests() {
         })
     ));
 }
+
+/// `rekindle infoview [own | friend <key> | group <id|default> | community
+/// <name>]` sends `InfoviewGet` for that subject from the CLI's window
+/// (plan E7.15, IV7); no subcommand is our own page.
+#[test]
+fn infoview_subcommands_parse_to_their_subjects() {
+    use rekindle_ipc::protocol::{InfoviewSubject, IpcRequest};
+
+    let subject = |args: &[&str]| match parse(args).command {
+        Some(Command::Infoview { subject }) => match crate::infoview::request(subject.as_ref()) {
+            IpcRequest::InfoviewGet { subject, window } => {
+                assert_eq!(window, rekindle_types::dto::infoview::CLI_WINDOW);
+                subject
+            }
+            _ => panic!("{args:?} is not InfoviewGet"),
+        },
+        _ => panic!("{args:?} is not an infoview command"),
+    };
+    let key = "ab".repeat(32);
+    assert_eq!(subject(&["infoview"]), InfoviewSubject::Own);
+    assert_eq!(subject(&["infoview", "own"]), InfoviewSubject::Own);
+    assert_eq!(
+        subject(&["infoview", "friend", &key]),
+        InfoviewSubject::Friend { public_key: key }
+    );
+    assert_eq!(
+        subject(&["infoview", "group", "default"]),
+        InfoviewSubject::FriendGroup { group_id: None }
+    );
+    assert_eq!(
+        subject(&["infoview", "group", "7"]),
+        InfoviewSubject::FriendGroup { group_id: Some(7) }
+    );
+    assert_eq!(
+        subject(&["infoview", "community", "Clan"]),
+        InfoviewSubject::Community {
+            community: "Clan".into()
+        }
+    );
+    assert!(
+        Cli::try_parse_from(["rekindle", "infoview", "group", "friends"]).is_err(),
+        "a group is an id or `default`"
+    );
+}

@@ -22,6 +22,11 @@ use crate::friend::NotJoinableReason;
 /// sends each webview's own label).
 pub const CLI_WINDOW: &str = "cli";
 
+/// The window label the TUI asks `InfoviewGet` with: its one Infoview
+/// view, distinct from the CLI's so a CLI run never takes over the pushes
+/// the open TUI view folds (plan E7.15, IV7).
+pub const TUI_WINDOW: &str = "tui";
+
 /// What a window's Infoview shows: its selection, as the Host resolves it.
 ///
 /// A pack's Info popup asks [`Selection`](Self::Selection) (plan E7.15,

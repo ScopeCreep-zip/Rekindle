@@ -280,6 +280,47 @@ async fn servers_view_changed_replaces_the_open_servers_view() {
     );
 }
 
+/// `InfoviewEvent::Updated` to the TUI's window reaches the open Infoview
+/// through the stream handler and the reducer (plan E7.15 IV7): the pushed
+/// view replaces the page, sections in the Host's order.
+#[tokio::test]
+async fn infoview_updated_replaces_the_open_infoview() {
+    use rekindle_types::dto::infoview::{
+        InfoviewEvent, InfoviewSection, InfoviewSubject, InfoviewView, TUI_WINDOW,
+    };
+    use rekindle_types::subscription_events::SystemEvent;
+    let (_dir, mut app) = app_on_test_bus().await;
+    let subject = InfoviewSubject::Friend {
+        public_key: "ab".repeat(32),
+    };
+    app.reduce(Action::ShowInfoview {
+        subject: subject.clone(),
+    })
+    .unwrap();
+    assert_eq!(app.breadcrumb(), "Friends > abababab…abab > Infoview");
+    let view = InfoviewView {
+        subject,
+        sections: vec![InfoviewSection::Bio {
+            text: "fragging since 2004".into(),
+        }],
+    };
+    let action = app.subscription_event_to_action(SubscriptionEvent::System(
+        SystemEvent::Infoview(InfoviewEvent::Updated {
+            window: TUI_WINDOW.into(),
+            view,
+        }),
+    ));
+    assert!(matches!(action, Some(Action::Render)));
+    while let Ok(queued) = app.action_rx.try_recv() {
+        if matches!(queued, Action::SubscriptionEvent(_)) {
+            app.reduce(queued).unwrap();
+        }
+    }
+    let text = screen(&mut app);
+    assert!(text.contains("Bio"), "{text}");
+    assert!(text.contains("fragging since 2004"), "{text}");
+}
+
 /// Plan RV1: the Host's route pause reaches the TUI's status line through
 /// the subscription reducer.
 #[tokio::test]

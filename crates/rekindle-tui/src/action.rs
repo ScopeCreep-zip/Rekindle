@@ -90,6 +90,11 @@ pub enum Action {
     ShowInstalledGames,
     /// The Servers view (`ServersView`, plan E7.2 G3).
     ShowServers,
+    /// A subject's Infoview (`InfoviewGet` from `TUI_WINDOW`, plan E7.15
+    /// IV7).
+    ShowInfoview {
+        subject: rekindle_types::dto::infoview::InfoviewSubject,
+    },
     /// `RecentServerRemove`: forget a recently visited server (plan E7.2
     /// G3); the view comes back.
     RemoveRecentServer {
@@ -361,5 +366,10 @@ pub enum CommandResult {
     /// answer to `RecentServerRemove`, plan E7.2 G3).
     ServersViewLoaded {
         view: rekindle_types::dto::servers::ServersView,
+    },
+    /// A subject's Infoview as the Host composed it (`InfoviewGet`, plan
+    /// E7.15 IV7).
+    InfoviewLoaded {
+        view: rekindle_types::dto::infoview::InfoviewView,
     },
 }

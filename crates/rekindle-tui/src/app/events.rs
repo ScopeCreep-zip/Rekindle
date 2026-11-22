@@ -225,7 +225,10 @@ impl App {
                 SystemEvent::ActivityAppended { .. }
                 // The Servers view composed again (plan E7.2 G3): the open
                 // Servers view shows it as the Host pushed it.
-                | SystemEvent::ServersViewChanged { .. },
+                | SystemEvent::ServersViewChanged { .. }
+                // A subject's Infoview composed again (plan E7.15 IV7): the
+                // open Infoview shows it as the Host pushed it.
+                | SystemEvent::Infoview(..),
             ) => {
                 let _ = self
                     .action_tx
