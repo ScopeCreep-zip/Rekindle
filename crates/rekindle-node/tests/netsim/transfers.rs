@@ -59,7 +59,7 @@ async fn a_transfer_completes_and_members_follow_the_successor() {
             anchor: community.anchor.clone(),
         });
         (community.nodes[2].call(request).await.ok())
-            .and_then(|v| v.as_array().cloned())
+            .and_then(|v| v["offers"].as_array().cloned())
             .is_some_and(|offers| {
                 offers
                     .iter()

@@ -217,14 +217,14 @@ fn lifecycle(request: LifecycleRequest) -> IpcRequest {
     IpcRequest::Community(CommunityRequest::Lifecycle(request))
 }
 
-/// The successors `node` was offered for `anchor` (the snapshot a window
-/// reads, lead decision (33)).
+/// The successors `node` was offered for `anchor`: the `offers` of the
+/// snapshot a window reads (lead decisions (33), (46)).
 async fn offered_to(node: &SimNode, anchor: &str) -> Vec<serde_json::Value> {
     let request = lifecycle(LifecycleRequest::CommunitySuccessors {
         anchor: anchor.to_owned(),
     });
     (node.call(request).await.ok())
-        .and_then(|v| v.as_array().cloned())
+        .and_then(|v| v["offers"].as_array().cloned())
         .unwrap_or_default()
 }
 

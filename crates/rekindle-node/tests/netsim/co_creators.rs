@@ -502,10 +502,8 @@ async fn a_two_creator_transfer_links_the_co_creator_through_the_community() {
         let Ok(v) = cat.call(accept()).await else {
             return false;
         };
-        let finished = v["pending_co_creators"]
-            .as_array()
-            .is_some_and(Vec::is_empty)
-            && v["registry_key"].as_str().is_some_and(|k| !k.is_empty());
+        let finished = v["pendingCoCreators"].as_array().is_some_and(Vec::is_empty)
+            && v["registryKey"].as_str().is_some_and(|k| !k.is_empty());
         if finished {
             *found.borrow_mut() = v["anchor"].as_str().unwrap_or_default().to_owned();
         }
