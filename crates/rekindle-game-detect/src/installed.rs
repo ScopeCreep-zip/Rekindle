@@ -1,6 +1,7 @@
 //! The games we can launch (plan E7.15 IV3, Xfire's "N Installed Games"):
-//! the bundled database's games that Steam has installed, with the games we
-//! have played, minus the hide list.
+//! the bundled database's games that Steam has installed and the OS's own
+//! native games present (plan E7.15 CH1), with the games we have played,
+//! minus the hide list.
 //!
 //! Steam lists its libraries in `steamapps/libraryfolders.vdf` (each a
 //! `"path"` value) and each installed game as
@@ -148,18 +149,32 @@ pub fn scan_steam(apps: &AppRoots) -> BTreeSet<u32> {
     steam_app_ids(&SteamLayout::CURRENT.roots(&apps.home, apps.program_files_x86.as_deref()))
 }
 
+/// The games in `db` whose native copy for `layout`'s OS is present under
+/// `apps` (plan E7.15 CH1: the OS's own Chess), read from fixed database
+/// paths only.
+#[must_use]
+pub fn native_installed(db: &GameDatabase, layout: SteamLayout, apps: &AppRoots) -> BTreeSet<u32> {
+    db.entries()
+        .filter(|entry| crate::launcher::native_present(entry, layout, apps))
+        .map(|entry| entry.id)
+        .collect()
+}
+
 /// The game ids we can launch: the games in `db` whose Steam id is in
-/// `steam_app_ids`, with `played`, minus `hidden`; ascending.
+/// `steam_app_ids`, the `native` games present, with `played`, minus
+/// `hidden`; ascending.
 #[must_use]
 pub fn installed_games(
     db: &GameDatabase,
     steam_app_ids: &BTreeSet<u32>,
+    native: &BTreeSet<u32>,
     played: &[u32],
     hidden: &[u32],
 ) -> Vec<u32> {
     steam_app_ids
         .iter()
         .flat_map(|app_id| db.ids_with_steam_app_id(*app_id))
+        .chain(native.iter().copied())
         .chain(played.iter().copied())
         .filter(|id| !hidden.contains(id))
         .collect::<BTreeSet<_>>()

@@ -18,7 +18,7 @@ export function transformFriend(f: FriendInfo): Friend {
     status: (f.status as Friend["status"]) ?? "offline",
     statusMessage: f.statusMessage ?? null,
     gameInfo: f.gameInfo
-      ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null, serverAddress: f.gameInfo.serverAddress ?? null, iconKey: f.gameInfo.iconKey }
+      ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null, serverAddress: f.gameInfo.serverAddress ?? null, iconKey: f.gameInfo.iconKey, joinable: f.gameInfo.joinable, joinableReason: f.gameInfo.joinableReason }
       : null,
     group: f.groupLabel,
     groupId: f.groupId,

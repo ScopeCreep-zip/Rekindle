@@ -103,18 +103,66 @@ fn keyvalues_values_are_unescaped() {
 fn installed_games_join_steam_and_played_minus_hidden() {
     let steam = BTreeSet::from([440, 570, 7]);
     assert_eq!(
-        installed_games(&db(), &steam, &[13], &[]),
+        installed_games(&db(), &steam, &BTreeSet::new(), &[13], &[]),
         vec![10, 11, 12, 13]
     );
     assert_eq!(
-        installed_games(&db(), &steam, &[13], &[11, 13]),
+        installed_games(&db(), &steam, &BTreeSet::new(), &[13], &[11, 13]),
         vec![10, 12]
     );
-    assert!(installed_games(&db(), &BTreeSet::new(), &[], &[]).is_empty());
+    assert!(installed_games(&db(), &BTreeSet::new(), &BTreeSet::new(), &[], &[]).is_empty());
 }
 
 #[test]
 fn a_missing_steam_root_is_empty() {
     let home = tempfile::tempdir().unwrap();
     assert!(steam_app_ids(&SteamLayout::Linux.roots(home.path(), None)).is_empty());
+}
+
+/// The OS's own Chess (plan E7.15 CH1, id 6200) is in the installed list
+/// when its fixed path exists under the Host's system root, and not
+/// before; Windows has no native copy.
+#[test]
+fn native_chess_is_installed_when_its_path_exists() {
+    let db = GameDatabase::bundled();
+    let root = tempfile::tempdir().unwrap();
+    let apps = AppRoots {
+        home: root.path().join("home"),
+        program_files_x86: None,
+        system: root.path().to_path_buf(),
+    };
+    for layout in [SteamLayout::MacOs, SteamLayout::Linux, SteamLayout::Windows] {
+        assert!(
+            native_installed(&db, layout, &apps).is_empty(),
+            "{layout:?}"
+        );
+    }
+    let contents = root.path().join("System/Applications/Chess.app/Contents");
+    std::fs::create_dir_all(&contents).unwrap();
+    std::fs::write(contents.join("Info.plist"), "com.apple.Chess").unwrap();
+    std::fs::create_dir_all(root.path().join("usr/games")).unwrap();
+    std::fs::write(root.path().join("usr/games/gnome-chess"), b"").unwrap();
+    for layout in [SteamLayout::MacOs, SteamLayout::Linux] {
+        let native = native_installed(&db, layout, &apps);
+        assert_eq!(native, BTreeSet::from([6200]), "{layout:?}");
+        assert_eq!(
+            installed_games(&db, &BTreeSet::new(), &native, &[], &[]),
+            vec![6200]
+        );
+    }
+    assert!(native_installed(&db, SteamLayout::Windows, &apps).is_empty());
+}
+
+/// Chess is detected from each OS's process name: `Chess` (macOS) and
+/// `gnome-chess` (Linux); GNOME Chess's engine child `hoichess` is not a
+/// game of its own.
+#[test]
+fn chess_is_detected_from_each_os_process_name() {
+    let db = GameDatabase::bundled();
+    assert_eq!(db.lookup_by_process("Chess").map(|e| e.id), Some(6200));
+    assert_eq!(
+        db.lookup_by_process("gnome-chess").map(|e| e.id),
+        Some(6200)
+    );
+    assert!(db.lookup_by_process("hoichess").is_none());
 }

@@ -145,7 +145,15 @@ export interface GameStatus {
   serverAddress: string | null;
   /** `src/assets/game-icons/<key>.png`, resolved by the backend (plan E7.2). */
   iconKey: string | null;
+  /** Whether "Join Game" can start this game on their server, stated by the
+   *  Host's launch check (plan E7.15 IV3c). */
+  joinable: boolean;
+  /** Why not, while `joinable` is false. */
+  joinableReason: NotJoinableReason | null;
 }
+
+/** `rekindle_types::friend::NotJoinableReason`. */
+export type NotJoinableReason = "noServer" | "cannotLaunch";
 
 export interface AudioDeviceInfo {
   id: string;

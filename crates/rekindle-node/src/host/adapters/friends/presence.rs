@@ -155,13 +155,22 @@ impl FriendPresenceDeps for HostFriends {
     }
 
     fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>) {
-        let game = game.map(|g| GameInfoState {
-            game_id: g.game_id,
-            game_name: g.game_name,
-            server_info: None,
-            elapsed_seconds: g.elapsed_seconds,
-            icon_key: rekindle_game_detect::GameDatabase::icon_key_for(g.game_id),
-            server_address: g.server_address,
+        let game = game.map(|g| {
+            let joinable_reason = rekindle_game_detect::launcher::not_joinable(
+                rekindle_game_detect::GameDatabase::shared(),
+                g.game_id,
+                g.server_address.as_deref(),
+            );
+            GameInfoState {
+                game_id: g.game_id,
+                game_name: g.game_name,
+                server_info: None,
+                elapsed_seconds: g.elapsed_seconds,
+                icon_key: rekindle_game_detect::GameDatabase::icon_key_for(g.game_id),
+                server_address: g.server_address,
+                joinable: joinable_reason.is_none(),
+                joinable_reason,
+            }
         });
         let snapshot = PresenceSnapshot::game(GameActivity::from_parts(
             game.as_ref().map(|g| g.game_name.clone()),

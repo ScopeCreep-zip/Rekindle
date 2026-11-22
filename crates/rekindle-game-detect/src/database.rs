@@ -16,10 +16,39 @@ pub struct GameEntry {
     /// `{addr}` is replaced with the `ip:port` at launch time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connect_template: Option<String>,
+    /// The OS's own copy of the game, started from a fixed path (plan
+    /// E7.15 CH1: the native Chess of each OS is the test game).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native: Option<NativeApps>,
     /// Xfire's id for this game, from `xfire_ids.json` (plan E7.2 "Game
     /// icons"); not part of the database JSON.
     #[serde(skip)]
     pub xfire_id: Option<u32>,
+}
+
+/// Where each OS keeps its own copy of a game. Every path is fixed in the
+/// bundled database and absolute; nothing from outside joins it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NativeApps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub macos: Option<MacApp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linux: Option<LinuxApp>,
+}
+
+/// A macOS app bundle: launch services open `path`, and the bundle there
+/// is ours only when its `Info.plist` names `bundle_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MacApp {
+    pub bundle_id: String,
+    pub path: String,
+}
+
+/// A Linux executable, run by its full path with no arguments and no shell
+/// (`/usr/games` is not always on `PATH`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinuxApp {
+    pub path: String,
 }
 
 impl GameEntry {
@@ -113,6 +142,12 @@ impl GameDatabase {
             .filter(|entry| entry.steam_app_id == Some(app_id))
             .map(|entry| entry.id)
             .collect()
+    }
+
+    /// Every entry, once per process name (an entry with two names comes
+    /// twice; callers collect ids).
+    pub fn entries(&self) -> impl Iterator<Item = &GameEntry> {
+        self.by_process.values()
     }
 
     /// Look up a game by process name (case-insensitive).

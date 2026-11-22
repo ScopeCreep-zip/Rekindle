@@ -336,10 +336,11 @@ fn own(request: &IpcRequest) -> Checked {
                     "an installed launch takes no server; every other source one",
                 ));
             }
-            rekindle_game_detect::launcher::launch_uri(
+            rekindle_game_detect::launcher::launch_target(
                 rekindle_game_detect::GameDatabase::shared(),
                 *game_id,
                 server.as_ref(),
+                rekindle_game_detect::installed::SteamLayout::CURRENT,
             )
             .map(drop)
             .map_err(|e| IpcResponse::error(400, format!("cannot launch: {e}")))

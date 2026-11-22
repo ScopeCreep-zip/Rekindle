@@ -58,6 +58,11 @@ pub struct AppRoots {
     /// `%ProgramFiles(x86)%` on Windows (Steam's default install); `None`
     /// elsewhere and under a base.
     pub program_files_x86: Option<PathBuf>,
+    /// The file system root the OS's own apps sit under (`/`): a native
+    /// game's fixed path in the game database (`/System/Applications/
+    /// Chess.app`, `/usr/games/gnome-chess`, plan E7.15 CH1) is read under
+    /// it. `base/system` under a base, so a contained Host sees none.
+    pub system: PathBuf,
 }
 
 /// Where the GUI's webview keeps its stores, decided with the root.
@@ -121,6 +126,7 @@ impl DataRoot {
             apps: AppRoots {
                 home: dirs::home_dir().ok_or(PathsError("home"))?,
                 program_files_x86: std::env::var_os("ProgramFiles(x86)").map(PathBuf::from),
+                system: PathBuf::from("/"),
             },
         })
     }
@@ -142,6 +148,7 @@ impl DataRoot {
             apps: AppRoots {
                 home: base.join("home"),
                 program_files_x86: None,
+                system: base.join("system"),
             },
         }
     }

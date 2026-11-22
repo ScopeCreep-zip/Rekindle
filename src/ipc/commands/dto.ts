@@ -11,7 +11,7 @@
 // same reason: it is the FSM state `setup.rs` emits, and both
 // `lifecycleCurrent()` and the channel subscription need to name it.
 
-import type { SendState } from "./types";
+import type { NotJoinableReason, SendState } from "./types";
 
 export interface GameInfo {
   gameName: string;
@@ -19,6 +19,10 @@ export interface GameInfo {
   startedAt: number | null;
   serverAddress: string | null;
   iconKey: string | null; // `src/assets/game-icons/<key>.png`, from the backend (plan E7.2)
+  /** The Host's join check (plan E7.15 IV3c), from the friend list's
+   *  `GameStatus`; a live presence event does not carry it yet. */
+  joinable?: boolean;
+  joinableReason?: NotJoinableReason | null;
 }
 
 /** One audit-log row (`rekindle_types::dto::community::CommunityAuditEntry`). */

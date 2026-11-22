@@ -49,6 +49,7 @@
     {"id": 6000, "name": "Halo Infinite", "process_names": ["HaloInfinite.exe", "haloinfinite"], "icon": "halo", "steam_app_id": 1240440},
     {"id": 6001, "name": "Sea of Thieves", "process_names": ["SoTGame.exe", "seaofthieves"], "icon": "sot", "steam_app_id": 1172620},
     {"id": 6100, "name": "Satisfactory", "process_names": ["FactoryGame-Win64-Shipping.exe", "satisfactory"], "icon": "satisfactory", "steam_app_id": 526870},
-    {"id": 6101, "name": "Lethal Company", "process_names": ["Lethal Company.exe", "lethalcompany"], "icon": "lethalcompany", "steam_app_id": 1966720}
+    {"id": 6101, "name": "Lethal Company", "process_names": ["Lethal Company.exe", "lethalcompany"], "icon": "lethalcompany", "steam_app_id": 1966720},
+    {"id": 6200, "name": "Chess", "process_names": ["Chess", "gnome-chess"], "icon": "chess", "native": {"macos": {"bundle_id": "com.apple.Chess", "path": "/System/Applications/Chess.app"}, "linux": {"path": "/usr/games/gnome-chess"}}}
   ]
 }

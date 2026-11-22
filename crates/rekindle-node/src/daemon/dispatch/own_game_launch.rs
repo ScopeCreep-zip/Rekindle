@@ -4,10 +4,12 @@
 //! (`host::intent_select::game_launch`); `validation` has checked that the
 //! game has a launch method for it.
 
+use rekindle_game_detect::installed::SteamLayout;
 use rekindle_game_detect::{installed, launcher, GameDatabase};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::dto::presence::InstalledGameView;
 use rekindle_types::game_server::ServerAddress;
+use rekindle_utils::paths::AppRoots;
 
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -31,13 +33,14 @@ pub(super) async fn route(
             if !state.can_write() {
                 return state_error(state, "write");
             }
-            launch(game_id, server).await
+            launch(ctx.root.apps.clone(), game_id, server).await
         }
         other => unreachable!("{} is not a game launch request", other.name()),
     }
 }
 
-/// `InstalledGamesGet`: Steam's installed games (read only while game
+/// `InstalledGamesGet`: Steam's installed games and the OS's own native
+/// games present (both read only while game
 /// detection is on, threat model I10) with the games we have played,
 /// minus the hide list, named from the bundled database.
 async fn installed_games(ctx: &DaemonContext) -> IpcResponse {
@@ -57,39 +60,46 @@ async fn installed_games(ctx: &DaemonContext) -> IpcResponse {
         Ok(read) => read,
         Err(e) => return IpcResponse::error(500, format!("games not read: {e}")),
     };
-    let steam = if detection {
-        let apps = ctx.root.apps.clone();
-        match rekindle_lifecycle::run_blocking(move || installed::scan_steam(&apps)).await {
-            Ok(ids) => ids,
-            Err(e) => return IpcResponse::error(500, format!("Steam library not read: {e}")),
-        }
-    } else {
-        std::collections::BTreeSet::new()
-    };
-    let played: Vec<u32> = played.iter().map(|total| total.game_id).collect();
-    let database = GameDatabase::shared();
-    let games: Vec<InstalledGameView> =
-        installed::installed_games(database, &steam, &played, &hidden)
+    let apps = ctx.root.apps.clone();
+    let read = rekindle_lifecycle::run_blocking(move || {
+        let database = GameDatabase::shared();
+        let (steam, native) = if detection {
+            (
+                installed::scan_steam(&apps),
+                installed::native_installed(database, SteamLayout::CURRENT, &apps),
+            )
+        } else {
+            Default::default()
+        };
+        let played: Vec<u32> = played.iter().map(|total| total.game_id).collect();
+        installed::installed_games(database, &steam, &native, &played, &hidden)
             .into_iter()
-            .map(|game_id| view(database, game_id))
-            .collect();
-    IpcResponse::ok(&games)
+            .map(|game_id| view(database, &apps, game_id))
+            .collect::<Vec<InstalledGameView>>()
+    })
+    .await;
+    match read {
+        Ok(games) => IpcResponse::ok(&games),
+        Err(e) => IpcResponse::error(500, format!("installed games not read: {e}")),
+    }
 }
 
-fn view(database: &GameDatabase, game_id: u32) -> InstalledGameView {
+fn view(database: &GameDatabase, apps: &AppRoots, game_id: u32) -> InstalledGameView {
     let entry = database.lookup_by_id(game_id);
     InstalledGameView {
         game_id,
         game_name: entry.map_or_else(|| format!("Game {game_id}"), |entry| entry.name.clone()),
         icon_key: entry.and_then(rekindle_game_detect::database::GameEntry::icon_key),
-        launchable: entry.is_some_and(launcher::launchable),
+        launchable: entry
+            .is_some_and(|entry| launcher::launchable(entry, SteamLayout::CURRENT, apps)),
     }
 }
 
-/// `GameLaunch`, once the gate let it run: the OS opens the launch URI.
-async fn launch(game_id: u32, server: Option<ServerAddress>) -> IpcResponse {
+/// `GameLaunch`, once the gate let it run: the OS opens the launch URI or
+/// the native app, read under the Host's own roots.
+async fn launch(apps: AppRoots, game_id: u32, server: Option<ServerAddress>) -> IpcResponse {
     let opened = rekindle_lifecycle::run_blocking(move || {
-        launcher::launch(GameDatabase::shared(), game_id, server.as_ref())
+        launcher::launch(GameDatabase::shared(), &apps, game_id, server.as_ref())
     })
     .await;
     match opened {

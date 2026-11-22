@@ -28,7 +28,7 @@ rekindle-transport = { path = "../rekindle-transport" }
 rekindle-types = { path = "../rekindle-types" }
 # The IPC bus (protocol, Noise, client/server, event router).
 rekindle-ipc = { path = "../rekindle-ipc" }
-rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub", "config" ] }
+rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub", "config", "paths" ] }
 # Tier-6 CRDT state type for the daemon's cached governance merge.
 rekindle-governance = { path = "../rekindle-governance" }
 # The v2.0 governance lifecycle (origin, bootstrap, join, segments,

@@ -101,4 +101,19 @@ pub struct GameInfoState {
     /// The game's icon, `src/assets/game-icons/<key>.png`, resolved by the
     /// backend from the game database (plan E7.2).
     pub icon_key: Option<String>,
+    /// Whether "Join Game" can start this game on their server here, as
+    /// the Host's launch check decides it (plan E7.15 IV3c, walk B1).
+    pub joinable: bool,
+    /// Why not, while `joinable` is false.
+    pub joinable_reason: Option<NotJoinableReason>,
+}
+
+/// Why a friend's game cannot be joined (plan E7.15 IV3c).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NotJoinableReason {
+    /// They are not on a server.
+    NoServer,
+    /// Rekindle has no way to start this game on a server.
+    CannotLaunch,
 }

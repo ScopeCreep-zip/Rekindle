@@ -28,7 +28,7 @@ use rekindle_types::dto::onboarding::{
 };
 use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
-use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState};
+use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, NotJoinableReason};
 use rekindle_types::intent::{
     IntentClass, IntentId, IntentKind, IntentReview, Notifies, ProofRequired, Reversibility,
     Subject, UndoOffer,
@@ -359,8 +359,23 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
         elapsed_seconds: 90,
         server_address: Some("10.0.0.1:27015".into()),
         icon_key: Some("xfire/8507".into()),
+        joinable: true,
+        joinable_reason: None,
     });
     add("friends.friend.accepted", to(Friend::of(&accepted)));
+    add(
+        "friends.gameInfo.cannotLaunch",
+        to(GameInfoState {
+            game_id: 4300,
+            game_name: "Minecraft".into(),
+            server_info: None,
+            elapsed_seconds: 30,
+            server_address: Some("10.0.0.1:25565".into()),
+            icon_key: Some("xfire/6216".into()),
+            joinable: false,
+            joinable_reason: Some(NotJoinableReason::CannotLaunch),
+        }),
+    );
     add(
         "presence.gameTotals",
         to(vec![GameTotalView {
