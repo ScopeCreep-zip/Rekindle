@@ -6,11 +6,12 @@ use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::dto::friends::{group_label, Friend};
 use rekindle_types::dto::infoview::{
     InfoviewAction, InfoviewCommunityRow, InfoviewPlayingRow, InfoviewSection, InfoviewServerRow,
-    InfoviewSubject, InfoviewView,
+    InfoviewSubject, InfoviewView, JoinSource,
 };
 use rekindle_types::event::EventInfo;
 use rekindle_types::friend::UserStatus;
 use rekindle_types::friend::{FriendState, FriendshipState};
+use rekindle_types::game_server::GameServerInfo;
 
 use crate::daemon::dispatch::{adapter, runtime_refused, DaemonContext};
 
@@ -135,13 +136,11 @@ fn playing(
                     icon_key: game.icon_key.clone(),
                     elapsed_seconds: game.elapsed_seconds,
                     server_info: game.server_info.clone(),
-                    join: game
-                        .server_address
-                        .clone()
-                        .map(|server| InfoviewAction::JoinServer {
-                            game_id: game.game_id,
-                            server,
-                        }),
+                    join: InfoviewAction::JoinServer {
+                        game_id: Some(game.game_id),
+                        server: game.server_address.clone(),
+                        source: JoinSource::FriendPresence,
+                    },
                 })
             })
             .collect::<Vec<_>>()
@@ -252,24 +251,24 @@ async fn community_page(
         Err(e) => return Err(runtime_refused(&e, "game servers")),
     };
     sections.push(InfoviewSection::GameServers {
-        servers: servers
-            .into_iter()
-            .map(|s| InfoviewServerRow {
-                join: s
-                    .game_id
-                    .parse()
-                    .ok()
-                    .map(|game_id| InfoviewAction::JoinServer {
-                        game_id,
-                        server: s.address.clone(),
-                    }),
-                label: s.label,
-                address: s.address,
-                game_id: s.game_id,
-            })
-            .collect(),
+        servers: servers.into_iter().map(server_row).collect(),
     });
     Ok(sections)
+}
+
+/// A community's game server as its row: `Join` always, its source the
+/// community.
+fn server_row(s: GameServerInfo) -> InfoviewServerRow {
+    InfoviewServerRow {
+        join: InfoviewAction::JoinServer {
+            game_id: s.game_id.parse().ok(),
+            server: Some(s.address.clone()),
+            source: JoinSource::Community,
+        },
+        label: s.label,
+        address: s.address,
+        game_id: s.game_id,
+    }
 }
 
 /// Pins on our community page: the newest this many.
@@ -290,4 +289,39 @@ async fn pinned(ctx: &DaemonContext, anchor: &str) -> Result<InfoviewSection, Ip
     pins.sort_by(|a, b| b.pinned_at.cmp(&a.pinned_at));
     pins.truncate(PINS);
     Ok(InfoviewSection::Pinned { pins })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A community's server row always carries `Join`, sourced from the
+    /// community, even when its game id is not numeric.
+    #[test]
+    fn a_community_server_row_joins_from_the_community() {
+        let info = |game_id: &str| GameServerInfo {
+            id: format!("gs_{}", "0".repeat(32)),
+            game_id: game_id.into(),
+            label: "Frag Night".into(),
+            address: "203.0.113.7:27015".into(),
+            added_by: "ab".repeat(32),
+            created_at: 1,
+        };
+        assert_eq!(
+            server_row(info("4100")).join,
+            InfoviewAction::JoinServer {
+                game_id: Some(4_100),
+                server: Some("203.0.113.7:27015".into()),
+                source: JoinSource::Community,
+            }
+        );
+        assert_eq!(
+            server_row(info("quake")).join,
+            InfoviewAction::JoinServer {
+                game_id: None,
+                server: Some("203.0.113.7:27015".into()),
+                source: JoinSource::Community,
+            }
+        );
+    }
 }

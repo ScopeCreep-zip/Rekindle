@@ -11,10 +11,13 @@ export type InfoviewSubject =
   | { type: "friendGroup"; groupId: number | null }
   | { type: "community"; community: string };
 
+/// Where a Join row's server came from, stated by the Host (`JoinSource`).
+export type JoinSource = "friendPresence" | "community";
+
 /// What a row's link does (`InfoviewAction`): sent like any other action.
 export type InfoviewAction =
   | { type: "openCommunity"; community: string }
-  | { type: "joinServer"; gameId: number; server: string }
+  | { type: "joinServer"; gameId: number | null; server: string | null; source: JoinSource }
   | { type: "openChat"; publicKey: string }
   | { type: "openProfile"; publicKey: string }
   | { type: "activityMore"; before: number };
@@ -37,7 +40,7 @@ export interface InfoviewPlayingRow {
   iconKey: string | null;
   elapsedSeconds: number;
   serverInfo: string | null;
-  join: InfoviewAction | null;
+  join: InfoviewAction;
 }
 
 /// A community's game server (`InfoviewServerRow`).
@@ -45,7 +48,7 @@ export interface InfoviewServerRow {
   label: string;
   address: string;
   gameId: string;
-  join: InfoviewAction | null;
+  join: InfoviewAction;
 }
 
 /// A removal from a community as shown (`display::CommunityRemovalDisplay`).

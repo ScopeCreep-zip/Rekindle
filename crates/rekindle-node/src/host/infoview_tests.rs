@@ -7,7 +7,7 @@ use std::time::Duration;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::Caller;
 use rekindle_types::dto::infoview::{
-    InfoviewEvent, InfoviewSection, InfoviewSubject, InfoviewView,
+    InfoviewAction, InfoviewEvent, InfoviewSection, InfoviewSubject, InfoviewView, JoinSource,
 };
 use rekindle_types::friend::GameInfoState;
 use rekindle_types::subscription_events::{
@@ -17,7 +17,7 @@ use rekindle_types::subscription_events::{
 use super::activity::{seen_of, store};
 use super::direct_tests::ann;
 use super::game_totals_tests::open_session;
-use super::seed_registry_community;
+use super::runtime::tests::seed_registry_community;
 use super::Host;
 
 async fn get(host: &Host, subject: InfoviewSubject, window: &str) -> InfoviewView {
@@ -96,8 +96,44 @@ async fn own_page_composes_the_feed_our_communities_and_friends_in_game() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].friend.public_key, bob);
     assert_eq!(
-        serde_json::to_value(rows[0].join.as_ref().unwrap()).unwrap(),
-        serde_json::json!({"type": "joinServer", "gameId": 4100, "server": "203.0.113.7:27015"})
+        serde_json::to_value(&rows[0].join).unwrap(),
+        serde_json::json!({
+            "type": "joinServer",
+            "gameId": 4100,
+            "server": "203.0.113.7:27015",
+            "source": "friendPresence",
+        })
+    );
+}
+
+/// A friend in game who shared no server still gets `Join`, sourced from
+/// their presence: the window never decides whether to render it.
+#[tokio::test]
+async fn a_playing_row_always_joins_from_friend_presence() {
+    let (_dirs, host, _owner, bob) = ann_and_bob().await;
+    host.ctx
+        .session
+        .write()
+        .as_mut()
+        .unwrap()
+        .friends
+        .get_mut(&bob)
+        .unwrap()
+        .game_info
+        .as_mut()
+        .unwrap()
+        .server_address = None;
+    let view = get(&host, InfoviewSubject::Own, "cli").await;
+    let InfoviewSection::NowPlaying { rows } = &view.sections[2] else {
+        panic!("{view:?}");
+    };
+    assert_eq!(
+        rows[0].join,
+        InfoviewAction::JoinServer {
+            game_id: Some(4_100),
+            server: None,
+            source: JoinSource::FriendPresence,
+        }
     );
 }
 
@@ -186,6 +222,15 @@ async fn a_community_page_counts_the_members_its_beats_show_present() {
     use rekindle_codec::member_record::{BeatState, PresenceBeat};
     let (_dirs, host, owner, _bob) = ann_and_bob().await;
     seed_registry_community(&host, &owner).await;
+    // A joined community holds our pseudonym and its loaded governance
+    // state (warm restore); an empty state grants Ann nothing, so events,
+    // pins and servers are empty.
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        c.my_pseudonym_key = Some("aa".repeat(32));
+        c.governance_state = Some(Default::default());
+    }
     host.ctx
         .session
         .write()

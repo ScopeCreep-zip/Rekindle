@@ -60,14 +60,33 @@ pub struct InfoviewView {
 pub enum InfoviewAction {
     /// Open the community's window.
     OpenCommunity { community: String },
-    /// Launch the game to the server (`host:port`).
-    JoinServer { game_id: u32, server: String },
+    /// Launch the game to the server (`host:port`). The Host states every
+    /// row's `source`, so the window never decides where a server came from
+    /// (memory: backend owns policy). A part the row lacks (no address
+    /// shared, a community game id that is not numeric) is `None`; why such
+    /// a row cannot be joined is CH2's `journal_entry::not_joinable`, which
+    /// is wired into this action when it merges (round 23).
+    JoinServer {
+        game_id: Option<u32>,
+        server: Option<String>,
+        source: JoinSource,
+    },
     /// Open the 1:1 chat with the friend.
     OpenChat { public_key: String },
     /// Open the friend's profile.
     OpenProfile { public_key: String },
     /// The feed's next page (`ActivityList` after row `before`).
     ActivityMore { before: i64 },
+}
+
+/// Where a `JoinServer` row's server came from, stated by the Host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JoinSource {
+    /// A friend's presence shared it (a `NowPlaying` row).
+    FriendPresence,
+    /// A community lists it (a `GameServers` row).
+    Community,
 }
 
 /// A joined community on our own page (design §2.4): the per-channel unread
@@ -85,7 +104,7 @@ pub struct InfoviewCommunityRow {
 }
 
 /// A friend playing now (design §2.5): the friend's buddy-list view, with
-/// `Join` when they shared a server.
+/// and `Join`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InfoviewPlayingRow {
@@ -96,8 +115,8 @@ pub struct InfoviewPlayingRow {
     pub elapsed_seconds: u32,
     /// The server label the friend shared, when they did.
     pub server_info: Option<String>,
-    /// `JoinServer`, present only when a server address was shared.
-    pub join: Option<InfoviewAction>,
+    /// `JoinServer` with `JoinSource::FriendPresence`, always present.
+    pub join: InfoviewAction,
 }
 
 /// A community's game server (design §2.8, Xfire's "Favorite Servers").
@@ -107,8 +126,8 @@ pub struct InfoviewServerRow {
     pub label: String,
     pub address: String,
     pub game_id: String,
-    /// `JoinServer`, present when the game id is a known numeric id.
-    pub join: Option<InfoviewAction>,
+    /// `JoinServer` with `JoinSource::Community`, always present.
+    pub join: InfoviewAction,
 }
 
 /// One section of a view.

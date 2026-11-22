@@ -140,8 +140,21 @@ fn sync() -> Vec<Sample> {
             SystemEvent::Infoview(rekindle_types::dto::infoview::InfoviewEvent::Updated {
                 window: "main".into(),
                 view: rekindle_types::dto::infoview::InfoviewView {
-                    subject: rekindle_types::dto::infoview::InfoviewSubject::Own,
-                    sections: Vec::new(),
+                    subject: rekindle_types::dto::infoview::InfoviewSubject::Community {
+                        community: "c1".into(),
+                    },
+                    sections: vec![rekindle_types::dto::infoview::InfoviewSection::GameServers {
+                        servers: vec![rekindle_types::dto::infoview::InfoviewServerRow {
+                            label: "Frag Night".into(),
+                            address: "203.0.113.7:27015".into(),
+                            game_id: "4100".into(),
+                            join: rekindle_types::dto::infoview::InfoviewAction::JoinServer {
+                                game_id: Some(4_100),
+                                server: Some("203.0.113.7:27015".into()),
+                                source: rekindle_types::dto::infoview::JoinSource::Community,
+                            },
+                        }],
+                    }],
                 },
             }),
         ),
