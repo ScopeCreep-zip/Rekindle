@@ -98,11 +98,23 @@ export async function acceptRequest(b: Browser, user: User, message: string): Pr
   await resolveIntent(b, { passphrase: user.passphrase });
 }
 
+/**
+ * The Friends list on screen: under a skin's tree, its Friends view (the
+ * tree may still show the Communities view a community journey left it
+ * on); otherwise the app's Friends tab.
+ */
+async function friendsView(b: Browser): Promise<void> {
+  if (await underTree(b)) {
+    if (!(await skinViewShown(b, "friends"))) await showSkinView(b, "friends");
+  } else {
+    await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  }
+}
+
 /** The Friends tab's row for `name`, once listed. */
 export async function friendRow(b: Browser, name: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
   await inBuddy(b);
-  // A skin's tree shows its Friends view first; the app's bar has a tab.
-  if (!(await underTree(b))) await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  await friendsView(b);
   return byText(b, ".buddy-item", name, NET_WAIT_MS);
 }
 
@@ -270,7 +282,7 @@ export async function createGroup(b: Browser, user: User, name: string, members:
 /** Open group `name`'s chat window from the buddy list (double-click its row) and switch to it. */
 export async function openGroup(b: Browser, name: string): Promise<void> {
   await inBuddy(b);
-  if (!(await underTree(b))) await (await b.$('.buddy-tab[title^="Friends"]')).click();
+  await friendsView(b);
   const before = await b.getWindowHandles();
   await doubleClick(b, await byText(b, ".group-dm-row", name.slice(0, 24), NET_WAIT_MS));
   await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("chat-g") && !before.includes(h), NET_WAIT_MS));
