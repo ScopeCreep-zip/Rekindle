@@ -120,13 +120,16 @@ impl DeviceView {
     /// `MemberJoined`, so its endorsement is `creator_device`, signed in the
     /// context of `creator_member_record` (rule 10).
     pub fn seed_genesis(&mut self, anchor: &str, cert: &GenesisCert) {
+        // A cert without a creator device adds nothing, so the view (and
+        // the state root that covers it) is the op set's alone.
+        let Some(e) = &cert.creator_device else {
+            return;
+        };
         let p = &cert.creator_pseudonym;
         let md = self.members.entry(p.clone()).or_default();
         md.member_record
             .get_or_insert_with(|| cert.creator_member_record.clone());
-        if let Some(e) = &cert.creator_device {
-            take_endorsement(md, p, anchor, e);
-        }
+        take_endorsement(md, p, anchor, e);
     }
 
     /// Record fork evidence for `member`'s `key` at `seq` (rule 5).
