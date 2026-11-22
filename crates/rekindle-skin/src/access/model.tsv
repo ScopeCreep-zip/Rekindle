@@ -417,6 +417,12 @@
 .incoming-call-display-name	text	var(--color-xfire-text-primary)	--color-xfire-bg-panel	1.0	false
 .incoming-call-timer	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
 .incoming-call-title	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
+.infoview-empty	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.infoview-link	text	var(--color-xfire-link)	--color-xfire-bg-panel	1.0	false
+.infoview-link[aria-disabled="true"]	text	var(--color-xfire-text-disabled)	--color-xfire-bg-panel	1.0	false
+.infoview-meta	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.infoview-section-title	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.infoview-text	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .invite-cancel-btn	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-panel	1.0	false
 .invite-cancel-btn	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false
 .invite-copy-btn	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false

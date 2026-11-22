@@ -5,6 +5,8 @@ import type { InfoviewAction, InfoviewSection, InfoviewSubject, InfoviewView } f
 import type { FriendInfo } from "../../ipc/commands/types";
 import { addToast } from "../../stores/toast.store";
 import { formatDuration } from "../../utils/formatting";
+import { handleLaunchGame } from "../../actions/game.actions";
+import { notJoinableText } from "../../utils/joinable_text";
 import ActivityFeed from "./ActivityFeed";
 
 /**
@@ -39,8 +41,8 @@ const Infoview: Component<{ subject: InfoviewSubject }> = (props) => {
 };
 
 /** Send one of the Host's actions. `activityMore` pages inside the
- *  Activity section itself; `joinServer` waits for the Host to state its
- *  source (the review it gets), so it is not sent from here yet. */
+ *  Activity section itself; `joinServer` launches through the Host's review
+ *  with the source the Host stated for the row. */
 function run(action: InfoviewAction): void {
   const failed = (e: unknown) => addToast(String(e), "error");
   switch (action.type) {
@@ -54,6 +56,8 @@ function run(action: InfoviewAction): void {
       commands.openProfileWindow(action.publicKey).catch(failed);
       return;
     case "joinServer":
+      if (action.gameId !== null) void handleLaunchGame(action.gameId, action.server, action.source);
+      return;
     case "activityMore":
       return;
   }
@@ -74,6 +78,34 @@ function actionText(action: InfoviewAction): string {
       return "View More";
   }
 }
+
+/**
+ * A row's Join (plan E7.15 IV3c/JV1): always shown; the Host's verdict on
+ * the action itself enables it or disables it (aria-disabled, focusable)
+ * with its reason beside it. Pressed, it launches through the Host's review.
+ */
+const JoinLink: Component<{ action: InfoviewAction }> = (props) => {
+  const reason = (): string => {
+    const a = props.action;
+    return a.type === "joinServer" && !a.joinable ? notJoinableText(a) : "";
+  };
+  return (
+    <>
+      <button
+        type="button"
+        class="infoview-link"
+        aria-disabled={reason() ? "true" : undefined}
+        title={reason() || undefined}
+        onClick={() => !reason() && run(props.action)}
+      >
+        {actionText(props.action)}
+      </button>
+      <Show when={reason()}>
+        <span class="infoview-meta">{reason()}</span>
+      </Show>
+    </>
+  );
+};
 
 function friendName(f: FriendInfo): string {
   return f.nickname ?? f.displayName;
@@ -126,6 +158,7 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
                       {row.serverInfo ? ` (${row.serverInfo})` : ""}
                     </span>
                     <span class="infoview-meta">{formatDuration(row.elapsedSeconds)}</span>
+                    <JoinLink action={row.join} />
                   </li>
                 )}
               </For>
@@ -238,6 +271,7 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
                 <li class="infoview-row">
                   <span class="infoview-text">{srv.label || srv.address}</span>
                   <span class="infoview-meta">{srv.address}</span>
+                  <JoinLink action={srv.join} />
                 </li>
               )}
             </For>

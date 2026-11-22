@@ -126,8 +126,10 @@
     cursor: pointer;
   }
 
-  .infoview-link:focus-visible {
-    outline: 2px solid var(--color-xfire-focus-outline);
-    outline-offset: 1px;
+  /* A Join the Host refuses (plan E7.15 IV3c): disabled text, still focusable. */
+  .infoview-link[aria-disabled="true"] {
+    color: var(--color-xfire-text-disabled);
+    text-decoration: none;
+    cursor: not-allowed;
   }
 }

@@ -117,6 +117,7 @@
 '.infoview-meta' = { on = ["--color-xfire-bg-panel"] }
 '.infoview-text' = { on = ["--color-xfire-bg-panel"] }
 '.infoview-link' = { on = ["--color-xfire-bg-panel"] }
+'.infoview-link[aria-disabled="true"]' = { on = ["--color-xfire-bg-panel"] }
 '.buddy-handshake-retrying' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-group-pending .buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-group-pending .buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
