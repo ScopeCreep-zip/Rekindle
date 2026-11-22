@@ -23,6 +23,7 @@ import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
 import NewGroupModal from "../components/buddy-list/NewGroupModal";
 import GroupDmList from "../components/buddy-list/GroupDmList";
 import { subscribeBuddyListGroupDmEvents } from "../handlers/group-dm.handlers";
+import { subscribeBuddyListTransferEvents } from "../handlers/transfer.handlers";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
@@ -124,6 +125,11 @@ function runBuddyListOp(op: ShellOp): boolean {
           return true;
       }
       return false;
+    case "newRoom":
+      // A room is a group DM (SK2-G §6): the New Group dialog, with the
+      // selected friend the Host named already picked.
+      setBuddyListUI({ newGroupPeer: op.arg.peer, showNewGroup: true });
+      return true;
     default:
       return false;
   }
@@ -150,6 +156,8 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeNotificationHandler());
     unlisteners.push(subscribeBuddyListChatEvents());
     unlisteners.push(subscribeBuddyListGroupDmEvents());
+    // The Downloads view's transfers (plan E7.2 G12): only this window lists them.
+    unlisteners.push(subscribeBuddyListTransferEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
     unlisteners.push(subscribeBuddyListVoiceEvents());
     // Each community's arrival, from the Host's one create and join path.

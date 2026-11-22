@@ -10,6 +10,7 @@ import NameField from "./NameField";
 import { PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
+import FilesView from "./FilesView";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -247,6 +248,14 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
         <div {...attrs}>
           {children()}
           <div class="skin-tree-view-content">{tree.views()}</div>
+        </div>
+      </Match>
+      <Match when={role().kind === "view" && viewKey() === "files"}>
+        <div {...attrs}>
+          {children()}
+          <div class="skin-tree-view-content">
+            <FilesView run={(a) => tree.run(n().id, a)} />
+          </div>
         </div>
       </Match>
       <Match when={pressable()}>

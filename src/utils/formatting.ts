@@ -57,3 +57,13 @@ export function formatDuration(seconds: number): string {
   const mins = Math.floor((seconds % 3600) / 60);
   return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 }
+
+const KB = 1024;
+const MB = 1024 * 1024;
+
+/** A file size as B, KB or MB (attachments, transfers). */
+export function formatSize(bytes: number): string {
+  if (bytes < KB) return `${bytes} B`;
+  if (bytes < MB) return `${(bytes / KB).toFixed(1)} KB`;
+  return `${(bytes / MB).toFixed(1)} MB`;
+}

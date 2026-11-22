@@ -39,6 +39,11 @@ function applyListEvent(event: GroupDmEvent): void {
   if ("joined" in event || "left" in event || "keyRotated" in event) {
     void handleLoadGroupDms();
   }
+  if ("renamed" in event) {
+    // The Host accepted the creator's rename (plan E7.2 G7): its name, as sent.
+    const { groupId, name } = event.renamed;
+    if (groupDmState.groups[groupId]) setGroupDmState("groups", groupId, "name", name);
+  }
 }
 
 /** The buddy list: invites and roster changes of every group. */

@@ -150,6 +150,13 @@
 '.skin-status-edit' = { on = ["--color-xfire-bg-status"] }
 '.skin-status-edit::placeholder' = { on = ["--color-xfire-bg-status"] }
 '.skin-ad-banner' = { on = ["--color-xfire-accent"] }
+# The Downloads view (plan E7.2 G12, theme/24-files-view.css): rows on the
+# views node's bg-dark, a selected row on the buddy list's accent tint.
+'.files-view-head' = { on = ["--color-xfire-bg-dark"] }
+'.files-view-row' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.files-view-size' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.files-view-status' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 5% over --color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
+'.files-view-empty' = { on = ["--color-xfire-bg-dark"] }
 '.skin-pair' = { on = ["--color-xfire-bg-dark"] }
 '.skin-pair-rule' = { on = ["--color-xfire-bg-dark"] }
 '.skin-pair-apca' = { on = ["--color-xfire-bg-dark"] }

@@ -8,12 +8,14 @@
 // which must start inside the pointer event that began them.
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { commands } from "../ipc/commands";
+import { transferCommands } from "../ipc/commands/dto_transfer";
 import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
 import { callsState } from "../stores/calls.store";
 import { handleEndDmCall, handleStartDmCall } from "./calls.actions";
 import { handleSetMuted } from "./voice.actions";
+import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
 import { handleMaximize, handleMinimize } from "./titlebar.actions";
 import { handleQuit, handleReportBug, openSettingsTab } from "../components/buddy-list/MenuBar";
@@ -69,6 +71,13 @@ const common: ShellRunner = (op) => {
       return true;
     case "openProfile":
       void commands.openProfileWindow(op.arg.friend);
+      return true;
+    case "chooseDownloadDest":
+      // `transfer_start` asks where to save in Rust; no path reaches the webview.
+      transferCommands.start(op.arg.attachmentId, op.arg.target).catch((e) => addToast(String(e), "error"));
+      return true;
+    case "openGroupChat":
+      handleOpenGroupChat(op.arg.groupId);
       return true;
     case "launchPopup":
       // The shell opens (or closes, when open) the pack popup beside this
@@ -152,6 +161,11 @@ export async function dispatchSkinAction(node: string, action: SkinAction): Prom
 
 /** This window's selection for its skin's selection-dependent actions and
  *  capabilities (the Host keeps it per window, lead decision 48). */
-export function sendSkinSelection(selection: SkinSelection | null): void {
-  commands.setSkinSelection(selection).catch((e) => addToast(String(e), "error"));
+export function sendSkinSelection(selection: SkinSelection | null): Promise<void> {
+  return commands.setSkinSelection(selection).then(
+    () => undefined,
+    (e) => {
+      addToast(String(e), "error");
+    },
+  );
 }
