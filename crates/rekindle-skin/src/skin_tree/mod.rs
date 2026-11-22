@@ -24,6 +24,8 @@ mod fit_tests;
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
+mod grip_tests;
+#[cfg(test)]
 mod rail_tests;
 #[cfg(test)]
 mod stack_tests;

@@ -30,7 +30,7 @@ use super::fit::fit;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::rail;
-use super::roles::{role, with_implied, Facts, Role};
+use super::roles::{check_grip, role, with_implied, Facts, Role};
 use super::triggers::{self, Pack};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_pieces, Decode};
@@ -332,6 +332,7 @@ impl Walk<'_> {
             groups: &self.group_ids,
         };
         let triggers = triggers::read(tile, comp, &id, &pack)?;
+        check_grip(&id, component, &triggers).map_err(bad)?;
         Ok(Read {
             tile,
             id,

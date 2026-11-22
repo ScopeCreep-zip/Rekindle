@@ -488,7 +488,7 @@ fn a_fixed_tile_is_clipped_to_its_parent() {
         "main.xml",
         br#"<Tile Name="W" Component="MainWindow">
 <Tile Name="Top" X="0" Y="0" ResizeX="100" Component="Top"/>
-<Tile Name="Gripper" JustX="RIGHT" X="-14" JustY="BOTTOM" Y="-10" Component="Grip"/>
+<Tile Name="Gripper" JustX="RIGHT" X="-14" JustY="BOTTOM" Y="-10" Component="Grip"><Triggers><Trigger Type="OnLeftButtonDown">ResizeBR</Trigger></Triggers></Tile>
 <Tile Name="CloseBox" JustX="RIGHT" X="-6" Y="2" Component="Close"/>
 </Tile>"#,
     )

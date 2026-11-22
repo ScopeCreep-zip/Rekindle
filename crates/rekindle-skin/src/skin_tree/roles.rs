@@ -180,27 +180,68 @@ fn tab(k: &str) -> Option<()> {
     (paired || matches!(k, "friends" | "servers" | "downloads" | "files")).then_some(())
 }
 
-fn resize(k: &str) -> Option<Role> {
-    let rest = k
-        .strip_prefix("mainresizegripper")
+/// The edge part of a grip's key (`MainResizeGripperBL`, `ResizeUp`,
+/// `GripperTopLeft`, `BRGripper`), `None` for a key that names no grip.
+fn grip(k: &str) -> Option<&str> {
+    k.strip_prefix("mainresizegripper")
+        .or_else(|| k.strip_prefix("resizegripper"))
         .or_else(|| k.strip_prefix("resize"))
         .or_else(|| k.strip_prefix("gripper"))
-        .or_else(|| k.strip_suffix("gripper"))?;
-    let edge = match rest {
-        "up" | "top" => Edge::Top,
-        "down" | "bottom" => Edge::Bottom,
-        "left" => Edge::Left,
-        "right" => Edge::Right,
-        "topleft" | "ul" => Edge::TopLeft,
-        "topright" => Edge::TopRight,
-        "bottomleft" => Edge::BottomLeft,
-        _ => Edge::BottomRight,
-    };
-    Some(acts(
-        NodeRole::Button,
-        SkinEvent::LeftDown,
-        SkinAction::Resize(edge),
-    ))
+        .or_else(|| k.strip_suffix("gripper"))
+}
+
+/// The closed table of edge spellings the packs use (Symbiosis's
+/// `MainResizeGripperBL`/`TL`/`TR`/`L`/`R`, Classic's `ResizeUp`, XGlow's
+/// `[ResizeTop]`): an edge outside it is an import error
+/// ([`check_grip`]), never a guessed corner.
+fn edge(rest: &str) -> Option<Edge> {
+    Some(match rest {
+        "up" | "top" | "t" => Edge::Top,
+        "down" | "bottom" | "b" => Edge::Bottom,
+        "left" | "l" => Edge::Left,
+        "right" | "r" => Edge::Right,
+        "topleft" | "tl" | "ul" => Edge::TopLeft,
+        "topright" | "tr" | "ur" => Edge::TopRight,
+        "bottomleft" | "bl" => Edge::BottomLeft,
+        "bottomright" | "br" => Edge::BottomRight,
+        _ => return None,
+    })
+}
+
+/// Refuses a tile the pack wires no pressing trigger on whose name or
+/// component is a grip with an edge outside [`edge`]'s table (plan SK2-A4:
+/// the old `_ => BottomRight` default misread five Symbiosis grips). A
+/// grip the pack wires itself (XGlow's `[Gripper]`, Combat's
+/// `[ResizeUlbr]`: `Action.lbtndown=ResizeBR`) needs no edge from its
+/// name.
+///
+/// # Errors
+/// The refusal, naming the tile and the grip's key.
+pub fn check_grip(
+    name: &str,
+    component: Option<&str>,
+    triggers: &[NodeTrigger],
+) -> Result<(), String> {
+    if triggers.iter().any(NodeTrigger::presses) {
+        return Ok(());
+    }
+    [Some(name), component]
+        .into_iter()
+        .flatten()
+        .map(key)
+        .find(|k| grip(k).is_some_and(|rest| edge(rest).is_none()))
+        .map_or(Ok(()), |k| Err(format!("{name}: grip {k}: unknown edge")))
+}
+
+/// A grip: the resize its name's edge implies, or, for a name without a
+/// known edge, a button whose action is the pack's own trigger
+/// ([`check_grip`] refuses one the pack leaves unwired).
+fn resize(k: &str) -> Option<Role> {
+    Some(
+        edge(grip(k)?).map_or(Role::Acts(NodeRole::Button, None), |e| {
+            acts(NodeRole::Button, SkinEvent::LeftDown, SkinAction::Resize(e))
+        }),
+    )
 }
 
 fn named(k: &str, f: &Facts<'_>) -> Option<Role> {
