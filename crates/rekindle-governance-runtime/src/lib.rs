@@ -60,6 +60,7 @@ pub mod op_walk;
 pub mod origin;
 pub mod origin_reserve;
 pub mod overflow;
+pub mod own_frontier;
 pub mod ownership;
 pub mod partial;
 pub mod quarantine;

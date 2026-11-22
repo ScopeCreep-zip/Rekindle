@@ -4,7 +4,7 @@
 
 use super::*;
 use rekindle_governance::fixture::meta;
-use rekindle_types::governance::AdmissionMode;
+use rekindle_types::governance::{AdmissionMode, Frontier};
 
 fn cert(key: &SigningKey) -> GenesisCert {
     GenesisCert {
