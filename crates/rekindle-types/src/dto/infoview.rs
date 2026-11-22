@@ -16,6 +16,7 @@ use crate::display::CommunityRemovalDisplay;
 use crate::dto::community::PinnedMessageView;
 use crate::dto::friends::Friend;
 use crate::event::EventInfo;
+use crate::friend::NotJoinableReason;
 
 /// The window label the CLI asks `InfoviewGet` with (the desktop shell
 /// sends each webview's own label).
@@ -63,13 +64,21 @@ pub enum InfoviewAction {
     /// Launch the game to the server (`host:port`). The Host states every
     /// row's `source`, so the window never decides where a server came from
     /// (memory: backend owns policy). A part the row lacks (no address
-    /// shared, a community game id that is not numeric) is `None`; why such
-    /// a row cannot be joined is CH2's `journal_entry::not_joinable`, which
-    /// is wired into this action when it merges (round 23).
+    /// shared, a community game id that is not numeric) is `None`.
+    ///
+    /// `joinable` and `joinable_reason` are the Host's verdict, the same
+    /// pair `GameInfoState` carries: a friend's row copies the verdict their
+    /// presence holds, a community's row is judged by
+    /// `journal_entry::not_joinable` (no server, a game id that is not
+    /// numeric, a game that cannot start on a server here). The window
+    /// shows the row's Join always, disabled with the reason when it is
+    /// not joinable.
     JoinServer {
         game_id: Option<u32>,
         server: Option<String>,
         source: JoinSource,
+        joinable: bool,
+        joinable_reason: Option<NotJoinableReason>,
     },
     /// Open the 1:1 chat with the friend.
     OpenChat { public_key: String },

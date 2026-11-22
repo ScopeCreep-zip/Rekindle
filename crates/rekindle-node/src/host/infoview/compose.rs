@@ -140,6 +140,8 @@ fn playing(
                         game_id: Some(game.game_id),
                         server: game.server_address.clone(),
                         source: JoinSource::FriendPresence,
+                        joinable: game.joinable,
+                        joinable_reason: game.joinable_reason,
                     },
                 })
             })
@@ -257,13 +259,19 @@ async fn community_page(
 }
 
 /// A community's game server as its row: `Join` always, its source the
-/// community.
+/// community, judged by the Host's one launch check
+/// (`journal_entry::not_joinable`, the check a friend's `GameInfoState`
+/// carries): a game id that is not numeric names nothing to launch.
 fn server_row(s: GameServerInfo) -> InfoviewServerRow {
+    let game_id = s.game_id.parse().ok();
+    let joinable_reason = crate::host::journal_entry::not_joinable(game_id, Some(&s.address));
     InfoviewServerRow {
         join: InfoviewAction::JoinServer {
-            game_id: s.game_id.parse().ok(),
+            game_id,
             server: Some(s.address.clone()),
             source: JoinSource::Community,
+            joinable: joinable_reason.is_none(),
+            joinable_reason,
         },
         label: s.label,
         address: s.address,
@@ -293,10 +301,13 @@ async fn pinned(ctx: &DaemonContext, anchor: &str) -> Result<InfoviewSection, Ip
 
 #[cfg(test)]
 mod tests {
+    use rekindle_types::friend::NotJoinableReason;
+
     use super::*;
 
     /// A community's server row always carries `Join`, sourced from the
-    /// community, even when its game id is not numeric.
+    /// community, even when its game id is not numeric: then it is not
+    /// joinable and says why; a launchable game on the server is joinable.
     #[test]
     fn a_community_server_row_joins_from_the_community() {
         let info = |game_id: &str| GameServerInfo {
@@ -313,6 +324,8 @@ mod tests {
                 game_id: Some(4_100),
                 server: Some("203.0.113.7:27015".into()),
                 source: JoinSource::Community,
+                joinable: true,
+                joinable_reason: None,
             }
         );
         assert_eq!(
@@ -321,6 +334,8 @@ mod tests {
                 game_id: None,
                 server: Some("203.0.113.7:27015".into()),
                 source: JoinSource::Community,
+                joinable: false,
+                joinable_reason: Some(NotJoinableReason::CannotLaunch),
             }
         );
     }

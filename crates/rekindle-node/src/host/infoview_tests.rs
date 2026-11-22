@@ -9,7 +9,7 @@ use rekindle_ipc::Caller;
 use rekindle_types::dto::infoview::{
     InfoviewAction, InfoviewEvent, InfoviewSection, InfoviewSubject, InfoviewView, JoinSource,
 };
-use rekindle_types::friend::GameInfoState;
+use rekindle_types::friend::{GameInfoState, NotJoinableReason};
 use rekindle_types::subscription_events::{
     FriendEvent, StreamFrame, SubscriptionEvent, SystemEvent,
 };
@@ -104,27 +104,43 @@ async fn own_page_composes_the_feed_our_communities_and_friends_in_game() {
             "gameId": 4100,
             "server": "203.0.113.7:27015",
             "source": "friendPresence",
+            "joinable": true,
+            "joinableReason": null,
         })
     );
 }
 
-/// A friend in game who shared no server still gets `Join`, sourced from
-/// their presence: the window never decides whether to render it.
-#[tokio::test]
-async fn a_playing_row_always_joins_from_friend_presence() {
-    let (_dirs, host, _owner, bob) = ann_and_bob().await;
-    host.ctx
-        .session
-        .write()
+/// Bob's game as his presence states it: `server`, and the verdict the
+/// presence adapter judged for it.
+fn set_bobs_game(
+    host: &Host,
+    bob: &str,
+    server: Option<&str>,
+    reason: Option<NotJoinableReason>,
+) -> GameInfoState {
+    let mut session = host.ctx.session.write();
+    let game = session
         .as_mut()
         .unwrap()
         .friends
-        .get_mut(&bob)
+        .get_mut(bob)
         .unwrap()
         .game_info
         .as_mut()
-        .unwrap()
-        .server_address = None;
+        .unwrap();
+    game.server_address = server.map(str::to_owned);
+    game.joinable = reason.is_none();
+    game.joinable_reason = reason;
+    game.clone()
+}
+
+/// A friend in game who shared no server still gets `Join`, sourced from
+/// their presence and disabled with the presence's reason: the window never
+/// decides whether to render it.
+#[tokio::test]
+async fn a_playing_row_always_joins_from_friend_presence() {
+    let (_dirs, host, _owner, bob) = ann_and_bob().await;
+    set_bobs_game(&host, &bob, None, Some(NotJoinableReason::NoServer));
     let view = get(&host, InfoviewSubject::Own, "cli").await;
     let InfoviewSection::NowPlaying { rows } = &view.sections[2] else {
         panic!("{view:?}");
@@ -135,8 +151,41 @@ async fn a_playing_row_always_joins_from_friend_presence() {
             game_id: Some(4_100),
             server: None,
             source: JoinSource::FriendPresence,
+            joinable: false,
+            joinable_reason: Some(NotJoinableReason::NoServer),
         }
     );
+}
+
+/// A playing row's verdict is the friend's `GameInfoState` verdict, on our
+/// own page and on the friend's page alike, in both directions.
+#[tokio::test]
+async fn a_playing_rows_verdict_matches_the_friends_game_info() {
+    let (_dirs, host, _owner, bob) = ann_and_bob().await;
+    for reason in [Some(NotJoinableReason::CannotLaunch), None] {
+        let game = set_bobs_game(&host, &bob, Some("203.0.113.7:27015"), reason);
+        let friend_page = InfoviewSubject::Friend {
+            public_key: bob.clone(),
+        };
+        for subject in [InfoviewSubject::Own, friend_page] {
+            let view = get(&host, subject, "cli").await;
+            let Some(InfoviewSection::NowPlaying { rows }) = view.sections.last() else {
+                panic!("{view:?}");
+            };
+            let InfoviewAction::JoinServer {
+                joinable,
+                joinable_reason,
+                ..
+            } = &rows[0].join
+            else {
+                panic!("{rows:?}");
+            };
+            assert_eq!(
+                (*joinable, *joinable_reason),
+                (game.joinable, game.joinable_reason)
+            );
+        }
+    }
 }
 
 #[tokio::test]

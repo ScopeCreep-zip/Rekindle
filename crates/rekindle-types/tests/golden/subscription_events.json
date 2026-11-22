@@ -1969,6 +1969,8 @@
                     "gameId": "4100",
                     "join": {
                       "gameId": 4100,
+                      "joinable": true,
+                      "joinableReason": null,
                       "server": "203.0.113.7:27015",
                       "source": "community",
                       "type": "joinServer"

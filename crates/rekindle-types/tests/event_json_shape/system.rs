@@ -170,6 +170,8 @@ fn sync() -> Vec<Sample> {
                                 game_id: Some(4_100),
                                 server: Some("203.0.113.7:27015".into()),
                                 source: rekindle_types::dto::infoview::JoinSource::Community,
+                                joinable: true,
+                                joinable_reason: None,
                             },
                         }],
                     }],

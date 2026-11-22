@@ -2,7 +2,7 @@
 // what `get_infoview` answers and `infoview-event` pushes to the one window
 // that asked. The Host owns the sections, their order and their actions.
 
-import type { ActivityListItem, EventInfo, FriendInfo } from "./types";
+import type { ActivityListItem, EventInfo, FriendInfo, NotJoinableReason } from "./types";
 
 /// What a window's Infoview shows (`InfoviewSubject`).
 export type InfoviewSubject =
@@ -17,7 +17,16 @@ export type JoinSource = "friendPresence" | "community";
 /// What a row's link does (`InfoviewAction`): sent like any other action.
 export type InfoviewAction =
   | { type: "openCommunity"; community: string }
-  | { type: "joinServer"; gameId: number | null; server: string | null; source: JoinSource }
+  | {
+      type: "joinServer";
+      gameId: number | null;
+      server: string | null;
+      source: JoinSource;
+      /// The Host's verdict (as `GameInfoState`): Join is always shown,
+      /// disabled with `joinableReason` when not joinable.
+      joinable: boolean;
+      joinableReason: NotJoinableReason | null;
+    }
   | { type: "openChat"; publicKey: string }
   | { type: "openProfile"; publicKey: string }
   | { type: "activityMore"; before: number };
