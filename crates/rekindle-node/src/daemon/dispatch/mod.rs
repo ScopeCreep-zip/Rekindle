@@ -350,9 +350,10 @@ impl DaemonContext {
             .unwrap_or_default()
     }
 
-    /// Journal one `SubscriptionEvent` for every subscriber (plan D3.2).
+    /// Journal one `SubscriptionEvent` for every subscriber (plan D3.2),
+    /// through the Host's one journal entry (`host::journal_entry`).
     pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
-        self.journal.publish(event);
+        crate::host::journal_entry::publish(&self.journal, event);
     }
 
     /// Publish `event` as one of the session's standing events (a security

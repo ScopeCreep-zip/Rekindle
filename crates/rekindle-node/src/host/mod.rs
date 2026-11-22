@@ -58,6 +58,7 @@ pub(crate) mod infoview;
 #[cfg(test)]
 mod infoview_tests;
 mod intent_select;
+pub(crate) mod journal_entry;
 pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;
 pub(crate) mod own_profile;

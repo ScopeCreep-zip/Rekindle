@@ -244,6 +244,8 @@
       "gameId": 4181,
       "gameName": "Counter-Strike 2",
       "iconKey": "xfire/8507",
+      "joinable": true,
+      "joinableReason": null,
       "serverAddress": "10.0.0.1:27015",
       "serverInfo": null
     },
@@ -287,6 +289,16 @@
     ],
     "token": "abcdefghijklmnopqrstuvwx2q",
     "url": "rekindle://add/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/VLD0:abc/abcdefghijklmnopqrstuvwx2q"
+  },
+  "friends.gameInfo.cannotLaunch": {
+    "elapsedSeconds": 30,
+    "gameId": 4300,
+    "gameName": "Minecraft",
+    "iconKey": "xfire/6216",
+    "joinable": false,
+    "joinableReason": "cannotLaunch",
+    "serverAddress": "10.0.0.1:25565",
+    "serverInfo": null
   },
   "friends.inviteCreated": {
     "createdAt": 1700000000000,

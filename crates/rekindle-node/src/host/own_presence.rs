@@ -484,30 +484,31 @@ impl OwnPresence {
             return;
         };
         let view = self.view();
-        let game = view
-            .game
-            .map_or(GameActivity::Idle, |game| GameActivity::Playing {
-                game_name: game.game_name,
-                game_id: Some(game.game_id),
-                elapsed_seconds: Some(game.elapsed_seconds),
-                server_address: game.server_address,
-                icon_key: game.icon_key,
-            });
+        let game = view.game.map_or(GameActivity::Idle, |game| {
+            GameActivity::from_parts(
+                Some(game.game_name),
+                Some(game.game_id),
+                Some(game.elapsed_seconds),
+                game.server_address,
+                game.icon_key,
+            )
+        });
         // Our own device sees our real status, Invisible included; peers
         // see the wire value (Invisible folds to "offline").
         let status = serde_json::to_value(view.status)
             .ok()
             .and_then(|v| v.as_str().map(str::to_owned));
-        self.journal
-            .publish(SubscriptionEvent::Presence(PresenceEvent::SelfChanged {
-                public_key,
-                snapshot: PresenceSnapshot {
-                    status,
-                    status_message: Some(view.status_message),
-                    game: Some(game),
-                    idle: Some(view.idle),
-                },
-            }));
+        let snapshot = PresenceSnapshot {
+            status,
+            status_message: Some(view.status_message),
+            game: Some(game),
+            idle: Some(view.idle),
+        };
+        let event = PresenceEvent::SelfChanged {
+            public_key,
+            snapshot,
+        };
+        super::journal_entry::publish(&self.journal, SubscriptionEvent::Presence(event));
     }
 
     /// Write one of our profile's subkeys through the session's pool.

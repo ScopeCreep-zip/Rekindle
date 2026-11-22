@@ -16,6 +16,8 @@
  * the daemon IPC as postcard, which cannot decode a tagged enum.
  */
 
+import type { NotJoinableReason } from "../commands/types";
+
 /** What a peer is playing, when the emitter actually looked. */
 export type GameActivity =
   | "idle"
@@ -27,6 +29,10 @@ export type GameActivity =
         serverAddress: string | null;
         /** `src/assets/game-icons/<key>.png`, resolved by the backend (plan E7.2). */
         iconKey: string | null;
+        /** Whether "Join Game" can start it, stated by the Host when it
+         *  journals the event (plan E7.15 IV3). */
+        joinable: boolean;
+        joinableReason: NotJoinableReason | null;
       };
     };
 

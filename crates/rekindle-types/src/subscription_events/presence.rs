@@ -56,6 +56,13 @@ pub enum GameActivity {
         /// the backend from the game database (plan E7.2); never on the
         /// wire between peers.
         icon_key: Option<String>,
+        /// Whether "Join Game" can start this game on their server here.
+        /// The Host states it once, when it journals the event (plan E7.15
+        /// IV3, decision 51); an emitter leaves it unstated (`false`, no
+        /// reason). Never on the wire between peers.
+        joinable: bool,
+        /// Why not, once the Host has stated `joinable` as false.
+        joinable_reason: Option<crate::friend::NotJoinableReason>,
     },
 }
 
@@ -78,7 +85,8 @@ impl GameActivity {
         }
     }
 
-    /// Build from the optional-name shape most call sites hold.
+    /// Build from the optional-name shape most call sites hold; `joinable`
+    /// stays unstated until the Host journals the event.
     #[must_use]
     pub fn from_parts(
         game_name: Option<String>,
@@ -94,6 +102,8 @@ impl GameActivity {
                 elapsed_seconds,
                 server_address,
                 icon_key,
+                joinable: false,
+                joinable_reason: None,
             },
             None => Self::Idle,
         }
@@ -229,6 +239,17 @@ impl PresenceEvent {
             Self::SelfProfileChanged { .. } => None,
         }
     }
+
+    /// The presence observation a variant carries, to state what only the
+    /// Host knows (`joinable`) before it is journaled.
+    pub fn snapshot_mut(&mut self) -> Option<&mut PresenceSnapshot> {
+        match self {
+            Self::CommunityMemberChanged { snapshot, .. }
+            | Self::FriendChanged { snapshot, .. }
+            | Self::SelfChanged { snapshot, .. } => Some(snapshot),
+            Self::SelfProfileChanged { .. } => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -281,11 +302,13 @@ mod tests {
                 elapsed_seconds: Some(12),
                 server_address: None,
                 icon_key: Some("xfire/8507".into()),
+                joinable: false,
+                joinable_reason: Some(crate::friend::NotJoinableReason::NoServer),
             }),
         };
         assert_eq!(
             serde_json::to_string(&playing).unwrap(),
-            r#"{"selfChanged":{"publicKey":"abc","snapshot":{"status":null,"statusMessage":null,"game":{"playing":{"gameName":"BF2","gameId":7,"elapsedSeconds":12,"serverAddress":null,"iconKey":"xfire/8507"}},"idle":null}}}"#
+            r#"{"selfChanged":{"publicKey":"abc","snapshot":{"status":null,"statusMessage":null,"game":{"playing":{"gameName":"BF2","gameId":7,"elapsedSeconds":12,"serverAddress":null,"iconKey":"xfire/8507","joinable":false,"joinableReason":"noServer"}},"idle":null}}}"#
         );
 
         let member = PresenceEvent::CommunityMemberChanged {
@@ -316,6 +339,8 @@ mod tests {
                 elapsed_seconds: Some(1234),
                 server_address: Some("10.0.0.1:16567".into()),
                 icon_key: Some("xfire/4101".into()),
+                joinable: false,
+                joinable_reason: Some(crate::friend::NotJoinableReason::CannotLaunch),
             });
 
         for event in [

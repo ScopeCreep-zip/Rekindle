@@ -83,6 +83,8 @@ function applyToFriend(publicKey: string, snapshot: PresenceSnapshot): void {
           elapsedSeconds: playing?.elapsedSeconds ?? null,
           serverAddress: playing?.serverAddress ?? null,
           iconKey: playing?.iconKey ?? null,
+          joinable: playing?.joinable ?? false,
+          joinableReason: playing?.joinableReason ?? null,
         }),
       );
     }
@@ -203,6 +205,8 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
                 startedAt: playing?.elapsedSeconds ?? null,
                 serverAddress: playing?.serverAddress ?? null,
                 iconKey: playing?.iconKey ?? null,
+                joinable: playing?.joinable ?? false,
+                joinableReason: playing?.joinableReason ?? null,
               },
         );
       }

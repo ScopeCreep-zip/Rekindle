@@ -156,9 +156,8 @@ impl FriendPresenceDeps for HostFriends {
 
     fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>) {
         let game = game.map(|g| {
-            let joinable_reason = rekindle_game_detect::launcher::not_joinable(
-                rekindle_game_detect::GameDatabase::shared(),
-                g.game_id,
+            let joinable_reason = crate::host::journal_entry::not_joinable(
+                Some(g.game_id),
                 g.server_address.as_deref(),
             );
             GameInfoState {

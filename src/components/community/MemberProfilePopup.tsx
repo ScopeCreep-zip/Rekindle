@@ -271,6 +271,8 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
               <span class="profile-popup-game-name">{info().gameName}</span>
               <Show when={info().serverAddress}>
                 <span class="profile-popup-game-server">{info().serverAddress}</span>
+              </Show>
+              <Show when={info().joinable}>
                 <button
                   class="profile-popup-join-btn"
                   onClick={() =>

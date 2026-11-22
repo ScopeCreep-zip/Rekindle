@@ -71,6 +71,8 @@ fn playing() -> PresenceSnapshot {
             elapsed_seconds: Some(1_234),
             server_address: Some(text("10.0.0.1:16567")),
             icon_key: Some(text("xfire/4101")),
+            joinable: false,
+            joinable_reason: Some(rekindle_types::friend::NotJoinableReason::CannotLaunch),
         })
 }
 

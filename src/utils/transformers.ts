@@ -4,6 +4,7 @@ import type { DmHistoryGap } from "../ipc/channels/chat_events";
 import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../ipc/commands/dto";
+import type { NotJoinableReason } from "../ipc/commands/types";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
@@ -274,6 +275,6 @@ export function transformNewFriend(
 
 
 /** Presence event game data → store GameInfo. */
-export function transformGameInfo(g: { gameName: string; gameId?: number | null; elapsedSeconds?: number | null; serverAddress?: string | null; iconKey: string | null }): GameInfo {
-  return { gameName: g.gameName, gameId: g.gameId ?? null, startedAt: g.elapsedSeconds ?? null, serverAddress: g.serverAddress ?? null, iconKey: g.iconKey };
+export function transformGameInfo(g: { gameName: string; gameId?: number | null; elapsedSeconds?: number | null; serverAddress?: string | null; iconKey: string | null; joinable: boolean; joinableReason: NotJoinableReason | null }): GameInfo {
+  return { gameName: g.gameName, gameId: g.gameId ?? null, startedAt: g.elapsedSeconds ?? null, serverAddress: g.serverAddress ?? null, iconKey: g.iconKey, joinable: g.joinable, joinableReason: g.joinableReason };
 }

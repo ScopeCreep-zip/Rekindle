@@ -97,7 +97,7 @@ pub(crate) async fn run_forwarder(ctx: std::sync::Arc<crate::daemon::dispatch::D
         ctx.shutdown.token(),
         source,
         |event| {
-            ctx.journal.publish(event);
+            ctx.publish_event(event);
             std::future::ready(())
         },
         |_| journal.resync(),

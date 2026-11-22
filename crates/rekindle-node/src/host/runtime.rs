@@ -417,7 +417,7 @@ impl Host {
         &self,
         event: rekindle_types::subscription_events::SubscriptionEvent,
     ) -> rekindle_types::subscription_events::Cursor {
-        self.ctx.journal.publish(event)
+        super::journal_entry::publish(&self.ctx.journal, event)
     }
 
     /// What followed `from` in the journal, then `Resumed`, or
