@@ -12,7 +12,17 @@ use crate::{builtin, images, manifest, package};
 
 fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
     for n in nodes {
-        let _ = writeln!(out, "{}{} {:?}", "  ".repeat(depth), n.id, n.role);
+        let _ = write!(out, "{}{} {:?}", "  ".repeat(depth), n.id, n.role);
+        if let Some(l) = &n.label {
+            let _ = write!(out, " label {:?}", l.text);
+            if let Some(c) = l.cover {
+                let _ = write!(out, " cover {c:?}");
+            }
+            if let Some(g) = l.glyph {
+                let _ = write!(out, " glyph {g:?}");
+            }
+        }
+        out.push('\n');
         lines(&n.children, depth + 1, out);
     }
 }

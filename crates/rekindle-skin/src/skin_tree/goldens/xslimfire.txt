@@ -47,7 +47,7 @@ TabHeader TabStrip
   TabNormalButton Tab(Friends)
   TabServerButton Tab(Servers)
   TabDownloadButton Tab(Files)
-  TabDownloadButton.Communities Tab(Communities)
+  TabDownloadButton.Communities Tab(Communities) label "Communities" cover [6, 3, 53, 12]
 TabbedControl Views
   BuddyView View(Friends)
     BvBk1 Part

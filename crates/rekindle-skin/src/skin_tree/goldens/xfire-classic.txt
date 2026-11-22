@@ -53,7 +53,7 @@ InnerBevel Decor
       TabServerButton Part
     TabDownloadText Tab(Files)
       TabDownloadButton Part
-    TabDownloadText.Communities Tab(Communities)
+    TabDownloadText.Communities Tab(Communities) label "Communities"
       TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)

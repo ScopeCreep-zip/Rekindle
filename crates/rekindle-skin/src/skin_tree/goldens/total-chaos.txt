@@ -19,7 +19,7 @@ Content Group
     TabNormalButton Tab(Friends)
     TabServerButton Tab(Servers)
     TabDownloadButton Tab(Files)
-    TabDownloadButton.Communities Tab(Communities)
+    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [7, 3, 60, 11]
   TabbedControl Views
     BuddyView View(Friends)
     ServerView View(Servers)

@@ -44,7 +44,7 @@ ButtonDivider Decor
 Friends Tab(Friends)
 Servers Tab(Servers)
 Downloads Tab(Files)
-Downloads.Communities Tab(Communities)
+Downloads.Communities Tab(Communities) label "Communities" cover [6, 3, 53, 12]
 AdArea AdArea
 UserName NameField
 DownArrow StatusList

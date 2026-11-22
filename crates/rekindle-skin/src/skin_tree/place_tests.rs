@@ -5,7 +5,7 @@
 use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_action::{EngineView, NodeTrigger, SkinAction};
 use rekindle_types::dto::skin_tree::{
-    NodeLabel, NodeRole, NodeSpan, ShellNode, SkinNode, SkinTree,
+    NodeGlyph, NodeLabel, NodeRole, NodeSpan, ShellNode, SkinNode, SkinTree,
 };
 use rekindle_types::dto::skin_tree_role::ViewKey;
 
@@ -386,6 +386,7 @@ fn an_art_label_clone_carries_its_own_label() {
         let Some(NodeLabel {
             text,
             cover: Some(cover),
+            glyph: None,
         }) = &clone.label
         else {
             panic!("{id}: {:?}", clone.label);
@@ -415,4 +416,55 @@ fn an_art_label_clone_carries_its_own_label() {
         }
         assert_eq!(found.unwrap().label, clone.label, "{id}: shell label");
     }
+}
+
+/// The served label of `id`'s Communities clone, as the shell reads it.
+fn clone_shell_label(id: &str) -> Option<NodeLabel> {
+    let main = served_main(id);
+    let shell = main.tree.as_ref().unwrap().shell(SkinWindow::Main);
+    let mut stack: Vec<&ShellNode> = shell.root.iter().collect();
+    while let Some(n) = stack.pop() {
+        if n.role == NodeRole::Tab(C) {
+            return n.label.clone();
+        }
+        stack.extend(n.children.iter());
+    }
+    None
+}
+
+/// Symbiosis's tabs are icon buttons (46 x 48 whole pictures, no word):
+/// the clone carries the Communities glyph with its words as the
+/// accessible name and no cover, so no text tab sits in the icon strip.
+#[test]
+fn an_icon_tab_clone_carries_a_glyph_and_no_cover() {
+    assert_eq!(
+        clone_shell_label("symbiosis"),
+        Some(NodeLabel {
+            text: "Communities".to_owned(),
+            cover: None,
+            glyph: Some(NodeGlyph::Communities),
+        })
+    );
+}
+
+/// Worded tabs keep their words: xslimfire's whole picture with a cover,
+/// Spacecowboy's words over its 3-slice part with none; neither a glyph.
+#[test]
+fn a_worded_tab_clone_keeps_its_words() {
+    assert_eq!(
+        clone_shell_label("xslimfire"),
+        Some(NodeLabel {
+            text: "Communities".to_owned(),
+            cover: Some([6, 3, 53, 12]),
+            glyph: None,
+        })
+    );
+    assert_eq!(
+        clone_shell_label("spacecowboy"),
+        Some(NodeLabel {
+            text: "Communities".to_owned(),
+            cover: None,
+            glyph: None,
+        })
+    );
 }
