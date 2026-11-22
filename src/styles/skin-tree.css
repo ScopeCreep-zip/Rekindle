@@ -143,4 +143,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* A pack's InfoView (plan E7.15 IV5): the Infoview on the pack's InfoView
+   * ground (its `InfoViewBG` colour group, imported as bg.secondary). */
+  [data-skin-role="infoView"] > .skin-tree-view-content {
+    background-color: var(--color-xfire-bg-secondary);
+    padding: 6px;
+  }
 }

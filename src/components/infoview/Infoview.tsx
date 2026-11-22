@@ -1,7 +1,7 @@
 import { Component, For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
 import { subscribeInfoview } from "../../ipc/channels";
-import type { InfoviewAction, InfoviewSection, InfoviewSubject, InfoviewView } from "../../ipc/commands/dto_infoview";
+import type { InfoviewAction, InfoviewRequest, InfoviewSection, InfoviewView } from "../../ipc/commands/dto_infoview";
 import type { FriendInfo } from "../../ipc/commands/types";
 import { addToast } from "../../stores/toast.store";
 import { formatDuration } from "../../utils/formatting";
@@ -16,7 +16,7 @@ import ActivityFeed from "./ActivityFeed";
  * pushes to this window. Each link is the Host's typed action, sent as it
  * is; the window decides nothing about what a section shows or allows.
  */
-const Infoview: Component<{ subject: InfoviewSubject }> = (props) => {
+const Infoview: Component<{ subject: InfoviewRequest }> = (props) => {
   const [view, setView] = createSignal<InfoviewView | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   let unlisten: (() => void) | undefined;

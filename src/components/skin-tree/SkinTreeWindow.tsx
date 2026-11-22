@@ -11,6 +11,7 @@ import { PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
 import FilesView from "./FilesView";
+import Infoview from "../infoview/Infoview";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -275,6 +276,16 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
         <div {...attrs}>
           {children()}
           <div class="skin-tree-view-content">{tree.views()}</div>
+        </div>
+      </Match>
+      {/* A pack's InfoView (its Info popup or an inline pane, plan E7.15 IV5): the
+       *  Host's Infoview for what this window's launcher has selected. */}
+      <Match when={role().kind === "infoView"}>
+        <div {...attrs}>
+          {children()}
+          <div class="skin-tree-view-content">
+            <Infoview subject={{ type: "selection" }} />
+          </div>
         </div>
       </Match>
       <Match when={role().kind === "view" && viewKey() === "communities"}>
