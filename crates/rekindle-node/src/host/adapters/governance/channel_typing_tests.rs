@@ -20,12 +20,12 @@ use crate::host::runtime::tests::channel_change_tests::{EDIT_CHANNEL, TEXT_KEY};
 use crate::host::runtime::tests::channel_gap_tests::with_channel;
 use crate::host::runtime::tests::{create_ann, offline_host, seed_registry_community};
 
-const COMMUNITY: &str = "community";
-const CHANNEL: &str = "general";
-const BOB: &str = "bob";
+const TYPING_COMMUNITY: &str = "community";
+const TYPING_CHANNEL: &str = "general";
+const TYPIST_BOB: &str = "bob";
 
 fn channel() -> TypingContext {
-    context(COMMUNITY, CHANNEL)
+    context(TYPING_COMMUNITY, TYPING_CHANNEL)
 }
 
 /// Wait up to `limit` for a `Stopped` frame in `stream`; when it came.
@@ -74,7 +74,7 @@ async fn a_typist_with_no_stop_frame_expires_within_ten_seconds() {
     let mut events = host.ctx.journal.subscribe(None);
     let friends = HostFriends::of(&host.ctx);
     let start = Instant::now();
-    typing::channel_frame(&friends, channel(), BOB, "Bob".into(), 60_000);
+    typing::channel_frame(&friends, channel(), TYPIST_BOB, "Bob".into(), 60_000);
     let ended = stopped_within(&mut events, Duration::from_secs(12)).await;
     let ended = ended.expect("the Host lapses the start without a stop frame");
     assert!(ended.duration_since(start) <= Duration::from_millis(10_500));
@@ -90,7 +90,7 @@ async fn a_resend_keeps_the_typist_past_six_seconds() {
     typing::channel_frame(
         &friends,
         channel(),
-        BOB,
+        TYPIST_BOB,
         "Bob".into(),
         CHANNEL_TYPING_TTL_MS,
     );
@@ -98,7 +98,7 @@ async fn a_resend_keeps_the_typist_past_six_seconds() {
     typing::channel_frame(
         &friends,
         channel(),
-        BOB,
+        TYPIST_BOB,
         "Bob".into(),
         CHANNEL_TYPING_TTL_MS,
     );
@@ -124,11 +124,11 @@ async fn a_message_or_a_stop_frame_ends_typing() {
     typing::channel_frame(
         &friends,
         channel(),
-        BOB,
+        TYPIST_BOB,
         "Bob".into(),
         CHANNEL_TYPING_TTL_MS,
     );
-    typing::stopped(&friends, &channel(), BOB);
+    typing::stopped(&friends, &channel(), TYPIST_BOB);
     assert!(stopped_within(&mut events, Duration::from_millis(500))
         .await
         .is_some());
@@ -159,7 +159,7 @@ async fn our_message_ends_our_typing_session() {
         now,
     );
     assert_eq!(draft, Draft::Started);
-    HostGovernance::new(host.ctx.clone()).end_channel_typing(COMMUNITY, CHANNEL);
+    HostGovernance::new(host.ctx.clone()).end_channel_typing(TYPING_COMMUNITY, TYPING_CHANNEL);
     assert!(
         !friends.stores().typing_out.lock().end(&channel()),
         "the session ended with our message"

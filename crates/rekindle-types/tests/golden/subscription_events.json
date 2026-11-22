@@ -1196,6 +1196,7 @@
     "membership": {
       "memberCardChanged": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "customStatus": "brb",
         "displayName": "Eve",
         "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       }
