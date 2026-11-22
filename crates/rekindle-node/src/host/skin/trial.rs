@@ -100,7 +100,8 @@ pub(super) async fn begin(ctx: &DaemonContext, id: String, hash: String) -> Answ
     let m: SkinManifest =
         serde_json::from_str(&manifest).map_err(|e| failed("skin manifest", e))?;
     let previous = ctx
-        .skin_trial
+        .skin
+        .trial
         .current(&owner)
         .map_or(stored, |t| t.previous);
     let trial = SkinTrial {
@@ -110,14 +111,14 @@ pub(super) async fn begin(ctx: &DaemonContext, id: String, hash: String) -> Answ
         reverts_at_ms: ctx.clock.now_ms().saturating_add(SKIN_TRIAL_MS),
     };
     let wait = Duration::from_millis(SKIN_TRIAL_MS);
-    let seq = ctx.skin_trial.begin(owner, trial.clone());
+    let seq = ctx.skin.trial.begin(owner, trial.clone());
     serve::announce(ctx).await?;
     publish(ctx, Some(trial));
     let host = ctx.this.upgrade().expect("a context in use is alive");
     ctx.unlock_scope_or_closed()
         .spawn_or_drop("skin trial revert", async move {
             tokio::time::sleep(wait).await;
-            if host.skin_trial.take_if(|h| h.seq == seq).is_some() {
+            if host.skin.trial.take_if(|h| h.seq == seq).is_some() {
                 revert_announced(&host).await;
             }
         });
@@ -135,7 +136,7 @@ async fn revert_announced(ctx: &DaemonContext) {
 /// End `owner`'s trial because another choice was stored (a built-in,
 /// or the stored skin chosen again).
 pub(super) fn end(ctx: &DaemonContext, owner: &str) {
-    if ctx.skin_trial.take_if(|h| h.owner == owner).is_some() {
+    if ctx.skin.trial.take_if(|h| h.owner == owner).is_some() {
         publish(ctx, None);
     }
 }
@@ -144,7 +145,8 @@ pub(super) fn end(ctx: &DaemonContext, owner: &str) {
 pub(super) async fn keep(ctx: &DaemonContext, id: &str, keep: bool) -> Answer<()> {
     let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
     let trial = ctx
-        .skin_trial
+        .skin
+        .trial
         .take_if(|h| h.owner == owner && h.trial.id == id)
         .ok_or_else(|| {
             rekindle_ipc::protocol::IpcResponse::error(409, format!("{id} is not on trial"))

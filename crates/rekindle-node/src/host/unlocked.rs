@@ -132,7 +132,7 @@ pub(crate) async fn release(ctx: &DaemonContext) {
         ctx.undo.clear_matching(|held| held.identity == owner);
     }
     // A skin on trial was never stored: the next unlock shows the choice.
-    ctx.skin_trial.clear();
+    ctx.skin.trial.clear();
     crate::daemon::clients::unload(ctx).await;
     ctx.mek_cache.write().clear();
     *ctx.signing_key.write() = None;

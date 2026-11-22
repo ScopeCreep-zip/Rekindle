@@ -46,10 +46,10 @@ enum Change {
 /// Record the shown skin's grounds and re-send every community's roles
 /// whose tag colours they change.
 pub(crate) fn note(ctx: &DaemonContext, grounds: SkinGrounds) {
-    let Change::Was(before) = ctx.skin_grounds.replace(grounds) else {
+    let Change::Was(before) = ctx.skin.grounds.replace(grounds) else {
         return;
     };
-    let after = ctx.skin_grounds.get();
+    let after = ctx.skin.grounds.get();
     let ids: Vec<String> = ctx.communities.map().read().keys().cloned().collect();
     for community in ids {
         let Some(gov) = ctx.communities.governance_state(&community) else {

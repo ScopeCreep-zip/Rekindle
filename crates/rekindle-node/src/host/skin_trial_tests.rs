@@ -27,7 +27,8 @@ async fn host_with_library_skin(dir: &tempfile::TempDir) -> (std::sync::Arc<Host
     create_ann(&host).await;
     let canonical = validate::run(builtin::PACKS[0].bytes).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(dir, &Ok(canonical.clone())))
         .unwrap();
     let (answer, _) = run(
@@ -172,7 +173,7 @@ async fn revert_now_and_a_built_in_choice_end_the_trial() {
     // A lock mid-trial leaves the stored choice.
     select(&host, &id).await;
     let owner = host.ctx.require_owner().unwrap();
-    assert!(host.ctx.skin_trial.current(&owner).is_some());
+    assert!(host.ctx.skin.trial.current(&owner).is_some());
     host.call(Caller::shell(), IpcRequest::Lock).await;
-    assert!(host.ctx.skin_trial.current(&owner).is_none());
+    assert!(host.ctx.skin.trial.current(&owner).is_none());
 }

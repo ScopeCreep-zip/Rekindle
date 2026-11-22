@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use rekindle_types::dto::skin_action::Capability as C;
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserStatus};
 
-use super::capability::{allows, Group, Selected, Transfer, World};
+use super::capability::{allows, Group, Selected, SkinWorld, Transfer};
 use super::signals::Inputs;
 
 /// Team Fortress 2: a connect template.
@@ -16,7 +16,7 @@ const DOTA2: u32 = 4102;
 /// No game in the database.
 const UNKNOWN: u32 = 1;
 
-fn can(c: C, inputs: &Inputs, world: &World, selected: Selected<'_>) -> bool {
+fn can(c: C, inputs: &Inputs, world: &SkinWorld, selected: Selected<'_>) -> bool {
     allows(c, inputs, world, selected)
 }
 
@@ -43,7 +43,7 @@ fn temp_file(name: &str) -> PathBuf {
 
 #[test]
 fn join_needs_a_game_we_can_launch() {
-    let (i, w) = (Inputs::default(), World::default());
+    let (i, w) = (Inputs::default(), SkinWorld::default());
     for (game, launchable) in [(TF2, true), (DOTA2, true), (UNKNOWN, false)] {
         let f = in_game(game);
         let friend = Selected::Friend {
@@ -63,7 +63,7 @@ fn join_needs_a_game_we_can_launch() {
 #[test]
 fn add_server_unless_a_favourite_and_refresh_a_known_server() {
     let i = Inputs::default();
-    let mut w = World::default();
+    let mut w = SkinWorld::default();
     let server = Selected::Server {
         game_id: TF2,
         address: "10.0.0.1:27015",
@@ -83,7 +83,7 @@ fn add_server_unless_a_favourite_and_refresh_a_known_server() {
 #[test]
 fn downloads_follow_the_selected_transfer_state() {
     let mut i = Inputs::default();
-    let w = World::default();
+    let w = SkinWorld::default();
     let t = Selected::Transfer {
         attachment_id: "a1",
     };
@@ -106,7 +106,7 @@ fn downloads_follow_the_selected_transfer_state() {
 #[test]
 fn a_lobby_is_hosted_in_a_group_with_a_member_while_in_a_launchable_game() {
     let i = Inputs::default();
-    let mut w = World::default();
+    let mut w = SkinWorld::default();
     let g = Selected::Group { group_id: "g1" };
     w.groups.insert("g1".into(), Group::Joined { others: 1 });
     w.own_game = Some(TF2);
@@ -128,8 +128,10 @@ fn a_lobby_is_hosted_in_a_group_with_a_member_while_in_a_launchable_game() {
 #[test]
 fn rooms_need_two_friends_to_create_and_a_known_group_to_enter() {
     let i = Inputs::default();
-    let mut w = World::default();
-    w.accepted_friends = 1;
+    let mut w = SkinWorld {
+        accepted_friends: 1,
+        ..SkinWorld::default()
+    };
     assert!(!can(C::CreateRoom, &i, &w, Selected::Nothing));
     w.accepted_friends = 2;
     assert!(can(C::CreateRoom, &i, &w, Selected::Nothing));
@@ -148,7 +150,7 @@ fn rooms_need_two_friends_to_create_and_a_known_group_to_enter() {
 #[test]
 fn media_actions_need_the_file_and_a_share_target() {
     let i = Inputs::default();
-    let mut w = World::default();
+    let mut w = SkinWorld::default();
     let file = temp_file("shot.png");
     let path = file.to_str().unwrap().to_owned();
     let m = Selected::Media { path: &path };

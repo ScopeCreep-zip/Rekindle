@@ -21,7 +21,7 @@ pub(crate) fn role_displays(
         .map(|g| {
             crate::host::adapters::governance::role_ops::role_displays(
                 &g,
-                ctx.skin_grounds.get().as_deref(),
+                ctx.skin.grounds.get().as_deref(),
             )
         })
         .unwrap_or_default()

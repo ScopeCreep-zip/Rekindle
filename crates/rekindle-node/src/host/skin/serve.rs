@@ -85,7 +85,7 @@ async fn library_package(ctx: &DaemonContext, hash: &str) -> Answer<Option<Held>
 /// stored choice, else (locked) the device login skin.
 async fn resolved(ctx: &DaemonContext) -> Answer<String> {
     if let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) {
-        if let Some(trial) = ctx.skin_trial.current(&owner) {
+        if let Some(trial) = ctx.skin.trial.current(&owner) {
             return Ok(trial.id);
         }
         return db

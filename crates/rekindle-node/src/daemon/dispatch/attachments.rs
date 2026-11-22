@@ -46,7 +46,7 @@ pub(super) async fn handle(ctx: &DaemonContext, key: &str, request: PinRequest) 
         } => {
             // The skin's StartDownload / StopDownload / ExecuteDownload
             // follow this download (SK2-G §4).
-            let signals = &ctx.skin_signals;
+            let signals = &ctx.skin.signals;
             signals.set_transfer(&attachment_id, Transfer::Active);
             match files
                 .download(key, &channel_id, &attachment_id, Path::new(&path))

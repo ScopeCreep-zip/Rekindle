@@ -118,21 +118,11 @@ pub struct DaemonContext {
     pub session: Arc<RwLock<Option<Session>>>,
     /// The data root: the identity registry and every identity's files.
     pub root: rekindle_db::paths::DataRoot,
-    /// Where `rekindle-skin-helper` is (plan E7.7.2): beside this
-    /// executable, found on the first skin import (`host::skin`).
-    pub skin_helper: std::sync::OnceLock<rekindle_skin::helper::HelperOpts>,
-    /// The library skin on trial ("Keep this skin?", plan E7.7.2), which
-    /// the Host reverts unless it is kept.
-    pub(crate) skin_trial: crate::host::skin::TrialSlot,
-    /// The role-tag grounds of the skin this device shows, so role colours
-    /// read on an imported skin too (`host::skin::shown`).
-    pub(crate) skin_grounds: crate::host::skin::ShownGrounds,
     /// Each open window's Infoview subject (plan E7.15, IV4).
     pub(crate) infoview: crate::host::infoview::OpenViews,
-    /// Each skin window's selection (plan SK2-A4).
-    pub(crate) skin_selection: crate::host::skin::actions::Selections,
-    /// Each skin window's state signals (plan SK2-A4 step 3).
-    pub(crate) skin_signals: crate::host::skin::signals::SignalState,
+    /// The skin helper, trial, shown grounds and each skin window's
+    /// selection and signals (`host::skin::SkinState`).
+    pub(crate) skin: crate::host::skin::SkinState,
     /// The unlocked identity's database (plan D1), shared with the
     /// handler and the inbox scan. Empty while locked.
     pub db: Arc<rekindle_db::DbHandle>,

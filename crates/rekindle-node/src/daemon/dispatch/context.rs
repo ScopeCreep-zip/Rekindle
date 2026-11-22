@@ -262,7 +262,7 @@ impl DaemonContext {
     pub(crate) async fn call(&self, request: IpcRequest, caller: &Caller) -> IpcResponse {
         // A skin action that is a feature becomes its own request first
         // (plan SK2-A4), so that request meets its own clearance and gate.
-        let request = match crate::host::skin::actions::resolve(&self.skin_selection, request) {
+        let request = match crate::host::skin::actions::resolve(&self.skin.selection, request) {
             Ok(request) => request,
             Err(refused) => return refused,
         };

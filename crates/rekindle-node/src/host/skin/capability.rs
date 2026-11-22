@@ -91,7 +91,7 @@ pub(crate) enum Transfer {
 /// The state besides the selection and the Host's stream, read before
 /// each recompute (`signals::load_world`).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct World {
+pub(crate) struct SkinWorld {
     pub accepted_friends: usize,
     /// Accepted friends whose presence names a server.
     pub friend_servers: usize,
@@ -150,7 +150,7 @@ fn friend_allows(capability: Capability, inputs: &Inputs, selected: Selected<'_>
 pub(crate) fn allows(
     capability: Capability,
     inputs: &Inputs,
-    world: &World,
+    world: &SkinWorld,
     selected: Selected<'_>,
 ) -> bool {
     use Capability as C;

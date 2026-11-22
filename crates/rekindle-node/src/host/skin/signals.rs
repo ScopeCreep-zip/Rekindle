@@ -23,7 +23,7 @@ use rekindle_types::subscription_events::{
     TypingEvent, VoiceEvent,
 };
 
-use super::capability::{allows, Group, Selected, Transfer, World};
+use super::capability::{allows, Group, Selected, SkinWorld, Transfer};
 use crate::daemon::dispatch::DaemonContext;
 
 /// A call the Host has seen on its stream, by call id.
@@ -203,7 +203,7 @@ impl Inputs {
 pub(crate) fn compute(
     window: &str,
     inputs: &Inputs,
-    world: &World,
+    world: &SkinWorld,
     selected: Selected<'_>,
 ) -> SkinSignalSet {
     let mut set = SkinSignalSet {
@@ -232,7 +232,7 @@ pub(crate) fn compute(
 pub(crate) fn window_sets(
     inputs: &Inputs,
     selections: &super::actions::Selections,
-    world: &World,
+    world: &SkinWorld,
     friend: impl Fn(&str) -> Option<FriendState>,
 ) -> BTreeMap<String, SkinSignalSet> {
     let mut windows: BTreeSet<String> = inputs.windows.clone();
@@ -255,8 +255,8 @@ pub(crate) fn window_sets(
 /// The state the capabilities read besides the selection and the stream:
 /// the session's friends and communities, our shown game, and our
 /// favourite servers, groups and group invites in the database.
-pub(crate) async fn load_world(ctx: &DaemonContext) -> World {
-    let mut world = World::default();
+pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
+    let mut world = SkinWorld::default();
     if let Some(session) = ctx.session.read().as_ref() {
         for f in session.friends.values() {
             if f.friendship_state == FriendshipState::Accepted {
@@ -330,15 +330,15 @@ impl SignalState {
 }
 
 /// Each window's set that differs from the one last published.
-pub(crate) fn changed(ctx: &DaemonContext, world: &World) -> Vec<(String, SkinSignalSet)> {
+pub(crate) fn changed(ctx: &DaemonContext, world: &SkinWorld) -> Vec<(String, SkinSignalSet)> {
     let sets = {
         let session = ctx.session.read();
-        let inputs = ctx.skin_signals.inputs.lock();
-        window_sets(&inputs, &ctx.skin_selection, world, |k| {
+        let inputs = ctx.skin.signals.inputs.lock();
+        window_sets(&inputs, &ctx.skin.selection, world, |k| {
             session.as_ref().and_then(|s| s.friends.get(k).cloned())
         })
     };
-    let mut last = ctx.skin_signals.last.lock();
+    let mut last = ctx.skin.signals.last.lock();
     last.retain(|w, _| sets.contains_key(w));
     let mut out = Vec::new();
     for (window, set) in sets {
@@ -351,7 +351,7 @@ pub(crate) fn changed(ctx: &DaemonContext, world: &World) -> Vec<(String, SkinSi
 }
 
 /// Publish every changed set.
-pub(crate) fn publish_changes(ctx: &DaemonContext, world: &World) {
+pub(crate) fn publish_changes(ctx: &DaemonContext, world: &SkinWorld) {
     for (window, set) in changed(ctx, world) {
         ctx.journal.publish_state(
             &format!("skin-signals:{window}"),
@@ -369,14 +369,14 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
             () = ctx.shutdown.requested() => return,
             frame = stream.next() => match frame {
                 Some(StreamFrame::Event(s)) => {
-                    if !ctx.skin_signals.inputs.lock().fold(&s.event) {
+                    if !ctx.skin.signals.inputs.lock().fold(&s.event) {
                         continue;
                     }
                 }
                 Some(_) => {}
                 None => return,
             },
-            () = ctx.skin_signals.poke.notified() => {}
+            () = ctx.skin.signals.poke.notified() => {}
         }
         publish_changes(&ctx, &load_world(&ctx).await);
     }
@@ -387,7 +387,7 @@ impl crate::host::Host {
     /// (the Tauri window-focus event): it drives the window's
     /// `OnActivate`/`OnDeactivate`.
     pub fn skin_window_focused(&self, window: &str, focused: bool) {
-        self.ctx.skin_signals.set_focus(window, focused);
+        self.ctx.skin.signals.set_focus(window, focused);
     }
 
     /// The shell opened a skin window; `selection` is what it shows from
@@ -397,26 +397,26 @@ impl crate::host::Host {
         window: &str,
         selection: Option<rekindle_types::dto::skin_run::SkinSelection>,
     ) {
-        self.ctx.skin_signals.inputs.lock().open(window);
-        self.ctx.skin_selection.set(window, selection);
-        self.ctx.skin_signals.poke();
+        self.ctx.skin.signals.inputs.lock().open(window);
+        self.ctx.skin.selection.set(window, selection);
+        self.ctx.skin.signals.poke();
     }
 
     /// A skin window closed: its selection and signals go with it.
     pub fn skin_window_closed(&self, window: &str) {
-        self.ctx.skin_signals.inputs.lock().close(window);
-        self.ctx.skin_selection.set(window, None);
+        self.ctx.skin.signals.inputs.lock().close(window);
+        self.ctx.skin.selection.set(window, None);
         self.ctx
             .journal
             .clear_state(&format!("skin-signals:{window}"));
-        self.ctx.skin_signals.poke();
+        self.ctx.skin.signals.poke();
     }
 
     /// Our microphone mute in the call, from the desktop call engine
     /// (until E4.1 moves calls into the Host): `OnAppCanMuteSelf` /
     /// `OnAppCanUnmuteSelf`.
     pub fn skin_self_muted(&self, muted: bool) {
-        self.ctx.skin_signals.inputs.lock().set_self_muted(muted);
-        self.ctx.skin_signals.poke();
+        self.ctx.skin.signals.inputs.lock().set_self_muted(muted);
+        self.ctx.skin.signals.poke();
     }
 }

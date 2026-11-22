@@ -38,6 +38,24 @@ pub(crate) use ids::check;
 pub(crate) use shown::ShownGrounds;
 pub(crate) use trial::TrialSlot;
 
+/// The Host's skin state, one field of the context.
+#[derive(Default)]
+pub(crate) struct SkinState {
+    /// Where `rekindle-skin-helper` is (plan E7.7.2): beside this
+    /// executable, found on the first skin import.
+    pub(crate) helper: std::sync::OnceLock<HelperOpts>,
+    /// The library skin on trial ("Keep this skin?", plan E7.7.2), which
+    /// the Host reverts unless it is kept.
+    pub(crate) trial: TrialSlot,
+    /// The role-tag grounds of the skin this device shows, so role colours
+    /// read on an imported skin too (`shown`).
+    pub(crate) grounds: ShownGrounds,
+    /// Each skin window's selection (plan SK2-A4).
+    pub(crate) selection: actions::Selections,
+    /// Each skin window's state signals (plan SK2-A4 step 3).
+    pub(crate) signals: signals::SignalState,
+}
+
 /// Route one skin request (the router's arm for them).
 pub(crate) async fn route(
     ctx: &DaemonContext,
@@ -107,11 +125,11 @@ fn failed(what: &str, e: impl std::fmt::Display) -> IpcResponse {
 
 /// The helper's location: beside this executable, found on first use.
 fn helper_opts(ctx: &DaemonContext) -> Answer<HelperOpts> {
-    if let Some(opts) = ctx.skin_helper.get() {
+    if let Some(opts) = ctx.skin.helper.get() {
         return Ok(opts.clone());
     }
     let opts = HelperOpts::beside_current_exe().map_err(|e| failed("skin helper", e))?;
-    Ok(ctx.skin_helper.get_or_init(|| opts).clone())
+    Ok(ctx.skin.helper.get_or_init(|| opts).clone())
 }
 
 /// A package's manifest; every package here passed the pipeline.
@@ -178,7 +196,7 @@ async fn remove(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
         return Err(not_found(&id));
     };
     let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
-    if ctx.skin_trial.current(&owner).is_some_and(|t| t.id == id) {
+    if ctx.skin.trial.current(&owner).is_some_and(|t| t.id == id) {
         return Err(in_use(&id));
     }
     let (hash, skin_id) = (hash.to_owned(), id.clone());
@@ -286,7 +304,7 @@ async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
             credits: m.credits,
         });
     }
-    let trial = ctx.skin_trial.current(&owner);
+    let trial = ctx.skin.trial.current(&owner);
     let (rows, choice) = db
         .call(move |conn| {
             Ok((

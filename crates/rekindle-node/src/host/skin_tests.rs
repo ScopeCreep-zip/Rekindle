@@ -101,7 +101,8 @@ async fn a_package_the_helper_refuses_is_refused_with_its_typed_error() {
     let bad = b"not a zip".to_vec();
     let refusal = validate::run(&bad).unwrap_err();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Err(refusal.clone())))
         .unwrap();
     let (answer, review) = run(&host, IpcRequest::SkinImport { bytes: bad }).await;
@@ -125,7 +126,8 @@ async fn import_select_set_login_and_remove_round_trip() {
     create_ann(&host).await;
     let canonical = validate::run(builtin::PACKS[0].bytes).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(canonical.clone())))
         .unwrap();
     let (answer, _) = run(
@@ -243,7 +245,8 @@ async fn a_skin_is_chosen_while_the_network_is_detached() {
         .unwrap();
     let canonical = validate::run(builtin::PACKS[1].bytes).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(canonical)))
         .unwrap();
     let other = format!("{}{}", builtin::PREFIX, builtin::PACKS[1].id);

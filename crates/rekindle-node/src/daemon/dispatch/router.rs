@@ -188,8 +188,8 @@ async fn route(
 
         // ── Skins (plan E7.7.2) ──────────────────────────────────
         request @ (IpcRequest::RunSkinAction { .. } | IpcRequest::SkinSelectionSet { .. }) => {
-            let answer = crate::host::skin::actions::answer(&ctx.skin_selection, request);
-            ctx.skin_signals.poke();
+            let answer = crate::host::skin::actions::answer(&ctx.skin.selection, request);
+            ctx.skin.signals.poke();
             answer
         }
         request @ (IpcRequest::SkinList

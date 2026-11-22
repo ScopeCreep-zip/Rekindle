@@ -39,7 +39,8 @@ async fn the_login_skin_applies_before_unlock_and_is_served_immutable() {
     let host = offline_host(&dir).await;
     let canonical = validate::run(builtin::PACKS[0].bytes).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(canonical.clone())))
         .unwrap();
     let applied: SkinApplied = data(
@@ -84,7 +85,8 @@ async fn a_library_skin_is_announced_and_served_no_store() {
     // is a valid canonical package with another address.
     let library = rekindle_skin::login::strip(&canonical.bytes).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(library.clone())))
         .unwrap();
     let (answer, _) = run(
@@ -151,7 +153,8 @@ async fn skin_frames_are_the_shown_skins_validated_layouts() {
     assert!(matches!(refused, IpcResponse::Error { .. }), "{refused:?}");
     let canonical = validate::run(builtin::PACKS[0].bytes).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(canonical.clone())))
         .unwrap();
     let shown: SkinFrames = data(host.call(Caller::shell(), IpcRequest::SkinFrames).await);
@@ -170,7 +173,8 @@ async fn a_shown_skin_without_layouts_has_no_frames() {
     create_ann(&host).await;
     let library = draft::package(&grey_skin(), &draft::Assets::default()).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(library.clone())))
         .unwrap();
     let (answer, _) = run(
@@ -248,7 +252,8 @@ async fn role_colours_are_resent_readable_on_an_imported_skin() {
     );
     let library = draft::package(&grey_skin(), &draft::Assets::default()).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(library.clone())))
         .unwrap();
     let (answer, _) = run(

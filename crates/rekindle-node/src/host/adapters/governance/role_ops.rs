@@ -169,7 +169,7 @@ impl HostGovernance {
     #[must_use]
     pub fn role_list(&self, community_id: &str) -> Vec<RoleDisplay> {
         self.governance_state_impl(community_id)
-            .map(|g| role_displays(&g, self.ctx.skin_grounds.get().as_deref()))
+            .map(|g| role_displays(&g, self.ctx.skin.grounds.get().as_deref()))
             .unwrap_or_default()
     }
 

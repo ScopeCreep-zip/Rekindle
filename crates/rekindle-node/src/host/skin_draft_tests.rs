@@ -64,7 +64,8 @@ async fn a_draft_is_reported_without_a_review_and_a_failing_pair_blocks_export()
     )
     .unwrap_err();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Err(refusal.clone())))
         .unwrap();
     let path = dir.path().join("night.rkskin");
@@ -90,7 +91,8 @@ async fn a_draft_starts_from_the_shown_skin_and_exports_for_a_byte_identical_imp
     create_ann(&host).await;
     let shown = validate::run(builtin::PACKS[0].bytes).unwrap();
     host.ctx
-        .skin_helper
+        .skin
+        .helper
         .set(stand_in(&dir, &Ok(shown.clone())))
         .unwrap();
     let start: SkinDraft = data(

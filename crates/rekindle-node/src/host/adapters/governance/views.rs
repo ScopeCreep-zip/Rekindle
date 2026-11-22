@@ -273,7 +273,7 @@ impl HostGovernance {
     /// ops not yet landed stands (the outbox's `governance_op` rows).
     pub(crate) async fn community_views(&self) -> Vec<CommunityView> {
         let now_secs = self.ctx.clock.now_secs();
-        let shown = self.ctx.skin_grounds.get();
+        let shown = self.ctx.skin.grounds.get();
         let mut views: Vec<CommunityView> = self
             .ctx
             .communities
