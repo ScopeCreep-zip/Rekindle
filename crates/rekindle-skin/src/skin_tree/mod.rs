@@ -6,6 +6,7 @@
 
 mod anchor;
 mod clip;
+pub mod cover;
 pub mod css;
 mod fit;
 pub mod import;

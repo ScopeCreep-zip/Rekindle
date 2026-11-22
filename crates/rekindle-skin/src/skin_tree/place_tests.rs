@@ -434,17 +434,23 @@ fn clone_shell_label(id: &str) -> Option<NodeLabel> {
 
 /// Symbiosis's tabs are icon buttons (46 x 48 whole pictures, no word):
 /// the clone carries the Communities glyph with its words as the
-/// accessible name and no cover, so no text tab sits in the icon strip.
+/// accessible name, so no text tab sits in the icon strip, and the cover
+/// of the copied clapperboard (x 14-31, y 15-31 of the art), so the shell
+/// fills it with the button's ground and draws the glyph there.
 #[test]
-fn an_icon_tab_clone_carries_a_glyph_and_no_cover() {
+fn an_icon_tab_clone_carries_a_glyph_over_the_copied_icon() {
+    let label = clone_shell_label("symbiosis");
     assert_eq!(
-        clone_shell_label("symbiosis"),
+        label,
         Some(NodeLabel {
             text: "Communities".to_owned(),
-            cover: None,
+            cover: Some([14, 15, 18, 17]),
             glyph: Some(NodeGlyph::Communities),
         })
     );
+    let [x, y, w, h] = label.and_then(|l| l.cover).unwrap();
+    assert!(x > 0 && y > 0 && x + w < 46 && y + h < 48, "inside the art");
+    assert!(w < 46 && h < 48, "smaller than the art");
 }
 
 /// Worded tabs keep their words: xslimfire's whole picture with a cover,

@@ -39,7 +39,7 @@ TabsContainer Decor
   ButtonPicturesTab Tab(Pictures)
   TabSeparator5 Decor
   ButtonVideosTab Tab(Videos)
-  ButtonVideosTab.Communities Tab(Communities) label "Communities" glyph Communities
+  ButtonVideosTab.Communities Tab(Communities) label "Communities" cover [14, 15, 18, 17] glyph Communities
   TabSeparator6 Decor
 ButtonNotificationsTab Tab(Notifications)
   ButtonNotificationsTabControl ButtonBar

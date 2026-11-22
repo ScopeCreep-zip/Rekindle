@@ -221,8 +221,9 @@ fn whole_picture(n: &SkinNode, w: u16) -> bool {
 /// - An icon tab (the art one whole picture at the box's size and the box
 ///   no more than twice as wide as it is tall: Symbiosis's 46 x 48
 ///   `ButtonVideosTab`, an icon button with no word) gets the shell's
-///   Communities glyph, the words its accessible name, and no cover: a word
-///   would be the only text tab in an icon strip.
+///   Communities glyph, the words its accessible name, and no cover yet: a
+///   word would be the only text tab in an icon strip. The cover, the box
+///   of the copied icon, is read from the art by [`super::cover`].
 /// - A worded whole picture (a word band at least 3.5 times as wide as it
 ///   is tall: xslimfire's 65 x 18 `TabDownloadButton`, Total Chaos's
 ///   74 x 17) covers the copied word's band: the box less a tenth of its
