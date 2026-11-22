@@ -19,7 +19,7 @@ import type {
   NotificationEvent,
   NotificationSubscriptionEvent,
 } from "./notification_events";
-import type { IntentReview, LifecycleState, SkinApplied, SkinTrial } from "../commands/dto";
+import type { IntentReview, LifecycleState, SkinApplied, SkinApplyFailure, SkinTrial } from "../commands/dto";
 import type { ActivityListItem, SettingsTab } from "../commands/types";
 import type { InfoviewView } from "../commands/dto_infoview";
 import type { SkinSignalSet } from "../commands/dto_skin_run";
@@ -276,6 +276,29 @@ export function subscribeSkinTrial(
   return on<{ system: { skinTrialChanged: { trial: SkinTrial | null } } }>(
     "skin-trial-event",
     (payload) => onTrial(payload.system.skinTrialChanged.trial),
+  );
+}
+
+/** `SystemEvent::SkinApplyFailed`: a window could not apply `skin` (plan SK2-T1). */
+export interface SkinApplyFailed {
+  window: string;
+  skin: string;
+  cause: SkinApplyFailure;
+  /** The Host reverted `skin`, which was on trial. */
+  reverted: boolean;
+}
+
+/**
+ * Subscribe to a window's failure to apply a skin (`SystemEvent::
+ * SkinApplyFailed`, plan SK2-T1): that window and Settings receive it on
+ * `skin-apply-event`, after the Host logged it and reverted a skin on trial.
+ */
+export function subscribeSkinApplyFailed(
+  onFailed: (failed: SkinApplyFailed) => void,
+): Promise<UnlistenFn> {
+  return on<{ system: { skinApplyFailed: SkinApplyFailed } }>(
+    "skin-apply-event",
+    (payload) => onFailed(payload.system.skinApplyFailed),
   );
 }
 
