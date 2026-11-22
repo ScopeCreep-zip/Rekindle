@@ -15,13 +15,24 @@
 //! - the art bakes a word the Host keeps (Tools, Help): no label;
 //! - no word in the art: `{text}`, no cover.
 //!
-//! The word's box is [`super::cover::icon_box`] on the art under the title's
-//! box: a menu title's word sits on a flat ground away from the art's edges,
-//! exactly the shape that measure reads (on Symbiosis's art,
-//! `[11, 5, 23, 10]`). SK3's worded-tab band (the box less fixed fractions)
-//! is not used: it guesses a framed tab's band, and a menu title has no
-//! frame, so the band would cover most of the art and miss nothing only by
-//! luck. The art under the title is the title's own whole picture, a part's,
+//! The word's box starts as [`super::cover::icon_box`] on the art under the
+//! title's box (what stands off each row's ground, the frame dropped), then
+//! grows (see [`word_cover`]): that measure takes each row's ground from
+//! its outer quarters, so a word reaching into a flank is read as ground
+//! there (Alloy's "E", x 37-45 of its 48 px art, fills the right quarter of
+//! its rows and the measure stops at x 36). The word's ink is the
+//! commonest colour of what the measure found; the box grows a column or
+//! row at a time while the next one holds ink, or a visible pixel off its
+//! row's ground beside ink (the anti-aliased edge: Total Chaos's dim "X"
+//! foot). Measured on the four art-titled packs: Symbiosis "Xfire"
+//! `[12, 4, 22, 10]`, Alloy "XFIRE" `[2, 2, 44, 11]`, Total Chaos "XFIRE"
+//! `[15, 3, 46, 9]` (its word x 15-49; the box keeps the right gauge bar
+//! the first measure joined to the "E"), XGlow "File" and its reflection
+//! `[1, 2, 21, 17]` (the reflection mirrors "File" under the word, so it
+//! is hidden with it: a reflection of "File" under "Rekindle" would show
+//! the old word). SK3's worded-tab band (the box less fixed fractions) is
+//! not used: it guesses a framed tab's band, and a menu title has no
+//! frame. The art under the title is the title's own whole picture, a part's,
 //! or, when it has none, the nearest enclosing node's whole picture cropped
 //! to the title's box (Total Chaos's titles lie over their words in
 //! `MenuBg`).
@@ -31,7 +42,7 @@ use rekindle_types::dto::skin::{Insets, SkinError, SkinRule, WindowLayout};
 use rekindle_types::dto::skin_action::{EngineMenu, SkinAction};
 use rekindle_types::dto::skin_tree::{NodeLabel, NodeRole, SkinNode};
 
-use super::cover::icon_box;
+use super::cover::{differing, edge_connected, icon_box, seen, ICON_TOLERANCE};
 use crate::package::Package;
 
 /// A whole picture laid in the window: its image and where its top-left
@@ -59,11 +70,11 @@ fn whole(n: &SkinNode, b: [i32; 4]) -> Option<Pic> {
     })
 }
 
-/// The box of `n` in its parent's box `p`.
-fn place(n: &SkinNode, p: [i32; 4]) -> [i32; 4] {
-    let (x, w) = n.x.place(p[2]);
-    let (y, h) = n.y.place(p[3]);
-    [p[0] + x, p[1] + y, w, h]
+/// The box of `node` in its parent's box `parent`.
+fn place(node: &SkinNode, parent: [i32; 4]) -> [i32; 4] {
+    let (left, wide) = node.x.place(parent[2]);
+    let (top, high) = node.y.place(parent[3]);
+    [parent[0] + left, parent[1] + top, wide, high]
 }
 
 /// The node's or a descendant's whole picture.
@@ -83,8 +94,12 @@ fn menu_of(n: &SkinNode) -> Option<EngineMenu> {
         .or_else(|| n.children.iter().find_map(menu_of))
 }
 
-/// The box, in the title's box `b`, of the word in `pic` under it.
-fn word_box(pic: &Pic, b: [i32; 4], package: &Package<'_>) -> Result<Option<[u16; 4]>, SkinError> {
+/// The box, in the title's box `title`, of the word in `pic` under it.
+fn word_box(
+    pic: &Pic,
+    title: [i32; 4],
+    package: &Package<'_>,
+) -> Result<Option<[u16; 4]>, SkinError> {
     let bytes = package.get(&pic.image).ok_or_else(|| {
         SkinError::new(
             pic.image.as_str(),
@@ -97,11 +112,11 @@ fn word_box(pic: &Pic, b: [i32; 4], package: &Package<'_>) -> Result<Option<[u16
     let Some(image) = frames.first() else {
         return Ok(None);
     };
-    let (dx, dy) = (b[0] - pic.at[0], b[1] - pic.at[1]);
+    let (dx, dy) = (title[0] - pic.at[0], title[1] - pic.at[1]);
     let size = |v: u32| i32::try_from(v).unwrap_or(0);
-    let across = b[2].min(size(image.width()) - dx);
-    let down = b[3].min(size(image.height()) - dy);
-    let (Ok(x0), Ok(y0), Ok(w), Ok(h)) = (
+    let across = title[2].min(size(image.width()) - dx);
+    let down = title[3].min(size(image.height()) - dy);
+    let (Ok(left), Ok(top), Ok(cols), Ok(rows)) = (
         u32::try_from(dx),
         u32::try_from(dy),
         u32::try_from(across),
@@ -109,11 +124,105 @@ fn word_box(pic: &Pic, b: [i32; 4], package: &Package<'_>) -> Result<Option<[u16
     ) else {
         return Ok(None);
     };
-    if w == 0 || h == 0 {
+    if cols == 0 || rows == 0 {
         return Ok(None);
     }
-    let under = RgbaImage::from_fn(w, h, |x, y| *image.get_pixel(x0 + x, y0 + y));
-    Ok(icon_box(&under))
+    let under = RgbaImage::from_fn(cols, rows, |col, row| {
+        *image.get_pixel(left + col, top + row)
+    });
+    Ok(word_cover(&under))
+}
+
+/// Within [`ICON_TOLERANCE`] of `ink` on every channel.
+fn inked(colour: [u8; 4], ink: [u8; 4]) -> bool {
+    colour[3] != 0
+        && colour
+            .iter()
+            .zip(ink)
+            .all(|(a, b)| a.abs_diff(b) <= ICON_TOLERANCE)
+}
+
+/// The commonest colour of the measured word pixels inside `edges`
+/// (`[left, top, right, bottom]`, inclusive).
+fn ink_of(pixels: &[[u8; 4]], word: &[bool], cols: usize, edges: [usize; 4]) -> Option<[u8; 4]> {
+    let mut counts: std::collections::HashMap<[u8; 4], usize> = std::collections::HashMap::new();
+    for row in edges[1]..=edges[3] {
+        for at in row * cols + edges[0]..=row * cols + edges[2] {
+            if word[at] {
+                *counts.entry(pixels[at]).or_default() += 1;
+            }
+        }
+    }
+    counts
+        .into_iter()
+        .max_by_key(|&(colour, count)| (count, colour))
+        .map(|(colour, _)| colour)
+}
+
+/// Widens `edges` a column or row at a time while the next one, across the
+/// box, holds a word pixel.
+fn grow(word: &[bool], cols: usize, rows: usize, edges: &mut [usize; 4]) {
+    let column = |col: usize, e: [usize; 4]| (e[1]..=e[3]).any(|row| word[row * cols + col]);
+    let line = |row: usize, e: [usize; 4]| (e[0]..=e[2]).any(|col| word[row * cols + col]);
+    loop {
+        let before = *edges;
+        if edges[0] > 0 && column(edges[0] - 1, *edges) {
+            edges[0] -= 1;
+        }
+        if edges[2] + 1 < cols && column(edges[2] + 1, *edges) {
+            edges[2] += 1;
+        }
+        if edges[1] > 0 && line(edges[1] - 1, *edges) {
+            edges[1] -= 1;
+        }
+        if edges[3] + 1 < rows && line(edges[3] + 1, *edges) {
+            edges[3] += 1;
+        }
+        if *edges == before {
+            return;
+        }
+    }
+}
+
+/// The box of the word baked into `image` (see the module doc): the icon
+/// box, grown while the next column or row holds the word's ink or its
+/// anti-aliased edge.
+fn word_cover(image: &RgbaImage) -> Option<[u16; 4]> {
+    let [left, top, wide, high] = icon_box(image)?.map(usize::from);
+    let cols = usize::try_from(image.width()).ok()?;
+    let rows = usize::try_from(image.height()).ok()?;
+    let pixels: Vec<[u8; 4]> = image
+        .rows()
+        .flat_map(|line| line.map(|pixel| seen(pixel.0)))
+        .collect();
+    let differs = differing(image, cols);
+    let frame = edge_connected(&differs, cols, rows);
+    let measured: Vec<bool> = differs
+        .iter()
+        .zip(&frame)
+        .map(|(off, edge)| *off && !*edge)
+        .collect();
+    let mut edges = [left, top, left + wide - 1, top + high - 1];
+    let ink = ink_of(&pixels, &measured, cols, edges)?;
+    let like: Vec<bool> = pixels.iter().map(|&p| inked(p, ink)).collect();
+    let beside_ink = |at: usize| {
+        let (col, row) = (at % cols, at / cols);
+        (row.saturating_sub(1)..=(row + 1).min(rows - 1)).any(|near_row| {
+            (col.saturating_sub(1)..=(col + 1).min(cols - 1))
+                .any(|near_col| like[near_row * cols + near_col])
+        })
+    };
+    let word: Vec<bool> = (0..pixels.len())
+        .map(|at| like[at] || (pixels[at][3] != 0 && differs[at] && beside_ink(at)))
+        .collect();
+    grow(&word, cols, rows, &mut edges);
+    let side = |v: usize| u16::try_from(v).ok();
+    Some([
+        side(edges[0])?,
+        side(edges[1])?,
+        side(edges[2] - edges[0] + 1)?,
+        side(edges[3] - edges[1] + 1)?,
+    ])
 }
 
 /// The Host's label for a menu title opening `menu` whose art's word, if

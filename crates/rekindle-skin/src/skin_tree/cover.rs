@@ -83,7 +83,7 @@ pub(crate) fn icon_box(image: &RgbaImage) -> Option<[u16; 4]> {
 /// colour it stores (Alloy's `node-filemenu.png` keeps stray colour under
 /// zero alpha around its "XFIRE", which would otherwise differ from the
 /// ground and join the word to the edge).
-const fn seen(p: [u8; 4]) -> [u8; 4] {
+pub(super) const fn seen(p: [u8; 4]) -> [u8; 4] {
     if p[3] == 0 {
         [0; 4]
     } else {
@@ -92,7 +92,7 @@ const fn seen(p: [u8; 4]) -> [u8; 4] {
 }
 
 /// Each pixel's difference from its row's ground (row-major).
-fn differing(image: &RgbaImage, width: usize) -> Vec<bool> {
+pub(super) fn differing(image: &RgbaImage, width: usize) -> Vec<bool> {
     let quarter = (width / 4).max(1);
     let mut out = Vec::with_capacity(width * image.rows().len());
     for pixels in image.rows() {
@@ -121,7 +121,7 @@ fn differing(image: &RgbaImage, width: usize) -> Vec<bool> {
 }
 
 /// The differing pixels 4-connected to the image's edge.
-fn edge_connected(differs: &[bool], w: usize, h: usize) -> Vec<bool> {
+pub(super) fn edge_connected(differs: &[bool], w: usize, h: usize) -> Vec<bool> {
     let mut seen = vec![false; w * h];
     let mut stack: Vec<(usize, usize)> = (0..h)
         .flat_map(|y| (0..w).map(move |x| (x, y)))
