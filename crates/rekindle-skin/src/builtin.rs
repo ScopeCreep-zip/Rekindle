@@ -4,8 +4,12 @@
 //! `cargo xtask import-skin … --builtin <id>` (E7.7.3) beside its `NOTICE`,
 //! and is embedded here with `include_bytes!`. Embedding is not trust: a
 //! built-in passes the same helper validation as any import, on its first
-//! use in each process ([`validated`]), and the canonical package the
-//! helper returns is what is served.
+//! use in each process ([`validated`]). A committed pack is the pipeline's
+//! fixed point, so the helper's canonical package must be the pack itself:
+//! an answer naming other bytes is refused and never kept, which means no
+//! helper, a test's stand-in included, can make a built-in serve anything
+//! but its own committed bytes for any later caller. Its address is
+//! therefore known without the helper ([`by_address`]).
 //!
 //! [`DEFAULT`] is Symbiosis, Xfire's stock skin, now that E7.7.3 imported
 //! it (`docs/architecture/ui-skin.md` "Reference assets"); `builtin:default`
@@ -95,6 +99,10 @@ pub const PACKS: [Builtin; 11] = [
 /// Each pack's helper-validated canonical package, once per process.
 static VALIDATED: [OnceLock<Canonical>; PACKS.len()] = [const { OnceLock::new() }; PACKS.len()];
 
+/// Each pack's address: BLAKE3 of its committed bytes, which is the
+/// address of the only canonical package [`validated`] accepts for it.
+static ADDRESSES: OnceLock<[String; PACKS.len()]> = OnceLock::new();
+
 /// The pack a `builtin:<id>` skin id names, and its index in [`PACKS`].
 #[must_use]
 pub fn find(skin_id: &str) -> Option<(usize, &'static Builtin)> {
@@ -102,10 +110,23 @@ pub fn find(skin_id: &str) -> Option<(usize, &'static Builtin)> {
     PACKS.iter().enumerate().find(|(_, b)| b.id == id)
 }
 
+/// The built-in whose canonical package has `address` (a `skin://` path's
+/// first segment), and its index in [`PACKS`]: looked up by address, so
+/// serving one file validates one pack, not every pack.
+#[must_use]
+pub fn by_address(address: &str) -> Option<(usize, &'static Builtin)> {
+    let addresses = ADDRESSES
+        .get_or_init(|| std::array::from_fn(|i| blake3::hash(PACKS[i].bytes).to_hex().to_string()));
+    let i = addresses.iter().position(|a| a == address)?;
+    Some((i, &PACKS[i]))
+}
+
 /// The canonical package of the built-in `skin_id`: validated by the
 /// helper at `opts` on first use in this process, the result kept for
 /// every later call. A failure is not kept, so a helper that did not
-/// answer is tried again on the next use.
+/// answer is tried again on the next use; nor is an answer that is not
+/// the committed pack ([`HelperError::NotTheBuiltin`]), so one host's
+/// helper cannot define the built-ins another host serves.
 ///
 /// `Ok(None)` when `skin_id` names no built-in pack.
 ///
@@ -119,6 +140,9 @@ pub fn validated(skin_id: &str, opts: &HelperOpts) -> Result<Option<Canonical>, 
         return Ok(Some(c.clone()));
     }
     let canonical = helper::validate(pack.bytes, opts)?;
+    if canonical.bytes != pack.bytes {
+        return Err(HelperError::NotTheBuiltin(skin_id.to_owned()));
+    }
     Ok(Some(VALIDATED[i].get_or_init(|| canonical).clone()))
 }
 
@@ -141,6 +165,11 @@ mod tests {
         assert!(find("builtin:nope").is_none());
         assert!(find("symbiosis").is_none());
         assert!(find("pkg:symbiosis").is_none());
+        for (i, pack) in PACKS.iter().enumerate() {
+            let address = validate::run(pack.bytes).unwrap().address();
+            assert_eq!(by_address(&address).map(|(j, _)| j), Some(i));
+        }
+        assert!(by_address(&"0".repeat(64)).is_none());
     }
 
     /// Xfire's own packs, first in [`PACKS`]; the rest are fan skins.

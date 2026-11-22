@@ -76,6 +76,11 @@ pub enum HelperError {
     /// The helper exited cleanly but its answer does not decode.
     #[error("skin helper answer refused: {0}")]
     Malformed(String),
+    /// The helper answered a built-in pack with a package other than the
+    /// committed pack, which is the pipeline's fixed point
+    /// ([`crate::builtin::validated`]).
+    #[error("skin helper answered another package for {0}")]
+    NotTheBuiltin(String),
 }
 
 /// Where the helper is, how long it may run and, on macOS, how much

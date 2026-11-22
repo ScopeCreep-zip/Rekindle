@@ -144,6 +144,53 @@ async fn a_library_skin_is_announced_and_served_no_store() {
     assert_eq!(status_of(&answer), Some(404));
 }
 
+/// The built-in cache is process-wide, so a host's helper must not define
+/// the built-ins another host serves: a stand-in answering another package
+/// for XGlow is refused, nothing is kept, and a second host with an honest
+/// helper serves XGlow's own committed bytes. XGlow is the pack no other
+/// test of this process validates, so the first answer is the stand-in's.
+#[tokio::test]
+async fn one_hosts_helper_cannot_change_the_builtins_another_host_serves() {
+    let xglow = format!("{}{}", builtin::PREFIX, builtin::PACKS[10].id);
+    let canonical = validate::run(builtin::PACKS[10].bytes).unwrap();
+    let lying_dir = tempfile::tempdir().unwrap();
+    let lying = offline_host(&lying_dir).await;
+    let other = rekindle_skin::login::strip(&canonical.bytes).unwrap();
+    lying
+        .ctx
+        .skin
+        .helper
+        .set(stand_in(&lying_dir, &Ok(other)))
+        .unwrap();
+    let get = |id: &str| IpcRequest::SkinGet {
+        id: Some(id.to_owned()),
+    };
+    let refused = lying.call(Caller::shell(), get(&xglow)).await;
+    assert!(matches!(refused, IpcResponse::Error { .. }), "{refused:?}");
+
+    let honest_dir = tempfile::tempdir().unwrap();
+    let honest = offline_host(&honest_dir).await;
+    honest
+        .ctx
+        .skin
+        .helper
+        .set(stand_in(&honest_dir, &Ok(canonical.clone())))
+        .unwrap();
+    let applied: SkinApplied = data(honest.call(Caller::shell(), get(&xglow)).await);
+    let a = canonical.address();
+    assert_eq!(applied.tokens_href, serve::tokens_href(&a));
+    let css: SkinServed = data(
+        honest
+            .call(Caller::shell(), file(format!("/{a}/tokens.css")))
+            .await,
+    );
+    assert_eq!(css.cache_control, serve::Cache::Immutable.header());
+    // What the process keeps is the committed pack, so the lying host now
+    // serves XGlow's own bytes too, never its helper's answer.
+    let again: SkinApplied = data(lying.call(Caller::shell(), get(&xglow)).await);
+    assert_eq!(again.tokens_href, serve::tokens_href(&a));
+}
+
 #[tokio::test]
 async fn skin_frames_are_the_shown_skins_validated_layouts() {
     let dir = tempfile::tempdir().unwrap();

@@ -176,14 +176,13 @@ pub(super) async fn frames(ctx: &DaemonContext) -> Answer<SkinFrames> {
 pub(super) async fn file(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> {
     let missing = || IpcResponse::error(404, "no such skin file");
     let (address, _) = serve::parse_path(path).ok_or_else(missing)?;
-    let mut held = None;
-    for pack in &builtin::PACKS {
-        let candidate = builtin_package(ctx, &format!("{}{}", builtin::PREFIX, pack.id)).await?;
-        if candidate.address == address {
-            held = Some(candidate);
-            break;
+    // A built-in is found by its address and only that pack is validated.
+    let mut held = match builtin::by_address(address) {
+        Some((_, pack)) => {
+            Some(builtin_package(ctx, &format!("{}{}", builtin::PREFIX, pack.id)).await?)
         }
-    }
+        None => None,
+    };
     if held.is_none() {
         held = login_copy(ctx, address)?;
     }
