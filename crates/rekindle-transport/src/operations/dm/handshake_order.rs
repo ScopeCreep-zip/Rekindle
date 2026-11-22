@@ -18,9 +18,19 @@ use crate::operations::friend::{state, FriendError, FriendHost, FriendStores};
 /// The stream prefix of a peer's handshake rows.
 const HANDSHAKE_STREAM: &str = "friend_handshake:";
 
-/// The kinds of a first contact: the PreKeyInit carrying our
-/// `FriendAccept` or `SessionResetAccept`.
-const FIRST_CONTACT: [DmTypeId; 2] = [DmTypeId::FriendAccept, DmTypeId::SessionResetAccept];
+/// The kinds a first contact's row is named by: the `PreKeyInit` carrying
+/// our `FriendAccept` or `SessionResetAccept` (`handshake::enqueue_frame`
+/// names a row by the frame's own kind, and every `PreKeyInit` on this
+/// stream is a first contact: `dm/outgoing.rs` `send_friend_accept`,
+/// `prekeys/first_contact.rs`), and the `FriendAccept` or
+/// `SessionResetAccept` row still waiting for the peer's prekey record
+/// (`handshake::enqueue_first_contact`). HOL1g: without the `PreKeyInit`
+/// prefix a real first contact was never noted and nothing waited for it.
+const FIRST_CONTACT: [DmTypeId; 3] = [
+    DmTypeId::PreKeyInit,
+    DmTypeId::FriendAccept,
+    DmTypeId::SessionResetAccept,
+];
 
 /// The kinds whose row waits for no other row of the stream (plan HOL1,
 /// lead decision 47): a first contact and a request themselves, a session
@@ -31,8 +41,9 @@ const FIRST_CONTACT: [DmTypeId; 2] = [DmTypeId::FriendAccept, DmTypeId::SessionR
 /// friendship and to hold our session (the receiver drops it otherwise:
 /// `friend/presence_key.rs`, `direct/frame.rs` NoSession), so it waits for
 /// our unsettled first contact ([`waits_for`]).
-const INDEPENDENT: [DmTypeId; 21] = [
+const INDEPENDENT: [DmTypeId; 22] = [
     DmTypeId::FriendRequest,
+    DmTypeId::PreKeyInit,
     DmTypeId::FriendAccept,
     DmTypeId::SessionResetRequest,
     DmTypeId::SessionResetAccept,
